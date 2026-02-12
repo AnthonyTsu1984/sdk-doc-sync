@@ -6,6 +6,7 @@ const DocGenerator = require('./doc-generator');
 const PythonScanner = require('./scanners/python-scanner');
 const JavaScanner = require('./scanners/java-scanner');
 const CppScanner = require('./scanners/cpp-scanner');
+const GoScanner = require('./scanners/go-scanner');
 
 /**
  * SdkDocSync — orchestrates the 5-phase pipeline: SCAN → INDEX → DIFF → APPROVE → EXECUTE
@@ -76,8 +77,10 @@ class SdkDocSync {
                 return new JavaScanner(opts);
             case 'cpp':
                 return new CppScanner(opts);
+            case 'go':
+                return new GoScanner(opts);
             default:
-                throw new Error(`Unsupported language: ${language}. Supported: python, java, cpp`);
+                throw new Error(`Unsupported language: ${language}. Supported: python, java, cpp, go`);
         }
     }
 

@@ -146,6 +146,7 @@ class MarkdownToFeishu {
         map['js'] = 30;  // JavaScript
         map['ts'] = 64;  // TypeScript
         map['py'] = 50;  // Python
+        map['cpp'] = 9;  // C++
         map['bash'] = 7;
         map['shell'] = 62;
         map['plaintext'] = 1;

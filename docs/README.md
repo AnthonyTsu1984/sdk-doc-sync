@@ -4,9 +4,42 @@ Complete documentation for the Feishu-Markdown Bridge project.
 
 ## Quick Links
 
-- 🚀 **[Quick Start Guide](./quick-start.md)** - Get started in 5 minutes
+- 🚀 **[Quick Start Guide](./getting-started/quick-start.md)** - Get started in 5 minutes
 - 📚 **[Main README](../README.md)** - Project overview and features
-- 📖 **[Examples](./examples.md)** - Comprehensive usage examples
+- 📖 **[Examples](./getting-started/examples.md)** - Comprehensive usage examples
+
+## Documentation Structure
+
+Documentation is organized into the following categories:
+
+### 📘 [Getting Started](./getting-started/)
+New to the project? Start here.
+- [Quick Start Guide](./getting-started/quick-start.md) - 5-minute setup
+- [Examples](./getting-started/examples.md) - Comprehensive usage examples
+
+### 🔄 [Converters](./converters/)
+Core conversion functionality between Markdown and Feishu.
+- [Feishu to Markdown](./converters/feishu-to-markdown.md) - Export Feishu docs
+- [Markdown to Feishu](./converters/markdown-to-feishu.md) - Import Markdown
+- [Block Type Mapping](./converters/BLOCK-TYPE-MAPPING.md) - Supported block types
+- [Patch Document](./converters/patch-document.md) - Update existing docs
+
+### 🌐 [Translation](./translation/)
+Multi-language documentation translation.
+- [Feishu Doc Translator](./translation/feishu-doc-translator.md) - Translation system overview
+- [Translators Guide](./translation/TRANSLATORS.md) - All translation engines (Claude, DeepL, Ollama, Feishu)
+- [Translator Setup](./translation/TRANSLATOR-SETUP.md) - Quick setup for each engine
+- [Update Behavior](./translation/UPDATE-BEHAVIOR.md) - How translations are updated
+
+### ✨ [Features](./features/)
+Special features and capabilities.
+- [Image Handling](./features/image-handling-strategy.md) - Image download and upload
+- [Supademo Support](./features/supademo-support.md) - Interactive demo components
+
+### 🛠️ [Development](./development/)
+Implementation details and testing.
+- [Implementation Summary](./development/implementation.md) - Architecture and design
+- [Integration Testing](./development/integration-testing.md) - Test setup and usage
 
 ## Documentation by Component
 
@@ -14,7 +47,7 @@ Complete documentation for the Feishu-Markdown Bridge project.
 
 Convert Feishu documents to Markdown format.
 
-**[Feishu to Markdown Guide →](./feishu-to-markdown.md)**
+**[Feishu to Markdown Guide →](./converters/feishu-to-markdown.md)**
 
 - API reference
 - Method documentation
@@ -39,7 +72,7 @@ const markdown = await f2m.get_markdown({ slug: 'my-document' });
 
 Push Markdown content to Feishu documents.
 
-**[Markdown to Feishu Guide →](./markdown-to-feishu.md)**
+**[Markdown to Feishu Guide →](./converters/markdown-to-feishu.md)**
 
 - API reference
 - Markdown syntax guide
@@ -65,7 +98,7 @@ await m2f.push_markdown({
 
 ## Usage Examples
 
-**[View All Examples →](./examples.md)**
+**[View All Examples →](./getting-started/examples.md)**
 
 Comprehensive examples covering:
 
@@ -89,7 +122,7 @@ Comprehensive examples covering:
 
 ## Implementation Details
 
-**[Implementation Summary →](./implementation.md)**
+**[Implementation Summary →](./development/implementation.md)**
 
 Technical details about:
 - Architecture overview
@@ -168,7 +201,7 @@ node tests/test-example.js
 
 ### 4. Start Using
 
-See the [Quick Start Guide](./quick-start.md) for your first conversion.
+See the [Quick Start Guide](./getting-started/quick-start.md) for your first conversion.
 
 ## Wiki vs Drive Configuration
 
@@ -241,22 +274,22 @@ Example: `https://company.feishu.cn/wiki/D1TiwX8o1iIBL3kMyCacjFwMnEf`
 ### Documentation Export
 Export Feishu documentation to version-controlled Markdown files for Git-based workflows.
 
-**Guide:** [Example 3: Export by Category](./examples.md#example-3-export-by-category)
+**Guide:** [Example 3: Export by Category](./getting-started/examples.md#example-3-export-by-category)
 
 ### Documentation Import
 Import existing Markdown documentation into Feishu for collaborative editing.
 
-**Guide:** [Example 7: Batch Import](./examples.md#example-7-batch-import)
+**Guide:** [Example 7: Batch Import](./getting-started/examples.md#example-7-batch-import)
 
 ### Continuous Sync
 Keep Feishu and Markdown in sync with automated workflows.
 
-**Guide:** [Example 11: Sync Workflow](./examples.md#example-11-sync-workflow)
+**Guide:** [Example 11: Sync Workflow](./getting-started/examples.md#example-11-sync-workflow)
 
 ### Multi-platform Publishing
 Maintain a single source of truth in Feishu, publish to multiple platforms.
 
-**Guide:** [Example 14: Multi-language Export](./examples.md#example-14-multi-language-export)
+**Guide:** [Example 14: Multi-language Export](./getting-started/examples.md#example-14-multi-language-export)
 
 ## Supported Features
 
@@ -286,7 +319,7 @@ class FeishuToMarkdown {
 }
 ```
 
-[Full API Documentation →](./feishu-to-markdown.md#methods)
+[Full API Documentation →](./converters/feishu-to-markdown.md#methods)
 
 ### MarkdownToFeishu
 
@@ -301,7 +334,7 @@ class MarkdownToFeishu {
 }
 ```
 
-[Full API Documentation →](./markdown-to-feishu.md#methods)
+[Full API Documentation →](./converters/markdown-to-feishu.md#methods)
 
 ## Troubleshooting
 
@@ -327,7 +360,7 @@ class MarkdownToFeishu {
 - `"space_id is not int"`: Ensure `WIKI_SPACE_ID` contains only numbers (no quotes)
 - Wrong wiki space: Verify `WIKI_SPACE_ID` from wiki URL
 
-**See:** [Troubleshooting Guide](./feishu-to-markdown.md#troubleshooting)
+**See:** [Troubleshooting Guide](./converters/feishu-to-markdown.md#troubleshooting)
 
 ## Contributing
 
@@ -345,7 +378,7 @@ ISC License - see [LICENSE](../LICENSE) file for details.
 
 ---
 
-**Last Updated:** February 2024
+**Last Updated:** February 2026
 **Version:** 1.0.0
 
 [← Back to Main README](../README.md)

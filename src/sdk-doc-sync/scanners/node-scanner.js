@@ -100,6 +100,14 @@ class NodeScanner extends BaseScanner {
             symbols.push(...clientMethods);
         }
 
+        // Resolve alias params: copy params from target method
+        this._resolveAliasParams(symbols);
+
+        // Remove skipped aliases (kept only for param resolution)
+        const filtered = symbols.filter(s => !s._skippedAlias);
+        symbols.length = 0;
+        symbols.push(...filtered);
+
         // Scan enums from types
         const enumSymbols = this._extractEnums();
         symbols.push(...enumSymbols);
@@ -143,7 +151,7 @@ class NodeScanner extends BaseScanner {
             // Match non-async named methods: `  connect(sdkVersion: string) {`
             const syncMatch = !methodMatch && line.match(/^\s{2}(\w+)\s*\([^)]*\)\s*[:{]/);
             // Match alias assignments: `  grantRole = this.addUserToRole;`
-            const aliasMatch = !methodMatch && !syncMatch && line.match(/^\s{2}(\w+)\s*=\s*this\.\w+;/);
+            const aliasMatch = !methodMatch && !syncMatch && line.match(/^\s{2}(\w+)\s*=\s*this\.(\w+);/);
             const match = methodMatch || syncMatch || aliasMatch;
             if (!match) continue;
 
@@ -156,8 +164,21 @@ class NodeScanner extends BaseScanner {
             // Skip private methods
             if (name.startsWith('_')) continue;
 
-            // Skip known aliases
-            if (this._aliases.has(name)) continue;
+            // Skip known aliases (but still extract params for resolution by other aliases)
+            if (this._aliases.has(name)) {
+                const params = this._extractParams(lines, i);
+                methods.push({
+                    name,
+                    parentClass: defaultCategory,
+                    kind: 'Function',
+                    docstring: '',
+                    filePath: relPath,
+                    lineNumber: i + 1,
+                    params,
+                    _skippedAlias: true,
+                });
+                continue;
+            }
 
             // Skip duplicate names across all files
             if (globalSeen.has(name)) continue;
@@ -181,7 +202,7 @@ class NodeScanner extends BaseScanner {
             // Extract parameters
             const params = this._extractParams(lines, i);
 
-            methods.push({
+            const symbol = {
                 name,
                 parentClass: category,
                 kind: 'Function',
@@ -189,10 +210,37 @@ class NodeScanner extends BaseScanner {
                 filePath: relPath,
                 lineNumber: i + 1,
                 params,
-            });
+            };
+
+            // For alias assignments, store the target method name for param resolution
+            if (aliasMatch) {
+                symbol.aliasOf = aliasMatch[2];
+            }
+
+            methods.push(symbol);
         }
 
         return methods;
+    }
+
+    /**
+     * Resolve alias params by copying from the target method.
+     * e.g., `hybridSearch = this.search;` → copy search's params to hybridSearch
+     */
+    _resolveAliasParams(symbols) {
+        const byName = new Map();
+        for (const s of symbols) {
+            byName.set(s.name, s);
+        }
+
+        for (const s of symbols) {
+            if (s.aliasOf && (!s.params || s.params.length === 0)) {
+                const target = byName.get(s.aliasOf);
+                if (target && target.params && target.params.length > 0) {
+                    s.params = [...target.params];
+                }
+            }
+        }
     }
 
     _extractJsDoc(lines, methodLine) {
@@ -247,6 +295,16 @@ class NodeScanner extends BaseScanner {
             if (braceDepth <= 0) break;
         }
 
+        // Resolve generic constraints: `method<T extends Foo | Bar>(param: T)`
+        // → treat param type as the first constraint type (e.g., Foo)
+        const genericMap = {};
+        const genericMatch = paramStr.match(/<(\w+)\s+extends\s+([^>]+)>/);
+        if (genericMatch) {
+            const typeVar = genericMatch[1];
+            const constraint = genericMatch[2].split('|')[0].trim();
+            genericMap[typeVar] = constraint;
+        }
+
         // Extract content between first ( and matching )
         const match = paramStr.match(/\(([^)]*)\)/);
         if (match) {
@@ -257,7 +315,10 @@ class NodeScanner extends BaseScanner {
                 for (const part of parts) {
                     const pm = part.match(/(\w+)\s*[?:]?\s*:?\s*(.*)/);
                     if (pm) {
-                        params.push({ name: pm[1], type: pm[2] || 'any' });
+                        let type = pm[2] || 'any';
+                        // Resolve generic type vars to their constraints
+                        if (genericMap[type]) type = genericMap[type];
+                        params.push({ name: pm[1], type });
                     }
                 }
             }

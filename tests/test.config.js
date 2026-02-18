@@ -178,6 +178,36 @@ const tests = [
         category: 'offline',
         description: 'List block creation: tight vs loose lists and nested children',
     },
+    {
+        name: 'grid-parser',
+        file: 'grid-parser.test.js',
+        category: 'offline',
+        description: 'Grid JSX component round-trip conversion',
+    },
+    {
+        name: 'tabs-parser',
+        file: 'tabs-parser.test.js',
+        category: 'offline',
+        description: 'Tabs JSX component round-trip conversion',
+    },
+    {
+        name: 'metadata-preservation',
+        file: 'metadata-preservation.test.js',
+        category: 'offline',
+        description: 'Board and iframe metadata preservation via HTML comments',
+    },
+    {
+        name: 'sheet-preservation',
+        file: 'sheet-preservation.test.js',
+        category: 'offline',
+        description: 'Sheet vs table block type distinction',
+    },
+    {
+        name: 'roundtrip-simple',
+        file: 'test-roundtrip-simple.js',
+        category: 'offline',
+        description: 'Simple round-trip: markdown → blocks → validate all types',
+    },
 
     // Integration tests (require Feishu API access)
     {
@@ -233,6 +263,12 @@ const tests = [
         file: 'test-sdk-doc-sync-e2e.js',
         category: 'integration',
         description: 'End-to-end SDK doc sync pipeline',
+    },
+    {
+        name: 'roundtrip-comprehensive',
+        file: 'test-roundtrip-comprehensive.js',
+        category: 'integration',
+        description: 'Comprehensive round-trip: Feishu → Markdown → Feishu',
     },
 ];
 

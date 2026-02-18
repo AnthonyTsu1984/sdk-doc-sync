@@ -13,11 +13,13 @@
     "test:integration": "node tests/run-all.js --integration",
     "test:all": "node tests/run-all.js --all",
     "test:list": "node tests/run-all.js --list",
-    "sdk-doc-sync": "node bin/sdk-doc-sync.js"
+    "sdk-doc-sync": "node bin/sdk-doc-sync.js",
+    "translate": "node bin/feishu-doc-translator.js"
   },
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.32.1",
     "@aws-sdk/client-s3": "^3.982.0",
     "bottleneck": "^2.19.5",
     "cheerio": "^1.2.0",

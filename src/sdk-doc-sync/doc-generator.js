@@ -268,7 +268,7 @@ class DocGenerator {
                 return `    .${p.name}(${arg})`;
             });
         const chain = withMethods.length > 0 ? '\n' + withMethods.join('\n') : '';
-        return `auto request = ${symbol.requestClass}();${chain ? '\nrequest' + chain + ';' : ''}`;
+        return `auto request = ${symbol.requestClass}()${chain ? chain + ';' : ';'}`;
     }
 
     _buildCppExample(symbol) {

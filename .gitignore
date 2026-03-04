@@ -8,3 +8,6 @@ repos
 
 # Temp scripts
 scripts/_tmp_*
+
+# SDK update worktrees
+.worktrees/

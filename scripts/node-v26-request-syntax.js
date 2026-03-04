@@ -1,17 +1,13 @@
 #!/usr/bin/env node
 /**
- * Node SDK v2.6.x Documentation Update Script
+ * Node SDK v2.6.x Request Syntax Rebuild Script
  *
- * Creates 21 new method docs discovered by diff-node-v26.js.
- * Runs one step at a time via --step=N flag.
+ * Rebuilds the 13 Node v2.6.x method docs that were missing a Request Syntax
+ * section. For each method: pushes new markdown to the same folder, updates
+ * the bitable record to point to the new doc, then deletes the old doc.
  *
  * Usage:
- *   node scripts/node-v26-update.js --step=N [--dry-run] [--method=name]
- *
- * Steps:
- *   0 — Create missing v2.6.x category folders
- *   1 — Create 21 new method docs
- *   2 — Handle Database orphan record
+ *   node scripts/node-v26-request-syntax.js [--dry-run] [--method=name]
  */
 
 const path = require('path');
@@ -27,34 +23,17 @@ const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 // ============================================================
 
 const BITABLE_TOKEN = 'R9i8bww4faNsR6smwQwcAtHGnkb';
-const V26_FOLDER = 'NFmOfwILlln3JgdePZUclweZnIe';
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
 const FEISHU_DOCX_HOST = 'https://zilliverse.feishu.cn';
 const DELAY_MS = 500;
 
-// Existing v2.6.x category folder tokens
 const FOLDER_TOKENS = {
-    Management: 'UmOafcFDglyFe3dayhAcRA0RnEd',
-    Collections: 'LOD4fz3qilpPyOdlfencoVEJnwd',
-    Vector: 'DFjqfW5yclNaqWdpjpqckLM2nud',
-    Partitions: 'Hg5PfTIHll3FK4dbYdxcaURHn2n',
-    // Created by step 0:
     Client: 'WlKqf2dXKljRPDdiiUIcdsh5nxd',
     Authentication: 'KWn3ff3dRlg3zndqerbcW0QXn1c',
     Database: 'F0ZXfs6XSlspHxdg7DwcYb84nMf',
     ResourceGroup: 'FsXcfY36qlOQAkdMEfKc80GInqe',
-};
-
-// VirtualNode parent record IDs
-const PARENT_RECORDS = {
-    Authentication: 'recu4NWhqWAejC',
-    Client: 'recu4NWmmkGZuZ',
-    Collections: 'recu4NWrP0FkyK',
-    Database: 'recvaTCXsgewcl',
-    Management: 'recu4NWwVB8uMo',
-    Partitions: 'recu4NWDr2iSEm',
-    Vector: 'recu4NWJ6hPqkS',
-    ResourceGroup: 'recuA2CVlf0gs8',
+    Management: 'UmOafcFDglyFe3dayhAcRA0RnEd',
+    Vector: 'DFjqfW5yclNaqWdpjpqckLM2nud',
 };
 
 const tokenFetcher = new larkTokenFetcher();
@@ -65,13 +44,7 @@ const tokenFetcher = new larkTokenFetcher();
 
 const args = process.argv.slice(2);
 const DRY_RUN = args.includes('--dry-run');
-const ONLY_STEP = args.find(a => a.startsWith('--step='))?.split('=')[1];
 const ONLY_METHOD = args.find(a => a.startsWith('--method='))?.split('=')[1];
-
-if (!ONLY_STEP) {
-    console.error('Usage: node scripts/node-v26-update.js --step=N [--dry-run] [--method=name]');
-    process.exit(1);
-}
 
 // ============================================================
 // Helpers
@@ -97,79 +70,30 @@ async function delay(ms = DELAY_MS) {
     return new Promise(r => setTimeout(r, ms));
 }
 
-// Push markdown doc + create bitable record
-async function createDoc(m2f, writer, { name, title, category, description, markdown }) {
-    const folderToken = FOLDER_TOKENS[category];
-    if (!folderToken) {
-        console.error(`    ❌ No folder token for ${category}`);
-        return null;
-    }
-
-    if (DRY_RUN) {
-        console.log(`    [DRY RUN] Would create doc '${title}' in ${category}`);
-        console.log(`    Folder: ${folderToken}`);
-        console.log(`    Parent record: ${PARENT_RECORDS[category]}`);
-        console.log(`    Markdown length: ${markdown.length} chars`);
-        return { status: 'dry-run' };
-    }
-
-    const docResult = await m2f.push_markdown({
-        markdown_content: markdown,
-        title,
-        folder_token: folderToken,
-    });
-    console.log(`    Doc: ${docResult.document_id} (${docResult.blocks_created} blocks)`);
-
-    const docLink = `${FEISHU_DOCX_HOST}/docx/${docResult.document_id}`;
-    const record = await writer.createRecord({
-        title,
-        link: docLink,
-        type: 'Function',
-        addedSince: 'v2.6.x',
-        description,
-        targets: 'milvus-sdk-node',
-        parentRecordId: PARENT_RECORDS[category],
-    });
-    console.log(`    Record: ${record.record_id}`);
-    return { status: 'ok', documentId: docResult.document_id, recordId: record.record_id };
+async function deleteDoc(docId) {
+    return feishuAPI('DELETE', `/open-apis/drive/v1/files/${docId}?type=docx`);
 }
 
-// ============================================================
-// Step 0: Create missing category folders
-// ============================================================
-
-async function step0() {
-    console.log('\n═══ Step 0: Create missing v2.6.x category folders ═══\n');
-
-    const needed = ['Client', 'Authentication', 'Database', 'ResourceGroup'];
-
-    for (const name of needed) {
-        if (DRY_RUN) {
-            console.log(`  [DRY RUN] Would create folder '${name}' in v2.6.x`);
-            continue;
+// Build a title→{recordId, docId} index from bitable records
+function buildIndex(records) {
+    const index = {};
+    for (const rec of records) {
+        const title = rec.fields['Docs']?.text || '';
+        const link = rec.fields['Docs']?.link || '';
+        const match = link.match(/\/docx\/([A-Za-z0-9]+)/);
+        if (title && match) {
+            index[title] = { recordId: rec.record_id, docId: match[1] };
         }
-
-        const result = await feishuAPI('POST', '/open-apis/drive/v1/files/create_folder', {
-            name,
-            folder_token: V26_FOLDER,
-        });
-        FOLDER_TOKENS[name] = result.token;
-        console.log(`  ✅ ${name}: ${result.token}`);
-        await delay();
     }
-
-    console.log('\n  Final FOLDER_TOKENS:');
-    for (const [k, v] of Object.entries(FOLDER_TOKENS)) {
-        console.log(`    '${k}': '${v || 'null (to be created)'}',`);
-    }
+    return index;
 }
 
 // ============================================================
-// Step 1: CREATE — 21 new methods
+// Method definitions (13 methods needing Request Syntax)
 // ============================================================
 
-const STEP1_METHODS = [
-    // ── Client (2) ──────────────────────────────────────────
+const METHODS = [
+    // ── Client ──────────────────────────────────────────────
     {
         name: 'use',
         title: 'use()',
@@ -213,93 +137,7 @@ await client.use({ db_name: 'my_database' });
 \`\`\`
 `,
     },
-    {
-        name: 'getVersion',
-        title: 'getVersion()',
-        category: 'Client',
-        description: 'Returns version information for the Milvus server.',
-        markdown: `Returns version information for the Milvus server.
-
-\`\`\`typescript
-await milvusClient.getVersion()
-\`\`\`
-
-**RETURNS:**
-
-*Promise\\<GetVersionResponse\\>*
-
-The response contains the version string of the connected server.
-
-**EXCEPTIONS:**
-
-- **MilvusError**
-This exception will be raised when any error occurs during this operation.
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const res = await client.getVersion();
-console.log(res.version); // "2.6.9"
-\`\`\`
-`,
-    },
-    // ── Authentication (2) ──────────────────────────────────
-    {
-        name: 'selectGrant',
-        title: 'selectGrant()',
-        category: 'Authentication',
-        description: 'Selects a grant for a specific role.',
-        markdown: `Selects a grant for a specific role, returning the privilege details for the specified object.
-
-\`\`\`typescript
-await milvusClient.selectGrant(data: SelectGrantReq)
-\`\`\`
-
-**PARAMETERS:**
-
-- **roleName** (*string*) -
-**[REQUIRED]**
-The name of the role.
-- **object** (*string*) -
-**[REQUIRED]**
-The type of the operational object (e.g., \`"Collection"\`, \`"Global"\`, \`"User"\`).
-- **objectName** (*string*) -
-**[REQUIRED]**
-The name of the object.
-- **db_name** (*string*) -
-The name of the database. Optional.
-- **timeout** (*number*) -
-RPC timeout in milliseconds. Optional.
-
-**RETURNS:**
-
-*Promise\\<SelectGrantResponse\\>*
-
-The response contains an \`entities\` array with grant information including role, object, object name, and grantor details.
-
-**EXCEPTIONS:**
-
-- **MilvusError**
-This exception will be raised when any error occurs during this operation.
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const res = await client.selectGrant({
-    roleName: 'my_role',
-    object: 'Collection',
-    objectName: 'my_collection',
-});
-console.log(res.entities);
-\`\`\`
-`,
-    },
+    // ── Authentication ───────────────────────────────────────
     {
         name: 'hasRole',
         title: 'hasRole()',
@@ -350,7 +188,7 @@ console.log(res.hasRole); // true or false
 \`\`\`
 `,
     },
-    // ── ResourceGroup (2) ───────────────────────────────────
+    // ── ResourceGroup ────────────────────────────────────────
     {
         name: 'transferNode',
         title: 'transferNode()',
@@ -410,126 +248,7 @@ await client.transferNode({
 \`\`\`
 `,
     },
-    {
-        name: 'dropAllResourceGroups',
-        title: 'dropAllResourceGroups()',
-        category: 'ResourceGroup',
-        description: 'Drops all resource groups, transfers all nodes to the default group.',
-        markdown: `Drops all resource groups and transfers all nodes back to the default resource group.
-
-\`\`\`typescript
-await milvusClient.dropAllResourceGroups()
-\`\`\`
-
-**RETURNS:**
-
-*Promise\\<ResStatus[]\\>*
-
-An array of response statuses, one for each dropped resource group.
-
-**EXCEPTIONS:**
-
-- **MilvusError**
-This exception will be raised when any error occurs during this operation.
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const results = await client.dropAllResourceGroups();
-\`\`\`
-`,
-    },
-    // ── Vector (4) ──────────────────────────────────────────
-    {
-        name: 'deleteEntities',
-        title: 'deleteEntities()',
-        category: 'Vector',
-        description: 'Delete entities in a Milvus collection.',
-        markdown: `Delete entities in a Milvus collection using a boolean expression to filter the entities to delete.
-
-\`\`\`typescript
-await milvusClient.deleteEntities(data: DeleteEntitiesReq)
-\`\`\`
-
-**PARAMETERS:**
-
-- **collection_name** (*string*) -
-**[REQUIRED]**
-The name of the collection.
-- **expr** (*string*) -
-A boolean expression to filter entities to delete. One of \`expr\` or \`filter\` is required.
-- **filter** (*string*) -
-Alias for \`expr\`.
-- **partition_name** (*string*) -
-The name of the target partition. Optional.
-- **consistency_level** (*string*) -
-The consistency level for the operation. Optional.
-- **timeout** (*number*) -
-RPC timeout in milliseconds. Optional.
-
-**RETURNS:**
-
-*Promise\\<MutationResult\\>*
-
-The response contains the IDs of deleted entities and mutation statistics.
-
-**EXCEPTIONS:**
-
-- **MilvusError**
-This exception will be raised when any error occurs during this operation.
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const res = await client.deleteEntities({
-    collection_name: 'my_collection',
-    expr: 'id in [1, 2, 3]',
-});
-\`\`\`
-`,
-    },
-    {
-        name: 'next',
-        title: 'next()',
-        category: 'Vector',
-        description: 'Returns the next batch of results from a search or query iterator.',
-        markdown: `Returns the next batch of results from a search or query iterator. This method is part of the async iterator pattern used by \`searchIterator()\` and \`queryIterator()\`.
-
-\`\`\`typescript
-const batch = await iterator.next()
-\`\`\`
-
-**RETURNS:**
-
-*Promise\\<IteratorResult\\>*
-
-An object with \`value\` (the batch of results) and \`done\` (boolean indicating end of iteration).
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const iterator = await client.queryIterator({
-    collection_name: 'my_collection',
-    batchSize: 100,
-});
-
-let batch = await iterator.next();
-while (!batch.done) {
-    console.log(batch.value);
-    batch = await iterator.next();
-}
-\`\`\`
-`,
-    },
+    // ── Vector ───────────────────────────────────────────────
     {
         name: 'getMetric',
         title: 'getMetric()',
@@ -637,7 +356,7 @@ console.log(res.tasks);
 \`\`\`
 `,
     },
-    // ── Management (6) ──────────────────────────────────────
+    // ── Management ───────────────────────────────────────────
     {
         name: 'loadBalance',
         title: 'loadBalance()',
@@ -985,122 +704,7 @@ console.log(replicas.replicas);
 \`\`\`
 `,
     },
-    // ── Collections (3) ─────────────────────────────────────
-    {
-        name: 'getPkFieldName',
-        title: 'getPkFieldName()',
-        category: 'Collections',
-        description: 'Get the primary key field name of a collection.',
-        markdown: `Get the primary key field name of a collection. This is a convenience method that describes the collection and extracts the primary key field name.
-
-\`\`\`typescript
-await milvusClient.getPkFieldName(data: DescribeCollectionReq)
-\`\`\`
-
-**PARAMETERS:**
-
-- **collection_name** (*string*) -
-**[REQUIRED]**
-The name of the collection.
-- **timeout** (*number*) -
-RPC timeout in milliseconds. Optional.
-
-**RETURNS:**
-
-*Promise\\<string\\>*
-
-The name of the primary key field.
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const pkName = await client.getPkFieldName({
-    collection_name: 'my_collection',
-});
-console.log(pkName); // e.g., "id"
-\`\`\`
-`,
-    },
-    {
-        name: 'getPkFieldType',
-        title: 'getPkFieldType()',
-        category: 'Collections',
-        description: 'Get the primary key field type.',
-        markdown: `Get the primary key field data type of a collection. This is a convenience method that describes the collection and extracts the primary key field type.
-
-\`\`\`typescript
-await milvusClient.getPkFieldType(data: DescribeCollectionReq)
-\`\`\`
-
-**PARAMETERS:**
-
-- **collection_name** (*string*) -
-**[REQUIRED]**
-The name of the collection.
-- **timeout** (*number*) -
-RPC timeout in milliseconds. Optional.
-
-**RETURNS:**
-
-*Promise\\<keyof typeof DataType\\>*
-
-The data type of the primary key field (e.g., \`"Int64"\`, \`"VarChar"\`).
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const pkType = await client.getPkFieldType({
-    collection_name: 'my_collection',
-});
-console.log(pkType); // e.g., "Int64"
-\`\`\`
-`,
-    },
-    {
-        name: 'getPkField',
-        title: 'getPkField()',
-        category: 'Collections',
-        description: 'Get the primary field schema of a collection.',
-        markdown: `Get the complete primary field schema of a collection. This is a convenience method that describes the collection and extracts the primary key field.
-
-\`\`\`typescript
-await milvusClient.getPkField(data: DescribeCollectionReq)
-\`\`\`
-
-**PARAMETERS:**
-
-- **collection_name** (*string*) -
-**[REQUIRED]**
-The name of the collection.
-- **timeout** (*number*) -
-RPC timeout in milliseconds. Optional.
-
-**RETURNS:**
-
-*Promise\\<FieldSchema\\>*
-
-The complete field schema object for the primary key, including name, data type, field ID, and other properties.
-
-## Example{#example}
-
-\`\`\`typescript
-import { MilvusClient } from '@zilliz/milvus2-sdk-node';
-
-const client = new MilvusClient({ address: 'localhost:19530' });
-const pkField = await client.getPkField({
-    collection_name: 'my_collection',
-});
-console.log(pkField.name, pkField.data_type);
-\`\`\`
-`,
-    },
-    // ── Database (2) ────────────────────────────────────────
+    // ── Database ─────────────────────────────────────────────
     {
         name: 'describeDatabase',
         title: 'describeDatabase()',
@@ -1210,71 +814,84 @@ await client.alterDatabase({
     },
 ];
 
-async function step1(m2f, writer) {
-    console.log('\n═══ Step 1: CREATE — 21 new methods ═══\n');
-
-    const byCategory = {};
-    for (const m of STEP1_METHODS) {
-        if (!byCategory[m.category]) byCategory[m.category] = [];
-        byCategory[m.category].push(m);
-    }
-
-    console.log('  Methods by category:');
-    for (const [cat, methods] of Object.entries(byCategory)) {
-        console.log(`    ${cat}: ${methods.map(m => m.name).join(', ')}`);
-    }
-    console.log('');
-
-    for (const method of STEP1_METHODS) {
-        if (ONLY_METHOD && method.name !== ONLY_METHOD) continue;
-        console.log(`  ${method.category}/${method.name}`);
-        await createDoc(m2f, writer, method);
-        if (!DRY_RUN) await delay();
-    }
-}
-
-// ============================================================
-// Step 2: Handle Database orphan
-// ============================================================
-
-async function step2(writer) {
-    console.log('\n═══ Step 2: Handle Database orphan record ═══\n');
-
-    const DATABASE_ORPHAN_ID = 'recudXw60YZeAZ';
-
-    if (DRY_RUN) {
-        console.log(`  [DRY RUN] Would delete orphan Database record: ${DATABASE_ORPHAN_ID}`);
-        console.log('  This is a Class record with no Docs link — likely a stale placeholder.');
-        return;
-    }
-
-    try {
-        await writer.deleteRecord(DATABASE_ORPHAN_ID);
-        console.log(`  ✅ Deleted orphan record ${DATABASE_ORPHAN_ID}`);
-    } catch (e) {
-        console.log(`  ⚠️ Could not delete: ${e.message}`);
-    }
-}
-
 // ============================================================
 // Main
 // ============================================================
 
 async function main() {
+    console.log('Node SDK v2.6.x — Add Request Syntax to 13 method docs');
+    console.log('=======================================================\n');
+
     if (DRY_RUN) console.log('  *** DRY RUN MODE ***\n');
 
-    const m2f = new MarkdownToFeishu({ sourceType: 'drive' });
+    // Build bitable index
+    console.log('Building bitable index...');
     const writer = new BitableWriter({ baseToken: BITABLE_TOKEN });
+    const allRecords = await writer.listRecords({ pageSize: 500 });
+    const index = buildIndex(allRecords);
+    console.log(`  ${Object.keys(index).length} records indexed\n`);
 
-    if (ONLY_STEP === '0') {
-        await step0();
-    } else if (ONLY_STEP === '1') {
-        await step1(m2f, writer);
-    } else if (ONLY_STEP === '2') {
-        await step2(writer);
-    } else {
-        console.log(`Step ${ONLY_STEP} not implemented. Available: 0, 1, 2`);
+    const m2f = new MarkdownToFeishu({ sourceType: 'drive' });
+
+    let updated = 0;
+    let skipped = 0;
+    let failed = 0;
+
+    for (const method of METHODS) {
+        if (ONLY_METHOD && method.name !== ONLY_METHOD) continue;
+
+        const entry = index[method.title];
+        if (!entry) {
+            console.log(`  ${method.name} — SKIP (not found in bitable)`);
+            skipped++;
+            continue;
+        }
+
+        const { recordId, docId: oldDocId } = entry;
+        const folderToken = FOLDER_TOKENS[method.category];
+
+        console.log(`  ${method.category}/${method.name}`);
+
+        if (DRY_RUN) {
+            console.log(`    [DRY RUN] old doc: ${oldDocId}`);
+            console.log(`    [DRY RUN] would push new doc to folder: ${folderToken}`);
+            console.log(`    [DRY RUN] would update record ${recordId} → new doc`);
+            console.log(`    [DRY RUN] would delete old doc ${oldDocId}`);
+            updated++;
+            continue;
+        }
+
+        try {
+            // 1. Push new doc
+            const docResult = await m2f.push_markdown({
+                markdown_content: method.markdown,
+                title: method.title,
+                folder_token: folderToken,
+            });
+            const newDocId = docResult.document_id;
+            console.log(`    new doc: ${newDocId} (${docResult.blocks_created} blocks)`);
+            await delay();
+
+            // 2. Update bitable record
+            const newLink = `${FEISHU_DOCX_HOST}/docx/${newDocId}`;
+            await writer.updateRecord(recordId, { title: method.title, link: newLink });
+            console.log(`    bitable record updated: ${recordId}`);
+            await delay();
+
+            // 3. Delete old doc
+            await deleteDoc(oldDocId);
+            console.log(`    old doc deleted: ${oldDocId}`);
+            await delay();
+
+            updated++;
+        } catch (e) {
+            console.log(`    FAILED: ${e.message}`);
+            failed++;
+        }
     }
+
+    console.log(`\n=======================================================`);
+    console.log(`Done: ${updated} updated, ${skipped} skipped, ${failed} failed`);
 }
 
 main().catch(err => { console.error('FATAL:', err); process.exit(1); });

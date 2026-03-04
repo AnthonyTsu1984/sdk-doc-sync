@@ -12071,7 +12071,7 @@
 			"post": {
 				"summary": "Drop Collection",
 				"deprecated": false,
-				"description": "This operation drops the current collection and all data within the collection.",
+				"description": "This operation drops the collection with the specified name and drops all data within.",
 				"x-i18n": {
 					"zh-CN": {
 						"summary": "删除 Collection",

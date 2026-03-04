@@ -123,15 +123,6 @@
 			}
 		},
 		{
-			"name": "Common Operations (V2)",
-			"description": "Common utility operations.",
-			"x-i18n": {
-				"zh-CN": {
-					"description": "通用工具接口。"
-				}
-			}
-		},
-		{
 			"name": "Quota Operations (V2)",
 			"description": "Operations for querying quota metrics.",
 			"x-i18n": {
@@ -19086,7 +19077,7 @@
 					}
 				},
 				"tags": [
-					"Common Operations (V2)"
+					"Collection Operations (V2)"
 				],
 				"parameters": [
 					{

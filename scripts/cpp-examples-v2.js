@@ -87,7 +87,9 @@ status = client->HasCollection(
     milvus::HasCollectionRequest()
         .WithCollectionName("my_collection"),
     response);
-util::CheckStatus("has collection", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Collection exists: " << response.HasCollection() << std::endl;`),
 
     'RenameCollection()': buildExample(
@@ -95,7 +97,9 @@ std::cout << "Collection exists: " << response.HasCollection() << std::endl;`),
     milvus::RenameCollectionRequest()
         .WithCollectionName("old_collection")
         .WithNewCollectionName("new_collection"));
-util::CheckStatus("rename collection", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'AlterCollectionFieldProperties()': buildExample(
 `status = client->AlterCollectionFieldProperties(
@@ -103,7 +107,9 @@ util::CheckStatus("rename collection", status);`),
         .WithCollectionName("my_collection")
         .WithFieldName("my_field")
         .AddProperty("max_length", "512"));
-util::CheckStatus("alter collection field properties", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'DropCollectionFieldProperties()': buildExample(
 `status = client->DropCollectionFieldProperties(
@@ -111,7 +117,9 @@ util::CheckStatus("alter collection field properties", status);`),
         .WithCollectionName("my_collection")
         .WithFieldName("my_field")
         .AddPropertyKey("max_length"));
-util::CheckStatus("drop collection field properties", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     // ── Aliases ───────────────────────────────────────────────────────────────
 
@@ -120,20 +128,26 @@ util::CheckStatus("drop collection field properties", status);`),
     milvus::CreateAliasRequest()
         .WithCollectionName("my_collection")
         .WithAlias("my_alias"));
-util::CheckStatus("create alias", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'DropAlias()': buildExample(
 `status = client->DropAlias(
     milvus::DropAliasRequest()
         .WithAlias("my_alias"));
-util::CheckStatus("drop alias", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'AlterAlias()': buildExample(
 `status = client->AlterAlias(
     milvus::AlterAliasRequest()
         .WithCollectionName("new_collection")
         .WithAlias("my_alias"));
-util::CheckStatus("alter alias", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'DescribeAlias()': buildExample(
 `milvus::DescribeAliasResponse response;
@@ -141,7 +155,9 @@ status = client->DescribeAlias(
     milvus::DescribeAliasRequest()
         .WithAlias("my_alias"),
     response);
-util::CheckStatus("describe alias", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Alias: " << response.Alias()
           << ", Collection: " << response.Collection() << std::endl;`),
 
@@ -151,7 +167,9 @@ status = client->ListAliases(
     milvus::ListAliasesRequest()
         .WithCollectionName("my_collection"),
     response);
-util::CheckStatus("list aliases", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 for (const auto& alias : response.Aliases()) {
     std::cout << "Alias: " << alias << std::endl;
 }`),
@@ -163,14 +181,18 @@ for (const auto& alias : response.Aliases()) {
     milvus::AlterDatabasePropertiesRequest()
         .WithDatabaseName("my_database")
         .AddProperty("key", "value"));
-util::CheckStatus("alter database properties", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'DropDatabaseProperties()': buildExample(
 `status = client->DropDatabaseProperties(
     milvus::DropDatabasePropertiesRequest()
         .WithDatabaseName("my_database")
         .AddPropertyKey("key"));
-util::CheckStatus("drop database properties", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     // ── Index ─────────────────────────────────────────────────────────────────
 
@@ -180,7 +202,9 @@ status = client->ListIndexes(
     milvus::ListIndexesRequest()
         .WithCollectionName("my_collection"),
     response);
-util::CheckStatus("list indexes", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 for (const auto& index_name : response.IndexNames()) {
     std::cout << "Index: " << index_name << std::endl;
 }`),
@@ -194,7 +218,9 @@ status = client->HasPartition(
         .WithCollectionName("my_collection")
         .WithPartitionName("my_partition"),
     response);
-util::CheckStatus("has partition", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Partition exists: " << response.HasPartition() << std::endl;`),
 
     'LoadPartitions()': buildExample(
@@ -204,7 +230,9 @@ std::cout << "Partition exists: " << response.HasPartition() << std::endl;`),
         .AddPartitionName("partition_1")
         .AddPartitionName("partition_2")
         .WithSync(true));
-util::CheckStatus("load partitions", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'ReleasePartitions()': buildExample(
 `status = client->ReleasePartitions(
@@ -212,7 +240,9 @@ util::CheckStatus("load partitions", status);`),
         .WithCollectionName("my_collection")
         .AddPartitionName("partition_1")
         .AddPartitionName("partition_2"));
-util::CheckStatus("release partitions", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'GetPartitionStatistics()': buildExample(
 `milvus::GetPartitionStatsResponse response;
@@ -221,7 +251,9 @@ status = client->GetPartitionStatistics(
         .WithCollectionName("my_collection")
         .WithPartitionName("my_partition"),
     response);
-util::CheckStatus("get partition statistics", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Row count: " << response.RowCount() << std::endl;`),
 
     // ── Segments ──────────────────────────────────────────────────────────────
@@ -232,7 +264,9 @@ status = client->ListPersistentSegments(
     milvus::ListPersistentSegmentsRequest()
         .WithCollectionName("my_collection"),
     response);
-util::CheckStatus("list persistent segments", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Segment count: " << response.Segments().size() << std::endl;`),
 
     'ListQuerySegments()': buildExample(
@@ -241,7 +275,9 @@ status = client->ListQuerySegments(
     milvus::ListQuerySegmentsRequest()
         .WithCollectionName("my_collection"),
     response);
-util::CheckStatus("list query segments", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Segment count: " << response.Segments().size() << std::endl;`),
 
     // ── Compaction ────────────────────────────────────────────────────────────
@@ -252,7 +288,9 @@ status = client->Compact(
     milvus::CompactRequest()
         .WithCollectionName("my_collection"),
     response);
-util::CheckStatus("compact", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Compaction ID: " << response.CompactionID() << std::endl;`),
 
     'GetCompactionState()': buildExample(
@@ -263,7 +301,9 @@ status = client->GetCompactionState(
     milvus::GetCompactionStateRequest()
         .WithCompactionID(compaction_id),
     response);
-util::CheckStatus("get compaction state", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "State: " << static_cast<int>(response.State()) << std::endl;`),
 
     'GetCompactionPlans()': buildExample(
@@ -274,7 +314,9 @@ status = client->GetCompactionPlans(
     milvus::GetCompactionPlansRequest()
         .WithCompactionID(compaction_id),
     response);
-util::CheckStatus("get compaction plans", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Plan count: " << response.Plans().size() << std::endl;`),
 
     // ── Resource Groups ───────────────────────────────────────────────────────
@@ -286,13 +328,17 @@ status = client->CreateResourceGroup(
     milvus::CreateResourceGroupRequest()
         .WithName("my_resource_group")
         .WithConfig(std::move(rg_config)));
-util::CheckStatus("create resource group", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'DropResourceGroup()': buildExample(
 `status = client->DropResourceGroup(
     milvus::DropResourceGroupRequest()
         .WithGroupName("my_resource_group"));
-util::CheckStatus("drop resource group", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'UpdateResourceGroups()': buildExample(
 `std::unordered_map<std::string, milvus::ResourceGroupConfig> groups;
@@ -301,7 +347,9 @@ groups["my_resource_group"] = milvus::ResourceGroupConfig();
 status = client->UpdateResourceGroups(
     milvus::UpdateResourceGroupsRequest()
         .WithGroups(std::move(groups)));
-util::CheckStatus("update resource groups", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'TransferNode()': buildExample(
 `status = client->TransferNode(
@@ -309,7 +357,9 @@ util::CheckStatus("update resource groups", status);`),
         .WithSourceGroup("source_group")
         .WithTargetGroup("target_group")
         .WithNumNodes(1));
-util::CheckStatus("transfer node", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'TransferReplica()': buildExample(
 `status = client->TransferReplica(
@@ -318,14 +368,18 @@ util::CheckStatus("transfer node", status);`),
         .WithSourceGroup("source_group")
         .WithTargetGroup("target_group")
         .WithNumReplicas(1));
-util::CheckStatus("transfer replica", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 
     'ListResourceGroups()': buildExample(
 `milvus::ListResourceGroupsResponse response;
 status = client->ListResourceGroups(
     milvus::ListResourceGroupsRequest(),
     response);
-util::CheckStatus("list resource groups", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 for (const auto& name : response.ResourceGroups()) {
     std::cout << "Resource group: " << name << std::endl;
 }`),
@@ -336,7 +390,9 @@ status = client->DescribeResourceGroup(
     milvus::DescribeResourceGroupRequest()
         .WithGroupName("my_resource_group"),
     response);
-util::CheckStatus("describe resource group", status);
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}
 std::cout << "Resource group: " << response.Name() << std::endl;`),
 
     // ── Client ────────────────────────────────────────────────────────────────
@@ -350,7 +406,9 @@ retry_param.WithMaxRetryTimes(10)
            .WithRetryOnRateLimit(true);
 
 status = client->SetRetryParam(retry_param);
-util::CheckStatus("set retry param", status);`),
+if (!status.IsOk()) {
+    std::cout << status.Message() << std::endl;
+}`),
 };
 
 // ============================================================

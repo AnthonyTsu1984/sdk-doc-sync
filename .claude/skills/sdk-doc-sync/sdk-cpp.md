@@ -10,7 +10,7 @@
 
 **Note:** C++ bitable has 8 shared VirtualNodes (targets=Milvus,Zilliz) — reuse them, do NOT create new ones. Live folder/record tokens in `memory/cpp-doc-audit.md`.
 
-**Doc format:**
+**Doc format — Methods (API functions):**
 
 ```
 [Description]
@@ -55,6 +55,38 @@ if (!status.IsOk()) {
 ```
 ```
 
+**Doc format — Type/Class docs (response objects, helper types):**
+
+```
+[Description paragraph. Start with "This class/struct represents ..."]
+
+```cpp
+const TypeName& obj = response.Method();
+```
+
+**METHODS:**
+
+- `ReturnType MethodName() const`
+
+    Description of what this returns.
+
+- `ReturnType OtherMethod() const`
+
+    Description.
+
+## Example{#example}
+
+```cpp
+[usage example]
+```
+```
+
+**Key distinction:** Type docs use `**METHODS:**` (bold paragraph), NOT `## Methods{#methods}` (h2 heading). The h2 format causes formatting inconsistency with PARAMETERS/RETURNS/EXCEPTIONS sections elsewhere in the knowledge base.
+
+For multi-class pages (e.g., SearchResults + SingleResult, Function + subclasses): use `## ClassName{#classname}` h2 per class, then inline **Methods:** or **METHODS:** within each section.
+
+For builder/request types with With* methods: use `## Request Syntax{#request-syntax}` h2 + **REQUEST METHODS:** (same as method docs).
+
 **Notes:**
 - Request Syntax uses chained constructor format (`auto request = Class()\n    .With...;`), NOT two-step
 - Example always starts with the connection block above
@@ -71,4 +103,7 @@ if (!status.IsOk()) {
 - `scripts/cpp-request-syntax-fix.js` — targeted block content update (reference impl)
 - `scripts/cpp-examples-v2.js` — targeted block prefix/replace (reference impl)
 - `scripts/cpp-missing-types-create.js`, `scripts/cpp-connectparam-create.js`, etc. — one-off type additions
+- `scripts/cpp-response-types-create.js` — 20 response/helper type Class docs (v2.6.1, 2026-03-15)
+- `scripts/cpp-fix-describe-resource-group.js` — fix DescribeResourceGroup example (response.Name() → response.Desc().Name())
+- `scripts/cpp-fix-methods-heading.js` — re-push docs that had h2 Methods headings, replace with **METHODS:** bold
 - `scripts/cpp-audit-util.js` — audit helper

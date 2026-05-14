@@ -7,12 +7,12 @@
     "lib": "lib"
   },
   "scripts": {
-    "test": "node tests/run-all.js",
-    "test:unit": "node tests/run-all.js --unit",
-    "test:offline": "node tests/run-all.js --offline",
-    "test:integration": "node tests/run-all.js --integration",
-    "test:all": "node tests/run-all.js --all",
-    "test:list": "node tests/run-all.js --list",
+    "test": "node .claude/skills/sdk-doc-sync/tests/run-all.js",
+    "test:unit": "node .claude/skills/sdk-doc-sync/tests/run-all.js --unit",
+    "test:offline": "node .claude/skills/sdk-doc-sync/tests/run-all.js --offline",
+    "test:integration": "node .claude/skills/sdk-doc-sync/tests/run-all.js --integration",
+    "test:all": "node .claude/skills/sdk-doc-sync/tests/run-all.js --all",
+    "test:list": "node .claude/skills/sdk-doc-sync/tests/run-all.js --list",
     "sdk-doc-sync": "node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js",
     "translate": "node .claude/skills/sdk-doc-sync/bin/feishu-doc-translator.js"
   },

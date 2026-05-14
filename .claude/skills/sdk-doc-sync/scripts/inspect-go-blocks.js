@@ -2,7 +2,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 const fetch = require('node-fetch');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 const tf = new larkTokenFetcher();
 
 async function getBlocks(docId) {

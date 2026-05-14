@@ -9,9 +9,9 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
-const NodeScanner = require('../../../../src/sdk-doc-sync/scanners/node-scanner');
-const BitableWriter = require('../../../../src/sdk-doc-sync/bitable-writer');
-const DiffEngine = require('../../../../src/sdk-doc-sync/diff-engine');
+const NodeScanner = require('../src/sdk-doc-sync/scanners/node-scanner');
+const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+const DiffEngine = require('../src/sdk-doc-sync/diff-engine');
 const fs = require('fs');
 
 const BITABLE_TOKEN = 'R9i8bww4faNsR6smwQwcAtHGnkb';

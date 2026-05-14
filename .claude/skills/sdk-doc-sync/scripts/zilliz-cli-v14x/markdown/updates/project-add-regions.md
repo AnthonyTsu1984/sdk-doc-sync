@@ -1,0 +1,2 @@
+- Region assignment payload uses `regionIds` (array) as the request key for add-regions operations.
+- If examples still show legacy region key names, migrate them to `regionIds`.

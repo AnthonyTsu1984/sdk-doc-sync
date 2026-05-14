@@ -1,0 +1,2 @@
+- Region assignment payload uses `regionIds` (array) as the request key.
+- For create-time regional placement, pass region values through `regionIds` rather than legacy singular keys.

@@ -2,10 +2,12 @@
 
 **Scanner:** `src/sdk-doc-sync/scanners/go-scanner.js`
 **Root dir:** `repos/milvus-sdk-go`; source dir: `client/milvusclient/`
+**Latest release:** `client/v2.6.3` (as of 2026-04-14) — tags use `client/vX.Y.Z` prefix, not plain `vX.Y.Z`
 
 | Version | Bitable Token | Drive Root (v2.6.x) |
 |---------|---------------|---------------------|
 | v2.6.x  | Yc7gbtmgSal2ewsdqlhcLWVanbh | `Pzejf3x4WlXq1HdtTndcfMjVnxh` |
+| v3.0.x  | KQT5bV62QaioKisKZT0crwZDnke | `Lx2efpuK9lt7m5dxNLVckP7enYe` |
 
 ## Doc Format
 
@@ -19,20 +21,21 @@ func (c *Client) MethodName(ctx context.Context, option MethodOption, callOption
 ## Request Syntax{#request-syntax}
 
 ```go
-client.MethodName(ctx, milvusclient.NewMethodOption(
-    collectionName,
-).WithParam(value))
+option := client.NewMethodOption(collectionName).
+    WithParam(value).
+
+client.MethodName(option)
 ```
 
 **PARAMETERS:**
 
-- **paramName** (*type*)
+- **paramName** (*type*) -
   Description. [REQUIRED params noted in description prose]
 
-**OPTION METHODS:**
+**BUILDER METHODS:**
 
 - `WithParam(type)`
-  Description.
+  This [verb] description.
 
 **RETURN TYPE:**
 
@@ -71,8 +74,10 @@ if err != nil {
 
 defer cli.Close(ctx)
 
-result, err := cli.MethodName(ctx, milvusclient.NewMethodOption("quick_setup").
-	WithParam(value))
+option := milvusclient.NewMethodOption("quick_setup").
+	WithParam(value)
+
+result, err := cli.MethodName(ctx, option)
 if err != nil {
 	// handle error
 }
@@ -85,11 +90,18 @@ fmt.Println(result)
 
 Go SDK docs are created via **direct Feishu block API** (not `push_markdown`). Each bullet section has a specific element style:
 
-- **PARAMETERS bullet:** `paramName[BOLD] (type[ITALIC])` — description in a **separate indented paragraph** immediately after the bullet (never inline)
-- **OPTION METHODS bullet:** entire `signature[CODE]` (inline_code style) — description in a separate indented paragraph
+- **PARAMETERS bullet:** `paramName[BOLD] (type[ITALIC]) -` — description in a **separate indented paragraph** immediately after the bullet (never inline)
+- **BUILDER METHODS bullet:** entire `signature[CODE]` (inline_code style) — description in a separate indented paragraph
 - **EXCEPTIONS bullet:** `error[BOLD]` — description in a separate indented paragraph
 - Both `RETURN TYPE:` and `RETURNS:` sections exist in every doc — `RETURN TYPE:` shows the type, `RETURNS:` shows the description
-- **Canonical reference:** `Delete()` doc — inspect with `scripts/inspect-go-blocks.js` when unsure about element styles
+- **Canonical reference:** `RefreshExternalCollection()` doc (v3.0) or `Delete()` doc — inspect with `scripts/inspect-go-blocks.js` when unsure about element styles
+
+## Prose Style Rules
+
+- **Builder method descriptions** start with "This [verb]..." — e.g., "This sets...", "This filters...", "This specifies..." — not bare imperative ("Sets...", "Filters...")
+- **WithDbName descriptions** should be context-specific: for collection-scoped ops use "This sets the database to which the specified collection belongs." rather than generic "This sets the database name."
+- **Cross-references to methods** use inline_code style: `GetRestoreSnapshotState()`, `RestoreSnapshot()` — both in description prose and RETURNS section
+- **Parameter descriptions** should be concise: prefer "The name of the target collection." over verbose phrases like "The name of the collection whose snapshots to list."
 
 ## Example Requirements
 
@@ -113,6 +125,17 @@ After greenfield creation, run `scripts/audit-go-todos.js` to find docs with `//
 | **Input types** (passed as parameters) | Schema, Field, FieldType, Function, ConsistencyLevel, IndexType, MetricType, AnnParam, ResourceGroupConfig | Replace TODO with real usage example showing the type in context |
 
 Reference: `scripts/go-fix-entity-examples.js`
+
+## Entity-type slug mapping
+
+Some scanner entity types share a name with their category VirtualNode. The bitable has a single record (type=Class) — the scanner must map to it, not create a new slug.
+
+| Scanner output | Bitable slug | Type |
+|---------------|-------------|------|
+| `Collections-Collection` | `v2-Collection` | Class |
+| `Database-Database` | `v2-Database` | Class |
+| `ResourceGroup-ResourceGroup` | `v2-ResourceGroup` | Class |
+| `Vector-Vector` | `v2-Vector` | Class |
 
 ## Scanner Details
 

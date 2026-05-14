@@ -1,4 +1,4 @@
-const PythonScanner = require('../../../../src/sdk-doc-sync/scanners/python-scanner');
+const PythonScanner = require('../src/sdk-doc-sync/scanners/python-scanner');
 const fs = require('fs');
 
 const rootDir = process.argv[2] || './repos/pymilvus/pymilvus';

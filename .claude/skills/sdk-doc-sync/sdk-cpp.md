@@ -2,6 +2,7 @@
 
 **Scanner:** `src/sdk-doc-sync/scanners/cpp-scanner.js`
 **Root dir:** `repos/milvus-sdk-cpp`; include dir: `src/include/milvus/`
+**Latest release:** `v2.6.2` (as of 2026-04-14)
 **Note:** 3-phase scan — MilvusClientV2.h virtual methods → request header With*/Add* params (with base class inheritance) → enum types. `using` aliases resolved via alias chain.
 
 | Version | Bitable Token              | Drive Root            | v2.6.x Folder         |

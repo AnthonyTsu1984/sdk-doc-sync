@@ -25,12 +25,12 @@ const path = require('path');
 require('dotenv').config();
 
 const fetch            = require('node-fetch');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
-const PythonScanner    = require('../../../../src/sdk-doc-sync/scanners/python-scanner');
-const JavaScanner      = require('../../../../src/sdk-doc-sync/scanners/java-scanner');
-const NodeScanner      = require('../../../../src/sdk-doc-sync/scanners/node-scanner');
-const CppScanner       = require('../../../../src/sdk-doc-sync/scanners/cpp-scanner');
-const GoScanner        = require('../../../../src/sdk-doc-sync/scanners/go-scanner');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
+const PythonScanner    = require('../src/sdk-doc-sync/scanners/python-scanner');
+const JavaScanner      = require('../src/sdk-doc-sync/scanners/java-scanner');
+const NodeScanner      = require('../src/sdk-doc-sync/scanners/node-scanner');
+const CppScanner       = require('../src/sdk-doc-sync/scanners/cpp-scanner');
+const GoScanner        = require('../src/sdk-doc-sync/scanners/go-scanner');
 
 const BASE_TOKEN   = 'IIY3bzFqca7li9s3JSFcIr88nxh';
 const TABLE_ID     = 'tbl1oHGX1R6HWnvO';

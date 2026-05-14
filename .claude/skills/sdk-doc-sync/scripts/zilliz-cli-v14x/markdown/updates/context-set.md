@@ -1,0 +1,2 @@
+- `--on-demand` resolves context endpoint routing to the on-demand control plane path before applying the context switch.
+- When `--on-demand` is set, endpoint resolution prefers the on-demand API surface over the default dedicated/shared cluster endpoint path.

@@ -1,0 +1,16 @@
+[
+  {"resource": "privatelink", "operation": "list-services", "folderToken": "Oiv0fRpvQlQ07RdjQObcYtaunVh", "parentRecordId": "recvjA0WiBL3nZ", "category": "PrivateLink"},
+  {"resource": "privatelink", "operation": "list", "folderToken": "Oiv0fRpvQlQ07RdjQObcYtaunVh", "parentRecordId": "recvjA0WiBL3nZ", "category": "PrivateLink"},
+  {"resource": "privatelink", "operation": "delete", "folderToken": "Oiv0fRpvQlQ07RdjQObcYtaunVh", "parentRecordId": "recvjA0WiBL3nZ", "category": "PrivateLink"},
+  {"resource": "privatelink", "operation": "add-whitelist", "folderToken": "Oiv0fRpvQlQ07RdjQObcYtaunVh", "parentRecordId": "recvjA0WiBL3nZ", "category": "PrivateLink"},
+  {"resource": "stage", "operation": "list", "folderToken": "LR32fkHcElbx5QdurL9cMlvunLh", "parentRecordId": "recvjA0WWFQRNi", "category": "Stage"},
+  {"resource": "stage", "operation": "create", "folderToken": "LR32fkHcElbx5QdurL9cMlvunLh", "parentRecordId": "recvjA0WWFQRNi", "category": "Stage"},
+  {"resource": "stage", "operation": "delete", "folderToken": "LR32fkHcElbx5QdurL9cMlvunLh", "parentRecordId": "recvjA0WWFQRNi", "category": "Stage"},
+  {"resource": "stage", "operation": "apply", "folderToken": "LR32fkHcElbx5QdurL9cMlvunLh", "parentRecordId": "recvjA0WWFQRNi", "category": "Stage"},
+  {"resource": "volume", "operation": "describe", "folderToken": "WabafQZw0l0BDUdRbsZcK8SOnqc", "parentRecordId": "recveEKtlf9PX6", "category": "Volume"},
+  {"resource": "volume", "operation": "apply", "folderToken": "WabafQZw0l0BDUdRbsZcK8SOnqc", "parentRecordId": "recveEKtlf9PX6", "category": "Volume"},
+  {"resource": "project", "operation": "add-regions", "folderToken": "ECvTfFzKElW00pdSugdcqakXnep", "parentRecordId": "recveEKqd7G2GE", "category": "Project"},
+  {"resource": "on-demand-cluster", "operation": "list", "folderToken": "LuO3fJ20yldkHcdLRzbc3ZYenEb", "parentRecordId": "recvjA0VoVQmjt", "category": "OnDemandCluster"},
+  {"resource": "on-demand-cluster", "operation": "describe", "folderToken": "LuO3fJ20yldkHcdLRzbc3ZYenEb", "parentRecordId": "recvjA0VoVQmjt", "category": "OnDemandCluster"},
+  {"resource": "on-demand-cluster", "operation": "delete", "folderToken": "LuO3fJ20yldkHcdLRzbc3ZYenEb", "parentRecordId": "recvjA0VoVQmjt", "category": "OnDemandCluster"}
+]

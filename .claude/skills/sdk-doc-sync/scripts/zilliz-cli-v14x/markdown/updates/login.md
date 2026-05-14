@@ -1,0 +1,3 @@
+- `--dev` and `--cn` are mutually exclusive and cannot be used together in the same login command.
+- Use `--cn` only for the China cloud endpoint path.
+- Use `--dev` only for development/internal endpoint routing.

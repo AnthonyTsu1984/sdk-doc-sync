@@ -1,0 +1,35 @@
+{
+  "python": {
+    "lastScannedTag": "v2.6.12",
+    "lastScanDate": "2026-04-14"
+  },
+  "python-v3": {
+    "lastScannedTag": "v3.0.0",
+    "lastScannedCommit": "f63a1aa2816205c165f04d33e658b06e9b1cee11",
+    "lastScanDate": "2026-05-09"
+  },
+  "java": {
+    "lastScannedTag": "v3.0.0",
+    "lastScanDate": "2026-05-13"
+  },
+  "node": {
+    "lastScannedTag": "v3.0.0",
+    "lastScanDate": "2026-05-09"
+  },
+  "cpp": {
+    "lastScannedTag": "v2.6.2",
+    "lastScanDate": "2026-04-14"
+  },
+  "go": {
+    "lastScannedTag": "client/v2.6.3",
+    "lastScanDate": "2026-04-14"
+  },
+  "rest": {
+    "lastScannedTag": "v2.6.14",
+    "lastScanDate": "2026-04-14"
+  },
+  "zilliz-cli": {
+    "lastScannedTag": "zilliz-v1.4.2",
+    "lastScanDate": "2026-05-14"
+  }
+}

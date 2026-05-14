@@ -12,8 +12,8 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
-const MarkdownToFeishu = require('../../../../src/markdown-to-feishu');
-const BitableWriter = require('../../../../src/sdk-doc-sync/bitable-writer');
+const MarkdownToFeishu = require('../src/markdown-to-feishu');
+const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 

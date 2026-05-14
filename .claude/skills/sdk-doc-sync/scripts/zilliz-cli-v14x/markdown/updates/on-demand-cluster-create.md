@@ -1,0 +1,4 @@
+- `--cu` is replaced by `--cu-size`.
+- `--cu-size` minimum value is `8`.
+- `--cluster-name` is required.
+- Session TTL floor is `60s`.

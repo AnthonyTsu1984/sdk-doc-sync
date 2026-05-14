@@ -15,8 +15,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') 
 
 const fs = require('fs');
 const fetch = require('node-fetch');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
-const BitableWriter = require('../../../../src/sdk-doc-sync/bitable-writer');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
+const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
 
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
 

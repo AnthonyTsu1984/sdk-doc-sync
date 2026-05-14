@@ -1,0 +1,2 @@
+- When using external-source collection creation, `externalSource` and `externalSpec` belong in the request body payload and are not top-level CLI command flags.
+- Keep `externalSource` and `externalSpec` paired in the same body payload to avoid partial external-source configuration.

@@ -15,7 +15,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
 const fetch = require('node-fetch');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 const DOC_ID   = 'EeZ3dCqWhoscrUxgC8GcImbDnMd';
 const HOST     = process.env.FEISHU_HOST || 'https://open.feishu.cn';

@@ -2,10 +2,13 @@ node_modules/
 .DS_Store
 .env
 
-repos
-
 # Temp scripts
 scripts/_tmp_*
+tmp/
 
 # SDK update worktrees
 .worktrees/
+
+# SDK source repos (cloned externally)
+repos/*
+!repos/.gitkeep

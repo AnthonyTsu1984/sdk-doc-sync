@@ -3,8 +3,8 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
-const BitableWriter = require('../../../../src/sdk-doc-sync/bitable-writer');
-const DiffEngine = require('../../../../src/sdk-doc-sync/diff-engine');
+const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+const DiffEngine = require('../src/sdk-doc-sync/diff-engine');
 const fs = require('fs');
 
 const BITABLE_TOKEN = 'J3Qzbv7AWazzivsv7vqcqlGCnFc';

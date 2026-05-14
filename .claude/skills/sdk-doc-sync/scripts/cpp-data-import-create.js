@@ -12,9 +12,9 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
 const fetch = require('node-fetch');
-const MarkdownToFeishu = require('../../../../src/markdown-to-feishu');
-const BitableWriter = require('../../../../src/sdk-doc-sync/bitable-writer');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
+const MarkdownToFeishu = require('../src/markdown-to-feishu');
+const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 const FEISHU_HOST = process.env.FEISHU_HOST;
 const FEISHU_DOCX_HOST = 'https://zilliverse.feishu.cn';

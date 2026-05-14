@@ -1,0 +1,2 @@
+- CLI startup update checks write informational output to stderr only.
+- Update checks are throttled to at most once every 24 hours.

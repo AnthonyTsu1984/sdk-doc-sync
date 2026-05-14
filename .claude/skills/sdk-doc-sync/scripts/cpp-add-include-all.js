@@ -9,7 +9,7 @@
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 const fetch = require('node-fetch');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 const FEISHU_HOST = process.env.FEISHU_HOST;
 const V26X_FOLDER = 'CSzVfDgfAlne87dDj3vcnR3nnsg';

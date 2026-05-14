@@ -1,8 +1,7 @@
 ---
 name: sdk-doc-sync
 description: Sync SDK source code to Feishu reference docs, or sync the Milvus server REST API source to openapi-milvus.json. Use when the user wants to scan an SDK repo, diff against existing Feishu knowledge base, create or update documentation for new/changed API symbols, or update the OpenAPI spec.
-argument-hint: [--language <python|java|node|cpp|go|rest>] [--sdk-version <version>]
-disable-model-invocation: true
+argument-hint: [--language <python|java|node|cpp|go|zilliz-cli|rest>] [--sdk-version <version>]
 ---
 
 # SDK Doc Sync
@@ -15,10 +14,11 @@ You are orchestrating a version-incremental documentation sync between an SDK so
 - Node.js → `sdk-node.md`
 - C++ → `sdk-cpp.md`
 - Go → `sdk-go.md`
+- Zilliz CLI → `sdk-zilliz-cli.md`
 - RESTful API → `sdk-rest.md`
 - SDK Alignment Bitable → `sdk-alignment.md`
 
-**SDK scripts** live in `.claude/skills/sdk-doc-sync/scripts/` (moved from `scripts/`). Run from project root: `node .claude/skills/sdk-doc-sync/scripts/<script>.js`.
+**SDK scripts** live in `.claude/skills/sdk-doc-sync/scripts/`. Run from project root: `node .claude/skills/sdk-doc-sync/scripts/<script>.js`.
 
 ## Architecture
 
@@ -26,51 +26,91 @@ You are orchestrating a version-incremental documentation sync between an SDK so
 - **Bitable** per version: fields — Docs (URL), Type (Function/Class/Enum/VirtualNode/Module), Slug (auto-populated DuplexLink — **never write it**), Added Since, Last Modified At, Deprecate Since, Targets, Description, Progress, Tag, 父记录 (parent record link)
 - Each version is **incremental** — ~85% of records carry forward unchanged; only the delta (new/changed/deprecated) needs work
 
+## Scan State
+
+The file `scan-state.json` tracks the last scanned tag per SDK. **Always read this file first** before scanning. After a successful scan, update it with the new tag.
+
+```json
+{ "python": { "lastScannedTag": "v2.6.12", "lastScanDate": "2026-04-14" }, ... }
+```
+
 ## Workflow
 
-### Phase 1: SCAN
+### Phase 0: CHECK — Is a scan needed?
 
-Use the CLI (preferred over `node -e` inline — inline scripts break with special characters):
+1. Read `scan-state.json` to get the last scanned tag for the SDK
+2. `git fetch --tags` in the SDK repo
+3. Find the latest tag (use `git tag --sort=-v:refname | head -5`)
+4. If latest tag == last scanned tag → **nothing to do**
+5. If latest tag > last scanned tag → proceed to Phase 1
 
-```bash
-node bin/sdk-doc-sync.js --language=python --sdk-dir repos/pymilvus/pymilvus --sdk-version v2.6.x --dry-run
-```
+### Phase 1: DIFF — What changed between tags?
 
-Or a script file (see `scripts/scan-pymilvus.js` for a reference). Review the output; report symbols with missing docstrings or unexpected names.
-
-### Phase 2: INDEX
-
-Use `BitableWriter.listRecords()` or exploration scripts to fetch the baseline. See the per-SDK reference file for bitable tokens.
-
-### Phase 3: DIFF
+**Do NOT do a full scan.** Instead, diff between the last scanned tag and the latest:
 
 ```bash
-node bin/sdk-doc-sync.js --language=python --sdk-version v2.6.x --dry-run
+# Find changed source files between versions
+git -C repos/pymilvus diff v2.6.12..v2.6.13 --name-only -- 'pymilvus/*.py' 'pymilvus/**/*.py'
+
+# Find added/removed/renamed methods
+git -C repos/pymilvus diff v2.6.12..v2.6.13 -- 'pymilvus/milvus_client/milvus_client.py'
 ```
 
-For each actionable item: **CREATE** (explain what new symbol does), **UPDATE** (explain what changed), **DEPRECATE** (confirm reason), **ORPHAN** (investigate rename/removal).
+From the diff, identify:
+- **New methods** → need CREATE
+- **Changed methods** (new params, changed signatures) → need UPDATE
+- **Removed/renamed methods** → need DEPRECATE or ORPHAN handling
 
-### Phase 4: APPROVE
+### Phase 2: SCAN — Only changed symbols
 
-Show the action list and ask for user sign-off before proceeding.
+Run the scanner on the SDK, then filter to only the symbols identified in Phase 1. Or scan individual files:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js --language=python --sdk-dir repos/pymilvus/pymilvus --sdk-version v2.6.x --dry-run
+```
+
+### Phase 3: INDEX
+
+Use `BitableWriter.listRecords()` or the bitable reader to fetch the baseline. See the per-SDK reference file for bitable tokens. Only fetch records relevant to the changed symbols.
+
+### Phase 4: DIFF
+
+Compare scanned symbols against bitable for the changed items only. For each actionable item: **CREATE** (explain what new symbol does), **UPDATE** (explain what changed — include parameter diffs), **DEPRECATE** (confirm reason).
+
+### Phase 5: APPROVE
+
+Show the action list and ask for user sign-off before proceeding. Include parameter-level detail for UPDATEs.
 
 ### Phase 5: EXECUTE — Write docs
 
 For each approved CREATE:
 1. Read the actual source code (scanner provides `filePath` and `lineNumber`)
 2. Write documentation matching the per-SDK format
-3. Create the Feishu doc using `MarkdownToFeishu.push_markdown()`
-4. Create the bitable record using `BitableWriter.createRecord()` — never set the Slug field
+3. Determine the correct drive folder (see **Folder placement rules** below)
+4. Create the Feishu doc using `MarkdownToFeishu.push_markdown()`
+5. Create the bitable record using `BitableWriter.createRecord()` — never set the Slug field
+
+**Folder placement rules:**
+- Place docs in the category subfolder that matches the bitable parent record (e.g., `Client` under `MilvusClient`, `Management` under `MilvusClient`).
+- **Create missing folders** via Feishu API (`feishu-doc.js create-folder`) if the expected subfolder does not exist in the version drive.
+- **Do NOT create ORM folders** for v3.0.x Python docs. The ORM layer is not expected to receive changes; MilvusClient methods already exist under their respective categories.
+- When updating a doc listed in the bitable but missing from the version drive, copy it to the correct folder with optional folder creation, then update the bitable link.
+- **Version-targeted UPDATE rule (required):** if target version is `vX.Y.x` and the current doc link points to an older version folder, **copy to target version folder first, then patch the copied doc, then repoint bitable**. Never patch the older-version source doc in place.
+- **Version-root guardrail (required):** resolve destination folders from the per-SDK canonical version root mapping first, then verify target folder ancestry with `feishu-doc.js list-folder`. Do not infer version from stale VirtualNode `Docs` links.
+- **After creating/moving category folders:** update touched VirtualNode records (`Docs` field) to the new folder URLs in the same run, then verify with `bitable-show`.
 
 **Formatting rules:**
 - Tight lists (no blank lines between items) — blank lines create incorrect nesting in Feishu
 - `*italic*` for types/return types, `**bold**` for `[REQUIRED]` tags and exception names
 - No nested bullets inside PARAMETERS — describe complex types in prose on the same line
+- **Never join two logical lines into one block with `\n`.** For example, parameter name (type) - and the parameter description should be two separate blocks. Each distinct line/paragraph must be its own Feishu block.
 - Run with `--dry-run` first, then `--method=name` for individual validation, then batch
 
 ### Phase 6: UPDATE — In-place patching
 
 **For same-version content changes** (adding sections, fixing text, updating examples):
+
+Precondition: the doc must already reside in the target version folder. If the doc still resides in an older version folder, do a copy-first migration to target version before applying any patch.
 
 ```js
 // Option A: patch_document() — smart diff of full content
@@ -113,20 +153,21 @@ await m2f.patch_document({ document_id: docId, blocks: newBlocks, strategy: 'sma
 
 | File | Purpose |
 |------|---------|
-| `src/sdk-doc-sync/scanners/python-scanner.js` | Extract symbols from Python source |
-| `src/sdk-doc-sync/scanners/java-scanner.js` | Extract symbols from Java source |
-| `src/sdk-doc-sync/scanners/node-scanner.js` | Extract symbols from Node/TypeScript source |
-| `src/sdk-doc-sync/scanners/cpp-scanner.js` | Extract symbols from C++ source |
-| `src/sdk-doc-sync/scanners/go-scanner.js` | Extract symbols from Go source |
-| `src/sdk-doc-sync/diff-engine.js` | Compare scanned symbols vs bitable index |
-| `src/sdk-doc-sync/doc-generator.js` | Scaffold templates and metadata generation |
-| `src/sdk-doc-sync/bitable-writer.js` | Bitable record CRUD (createRecord, updateRecord, deleteRecord, listRecords) |
-| `src/sdk-doc-sync/index.js` | Orchestrator |
-| `bin/sdk-doc-sync.js` | CLI entry point (`--language`, `--dry-run`, `--sdk-version`) |
-| `docs/converters/patch-document.md` | `patch_document()` API reference |
-| `specs/openapi-milvus.json` | Milvus server REST API spec (edit for server updates) |
-| `specs/openapi-cloud.json` | Zilliz Cloud REST API spec (do not touch for server updates) |
-| `specs/openapi.json` | Combined spec — regenerated by merge script, do not edit directly |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/scanners/python-scanner.js` | Extract symbols from Python source |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/scanners/java-scanner.js` | Extract symbols from Java source |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/scanners/node-scanner.js` | Extract symbols from Node/TypeScript source |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/scanners/cpp-scanner.js` | Extract symbols from C++ source |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/scanners/go-scanner.js` | Extract symbols from Go source |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/scanners/zilliz-cli-scanner.js` | Extract CLI commands from Zilliz CLI JSON models + Click commands |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/diff-engine.js` | Compare scanned symbols vs bitable index |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/doc-generator.js` | Scaffold templates and metadata generation |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/bitable-writer.js` | Bitable record CRUD (createRecord, updateRecord, deleteRecord, listRecords) |
+| `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/index.js` | Orchestrator |
+| `.claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js` | CLI entry point (`--language`, `--dry-run`, `--sdk-version`) |
+| `.claude/skills/sdk-doc-sync/docs/converters/patch-document.md` | `patch_document()` API reference |
+| `.claude/skills/sdk-doc-sync/specs/openapi-milvus.json` | Milvus server REST API spec (edit for server updates) |
+| `.claude/skills/sdk-doc-sync/specs/openapi-cloud.json` | Zilliz Cloud REST API spec (do not touch for server updates) |
+| `.claude/skills/sdk-doc-sync/specs/openapi.json` | Combined spec — regenerated by merge script, do not edit directly |
 
 SDK scripts are in `.claude/skills/sdk-doc-sync/scripts/` — see per-SDK reference files for the relevant script list.
 
@@ -151,6 +192,26 @@ How it works:
 
 Per-SDK tokens: C++ `XmndbkxkQaigA8soRiCcTT41nMd` · Go `Yc7gbtmgSal2ewsdqlhcLWVanbh` · Node `R9i8bww4faNsR6smwQwcAtHGnkb`
 
+### `scripts/fix-leading-spaces.js` — Leading whitespace fix (post-action)
+
+Run after any bulk doc generation to trim leading whitespace from text_run elements. The doc generator previously used 4-space indentation for list continuation lines; `marked.js` only strips 2 (the `- ` marker width), leaving 2 residual spaces that Feishu renders as blockquotes.
+
+```bash
+# Dry run first — shows affected blocks
+node .claude/skills/sdk-doc-sync/scripts/fix-leading-spaces.js --bitable <token> --dry-run
+
+# Apply fixes
+node .claude/skills/sdk-doc-sync/scripts/fix-leading-spaces.js --bitable <token>
+```
+
+How it works:
+1. Indexes all docs from the bitable
+2. For each doc, fetches all blocks and walks every element-bearing block (skips code blocks)
+3. For the first `text_run` in each block: trims leading spaces/tabs from content
+4. Patches changed blocks via `batch_update` in batches of 20
+
+Per-SDK tokens: C++ `XmndbkxkQaigA8soRiCcTT41nMd` · Go `Yc7gbtmgSal2ewsdqlhcLWVanbh` · Node `R9i8bww4faNsR6smwQwcAtHGnkb`
+
 ### `scripts/post-fix-links.js` — Stale link repair (post-action)
 
 Run after any operation that regenerates docs (re-push, version migration) to repair inline Feishu docx links that now point to deleted doc IDs.
@@ -170,12 +231,35 @@ How it works:
 4. Replacement is found by matching the link's anchor text against bitable titles
 5. Stale links with no title match are reported but left unchanged
 
+### Update category VirtualNode folder links (post-action)
+
+After creating new drive subfolders, update the corresponding category (VirtualNode) records in the bitable so their `Docs` field points to the folder URL (`https://zilliverse.feishu.cn/drive/folder/${FOLDER_TOKEN}`), not a docx or malformed link:
+
+```bash
+node -e "
+const BitableWriter = require('./src/sdk-doc-sync/bitable-writer');
+(async () => {
+  const bw = new BitableWriter({ baseToken: '<token>' });
+  await bw.updateRecord('RECORD_ID', {
+    title: 'FolderName',
+    link: 'https://zilliverse.feishu.cn/drive/folder/FOLDER_TOKEN'
+  });
+})();
+"
+```
+
+**Mandatory verification after CREATE/MOVE + VirtualNode updates:**
+1. `feishu-doc.js bitable-show <base-token> <virtual-node-record-id>` → confirm `Docs.link` is the expected folder URL.
+2. `feishu-doc.js list-folder <new-folder-token> --type docx` → confirm created/moved docs are present.
+3. `feishu-doc.js list-folder <old-folder-token> --type docx` → confirm moved doc IDs are absent from the old folder.
+4. For new Function records: `feishu-doc.js bitable-show <base-token> <new-record-id>` → confirm `Slug`, `Docs.link`, and `父记录` match the intended category.
+
 ## CLI Tools
 
 ### `scripts/feishu-doc.js` — Feishu Doc CLI
 
 ```
-node scripts/feishu-doc.js <subcommand> [options]
+node .claude/skills/sdk-doc-sync/scripts/feishu-doc.js <subcommand> [options]
 
 Global options:
   --source-type drive|wiki   Drive vs wiki (default: drive)
@@ -208,10 +292,10 @@ Bitable records:
 ### `scripts/edit-openapi.js` — OpenAPI Spec Editor CLI
 
 ```
-node scripts/edit-openapi.js <subcommand> [options]
+node .claude/skills/sdk-doc-sync/scripts/edit-openapi.js <subcommand> [options]
 
 Global options:
-  --spec <path>    Target spec (default: specs/openapi-milvus.json)
+  --spec <path>    Target spec (default: .claude/skills/sdk-doc-sync/specs/openapi-milvus.json)
   --dry-run        Print changes without writing
   --no-merge       Skip regenerating openapi.json after edits
   --help, -h       Print this help
@@ -237,3 +321,46 @@ Tag management:
   add-tag    --name <name> [--description <text>]
   remove-tag --name <name>
 ```
+
+---
+
+## Known Issues & Patterns
+
+### DiffEngine category backfill
+
+The v3.0.x diff script (`diff-pymilvus-v30.js`) originally used a hardcoded `MILVUS_CLIENT_CATEGORIES` list. Methods documented under prefixes like `CollectionSchema` were falsely flagged as CREATE because the prefix wasn't in the list.
+
+**Fix:** After building the initial category map, backfill any unmatched MilvusClient method by searching all non-Collection prefixes in the bitable.
+
+### Drive doc URL construction
+
+`MarkdownToFeishu.push_markdown()` returns `wiki_url` as an empty string for drive docs. Passing this to `BitableWriter.createRecord()` causes `URLFieldConvFail`.
+
+**Fix:** Manually construct the doc URL: `https://zilliverse.feishu.cn/docx/${pushResult.document_id}`.
+
+### Code block updates via `batch_update`
+
+Feishu does not support `replace_code` in `batch_update` (returns error 1770001).
+
+**Fix:** Use `update_text_elements` with `elements: [{ text_run: { content: newCode } }]`. This works on code blocks (block_type 14) even though their content lives in `code.elements` rather than `text.elements`.
+
+### Nested children insertion
+
+The `POST /open-apis/docx/v1/documents/{doc_id}/blocks/{parent_id}/children` API rejects blocks that define nested `children` inline (error 9499).
+
+**Fix:** Insert the parent block first, capture its `block_id` from the response, then insert child blocks in a separate API call targeting that new block_id.
+
+### Release delta vs undocumented backlog
+
+When comparing a new release to Feishu, separate two buckets:
+1. **Release delta:** symbols/signatures changed between baseline tag/commit and target tag.
+2. **Undocumented backlog:** symbols already present before the target tag but missing docs.
+
+Do not label backlog items as newly added in the target release. Verify first appearance with tag checks before setting `Added Since`.
+
+### `feishu-doc.js` CLI environment loading
+
+`feishu-doc.js` loads `.env` from `path.resolve(__dirname, '..', '.env')` (i.e., `.claude/skills/sdk-doc-sync/.env`). If that file does not exist, `FEISHU_HOST` is undefined and API calls fail with "Only absolute URLs are supported".
+
+**Fix:** Either run the script from the project root after ensuring the `.env` is discoverable, or export `FEISHU_HOST`, `APP_ID`, and `APP_SECRET` explicitly before running the command.
+

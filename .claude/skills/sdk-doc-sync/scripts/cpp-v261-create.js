@@ -20,11 +20,11 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
 const fetch = require('node-fetch');
-const MarkdownToFeishu = require('../../../../src/markdown-to-feishu');
-const BitableWriter = require('../../../../src/sdk-doc-sync/bitable-writer');
-const CppScanner = require('../../../../src/sdk-doc-sync/scanners/cpp-scanner');
-const DocGenerator = require('../../../../src/sdk-doc-sync/doc-generator');
-const larkTokenFetcher = require('../../../../lib/lark-docs/larkTokenFetcher');
+const MarkdownToFeishu = require('../src/markdown-to-feishu');
+const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+const CppScanner = require('../src/sdk-doc-sync/scanners/cpp-scanner');
+const DocGenerator = require('../src/sdk-doc-sync/doc-generator');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 // ============================================================
 // Constants

@@ -1,0 +1,2 @@
+- Privatelink command surface follows the updated endpoint family naming in v1.4.x.
+- Replace legacy endpoint-family references with the v1.4.x privatelink endpoint family names.

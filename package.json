@@ -13,8 +13,8 @@
     "test:integration": "node tests/run-all.js --integration",
     "test:all": "node tests/run-all.js --all",
     "test:list": "node tests/run-all.js --list",
-    "sdk-doc-sync": "node bin/sdk-doc-sync.js",
-    "translate": "node bin/feishu-doc-translator.js"
+    "sdk-doc-sync": "node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js",
+    "translate": "node .claude/skills/sdk-doc-sync/bin/feishu-doc-translator.js"
   },
   "author": "",
   "license": "ISC",
@@ -25,6 +25,7 @@
     "cheerio": "^1.2.0",
     "dotenv": "^17.2.3",
     "form-data": "^4.0.5",
+    "lodash": "^4.17.23",
     "marked": "^17.0.1",
     "node-fetch": "^2.7.0",
     "showdown": "^2.1.0",

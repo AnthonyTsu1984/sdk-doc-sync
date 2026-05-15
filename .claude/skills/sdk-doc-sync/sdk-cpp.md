@@ -107,4 +107,6 @@ For builder/request types with With* methods: use `## Request Syntax{#request-sy
 - `scripts/cpp-response-types-create.js` — 20 response/helper type Class docs (v2.6.1, 2026-03-15)
 - `scripts/cpp-fix-describe-resource-group.js` — fix DescribeResourceGroup example (response.Name() → response.Desc().Name())
 - `scripts/cpp-fix-methods-heading.js` — re-push docs that had h2 Methods headings, replace with **METHODS:** bold
+- `scripts/cpp-v263-fix-returns-format.js` — targeted block patch for v2.6.3 function RETURNS lines (`*Status with Type*` → `*Status* with *Type*`)
+- `scripts/cpp-add-ptr-type-links.js` — C++ pointer-alias cross-reference pass (`XxxPtr` → `Xxx` class doc link)
 - `scripts/cpp-audit-util.js` — audit helper

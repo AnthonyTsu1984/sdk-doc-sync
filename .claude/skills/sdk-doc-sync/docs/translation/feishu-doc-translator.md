@@ -179,12 +179,12 @@ Documents exist in source but not in target. These need to be translated and cre
 ### UPDATE
 Documents exist in both, but source has been modified more recently.
 
-**Action:**
+**Action (version-aware):**
 1. Fetch source document markdown
 2. Translate content
-3. Find source parent → Match to target parent by slug
-4. Create new target doc as child of matched parent
-5. Update bitable record with new doc URL
+3. Resolve target parent by slug and verify target folder ancestry
+4. If target doc is already in the correct target-version location, patch in place
+5. If target doc points to an older-version location, copy to the target-version folder first, then patch the copy, then update bitable with the copied doc URL
 
 ### SKIP
 Documents exist in both and are synchronized. No action needed.

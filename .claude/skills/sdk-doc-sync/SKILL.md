@@ -97,7 +97,8 @@ For each approved CREATE:
 - When updating a doc listed in the bitable but missing from the version drive, copy it to the correct folder with optional folder creation, then update the bitable link.
 - **Version-targeted UPDATE rule (required):** if target version is `vX.Y.x` and the current doc link points to an older version folder, **copy to target version folder first, then patch the copied doc, then repoint bitable**. Never patch the older-version source doc in place.
 - **Version-root guardrail (required):** resolve destination folders from the per-SDK canonical version root mapping first, then verify target folder ancestry with `feishu-doc.js list-folder`. Do not infer version from stale VirtualNode `Docs` links.
-- **After creating/moving category folders:** update touched VirtualNode records (`Docs` field) to the new folder URLs in the same run, then verify with `bitable-show`.
+- **Module-placement guardrail (required):** for top-level modules (for example Python `Volume`), the module folder must be a direct child of the version root unless the SDK reference explicitly defines another parent. Never place a top-level module under another module because an older record happened to point there.
+- **After creating/moving category folders:** update touched VirtualNode/Module records (`Docs` field) to the new folder URLs in the same run, then verify with `bitable-show`.
 
 **Formatting rules:**
 - Tight lists (no blank lines between items) — blank lines create incorrect nesting in Feishu
@@ -106,28 +107,61 @@ For each approved CREATE:
 - **Never join two logical lines into one block with `\n`.** For example, parameter name (type) - and the parameter description should be two separate blocks. Each distinct line/paragraph must be its own Feishu block.
 - Run with `--dry-run` first, then `--method=name` for individual validation, then batch
 
-### Phase 6: UPDATE — In-place patching
+### Phase 6: UPDATE — Copy-first-then-update patch
 
-**For same-version content changes** (adding sections, fixing text, updating examples):
+UPDATE Behavior (Version-Aware)
 
-Precondition: the doc must already reside in the target version folder. If the doc still resides in an older version folder, do a copy-first migration to target version before applying any patch.
+**Core rule**
 
-```js
-// Option A: patch_document() — smart diff of full content
-await m2f.patch_document({ document_id: docId, blocks: newBlocks, strategy: 'smart' });
+UPDATE is **not** a single universal behavior. It depends on whether source and target are in the same version location.
 
-// Option B: targeted block insert — insert new blocks at a specific position
-// POST /open-apis/docx/v1/documents/{doc_id}/blocks/{parent_id}/children
-// Body: { children: [...blockDefs], index: N }
+**Case A: Same-version update (in-place allowed)**
 
-// Option C: targeted block update — patch specific block content
-// PATCH /open-apis/docx/v1/documents/{doc_id}/blocks/batch_update
-// Body: { requests: [{ block_id, update_text_elements: { elements: [...] } }] }
+Use in-place update only when the target doc already resides in the correct target-version folder **and is not shared by older-version bitables**.
 
-// Option D: targeted block delete — delete a range of child blocks
-// DELETE /open-apis/docx/v1/documents/{doc_id}/blocks/{parent_id}/children/batch_delete
-// Body: { start_index: N, end_index: M }  (end_index is EXCLUSIVE)
-```
+Flow:
+1. Resolve target doc token from bitable `Docs.link`.
+2. Verify doc ancestry is already under the intended target version folder.
+3. Verify this token is not referenced by older-version bitables (if shared, switch to Case B).
+4. Patch content in place (`patch_document` / `patch --strategy smart`).
+5. Keep URL unchanged.
+
+**Case B: Cross-version update (copy-first required)**
+
+If the current doc link points to an older-version folder, **do not patch that doc directly**.
+
+Flow:
+1. Copy the doc into the target-version folder.
+2. Patch/merge updates on the copied doc only.
+3. Repoint bitable record with both `title` and `link`.
+4. Keep older-version doc as historical snapshot.
+
+**Why this distinction matters**
+
+Patching older-version docs in place causes version contamination:
+- old-version docs stop being stable snapshots,
+- multiple version bitables may share one mutable token,
+- rollback and audit become difficult.
+
+**Required checks before UPDATE**
+
+1. Confirm target version root/folder from canonical mapping (not stale links).
+2. Verify module/category parent folder is correct under the target version root (do not follow stale Module/VirtualNode links blindly).
+3. Verify current doc ancestry with `list-folder`.
+4. Verify whether the doc token is referenced by older-version bitables.
+5. Choose Case A or Case B explicitly.
+
+**Required checks after UPDATE**
+
+1. `bitable-show` record: verify `Docs.link`, `父记录`, and version metadata.
+2. `list-folder` target folder: verify doc exists at target location.
+3. If cross-version: verify old-version doc remains unchanged.
+
+**Notes**
+
+- `updateRecord()` must pass both `title` and `link` when repointing `Docs`.
+- Block type conversions are not supported via batch update; use full re-push in the same target folder when needed.
+
 
 **Bottom-up insertion rule:** When inserting blocks after multiple existing blocks in a loop, sort operations from highest child index to lowest to avoid index shifting.
 
@@ -138,7 +172,7 @@ await m2f.patch_document({ document_id: docId, blocks: newBlocks, strategy: 'sma
 
 **NEVER use doc replacement for same-version content edits.**
 
-**Block type changes are not supported via batch_update.** Attempting `update_block_type: { block_type: 2 }` returns error 1770001. If you need to change a heading block to a paragraph (e.g., h2 → bold text), you must re-push the entire doc using the version migration pattern above.
+**Block type changes are not supported via batch_update.** Attempting `update_block_type: { block_type: 2 }` returns error 1770001. If you need to change a heading block to a paragraph (e.g., h2 → bold text), re-push the entire doc in the **same target folder** (same-version full rewrite). Do **not** treat this as cross-version migration; cross-version changes still require copy-to-target-first, then patch/repoint.
 
 ---
 
@@ -191,6 +225,9 @@ How it works:
 5. Patches changed blocks via `batch_update` in batches of 20
 
 Per-SDK tokens: C++ `XmndbkxkQaigA8soRiCcTT41nMd` · Go `Yc7gbtmgSal2ewsdqlhcLWVanbh` · Node `R9i8bww4faNsR6smwQwcAtHGnkb`
+
+C++ pointer-alias caveat: exact-match linking will not match tokens like `OptimizeTaskPtr` when the indexed Class title is `OptimizeTask`.
+Use `.claude/skills/sdk-doc-sync/scripts/cpp-add-ptr-type-links.js` after `add-type-links.js` for C++ docs that use `XxxPtr` aliases.
 
 ### `scripts/fix-leading-spaces.js` — Leading whitespace fix (post-action)
 
@@ -275,6 +312,7 @@ Doc content:
 Drive management:
   list-folder   <folder-token> [--type docx|folder|all]
   move          <token> --to <folder-token> [--type docx|folder]
+  copy          <token> --to <folder-token> --name <new-name> [--type docx|folder]
   delete        <token> [--type docx|folder] [--yes]
   create-folder <name> --parent <folder-token>
 
@@ -363,4 +401,16 @@ Do not label backlog items as newly added in the target release. Verify first ap
 `feishu-doc.js` loads `.env` from `path.resolve(__dirname, '..', '.env')` (i.e., `.claude/skills/sdk-doc-sync/.env`). If that file does not exist, `FEISHU_HOST` is undefined and API calls fail with "Only absolute URLs are supported".
 
 **Fix:** Either run the script from the project root after ensuring the `.env` is discoverable, or export `FEISHU_HOST`, `APP_ID`, and `APP_SECRET` explicitly before running the command.
+
+### Shared-token contamination across versions
+
+A doc token can be referenced by both `v(N-1)` and `vN` bitables even when the `vN` record looks correct. Patching that token mutates both versions.
+
+**Fix:** Before any in-place patch, check whether older-version bitables reference the same doc token. If shared, force Case B (copy to target-version folder, patch copy, repoint `vN` record with `title` + `link`).
+
+### Module folder drift from stale links
+
+A Module/VirtualNode `Docs` link can point to a folder outside the canonical version root (for example, left from v2.5 lineage). Following that stale link can place vN docs in the wrong subtree.
+
+**Fix:** Treat per-SDK canonical version root as source of truth. If module folder is missing under target version root, create it there, move/copy vN docs into it, and repoint the module record in the same run.
 

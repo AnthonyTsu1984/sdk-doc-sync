@@ -1,0 +1,34 @@
+{
+  "entries": [
+    {
+      "operationKey": "collections/create_collection",
+      "language": "python",
+      "status": "supported"
+    },
+    {
+      "operationKey": "collections/create_collection",
+      "language": "java",
+      "status": "missing"
+    },
+    {
+      "operationKey": "collections/create_collection",
+      "language": "go",
+      "status": "unclear"
+    },
+    {
+      "operationKey": "collections/drop_collection",
+      "language": "python",
+      "status": "supported"
+    },
+    {
+      "operationKey": "collections/drop_collection",
+      "language": "node",
+      "status": "supported"
+    },
+    {
+      "operationKey": "collections/drop_collection",
+      "language": "rest",
+      "status": "missing"
+    }
+  ]
+}

@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const Module = require('node:module');
 
-const TARGET_MODULE = '/Volumes/CaseSensitive/projects/feishu-markdown-bridge/.worktrees/patch-code-blocks-runner/.claude/skills/patch-code-blocks/src/target.js';
+const TARGET_MODULE = require.resolve('../src/target');
 
 function withTargetMocks(fetchImpl, tokenImpl = async () => 'tenant-token') {
   const originalLoad = Module._load;
@@ -87,8 +87,32 @@ test('resolveDocumentId rejects when FEISHU_HOST is missing', async () => {
   });
 });
 
+test('resolveDocumentId rejects untrusted FEISHU_HOST domains by default', async () => {
+  await withEnv({ FEISHU_HOST: 'https://api.example.com', FEISHU_ALLOW_UNSAFE_HOST: undefined }, async () => {
+    const { resolveDocumentId } = withTargetMocks(async () => ({ ok: true, status: 200, json: async () => ({ code: 0, data: { node: { obj_token: 'docx-1' } } }) }));
+
+    await assert.rejects(
+      () => resolveDocumentId('https://host/wiki/node1'),
+      /Untrusted FEISHU_HOST/
+    );
+  });
+});
+
+test('resolveDocumentId allows untrusted FEISHU_HOST when explicitly overridden', async () => {
+  await withEnv({ FEISHU_HOST: 'https://api.example.com', FEISHU_ALLOW_UNSAFE_HOST: 'true' }, async () => {
+    const { resolveDocumentId } = withTargetMocks(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ code: 0, data: { node: { obj_token: 'docx-override' } } }),
+    }));
+
+    const docId = await resolveDocumentId('https://host/wiki/node1');
+    assert.equal(docId, 'docx-override');
+  });
+});
+
 test('resolveDocumentId handles HTTP errors', async () => {
-  await withEnv({ FEISHU_HOST: 'https://api.example.com' }, async () => {
+  await withEnv({ FEISHU_HOST: 'https://open.feishu.cn' }, async () => {
     const { resolveDocumentId } = withTargetMocks(async () => ({
       ok: false,
       status: 502,
@@ -103,7 +127,7 @@ test('resolveDocumentId handles HTTP errors', async () => {
 });
 
 test('resolveDocumentId handles invalid JSON body', async () => {
-  await withEnv({ FEISHU_HOST: 'https://api.example.com' }, async () => {
+  await withEnv({ FEISHU_HOST: 'https://open.feishu.cn' }, async () => {
     const { resolveDocumentId } = withTargetMocks(async () => ({
       ok: true,
       status: 200,
@@ -118,7 +142,7 @@ test('resolveDocumentId handles invalid JSON body', async () => {
 });
 
 test('resolveDocumentId handles API-level failure and missing obj_token', async () => {
-  await withEnv({ FEISHU_HOST: 'https://api.example.com' }, async () => {
+  await withEnv({ FEISHU_HOST: 'https://open.feishu.cn' }, async () => {
     const { resolveDocumentId: apiFail } = withTargetMocks(async () => ({
       ok: true,
       status: 200,
@@ -136,7 +160,7 @@ test('resolveDocumentId handles API-level failure and missing obj_token', async 
 });
 
 test('resolveDocumentId maps AbortError to timeout message', async () => {
-  await withEnv({ FEISHU_HOST: 'https://api.example.com', FEISHU_REQUEST_TIMEOUT_MS: '1234' }, async () => {
+  await withEnv({ FEISHU_HOST: 'https://open.feishu.cn', FEISHU_REQUEST_TIMEOUT_MS: '1234' }, async () => {
     const { resolveDocumentId } = withTargetMocks(async () => {
       const err = new Error('aborted');
       err.name = 'AbortError';
@@ -151,7 +175,7 @@ test('resolveDocumentId maps AbortError to timeout message', async () => {
 });
 
 test('resolveDocumentId falls back to default timeout when FEISHU_REQUEST_TIMEOUT_MS is invalid', async () => {
-  await withEnv({ FEISHU_HOST: 'https://api.example.com', FEISHU_REQUEST_TIMEOUT_MS: '12.5' }, async () => {
+  await withEnv({ FEISHU_HOST: 'https://open.feishu.cn', FEISHU_REQUEST_TIMEOUT_MS: '12.5' }, async () => {
     const { resolveDocumentId } = withTargetMocks(async () => {
       const err = new Error('aborted');
       err.name = 'AbortError';
@@ -166,7 +190,7 @@ test('resolveDocumentId falls back to default timeout when FEISHU_REQUEST_TIMEOU
 });
 
 test('resolveDocumentId returns wiki obj_token on success', async () => {
-  await withEnv({ FEISHU_HOST: 'https://api.example.com' }, async () => {
+  await withEnv({ FEISHU_HOST: 'https://open.feishu.cn' }, async () => {
     const { resolveDocumentId } = withTargetMocks(async (_url, options) => {
       assert.equal(options.method, 'GET');
       assert.match(options.headers.Authorization, /^Bearer /);

@@ -122,3 +122,18 @@ Module._load = function patchedLoad(request, parent, isMain) {
   assert.match(result.stderr, /ERROR: mocked extraction failure/);
   assert.match(result.stderr, /Usage: patch-code-blocks --target/);
 });
+
+test('apply mode is explicitly blocked until mutation flow is implemented', () => {
+  const result = spawnSync(process.execPath, [BIN_PATH,
+    '--target', 'https://example.feishu.cn/docx/anything',
+    '--product', 'zilliz-saas',
+    '--apply', 'true',
+  ], {
+    cwd: CWD,
+    env: { ...process.env },
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /Apply mode is not implemented yet/);
+});

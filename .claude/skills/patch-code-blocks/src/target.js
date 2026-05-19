@@ -28,6 +28,27 @@ function resolveRequestTimeoutMs() {
   return parsed;
 }
 
+function isUnsafeHostAllowed() {
+  return String(process.env.FEISHU_ALLOW_UNSAFE_HOST || '').toLowerCase() === 'true';
+}
+
+function assertTrustedHost(host) {
+  if (isUnsafeHostAllowed()) {
+    return;
+  }
+
+  const { hostname } = new URL(host);
+  const trusted =
+    hostname === 'open.feishu.cn' ||
+    hostname === 'open.larksuite.com' ||
+    hostname.endsWith('.feishu.cn') ||
+    hostname.endsWith('.larksuite.com');
+
+  if (!trusted) {
+    throw new Error(`Untrusted FEISHU_HOST: ${host}`);
+  }
+}
+
 async function resolveDocumentId(target) {
   const parsed = parseTarget(target);
   if (parsed.kind === 'docx') {
@@ -38,6 +59,8 @@ async function resolveDocumentId(target) {
   if (!host) {
     throw new Error('Missing FEISHU_HOST environment variable');
   }
+
+  assertTrustedHost(host);
 
   const tokenFetcher = new LarkTokenFetcher();
   const tenantToken = await tokenFetcher.token();
@@ -94,4 +117,5 @@ async function resolveDocumentId(target) {
 module.exports = {
   parseTarget,
   resolveDocumentId,
+  assertTrustedHost,
 };

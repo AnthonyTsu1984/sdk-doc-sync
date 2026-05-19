@@ -13,6 +13,11 @@ const { formatDryRunReport, formatApplyReport } = require('../src/report');
 async function main() {
   try {
     const config = parseArgs(process.argv.slice(2));
+
+    if (config.apply) {
+      throw new Error('Apply mode is not implemented yet. Use --apply=false and follow /test-code-blocks verification flow before manual patch execution.');
+    }
+
     const documentId = await resolveDocumentId(config.target);
 
     const m2f = new MarkdownToFeishu({

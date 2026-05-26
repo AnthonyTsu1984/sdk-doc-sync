@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * Temp script: export a single Feishu docx to Markdown.
+ * Export a single Feishu docx to Markdown.
  *
  * Usage:
- *   node temp-export-doc.js <doc-token-or-url> [output-file]
+ *   node .claude/skills/sdk-doc-sync/bin/export-doc.js <doc-token-or-url> [output-file]
  *
  * Example:
- *   node temp-export-doc.js PR2adhLOKo3qCtxug65cKieMnUM ./output.md
+ *   node .claude/skills/sdk-doc-sync/bin/export-doc.js PR2adhLOKo3qCtxug65cKieMnUM ./output.md
  */
 
 'use strict';
@@ -14,9 +14,12 @@
 const fs = require('fs');
 const path = require('path');
 
-require('dotenv').config({ path: path.resolve(__dirname, '.env') });
+const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 
-const FeishuToMarkdown = require('./.claude/skills/sdk-doc-sync/src/feishu-to-markdown');
+process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
+require('dotenv').config({ path: path.join(PROJECT_ROOT, '.env'), quiet: true });
+
+const FeishuToMarkdown = require('../src/feishu-to-markdown');
 
 function extractToken(input) {
     const match = input.match(/(?:docx|wiki)\/([a-zA-Z0-9]+)/);
@@ -28,7 +31,7 @@ async function main() {
     const outputFile = process.argv[3] || 'exported.md';
 
     if (!rawInput) {
-        console.error('Usage: node temp-export-doc.js <doc-token-or-url> [output-file]');
+        console.error('Usage: node .claude/skills/sdk-doc-sync/bin/export-doc.js <doc-token-or-url> [output-file]');
         process.exit(1);
     }
 

@@ -1,7 +1,7 @@
 ---
 name: sdk-doc-sync
 description: Sync SDK source code to Feishu reference docs, or sync the Milvus server REST API source to openapi-milvus.json. Use when the user wants to scan an SDK repo, diff against existing Feishu knowledge base, create or update documentation for new/changed API symbols, or update the OpenAPI spec.
-argument-hint: [--language <python|java|node|cpp|go|zilliz-cli|rest>] [--sdk-version <version>]
+argument-hint: "[--language <python|java|node|cpp|go|zilliz-cli|rest>] [--sdk-version <version>]"
 ---
 
 # SDK Doc Sync
@@ -413,4 +413,3 @@ A doc token can be referenced by both `v(N-1)` and `vN` bitables even when the `
 A Module/VirtualNode `Docs` link can point to a folder outside the canonical version root (for example, left from v2.5 lineage). Following that stale link can place vN docs in the wrong subtree.
 
 **Fix:** Treat per-SDK canonical version root as source of truth. If module folder is missing under target version root, create it there, move/copy vN docs into it, and repoint the module record in the same run.
-

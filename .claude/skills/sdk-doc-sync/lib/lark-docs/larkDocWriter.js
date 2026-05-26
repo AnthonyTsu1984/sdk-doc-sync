@@ -983,7 +983,7 @@ class larkDocWriter {
     }
 
     async __code(code, indent, prev, next, blocks) {
-        const valid_langs = ['Python', 'JavaScript', 'Java', 'Go', 'Bash']
+        const valid_langs = ['Python', 'JavaScript', 'Java', 'Go', 'C++', 'Bash', 'Shell']
         let lang = code.style.language ? this.code_langs[code['style']['language']] : 'plaintext'
         let elements = (await Promise.all(code['elements'].map( async x => {
             let content = await this.__text_run(x, code['elements'], true)
@@ -1127,6 +1127,9 @@ class larkDocWriter {
                         break;
                     case 'Bash':
                         label = 'cURL'
+                        break;
+                    case 'Shell':
+                        label = 'Zilliz CLI'
                         break;
                     default:
                         label = lang

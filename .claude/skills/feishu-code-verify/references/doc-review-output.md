@@ -80,3 +80,104 @@ Confidence / limits
 ```
 
 Keep the review grounded in report fields and scenario artifacts. If a suggestion is an inference from generated-program preparation, say so explicitly.
+
+## High-Information Template
+
+Use this fuller template for SDK procedure docs, shim/fixture development, or any live runtime run. Keep the sections even when a value is zero or not applicable.
+
+```text
+Verification report
+
+Scope
+- Sources:
+- Languages:
+- Modes:
+- Live target:
+- SDK/tooling inputs:
+- Reports:
+- Scenario artifacts:
+
+Headline result
+- Raw snippets:
+- Scenario compile:
+- Scenario runtime:
+- Manual coverage:
+- Exit status meaning:
+
+Evidence matrix
+| Source | Language | Raw result | Scenario compile | Scenario runtime | Shims/fixtures | Evidence |
+| ... |
+
+What the verifier proved
+- Raw block passed:
+- Scenario-covered:
+- Runtime-proved:
+- Dependency/tooling-proved:
+
+Failures and gaps
+| Source | Language | Stage | Symptom | Root cause class | Next action |
+| ... |
+
+Root cause classes
+- Doc code defect: syntax/API issue in the extracted block itself.
+- Missing setup shim: client/env/import/variable boilerplate omitted by the doc.
+- Missing fixture: schema, collection, index, rows, object storage, or test data absent.
+- Environment dependency: SDK package, classpath, Go module, CLI, cloud endpoint, or network unavailable.
+- Product/runtime behavior: service rejected a request after valid setup.
+
+Shim/fixture decisions
+- Safe shim candidates:
+- Fixture candidates:
+- Do not shim:
+- Requires doc change:
+
+Doc recommendations
+- Copy-paste readiness:
+- Workflow order:
+- Prerequisites/env:
+- Data/schema:
+- Safety/isolation:
+- Expected output:
+
+Confidence and limits
+- High confidence:
+- Medium confidence:
+- Not proven:
+- Follow-up verification command:
+```
+
+### Evidence Matrix Guidance
+
+Use terse but concrete evidence in the table:
+
+- Raw result: `65 passed / 3 failed / 23 manual`.
+- Scenario compile: `python passed`, `java manual: missing Gson`, `go manual: module path mismatch`.
+- Scenario runtime: include the first failing operation, not the entire stack trace.
+- Shims/fixtures: list report `scenario.shims[].name`; if a fixture was generated, name the fixture and resource suffix.
+- Evidence: report path plus generated scenario path and the block index or line number when useful.
+
+### Shim And Fixture Backlog Format
+
+When the run is being used to improve verifier coverage, include a ranked backlog:
+
+```text
+Next shim/fixture backlog
+P0
+- Rule:
+  Trigger:
+  Transformation/fixture:
+  Safety guard:
+  Expected report change:
+
+P1
+- Rule:
+  Trigger:
+  Transformation/fixture:
+  Safety guard:
+  Expected report change:
+
+Do not implement as shim
+- Reason:
+```
+
+Prefer fixture rules for semantic prerequisites such as collection schema and rows. Prefer shim rules for mechanical omissions such as endpoint env mapping, client construction, import hoisting, repeated local declarations, and syntactic wrapping of documented DSL expressions.

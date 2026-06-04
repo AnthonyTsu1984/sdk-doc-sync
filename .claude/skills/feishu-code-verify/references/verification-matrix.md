@@ -12,7 +12,7 @@ Prefer the lowest-risk check that catches real documentation drift.
 | TypeScript | `tsc --noEmit` if `tsc` exists | project-aware `tsc -p` | no TypeScript compiler |
 | Go | `gofmt` fragment harness for partial snippets; `go test` for complete package snippets; scenario `gofmt` for ordered snippets | repo-aware scenario `go test` with `DOC_VERIFY_GO_MODULE_DIR` or `--go-module-dir` | setup symbols/types are required |
 | Java | fragment harness with `javac`; dependency-only errors become manual classpath/setup hints | `javac`/Maven with `DOC_VERIFY_JAVA_CLASSPATH`, `--java-classpath`, `DOC_VERIFY_JAVA_SDK_REPO`, or `--java-sdk-repo` | classpath cannot be derived |
-| C/C++ | compiler `-fsyntax-only` for complete snippets | project-aware compile database | includes are unavailable |
+| C/C++ | compiler `-fsyntax-only` for complete C snippets; C++ fragment harness with common includes | SDK-aware C++ syntax check with `DOC_VERIFY_CPP_SDK_REPO`, `--cpp-sdk-repo`, `DOC_VERIFY_CPP_INCLUDE_DIRS`, or `--cpp-include-dir` | SDK/dependency headers, toolchain standard headers, or setup symbols are unavailable |
 | SQL/HTTP | parse/display only | live smoke test with `--live` | no safe test database/service |
 
 Use `manual` instead of `failed` when a snippet is valid documentation but requires environment-specific setup.

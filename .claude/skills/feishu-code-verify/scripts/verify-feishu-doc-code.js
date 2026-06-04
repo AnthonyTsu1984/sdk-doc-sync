@@ -17,6 +17,7 @@ require('dotenv').config({ path: path.join(SDK_ROOT, '.env'), quiet: true });
 
 const BitableWriter = require(path.join(SDK_ROOT, 'src/sdk-doc-sync/bitable-writer'));
 const MarkdownToFeishu = require(path.join(SDK_ROOT, 'src/markdown-to-feishu'));
+const { createScenarioShimContext } = require('./scenario-shims');
 
 const DEFAULT_REPORT = '/tmp/feishu-code-verify-report.json';
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
@@ -72,6 +73,10 @@ function parseArgs(argv) {
         javaClasspathError: '',
         javaImportIndex: null,
         goModuleDir: process.env.DOC_VERIFY_GO_MODULE_DIR || '',
+        nodeSdkRepo: process.env.DOC_VERIFY_NODE_SDK_REPO || '',
+        nodeSdkBuilds: [],
+        cppSdkRepo: process.env.DOC_VERIFY_CPP_SDK_REPO || '',
+        cppIncludeDirs: (process.env.DOC_VERIFY_CPP_INCLUDE_DIRS || '').split(path.delimiter).filter(Boolean),
         pythonCommand: process.env.DOC_VERIFY_PYTHON || 'python3',
         pythonPath: process.env.DOC_VERIFY_PYTHONPATH || '',
         liveProfile: 'zilliz',
@@ -80,6 +85,12 @@ function parseArgs(argv) {
         runScenarios: false,
         resourceSuffix: process.env.DOC_VERIFY_RESOURCE_SUFFIX || '',
         scenarioOutDir: '/tmp/feishu-code-scenarios',
+        manta: false,
+        mantaWorkspace: process.env.DOC_VERIFY_MANTA_WORKSPACE || 'default',
+        mantaResource: process.env.DOC_VERIFY_MANTA_RESOURCE || '',
+        mantaEndpoint: process.env.DOC_VERIFY_MANTA_ENDPOINT || '',
+        mantaCreateMilvus: process.env.DOC_VERIFY_MANTA_CREATE_MILVUS || '',
+        mantaTimeout: parseInt(process.env.DOC_VERIFY_MANTA_TIMEOUT || '1800', 10),
     };
 
     const raw = argv.slice(2);
@@ -104,11 +115,29 @@ function parseArgs(argv) {
         else if (a === '--java-sdk-repo' && raw[i + 1]) opts.javaSdkRepo = raw[++i];
         else if (a === '--java-maven-repo' && raw[i + 1]) opts.javaMavenRepo = raw[++i];
         else if (a === '--go-module-dir' && raw[i + 1]) opts.goModuleDir = raw[++i];
+        else if (a === '--node-sdk-repo' && raw[i + 1]) opts.nodeSdkRepo = raw[++i];
+        else if (a === '--cpp-sdk-repo' && raw[i + 1]) opts.cppSdkRepo = raw[++i];
+        else if (a === '--cpp-include-dir' && raw[i + 1]) opts.cppIncludeDirs.push(raw[++i]);
         else if (a === '--python-command' && raw[i + 1]) opts.pythonCommand = raw[++i];
         else if (a === '--python-path' && raw[i + 1]) opts.pythonPath = raw[++i];
         else if (a === '--live-profile' && raw[i + 1]) opts.liveProfile = raw[++i];
         else if (a === '--scenario-out-dir' && raw[i + 1]) opts.scenarioOutDir = raw[++i];
         else if (a === '--resource-suffix' && raw[i + 1]) opts.resourceSuffix = raw[++i];
+        else if (a === '--manta') opts.manta = true;
+        else if (a === '--manta-workspace' && raw[i + 1]) opts.mantaWorkspace = raw[++i];
+        else if (a === '--manta-resource' && raw[i + 1]) {
+            opts.manta = true;
+            opts.mantaResource = raw[++i];
+        }
+        else if (a === '--manta-endpoint' && raw[i + 1]) {
+            opts.manta = true;
+            opts.mantaEndpoint = raw[++i];
+        }
+        else if (a === '--manta-create-milvus' && raw[i + 1]) {
+            opts.manta = true;
+            opts.mantaCreateMilvus = raw[++i];
+        }
+        else if (a === '--manta-timeout' && raw[i + 1]) opts.mantaTimeout = parseInt(raw[++i], 10);
         else if (a === '--request-live') opts.requestLive = true;
         else if (a === '--scenario') opts.scenario = true;
         else if (a === '--run-scenarios') {
@@ -154,8 +183,18 @@ Controls:
   --scenario-out-dir <d>  Directory for generated scenario scripts.
   --resource-suffix <s>   Suffix for runtime database/collection names. Env: DOC_VERIFY_RESOURCE_SUFFIX.
   --go-module-dir <dir>   Go module dir for module-aware Go scenario checks. Env: DOC_VERIFY_GO_MODULE_DIR.
+  --node-sdk-repo <dir>   Local @zilliz/milvus2-sdk-node checkout for JS runtime. Env: DOC_VERIFY_NODE_SDK_REPO.
+  --cpp-sdk-repo <dir>    Add local milvus-sdk-cpp headers. Env: DOC_VERIFY_CPP_SDK_REPO.
+  --cpp-include-dir <dir> Extra C/C++ include directory. Repeatable. Env: DOC_VERIFY_CPP_INCLUDE_DIRS.
   --python-command <cmd>  Python executable for Python checks. Env: DOC_VERIFY_PYTHON.
   --python-path <path>    Extra PYTHONPATH for Python scenario runtime. Env: DOC_VERIFY_PYTHONPATH.
+  --manta                 Run an explicit Manta runtime verification job.
+  --manta-workspace <w>   Manta workspace for runtime jobs. Env: DOC_VERIFY_MANTA_WORKSPACE.
+  --manta-resource <id>   Reuse a Manta Milvus resource and its endpoint. Env: DOC_VERIFY_MANTA_RESOURCE.
+  --manta-endpoint <uri>  Internal Milvus endpoint for the Manta runtime job. Env: DOC_VERIFY_MANTA_ENDPOINT.
+  --manta-create-milvus <version-or-image>
+                         Create a temporary Milvus resource through Manta first. Env: DOC_VERIFY_MANTA_CREATE_MILVUS.
+  --manta-timeout <sec>   Manta job wait/follow timeout. Env: DOC_VERIFY_MANTA_TIMEOUT.
   --no-harness            Disable Java/Go partial-snippet harness checks.
   --extract-only          Do not run checks.
   --report <path>         Default: ${DEFAULT_REPORT}
@@ -450,6 +489,43 @@ function runCommand(command, args, options = {}) {
     };
 }
 
+function runCommandRaw(command, args, options = {}) {
+    const result = spawnSync(command, args, {
+        cwd: options.cwd,
+        timeout: options.timeout,
+        encoding: 'utf8',
+        maxBuffer: options.maxBuffer || 10 * 1024 * 1024,
+        env: options.env || process.env,
+    });
+    return {
+        command: [command, ...args].join(' '),
+        status: result.status,
+        signal: result.signal,
+        stdout: String(result.stdout || ''),
+        stderr: String(result.stderr || ''),
+        error: result.error ? result.error.message : null,
+    };
+}
+
+function parseJsonOutput(text) {
+    const raw = String(text || '').trim();
+    if (!raw) return null;
+    try {
+        return JSON.parse(raw);
+    } catch {
+        const start = raw.indexOf('{');
+        const end = raw.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            try {
+                return JSON.parse(raw.slice(start, end + 1));
+            } catch {
+                return null;
+            }
+        }
+    }
+    return null;
+}
+
 function envWithPythonPath(opts) {
     if (!opts.pythonPath) return process.env;
     const existing = process.env.PYTHONPATH || '';
@@ -678,7 +754,7 @@ function verifySnippet(snippet, classification, opts) {
                 return verifyJava(code, tmp, timeout, opts);
             case 'cpp':
             case 'c':
-                return verifyCpp(code, tmp, timeout, lang);
+                return verifyCpp(code, tmp, timeout, lang, opts);
             default:
                 return { status: 'skipped', detail: `no verifier for ${lang}` };
         }
@@ -880,15 +956,135 @@ function indentNonEmpty(text, prefix) {
         .join('\n');
 }
 
-function verifyCpp(code, tmp, timeout, lang) {
-    if (!/#include|int\s+main\s*\(/.test(code)) return { status: 'manual', detail: `${lang} snippet is partial` };
+function verifyCpp(code, tmp, timeout, lang, opts) {
+    if (lang === 'c' && !/#include|int\s+main\s*\(/.test(code)) return { status: 'manual', detail: 'c snippet is partial' };
+    if (lang === 'cpp' && !/\b(?:int|auto)\s+main\s*\(/.test(code) && opts.harness) {
+        return verifyCppFragment(code, tmp, timeout, opts);
+    }
+    if (!/#include|\b(?:int|auto)\s+main\s*\(/.test(code)) return { status: 'manual', detail: `${lang} snippet is partial` };
     const ext = lang === 'c' ? 'c' : 'cpp';
     const compiler = lang === 'c' ? 'cc' : (commandExists('clang++') ? 'clang++' : 'g++');
     const file = writeTemp(tmp, `snippet.${ext}`, code);
-    const result = runCommand(compiler, ['-fsyntax-only', file], { cwd: tmp, timeout });
-    return result.status === 0
-        ? { status: 'passed', detail: `${compiler} -fsyntax-only passed`, result }
-        : { status: 'failed', detail: `${compiler} syntax check failed`, result };
+    const args = cppCompileArgs(lang, opts, file);
+    const result = runCommand(compiler, args, { cwd: tmp, timeout });
+    return cppVerificationResult(result, `${compiler} ${args.filter(arg => arg !== file).join(' ')} passed`, `${compiler} syntax check failed`, null, opts);
+}
+
+function verifyCppFragment(code, tmp, timeout, opts) {
+    const compiler = commandExists('clang++') ? 'clang++' : 'g++';
+    const { includes, body } = splitCppIncludes(code);
+    const includeSet = new Set(includes);
+    for (const line of inferredCppIncludes(body)) includeSet.add(line);
+    const wrapped = [
+        Array.from(includeSet).sort().join('\n'),
+        '',
+        'int main() {',
+        indentNonEmpty(body, '    '),
+        '    return 0;',
+        '}',
+        '',
+    ].filter(Boolean).join('\n');
+    const file = writeTemp(tmp, 'snippet_fragment.cpp', wrapped);
+    const args = cppCompileArgs('cpp', opts, file);
+    const result = runCommand(compiler, args, { cwd: tmp, timeout });
+    return cppVerificationResult(
+        result,
+        'c++ fragment harness compiled with -fsyntax-only',
+        'c++ fragment harness syntax failed',
+        { type: 'cpp-fragment', strength: 'compile' },
+        opts
+    );
+}
+
+function splitCppIncludes(code) {
+    const includes = [];
+    const body = [];
+    for (const line of String(code || '').split('\n')) {
+        if (/^\s*#\s*include\b/.test(line)) includes.push(line.trim());
+        else body.push(line);
+    }
+    return { includes, body: body.join('\n').trim() };
+}
+
+function inferredCppIncludes(body) {
+    const includes = [
+        '#include <cstdint>',
+        '#include <iostream>',
+        '#include <memory>',
+        '#include <string>',
+        '#include <utility>',
+        '#include <vector>',
+    ];
+    if (/\bmilvus::|\bMilvusClient\b/.test(body)) includes.push('#include <milvus/MilvusClientV2.h>');
+    return includes;
+}
+
+function cppCompileArgs(lang, opts, file) {
+    const args = [];
+    if (lang === 'cpp') args.push('-std=c++17');
+    args.push('-fsyntax-only');
+    args.push(...cppIncludeArgs(opts));
+    args.push(file);
+    return args;
+}
+
+function cppIncludeArgs(opts) {
+    const dirs = [];
+    if (opts.cppSdkRepo) {
+        const repo = path.resolve(opts.cppSdkRepo);
+        dirs.push(path.join(repo, 'src', 'include'));
+    }
+    for (const dir of opts.cppIncludeDirs || []) dirs.push(path.resolve(dir));
+    if (process.platform === 'darwin') {
+        const sdkRoot = process.env.SDKROOT || '/Library/Developer/CommandLineTools/SDKs/MacOSX.sdk';
+        dirs.push(path.join(sdkRoot, 'usr', 'include', 'c++', 'v1'));
+    }
+    return dirs.filter(dir => fs.existsSync(dir)).flatMap(dir => ['-I', dir]);
+}
+
+function cppVerificationResult(result, passDetail, failDetail, harness, opts) {
+    if (result.status === 0) {
+        return { status: 'passed', detail: passDetail, ...(harness ? { harness } : {}), result };
+    }
+    const dependency = cppDependencyOrSetupFailure(result.stderr, opts);
+    if (dependency) {
+        return {
+            status: 'manual',
+            detail: dependency,
+            ...(harness ? { harness: { ...harness, strength: 'syntax-with-unresolved-deps' } } : {}),
+            result,
+        };
+    }
+    return { status: 'failed', detail: failDetail, ...(harness ? { harness: { ...harness, strength: 'syntax' } } : {}), result };
+}
+
+function cppDependencyOrSetupFailure(stderr, opts) {
+    const text = String(stderr || '');
+    const syntaxPatterns = [
+        /\bexpected\b/i,
+        /extraneous closing brace/i,
+        /missing terminating/i,
+        /unterminated/i,
+        /invalid suffix/i,
+        /cannot combine with previous/i,
+    ];
+    if (syntaxPatterns.some(re => re.test(text))) return '';
+
+    if (/fatal error: ['"]milvus\/.+['"] file not found/.test(text)) {
+        return opts.cppSdkRepo
+            ? 'c++ SDK header was not found under the configured --cpp-sdk-repo; check repos/milvus-sdk-cpp/src/include'
+            : 'c++ snippet requires Milvus SDK headers; set DOC_VERIFY_CPP_SDK_REPO or --cpp-sdk-repo';
+    }
+    if (/fatal error: ['"](string|vector|memory|iostream|cstdint|utility)['"] file not found/.test(text)) {
+        return 'c++ compiler cannot find standard library headers; install/fix the local C++ toolchain';
+    }
+    if (/fatal error: ['"].+['"] file not found/.test(text)) {
+        return 'c++ snippet requires headers that are not available locally; set --cpp-include-dir or DOC_VERIFY_CPP_INCLUDE_DIRS';
+    }
+    if (/use of undeclared identifier|unknown type name|no template named|does not name a type|was not declared in this scope/.test(text)) {
+        return 'c++ fragment parsed but setup symbols or includes are unresolved';
+    }
+    return '';
 }
 
 function runSnippet(lang, code, tmp, timeout, opts) {
@@ -1086,7 +1282,11 @@ function scenarioResourceSuffix(opts) {
     if (!opts.resourceSuffix) {
         opts.resourceSuffix = `doc_verify_${Date.now().toString(36)}`;
     }
-    return String(opts.resourceSuffix).replace(/[^A-Za-z0-9_]/g, '_');
+    return [opts.resourceSuffix, opts.scenarioScope]
+        .filter(Boolean)
+        .join('_')
+        .replace(/[^A-Za-z0-9_]/g, '_')
+        .slice(0, 120);
 }
 
 function scenarioDatabaseName(opts) {
@@ -1099,12 +1299,47 @@ function scenarioCollectionName(opts) {
     return suffix ? `prod_collection_${suffix}` : 'prod_collection';
 }
 
+function withScenarioScope(opts, source, language) {
+    if (!opts.runScenarios) return opts;
+    const base = scenarioIdBase(source, language || 'scenario').slice(0, 36);
+    return { ...opts, scenarioScope: `${language || 'scenario'}_${base}` };
+}
+
+function scenarioUsesStructArrayFixture(snippets) {
+    const text = snippets.map(snippet => snippet.code || '').join('\n');
+    if (!/\bchunks\s*\[|\bchunks\]/.test(text) && !/"chunks"|'chunks'/.test(text)) return false;
+    if (!/\b(chunk_vector|element_vector|text_vector)\b|chunks\[[^\]]+\]/.test(text)) return false;
+    return !/\bcreate_collection\s*\(|\/collections\/create\b|collection\s+create\b/i.test(text);
+}
+
+function replacePythonCollectionLiterals(text) {
+    return String(text || '')
+        .replace(/(["'])my_database\1/g, 'DOC_VERIFY_DATABASE_NAME')
+        .replace(/(["'])(?:prod_collection|my_collection|books)\1/g, 'DOC_VERIFY_COLLECTION_NAME');
+}
+
+function replaceJavaGoCollectionLiterals(text) {
+    return String(text || '')
+        .replace(/"my_database"/g, 'DOC_VERIFY_DATABASE_NAME')
+        .replace(/"(?:prod_collection|my_collection|books)"/g, 'DOC_VERIFY_COLLECTION_NAME');
+}
+
+function replaceJavaScriptCollectionLiterals(text) {
+    return String(text || '')
+        .replace(/(["'`])my_database\1/g, 'globalThis.DOC_VERIFY_DATABASE_NAME')
+        .replace(/(["'`])(?:prod_collection|my_collection|books)\1/g, 'globalThis.DOC_VERIFY_COLLECTION_NAME');
+}
+
+function replaceBashCollectionLiterals(text) {
+    return String(text || '')
+        .replace(/\bmy_database\b/g, '${DOC_VERIFY_DATABASE_NAME}')
+        .replace(/\b(?:prod_collection|my_collection|books)\b/g, '${DOC_VERIFY_COLLECTION_NAME}');
+}
+
 function replaceScenarioResourceLiterals(code, opts, language) {
     if (!opts.runScenarios) return code;
     if (language === 'python') {
-        let text = String(code || '')
-            .replace(/"my_database"/g, 'DOC_VERIFY_DATABASE_NAME')
-            .replace(/"prod_collection"/g, 'DOC_VERIFY_COLLECTION_NAME')
+        let text = replacePythonCollectionLiterals(code)
             .replace(/OBJECT_URLS\s*=\s*\[\[[\s\S]*?\]\]/m, 'OBJECT_URLS = doc_verify_object_urls()')
             .replace(/^(\s*)ACCESS_KEY\s*=\s*["']YOUR_STORAGE_ACCESS_KEY["']\s*$/gm, '$1ACCESS_KEY = DOC_VERIFY_AWS_ACCESS_KEY')
             .replace(/^(\s*)SECRET_KEY\s*=\s*["']YOUR_STORAGE_SECRET_KEY["']\s*$/gm, '$1SECRET_KEY = DOC_VERIFY_AWS_SECRET_KEY')
@@ -1132,9 +1367,7 @@ function replaceScenarioResourceLiterals(code, opts, language) {
         return text;
     }
     if (language === 'java' || language === 'go') {
-        let text = String(code || '')
-            .replace(/"my_database"/g, 'DOC_VERIFY_DATABASE_NAME')
-            .replace(/"prod_collection"/g, 'DOC_VERIFY_COLLECTION_NAME');
+        let text = replaceJavaGoCollectionLiterals(code);
         if (language === 'java') {
             text = text
                 .replace(/List<Float>\s+queryVector\s*=\s*Arrays\.asList\([\s\S]*?\);/, 'List<Float> queryVector = docVerifyVector(0);')
@@ -1148,14 +1381,10 @@ function replaceScenarioResourceLiterals(code, opts, language) {
         return text;
     }
     if (language === 'javascript') {
-        return String(code || '')
-            .replace(/(["'`])my_database\1/g, 'globalThis.DOC_VERIFY_DATABASE_NAME')
-            .replace(/(["'`])prod_collection\1/g, 'globalThis.DOC_VERIFY_COLLECTION_NAME');
+        return replaceJavaScriptCollectionLiterals(code);
     }
     if (language === 'bash') {
-        return String(code || '')
-            .replace(/\bmy_database\b/g, '${DOC_VERIFY_DATABASE_NAME}')
-            .replace(/\bprod_collection\b/g, '${DOC_VERIFY_COLLECTION_NAME}');
+        return replaceBashCollectionLiterals(code);
     }
     return code;
 }
@@ -1163,13 +1392,25 @@ function replaceScenarioResourceLiterals(code, opts, language) {
 function buildPythonScenario(snippets, opts) {
     if (snippets.length === 0) return null;
     const source = snippets[0].source;
+    opts = withScenarioScope(opts, source, 'python');
     const outDir = path.join(opts.scenarioOutDir, 'python', scenarioIdBase(source, 'python-scenario'));
     fs.mkdirSync(outDir, { recursive: true });
 
+    const shim = createScenarioShimContext('python', snippets, opts);
+    const needsStructArrayFixture = opts.runScenarios && scenarioUsesStructArrayFixture(snippets);
     const body = [];
+    let insertedStructArrayLoad = false;
     for (const snippet of snippets) {
+        if (needsStructArrayFixture && !insertedStructArrayLoad && /\bclient\.search\s*\(/.test(snippet.code || '')) {
+            body.push('doc_verify_load_collection(client)');
+            insertedStructArrayLoad = true;
+        }
         body.push(`# Block ${snippet.index}: ${snippet.section}`);
-        body.push(replaceScenarioResourceLiterals(normalizePythonScenarioCode(snippet.code), opts, 'python'));
+        const normalized = shim.normalizeSnippet(
+            snippet,
+            replaceScenarioResourceLiterals(normalizePythonScenarioCode(snippet.code), opts, 'python')
+        );
+        body.push(normalized);
         body.push('');
     }
 
@@ -1258,6 +1499,13 @@ function buildPythonScenario(snippets, opts) {
         '            raise RuntimeError(data.get("reason") or json.dumps(payload))',
         '        time.sleep(int(os.getenv("DOC_VERIFY_IMPORT_POLL_SECONDS", "5")))',
         '    raise TimeoutError(f"Bulk import job did not complete before timeout: {job_id}")',
+        ...(needsStructArrayFixture ? pythonStructArrayFixtureHelpers() : []),
+        ...shim.helpers,
+        ...shim.setup,
+        ...(needsStructArrayFixture ? [
+            '',
+            'doc_verify_prepare_struct_array_fixture(doc_verify_get_client())',
+        ] : []),
         '',
         ...body,
     ].join('\n');
@@ -1272,8 +1520,77 @@ function buildPythonScenario(snippets, opts) {
         snippetCount: snippets.length,
         snippetIds: snippets.map(snippet => snippet.id),
         scenarioPath: file,
+        shims: scenarioShimSummary(shim),
         ...result,
     };
+}
+
+function pythonStructArrayFixtureHelpers() {
+    return [
+        '',
+        'def doc_verify_struct_vector(row, offset=0):',
+        '    return [float(((row + offset + i) % 11) + 1) / 11.0 for i in range(5)]',
+        '',
+        'def doc_verify_struct_rows():',
+        '    return [',
+        '        {',
+        '            "id": 1,',
+        '            "doc_status": "active",',
+        '            "chunks": [',
+        '                {"text": "Red book introduction", "score": 0.95, "chunk_vector": doc_verify_struct_vector(0), "element_vector": doc_verify_struct_vector(1), "text_vector": doc_verify_struct_vector(2)},',
+        '                {"text": "Blue book appendix", "score": 0.70, "chunk_vector": doc_verify_struct_vector(3), "element_vector": doc_verify_struct_vector(4), "text_vector": doc_verify_struct_vector(5)},',
+        '            ],',
+        '        },',
+        '        {',
+        '            "id": 2,',
+        '            "doc_status": "active",',
+        '            "chunks": [',
+        '                {"text": "Red chapter with examples", "score": 0.88, "chunk_vector": doc_verify_struct_vector(6), "element_vector": doc_verify_struct_vector(7), "text_vector": doc_verify_struct_vector(8)},',
+        '            ],',
+        '        },',
+        '        {',
+        '            "id": 3,',
+        '            "doc_status": "archived",',
+        '            "chunks": [',
+        '                {"text": "Archived reference", "score": 0.55, "chunk_vector": doc_verify_struct_vector(9), "element_vector": doc_verify_struct_vector(10), "text_vector": doc_verify_struct_vector(0)},',
+        '            ],',
+        '        },',
+        '    ]',
+        '',
+        'def doc_verify_prepare_struct_array_fixture(client):',
+        '    from pymilvus import DataType',
+        '    try:',
+        '        if client.has_collection(collection_name=DOC_VERIFY_COLLECTION_NAME):',
+        '            return',
+        '    except Exception:',
+        '        pass',
+        '    schema = client.create_schema()',
+        '    schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True, auto_id=False)',
+        '    schema.add_field(field_name="doc_status", datatype=DataType.VARCHAR, max_length=64)',
+        '    struct_schema = client.create_struct_field_schema()',
+        '    struct_schema.add_field("text", DataType.VARCHAR, max_length=65535)',
+        '    struct_schema.add_field("score", DataType.FLOAT)',
+        '    struct_schema.add_field("chunk_vector", DataType.FLOAT_VECTOR, dim=5)',
+        '    struct_schema.add_field("element_vector", DataType.FLOAT_VECTOR, dim=5)',
+        '    struct_schema.add_field("text_vector", DataType.FLOAT_VECTOR, dim=5)',
+        '    schema.add_field("chunks", datatype=DataType.ARRAY, element_type=DataType.STRUCT, struct_schema=struct_schema, max_capacity=100)',
+        '    client.create_collection(collection_name=DOC_VERIFY_COLLECTION_NAME, schema=schema)',
+        '    client.insert(collection_name=DOC_VERIFY_COLLECTION_NAME, data=doc_verify_struct_rows())',
+        '    index_params = client.prepare_index_params()',
+        '    index_params.add_index(field_name="chunks[chunk_vector]", index_type="AUTOINDEX", metric_type="MAX_SIM_COSINE")',
+        '    index_params.add_index(field_name="chunks[element_vector]", index_type="AUTOINDEX", metric_type="COSINE")',
+        '    index_params.add_index(field_name="chunks[text_vector]", index_type="AUTOINDEX", metric_type="COSINE")',
+        '    index_params.add_index(field_name="chunks[text]", index_type="INVERTED")',
+        '    client.create_index(collection_name=DOC_VERIFY_COLLECTION_NAME, index_params=index_params)',
+        '',
+        'def doc_verify_load_collection(client):',
+        '    try:',
+        '        client.load_collection(collection_name=DOC_VERIFY_COLLECTION_NAME)',
+        '    except Exception as exc:',
+        '        if "loaded" not in str(exc).lower():',
+        '            raise',
+        '    time.sleep(int(os.getenv("DOC_VERIFY_LOAD_WAIT_SECONDS", "2")))',
+    ];
 }
 
 function normalizePythonScenarioCode(code) {
@@ -1317,17 +1634,20 @@ function verifyPythonScenario(file, opts) {
 function buildGoScenario(snippets, opts) {
     if (snippets.length === 0) return null;
     const source = snippets[0].source;
+    opts = withScenarioScope(opts, source, 'go');
     const outDir = path.join(opts.scenarioOutDir, 'go', scenarioIdBase(source, 'go-scenario'));
     fs.mkdirSync(outDir, { recursive: true });
 
+    const shim = createScenarioShimContext('go', snippets, opts);
     const importSpecs = new Set(['"os"']);
     if (opts.runScenarios) importSpecs.add('"time"');
+    for (const spec of shim.imports) importSpecs.add(spec);
     const body = [];
     for (const snippet of snippets) {
         const parts = splitGoPackageAndImports(snippet.code);
         for (const spec of goImportSpecs(parts.imports)) importSpecs.add(spec);
         body.push(`// Block ${snippet.index}: ${snippet.section}`);
-        body.push(replaceScenarioResourceLiterals(parts.body, opts, 'go'));
+        body.push(shim.normalizeSnippet(snippet, replaceScenarioResourceLiterals(parts.body, opts, 'go')));
         body.push('');
     }
 
@@ -1388,6 +1708,7 @@ function buildGoScenario(snippets, opts) {
         ...goRuntimeHelpers,
         '',
         'func main() {',
+        indentNonEmpty(shim.setup.join('\n'), '    '),
         indentNonEmpty(body.join('\n'), '    '),
         '}',
         '',
@@ -1404,6 +1725,7 @@ function buildGoScenario(snippets, opts) {
         snippetCount: snippets.length,
         snippetIds: snippets.map(snippet => snippet.id),
         scenarioPath: file,
+        shims: scenarioShimSummary(shim),
         goModuleDir: opts.goModuleDir ? path.resolve(opts.goModuleDir) : null,
         ...result,
     };
@@ -1435,14 +1757,37 @@ function goImportSpecs(imports) {
 }
 
 function renderGoImports(specs) {
-    const sorted = Array.from(specs).sort();
+    const sorted = dedupeGoImportSpecs(specs).sort();
     if (sorted.length === 0) return '';
     return ['import (', ...sorted.map(spec => `    ${spec}`), ')'].join('\n');
 }
 
+function dedupeGoImportSpecs(specs) {
+    const byPath = new Map();
+    for (const spec of specs) {
+        const text = String(spec || '').trim();
+        const pathMatch = text.match(/"([^"]+)"/);
+        const importPath = pathMatch ? pathMatch[1] : text;
+        const existing = byPath.get(importPath);
+        if (!existing || /^\w+\s+"/.test(text)) byPath.set(importPath, text);
+    }
+    return Array.from(byPath.values());
+}
+
+function goModuleRequireVersion(moduleName) {
+    const major = String(moduleName || '').match(/\/v([2-9]\d*)$/);
+    return major ? `v${major[1]}.0.0` : 'v0.0.0';
+}
+
 function prepareGoScenarioModule(outDir, opts) {
     if (!opts.goModuleDir) return;
-    const moduleDir = path.resolve(opts.goModuleDir);
+    let moduleDir = path.resolve(opts.goModuleDir);
+    const scenarioFile = path.join(outDir, 'DocsScenario.go');
+    const scenarioText = fs.existsSync(scenarioFile) ? fs.readFileSync(scenarioFile, 'utf8') : '';
+    const nestedClientDir = path.join(moduleDir, 'client');
+    if (/github\.com\/milvus-io\/milvus\/client\/v2\/milvusclient/.test(scenarioText) && fs.existsSync(path.join(nestedClientDir, 'go.mod'))) {
+        moduleDir = nestedClientDir;
+    }
     const goMod = path.join(moduleDir, 'go.mod');
     if (!fs.existsSync(goMod)) return;
 
@@ -1451,13 +1796,22 @@ function prepareGoScenarioModule(outDir, opts) {
     const moduleName = moduleMatch ? moduleMatch[1] : '';
     const goVersionMatch = text.match(/^\s*go\s+(\S+)/m);
     const goVersion = goVersionMatch ? goVersionMatch[1] : '1.22';
+    const replaceLines = [];
+    if (moduleName) replaceLines.push(`replace ${moduleName} => ${moduleDir}`);
+    const repoRoot = path.resolve(opts.goModuleDir);
+    const localPkgDir = path.join(repoRoot, 'pkg');
+    if (fs.existsSync(path.join(localPkgDir, 'go.mod'))) {
+        const pkgText = fs.readFileSync(path.join(localPkgDir, 'go.mod'), 'utf8');
+        const pkgModuleMatch = pkgText.match(/^\s*module\s+(\S+)/m);
+        if (pkgModuleMatch) replaceLines.push(`replace ${pkgModuleMatch[1]} => ${localPkgDir}`);
+    }
     const generated = [
         'module docsverify',
         '',
         `go ${goVersion}`,
         '',
-        moduleName ? `require ${moduleName} v0.0.0` : '',
-        moduleName ? `replace ${moduleName} => ${moduleDir}` : '',
+        moduleName ? `require ${moduleName} ${goModuleRequireVersion(moduleName)}` : '',
+        ...replaceLines,
         '',
     ].filter(Boolean).join('\n');
     fs.writeFileSync(path.join(outDir, 'go.mod'), generated);
@@ -1503,19 +1857,22 @@ function verifyGoScenario(file, opts) {
 }
 
 function looksLikeGoManualFailure(text) {
-    return /no required module provides package|package .* is not in std|cannot find package|undefined:|declared and not used|imported and not used|missing go\.sum entry|go: updates to go\.mod needed|go: downloading go\d|toolchain|requires go >=/i.test(String(text || ''));
+    return /no required module provides package|package .* is not in std|cannot find package|undefined:|declared and not used|imported and not used|missing go\.sum entry|go: updates to go\.mod needed|go: downloading go\d|toolchain|requires go >=|no new variables on left side|has no field or method|cannot use .* as .* value|not enough arguments|too many arguments/i.test(String(text || ''));
 }
 
 function buildJavaScenario(snippets, opts) {
     if (snippets.length === 0) return null;
     const source = snippets[0].source;
+    opts = withScenarioScope(opts, source, 'java');
     const idBase = scenarioIdBase(source, 'java-scenario');
     const outDir = path.join(opts.scenarioOutDir, 'java', idBase);
     fs.mkdirSync(outDir, { recursive: true });
 
+    const shim = createScenarioShimContext('java', snippets, opts);
     const imports = new Set(['import java.util.*;']);
+    for (const line of shim.imports) imports.add(line);
     if (opts.runScenarios) {
-        imports.add('import com.google.gson.Gson;');
+        imports.add('import com.google.gson.JsonArray;');
         imports.add('import com.google.gson.JsonObject;');
         imports.add('import io.milvus.v2.service.vector.request.InsertReq;');
     }
@@ -1524,7 +1881,7 @@ function buildJavaScenario(snippets, opts) {
         const parts = splitJavaImports(snippet.code);
         for (const line of parts.imports.split('\n').filter(Boolean)) imports.add(line);
         body.push(`// Block ${snippet.index}: ${snippet.section}`);
-        body.push(replaceScenarioResourceLiterals(parts.body, opts, 'java'));
+        body.push(shim.normalizeSnippet(snippet, replaceScenarioResourceLiterals(parts.body, opts, 'java')));
         body.push('');
     }
     addInferredJavaImports(imports, body.join('\n'), opts);
@@ -1539,13 +1896,16 @@ function buildJavaScenario(snippets, opts) {
         '    }',
         '',
         '    private static void docVerifyInsertRows(MilvusClientV2 client, String databaseName, String collectionName) throws Exception {',
-        '        Gson gson = new Gson();',
         '        List<JsonObject> rows = new ArrayList<>();',
         '        for (int row = 0; row < 3; row++) {',
         '            JsonObject item = new JsonObject();',
         '            item.addProperty("product_id", row + 1);',
         '            item.addProperty("product_name", "doc verify product " + (row + 1));',
-        '            item.add("embedding", gson.toJsonTree(docVerifyVector(row)));',
+        '            JsonArray embedding = new JsonArray();',
+        '            for (Float value : docVerifyVector(row)) {',
+        '                embedding.add(value);',
+        '            }',
+        '            item.add("embedding", embedding);',
         '            rows.add(item);',
         '        }',
         '        client.insert(InsertReq.builder()',
@@ -1569,6 +1929,7 @@ function buildJavaScenario(snippets, opts) {
         '        String CLOUD_PLATFORM_ENDPOINT = System.getenv().getOrDefault("CLOUD_PLATFORM_ENDPOINT", System.getenv("DOC_VERIFY_CLOUD_PLATFORM_ENDPOINT"));',
         `        String DOC_VERIFY_DATABASE_NAME = System.getenv().getOrDefault("DOC_VERIFY_DATABASE_NAME", "${scenarioDatabaseName(opts)}");`,
         `        String DOC_VERIFY_COLLECTION_NAME = System.getenv().getOrDefault("DOC_VERIFY_COLLECTION_NAME", "${scenarioCollectionName(opts)}");`,
+        ...shim.setup,
         indentNonEmpty(body.join('\n'), '        '),
         '    }',
         '}',
@@ -1585,6 +1946,7 @@ function buildJavaScenario(snippets, opts) {
         snippetCount: snippets.length,
         snippetIds: snippets.map(snippet => snippet.id),
         scenarioPath: file,
+        shims: scenarioShimSummary(shim),
         classpathProvided: Boolean(opts.javaClasspath),
         classpathSource: opts.javaClasspathSource || null,
         classpathError: opts.javaClasspathError || null,
@@ -1621,22 +1983,45 @@ function verifyJavaScenario(file, opts) {
 function buildJavaScriptScenario(snippets, opts) {
     if (snippets.length === 0) return null;
     const source = snippets[0].source;
+    opts = withScenarioScope(opts, source, 'javascript');
     const outDir = path.join(opts.scenarioOutDir, 'javascript', scenarioIdBase(source, 'javascript-scenario'));
     fs.mkdirSync(outDir, { recursive: true });
 
+    const shim = createScenarioShimContext('javascript', snippets, opts);
+    const imports = new Set();
+    const globalDeclarations = new Set();
     const body = [];
     for (const snippet of snippets) {
+        const normalized = shim.normalizeSnippet(
+            snippet,
+            replaceScenarioResourceLiterals(normalizeJavaScriptScenarioCode(snippet.code), opts, 'javascript')
+        );
+        const parts = splitJavaScriptImports(normalized);
+        for (const line of parts.imports) imports.add(line);
+        const declarations = declaredJavaScriptNames(parts.body);
+        const scoped = declarations.some(name => globalDeclarations.has(name));
         body.push(`// Block ${snippet.index}: ${snippet.section}`);
-        body.push(replaceScenarioResourceLiterals(normalizeJavaScriptScenarioCode(snippet.code), opts, 'javascript'));
+        if (scoped) {
+            body.push('{');
+            body.push(indentNonEmpty(parts.body, '  '));
+            body.push('}');
+        } else {
+            body.push(parts.body);
+            for (const name of declarations) globalDeclarations.add(name);
+        }
         body.push('');
     }
 
     const sourceText = [
+        ...Array.from(imports).sort(),
+        '',
         'globalThis.SERVING_CLUSTER_ENDPOINT = process.env.SERVING_CLUSTER_ENDPOINT || process.env.ZILLIZ_CLUSTER_ENDPOINT || process.env.DOC_VERIFY_SERVING_CLUSTER_ENDPOINT || "";',
         'globalThis.TOKEN = process.env.TOKEN || process.env.ZILLIZ_CLUSTER_CREDENTIAL || process.env.ZILLIZ_API_KEY || process.env.DOC_VERIFY_TOKEN || process.env.DOC_VERIFY_ZILLIZ_API_KEY || "";',
         'globalThis.CLOUD_PLATFORM_ENDPOINT = process.env.CLOUD_PLATFORM_ENDPOINT || process.env.DOC_VERIFY_CLOUD_PLATFORM_ENDPOINT || "";',
         `globalThis.DOC_VERIFY_DATABASE_NAME = process.env.DOC_VERIFY_DATABASE_NAME || "${scenarioDatabaseName(opts)}";`,
         `globalThis.DOC_VERIFY_COLLECTION_NAME = process.env.DOC_VERIFY_COLLECTION_NAME || "${scenarioCollectionName(opts)}";`,
+        '',
+        ...shim.header,
         '',
         ...body,
     ].join('\n');
@@ -1651,6 +2036,8 @@ function buildJavaScriptScenario(snippets, opts) {
         snippetCount: snippets.length,
         snippetIds: snippets.map(snippet => snippet.id),
         scenarioPath: file,
+        shims: scenarioShimSummary(shim),
+        nodeSdkRepo: opts.nodeSdkRepo ? path.resolve(opts.nodeSdkRepo) : null,
         ...result,
     };
 }
@@ -1658,6 +2045,25 @@ function buildJavaScriptScenario(snippets, opts) {
 function normalizeJavaScriptScenarioCode(code) {
     return String(code || '')
         .replace(/^#!.*\n/, '');
+}
+
+function splitJavaScriptImports(code) {
+    const imports = [];
+    const body = [];
+    for (const line of String(code || '').split('\n')) {
+        if (/^\s*import\s+/.test(line)) imports.push(line.trim().replace(/;?$/, ';'));
+        else body.push(line);
+    }
+    return { imports, body: body.join('\n').trim() };
+}
+
+function declaredJavaScriptNames(code) {
+    const stripped = stripJavaScriptCommentsAndStrings(code);
+    const names = [];
+    const re = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)/g;
+    let match;
+    while ((match = re.exec(stripped)) !== null) names.push(match[1]);
+    return names;
 }
 
 function javascriptScenarioUsesModuleSyntax(code) {
@@ -1686,22 +2092,163 @@ function verifyJavaScriptScenarioProgram(file, opts) {
     if (!opts.runScenarios) return { status: 'passed', detail: 'javascript scenario node --check passed', result };
     const runtimeGate = scenarioRuntimeGate(opts, 'javascript');
     if (runtimeGate) return { status: 'passed', detail: 'javascript scenario node --check passed', result, runtime: runtimeGate };
+    const resolver = prepareNodeSdkResolver(path.dirname(file), opts, file);
+    if (resolver.status === 'manual') {
+        return { status: 'passed', detail: 'javascript scenario node --check passed', result, runtime: resolver };
+    }
     const runResult = runCommand('node', [file], { cwd, timeout: opts.timeout });
     return runResult.status === 0
         ? { status: 'passed', detail: 'javascript scenario run passed', result, runtime: { status: 'passed', detail: 'javascript scenario run passed', result: runResult } }
         : { status: 'failed', detail: 'javascript scenario run failed', result, runtime: { status: 'failed', detail: 'javascript scenario run failed', result: runResult } };
 }
 
+function prepareNodeSdkResolver(cwd, opts, file) {
+    const sourceText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+    if (!/@zilliz\/milvus2-sdk-node|\bmilvusClient\b|\bMilvusClient\b/.test(sourceText)) {
+        return { status: 'passed', detail: 'javascript scenario does not require local Milvus Node SDK resolution' };
+    }
+
+    const resolved = runCommand('node', ['-e', 'require.resolve("@zilliz/milvus2-sdk-node")'], { cwd, timeout: opts.timeout });
+    if (resolved.status === 0) {
+        return { status: 'passed', detail: 'javascript Milvus Node SDK resolved from scenario directory' };
+    }
+
+    if (!opts.nodeSdkRepo) {
+        return {
+            status: 'manual',
+            detail: 'javascript scenario runtime requires @zilliz/milvus2-sdk-node; set DOC_VERIFY_NODE_SDK_REPO or --node-sdk-repo',
+        };
+    }
+
+    const repo = path.resolve(opts.nodeSdkRepo);
+    const packageJson = path.join(repo, 'package.json');
+    const distDir = path.join(repo, 'dist');
+    if (!fs.existsSync(packageJson)) {
+        return { status: 'manual', detail: `Node SDK repo is missing package.json: ${repo}` };
+    }
+    if (!fs.existsSync(distDir)) {
+        const build = buildNodeSdkRepo(repo, opts);
+        if (build.status !== 'passed') {
+            return {
+                status: 'manual',
+                detail: `Node SDK repo build did not produce ${repo}/dist; Node runtime cannot import @zilliz/milvus2-sdk-node`,
+                nodeSdkBuild: build,
+            };
+        }
+    }
+
+    const scopedDir = path.join(cwd, 'node_modules', '@zilliz');
+    const linkPath = path.join(scopedDir, 'milvus2-sdk-node');
+    fs.mkdirSync(scopedDir, { recursive: true });
+    try {
+        if (fs.existsSync(linkPath) || fs.lstatSync(linkPath).isSymbolicLink()) fs.rmSync(linkPath, { recursive: true, force: true });
+    } catch {
+        // lstatSync throws when the link does not exist; mkdir above is enough in that case.
+    }
+    fs.symlinkSync(repo, linkPath, 'dir');
+    return { status: 'passed', detail: `javascript Milvus Node SDK linked from ${repo}` };
+}
+
+function buildNodeSdkRepo(repo, opts) {
+    const record = {
+        repo,
+        status: 'manual',
+        detail: '',
+        install: null,
+        build: null,
+    };
+    const distDir = path.join(repo, 'dist');
+    if (fs.existsSync(distDir)) {
+        record.status = 'passed';
+        record.detail = 'Node SDK dist already exists';
+        opts.nodeSdkBuilds.push(record);
+        return record;
+    }
+
+    const packageJson = path.join(repo, 'package.json');
+    if (!fs.existsSync(packageJson)) {
+        record.detail = `Node SDK repo is missing package.json: ${repo}`;
+        opts.nodeSdkBuilds.push(record);
+        return record;
+    }
+
+    const hasNodeModules = fs.existsSync(path.join(repo, 'node_modules'));
+    const hasYarn = commandExists('yarn');
+    const hasNpm = commandExists('npm');
+    const hasYarnLock = fs.existsSync(path.join(repo, 'yarn.lock'));
+    const hasPackageLock = fs.existsSync(path.join(repo, 'package-lock.json'));
+
+    if (!hasNodeModules) {
+        if (hasYarn && hasYarnLock) {
+            record.install = runCommand('yarn', ['install', '--frozen-lockfile'], { cwd: repo, timeout: opts.timeout });
+        } else if (hasNpm && hasPackageLock) {
+            record.install = runCommand('npm', ['ci'], { cwd: repo, timeout: opts.timeout });
+        } else if (hasNpm) {
+            record.install = runCommand('npm', ['install'], { cwd: repo, timeout: opts.timeout });
+        } else {
+            record.detail = 'Node SDK dependencies are missing and neither yarn nor npm is available';
+            opts.nodeSdkBuilds.push(record);
+            return record;
+        }
+        if (record.install.status !== 0) {
+            record.status = 'failed';
+            record.detail = 'Node SDK dependency install failed';
+            opts.nodeSdkBuilds.push(record);
+            return record;
+        }
+    }
+
+    if (hasYarn) {
+        record.build = runCommand('yarn', ['build'], { cwd: repo, timeout: opts.timeout });
+    } else if (hasNpm) {
+        record.build = runCommand('npm', ['run', 'build'], { cwd: repo, timeout: opts.timeout });
+    } else {
+        record.detail = 'Node SDK dist is missing and neither yarn nor npm is available';
+        opts.nodeSdkBuilds.push(record);
+        return record;
+    }
+
+    if (record.build.status !== 0) {
+        record.status = 'failed';
+        record.detail = 'Node SDK build failed';
+        opts.nodeSdkBuilds.push(record);
+        return record;
+    }
+
+    if (!fs.existsSync(distDir)) {
+        record.status = 'failed';
+        record.detail = 'Node SDK build completed but dist/ is still missing';
+        opts.nodeSdkBuilds.push(record);
+        return record;
+    }
+
+    record.status = 'passed';
+    record.detail = 'Node SDK build produced dist/';
+    opts.nodeSdkBuilds.push(record);
+    return record;
+}
+
 function buildBashScenario(snippets, opts) {
     if (snippets.length === 0) return null;
     const source = snippets[0].source;
+    opts = withScenarioScope(opts, source, 'bash');
     const outDir = path.join(opts.scenarioOutDir, 'bash', scenarioIdBase(source, 'bash-scenario'));
     fs.mkdirSync(outDir, { recursive: true });
 
+    const shim = createScenarioShimContext('bash', snippets, opts);
+    const needsStructArrayFixture = opts.runScenarios && scenarioUsesStructArrayFixture(snippets);
     const body = [];
+    let insertedStructArrayLoad = false;
     for (const snippet of snippets) {
+        if (needsStructArrayFixture && !insertedStructArrayLoad && /\/entities\/search\b|vector search/i.test(snippet.code || '')) {
+            body.push('doc_verify_load_struct_array_collection');
+            insertedStructArrayLoad = true;
+        }
         body.push(`# Block ${snippet.index}: ${snippet.section}`);
-        body.push(replaceScenarioResourceLiterals(normalizeBashScenarioCode(snippet.code), opts, 'bash'));
+        body.push(shim.normalizeSnippet(
+            snippet,
+            replaceScenarioResourceLiterals(normalizeBashScenarioCode(snippet.code), opts, 'bash')
+        ));
         body.push('');
     }
 
@@ -1714,6 +2261,11 @@ function buildBashScenario(snippets, opts) {
         `DOC_VERIFY_DATABASE_NAME="\${DOC_VERIFY_DATABASE_NAME:-${scenarioDatabaseName(opts)}}"`,
         `DOC_VERIFY_COLLECTION_NAME="\${DOC_VERIFY_COLLECTION_NAME:-${scenarioCollectionName(opts)}}"`,
         'export SERVING_CLUSTER_ENDPOINT TOKEN CLOUD_PLATFORM_ENDPOINT DOC_VERIFY_DATABASE_NAME DOC_VERIFY_COLLECTION_NAME',
+        ...(needsStructArrayFixture ? bashStructArrayFixtureHelpers() : []),
+        ...(needsStructArrayFixture ? [
+            '',
+            'doc_verify_prepare_struct_array_collection',
+        ] : []),
         '',
         ...body,
     ].join('\n');
@@ -1728,8 +2280,90 @@ function buildBashScenario(snippets, opts) {
         snippetCount: snippets.length,
         snippetIds: snippets.map(snippet => snippet.id),
         scenarioPath: file,
+        shims: scenarioShimSummary(shim),
         ...result,
     };
+}
+
+function bashStructArrayFixtureHelpers() {
+    return [
+        '',
+        'doc_verify_rest_auth_args=()',
+        'if [[ -n "${TOKEN:-}" ]]; then',
+        '  doc_verify_rest_auth_args=(-H "Authorization: Bearer ${TOKEN}")',
+        'fi',
+        '',
+        'doc_verify_struct_vector_json() {',
+        '  local row="${1:-0}"',
+        '  local out="["',
+        '  local i value',
+        '  for i in 0 1 2 3 4; do',
+        '    value=$(awk -v row="$row" -v i="$i" \'BEGIN { printf "%.6f", (((row + i) % 11) + 1) / 11 }\')',
+        '    if [[ "$i" != "0" ]]; then out+=","; fi',
+        '    out+="$value"',
+        '  done',
+        '  out+="]"',
+        '  printf "%s" "$out"',
+        '}',
+        '',
+        'doc_verify_prepare_struct_array_collection() {',
+        '  curl -fsS -X POST "${SERVING_CLUSTER_ENDPOINT}/v2/vectordb/collections/create" \\',
+        '    -H "Content-Type: application/json" "${doc_verify_rest_auth_args[@]}" \\',
+        '    -d "$(cat <<JSON',
+        '{',
+        '  "collectionName": "${DOC_VERIFY_COLLECTION_NAME}",',
+        '  "schema": {',
+        '    "autoID": false,',
+        '    "fields": [',
+        '      {"fieldName": "id", "dataType": "Int64", "isPrimary": true},',
+        '      {"fieldName": "doc_status", "dataType": "VarChar", "elementTypeParams": {"max_length": "64"}},',
+        '      {"fieldName": "chunks", "dataType": "Array", "elementDataType": "Struct", "maxCapacity": 100, "fields": [',
+        '        {"fieldName": "text", "dataType": "VarChar", "elementTypeParams": {"max_length": "65535"}},',
+        '        {"fieldName": "score", "dataType": "Float"},',
+        '        {"fieldName": "chunk_vector", "dataType": "FloatVector", "elementTypeParams": {"dim": "5"}},',
+        '        {"fieldName": "element_vector", "dataType": "FloatVector", "elementTypeParams": {"dim": "5"}},',
+        '        {"fieldName": "text_vector", "dataType": "FloatVector", "elementTypeParams": {"dim": "5"}}',
+        '      ]}',
+        '    ]',
+        '  }',
+        '}',
+        'JSON',
+        ')" || true',
+        '  local v0 v1 v2 v3',
+        '  v0="$(doc_verify_struct_vector_json 0)"',
+        '  v1="$(doc_verify_struct_vector_json 1)"',
+        '  v2="$(doc_verify_struct_vector_json 2)"',
+        '  v3="$(doc_verify_struct_vector_json 3)"',
+        '  curl -fsS -X POST "${SERVING_CLUSTER_ENDPOINT}/v2/vectordb/entities/insert" \\',
+        '    -H "Content-Type: application/json" "${doc_verify_rest_auth_args[@]}" \\',
+        '    -d "$(cat <<JSON',
+        '{',
+        '  "collectionName": "${DOC_VERIFY_COLLECTION_NAME}",',
+        '  "data": [',
+        '    {"id": 1, "doc_status": "active", "chunks": [{"text": "Red book introduction", "score": 0.95, "chunk_vector": ${v0}, "element_vector": ${v1}, "text_vector": ${v2}}]},',
+        '    {"id": 2, "doc_status": "active", "chunks": [{"text": "Red chapter with examples", "score": 0.88, "chunk_vector": ${v1}, "element_vector": ${v2}, "text_vector": ${v3}}]},',
+        '    {"id": 3, "doc_status": "archived", "chunks": [{"text": "Archived reference", "score": 0.55, "chunk_vector": ${v2}, "element_vector": ${v3}, "text_vector": ${v0}}]}',
+        '  ]',
+        '}',
+        'JSON',
+        ')" || true',
+        '}',
+        '',
+        'doc_verify_load_struct_array_collection() {',
+        '  curl -fsS -X POST "${SERVING_CLUSTER_ENDPOINT}/v2/vectordb/collections/load" \\',
+        '    -H "Content-Type: application/json" "${doc_verify_rest_auth_args[@]}" \\',
+        '    -d "{\\"collectionName\\": \\"${DOC_VERIFY_COLLECTION_NAME}\\"}" || true',
+        '  sleep "${DOC_VERIFY_LOAD_WAIT_SECONDS:-2}"',
+        '}',
+    ];
+}
+
+function scenarioShimSummary(shim) {
+    if (!shim || !shim.names || shim.names.length === 0) return [];
+    return shim.names.map(name => ({
+        name,
+        notes: (shim.notes || []).filter(Boolean),
+    }));
 }
 
 function normalizeBashScenarioCode(code) {
@@ -1816,6 +2450,210 @@ function buildLiveVerificationPlan(results, opts) {
     };
 }
 
+function runMantaRuntimeVerification(opts, sources, scenarioResults) {
+    if (!opts.manta) return null;
+    const state = {
+        status: 'manual',
+        detail: '',
+        startedAt: new Date().toISOString(),
+        workspace: opts.mantaWorkspace,
+        endpoint: opts.mantaEndpoint || '',
+        resource: null,
+        createJob: null,
+        verifyJob: null,
+        artifacts: [],
+    };
+
+    if (!commandExists('manta-client')) {
+        state.detail = 'manta-client is not available';
+        return state;
+    }
+    if (!opts.live || !opts.allowRun || !opts.runScenarios) {
+        state.detail = 'Manta runtime verification requires --run-scenarios --live --allow-run';
+        return state;
+    }
+
+    if (opts.mantaCreateMilvus && !state.endpoint) {
+        const created = createMantaMilvusResource(opts);
+        state.createJob = created;
+        if (created.status !== 'passed') {
+            state.status = 'failed';
+            state.detail = created.detail;
+            return state;
+        }
+        state.endpoint = created.endpoint || '';
+        state.resource = created.resource || null;
+    }
+
+    if (opts.mantaResource && !state.endpoint) {
+        const resource = resolveMantaResource(opts.mantaResource, opts);
+        state.resource = resource.resource || null;
+        if (resource.status !== 'passed') {
+            state.detail = resource.detail;
+            return state;
+        }
+        state.endpoint = resource.endpoint;
+    }
+
+    if (!state.endpoint) {
+        state.detail = 'Manta runtime requires --manta-endpoint, --manta-resource, or --manta-create-milvus';
+        return state;
+    }
+
+    const verify = createMantaVerificationJob(opts, sources, scenarioResults, state.endpoint);
+    state.verifyJob = verify;
+    state.status = verify.status;
+    state.detail = verify.detail;
+    state.artifacts = verify.artifacts || [];
+    return state;
+}
+
+function createMantaMilvusResource(opts) {
+    const prompt = [
+        `Create a temporary Milvus ${opts.mantaCreateMilvus} instance for Feishu code verification.`,
+        'Use a Manta-managed Milvus resource. Wait until the service is reachable before finishing.',
+        'Return resource id/name, namespace, endpoint, image tag, readiness state, and server version if available.',
+    ].join(' ');
+    const create = runCommandRaw('manta-client', [
+        'job', 'create',
+        '-w', opts.mantaWorkspace,
+        '-s', 'milvus-deploy',
+        '-T', String(opts.mantaTimeout),
+        '-j',
+        '-p', prompt,
+    ], { timeout: opts.mantaTimeout * 1000 });
+    const jobId = mantaJobIdFromOutput(create.stdout) || mantaJobIdFromOutput(create.stderr);
+    const record = { status: 'failed', detail: '', jobId, create: redactMantaCommand(create), wait: null, info: null, endpoint: '', resource: null };
+    if (create.status !== 0 || !jobId) {
+        record.detail = 'Failed to create Manta Milvus deployment job';
+        return record;
+    }
+    record.wait = redactMantaCommand(runCommandRaw('manta-client', ['job', 'wait', jobId, '--timeout', String(opts.mantaTimeout)], { timeout: (opts.mantaTimeout + 30) * 1000 }));
+    record.info = redactMantaCommand(runCommandRaw('manta-client', ['job', 'info', jobId, '--json'], { timeout: opts.timeout }));
+    const info = parseJsonOutput(record.info.stdout);
+    const resultText = [info?.result, record.info.stdout, record.wait.stdout].filter(Boolean).join('\n');
+    record.endpoint = extractMantaEndpoint(resultText);
+    record.resource = extractMantaResource(resultText);
+    if (!record.endpoint) {
+        record.detail = 'Manta Milvus deployment completed but no endpoint was found in job output';
+        return record;
+    }
+    record.status = 'passed';
+    record.detail = 'Manta Milvus resource created and endpoint discovered';
+    return record;
+}
+
+function resolveMantaResource(resourceIdOrName, opts) {
+    const value = String(resourceIdOrName || '').trim();
+    if (!value) return { status: 'manual', detail: 'empty Manta resource id/name' };
+    let resource = null;
+    if (/^\d+$/.test(value)) {
+        const infoResult = runCommandRaw('manta-client', ['resource', 'info', value, '--json'], { timeout: opts.timeout });
+        if (infoResult.status !== 0) {
+            return { status: 'manual', detail: `manta-client resource info failed for ${value}`, result: redactMantaCommand(infoResult) };
+        }
+        resource = parseJsonOutput(infoResult.stdout);
+    } else {
+        const listResult = runCommandRaw('manta-client', ['resource', 'list', '--limit', '100', '--json'], { timeout: opts.timeout });
+        if (listResult.status !== 0) {
+            return { status: 'manual', detail: 'manta-client resource list failed', result: redactMantaCommand(listResult) };
+        }
+        const list = parseJsonOutput(listResult.stdout);
+        resource = (list?.items || []).find(item => item.resource_name === value || String(item.id) === value);
+    }
+    const endpoint = resource?.resource_metadata?.endpoint;
+    if (!endpoint) return { status: 'manual', detail: `Manta resource has no endpoint: ${value}`, resource };
+    if (resource?.resource_metadata?.ready === false) return { status: 'manual', detail: `Manta resource is not ready: ${value}`, resource, endpoint };
+    return { status: 'passed', detail: 'Manta resource endpoint resolved', resource, endpoint: endpoint.startsWith('http') ? endpoint : `http://${endpoint}` };
+}
+
+function createMantaVerificationJob(opts, sources, scenarioResults, endpoint) {
+    const docInputs = sources.map(source => source.link || source.id || source.title).filter(Boolean).join(', ');
+    const languages = Array.from(opts.languages || new Set(scenarioResults.map(s => s.language))).join(',');
+    const prompt = [
+        `Run a live Feishu code verification against Milvus endpoint ${endpoint}.`,
+        docInputs ? `Docs: ${docInputs}.` : '',
+        languages ? `Languages/scenarios: ${languages}.` : '',
+        'Use the generated feishu-code-verify scenario behavior as the reference: create isolated fixture resources, print server version, run documented steps, record pass/fail per step, and clean up only isolated resources.',
+        'Python probes should use MilvusClient, not ORM, unless the document explicitly documents ORM. Java, Go, and Node probes should use SDK v2 surfaces.',
+        'Return output.md and output.json artifacts with local static status, Manta runtime status, endpoint, server version, SDK versions, created resource names, and document-change recommendations.',
+    ].filter(Boolean).join(' ');
+    const create = runCommandRaw('manta-client', [
+        'job', 'create',
+        '-w', opts.mantaWorkspace,
+        '-s', 'milvus-test',
+        '-T', String(opts.mantaTimeout),
+        '-j',
+        '-p', prompt,
+    ], { timeout: opts.timeout });
+    const jobId = mantaJobIdFromOutput(create.stdout) || mantaJobIdFromOutput(create.stderr);
+    const record = { status: 'failed', detail: '', jobId, create: redactMantaCommand(create), wait: null, info: null, artifacts: [] };
+    if (create.status !== 0 || !jobId) {
+        record.detail = 'Failed to create Manta verification job';
+        return record;
+    }
+    record.wait = redactMantaCommand(runCommandRaw('manta-client', ['job', 'wait', jobId, '--timeout', String(opts.mantaTimeout)], { timeout: (opts.mantaTimeout + 30) * 1000 }));
+    record.info = redactMantaCommand(runCommandRaw('manta-client', ['job', 'info', jobId, '--json'], { timeout: opts.timeout }));
+    const info = parseJsonOutput(record.info.stdout);
+    const terminalStatus = info?.status || (record.wait.status === 0 ? 'completed' : 'failed');
+    record.artifacts = downloadMantaVerificationArtifacts(jobId, opts);
+    if (terminalStatus === 'completed') {
+        record.status = 'passed';
+        record.detail = 'Manta verification job completed';
+    } else {
+        record.status = 'failed';
+        record.detail = `Manta verification job ended with status ${terminalStatus}`;
+    }
+    return record;
+}
+
+function downloadMantaVerificationArtifacts(jobId, opts) {
+    const artifactDir = path.join('/tmp', `feishu-code-verify-manta-${jobId}`);
+    fs.mkdirSync(artifactDir, { recursive: true });
+    return ['output.md', 'output.json'].map(filename => {
+        const output = path.join(artifactDir, filename);
+        const result = runCommandRaw('manta-client', ['job', 'download', jobId, filename, '--output', output], { timeout: opts.timeout });
+        return {
+            filename,
+            output,
+            status: result.status === 0 ? 'passed' : 'manual',
+            detail: result.status === 0 ? 'downloaded' : 'artifact not available',
+            result: redactMantaCommand(result),
+        };
+    });
+}
+
+function mantaJobIdFromOutput(text) {
+    const parsed = parseJsonOutput(text);
+    const id = parsed?.job_id || parsed?.id || parsed?.jobId;
+    if (id) return String(id);
+    const match = String(text || '').match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
+    return match ? match[0] : '';
+}
+
+function extractMantaEndpoint(text) {
+    const match = String(text || '').match(/(?:https?:\/\/)?[A-Za-z0-9.-]+\.manta-user-[A-Za-z0-9-]+(?::19530)?/);
+    if (!match) return '';
+    return match[0].startsWith('http') ? match[0] : `http://${match[0]}`;
+}
+
+function extractMantaResource(text) {
+    const name = String(text || '').match(/(?:resource|Managed resource|Resource):\s*`?([A-Za-z0-9._-]+)`?/i);
+    return name ? { resource_name: name[1] } : null;
+}
+
+function redactMantaCommand(result) {
+    if (!result) return null;
+    return {
+        command: result.command,
+        status: result.status,
+        signal: result.signal,
+        stdout: redact(result.stdout),
+        stderr: redact(result.stderr),
+        error: result.error || null,
+    };
+}
+
 function printLivePlan(plan) {
     if (plan.candidateBlocks === 0) return;
     console.log('\nLive verification plan');
@@ -1866,6 +2704,7 @@ async function main() {
     });
     const scenarioResults = buildScenarioResults(filtered, opts).filter(Boolean);
     applyScenarioCoverage(results, scenarioResults);
+    const mantaRuntime = runMantaRuntimeVerification(opts, sources, scenarioResults);
 
     const manualCoveredByScenario = results.filter(r =>
         r.verification.status === 'manual' &&
@@ -1892,12 +2731,26 @@ async function main() {
         scenarioRuntimePassed: scenarioResults.filter(r => r.runtime?.status === 'passed').length,
         scenarioRuntimeFailed: scenarioResults.filter(r => r.runtime?.status === 'failed').length,
         scenarioRuntimeManual: scenarioResults.filter(r => r.runtime?.status === 'manual').length,
+        mantaRuntimePassed: mantaRuntime?.status === 'passed' ? 1 : 0,
+        mantaRuntimeFailed: mantaRuntime?.status === 'failed' ? 1 : 0,
+        mantaRuntimeManual: mantaRuntime?.status === 'manual' ? 1 : 0,
         javaClasspathSource: opts.javaClasspathSource || null,
         javaClasspathError: opts.javaClasspathError || null,
+        nodeSdkBuildPassed: opts.nodeSdkBuilds.filter(r => r.status === 'passed').length,
+        nodeSdkBuildFailed: opts.nodeSdkBuilds.filter(r => r.status === 'failed').length,
+        nodeSdkBuildManual: opts.nodeSdkBuilds.filter(r => r.status === 'manual').length,
+        cppSdkRepo: opts.cppSdkRepo ? path.resolve(opts.cppSdkRepo) : null,
+        cppIncludeDirs: (opts.cppIncludeDirs || []).map(dir => path.resolve(dir)),
+        sdkRuntimeRules: {
+            python: 'MilvusClient',
+            java: 'v2',
+            go: 'v2',
+            node: 'v2',
+        },
     };
 
     const liveVerification = buildLiveVerificationPlan(results, opts);
-    const report = { summary, liveVerification, scenarios: scenarioResults, results };
+    const report = { summary, liveVerification, nodeSdkBuilds: opts.nodeSdkBuilds, mantaRuntime, scenarios: scenarioResults, results };
     fs.writeFileSync(opts.report, JSON.stringify(report, null, 2));
 
     console.log('Feishu code verification summary');
@@ -1910,6 +2763,9 @@ async function main() {
             console.log(`    ${scenario.scenarioPath}`);
         }
     }
+    if (mantaRuntime) {
+        console.log(`Manta runtime: ${mantaRuntime.status} - ${mantaRuntime.detail}`);
+    }
     if (opts.javaSdkRepo && opts.javaClasspathError) {
         console.log(`Java SDK classpath: manual - ${opts.javaClasspathError}`);
     } else if (opts.javaClasspathSource) {
@@ -1918,7 +2774,7 @@ async function main() {
     if (opts.requestLive) printLivePlan(liveVerification);
     console.log(`Report written to ${opts.report}`);
 
-    if (summary.failed > 0) process.exitCode = 1;
+    if (summary.failed > 0 || summary.mantaRuntimeFailed > 0) process.exitCode = 1;
 }
 
 main().catch(err => {

@@ -102,6 +102,19 @@ For docs that attach search/query to an on-demand cluster, verify per SDK whethe
 - Zilliz CLI: set active cluster context with `zilliz context set --cluster-id ...`, then run data-plane commands such as `zilliz vector search`.
 - Go/C++ may expose normal search APIs without cluster/session routing. If no public `cluster_id` or session equivalent exists in the mapped paths or broader repo search, skip those blocks and report the gap instead of adding normal search examples that silently omit on-demand routing.
 
+### StructArray, EmbeddingList, And Element-Level Search
+
+When patching StructArray search docs, preserve the semantic distinction between EmbeddingList search and element-level search:
+
+- Do not define EmbeddingList search as "a query with multiple vectors"; an EmbeddingList can contain one or more vectors. The defining behavior is the `MAX_SIM*` metric family.
+- Explain grouped element-level search by metric behavior: `MAX_SIM*` scores a query embedding list against a stored embedding list by taking the best stored-vector match for each query vector and combining those best matches, for example `score(Q, D) = sum_i max_j sim(q_i, d_j)`. Element-level search scores individual Struct elements with a regular vector metric; `group_by_field` only collapses element hits to entity-level results and does not recompute a `MAX_SIM*` score.
+- For result prose, avoid bare `offset` because it can be confused with the request pagination parameter. Use "element offset" or "matched Struct element offset". In PyMilvus, search-result `offset` is populated from `SearchResultData.element_indices`; query/element-filter results are expanded from response `element_indices` and get an `offset` field. Request `offset` remains pagination.
+- `element_filter` limits which Struct elements participate in filtering/search; it does not by itself make the result row-level. `MATCH_*` filters are row-level and do not identify a matched element offset. Grouped element-level search results are row-level and clear element offsets.
+- Prefer explicit sample embeddings over randomly generated vectors in docs, so examples are direct and easy to compare across SDKs.
+- REST and Zilliz CLI can represent float EmbeddingList search with nested arrays, for example define `QUERY='[[...],[...]]'` and pass REST `"data": [$QUERY]` or CLI `--data "[$QUERY]"`. Confirm the current REST route and CLI flags in source before adding examples.
+- For non-float EmbeddingList examples, verify both public type declarations and the serialization path. Do not rely on enum names or placeholder-type mappings alone; confirm that the SDK can actually encode the vector type being documented.
+- Do not assume helper methods such as `add_batch` exist across SDKs. If only PyMilvus has the helper, document it as PyMilvus-specific rather than porting fake helper examples.
+
 ### Patching Pattern
 
 For each code group:

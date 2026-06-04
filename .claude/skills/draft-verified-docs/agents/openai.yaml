@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verified Doc Drafter"
+  short_description: "Draft docs from verified references"
+  default_prompt: "Use $draft-verified-docs to draft a technical document from Feishu or external references, verify claims against Milvus or Zilliz source, and write it to my target Feishu page."

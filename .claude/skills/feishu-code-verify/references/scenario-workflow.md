@@ -92,7 +92,7 @@ Language-specific preparation:
 - Python: normalize doctest prompts, preserve SDK imports, add `PYTHONPATH` when requested, map bulk-import placeholders, and generate/upload Parquet when S3 env is available.
 - Go: merge imports, generate `package main` and `func main`, create a temporary module when `DOC_VERIFY_GO_MODULE_DIR` is set, run `go mod tidy`, and add fixture inserts before search.
 - Java: merge imports, generate `DocsScenario.main`, infer missing SDK imports when possible, derive or use classpath, and add fixture inserts before search.
-- Node/JavaScript: generate `docs_scenario.js` or `docs_scenario.mjs`, strip shebangs, expose common env values through `globalThis`, map common resource literals, and check with `node --check`.
+- Node/JavaScript: generate `docs_scenario.js` or `docs_scenario.mjs`, strip shebangs, hoist static imports, scope duplicate local declarations, expose common env values through `globalThis`, map common resource literals, and check with `node --check`.
 - Bash: generate `docs_scenario.sh`, strip shebangs from snippets, export common env values, map common resource literals, and check with `bash -n`.
 
 ## Language Setup

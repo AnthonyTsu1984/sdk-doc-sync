@@ -8,6 +8,7 @@
 | Version | Bitable Token              | Drive Root            | v2.6.x Folder         |
 |---------|----------------------------|-----------------------|-----------------------|
 | v2.6.x  | XmndbkxkQaigA8soRiCcTT41nMd | `PImWfhhIaleQUZd3qrWcsIgOncb` | `CSzVfDgfAlne87dDj3vcnR3nnsg` |
+| v3.0.x  | QdLkbfmnFatl4TsThKDc5Dobn5g | `NVjgfJr5aleBsedDoKCcDpnJn9b` | `NVjgfJr5aleBsedDoKCcDpnJn9b` |
 
 **Note:** C++ bitable has 8 shared VirtualNodes (targets=Milvus,Zilliz) — reuse them, do NOT create new ones. Live folder/record tokens in `memory/cpp-doc-audit.md`.
 

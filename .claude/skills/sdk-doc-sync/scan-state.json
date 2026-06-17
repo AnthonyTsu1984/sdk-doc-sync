@@ -10,15 +10,17 @@
   },
   "java": {
     "lastScannedTag": "v3.0.0",
-    "lastScanDate": "2026-05-13"
+    "lastScannedCommit": "944cc80ff2794fca31259caa91afd0187ac9a509",
+    "lastScanDate": "2026-06-17"
   },
   "node": {
     "lastScannedTag": "v3.0.0",
     "lastScanDate": "2026-05-09"
   },
   "cpp": {
-    "lastScannedTag": "v2.6.3",
-    "lastScanDate": "2026-05-15"
+    "lastScannedTag": "origin/master",
+    "lastScannedCommit": "69a0b657dccde72e5ba409b1ea77f43977f97ac3",
+    "lastScanDate": "2026-06-17"
   },
   "go": {
     "lastScannedTag": "client/v2.6.3",

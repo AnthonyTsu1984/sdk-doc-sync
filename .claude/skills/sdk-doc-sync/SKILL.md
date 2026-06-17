@@ -94,8 +94,8 @@ For each approved CREATE:
 - Place docs in the category subfolder that matches the bitable parent record (e.g., `Client` under `MilvusClient`, `Management` under `MilvusClient`).
 - **Create missing folders** via Feishu API (`feishu-doc.js create-folder`) if the expected subfolder does not exist in the version drive.
 - **Do NOT create ORM folders** for v3.0.x Python docs. The ORM layer is not expected to receive changes; MilvusClient methods already exist under their respective categories.
-- When updating a doc listed in the bitable but missing from the version drive, copy it to the correct folder with optional folder creation, then update the bitable link.
-- **Version-targeted UPDATE rule (required):** if target version is `vX.Y.x` and the current doc link points to an older version folder, **copy to target version folder first, then patch the copied doc, then repoint bitable**. Never patch the older-version source doc in place.
+- When updating a doc listed in the bitable but missing from the version drive, prefer the one-write cross-version UPDATE flow: fetch the old doc as Markdown, merge the target-version changes in memory, push the final Markdown once to the correct target-version folder, then update the bitable link. Use copy-first only as a fallback for docs that cannot be safely round-tripped through Markdown.
+- **Version-targeted UPDATE rule (required):** if target version is `vX.Y.x` and the current doc link points to an older version folder, **never patch the older-version source doc in place**. If the target-version doc does not exist and the source doc is Markdown-compatible, fetch old Markdown, merge updates in memory, push the final doc once to the target folder, then repoint bitable. If Markdown round-trip is unsafe, copy to the target folder first, patch the copied doc, then repoint bitable.
 - **Version-root guardrail (required):** resolve destination folders from the per-SDK canonical version root mapping first, then verify target folder ancestry with `feishu-doc.js list-folder`. Do not infer version from stale VirtualNode `Docs` links.
 - **Module-placement guardrail (required):** for top-level modules (for example Python `Volume`), the module folder must be a direct child of the version root unless the SDK reference explicitly defines another parent. Never place a top-level module under another module because an older record happened to point there.
 - **After creating/moving category folders:** update touched VirtualNode/Module records (`Docs` field) to the new folder URLs in the same run, then verify with `bitable-show`.
@@ -104,7 +104,12 @@ For each approved CREATE:
 - Tight lists (no blank lines between items) — blank lines create incorrect nesting in Feishu
 - `*italic*` for types/return types, `**bold**` for `[REQUIRED]` tags and exception names
 - No nested bullets inside PARAMETERS — describe complex types in prose on the same line
-- **Never join two logical lines into one block with `\n`.** For example, parameter name (type) - and the parameter description should be two separate blocks. Each distinct line/paragraph must be its own Feishu block.
+- **Never join two logical lines into one rendered block.** Builder/request method signatures, typed return fields, and exception names must be separate from their descriptions:
+  - Good: `- \`field(Type value)\`` followed by `Description.` on the next line.
+  - Good: `- **field** (*Type*)` followed by `Description.` on the next line.
+  - Good: `- **MilvusClientException**` followed by `This exception...` on the next line.
+  - Bad: `- \`field(Type value)\` -Description.`
+  - Bad: `- **field** (*Type*)Description.`
 - Run with `--dry-run` first, then `--method=name` for individual validation, then batch
 
 ### Phase 6: UPDATE — Copy-first-then-update patch
@@ -126,11 +131,18 @@ Flow:
 4. Patch content in place (`patch_document` / `patch --strategy smart`).
 5. Keep URL unchanged.
 
-**Case B: Cross-version update (copy-first required)**
+**Case B: Cross-version update**
 
 If the current doc link points to an older-version folder, **do not patch that doc directly**.
 
-Flow:
+Preferred one-write flow when the target-version doc does not exist and the source doc is Markdown-compatible:
+1. Fetch the old doc content as Markdown.
+2. Merge the target-version updates into the Markdown in memory, inserting changes into the normal sections (`Request Syntax`, builder/request methods, return details, response type details, etc.).
+3. Push the final Markdown once into the target-version folder.
+4. Repoint the target-version bitable record with both `title` and `link`.
+5. Keep the older-version doc as a historical snapshot.
+
+Fallback copy-first flow for docs that cannot be safely round-tripped through Markdown:
 1. Copy the doc into the target-version folder.
 2. Patch/merge updates on the copied doc only.
 3. Repoint bitable record with both `title` and `link`.
@@ -156,11 +168,14 @@ Patching older-version docs in place causes version contamination:
 1. `bitable-show` record: verify `Docs.link`, `父记录`, and version metadata.
 2. `list-folder` target folder: verify doc exists at target location.
 3. If cross-version: verify old-version doc remains unchanged.
+4. For full re-pushes, inspect Docx blocks for formatting-sensitive content. Do not rely only on Markdown export for list/child-block layout.
 
 **Notes**
 
 - `updateRecord()` must pass both `title` and `link` when repointing `Docs`.
 - Block type conversions are not supported via batch update; use full re-push in the same target folder when needed.
+- Do not append visible version changelog sections such as `v3.0.x Updates` for API reference changes. Integrate new parameters, methods, and response fields into the proper existing sections.
+- When the user has manually fixed a page, exclude it from automated repair unless they explicitly ask for it. Verify it, but do not overwrite it.
 
 
 **Bottom-up insertion rule:** When inserting blocks after multiple existing blocks in a loop, sort operations from highest child index to lowest to avoid index shifting.
@@ -267,6 +282,19 @@ How it works:
 3. A link is stale when its embedded docx ID is absent from the bitable index
 4. Replacement is found by matching the link's anchor text against bitable titles
 5. Stale links with no title match are reported but left unchanged
+
+### Post-action verification checklist
+
+Run these checks after doc creation, full re-push, or version migration:
+
+1. Verify no visible version changelog sections were introduced (`v3.0.x Updates`, release-note fragments, or similar).
+2. Verify exactly one H1/title block and no old duplicated doc fragments.
+3. Inspect Docx blocks directly for line-break-sensitive lists. A bullet block must contain only the method/field/exception label; its description should be a child text block or the next intended block, not appended to the same bullet text.
+4. Run `scripts/fix-leading-spaces.js --bitable <token> --dry-run`.
+5. Run `scripts/add-type-links.js --bitable <token> --dry-run` where the SDK uses Class/Enum cross-links.
+6. If the doc was moved or copied across versions, verify the old-version doc remains unchanged and the target-version bitable now points at the new doc.
+
+Do not treat Feishu Markdown export as the source of truth for list layout. The exporter may flatten bullet child text back into one Markdown line even when the rendered Docx block tree is correct. When debugging rendering, fetch blocks with `MarkdownToFeishu.get_document_blocks()` or `feishu-doc.js get-blocks`.
 
 ### Update category VirtualNode folder links (post-action)
 
@@ -407,6 +435,24 @@ Do not label backlog items as newly added in the target release. Verify first ap
 A doc token can be referenced by both `v(N-1)` and `vN` bitables even when the `vN` record looks correct. Patching that token mutates both versions.
 
 **Fix:** Before any in-place patch, check whether older-version bitables reference the same doc token. If shared, force Case B (copy to target-version folder, patch copy, repoint `vN` record with `title` + `link`).
+
+### Markdown export flattens nested list descriptions
+
+Feishu Markdown export can render a correct Docx block tree as joined Markdown, such as `- \`data(...)\`Description`. This does not necessarily mean the live page is broken; the live page follows the block tree.
+
+**Fix:** Verify the actual block tree before repatching. For builder/request methods, typed return fields, and exceptions, the bullet text should contain only the signature/name/type label, with the description stored as a child text block or separate intended paragraph. If the bullet block itself contains both label and description, repair it and add a verifier for that exact pattern.
+
+### One-write cross-version updates
+
+Copy-first-then-patch is more write-heavy and creates transient intermediate docs. It is still useful when Markdown round-trip is unsafe, but it should not be the default.
+
+**Fix:** For Markdown-compatible docs missing from the target version folder, fetch the old doc as Markdown, merge target-version changes in memory, push the final Markdown once to the target folder, and repoint the target-version bitable with both `title` and `link`.
+
+### Integrated API reference updates
+
+API reference pages should describe the current target-version API, not show a visible version delta.
+
+**Fix:** Insert new parameters, request methods, return fields, response details, and examples into their normal sections. Do not add sections such as `v3.0.x Updates` unless the user explicitly asks for release notes.
 
 ### Module folder drift from stale links
 

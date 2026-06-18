@@ -21,10 +21,11 @@
  *
  * Usage:
  *   node .claude/skills/sdk-doc-sync/scripts/add-type-links.js \
- *     --bitable <token> [--dry-run]
+ *     --bitable <token> [--title <doc title>] [--dry-run]
  *
  * Options:
  *   --bitable <token>   Bitable app token to scan (required)
+ *   --title <doc title> Only scan docs with this exact title. Repeatable.
  *   --dry-run           Report what would be linked without writing anything
  *
  * Per-SDK tokens:
@@ -55,9 +56,21 @@ function argValue(flag) {
 
 const BITABLE_TOKEN = argValue('--bitable');
 if (!BITABLE_TOKEN) {
-    console.error('Usage: node add-type-links.js --bitable <token> [--dry-run]');
+    console.error('Usage: node add-type-links.js --bitable <token> [--title <doc title>] [--dry-run]');
     process.exit(1);
 }
+
+function argValues(flag) {
+    const out = [];
+    for (let i = 0; i < process.argv.length; i++) {
+        const arg = process.argv[i];
+        if (arg === flag && process.argv[i + 1]) out.push(process.argv[i + 1]);
+        else if (arg.startsWith(`${flag}=`)) out.push(arg.split('=').slice(1).join('='));
+    }
+    return out;
+}
+
+const TITLE_FILTERS = new Set(argValues('--title'));
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -229,6 +242,7 @@ async function main() {
     for (const rec of records) {
         const link  = rec.fields['Docs']?.link || '';
         const title = rec.fields['Docs']?.text  || '';
+        if (TITLE_FILTERS.size && !TITLE_FILTERS.has(title)) continue;
         const docId = extractDocId(link);
         if (!docId) continue;
         scanQueue.push({ docId, title, selfTypeName: normalizeTitle(title) });

@@ -1,6 +1,6 @@
 # Zilliz CLI — SDK Doc Sync Reference
 
-> **⚠️ Tool transition:** The Python `zilliz-cli` (v0.1.5) was replaced by the Rust `zilliz` / `zz` binary. As of 2026-05-14, the public release stream is `zilliz-v1.4.2`. The legacy `zilliz-cli` reference below is kept for historical context.
+> **⚠️ Tool transition:** The Python `zilliz-cli` (v0.1.5) was replaced by the Rust `zilliz` / `zz` binary. As of 2026-06-17, the public release stream is `zilliz-v1.4.4` with v1.4.5 implementation changes traced in `zilliz-cloud/vdc/zilliz-tui`. The legacy `zilliz-cli` reference below is kept for historical context.
 
 ## zilliz-tui / zilliz CLI (current Rust stream)
 
@@ -8,7 +8,8 @@
 - **Public release repo:** `repos/zilliz-cli/` (`github.com/zilliztech/zilliz-cli`)
 - **Language:** Rust (Cargo.toml + clap derive macros)
 - **Binary names:** `zilliz` and `zz`
-- **Latest release:** `zilliz-v1.4.2` (published 2026-05-13)
+- **Latest scanned public release:** `zilliz-v1.4.4` (scanned 2026-06-17)
+- **Latest scanned implementation commit:** `14b5dc47a029a0c8908a47daa035b269e3247ce1` in `repos/zilliz-cloud/vdc/zilliz-tui`
 - **Source:** `repos/zilliz-cloud/vdc/zilliz-tui/src/`
 - **CLI dispatch:** `src/cli/args.rs` (clap definitions) + `src/lib.rs` (op dispatch table)
 - **Resource models:** `src/model/builtin_models/control-plane.json` and `data-plane.json`
@@ -26,7 +27,7 @@
 
 Folder map v1.3.x: `/tmp/v13x-folders.json` (3 categories × 8 subfolders = 24 leaf folders).
 Doc copy mapping (v0.1.x → v1.3.x docx tokens): `/tmp/v13x-doc-copy-mapping.json`.
-Folder map v1.4.x: Cloud Management (`QMg2fBP94l5N7VdSwbucwMffnje`) → Project (`ECvTfFzKElW00pdSugdcqakXnep`), OnDemandCluster (`LuO3fJ20yldkHcdLRzbc3ZYenEb`), PrivateLink (`Oiv0fRpvQlQ07RdjQObcYtaunVh`), Stage (`LR32fkHcElbx5QdurL9cMlvunLh`), Volume (`WabafQZw0l0BDUdRbsZcK8SOnqc`); Data Operations (`Ag0Rf5tHcl6Wp7d37lBcUE8LnMg`) → Collection (`ZiRWf2bJDlO6A3dWLW1cRKHLnAb`), ExternalCollectionRefresh (`UsGBf6CcilUmMFdhvqScr3Krnah`); Configuration (`DGm8fFP8plvHz5d6sErcKcoLnRh`) → Context (`UwkgfNHjflzvCXdn9CkcXWrInHd`), Auth (`NORefWujnlbXKSdmo1tclDHdn6g`), Global (`NYgzfcJMylBEqqd8UBMcuEWKnga`).
+Folder map v1.4.x: Cloud Management (`QMg2fBP94l5N7VdSwbucwMffnje`) → Project (`ECvTfFzKElW00pdSugdcqakXnep`), OnDemandCluster (`LuO3fJ20yldkHcdLRzbc3ZYenEb`), PrivateLink (`Oiv0fRpvQlQ07RdjQObcYtaunVh`), Stage (`LR32fkHcElbx5QdurL9cMlvunLh`), Volume (`WabafQZw0l0BDUdRbsZcK8SOnqc`), StorageIntegration; Data Operations (`Ag0Rf5tHcl6Wp7d37lBcUE8LnMg`) → Collection (`ZiRWf2bJDlO6A3dWLW1cRKHLnAb`), ExternalCollectionRefresh (`UsGBf6CcilUmMFdhvqScr3Krnah`); Configuration (`DGm8fFP8plvHz5d6sErcKcoLnRh`) → Context (`UwkgfNHjflzvCXdn9CkcXWrInHd`), Auth (`NORefWujnlbXKSdmo1tclDHdn6g`), Global (`NYgzfcJMylBEqqd8UBMcuEWKnga`).
 
 ### Category Structure (v1.3.x)
 
@@ -54,6 +55,12 @@ Data Operations/
 | `milvus standalone install/start/stop/restart/delete/upgrade` | Cloud Management / Milvus Standalone | local Milvus deployment via Docker |
 | `billing download-invoice` | Cloud Management / Billing | new in v1.x |
 | `collection metrics` | Data Operations / Collection | per-collection metrics |
+| `storage-integration list` | Cloud Management / StorageIntegration | list external storage integrations |
+| `storage-integration create` | Cloud Management / StorageIntegration | create AWS/Azure/GCP external storage integration |
+| `storage-integration describe` | Cloud Management / StorageIntegration | inspect one integration by ID |
+| `storage-integration delete` | Cloud Management / StorageIntegration | delete one integration by ID |
+| `storage-integration validate` | Cloud Management / StorageIntegration | validate integration configuration |
+| `storage-integration generate-auth-materials` | Cloud Management / StorageIntegration | generate cloud-side authorization materials |
 
 ### Behavior changes since v0.1.x (existing docs need patching)
 
@@ -96,6 +103,9 @@ Use this when public release tags are in `zilliztech/zilliz-cli` but implementat
 | Release notes `zilliz-v1.4.0` | Added `external-collection refresh` actions; renamed `query-cluster` → `on-demand-cluster`; `--cu` → `--cu-size`; new constraints and path renames | UPDATE existing command docs + CREATE new command docs where missing |
 | Release notes `zilliz-v1.4.1` | Added top-level `zilliz upgrade`/`update` and background update-check behavior | CREATE `upgrade` doc + UPDATE global behavior notes |
 | Release notes `zilliz-v1.4.2` | Added top-level `zilliz uninstall` (`--purge`, `--yes`) | CREATE `uninstall` doc |
+| Release notes / implementation trace through `zilliz-v1.4.4` and commit `14b5dc47a029a0c8908a47daa035b269e3247ce1` | Added `storage-integration` command family; removed manual `completion` command because shell completion is now automatic | CREATE storage-integration docs; DEPRECATE `completion`; UPDATE affected v1.4.x records |
+
+Storage-integration docs are handled by `.claude/skills/sdk-doc-sync/scripts/zilliz-cli-v14x/update-v144-v145.js`. Run dry-run first; the script also updates related records' `Last Modified At` and deprecates removed `completion` behavior.
 
 Important: the public `zilliz-cli` repo can be release-oriented and may not contain full Rust source at each tag. Do not infer “no command changes” from file diffs alone; always parse release notes and then validate against `zilliz-cloud/vdc/zilliz-tui` source/model files.
 

@@ -1,6 +1,6 @@
 ---
 name: sdk-doc-sync
-description: Sync SDK source code to Feishu reference docs, or sync the Milvus server REST API source to openapi-milvus.json. Use when the user wants to scan an SDK repo, diff against existing Feishu knowledge base, create or update documentation for new/changed API symbols, or update the OpenAPI spec.
+description: Use when scanning SDK/API repos, diffing existing Feishu or zdoc REST docs, creating or updating docs for new/changed SDK symbols, or updating Milvus/Zilliz OpenAPI specs and public REST fragments.
 argument-hint: "[--language <python|java|node|cpp|go|zilliz-cli|rest>] [--sdk-version <version>]"
 ---
 
@@ -98,6 +98,7 @@ For each approved CREATE:
 - **Version-targeted UPDATE rule (required):** if target version is `vX.Y.x` and the current doc link points to an older version folder, **never patch the older-version source doc in place**. If the target-version doc does not exist and the source doc is Markdown-compatible, fetch old Markdown, merge updates in memory, push the final doc once to the target folder, then repoint bitable. If Markdown round-trip is unsafe, copy to the target folder first, patch the copied doc, then repoint bitable.
 - **Version-root guardrail (required):** resolve destination folders from the per-SDK canonical version root mapping first, then verify target folder ancestry with `feishu-doc.js list-folder`. Do not infer version from stale VirtualNode `Docs` links.
 - **Module-placement guardrail (required):** for top-level modules (for example Python `Volume`), the module folder must be a direct child of the version root unless the SDK reference explicitly defines another parent. Never place a top-level module under another module because an older record happened to point there.
+- **Category reparenting rule (required):** if records are discovered under the wrong category parent (for example import APIs under `Vector` when a `Data Import` category exists or is required), create the missing category folder/VirtualNode under the canonical version root, copy or move the involved docs into that folder as needed, and update the records' `父记录` plus `Docs` link in the same run. Prefer version-local copies when the old doc token is shared by older versions.
 - **After creating/moving category folders:** update touched VirtualNode/Module records (`Docs` field) to the new folder URLs in the same run, then verify with `bitable-show`.
 
 **Formatting rules:**
@@ -189,6 +190,19 @@ Patching older-version docs in place causes version contamination:
 
 **Block type changes are not supported via batch_update.** Attempting `update_block_type: { block_type: 2 }` returns error 1770001. If you need to change a heading block to a paragraph (e.g., h2 → bold text), re-push the entire doc in the **same target folder** (same-version full rewrite). Do **not** treat this as cross-version migration; cross-version changes still require copy-to-target-first, then patch/repoint.
 
+### Phase 7: BACKFILL/REPARENT — Missing docs across existing versions
+
+Use this flow when the API already exists in older releases but the docs, category, or bitable records are missing or under the wrong parent.
+
+1. Trace first appearance by tags/commits and separate release delta from undocumented backlog.
+2. Classify each symbol into a target category and target versions. For pre-baseline APIs, use the user's requested metadata convention (for example `Added Since: inherit`).
+3. Resolve canonical version roots from the per-SDK reference. Do not use stale record links as folder truth.
+4. Create missing category folders and VirtualNode/Module records under each canonical version root.
+5. For existing docs under the wrong category, check whether the doc token is shared by older-version bitables. If shared, copy into the target-version folder and repoint the target record; if not shared and the user asked for a move, move/reparent directly.
+6. Create missing docs in the earliest appropriate version folder, then create later-version records pointing to that doc unless version-local snapshots are required.
+7. Update touched records' `父记录`, `Docs` link, and version metadata in the same run.
+8. Run post-action checks: folder listing, `bitable-show`, `fix-leading-spaces --dry-run`, scoped `add-type-links --dry-run`, and raw Docx block inspection for formatting-sensitive pages.
+
 ---
 
 ## What Makes Your Docs Better
@@ -228,6 +242,9 @@ Run after any bulk doc creation to inject Feishu docx links where type names (Cl
 # Dry run first — shows what would be linked
 node .claude/skills/sdk-doc-sync/scripts/add-type-links.js --bitable <token> --dry-run
 
+# Scope to only newly created/touched docs when broad dry-run reports unrelated pages
+node .claude/skills/sdk-doc-sync/scripts/add-type-links.js --bitable <token> --title "BulkWriter" --title "BulkWriterOptions" --dry-run
+
 # Apply links
 node .claude/skills/sdk-doc-sync/scripts/add-type-links.js --bitable <token>
 ```
@@ -238,6 +255,8 @@ How it works:
 3. For each `text_run`: if its trimmed content (trailing `()` stripped) exactly matches a type name, and the run has no existing link or inline-code style, injects a link to that type's doc
 4. Self-references (doc's own title) are skipped
 5. Patches changed blocks via `batch_update` in batches of 20
+
+Use repeated `--title <doc title>` filters when the post-action should only touch docs from the current task. This is especially useful after broad dry-runs find unrelated/pre-existing link opportunities in the same bitable.
 
 Per-SDK tokens: C++ `XmndbkxkQaigA8soRiCcTT41nMd` · Go `Yc7gbtmgSal2ewsdqlhcLWVanbh` · Node `R9i8bww4faNsR6smwQwcAtHGnkb`
 

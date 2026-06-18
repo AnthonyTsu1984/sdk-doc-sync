@@ -14,8 +14,9 @@
     "lastScanDate": "2026-06-17"
   },
   "node": {
-    "lastScannedTag": "v3.0.0",
-    "lastScanDate": "2026-05-09"
+    "lastScannedTag": "v3.0.3",
+    "lastScannedCommit": "b85dfcd618ef2692e687464478d1f0f9ba1d6875",
+    "lastScanDate": "2026-06-17"
   },
   "cpp": {
     "lastScannedTag": "origin/master",
@@ -31,7 +32,9 @@
     "lastScanDate": "2026-04-14"
   },
   "zilliz-cli": {
-    "lastScannedTag": "zilliz-v1.4.2",
-    "lastScanDate": "2026-05-14"
+    "lastScannedTag": "zilliz-v1.4.4",
+    "lastScannedCommit": "41287924b71e27ed8781e7afec82311175c5085b",
+    "lastScannedImplementationCommit": "14b5dc47a029a0c8908a47daa035b269e3247ce1",
+    "lastScanDate": "2026-06-17"
   }
 }

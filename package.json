@@ -13,6 +13,11 @@
     "test:integration": "node .claude/skills/sdk-doc-sync/tests/run-all.js --integration",
     "test:all": "node .claude/skills/sdk-doc-sync/tests/run-all.js --all",
     "test:list": "node .claude/skills/sdk-doc-sync/tests/run-all.js --list",
+    "test:agent-team": "node --test .claude/agent-team/tests/*.test.js",
+    "doc-agent:scan": "node .claude/agent-team/bin/doc-agent-scan.js",
+    "doc-agent:dry-run": "node .claude/agent-team/bin/doc-agent-dry-run.js",
+    "doc-agent:live-write": "node .claude/agent-team/bin/doc-agent-live-write.js",
+    "doc-agent:verify": "node .claude/agent-team/bin/doc-agent-verify.js",
     "sdk-doc-sync": "node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js",
     "translate": "node .claude/skills/sdk-doc-sync/bin/feishu-doc-translator.js"
   },

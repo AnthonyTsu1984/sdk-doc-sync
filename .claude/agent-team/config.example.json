@@ -1,0 +1,125 @@
+{
+  "mvp": {
+    "enabled": true,
+    "timezone": "Asia/Shanghai",
+    "artifactRetentionDays": 14
+  },
+  "feishu": {
+    "host": "https://open.feishu.cn",
+    "chatId": "oc_REPLACE_WITH_DOC_AGENT_TEAM_CHAT_ID",
+    "approverIds": ["ou_REPLACE_WITH_APPROVER_OPEN_ID"],
+    "appIdEnv": "APP_ID",
+    "appSecretEnv": "APP_SECRET"
+  },
+  "github": {
+    "owner": "REPLACE_WITH_GITHUB_OWNER",
+    "repo": "feishu-markdown-bridge",
+    "ref": "master",
+    "dispatchEventPrefix": "doc-agent"
+  },
+  "approvalConsumer": {
+    "enabled": true,
+    "decisionLogPath": ".claude/agent-team/state/decisions.jsonl",
+    "taskTtlMinutes": 1440,
+    "larkCliCommand": "lark-cli",
+    "eventKey": "im.message.receive_v1"
+  },
+  "surfaces": {
+    "localization": {
+      "enabled": true,
+      "owner": "localization-owner",
+      "sourceBaseToken": "REPLACE_WITH_SOURCE_BASE_TOKEN",
+      "sourceTableIds": ["REPLACE_WITH_SOURCE_TABLE_ID"],
+      "sourceRootToken": "REPLACE_WITH_SOURCE_WIKI_ROOT_TOKEN",
+      "targetBaseToken": "REPLACE_WITH_TARGET_BASE_TOKEN",
+      "targetTableIds": ["REPLACE_WITH_TARGET_TABLE_ID"],
+      "targetRootToken": "REPLACE_WITH_TARGET_WIKI_ROOT_TOKEN",
+      "sourceLang": "en",
+      "targetLang": "zh",
+      "driveType": "wiki",
+      "translator": "claude",
+      "linkCheck": {
+        "enabled": true,
+        "checkMentionDoc": true,
+        "checkExternalLinks": true,
+        "timeoutMs": 10000
+      },
+      "allowedLiveActions": ["NEW", "UPDATE", "META_ONLY"]
+    },
+    "sdkReference": {
+      "enabled": false,
+      "owners": [
+        {
+          "id": "java-sdk-doc-owner",
+          "language": "java",
+          "repo": "milvus-io/milvus-sdk-java",
+          "defaultBranch": "master",
+          "sourcePathHints": ["src/main/java"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        },
+        {
+          "id": "python-sdk-doc-owner",
+          "language": "python",
+          "repo": "milvus-io/pymilvus",
+          "defaultBranch": "master",
+          "sourcePathHints": ["pymilvus"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        }
+      ]
+    },
+    "restReference": {
+      "enabled": false,
+      "owners": [
+        {
+          "id": "rest-api-doc-owner",
+          "repo": "zilliztech/cloud-v2",
+          "defaultBranch": "master",
+          "openApiSpecPath": "OPTIONAL_OPENAPI_SPEC_PATH",
+          "sourcePathHints": ["api", "internal"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        }
+      ]
+    },
+    "cliReference": {
+      "enabled": false,
+      "owners": [
+        {
+          "id": "cli-doc-owner",
+          "repo": "zilliztech/zilliz-cli",
+          "defaultBranch": "main",
+          "sourcePathHints": ["cmd", "internal"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        }
+      ]
+    },
+    "guideDocs": {
+      "enabled": false,
+      "owner": "guide-doc-owner",
+      "docs": [
+        {
+          "id": "example-guide",
+          "url": "https://REPLACE_WITH_FEISHU_DOC_URL",
+          "expectedLanguages": ["python", "java", "go", "javascript", "bash", "shell", "cpp"]
+        }
+      ]
+    },
+    "verifiedDocs": {
+      "enabled": false,
+      "owner": "verified-doc-owner",
+      "docs": []
+    }
+  },
+  "agentRuntime": {
+    "enabled": false,
+    "command": "codex",
+    "args": ["exec", "--json"]
+  }
+}

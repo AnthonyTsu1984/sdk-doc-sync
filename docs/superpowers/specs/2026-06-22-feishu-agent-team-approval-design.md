@@ -75,6 +75,32 @@ Approved GitHub Actions workflow
 - Refetches changed docs/records and runs verification.
 - Posts final result and links to artifacts.
 
+### Agent Invocation Boundary
+
+GitHub Actions remains the execution runner. Agents are invoked only for work that benefits from reasoning, synthesis, task decomposition, drafting, or review.
+
+Deterministic scripts own:
+
+- scheduled workflow triggers
+- reading and writing JSON state
+- GitHub metadata queries
+- Feishu metadata queries
+- Feishu message/card sending
+- approval callback validation and dispatch
+- artifact upload/download
+- final command execution after an approved decision
+
+Agent invocations own:
+
+- turning a daily scan report plus human policy into concrete tasks
+- choosing the relevant owner for each task
+- drafting or revising documentation content
+- explaining source/doc discrepancies
+- preparing human-readable dry-run summaries
+- reviewing owner output against the chosen policy
+
+Owner agents should be invoked through a CLI-style agent runtime when they need repository/filesystem/test access. Lightweight coordinator decisions may use an SDK/API call if that is simpler. The MVP should not implement a custom long-running tool loop for agents.
+
 ### Approval Gateway
 
 The approval gateway is the always-on "doorbell" for Feishu card button clicks.
@@ -316,20 +342,79 @@ Guardrails:
 
 ## MVP Scope
 
-The first implementation should support one safe end-to-end loop:
+The first implementation must prove the control loop without trying to automate every doc family.
 
-1. Scheduled daily scan.
-2. Feishu scan report with findings and policy choices.
-3. Human policy choice or custom instruction through Feishu.
-4. Coordinator decomposes the decision into runnable owner tasks.
-5. One domain owner produces dry-run output for one task type, preferably localization diff or Java SDK doc sync.
-6. Feishu approval card for live write or PR creation.
-7. Approval gateway callback.
-8. GitHub workflow dispatch after approval.
-9. Live write or PR creation for the approved task.
-10. Independent review, verification, and final Feishu status.
+### MVP Work Type
 
-Recommended MVP task type: localization diff dry-run plus manual approval for live localized doc creation/update, owned end to end by `localization-owner`. It exercises Feishu table/doc reads, card approval, controlled Feishu writes, and result verification without needing live SDK runtime environments.
+Use one task family only:
+
+- `localization-owner` owns localization parity for one configured Feishu source/target table pair.
+- The daily scan checks source and target Feishu metadata by stable slug.
+- The dry run classifies records as `NEW`, `UPDATE`, `META_ONLY`, `SKIP`, or `ORPHAN`.
+- The live write path supports only `NEW`, `UPDATE`, and `META_ONLY`.
+- `ORPHAN` is report-only in MVP.
+
+This avoids SDK builds, large source checkouts, and live runtime verification while still exercising the Feishu scan, decision, approval, write, and verification loop.
+
+### MVP User Flow
+
+1. `doc-agent-scan.yml` runs once per day and by manual dispatch.
+2. The scan queries Feishu source/target table metadata and produces a daily report artifact.
+3. A Feishu report card summarizes findings and offers these policies:
+   - `Ignore for now`
+   - `Create dry-run plans only`
+   - `Create/update localized docs after per-task approval`
+   - `Custom instruction`
+4. The user chooses a policy or submits custom instructions from Feishu.
+5. The approval gateway records the decision and triggers `doc-agent-dry-run.yml`.
+6. The coordinator turns the decision into one or more `localization-owner` tasks.
+7. `localization-owner` produces dry-run plans and draft outputs for the configured table pair.
+8. `review-agent` reviews the dry-run output.
+9. If review passes and a live write is needed, Feishu receives a second approval card for the concrete write plan.
+10. After approval, `doc-agent-live-write.yml` performs the approved Feishu writes.
+11. The workflow refetches changed records/docs, verifies metadata and links, and posts final status to Feishu.
+
+### MVP Technical Boundaries
+
+Included:
+
+- one Feishu chat for progress and approval cards
+- one approver allowlist
+- one approval gateway endpoint for Feishu interactive card callbacks
+- GitHub `repository_dispatch` or `workflow_dispatch` from the gateway
+- one source/target localization table pair
+- one scheduled daily report
+- one manual dispatch path for testing
+- dry-run artifacts stored in GitHub Actions
+- live Feishu write only after review and explicit card approval
+- final Feishu status message with artifact links
+
+Excluded:
+
+- SDK owner agents
+- REST API owner work
+- CLI owner work
+- verified long-form doc drafting
+- code example patching
+- GitHub PR creation
+- automatic low-risk writes without approval
+- multiple Feishu chats or multi-tenant approval rules
+- multiple localization table pairs
+- deleting or archiving Feishu docs/records
+- production live runtime verification
+- full checkout of target source repositories
+- custom dashboard or web UI beyond Feishu cards
+
+### MVP Success Criteria
+
+- A scheduled workflow sends a daily Feishu report card even when no changes are found.
+- Selecting a policy in Feishu triggers the correct GitHub workflow.
+- The dry-run workflow produces a machine-readable task record and a human-readable summary.
+- The concrete live-write card is idempotent: duplicate clicks do not execute duplicate writes.
+- A live write updates only the approved Feishu records/docs.
+- Post-write verification refetches the changed Feishu resources and reports PASS/FAIL.
+- Failed, rejected, expired, and change-requested tasks preserve artifacts and do not advance the handled baseline.
+- The implementation can be extended to SDK owners later without changing the approval gateway contract.
 
 ## Out Of Scope For MVP
 
@@ -341,12 +426,16 @@ Recommended MVP task type: localization diff dry-run plus manual approval for li
 - Deleting Feishu docs or bitable records.
 - Production live runtime tests without explicit per-run approval.
 - Full checkout of every target repository on every scheduled scan.
+- Running all owner agents in parallel.
+- Supporting every `.claude` skill in the first release.
+- Building a custom SDK-based agent tool loop.
 
 ## Open Questions
 
 1. Which Feishu chat should receive progress messages and cards?
 2. Which Feishu users are authorized approvers?
-3. Should approved work write directly to Feishu, open a GitHub PR first, or support both by action type?
-4. Which task type should be the MVP: SDK doc sync, localization diff, code patching, or verified draft docs?
-5. Should the approval gateway be Cloudflare Worker, Vercel, AWS Lambda, or an existing internal service?
-6. Which target repositories can rely on GitHub metadata first, and which require source checkout even for daily discovery?
+3. Should the approval gateway be Cloudflare Worker, Vercel, AWS Lambda, or an existing internal service?
+4. Which source/target localization table pair should be used for the MVP?
+5. Which agent runtime should owner/reviewer invocations use first: Codex CLI, Claude Code CLI, or a small SDK/API coordinator?
+6. Post-MVP: should approved work write directly to Feishu, open a GitHub PR first, or support both by action type?
+7. Post-MVP: which target repositories can rely on GitHub metadata first, and which require source checkout even for daily discovery?

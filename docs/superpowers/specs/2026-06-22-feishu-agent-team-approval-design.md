@@ -62,6 +62,7 @@ Approved GitHub Actions workflow
 - Checks out this repository.
 - Reads automation state before scanning.
 - Performs lightweight discovery for the configured MVP localization source/target base pair and table id mappings.
+- Checks linked source/target Feishu doc pages for broken `mention_doc` references and normal links.
 - Builds a daily scan report with affected surfaces, estimated effort, risk, and possible dealing policies.
 - Sends a Feishu report card instead of starting live work directly.
 
@@ -260,6 +261,7 @@ Agents should be organized by durable ownership of a documentation surface, not 
 
 - Owns localization parity end to end across configured Feishu wiki roots and bitables.
 - Diffs source and target tables, proposes create/update/meta-only/orphan actions, and preserves media/embed handling rules.
+- Scans source and target doc page content for broken `mention_doc` references and normal links, then reports link failures as scan findings before any live write.
 
 `guide-doc-owner`
 
@@ -458,6 +460,7 @@ Use one task family for live execution:
 
 - `localization-owner` owns localization parity for one configured Feishu source/target base pair with one or more mapped table id pairs.
 - The daily scan checks source and target Feishu metadata by stable slug.
+- The daily scan checks Feishu doc page links for broken `mention_doc` references and normal Markdown/URL links.
 - The dry run classifies records as `NEW`, `UPDATE`, `META_ONLY`, `SKIP`, or `ORPHAN`.
 - The live write path supports only `NEW`, `UPDATE`, and `META_ONLY`.
 - `ORPHAN` is report-only in MVP.
@@ -477,7 +480,7 @@ Those disabled surfaces are not executed in the MVP, but they must be represente
 ### MVP User Flow
 
 1. `doc-agent-scan.yml` runs once per day and by manual dispatch.
-2. The scan queries Feishu source/target table metadata and produces a daily report artifact.
+2. The scan queries Feishu source/target table metadata, fetches configured doc pages, checks `mention_doc` and normal links, and produces a daily report artifact.
 3. A Feishu report card summarizes findings and offers these policies:
    - `Ignore for now`
    - `Create dry-run plans only`
@@ -529,6 +532,7 @@ Excluded:
 ### MVP Success Criteria
 
 - A scheduled workflow sends a daily Feishu report card even when no changes are found.
+- The daily Feishu report includes broken-link counts and details when `mention_doc` references or normal links fail.
 - Selecting a policy in Feishu triggers the correct GitHub workflow.
 - The dry-run workflow produces a machine-readable task record and a human-readable summary.
 - The concrete live-write approval command is idempotent: duplicate replies do not execute duplicate writes.
@@ -558,6 +562,7 @@ Excluded:
 - Agent runtime for owner/reviewer work: Codex CLI first, because owner agents need repository/filesystem/test access. Lightweight card copy or classification helpers may use SDK/API calls later.
 - MVP write mode: approved live Feishu writes only. GitHub PR creation is deferred.
 - MVP scan mode: Feishu metadata only for one localization base/root pair and its configured table id mappings. No target source repository checkout.
+- MVP link-check mode: Feishu doc page content only; check `mention_doc` targets and normal links, but do not auto-patch links.
 - MVP card model: one daily report card and one concrete live-write approval card per approved task batch, both using reply-command decisions.
 - MVP review model: review before the concrete live-write approval card.
 

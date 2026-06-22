@@ -33,6 +33,7 @@ Create:
 - `.claude/agent-team/src/contracts.js` — task/action/status constants and validation helpers.
 - `.claude/agent-team/src/owner-registry.js` — enabled/disabled owner surface registry and routing helpers.
 - `.claude/agent-team/src/localization-diff.js` — MVP source/target bitable diff wrapper.
+- `.claude/agent-team/src/localization-link-check.js` — Feishu doc page `mention_doc` and normal link checker.
 - `.claude/agent-team/src/state-store.js` — JSON state read/write and baseline handling.
 - `.claude/agent-team/src/report-renderer.js` — human-readable summaries for Feishu cards and artifacts.
 - `.claude/agent-team/src/feishu-im.js` — Feishu bot message/card sender.
@@ -52,6 +53,7 @@ Create:
 - `.claude/agent-team/tests/config.test.js` — config validation tests.
 - `.claude/agent-team/tests/owner-registry.test.js` — owner routing and disabled-surface tests.
 - `.claude/agent-team/tests/localization-diff.test.js` — diff classification tests.
+- `.claude/agent-team/tests/localization-link-check.test.js` — doc page link extraction and broken-link tests.
 - `.claude/agent-team/tests/cards.test.js` — card payload tests.
 - `.claude/agent-team/tests/state-store.test.js` — baseline/state tests.
 - `.claude/agent-team/tests/approval-commands.test.js` — approval parser tests.
@@ -140,6 +142,12 @@ Create `.claude/agent-team/config.example.json`:
       "targetLang": "zh",
       "driveType": "wiki",
       "translator": "claude",
+      "linkCheck": {
+        "enabled": true,
+        "checkMentionDoc": true,
+        "checkExternalLinks": true,
+        "timeoutMs": 10000
+      },
       "allowedLiveActions": ["NEW", "UPDATE", "META_ONLY"]
     },
     "sdkReference": {
@@ -378,6 +386,9 @@ function validateConfig(config) {
   requireString(surfaces.localization?.sourceRootToken, 'surfaces.localization.sourceRootToken');
   requireString(surfaces.localization?.targetBaseToken, 'surfaces.localization.targetBaseToken');
   requireString(surfaces.localization?.targetRootToken, 'surfaces.localization.targetRootToken');
+  requireBoolean(surfaces.localization?.linkCheck?.enabled, 'surfaces.localization.linkCheck.enabled');
+  requireBoolean(surfaces.localization?.linkCheck?.checkMentionDoc, 'surfaces.localization.linkCheck.checkMentionDoc');
+  requireBoolean(surfaces.localization?.linkCheck?.checkExternalLinks, 'surfaces.localization.linkCheck.checkExternalLinks');
   requireArray(surfaces.localization?.allowedLiveActions, 'surfaces.localization.allowedLiveActions');
   validateOwnerList(surfaces.sdkReference, 'sdkReference');
   validateOwnerList(surfaces.restReference, 'restReference');
@@ -503,6 +514,7 @@ function validConfig() {
         targetBaseToken: 'tgt_base',
         targetTableIds: ['tgt_table_a', 'tgt_table_b'],
         targetRootToken: 'tgt_root',
+        linkCheck: { enabled: true, checkMentionDoc: true, checkExternalLinks: true },
         allowedLiveActions: ['NEW', 'UPDATE', 'META_ONLY'],
       },
       sdkReference: {
@@ -840,8 +852,10 @@ git commit -m "feat: add doc agent state store"
 
 **Files:**
 - Create: `.claude/agent-team/src/localization-diff.js`
+- Create: `.claude/agent-team/src/localization-link-check.js`
 - Create: `.claude/agent-team/src/report-renderer.js`
 - Create: `.claude/agent-team/tests/localization-diff.test.js`
+- Create: `.claude/agent-team/tests/localization-link-check.test.js`
 
 - [ ] **Step 1: Implement localization diff wrapper**
 
@@ -930,7 +944,128 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 2: Implement report renderer**
+- [ ] **Step 2: Implement localization link checker**
+
+Create `.claude/agent-team/src/localization-link-check.js`:
+
+```js
+const { execFileSync } = require('child_process');
+
+function recordTitle(record) {
+  return record.metadata?.title || record.title || record.slug || record.metadata?.slug || '(untitled)';
+}
+
+function recordUrl(record) {
+  return record.metadata?.link || record.link || record.url || '';
+}
+
+function extractMarkdownLinks(markdown) {
+  const links = [];
+  const markdownLinkRe = /\[[^\]]+\]\((https?:\/\/[^)\s]+)\)/g;
+  const bareUrlRe = /https?:\/\/[^\s)<>"']+/g;
+  for (const match of markdown.matchAll(markdownLinkRe)) {
+    links.push({ type: 'link', url: match[1] });
+  }
+  for (const match of markdown.matchAll(bareUrlRe)) {
+    const url = match[0].replace(/[.,;:!?]+$/, '');
+    if (!links.some(link => link.url === url)) links.push({ type: 'link', url });
+  }
+  return links;
+}
+
+function extractMentionDocs(markdown) {
+  const mentions = [];
+  for (const line of markdown.split('\n')) {
+    if (!/mention_doc/i.test(line)) continue;
+    const url = (line.match(/https?:\/\/[^\s)<>"']+/) || [])[0];
+    const token = (line.match(/\b(?:docx?|wiki)_[A-Za-z0-9]+\b/) || [])[0];
+    if (url || token) mentions.push({ type: 'mention_doc', url, token, raw: line.trim() });
+  }
+  return mentions;
+}
+
+function fetchDocMarkdownWithLarkCli(urlOrToken) {
+  const out = execFileSync('lark-cli', [
+    'docs',
+    '+fetch',
+    '--doc',
+    urlOrToken,
+    '--doc-format',
+    'markdown',
+    '--format',
+    'json',
+  ], { encoding: 'utf8', maxBuffer: 50 * 1024 * 1024 });
+  const parsed = JSON.parse(out);
+  return parsed.data?.document?.content || parsed.document?.content || '';
+}
+
+async function defaultVerifyHttpLink(url, timeoutMs = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    let response = await fetch(url, { method: 'HEAD', signal: controller.signal });
+    if (response.status === 405) {
+      response = await fetch(url, { method: 'GET', signal: controller.signal });
+    }
+    return { ok: response.status < 400, status: response.status };
+  } catch (error) {
+    return { ok: false, error: error.message };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function checkLocalizationLinks({ records, config, fetchDocMarkdown = fetchDocMarkdownWithLarkCli, verifyHttpLink = defaultVerifyHttpLink }) {
+  const linkConfig = config.surfaces.localization.linkCheck || {};
+  if (!linkConfig.enabled) return { summary: { checkedDocs: 0, brokenLinks: 0, brokenMentionDocs: 0 }, findings: [] };
+  const findings = [];
+  for (const record of records) {
+    const docUrl = recordUrl(record);
+    if (!docUrl) continue;
+    let markdown = '';
+    try {
+      markdown = await fetchDocMarkdown(docUrl);
+    } catch (error) {
+      findings.push({ type: 'doc_fetch_failed', docUrl, title: recordTitle(record), error: error.message });
+      continue;
+    }
+    if (linkConfig.checkMentionDoc) {
+      for (const mention of extractMentionDocs(markdown)) {
+        try {
+          await fetchDocMarkdown(mention.url || mention.token);
+        } catch (error) {
+          findings.push({ type: 'broken_mention_doc', docUrl, title: recordTitle(record), target: mention.url || mention.token, error: error.message });
+        }
+      }
+    }
+    if (linkConfig.checkExternalLinks) {
+      for (const link of extractMarkdownLinks(markdown).filter(item => !/feishu\.cn|larksuite\.com/.test(item.url))) {
+        const result = await verifyHttpLink(link.url, linkConfig.timeoutMs || 10000);
+        if (!result.ok) {
+          findings.push({ type: 'broken_link', docUrl, title: recordTitle(record), target: link.url, status: result.status, error: result.error });
+        }
+      }
+    }
+  }
+  return {
+    summary: {
+      checkedDocs: records.filter(record => recordUrl(record)).length,
+      brokenLinks: findings.filter(finding => finding.type === 'broken_link').length,
+      brokenMentionDocs: findings.filter(finding => finding.type === 'broken_mention_doc').length,
+    },
+    findings,
+  };
+}
+
+module.exports = {
+  checkLocalizationLinks,
+  extractMarkdownLinks,
+  extractMentionDocs,
+  fetchDocMarkdownWithLarkCli,
+};
+```
+
+- [ ] **Step 3: Implement report renderer**
 
 Create `.claude/agent-team/src/report-renderer.js`:
 
@@ -939,7 +1074,7 @@ function actionTitle(action) {
   return action.source?.metadata?.title || action.target?.metadata?.title || action.slug || '(untitled)';
 }
 
-function renderMarkdownReport({ task, summary, actions }) {
+function renderMarkdownReport({ task, summary, actions, linkReport = { summary: {}, findings: [] } }) {
   const lines = [];
   lines.push(`# Doc Agent Daily Localization Report`);
   lines.push('');
@@ -954,6 +1089,8 @@ function renderMarkdownReport({ task, summary, actions }) {
   lines.push(`- META_ONLY: ${summary.META_ONLY}`);
   lines.push(`- SKIP: ${summary.SKIP}`);
   lines.push(`- ORPHAN: ${summary.ORPHAN}`);
+  lines.push(`- Broken links: ${linkReport.summary.brokenLinks || 0}`);
+  lines.push(`- Broken mention_doc references: ${linkReport.summary.brokenMentionDocs || 0}`);
   lines.push('');
   lines.push(`## Actionable Items`);
   lines.push('');
@@ -968,16 +1105,28 @@ function renderMarkdownReport({ task, summary, actions }) {
   }
 
   lines.push('');
+  lines.push(`## Broken Link Findings`);
+  lines.push('');
+  for (const finding of linkReport.findings || []) {
+    lines.push(`- **${finding.type}** ${finding.title}: ${finding.target || finding.docUrl}`);
+    if (finding.status || finding.error) lines.push(`  Status: ${finding.status || finding.error}`);
+  }
+  if (!linkReport.findings || linkReport.findings.length === 0) {
+    lines.push('- No broken links found.');
+  }
+
+  lines.push('');
   return `${lines.join('\n')}\n`;
 }
 
-function renderFeishuSummary({ summary }) {
+function renderFeishuSummary({ summary, linkReport = { summary: {} } }) {
   return [
     `Total: ${summary.total}`,
     `NEW: ${summary.NEW}`,
     `UPDATE: ${summary.UPDATE}`,
     `META_ONLY: ${summary.META_ONLY}`,
     `ORPHAN: ${summary.ORPHAN}`,
+    `Broken links: ${(linkReport.summary.brokenLinks || 0) + (linkReport.summary.brokenMentionDocs || 0)}`,
   ].join(' · ');
 }
 
@@ -987,7 +1136,7 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 3: Add diff tests**
+- [ ] **Step 4: Add diff and link-check tests**
 
 Create `.claude/agent-team/tests/localization-diff.test.js`:
 
@@ -1041,7 +1190,44 @@ test('renderMarkdownReport includes actionable items', () => {
 });
 ```
 
-- [ ] **Step 4: Run tests**
+Create `.claude/agent-team/tests/localization-link-check.test.js`:
+
+```js
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { checkLocalizationLinks, extractMarkdownLinks, extractMentionDocs } = require('../src/localization-link-check');
+
+test('extractMarkdownLinks finds markdown and bare links', () => {
+  const links = extractMarkdownLinks('See [ok](https://example.com/a) and https://example.com/b.');
+  assert.deepEqual(links.map(link => link.url), ['https://example.com/a', 'https://example.com/b.']);
+});
+
+test('extractMentionDocs finds mention_doc references', () => {
+  const mentions = extractMentionDocs('<!-- feishu-block: mention_doc https://zilliverse.feishu.cn/docx/AbCd -->');
+  assert.equal(mentions[0].type, 'mention_doc');
+  assert.match(mentions[0].url, /feishu/);
+});
+
+test('checkLocalizationLinks reports broken mention_doc and external links', async () => {
+  const records = [{ metadata: { title: 'Doc', link: 'doc-main' } }];
+  const markdownByDoc = {
+    'doc-main': '<!-- mention_doc docx_missing -->\nSee [bad](https://bad.example/link)',
+  };
+  const report = await checkLocalizationLinks({
+    records,
+    config: { surfaces: { localization: { linkCheck: { enabled: true, checkMentionDoc: true, checkExternalLinks: true } } } },
+    fetchDocMarkdown: async (doc) => {
+      if (!markdownByDoc[doc]) throw new Error('not found');
+      return markdownByDoc[doc];
+    },
+    verifyHttpLink: async () => ({ ok: false, status: 404 }),
+  });
+  assert.equal(report.summary.brokenMentionDocs, 1);
+  assert.equal(report.summary.brokenLinks, 1);
+});
+```
+
+- [ ] **Step 5: Run tests**
 
 Run:
 
@@ -1049,13 +1235,13 @@ Run:
 npm run test:agent-team
 ```
 
-Expected: PASS for localization diff and renderer tests.
+Expected: PASS for localization diff, link-check, and renderer tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add .claude/agent-team/src/localization-diff.js .claude/agent-team/src/report-renderer.js .claude/agent-team/tests/localization-diff.test.js
-git commit -m "feat: add localization diff reporting"
+git add .claude/agent-team/src/localization-diff.js .claude/agent-team/src/localization-link-check.js .claude/agent-team/src/report-renderer.js .claude/agent-team/tests/localization-diff.test.js .claude/agent-team/tests/localization-link-check.test.js
+git commit -m "feat: add localization scan reporting"
 ```
 
 ---
@@ -1236,6 +1422,7 @@ const { loadConfig } = require('../src/config');
 const { createTaskId, TaskStore } = require('../src/task-store');
 const { StateStore } = require('../src/state-store');
 const { readLocalizationRecords, diffLocalizationRecords } = require('../src/localization-diff');
+const { checkLocalizationLinks } = require('../src/localization-link-check');
 const { renderMarkdownReport, renderFeishuSummary } = require('../src/report-renderer');
 const { buildDailyReportCard } = require('../src/cards');
 const { FeishuImClient } = require('../src/feishu-im');
@@ -1263,23 +1450,28 @@ async function main() {
 
   const records = await readLocalizationRecords(config);
   const diff = diffLocalizationRecords(records);
-  const report = renderMarkdownReport({ task, ...diff });
+  const linkReport = await checkLocalizationLinks({
+    records: [...records.sourceRecords, ...records.targetRecords],
+    config,
+  });
+  const report = renderMarkdownReport({ task, ...diff, linkReport });
 
-  taskStore.writeTask({ ...task, summary: diff.summary });
+  taskStore.writeTask({ ...task, summary: diff.summary, linkSummary: linkReport.summary });
   taskStore.writeArtifact(task.id, 'actions.json', diff.actions);
+  taskStore.writeArtifact(task.id, 'link-report.json', linkReport);
   taskStore.writeArtifact(task.id, 'summary.md', report);
 
   if (sendCard) {
     const card = buildDailyReportCard({
       task,
-      summaryText: renderFeishuSummary(diff),
+      summaryText: renderFeishuSummary({ ...diff, linkReport }),
     });
     const im = new FeishuImClient({ host: config.feishu.host });
     const message = await im.sendCard({ chatId: config.feishu.chatId, card });
     taskStore.writeArtifact(task.id, 'feishu-message.json', message);
   }
 
-  console.log(JSON.stringify({ task, summary: diff.summary }, null, 2));
+  console.log(JSON.stringify({ task, summary: diff.summary, linkSummary: linkReport.summary }, null, 2));
 }
 
 main().catch(error => {
@@ -2002,6 +2194,7 @@ const { loadConfig } = require('../src/config');
 const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS } = require('../src/contracts');
 const { readLocalizationRecords, diffLocalizationRecords } = require('../src/localization-diff');
+const { checkLocalizationLinks } = require('../src/localization-link-check');
 
 async function main() {
   const taskId = process.env.DOC_AGENT_TASK_ID || process.argv[2];
@@ -2011,9 +2204,14 @@ async function main() {
   const task = store.readTask(taskId);
   const records = await readLocalizationRecords(config);
   const diff = diffLocalizationRecords(records);
+  const linkReport = await checkLocalizationLinks({
+    records: [...records.sourceRecords, ...records.targetRecords],
+    config,
+  });
   const failed = diff.actions.filter(action => ['NEW', 'UPDATE', 'META_ONLY'].includes(action.type));
-  const status = failed.length === 0 ? TASK_STATUS.COMPLETED : TASK_STATUS.FAILED;
-  store.writeArtifact(taskId, 'verification.json', { summary: diff.summary, remaining: failed });
+  const linkFailures = linkReport.findings || [];
+  const status = failed.length === 0 && linkFailures.length === 0 ? TASK_STATUS.COMPLETED : TASK_STATUS.FAILED;
+  store.writeArtifact(taskId, 'verification.json', { summary: diff.summary, remaining: failed, linkReport });
   store.writeTask({ ...task, status, verifiedAt: new Date().toISOString() });
   console.log(JSON.stringify({ taskId, status, remaining: failed.length }, null, 2));
   if (failed.length > 0) process.exit(2);
@@ -2319,6 +2517,7 @@ Spec coverage:
 - GitHub Actions scheduler/executor: Task 8.
 - Domain-owner model: Task 1 defines multi-domain owner routes and disabled SDK/REST/CLI/guide/verified surfaces; Task 7 uses the localization owner route for MVP execution.
 - Metadata-first localization MVP: Task 3 and Task 5.
+- Localization broken-link reporting: Task 3 implements `mention_doc` and normal link checks; Task 5 includes the link report in scan artifacts/cards; Task 7 verifies links after live writes.
 - Live writes only after review and approval: Task 7 and Task 8.
 - Guide-doc scan: config and owner route exist in Task 1, but scanning remains deferred because the finalized spec marks it Phase 2 report-only after MVP.
 

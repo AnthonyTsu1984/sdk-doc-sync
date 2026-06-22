@@ -1,0 +1,14 @@
+[Unit]
+Description=Feishu Doc Agent Approval Consumer
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/ABSOLUTE/PATH/feishu-markdown-bridge
+ExecStart=/usr/bin/node .claude/agent-team/bin/doc-agent-approval-consumer.js
+Environment=GITHUB_TOKEN=REPLACE_WITH_TOKEN_OR_USE_ENV_FILE
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

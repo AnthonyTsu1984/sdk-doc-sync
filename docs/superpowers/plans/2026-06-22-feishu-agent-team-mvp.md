@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the MVP Feishu-controlled documentation agent loop: daily localization scan, Feishu policy card, local Feishu event approval consumer, dry-run task generation, reviewed live Feishu write, and final verification.
+**Goal:** Build the MVP Feishu-controlled documentation agent control plane with multi-domain owner contracts, localization as the first enabled live owner, Feishu policy cards, local Feishu event approvals, dry-run task generation, reviewed live Feishu write, and final verification.
 
-**Architecture:** GitHub Actions runs deterministic Node.js scripts for state, Feishu metadata, cards, artifacts, and live writes. A local long-lived Node.js consumer wraps `lark-cli event consume im.message.receive_v1`, parses approval replies in the configured Feishu chat, and triggers GitHub `repository_dispatch`. Agent work is represented by owner/reviewer prompt artifacts in MVP, with Codex CLI execution added behind one script boundary so it can be enabled without changing workflow contracts.
+**Architecture:** GitHub Actions runs deterministic Node.js scripts for state, Feishu metadata, cards, artifacts, owner routing, and approved live writes. The control-plane schema models localization, SDK reference, REST reference, CLI reference, guide-doc, and verified-doc owners, while only the localization surface is enabled for MVP live execution. A local long-lived Node.js consumer wraps `lark-cli event consume im.message.receive_v1`, parses approval replies in the configured Feishu chat, and triggers GitHub `repository_dispatch`.
 
 **Tech Stack:** Node.js CommonJS, existing Feishu SDK sync utilities, GitHub Actions, local `lark-cli event consume`, Feishu/Lark bot APIs, `node --test`.
 
@@ -12,15 +12,17 @@
 
 ## Scope Boundary
 
-Implement only the finalized MVP:
+Implement the finalized MVP control plane, with localization as the only enabled live work type:
 
 - One Feishu source/target localization table pair.
+- Disabled-but-validated configuration surfaces for SDK reference docs, REST API reference docs, CLI docs, guide docs, and verified long-form docs.
+- Shared task/owner contracts for all documented domains.
 - One daily scan report card.
 - One dry-run path after policy selection.
 - One live-write approval card after dry-run review passes.
 - Approved live Feishu writes for `NEW`, `UPDATE`, and `META_ONLY`.
 - `ORPHAN` remains report-only.
-- No SDK owner automation, guide live patching, PR creation, automatic writes, multi-chat routing, or source repo checkout.
+- No enabled SDK/REST/CLI owner automation, guide live patching, PR creation, automatic writes, multi-chat routing, or source repo checkout.
 
 ## File Structure
 
@@ -29,6 +31,7 @@ Create:
 - `.claude/agent-team/config.example.json` — documented non-secret configuration template.
 - `.claude/agent-team/src/config.js` — environment/config loader and validator.
 - `.claude/agent-team/src/contracts.js` — task/action/status constants and validation helpers.
+- `.claude/agent-team/src/owner-registry.js` — enabled/disabled owner surface registry and routing helpers.
 - `.claude/agent-team/src/localization-diff.js` — MVP source/target bitable diff wrapper.
 - `.claude/agent-team/src/state-store.js` — JSON state read/write and baseline handling.
 - `.claude/agent-team/src/report-renderer.js` — human-readable summaries for Feishu cards and artifacts.
@@ -47,6 +50,7 @@ Create:
 - `.claude/agent-team/supervisor/launchd.plist.example` — macOS launchd template.
 - `.claude/agent-team/supervisor/systemd.service.example` — Linux systemd template.
 - `.claude/agent-team/tests/config.test.js` — config validation tests.
+- `.claude/agent-team/tests/owner-registry.test.js` — owner routing and disabled-surface tests.
 - `.claude/agent-team/tests/localization-diff.test.js` — diff classification tests.
 - `.claude/agent-team/tests/cards.test.js` — card payload tests.
 - `.claude/agent-team/tests/state-store.test.js` — baseline/state tests.
@@ -74,6 +78,7 @@ Reuse:
 Critical implementation notes:
 
 - Cross-workflow task artifacts must be downloaded by `sourceRunId`. The scan card and normalized approval payload must include `sourceRunId`, and dry-run/live-write workflows must download the prior run artifact before reading task files.
+- Every task artifact must include `workType` and `owner`. The MVP only enables `workType: "localization"`, but disabled SDK/REST/CLI/guide/verified surfaces must still be represented in contracts and owner routing tests.
 - The existing `FeishuDocTranslator` must be patched to pass source and target table ids into `BitableReader`, `BitableWriter`, `FeishuToMarkdown`, and `MarkdownToFeishu` where those constructors support or need table-aware behavior.
 - `META_ONLY` actions are not document translation actions. The live-write command must apply them through `BitableWriter.updateRecord()` instead of passing them to `FeishuDocTranslator`.
 
@@ -85,7 +90,9 @@ Critical implementation notes:
 - Create: `.claude/agent-team/config.example.json`
 - Create: `.claude/agent-team/src/contracts.js`
 - Create: `.claude/agent-team/src/config.js`
+- Create: `.claude/agent-team/src/owner-registry.js`
 - Create: `.claude/agent-team/tests/config.test.js`
+- Create: `.claude/agent-team/tests/owner-registry.test.js`
 - Modify: `package.json`
 
 - [ ] **Step 1: Create the config template**
@@ -119,18 +126,92 @@ Create `.claude/agent-team/config.example.json`:
     "larkCliCommand": "lark-cli",
     "eventKey": "im.message.receive_v1"
   },
-  "localization": {
-    "sourceBaseToken": "REPLACE_WITH_SOURCE_BASE_TOKEN",
-    "sourceTableId": "REPLACE_WITH_SOURCE_TABLE_ID",
-    "sourceRootToken": "REPLACE_WITH_SOURCE_WIKI_ROOT_TOKEN",
-    "targetBaseToken": "REPLACE_WITH_TARGET_BASE_TOKEN",
-    "targetTableId": "REPLACE_WITH_TARGET_TABLE_ID",
-    "targetRootToken": "REPLACE_WITH_TARGET_WIKI_ROOT_TOKEN",
-    "sourceLang": "en",
-    "targetLang": "zh",
-    "driveType": "wiki",
-    "translator": "claude",
-    "allowedLiveActions": ["NEW", "UPDATE", "META_ONLY"]
+  "surfaces": {
+    "localization": {
+      "enabled": true,
+      "owner": "localization-owner",
+      "sourceBaseToken": "REPLACE_WITH_SOURCE_BASE_TOKEN",
+      "sourceTableId": "REPLACE_WITH_SOURCE_TABLE_ID",
+      "sourceRootToken": "REPLACE_WITH_SOURCE_WIKI_ROOT_TOKEN",
+      "targetBaseToken": "REPLACE_WITH_TARGET_BASE_TOKEN",
+      "targetTableId": "REPLACE_WITH_TARGET_TABLE_ID",
+      "targetRootToken": "REPLACE_WITH_TARGET_WIKI_ROOT_TOKEN",
+      "sourceLang": "en",
+      "targetLang": "zh",
+      "driveType": "wiki",
+      "translator": "claude",
+      "allowedLiveActions": ["NEW", "UPDATE", "META_ONLY"]
+    },
+    "sdkReference": {
+      "enabled": false,
+      "owners": [
+        {
+          "id": "java-sdk-doc-owner",
+          "language": "java",
+          "repo": "milvus-io/milvus-sdk-java",
+          "defaultBranch": "master",
+          "sourcePathHints": ["src/main/java"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        },
+        {
+          "id": "python-sdk-doc-owner",
+          "language": "python",
+          "repo": "milvus-io/pymilvus",
+          "defaultBranch": "master",
+          "sourcePathHints": ["pymilvus"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        }
+      ]
+    },
+    "restReference": {
+      "enabled": false,
+      "owners": [
+        {
+          "id": "rest-api-doc-owner",
+          "repo": "zilliztech/cloud-v2",
+          "defaultBranch": "master",
+          "openApiSpecPath": "OPTIONAL_OPENAPI_SPEC_PATH",
+          "sourcePathHints": ["api", "internal"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        }
+      ]
+    },
+    "cliReference": {
+      "enabled": false,
+      "owners": [
+        {
+          "id": "cli-doc-owner",
+          "repo": "zilliztech/zilliz-cli",
+          "defaultBranch": "main",
+          "sourcePathHints": ["cmd", "internal"],
+          "feishuBaseToken": "OPTIONAL_TARGET_BASE_TOKEN",
+          "feishuTableId": "OPTIONAL_TARGET_TABLE_ID",
+          "feishuRootToken": "OPTIONAL_TARGET_WIKI_ROOT_TOKEN"
+        }
+      ]
+    },
+    "guideDocs": {
+      "enabled": false,
+      "owner": "guide-doc-owner",
+      "docs": [
+        {
+          "id": "example-guide",
+          "url": "https://REPLACE_WITH_FEISHU_DOC_URL",
+          "expectedLanguages": ["python", "java", "go", "javascript", "bash", "shell", "cpp"]
+        }
+      ]
+    },
+    "verifiedDocs": {
+      "enabled": false,
+      "owner": "verified-doc-owner",
+      "docs": []
+    }
   },
   "agentRuntime": {
     "enabled": false,
@@ -151,6 +232,34 @@ const ACTION_TYPES = Object.freeze({
   META_ONLY: 'META_ONLY',
   SKIP: 'SKIP',
   ORPHAN: 'ORPHAN',
+  REFERENCE_CREATE: 'REFERENCE_CREATE',
+  REFERENCE_UPDATE: 'REFERENCE_UPDATE',
+  GUIDE_CODE_GAP: 'GUIDE_CODE_GAP',
+  VERIFIED_DRAFT: 'VERIFIED_DRAFT',
+});
+
+const WORK_TYPES = Object.freeze({
+  LOCALIZATION: 'localization',
+  SDK_REFERENCE: 'sdkReference',
+  REST_REFERENCE: 'restReference',
+  CLI_REFERENCE: 'cliReference',
+  GUIDE_DOCS: 'guideDocs',
+  VERIFIED_DOCS: 'verifiedDocs',
+});
+
+const OWNER_TYPES = Object.freeze({
+  DOC_COORDINATOR: 'doc-coordinator',
+  LOCALIZATION_OWNER: 'localization-owner',
+  JAVA_SDK_DOC_OWNER: 'java-sdk-doc-owner',
+  PYTHON_SDK_DOC_OWNER: 'python-sdk-doc-owner',
+  GO_SDK_DOC_OWNER: 'go-sdk-doc-owner',
+  NODE_SDK_DOC_OWNER: 'node-sdk-doc-owner',
+  CPP_SDK_DOC_OWNER: 'cpp-sdk-doc-owner',
+  REST_API_DOC_OWNER: 'rest-api-doc-owner',
+  CLI_DOC_OWNER: 'cli-doc-owner',
+  GUIDE_DOC_OWNER: 'guide-doc-owner',
+  VERIFIED_DOC_OWNER: 'verified-doc-owner',
+  REVIEW_AGENT: 'review-agent',
 });
 
 const TASK_STATUS = Object.freeze({
@@ -190,6 +299,8 @@ function isLiveActionAllowed(type, allowed = []) {
 
 module.exports = {
   ACTION_TYPES,
+  WORK_TYPES,
+  OWNER_TYPES,
   TASK_STATUS,
   POLICY_ACTIONS,
   assertKnownActionType,
@@ -221,6 +332,22 @@ function requireArray(value, name) {
   }
 }
 
+function requireBoolean(value, name) {
+  if (typeof value !== 'boolean') {
+    throw new Error(`Missing required config boolean: ${name}`);
+  }
+}
+
+function validateOwnerList(surface, name) {
+  requireBoolean(surface?.enabled, `surfaces.${name}.enabled`);
+  requireArray(surface?.owners, `surfaces.${name}.owners`);
+  for (const [index, owner] of surface.owners.entries()) {
+    requireString(owner.id, `surfaces.${name}.owners.${index}.id`);
+    requireString(owner.repo, `surfaces.${name}.owners.${index}.repo`);
+    requireString(owner.defaultBranch, `surfaces.${name}.owners.${index}.defaultBranch`);
+  }
+}
+
 function validateConfig(config) {
   requireString(config.feishu?.chatId, 'feishu.chatId');
   requireArray(config.feishu?.approverIds, 'feishu.approverIds');
@@ -230,13 +357,25 @@ function validateConfig(config) {
   requireString(config.approvalConsumer?.decisionLogPath, 'approvalConsumer.decisionLogPath');
   requireString(config.approvalConsumer?.larkCliCommand, 'approvalConsumer.larkCliCommand');
   requireString(config.approvalConsumer?.eventKey, 'approvalConsumer.eventKey');
-  requireString(config.localization?.sourceBaseToken, 'localization.sourceBaseToken');
-  requireString(config.localization?.sourceTableId, 'localization.sourceTableId');
-  requireString(config.localization?.sourceRootToken, 'localization.sourceRootToken');
-  requireString(config.localization?.targetBaseToken, 'localization.targetBaseToken');
-  requireString(config.localization?.targetTableId, 'localization.targetTableId');
-  requireString(config.localization?.targetRootToken, 'localization.targetRootToken');
-  requireArray(config.localization?.allowedLiveActions, 'localization.allowedLiveActions');
+  const surfaces = config.surfaces || {};
+  requireBoolean(surfaces.localization?.enabled, 'surfaces.localization.enabled');
+  requireString(surfaces.localization?.owner, 'surfaces.localization.owner');
+  requireString(surfaces.localization?.sourceBaseToken, 'surfaces.localization.sourceBaseToken');
+  requireString(surfaces.localization?.sourceTableId, 'surfaces.localization.sourceTableId');
+  requireString(surfaces.localization?.sourceRootToken, 'surfaces.localization.sourceRootToken');
+  requireString(surfaces.localization?.targetBaseToken, 'surfaces.localization.targetBaseToken');
+  requireString(surfaces.localization?.targetTableId, 'surfaces.localization.targetTableId');
+  requireString(surfaces.localization?.targetRootToken, 'surfaces.localization.targetRootToken');
+  requireArray(surfaces.localization?.allowedLiveActions, 'surfaces.localization.allowedLiveActions');
+  validateOwnerList(surfaces.sdkReference, 'sdkReference');
+  validateOwnerList(surfaces.restReference, 'restReference');
+  validateOwnerList(surfaces.cliReference, 'cliReference');
+  requireBoolean(surfaces.guideDocs?.enabled, 'surfaces.guideDocs.enabled');
+  requireString(surfaces.guideDocs?.owner, 'surfaces.guideDocs.owner');
+  requireArray(surfaces.guideDocs?.docs, 'surfaces.guideDocs.docs');
+  requireBoolean(surfaces.verifiedDocs?.enabled, 'surfaces.verifiedDocs.enabled');
+  requireString(surfaces.verifiedDocs?.owner, 'surfaces.verifiedDocs.owner');
+  requireArray(surfaces.verifiedDocs?.docs, 'surfaces.verifiedDocs.docs');
   return config;
 }
 
@@ -254,7 +393,77 @@ module.exports = {
 };
 ```
 
-- [ ] **Step 4: Add config tests**
+- [ ] **Step 4: Implement owner registry**
+
+Create `.claude/agent-team/src/owner-registry.js`:
+
+```js
+const { WORK_TYPES } = require('./contracts');
+
+function localizationSurface(config) {
+  return {
+    workType: WORK_TYPES.LOCALIZATION,
+    enabled: config.surfaces.localization.enabled,
+    owner: config.surfaces.localization.owner,
+    liveWriteEnabled: config.surfaces.localization.enabled,
+  };
+}
+
+function ownerListSurface(config, workType) {
+  const surface = config.surfaces[workType];
+  return surface.owners.map(owner => ({
+    workType,
+    enabled: surface.enabled,
+    owner: owner.id,
+    repo: owner.repo,
+    liveWriteEnabled: false,
+  }));
+}
+
+function singletonSurface(config, workType) {
+  const surface = config.surfaces[workType];
+  return [{
+    workType,
+    enabled: surface.enabled,
+    owner: surface.owner,
+    liveWriteEnabled: false,
+  }];
+}
+
+function listOwnerRoutes(config) {
+  return [
+    localizationSurface(config),
+    ...ownerListSurface(config, WORK_TYPES.SDK_REFERENCE),
+    ...ownerListSurface(config, WORK_TYPES.REST_REFERENCE),
+    ...ownerListSurface(config, WORK_TYPES.CLI_REFERENCE),
+    ...singletonSurface(config, WORK_TYPES.GUIDE_DOCS),
+    ...singletonSurface(config, WORK_TYPES.VERIFIED_DOCS),
+  ];
+}
+
+function enabledOwnerRoutes(config) {
+  return listOwnerRoutes(config).filter(route => route.enabled);
+}
+
+function routeTask(config, task) {
+  const route = listOwnerRoutes(config).find(candidate => {
+    if (candidate.workType !== task.workType) return false;
+    if (task.owner && candidate.owner !== task.owner) return false;
+    return true;
+  });
+  if (!route) throw new Error(`No owner route for workType=${task.workType} owner=${task.owner || ''}`);
+  if (!route.enabled) throw new Error(`Owner route is disabled: ${route.owner}`);
+  return route;
+}
+
+module.exports = {
+  listOwnerRoutes,
+  enabledOwnerRoutes,
+  routeTask,
+};
+```
+
+- [ ] **Step 5: Add config tests**
 
 Create `.claude/agent-team/tests/config.test.js`:
 
@@ -272,20 +481,44 @@ function validConfig() {
       larkCliCommand: 'lark-cli',
       eventKey: 'im.message.receive_v1',
     },
-    localization: {
-      sourceBaseToken: 'src_base',
-      sourceTableId: 'src_table',
-      sourceRootToken: 'src_root',
-      targetBaseToken: 'tgt_base',
-      targetTableId: 'tgt_table',
-      targetRootToken: 'tgt_root',
-      allowedLiveActions: ['NEW', 'UPDATE', 'META_ONLY'],
+    surfaces: {
+      localization: {
+        enabled: true,
+        owner: 'localization-owner',
+        sourceBaseToken: 'src_base',
+        sourceTableId: 'src_table',
+        sourceRootToken: 'src_root',
+        targetBaseToken: 'tgt_base',
+        targetTableId: 'tgt_table',
+        targetRootToken: 'tgt_root',
+        allowedLiveActions: ['NEW', 'UPDATE', 'META_ONLY'],
+      },
+      sdkReference: {
+        enabled: false,
+        owners: [{ id: 'java-sdk-doc-owner', repo: 'milvus-io/milvus-sdk-java', defaultBranch: 'master' }],
+      },
+      restReference: {
+        enabled: false,
+        owners: [{ id: 'rest-api-doc-owner', repo: 'zilliztech/cloud-v2', defaultBranch: 'master' }],
+      },
+      cliReference: {
+        enabled: false,
+        owners: [{ id: 'cli-doc-owner', repo: 'zilliztech/zilliz-cli', defaultBranch: 'main' }],
+      },
+      guideDocs: { enabled: false, owner: 'guide-doc-owner', docs: [] },
+      verifiedDocs: { enabled: false, owner: 'verified-doc-owner', docs: [] },
     },
   };
 }
 
 test('validateConfig accepts complete MVP config', () => {
   assert.equal(validateConfig(validConfig()).github.repo, 'feishu-markdown-bridge');
+});
+
+test('validateConfig requires disabled SDK and REST surfaces to be explicit', () => {
+  const config = validConfig();
+  delete config.surfaces.restReference;
+  assert.throws(() => validateConfig(config), /surfaces\.restReference\.enabled/);
 });
 
 test('validateConfig rejects missing approver allowlist', () => {
@@ -295,7 +528,62 @@ test('validateConfig rejects missing approver allowlist', () => {
 });
 ```
 
-- [ ] **Step 5: Add package scripts**
+- [ ] **Step 6: Add owner registry tests**
+
+Create `.claude/agent-team/tests/owner-registry.test.js`:
+
+```js
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { enabledOwnerRoutes, listOwnerRoutes, routeTask } = require('../src/owner-registry');
+
+function config() {
+  return {
+    surfaces: {
+      localization: { enabled: true, owner: 'localization-owner' },
+      sdkReference: {
+        enabled: false,
+        owners: [{ id: 'java-sdk-doc-owner', repo: 'milvus-io/milvus-sdk-java' }],
+      },
+      restReference: {
+        enabled: false,
+        owners: [{ id: 'rest-api-doc-owner', repo: 'zilliztech/cloud-v2' }],
+      },
+      cliReference: {
+        enabled: false,
+        owners: [{ id: 'cli-doc-owner', repo: 'zilliztech/zilliz-cli' }],
+      },
+      guideDocs: { enabled: false, owner: 'guide-doc-owner' },
+      verifiedDocs: { enabled: false, owner: 'verified-doc-owner' },
+    },
+  };
+}
+
+test('listOwnerRoutes includes localization, SDK, REST, CLI, guide, and verified domains', () => {
+  const routes = listOwnerRoutes(config());
+  assert.deepEqual(routes.map(route => route.owner), [
+    'localization-owner',
+    'java-sdk-doc-owner',
+    'rest-api-doc-owner',
+    'cli-doc-owner',
+    'guide-doc-owner',
+    'verified-doc-owner',
+  ]);
+});
+
+test('enabledOwnerRoutes only enables localization in MVP config', () => {
+  assert.deepEqual(enabledOwnerRoutes(config()).map(route => route.owner), ['localization-owner']);
+});
+
+test('routeTask rejects disabled SDK reference owner during MVP', () => {
+  assert.throws(
+    () => routeTask(config(), { workType: 'sdkReference', owner: 'java-sdk-doc-owner' }),
+    /disabled/
+  );
+});
+```
+
+- [ ] **Step 7: Add package scripts**
 
 Modify `package.json` scripts:
 
@@ -319,7 +607,7 @@ Modify `package.json` scripts:
 }
 ```
 
-- [ ] **Step 6: Run tests**
+- [ ] **Step 8: Run tests**
 
 Run:
 
@@ -327,12 +615,12 @@ Run:
 npm run test:agent-team
 ```
 
-Expected: PASS for `config.test.js`.
+Expected: PASS for `config.test.js` and `owner-registry.test.js`.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add package.json .claude/agent-team/config.example.json .claude/agent-team/src/contracts.js .claude/agent-team/src/config.js .claude/agent-team/tests/config.test.js
+git add package.json .claude/agent-team/config.example.json .claude/agent-team/src/contracts.js .claude/agent-team/src/config.js .claude/agent-team/src/owner-registry.js .claude/agent-team/tests/config.test.js .claude/agent-team/tests/owner-registry.test.js
 git commit -m "feat: add doc agent config contracts"
 ```
 
@@ -565,13 +853,14 @@ function classifyMetaOnly(actions) {
 }
 
 async function readLocalizationRecords(config) {
+  const localization = config.surfaces.localization;
   const sourceReader = new BitableReader({
-    baseToken: config.localization.sourceBaseToken,
-    tableId: config.localization.sourceTableId,
+    baseToken: localization.sourceBaseToken,
+    tableId: localization.sourceTableId,
   });
   const targetReader = new BitableReader({
-    baseToken: config.localization.targetBaseToken,
-    tableId: config.localization.targetTableId,
+    baseToken: localization.targetBaseToken,
+    tableId: localization.targetTableId,
   });
   const [sourceRecords, targetRecords] = await Promise.all([
     sourceReader.listRecords(),
@@ -905,7 +1194,8 @@ const { readLocalizationRecords, diffLocalizationRecords } = require('../src/loc
 const { renderMarkdownReport, renderFeishuSummary } = require('../src/report-renderer');
 const { buildDailyReportCard } = require('../src/cards');
 const { FeishuImClient } = require('../src/feishu-im');
-const { TASK_STATUS } = require('../src/contracts');
+const { TASK_STATUS, WORK_TYPES } = require('../src/contracts');
+const { routeTask } = require('../src/owner-registry');
 
 async function main() {
   const args = new Set(process.argv.slice(2));
@@ -916,12 +1206,15 @@ async function main() {
   const state = stateStore.read();
   const task = {
     id: createTaskId('loc-scan'),
+    workType: WORK_TYPES.LOCALIZATION,
+    owner: config.surfaces.localization.owner,
     type: 'localization_scan',
     status: TASK_STATUS.DETECTED,
     createdAt: new Date().toISOString(),
     sourceRunId: process.env.GITHUB_RUN_ID || null,
     baseline: state.localization.lastHandled,
   };
+  routeTask(config, task);
 
   const records = await readLocalizationRecords(config);
   const diff = diffLocalizationRecords(records.sourceRecords, records.targetRecords);
@@ -1553,9 +1846,10 @@ const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');
 
 async function applyMetaOnlyActions(config, actions) {
+  const localization = config.surfaces.localization;
   const writer = new BitableWriter({
-    baseToken: config.localization.targetBaseToken,
-    tableId: config.localization.targetTableId,
+    baseToken: localization.targetBaseToken,
+    tableId: localization.targetTableId,
   });
   const results = [];
   for (const action of actions) {
@@ -1580,7 +1874,8 @@ async function main() {
   const store = new TaskStore();
   const task = store.readTask(taskId);
   const approved = JSON.parse(fs.readFileSync(path.join(store.taskDir(taskId), 'live-actions.json'), 'utf8'));
-  const allowed = config.localization.allowedLiveActions;
+  const localization = config.surfaces.localization;
+  const allowed = localization.allowedLiveActions;
   const unsafe = approved.filter(action => !isLiveActionAllowed(action.type, allowed));
   if (unsafe.length) {
     throw new Error(`Refusing live write for disallowed action types: ${unsafe.map(a => a.type).join(', ')}`);
@@ -1589,16 +1884,16 @@ async function main() {
   store.writeTask({ ...task, status: TASK_STATUS.LIVE_WRITE_STARTED, liveWriteStartedAt: new Date().toISOString() });
 
   const translator = new FeishuDocTranslator({
-    sourceBitable: config.localization.sourceBaseToken,
-    targetBitable: config.localization.targetBaseToken,
-    sourceTableId: config.localization.sourceTableId,
-    targetTableId: config.localization.targetTableId,
-    sourceRoot: config.localization.sourceRootToken,
-    targetRoot: config.localization.targetRootToken,
-    sourceLang: config.localization.sourceLang,
-    targetLang: config.localization.targetLang,
-    driveType: config.localization.driveType,
-    translatorType: config.localization.translator,
+    sourceBitable: localization.sourceBaseToken,
+    targetBitable: localization.targetBaseToken,
+    sourceTableId: localization.sourceTableId,
+    targetTableId: localization.targetTableId,
+    sourceRoot: localization.sourceRootToken,
+    targetRoot: localization.targetRootToken,
+    sourceLang: localization.sourceLang,
+    targetLang: localization.targetLang,
+    driveType: localization.driveType,
+    translatorType: localization.translator,
     dryRun: false,
     approvalCallback: async (actions) => {
       const approvedSlugs = new Set(approved.map(action => `${action.type}:${action.slug}`));
@@ -1895,11 +2190,12 @@ Local approval consumer environment:
 
 1. Copy `.claude/agent-team/config.example.json`.
 2. Fill real Feishu chat, approver, source table, target table, root, GitHub, and approval consumer values.
-3. Store the filled JSON as GitHub secret `DOC_AGENT_CONFIG_JSON`.
-4. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.
-5. Run `lark-cli auth login` if needed and verify `lark-cli event consume im.message.receive_v1 --as bot --max-events 1 --timeout 30s` can receive events.
-6. Start `.claude/agent-team/bin/doc-agent-approval-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN` in its environment.
-7. Run `Doc Agent Scan` manually from GitHub Actions.
+3. Keep SDK reference, REST reference, CLI reference, guide-doc, and verified-doc surfaces present but disabled until their owners are implemented.
+4. Store the filled JSON as GitHub secret `DOC_AGENT_CONFIG_JSON`.
+5. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.
+6. Run `lark-cli auth login` if needed and verify `lark-cli event consume im.message.receive_v1 --as bot --max-events 1 --timeout 30s` can receive events.
+7. Start `.claude/agent-team/bin/doc-agent-approval-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN` in its environment.
+8. Run `Doc Agent Scan` manually from GitHub Actions.
 
 ## Expected MVP Flow
 
@@ -1949,10 +2245,10 @@ Spec coverage:
 - Feishu cards as interaction media: Task 4, Task 5, Task 7, Task 8.
 - Always-on local Feishu approval consumer: Task 6.
 - GitHub Actions scheduler/executor: Task 8.
-- Domain-owner model: Task 7 adds the owner-agent boundary without implementing all owners.
+- Domain-owner model: Task 1 defines multi-domain owner routes and disabled SDK/REST/CLI/guide/verified surfaces; Task 7 uses the localization owner route for MVP execution.
 - Metadata-first localization MVP: Task 3 and Task 5.
 - Live writes only after review and approval: Task 7 and Task 8.
-- Guide-doc scan: deferred because the finalized spec marks it Phase 2 report-only after MVP.
+- Guide-doc scan: config and owner route exist in Task 1, but scanning remains deferred because the finalized spec marks it Phase 2 report-only after MVP.
 
 Residual verification notes:
 

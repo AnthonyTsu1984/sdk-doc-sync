@@ -23,7 +23,8 @@ The AWS `sample-codex-agent-team` repository contributes the team operating mode
 - A local long-lived Feishu event consumer receives approval chat replies and triggers GitHub workflows.
 - Agents are domain owners, not pipeline stations. Shared scanning, drafting, patching, localization, and verification scripts are tools used by owners.
 - Repository access is metadata-first. Owner agents fetch source only after a human policy decision requires code evidence or a patch plan.
-- MVP is localization-only for one configured Feishu source/target table pair.
+- MVP live execution is localization-first for one configured Feishu source/target table pair.
+- MVP configuration, contracts, task artifacts, and test harness must still model the other documented owner domains as disabled surfaces: SDK reference docs, REST API reference docs, CLI docs, guide docs, and verified long-form docs.
 - Guide-doc code-gap scanning is the next report-only extension. Live guide patching is not part of MVP.
 - SDK/reference doc owners, REST/CLI owners, GitHub PR creation, and automatic low-risk writes are post-MVP.
 
@@ -453,7 +454,7 @@ The first implementation must prove the control loop without trying to automate 
 
 ### MVP Work Type
 
-Use one task family only:
+Use one task family for live execution:
 
 - `localization-owner` owns localization parity for one configured Feishu source/target table pair.
 - The daily scan checks source and target Feishu metadata by stable slug.
@@ -462,6 +463,16 @@ Use one task family only:
 - `ORPHAN` is report-only in MVP.
 
 This avoids SDK builds, large source checkouts, and live runtime verification while still exercising the Feishu scan, decision, approval, write, and verification loop.
+
+The MVP control plane must not hard-code localization as the only possible domain. It should define disabled configurations and contracts for:
+
+- SDK reference doc generation and update owners, grouped by language.
+- REST API reference doc generation and update owners.
+- CLI reference doc generation and update owners.
+- Guide-doc code-gap scanning.
+- Verified long-form doc drafting.
+
+Those disabled surfaces are not executed in the MVP, but they must be represented in config validation, task type constants, owner routing, and tests so later phases do not require replacing the core contract.
 
 ### MVP User Flow
 
@@ -489,6 +500,8 @@ Included:
 - one approver allowlist
 - one local Feishu event consumer using `lark-cli event consume im.message.receive_v1`
 - GitHub `repository_dispatch` or `workflow_dispatch` from the event consumer
+- shared domain configuration schema covering localization, SDK reference docs, REST API docs, CLI docs, guide docs, and verified docs
+- owner/task routing contracts for all documented domains, with only localization enabled for live execution
 - one source/target localization table pair
 - one scheduled daily report
 - one manual dispatch path for testing
@@ -556,6 +569,9 @@ The implementation plan must require these values before running live workflows:
 - Feishu approver allowlist by stable user/open id.
 - Feishu source base/table/root tokens for the MVP localization table pair.
 - Feishu target base/table/root tokens for the MVP localization table pair.
+- Disabled SDK reference doc owner configs, including repo URL/name, language, owner id, and Feishu target identifiers where known.
+- Disabled REST API reference doc owner configs, including OpenAPI/source spec location, repo URL/name, owner id, and Feishu target identifiers where known.
+- Disabled guide-doc scan config, including listed Feishu doc URLs/tokens and expected language sets.
 - Local event consumer host/service path and decision-log path.
 - GitHub repository, branch/ref, and dispatch event names.
 - GitHub credential used by the local event consumer for `repository_dispatch`.

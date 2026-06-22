@@ -6,6 +6,10 @@ node_modules/
 scripts/_tmp_*
 tmp/
 
+# Local doc agent runtime state
+.claude/agent-team/config.json
+.claude/agent-team/state/*.json
+
 # SDK update worktrees
 .worktrees/
 

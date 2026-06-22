@@ -14,7 +14,7 @@
 
 Implement the finalized MVP control plane, with localization as the only enabled live work type:
 
-- One Feishu source/target localization table pair.
+- One Feishu source/target localization base pair with one or more mapped source/target table id pairs.
 - Disabled-but-validated configuration surfaces for SDK reference docs, REST API reference docs, CLI docs, guide docs, and verified long-form docs.
 - Shared task/owner contracts for all documented domains.
 - One daily scan report card.
@@ -79,7 +79,7 @@ Critical implementation notes:
 
 - Cross-workflow task artifacts must be downloaded by `sourceRunId`. The scan card and normalized approval payload must include `sourceRunId`, and dry-run/live-write workflows must download the prior run artifact before reading task files.
 - Every task artifact must include `workType` and `owner`. The MVP only enables `workType: "localization"`, but disabled SDK/REST/CLI/guide/verified surfaces must still be represented in contracts and owner routing tests.
-- The existing `FeishuDocTranslator` must be patched to pass source and target table ids into `BitableReader`, `BitableWriter`, `FeishuToMarkdown`, and `MarkdownToFeishu` where those constructors support or need table-aware behavior.
+- The existing `FeishuDocTranslator` must be patched to accept one source/target table id pair per invocation and pass those ids into `BitableReader`, `BitableWriter`, `FeishuToMarkdown`, and `MarkdownToFeishu` where those constructors support or need table-aware behavior.
 - `META_ONLY` actions are not document translation actions. The live-write command must apply them through `BitableWriter.updateRecord()` instead of passing them to `FeishuDocTranslator`.
 
 ---
@@ -131,10 +131,10 @@ Create `.claude/agent-team/config.example.json`:
       "enabled": true,
       "owner": "localization-owner",
       "sourceBaseToken": "REPLACE_WITH_SOURCE_BASE_TOKEN",
-      "sourceTableId": "REPLACE_WITH_SOURCE_TABLE_ID",
+      "sourceTableIds": ["REPLACE_WITH_SOURCE_TABLE_ID"],
       "sourceRootToken": "REPLACE_WITH_SOURCE_WIKI_ROOT_TOKEN",
       "targetBaseToken": "REPLACE_WITH_TARGET_BASE_TOKEN",
-      "targetTableId": "REPLACE_WITH_TARGET_TABLE_ID",
+      "targetTableIds": ["REPLACE_WITH_TARGET_TABLE_ID"],
       "targetRootToken": "REPLACE_WITH_TARGET_WIKI_ROOT_TOKEN",
       "sourceLang": "en",
       "targetLang": "zh",
@@ -332,6 +332,14 @@ function requireArray(value, name) {
   }
 }
 
+function requireEqualLength(left, right, leftName, rightName) {
+  requireArray(left, leftName);
+  requireArray(right, rightName);
+  if (left.length !== right.length) {
+    throw new Error(`Config arrays must have equal length: ${leftName} and ${rightName}`);
+  }
+}
+
 function requireBoolean(value, name) {
   if (typeof value !== 'boolean') {
     throw new Error(`Missing required config boolean: ${name}`);
@@ -361,10 +369,14 @@ function validateConfig(config) {
   requireBoolean(surfaces.localization?.enabled, 'surfaces.localization.enabled');
   requireString(surfaces.localization?.owner, 'surfaces.localization.owner');
   requireString(surfaces.localization?.sourceBaseToken, 'surfaces.localization.sourceBaseToken');
-  requireString(surfaces.localization?.sourceTableId, 'surfaces.localization.sourceTableId');
+  requireEqualLength(
+    surfaces.localization?.sourceTableIds,
+    surfaces.localization?.targetTableIds,
+    'surfaces.localization.sourceTableIds',
+    'surfaces.localization.targetTableIds'
+  );
   requireString(surfaces.localization?.sourceRootToken, 'surfaces.localization.sourceRootToken');
   requireString(surfaces.localization?.targetBaseToken, 'surfaces.localization.targetBaseToken');
-  requireString(surfaces.localization?.targetTableId, 'surfaces.localization.targetTableId');
   requireString(surfaces.localization?.targetRootToken, 'surfaces.localization.targetRootToken');
   requireArray(surfaces.localization?.allowedLiveActions, 'surfaces.localization.allowedLiveActions');
   validateOwnerList(surfaces.sdkReference, 'sdkReference');
@@ -486,10 +498,10 @@ function validConfig() {
         enabled: true,
         owner: 'localization-owner',
         sourceBaseToken: 'src_base',
-        sourceTableId: 'src_table',
+        sourceTableIds: ['src_table_a', 'src_table_b'],
         sourceRootToken: 'src_root',
         targetBaseToken: 'tgt_base',
-        targetTableId: 'tgt_table',
+        targetTableIds: ['tgt_table_a', 'tgt_table_b'],
         targetRootToken: 'tgt_root',
         allowedLiveActions: ['NEW', 'UPDATE', 'META_ONLY'],
       },
@@ -519,6 +531,12 @@ test('validateConfig requires disabled SDK and REST surfaces to be explicit', ()
   const config = validConfig();
   delete config.surfaces.restReference;
   assert.throws(() => validateConfig(config), /surfaces\.restReference\.enabled/);
+});
+
+test('validateConfig rejects mismatched localization table mappings', () => {
+  const config = validConfig();
+  config.surfaces.localization.targetTableIds = ['tgt_table_a'];
+  assert.throws(() => validateConfig(config), /sourceTableIds and surfaces\.localization\.targetTableIds/);
 });
 
 test('validateConfig rejects missing approver allowlist', () => {
@@ -843,35 +861,61 @@ function normalizeSummary(actions) {
 
 function classifyMetaOnly(actions) {
   return actions.map((action) => {
-    if (action.type !== 'UPDATE') return action;
-    const reason = action.reason || '';
+    const tableScopedAction = {
+      ...action,
+      sourceTableId: action.sourceTableId || action.source?.sourceTableId || action.target?.sourceTableId,
+      targetTableId: action.targetTableId || action.source?.targetTableId || action.target?.targetTableId,
+    };
+    if (tableScopedAction.type !== 'UPDATE') return tableScopedAction;
+    const reason = tableScopedAction.reason || '';
     if (/deprecated since|source deprecated/i.test(reason)) {
-      return { ...action, type: 'META_ONLY', reason };
+      return { ...tableScopedAction, type: 'META_ONLY', reason };
     }
-    return action;
+    return tableScopedAction;
   });
 }
 
 async function readLocalizationRecords(config) {
   const localization = config.surfaces.localization;
-  const sourceReader = new BitableReader({
-    baseToken: localization.sourceBaseToken,
-    tableId: localization.sourceTableId,
-  });
-  const targetReader = new BitableReader({
-    baseToken: localization.targetBaseToken,
-    tableId: localization.targetTableId,
-  });
-  const [sourceRecords, targetRecords] = await Promise.all([
-    sourceReader.listRecords(),
-    targetReader.listRecords(),
-  ]);
-  return { sourceRecords, targetRecords };
+  const pairs = localization.sourceTableIds.map((sourceTableId, index) => ({
+    sourceTableId,
+    targetTableId: localization.targetTableIds[index],
+  }));
+  const tableResults = await Promise.all(pairs.map(async pair => {
+    const sourceReader = new BitableReader({
+      baseToken: localization.sourceBaseToken,
+      tableId: pair.sourceTableId,
+    });
+    const targetReader = new BitableReader({
+      baseToken: localization.targetBaseToken,
+      tableId: pair.targetTableId,
+    });
+    const [sourceRecords, targetRecords] = await Promise.all([
+      sourceReader.listRecords(),
+      targetReader.listRecords(),
+    ]);
+    return {
+      ...pair,
+      sourceRecords: sourceRecords.map(record => ({ ...record, sourceTableId: pair.sourceTableId, targetTableId: pair.targetTableId })),
+      targetRecords: targetRecords.map(record => ({ ...record, sourceTableId: pair.sourceTableId, targetTableId: pair.targetTableId })),
+    };
+  }));
+  return {
+    tableResults,
+    sourceRecords: tableResults.flatMap(result => result.sourceRecords),
+    targetRecords: tableResults.flatMap(result => result.targetRecords),
+  };
 }
 
-function diffLocalizationRecords(sourceRecords, targetRecords) {
+function diffOneTablePair(sourceRecords, targetRecords) {
   const diff = new TranslationDiff({ strict: true });
-  const actions = classifyMetaOnly(diff.diff(sourceRecords, targetRecords));
+  return classifyMetaOnly(diff.diff(sourceRecords, targetRecords));
+}
+
+function diffLocalizationRecords(sourceRecordsOrReadResult, targetRecords = null) {
+  const actions = sourceRecordsOrReadResult.tableResults
+    ? sourceRecordsOrReadResult.tableResults.flatMap(result => diffOneTablePair(result.sourceRecords, result.targetRecords))
+    : diffOneTablePair(sourceRecordsOrReadResult, targetRecords);
   return {
     actions,
     summary: normalizeSummary(actions),
@@ -881,6 +925,7 @@ function diffLocalizationRecords(sourceRecords, targetRecords) {
 module.exports = {
   readLocalizationRecords,
   diffLocalizationRecords,
+  diffOneTablePair,
   normalizeSummary,
 };
 ```
@@ -1217,7 +1262,7 @@ async function main() {
   routeTask(config, task);
 
   const records = await readLocalizationRecords(config);
-  const diff = diffLocalizationRecords(records.sourceRecords, records.targetRecords);
+  const diff = diffLocalizationRecords(records);
   const report = renderMarkdownReport({ task, ...diff });
 
   taskStore.writeTask({ ...task, summary: diff.summary });
@@ -1845,24 +1890,71 @@ const { loadConfig } = require('../src/config');
 const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');
 
+function groupByTablePair(actions) {
+  return actions.reduce((groups, action) => {
+    const key = `${action.sourceTableId}:${action.targetTableId}`;
+    if (!groups.has(key)) {
+      groups.set(key, {
+        sourceTableId: action.sourceTableId,
+        targetTableId: action.targetTableId,
+        actions: [],
+      });
+    }
+    groups.get(key).actions.push(action);
+    return groups;
+  }, new Map());
+}
+
 async function applyMetaOnlyActions(config, actions) {
   const localization = config.surfaces.localization;
-  const writer = new BitableWriter({
-    baseToken: localization.targetBaseToken,
-    tableId: localization.targetTableId,
-  });
   const results = [];
-  for (const action of actions) {
-    if (!action.target?.id) {
-      results.push({ action, status: 'skipped', reason: 'target record missing' });
-      continue;
+  for (const group of groupByTablePair(actions).values()) {
+    const writer = new BitableWriter({
+      baseToken: localization.targetBaseToken,
+      tableId: group.targetTableId,
+    });
+    for (const action of group.actions) {
+      if (!action.target?.id) {
+        results.push({ action, status: 'skipped', reason: 'target record missing' });
+        continue;
+      }
+      const fields = {
+        deprecateSince: action.source?.metadata?.deprecate_since || undefined,
+        lastModified: action.source?.metadata?.last_modified || undefined,
+      };
+      await writer.updateRecord(action.target.id, fields);
+      results.push({ action, status: 'success', targetTableId: group.targetTableId });
     }
-    const fields = {
-      deprecateSince: action.source?.metadata?.deprecate_since || undefined,
-      lastModified: action.source?.metadata?.last_modified || undefined,
-    };
-    await writer.updateRecord(action.target.id, fields);
-    results.push({ action, status: 'success' });
+  }
+  return results;
+}
+
+async function runTranslationActions(config, approved) {
+  const localization = config.surfaces.localization;
+  const results = [];
+  for (const group of groupByTablePair(approved).values()) {
+    const translator = new FeishuDocTranslator({
+      sourceBitable: localization.sourceBaseToken,
+      targetBitable: localization.targetBaseToken,
+      sourceTableId: group.sourceTableId,
+      targetTableId: group.targetTableId,
+      sourceRoot: localization.sourceRootToken,
+      targetRoot: localization.targetRootToken,
+      sourceLang: localization.sourceLang,
+      targetLang: localization.targetLang,
+      driveType: localization.driveType,
+      translatorType: localization.translator,
+      dryRun: false,
+      approvalCallback: async (actions) => {
+        const approvedSlugs = new Set(group.actions.map(action => `${action.type}:${action.slug}`));
+        return actions.filter(action => approvedSlugs.has(`${action.type}:${action.slug}`));
+      },
+    });
+    results.push({
+      sourceTableId: group.sourceTableId,
+      targetTableId: group.targetTableId,
+      result: await translator.run(),
+    });
   }
   return results;
 }
@@ -1883,34 +1975,14 @@ async function main() {
 
   store.writeTask({ ...task, status: TASK_STATUS.LIVE_WRITE_STARTED, liveWriteStartedAt: new Date().toISOString() });
 
-  const translator = new FeishuDocTranslator({
-    sourceBitable: localization.sourceBaseToken,
-    targetBitable: localization.targetBaseToken,
-    sourceTableId: localization.sourceTableId,
-    targetTableId: localization.targetTableId,
-    sourceRoot: localization.sourceRootToken,
-    targetRoot: localization.targetRootToken,
-    sourceLang: localization.sourceLang,
-    targetLang: localization.targetLang,
-    driveType: localization.driveType,
-    translatorType: localization.translator,
-    dryRun: false,
-    approvalCallback: async (actions) => {
-      const approvedSlugs = new Set(approved.map(action => `${action.type}:${action.slug}`));
-      return actions.filter(action => approvedSlugs.has(`${action.type}:${action.slug}`));
-    },
-  });
-
   const translationActions = approved.filter(action => ['NEW', 'UPDATE'].includes(action.type));
   const metaOnlyActions = approved.filter(action => action.type === 'META_ONLY');
-  const result = translationActions.length > 0
-    ? await translator.run()
-    : { actions: [], summary: { total: 0 }, results: [] };
+  const result = translationActions.length > 0 ? await runTranslationActions(config, translationActions) : [];
   const metaOnlyResults = await applyMetaOnlyActions(config, metaOnlyActions);
   store.writeArtifact(taskId, 'meta-only-result.json', metaOnlyResults);
   store.writeArtifact(taskId, 'live-write-result.json', result);
   store.writeTask({ ...task, status: TASK_STATUS.VERIFICATION_STARTED, liveWriteCompletedAt: new Date().toISOString() });
-  console.log(JSON.stringify({ taskId, resultSummary: result.summary }, null, 2));
+  console.log(JSON.stringify({ taskId, translationTableCount: result.length, metaOnlyCount: metaOnlyResults.length }, null, 2));
 }
 
 main().catch(error => {
@@ -1938,7 +2010,7 @@ async function main() {
   const store = new TaskStore();
   const task = store.readTask(taskId);
   const records = await readLocalizationRecords(config);
-  const diff = diffLocalizationRecords(records.sourceRecords, records.targetRecords);
+  const diff = diffLocalizationRecords(records);
   const failed = diff.actions.filter(action => ['NEW', 'UPDATE', 'META_ONLY'].includes(action.type));
   const status = failed.length === 0 ? TASK_STATUS.COMPLETED : TASK_STATUS.FAILED;
   store.writeArtifact(taskId, 'verification.json', { summary: diff.summary, remaining: failed });
@@ -2189,7 +2261,7 @@ Local approval consumer environment:
 ## Setup
 
 1. Copy `.claude/agent-team/config.example.json`.
-2. Fill real Feishu chat, approver, source table, target table, root, GitHub, and approval consumer values.
+2. Fill real Feishu chat, approver, source/target base tokens, `sourceTableIds`, `targetTableIds`, root tokens, GitHub, and approval consumer values.
 3. Keep SDK reference, REST reference, CLI reference, guide-doc, and verified-doc surfaces present but disabled until their owners are implemented.
 4. Store the filled JSON as GitHub secret `DOC_AGENT_CONFIG_JSON`.
 5. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.

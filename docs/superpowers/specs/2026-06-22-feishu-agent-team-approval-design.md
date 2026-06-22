@@ -23,7 +23,7 @@ The AWS `sample-codex-agent-team` repository contributes the team operating mode
 - A local long-lived Feishu event consumer receives approval chat replies and triggers GitHub workflows.
 - Agents are domain owners, not pipeline stations. Shared scanning, drafting, patching, localization, and verification scripts are tools used by owners.
 - Repository access is metadata-first. Owner agents fetch source only after a human policy decision requires code evidence or a patch plan.
-- MVP live execution is localization-first for one configured Feishu source/target table pair.
+- MVP live execution is localization-first for one configured Feishu source/target base pair with one or more mapped source/target table id pairs.
 - MVP configuration, contracts, task artifacts, and test harness must still model the other documented owner domains as disabled surfaces: SDK reference docs, REST API reference docs, CLI docs, guide docs, and verified long-form docs.
 - Guide-doc code-gap scanning is the next report-only extension. Live guide patching is not part of MVP.
 - SDK/reference doc owners, REST/CLI owners, GitHub PR creation, and automatic low-risk writes are post-MVP.
@@ -61,7 +61,7 @@ Approved GitHub Actions workflow
 - MVP workflow. Runs on schedule and `workflow_dispatch`.
 - Checks out this repository.
 - Reads automation state before scanning.
-- Performs lightweight discovery for the configured MVP localization source/target table pair.
+- Performs lightweight discovery for the configured MVP localization source/target base pair and table id mappings.
 - Builds a daily scan report with affected surfaces, estimated effort, risk, and possible dealing policies.
 - Sends a Feishu report card instead of starting live work directly.
 
@@ -376,7 +376,7 @@ Full checkouts are reserved for tasks that require broad source tracing, live bu
 
 - The coordinator owns automation state updates after successful scan/report cycles.
 - For SDK/reference owners, automation state includes the existing `.claude/skills/sdk-doc-sync/scan-state.json`.
-- For the localization MVP, automation state must separately track source/target table pair, last handled source modified time or revision, and unresolved carryover findings.
+- For the localization MVP, automation state must separately track source/target base pair, mapped table ids, last handled source modified time or revision, and unresolved carryover findings.
 - Owner agents must not advance scan state merely because they started work.
 - A failed or rejected task preserves the old baseline unless the human explicitly chooses to mark it handled.
 - Daily reports should distinguish "new source change detected" from "previously detected but not handled."
@@ -456,7 +456,7 @@ The first implementation must prove the control loop without trying to automate 
 
 Use one task family for live execution:
 
-- `localization-owner` owns localization parity for one configured Feishu source/target table pair.
+- `localization-owner` owns localization parity for one configured Feishu source/target base pair with one or more mapped table id pairs.
 - The daily scan checks source and target Feishu metadata by stable slug.
 - The dry run classifies records as `NEW`, `UPDATE`, `META_ONLY`, `SKIP`, or `ORPHAN`.
 - The live write path supports only `NEW`, `UPDATE`, and `META_ONLY`.
@@ -486,7 +486,7 @@ Those disabled surfaces are not executed in the MVP, but they must be represente
 4. The user chooses a policy or submits custom instructions from Feishu.
 5. The local event consumer records the decision and triggers `doc-agent-dry-run.yml`.
 6. The coordinator turns the decision into one or more `localization-owner` tasks.
-7. `localization-owner` produces dry-run plans and draft outputs for the configured table pair.
+7. `localization-owner` produces dry-run plans and draft outputs for the configured table mappings.
 8. `review-agent` reviews the dry-run output.
 9. If review passes and a live write is needed, Feishu receives a second approval card showing the concrete write commands.
 10. After approval, `doc-agent-live-write.yml` performs the approved Feishu writes.
@@ -502,7 +502,7 @@ Included:
 - GitHub `repository_dispatch` or `workflow_dispatch` from the event consumer
 - shared domain configuration schema covering localization, SDK reference docs, REST API docs, CLI docs, guide docs, and verified docs
 - owner/task routing contracts for all documented domains, with only localization enabled for live execution
-- one source/target localization table pair
+- one source/target localization base pair with one or more mapped table id pairs
 - one scheduled daily report
 - one manual dispatch path for testing
 - dry-run artifacts stored in GitHub Actions
@@ -520,7 +520,7 @@ Excluded:
 - GitHub PR creation
 - automatic low-risk writes without approval
 - multiple Feishu chats or multi-tenant approval rules
-- multiple localization table pairs
+- multiple localization base/root pairs
 - deleting or archiving Feishu docs/records
 - production live runtime verification
 - full checkout of target source repositories
@@ -557,7 +557,7 @@ Excluded:
 - GitHub trigger from event consumer: `repository_dispatch`, with the original workflow run id, task id, action, approver id, and optional custom instruction in the payload.
 - Agent runtime for owner/reviewer work: Codex CLI first, because owner agents need repository/filesystem/test access. Lightweight card copy or classification helpers may use SDK/API calls later.
 - MVP write mode: approved live Feishu writes only. GitHub PR creation is deferred.
-- MVP scan mode: Feishu metadata only for one localization table pair. No target source repository checkout.
+- MVP scan mode: Feishu metadata only for one localization base/root pair and its configured table id mappings. No target source repository checkout.
 - MVP card model: one daily report card and one concrete live-write approval card per approved task batch, both using reply-command decisions.
 - MVP review model: review before the concrete live-write approval card.
 
@@ -567,8 +567,8 @@ The implementation plan must require these values before running live workflows:
 
 - Feishu chat id for progress messages and cards.
 - Feishu approver allowlist by stable user/open id.
-- Feishu source base/table/root tokens for the MVP localization table pair.
-- Feishu target base/table/root tokens for the MVP localization table pair.
+- Feishu source base/root tokens and `sourceTableIds` array for the MVP localization base pair.
+- Feishu target base/root tokens and `targetTableIds` array for the MVP localization base pair.
 - Disabled SDK reference doc owner configs, including repo URL/name, language, owner id, and Feishu target identifiers where known.
 - Disabled REST API reference doc owner configs, including OpenAPI/source spec location, repo URL/name, owner id, and Feishu target identifiers where known.
 - Disabled guide-doc scan config, including listed Feishu doc URLs/tokens and expected language sets.

@@ -53,6 +53,17 @@ Approved GitHub Actions workflow
 - Builds a daily scan report with affected surfaces, estimated effort, risk, and possible dealing policies.
 - Sends a Feishu report card instead of starting live work directly.
 
+`guide-doc-code-gap-scan.yml`
+
+- Runs on schedule, manual dispatch, or as a child of the daily scan.
+- Reads a configured list of Feishu guide/tutorial/procedure docs.
+- Exports or fetches each listed doc.
+- Groups adjacent code blocks into procedure steps.
+- Detects incomplete code-tab groups against the canonical language order: Python, Java, Go, JavaScript, Bash, Shell, C++.
+- Uses lightweight source/repo evidence first to decide whether each missing language is likely fillable.
+- Produces a code-gap feasibility report and Feishu decision card.
+- Does not patch guide docs directly.
+
 `doc-agent-dry-run.yml`
 
 - Runs after the human selects a policy from the daily scan report or supplies custom instructions.
@@ -146,6 +157,17 @@ The daily scan report card is a higher-level decision card. It should summarize 
 
 If the user chooses `Custom instruction`, the coordinator should preserve the typed instruction as part of the task record and use it to guide decomposition.
 
+Guide-doc code-gap cards should summarize missing language blocks and feasible remediation policies, such as:
+
+- `Ignore for now`
+- `Create patch plans for fillable gaps`
+- `Patch only high-confidence gaps after per-doc approval`
+- `Open manual-review tasks for unsupported or uncertain gaps`
+- `Verify existing snippets only`
+- `Custom instruction`
+
+The card should avoid presenting `fill all gaps` as a default when source evidence is incomplete. Unsupported SDK/API gaps should be shown as explicit non-patchable findings.
+
 ### State Store
 
 The system needs persistent state for:
@@ -161,6 +183,18 @@ The system needs persistent state for:
 - approval timestamp
 - live workflow run id
 - final result
+
+Guide-doc code-gap tasks also need:
+
+- Feishu doc token or URL
+- doc title
+- code group id or heading path
+- existing languages
+- missing languages
+- fillability status per missing language: `fillable`, `unsupported`, `uncertain`, or `manual`
+- evidence links or source paths checked
+- recommended policy
+- verifier report path
 
 MVP storage can be a JSON file artifact plus gateway KV/Durable Object state. Longer term, use a small database table if querying history becomes important.
 
@@ -217,6 +251,8 @@ Agents should be organized by durable ownership of a documentation surface, not 
 `guide-doc-owner`
 
 - Owns guide, tutorial, and procedure docs end to end.
+- Scans listed guide docs for incomplete code-block groups and reports missing language coverage.
+- Determines whether missing blocks are fillable by checking real SDK/API/CLI support before proposing patches.
 - Uses `draft-verified-docs` to draft or revise prose from supplied references after checking source repos and specs.
 - Uses `patch-feishu-code` to add missing Java, Go, Node.js, REST, CLI, or C++ examples to procedure docs when Python examples already define the workflow.
 - Uses `feishu-code-verify` to statically or scenario-check guide snippets before and after proposed patches.
@@ -236,6 +272,54 @@ Agents should be organized by durable ownership of a documentation surface, not 
 
 - Sends progress messages and approval cards.
 - Updates cards after decisions and completion.
+
+## Guide Doc Code-Gap Scan
+
+The guide-doc owner needs a scan flow because guide/procedure docs are not versioned reference records. The scan starts from an explicit list of Feishu docs rather than from SDK release tags.
+
+### Inputs
+
+- A tracked configuration file listing Feishu guide doc URLs/tokens, product surface, and expected language set.
+- Optional per-doc overrides for expected languages when a language is intentionally unsupported.
+- Local skill scripts from `patch-feishu-code`, `feishu-code-verify`, and `draft-verified-docs`.
+- Lightweight source access for SDK/API/CLI support checks.
+
+### Scan Output
+
+For every listed doc, the scan should produce:
+
+- doc title and URL
+- headings or section paths containing code examples
+- code groups and existing languages
+- missing languages per group
+- whether Python exists as the workflow source
+- feasibility per missing language:
+  - `fillable`: public SDK/API/CLI support found and example can be drafted
+  - `unsupported`: source inspection suggests no public support
+  - `uncertain`: evidence is insufficient or conflicting
+  - `manual`: group lacks enough semantic context for safe automated patching
+- evidence checked, including source paths, symbols, routes, CLI commands, or docs
+- risk level
+- recommended policy
+
+### Decision Flow
+
+1. Scheduled scan produces the feasibility report.
+2. Feishu sends a guide-doc code-gap decision card.
+3. The user chooses a policy or writes custom instructions.
+4. The coordinator creates guide-doc-owner tasks by doc or by independent procedure section.
+5. The guide-doc owner produces patch plans only for `fillable` gaps unless the user explicitly requests manual or uncertain work.
+6. Review checks source evidence, code correctness, Feishu insertion points, and verification coverage.
+7. Live patching still requires a concrete per-doc approval card.
+
+### Guardrails
+
+- Do not invent examples for `unsupported` gaps.
+- Do not patch a language block just because another SDK has a similar-looking method.
+- Prefer source examples/tests and public APIs over internal helper code.
+- If Python does not define the workflow, use `draft-verified-docs` to build a verified workflow first or mark the group `manual`.
+- Run `feishu-code-verify` on generated snippets before asking for live-write approval when feasible.
+- Refetch the Feishu doc after any live patch and confirm code-block order and language labels.
 
 ## Lightweight Repository Access
 
@@ -290,6 +374,7 @@ The first version should require approval for:
 - any live Feishu doc patch
 - any Feishu bitable create/update/delete
 - any localized doc create/update
+- any guide-doc code block insertion or replacement
 - any GitHub PR creation
 - any live runtime verification that uses external service credentials
 - any retry that broadens permissions or target scope
@@ -402,7 +487,7 @@ Excluded:
 - SDK owner agents
 - REST API owner work
 - CLI owner work
-- guide/procedure doc owner work
+- guide/procedure doc live patching
 - verified long-form doc drafting
 - code example patching
 - GitHub PR creation

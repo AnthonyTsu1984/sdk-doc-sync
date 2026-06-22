@@ -2,11 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the MVP Feishu-controlled documentation agent loop: daily localization scan, Feishu policy card, approval gateway callback, dry-run task generation, reviewed live Feishu write, and final verification.
+**Goal:** Build the MVP Feishu-controlled documentation agent loop: daily localization scan, Feishu policy card, local Feishu event approval consumer, dry-run task generation, reviewed live Feishu write, and final verification.
 
-**Architecture:** GitHub Actions runs deterministic Node.js scripts for state, Feishu metadata, cards, artifacts, and live writes. A Cloudflare Worker receives Feishu interactive card callbacks and triggers GitHub `repository_dispatch`. Agent work is represented by owner/reviewer prompt artifacts in MVP, with Codex CLI execution added behind one script boundary so it can be enabled without changing workflow contracts.
+**Architecture:** GitHub Actions runs deterministic Node.js scripts for state, Feishu metadata, cards, artifacts, and live writes. A local long-lived Node.js consumer wraps `lark-cli event consume im.message.receive_v1`, parses approval replies in the configured Feishu chat, and triggers GitHub `repository_dispatch`. Agent work is represented by owner/reviewer prompt artifacts in MVP, with Codex CLI execution added behind one script boundary so it can be enabled without changing workflow contracts.
 
-**Tech Stack:** Node.js CommonJS, existing Feishu SDK sync utilities, GitHub Actions, Cloudflare Worker, Feishu/Lark bot APIs, `node --test`.
+**Tech Stack:** Node.js CommonJS, existing Feishu SDK sync utilities, GitHub Actions, local `lark-cli event consume`, Feishu/Lark bot APIs, `node --test`.
 
 ---
 
@@ -33,21 +33,25 @@ Create:
 - `.claude/agent-team/src/state-store.js` — JSON state read/write and baseline handling.
 - `.claude/agent-team/src/report-renderer.js` — human-readable summaries for Feishu cards and artifacts.
 - `.claude/agent-team/src/feishu-im.js` — Feishu bot message/card sender.
-- `.claude/agent-team/src/cards.js` — interactive card JSON builders.
+- `.claude/agent-team/src/cards.js` — Feishu report/approval card JSON builders.
 - `.claude/agent-team/src/task-store.js` — task JSON creation, lookup, and artifact persistence.
-- `.claude/agent-team/src/github-dispatch.js` — repository dispatch helper used by gateway tests and local tooling.
+- `.claude/agent-team/src/github-dispatch.js` — repository dispatch helper used by the local event consumer.
+- `.claude/agent-team/src/approval-commands.js` — approval reply parser and validator.
+- `.claude/agent-team/src/event-consumer.js` — `lark-cli event consume` wrapper and dispatcher.
 - `.claude/agent-team/src/agent-runner.js` — Codex CLI invocation boundary, disabled by default for MVP tests.
 - `.claude/agent-team/bin/doc-agent-scan.js` — scheduled/manual scan entrypoint.
 - `.claude/agent-team/bin/doc-agent-dry-run.js` — policy-to-task dry-run entrypoint.
 - `.claude/agent-team/bin/doc-agent-live-write.js` — approved Feishu write entrypoint.
 - `.claude/agent-team/bin/doc-agent-verify.js` — post-write verification entrypoint.
-- `.claude/agent-team/approval-gateway/worker.js` — Cloudflare Worker callback receiver.
-- `.claude/agent-team/approval-gateway/wrangler.toml.example` — deployment template.
+- `.claude/agent-team/bin/doc-agent-approval-consumer.js` — local long-lived approval listener entrypoint.
+- `.claude/agent-team/supervisor/launchd.plist.example` — macOS launchd template.
+- `.claude/agent-team/supervisor/systemd.service.example` — Linux systemd template.
 - `.claude/agent-team/tests/config.test.js` — config validation tests.
 - `.claude/agent-team/tests/localization-diff.test.js` — diff classification tests.
 - `.claude/agent-team/tests/cards.test.js` — card payload tests.
 - `.claude/agent-team/tests/state-store.test.js` — baseline/state tests.
-- `.claude/agent-team/tests/gateway.test.js` — callback verification/dispatch tests.
+- `.claude/agent-team/tests/approval-commands.test.js` — approval parser tests.
+- `.claude/agent-team/tests/event-consumer.test.js` — event consumer tests.
 - `.github/workflows/doc-agent-scan.yml` — daily scan workflow.
 - `.github/workflows/doc-agent-dry-run.yml` — repository-dispatch dry-run workflow.
 - `.github/workflows/doc-agent-live-write.yml` — repository-dispatch live-write workflow.
@@ -69,7 +73,7 @@ Reuse:
 
 Critical implementation notes:
 
-- Cross-workflow task artifacts must be downloaded by `sourceRunId`. The scan card and gateway payload must include `sourceRunId`, and dry-run/live-write workflows must download the prior run artifact before reading task files.
+- Cross-workflow task artifacts must be downloaded by `sourceRunId`. The scan card and normalized approval payload must include `sourceRunId`, and dry-run/live-write workflows must download the prior run artifact before reading task files.
 - The existing `FeishuDocTranslator` must be patched to pass source and target table ids into `BitableReader`, `BitableWriter`, `FeishuToMarkdown`, and `MarkdownToFeishu` where those constructors support or need table-aware behavior.
 - `META_ONLY` actions are not document translation actions. The live-write command must apply them through `BitableWriter.updateRecord()` instead of passing them to `FeishuDocTranslator`.
 
@@ -108,9 +112,12 @@ Create `.claude/agent-team/config.example.json`:
     "ref": "master",
     "dispatchEventPrefix": "doc-agent"
   },
-  "approvalGateway": {
-    "url": "https://REPLACE_WITH_WORKER_DOMAIN/feishu/card-callback",
-    "taskTtlMinutes": 1440
+  "approvalConsumer": {
+    "enabled": true,
+    "decisionLogPath": ".claude/agent-team/state/decisions.jsonl",
+    "taskTtlMinutes": 1440,
+    "larkCliCommand": "lark-cli",
+    "eventKey": "im.message.receive_v1"
   },
   "localization": {
     "sourceBaseToken": "REPLACE_WITH_SOURCE_BASE_TOKEN",
@@ -220,7 +227,9 @@ function validateConfig(config) {
   requireString(config.github?.owner, 'github.owner');
   requireString(config.github?.repo, 'github.repo');
   requireString(config.github?.ref, 'github.ref');
-  requireString(config.approvalGateway?.url, 'approvalGateway.url');
+  requireString(config.approvalConsumer?.decisionLogPath, 'approvalConsumer.decisionLogPath');
+  requireString(config.approvalConsumer?.larkCliCommand, 'approvalConsumer.larkCliCommand');
+  requireString(config.approvalConsumer?.eventKey, 'approvalConsumer.eventKey');
   requireString(config.localization?.sourceBaseToken, 'localization.sourceBaseToken');
   requireString(config.localization?.sourceTableId, 'localization.sourceTableId');
   requireString(config.localization?.sourceRootToken, 'localization.sourceRootToken');
@@ -258,7 +267,11 @@ function validConfig() {
   return {
     feishu: { chatId: 'oc_chat', approverIds: ['ou_user'] },
     github: { owner: 'zilliztech', repo: 'feishu-markdown-bridge', ref: 'master' },
-    approvalGateway: { url: 'https://worker.example.com/feishu/card-callback' },
+    approvalConsumer: {
+      decisionLogPath: '.claude/agent-team/state/decisions.jsonl',
+      larkCliCommand: 'lark-cli',
+      eventKey: 'im.message.receive_v1',
+    },
     localization: {
       sourceBaseToken: 'src_base',
       sourceTableId: 'src_table',
@@ -725,18 +738,22 @@ git commit -m "feat: add localization diff reporting"
 Create `.claude/agent-team/src/cards.js`:
 
 ```js
-const { POLICY_ACTIONS } = require('./contracts');
-
-function button(text, value, type = 'default') {
-  return {
-    tag: 'button',
-    text: { tag: 'plain_text', content: text },
-    type,
-    value,
-  };
+function commandBlock(task, commands) {
+  const sourceRun = task.sourceRunId ? `\nsource run: \`${task.sourceRunId}\`` : '';
+  return [
+    `task: \`${task.id}\`${sourceRun}`,
+    '',
+    ...commands.map(command => `- \`${command}\``),
+  ].join('\n');
 }
 
-function buildDailyReportCard({ task, summaryText, gatewayUrl }) {
+function buildDailyReportCard({ task, summaryText }) {
+  const commands = [
+    `ignore ${task.id}`,
+    `dry-run ${task.id}`,
+    `patch ${task.id}`,
+    `custom ${task.id}: <your instruction>`,
+  ];
   return {
     config: { wide_screen_mode: true },
     header: {
@@ -744,26 +761,18 @@ function buildDailyReportCard({ task, summaryText, gatewayUrl }) {
       template: 'blue',
     },
     elements: [
-      { tag: 'markdown', content: `**Task**: ${task.id}\n\n${summaryText}` },
-      {
-        tag: 'input',
-        name: 'customInstruction',
-        placeholder: { tag: 'plain_text', content: 'Optional custom instruction for the agent team' },
-      },
-      {
-        tag: 'action',
-        actions: [
-          button('Ignore for now', { taskId: task.id, sourceRunId: task.sourceRunId, action: POLICY_ACTIONS.IGNORE }, 'default'),
-          button('Create dry-run plans only', { taskId: task.id, sourceRunId: task.sourceRunId, action: POLICY_ACTIONS.DRY_RUN_ONLY }, 'default'),
-          button('Create/update after approval', { taskId: task.id, sourceRunId: task.sourceRunId, action: POLICY_ACTIONS.PATCH_AFTER_APPROVAL }, 'primary'),
-          button('Custom instruction', { taskId: task.id, sourceRunId: task.sourceRunId, action: POLICY_ACTIONS.CUSTOM, gatewayUrl }, 'default'),
-        ],
-      },
+      { tag: 'markdown', content: `**Summary**\n${summaryText}` },
+      { tag: 'markdown', content: `**Reply with one command**\n${commandBlock(task, commands)}` },
     ],
   };
 }
 
 function buildLiveWriteApprovalCard({ task, summaryText }) {
+  const commands = [
+    `approve ${task.id}`,
+    `reject ${task.id}`,
+    `changes ${task.id}: <what to change>`,
+  ];
   return {
     config: { wide_screen_mode: true },
     header: {
@@ -771,15 +780,8 @@ function buildLiveWriteApprovalCard({ task, summaryText }) {
       template: 'orange',
     },
     elements: [
-      { tag: 'markdown', content: `**Task**: ${task.id}\n\n${summaryText}` },
-      {
-        tag: 'action',
-        actions: [
-          button('Approve', { taskId: task.id, sourceRunId: task.sourceRunId, action: 'approve_live_write' }, 'primary'),
-          button('Reject', { taskId: task.id, sourceRunId: task.sourceRunId, action: 'reject' }, 'danger'),
-          button('Request changes', { taskId: task.id, sourceRunId: task.sourceRunId, action: 'changes_requested' }, 'default'),
-        ],
-      },
+      { tag: 'markdown', content: `**Summary**\n${summaryText}` },
+      { tag: 'markdown', content: `**Reply with one command**\n${commandBlock(task, commands)}` },
     ],
   };
 }
@@ -787,6 +789,7 @@ function buildLiveWriteApprovalCard({ task, summaryText }) {
 module.exports = {
   buildDailyReportCard,
   buildLiveWriteApprovalCard,
+  commandBlock,
 };
 ```
 
@@ -840,25 +843,26 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { buildDailyReportCard, buildLiveWriteApprovalCard } = require('../src/cards');
 
-test('daily report card contains MVP policy actions', () => {
+test('daily report card contains MVP reply commands', () => {
   const card = buildDailyReportCard({
-    task: { id: 'task-1' },
-    summaryText: 'Total: 1 · NEW: 1',
-    gatewayUrl: 'https://worker.example.com/feishu/card-callback',
+    task: { id: 'task-1', sourceRunId: '123' },
+    summaryText: 'Total: 1 · NEW: 1'
   });
-  const actionElement = card.elements.find(element => element.tag === 'action');
-  const actions = actionElement.actions.map(action => action.value.action);
-  assert.deepEqual(actions, ['ignore', 'dry_run_only', 'patch_after_approval', 'custom']);
+  const content = JSON.stringify(card);
+  assert.match(content, /dry-run task-1/);
+  assert.match(content, /patch task-1/);
+  assert.match(content, /custom task-1/);
 });
 
-test('live write card has approve reject and changes buttons', () => {
+test('live write card has approve reject and changes commands', () => {
   const card = buildLiveWriteApprovalCard({
-    task: { id: 'task-1' },
+    task: { id: 'task-1', sourceRunId: '456' },
     summaryText: 'NEW: one doc',
   });
-  const actionElement = card.elements.find(element => element.tag === 'action');
-  const actions = actionElement.actions.map(action => action.value.action);
-  assert.deepEqual(actions, ['approve_live_write', 'reject', 'changes_requested']);
+  const content = JSON.stringify(card);
+  assert.match(content, /approve task-1/);
+  assert.match(content, /reject task-1/);
+  assert.match(content, /changes task-1/);
 });
 ```
 
@@ -931,7 +935,6 @@ async function main() {
     const card = buildDailyReportCard({
       task,
       summaryText: renderFeishuSummary(diff),
-      gatewayUrl: config.approvalGateway.url,
     });
     const im = new FeishuImClient({ host: config.feishu.host });
     const message = await im.sendCard({ chatId: config.feishu.chatId, card });
@@ -974,42 +977,83 @@ git commit -m "feat: add localization scan command"
 
 ---
 
-### Task 6: Approval Gateway Worker
+### Task 6: Local Approval Event Consumer
 
 **Files:**
-- Create: `.claude/agent-team/approval-gateway/worker.js`
-- Create: `.claude/agent-team/approval-gateway/wrangler.toml.example`
-- Create: `.claude/agent-team/tests/gateway.test.js`
+- Create: `.claude/agent-team/src/approval-commands.js`
+- Create: `.claude/agent-team/src/github-dispatch.js`
+- Create: `.claude/agent-team/src/event-consumer.js`
+- Create: `.claude/agent-team/bin/doc-agent-approval-consumer.js`
+- Create: `.claude/agent-team/supervisor/launchd.plist.example`
+- Create: `.claude/agent-team/supervisor/systemd.service.example`
+- Create: `.claude/agent-team/tests/approval-commands.test.js`
+- Create: `.claude/agent-team/tests/event-consumer.test.js`
 
-- [ ] **Step 1: Implement worker**
+- [ ] **Step 1: Implement approval command parser**
 
-Create `.claude/agent-team/approval-gateway/worker.js`:
+Create `.claude/agent-team/src/approval-commands.js`:
 
 ```js
-async function sha256Hex(text) {
-  const data = new TextEncoder().encode(text);
-  const digest = await crypto.subtle.digest('SHA-256', data);
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
+const ACTION_ALIASES = Object.freeze({
+  ignore: 'ignore',
+  'dry-run': 'dry_run_only',
+  dryrun: 'dry_run_only',
+  patch: 'patch_after_approval',
+  custom: 'custom',
+  approve: 'approve_live_write',
+  reject: 'reject',
+  changes: 'changes_requested',
+});
+
+function parseApprovalCommand(text) {
+  const raw = String(text || '').trim();
+  const match = raw.match(/^([a-zA-Z-]+)\s+([a-zA-Z0-9_.:-]+)(?::\s*([\s\S]+))?$/);
+  if (!match) return null;
+  const command = match[1].toLowerCase();
+  const action = ACTION_ALIASES[command];
+  if (!action) return null;
+  return {
+    action,
+    taskId: match[2],
+    customInstruction: match[3] ? match[3].trim() : '',
+    raw,
+  };
 }
 
-function verifyFeishuToken(payload, env) {
-  const configured = env.FEISHU_VERIFICATION_TOKEN;
-  if (!configured) return false;
-  const token = payload.token || payload.header?.token || payload.event?.token || '';
-  return token === configured;
+function normalizeFeishuMessageEvent(event) {
+  const root = event.event || event;
+  return {
+    chatId: root.chat_id || root.message?.chat_id || '',
+    senderId: root.sender_id || root.sender?.sender_id?.open_id || root.sender?.id || '',
+    messageId: root.message_id || root.message?.message_id || '',
+    text: root.text || root.content || root.message?.content || '',
+  };
 }
 
-async function dispatchGithub(env, payload) {
-  const response = await fetch(`https://api.github.com/repos/${env.GITHUB_OWNER}/${env.GITHUB_REPO}/dispatches`, {
+module.exports = {
+  parseApprovalCommand,
+  normalizeFeishuMessageEvent,
+};
+```
+
+- [ ] **Step 2: Implement GitHub dispatch helper**
+
+Create `.claude/agent-team/src/github-dispatch.js`:
+
+```js
+async function dispatchGithub({ config, token, decision }) {
+  if (!token) throw new Error('GITHUB_TOKEN is required for repository_dispatch');
+  const prefix = config.github.dispatchEventPrefix || 'doc-agent';
+  const response = await fetch(`https://api.github.com/repos/${config.github.owner}/${config.github.repo}/dispatches`, {
     method: 'POST',
     headers: {
       Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      'User-Agent': 'feishu-doc-agent-approval-gateway',
+      Authorization: `Bearer ${token}`,
+      'User-Agent': 'feishu-doc-agent-approval-consumer',
     },
     body: JSON.stringify({
-      event_type: `${env.DISPATCH_PREFIX || 'doc-agent'}-${payload.action}`,
-      client_payload: payload,
+      event_type: `${prefix}-${decision.action}`,
+      client_payload: decision,
     }),
   });
   if (!response.ok) {
@@ -1017,106 +1061,282 @@ async function dispatchGithub(env, payload) {
   }
 }
 
-async function handleCallback(request, env) {
-  if (request.method !== 'POST') return new Response('method not allowed', { status: 405 });
-  const payload = await request.json();
-  if (!verifyFeishuToken(payload, env)) return new Response('forbidden', { status: 403 });
-  if (payload.challenge) {
-    return Response.json({ challenge: payload.challenge });
-  }
+module.exports = {
+  dispatchGithub,
+};
+```
 
-  const actionValue = payload.action?.value || payload.event?.action?.value || payload;
-  const taskId = actionValue.taskId;
-  const action = actionValue.action;
-  const sourceRunId = actionValue.sourceRunId || null;
-  const customInstruction = payload.form_value?.customInstruction || payload.event?.form_value?.customInstruction || '';
-  const userId = payload.operator?.open_id || payload.event?.operator?.open_id || payload.open_id || 'unknown';
+- [ ] **Step 3: Implement event consumer wrapper**
 
-  if (!taskId || !action) {
-    return Response.json({ ok: false, error: 'missing taskId or action' }, { status: 400 });
-  }
+Create `.claude/agent-team/src/event-consumer.js`:
 
-  const allowed = (env.APPROVER_IDS || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (allowed.length > 0 && !allowed.includes(userId)) {
-    return Response.json({ ok: false, error: 'approver not allowed' }, { status: 403 });
-  }
+```js
+const fs = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
+const { parseApprovalCommand, normalizeFeishuMessageEvent } = require('./approval-commands');
+const { dispatchGithub } = require('./github-dispatch');
 
-  const decisionId = await sha256Hex(`${taskId}:${action}:${userId}`);
-  const decision = {
-    decisionId,
-    taskId,
-    action,
-    sourceRunId,
-    customInstruction,
-    userId,
-    decidedAt: new Date().toISOString(),
-  };
-
-  if (env.DECISIONS) {
-    const existing = await env.DECISIONS.get(decisionId);
-    if (existing) return Response.json({ ok: true, duplicate: true, decision });
-    await env.DECISIONS.put(decisionId, JSON.stringify(decision), { expirationTtl: 60 * 60 * 24 * 14 });
-  }
-
-  await dispatchGithub(env, decision);
-  return Response.json({ ok: true, decision });
+function ensureDir(dir) {
+  fs.mkdirSync(dir, { recursive: true });
 }
 
-export default {
-  fetch: handleCallback,
+function appendDecision(filePath, decision) {
+  ensureDir(path.dirname(filePath));
+  fs.appendFileSync(filePath, `${JSON.stringify(decision)}\n`);
+}
+
+function hasDecision(filePath, decisionId) {
+  if (!fs.existsSync(filePath)) return false;
+  return fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean).some(line => {
+    try {
+      return JSON.parse(line).decisionId === decisionId;
+    } catch {
+      return false;
+    }
+  });
+}
+
+function createDecision({ parsed, event, sourceRunId = null }) {
+  const decisionId = `${parsed.taskId}:${parsed.action}:${event.senderId}`;
+  return {
+    decisionId,
+    taskId: parsed.taskId,
+    action: parsed.action,
+    sourceRunId,
+    customInstruction: parsed.customInstruction,
+    userId: event.senderId,
+    messageId: event.messageId,
+    decidedAt: new Date().toISOString(),
+  };
+}
+
+async function handleEvent({ config, event, githubToken, sourceRunIdResolver = () => null }) {
+  const normalized = normalizeFeishuMessageEvent(event);
+  if (normalized.chatId !== config.feishu.chatId) return { ignored: true, reason: 'chat mismatch' };
+  if (!config.feishu.approverIds.includes(normalized.senderId)) return { ignored: true, reason: 'sender not allowed' };
+  const parsed = parseApprovalCommand(normalized.text);
+  if (!parsed) return { ignored: true, reason: 'not an approval command' };
+  const decision = createDecision({
+    parsed,
+    event: normalized,
+    sourceRunId: sourceRunIdResolver(parsed.taskId),
+  });
+  const logPath = config.approvalConsumer.decisionLogPath;
+  if (hasDecision(logPath, decision.decisionId)) return { duplicate: true, decision };
+  appendDecision(logPath, decision);
+  await dispatchGithub({ config, token: githubToken, decision });
+  return { ok: true, decision };
+}
+
+function waitForReady(child, eventKey) {
+  return new Promise((resolve, reject) => {
+    const readyLine = `[event] ready event_key=${eventKey}`;
+    let stderr = '';
+    const timer = setTimeout(() => reject(new Error(`Timed out waiting for ${readyLine}`)), 30000);
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', chunk => {
+      stderr += chunk;
+      process.stderr.write(chunk);
+      if (stderr.includes(readyLine)) {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    child.once('exit', code => {
+      clearTimeout(timer);
+      reject(new Error(`lark-cli event consumer exited before ready, code=${code}`));
+    });
+  });
+}
+
+async function runEventConsumer({ config, githubToken }) {
+  const command = config.approvalConsumer.larkCliCommand || 'lark-cli';
+  const eventKey = config.approvalConsumer.eventKey || 'im.message.receive_v1';
+  const child = spawn(command, ['event', 'consume', eventKey, '--as', 'bot'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+  await waitForReady(child, eventKey);
+  child.stdout.setEncoding('utf8');
+  let buffer = '';
+  child.stdout.on('data', chunk => {
+    buffer += chunk;
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      Promise.resolve()
+        .then(() => handleEvent({ config, event: JSON.parse(line), githubToken }))
+        .catch(error => console.error(error.stack || error.message));
+    }
+  });
+  return child;
+}
+
+module.exports = {
+  appendDecision,
+  createDecision,
+  handleEvent,
+  waitForReady,
+  runEventConsumer,
 };
-
-export { handleCallback, sha256Hex };
 ```
 
-This MVP verifies Feishu callbacks with `FEISHU_VERIFICATION_TOKEN` from the callback payload. During implementation, capture one real Feishu card callback payload in a non-live environment and adjust `verifyFeishuToken()` only if Feishu uses a different token/header shape for interactive cards.
+- [ ] **Step 4: Implement local consumer CLI**
 
-- [ ] **Step 2: Add Wrangler template**
+Create `.claude/agent-team/bin/doc-agent-approval-consumer.js`:
 
-Create `.claude/agent-team/approval-gateway/wrangler.toml.example`:
+```js
+#!/usr/bin/env node
 
-```toml
-name = "feishu-doc-agent-approval"
-main = "worker.js"
-compatibility_date = "2026-06-22"
+const { loadConfig } = require('../src/config');
+const { runEventConsumer } = require('../src/event-consumer');
 
-[[kv_namespaces]]
-binding = "DECISIONS"
-id = "REPLACE_WITH_CLOUDFLARE_KV_NAMESPACE_ID"
+const config = loadConfig();
+const githubToken = process.env.GITHUB_TOKEN;
+if (!githubToken) {
+  console.error('GITHUB_TOKEN is required');
+  process.exit(1);
+}
 
-[vars]
-GITHUB_OWNER = "REPLACE_WITH_GITHUB_OWNER"
-GITHUB_REPO = "feishu-markdown-bridge"
-DISPATCH_PREFIX = "doc-agent"
-APPROVER_IDS = "ou_REPLACE_WITH_APPROVER_OPEN_ID"
+runEventConsumer({ config, githubToken }).then(child => {
+  console.error(`[doc-agent] approval consumer started pid=${child.pid}`);
+}).catch(error => {
+  console.error(error.stack || error.message);
+  process.exit(1);
+});
 ```
 
-Secrets set with `wrangler secret put`:
+- [ ] **Step 5: Add supervisor templates**
 
-```bash
-wrangler secret put GITHUB_TOKEN
-wrangler secret put FEISHU_VERIFICATION_TOKEN
+Create `.claude/agent-team/supervisor/launchd.plist.example`:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zilliz.doc-agent-approval-consumer</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/usr/local/bin/node</string>
+    <string>/ABSOLUTE/PATH/feishu-markdown-bridge/.claude/agent-team/bin/doc-agent-approval-consumer.js</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/ABSOLUTE/PATH/feishu-markdown-bridge</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>GITHUB_TOKEN</key>
+    <string>REPLACE_WITH_TOKEN_OR_USE_LAUNCHD_ENV</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+</dict>
+</plist>
 ```
 
-- [ ] **Step 3: Add gateway tests**
+Create `.claude/agent-team/supervisor/systemd.service.example`:
 
-Create `.claude/agent-team/tests/gateway.test.js`:
+```ini
+[Unit]
+Description=Feishu Doc Agent Approval Consumer
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/ABSOLUTE/PATH/feishu-markdown-bridge
+ExecStart=/usr/bin/node .claude/agent-team/bin/doc-agent-approval-consumer.js
+Environment=GITHUB_TOKEN=REPLACE_WITH_TOKEN_OR_USE_ENV_FILE
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+- [ ] **Step 6: Add approval parser tests**
+
+Create `.claude/agent-team/tests/approval-commands.test.js`:
 
 ```js
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { parseApprovalCommand, normalizeFeishuMessageEvent } = require('../src/approval-commands');
 
-test('gateway worker source contains required exports and dispatch guard', async () => {
-  const fs = require('fs');
-  const source = fs.readFileSync('.claude/agent-team/approval-gateway/worker.js', 'utf8');
-  assert.match(source, /export default/);
-  assert.match(source, /FEISHU_VERIFICATION_TOKEN/);
-  assert.match(source, /dispatchGithub/);
-  assert.match(source, /APPROVER_IDS/);
+test('parseApprovalCommand parses MVP policy commands', () => {
+  assert.deepEqual(parseApprovalCommand('dry-run loc-scan-1'), {
+    action: 'dry_run_only',
+    taskId: 'loc-scan-1',
+    customInstruction: '',
+    raw: 'dry-run loc-scan-1',
+  });
+  assert.equal(parseApprovalCommand('patch loc-scan-1').action, 'patch_after_approval');
+  assert.equal(parseApprovalCommand('approve loc-scan-1').action, 'approve_live_write');
+});
+
+test('parseApprovalCommand captures custom instruction', () => {
+  const parsed = parseApprovalCommand('custom loc-scan-1: only update metadata');
+  assert.equal(parsed.action, 'custom');
+  assert.equal(parsed.customInstruction, 'only update metadata');
+});
+
+test('normalizeFeishuMessageEvent handles flat event shape', () => {
+  const event = normalizeFeishuMessageEvent({
+    chat_id: 'oc_chat',
+    sender_id: 'ou_user',
+    message_id: 'om_msg',
+    content: 'approve loc-scan-1',
+  });
+  assert.equal(event.chatId, 'oc_chat');
+  assert.equal(event.senderId, 'ou_user');
+  assert.equal(event.text, 'approve loc-scan-1');
 });
 ```
 
-- [ ] **Step 4: Run tests**
+- [ ] **Step 7: Add event consumer tests**
+
+Create `.claude/agent-team/tests/event-consumer.test.js`:
+
+```js
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { handleEvent } = require('../src/event-consumer');
+
+function config(logPath) {
+  return {
+    feishu: { chatId: 'oc_chat', approverIds: ['ou_allowed'] },
+    github: { owner: 'zilliztech', repo: 'feishu-markdown-bridge', dispatchEventPrefix: 'doc-agent' },
+    approvalConsumer: { decisionLogPath: logPath },
+  };
+}
+
+test('handleEvent ignores unauthorized sender before dispatch', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
+  const result = await handleEvent({
+    config: config(path.join(dir, 'decisions.jsonl')),
+    githubToken: 'unused',
+    event: { chat_id: 'oc_chat', sender_id: 'ou_other', message_id: 'om_1', content: 'approve loc-scan-1' },
+  });
+  assert.equal(result.ignored, true);
+  assert.equal(result.reason, 'sender not allowed');
+});
+```
+
+- [ ] **Step 8: Make CLI executable**
+
+Run:
+
+```bash
+chmod +x .claude/agent-team/bin/doc-agent-approval-consumer.js
+```
+
+- [ ] **Step 9: Run tests**
 
 Run:
 
@@ -1124,13 +1344,13 @@ Run:
 npm run test:agent-team
 ```
 
-Expected: PASS. Worker runtime integration is verified later with Cloudflare preview or deployed endpoint.
+Expected: PASS. Do not run the unbounded consumer until `lark-cli` auth and `GITHUB_TOKEN` are configured.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 10: Commit**
 
 ```bash
-git add .claude/agent-team/approval-gateway/worker.js .claude/agent-team/approval-gateway/wrangler.toml.example .claude/agent-team/tests/gateway.test.js
-git commit -m "feat: add approval gateway worker"
+git add .claude/agent-team/src/approval-commands.js .claude/agent-team/src/github-dispatch.js .claude/agent-team/src/event-consumer.js .claude/agent-team/bin/doc-agent-approval-consumer.js .claude/agent-team/supervisor/launchd.plist.example .claude/agent-team/supervisor/systemd.service.example .claude/agent-team/tests/approval-commands.test.js .claude/agent-team/tests/event-consumer.test.js
+git commit -m "feat: add local feishu approval consumer"
 ```
 
 ---
@@ -1667,35 +1887,35 @@ GitHub Actions secrets:
 - `FEISHU_WIKI_SPACE_ID`
 - `ANTHROPIC_API_KEY` when translator is `claude`
 
-Cloudflare Worker secrets:
+Local approval consumer environment:
 
 - `GITHUB_TOKEN`
-- `APPROVAL_GATEWAY_SHARED_SECRET`
 
 ## Setup
 
 1. Copy `.claude/agent-team/config.example.json`.
-2. Fill real Feishu chat, approver, source table, target table, root, GitHub, and approval gateway values.
+2. Fill real Feishu chat, approver, source table, target table, root, GitHub, and approval consumer values.
 3. Store the filled JSON as GitHub secret `DOC_AGENT_CONFIG_JSON`.
-4. Deploy `.claude/agent-team/approval-gateway/worker.js` with the Cloudflare config from `wrangler.toml.example`.
-5. Configure Feishu card callback URL to the Cloudflare Worker endpoint.
-6. Run `Doc Agent Scan` manually from GitHub Actions.
+4. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.
+5. Run `lark-cli auth login` if needed and verify `lark-cli event consume im.message.receive_v1 --as bot --max-events 1 --timeout 30s` can receive events.
+6. Start `.claude/agent-team/bin/doc-agent-approval-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN` in its environment.
+7. Run `Doc Agent Scan` manually from GitHub Actions.
 
 ## Expected MVP Flow
 
 1. `Doc Agent Scan` posts a Feishu daily report card.
-2. Approver chooses `Create dry-run plans only` or `Create/update after approval`.
-3. Worker receives the card callback and dispatches the dry-run workflow.
+2. Approver replies in the configured Feishu chat with `dry-run <task-id>` or `patch <task-id>`.
+3. Local approval consumer receives the Feishu event and dispatches the dry-run workflow.
 4. Dry-run workflow uploads artifacts and sends a concrete live-write approval card when there are actionable records.
-5. Approver clicks `Approve`.
-6. Worker dispatches live-write workflow.
+5. Approver replies `approve <task-id>`.
+6. Local approval consumer dispatches live-write workflow.
 7. Live-write workflow updates approved Feishu docs/records and verifies the result.
 
 ## Safety Rules
 
 - Do not use live-write workflow without a reviewed dry-run artifact.
 - Do not approve `ORPHAN` deletion; MVP never deletes or archives target docs.
-- Duplicate card clicks must not cause duplicate writes.
+- Duplicate approval replies must not cause duplicate writes.
 - If verification fails, preserve artifacts and do not advance the handled baseline.
 ```
 
@@ -1727,7 +1947,7 @@ git commit -m "docs: add doc agent mvp runbook"
 Spec coverage:
 
 - Feishu cards as interaction media: Task 4, Task 5, Task 7, Task 8.
-- Always-on approval gateway: Task 6.
+- Always-on local Feishu approval consumer: Task 6.
 - GitHub Actions scheduler/executor: Task 8.
 - Domain-owner model: Task 7 adds the owner-agent boundary without implementing all owners.
 - Metadata-first localization MVP: Task 3 and Task 5.
@@ -1736,5 +1956,5 @@ Spec coverage:
 
 Residual verification notes:
 
-- Feishu interactive card callback payload shape must be verified against one real non-live callback before enabling live writes. The Worker is structured to isolate that parsing change.
+- Feishu event payload shape must be verified against one real non-live approval message before enabling live writes. `normalizeFeishuMessageEvent()` is structured to isolate that parsing change.
 - The current root `npm test` points at a missing SDK sync test directory. Use `npm run test:agent-team` for this MVP until the broader test script is repaired.

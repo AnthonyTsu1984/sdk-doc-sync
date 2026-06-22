@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build an automated documentation agent team that runs from GitHub Actions, reports progress through Feishu messages, and asks for human approval through Feishu message cards before live writes or other risky actions.
+Build an automated documentation agent team that runs from GitHub Actions, reports progress through Feishu messages/cards, and asks for human approval through Feishu chat replies before live writes or other risky actions.
 
 ## Context
 
@@ -19,8 +19,8 @@ The AWS `sample-codex-agent-team` repository contributes the team operating mode
 ## Finalized Decisions
 
 - GitHub Actions is the scheduler, stateful artifact store, and execution runner.
-- Feishu messages and interactive cards are the human control surface.
-- A small always-on approval gateway receives Feishu card callbacks and triggers GitHub workflows.
+- Feishu messages and cards are the human control surface.
+- A local long-lived Feishu event consumer receives approval chat replies and triggers GitHub workflows.
 - Agents are domain owners, not pipeline stations. Shared scanning, drafting, patching, localization, and verification scripts are tools used by owners.
 - Repository access is metadata-first. Owner agents fetch source only after a human policy decision requires code evidence or a patch plan.
 - MVP is localization-only for one configured Feishu source/target table pair.
@@ -32,18 +32,18 @@ The AWS `sample-codex-agent-team` repository contributes the team operating mode
 ```text
 GitHub Actions schedule/manual dispatch
   -> coordinator job performs lightweight repo/source-doc discovery
-  -> coordinator posts daily Feishu scan report with policy choices
-  -> human chooses a policy or types custom instructions
+  -> coordinator posts daily Feishu scan report card with policy commands
+  -> human replies in Feishu with a decision command or custom instruction
   -> coordinator breaks the decision into runnable tasks
   -> domain owner agents execute end-to-end task slices
   -> review job consolidates PASS/FAIL and risk level
   -> notification job sends Feishu progress messages or approval cards
 
-Feishu approval card button
-  -> approval gateway receives Feishu callback
-  -> gateway verifies callback, user, and task state
-  -> gateway records decision
-  -> gateway triggers GitHub repository_dispatch/workflow_dispatch
+Feishu approval reply
+  -> local event consumer receives im.message.receive_v1
+  -> consumer verifies chat, sender, task, and current state
+  -> consumer records decision
+  -> consumer triggers GitHub repository_dispatch/workflow_dispatch
 
 Approved GitHub Actions workflow
   -> executes approved live writes
@@ -86,7 +86,7 @@ Approved GitHub Actions workflow
 
 `doc-agent-approval-result.yml`
 
-- Runs after the approval gateway receives a Feishu card decision.
+- Runs after the local event consumer receives a Feishu approval reply.
 - Executes the approved operation, rejects it, or records a change request.
 - Posts status back to the same Feishu thread/card.
 
@@ -108,7 +108,7 @@ Deterministic scripts own:
 - GitHub metadata queries
 - Feishu metadata queries
 - Feishu message/card sending
-- approval callback validation and dispatch
+- approval event validation and dispatch
 - artifact upload/download
 - final command execution after an approved decision
 
@@ -123,27 +123,28 @@ Agent invocations own:
 
 Owner agents should be invoked through a CLI-style agent runtime when they need repository/filesystem/test access. Lightweight coordinator decisions may use an SDK/API call if that is simpler. The MVP should not implement a custom long-running tool loop for agents.
 
-### Approval Gateway
+### Local Approval Event Consumer
 
-The approval gateway is the always-on "doorbell" for Feishu card button clicks.
+The local approval event consumer is the always-on "doorbell" for Feishu approval replies. It avoids public inbound webhook reachability problems by keeping an outbound event connection to Feishu.
 
 Responsibilities:
 
-- Expose an HTTPS endpoint for Feishu interactive card callbacks.
-- Verify Feishu callback signature, timestamp, and challenge events.
-- Verify the clicker is an authorized approver.
-- Verify the task id, action id, nonce, and current decision state.
+- Run `lark-cli event consume im.message.receive_v1 --as bot` under process supervision.
+- Listen only to the configured approval chat.
+- Parse approval commands from message replies or normal chat messages.
+- Verify the sender is an authorized approver.
+- Verify the task id, action id, source run id, and current decision state.
 - Persist the decision.
 - Trigger GitHub `repository_dispatch` or `workflow_dispatch`.
-- Return an immediate acknowledgement to Feishu.
+- Reply or send a status message back to Feishu.
 
-MVP implementation: Cloudflare Worker with a small durable store. Vercel, AWS Lambda, or an internal service can replace it later if they expose a stable HTTPS endpoint and keep secrets safely.
+MVP implementation: local Node.js daemon wrapping `lark-cli event consume`. Run it with `launchd`, `systemd`, a self-hosted runner service, or another supervisor on a machine with outbound access to Feishu and GitHub.
 
 ### Feishu Messages And Cards
 
 Progress messages are normal Feishu messages in a dedicated chat, for example `Doc Agent Team`.
 
-Approval messages are interactive cards with:
+Approval report cards are Feishu cards with:
 
 - task title
 - required decision
@@ -153,29 +154,29 @@ Approval messages are interactive cards with:
 - dry-run summary
 - artifact links
 - expiry time
-- buttons: `Approve`, `Reject`, `Request Changes`, `Open Details`
+- command examples: `approve <task-id>`, `reject <task-id>`, `changes <task-id>: <message>`, `dry-run <task-id>`, `patch <task-id>`
 
-Cards should be updated after a decision so stale cards show their final state.
+Cards should include the task id and source run id so replies can be parsed and dispatched idempotently. The event consumer should post a follow-up status message after a decision so stale cards are not misleading.
 
-The daily scan report card is a higher-level decision card. It should summarize all detected findings and offer policies such as:
+The daily scan report card is a higher-level decision card. It should summarize all detected findings and show commands such as:
 
-- `Ignore for now`
-- `Create dry-run plans only`
-- `Patch Feishu after per-task approval`
-- `Custom instruction`
+- `ignore <task-id>`
+- `dry-run <task-id>`
+- `patch <task-id>`
+- `custom <task-id>: <instruction>`
 
 If the user chooses `Custom instruction`, the coordinator should preserve the typed instruction as part of the task record and use it to guide decomposition.
 
 Post-MVP cards may add policies such as `Open GitHub PRs` or `Patch low-risk docs automatically, ask for risky ones`. Those are intentionally excluded from the MVP.
 
-Guide-doc code-gap cards should summarize missing language blocks and feasible remediation policies, such as:
+Guide-doc code-gap cards should summarize missing language blocks and feasible remediation policies with commands such as:
 
-- `Ignore for now`
-- `Create patch plans for fillable gaps`
-- `Patch only high-confidence gaps after per-doc approval`
-- `Open manual-review tasks for unsupported or uncertain gaps`
-- `Verify existing snippets only`
-- `Custom instruction`
+- `ignore <task-id>`
+- `plan-fillable <task-id>`
+- `patch-high-confidence <task-id>`
+- `manual-review <task-id>`
+- `verify-only <task-id>`
+- `custom <task-id>: <instruction>`
 
 The card should avoid presenting `fill all gaps` as a default when source evidence is incomplete. Unsupported SDK/API gaps should be shown as explicit non-patchable findings.
 
@@ -207,7 +208,7 @@ Guide-doc code-gap tasks also need:
 - recommended policy
 - verifier report path
 
-MVP storage can be a JSON file artifact plus gateway KV/Durable Object state. Longer term, use a small database table if querying history becomes important.
+MVP storage can be a JSON file artifact plus a local decision log consumed by the event listener. Longer term, use SQLite or another small database if querying history becomes important.
 
 ## Agent Roles
 
@@ -419,7 +420,7 @@ Rules:
 
 - Live writes require `review_passed` and `approved`.
 - Expired approvals cannot be reused.
-- A card button click must be idempotent.
+- A repeated approval command must be idempotent.
 - `Request Changes` should create a new GitHub issue comment or workflow artifact containing the human message, then stop the task.
 - `Reject` should stop the task and preserve artifacts.
 
@@ -432,18 +433,17 @@ Secrets required in GitHub Actions:
 - Optional translator/API credentials for localization.
 - Optional live verification credentials.
 
-Secrets required in the approval gateway:
+Secrets required by the local event consumer:
 
-- Feishu callback verification secret.
 - GitHub dispatch credential.
-- Gateway signing secret for task payloads.
+- Local decision-log signing secret or file permissions restricting writes to the listener user.
 
 Guardrails:
 
 - Do not include secrets in Feishu cards, artifacts, logs, or generated docs.
 - Use least-privilege Feishu scopes.
 - Limit approvers by Feishu open id or user id allowlist.
-- Include task nonce and expiry in every card action.
+- Include task id, source run id, and expiry in every approval card.
 - Verify repository, workflow, ref, task id, and approval status before dispatching live work.
 - Treat unknown targets as production-like and require approval.
 
@@ -473,11 +473,11 @@ This avoids SDK builds, large source checkouts, and live runtime verification wh
    - `Create/update localized docs after per-task approval`
    - `Custom instruction`
 4. The user chooses a policy or submits custom instructions from Feishu.
-5. The approval gateway records the decision and triggers `doc-agent-dry-run.yml`.
+5. The local event consumer records the decision and triggers `doc-agent-dry-run.yml`.
 6. The coordinator turns the decision into one or more `localization-owner` tasks.
 7. `localization-owner` produces dry-run plans and draft outputs for the configured table pair.
 8. `review-agent` reviews the dry-run output.
-9. If review passes and a live write is needed, Feishu receives a second approval card for the concrete write plan.
+9. If review passes and a live write is needed, Feishu receives a second approval card showing the concrete write commands.
 10. After approval, `doc-agent-live-write.yml` performs the approved Feishu writes.
 11. The workflow refetches changed records/docs, verifies metadata and links, and posts final status to Feishu.
 
@@ -487,8 +487,8 @@ Included:
 
 - one Feishu chat for progress and approval cards
 - one approver allowlist
-- one approval gateway endpoint for Feishu interactive card callbacks
-- GitHub `repository_dispatch` or `workflow_dispatch` from the gateway
+- one local Feishu event consumer using `lark-cli event consume im.message.receive_v1`
+- GitHub `repository_dispatch` or `workflow_dispatch` from the event consumer
 - one source/target localization table pair
 - one scheduled daily report
 - one manual dispatch path for testing
@@ -518,11 +518,11 @@ Excluded:
 - A scheduled workflow sends a daily Feishu report card even when no changes are found.
 - Selecting a policy in Feishu triggers the correct GitHub workflow.
 - The dry-run workflow produces a machine-readable task record and a human-readable summary.
-- The concrete live-write card is idempotent: duplicate clicks do not execute duplicate writes.
+- The concrete live-write approval command is idempotent: duplicate replies do not execute duplicate writes.
 - A live write updates only the approved Feishu records/docs.
 - Post-write verification refetches the changed Feishu resources and reports PASS/FAIL.
 - Failed, rejected, expired, and change-requested tasks preserve artifacts and do not advance the handled baseline.
-- The implementation can be extended to SDK and guide owners later without changing the approval gateway contract.
+- The implementation can be extended to SDK and guide owners later without changing the normalized decision payload contract.
 
 ## Out Of Scope For MVP
 
@@ -540,12 +540,12 @@ Excluded:
 
 ## Implementation Defaults
 
-- Approval gateway: Cloudflare Worker with a small durable store.
-- GitHub trigger from gateway: `repository_dispatch` for card callbacks, with the original workflow run id and task id in the payload.
+- Approval transport: local Feishu event consumer.
+- GitHub trigger from event consumer: `repository_dispatch`, with the original workflow run id, task id, action, approver id, and optional custom instruction in the payload.
 - Agent runtime for owner/reviewer work: Codex CLI first, because owner agents need repository/filesystem/test access. Lightweight card copy or classification helpers may use SDK/API calls later.
 - MVP write mode: approved live Feishu writes only. GitHub PR creation is deferred.
 - MVP scan mode: Feishu metadata only for one localization table pair. No target source repository checkout.
-- MVP card model: one daily report card and one concrete live-write approval card per approved task batch.
+- MVP card model: one daily report card and one concrete live-write approval card per approved task batch, both using reply-command decisions.
 - MVP review model: review before the concrete live-write approval card.
 
 ## Required Configuration
@@ -556,9 +556,9 @@ The implementation plan must require these values before running live workflows:
 - Feishu approver allowlist by stable user/open id.
 - Feishu source base/table/root tokens for the MVP localization table pair.
 - Feishu target base/table/root tokens for the MVP localization table pair.
-- Approval gateway URL and Feishu callback verification secret.
+- Local event consumer host/service path and decision-log path.
 - GitHub repository, branch/ref, and dispatch event names.
-- GitHub credential used by the gateway for `repository_dispatch`.
+- GitHub credential used by the local event consumer for `repository_dispatch`.
 - Feishu bot credentials and required scopes for messaging, doc reads, doc writes, and bitable reads/writes.
 - Translator choice and credentials if the MVP creates or updates localized prose rather than only metadata.
 

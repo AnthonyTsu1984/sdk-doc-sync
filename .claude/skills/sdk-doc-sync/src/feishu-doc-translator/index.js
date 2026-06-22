@@ -16,6 +16,8 @@ class FeishuDocTranslator {
     constructor(options) {
         this.sourceBitable = options.sourceBitable;
         this.targetBitable = options.targetBitable;
+        this.sourceTableId = options.sourceTableId || null;
+        this.targetTableId = options.targetTableId || null;
         this.sourceRoot = options.sourceRoot;
         this.targetRoot = options.targetRoot;
         this.sourceLang = options.sourceLang || 'en';
@@ -26,9 +28,9 @@ class FeishuDocTranslator {
         this.approvalCallback = options.approvalCallback || null;
 
         // Initialize components
-        this.sourceReader = new BitableReader({ baseToken: this.sourceBitable });
-        this.targetReader = new BitableReader({ baseToken: this.targetBitable });
-        this.targetWriter = new BitableWriter({ baseToken: this.targetBitable });
+        this.sourceReader = new BitableReader({ baseToken: this.sourceBitable, tableId: this.sourceTableId });
+        this.targetReader = new BitableReader({ baseToken: this.targetBitable, tableId: this.targetTableId });
+        this.targetWriter = new BitableWriter({ baseToken: this.targetBitable, tableId: this.targetTableId });
         this.diff = new TranslationDiff({ strict: true });
 
         // Initialize translator

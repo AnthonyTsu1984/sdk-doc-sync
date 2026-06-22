@@ -15,6 +15,10 @@ function parseArgs(argv) {
             args.sourceBitable = argv[++i];
         } else if (arg === '--target-bitable' && argv[i + 1]) {
             args.targetBitable = argv[++i];
+        } else if (arg === '--source-table' && argv[i + 1]) {
+            args.sourceTableId = argv[++i];
+        } else if (arg === '--target-table' && argv[i + 1]) {
+            args.targetTableId = argv[++i];
         } else if (arg === '--source-root' && argv[i + 1]) {
             args.sourceRoot = argv[++i];
         } else if (arg === '--target-root' && argv[i + 1]) {
@@ -48,6 +52,8 @@ Usage: feishu-doc-translator [options]
 Options:
   --source-bitable <token>     Source bitable app token (required)
   --target-bitable <token>     Target bitable app token (required)
+  --source-table <table_id>    Source bitable table ID (required for multi-table bases)
+  --target-table <table_id>    Target bitable table ID (required for multi-table bases)
   --source-root <token>        Source root page/folder token (required)
   --target-root <token>        Target root page/folder token (required)
   --source-lang <lang>         Source language code (default: en)
@@ -209,6 +215,8 @@ async function main() {
     const translator = new FeishuDocTranslator({
         sourceBitable: args.sourceBitable,
         targetBitable: args.targetBitable,
+        sourceTableId: args.sourceTableId,
+        targetTableId: args.targetTableId,
         sourceRoot: args.sourceRoot,
         targetRoot: args.targetRoot,
         sourceLang: args.sourceLang || 'en',
@@ -245,7 +253,15 @@ async function main() {
     }
 }
 
-main().catch(err => {
-    console.error('Unhandled error:', err.message);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch(err => {
+        console.error('Unhandled error:', err.message);
+        process.exit(1);
+    });
+}
+
+module.exports = {
+    parseArgs,
+    createApprovalCallback,
+    main,
+};

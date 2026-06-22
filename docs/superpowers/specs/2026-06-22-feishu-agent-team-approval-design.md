@@ -16,6 +16,17 @@ The local `.claude` skills already cover the core documentation work:
 
 The AWS `sample-codex-agent-team` repository contributes the team operating model: a coordinator, scoped worker roles, durable spec/task/review artifacts, parallel file-disjoint work, and independent PASS/FAIL review gates. It is not a production control plane, so GitHub Actions should provide scheduling, execution, artifact storage, retries, and audit history.
 
+## Finalized Decisions
+
+- GitHub Actions is the scheduler, stateful artifact store, and execution runner.
+- Feishu messages and interactive cards are the human control surface.
+- A small always-on approval gateway receives Feishu card callbacks and triggers GitHub workflows.
+- Agents are domain owners, not pipeline stations. Shared scanning, drafting, patching, localization, and verification scripts are tools used by owners.
+- Repository access is metadata-first. Owner agents fetch source only after a human policy decision requires code evidence or a patch plan.
+- MVP is localization-only for one configured Feishu source/target table pair.
+- Guide-doc code-gap scanning is the next report-only extension. Live guide patching is not part of MVP.
+- SDK/reference doc owners, REST/CLI owners, GitHub PR creation, and automatic low-risk writes are post-MVP.
+
 ## Architecture
 
 ```text
@@ -35,7 +46,7 @@ Feishu approval card button
   -> gateway triggers GitHub repository_dispatch/workflow_dispatch
 
 Approved GitHub Actions workflow
-  -> executes live writes or PR creation
+  -> executes approved live writes
   -> verifies results
   -> posts final Feishu status
 ```
@@ -46,16 +57,16 @@ Approved GitHub Actions workflow
 
 `doc-agent-scan.yml`
 
-- Runs on schedule and `workflow_dispatch`.
+- MVP workflow. Runs on schedule and `workflow_dispatch`.
 - Checks out this repository.
-- Reads scan state before scanning.
-- Performs lightweight discovery for configured SDK/source repositories and Feishu source docs.
+- Reads automation state before scanning.
+- Performs lightweight discovery for the configured MVP localization source/target table pair.
 - Builds a daily scan report with affected surfaces, estimated effort, risk, and possible dealing policies.
 - Sends a Feishu report card instead of starting live work directly.
 
 `guide-doc-code-gap-scan.yml`
 
-- Runs on schedule, manual dispatch, or as a child of the daily scan.
+- Phase 2 report-only workflow. Runs on schedule, manual dispatch, or as a child of the daily scan after MVP is stable.
 - Reads a configured list of Feishu guide/tutorial/procedure docs.
 - Exports or fetches each listed doc.
 - Groups adjacent code blocks into procedure steps.
@@ -82,7 +93,7 @@ Approved GitHub Actions workflow
 `doc-agent-live-write.yml`
 
 - Runs only after an approval record is valid.
-- Performs Feishu writes, GitHub PR creation, bitable updates, or state updates according to the approved action.
+- Performs Feishu writes, bitable updates, or state updates according to the approved action.
 - Refetches changed docs/records and runs verification.
 - Posts final result and links to artifacts.
 
@@ -126,7 +137,7 @@ Responsibilities:
 - Trigger GitHub `repository_dispatch` or `workflow_dispatch`.
 - Return an immediate acknowledgement to Feishu.
 
-Recommended implementation: Cloudflare Worker with a small durable store. Vercel, AWS Lambda, or an internal service are acceptable alternatives if they can expose a stable HTTPS endpoint and keep secrets safely.
+MVP implementation: Cloudflare Worker with a small durable store. Vercel, AWS Lambda, or an internal service can replace it later if they expose a stable HTTPS endpoint and keep secrets safely.
 
 ### Feishu Messages And Cards
 
@@ -150,12 +161,12 @@ The daily scan report card is a higher-level decision card. It should summarize 
 
 - `Ignore for now`
 - `Create dry-run plans only`
-- `Open GitHub PRs`
 - `Patch Feishu after per-task approval`
-- `Patch low-risk docs automatically, ask for risky ones`
 - `Custom instruction`
 
 If the user chooses `Custom instruction`, the coordinator should preserve the typed instruction as part of the task record and use it to guide decomposition.
+
+Post-MVP cards may add policies such as `Open GitHub PRs` or `Patch low-risk docs automatically, ask for risky ones`. Those are intentionally excluded from the MVP.
 
 Guide-doc code-gap cards should summarize missing language blocks and feasible remediation policies, such as:
 
@@ -260,7 +271,7 @@ Agents should be organized by durable ownership of a documentation surface, not 
 
 `verified-doc-owner`
 
-- Owns source-verified long-form documentation tasks that cut across SDK/API surfaces.
+- Owns source-verified long-form documentation tasks that cut across SDK/API surfaces and are not better owned by `guide-doc-owner`.
 - Builds claim inventories, verifies implementation evidence, drafts docs, and lists unresolved claims.
 
 `review-agent`
@@ -332,7 +343,7 @@ The daily scan should first use lightweight metadata:
 - GitHub Releases API or tags API for latest release/tag checks.
 - GitHub compare API for changed file names between the last scanned tag and the latest tag.
 - Feishu bitable/doc metadata for source-doc modification checks.
-- Existing `scan-state.json` as the local baseline.
+- Existing automation state as the local baseline.
 
 This stage produces the daily report and usually does not need a full source checkout.
 
@@ -361,7 +372,9 @@ Full checkouts are reserved for tasks that require broad source tracing, live bu
 
 ### Repo State Rules
 
-- The coordinator owns `scan-state.json` updates after successful scan/report cycles.
+- The coordinator owns automation state updates after successful scan/report cycles.
+- For SDK/reference owners, automation state includes the existing `.claude/skills/sdk-doc-sync/scan-state.json`.
+- For the localization MVP, automation state must separately track source/target table pair, last handled source modified time or revision, and unresolved carryover findings.
 - Owner agents must not advance scan state merely because they started work.
 - A failed or rejected task preserves the old baseline unless the human explicitly chooses to mark it handled.
 - Daily reports should distinguish "new source change detected" from "previously detected but not handled."
@@ -369,16 +382,17 @@ Full checkouts are reserved for tasks that require broad source tracing, live bu
 
 ## Decision Gates
 
-The first version should require approval for:
+All phases require approval for:
 
 - any live Feishu doc patch
 - any Feishu bitable create/update/delete
 - any localized doc create/update
 - any guide-doc code block insertion or replacement
-- any GitHub PR creation
 - any live runtime verification that uses external service credentials
 - any retry that broadens permissions or target scope
 - any bulk action above a configured threshold
+
+Post-MVP, any GitHub PR creation also requires approval.
 
 The system may send informational messages without approval for:
 
@@ -414,7 +428,7 @@ Rules:
 Secrets required in GitHub Actions:
 
 - Feishu app id and app secret for bot messages and doc APIs.
-- GitHub token or GitHub App credentials for dispatching workflows and creating PRs.
+- GitHub token or GitHub App credentials for dispatching workflows.
 - Optional translator/API credentials for localization.
 - Optional live verification credentials.
 
@@ -508,7 +522,7 @@ Excluded:
 - A live write updates only the approved Feishu records/docs.
 - Post-write verification refetches the changed Feishu resources and reports PASS/FAIL.
 - Failed, rejected, expired, and change-requested tasks preserve artifacts and do not advance the handled baseline.
-- The implementation can be extended to SDK owners later without changing the approval gateway contract.
+- The implementation can be extended to SDK and guide owners later without changing the approval gateway contract.
 
 ## Out Of Scope For MVP
 
@@ -524,12 +538,36 @@ Excluded:
 - Supporting every `.claude` skill in the first release.
 - Building a custom SDK-based agent tool loop.
 
-## Open Questions
+## Implementation Defaults
 
-1. Which Feishu chat should receive progress messages and cards?
-2. Which Feishu users are authorized approvers?
-3. Should the approval gateway be Cloudflare Worker, Vercel, AWS Lambda, or an existing internal service?
-4. Which source/target localization table pair should be used for the MVP?
-5. Which agent runtime should owner/reviewer invocations use first: Codex CLI, Claude Code CLI, or a small SDK/API coordinator?
-6. Post-MVP: should approved work write directly to Feishu, open a GitHub PR first, or support both by action type?
-7. Post-MVP: which target repositories can rely on GitHub metadata first, and which require source checkout even for daily discovery?
+- Approval gateway: Cloudflare Worker with a small durable store.
+- GitHub trigger from gateway: `repository_dispatch` for card callbacks, with the original workflow run id and task id in the payload.
+- Agent runtime for owner/reviewer work: Codex CLI first, because owner agents need repository/filesystem/test access. Lightweight card copy or classification helpers may use SDK/API calls later.
+- MVP write mode: approved live Feishu writes only. GitHub PR creation is deferred.
+- MVP scan mode: Feishu metadata only for one localization table pair. No target source repository checkout.
+- MVP card model: one daily report card and one concrete live-write approval card per approved task batch.
+- MVP review model: review before the concrete live-write approval card.
+
+## Required Configuration
+
+The implementation plan must require these values before running live workflows:
+
+- Feishu chat id for progress messages and cards.
+- Feishu approver allowlist by stable user/open id.
+- Feishu source base/table/root tokens for the MVP localization table pair.
+- Feishu target base/table/root tokens for the MVP localization table pair.
+- Approval gateway URL and Feishu callback verification secret.
+- GitHub repository, branch/ref, and dispatch event names.
+- GitHub credential used by the gateway for `repository_dispatch`.
+- Feishu bot credentials and required scopes for messaging, doc reads, doc writes, and bitable reads/writes.
+- Translator choice and credentials if the MVP creates or updates localized prose rather than only metadata.
+
+## Post-MVP Decisions
+
+These decisions are intentionally deferred until the MVP control loop is working:
+
+- Whether approved work should write directly to Feishu, open GitHub PRs, or support both by action type.
+- Which SDK/reference doc owner should be automated first.
+- Which target repositories can rely on GitHub metadata first, and which require source checkout even for daily discovery.
+- Whether guide-doc code-gap scanning should run daily or less frequently.
+- Whether low-risk actions can become automatic after enough successful approved runs.

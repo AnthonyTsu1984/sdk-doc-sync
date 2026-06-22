@@ -1,0 +1,39 @@
+name: Doc Agent Scan
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Write config
+        env:
+          DOC_AGENT_CONFIG_JSON: ${{ secrets.DOC_AGENT_CONFIG_JSON }}
+        run: |
+          mkdir -p .claude/agent-team
+          printf '%s' "$DOC_AGENT_CONFIG_JSON" > .claude/agent-team/config.json
+      - name: Run scan
+        run: npm run doc-agent:scan -- --send-card
+        env:
+          APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: doc-agent-scan-artifacts
+          path: tmp/doc-agent/**
+          retention-days: 14

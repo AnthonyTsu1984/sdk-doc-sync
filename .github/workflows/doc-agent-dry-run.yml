@@ -1,0 +1,48 @@
+name: Doc Agent Dry Run
+
+on:
+  repository_dispatch:
+    types:
+      - doc-agent-dry_run_only
+      - doc-agent-patch_after_approval
+      - doc-agent-custom
+
+jobs:
+  dry-run:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Write config
+        env:
+          DOC_AGENT_CONFIG_JSON: ${{ secrets.DOC_AGENT_CONFIG_JSON }}
+        run: |
+          mkdir -p .claude/agent-team
+          printf '%s' "$DOC_AGENT_CONFIG_JSON" > .claude/agent-team/config.json
+      - name: Download scan artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: doc-agent-scan-artifacts
+          path: tmp/doc-agent
+          run-id: ${{ github.event.client_payload.sourceRunId }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Run dry-run
+        run: npm run doc-agent:dry-run -- "${{ github.event.client_payload.taskId }}" --send-card
+        env:
+          APP_ID: ${{ secrets.FEISHU_APP_ID }}
+          APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
+          WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: doc-agent-dry-run-artifacts
+          path: tmp/doc-agent/**
+          retention-days: 14

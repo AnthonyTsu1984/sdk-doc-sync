@@ -8,11 +8,12 @@ function commandBlock(task, commands) {
 }
 
 function buildDailyReportCard({ task, summaryText }) {
+  const suffix = task.sourceRunId ? ` ${task.sourceRunId}` : '';
   const commands = [
-    `ignore ${task.id}`,
-    `dry-run ${task.id}`,
-    `patch ${task.id}`,
-    `custom ${task.id}: <your instruction>`,
+    `ignore ${task.id}${suffix}`,
+    `dry-run ${task.id}${suffix}`,
+    `patch ${task.id}${suffix}`,
+    `custom ${task.id}${suffix}: <your instruction>`,
   ];
   return {
     config: { wide_screen_mode: true },
@@ -28,10 +29,11 @@ function buildDailyReportCard({ task, summaryText }) {
 }
 
 function buildLiveWriteApprovalCard({ task, summaryText }) {
+  const suffix = task.sourceRunId ? ` ${task.sourceRunId}` : '';
   const commands = [
-    `approve ${task.id}`,
-    `reject ${task.id}`,
-    `changes ${task.id}: <what to change>`,
+    `approve ${task.id}${suffix}`,
+    `reject ${task.id}${suffix}`,
+    `changes ${task.id}${suffix}: <what to change>`,
   ];
   return {
     config: { wide_screen_mode: true },

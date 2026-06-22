@@ -9,6 +9,7 @@ test('daily report card contains MVP reply commands', () => {
   });
   const content = JSON.stringify(card);
   assert.match(content, /dry-run task-1/);
+  assert.match(content, /dry-run task-1 123/);
   assert.match(content, /patch task-1/);
   assert.match(content, /custom task-1/);
 });
@@ -20,6 +21,7 @@ test('live write card has approve reject and changes commands', () => {
   });
   const content = JSON.stringify(card);
   assert.match(content, /approve task-1/);
+  assert.match(content, /approve task-1 456/);
   assert.match(content, /reject task-1/);
   assert.match(content, /changes task-1/);
 });

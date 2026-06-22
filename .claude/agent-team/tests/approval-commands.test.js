@@ -6,6 +6,7 @@ test('parseApprovalCommand parses MVP policy commands', () => {
   assert.deepEqual(parseApprovalCommand('dry-run loc-scan-1'), {
     action: 'dry_run_only',
     taskId: 'loc-scan-1',
+    sourceRunId: null,
     customInstruction: '',
     raw: 'dry-run loc-scan-1',
   });
@@ -17,6 +18,13 @@ test('parseApprovalCommand captures custom instruction', () => {
   const parsed = parseApprovalCommand('custom loc-scan-1: only update metadata');
   assert.equal(parsed.action, 'custom');
   assert.equal(parsed.customInstruction, 'only update metadata');
+});
+
+test('parseApprovalCommand captures optional source run id', () => {
+  const parsed = parseApprovalCommand('approve loc-scan-1 123456');
+  assert.equal(parsed.action, 'approve_live_write');
+  assert.equal(parsed.taskId, 'loc-scan-1');
+  assert.equal(parsed.sourceRunId, '123456');
 });
 
 test('normalizeFeishuMessageEvent handles flat event shape', () => {

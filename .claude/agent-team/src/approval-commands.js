@@ -11,7 +11,7 @@ const ACTION_ALIASES = Object.freeze({
 
 function parseApprovalCommand(text) {
   const raw = String(text || '').trim();
-  const match = raw.match(/^([a-zA-Z-]+)\s+([a-zA-Z0-9_.:-]+)(?::\s*([\s\S]+))?$/);
+  const match = raw.match(/^([a-zA-Z-]+)\s+([a-zA-Z0-9_.:-]+)(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/);
   if (!match) return null;
   const command = match[1].toLowerCase();
   const action = ACTION_ALIASES[command];
@@ -19,7 +19,8 @@ function parseApprovalCommand(text) {
   return {
     action,
     taskId: match[2],
-    customInstruction: match[3] ? match[3].trim() : '',
+    sourceRunId: match[3] || null,
+    customInstruction: match[4] ? match[4].trim() : '',
     raw,
   };
 }

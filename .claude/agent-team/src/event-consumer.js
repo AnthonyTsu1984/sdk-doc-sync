@@ -53,7 +53,7 @@ async function handleEvent({
   const decision = createDecision({
     parsed,
     event: normalized,
-    sourceRunId: sourceRunIdResolver(parsed.taskId),
+    sourceRunId: parsed.sourceRunId || sourceRunIdResolver(parsed.taskId),
   });
   const logPath = config.approvalConsumer.decisionLogPath;
   if (hasDecision(logPath, decision.decisionId)) return { duplicate: true, decision };

@@ -214,6 +214,14 @@ Agents should be organized by durable ownership of a documentation surface, not 
 - Owns localization parity end to end across configured Feishu wiki roots and bitables.
 - Diffs source and target tables, proposes create/update/meta-only/orphan actions, and preserves media/embed handling rules.
 
+`guide-doc-owner`
+
+- Owns guide, tutorial, and procedure docs end to end.
+- Uses `draft-verified-docs` to draft or revise prose from supplied references after checking source repos and specs.
+- Uses `patch-feishu-code` to add missing Java, Go, Node.js, REST, CLI, or C++ examples to procedure docs when Python examples already define the workflow.
+- Uses `feishu-code-verify` to statically or scenario-check guide snippets before and after proposed patches.
+- Produces unresolved-claim lists, code-support gaps, patch plans, and verification reports before asking for live-write approval.
+
 `verified-doc-owner`
 
 - Owns source-verified long-form documentation tasks that cut across SDK/API surfaces.
@@ -394,6 +402,7 @@ Excluded:
 - SDK owner agents
 - REST API owner work
 - CLI owner work
+- guide/procedure doc owner work
 - verified long-form doc drafting
 - code example patching
 - GitHub PR creation

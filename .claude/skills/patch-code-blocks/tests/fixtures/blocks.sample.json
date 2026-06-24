@@ -1,0 +1,91 @@
+[
+  {
+    "block_id": "root",
+    "block_type": 1,
+    "children": ["h1", "h2", "emptyHeading"]
+  },
+  {
+    "block_id": "h1",
+    "block_type": 3,
+    "children": ["code1"],
+    "heading1": {
+      "elements": [
+        {
+          "text_run": {
+            "content": "Create Collection"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "block_id": "code1",
+    "block_type": 14,
+    "code": {
+      "language": "Python",
+      "elements": [
+        {
+          "text_run": {
+            "content": "client.create_collection()"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "block_id": "h2",
+    "block_type": 3,
+    "children": ["code2"],
+    "heading1": {
+      "elements": [
+        {
+          "text_run": {
+            "content": "Drop Collection"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "block_id": "code2",
+    "block_type": 14,
+    "code": {
+      "language": "JavaScript",
+      "elements": [
+        {
+          "text_run": {
+            "content": "await client.dropCollection()"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "block_id": "emptyHeading",
+    "block_type": 3,
+    "children": ["code3"],
+    "heading1": {
+      "elements": [
+        {
+          "text_run": {
+            "content": "!!!"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "block_id": "code3",
+    "block_type": 14,
+    "code": {
+      "language": "Bash",
+      "elements": [
+        {
+          "text_run": {
+            "content": "milvus-cli status"
+          }
+        }
+      ]
+    }
+  }
+]

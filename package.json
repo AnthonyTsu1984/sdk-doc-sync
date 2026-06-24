@@ -19,7 +19,8 @@
     "doc-agent:live-write": "node .claude/agent-team/bin/doc-agent-live-write.js",
     "doc-agent:verify": "node .claude/agent-team/bin/doc-agent-verify.js",
     "sdk-doc-sync": "node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js",
-    "translate": "node .claude/skills/sdk-doc-sync/bin/feishu-doc-translator.js"
+    "translate": "node .claude/skills/sdk-doc-sync/bin/feishu-doc-translator.js",
+    "test:patch-code-blocks": "node --test .claude/skills/patch-code-blocks/tests/*.test.js"
   },
   "author": "",
   "license": "ISC",

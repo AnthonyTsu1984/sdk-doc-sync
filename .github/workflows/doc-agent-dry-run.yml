@@ -44,6 +44,7 @@ jobs:
       - name: Run dry-run
         run: npm run doc-agent:dry-run -- "${{ github.event.client_payload.taskId }}" --send-card
         env:
+          FEISHU_HOST: https://open.feishu.cn
           APP_ID: ${{ secrets.FEISHU_APP_ID }}
           APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}

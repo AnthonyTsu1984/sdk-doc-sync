@@ -35,6 +35,7 @@ jobs:
       - name: Run scan
         run: npm run doc-agent:scan -- --send-card
         env:
+          FEISHU_HOST: https://open.feishu.cn
           APP_ID: ${{ secrets.FEISHU_APP_ID }}
           APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}

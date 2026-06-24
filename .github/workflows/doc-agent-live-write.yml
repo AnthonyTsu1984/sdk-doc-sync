@@ -18,12 +18,20 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
       - name: Write config
         env:
           DOC_AGENT_CONFIG_JSON: ${{ secrets.DOC_AGENT_CONFIG_JSON }}
         run: |
           mkdir -p .claude/agent-team
           printf '%s' "$DOC_AGENT_CONFIG_JSON" > .claude/agent-team/config.json
+      - name: Configure Codex
+        env:
+          CODEX_CONFIG_TOML: ${{ secrets.CODEX_CONFIG_TOML }}
+        run: |
+          mkdir -p "$HOME/.codex"
+          printf '%s' "$CODEX_CONFIG_TOML" > "$HOME/.codex/config.toml"
       - name: Download dry-run artifacts
         uses: actions/download-artifact@v4
         with:
@@ -37,7 +45,7 @@ jobs:
           APP_ID: ${{ secrets.FEISHU_APP_ID }}
           APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
           WIKI_SPACE_ID: ${{ secrets.FEISHU_WIKI_SPACE_ID }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.CODEX_OPENAI_API_KEY }}
       - name: Verify
         run: npm run doc-agent:verify -- "${{ github.event.client_payload.taskId }}"
         env:

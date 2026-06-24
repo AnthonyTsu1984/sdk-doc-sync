@@ -37,7 +37,7 @@
       "sourceLang": "en",
       "targetLang": "zh",
       "driveType": "wiki",
-      "translator": "claude",
+      "translator": "feishu",
       "linkCheck": {
         "enabled": true,
         "checkMentionDoc": true,
@@ -120,6 +120,6 @@
   "agentRuntime": {
     "enabled": false,
     "command": "codex",
-    "args": ["exec", "--json"]
+    "args": ["exec", "--json", "--sandbox", "read-only", "--ask-for-approval", "never"]
   }
 }

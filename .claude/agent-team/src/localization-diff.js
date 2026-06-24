@@ -40,9 +40,26 @@ async function readLocalizationRecords(config) {
       baseToken: localization.targetBaseToken,
       tableId: pair.targetTableId,
     });
+    const readRecords = async ({ reader, side, baseToken, tableId }) => {
+      try {
+        return await reader.listRecords();
+      } catch (error) {
+        throw new Error(`Failed to read ${side} localization table ${baseToken}/${tableId}: ${error.message}`);
+      }
+    };
     const [sourceRecords, targetRecords] = await Promise.all([
-      sourceReader.listRecords(),
-      targetReader.listRecords(),
+      readRecords({
+        reader: sourceReader,
+        side: 'source',
+        baseToken: localization.sourceBaseToken,
+        tableId: pair.sourceTableId,
+      }),
+      readRecords({
+        reader: targetReader,
+        side: 'target',
+        baseToken: localization.targetBaseToken,
+        tableId: pair.targetTableId,
+      }),
     ]);
     return {
       ...pair,

@@ -59,3 +59,18 @@ Local approval consumer environment:
 - Duplicate approval replies must not cause duplicate writes.
 - If verification fails, preserve artifacts and do not advance the handled baseline.
 - Broken `mention_doc` references and normal links are reported during scan and verification; fixes still require explicit approval.
+
+## ztrans Lark Interface
+
+The configured bot is called `ztrans` in the Lark approval chat.
+
+Users can still reply with raw commands from the cards, but the preferred form is:
+
+- `@ztrans dry run <task-id> <source-run-id>`
+- `@ztrans patch <task-id> <source-run-id>`
+- `@ztrans approve <task-id> <source-run-id>`
+- `@ztrans reject <task-id> <source-run-id>`
+- `@ztrans changes <task-id> <source-run-id>: <instruction>`
+- `@ztrans help`
+
+Cards list affected document titles grouped by action type. Long groups are capped in the card; use the workflow artifact `summary.md` for the full list.

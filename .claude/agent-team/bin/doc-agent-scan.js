@@ -47,6 +47,7 @@ async function main() {
     const card = buildDailyReportCard({
       task,
       summaryText: renderFeishuSummary({ ...diff, linkReport }),
+      actions: diff.actions,
     });
     const im = new FeishuImClient({ host: config.feishu.host });
     const message = await im.sendCard({ chatId: config.feishu.chatId, card });

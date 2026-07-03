@@ -46,3 +46,36 @@ test('renderAffectedDocsMarkdown groups titles and caps long lists', () => {
   assert.match(markdown, /ORPHAN \(report only\)/);
   assert.match(markdown, /Legacy Pricing/);
 });
+
+test('daily report card lists affected doc titles', () => {
+  const card = buildDailyReportCard({
+    task: { id: 'task-1', sourceRunId: '123' },
+    summaryText: 'Total: 2 · NEW: 1 · UPDATE: 1',
+    actions: [
+      { type: 'NEW', slug: 'new-doc', source: { metadata: { title: 'New Doc' } } },
+      { type: 'UPDATE', slug: 'old-doc', source: { metadata: { title: 'Old Doc' } } },
+    ],
+  });
+  const content = JSON.stringify(card);
+  assert.match(content, /ztrans found localization work/);
+  assert.match(content, /New Doc/);
+  assert.match(content, /Old Doc/);
+  assert.match(content, /No Feishu docs have been changed yet/);
+});
+
+test('live write card lists only write-capable docs and calls out orphans', () => {
+  const card = buildLiveWriteApprovalCard({
+    task: { id: 'task-1', sourceRunId: '456' },
+    summaryText: 'NEW: one doc',
+    actions: [
+      { type: 'NEW', slug: 'new-doc', source: { metadata: { title: 'New Doc' } } },
+      { type: 'ORPHAN', slug: 'legacy', target: { metadata: { title: 'Legacy Doc' } } },
+    ],
+    orphanCount: 1,
+  });
+  const content = JSON.stringify(card);
+  assert.match(content, /Approve localization writes/);
+  assert.match(content, /New Doc/);
+  assert.doesNotMatch(content, /Legacy Doc/);
+  assert.match(content, /1 orphan target doc is report-only/);
+});

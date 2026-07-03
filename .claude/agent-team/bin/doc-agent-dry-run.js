@@ -38,9 +38,12 @@ async function main() {
   store.writeArtifact(taskId, 'live-actions.json', actionable);
 
   if (actionable.length > 0 && process.argv.includes('--send-card')) {
+    const orphanCount = actions.filter(action => action.type === 'ORPHAN').length;
     const card = buildLiveWriteApprovalCard({
       task: nextTask,
       summaryText: renderFeishuSummary({ summary: task.summary }),
+      actions: [...actionable, ...actions.filter(action => action.type === 'ORPHAN')],
+      orphanCount,
     });
     const im = new FeishuImClient({ host: config.feishu.host });
     await im.sendCard({ chatId: config.feishu.chatId, card });

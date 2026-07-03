@@ -15,6 +15,11 @@ GitHub Actions secrets:
 Local approval consumer environment:
 
 - `GITHUB_TOKEN`
+- `APP_ID`
+- `APP_SECRET`
+- `FEISHU_HOST`
+- `FEISHU_EVENT_VERIFICATION_TOKEN` when verification token is enabled in Feishu event subscription
+- `FEISHU_EVENT_ENCRYPT_KEY` when event encryption is enabled in Feishu event subscription
 
 ## Setup
 
@@ -38,15 +43,15 @@ Local approval consumer environment:
 7. If `agentRuntime.enabled` is `true`, keep `agentRuntime.command` as `codex` in GitHub Actions. The workflows install the Codex CLI with `npm install -g @openai/codex`.
 8. Keep localization `translator` set to `feishu` unless you explicitly want another translation backend. Codex is the owner-agent runtime in this MVP; it is not currently the document translation engine.
 9. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.
-10. Run `lark-cli auth login` if needed and verify `lark-cli event consume im.message.receive_v1 --as bot --max-events 1 --timeout 30s` can receive events.
-11. Start `.claude/agent-team/bin/doc-agent-approval-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN` in its environment.
+10. Configure the Feishu app event subscription request URL to the public endpoint that forwards to the local webhook consumer, for example `https://YOUR_PUBLIC_HOST/feishu/events`.
+11. Start `.claude/agent-team/bin/doc-agent-webhook-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN`, `APP_ID`, `APP_SECRET`, and callback verification env vars in its environment.
 12. Run `Doc Agent Scan` manually from GitHub Actions.
 
 ## Expected MVP Flow
 
 1. `Doc Agent Scan` posts a Feishu daily report card.
 2. Approver replies in the configured Feishu chat with `dry-run <task-id> <source-run-id>` or `patch <task-id> <source-run-id>`.
-3. Local approval consumer receives the Feishu event and dispatches the dry-run workflow.
+3. Webhook approval consumer receives the Feishu event and dispatches the dry-run workflow.
 4. Dry-run workflow uploads artifacts and sends a concrete live-write approval card when there are actionable records.
 5. Approver replies `approve <task-id> <source-run-id>`.
 6. Local approval consumer dispatches the live-write workflow.

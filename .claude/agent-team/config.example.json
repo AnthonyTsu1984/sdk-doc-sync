@@ -22,7 +22,9 @@
     "decisionLogPath": ".claude/agent-team/state/decisions.jsonl",
     "taskTtlMinutes": 1440,
     "larkCliCommand": "lark-cli",
-    "eventKey": "im.message.receive_v1"
+    "eventKey": "im.message.receive_v1",
+    "webhookPort": 8787,
+    "webhookPath": "/feishu/events"
   },
   "surfaces": {
     "localization": {

@@ -15,6 +15,7 @@
     "test:list": "node .claude/skills/sdk-doc-sync/tests/run-all.js --list",
     "test:agent-team": "node --test .claude/agent-team/tests/*.test.js",
     "doc-agent:scan": "node .claude/agent-team/bin/doc-agent-scan.js",
+    "doc-agent:webhook": "node .claude/agent-team/bin/doc-agent-webhook-consumer.js",
     "doc-agent:dry-run": "node .claude/agent-team/bin/doc-agent-dry-run.js",
     "doc-agent:live-write": "node .claude/agent-team/bin/doc-agent-live-write.js",
     "doc-agent:verify": "node .claude/agent-team/bin/doc-agent-verify.js",

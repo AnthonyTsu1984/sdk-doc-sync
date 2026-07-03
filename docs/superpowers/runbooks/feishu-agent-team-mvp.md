@@ -44,8 +44,9 @@ Local approval consumer environment:
 8. Keep localization `translator` set to `feishu` unless you explicitly want another translation backend. Codex is the owner-agent runtime in this MVP; it is not currently the document translation engine.
 9. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.
 10. Configure the Feishu app event subscription request URL to the public endpoint that forwards to the webhook consumer, for example `https://YOUR_PUBLIC_HOST/feishu/events`.
-11. For local testing, start `.claude/agent-team/bin/doc-agent-webhook-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN`, `APP_ID`, `APP_SECRET`, and callback verification env vars in its environment.
-12. Run `Doc Agent Scan` manually from GitHub Actions.
+11. For local callback testing, start `.claude/agent-team/bin/doc-agent-webhook-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN`, `APP_ID`, `APP_SECRET`, and callback verification env vars in its environment.
+12. For long-connection mode, use Feishu's official Node SDK daemon instead of `lark-cli`: start `.claude/agent-team/bin/doc-agent-approval-consumer.js` with `GITHUB_TOKEN`, `APP_ID`, and `APP_SECRET` in its environment. The Feishu console subscription mode must be `长连接`, and the app credentials must be the same app as the `ztrans` bot users mention.
+13. Run `Doc Agent Scan` manually from GitHub Actions.
 
 ## Cloudflare Worker Deployment
 

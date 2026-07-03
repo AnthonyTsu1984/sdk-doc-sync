@@ -145,11 +145,61 @@ async function runEventConsumer({ config, githubToken }) {
   return child;
 }
 
+function getSdkCredentials(config) {
+  const appIdEnv = config.feishu?.appIdEnv || 'APP_ID';
+  const appSecretEnv = config.feishu?.appSecretEnv || 'APP_SECRET';
+  const appId = process.env[appIdEnv];
+  const appSecret = process.env[appSecretEnv];
+  if (!appId) throw new Error(`Missing Feishu SDK app id env: ${appIdEnv}`);
+  if (!appSecret) throw new Error(`Missing Feishu SDK app secret env: ${appSecretEnv}`);
+  return { appId, appSecret };
+}
+
+async function runSdkEventConsumer({
+  config,
+  githubToken,
+  lark = require('@larksuiteoapi/node-sdk'),
+  im = new FeishuImClient({ host: config.feishu.host }),
+}) {
+  const credentials = getSdkCredentials(config);
+  const loggerLevel = lark.LoggerLevel?.info ?? 3;
+  const wsClient = new lark.WSClient({
+    ...credentials,
+    loggerLevel,
+    onReady: () => console.error('[doc-agent] Feishu SDK long-connection consumer ready'),
+    onReconnecting: () => console.error('[doc-agent] Feishu SDK long-connection reconnecting'),
+    onReconnected: () => console.error('[doc-agent] Feishu SDK long-connection reconnected'),
+    onError: error => console.error(error.stack || error.message),
+  });
+  const eventDispatcher = new lark.EventDispatcher({}).register({
+    'im.message.receive_v1': async data => {
+      try {
+        const result = await handleEvent({
+          config,
+          event: data,
+          githubToken,
+          respond: message => im.sendText(message),
+        });
+        if (result?.ignored) console.error(`[doc-agent] ignored event: ${result.reason}`);
+        else if (result?.duplicate) console.error(`[doc-agent] duplicate decision: ${result.decision.decisionId}`);
+        else if (result?.local) console.error(`[doc-agent] sent local response: ${result.parsed.action}`);
+        else if (result?.ok) console.error(`[doc-agent] dispatched decision: ${result.decision.decisionId}`);
+      } catch (error) {
+        console.error(error.stack || error.message);
+        throw error;
+      }
+    },
+  });
+  await wsClient.start({ eventDispatcher });
+  return wsClient;
+}
+
 module.exports = {
   appendDecision,
   createDecision,
   handleEvent,
   localResponseText,
   runEventConsumer,
+  runSdkEventConsumer,
   waitForReady,
 };

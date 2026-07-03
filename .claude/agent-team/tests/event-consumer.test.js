@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { handleEvent } = require('../src/event-consumer');
+const { handleEvent, runSdkEventConsumer } = require('../src/event-consumer');
 
 function config(logPath) {
   return {
@@ -91,4 +91,60 @@ test('handleEvent sends local response when responder is supplied', async () => 
   assert.equal(sent.length, 1);
   assert.equal(sent[0].chatId, localConfig.feishu.chatId);
   assert.match(sent[0].text, /ztrans understands/);
+});
+
+test('runSdkEventConsumer registers official SDK message receive handler', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
+  const localConfig = config(path.join(dir, 'decisions.jsonl'));
+  process.env.TEST_FEISHU_APP_ID = 'cli_test';
+  process.env.TEST_FEISHU_APP_SECRET = 'secret';
+  localConfig.feishu.appIdEnv = 'TEST_FEISHU_APP_ID';
+  localConfig.feishu.appSecretEnv = 'TEST_FEISHU_APP_SECRET';
+
+  let registeredHandles = null;
+  const fakeWsClient = {
+    started: false,
+    async start({ eventDispatcher }) {
+      this.started = true;
+      this.eventDispatcher = eventDispatcher;
+    },
+  };
+  class FakeEventDispatcher {
+    register(handles) {
+      registeredHandles = handles;
+      return this;
+    }
+  }
+  const sent = [];
+  const sdk = {
+    LoggerLevel: { info: 3 },
+    WSClient: function WSClient(params) {
+      assert.equal(params.appId, 'cli_test');
+      assert.equal(params.appSecret, 'secret');
+      return fakeWsClient;
+    },
+    EventDispatcher: FakeEventDispatcher,
+  };
+
+  const wsClient = await runSdkEventConsumer({
+    config: localConfig,
+    githubToken: '',
+    lark: sdk,
+    im: { sendText: async message => sent.push(message) },
+  });
+  assert.equal(wsClient.started, true);
+  assert.equal(typeof registeredHandles['im.message.receive_v1'], 'function');
+
+  await registeredHandles['im.message.receive_v1']({
+    sender: { sender_id: { open_id: localConfig.feishu.approverIds[0] }, sender_type: 'user' },
+    message: {
+      chat_id: localConfig.feishu.chatId,
+      message_id: 'om-help',
+      content: JSON.stringify({ text: '<at user_id="ou_bot">ztrans</at> help' }),
+    },
+  });
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].text, /ztrans understands/);
+  delete process.env.TEST_FEISHU_APP_ID;
+  delete process.env.TEST_FEISHU_APP_SECRET;
 });

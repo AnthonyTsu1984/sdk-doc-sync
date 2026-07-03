@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+require('dotenv').config();
+
 const { loadConfig } = require('../src/config');
-const { runEventConsumer } = require('../src/event-consumer');
+const { runSdkEventConsumer } = require('../src/event-consumer');
 
 const config = loadConfig();
 const githubToken = process.env.GITHUB_TOKEN;
@@ -10,8 +12,8 @@ if (!githubToken) {
   process.exit(1);
 }
 
-runEventConsumer({ config, githubToken }).then(child => {
-  console.error(`[doc-agent] approval consumer started pid=${child.pid}`);
+runSdkEventConsumer({ config, githubToken }).then(() => {
+  console.error('[doc-agent] approval consumer started with Feishu official SDK long connection');
 }).catch(error => {
   console.error(error.stack || error.message);
   process.exit(1);

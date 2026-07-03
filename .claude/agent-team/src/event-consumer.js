@@ -38,6 +38,24 @@ function createDecision({ parsed, event, sourceRunId = null }) {
   };
 }
 
+function localResponseText(parsed) {
+  if (parsed.action === 'help') {
+    return [
+      'ztrans understands:',
+      '- @ztrans dry run <task-id>',
+      '- @ztrans patch <task-id>',
+      '- @ztrans approve <task-id>',
+      '- @ztrans reject <task-id>',
+      '- @ztrans changes <task-id>: <instruction>',
+      '- @ztrans explain <task-id>',
+    ].join('\n');
+  }
+  if (parsed.action === 'explain') {
+    return `I can explain task ${parsed.taskId}, but task lookup is not wired into chat replies yet. Use the latest scan card or artifact summary for now.`;
+  }
+  return 'ztrans did not dispatch a workflow for this local instruction.';
+}
+
 async function handleEvent({
   config,
   event,
@@ -50,6 +68,9 @@ async function handleEvent({
   if (!config.feishu.approverIds.includes(normalized.senderId)) return { ignored: true, reason: 'sender not allowed' };
   const parsed = parseApprovalCommand(normalized.text);
   if (!parsed) return { ignored: true, reason: 'not an approval command' };
+  if (parsed.local) {
+    return { local: true, parsed, responseText: localResponseText(parsed) };
+  }
   const decision = createDecision({
     parsed,
     event: normalized,
@@ -110,6 +131,7 @@ module.exports = {
   appendDecision,
   createDecision,
   handleEvent,
+  localResponseText,
   runEventConsumer,
   waitForReady,
 };

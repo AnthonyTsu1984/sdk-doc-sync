@@ -27,6 +27,27 @@ class FeishuImClient {
     }
     return data.data;
   }
+
+  async sendText({ chatId, text }) {
+    const token = await this.tokenFetcher.token();
+    const response = await fetch(`${this.host}/open-apis/im/v1/messages?receive_id_type=chat_id`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        receive_id: chatId,
+        msg_type: 'text',
+        content: JSON.stringify({ text }),
+      }),
+    });
+    const data = await response.json();
+    if (data.code !== 0) {
+      throw new Error(`Failed to send Feishu text: ${data.msg || response.status}`);
+    }
+    return data.data;
+  }
 }
 
 module.exports = {

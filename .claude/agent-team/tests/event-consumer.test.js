@@ -50,3 +50,23 @@ test('handleEvent appends decision and dispatches once', async () => {
   assert.equal(dispatched.length, 1);
   assert.match(fs.readFileSync(logPath, 'utf8'), /approve_live_write/);
 });
+
+test('handleEvent returns local response for help without dispatching', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
+  const localConfig = config(path.join(dir, 'decisions.jsonl'));
+  let dispatched = false;
+  const result = await handleEvent({
+    config: localConfig,
+    event: {
+      chat_id: localConfig.feishu.chatId,
+      sender_id: localConfig.feishu.approverIds[0],
+      message_id: 'om-help',
+      content: '@ztrans help',
+    },
+    githubToken: 'token',
+    dispatch: async () => { dispatched = true; },
+  });
+  assert.equal(dispatched, false);
+  assert.equal(result.local, true);
+  assert.match(result.responseText, /@ztrans dry run/);
+});

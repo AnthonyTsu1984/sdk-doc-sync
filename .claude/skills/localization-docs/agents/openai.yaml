@@ -1,0 +1,4 @@
+interface:
+  display_name: "Localization Docs"
+  short_description: "Manage localized Feishu docs and bitables"
+  default_prompt: "Use $localization-docs to align English and localized Feishu docs from the Zilliz bitables."

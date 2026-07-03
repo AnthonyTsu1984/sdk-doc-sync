@@ -2,6 +2,34 @@ function actionTitle(action) {
   return action.source?.metadata?.title || action.target?.metadata?.title || action.slug || '(untitled)';
 }
 
+function groupActionsByType(actions = [], includeTypes = []) {
+  const groups = new Map(includeTypes.map(type => [type, []]));
+  for (const action of actions) {
+    if (!groups.has(action.type)) continue;
+    groups.get(action.type).push(action);
+  }
+  return groups;
+}
+
+function renderAffectedDocsMarkdown({ actions = [], includeTypes = ['NEW', 'UPDATE', 'META_ONLY', 'ORPHAN'], limitPerType = 5 } = {}) {
+  const lines = ['**Affected docs**'];
+  let hasAny = false;
+  const groups = groupActionsByType(actions, includeTypes);
+  for (const [type, typedActions] of groups.entries()) {
+    if (typedActions.length === 0) continue;
+    hasAny = true;
+    const label = type === 'ORPHAN' ? 'ORPHAN (report only)' : type;
+    lines.push('', `**${label}**`);
+    for (const action of typedActions.slice(0, limitPerType)) {
+      lines.push(`- ${actionTitle(action)}`);
+    }
+    const remaining = typedActions.length - limitPerType;
+    if (remaining > 0) lines.push(`...and ${remaining} more`);
+  }
+  if (!hasAny) lines.push('', '- No affected docs.');
+  return lines.join('\n');
+}
+
 function renderMarkdownReport({ task, summary, actions, linkReport = { summary: {}, findings: [] } }) {
   const lines = [];
   lines.push('# Doc Agent Daily Localization Report');
@@ -59,6 +87,9 @@ function renderFeishuSummary({ summary, linkReport = { summary: {} } }) {
 }
 
 module.exports = {
+  actionTitle,
+  groupActionsByType,
+  renderAffectedDocsMarkdown,
   renderMarkdownReport,
   renderFeishuSummary,
 };

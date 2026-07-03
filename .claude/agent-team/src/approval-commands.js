@@ -9,9 +9,41 @@ const ACTION_ALIASES = Object.freeze({
   changes: 'changes_requested',
 });
 
+function stripBotMention(text) {
+  return String(text || '')
+    .replace(/^@\s*ztrans\b[:,]?\s*/i, '')
+    .replace(/^<at[^>]*>[^<]*<\/at>\s*/i, '')
+    .trim();
+}
+
+function normalizeFriendlyCommand(text) {
+  return text
+    .replace(/^dry\s+run\b/i, 'dry-run')
+    .replace(/^create\s+patch\s+plan\b/i, 'patch')
+    .replace(/^approve\s+live\s+write\b/i, 'approve')
+    .replace(/^show\s+/i, 'explain ');
+}
+
+function localIntent(action, taskId, raw) {
+  return {
+    action,
+    local: true,
+    taskId: taskId || null,
+    sourceRunId: null,
+    customInstruction: '',
+    raw,
+  };
+}
+
 function parseApprovalCommand(text) {
   const raw = String(text || '').trim();
-  const match = raw.match(/^([a-zA-Z-]+)\s+([a-zA-Z0-9_.:-]+)(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/);
+  const normalized = normalizeFriendlyCommand(stripBotMention(raw));
+  if (!normalized) return null;
+  if (/^help$/i.test(normalized)) return localIntent('help', null, raw);
+  const explainMatch = normalized.match(/^explain\s+([a-zA-Z0-9_.:-]+)$/i);
+  if (explainMatch) return localIntent('explain', explainMatch[1], raw);
+
+  const match = normalized.match(/^([a-zA-Z-]+)\s+([a-zA-Z0-9_.:-]+)(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/);
   if (!match) return null;
   const command = match[1].toLowerCase();
   const action = ACTION_ALIASES[command];
@@ -31,6 +63,7 @@ function normalizeFeishuMessageEvent(event) {
     chatId: root.chat_id || root.message?.chat_id || '',
     senderId: root.sender_id || root.sender?.sender_id?.open_id || root.sender?.id || '',
     messageId: root.message_id || root.message?.message_id || '',
+    threadId: root.thread_id || root.message?.thread_id || '',
     text: root.text || root.content || root.message?.content || '',
   };
 }
@@ -38,4 +71,5 @@ function normalizeFeishuMessageEvent(event) {
 module.exports = {
   parseApprovalCommand,
   normalizeFeishuMessageEvent,
+  stripBotMention,
 };

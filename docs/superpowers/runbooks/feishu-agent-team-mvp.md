@@ -43,9 +43,39 @@ Local approval consumer environment:
 7. If `agentRuntime.enabled` is `true`, keep `agentRuntime.command` as `codex` in GitHub Actions. The workflows install the Codex CLI with `npm install -g @openai/codex`.
 8. Keep localization `translator` set to `feishu` unless you explicitly want another translation backend. Codex is the owner-agent runtime in this MVP; it is not currently the document translation engine.
 9. Put the same config file at `.claude/agent-team/config.json` on the machine that runs the local consumer.
-10. Configure the Feishu app event subscription request URL to the public endpoint that forwards to the local webhook consumer, for example `https://YOUR_PUBLIC_HOST/feishu/events`.
-11. Start `.claude/agent-team/bin/doc-agent-webhook-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN`, `APP_ID`, `APP_SECRET`, and callback verification env vars in its environment.
+10. Configure the Feishu app event subscription request URL to the public endpoint that forwards to the webhook consumer, for example `https://YOUR_PUBLIC_HOST/feishu/events`.
+11. For local testing, start `.claude/agent-team/bin/doc-agent-webhook-consumer.js` under `launchd`, `systemd`, or another supervisor with `GITHUB_TOKEN`, `APP_ID`, `APP_SECRET`, and callback verification env vars in its environment.
 12. Run `Doc Agent Scan` manually from GitHub Actions.
+
+## Cloudflare Worker Deployment
+
+The Cloudflare Worker version is in `.claude/agent-team/cloudflare-worker`.
+
+1. Create a KV namespace for approval dedupe:
+
+   ```bash
+   npx wrangler kv namespace create DECISIONS
+   ```
+
+2. Put the returned namespace id into `.claude/agent-team/cloudflare-worker/wrangler.jsonc`.
+3. Store secrets:
+
+   ```bash
+   npx wrangler secret put DOC_AGENT_CONFIG_JSON --config .claude/agent-team/cloudflare-worker/wrangler.jsonc
+   npx wrangler secret put APP_ID --config .claude/agent-team/cloudflare-worker/wrangler.jsonc
+   npx wrangler secret put APP_SECRET --config .claude/agent-team/cloudflare-worker/wrangler.jsonc
+   npx wrangler secret put GITHUB_TOKEN --config .claude/agent-team/cloudflare-worker/wrangler.jsonc
+   npx wrangler secret put FEISHU_EVENT_VERIFICATION_TOKEN --config .claude/agent-team/cloudflare-worker/wrangler.jsonc
+   npx wrangler secret put FEISHU_EVENT_ENCRYPT_KEY --config .claude/agent-team/cloudflare-worker/wrangler.jsonc
+   ```
+
+4. Deploy:
+
+   ```bash
+   npm run doc-agent:worker:deploy
+   ```
+
+5. Configure Feishu event subscription to the deployed Worker URL plus `/feishu/events`.
 
 ## Expected MVP Flow
 

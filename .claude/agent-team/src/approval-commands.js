@@ -57,14 +57,28 @@ function parseApprovalCommand(text) {
   };
 }
 
+function textFromFeishuContent(content) {
+  if (!content) return '';
+  if (typeof content !== 'string') {
+    return content.text || '';
+  }
+  try {
+    const parsed = JSON.parse(content);
+    return parsed && typeof parsed.text === 'string' ? parsed.text : content;
+  } catch {
+    return content;
+  }
+}
+
 function normalizeFeishuMessageEvent(event) {
   const root = event.event || event;
+  const content = root.text || root.content || root.message?.content || '';
   return {
     chatId: root.chat_id || root.message?.chat_id || '',
     senderId: root.sender_id || root.sender?.sender_id?.open_id || root.sender?.id || '',
     messageId: root.message_id || root.message?.message_id || '',
     threadId: root.thread_id || root.message?.thread_id || '',
-    text: root.text || root.content || root.message?.content || '',
+    text: textFromFeishuContent(content),
   };
 }
 

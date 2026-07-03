@@ -39,6 +39,17 @@ test('normalizeFeishuMessageEvent handles flat event shape', () => {
   assert.equal(event.text, 'approve loc-scan-1');
 });
 
+test('normalizeFeishuMessageEvent extracts JSON text content with mention markup', () => {
+  const event = normalizeFeishuMessageEvent({
+    chat_id: 'oc_chat',
+    sender_id: 'ou_user',
+    message_id: 'om_msg',
+    content: JSON.stringify({ text: '<at user_id="ou_bot">ztrans</at> help' }),
+  });
+  assert.equal(event.text, '<at user_id="ou_bot">ztrans</at> help');
+  assert.equal(parseApprovalCommand(event.text).action, 'help');
+});
+
 test('parseApprovalCommand strips ztrans mention and friendly dry run alias', () => {
   const parsed = parseApprovalCommand('@ztrans dry run loc-scan-1 123456');
   assert.equal(parsed.action, 'dry_run_only');

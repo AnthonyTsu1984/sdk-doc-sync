@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { parseApprovalCommand, normalizeFeishuMessageEvent } = require('./approval-commands');
+const { FeishuImClient } = require('./feishu-im');
 const { dispatchGithub } = require('./github-dispatch');
 
 function ensureDir(dir) {
@@ -62,6 +63,7 @@ async function handleEvent({
   githubToken,
   sourceRunIdResolver = () => null,
   dispatch = decision => dispatchGithub({ config, token: githubToken, decision }),
+  respond = null,
 }) {
   const normalized = normalizeFeishuMessageEvent(event);
   if (normalized.chatId !== config.feishu.chatId) return { ignored: true, reason: 'chat mismatch' };
@@ -69,7 +71,11 @@ async function handleEvent({
   const parsed = parseApprovalCommand(normalized.text);
   if (!parsed) return { ignored: true, reason: 'not an approval command' };
   if (parsed.local) {
-    return { local: true, parsed, responseText: localResponseText(parsed) };
+    const responseText = localResponseText(parsed);
+    if (respond) {
+      await respond({ chatId: normalized.chatId, text: responseText });
+    }
+    return { local: true, parsed, responseText };
   }
   const decision = createDecision({
     parsed,
@@ -107,6 +113,7 @@ function waitForReady(child, eventKey) {
 async function runEventConsumer({ config, githubToken }) {
   const command = config.approvalConsumer.larkCliCommand || 'lark-cli';
   const eventKey = config.approvalConsumer.eventKey || 'im.message.receive_v1';
+  const im = new FeishuImClient({ host: config.feishu.host });
   const child = spawn(command, ['event', 'consume', eventKey, '--as', 'bot'], {
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -120,7 +127,18 @@ async function runEventConsumer({ config, githubToken }) {
     for (const line of lines) {
       if (!line.trim()) continue;
       Promise.resolve()
-        .then(() => handleEvent({ config, event: JSON.parse(line), githubToken }))
+        .then(() => handleEvent({
+          config,
+          event: JSON.parse(line),
+          githubToken,
+          respond: message => im.sendText(message),
+        }))
+        .then(result => {
+          if (result?.ignored) console.error(`[doc-agent] ignored event: ${result.reason}`);
+          else if (result?.duplicate) console.error(`[doc-agent] duplicate decision: ${result.decision.decisionId}`);
+          else if (result?.local) console.error(`[doc-agent] sent local response: ${result.parsed.action}`);
+          else if (result?.ok) console.error(`[doc-agent] dispatched decision: ${result.decision.decisionId}`);
+        })
         .catch(error => console.error(error.stack || error.message));
     }
   });

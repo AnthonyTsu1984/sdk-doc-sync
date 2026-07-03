@@ -70,3 +70,25 @@ test('handleEvent returns local response for help without dispatching', async ()
   assert.equal(result.local, true);
   assert.match(result.responseText, /@ztrans dry run/);
 });
+
+test('handleEvent sends local response when responder is supplied', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
+  const localConfig = config(path.join(dir, 'decisions.jsonl'));
+  const sent = [];
+  const result = await handleEvent({
+    config: localConfig,
+    event: {
+      chat_id: localConfig.feishu.chatId,
+      sender_id: localConfig.feishu.approverIds[0],
+      message_id: 'om-help',
+      content: JSON.stringify({ text: '<at user_id="ou_bot">ztrans</at> help' }),
+    },
+    githubToken: '',
+    dispatch: async () => { throw new Error('should not dispatch'); },
+    respond: async message => sent.push(message),
+  });
+  assert.equal(result.local, true);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0].chatId, localConfig.feishu.chatId);
+  assert.match(sent[0].text, /ztrans understands/);
+});

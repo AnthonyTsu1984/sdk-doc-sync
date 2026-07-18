@@ -160,7 +160,7 @@ class SdkDocSync {
         // Phase 2: INDEX (read previous version's bitable as baseline)
         const source = this.previousBaseToken ? 'previous version' : 'current';
         this.onProgress('INDEX', `Fetching ${source} KB index...`);
-        result.indexed = await this._readIndex();
+        result.indexed = this._filterIndexedByReleaseScope(await this._readIndex());
         this.onProgress('INDEX', `Found ${result.indexed.length} existing documents`);
 
         // Phase 3: DIFF
@@ -277,6 +277,12 @@ class SdkDocSync {
         if (!this.releaseScope) return symbols;
         const allowed = new Set(this.releaseScope.actions.map((action) => action.symbol));
         return symbols.filter((symbol) => allowed.has(this._symbolDisplayName(symbol)));
+    }
+
+    _filterIndexedByReleaseScope(docs) {
+        if (!this.releaseScope) return docs;
+        const allowed = new Set(this.releaseScope.actions.map((action) => action.canonicalSlug));
+        return docs.filter((doc) => allowed.has(doc.metadata?.slug));
     }
 
     _applyReleaseScopeCategoryMap() {

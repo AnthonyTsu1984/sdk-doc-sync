@@ -1,10 +1,12 @@
 'use strict';
 
 const path = require('node:path');
+const fs = require('node:fs');
+const os = require('node:os');
 
 const PythonScanner = require('../scanners/python-scanner');
 const { createReleaseScope, validateReleaseScope } = require('./schema');
-const { resolveReleaseRange, changedFilesInRange } = require('./git-range');
+const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
 const { loadIdentityMap, normalizeDelta } = require('./identity-normalizer');
 
@@ -16,6 +18,61 @@ function scannerFor(language, sdkDir) {
 async function scanSymbols({ scanner, sdkDir, language }) {
   const resolvedScanner = scanner || scannerFor(language, sdkDir);
   return await resolvedScanner.scan();
+}
+
+function toPosixPath(value) {
+  return value.split(path.sep).join('/');
+}
+
+function packageRelativeDir({ repoDir, sdkDir, publicRoots }) {
+  if (sdkDir && repoDir) {
+    const relative = toPosixPath(path.relative(repoDir, sdkDir));
+    if (relative && !relative.startsWith('..')) return relative;
+  }
+  const firstRoot = (publicRoots || []).find(Boolean);
+  return firstRoot ? firstRoot.replace(/\/+$/, '') : '';
+}
+
+function materializeSnapshot({
+  ref,
+  repoDir,
+  sdkDir,
+  publicRoots,
+  runGit,
+} = {}) {
+  if (!repoDir) throw new Error('repoDir is required to scan release tag snapshots');
+  const packageDir = packageRelativeDir({ repoDir, sdkDir, publicRoots });
+  const roots = (publicRoots && publicRoots.length > 0)
+    ? publicRoots.map((root) => root.replace(/\/+$/, ''))
+    : [packageDir].filter(Boolean);
+  if (roots.length === 0) throw new Error('publicRoots or sdkDir is required to scan release tag snapshots');
+
+  const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), `sdk-release-scout-${ref.replace(/[^A-Za-z0-9_.-]/g, '-')}-`));
+  const output = runGit(['ls-tree', '-r', '--name-only', ref, '--', ...roots], { cwd: repoDir });
+  const files = output.split('\n').map((line) => line.trim()).filter(Boolean);
+  for (const file of files) {
+    const content = runGit(['show', `${ref}:${file}`], { cwd: repoDir });
+    const destination = path.join(snapshotRoot, file);
+    fs.mkdirSync(path.dirname(destination), { recursive: true });
+    fs.writeFileSync(destination, content, 'utf8');
+  }
+
+  return {
+    root: snapshotRoot,
+    sdkDir: packageDir ? path.join(snapshotRoot, packageDir) : snapshotRoot,
+    cleanup() {
+      fs.rmSync(snapshotRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+async function scanRefSymbols({ ref, repoDir, sdkDir, publicRoots, language, runGit }) {
+  const snapshot = materializeSnapshot({ ref, repoDir, sdkDir, publicRoots, runGit });
+  try {
+    return await scanSymbols({ sdkDir: snapshot.sdkDir, language });
+  } finally {
+    snapshot.cleanup();
+  }
 }
 
 async function runReleaseScout({
@@ -60,14 +117,29 @@ async function runReleaseScout({
     cwd: repoDir,
   });
   const map = loadIdentityMap(identityMapPath);
-  const baseline = baselineSymbols || await scanSymbols({ scanner: baselineScanner, sdkDir, language });
-  const target = targetSymbols || await scanSymbols({ scanner: targetScanner, sdkDir, language });
+  const resolvedRunGit = runGit || defaultRunGit;
+  const baseline = baselineSymbols
+    || await (baselineScanner
+      ? scanSymbols({ scanner: baselineScanner, sdkDir, language })
+      : scanRefSymbols({ ref: range.baselineTag, repoDir, sdkDir, publicRoots, language, runGit: resolvedRunGit }));
+  const target = targetSymbols
+    || await (targetScanner
+      ? scanSymbols({ scanner: targetScanner, sdkDir, language })
+      : scanRefSymbols({ ref: range.targetTag, repoDir, sdkDir, publicRoots, language, runGit: resolvedRunGit }));
+  const scopedBaseline = filterSymbolsByChangedFiles({
+    symbols: baseline,
+    changedFiles,
+    sdkPackagePrefix: map.packagePrefix || '',
+  });
   const scopedTarget = filterSymbolsByChangedFiles({
     symbols: target,
     changedFiles,
     sdkPackagePrefix: map.packagePrefix || '',
   });
-  const scopedIdentities = new Set(scopedTarget.map(publicIdentity));
+  const scopedIdentities = new Set([
+    ...scopedBaseline.map(publicIdentity),
+    ...scopedTarget.map(publicIdentity),
+  ]);
   const deltas = classifySymbolDeltas({ baseline, target })
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
 
@@ -100,4 +172,5 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
 module.exports = {
   runReleaseScout,
   defaultIdentityMapPath,
+  materializeSnapshot,
 };

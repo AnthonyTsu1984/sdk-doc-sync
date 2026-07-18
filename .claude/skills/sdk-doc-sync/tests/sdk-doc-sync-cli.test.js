@@ -365,6 +365,165 @@ test('schema-first CLI filters scanned symbols through release scope', async () 
   assert.match(stdout.join('\n'), /"releaseScope"/);
 });
 
+test('schema-first CLI rejects mutated release-scope artifacts', async () => {
+  const stderr = [];
+  const exitCodes = [];
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: [],
+    actions: [],
+    scannerDiagnostics: [],
+    writesPerformed: true,
+    scanStateUpdated: false,
+  };
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/release-scope.json',
+      '--dry-run',
+      '--json',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      readFile: () => JSON.stringify(scope),
+      onStderr: (line) => stderr.push(line),
+      exit: (code) => exitCodes.push(code),
+    },
+  });
+  assert.equal(result, null);
+  assert.deepEqual(exitCodes, [1]);
+  assert.match(stderr.join('\n'), /writesPerformed=false/);
+});
+
+test('schema-first CLI rejects release-scope metadata mismatches', async () => {
+  const stderr = [];
+  const exitCodes = [];
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: [],
+    actions: [],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'node',
+      '--sdk-name',
+      'milvus-sdk-node',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/release-scope.json',
+      '--dry-run',
+      '--json',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      readFile: () => JSON.stringify(scope),
+      onStderr: (line) => stderr.push(line),
+      exit: (code) => exitCodes.push(code),
+    },
+  });
+  assert.equal(result, null);
+  assert.deepEqual(exitCodes, [1]);
+  assert.match(stderr.join('\n'), /metadata does not match/);
+});
+
+test('schema-first CLI scopes indexed docs for removed release symbols', async () => {
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: ['pymilvus/client/field_ops.py'],
+    actions: [{
+      type: 'DEPRECATE',
+      stableId: 'python:Vector:FieldOp',
+      canonicalSlug: 'FieldOp',
+      symbol: 'FieldOp',
+      source: { file: 'pymilvus/client/field_ops.py', line: 45 },
+      reason: 'removed public class',
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/release-scope.json',
+      '--dry-run',
+      '--json',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      readFile: () => JSON.stringify(scope),
+      scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+      indexReader: async () => [
+        { id: 'rec-field-op', metadata: { slug: 'FieldOp', description: 'Field operation helper.' } },
+        { id: 'rec-search', metadata: { slug: 'Vector-search', description: 'Unrelated search doc.' } },
+      ],
+      onStdout: () => {},
+    },
+  });
+
+  assert.deepEqual(result.indexed.map((doc) => doc.metadata.slug), ['FieldOp']);
+  assert.deepEqual(result.diff.map((action) => [action.type, action.slug]), [['ORPHAN', 'FieldOp']]);
+});
+
 test('real CLI scanner factory supports Node schema-first dry-run with a reference context file', async () => {
   const sdkDir = tempDir('sdk-doc-sync-node');
   writeText(path.join(sdkDir, 'milvus', 'MilvusClient.ts'), `

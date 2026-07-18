@@ -82,7 +82,15 @@ function validateReleaseScope(scope) {
   requireBoolean('$.approvalGrade', scope.approvalGrade);
   requireBoolean('$.writesPerformed', scope.writesPerformed);
   requireBoolean('$.scanStateUpdated', scope.scanStateUpdated);
-  if (!Array.isArray(scope.changedFiles)) errors.push({ path: '$.changedFiles', message: 'must be an array' });
+  if (!Array.isArray(scope.changedFiles)) {
+    errors.push({ path: '$.changedFiles', message: 'must be an array' });
+  } else {
+    for (const [index, file] of scope.changedFiles.entries()) {
+      if (typeof file !== 'string' || file.length === 0 || file.includes('\\')) {
+        errors.push({ path: `$.changedFiles[${index}]`, message: 'must be a non-empty normalized path string' });
+      }
+    }
+  }
   if (!Array.isArray(scope.actions)) errors.push({ path: '$.actions', message: 'must be an array' });
   if (!Array.isArray(scope.scannerDiagnostics)) errors.push({ path: '$.scannerDiagnostics', message: 'must be an array' });
 

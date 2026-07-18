@@ -21,6 +21,7 @@ function sourceOf(symbol, sdkPackagePrefix = '') {
 
 function classifySymbolDeltas({ baseline, target } = {}) {
   const oldByIdentity = new Map((baseline || []).map((symbol) => [publicIdentity(symbol), symbol]));
+  const targetByIdentity = new Map((target || []).map((symbol) => [publicIdentity(symbol), symbol]));
   const deltas = [];
   for (const symbol of target || []) {
     const identity = publicIdentity(symbol);
@@ -44,6 +45,16 @@ function classifySymbolDeltas({ baseline, target } = {}) {
         reason: 'signature changed',
       });
     }
+  }
+  for (const [identity, previous] of oldByIdentity.entries()) {
+    if (targetByIdentity.has(identity)) continue;
+    deltas.push({
+      type: 'DEPRECATE',
+      symbolIdentity: identity,
+      symbol: previous,
+      previous,
+      reason: `removed public ${previous.kind || 'symbol'}`,
+    });
   }
   return deltas.sort((a, b) => {
     const order = { UPDATE: 0, CREATE: 1, DEPRECATE: 2, BACKFILL: 3 };

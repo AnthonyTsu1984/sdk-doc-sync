@@ -35,6 +35,17 @@ test('release-scope schema rejects missing approval and mutation flags', () => {
   ]);
 });
 
+test('release-scope schema rejects malformed changedFiles entries', () => {
+  const scope = readFixture('python-v26-expected.json');
+  scope.changedFiles = ['pymilvus/client/field_ops.py', 'pymilvus\\bad.py', ''];
+  const validation = validateReleaseScope(scope);
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation.errors.map((error) => error.path), [
+    '$.changedFiles[1]',
+    '$.changedFiles[2]',
+  ]);
+});
+
 test('createReleaseScope sorts files, actions, and diagnostics deterministically', () => {
   const scope = createReleaseScope({
     language: 'python',
@@ -161,6 +172,16 @@ test('classifySymbolDeltas detects creates and signature updates', () => {
   assert.deepEqual(deltas.map((delta) => [delta.type, delta.symbolIdentity, delta.reason]), [
     ['UPDATE', 'MilvusClient.compact', 'signature changed'],
     ['CREATE', 'FieldOp', 'new public class'],
+  ]);
+});
+
+test('classifySymbolDeltas detects removed public symbols', () => {
+  const baseline = readFixture('python-v26-scanned-target.json');
+  const target = readFixture('python-v26-scanned-target.json')
+    .filter((symbol) => symbol.name !== 'FieldOp');
+  const deltas = classifySymbolDeltas({ baseline, target });
+  assert.deepEqual(deltas.map((delta) => [delta.type, delta.symbolIdentity, delta.reason]), [
+    ['DEPRECATE', 'FieldOp', 'removed public class'],
   ]);
 });
 

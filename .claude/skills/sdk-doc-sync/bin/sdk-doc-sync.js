@@ -303,28 +303,6 @@ async function runCli({
     const readFile = dependencies.readFile || ((file) => fs.readFileSync(file, 'utf8'));
     const writeFile = dependencies.writeFile || ((file, content) => fs.writeFileSync(file, content));
 
-    let releaseScope = null;
-    if (args.releaseScope) {
-        const releaseScopePath = path.resolve(args.releaseScope);
-        releaseScope = JSON.parse(readFile(releaseScopePath));
-        const validation = validateReleaseScope(releaseScope);
-        if (!validation.valid) {
-            err(`Error: invalid --release-scope: ${JSON.stringify(validation.errors)}`);
-            exit(1);
-            return null;
-        }
-        if (releaseScope.approvalGrade !== true) {
-            err('Error: --release-scope must be approvalGrade=true');
-            exit(1);
-            return null;
-        }
-    }
-    if (args.changedOnly && !releaseScope) {
-        err('Error: --changed-only requires --release-scope');
-        exit(1);
-        return null;
-    }
-
     if (!args.sdkDir) {
         err('Error: --sdk-dir is required');
         printUsage();
@@ -344,6 +322,34 @@ async function runCli({
         return null;
     }
 
+    const language = args.language || 'python';
+    let releaseScope = null;
+    if (args.releaseScope) {
+        const releaseScopePath = path.resolve(args.releaseScope);
+        releaseScope = JSON.parse(readFile(releaseScopePath));
+        const validation = validateReleaseScope(releaseScope);
+        if (!validation.valid) {
+            err(`Error: invalid --release-scope: ${JSON.stringify(validation.errors)}`);
+            exit(1);
+            return null;
+        }
+        if (releaseScope.approvalGrade !== true || releaseScope.writesPerformed !== false || releaseScope.scanStateUpdated !== false) {
+            err('Error: --release-scope must be approvalGrade=true, writesPerformed=false, and scanStateUpdated=false');
+            exit(1);
+            return null;
+        }
+        if (releaseScope.language !== language || releaseScope.sdkName !== args.sdkName || releaseScope.track !== args.sdkVersion) {
+            err(`Error: --release-scope metadata does not match requested ${language}/${args.sdkName}/${args.sdkVersion}`);
+            exit(1);
+            return null;
+        }
+    }
+    if (args.changedOnly && !releaseScope) {
+        err('Error: --changed-only requires --release-scope');
+        exit(1);
+        return null;
+    }
+
     const rootToken = env.ROOT_TOKEN;
     const baseToken = env.BASE_TOKEN;
 
@@ -353,7 +359,6 @@ async function runCli({
         return null;
     }
 
-    const language = args.language || 'python';
     const fileContextProvider = createReferenceContextProvider(args.referenceContext, { language });
     const artifactProvider = dependencies.artifactProvider || createSchemaFirstArtifactProvider({
         language,

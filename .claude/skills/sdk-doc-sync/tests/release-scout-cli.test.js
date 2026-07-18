@@ -3,7 +3,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { runReleaseScout } = require('../src/sdk-doc-sync/release-scope/release-scout');
 const { runCli } = require('../bin/sdk-release-scout');
@@ -12,6 +14,17 @@ const fixtureDir = path.join(__dirname, 'fixtures', 'release-scope');
 
 function fixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8'));
+}
+
+function writeText(file, content) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, content, 'utf8');
+}
+
+function git(repo, args) {
+  const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' });
+  assert.equal(result.status, 0, `git ${args.join(' ')} failed: ${result.stderr}`);
+  return result.stdout.trim();
 }
 
 test('runReleaseScout emits the bounded Python v2.6 release artifact', async () => {
@@ -38,6 +51,54 @@ test('runReleaseScout emits the bounded Python v2.6 release artifact', async () 
   assert.equal(scope.approvalGrade, true);
   assert.equal(scope.writesPerformed, false);
   assert.equal(scope.scanStateUpdated, false);
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId]), [
+    ['UPDATE', 'python:Management:compact'],
+    ['CREATE', 'python:Vector:FieldOp'],
+  ]);
+});
+
+test('runReleaseScout scans baseline and target tag snapshots without injected symbols', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-release-scout-git-'));
+  git(repo, ['init']);
+  git(repo, ['config', 'user.email', 'sdk-release-scout@example.test']);
+  git(repo, ['config', 'user.name', 'SDK Release Scout']);
+  writeText(path.join(repo, 'pymilvus', 'milvus_client', 'milvus_client.py'), `
+class MilvusClient:
+    def compact(self, collection_name: str, timeout: float = None) -> int:
+        return 1
+`);
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-m', 'baseline']);
+  git(repo, ['tag', 'v2.6.12']);
+  writeText(path.join(repo, 'pymilvus', 'milvus_client', 'milvus_client.py'), `
+class MilvusClient:
+    def compact(self, collection_name: str, target_size: int = None, timeout: float = None) -> int:
+        return 1
+`);
+  writeText(path.join(repo, 'pymilvus', 'client', 'field_ops.py'), `
+class FieldOp:
+    pass
+`);
+  git(repo, ['add', '.']);
+  git(repo, ['commit', '-m', 'target']);
+  git(repo, ['tag', 'v2.6.17']);
+
+  const scope = await runReleaseScout({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    scanState: { python: { lastScannedTag: 'v2.6.12' } },
+    targetTag: 'v2.6.17',
+    repoDir: repo,
+    sdkDir: path.join(repo, 'pymilvus'),
+    publicRoots: ['pymilvus/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'),
+  });
+
+  assert.deepEqual(scope.changedFiles, [
+    'pymilvus/client/field_ops.py',
+    'pymilvus/milvus_client/milvus_client.py',
+  ]);
   assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId]), [
     ['UPDATE', 'python:Management:compact'],
     ['CREATE', 'python:Vector:FieldOp'],

@@ -490,3 +490,44 @@ test('Docx tables reject cell edges that do not reference table-cell blocks', ()
   ]), (error) => error.code === 'DOCX_TABLE_CELL_TYPE'
     && error.path === '$[1].table.cells[0]');
 });
+
+test('Markdown text escaping neutralizes tab-indented code without changing list indentation', () => {
+  const markdown = renderMarkdown(schema.document([
+    schema.paragraph([schema.text('\tzero\n \tone\n  \ttwo\n   \tthree')]),
+    schema.unorderedList([
+      schema.listItem([
+        schema.paragraph([schema.text('parent')]),
+        schema.unorderedList([
+          schema.listItem([schema.paragraph([schema.text('child')])]),
+        ]),
+      ]),
+    ]),
+  ]));
+
+  assert.ok(markdown.includes('&#9;zero\n &#9;one\n  &#9;two\n   &#9;three'));
+  assert.match(markdown, /\n\n- parent\n  - child\n$/);
+});
+
+test('combined inline-code marks retain all semantics in deterministic order', () => {
+  const direct = schema.document([schema.paragraph([
+    schema.text('a``b', ['inlineCode', 'bold', 'italic', 'strikethrough', 'underline']),
+  ])]);
+  assert.equal(renderMarkdown(direct), '<u>~~***```a``b```***~~</u>\n');
+
+  const converted = docxToIr([
+    { block_id: 'page', block_type: 1, children: ['text'] },
+    {
+      block_id: 'text',
+      block_type: 2,
+      parent_id: 'page',
+      text: { elements: [{
+        text_run: {
+          content: '<tag>',
+          text_element_style: { inline_code: true, bold: true, underline: true },
+        },
+      }] },
+    },
+  ]);
+  assert.deepEqual(converted.children[0].children[0].marks, ['bold', 'underline', 'inlineCode']);
+  assert.equal(renderMarkdown(converted), '<u>**`<tag>`**</u>\n');
+});

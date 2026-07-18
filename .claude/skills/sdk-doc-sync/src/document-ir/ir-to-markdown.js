@@ -15,6 +15,7 @@ function escapeText(value) {
 
 function escapeBlockStarts(value) {
   return value.split('\n').map((line) => line
+    .replace(/^( {0,3})\t/, '$1&#9;')
     .replace(/^ {4}/, '&#32;   ')
     .replace(/^(\s*)(?=(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|&gt;\s|`{3,}|~{3,}|-(?:\s*-){2,}\s*$|={3,}\s*$))/, '$1\\'))
     .join('\n');
@@ -28,11 +29,13 @@ function renderInline(node) {
   if (node.type === 'citation' || node.type === 'documentReference') {
     return `[${escapeText(node.title)}](${safeUrl(node.url)})`;
   }
-  let value = escapeText(node.value);
+  let value;
   if (node.marks.includes('inlineCode')) {
     const runs = String(node.value).match(/`+/g) || [];
     const delimiter = '`'.repeat(Math.max(1, ...runs.map((run) => run.length + 1)));
-    return `${delimiter}${String(node.value)}${delimiter}`;
+    value = `${delimiter}${String(node.value)}${delimiter}`;
+  } else {
+    value = escapeText(node.value);
   }
   if (node.marks.includes('bold')) value = `**${value}**`;
   if (node.marks.includes('italic')) value = `*${value}*`;

@@ -47,29 +47,35 @@ class FeishuClient {
       throw new TypeError('FeishuClient request requires a non-empty path');
     }
 
-    const token = await this.tokenProvider();
-    if (typeof token !== 'string' || token.trim() === '') {
-      throw new FeishuError(
-        'FEISHU_TOKEN_INVALID',
-        'Feishu tokenProvider must return a non-empty access token',
-      );
-    }
-
-    const headers = { Authorization: `Bearer ${token.trim()}` };
-    const options = { method: String(method).toUpperCase(), headers };
-    if (body !== null) {
-      headers['Content-Type'] = 'application/json; charset=utf-8';
-      options.body = JSON.stringify(body);
-    }
-
+    const requestMethod = String(method).toUpperCase();
     const url = `${this.host}/${path.replace(/^\/+/, '')}`;
     for (let retry = 0; ; retry += 1) {
-      const response = await this.transport(url, options);
+      const token = await this.tokenProvider();
+      if (typeof token !== 'string' || token.trim() === '') {
+        throw new FeishuError(
+          'FEISHU_TOKEN_INVALID',
+          'Feishu tokenProvider must return a non-empty access token',
+        );
+      }
+
+      const headers = { Authorization: `Bearer ${token.trim()}` };
+      let encodedBody;
+      if (body !== null) {
+        headers['Content-Type'] = 'application/json; charset=utf-8';
+        encodedBody = JSON.stringify(body);
+      }
+
+      const response = await this.transport({
+        url,
+        method: requestMethod,
+        headers,
+        body: encodedBody,
+      });
       const status = response?.status;
       if (!Number.isInteger(status)) {
         throw new FeishuError(
           'FEISHU_INVALID_RESPONSE',
-          `Feishu ${options.method} ${path} returned a response without an HTTP status`,
+          `Feishu ${requestMethod} ${path} returned a response without an HTTP status`,
         );
       }
 
@@ -77,7 +83,7 @@ class FeishuClient {
         if (retry >= this.maxRetries) {
           throw new FeishuError(
             'FEISHU_RETRY_EXHAUSTED',
-            `Feishu ${options.method} ${path} exhausted ${this.maxRetries} retries after HTTP ${status}`,
+            `Feishu ${requestMethod} ${path} exhausted ${this.maxRetries} retries after HTTP ${status}`,
             { status, attempts: retry + 1 },
           );
         }
@@ -88,7 +94,7 @@ class FeishuClient {
       if (status < 200 || status >= 300) {
         throw new FeishuError(
           'FEISHU_HTTP_ERROR',
-          `Feishu ${options.method} ${path} failed with HTTP ${status}`,
+          `Feishu ${requestMethod} ${path} failed with HTTP ${status}`,
           { status },
         );
       }
@@ -99,7 +105,7 @@ class FeishuClient {
       } catch (cause) {
         throw new FeishuError(
           'FEISHU_INVALID_JSON',
-          `Feishu ${options.method} ${path} returned invalid JSON`,
+          `Feishu ${requestMethod} ${path} returned invalid JSON`,
           { cause },
         );
       }
@@ -107,13 +113,13 @@ class FeishuClient {
       if (!envelope || typeof envelope !== 'object' || Array.isArray(envelope)) {
         throw new FeishuError(
           'FEISHU_INVALID_RESPONSE',
-          `Feishu ${options.method} ${path} must return an object envelope`,
+          `Feishu ${requestMethod} ${path} must return an object envelope`,
         );
       }
       if (!Object.hasOwn(envelope, 'code') || typeof envelope.code !== 'number') {
         throw new FeishuError(
           'FEISHU_INVALID_RESPONSE',
-          `Feishu ${options.method} ${path} returned an envelope without a numeric code`,
+          `Feishu ${requestMethod} ${path} returned an envelope without a numeric code`,
         );
       }
       if (envelope.code !== 0) {
@@ -122,7 +128,7 @@ class FeishuClient {
           : '';
         throw new FeishuError(
           'FEISHU_API_ERROR',
-          `Feishu ${options.method} ${path} failed with API code ${envelope.code}${apiMessage}`,
+          `Feishu ${requestMethod} ${path} failed with API code ${envelope.code}${apiMessage}`,
           { apiCode: envelope.code },
         );
       }

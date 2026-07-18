@@ -37,12 +37,16 @@ class DocxReader {
   }
 
   async readBlocks(documentToken) {
+    const resolvedToken = await this.resolveWikiToken(documentToken);
+    return this._readDocumentBlocks(resolvedToken);
+  }
+
+  async _readDocumentBlocks(documentToken) {
     if (typeof this.client.paginate !== 'function') {
       throw new TypeError('DocxReader client must provide paginate() to read blocks');
     }
-    const resolvedToken = await this.resolveWikiToken(documentToken);
     return this.client.paginate({
-      path: `/open-apis/docx/v1/documents/${encodeURIComponent(resolvedToken)}/blocks?page_size=500`,
+      path: `/open-apis/docx/v1/documents/${encodeURIComponent(documentToken)}/blocks?page_size=500`,
     });
   }
 
@@ -54,6 +58,7 @@ class DocxReader {
     const context = {
       documents: new Map(),
       targets: new Map(),
+      rootParents: new Map(),
     };
     const replacements = new Map();
     const available = new Map();
@@ -115,7 +120,16 @@ class DocxReader {
 
     const materialized = await this._materializeTarget(documentId, blockId, context, stack);
     const clones = materialized.map((block) => this._cloneBlock(block));
-    clones[0].parent_id = reference.parent_id;
+    const rootId = clones[0].block_id;
+    const parentId = reference.parent_id;
+    if (context.rootParents.has(rootId) && context.rootParents.get(rootId) !== parentId) {
+      throw new DocxReaderError(
+        'DOCX_REFERENCE_MULTI_PARENT',
+        `Materialized reference root ${rootId} cannot be attached to both ${context.rootParents.get(rootId)} and ${parentId}`,
+      );
+    }
+    context.rootParents.set(rootId, parentId);
+    clones[0].parent_id = parentId;
     return clones;
   }
 
@@ -192,7 +206,7 @@ class DocxReader {
 
   async _loadDocument(documentId, context) {
     if (!context.documents.has(documentId)) {
-      context.documents.set(documentId, Promise.resolve(this.readBlocks(documentId)));
+      context.documents.set(documentId, Promise.resolve(this._readDocumentBlocks(documentId)));
     }
     return context.documents.get(documentId);
   }
@@ -202,11 +216,11 @@ class DocxReader {
   }
 
   _cloneBlock(block) {
-    return {
-      ...block,
-      ...(Array.isArray(block?.children) ? { children: block.children.slice() } : {}),
-      ...(block?.reference_synced ? { reference_synced: { ...block.reference_synced } } : {}),
-    };
+    if (Array.isArray(block)) return block.map((value) => this._cloneBlock(value));
+    if (!block || typeof block !== 'object') return block;
+    return Object.fromEntries(
+      Object.entries(block).map(([key, value]) => [key, this._cloneBlock(value)]),
+    );
   }
 }
 

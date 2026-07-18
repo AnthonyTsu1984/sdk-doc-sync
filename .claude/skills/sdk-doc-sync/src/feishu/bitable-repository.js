@@ -51,15 +51,15 @@ class BitableRepository {
   _normalizeRecord(record) {
     const fields = record?.fields && typeof record.fields === 'object' ? record.fields : {};
     const type = this._text(fields.Type);
-    const docs = fields.Docs && typeof fields.Docs === 'object' ? fields.Docs : {};
-    const title = this._text(docs.text);
-    const link = this._text(docs.link);
+    const docs = this._docs(fields.Docs);
+    const title = docs.title;
+    const link = docs.link;
     const token = this._documentToken(link);
 
-    if (type && type !== 'VirtualNode' && !token) {
+    if (type !== 'VirtualNode' && !token) {
       throw new BitableRepositoryError(
         'BITABLE_DOCS_LINK_INVALID',
-        `Bitable document record ${record?.record_id || '(unknown)'} has a missing or malformed Docs link`,
+        `Bitable document record ${record?.record_id || '(unknown)'} has a missing or malformed Docs link; expected an absolute URL with a /docx/ or /wiki/ document token`,
       );
     }
 
@@ -83,25 +83,43 @@ class BitableRepository {
 
   _text(value) {
     if (value === null || value === undefined) return '';
-    return typeof value === 'string' ? value : String(value);
+    if (typeof value === 'string') return value;
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) return value.map((part) => this._text(part)).join('');
+    if (typeof value !== 'object') return '';
+    for (const key of ['text', 'title', 'name', 'value']) {
+      if (Object.hasOwn(value, key)) return this._text(value[key]);
+    }
+    return '';
+  }
+
+  _docs(value) {
+    const findLink = (part) => {
+      if (Array.isArray(part)) {
+        for (const item of part) {
+          const link = findLink(item);
+          if (link) return link;
+        }
+        return '';
+      }
+      if (!part || typeof part !== 'object') return '';
+      if (Object.hasOwn(part, 'link')) return this._text(part.link).trim();
+      return '';
+    };
+
+    return {
+      title: this._text(value),
+      link: findLink(value),
+    };
   }
 
   _slug(value) {
-    if (typeof value === 'string') return value;
-    if (!Array.isArray(value)) return '';
-    return value.map((part) => {
-      if (typeof part === 'string') return part;
-      if (!part || typeof part !== 'object') return '';
-      if (typeof part.text === 'string') return part.text;
-      if (typeof part[part.type] === 'string') return part[part.type];
-      return '';
-    }).join('');
+    return this._text(value);
   }
 
   _targets(value) {
-    if (Array.isArray(value)) return value.slice();
-    if (typeof value === 'string' && value) return [value];
-    return [];
+    const values = Array.isArray(value) ? value : [value];
+    return values.map((item) => this._text(item)).filter(Boolean);
   }
 
   _parent(value) {
@@ -116,6 +134,8 @@ class BitableRepository {
     if (!link) return null;
     try {
       const url = new URL(link);
+      if (!['http:', 'https:'].includes(url.protocol)) return null;
+      // Document identity is encoded in the path; the URL origin is intentionally irrelevant.
       const match = url.pathname.match(/\/(?:docx|wiki)\/([^/]+)\/?$/);
       return match?.[1] || null;
     } catch {

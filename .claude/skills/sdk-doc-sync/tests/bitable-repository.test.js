@@ -135,6 +135,87 @@ test('rejects a malformed required Docs link for document records', async () => 
     assert.equal(error.code, 'BITABLE_DOCS_LINK_INVALID');
     assert.match(error.message, /bad-record/);
     assert.match(error.message, /Docs link/);
+    assert.match(error.message, /absolute URL with a \/docx\/ or \/wiki\/ document token/);
     return true;
   });
+});
+
+test('normalizes rich text, option objects, and Docs variants without object coercion', async () => {
+  const rawRecords = [
+    {
+      record_id: 'rich-document',
+      fields: {
+        Type: [{ name: 'Function' }],
+        Docs: [{
+          title: 'Create ',
+        }, {
+          text: 'collection',
+          link: 'https://arbitrary.example/docx/doc-token',
+        }],
+        Slug: [{ text: 'create-' }, { value: 'collection' }],
+        'Added Since': { value: 'v2.4.x' },
+        'Last Modified At': [{ text: 'v2.6' }, { title: '.x' }],
+        Progress: { name: 'Publish' },
+        Targets: [{ name: 'Milvus' }, { value: 'Zilliz Cloud' }],
+      },
+    },
+    {
+      record_id: 'virtual',
+      fields: {
+        Type: { value: 'VirtualNode' },
+        Docs: { name: 'Utilities' },
+      },
+    },
+  ];
+  const repository = new BitableRepository({
+    client: { async paginate() { return rawRecords; } },
+    baseToken: 'base',
+    tableId: 'table',
+  });
+
+  const records = await repository.listRecords();
+
+  assert.deepEqual(records[0].metadata, {
+    title: 'Create collection',
+    link: 'https://arbitrary.example/docx/doc-token',
+    token: 'doc-token',
+    slug: 'create-collection',
+    type: 'Function',
+    addedSince: 'v2.4.x',
+    lastModified: 'v2.6.x',
+    deprecateSince: '',
+    progress: 'Publish',
+    targets: ['Milvus', 'Zilliz Cloud'],
+  });
+  assert.equal(records[1].metadata.title, 'Utilities');
+  assert.equal(records[1].metadata.type, 'VirtualNode');
+  assert.equal(JSON.stringify(records).includes('[object Object]'), false);
+});
+
+test('extracts document tokens independently of URL origin', async () => {
+  const rawRecords = [
+    {
+      record_id: 'docx',
+      fields: {
+        Type: 'Function',
+        Docs: { text: 'Docx', link: 'https://docs.example.test/docx/docx-token' },
+      },
+    },
+    {
+      record_id: 'wiki',
+      fields: {
+        Type: 'Function',
+        Docs: { text: 'Wiki', link: 'https://another-origin.invalid/wiki/wiki-token?from=test' },
+      },
+    },
+  ];
+  const repository = new BitableRepository({
+    client: { async paginate() { return rawRecords; } },
+    baseToken: 'base',
+    tableId: 'table',
+  });
+
+  const records = await repository.listRecords();
+
+  assert.deepEqual(records.map((record) => record.metadata.token), ['docx-token', 'wiki-token']);
 });

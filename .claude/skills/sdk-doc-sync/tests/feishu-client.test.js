@@ -27,8 +27,8 @@ test('GET request adds a bearer token and validates the Feishu envelope', async 
   const client = new FeishuClient({
     host: 'https://open.feishu.test/',
     tokenProvider: async () => 'tenant-token',
-    transport: async (url, options) => {
-      calls.push({ url, options });
+    transport: async (request) => {
+      calls.push(request);
       return response({ body: { code: 0, data: { value: 42 } } });
     },
   });
@@ -37,9 +37,9 @@ test('GET request adds a bearer token and validates the Feishu envelope', async 
 
   assert.deepEqual(result, { code: 0, data: { value: 42 } });
   assert.equal(calls[0].url, 'https://open.feishu.test/open-apis/example');
-  assert.equal(calls[0].options.method, 'GET');
-  assert.equal(calls[0].options.headers.Authorization, 'Bearer tenant-token');
-  assert.equal(calls[0].options.body, undefined);
+  assert.equal(calls[0].method, 'GET');
+  assert.equal(calls[0].headers.Authorization, 'Bearer tenant-token');
+  assert.equal(calls[0].body, undefined);
 });
 
 test('request JSON-encodes a body', async () => {
@@ -47,8 +47,8 @@ test('request JSON-encodes a body', async () => {
   const client = new FeishuClient({
     host: 'https://open.feishu.test',
     tokenProvider: async () => 'token',
-    transport: async (_url, requestOptions) => {
-      options = requestOptions;
+    transport: async (request) => {
+      options = request;
       return response();
     },
   });
@@ -109,9 +109,13 @@ test('request rejects HTTP and Feishu API errors without retrying API failures',
   });
 
   let calls = 0;
+  let tokenCalls = 0;
   const apiClient = new FeishuClient({
     host: 'https://open.feishu.test',
-    tokenProvider: async () => 'token',
+    tokenProvider: async () => {
+      tokenCalls += 1;
+      return 'token';
+    },
     transport: async () => {
       calls += 1;
       return response({ body: { code: 999, msg: 'invalid parameter' } });
@@ -124,18 +128,20 @@ test('request rejects HTTP and Feishu API errors without retrying API failures',
     return true;
   });
   assert.equal(calls, 1);
+  assert.equal(tokenCalls, 1);
 });
 
-test('request waits for the rate-limit reset header before retrying a 429', async () => {
+test('request reacquires a token for each transport attempt after a 429', async () => {
   const waits = [];
-  let calls = 0;
+  const authorizations = [];
+  const tokens = ['token-a', 'token-b'];
   const client = new FeishuClient({
     host: 'https://open.feishu.test',
-    tokenProvider: async () => 'token',
+    tokenProvider: async () => tokens.shift(),
     wait: async (milliseconds) => waits.push(milliseconds),
-    transport: async () => {
-      calls += 1;
-      if (calls === 1) {
+    transport: async ({ headers }) => {
+      authorizations.push(headers.Authorization);
+      if (authorizations.length === 1) {
         return response({
           status: 429,
           body: { code: 999, msg: 'rate limited' },
@@ -148,7 +154,7 @@ test('request waits for the rate-limit reset header before retrying a 429', asyn
 
   const result = await client.request({ path: '/items' });
 
-  assert.equal(calls, 2);
+  assert.deepEqual(authorizations, ['Bearer token-a', 'Bearer token-b']);
   assert.deepEqual(waits, [2500]);
   assert.deepEqual(result.data, { ok: true });
 });
@@ -182,7 +188,7 @@ test('paginate combines pages and sends the returned page token', async () => {
   const client = new FeishuClient({
     host: 'https://open.feishu.test',
     tokenProvider: async () => 'token',
-    transport: async (url) => {
+    transport: async ({ url }) => {
       urls.push(url);
       if (urls.length === 1) {
         return response({

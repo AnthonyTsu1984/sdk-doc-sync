@@ -53,6 +53,37 @@ test('readBlocks resolves wiki tokens and fully paginates document blocks', asyn
   }]);
 });
 
+test('reference source_document_id is read directly as a Docx document token', async () => {
+  const paths = [];
+  const reader = new DocxReader({
+    client: {
+      async request() {
+        throw new Error('reference document tokens must not be resolved through Wiki');
+      },
+      async paginate({ path }) {
+        paths.push(path);
+        return [{ block_id: 'source-root', block_type: 2, text: { elements: [] } }];
+      },
+    },
+    sourceType: 'wiki',
+  });
+
+  const expanded = await reader.expandReferences([{
+    block_id: 'reference',
+    block_type: 50,
+    parent_id: 'page',
+    reference_synced: {
+      source_document_id: 'docx-source-token',
+      source_block_id: 'source-root',
+    },
+  }]);
+
+  assert.deepEqual(expanded.map((block) => block.block_id), ['source-root']);
+  assert.deepEqual(paths, [
+    '/open-apis/docx/v1/documents/docx-source-token/blocks?page_size=500',
+  ]);
+});
+
 test('expandReferences recursively replaces roots and appends each descendant once', async () => {
   const documents = {
     'source-a': [
@@ -72,12 +103,12 @@ test('expandReferences recursively replaces roots and appends each descendant on
   };
   const reads = [];
   const reader = new DocxReader({ client: {}, sourceType: 'drive' });
-  reader.readBlocks = async (token) => {
+  reader._readDocumentBlocks = async (token) => {
     reads.push(token);
     return documents[token];
   };
   const blocks = [
-    { block_id: 'page', block_type: 1, children: ['ref-a', 'after', 'ref-b'] },
+    { block_id: 'page', block_type: 1, children: ['ref-a', 'after'] },
     {
       block_id: 'ref-a',
       block_type: 50,
@@ -85,21 +116,15 @@ test('expandReferences recursively replaces roots and appends each descendant on
       reference_synced: { source_document_id: 'source-a', source_block_id: 'a-root' },
     },
     { block_id: 'after', block_type: 2, parent_id: 'page' },
-    {
-      block_id: 'ref-b',
-      block_type: 50,
-      parent_id: 'page',
-      reference_synced: { source_document_id: 'source-b', source_block_id: 'b-root' },
-    },
   ];
 
   const expanded = await reader.expandReferences(blocks);
   const byId = new Map(expanded.map((block) => [block.block_id, block]));
 
   assert.deepEqual(expanded.map((block) => block.block_id), [
-    'page', 'a-root', 'after', 'b-root', 'a-child', 'shared-child',
+    'page', 'a-root', 'after', 'a-child', 'b-root', 'shared-child',
   ]);
-  assert.deepEqual(byId.get('page').children, ['a-root', 'after', 'b-root']);
+  assert.deepEqual(byId.get('page').children, ['a-root', 'after']);
   assert.equal(byId.get('a-root').parent_id, 'page');
   assert.deepEqual(byId.get('a-root').children, ['a-child', 'b-root']);
   assert.equal(byId.get('b-root').parent_id, 'a-root');
@@ -121,7 +146,7 @@ test('expandReferences detects recursive reference cycles', async () => {
     }],
   };
   const reader = new DocxReader({ client: {} });
-  reader.readBlocks = async (token) => documents[token];
+  reader._readDocumentBlocks = async (token) => documents[token];
 
   await assert.rejects(reader.expandReferences([{
     block_id: 'start',
@@ -133,4 +158,82 @@ test('expandReferences detects recursive reference cycles', async () => {
     assert.match(error.message, /a:a-root.*b:b-root.*a:a-root/);
     return true;
   });
+});
+
+test('expandReferences rejects one materialized root attached to different parents', async () => {
+  const reader = new DocxReader({ client: {} });
+  reader._readDocumentBlocks = async () => [{ block_id: 'shared-root', block_type: 2 }];
+
+  await assert.rejects(reader.expandReferences([
+    {
+      block_id: 'reference-a',
+      block_type: 50,
+      parent_id: 'parent-a',
+      reference_synced: { source_document_id: 'source', source_block_id: 'shared-root' },
+    },
+    {
+      block_id: 'reference-b',
+      block_type: 50,
+      parent_id: 'parent-b',
+      reference_synced: { source_document_id: 'source', source_block_id: 'shared-root' },
+    },
+  ]), (error) => {
+    assert.equal(error.code, 'DOCX_REFERENCE_MULTI_PARENT');
+    assert.match(error.message, /shared-root/);
+    assert.match(error.message, /parent-a/);
+    assert.match(error.message, /parent-b/);
+    return true;
+  });
+});
+
+test('expandReferences deduplicates repeated roots attached to the same parent', async () => {
+  const reader = new DocxReader({ client: {} });
+  reader._readDocumentBlocks = async () => [{ block_id: 'shared-root', block_type: 2 }];
+
+  const expanded = await reader.expandReferences([
+    {
+      block_id: 'reference-a',
+      block_type: 50,
+      parent_id: 'parent',
+      reference_synced: { source_document_id: 'source', source_block_id: 'shared-root' },
+    },
+    {
+      block_id: 'reference-b',
+      block_type: 50,
+      parent_id: 'parent',
+      reference_synced: { source_document_id: 'source', source_block_id: 'shared-root' },
+    },
+  ]);
+
+  assert.equal(expanded.filter((block) => block.block_id === 'shared-root').length, 1);
+  assert.equal(expanded[0].parent_id, 'parent');
+});
+
+test('expandReferences deep-clones returned blocks before exposing cached source data', async () => {
+  const source = [{
+    block_id: 'source-root',
+    block_type: 2,
+    text: {
+      elements: [{
+        text_run: {
+          content: 'original',
+          text_element_style: { bold: true },
+        },
+      }],
+    },
+  }];
+  const reader = new DocxReader({ client: {} });
+  reader._readDocumentBlocks = async () => source;
+
+  const expanded = await reader.expandReferences([{
+    block_id: 'reference',
+    block_type: 50,
+    parent_id: 'page',
+    reference_synced: { source_document_id: 'source', source_block_id: 'source-root' },
+  }]);
+  expanded[0].text.elements[0].text_run.content = 'mutated';
+  expanded[0].text.elements[0].text_run.text_element_style.bold = false;
+
+  assert.equal(source[0].text.elements[0].text_run.content, 'original');
+  assert.equal(source[0].text.elements[0].text_run.text_element_style.bold, true);
 });

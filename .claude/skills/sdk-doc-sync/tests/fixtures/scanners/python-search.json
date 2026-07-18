@@ -1,0 +1,19 @@
+{
+  "name": "search",
+  "kind": "method",
+  "signature": "def search(self, collection_name: str, data: list[list[float]], *, limit: int = 10, **kwargs: Any) -> list[SearchResult]:",
+  "docstring": "Searches vectors in a collection.",
+  "params": [
+    { "name": "collection_name", "kind": "positional", "type": "str", "default": null },
+    { "name": "data", "kind": "positional", "type": "list[list[float]]", "default": null },
+    { "name": "*", "kind": "separator", "type": null, "default": null },
+    { "name": "limit", "kind": "keyword", "type": "int", "default": "10" },
+    { "name": "kwargs", "kind": "kwargs", "type": "Any", "default": null }
+  ],
+  "returnType": "list[SearchResult]",
+  "filePath": "pymilvus/milvus_client/milvus_client.py",
+  "lineNumber": 372,
+  "parentClass": "MilvusClient",
+  "decorators": [],
+  "baseClasses": []
+}

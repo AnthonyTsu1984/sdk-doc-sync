@@ -1,0 +1,49 @@
+{
+  "name": "createCollection",
+  "parentClass": "Collections",
+  "kind": "Function",
+  "docstring": "Creates a collection.",
+  "filePath": "milvus/MilvusClient.ts",
+  "lineNumber": 146,
+  "params": [
+    { "name": "data", "type": "CreateCollectionReq | SimpleCreateCollectionReq" }
+  ],
+  "requestVariants": [
+    {
+      "id": "simple",
+      "title": "Simple collection",
+      "description": "Creates a collection with a dimension and primary field.",
+      "signature": "await client.createCollection({ collection_name, dimension })",
+      "inputs": [
+        { "name": "collection_name", "type": "string", "required": true, "description": "Collection name." },
+        { "name": "dimension", "type": "number", "required": true, "description": "Vector dimension." }
+      ]
+    },
+    {
+      "id": "schema",
+      "title": "Custom schema",
+      "description": "Creates a collection from an explicit schema.",
+      "signature": "await client.createCollection({ collection_name, schema })",
+      "inputs": [
+        { "name": "collection_name", "type": "string", "required": true, "description": "Collection name." },
+        {
+          "name": "schema",
+          "type": "FieldType[]",
+          "required": true,
+          "description": "Collection fields.",
+          "children": [
+            { "name": "name", "type": "string", "required": true, "description": "Field name." },
+            { "name": "data_type", "type": "DataType", "required": true, "description": "Field data type." }
+          ]
+        }
+      ]
+    }
+  ],
+  "result": {
+    "type": "Promise<CreateCollectionResponse>",
+    "description": "Resolves after the collection is created.",
+    "fields": [
+      { "name": "status", "type": "Status", "required": true, "description": "Operation status." }
+    ]
+  }
+}

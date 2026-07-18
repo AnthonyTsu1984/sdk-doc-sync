@@ -1,0 +1,17 @@
+{
+  "name": "CreateCollection",
+  "kind": "method",
+  "signature": "Status CreateCollection(const CreateCollectionRequest& request, CreateCollectionResponse& response)",
+  "docstring": "Creates a collection.",
+  "params": [
+    { "name": "WithCollectionName", "kind": "keyword", "type": "std::string", "argName": "collection_name", "fullArgStr": "const std::string& collection_name", "description": "Sets the collection name." },
+    { "name": "WithDimension", "kind": "keyword", "type": "int64_t", "argName": "dimension", "fullArgStr": "int64_t dimension", "description": "Sets the vector dimension." },
+    { "name": "AddField", "kind": "keyword", "type": "FieldSchema", "argName": "field", "fullArgStr": "const FieldSchema& field", "description": "Adds a schema field." }
+  ],
+  "directParams": [],
+  "filePath": "include/milvus/MilvusClientV2.h",
+  "lineNumber": 91,
+  "parentClass": "Collections",
+  "requestClass": "CreateCollectionRequest",
+  "responseClass": "CreateCollectionResponse"
+}

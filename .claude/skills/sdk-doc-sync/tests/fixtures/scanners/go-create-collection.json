@@ -1,0 +1,21 @@
+{
+  "name": "CreateCollection",
+  "kind": "method",
+  "signature": "func (c *Client) CreateCollection(ctx context.Context, option CreateCollectionOption) error",
+  "docstring": "CreateCollection creates a collection.",
+  "params": [
+    { "name": "collectionName", "type": "string", "kind": "required" },
+    { "name": "dimension", "type": "int64", "kind": "required" }
+  ],
+  "optionMethods": [
+    { "name": "WithMetricType", "params": "metricType entity.MetricType", "fullSignature": "WithMetricType(metricType entity.MetricType)", "description": "Sets the metric type." },
+    { "name": "WithConsistencyLevel", "params": "level entity.ConsistencyLevel", "fullSignature": "WithConsistencyLevel(level entity.ConsistencyLevel)", "description": "Sets the consistency level." }
+  ],
+  "altConstructors": [],
+  "optionType": "CreateCollectionOption",
+  "returnType": "error",
+  "filePath": "client/milvusclient/collection.go",
+  "lineNumber": 42,
+  "parentClass": "Collections",
+  "example": null
+}

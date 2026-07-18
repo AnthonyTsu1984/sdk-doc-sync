@@ -1,0 +1,18 @@
+{
+  "name": "createCollection",
+  "kind": "method",
+  "signature": "public void createCollection(CreateCollectionReq request)",
+  "docstring": null,
+  "params": [
+    { "name": "collectionName", "kind": "keyword", "type": "String", "default": null },
+    { "name": "dimension", "kind": "keyword", "type": "Integer", "default": null },
+    { "name": "metricType", "kind": "keyword", "type": "MetricType", "default": "MetricType.COSINE" }
+  ],
+  "filePath": "src/main/java/io/milvus/v2/client/MilvusClientV2.java",
+  "lineNumber": 184,
+  "parentClass": "MilvusClientV2",
+  "returnType": "void",
+  "requestClass": "CreateCollectionReq",
+  "decorators": [],
+  "baseClasses": []
+}

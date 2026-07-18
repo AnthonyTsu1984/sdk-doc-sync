@@ -22,6 +22,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   assert.deepEqual(result.stdout.trim().split('\n'), [
     '.claude/skills/sdk-doc-sync/tests/bitable-repository.test.js',
     '.claude/skills/sdk-doc-sync/tests/block-registry.test.js',
+    '.claude/skills/sdk-doc-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/sdk-doc-sync/tests/document-ir.test.js',
     '.claude/skills/sdk-doc-sync/tests/docx-reader.test.js',
     '.claude/skills/sdk-doc-sync/tests/feishu-client.test.js',

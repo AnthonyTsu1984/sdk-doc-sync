@@ -112,6 +112,17 @@ function createExample({ title, description = '', language, code, fence, evidenc
   });
 }
 
+function createHttpMetadata({
+  method,
+  path,
+  auth = [],
+  request = null,
+  responses = [],
+  evidence = [],
+} = {}) {
+  return immutable({ method, path, auth, request, responses, evidence });
+}
+
 function createReferenceDocument({
   identity = {},
   source = {},
@@ -127,6 +138,7 @@ function createReferenceDocument({
   audienceVariants = [],
   evidence = [],
   exampleOptional = false,
+  http,
 } = {}) {
   return immutable({
     schemaVersion: 1,
@@ -144,6 +156,7 @@ function createReferenceDocument({
     audienceVariants,
     evidence,
     exampleOptional,
+    ...(http !== undefined ? { http } : {}),
   });
 }
 
@@ -174,4 +187,6 @@ module.exports = {
   example: createExample,
   createTypeReference,
   typeReference: createTypeReference,
+  createHttpMetadata,
+  httpMetadata: createHttpMetadata,
 };

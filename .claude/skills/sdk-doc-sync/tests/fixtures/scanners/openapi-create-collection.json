@@ -1,0 +1,150 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Zilliz Cloud Data Plane", "version": "v2" },
+  "paths": {
+    "/v2/vectordb/collections": {
+      "post": {
+        "operationId": "createCollection",
+        "summary": "Create a collection",
+        "description": "Creates a collection in the selected database.",
+        "security": [{ "ApiKeyAuth": [] }],
+        "parameters": [
+          {
+            "name": "dbName",
+            "in": "query",
+            "required": false,
+            "description": "Database name.",
+            "schema": { "type": "string", "default": "default" }
+          },
+          {
+            "name": "X-Request-ID",
+            "in": "header",
+            "required": false,
+            "description": "Caller-provided request identifier.",
+            "schema": { "type": "string", "format": "uuid", "nullable": true }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Collection definition.",
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CreateCollectionRequest" },
+              "example": {
+                "collectionName": "docs",
+                "dimension": 128,
+                "consistencyLevel": "Bounded",
+                "schema": {
+                  "fields": [
+                    { "name": "id", "dataType": "Int64" },
+                    { "name": "vector", "dataType": "FloatVector", "description": null }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Collection created.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/CreateCollectionResponse" },
+                "example": { "code": 0, "data": { "collectionName": "docs" } }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid collection definition.",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ErrorResponse" },
+                "example": { "code": 1100, "message": "invalid dimension" }
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "curl",
+            "label": "cURL request",
+            "source": "curl --request POST 'https://api.example.test/v2/vectordb/collections?dbName=default' --header 'Authorization: Bearer ${ZILLIZ_API_KEY}' --header 'Content-Type: application/json' --data '{\"collectionName\":\"docs\",\"dimension\":128}'"
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ApiKeyAuth": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "Authorization",
+        "description": "Use a Zilliz Cloud API key as a bearer token."
+      }
+    },
+    "schemas": {
+      "CreateCollectionRequest": {
+        "type": "object",
+        "required": ["collectionName", "dimension"],
+        "properties": {
+          "collectionName": { "type": "string", "description": "Collection name." },
+          "dimension": { "type": "integer", "format": "int64", "description": "Vector dimension." },
+          "consistencyLevel": {
+            "type": "string",
+            "description": "Consistency level.",
+            "enum": ["Strong", "Bounded", "Eventually"],
+            "default": "Bounded"
+          },
+          "schema": {
+            "type": "object",
+            "description": "Optional custom schema.",
+            "properties": {
+              "fields": {
+                "type": "array",
+                "description": "Field definitions.",
+                "items": { "$ref": "#/components/schemas/FieldSchema" }
+              }
+            }
+          }
+        }
+      },
+      "FieldSchema": {
+        "type": "object",
+        "required": ["name", "dataType"],
+        "properties": {
+          "name": { "type": "string", "description": "Field name." },
+          "dataType": {
+            "type": "string",
+            "description": "Field data type.",
+            "enum": ["Int64", "VarChar", "FloatVector"]
+          },
+          "description": { "type": "string", "nullable": true, "description": "Optional field description." }
+        }
+      },
+      "CreateCollectionResponse": {
+        "type": "object",
+        "required": ["code", "data"],
+        "properties": {
+          "code": { "type": "integer", "description": "Status code." },
+          "data": {
+            "type": "object",
+            "description": "Created collection metadata.",
+            "required": ["collectionName"],
+            "properties": {
+              "collectionName": { "type": "string", "description": "Created collection name." }
+            }
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "integer", "description": "Error code." },
+          "message": { "type": "string", "description": "Error message." }
+        }
+      }
+    }
+  }
+}

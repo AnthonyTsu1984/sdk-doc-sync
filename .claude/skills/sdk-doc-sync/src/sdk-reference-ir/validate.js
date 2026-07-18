@@ -474,6 +474,97 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     });
   }
 
+  function validateHttpMetadata(value, path) {
+    if (value === null || value === undefined) return;
+    if (!isObject(value)) {
+      error(path, 'http metadata must be null or an object', 'INVALID_HTTP_METADATA');
+      return;
+    }
+    if (!/^[A-Z]+$/.test(value.method || '')) {
+      error(`${path}.method`, 'HTTP method must be uppercase letters', 'INVALID_HTTP_METHOD');
+    }
+    if (!isNonEmptyString(value.path) || !value.path.startsWith('/')) {
+      error(`${path}.path`, 'HTTP path must be an absolute path', 'INVALID_HTTP_PATH');
+    }
+    validateEvidenceList(value.evidence, `${path}.evidence`);
+    if (production && (!Array.isArray(value.evidence) || value.evidence.length === 0)) {
+      error(`${path}.evidence`, 'HTTP metadata requires its own evidence', 'MISSING_HTTP_EVIDENCE');
+    }
+    requireProductionEvidence(value, path);
+
+    const auth = requireArray(value.auth, `${path}.auth`, 'HTTP auth descriptors');
+    auth?.forEach((item, index) => {
+      const itemPath = `${path}.auth[${index}]`;
+      if (!isObject(item)) {
+        error(itemPath, 'HTTP auth descriptor must be an object', 'INVALID_HTTP_AUTH');
+        return;
+      }
+      requireString(item.name, `${itemPath}.name`, 'HTTP auth name');
+      requireString(item.type, `${itemPath}.type`, 'HTTP auth type');
+      if (typeof item.description !== 'string') {
+        error(`${itemPath}.description`, 'HTTP auth description must be a string', 'INVALID_HTTP_AUTH');
+      }
+      if (item.in !== undefined) requireString(item.in, `${itemPath}.in`, 'HTTP auth location');
+      if (item.parameterName !== undefined) {
+        requireString(item.parameterName, `${itemPath}.parameterName`, 'HTTP auth parameter name');
+      }
+      validateEvidenceList(item.evidence, `${itemPath}.evidence`);
+      if (production && (!Array.isArray(item.evidence) || item.evidence.length === 0)) {
+        error(`${itemPath}.evidence`, 'HTTP auth metadata requires its own evidence', 'MISSING_HTTP_EVIDENCE');
+      }
+      requireProductionEvidence(item, itemPath);
+    });
+
+    if (value.request !== null && value.request !== undefined) {
+      const requestPath = `${path}.request`;
+      if (!isObject(value.request)) {
+        error(requestPath, 'HTTP request metadata must be null or an object', 'INVALID_HTTP_REQUEST');
+      } else {
+        requireString(value.request.contentType, `${requestPath}.contentType`, 'request content type', { nonEmpty: false });
+        for (const location of ['path', 'query', 'header', 'body']) {
+          validateFieldList(value.request[location], `${requestPath}.${location}`);
+        }
+        validateEvidenceList(value.request.evidence, `${requestPath}.evidence`);
+        if (production && (!Array.isArray(value.request.evidence) || value.request.evidence.length === 0)) {
+          error(`${requestPath}.evidence`, 'HTTP request metadata requires its own evidence', 'MISSING_HTTP_EVIDENCE');
+        }
+        requireProductionEvidence(value.request, requestPath);
+      }
+    }
+
+    const responses = requireArray(value.responses, `${path}.responses`, 'HTTP responses');
+    if (production && responses && responses.length === 0) {
+      error(`${path}.responses`, 'REST operations require at least one HTTP response', 'MISSING_HTTP_RESPONSE');
+    }
+    const statuses = new Set();
+    responses?.forEach((response, index) => {
+      const responsePath = `${path}.responses[${index}]`;
+      if (!isObject(response)) {
+        error(responsePath, 'HTTP response must be an object', 'INVALID_HTTP_RESPONSE');
+        return;
+      }
+      if (requireString(response.status, `${responsePath}.status`, 'HTTP response status')) {
+        if (statuses.has(response.status)) {
+          error(`${responsePath}.status`, `duplicate HTTP response status ${response.status}`, 'DUPLICATE_HTTP_STATUS');
+        }
+        statuses.add(response.status);
+      }
+      if (typeof response.description !== 'string') {
+        error(`${responsePath}.description`, 'HTTP response description must be a string', 'INVALID_HTTP_RESPONSE');
+      }
+      if (response.contentType !== undefined) {
+        requireString(response.contentType, `${responsePath}.contentType`, 'response content type', { nonEmpty: false });
+      }
+      validateType(response.type, `${responsePath}.type`);
+      validateFieldList(response.fields, `${responsePath}.fields`);
+      validateEvidenceList(response.evidence, `${responsePath}.evidence`);
+      if (production && (!Array.isArray(response.evidence) || response.evidence.length === 0)) {
+        error(`${responsePath}.evidence`, 'HTTP response metadata requires its own evidence', 'MISSING_HTTP_EVIDENCE');
+      }
+      requireProductionEvidence(response, responsePath);
+    });
+  }
+
   function scanPlaceholders(value, path, seen = new WeakSet(), skip = false) {
     if (!production) return;
     if (typeof value === 'string') {
@@ -545,6 +636,10 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   validateRelated(doc.related, '$.related');
   validateAudienceVariants(doc.audienceVariants, '$.audienceVariants');
   validateEvidenceList(doc.evidence, '$.evidence');
+  validateHttpMetadata(doc.http, '$.http');
+  if (doc.http !== null && doc.http !== undefined && doc.identity?.kind !== 'rest-operation') {
+    error('$.http', 'HTTP metadata is only valid for rest-operation documents', 'HTTP_METADATA_WRONG_FAMILY');
+  }
 
   if (production) {
     scanPlaceholders(doc, '$');
@@ -563,6 +658,9 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         `${kind} documents are not compatible with ${language}`,
         'INCOMPATIBLE_DOCUMENT_LANGUAGE',
       );
+    }
+    if (kind === 'rest-operation' && (doc.http === null || doc.http === undefined)) {
+      error('$.http', 'rest-operation documents require HTTP metadata', 'MISSING_HTTP_METADATA');
     }
     if (Array.isArray(doc.callableMembers)) {
       const allowedMemberKind = MEMBER_KIND_BY_LANGUAGE.get(language);

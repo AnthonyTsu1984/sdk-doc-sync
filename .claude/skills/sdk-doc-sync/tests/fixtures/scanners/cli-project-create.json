@@ -7,7 +7,8 @@
   "params": [
     { "name": "--name", "shorthand": "-n", "apiName": "name", "type": "string", "required": true, "description": "Project name.", "default": null, "choices": null, "position": null, "requiredUnless": null, "requiredWhen": null, "repeatable": false },
     { "name": "--region", "shorthand": "-r", "apiName": "region", "type": "string", "required": true, "description": "Deployment region.", "default": null, "choices": ["aws-us-west-2", "gcp-us-west1"], "position": null, "requiredUnless": null, "requiredWhen": null, "repeatable": true },
-    { "name": "--plan", "shorthand": null, "apiName": "plan", "type": "string", "required": false, "description": "Subscription plan.", "default": "serverless", "choices": ["serverless", "dedicated"], "position": null, "requiredUnless": null, "requiredWhen": null, "repeatable": false }
+    { "name": "--plan", "shorthand": null, "apiName": "plan", "type": "string", "required": true, "description": "Subscription plan.", "default": "serverless", "choices": ["serverless", "dedicated"], "position": null, "requiredUnless": null, "requiredWhen": null, "repeatable": false, "allowRequiredDefault": true },
+    { "name": "--api-key", "shorthand": null, "apiName": "apiKey", "type": "string", "required": false, "description": "Overrides the configured API key for this command.", "default": null, "choices": null, "position": null, "requiredUnless": null, "requiredWhen": null, "repeatable": false }
   ],
   "returnType": null,
   "filePath": "src/commands/project.rs",

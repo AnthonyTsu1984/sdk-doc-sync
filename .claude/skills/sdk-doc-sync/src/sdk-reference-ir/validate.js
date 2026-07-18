@@ -480,8 +480,8 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       error(path, 'http metadata must be null or an object', 'INVALID_HTTP_METADATA');
       return;
     }
-    if (!/^[A-Z]+$/.test(value.method || '')) {
-      error(`${path}.method`, 'HTTP method must be uppercase letters', 'INVALID_HTTP_METHOD');
+    if (!['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS', 'TRACE'].includes(value.method)) {
+      error(`${path}.method`, 'HTTP method must be a standard uppercase method', 'INVALID_HTTP_METHOD');
     }
     if (!isNonEmptyString(value.path) || !value.path.startsWith('/')) {
       error(`${path}.path`, 'HTTP path must be an absolute path', 'INVALID_HTTP_PATH');
@@ -508,11 +508,66 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       if (item.parameterName !== undefined) {
         requireString(item.parameterName, `${itemPath}.parameterName`, 'HTTP auth parameter name');
       }
+      if (item.scopes !== undefined) {
+        const scopes = requireArray(item.scopes, `${itemPath}.scopes`, 'HTTP auth scopes');
+        scopes?.forEach((scope, scopeIndex) => requireString(
+          scope,
+          `${itemPath}.scopes[${scopeIndex}]`,
+          'HTTP auth scope',
+        ));
+      }
       validateEvidenceList(item.evidence, `${itemPath}.evidence`);
       if (production && (!Array.isArray(item.evidence) || item.evidence.length === 0)) {
         error(`${itemPath}.evidence`, 'HTTP auth metadata requires its own evidence', 'MISSING_HTTP_EVIDENCE');
       }
       requireProductionEvidence(item, itemPath);
+    });
+
+    const security = requireArray(value.security, `${path}.security`, 'HTTP security groups');
+    security?.forEach((group, groupIndex) => {
+      const groupPath = `${path}.security[${groupIndex}]`;
+      if (!isObject(group)) {
+        error(groupPath, 'HTTP security group must be an object', 'INVALID_HTTP_SECURITY');
+        return;
+      }
+      if (typeof group.anonymous !== 'boolean') {
+        error(`${groupPath}.anonymous`, 'HTTP security anonymous flag must be a boolean', 'INVALID_HTTP_SECURITY');
+      }
+      const schemes = requireArray(group.schemes, `${groupPath}.schemes`, 'HTTP security schemes');
+      if (group.anonymous === true && schemes?.length > 0) {
+        error(groupPath, 'anonymous HTTP security groups must not contain schemes', 'INVALID_HTTP_SECURITY');
+      }
+      if (group.anonymous === false && schemes?.length === 0) {
+        error(groupPath, 'non-anonymous HTTP security groups require schemes', 'INVALID_HTTP_SECURITY');
+      }
+      schemes?.forEach((item, schemeIndex) => {
+        const itemPath = `${groupPath}.schemes[${schemeIndex}]`;
+        if (!isObject(item)) {
+          error(itemPath, 'HTTP security scheme must be an object', 'INVALID_HTTP_SECURITY');
+          return;
+        }
+        requireString(item.name, `${itemPath}.name`, 'HTTP security scheme name');
+        requireString(item.type, `${itemPath}.type`, 'HTTP security scheme type');
+        if (typeof item.description !== 'string') {
+          error(`${itemPath}.description`, 'HTTP security scheme description must be a string', 'INVALID_HTTP_SECURITY');
+        }
+        const scopes = requireArray(item.scopes, `${itemPath}.scopes`, 'HTTP security scopes');
+        scopes?.forEach((scope, scopeIndex) => requireString(
+          scope,
+          `${itemPath}.scopes[${scopeIndex}]`,
+          'HTTP security scope',
+        ));
+        validateEvidenceList(item.evidence, `${itemPath}.evidence`);
+        if (production && (!Array.isArray(item.evidence) || item.evidence.length === 0)) {
+          error(`${itemPath}.evidence`, 'HTTP security schemes require their own evidence', 'MISSING_HTTP_EVIDENCE');
+        }
+        requireProductionEvidence(item, itemPath);
+      });
+      validateEvidenceList(group.evidence, `${groupPath}.evidence`);
+      if (production && (!Array.isArray(group.evidence) || group.evidence.length === 0)) {
+        error(`${groupPath}.evidence`, 'HTTP security groups require their own evidence', 'MISSING_HTTP_EVIDENCE');
+      }
+      requireProductionEvidence(group, groupPath);
     });
 
     if (value.request !== null && value.request !== undefined) {
@@ -544,6 +599,13 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         return;
       }
       if (requireString(response.status, `${responsePath}.status`, 'HTTP response status')) {
+        if (!/^(?:default|[1-5]\d{2}|[1-5]XX)$/.test(response.status)) {
+          error(
+            `${responsePath}.status`,
+            'HTTP response status must be default, 100-599, or a 1XX-5XX pattern',
+            'INVALID_HTTP_STATUS',
+          );
+        }
         if (statuses.has(response.status)) {
           error(`${responsePath}.status`, `duplicate HTTP response status ${response.status}`, 'DUPLICATE_HTTP_STATUS');
         }

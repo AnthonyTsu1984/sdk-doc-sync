@@ -18,7 +18,7 @@ zilliz project create [OPTIONS]
 - **--region** (*string*) - **\[REQUIRED\]**
   Deployment region.
   Constraints: choices: aws-us-west-2, gcp-us-west1; repeatable; shorthand: -r; api-name: region.
-- **--plan** (*string*) - **\[REQUIRED\]** Default: `serverless`
+- **--plan** (*string*) - Default: `serverless`
   Subscription plan.
   Constraints: choices: serverless, dedicated; api-name: plan.
 - **--api-key** (*string*) -

@@ -26,10 +26,28 @@ function authFields(auth) {
     constraints: [
       ...(item.in ? [`in: ${item.in}`] : []),
       ...(item.parameterName ? [`name: ${item.parameterName}`] : []),
+      ...(item.scopes?.length ? [`Scopes: ${item.scopes.join(', ')}`] : []),
     ],
     children: [],
     appliesWhen: null,
   }));
+}
+
+function renderSecurity(blocks, http) {
+  const groups = Array.isArray(http.security) && http.security.length > 0
+    ? http.security
+    : (http.auth.length > 0 ? [{ anonymous: false, schemes: http.auth }] : []);
+  if (groups.length === 0) return;
+  blocks.push(heading(2, 'Authentication'));
+  if (groups.length > 1) blocks.push(paragraph('Use one of:'));
+  for (const group of groups) {
+    if (group.anonymous) {
+      blocks.push(paragraph('Anonymous access.'));
+      continue;
+    }
+    if (group.schemes.length > 1) blocks.push(paragraph('All of:'));
+    blocks.push(renderFields(authFields(group.schemes), {}, 'http-auth'));
+  }
 }
 
 function requestSection(blocks, label, fields) {
@@ -44,10 +62,7 @@ function render(document) {
     paragraph(document.summary),
     ir.codeBlock(`${http.method} ${http.path}`, 'PlainText'),
   ];
-  if (http.auth.length > 0) {
-    blocks.push(heading(2, 'Authentication'));
-    blocks.push(renderFields(authFields(http.auth), {}, 'http-auth'));
-  }
+  renderSecurity(blocks, http);
   if (http.request) {
     blocks.push(heading(2, 'Request'));
     requestSection(blocks, 'Path', http.request.path);

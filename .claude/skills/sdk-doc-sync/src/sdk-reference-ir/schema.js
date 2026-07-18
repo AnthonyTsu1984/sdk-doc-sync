@@ -116,11 +116,12 @@ function createHttpMetadata({
   method,
   path,
   auth = [],
+  security = [],
   request = null,
   responses = [],
   evidence = [],
 } = {}) {
-  return immutable({ method, path, auth, request, responses, evidence });
+  return immutable({ method, path, auth, security, request, responses, evidence });
 }
 
 function createReferenceDocument({

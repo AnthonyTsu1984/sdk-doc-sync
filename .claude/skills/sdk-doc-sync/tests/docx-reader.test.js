@@ -209,6 +209,39 @@ test('expandReferences deduplicates repeated roots attached to the same parent',
   assert.equal(expanded[0].parent_id, 'parent');
 });
 
+test('expandReferences deduplicates rewritten child IDs while preserving sibling order', async () => {
+  const reader = new DocxReader({ client: {} });
+  reader._readDocumentBlocks = async () => [{ block_id: 'shared-root', block_type: 2 }];
+
+  const expanded = await reader.expandReferences([
+    {
+      block_id: 'parent',
+      block_type: 1,
+      children: ['before', 'reference-a', 'reference-b', 'after'],
+    },
+    { block_id: 'before', block_type: 2, parent_id: 'parent' },
+    {
+      block_id: 'reference-a',
+      block_type: 50,
+      parent_id: 'parent',
+      reference_synced: { source_document_id: 'source', source_block_id: 'shared-root' },
+    },
+    {
+      block_id: 'reference-b',
+      block_type: 50,
+      parent_id: 'parent',
+      reference_synced: { source_document_id: 'source', source_block_id: 'shared-root' },
+    },
+    { block_id: 'after', block_type: 2, parent_id: 'parent' },
+  ]);
+  const byId = new Map(expanded.map((block) => [block.block_id, block]));
+
+  assert.deepEqual(byId.get('parent').children, ['before', 'shared-root', 'after']);
+  assert.deepEqual(expanded.map((block) => block.block_id), [
+    'parent', 'before', 'shared-root', 'after',
+  ]);
+});
+
 test('expandReferences deep-clones returned blocks before exposing cached source data', async () => {
   const source = [{
     block_id: 'source-root',

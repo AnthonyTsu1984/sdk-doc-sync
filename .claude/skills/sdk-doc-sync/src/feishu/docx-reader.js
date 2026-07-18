@@ -99,9 +99,18 @@ class DocxReader {
       }
     }
 
+    const replacementRoots = new Set(replacements.values());
     for (const block of output) {
       if (Array.isArray(block.children)) {
-        block.children = block.children.map((id) => replacements.get(id) || id);
+        const seenReplacementRoots = new Set();
+        block.children = block.children
+          .map((id) => replacements.get(id) || id)
+          .filter((id) => {
+            if (!replacementRoots.has(id)) return true;
+            if (seenReplacementRoots.has(id)) return false;
+            seenReplacementRoots.add(id);
+            return true;
+          });
       }
     }
     return output;

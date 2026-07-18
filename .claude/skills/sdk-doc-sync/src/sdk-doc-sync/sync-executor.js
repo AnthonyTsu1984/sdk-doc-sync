@@ -26,6 +26,18 @@ function containsLegacyScaffold(content) {
       || /\b(?:Brief description|Usage example|List relevant exceptions)\b/i.test(content));
 }
 
+function assertPublishableArtifact(plan, artifact) {
+  if (!artifact || !nonEmptyString(artifact.content)) {
+    throw new SyncExecutionError('ARTIFACT_CONTENT_REQUIRED', `Reviewed artifact content is required for ${plan.stableId}`);
+  }
+  if (containsLegacyScaffold(artifact.content)) {
+    throw new SyncExecutionError(
+      'LEGACY_SCAFFOLD_ARTIFACT',
+      `Legacy scaffold content cannot be published for ${plan.stableId}; provide a reviewed schema-first artifact`,
+    );
+  }
+}
+
 function linkFromCreated(created) {
   return created?.url || created?.wiki_url || created?.link || created?.documentUrl || '';
 }
@@ -179,15 +191,7 @@ class SyncExecutor {
   }
 
   async _createDocument(plan, artifact, action) {
-    if (!artifact || !nonEmptyString(artifact.content)) {
-      throw new SyncExecutionError('ARTIFACT_CONTENT_REQUIRED', `Reviewed artifact content is required for ${plan.stableId}`);
-    }
-    if (containsLegacyScaffold(artifact.content)) {
-      throw new SyncExecutionError(
-        'LEGACY_SCAFFOLD_ARTIFACT',
-        `Legacy scaffold content cannot be published for ${plan.stableId}; provide a reviewed schema-first artifact`,
-      );
-    }
+    assertPublishableArtifact(plan, artifact);
     const input = {
       title: artifactTitle(plan, artifact, action),
       content: artifact.content,
@@ -216,9 +220,7 @@ class SyncExecutor {
   }
 
   async _patchDocument(plan, artifact) {
-    if (!artifact || !nonEmptyString(artifact.content)) {
-      throw new SyncExecutionError('ARTIFACT_CONTENT_REQUIRED', `Reviewed artifact content is required for ${plan.stableId}`);
-    }
+    assertPublishableArtifact(plan, artifact);
     const input = {
       documentToken: plan.source.documentToken,
       content: artifact.content,

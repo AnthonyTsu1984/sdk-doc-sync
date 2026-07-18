@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const {
@@ -194,6 +195,20 @@ function baseArgs(language) {
   ];
 }
 
+function tempDir(name) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), `${name}-`));
+}
+
+function writeJson(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function writeText(file, value) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, value, 'utf8');
+}
+
 async function runDryCli(language, symbol, context) {
   const stdout = [];
   const stderr = [];
@@ -258,4 +273,102 @@ test('schema-first CLI surfaces invalid schema failures before planning', async 
   assert.equal(result.planningErrors.length, 1);
   assert.equal(result.planningErrors[0].code, 'SCHEMA_FIRST_GENERATION_FAILED');
   assert.match(stdout.join('\n'), /Unsupported OpenAPI version/);
+});
+
+test('real CLI scanner factory supports Node schema-first dry-run with a reference context file', async () => {
+  const sdkDir = tempDir('sdk-doc-sync-node');
+  writeText(path.join(sdkDir, 'milvus', 'MilvusClient.ts'), `
+export class MilvusClient {
+  /**
+   * Creates a collection through the Node.js client.
+   */
+  async createCollection(request: SimpleCreateCollectionReq): Promise<CreateCollectionResponse> {
+    return {} as CreateCollectionResponse;
+  }
+}
+`);
+  const contextFile = path.join(sdkDir, 'reference-context.json');
+  writeJson(contextFile, {
+    repository: 'zilliztech/milvus-sdk-node',
+    revision: 'v2.6.0',
+    category: 'Collections',
+    summary: 'Creates a collection through the Node.js client.',
+    examples: [{
+      title: 'Create a collection',
+      description: 'Creates a simple collection.',
+      language: 'node',
+      fence: 'JavaScript',
+      code: 'await client.createCollection({ collection_name: "docs", dimension: 128 });',
+    }],
+    exceptions: [{
+      name: 'MilvusError',
+      condition: 'The promise is rejected.',
+      description: 'Contains the operation failure details.',
+    }],
+    reviewedEvidence: reviewedEvidence('node'),
+  });
+  const stdout = [];
+
+  const result = await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', sdkDir,
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v2.6.0',
+      '--reference-context', contextFile,
+      '--dry-run',
+      '--json',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      onStdout: (line) => stdout.push(line),
+    },
+  });
+
+  assert.ok(result.plans.some((plan) => plan.stableId === 'node:Collections:createCollection'));
+  assert.equal(result.planningErrors.length, 0);
+  assert.match(stdout.join('\n'), /node:Collections:createCollection/);
+});
+
+test('real CLI scanner factory supports REST OpenAPI dry-run with a reference context file', async () => {
+  const sdkDir = tempDir('sdk-doc-sync-rest');
+  writeJson(path.join(sdkDir, 'openapi.json'), fixture('openapi-create-collection.json'));
+  const contextFile = path.join(sdkDir, 'reference-context.json');
+  writeJson(contextFile, {
+    repository: 'zilliztech/cloud-openapi',
+    revision: '2026-07-18',
+    file: 'openapi.json',
+    line: 1,
+    category: 'Collections',
+    related: [],
+    notes: [],
+  });
+  const stdout = [];
+
+  const result = await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', sdkDir,
+      '--language', 'rest',
+      '--sdk-name', 'cloud-rest',
+      '--sdk-version', 'v2',
+      '--reference-context', contextFile,
+      '--dry-run',
+      '--json',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      onStdout: (line) => stdout.push(line),
+    },
+  });
+
+  assert.equal(result.plans.length, 1);
+  assert.equal(result.planningErrors.length, 0);
+  assert.equal(result.plans[0].stableId, 'rest:Collections:createCollection');
+  assert.match(stdout.join('\n'), /rest:Collections:createCollection/);
 });

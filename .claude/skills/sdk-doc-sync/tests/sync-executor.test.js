@@ -162,6 +162,21 @@ test('SyncExecutor rejects legacy DocGenerator scaffold artifacts', async () => 
   assert.deepEqual(calls, []);
 });
 
+test('SyncExecutor rejects legacy scaffold artifacts before in-place updates', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(plan('UPDATE'), {
+    artifact: artifact('# createCollection\n\n<!-- TODO: Add update details. -->\n'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.failedStep, 'patchDocument');
+  assert.equal(result.error.code, 'LEGACY_SCAFFOLD_ARTIFACT');
+  assert.deepEqual(calls, []);
+});
+
 test('SyncExecutor patches in-place only against the planned target-local token', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
   const executor = new SyncExecutor({ documentWriter, bitableWriter });

@@ -2,6 +2,9 @@
 
 const readline = require('readline');
 const path = require('path');
+const fs = require('fs');
+
+process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
@@ -44,6 +47,8 @@ function parseArgs(argv) {
             args.sourceType = argv[++i];
         } else if (arg === '--previous-base-token' && argv[i + 1]) {
             args.previousBaseToken = argv[++i];
+        } else if (arg === '--reference-context' && argv[i + 1]) {
+            args.referenceContext = argv[++i];
         } else if (arg === '--targets' && argv[i + 1]) {
             args.targets = argv[++i].split(',').map(t => t.trim());
         } else if (arg === '--exclude' && argv[i + 1]) {
@@ -73,6 +78,7 @@ Options:
   --sdk-version <ver>              SDK version for metadata (required)
   --source-type <type>             Feishu source type: drive or wiki (default: drive)
   --previous-base-token <token>    Bitable token of previous version (for incremental diff)
+  --reference-context <file>       JSON file with reviewed schema-first generation context
   --targets <list>                 Comma-separated target platforms (e.g., Milvus,Zilliz)
   --exclude <pattern>              Glob pattern to exclude (repeatable)
   --dry-run                        Show diff without executing changes
@@ -157,6 +163,40 @@ function defaultReferenceContext(action) {
         reviewedEvidence: [],
         related: [],
         notes: [],
+    };
+}
+
+function stableIdCandidates(action, language) {
+    const symbol = action.symbol || {};
+    const category = symbol.parentClass || symbol.category || '';
+    const name = symbol.name || action.slug || '';
+    return [
+        action.stableId,
+        symbol.identity?.stableId,
+        symbol.stableId,
+        language && category && name ? `${language}:${category}:${name}` : null,
+        action.slug,
+        name,
+    ].filter(Boolean);
+}
+
+function createReferenceContextProvider(filePath, { language } = {}) {
+    if (!filePath) return null;
+    const absolute = path.resolve(filePath);
+    return async (action) => {
+        const raw = JSON.parse(fs.readFileSync(absolute, 'utf8'));
+        const contexts = raw.contexts || raw.byStableId || raw.bySlug || {};
+        const match = stableIdCandidates(action, language)
+            .map((key) => contexts[key])
+            .find(Boolean) || {};
+        const base = raw.contexts || raw.byStableId || raw.bySlug
+            ? Object.fromEntries(Object.entries(raw).filter(([key]) => !['contexts', 'byStableId', 'bySlug'].includes(key)))
+            : raw;
+        return {
+            ...base,
+            ...match,
+            ...(language === 'rest' ? { input: action.symbol } : {}),
+        };
     };
 }
 
@@ -280,9 +320,10 @@ async function runCli({
     }
 
     const language = args.language || 'python';
+    const fileContextProvider = createReferenceContextProvider(args.referenceContext, { language });
     const artifactProvider = dependencies.artifactProvider || createSchemaFirstArtifactProvider({
         language,
-        referenceContextProvider: dependencies.referenceContextProvider,
+        referenceContextProvider: dependencies.referenceContextProvider || fileContextProvider,
     });
     const planningContextProvider = dependencies.planningContextProvider
         || createDefaultPlanningContextProvider({ rootToken: rootToken || 'dummy', sdkVersion: args.sdkVersion });

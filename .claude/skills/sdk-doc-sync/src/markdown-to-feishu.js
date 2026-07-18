@@ -2,6 +2,12 @@ const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher.js');
 const fetch = require('node-fetch');
 const marked = require('marked');
 const cheerio = require('cheerio');
+const {
+    BLOCK_NAME_TO_ID,
+    LANGUAGE_ID_TO_NAME,
+    LANGUAGE_ALIASES,
+    languageId,
+} = require('./document-ir/block-registry');
 
 require('dotenv').config();
 
@@ -20,118 +26,11 @@ class MarkdownToFeishu {
     }
 
     __create_block_type_map() {
-        return {
-            'page': 1,
-            'text': 2,
-            'heading1': 3,
-            'heading2': 4,
-            'heading3': 5,
-            'heading4': 6,
-            'heading5': 7,
-            'heading6': 8,
-            'heading7': 9,
-            'heading8': 10,
-            'heading9': 11,
-            'bullet': 12,
-            'ordered': 13,
-            'code': 14,
-            'quote': 15,
-            'todo': 17,
-            'bitable': 18,
-            'callout': 19,
-            'divider': 22,
-            'file': 23,
-            'grid': 24,
-            'grid_column': 25,
-            'iframe': 26,
-            'image': 27,
-            'sheet': 30,
-            'table': 31,
-            'table_cell': 32,
-            'quote_container': 34,
-            'add_ons': 40
-        };
+        return { ...BLOCK_NAME_TO_ID };
     }
 
     __create_lang_map() {
-        return [
-            null,
-            "PlainText",
-            "ABAP",
-            "Ada",
-            "Apache",
-            "Apex",
-            "Assembly",
-            "Bash",
-            "CSharp",
-            "C++",
-            "C",
-            "COBOL",
-            "CSS",
-            "CoffeeScript",
-            "D",
-            "Dart",
-            "Delphi",
-            "Django",
-            "Dockerfile",
-            "Erlang",
-            "Fortran",
-            "FoxPro",
-            "Go",
-            "Groovy",
-            "HTML",
-            "HTMLBars",
-            "HTTP",
-            "Haskell",
-            "JSON",
-            "Java",
-            "JavaScript",
-            "Julia",
-            "Kotlin",
-            "LateX",
-            "Lisp",
-            "Logo",
-            "Lua",
-            "MATLAB",
-            "Makefile",
-            "Markdown",
-            "Nginx",
-            "Objective",
-            "OpenEdgeABL",
-            "PHP",
-            "Perl",
-            "PostScript",
-            "Power",
-            "Prolog",
-            "ProtoBuf",
-            "Python",
-            "R",
-            "RPG",
-            "Ruby",
-            "Rust",
-            "SAS",
-            "SCSS",
-            "SQL",
-            "Scala",
-            "Scheme",
-            "Scratch",
-            "Shell",
-            "Swift",
-            "Thrift",
-            "TypeScript",
-            "VBScript",
-            "Visual",
-            "XML",
-            "YAML",
-            "CMake",
-            "Diff",
-            "Gherkin",
-            "GraphQL",
-            "OpenGL Shading Language",
-            "Properties",
-            "Solidity",
-            "TOML"
-        ];
+        return Array.from(LANGUAGE_ID_TO_NAME);
     }
 
     __create_lang_id_map() {
@@ -142,22 +41,12 @@ class MarkdownToFeishu {
                 map[lang.toLowerCase()] = idx;
             }
         });
-        // Add common aliases
-        map['js'] = 30;  // JavaScript
-        map['ts'] = 64;  // TypeScript
-        map['py'] = 50;  // Python
-        map['cpp'] = 9;  // C++
-        map['bash'] = 7;
-        map['shell'] = 62;
-        map['plaintext'] = 1;
-        map['text'] = 1;
+        Object.assign(map, LANGUAGE_ALIASES);
         return map;
     }
 
     __get_lang_id(lang_name) {
-        if (!lang_name) return 1; // PlainText
-        const normalized = lang_name.toLowerCase();
-        return this.lang_id_map[normalized] || 1;
+        return languageId(lang_name) ?? 1;
     }
 
     // ==================== Text Element Parsing ====================

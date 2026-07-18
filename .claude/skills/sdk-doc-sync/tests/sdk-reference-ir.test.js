@@ -222,6 +222,40 @@ test('validates callable member kinds and signatures with path-aware errors', ()
   assert.ok(errors.some((error) => error.path === '$.callableMembers[1].signature'));
 });
 
+test('rejects duplicate callable member kind and name keys at the second member', () => {
+  const member = (kind, name) => createCallableMember({
+    kind,
+    name,
+    signature: createSignature({ display: `${name}()`, inputs: [] }),
+  });
+  const errors = validateReferenceDocument(completeMethod({
+    callableMembers: [member('builder', 'withLimit'), member('builder', 'withLimit')],
+  })).errors;
+
+  assert.deepEqual(errors.find((error) => error.code === 'DUPLICATE_CALLABLE_MEMBER'), {
+    path: '$.callableMembers[1]',
+    message: 'callable member builder:withLimit duplicates $.callableMembers[0]',
+    code: 'DUPLICATE_CALLABLE_MEMBER',
+  });
+});
+
+test('allows callable members with distinct kinds or names', () => {
+  const member = (kind, name) => createCallableMember({
+    kind,
+    name,
+    signature: createSignature({ display: `${name}()`, inputs: [] }),
+  });
+  const doc = completeMethod({
+    callableMembers: [
+      member('builder', 'withLimit'),
+      member('option', 'withLimit'),
+      member('builder', 'withTimeout'),
+    ],
+  });
+
+  assert.equal(validateReferenceDocument(doc).valid, true);
+});
+
 test('enforces command and enum forbidden-section policies in production', () => {
   const command = completeMethod({
     identity: {
@@ -276,13 +310,29 @@ test('production rejects every placeholder pattern anywhere in authored content'
   }
 });
 
-test('production requires summaries, signatures, examples, and class example opt-out', () => {
+test('production requires summaries, signatures, and examples', () => {
   const missing = completeMethod({ summary: '', signatures: [], examples: [] });
   const errors = validateReferenceDocument(missing, { production: true }).errors;
   assert.ok(errors.some((error) => error.path === '$.summary'));
   assert.ok(errors.some((error) => error.path === '$.signatures'));
   assert.ok(errors.some((error) => error.path === '$.examples'));
+});
 
+test('production classes without examples fail with MISSING_EXAMPLE', () => {
+  const classDoc = completeMethod({
+    identity: {
+      kind: 'class', language: 'python', name: 'Collection',
+      title: 'Collection', stableId: 'python.Collection',
+    },
+    signatures: [],
+    examples: [],
+  });
+
+  assert.ok(validateReferenceDocument(classDoc, { production: true }).errors
+    .some((error) => error.code === 'MISSING_EXAMPLE' && error.path === '$.examples'));
+});
+
+test('production classes may explicitly opt out of examples', () => {
   const classDoc = completeMethod({
     identity: {
       kind: 'class', language: 'python', name: 'Collection',
@@ -292,6 +342,7 @@ test('production requires summaries, signatures, examples, and class example opt
     examples: [],
     exampleOptional: true,
   });
+
   assert.equal(validateReferenceDocument(classDoc, { production: true }).errors
     .some((error) => error.code === 'MISSING_EXAMPLE'), false);
 });

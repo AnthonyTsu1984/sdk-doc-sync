@@ -266,11 +266,24 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   function validateCallableMembers(value, path) {
     const members = requireArray(value, path, 'callable members');
     if (!members) return;
+    const keys = new Map();
     members.forEach((member, index) => {
       const memberPath = `${path}[${index}]`;
       if (!isObject(member)) {
         error(memberPath, 'callable member must be an object', 'INVALID_CALLABLE_MEMBER');
         return;
+      }
+      if (MEMBER_KINDS.includes(member.kind) && isNonEmptyString(member.name)) {
+        const key = JSON.stringify([member.kind, member.name]);
+        if (keys.has(key)) {
+          error(
+            memberPath,
+            `callable member ${member.kind}:${member.name} duplicates ${keys.get(key)}`,
+            'DUPLICATE_CALLABLE_MEMBER',
+          );
+        } else {
+          keys.set(key, memberPath);
+        }
       }
       if (!MEMBER_KINDS.includes(member.kind)) {
         error(`${memberPath}.kind`, `unsupported callable member kind ${member.kind}`, 'INVALID_MEMBER_KIND');

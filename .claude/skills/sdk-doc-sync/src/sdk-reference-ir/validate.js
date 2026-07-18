@@ -9,6 +9,7 @@ const {
 } = require('./schema');
 
 const MIN_EXAMPLE_CODE_LENGTH = 12;
+const EXAMPLE_FENCE = /^[A-Za-z][A-Za-z0-9+.#_-]{0,31}$/;
 const AUDIENCE_VALUE = /^[a-z0-9][a-z0-9.-]*$/;
 const NAMED_PLACEHOLDER = /Brief description|Usage example|List relevant exceptions/i;
 const TODO_WORKFLOW = /\btodo\s+(?:later|fix|pending|replace|add|update|review|implement|document|describe|example)\b/i;
@@ -409,6 +410,14 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
             'SHALLOW_EXAMPLE',
           );
         }
+      }
+      if (item.fence !== undefined
+        && (typeof item.fence !== 'string' || !EXAMPLE_FENCE.test(item.fence))) {
+        error(
+          `${itemPath}.fence`,
+          'example fence must be a conservative language identifier',
+          'INVALID_EXAMPLE_FENCE',
+        );
       }
       validateEvidenceList(item.evidence, `${itemPath}.evidence`);
       requireProductionEvidence(item, itemPath);

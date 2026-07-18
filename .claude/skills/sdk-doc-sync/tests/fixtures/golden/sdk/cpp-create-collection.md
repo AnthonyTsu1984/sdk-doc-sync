@@ -16,7 +16,9 @@ Status CreateCollection(const CreateCollectionRequest& request, CreateCollection
 auto request = CreateCollectionRequest()
     .WithCollectionName(collection_name)
     .WithDimension(dimension)
-    .AddField(field);
+    .AddField(field)
+    .EnableDynamicField()
+    .AddExtraParam(key, value);
 ```
 
 **REQUEST METHODS:**
@@ -27,6 +29,10 @@ auto request = CreateCollectionRequest()
   Sets the vector dimension.
 - `AddField(const FieldSchema& field)`
   Adds a schema field.
+- `EnableDynamicField()`
+  Enables the dynamic field.
+- `AddExtraParam(const std::string& key, const std::string& value)`
+  Adds an extra request parameter.
 
 **RETURNS:**
 
@@ -37,12 +43,14 @@ Returns the operation status and fills the response object.
 - **response** ([CreateCollectionResponse](/reference/cpp/create-collection-response)) - **\[REQUIRED\]**
   The created collection response.
 
-**EXCEPTIONS:**
+**ERROR HANDLING:**
 
 - **Status**
   status.IsOk() is false. Inspect the status code and message for failure details.
 
 ## Example{#example}
+
+### Create a collection
 
 Builds a request and checks the returned status.
 

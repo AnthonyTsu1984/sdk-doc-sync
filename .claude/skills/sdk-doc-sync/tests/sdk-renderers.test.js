@@ -81,8 +81,13 @@ function context(language) {
       repository: 'zilliztech/milvus-sdk-node', category: 'Collections',
       summary: 'Creates a collection through the Node.js client.',
       examples: [{
-        title: 'Create a collection', description: 'Creates a simple collection.', language: 'node',
+        title: 'JavaScript example', description: 'Creates a simple collection with JavaScript.', language: 'node',
+        fence: 'JavaScript',
         code: 'await client.createCollection({ collection_name: "docs", dimension: 128 });',
+      }, {
+        title: 'TypeScript example', description: 'Creates a typed collection request.', language: 'node',
+        fence: 'TypeScript',
+        code: 'const request: SimpleCreateCollectionReq = { collection_name: "docs", dimension: 128 };\nawait client.createCollection(request);',
       }],
       exceptions: [{
         name: 'MilvusError', condition: 'The promise is rejected.',
@@ -97,6 +102,7 @@ function context(language) {
     go: {
       repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
       summary: 'Creates a collection through the Go client.',
+      requestSyntax: 'option := milvusclient.SimpleCreateCollectionOptions("docs", 128)\nerr := client.CreateCollection(ctx, option)',
       examples: [{
         title: 'Create a collection', description: 'Creates a collection and checks the returned error.', language: 'go',
         code: 'option := milvusclient.SimpleCreateCollectionOptions("docs", 128)\nerr := client.CreateCollection(ctx, option)\nif err != nil {\n    log.Fatal(err)\n}',
@@ -126,6 +132,12 @@ function context(language) {
         name: 'Status', condition: 'status.IsOk() is false.',
         description: 'Inspect the status code and message for failure details.',
       }],
+      memberInputs: {
+        AddExtraParam: [
+          { name: 'key', type: 'std::string', description: 'The extra parameter key.' },
+          { name: 'value', type: 'std::string', description: 'The extra parameter value.' },
+        ],
+      },
       typeUrls: { CreateCollectionResponse: '/reference/cpp/create-collection-response' },
     },
   }[language];
@@ -176,6 +188,19 @@ function enrich(language, symbol) {
       description: member.description.replace(/^Sets/, 'This sets'),
     }));
   }
+  if (language === 'cpp') {
+    symbol.params.push({
+      name: 'EnableDynamicField', kind: 'keyword', type: 'bool',
+      fullArgStr: '', fullSignature: 'EnableDynamicField()',
+      description: 'Enables the dynamic field.',
+    });
+    symbol.params.push({
+      name: 'AddExtraParam', kind: 'keyword', type: 'std::string',
+      fullArgStr: 'const std::string& key, const std::string& value',
+      fullSignature: 'AddExtraParam(const std::string& key, const std::string& value)',
+      description: 'Adds an extra request parameter.',
+    });
+  }
   return symbol;
 }
 
@@ -223,6 +248,7 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.python, /\*\*PARAMETERS:\*\*/);
   assert.match(rendered.python, /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
   assert.match(rendered.python, /## Examples\n/);
+  assert.match(rendered.python, /### Search a collection/);
   assert.match(rendered.python, /\[str\]\(\/reference\/python\/str\)/);
 
   const pythonContext = context('python');
@@ -240,19 +266,28 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.java, /## Request Syntax\{#request-syntax\}/);
   assert.match(rendered.java, /\*\*BUILDER METHODS:\*\*/);
   assert.match(rendered.java, /## Example\{#example\}/);
+  assert.match(rendered.java, /### Create a collection/);
 
   assert.match(rendered.go, /```go\n/);
   assert.match(rendered.go, /\*\*PARAMETERS:\*\*/);
   assert.match(rendered.go, /\*\*OPTION METHODS:\*\*/);
   assert.match(rendered.go, /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
+  assert.match(rendered.go, /\*\*ERROR HANDLING:\*\*/);
+  assert.doesNotMatch(rendered.go, /\*\*EXCEPTIONS:\*\*/);
+  assert.match(rendered.go, /SimpleCreateCollectionOptions\("docs", 128\)[\s\S]*client\.CreateCollection\(ctx, option\)/);
 
   assert.match(rendered.node, /```typescript\nclient\.createCollection/);
-  assert.match(rendered.node, /```javascript\nawait client\.createCollection/);
+  assert.match(rendered.node, /### JavaScript example[\s\S]*```javascript\nawait client\.createCollection/);
+  assert.match(rendered.node, /### TypeScript example[\s\S]*```typescript\nconst request: SimpleCreateCollectionReq/);
   assert.match(rendered.node, /### Simple collection[\s\S]*### Custom schema/);
   assert.doesNotMatch(rendered.node, /```python|def createCollection|BUILDER METHODS/);
 
   assert.match(rendered.cpp, /```c\+\+\n/);
   assert.match(rendered.cpp, /\*\*REQUEST METHODS:\*\*/);
+  assert.match(rendered.cpp, /\.EnableDynamicField\(\)/);
+  assert.match(rendered.cpp, /\.AddExtraParam\(key, value\);/);
+  assert.match(rendered.cpp, /\*\*ERROR HANDLING:\*\*/);
+  assert.doesNotMatch(rendered.cpp, /\*\*EXCEPTIONS:\*\*/);
   assert.match(rendered.cpp, /status code and message/);
 
   const direct = fixture('java-create-collection.json');
@@ -263,6 +298,63 @@ test('language policies control exact sections, fences, and conditional request 
   assert.equal(validateReferenceDocument(directReference, { production: true }).valid, true);
   const directMarkdown = renderMarkdown(javaRenderer.render(directReference, { typeUrls: directContext.typeUrls }));
   assert.doesNotMatch(directMarkdown, /Request Syntax|BUILDER METHODS/);
+});
+
+test('Go request syntax is explicit Reference IR metadata and is independent from examples', () => {
+  const symbol = enrich('go', fixture('go-create-collection.json'));
+  const originalContext = context('go');
+  const changedExampleContext = {
+    ...originalContext,
+    examples: originalContext.examples.map((example) => ({
+      ...example,
+      code: 'fmt.Println("example changed without changing request syntax")',
+    })),
+  };
+  const original = goAdapter.toReferenceDocument(symbol, originalContext);
+  const changed = goAdapter.toReferenceDocument(symbol, changedExampleContext);
+  assert.equal(original.requestVariants[0].signature.display, originalContext.requestSyntax);
+  assert.equal(changed.requestVariants[0].signature.display, originalContext.requestSyntax);
+
+  const originalMarkdown = renderMarkdown(goRenderer.render(original));
+  const changedMarkdown = renderMarkdown(goRenderer.render(changed));
+  const requestSection = (value) => value.match(/## Request Syntax\{#request-syntax\}[\s\S]*?(?=\n\*\*PARAMETERS:)/)?.[0];
+  assert.equal(requestSection(changedMarkdown), requestSection(originalMarkdown));
+
+  const withoutRequestContext = { ...originalContext };
+  delete withoutRequestContext.requestSyntax;
+  const withoutRequest = goAdapter.toReferenceDocument(symbol, withoutRequestContext);
+  assert.deepEqual(withoutRequest.requestVariants, []);
+  assert.doesNotMatch(renderMarkdown(goRenderer.render(withoutRequest)), /Request Syntax/);
+});
+
+test('example fence metadata is validated and preserved with example titles', () => {
+  const nodeContext = context('node');
+  const reference = nodeAdapter.toReferenceDocument(enrich('node', fixture('node-create-collection.json')), nodeContext);
+  assert.deepEqual(reference.examples.map((example) => [example.title, example.fence]), [
+    ['JavaScript example', 'JavaScript'],
+    ['TypeScript example', 'TypeScript'],
+  ]);
+  assert.equal(validateReferenceDocument(reference, { production: true }).valid, true);
+
+  const malformed = nodeAdapter.toReferenceDocument(fixture('node-create-collection.json'), {
+    ...nodeContext,
+    examples: [{ ...nodeContext.examples[0], fence: 'bad fence' }],
+  });
+  assert.ok(validateReferenceDocument(malformed).errors.some((error) => error.code === 'INVALID_EXAMPLE_FENCE'
+    && error.path === '$.examples[0].fence'));
+});
+
+test('empty field and member descriptions do not create blank list paragraphs', () => {
+  const javaContext = context('java');
+  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), javaContext);
+  const rendered = javaRenderer.render(reference);
+  const memberList = rendered.children.find((node) => node.type === 'unorderedList'
+    && node.metadata?.role === 'member');
+  assert.ok(memberList);
+  assert.equal(memberList.items[0].children.length, 1);
+
+  const emptyParagraph = JSON.stringify(rendered).includes('"type":"paragraph","children":[{"type":"text","value":""');
+  assert.equal(emptyParagraph, false);
 });
 
 test('parameter, member, result, and error lists keep signature and description as separate logical blocks', () => {

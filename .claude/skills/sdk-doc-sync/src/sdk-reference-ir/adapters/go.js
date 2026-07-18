@@ -77,6 +77,24 @@ function toReferenceDocument(symbol, context = {}) {
     });
   }
   const signatures = [common.makeSignature(symbol.signature || '', symbol.params, evidence, { symbol, context })];
+  let requestVariants = [];
+  if (Array.isArray(context.requestVariants)) {
+    requestVariants = context.requestVariants.map((variant) => common.makeRequestVariant({
+      ...variant,
+      inputs: variant.inputs || symbol.params,
+    }, evidence, { symbol, context }));
+  } else if (context.requestSyntax) {
+    const request = typeof context.requestSyntax === 'object'
+      ? context.requestSyntax
+      : { signature: context.requestSyntax };
+    requestVariants = [common.makeRequestVariant({
+      id: request.id || 'primary',
+      title: request.title || '',
+      description: request.description || '',
+      signature: request.signature || request.display || '',
+      inputs: request.inputs || symbol.params,
+    }, evidence, { symbol, context })];
+  }
   const callableMembers = (symbol.optionMethods || []).map((member) => common.makeCallableMember(
     'option',
     member,
@@ -95,6 +113,7 @@ function toReferenceDocument(symbol, context = {}) {
     language: 'go',
     kind,
     signatures,
+    requestVariants,
     callableMembers,
     result,
     errors,

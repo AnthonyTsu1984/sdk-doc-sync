@@ -14,6 +14,7 @@ func (c *Client) CreateCollection(ctx context.Context, option CreateCollectionOp
 
 ```go
 option := milvusclient.SimpleCreateCollectionOptions("docs", 128)
+err := client.CreateCollection(ctx, option)
 ```
 
 **PARAMETERS:**
@@ -40,12 +41,14 @@ option := milvusclient.SimpleCreateCollectionOptions("docs", 128)
 
 Returns nil on success or an error on failure.
 
-**EXCEPTIONS:**
+**ERROR HANDLING:**
 
 - **error**
   The operation fails. Check the returned error for failure details.
 
 ## Example{#example}
+
+### Create a collection
 
 Creates a collection and checks the returned error.
 

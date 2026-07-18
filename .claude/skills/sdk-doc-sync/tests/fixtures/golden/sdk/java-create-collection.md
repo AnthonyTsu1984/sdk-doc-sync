@@ -42,6 +42,8 @@ Completes after the collection is created.
 
 ## Example{#example}
 
+### Create a collection
+
 Builds and submits a collection request.
 
 ```java

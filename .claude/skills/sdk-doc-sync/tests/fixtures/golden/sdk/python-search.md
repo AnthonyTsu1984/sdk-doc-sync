@@ -51,6 +51,8 @@ Returns the matching entities ordered by similarity.
 
 ## Examples
 
+### Search a collection
+
 Runs a vector search.
 
 ```python

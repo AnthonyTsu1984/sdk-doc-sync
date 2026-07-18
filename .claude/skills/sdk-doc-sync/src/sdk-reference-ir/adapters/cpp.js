@@ -66,14 +66,22 @@ function toReferenceDocument(symbol, context = {}) {
       inputs: directParams,
     }, evidence, { symbol, context })];
   }
-  const callableMembers = symbol.requestClass ? (symbol.params || []).map((member) => common.makeCallableMember(
-    'request',
-    member,
-    evidence,
-    member.fullSignature || `${member.name || ''}(${member.fullArgStr || ''})`,
-    member.argName ? [{ ...member, name: member.argName }] : [],
-    { symbol, context },
-  )) : [];
+  const callableMembers = symbol.requestClass ? (symbol.params || []).map((member) => {
+    const contextualInputs = context.memberInputs?.[member.name];
+    const signatureInputs = Array.isArray(contextualInputs)
+      ? contextualInputs
+      : Array.isArray(member.inputs)
+        ? member.inputs
+        : member.argName ? [{ ...member, name: member.argName }] : [];
+    return common.makeCallableMember(
+      'request',
+      member,
+      evidence,
+      member.fullSignature || `${member.name || ''}(${member.fullArgStr || ''})`,
+      signatureInputs,
+      { symbol, context },
+    );
+  }) : [];
   const inferredStatus = parseReturnType(symbol);
   const resultInput = callable
     ? context.result || symbol.result || (inferredStatus ? { type: inferredStatus } : null)

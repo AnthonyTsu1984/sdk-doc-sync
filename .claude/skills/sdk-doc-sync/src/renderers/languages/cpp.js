@@ -9,7 +9,8 @@ function requestSignature(document, variant) {
     `auto request = ${variant.signature.display}()`,
     ...members.map((member, index) => {
       const suffix = index === members.length - 1 ? ';' : '';
-      return `    .${member.name}(${member.signature.inputs[0]?.name || member.name})${suffix}`;
+      const args = member.signature.inputs.map((input) => input.name).join(', ');
+      return `    .${member.name}(${args})${suffix}`;
     }),
   ].join('\n');
 }
@@ -25,6 +26,6 @@ module.exports = createSdkRenderer({
   memberKind: 'request',
   membersLabel: 'REQUEST METHODS:',
   returnsLabel: 'RETURNS:',
-  errorsLabel: 'EXCEPTIONS:',
+  errorsLabel: 'ERROR HANDLING:',
   exampleHeading: 'Example{#example}',
 });

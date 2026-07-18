@@ -192,6 +192,7 @@ function makeExamples(symbol, context, language, evidence) {
     description: String(item.description || ''),
     language: item.language || language,
     code: String(item.code || ''),
+    ...(item.fence !== undefined ? { fence: item.fence } : {}),
     evidence: Array.isArray(item.evidence) && item.evidence.length > 0 ? item.evidence : evidence,
   }));
 }

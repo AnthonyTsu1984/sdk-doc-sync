@@ -72,10 +72,9 @@ function fieldDetails(field) {
 
 function renderFields(fields, context, role = 'field') {
   const items = fields.map((field) => {
-    const children = [
-      fieldHeader(field, context),
-      paragraph(sentence(field.description)),
-    ];
+    const children = [fieldHeader(field, context)];
+    const description = sentence(field.description);
+    if (description) children.push(paragraph(description));
     const details = fieldDetails(field);
     if (details) children.push(paragraph(sentence(details)));
     if (Array.isArray(field.children) && field.children.length > 0) {
@@ -87,10 +86,12 @@ function renderFields(fields, context, role = 'field') {
 }
 
 function renderMembers(members, context) {
-  return ir.unorderedList(members.map((member) => ir.listItem([
-    ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])]),
-    paragraph(sentence(member.description)),
-  ])), { metadata: { role: 'member' } });
+  return ir.unorderedList(members.map((member) => {
+    const children = [ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])])];
+    const description = sentence(member.description);
+    if (description) children.push(paragraph(description));
+    return ir.listItem(children);
+  }), { metadata: { role: 'member' } });
 }
 
 function renderErrors(errors) {
@@ -193,8 +194,12 @@ function createSdkRenderer(policy) {
     if (Array.isArray(document.examples) && document.examples.length > 0) {
       blocks.push(heading(2, frozenPolicy.exampleHeading));
       for (const example of document.examples) {
+        const baseHeading = frozenPolicy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();
+        const distinctTitle = example.title
+          && ![baseHeading, baseHeading.replace(/s$/, '')].includes(example.title.toLowerCase());
+        if (document.examples.length > 1 || distinctTitle) blocks.push(heading(3, example.title));
         if (example.description) blocks.push(paragraph(example.description));
-        blocks.push(ir.codeBlock(example.code, frozenPolicy.exampleFence));
+        blocks.push(ir.codeBlock(example.code, example.fence || frozenPolicy.exampleFence));
       }
     }
 

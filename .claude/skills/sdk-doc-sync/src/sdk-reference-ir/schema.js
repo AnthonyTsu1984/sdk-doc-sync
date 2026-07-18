@@ -101,8 +101,15 @@ function createError({ name, condition = '', description = '', evidence = [] } =
   return immutable({ name, condition, description, evidence });
 }
 
-function createExample({ title, description = '', language, code, evidence = [] } = {}) {
-  return immutable({ title, description, language, code, evidence });
+function createExample({ title, description = '', language, code, fence, evidence = [] } = {}) {
+  return immutable({
+    title,
+    description,
+    language,
+    code,
+    ...(fence !== undefined ? { fence } : {}),
+    evidence,
+  });
 }
 
 function createReferenceDocument({

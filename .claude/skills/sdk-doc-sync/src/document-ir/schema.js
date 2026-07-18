@@ -1,10 +1,26 @@
 'use strict';
 
+function deepClone(value, seen = new Map()) {
+  if (!value || typeof value !== 'object') return value;
+  if (seen.has(value)) return seen.get(value);
+  const clone = Array.isArray(value) ? [] : {};
+  seen.set(value, clone);
+  for (const [key, child] of Object.entries(value)) clone[key] = deepClone(child, seen);
+  return clone;
+}
+
+function deepFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+  return Object.freeze(value);
+}
+
 function withSource(type, fields, options = {}) {
   const node = { type, ...fields };
   if (options.sourceId !== undefined) node.sourceId = options.sourceId;
-  if (options.metadata !== undefined) node.metadata = { ...options.metadata };
-  return node;
+  if (options.metadata !== undefined) node.metadata = options.metadata;
+  return deepFreeze(deepClone(node));
 }
 
 function document(children = [], options = {}) {

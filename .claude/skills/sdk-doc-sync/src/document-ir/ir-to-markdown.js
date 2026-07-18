@@ -4,9 +4,19 @@ const { languageId, languageName } = require('./block-registry');
 const { validateDocumentIr } = require('./validate');
 
 function escapeText(value) {
-  return String(value)
+  return String(value).split('\n').map((line) => line
     .replace(/\\/g, '\\\\')
-    .replace(/([*_[\]])/g, '\\$1');
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/([*_[\]])/g, '\\$1'))
+    .join('\n');
+}
+
+function escapeBlockStarts(value) {
+  return value.split('\n').map((line) => line
+    .replace(/^(\s*)(?=(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|&gt;\s|`{3,}|~{3,}))/, '$1\\'))
+    .join('\n');
 }
 
 function safeUrl(value) {
@@ -18,16 +28,19 @@ function renderInline(node) {
     return `[${escapeText(node.title)}](${safeUrl(node.url)})`;
   }
   let value = escapeText(node.value);
-  if (node.marks.includes('inlineCode')) return `\`${String(node.value).replace(/`/g, '\\`')}\``;
+  if (node.marks.includes('inlineCode')) {
+    const runs = String(node.value).match(/`+/g) || [];
+    const delimiter = '`'.repeat(Math.max(1, ...runs.map((run) => run.length + 1)));
+    return `${delimiter}${String(node.value)}${delimiter}`;
+  }
   if (node.marks.includes('bold')) value = `**${value}**`;
   if (node.marks.includes('italic')) value = `*${value}*`;
   if (node.marks.includes('strikethrough')) value = `~~${value}~~`;
-  if (node.marks.includes('underline')) value = `<u>${value}</u>`;
   return value;
 }
 
 function renderInlines(children) {
-  return children.map(renderInline).join('');
+  return escapeBlockStarts(children.map(renderInline).join(''));
 }
 
 function fenceName(language) {
@@ -58,7 +71,7 @@ function renderTableCell(cell) {
 }
 
 function renderMedia(node) {
-  const fallback = `feishu://${node.kind}/${node.token || node.sourceId || 'unknown'}`;
+  const fallback = `#feishu-${encodeURIComponent(node.kind)}-${encodeURIComponent(node.token || node.sourceId || 'unknown')}`;
   const url = safeUrl(node.url || fallback);
   if (node.kind === 'image') return `![${escapeText(node.alt || node.name || 'Image')}](${url})`;
   const label = node.name || ({ file: 'File', iframe: 'Embedded content', board: 'Board' })[node.kind] || node.kind;
@@ -75,7 +88,11 @@ function renderBlock(node, options) {
     case 'orderedList':
       return renderList(node);
     case 'codeBlock':
-      return `\`\`\`${fenceName(node.language)}\n${node.value}\n\`\`\``;
+      {
+        const runs = node.value.match(/`+/g) || [];
+        const fence = '`'.repeat(Math.max(3, ...runs.map((run) => run.length + 1)));
+        return `${fence}${fenceName(node.language)}\n${node.value}\n${fence}`;
+      }
     case 'table': {
       if (node.rows.length === 0) return '';
       const rows = node.rows.map((row) => row.cells.map(renderTableCell));
@@ -97,7 +114,12 @@ function renderBlock(node, options) {
     case 'opaque': {
       if (!options.lossy) throw new Error('Cannot render opaque node without lossy mode');
       const blockType = node.raw?.block_type ?? node.metadata?.blockType ?? 'unknown';
-      return `<!-- Unsupported Docx block type ${blockType} (source: ${node.sourceId || 'unknown'}) -->`;
+      const commentValue = (value) => String(value)
+        .replace(/--/g, '- -')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/[\r\n]+/g, ' ');
+      return `<!-- Unsupported Docx block type ${commentValue(blockType)} (source: ${commentValue(node.sourceId || 'unknown')}) -->`;
     }
     default:
       throw new Error(`Cannot render unknown IR node type ${node.type}`);

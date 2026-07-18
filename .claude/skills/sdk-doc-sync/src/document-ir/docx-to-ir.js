@@ -3,6 +3,15 @@
 const schema = require('./schema');
 const { blockName, languageName } = require('./block-registry');
 
+class DocxToIrError extends Error {
+  constructor(code, path, message) {
+    super(`${path}: ${message}`);
+    this.name = 'DocxToIrError';
+    this.code = code;
+    this.path = path;
+  }
+}
+
 function clone(value) {
   if (Array.isArray(value)) return value.map(clone);
   if (!value || typeof value !== 'object') return value;
@@ -22,9 +31,76 @@ function docxToIr(input, { metadata } = {}) {
   const blocks = Array.isArray(input) ? input : input?.items;
   if (!Array.isArray(blocks)) throw new TypeError('docxToIr requires a raw Docx block array');
 
-  const byId = new Map(blocks.map((block) => [block.block_id, block]));
+  const byId = new Map();
+  const indexById = new Map();
+  for (let index = 0; index < blocks.length; index += 1) {
+    const id = blocks[index]?.block_id;
+    const path = `$[${index}].block_id`;
+    if (typeof id !== 'string' || id === '') throw new DocxToIrError('DOCX_GRAPH_INVALID_ID', path, 'block_id must be a non-empty string');
+    if (byId.has(id)) throw new DocxToIrError('DOCX_GRAPH_DUPLICATE_ID', path, `duplicate block_id ${id}`);
+    byId.set(id, blocks[index]);
+    indexById.set(id, index);
+  }
+
+  const edges = new Map();
+  const incoming = new Map();
+  for (const block of blocks) {
+    const index = indexById.get(block.block_id);
+    const childGroups = [];
+    if (block.children !== undefined) childGroups.push(['children', block.children]);
+    if (block.block_type === 31 && block.table?.cells !== undefined) childGroups.push(['table.cells', block.table.cells]);
+    const ids = [];
+    for (const [field, children] of childGroups) {
+      const path = `$[${index}].${field}`;
+      if (!Array.isArray(children)) throw new DocxToIrError('DOCX_GRAPH_INVALID_CHILDREN', path, `${field} must be an array`);
+      const local = new Set();
+      children.forEach((childId, childIndex) => {
+        const childPath = `${path}[${childIndex}]`;
+        if (!byId.has(childId)) throw new DocxToIrError('DOCX_GRAPH_MISSING_CHILD', childPath, `referenced child ${childId} does not exist`);
+        if (local.has(childId)) throw new DocxToIrError('DOCX_GRAPH_REPEATED_EDGE', childPath, `child ${childId} is referenced more than once by ${block.block_id}`);
+        local.add(childId);
+        const previous = incoming.get(childId);
+        if (previous && previous.parent !== block.block_id) {
+          throw new DocxToIrError('DOCX_GRAPH_MULTIPLE_PARENT', childPath, `child ${childId} is reused by ${previous.parent} and ${block.block_id}`);
+        }
+        incoming.set(childId, { parent: block.block_id, path: childPath });
+        ids.push(childId);
+      });
+    }
+    edges.set(block.block_id, ids);
+  }
+
+  const active = new Set();
+  const complete = new Set();
+  function checkCycle(id, path) {
+    if (active.has(id)) throw new DocxToIrError('DOCX_GRAPH_CYCLE', path, `cycle reaches ${id}`);
+    if (complete.has(id)) return;
+    active.add(id);
+    for (const childId of edges.get(id) || []) checkCycle(childId, `${path}.children`);
+    active.delete(id);
+    complete.add(id);
+  }
+  for (const id of byId.keys()) checkCycle(id, `$[${indexById.get(id)}]`);
+
   const visited = new Set();
   const page = blocks.find((block) => block.block_type === 1);
+  if (page) {
+    const reachable = new Set();
+    const mark = (id) => {
+      if (reachable.has(id)) return;
+      reachable.add(id);
+      for (const child of edges.get(id) || []) mark(child);
+    };
+    mark(page.block_id);
+    const unreachable = blocks.find((block) => block.block_type !== 1 && !reachable.has(block.block_id));
+    if (unreachable) {
+      throw new DocxToIrError(
+        'DOCX_GRAPH_UNREACHABLE',
+        `$[${indexById.get(unreachable.block_id)}]`,
+        `block ${unreachable.block_id} is unreachable from page ${page.block_id}`,
+      );
+    }
+  }
 
   function elementsFor(block, name = blockName(block.block_type)) {
     return block?.[name]?.elements || [];
@@ -45,7 +121,6 @@ function docxToIr(input, { metadata } = {}) {
         if (style.bold) marks.push('bold');
         if (style.italic) marks.push('italic');
         if (style.strikethrough) marks.push('strikethrough');
-        if (style.underline) marks.push('underline');
         if (style.inline_code) marks.push('inlineCode');
         result.push(schema.text(content, marks));
       } else if (element.mention_doc) {
@@ -140,12 +215,12 @@ function docxToIr(input, { metadata } = {}) {
       return schema.callout([schema.paragraph(convertElements(elementsFor(block, 'quote')), {
         metadata: { sourceBlockId: block.block_id },
       })], {
-        kind: 'quote',
+        kind: 'note',
         sourceId: block.block_id,
       });
     }
     if (block.block_type === 19 || block.block_type === 34) {
-      const kind = block.block_type === 34 ? 'quote' : 'callout';
+      const kind = block.callout?.emoji_id === 'bulb' ? 'tip' : 'note';
       const children = convertSequence(block.children || []);
       if (children.length === 0 && elementsFor(block, name).length > 0) {
         children.push(schema.paragraph(convertElements(elementsFor(block, name)), {
@@ -159,8 +234,23 @@ function docxToIr(input, { metadata } = {}) {
       });
     }
     if (block.block_type === 31) {
-      const columnCount = block.table?.property?.column_size || block.table?.column_size || 1;
+      const property = block.table?.property;
+      const hasPropertyColumn = property && Object.hasOwn(property, 'column_size');
+      const hasPropertyRow = property && Object.hasOwn(property, 'row_size');
+      const columnCount = hasPropertyColumn ? property.column_size : block.table?.column_size;
+      const rowCount = hasPropertyRow ? property.row_size : block.table?.row_size;
+      const basePath = `$[${indexById.get(block.block_id)}].table`;
+      if (!Number.isInteger(columnCount) || columnCount <= 0) {
+        throw new DocxToIrError('DOCX_TABLE_DIMENSION_INVALID', `${basePath}.${hasPropertyColumn ? 'property.' : ''}column_size`, 'column_size must be a positive integer');
+      }
+      if (rowCount !== undefined && (!Number.isInteger(rowCount) || rowCount <= 0)) {
+        throw new DocxToIrError('DOCX_TABLE_DIMENSION_INVALID', `${basePath}.${hasPropertyRow ? 'property.' : ''}row_size`, 'row_size must be a positive integer');
+      }
       const cells = block.table?.cells || [];
+      const inferredRows = rowCount === undefined ? cells.length / columnCount : rowCount;
+      if (!Number.isInteger(inferredRows) || inferredRows <= 0 || cells.length !== inferredRows * columnCount) {
+        throw new DocxToIrError('DOCX_TABLE_CELL_COUNT', `${basePath}.cells`, `expected ${rowCount === undefined ? 'a whole number of' : rowCount} rows of ${columnCount} cells, found ${cells.length}`);
+      }
       const rows = [];
       for (let offset = 0; offset < cells.length; offset += columnCount) {
         rows.push(schema.tableRow(cells.slice(offset, offset + columnCount).map(convertCell)));
@@ -219,4 +309,4 @@ function docxToIr(input, { metadata } = {}) {
   });
 }
 
-module.exports = { docxToIr };
+module.exports = { docxToIr, DocxToIrError };

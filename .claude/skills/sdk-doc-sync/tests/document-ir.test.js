@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const schema = require('../src/document-ir/schema');
 const { validateDocumentIr } = require('../src/document-ir/validate');
-const { docxToIr } = require('../src/document-ir/docx-to-ir');
+const { docxToIr, DocxToIrError } = require('../src/document-ir/docx-to-ir');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 
 const fixturePath = path.join(__dirname, 'fixtures', 'document-ir', 'sdk-method.json');
@@ -144,7 +144,7 @@ test('converts ordered lists and quote blocks into valid IR', () => {
 
   assert.deepEqual(ir.children.map((node) => node.type), ['orderedList', 'callout']);
   assert.equal(ir.children[0].items.length, 2);
-  assert.equal(ir.children[1].kind, 'quote');
+  assert.equal(ir.children[1].kind, 'note');
   assert.deepEqual(validateDocumentIr(ir), { valid: true, errors: [], warnings: [] });
   assert.match(renderMarkdown(ir), /^1\. Connect\n2\. Search\n\n> Use bounded consistency\./);
 });
@@ -212,4 +212,201 @@ test('repeated Markdown rendering is byte-stable and pure', () => {
 
   assert.equal(Buffer.compare(Buffer.from(first), Buffer.from(second)), 0);
   assert.equal(JSON.stringify(ir), before);
+});
+
+test('Docx conversion rejects malformed graphs with typed path-aware errors', () => {
+  const cases = [
+    {
+      code: 'DOCX_GRAPH_DUPLICATE_ID',
+      blocks: [
+        { block_id: 'page', block_type: 1, children: [] },
+        { block_id: 'page', block_type: 2, text: { elements: [] } },
+      ],
+    },
+    {
+      code: 'DOCX_GRAPH_MISSING_CHILD',
+      blocks: [{ block_id: 'page', block_type: 1, children: ['missing'] }],
+    },
+    {
+      code: 'DOCX_GRAPH_CYCLE',
+      blocks: [
+        { block_id: 'a', block_type: 19, children: ['b'] },
+        { block_id: 'b', block_type: 19, children: ['a'] },
+      ],
+    },
+    {
+      code: 'DOCX_GRAPH_REPEATED_EDGE',
+      blocks: [
+        { block_id: 'page', block_type: 1, children: ['child', 'child'] },
+        { block_id: 'child', block_type: 2, text: { elements: [] } },
+      ],
+    },
+    {
+      code: 'DOCX_GRAPH_MULTIPLE_PARENT',
+      blocks: [
+        { block_id: 'page', block_type: 1, children: ['one', 'two'] },
+        { block_id: 'one', block_type: 19, children: ['shared'] },
+        { block_id: 'two', block_type: 19, children: ['shared'] },
+        { block_id: 'shared', block_type: 2, text: { elements: [] } },
+      ],
+    },
+    {
+      code: 'DOCX_GRAPH_UNREACHABLE',
+      blocks: [
+        { block_id: 'page', block_type: 1, children: ['visible'] },
+        { block_id: 'visible', block_type: 2, text: { elements: [] } },
+        { block_id: 'orphan', block_type: 2, text: { elements: [] } },
+      ],
+    },
+  ];
+
+  for (const { code, blocks } of cases) {
+    assert.throws(() => docxToIr(blocks), (error) => {
+      assert.equal(error instanceof DocxToIrError, true);
+      assert.equal(error.code, code);
+      assert.match(error.path, /^\$/);
+      return true;
+    });
+  }
+});
+
+function rawTable({ columnSize, rowSize, cellCount }) {
+  const cells = Array.from({ length: cellCount }, (_, index) => `cell-${index}`);
+  const property = { column_size: columnSize };
+  if (rowSize !== undefined) property.row_size = rowSize;
+  return [
+    { block_id: 'page', block_type: 1, children: ['table'] },
+    { block_id: 'table', block_type: 31, table: { property, cells } },
+    ...cells.map((block_id) => ({ block_id, block_type: 32, children: [] })),
+  ];
+}
+
+test('Docx table conversion enforces positive dimensions and exact rectangular cell counts', () => {
+  assert.equal(docxToIr(rawTable({ columnSize: 2, cellCount: 4 })).children[0].rows.length, 2);
+  for (const columnSize of [0, -1, '2']) {
+    assert.throws(
+      () => docxToIr(rawTable({ columnSize, cellCount: 4 })),
+      (error) => error.code === 'DOCX_TABLE_DIMENSION_INVALID' && error.path.endsWith('column_size'),
+    );
+  }
+  for (const rowSize of [0, -1, '2']) {
+    assert.throws(
+      () => docxToIr(rawTable({ columnSize: 2, rowSize, cellCount: 4 })),
+      (error) => error.code === 'DOCX_TABLE_DIMENSION_INVALID' && error.path.endsWith('row_size'),
+    );
+  }
+  for (const config of [
+    { columnSize: 2, cellCount: 3 },
+    { columnSize: 2, rowSize: 2, cellCount: 3 },
+  ]) {
+    assert.throws(() => docxToIr(rawTable(config)), (error) => error.code === 'DOCX_TABLE_CELL_COUNT');
+  }
+});
+
+test('schema constructors deep-clone and recursively freeze caller-owned data', () => {
+  const children = [{ type: 'text', value: 'original', marks: [], metadata: { nested: { value: 1 } } }];
+  const metadata = { nested: { label: 'source' } };
+  const details = { url: 'https://example.test/image.png', nested: { width: 10 } };
+  const raw = { block_type: 99, nested: { value: true } };
+  const paragraph = schema.paragraph(children, { metadata });
+  const media = schema.media('image', details);
+  const opaque = schema.opaque(raw);
+
+  children[0].value = 'mutated';
+  metadata.nested.label = 'mutated';
+  details.nested.width = 99;
+  raw.nested.value = false;
+
+  assert.equal(paragraph.children[0].value, 'original');
+  assert.equal(paragraph.metadata.nested.label, 'source');
+  assert.equal(media.nested.width, 10);
+  assert.equal(opaque.raw.nested.value, true);
+  assert.equal(Object.isFrozen(paragraph.children[0].metadata.nested), true);
+  assert.equal(Object.isFrozen(media.nested), true);
+  assert.equal(Object.isFrozen(opaque.raw.nested), true);
+  assert.equal(Object.isFrozen(children[0]), false);
+  assert.equal(Object.isFrozen(metadata), false);
+});
+
+test('validation is cycle-safe and reports the cyclic object path', () => {
+  const callout = { type: 'callout', kind: 'note', children: [] };
+  callout.children.push(callout);
+  const result = validateDocumentIr({ type: 'document', children: [callout] });
+  assert.equal(result.valid, false);
+  assert.ok(result.errors.some((error) => error.code === 'IR_CYCLE' && error.path === '$.children[0].children[0]'));
+});
+
+test('validation enforces heading, mark, table, callout, media, audience, and destination policies', () => {
+  const ir = {
+    type: 'document',
+    children: [
+      { type: 'heading', level: 7, children: [] },
+      { type: 'paragraph', children: [{ type: 'text', value: 'x', marks: ['bold', 'bold', 'underline', 42] }] },
+      { type: 'table', rows: [
+        { type: 'tableRow', cells: [{ type: 'tableCell', children: [] }] },
+        { type: 'tableRow', cells: [] },
+      ] },
+      { type: 'callout', kind: 'quote', children: [] },
+      { type: 'media', kind: 'image' },
+      { type: 'media', kind: 'image', url: 'javascript:alert(1)' },
+      { type: 'audience', mode: 'include', target: 'milvus\"><script', children: [] },
+      { type: 'paragraph', children: [
+        { type: 'citation', title: 'bad', url: 'data:text/html,x' },
+        { type: 'documentReference', title: '', url: '' },
+      ] },
+    ],
+  };
+  const errors = validateDocumentIr(ir).errors;
+  for (const code of [
+    'INVALID_HEADING_LEVEL', 'INVALID_MARKS', 'INVALID_TABLE', 'INVALID_CALLOUT',
+    'INVALID_MEDIA', 'INVALID_AUDIENCE', 'INVALID_REFERENCE',
+  ]) assert.ok(errors.some((error) => error.code === code), code);
+});
+
+test('Markdown serialization neutralizes syntax injection and uses dynamic code delimiters', () => {
+  const ir = schema.document([
+    schema.paragraph([
+      schema.text('<script>\n# heading\n- item\n1. ordered\n> quote\n``` fence'),
+      schema.text('a``b', ['inlineCode']),
+    ]),
+    schema.codeBlock('before\n```\nafter', 'PlainText'),
+    schema.paragraph([
+      schema.citation('HTTP', 'https://example.test/a b'),
+      schema.citation('Mail', 'mailto:user@example.test'),
+      schema.citation('Absolute', '/docs/page'),
+      schema.citation('Relative', '../docs/page'),
+      schema.citation('Anchor', '#section'),
+    ]),
+  ]);
+  const markdown = renderMarkdown(ir);
+  assert.match(markdown, /&lt;script&gt;/);
+  for (const value of ['\\# heading', '\\- item', '\\1. ordered', '\\&gt; quote', '\\``` fence']) {
+    assert.ok(markdown.includes(value), value);
+  }
+  assert.ok(markdown.includes('```a``b```'));
+  assert.ok(markdown.includes('````plaintext\nbefore\n```\nafter\n````'));
+  assert.match(markdown, /\(mailto:user@example\.test\)/);
+  assert.match(markdown, /\(\/docs\/page\)/);
+  assert.match(markdown, /\(\.\.\/docs\/page\)/);
+  assert.match(markdown, /\(#section\)/);
+});
+
+test('Markdown validation rejects unsafe URLs and audience targets and sanitizes opaque comments', () => {
+  for (const url of [
+    'javascript:alert(1)', 'data:text/html,x', 'vbscript:msgbox(1)',
+    '//evil.example/path', ' javascript:alert(1)',
+  ]) {
+    const ir = schema.document([schema.paragraph([schema.citation('unsafe', url)])]);
+    assert.throws(() => renderMarkdown(ir), /reference URL/i);
+  }
+  assert.throws(
+    () => renderMarkdown(schema.document([schema.audienceRegion('include', 'bad\"><x', [])])),
+    /audience target/i,
+  );
+  const markdown = renderMarkdown(schema.document([
+    schema.opaque({ block_type: '-->\n<script>' }, { sourceId: 'x-->\ny' }),
+  ]), { lossy: true });
+  assert.equal((markdown.match(/-->/g) || []).length, 1);
+  assert.equal(markdown.includes('<script>'), false);
+  assert.equal(markdown.split('\n').length, 2);
 });

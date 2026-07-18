@@ -1,0 +1,234 @@
+{
+  "items": [
+    {
+      "block_id": "page",
+      "block_type": 1,
+      "children": [
+        "method-heading",
+        "description",
+        "signature",
+        "parameters-heading",
+        "parameter-collection",
+        "parameter-filter",
+        "returns-heading",
+        "returns",
+        "callout"
+      ],
+      "page": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Search method",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "method-heading",
+      "block_type": 3,
+      "parent_id": "page",
+      "heading1": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "search()",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "description",
+      "block_type": 2,
+      "parent_id": "page",
+      "text": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Searches a collection and returns ",
+              "text_element_style": {}
+            }
+          },
+          {
+            "text_run": {
+              "content": "matching entities",
+              "text_element_style": {
+                "bold": true
+              }
+            }
+          },
+          {
+            "text_run": {
+              "content": ".",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "signature",
+      "block_type": 14,
+      "parent_id": "page",
+      "code": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Status Search(const SearchRequest& request);",
+              "text_element_style": {}
+            }
+          }
+        ],
+        "style": {
+          "language": 9
+        }
+      }
+    },
+    {
+      "block_id": "parameters-heading",
+      "block_type": 4,
+      "parent_id": "page",
+      "heading2": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Parameters",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "parameter-collection",
+      "block_type": 12,
+      "parent_id": "page",
+      "children": ["parameter-collection-detail"],
+      "bullet": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "collection_name",
+              "text_element_style": {
+                "inline_code": true
+              }
+            }
+          },
+          {
+            "text_run": {
+              "content": " - target collection.",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "parameter-collection-detail",
+      "block_type": 12,
+      "parent_id": "parameter-collection",
+      "bullet": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Required and non-empty.",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "parameter-filter",
+      "block_type": 12,
+      "parent_id": "page",
+      "bullet": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "filter",
+              "text_element_style": {
+                "inline_code": true
+              }
+            }
+          },
+          {
+            "text_run": {
+              "content": " - scalar filter expression.",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "returns-heading",
+      "block_type": 4,
+      "parent_id": "page",
+      "heading2": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Returns",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "returns",
+      "block_type": 2,
+      "parent_id": "page",
+      "text": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "Returns a Status and the matched rows.",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    },
+    {
+      "block_id": "callout",
+      "block_type": 19,
+      "parent_id": "page",
+      "children": ["citation-paragraph"],
+      "callout": {
+        "emoji_id": "bulb"
+      }
+    },
+    {
+      "block_id": "citation-paragraph",
+      "block_type": 2,
+      "parent_id": "callout",
+      "text": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "See ",
+              "text_element_style": {}
+            }
+          },
+          {
+            "mention_doc": {
+              "title": "Search guide",
+              "url": "https%3A%2F%2Fexample.test%2Fsearch"
+            }
+          },
+          {
+            "text_run": {
+              "content": " for details.",
+              "text_element_style": {}
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

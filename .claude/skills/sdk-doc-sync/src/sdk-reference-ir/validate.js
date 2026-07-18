@@ -508,6 +508,10 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       if (item.parameterName !== undefined) {
         requireString(item.parameterName, `${itemPath}.parameterName`, 'HTTP auth parameter name');
       }
+      if (item.scheme !== undefined) requireString(item.scheme, `${itemPath}.scheme`, 'HTTP auth scheme');
+      if (item.bearerFormat !== undefined) {
+        requireString(item.bearerFormat, `${itemPath}.bearerFormat`, 'HTTP bearer format');
+      }
       if (item.scopes !== undefined) {
         const scopes = requireArray(item.scopes, `${itemPath}.scopes`, 'HTTP auth scopes');
         scopes?.forEach((scope, scopeIndex) => requireString(
@@ -550,6 +554,10 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         requireString(item.type, `${itemPath}.type`, 'HTTP security scheme type');
         if (typeof item.description !== 'string') {
           error(`${itemPath}.description`, 'HTTP security scheme description must be a string', 'INVALID_HTTP_SECURITY');
+        }
+        if (item.scheme !== undefined) requireString(item.scheme, `${itemPath}.scheme`, 'HTTP security scheme');
+        if (item.bearerFormat !== undefined) {
+          requireString(item.bearerFormat, `${itemPath}.bearerFormat`, 'HTTP bearer format');
         }
         const scopes = requireArray(item.scopes, `${itemPath}.scopes`, 'HTTP security scopes');
         scopes?.forEach((scope, scopeIndex) => requireString(

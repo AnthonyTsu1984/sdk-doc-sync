@@ -3,6 +3,13 @@
 const schema = require('../schema');
 
 const UNSUPPORTED_COMBINATORS = ['oneOf', 'anyOf', 'not', 'discriminator'];
+const MERGED_SCHEMA_METADATA = new WeakMap();
+const LOWER_BOUNDS = ['minimum', 'exclusiveMinimum', 'minLength', 'minItems', 'minProperties'];
+const UPPER_BOUNDS = ['maximum', 'exclusiveMaximum', 'maxLength', 'maxItems', 'maxProperties'];
+const STRUCTURAL_KEYS = new Set([
+  'type', 'description', 'enum', 'required', 'nullable', 'properties', 'items', 'allOf',
+  ...LOWER_BOUNDS, ...UPPER_BOUNDS,
+]);
 
 function escapePointer(value) {
   return String(value).replace(/~/g, '~0').replace(/\//g, '~1');
@@ -58,6 +65,17 @@ function directSchema(spec, raw, pointer, stack = []) {
   const resolved = resolveNode(spec, raw, pointer, stack);
   const value = resolved.value || {};
   assertSupportedSchema(value, resolved.pointer);
+  const mergedMetadata = MERGED_SCHEMA_METADATA.get(value);
+  if (mergedMetadata) {
+    return {
+      value,
+      pointer: resolved.pointer,
+      stack: resolved.stack,
+      propertyPointers: mergedMetadata.propertyPointers,
+      propertyEvidence: mergedMetadata.propertyEvidence,
+      evidencePointers: mergedMetadata.evidencePointers,
+    };
+  }
   const propertyPointers = new Map();
   const propertyEvidence = new Map();
   for (const name of Object.keys(value.properties || {})) {
@@ -71,6 +89,7 @@ function directSchema(spec, raw, pointer, stack = []) {
     stack: resolved.stack,
     propertyPointers,
     propertyEvidence,
+    evidencePointers: [resolved.pointer],
   };
 }
 
@@ -81,6 +100,158 @@ function schemaKind(spec, raw, pointer, stack = []) {
     return `array<${item.value.type || (item.value.properties ? 'object' : '')}>`;
   }
   return resolved.value.type || (resolved.value.properties ? 'object' : '');
+}
+
+function equalValue(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function conflict(pointer, key, message) {
+  throw new Error(`OPENAPI_ALLOF_CONFLICT at ${pointer}/${key}: ${message}`);
+}
+
+function mergeDescription(left, right) {
+  return [...new Set([left, right].filter(Boolean))].join(' ');
+}
+
+function mergeBound(result, left, right, key, mode, pointer) {
+  const leftHas = Object.hasOwn(left, key);
+  const rightHas = Object.hasOwn(right, key);
+  if (!leftHas && !rightHas) return;
+  if (!leftHas) result[key] = right[key];
+  else if (!rightHas) result[key] = left[key];
+  else if (typeof left[key] === 'number' && typeof right[key] === 'number') {
+    result[key] = mode === 'lower' ? Math.max(left[key], right[key]) : Math.min(left[key], right[key]);
+  } else if (equalValue(left[key], right[key])) result[key] = left[key];
+  else conflict(pointer, key, `incompatible values ${JSON.stringify(left[key])} and ${JSON.stringify(right[key])}`);
+}
+
+function assertPossibleRanges(value, pointer) {
+  const lowerCandidates = [
+    Object.hasOwn(value, 'minimum') ? { value: value.minimum, exclusive: false, key: 'minimum' } : null,
+    Object.hasOwn(value, 'exclusiveMinimum') && typeof value.exclusiveMinimum === 'number'
+      ? { value: value.exclusiveMinimum, exclusive: true, key: 'exclusiveMinimum' }
+      : null,
+  ].filter(Boolean);
+  const upperCandidates = [
+    Object.hasOwn(value, 'maximum') ? { value: value.maximum, exclusive: false, key: 'maximum' } : null,
+    Object.hasOwn(value, 'exclusiveMaximum') && typeof value.exclusiveMaximum === 'number'
+      ? { value: value.exclusiveMaximum, exclusive: true, key: 'exclusiveMaximum' }
+      : null,
+  ].filter(Boolean);
+  const lower = lowerCandidates.sort((a, b) => b.value - a.value || Number(b.exclusive) - Number(a.exclusive))[0];
+  const upper = upperCandidates.sort((a, b) => a.value - b.value || Number(b.exclusive) - Number(a.exclusive))[0];
+  if (lower && upper && (lower.value > upper.value || (lower.value === upper.value && (lower.exclusive || upper.exclusive)))) {
+    conflict(pointer, lower.key, `impossible range against ${upper.key}`);
+  }
+  for (const [minimumKey, maximumKey] of [
+    ['minLength', 'maxLength'], ['minItems', 'maxItems'], ['minProperties', 'maxProperties'],
+  ]) {
+    if (Object.hasOwn(value, minimumKey)
+      && Object.hasOwn(value, maximumKey)
+      && value[minimumKey] > value[maximumKey]) {
+      conflict(pointer, minimumKey, `impossible range against ${maximumKey}`);
+    }
+  }
+}
+
+function mergeResolvedSchemas(spec, left, right, pointer, stack) {
+  const result = {};
+  const leftType = left.value.type || (left.value.properties ? 'object' : left.value.items ? 'array' : '');
+  const rightType = right.value.type || (right.value.properties ? 'object' : right.value.items ? 'array' : '');
+  if (leftType && rightType && leftType !== rightType) {
+    conflict(pointer, 'type', `incompatible values ${leftType} and ${rightType}`);
+  }
+  if (leftType || rightType) result.type = leftType || rightType;
+  const description = mergeDescription(left.value.description, right.value.description);
+  if (description) result.description = description;
+
+  if (Array.isArray(left.value.enum) || Array.isArray(right.value.enum)) {
+    if (!Array.isArray(left.value.enum)) result.enum = [...right.value.enum];
+    else if (!Array.isArray(right.value.enum)) result.enum = [...left.value.enum];
+    else {
+      result.enum = left.value.enum.filter((candidate) => right.value.enum.some((item) => equalValue(item, candidate)));
+      if (result.enum.length === 0) conflict(pointer, 'enum', 'intersection is empty');
+    }
+  }
+
+  const leftNullable = Object.hasOwn(left.value, 'nullable');
+  const rightNullable = Object.hasOwn(right.value, 'nullable');
+  if (leftNullable || rightNullable) {
+    result.nullable = leftNullable && rightNullable
+      ? left.value.nullable === true && right.value.nullable === true
+      : (leftNullable ? left.value.nullable : right.value.nullable);
+  }
+
+  for (const key of LOWER_BOUNDS) mergeBound(result, left.value, right.value, key, 'lower', pointer);
+  for (const key of UPPER_BOUNDS) mergeBound(result, left.value, right.value, key, 'upper', pointer);
+
+  const required = new Set([...(left.value.required || []), ...(right.value.required || [])]);
+  if (required.size > 0) result.required = [...required];
+
+  const propertyPointers = new Map();
+  const propertyEvidence = new Map();
+  const propertyNames = [...new Set([
+    ...Object.keys(left.value.properties || {}),
+    ...Object.keys(right.value.properties || {}),
+  ])];
+  if (propertyNames.length > 0) result.properties = {};
+  for (const name of propertyNames) {
+    const leftProperty = left.value.properties?.[name];
+    const rightProperty = right.value.properties?.[name];
+    const leftPointer = left.propertyPointers.get(name) || `${left.pointer}/properties/${escapePointer(name)}`;
+    const rightPointer = right.propertyPointers.get(name) || `${right.pointer}/properties/${escapePointer(name)}`;
+    if (leftProperty !== undefined && rightProperty !== undefined) {
+      const merged = mergeResolvedSchemas(
+        spec,
+        resolveSchema(spec, leftProperty, leftPointer, left.stack),
+        resolveSchema(spec, rightProperty, rightPointer, right.stack),
+        `${pointer}/properties/${escapePointer(name)}`,
+        stack,
+      );
+      result.properties[name] = merged.value;
+      propertyPointers.set(name, leftPointer);
+      propertyEvidence.set(name, merged.evidencePointers);
+    } else if (leftProperty !== undefined) {
+      result.properties[name] = leftProperty;
+      propertyPointers.set(name, leftPointer);
+      propertyEvidence.set(name, left.propertyEvidence.get(name) || [leftPointer]);
+    } else {
+      result.properties[name] = rightProperty;
+      propertyPointers.set(name, rightPointer);
+      propertyEvidence.set(name, right.propertyEvidence.get(name) || [rightPointer]);
+    }
+  }
+
+  if (left.value.items !== undefined && right.value.items !== undefined) {
+    const itemPointer = `${pointer}/items`;
+    const mergedItems = mergeResolvedSchemas(
+      spec,
+      resolveSchema(spec, left.value.items, `${left.pointer}/items`, left.stack),
+      resolveSchema(spec, right.value.items, `${right.pointer}/items`, right.stack),
+      itemPointer,
+      stack,
+    );
+    result.items = mergedItems.value;
+  } else if (left.value.items !== undefined) result.items = left.value.items;
+  else if (right.value.items !== undefined) result.items = right.value.items;
+
+  const keys = new Set([...Object.keys(left.value), ...Object.keys(right.value)]);
+  for (const key of keys) {
+    if (STRUCTURAL_KEYS.has(key)) continue;
+    const leftHas = Object.hasOwn(left.value, key);
+    const rightHas = Object.hasOwn(right.value, key);
+    if (!leftHas) result[key] = right.value[key];
+    else if (!rightHas || equalValue(left.value[key], right.value[key])) result[key] = left.value[key];
+    else conflict(pointer, key, `incompatible values ${JSON.stringify(left.value[key])} and ${JSON.stringify(right.value[key])}`);
+  }
+  assertPossibleRanges(result, pointer);
+  const evidencePointers = [...new Set([
+    ...(left.evidencePointers || [left.pointer]),
+    ...(right.evidencePointers || [right.pointer]),
+  ])];
+  MERGED_SCHEMA_METADATA.set(result, { propertyPointers, propertyEvidence, evidencePointers });
+  return { value: result, pointer, stack, propertyPointers, propertyEvidence, evidencePointers };
 }
 
 function mergeAllOf(spec, base, pointer, stack) {
@@ -94,48 +265,22 @@ function mergeAllOf(spec, base, pointer, stack) {
     parts.push(resolveSchema(spec, part, `${base.pointer}/allOf/${index}`, stack));
   });
 
-  const merged = { type: '', description: '', required: [], properties: {} };
-  const required = new Set();
-  const descriptions = [];
-  const propertyPointers = new Map();
-  const propertyEvidence = new Map();
-  for (const part of parts) {
-    const partType = part.value.type || (part.value.properties ? 'object' : '');
-    if (partType && merged.type && partType !== merged.type) {
-      throw new Error(`OPENAPI_ALLOF_CONFLICT at ${pointer}: incompatible types ${merged.type} and ${partType}`);
-    }
-    if (partType) merged.type = partType;
-    if (part.value.description && !descriptions.includes(part.value.description)) descriptions.push(part.value.description);
-    for (const name of part.value.required || []) required.add(name);
-    for (const [name, property] of Object.entries(part.value.properties || {})) {
-      const propertyPointer = part.propertyPointers.get(name) || `${part.pointer}/properties/${escapePointer(name)}`;
-      const sources = part.propertyEvidence.get(name) || [propertyPointer];
-      if (Object.hasOwn(merged.properties, name)) {
-        const previousPointer = propertyPointers.get(name);
-        const previousKind = schemaKind(spec, merged.properties[name], previousPointer, stack);
-        const nextKind = schemaKind(spec, property, propertyPointer, part.stack);
-        if (previousKind && nextKind && previousKind !== nextKind) {
-          throw new Error(`OPENAPI_ALLOF_CONFLICT at ${pointer}/properties/${escapePointer(name)}: incompatible property types ${previousKind} and ${nextKind}`);
-        }
-        const previous = merged.properties[name];
-        const combinedDescriptions = [...new Set([previous.description, property.description].filter(Boolean))];
-        merged.properties[name] = {
-          ...previous,
-          ...(Object.keys(previous).length === 0 ? property : {}),
-          ...(combinedDescriptions.length > 0 ? { description: combinedDescriptions.join(' ') } : {}),
-        };
-        propertyEvidence.set(name, [...(propertyEvidence.get(name) || []), ...sources]);
-      } else {
-        merged.properties[name] = property;
-        propertyPointers.set(name, propertyPointer);
-        propertyEvidence.set(name, [...sources]);
-      }
-    }
+  if (parts.length === 0) return base;
+  let merged = parts[0];
+  for (const part of parts.slice(1)) merged = mergeResolvedSchemas(spec, merged, part, pointer, stack);
+  if (base.value.description) {
+    const value = {
+      ...merged.value,
+      description: mergeDescription(base.value.description, merged.value.description),
+    };
+    MERGED_SCHEMA_METADATA.set(value, {
+      propertyPointers: merged.propertyPointers,
+      propertyEvidence: merged.propertyEvidence,
+      evidencePointers: merged.evidencePointers,
+    });
+    merged = { ...merged, value };
   }
-  merged.required = [...required];
-  merged.description = [...new Set([base.value.description, ...descriptions].filter(Boolean))].join(' ');
-  if (!merged.type && Object.keys(merged.properties).length > 0) merged.type = 'object';
-  return { value: merged, pointer: base.pointer, stack, propertyPointers, propertyEvidence };
+  return merged;
 }
 
 function resolveSchema(spec, raw, pointer, stack = []) {
@@ -163,7 +308,14 @@ function normalizeField(
   const constraints = [];
   if (value.format) constraints.push(`format: ${value.format}`);
   if (value.nullable === true) constraints.push('nullable');
+  if (value.nullable === false) constraints.push('non-nullable');
   if (Array.isArray(value.enum) && value.enum.length > 0) constraints.push(`enum: ${value.enum.join(', ')}`);
+  for (const key of [
+    'const', 'pattern', 'minimum', 'exclusiveMinimum', 'maximum', 'exclusiveMaximum',
+    'minLength', 'maxLength', 'minItems', 'maxItems', 'minProperties', 'maxProperties',
+  ]) {
+    if (Object.hasOwn(value, key)) constraints.push(`${key}: ${value[key]}`);
+  }
   const children = [];
   if (value.type === 'array' && value.items) {
     const item = resolveSchema(spec, value.items, `${resolved.pointer}/items`, resolved.stack);
@@ -207,7 +359,7 @@ function normalizeField(
     constraints,
     children,
     appliesWhen: null,
-    evidence: evidenceMany(evidencePointers, context),
+    evidence: evidenceMany(resolved.evidencePointers || evidencePointers, context),
   });
 }
 
@@ -335,6 +487,8 @@ function securityDescriptor(spec, name, scopes, context) {
   return {
     name,
     type: String(scheme.type || ''),
+    scheme: scheme.scheme,
+    bearerFormat: scheme.bearerFormat,
     in: scheme.in,
     parameterName: scheme.name,
     description: String(scheme.description || ''),

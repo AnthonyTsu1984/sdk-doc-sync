@@ -259,6 +259,100 @@ test('OpenAPI allOf composes local object schemas and unsupported combinators fa
   );
 });
 
+test('OpenAPI allOf recursively intersects compatible constraints without losing evidence', () => {
+  const spec = jsonFixture('openapi-create-collection.json');
+  spec.components.schemas.CreateCollectionRequest = {
+    type: 'object',
+    required: ['mode'],
+    properties: {
+      mode: {
+        allOf: [
+          {
+            type: 'string',
+            enum: ['fast', 'safe'],
+            default: 'safe',
+            nullable: true,
+            description: 'Mode selected by the caller.',
+          },
+          {
+            type: 'string',
+            enum: ['safe', 'slow'],
+            default: 'safe',
+            nullable: false,
+            format: 'uuid',
+            description: 'Must use the UUID representation.',
+          },
+        ],
+      },
+      profile: {
+        allOf: [
+          {
+            type: 'object',
+            required: ['left'],
+            properties: {
+              left: { type: 'string' },
+              shared: { type: 'string', minLength: 2, maxLength: 12 },
+            },
+          },
+          {
+            type: 'object',
+            required: ['right'],
+            properties: {
+              right: { type: 'integer' },
+              shared: { type: 'string', minLength: 3, maxLength: 8 },
+            },
+          },
+        ],
+      },
+      tags: {
+        allOf: [
+          { type: 'array', minItems: 1, items: { type: 'object', properties: { label: { type: 'string' } } } },
+          { type: 'array', maxItems: 4, items: { type: 'object', properties: { code: { type: 'integer' } } } },
+        ],
+      },
+    },
+  };
+
+  const reference = openapiAdapter.toReferenceDocument(restInput(spec), restContext());
+  const fields = Object.fromEntries(reference.http.request.body.map((field) => [field.name, field]));
+  assert.equal(fields.mode.defaultValue, 'safe');
+  assert.equal(fields.mode.description, 'Mode selected by the caller. Must use the UUID representation.');
+  assert.deepEqual(fields.mode.constraints, ['format: uuid', 'non-nullable', 'enum: safe']);
+  assert.equal(fields.mode.evidence.length, 2);
+  assert.deepEqual(fields.profile.children.map((field) => [field.name, field.required]), [
+    ['left', true],
+    ['shared', false],
+    ['right', true],
+  ]);
+  const shared = fields.profile.children.find((field) => field.name === 'shared');
+  assert.ok(shared.constraints.includes('minLength: 3'));
+  assert.ok(shared.constraints.includes('maxLength: 8'));
+  assert.equal(shared.evidence.length, 2);
+  assert.deepEqual(fields.tags.children.map((field) => field.name), ['label', 'code']);
+  assert.ok(fields.tags.constraints.includes('minItems: 1'));
+  assert.ok(fields.tags.constraints.includes('maxItems: 4'));
+});
+
+test('OpenAPI allOf rejects incompatible scalar, enum, and range constraints with exact keys', () => {
+  const cases = [
+    ['format', { type: 'string', format: 'uuid' }, { type: 'string', format: 'email' }],
+    ['default', { type: 'string', default: 'a' }, { type: 'string', default: 'b' }],
+    ['enum', { type: 'string', enum: ['a'] }, { type: 'string', enum: ['b'] }],
+    ['minimum', { type: 'integer', minimum: 10 }, { type: 'integer', maximum: 5 }],
+  ];
+  for (const [key, left, right] of cases) {
+    const spec = jsonFixture('openapi-create-collection.json');
+    spec.components.schemas.CreateCollectionRequest = {
+      type: 'object',
+      properties: { value: { allOf: [left, right] } },
+    };
+    assert.throws(
+      () => openapiAdapter.toReferenceDocument(restInput(spec), restContext()),
+      new RegExp(`OPENAPI_ALLOF_CONFLICT.*value.*${key}`, 'i'),
+    );
+  }
+});
+
 test('OpenAPI recursive schemas fail explicitly instead of silently losing fields', () => {
   const spec = jsonFixture('openapi-create-collection.json');
   spec.components.schemas.CreateCollectionRequest = {
@@ -278,9 +372,15 @@ test('OpenAPI security preserves OR alternatives, AND schemes, OAuth scopes, and
     description: 'OAuth access token.',
     flows: { clientCredentials: { tokenUrl: 'https://example.test/token', scopes: { 'collections:write': 'Create collections.' } } },
   };
+  spec.components.securitySchemes.BearerAuth = {
+    type: 'http',
+    scheme: 'bearer',
+    bearerFormat: 'JWT',
+    description: 'Standard access token.',
+  };
   spec.paths['/v2/vectordb/collections'].post.security = [
     { ApiKeyAuth: [], OAuth: ['collections:write'] },
-    { OAuth: ['collections:read'] },
+    { OAuth: ['collections:read'], BearerAuth: [] },
     {},
   ];
   const reference = openapiAdapter.toReferenceDocument(restInput(spec), restContext());
@@ -290,6 +390,9 @@ test('OpenAPI security preserves OR alternatives, AND schemes, OAuth scopes, and
     ['OAuth', ['collections:write']],
   ]);
   assert.deepEqual(reference.http.security[1].schemes[0].scopes, ['collections:read']);
+  assert.equal(reference.http.security[1].schemes[1].type, 'http');
+  assert.equal(reference.http.security[1].schemes[1].scheme, 'bearer');
+  assert.equal(reference.http.security[1].schemes[1].bearerFormat, 'JWT');
   assert.equal(reference.http.security[2].anonymous, true);
   assert.equal(validateReferenceDocument(reference, { production: true }).valid, true);
 
@@ -297,6 +400,8 @@ test('OpenAPI security preserves OR alternatives, AND schemes, OAuth scopes, and
   assert.match(markdown, /Use one of:/);
   assert.match(markdown, /All of:/);
   assert.match(markdown, /Scopes: collections:write/);
+  assert.match(markdown, /scheme: bearer/);
+  assert.match(markdown, /bearer format: JWT/);
   assert.match(markdown, /Anonymous access/);
 });
 

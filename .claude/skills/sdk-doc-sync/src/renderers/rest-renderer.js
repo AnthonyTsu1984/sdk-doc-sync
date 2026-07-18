@@ -26,6 +26,8 @@ function authFields(auth) {
     constraints: [
       ...(item.in ? [`in: ${item.in}`] : []),
       ...(item.parameterName ? [`name: ${item.parameterName}`] : []),
+      ...(item.scheme ? [`scheme: ${item.scheme}`] : []),
+      ...(item.bearerFormat ? [`bearer format: ${item.bearerFormat}`] : []),
       ...(item.scopes?.length ? [`Scopes: ${item.scopes.join(', ')}`] : []),
     ],
     children: [],

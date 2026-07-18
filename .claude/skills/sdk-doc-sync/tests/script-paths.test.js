@@ -30,6 +30,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/sdk-doc-sync/tests/scanner-adapters.test.js',
     '.claude/skills/sdk-doc-sync/tests/script-paths.test.js',
     '.claude/skills/sdk-doc-sync/tests/sdk-reference-ir.test.js',
+    '.claude/skills/sdk-doc-sync/tests/sdk-renderers.test.js',
   ]);
 });
 

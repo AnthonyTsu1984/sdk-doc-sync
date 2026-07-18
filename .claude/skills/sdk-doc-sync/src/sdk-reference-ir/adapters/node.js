@@ -37,6 +37,7 @@ function toReferenceDocument(symbol, context = {}) {
     }, evidence, { symbol, context })];
   }
   const result = callable ? common.makeResult(symbol.result, evidence, { symbol, context }) : null;
+  const errors = callable ? common.makeErrors(context.exceptions || symbol.exceptions, evidence) : [];
   return common.buildReferenceDocument({
     symbol,
     context,
@@ -46,6 +47,7 @@ function toReferenceDocument(symbol, context = {}) {
     requestVariants,
     callableMembers: [],
     result,
+    errors,
   });
 }
 

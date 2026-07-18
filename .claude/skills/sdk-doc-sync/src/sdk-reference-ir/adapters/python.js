@@ -27,8 +27,8 @@ function toReferenceDocument(symbol, context = {}) {
     signature: symbol.signature || '',
     inputs: symbol.params,
   }, evidence, { symbol, context })] : [];
-  const result = callable && symbol.returnType
-    ? common.makeResult({ type: symbol.returnType }, evidence, { symbol, context })
+  const result = callable && (context.result || symbol.result || symbol.returnType)
+    ? common.makeResult(context.result || symbol.result || { type: symbol.returnType }, evidence, { symbol, context })
     : null;
   const errors = callable ? common.makeErrors(context.exceptions || symbol.exceptions, evidence) : [];
   const notes = [...(Array.isArray(context.notes) ? context.notes : [])];

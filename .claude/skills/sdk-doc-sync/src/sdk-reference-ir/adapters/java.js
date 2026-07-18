@@ -53,9 +53,14 @@ function toReferenceDocument(symbol, context = {}) {
       }, evidence, display, [input], { symbol, context: effectiveContext }));
     }
   }
-  const result = symbol.returnType && symbol.returnType !== 'void'
-    ? common.makeResult({ type: symbol.returnType }, evidence, { symbol, context: effectiveContext })
+  const result = effectiveContext.result || symbol.result || (symbol.returnType && symbol.returnType !== 'void')
+    ? common.makeResult(
+      effectiveContext.result || symbol.result || { type: symbol.returnType },
+      evidence,
+      { symbol, context: effectiveContext },
+    )
     : null;
+  const errors = common.makeErrors(effectiveContext.exceptions || symbol.exceptions, evidence);
   return common.buildReferenceDocument({
     symbol,
     context: effectiveContext,
@@ -64,6 +69,7 @@ function toReferenceDocument(symbol, context = {}) {
     requestVariants,
     callableMembers,
     result,
+    errors,
   });
 }
 

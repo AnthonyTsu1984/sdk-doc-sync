@@ -85,9 +85,10 @@ function toReferenceDocument(symbol, context = {}) {
     [],
     { symbol, context },
   ));
-  const result = symbol.returnType
-    ? common.makeResult({ type: symbol.returnType }, evidence, { symbol, context })
+  const result = context.result || symbol.result || symbol.returnType
+    ? common.makeResult(context.result || symbol.result || { type: symbol.returnType }, evidence, { symbol, context })
     : null;
+  const errors = common.makeErrors(context.exceptions || symbol.exceptions, evidence);
   return common.buildReferenceDocument({
     symbol,
     context,
@@ -96,6 +97,7 @@ function toReferenceDocument(symbol, context = {}) {
     signatures,
     callableMembers,
     result,
+    errors,
   });
 }
 

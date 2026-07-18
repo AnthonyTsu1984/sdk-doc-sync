@@ -79,6 +79,7 @@ function toReferenceDocument(symbol, context = {}) {
     ? context.result || symbol.result || (inferredStatus ? { type: inferredStatus } : null)
     : null;
   const result = common.makeResult(resultInput, evidence, { symbol, context });
+  const errors = common.makeErrors(context.exceptions || symbol.exceptions, evidence);
   return common.buildReferenceDocument({
     symbol,
     context,
@@ -88,6 +89,7 @@ function toReferenceDocument(symbol, context = {}) {
     requestVariants,
     callableMembers,
     result,
+    errors,
   });
 }
 

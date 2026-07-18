@@ -24,3 +24,22 @@ test('package.json test scripts point to existing files', () => {
     assert.equal(fs.existsSync(target), true, `Missing script target for ${scriptName}: ${target}`);
   }
 });
+
+test('default npm test uses the complete repository test runner', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.equal(pkg.scripts.test, 'node scripts/run-tests.js');
+
+  const runnerPath = path.join(repoRoot, 'scripts', 'run-tests.js');
+  assert.equal(fs.existsSync(runnerPath), true, `Missing aggregate runner: ${runnerPath}`);
+  const runner = fs.readFileSync(runnerPath, 'utf8');
+  for (const required of [
+    'sdk-doc-sync',
+    'test:skills',
+    'test:patch-code-blocks',
+    'test:verifier',
+    'test:agent-team',
+  ]) {
+    assert.match(runner, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});

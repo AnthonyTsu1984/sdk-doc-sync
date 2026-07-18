@@ -7,13 +7,16 @@
     "lib": "lib"
   },
   "scripts": {
-    "test": "node .claude/skills/sdk-doc-sync/tests/run-all.js",
+    "test": "node scripts/run-tests.js",
     "test:unit": "node .claude/skills/sdk-doc-sync/tests/run-all.js --unit",
     "test:offline": "node .claude/skills/sdk-doc-sync/tests/run-all.js --offline",
     "test:integration": "node .claude/skills/sdk-doc-sync/tests/run-all.js --integration",
     "test:all": "node .claude/skills/sdk-doc-sync/tests/run-all.js --all",
     "test:list": "node .claude/skills/sdk-doc-sync/tests/run-all.js --list",
     "test:agent-team": "node --test .claude/agent-team/tests/*.test.js",
+    "test:skills": "node --test tests/skills/*.test.js",
+    "validate:skills": "node scripts/validate-skills.js",
+    "test:verifier": "node .claude/skills/feishu-code-verify/scripts/verify-feishu-doc-code.js --self-test",
     "doc-agent:scan": "node .claude/agent-team/bin/doc-agent-scan.js",
     "doc-agent:approval": "node .claude/agent-team/bin/doc-agent-approval-consumer.js",
     "doc-agent:webhook": "node .claude/agent-team/bin/doc-agent-webhook-consumer.js",

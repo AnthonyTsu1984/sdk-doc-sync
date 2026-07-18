@@ -166,7 +166,7 @@ class SdkDocSync {
         // Phase 3: DIFF
         this.onProgress('DIFF', 'Computing diff between source and KB...');
         this._applyReleaseScopeCategoryMap();
-        result.diff = this.diffEngine.diff(result.scanned, result.indexed);
+        result.diff = this._applyReleaseScopeDiffActions(this.diffEngine.diff(result.scanned, result.indexed));
         if (this.changedOnly) {
             result.diff = result.diff.filter((action) => action.type !== 'SKIP');
         }
@@ -295,6 +295,22 @@ class SdkDocSync {
         this.diffEngine._categoryMapLower = Object.fromEntries(
             Object.entries(this.diffEngine.categoryMap).map(([key, value]) => [key.toLowerCase(), value]),
         );
+    }
+
+    _applyReleaseScopeDiffActions(actions) {
+        if (!this.releaseScope) return actions;
+        const scopedBySlug = new Map(this.releaseScope.actions.map((action) => [action.canonicalSlug, action]));
+        return actions.map((action) => {
+            const scoped = scopedBySlug.get(action.slug);
+            if (!scoped) return action;
+            return {
+                ...action,
+                type: scoped.type,
+                stableId: scoped.stableId,
+                reason: scoped.reason || action.reason,
+                releaseScopeAction: scoped,
+            };
+        });
     }
 
     async _planningContextFor(action, index, result) {

@@ -48,13 +48,18 @@ function materializeSnapshot({
   if (roots.length === 0) throw new Error('publicRoots or sdkDir is required to scan release tag snapshots');
 
   const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), `sdk-release-scout-${ref.replace(/[^A-Za-z0-9_.-]/g, '-')}-`));
-  const output = runGit(['ls-tree', '-r', '--name-only', ref, '--', ...roots], { cwd: repoDir });
-  const files = output.split('\n').map((line) => line.trim()).filter(Boolean);
-  for (const file of files) {
-    const content = runGit(['show', `${ref}:${file}`], { cwd: repoDir });
-    const destination = path.join(snapshotRoot, file);
-    fs.mkdirSync(path.dirname(destination), { recursive: true });
-    fs.writeFileSync(destination, content, 'utf8');
+  try {
+    const output = runGit(['ls-tree', '-r', '--name-only', ref, '--', ...roots], { cwd: repoDir });
+    const files = output.split('\n').map((line) => line.trim()).filter(Boolean);
+    for (const file of files) {
+      const content = runGit(['show', `${ref}:${file}`], { cwd: repoDir });
+      const destination = path.join(snapshotRoot, file);
+      fs.mkdirSync(path.dirname(destination), { recursive: true });
+      fs.writeFileSync(destination, content, 'utf8');
+    }
+  } catch (error) {
+    fs.rmSync(snapshotRoot, { recursive: true, force: true });
+    throw error;
   }
 
   return {

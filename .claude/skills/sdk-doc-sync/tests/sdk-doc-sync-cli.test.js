@@ -521,7 +521,13 @@ test('schema-first CLI scopes indexed docs for removed release symbols', async (
   });
 
   assert.deepEqual(result.indexed.map((doc) => doc.metadata.slug), ['FieldOp']);
-  assert.deepEqual(result.diff.map((action) => [action.type, action.slug]), [['ORPHAN', 'FieldOp']]);
+  assert.deepEqual(result.diff.map((action) => [action.type, action.slug, action.stableId]), [
+    ['DEPRECATE', 'FieldOp', 'python:Vector:FieldOp'],
+  ]);
+  assert.equal(result.plans[0].action, 'DEPRECATE');
+  assert.deepEqual(result.plans[0].postconditions, [
+    { type: 'TARGET_METADATA', version: 'v2.6.x', state: 'DEPRECATED' },
+  ]);
 });
 
 test('real CLI scanner factory supports Node schema-first dry-run with a reference context file', async () => {

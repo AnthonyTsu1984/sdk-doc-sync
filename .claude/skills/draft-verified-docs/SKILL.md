@@ -1,6 +1,6 @@
 ---
 name: draft-verified-docs
-description: Draft technical documentation from supplied references and publish or patch it on a specified Feishu/Lark doc page. Use when the user provides Feishu docs, wiki/doc tokens, external URLs, local Markdown, product notes, issue links, or mixed references and wants a Milvus or Zilliz technical doc drafted after verifying claims against the actual Milvus, SDK, Zilliz Cloud, or Zilliz CLI source repos, including service/business logic in Milvus or Zilliz Cloud implementations. Also use when asked to list unresolved verification items before or while drafting docs.
+description: Use when drafting or substantially revising Milvus or Zilliz technical documentation from Feishu pages, external URLs, local Markdown, product notes, issues, or mixed references, with claims verified against source repositories and implementation logic before publishing or patching a target Feishu/Lark page. Do not use for a verification-only pass over existing code snippets or for release-wide SDK symbol synchronization.
 ---
 
 # Draft Verified Docs
@@ -44,6 +44,7 @@ For concrete repo paths, reusable commands, and report format, read [references/
    - Use `.claude/skills/sdk-doc-sync/scripts/feishu-doc.js patch <target-doc-id> <draft.md> --strategy smart|replace|append`.
    - If the target page cannot be patched by the Node helper or the user asks for `lark-cli`, use the Feishu/Lark CLI workflow in [references/workflow.md](references/workflow.md#feishulark-cli-patching).
    - Use `--dry-run` before the first live patch when the target already contains content or when the requested edit scope is ambiguous.
+   - Show the exact target, patch strategy, and dry-run changes, then obtain explicit approval before any live write.
    - After patching, refetch/export the target page and verify that headings, code blocks, tables/lists, and the unresolved-verification section rendered as intended.
 
 ## Dependency Reuse

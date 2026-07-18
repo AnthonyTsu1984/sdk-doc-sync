@@ -1,6 +1,6 @@
 ---
 name: localization-docs
-description: Manage Zilliz documentation localization across paired Feishu/Lark wiki roots and bitables. Use when asked to align English and localized documentation tables, diff source and target docs, create localized wiki docs, update localized content, preserve or recreate images, boards, Figma embeds, Supademo insertions, or synchronize Feishu bitable metadata for Zilliz docs.
+description: Use when aligning paired source and localized Zilliz documentation across Feishu/Lark wiki roots and bitables, including record diffs, localized document creation or updates, metadata synchronization, parent mapping, and preservation of images, boards, Figma embeds, sheets, or Supademo blocks. Do not use for same-language SDK release synchronization.
 ---
 
 # Localization Docs
@@ -23,12 +23,14 @@ Before live writes, always produce a dry-run summary and get explicit approval f
 
 ## Preferred Implementation
 
-Reuse the existing SDK sync library rather than writing one-off Feishu API code. Important: the current translator CLI parses base tokens but not table IDs, so it is not sufficient for this multi-table localization workflow until it is patched or wrapped with table-aware readers.
+Reuse the existing SDK sync library rather than writing one-off Feishu API code. The translator CLI supports table-aware reads and writes through `--source-table` and `--target-table`; always provide both options for these multi-table bases.
 
 ```bash
 npm run translate -- \
   --source-bitable Ac7xbs2k1ad7bjsCXr0ccHe9nMh \
   --target-bitable I6YUb1M0JajHrqsJGcLcZNh7neP \
+  --source-table tblWv7PjNDsexddH \
+  --target-table tblYpqCgevikMomb \
   --source-root OUWXw5c4gia34ZkQUcEcMFbWn6s \
   --target-root XyeFwdx6kiK9A6kq3yIcLNdEnDd \
   --source-lang en \
@@ -37,7 +39,7 @@ npm run translate -- \
   --dry-run
 ```
 
-Use the command only for smoke testing the default table behavior. For real localization, run once per mapped table pair by instantiating `BitableReader({ baseToken, tableId })` for both source and target, or patch `.claude/skills/sdk-doc-sync/bin/feishu-doc-translator.js` and `.claude/skills/sdk-doc-sync/src/feishu-doc-translator/index.js` to expose `--source-table` and `--target-table`. Use `--action new` or `--action update` only after reviewing the dry-run output. Add `--translator claude`, `--translator feishu`, `--translator deepl`, or `--translator ollama` according to the available credentials and quality requirements.
+Run once per mapped table pair using the canonical table IDs in [references/zilliz-localization.md](references/zilliz-localization.md). Use `--action new` or `--action update` only after reviewing the dry-run output and obtaining explicit approval. Add `--translator claude`, `--translator feishu`, `--translator deepl`, or `--translator ollama` according to the available credentials and quality requirements.
 
 ## Metadata Rules
 

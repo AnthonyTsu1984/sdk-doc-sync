@@ -2,21 +2,14 @@
 
 Use this file when aligning the Global `Development` table to the Chinese `开发指南` table.
 
+For historical counts and documents created during the 2026-07-03 pass, see [development-snapshot-2026-07-03.md](development-snapshot-2026-07-03.md). Recompute current state before every new run.
+
 ## Table Pair
 
 | Role | Base token | Table ID | Wiki root |
 |---|---|---|---|
 | Global source | `Ac7xbs2k1ad7bjsCXr0ccHe9nMh` | `tblWv7PjNDsexddH` | `OUWXw5c4gia34ZkQUcEcMFbWn6s` |
 | Chinese target | `I6YUb1M0JajHrqsJGcLcZNh7neP` | `tblYpqCgevikMomb` | `XyeFwdx6kiK9A6kq3yIcLNdEnDd` |
-
-## Status Snapshot
-
-Last full metadata pass:
-
-- Chinese table total: `178` records.
-- Full-table verification after fill: `0` Chinese records with missing required metadata.
-- Updated fields only: `Slug`, `Labels`, `Placement Type`, `Targets`, `Keywords`, `Progress`, `Notebook`, `Beta`.
-- No document links or wiki content were changed during the metadata fill.
 
 ## Required Metadata
 
@@ -66,13 +59,6 @@ Chinese-specific valid equivalents:
 | `硅基流动 Ranker` | `siliconflow-model-ranker` | Chinese SaaS model-ranker equivalent. |
 | `阿里云对象存储` | `integrate-with-alibaba-cloud-oss` | Chinese SaaS storage integration. |
 | `Amazon S3` | `integrate-with-amazon-s3-cn` | Chinese SaaS storage integration. |
-
-## Created Localized Docs
-
-| Global title | Chinese title | Chinese wiki URL | Target slug |
-|---|---|---|---|
-| `Connect to Serving Clusters` | `连接到 Serving 集群` | `https://zilliverse.feishu.cn/wiki/BPy2wUkRkiVfDjkdIB7cKiYSnud` | `connect-to-serving-cluster` |
-| `Connect for On-Demand Search` | `连接按需搜索` | `https://zilliverse.feishu.cn/wiki/Mj2bw4KFYikkOJkLCOtcDQn0nph` | `connect-for-on-demand-search` |
 
 ## Title Overrides
 

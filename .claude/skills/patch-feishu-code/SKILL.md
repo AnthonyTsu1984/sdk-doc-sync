@@ -1,7 +1,6 @@
 ---
 name: patch-feishu-code
-description: Read a Feishu/Lark SDK procedure doc, infer the workflow from its Python examples, verify equivalent SDK usage from local Milvus and Zilliz repos, port missing examples to Java, Go, Node.js, RESTful API, Zilliz CLI, and C++, then patch the Feishu doc with the missing code blocks in canonical order.
-argument-hint: "<feishu-doc-url-or-token>"
+description: Use when an existing Feishu/Lark SDK procedure document already has Python workflow examples and needs missing Java, Go, Node.js, RESTful API, Zilliz CLI, or C++ equivalents verified from local source repositories and inserted in canonical language order. Do not use for release-wide API inventory or for verification-only checks that should not modify the document.
 ---
 
 # Patch Feishu Code
@@ -75,55 +74,9 @@ The map is the starting point, not a hard search boundary. If the Python doc use
    - Treat verifier scenario failures carefully: combined JavaScript scenarios can fail from independent snippets redeclaring names, and Java compile checks need a classpath. Inspect per-block status before calling a patch bad.
    - Summarize inserted blocks, skipped languages, and verification results.
 
-## Feature-Specific Notes From Prior Runs
+## Feature-Specific Cases
 
-### Zilliz Cloud Import Jobs
-
-Python examples commonly use `pymilvus.bulk_writer.bulk_import(...)` and `get_import_progress(...)`. Equivalent support is spread across SDK-specific helper layers:
-
-- Java: search `repos/milvus-sdk-java/sdk-bulkwriter/`.
-  - Import create: `io.milvus.bulkwriter.restful.BulkImportUtils.bulkImport(...)`
-  - Import progress: `io.milvus.bulkwriter.restful.BulkImportUtils.getImportProgress(...)`
-  - Request builders: `CloudImportRequest.builder()` and `CloudDescribeImportRequest.builder()`
-  - Typical imports include `io.milvus.bulkwriter.request.import_.CloudImportRequest`, `io.milvus.bulkwriter.request.describe.CloudDescribeImportRequest`, and `io.milvus.bulkwriter.restful.BulkImportUtils`.
-- Node.js: inspect `HttpClient` APIs such as `createImportJobs(...)` and `getImportJobProgress(...)`.
-- Zilliz CLI: inspect `zilliz import start`, `zilliz import status`, and related model definitions under `zilliz-tui`.
-- RESTful: use Cloud import endpoints from the existing doc/API source, for example `/v2/vectordb/jobs/import/create` and progress/describe endpoints.
-- Do not skip Java import support merely because it is absent from `sdk-core`.
-
-### On-Demand Search Cluster Routing
-
-For docs that attach search/query to an on-demand cluster, verify per SDK whether there is real routing support:
-
-- Python: `client.session(cluster_id=...)` routes DQL calls to the cluster.
-- RESTful: the search endpoint can carry `cluster_id` as shown by the doc/source being patched.
-- Java: `ConnectConfig.builder().option(Collections.singletonMap("cluster_id", "..."))` sends the cluster id in `ConnectRequest.client_info.reserved`.
-- Node.js: `new MilvusClient({ ..., option: { cluster_id: "..." } })` sends reserved connection options.
-- Zilliz CLI: set active cluster context with `zilliz context set --cluster-id ...`, then run data-plane commands such as `zilliz vector search`.
-- Go/C++ may expose normal search APIs without cluster/session routing. If no public `cluster_id` or session equivalent exists in the mapped paths or broader repo search, skip those blocks and report the gap instead of adding normal search examples that silently omit on-demand routing.
-
-### StructArray, EmbeddingList, And Element-Level Search
-
-When patching StructArray search docs, preserve the semantic distinction between EmbeddingList search and element-level search:
-
-- Do not define EmbeddingList search as "a query with multiple vectors"; an EmbeddingList can contain one or more vectors. The defining behavior is the `MAX_SIM*` metric family.
-- Explain grouped element-level search by metric behavior: `MAX_SIM*` scores a query embedding list against a stored embedding list by taking the best stored-vector match for each query vector and combining those best matches, for example `score(Q, D) = sum_i max_j sim(q_i, d_j)`. Element-level search scores individual Struct elements with a regular vector metric; `group_by_field` only collapses element hits to entity-level results and does not recompute a `MAX_SIM*` score.
-- For result prose, avoid bare `offset` because it can be confused with the request pagination parameter. Use "element offset" or "matched Struct element offset". In PyMilvus, search-result `offset` is populated from `SearchResultData.element_indices`; query/element-filter results are expanded from response `element_indices` and get an `offset` field. Request `offset` remains pagination.
-- `element_filter` limits which Struct elements participate in filtering/search; it does not by itself make the result row-level. `MATCH_*` filters are row-level and do not identify a matched element offset. Grouped element-level search results are row-level and clear element offsets.
-- Prefer explicit sample embeddings over randomly generated vectors in docs, so examples are direct and easy to compare across SDKs.
-- REST and Zilliz CLI can represent float EmbeddingList search with nested arrays, for example define `QUERY='[[...],[...]]'` and pass REST `"data": [$QUERY]` or CLI `--data "[$QUERY]"`. Confirm the current REST route and CLI flags in source before adding examples.
-- For non-float EmbeddingList examples, verify both public type declarations and the serialization path. Do not rely on enum names or placeholder-type mappings alone; confirm that the SDK can actually encode the vector type being documented.
-- Do not assume helper methods such as `add_batch` exist across SDKs. If only PyMilvus has the helper, document it as PyMilvus-specific rather than porting fake helper examples.
-
-### Patching Pattern
-
-For each code group:
-
-1. Identify the anchor block ids from the refetched document.
-2. Generate XML `<pre lang="..."><code>...</code></pre>` snippets under `tmp/patch-feishu-code/`. Do not create new working files under `.tmp/`.
-3. Insert after the previous canonical-language block, or replace a just-added block if a correction is needed.
-4. Refetch the live doc and inspect the resulting order directly; do not rely on local patch files.
-5. Keep a concise final report listing inserted blocks, intentionally skipped languages, live revision id, and verifier caveats.
+When the procedure covers Cloud import jobs, on-demand routing, StructArray/EmbeddingList search, or block-level patch mechanics, read [references/feature-cases.md](references/feature-cases.md). Treat those notes as search guidance and re-verify current public APIs before generating code.
 
 ## Porting Rules
 
@@ -139,6 +92,7 @@ For each code group:
 ## Patching Guardrails
 
 - Make a dry-run or written insertion plan before the first write: doc token, target groups, insertion point, languages to add, and source files used for each port.
+- Show that exact plan or dry-run and obtain explicit approval before the first live write.
 - Put temporary generated XML, helper scripts, fetch outputs, and verification scratch files in `tmp/patch-feishu-code/`.
 - Do not rewrite unrelated prose, headings, links, or existing correct code blocks.
 - Do not use whole-document replacement for a small code-block insertion unless block-level patching cannot represent the change.

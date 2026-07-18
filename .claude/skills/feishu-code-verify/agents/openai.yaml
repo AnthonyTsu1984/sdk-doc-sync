@@ -1,0 +1,4 @@
+interface:
+  display_name: "Feishu Code Verify"
+  short_description: "Validate documentation code examples"
+  default_prompt: "Use $feishu-code-verify to check the code examples in this Feishu or Markdown document and report static, scenario, and runtime verification separately."

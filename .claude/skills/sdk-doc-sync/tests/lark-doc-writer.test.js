@@ -19,7 +19,12 @@ function createWriter(blocks) {
   return writer;
 }
 
-test('preserves Feishu C++ language ID 9 as a fenced C++ block', async () => {
+function suppressDebugLogs(t) {
+  t.mock.method(console, 'log', () => {});
+}
+
+test('preserves Feishu C++ language ID 9 as a fenced C++ block', async (t) => {
+  suppressDebugLogs(t);
   const fixture = loadFixture();
   const codeBlock = fixture.items.find((block) => block.block_id === 'cpp-code-block');
   const writer = createWriter(fixture.items);
@@ -45,7 +50,27 @@ test('default FeishuToMarkdown target retains include and exclude region bodies'
   assert.equal(markdown, 'xy');
 });
 
-test('mapped-null Docx block type 16 renders an explicit unsupported marker', async () => {
+test('malformed filter regions remain unchanged and emit warnings under all targets', (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (message) => warnings.push(message));
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const malformedInclude = 'A<include target="milvus">broken';
+  const malformedExclude = 'B<exclude target="zilliz">broken';
+
+  assert.equal(converter.__filter_content(malformedInclude, converter.targets), malformedInclude);
+  assert.equal(converter.__filter_content(malformedExclude, converter.targets), malformedExclude);
+  assert.deepEqual(warnings, [
+    'No matching end tag for include tag at index 1',
+    'No matching end tag for exclude tag at index 1',
+  ]);
+});
+
+test('mapped-null Docx block type 16 renders an explicit unsupported marker', async (t) => {
+  suppressDebugLogs(t);
   const fixture = loadFixture();
   const unsupportedBlock = fixture.items.find((block) => block.block_id === 'mapped-null-block');
   const writer = createWriter(fixture.items);
@@ -55,7 +80,8 @@ test('mapped-null Docx block type 16 renders an explicit unsupported marker', as
   assert.equal(markdown, '[Unsupported block type: 16]');
 });
 
-test('get_markdown emits exactly one front matter delimiter pair', async () => {
+test('get_markdown emits exactly one front matter delimiter pair', async (t) => {
+  suppressDebugLogs(t);
   const converter = new FeishuToMarkdown({
     sourceType: 'drive',
     rootToken: null,
@@ -85,7 +111,8 @@ test('get_markdown emits exactly one front matter delimiter pair', async () => {
   assert.match(markdown, /---\n\n# Example$/);
 });
 
-test('reference-synced expansion appends each source descendant once', async () => {
+test('reference-synced expansion appends each source descendant once', async (t) => {
+  suppressDebugLogs(t);
   const converter = new FeishuToMarkdown({
     sourceType: 'drive',
     rootToken: null,
@@ -136,6 +163,57 @@ test('reference-synced expansion appends each source descendant once', async () 
   assert.equal(new Set(ids).size, ids.length);
 });
 
+test('overlapping references append each shared source block ID once', async (t) => {
+  suppressDebugLogs(t);
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const blocks = [{
+    block_id: 'parent',
+    block_type: 2,
+    children: ['reference-one', 'reference-two'],
+  }, {
+    block_id: 'reference-one',
+    parent_id: 'parent',
+    block_type: 50,
+    reference_synced: {
+      source_document_id: 'source-doc',
+      source_block_id: 'source-root',
+    },
+  }, {
+    block_id: 'reference-two',
+    parent_id: 'parent',
+    block_type: 50,
+    reference_synced: {
+      source_document_id: 'source-doc',
+      source_block_id: 'source-root',
+    },
+  }];
+  converter.__fetch_doc_blocks = async () => [{
+    block_id: 'source-root',
+    block_type: 2,
+    children: ['source-child'],
+  }, {
+    block_id: 'source-child',
+    parent_id: 'source-root',
+    block_type: 2,
+    children: ['source-grandchild'],
+  }, {
+    block_id: 'source-grandchild',
+    parent_id: 'source-child',
+    block_type: 2,
+  }];
+
+  const expanded = await converter.__get_reference_syncd_blocks(blocks);
+  const ids = expanded.map((block) => block.block_id);
+
+  assert.deepEqual(ids, ['parent', 'source-root', 'source-child', 'source-grandchild']);
+  assert.deepEqual(expanded[0].children, ['source-root', 'source-root']);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
 test('Drive writer provides deterministic keywords', () => {
   const writer = new LarkDriveWriter(null, null, 'docsSidebar', __dirname, '', 'all', true, false, 'manual');
 
@@ -148,7 +226,8 @@ test('Drive writer provides deterministic keywords', () => {
   ]);
 });
 
-test('Drive writer emits the correctly spelled displayed_sidebar field', async () => {
+test('Drive writer emits the correctly spelled displayed_sidebar field', async (t) => {
+  suppressDebugLogs(t);
   const outputDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'lark-drive-writer-'));
   const writer = new LarkDriveWriter(null, null, 'docsSidebar', __dirname, '', 'all', true, false, 'manual');
   writer.__fetch_doc_source = () => ({

@@ -403,6 +403,10 @@ class larkDocWriter {
     __filter_content (markdown, targets) {
         const matches = this.__match_filter_tags(markdown)
 
+        if (matches.some(match => match.endIndex === -1)) {
+            return markdown
+        }
+
         if (matches.length > 0) {
             var preText = markdown.slice(0, matches[0].startIndex)
             var matchText = markdown.slice(matches[0].startIndex, matches[0].endIndex)

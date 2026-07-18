@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "language": "python",
+  "sdkName": "pymilvus",
+  "track": "v2.6.x",
+  "baselineTag": "v2.6.12",
+  "targetTag": "v2.6.17",
+  "targetCommit": "05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4",
+  "targetDate": "2026-07-15T08:32:32.000Z",
+  "releaseRange": "v2.6.12..v2.6.17",
+  "approvalGrade": true,
+  "changedFiles": [
+    "pymilvus/client/field_ops.py",
+    "pymilvus/milvus_client/milvus_client.py"
+  ],
+  "actions": [
+    {
+      "type": "UPDATE",
+      "stableId": "python:Management:compact",
+      "canonicalSlug": "Management-compact",
+      "symbol": "MilvusClient.compact",
+      "source": {
+        "file": "pymilvus/milvus_client/milvus_client.py",
+        "line": 1835
+      },
+      "reason": "signature changed"
+    },
+    {
+      "type": "CREATE",
+      "stableId": "python:Vector:FieldOp",
+      "canonicalSlug": "FieldOp",
+      "symbol": "FieldOp",
+      "source": {
+        "file": "pymilvus/client/field_ops.py",
+        "line": 45
+      },
+      "reason": "new public class"
+    }
+  ],
+  "scannerDiagnostics": [
+    {
+      "level": "warn",
+      "code": "FULL_SCAN_DIAGNOSTIC_ONLY",
+      "message": "Full scanner output is not approval-grade for python v2.6.x."
+    }
+  ],
+  "writesPerformed": false,
+  "scanStateUpdated": false
+}

@@ -3,6 +3,7 @@ const MarkdownToFeishu = require('../markdown-to-feishu');
 const BitableWriter = require('./bitable-writer');
 const DiffEngine = require('./diff-engine');
 const DocGenerator = require('./doc-generator');
+const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
 const PythonScanner = require('./scanners/python-scanner');
 const JavaScanner = require('./scanners/java-scanner');
@@ -41,6 +42,8 @@ class SdkDocSync {
         exclude = [],
         indexReader = null,
         planner = null,
+        executor = null,
+        verifier = null,
         artifactProvider = null,
         artifacts = null,
         planningContextProvider = null,
@@ -86,10 +89,17 @@ class SdkDocSync {
         this.f2m = this.indexReader;
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
+        this.executor = executor || null;
+        this.verifier = verifier || null;
 
         if (!dryRun) {
             this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
             this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken });
+            this.executor = this.executor || new SyncExecutor({
+                documentWriter: this.m2f,
+                bitableWriter: this.bitableWriter,
+                verifier: this.verifier,
+            });
         }
     }
 
@@ -148,7 +158,7 @@ class SdkDocSync {
                 const context = await this._planningContextFor(action, index, result);
                 const plan = this.planner.planAction(action, context);
                 result.plans.push(plan);
-                plannedActions.push({ action, plan });
+                plannedActions.push({ action, plan, context });
                 this._planningContexts.set(action, context);
             } catch (error) {
                 result.planningErrors.push({
@@ -195,9 +205,20 @@ class SdkDocSync {
         this.onProgress('EXECUTE', `Executing ${result.approved.length} actions...`);
         for (const action of result.approved) {
             try {
-                const execResult = await this._executeAction(action);
+                const planned = plannedActions.find((entry) => entry.action === action)
+                    || plannedActions.find((entry) => entry.plan === action);
+                if (!planned) throw new Error(`Approved action was not planned: ${this._stableIdFor(action) || '(unknown)'}`);
+                const execResult = await this.executor.execute(planned.plan, {
+                    action: planned.action,
+                    artifact: planned.context.artifact,
+                    approval: { approved: true },
+                });
                 result.results.push({ action, status: 'success', ...execResult });
-                this.onProgress('EXECUTE', `${action.type} ${action.slug} — success`);
+                if (execResult.status === 'error') {
+                    this.onProgress('EXECUTE', `${planned.action.type} ${planned.action.slug} — ERROR: ${execResult.error?.message || execResult.failedStep}`);
+                } else {
+                    this.onProgress('EXECUTE', `${planned.action.type} ${planned.action.slug} — success`);
+                }
             } catch (err) {
                 result.results.push({ action, status: 'error', error: err.message });
                 this.onProgress('EXECUTE', `${action.type} ${action.slug} — ERROR: ${err.message}`);

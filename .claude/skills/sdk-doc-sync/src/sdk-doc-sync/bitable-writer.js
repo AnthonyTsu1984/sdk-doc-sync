@@ -153,7 +153,7 @@ class BitableWriter {
         if (fields.title && fields.link) {
             formatted['Docs'] = { text: fields.title, link: fields.link };
         } else if (fields.title) {
-            formatted['Docs'] = fields.title;
+            throw new TypeError('Docs link is required when writing a Docs title');
         }
 
         // Slug is a DuplexLink auto-populated by Feishu — never set it

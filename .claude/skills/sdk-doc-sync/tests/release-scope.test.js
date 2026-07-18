@@ -65,3 +65,74 @@ test('createReleaseScope sorts files, actions, and diagnostics deterministically
   assert.equal(stableReleaseScopeJson(scope), `${stableReleaseScopeJson(scope)}`);
   assert.deepEqual(validateReleaseScope(scope), { valid: true, errors: [] });
 });
+
+const {
+  latestTagInTrack,
+  resolveReleaseRange,
+  changedFilesInRange,
+} = require('../src/sdk-doc-sync/release-scope/git-range');
+
+function fakeGit(outputs) {
+  return (args) => {
+    const key = args.join(' ');
+    if (!Object.prototype.hasOwnProperty.call(outputs, key)) {
+      throw new Error(`Unexpected git call: ${key}`);
+    }
+    return outputs[key];
+  };
+}
+
+test('latestTagInTrack resolves the highest semver tag in a track', () => {
+  const tag = latestTagInTrack({
+    track: 'v2.6.x',
+    runGit: fakeGit({
+      'tag --list v2.6.* --sort=v:refname': 'v2.6.15\nv2.6.16\nv2.6.17\n',
+    }),
+  });
+  assert.equal(tag, 'v2.6.17');
+});
+
+test('resolveReleaseRange uses scan-state baseline and latest target', () => {
+  const range = resolveReleaseRange({
+    languageKey: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    scanState: { python: { lastScannedTag: 'v2.6.12' } },
+    runGit: fakeGit({
+      'tag --list v2.6.* --sort=v:refname': 'v2.6.13\nv2.6.17\n',
+      'rev-list -n 1 v2.6.17': '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4\n',
+      'show -s --format=%cI v2.6.17': '2026-07-15T16:32:32+08:00\n',
+    }),
+  });
+  assert.deepEqual(range, {
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    noChanges: false,
+  });
+});
+
+test('changedFilesInRange returns sorted public SDK paths only', () => {
+  const files = changedFilesInRange({
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    publicRoots: ['pymilvus/', 'src/'],
+    runGit: fakeGit({
+      'diff --name-only v2.6.12..v2.6.17': [
+        'tests/unit/test_milvus_client.py',
+        'pymilvus/milvus_client/milvus_client.py',
+        'pymilvus/client/field_ops.py',
+        'README.md',
+      ].join('\n'),
+    }),
+  });
+  assert.deepEqual(files, [
+    'pymilvus/client/field_ops.py',
+    'pymilvus/milvus_client/milvus_client.py',
+  ]);
+});

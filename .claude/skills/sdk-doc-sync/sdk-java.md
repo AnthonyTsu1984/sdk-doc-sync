@@ -1,17 +1,19 @@
 # Java SDK Reference (milvus-sdk-java)
 
 **Scanner:** `src/sdk-doc-sync/scanners/java-scanner.js`
-**Root dir:** `repos/milvus-sdk-java/sdk-core/src/main/java/io/milvus`
-**Latest release:** `v2.6.18` (as of 2026-05-02). v3.0.x doc set tracks master commit `80b4f555` as the would-be `v3.0.x` tag.
-**Note:** 2-phase scan — MilvusClientV2.java methods → Req class builder fields as params. Skip Lombok setter methods (`set[A-Z]*`).
+**Root dir:** `repos/milvus-sdk-java`
+**Latest release:** `v2.6.22` (as of 2026-07-18). v3.0.x doc set tracks master commit `80b4f555` as the would-be `v3.0.x` tag.
+**Note:** 2-phase scan — `sdk-core` `MilvusClientV2.java` methods → Req class builder fields as params; plus selected `sdk-bulkwriter` manager/writer methods and request/model/param classes. Skip Lombok setter methods (`set[A-Z]*`).
 
 | Version | Bitable Token              | Drive Folder          |
 |---------|----------------------------|-----------------------|
-| v2.3.x  | Bp72bJ9wEazV1SsA30lcsuJgnfe | `O4sRfb29olHnoid8hJMcxfhHnud` |
-| v2.4.x  | WqHJb3zimaxXjssk4Kic4GEDnte |                       |
-| v2.5.x  | Hsq1bRcqraeQW0sGFJbcI3YIn3d |                       |
-| v2.6.x  | Sbtcbm660abngWsXryKct5nOn2e |                       |
+| v2.3.x  | Bp72bJ9wEazV1SsA30lcsuJgnfe | `GYfPfBbdglDhh5dzLH3cYaV1nDf` |
+| v2.4.x  | WqHJb3zimaxXjssk4Kic4GEDnte | `Sg3EfIgVtlTkeBdtguJchE9ynne` |
+| v2.5.x  | Hsq1bRcqraeQW0sGFJbcI3YIn3d | `LJ6MfN5wzlHjz8dB642cjUh8nqq` |
+| v2.6.x  | Sbtcbm660abngWsXryKct5nOn2e | `B1agfRbPglv4tpdTkjlcUMgVnRV` |
 | v3.0.x  | AOFDbSmwma9XrNsLa8KcQgt9ngc | `C4Ckfsx5qlKHbnd5PVrcpxvTn2d` |
+
+Shared Java root folder: `O4sRfb29olHnoid8hJMcxfhHnud`.
 
 **Doc format:**
 
@@ -71,6 +73,8 @@ The scanner returns `parentClass: 'MilvusClientV2'` for all methods. Category mu
 | `releaseCollection` | `ReleaseCollectionReq` | `v2-Management` (not Collections) |
 | `describeReplicas` | `DescribeReplicasReq` | `v2-Collections` (not Management) |
 | `updatePassword` | `UpdatePasswordReq` | `v2-Authentication` |
+
+**v2.6.x first-level folders verified under the version root:** `Client`, `Collections`, `Data Import`, `Database`, `Management`, `Partitions`, `Vector`, `Volume`. User-approved first-level planning categories also include `Authentication` and `CDC`; create or resolve those physical folders before executing Authentication/CDC document writes. `sdk-bulkwriter` data-import APIs belong under `Data Import`; volume manager and volume request/model APIs belong under `Volume`.
 
 **Notes:**
 - Methods without a Req parameter skip the Request Syntax and BUILDER METHODS sections

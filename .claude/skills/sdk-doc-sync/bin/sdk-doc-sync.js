@@ -166,11 +166,13 @@ function firstValidationCode(validation, fallback) {
 }
 
 function defaultReferenceContext(action) {
+    const scoped = action.releaseScopeAction || {};
+    const source = scoped.source || {};
     return {
-        repository: '',
-        revision: '',
+        repository: source.repository || '',
+        revision: source.revision || '',
         category: action.symbol?.category || '',
-        reviewedEvidence: [],
+        reviewedEvidence: scoped.evidence || [],
         related: [],
         notes: [],
     };
@@ -437,6 +439,8 @@ function createBoundedSummary(result) {
                 ? `${action.symbol.parentClass ? action.symbol.parentClass + '.' : ''}${action.symbol.name}`
                 : null,
             reason: action.reason,
+            source: action.releaseScopeAction?.source || null,
+            evidence: action.releaseScopeAction?.evidence || [],
         })),
         planningErrors: result.planningErrors,
     };

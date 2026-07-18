@@ -405,6 +405,77 @@ test('schema-first CLI filters scanned symbols through release scope', async () 
   assert.match(stdout.join('\n'), /"releaseScope"/);
 });
 
+test('schema-first CLI rejects release-scope line drift instead of silently dropping symbols', async () => {
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:Management:compact',
+      canonicalSlug: 'Management-compact',
+      symbol: 'MilvusClient.compact',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 1835 },
+      reason: 'signature changed',
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+
+  await assert.rejects(
+    () => runCli({
+      argv: [
+        'node',
+        'sdk-doc-sync',
+        '--sdk-dir',
+        '/fixtures/sdk',
+        '--language',
+        'python',
+        '--sdk-name',
+        'pymilvus',
+        '--sdk-version',
+        'v2.6.x',
+        '--release-scope',
+        '/tmp/release-scope.json',
+        '--dry-run',
+        '--json',
+      ],
+      env: { BASE_TOKEN: 'base-v26', ROOT_TOKEN: 'root-v26' },
+      dependencies: {
+        loadEnv: false,
+        readFile: () => JSON.stringify(scope),
+        scanner: {
+          rootDir: '/fixtures/sdk',
+          async scan() {
+            return [{
+              name: 'compact',
+              kind: 'method',
+              parentClass: 'MilvusClient',
+              filePath: 'milvus_client/milvus_client.py',
+              lineNumber: 1800,
+              signature: 'def compact(self, collection_name: str, target_size: Optional[int] = None) -> int:',
+              params: [],
+              returnType: 'int',
+              decorators: [],
+            }];
+          },
+        },
+        indexReader: async () => [],
+      },
+    }),
+    /Release scope source line mismatch.*05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4.*MilvusClient\.compact/,
+  );
+});
+
 test('schema-first CLI rejects mutated release-scope artifacts', async () => {
   const stderr = [];
   const exitCodes = [];

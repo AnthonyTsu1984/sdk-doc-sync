@@ -19,6 +19,7 @@ function parseArgs(argv) {
     else if (arg === '--track') args.track = argv[++i];
     else if (arg === '--sdk-dir') args.sdkDir = argv[++i];
     else if (arg === '--repo-dir') args.repoDir = argv[++i];
+    else if (arg === '--baseline-tag') args.baselineTag = argv[++i];
     else if (arg === '--target-tag') args.targetTag = argv[++i];
     else if (arg === '--identity-map') args.identityMapPath = argv[++i];
     else if (arg === '--output') args.output = argv[++i];
@@ -42,6 +43,16 @@ function defaultsFor(args) {
       sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'pymilvus', 'pymilvus'),
       repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'pymilvus'),
       publicRoots: ['pymilvus/'],
+    };
+  }
+  if (args.language === 'java') {
+    return {
+      sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-java'),
+      repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-java'),
+      publicRoots: [
+        'sdk-core/src/main/java/',
+        'sdk-bulkwriter/src/main/java/',
+      ],
     };
   }
   return {
@@ -76,7 +87,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     language: args.language,
     sdkName: args.sdkName,
     track: args.track,
-    scanState: dependencies.loadScanState ? dependencies.loadScanState() : loadScanState(),
+    scanState: args.baselineTag
+      ? { ...(dependencies.loadScanState ? dependencies.loadScanState() : loadScanState()), [args.language]: { lastScannedTag: args.baselineTag } }
+      : dependencies.loadScanState ? dependencies.loadScanState() : loadScanState(),
     targetTag: args.targetTag || null,
     sdkDir: defaults.sdkDir,
     repoDir: defaults.repoDir,

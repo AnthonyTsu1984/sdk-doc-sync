@@ -1,0 +1,194 @@
+{
+  "schemaVersion": 1,
+  "language": "java",
+  "track": "v2.6.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "CloudDescribeImportRequest": {
+      "stableId": "java:v2-DataImport:CloudDescribeImportRequest",
+      "canonicalSlug": "v2-DataImport-CloudDescribeImportRequest",
+      "category": "Data Import"
+    },
+    "CloudImportRequest": {
+      "stableId": "java:v2-DataImport:CloudImportRequest",
+      "canonicalSlug": "v2-DataImport-CloudImportRequest",
+      "category": "Data Import"
+    },
+    "CloudListImportJobsRequest": {
+      "stableId": "java:v2-DataImport:CloudListImportJobsRequest",
+      "canonicalSlug": "v2-DataImport-CloudListImportJobsRequest",
+      "category": "Data Import"
+    },
+    "CreateVolumeRequest": {
+      "stableId": "java:v2-Volume:CreateVolumeRequest",
+      "canonicalSlug": "v2-Volume-CreateVolumeRequest",
+      "category": "Volume"
+    },
+    "DescribeVolumeRequest": {
+      "stableId": "java:v2-Volume:DescribeVolumeRequest",
+      "canonicalSlug": "v2-Volume-DescribeVolumeRequest",
+      "category": "Volume"
+    },
+    "ListVolumesRequest": {
+      "stableId": "java:v2-Volume:ListVolumesRequest",
+      "canonicalSlug": "v2-Volume-ListVolumesRequest",
+      "category": "Volume"
+    },
+    "MilvusClientV2.batchDescribeCollection": {
+      "stableId": "java:v2-Collections:batchDescribeCollection",
+      "canonicalSlug": "v2-Collections-batchDescribeCollection",
+      "category": "Collections"
+    },
+    "MilvusClientV2.close": {
+      "stableId": "java:v2-Client:close",
+      "canonicalSlug": "v2-Client-close",
+      "category": "Client"
+    },
+    "MilvusClientV2.compact": {
+      "stableId": "java:v2-Management:compact",
+      "canonicalSlug": "v2-Management-compact",
+      "category": "Management"
+    },
+    "MilvusClientV2.createRole": {
+      "stableId": "java:v2-Authentication:createRole",
+      "canonicalSlug": "v2-Authentication-createRole",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.createUser": {
+      "stableId": "java:v2-Authentication:createUser",
+      "canonicalSlug": "v2-Authentication-createUser",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.describeCollection": {
+      "stableId": "java:v2-Collections:describeCollection",
+      "canonicalSlug": "v2-Collections-describeCollection",
+      "category": "Collections"
+    },
+    "MilvusClientV2.renameCollection": {
+      "stableId": "java:v2-Collections:renameCollection",
+      "canonicalSlug": "v2-Collections-renameCollection",
+      "category": "Collections"
+    },
+    "MilvusClientV2.updatePassword": {
+      "stableId": "java:v2-Authentication:updatePassword",
+      "canonicalSlug": "v2-Authentication-updatePassword",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.upsert": {
+      "stableId": "java:v2-Vector:upsert",
+      "canonicalSlug": "v2-Vector-upsert",
+      "category": "Vector"
+    },
+    "MilvusClientV2.getLoadStateV2": {
+      "stableId": "java:v2-Management:getLoadStateV2",
+      "canonicalSlug": "v2-Management-getLoadStateV2",
+      "category": "Management"
+    },
+    "MilvusClientV2.updateUser": {
+      "stableId": "java:v2-Authentication:updateUser",
+      "canonicalSlug": "v2-Authentication-updateUser",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.alterRole": {
+      "stableId": "java:v2-Authentication:alterRole",
+      "canonicalSlug": "v2-Authentication-alterRole",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.flushAll": {
+      "stableId": "java:v2-Management:flushAll",
+      "canonicalSlug": "v2-Management-flushAll",
+      "category": "Management"
+    },
+    "MilvusClientV2.getFlushAllState": {
+      "stableId": "java:v2-Management:getFlushAllState",
+      "canonicalSlug": "v2-Management-getFlushAllState",
+      "category": "Management"
+    },
+    "MilvusClientV2.getServerVersion": {
+      "stableId": "java:v2-Management:getServerVersion",
+      "canonicalSlug": "v2-Management-getServerVersion",
+      "category": "Management"
+    },
+    "MilvusClientV2.getServerVersionV2": {
+      "stableId": "java:v2-Management:getServerVersionV2",
+      "canonicalSlug": "v2-Management-getServerVersionV2",
+      "category": "Management"
+    },
+    "MilvusClientV2.dumpMessages": {
+      "stableId": "java:v2-CDC:dumpMessages",
+      "canonicalSlug": "v2-CDC-dumpMessages",
+      "category": "CDC"
+    },
+    "MilvusClientV2.getReplicateInfo": {
+      "stableId": "java:v2-CDC:getReplicateInfo",
+      "canonicalSlug": "v2-CDC-getReplicateInfo",
+      "category": "CDC"
+    },
+    "MilvusClientV2.getReplicateConfiguration": {
+      "stableId": "java:v2-CDC:getReplicateConfiguration",
+      "canonicalSlug": "v2-CDC-getReplicateConfiguration",
+      "category": "CDC"
+    },
+    "MilvusClientV2.updateReplicateConfiguration": {
+      "stableId": "java:v2-CDC:updateReplicateConfiguration",
+      "canonicalSlug": "v2-CDC-updateReplicateConfiguration",
+      "category": "CDC"
+    },
+    "UploadFilesRequest": {
+      "stableId": "java:v2-Volume:UploadFilesRequest",
+      "canonicalSlug": "v2-Volume-UploadFilesRequest",
+      "category": "Volume"
+    },
+    "UploadProgress": {
+      "stableId": "java:v2-Volume:UploadProgress",
+      "canonicalSlug": "v2-Volume-UploadProgress",
+      "category": "Volume"
+    },
+    "VolumeBulkWriter.close": {
+      "stableId": "java:v2-DataImport:VolumeBulkWriter-close",
+      "canonicalSlug": "v2-DataImport-VolumeBulkWriter-close",
+      "category": "Data Import"
+    },
+    "VolumeBulkWriterParam": {
+      "stableId": "java:v2-DataImport:VolumeBulkWriterParam",
+      "canonicalSlug": "v2-DataImport-VolumeBulkWriterParam",
+      "category": "Data Import"
+    },
+    "VolumeFileManager.shutdownGracefully": {
+      "stableId": "java:v2-Volume:VolumeFileManager-shutdownGracefully",
+      "canonicalSlug": "v2-Volume-VolumeFileManager-shutdownGracefully",
+      "category": "Volume"
+    },
+    "VolumeFileManager.uploadFiles": {
+      "stableId": "java:v2-Volume:VolumeFileManager-uploadFiles",
+      "canonicalSlug": "v2-Volume-VolumeFileManager-uploadFiles",
+      "category": "Volume"
+    },
+    "VolumeFileManager.uploadFilesAsync": {
+      "stableId": "java:v2-Volume:VolumeFileManager-uploadFilesAsync",
+      "canonicalSlug": "v2-Volume-VolumeFileManager-uploadFilesAsync",
+      "category": "Volume"
+    },
+    "VolumeInfo": {
+      "stableId": "java:v2-Volume:VolumeInfo",
+      "canonicalSlug": "v2-Volume-VolumeInfo",
+      "category": "Volume"
+    },
+    "VolumeManager.createVolume": {
+      "stableId": "java:v2-Volume:createVolume",
+      "canonicalSlug": "v2-Volume-createVolume",
+      "category": "Volume"
+    },
+    "VolumeManager.describeVolume": {
+      "stableId": "java:v2-Volume:describeVolume",
+      "canonicalSlug": "v2-Volume-describeVolume",
+      "category": "Volume"
+    },
+    "VolumeManager.listVolumes": {
+      "stableId": "java:v2-Volume:listVolumes",
+      "canonicalSlug": "v2-Volume-listVolumes",
+      "category": "Volume"
+    }
+  }
+}

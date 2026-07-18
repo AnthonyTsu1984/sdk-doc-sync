@@ -19,6 +19,8 @@ function actionsFrom(artifact) {
     symbol: row.symbol || '',
     slug: row.canonicalSlug || row.slug || '',
     reason: row.reason || '',
+    source: row.source || null,
+    evidence: row.evidence || [],
   }));
 }
 
@@ -45,11 +47,41 @@ function duplicateKeys(rows) {
     .map(([key, count]) => ({ key, count }));
 }
 
+function stableJson(value) {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (!value || typeof value !== 'object') return JSON.stringify(value);
+  return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${stableJson(value[key])}`).join(',')}}`;
+}
+
+function comparableAction(row) {
+  return stableJson({
+    type: row.type,
+    symbol: row.symbol,
+    slug: row.slug,
+    reason: row.reason,
+    source: row.source,
+    evidence: row.evidence,
+  });
+}
+
+function planningErrorsFrom(artifact) {
+  return (artifact.planningErrors || []).map((error) => ({
+    key: `${error.stableId || ''}:${error.diffAction || ''}:${error.code || ''}`,
+    stableId: error.stableId || '',
+    diffAction: error.diffAction || '',
+    code: error.code || '',
+  }));
+}
+
 function compare(a, b) {
   const aActions = actionsFrom(a);
   const bActions = actionsFrom(b);
+  const aPlanningErrors = planningErrorsFrom(a);
+  const bPlanningErrors = planningErrorsFrom(b);
   const aMap = mapByKey(aActions);
   const bMap = mapByKey(bActions);
+  const aPlanningErrorMap = mapByKey(aPlanningErrors);
+  const bPlanningErrorMap = mapByKey(bPlanningErrors);
   const shared = [];
   const changed = [];
   const onlyA = [];
@@ -61,7 +93,7 @@ function compare(a, b) {
       onlyA.push(row);
       continue;
     }
-    if (row.type === other.type && row.slug === other.slug && row.symbol === other.symbol) {
+    if (comparableAction(row) === comparableAction(other)) {
       shared.push(row);
     } else {
       changed.push({ a: row, b: other });
@@ -82,6 +114,8 @@ function compare(a, b) {
       uniqueCount: aMap.size,
       duplicateKeys: duplicateKeys(aActions),
       countsByType: countBy(aActions, 'type'),
+      planningErrorCount: aPlanningErrors.length,
+      planningErrorCodes: countBy(aPlanningErrors, 'code'),
     },
     b: {
       releaseScope: b.releaseScope || {
@@ -93,6 +127,8 @@ function compare(a, b) {
       uniqueCount: bMap.size,
       duplicateKeys: duplicateKeys(bActions),
       countsByType: countBy(bActions, 'type'),
+      planningErrorCount: bPlanningErrors.length,
+      planningErrorCodes: countBy(bPlanningErrors, 'code'),
     },
     sharedCount: shared.length,
     changedCount: changed.length,
@@ -101,6 +137,7 @@ function compare(a, b) {
     onlyA,
     onlyB,
     changed,
+    planningErrorsChanged: stableJson([...aPlanningErrorMap.keys()].sort()) !== stableJson([...bPlanningErrorMap.keys()].sort()),
   };
 }
 
@@ -122,10 +159,16 @@ function main(argv) {
   if (result.a.duplicateKeys.length || result.b.duplicateKeys.length) {
     console.log(`Unique keys: A=${result.a.uniqueCount}, B=${result.b.uniqueCount}`);
   }
+  if (result.a.planningErrorCount || result.b.planningErrorCount) {
+    console.log(`Planning errors: A=${result.a.planningErrorCount}, B=${result.b.planningErrorCount}`);
+  }
   console.log(`Shared: ${result.sharedCount}`);
   console.log(`Changed: ${result.changedCount}`);
   console.log(`Only in A: ${result.onlyACount}`);
   console.log(`Only in B: ${result.onlyBCount}`);
+  if (result.planningErrorsChanged) {
+    console.log('Planning error sets changed');
+  }
   if (result.a.duplicateKeys.length) {
     console.log(`Duplicate keys in A: ${result.a.duplicateKeys.length}`);
   }

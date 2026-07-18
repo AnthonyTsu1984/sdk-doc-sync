@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 const PythonScanner = require('../scanners/python-scanner');
+const JavaScanner = require('../scanners/java-scanner');
 const { createReleaseScope, validateReleaseScope } = require('./schema');
 const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
@@ -12,6 +13,7 @@ const { loadIdentityMap, normalizeDelta } = require('./identity-normalizer');
 
 function scannerFor(language, sdkDir) {
   if (language === 'python') return new PythonScanner({ rootDir: sdkDir, publicOnly: true });
+  if (language === 'java') return new JavaScanner({ rootDir: sdkDir, publicOnly: true });
   throw new Error(`Release scout scanner is not configured for ${language}`);
 }
 
@@ -27,6 +29,7 @@ function toPosixPath(value) {
 function packageRelativeDir({ repoDir, sdkDir, publicRoots }) {
   if (sdkDir && repoDir) {
     const relative = toPosixPath(path.relative(repoDir, sdkDir));
+    if (relative === '') return '';
     if (relative && !relative.startsWith('..')) return relative;
   }
   const firstRoot = (publicRoots || []).find(Boolean);
@@ -159,7 +162,24 @@ async function runReleaseScout({
   const deltas = classifySymbolDeltas({ baseline, target })
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
 
-  const normalized = deltas.map((delta) => normalizeDelta(delta, map));
+  const normalized = deltas.map((delta) => {
+    const item = normalizeDelta(delta, map);
+    const action = {
+      ...item,
+      source: {
+        ...item.source,
+        repository: `milvus-io/${sdkName}`,
+        revision: range.targetCommit,
+      },
+      evidence: [{
+        kind: 'source',
+        locator: `${item.source.file}:${item.source.line}`,
+        revision: range.targetCommit,
+        confidence: 'direct',
+      }],
+    };
+    return action;
+  });
   const actions = normalized.map(({ diagnostic, ...action }) => action);
   const scannerDiagnostics = [
     { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
@@ -181,6 +201,9 @@ async function runReleaseScout({
 function defaultIdentityMapPath({ skillRoot, language, track }) {
   if (language === 'python' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'python-v26.json');
+  }
+  if (language === 'java' && track === 'v2.6.x') {
+    return path.join(skillRoot, 'references', 'identity', 'java-v26.json');
   }
   throw new Error(`No default identity map for ${language} ${track}`);
 }

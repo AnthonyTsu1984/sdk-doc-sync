@@ -202,6 +202,7 @@ const {
   loadIdentityMap,
   normalizeDelta,
 } = require('../src/sdk-doc-sync/release-scope/identity-normalizer');
+const { compare } = require('../bin/compare-scan-artifacts');
 
 test('identity normalizer maps raw Python scanner symbols to canonical docs', () => {
   const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'));
@@ -242,4 +243,76 @@ test('identity normalizer gives unmapped symbols explicit diagnostics', () => {
     code: 'UNMAPPED_CANONICAL_IDENTITY',
     message: 'No canonical identity mapping for MilvusClient.unknown_method in python v2.6.x.',
   });
+});
+
+test('compare-scan-artifacts treats source evidence drift as action changes', () => {
+  const left = {
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'java:v2-Vector:upsert',
+      canonicalSlug: 'v2-Vector-upsert',
+      symbol: 'MilvusClientV2.upsert',
+      reason: 'signature changed',
+      source: {
+        file: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java',
+        line: 737,
+        repository: 'milvus-io/milvus-sdk-java',
+        revision: 'target-a',
+      },
+      evidence: [{
+        kind: 'source',
+        locator: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java:737',
+        revision: 'target-a',
+        confidence: 'direct',
+      }],
+    }],
+  };
+  const right = {
+    actions: [{
+      ...left.actions[0],
+      source: {
+        ...left.actions[0].source,
+        line: 721,
+      },
+      evidence: [{
+        ...left.actions[0].evidence[0],
+        locator: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java:721',
+      }],
+    }],
+  };
+
+  const result = compare(left, right);
+  assert.equal(result.sharedCount, 0);
+  assert.equal(result.changedCount, 1);
+  assert.equal(result.changed[0].a.source.line, 737);
+  assert.equal(result.changed[0].b.source.line, 721);
+});
+
+test('compare-scan-artifacts reports planning error set changes', () => {
+  const left = {
+    diff: [{
+      type: 'UPDATE',
+      stableId: 'java:v2-Vector:upsert',
+      slug: 'v2-Vector-upsert',
+      symbol: 'MilvusClientV2.upsert',
+    }],
+    planningErrors: [{
+      stableId: 'java:v2-Vector:upsert',
+      diffAction: 'UPDATE',
+      code: 'MISSING_SUMMARY',
+    }],
+  };
+  const right = {
+    diff: left.diff,
+    planningErrors: [{
+      stableId: 'java:v2-Vector:upsert',
+      diffAction: 'UPDATE',
+      code: 'MISSING_REVIEWED_EVIDENCE',
+    }],
+  };
+
+  const result = compare(left, right);
+  assert.deepEqual(result.a.planningErrorCodes, { MISSING_SUMMARY: 1 });
+  assert.deepEqual(result.b.planningErrorCodes, { MISSING_REVIEWED_EVIDENCE: 1 });
+  assert.equal(result.planningErrorsChanged, true);
 });

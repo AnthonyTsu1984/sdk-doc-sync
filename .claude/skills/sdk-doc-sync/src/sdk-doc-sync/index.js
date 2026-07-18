@@ -275,8 +275,40 @@ class SdkDocSync {
 
     _filterByReleaseScope(symbols) {
         if (!this.releaseScope) return symbols;
-        const allowed = new Set(this.releaseScope.actions.map((action) => action.symbol));
-        return symbols.filter((symbol) => allowed.has(this._symbolDisplayName(symbol)));
+        const allowed = new Map();
+        for (const action of this.releaseScope.actions) {
+            const lines = allowed.get(action.symbol) || new Set();
+            if (Number.isInteger(action.source?.line)) lines.add(action.source.line);
+            allowed.set(action.symbol, lines);
+        }
+        const byDisplayName = new Map();
+        for (const symbol of symbols) {
+            const key = this._symbolDisplayName(symbol);
+            const entries = byDisplayName.get(key) || [];
+            entries.push(symbol);
+            byDisplayName.set(key, entries);
+        }
+        const mismatches = [];
+        for (const [symbolName, expectedLines] of allowed.entries()) {
+            if (expectedLines.size === 0) continue;
+            const candidates = byDisplayName.get(symbolName) || [];
+            if (candidates.length === 0) continue;
+            const actualLines = new Set(candidates.map((symbol) => symbol.lineNumber).filter(Number.isInteger));
+            const hasAnyExpectedLine = [...expectedLines].some((line) => actualLines.has(line));
+            if (!hasAnyExpectedLine) {
+                mismatches.push(`${symbolName}: expected line ${[...expectedLines].join('/')} but scanned line ${[...actualLines].join('/') || 'unknown'}`);
+            }
+        }
+        if (mismatches.length > 0) {
+            const error = new Error(`Release scope source line mismatch. Ensure --sdk-dir is checked out at ${this.releaseScope.targetCommit || this.releaseScope.targetTag}: ${mismatches.join('; ')}`);
+            error.code = 'RELEASE_SCOPE_LINE_MISMATCH';
+            throw error;
+        }
+        return symbols.filter((symbol) => {
+            const lines = allowed.get(this._symbolDisplayName(symbol));
+            if (!lines) return false;
+            return lines.size === 0 || lines.has(symbol.lineNumber);
+        });
     }
 
     _filterIndexedByReleaseScope(docs) {

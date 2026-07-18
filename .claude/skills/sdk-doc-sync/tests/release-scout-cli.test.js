@@ -121,6 +121,83 @@ class FieldOp:
   ]);
 });
 
+test('runReleaseScout maps Java v2.6 core and bulk-writer symbols from repo-relative paths', async () => {
+  const baselineSymbols = [
+    {
+      name: 'upsert',
+      kind: 'method',
+      signature: 'public MutationResp upsert(UpsertReq request)',
+      params: [{ name: 'data', kind: 'keyword', type: 'List<JsonObject>', default: null }],
+      filePath: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java',
+      lineNumber: 737,
+      parentClass: 'MilvusClientV2',
+      decorators: [],
+      returnType: 'MutationResp',
+    },
+    {
+      name: 'uploadFilesAsync',
+      kind: 'method',
+      signature: 'public CompletableFuture<UploadFilesResult> uploadFilesAsync(UploadFilesRequest request)',
+      params: [
+        { name: 'sourceFilePath', kind: 'keyword', type: 'String', default: null },
+        { name: 'targetVolumePath', kind: 'keyword', type: 'String', default: null },
+      ],
+      filePath: 'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/VolumeFileManager.java',
+      lineNumber: 81,
+      parentClass: 'VolumeFileManager',
+      decorators: [],
+      returnType: 'CompletableFuture<UploadFilesResult>',
+    },
+  ];
+  const targetSymbols = [
+    {
+      ...baselineSymbols[0],
+      params: [
+        { name: 'data', kind: 'keyword', type: 'List<JsonObject>', default: null },
+        { name: 'fieldOps', kind: 'keyword', type: 'Map<String, FieldPartialUpdateOp>', default: 'null' },
+      ],
+    },
+    {
+      ...baselineSymbols[1],
+      params: [
+        ...baselineSymbols[1].params,
+        { name: 'uploadConcurrency', kind: 'keyword', type: 'int', default: '5' },
+        { name: 'progressListener', kind: 'keyword', type: 'ProgressListener', default: 'null' },
+      ],
+    },
+  ];
+
+  const scope = await runReleaseScout({
+    language: 'java',
+    sdkName: 'milvus-sdk-java',
+    track: 'v2.6.x',
+    scanState: { java: { lastScannedTag: 'v2.6.18' } },
+    targetTag: 'v2.6.22',
+    repoDir: '/repo/milvus-sdk-java',
+    sdkDir: '/repo/milvus-sdk-java',
+    publicRoots: ['sdk-core/src/main/java/', 'sdk-bulkwriter/src/main/java/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'java-v26.json'),
+    baselineSymbols,
+    targetSymbols,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v2.6.22': '73ea2a20df76e21ba515c870a78cf1a75e4b7d0f\n',
+        'show -s --format=%cI v2.6.22': '2026-06-29T10:38:24+08:00\n',
+        'diff --name-only v2.6.18..v2.6.22': [
+          'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java',
+          'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/VolumeFileManager.java',
+        ].join('\n'),
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.source.file]), [
+    ['UPDATE', 'java:v2-Vector:upsert', 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java'],
+    ['UPDATE', 'java:v2-Volume:VolumeFileManager-uploadFilesAsync', 'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/VolumeFileManager.java'],
+  ]);
+});
+
 test('sdk-release-scout CLI writes JSON and does not print raw scanner dumps', async () => {
   const stdout = [];
   const stderr = [];

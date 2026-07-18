@@ -353,6 +353,98 @@ test('OpenAPI allOf rejects incompatible scalar, enum, and range constraints wit
   }
 });
 
+test('OpenAPI 3.0 allOf treats omitted nullable as false and merges boolean exclusive bounds', () => {
+  const spec = jsonFixture('openapi-create-collection.json');
+  spec.openapi = '3.0.3';
+  spec.components.schemas.CreateCollectionRequest = {
+    type: 'object',
+    properties: {
+      omittedAndTrue: { allOf: [{ type: 'string' }, { type: 'string', nullable: true }] },
+      allTrue: { allOf: [{ type: 'string', nullable: true }, { type: 'string', nullable: true }] },
+      explicitFalse: { allOf: [{ type: 'string', nullable: false }, { type: 'string', nullable: true }] },
+      equalBounds: {
+        allOf: [
+          { type: 'number', minimum: 5, exclusiveMinimum: false, maximum: 20, exclusiveMaximum: false },
+          { type: 'number', minimum: 5, exclusiveMinimum: true, maximum: 15, exclusiveMaximum: true },
+        ],
+      },
+      differentBounds: {
+        allOf: [
+          { type: 'number', minimum: 5, exclusiveMinimum: true, maximum: 20, exclusiveMaximum: true },
+          { type: 'number', minimum: 7, exclusiveMinimum: false, maximum: 15, exclusiveMaximum: false },
+        ],
+      },
+    },
+  };
+  const reference = openapiAdapter.toReferenceDocument(restInput(spec), restContext());
+  const fields = Object.fromEntries(reference.http.request.body.map((field) => [field.name, field]));
+  assert.ok(fields.omittedAndTrue.constraints.includes('non-nullable'));
+  assert.ok(fields.allTrue.constraints.includes('nullable'));
+  assert.ok(fields.explicitFalse.constraints.includes('non-nullable'));
+  assert.ok(fields.equalBounds.constraints.includes('minimum: 5'));
+  assert.ok(fields.equalBounds.constraints.includes('exclusiveMinimum: true'));
+  assert.ok(fields.equalBounds.constraints.includes('maximum: 15'));
+  assert.ok(fields.equalBounds.constraints.includes('exclusiveMaximum: true'));
+  assert.ok(fields.differentBounds.constraints.includes('minimum: 7'));
+  assert.ok(fields.differentBounds.constraints.includes('exclusiveMinimum: false'));
+  assert.ok(fields.differentBounds.constraints.includes('maximum: 15'));
+  assert.ok(fields.differentBounds.constraints.includes('exclusiveMaximum: false'));
+
+  const impossible = jsonFixture('openapi-create-collection.json');
+  impossible.openapi = '3.0.3';
+  impossible.components.schemas.CreateCollectionRequest = {
+    type: 'object',
+    properties: {
+      value: {
+        allOf: [
+          { type: 'number', minimum: 10, exclusiveMinimum: false },
+          { type: 'number', maximum: 10, exclusiveMaximum: true },
+        ],
+      },
+    },
+  };
+  assert.throws(
+    () => openapiAdapter.toReferenceDocument(restInput(impossible), restContext()),
+    /OPENAPI_ALLOF_CONFLICT.*value.*minimum/i,
+  );
+});
+
+test('OpenAPI 3.1 allOf keeps numeric exclusive bounds and does not default omitted nullable', () => {
+  const spec = jsonFixture('openapi-create-collection.json');
+  spec.openapi = '3.0.3';
+  spec.components.schemas.CreateCollectionRequest = {
+    type: 'object',
+    properties: {
+      nullableKeyword: { allOf: [{ type: 'string' }, { type: 'string', nullable: true }] },
+      range: {
+        allOf: [
+          { type: 'number', exclusiveMinimum: 5, exclusiveMaximum: 20 },
+          { type: 'number', exclusiveMinimum: 7, exclusiveMaximum: 15 },
+        ],
+      },
+    },
+  };
+  const context = { ...restContext(), openapiVersion: '3.1.1' };
+  const reference = openapiAdapter.toReferenceDocument(restInput(spec), context);
+  const fields = Object.fromEntries(reference.http.request.body.map((field) => [field.name, field]));
+  assert.ok(fields.nullableKeyword.constraints.includes('nullable'));
+  assert.ok(fields.range.constraints.includes('exclusiveMinimum: 7'));
+  assert.ok(fields.range.constraints.includes('exclusiveMaximum: 15'));
+
+  const impossible = jsonFixture('openapi-create-collection.json');
+  impossible.openapi = '3.1.0';
+  impossible.components.schemas.CreateCollectionRequest = {
+    type: 'object',
+    properties: {
+      value: { allOf: [{ type: 'number', exclusiveMinimum: 10 }, { type: 'number', maximum: 10 }] },
+    },
+  };
+  assert.throws(
+    () => openapiAdapter.toReferenceDocument(restInput(impossible), restContext()),
+    /OPENAPI_ALLOF_CONFLICT.*value.*exclusiveMinimum/i,
+  );
+});
+
 test('OpenAPI recursive schemas fail explicitly instead of silently losing fields', () => {
   const spec = jsonFixture('openapi-create-collection.json');
   spec.components.schemas.CreateCollectionRequest = {

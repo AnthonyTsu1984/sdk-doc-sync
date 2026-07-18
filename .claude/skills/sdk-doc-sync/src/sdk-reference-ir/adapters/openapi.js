@@ -11,6 +11,13 @@ const STRUCTURAL_KEYS = new Set([
   ...LOWER_BOUNDS, ...UPPER_BOUNDS,
 ]);
 
+function openapiSemantics(spec, context = {}) {
+  const declared = String(context.openapiVersion || spec.openapi || '');
+  if (/^3\.0(?:\.|$)/.test(declared)) return Object.freeze({ family: '3.0', declared });
+  if (/^3\.1(?:\.|$)/.test(declared)) return Object.freeze({ family: '3.1', declared });
+  throw new Error(`Unsupported OpenAPI version: ${declared || '(missing)'}`);
+}
+
 function escapePointer(value) {
   return String(value).replace(/~/g, '~0').replace(/\//g, '~1');
 }
@@ -61,7 +68,7 @@ function assertSupportedSchema(value, pointer) {
   }
 }
 
-function directSchema(spec, raw, pointer, stack = []) {
+function directSchema(spec, raw, pointer, stack = [], semantics = openapiSemantics(spec)) {
   const resolved = resolveNode(spec, raw, pointer, stack);
   const value = resolved.value || {};
   assertSupportedSchema(value, resolved.pointer);
@@ -74,6 +81,7 @@ function directSchema(spec, raw, pointer, stack = []) {
       propertyPointers: mergedMetadata.propertyPointers,
       propertyEvidence: mergedMetadata.propertyEvidence,
       evidencePointers: mergedMetadata.evidencePointers,
+      semantics: mergedMetadata.semantics || semantics,
     };
   }
   const propertyPointers = new Map();
@@ -90,13 +98,20 @@ function directSchema(spec, raw, pointer, stack = []) {
     propertyPointers,
     propertyEvidence,
     evidencePointers: [resolved.pointer],
+    semantics,
   };
 }
 
-function schemaKind(spec, raw, pointer, stack = []) {
-  const resolved = resolveSchema(spec, raw, pointer, stack);
+function schemaKind(spec, raw, pointer, stack = [], semantics = openapiSemantics(spec)) {
+  const resolved = resolveSchema(spec, raw, pointer, stack, semantics);
   if (resolved.value.type === 'array') {
-    const item = resolveSchema(spec, resolved.value.items || {}, `${resolved.pointer}/items`, resolved.stack);
+    const item = resolveSchema(
+      spec,
+      resolved.value.items || {},
+      `${resolved.pointer}/items`,
+      resolved.stack,
+      resolved.semantics,
+    );
     return `array<${item.value.type || (item.value.properties ? 'object' : '')}>`;
   }
   return resolved.value.type || (resolved.value.properties ? 'object' : '');
@@ -126,19 +141,27 @@ function mergeBound(result, left, right, key, mode, pointer) {
   else conflict(pointer, key, `incompatible values ${JSON.stringify(left[key])} and ${JSON.stringify(right[key])}`);
 }
 
-function assertPossibleRanges(value, pointer) {
-  const lowerCandidates = [
-    Object.hasOwn(value, 'minimum') ? { value: value.minimum, exclusive: false, key: 'minimum' } : null,
-    Object.hasOwn(value, 'exclusiveMinimum') && typeof value.exclusiveMinimum === 'number'
-      ? { value: value.exclusiveMinimum, exclusive: true, key: 'exclusiveMinimum' }
-      : null,
-  ].filter(Boolean);
-  const upperCandidates = [
-    Object.hasOwn(value, 'maximum') ? { value: value.maximum, exclusive: false, key: 'maximum' } : null,
-    Object.hasOwn(value, 'exclusiveMaximum') && typeof value.exclusiveMaximum === 'number'
-      ? { value: value.exclusiveMaximum, exclusive: true, key: 'exclusiveMaximum' }
-      : null,
-  ].filter(Boolean);
+function assertPossibleRanges(value, pointer, semantics) {
+  const lowerCandidates = semantics.family === '3.0'
+    ? [Object.hasOwn(value, 'minimum')
+      ? { value: value.minimum, exclusive: value.exclusiveMinimum === true, key: 'minimum' }
+      : null].filter(Boolean)
+    : [
+      Object.hasOwn(value, 'minimum') ? { value: value.minimum, exclusive: false, key: 'minimum' } : null,
+      Object.hasOwn(value, 'exclusiveMinimum') && typeof value.exclusiveMinimum === 'number'
+        ? { value: value.exclusiveMinimum, exclusive: true, key: 'exclusiveMinimum' }
+        : null,
+    ].filter(Boolean);
+  const upperCandidates = semantics.family === '3.0'
+    ? [Object.hasOwn(value, 'maximum')
+      ? { value: value.maximum, exclusive: value.exclusiveMaximum === true, key: 'maximum' }
+      : null].filter(Boolean)
+    : [
+      Object.hasOwn(value, 'maximum') ? { value: value.maximum, exclusive: false, key: 'maximum' } : null,
+      Object.hasOwn(value, 'exclusiveMaximum') && typeof value.exclusiveMaximum === 'number'
+        ? { value: value.exclusiveMaximum, exclusive: true, key: 'exclusiveMaximum' }
+        : null,
+    ].filter(Boolean);
   const lower = lowerCandidates.sort((a, b) => b.value - a.value || Number(b.exclusive) - Number(a.exclusive))[0];
   const upper = upperCandidates.sort((a, b) => a.value - b.value || Number(b.exclusive) - Number(a.exclusive))[0];
   if (lower && upper && (lower.value > upper.value || (lower.value === upper.value && (lower.exclusive || upper.exclusive)))) {
@@ -155,8 +178,38 @@ function assertPossibleRanges(value, pointer) {
   }
 }
 
+function openapi30Bound(value, boundKey, exclusiveKey) {
+  if (!Object.hasOwn(value, boundKey)) return null;
+  return {
+    value: value[boundKey],
+    exclusive: value[exclusiveKey] === true,
+    explicitExclusive: Object.hasOwn(value, exclusiveKey),
+  };
+}
+
+function mergeOpenapi30Bound(result, left, right, boundKey, exclusiveKey, mode) {
+  const leftBound = openapi30Bound(left, boundKey, exclusiveKey);
+  const rightBound = openapi30Bound(right, boundKey, exclusiveKey);
+  if (!leftBound && !rightBound) return;
+  let selected;
+  if (!leftBound) selected = rightBound;
+  else if (!rightBound) selected = leftBound;
+  else if (leftBound.value === rightBound.value) {
+    selected = {
+      value: leftBound.value,
+      exclusive: leftBound.exclusive || rightBound.exclusive,
+      explicitExclusive: leftBound.explicitExclusive || rightBound.explicitExclusive,
+    };
+  } else if ((mode === 'lower' && leftBound.value > rightBound.value)
+    || (mode === 'upper' && leftBound.value < rightBound.value)) selected = leftBound;
+  else selected = rightBound;
+  result[boundKey] = selected.value;
+  if (selected.explicitExclusive) result[exclusiveKey] = selected.exclusive;
+}
+
 function mergeResolvedSchemas(spec, left, right, pointer, stack) {
   const result = {};
+  const semantics = left.semantics || right.semantics || openapiSemantics(spec);
   const leftType = left.value.type || (left.value.properties ? 'object' : left.value.items ? 'array' : '');
   const rightType = right.value.type || (right.value.properties ? 'object' : right.value.items ? 'array' : '');
   if (leftType && rightType && leftType !== rightType) {
@@ -177,14 +230,27 @@ function mergeResolvedSchemas(spec, left, right, pointer, stack) {
 
   const leftNullable = Object.hasOwn(left.value, 'nullable');
   const rightNullable = Object.hasOwn(right.value, 'nullable');
-  if (leftNullable || rightNullable) {
+  if (semantics.family === '3.0') {
+    result.nullable = left.value.nullable === true && right.value.nullable === true;
+  } else if (leftNullable || rightNullable) {
     result.nullable = leftNullable && rightNullable
       ? left.value.nullable === true && right.value.nullable === true
       : (leftNullable ? left.value.nullable : right.value.nullable);
   }
 
-  for (const key of LOWER_BOUNDS) mergeBound(result, left.value, right.value, key, 'lower', pointer);
-  for (const key of UPPER_BOUNDS) mergeBound(result, left.value, right.value, key, 'upper', pointer);
+  if (semantics.family === '3.0') {
+    mergeOpenapi30Bound(result, left.value, right.value, 'minimum', 'exclusiveMinimum', 'lower');
+    mergeOpenapi30Bound(result, left.value, right.value, 'maximum', 'exclusiveMaximum', 'upper');
+    for (const key of LOWER_BOUNDS.filter((item) => !['minimum', 'exclusiveMinimum'].includes(item))) {
+      mergeBound(result, left.value, right.value, key, 'lower', pointer);
+    }
+    for (const key of UPPER_BOUNDS.filter((item) => !['maximum', 'exclusiveMaximum'].includes(item))) {
+      mergeBound(result, left.value, right.value, key, 'upper', pointer);
+    }
+  } else {
+    for (const key of LOWER_BOUNDS) mergeBound(result, left.value, right.value, key, 'lower', pointer);
+    for (const key of UPPER_BOUNDS) mergeBound(result, left.value, right.value, key, 'upper', pointer);
+  }
 
   const required = new Set([...(left.value.required || []), ...(right.value.required || [])]);
   if (required.size > 0) result.required = [...required];
@@ -204,8 +270,8 @@ function mergeResolvedSchemas(spec, left, right, pointer, stack) {
     if (leftProperty !== undefined && rightProperty !== undefined) {
       const merged = mergeResolvedSchemas(
         spec,
-        resolveSchema(spec, leftProperty, leftPointer, left.stack),
-        resolveSchema(spec, rightProperty, rightPointer, right.stack),
+        resolveSchema(spec, leftProperty, leftPointer, left.stack, semantics),
+        resolveSchema(spec, rightProperty, rightPointer, right.stack, semantics),
         `${pointer}/properties/${escapePointer(name)}`,
         stack,
       );
@@ -227,8 +293,8 @@ function mergeResolvedSchemas(spec, left, right, pointer, stack) {
     const itemPointer = `${pointer}/items`;
     const mergedItems = mergeResolvedSchemas(
       spec,
-      resolveSchema(spec, left.value.items, `${left.pointer}/items`, left.stack),
-      resolveSchema(spec, right.value.items, `${right.pointer}/items`, right.stack),
+      resolveSchema(spec, left.value.items, `${left.pointer}/items`, left.stack, semantics),
+      resolveSchema(spec, right.value.items, `${right.pointer}/items`, right.stack, semantics),
       itemPointer,
       stack,
     );
@@ -245,13 +311,17 @@ function mergeResolvedSchemas(spec, left, right, pointer, stack) {
     else if (!rightHas || equalValue(left.value[key], right.value[key])) result[key] = left.value[key];
     else conflict(pointer, key, `incompatible values ${JSON.stringify(left.value[key])} and ${JSON.stringify(right.value[key])}`);
   }
-  assertPossibleRanges(result, pointer);
+  assertPossibleRanges(result, pointer, semantics);
   const evidencePointers = [...new Set([
     ...(left.evidencePointers || [left.pointer]),
     ...(right.evidencePointers || [right.pointer]),
   ])];
-  MERGED_SCHEMA_METADATA.set(result, { propertyPointers, propertyEvidence, evidencePointers });
-  return { value: result, pointer, stack, propertyPointers, propertyEvidence, evidencePointers };
+  MERGED_SCHEMA_METADATA.set(result, {
+    propertyPointers, propertyEvidence, evidencePointers, semantics,
+  });
+  return {
+    value: result, pointer, stack, propertyPointers, propertyEvidence, evidencePointers, semantics,
+  };
 }
 
 function mergeAllOf(spec, base, pointer, stack) {
@@ -259,10 +329,10 @@ function mergeAllOf(spec, base, pointer, stack) {
   const own = { ...base.value };
   delete own.allOf;
   if (Object.keys(own).some((key) => !['description'].includes(key))) {
-    parts.push(directSchema(spec, own, base.pointer, stack));
+    parts.push(directSchema(spec, own, base.pointer, stack, base.semantics));
   }
   base.value.allOf.forEach((part, index) => {
-    parts.push(resolveSchema(spec, part, `${base.pointer}/allOf/${index}`, stack));
+    parts.push(resolveSchema(spec, part, `${base.pointer}/allOf/${index}`, stack, base.semantics));
   });
 
   if (parts.length === 0) return base;
@@ -277,20 +347,21 @@ function mergeAllOf(spec, base, pointer, stack) {
       propertyPointers: merged.propertyPointers,
       propertyEvidence: merged.propertyEvidence,
       evidencePointers: merged.evidencePointers,
+      semantics: merged.semantics,
     });
     merged = { ...merged, value };
   }
   return merged;
 }
 
-function resolveSchema(spec, raw, pointer, stack = []) {
-  const base = directSchema(spec, raw, pointer, stack);
+function resolveSchema(spec, raw, pointer, stack = [], semantics = openapiSemantics(spec)) {
+  const base = directSchema(spec, raw, pointer, stack, semantics);
   if (!Array.isArray(base.value.allOf)) return base;
   return mergeAllOf(spec, base, base.pointer, base.stack);
 }
 
-function schemaDisplay(spec, raw, pointer, stack) {
-  return schemaKind(spec, raw, pointer, stack);
+function schemaDisplay(spec, raw, pointer, stack, semantics) {
+  return schemaKind(spec, raw, pointer, stack, semantics);
 }
 
 function normalizeField(
@@ -303,7 +374,8 @@ function normalizeField(
   stack = [],
   evidencePointers = [pointer],
 ) {
-  const resolved = resolveSchema(spec, raw, pointer, stack);
+  const semantics = context.openapiSemantics || openapiSemantics(spec, context);
+  const resolved = resolveSchema(spec, raw, pointer, stack, semantics);
   const value = resolved.value || {};
   const constraints = [];
   if (value.format) constraints.push(`format: ${value.format}`);
@@ -318,7 +390,7 @@ function normalizeField(
   }
   const children = [];
   if (value.type === 'array' && value.items) {
-    const item = resolveSchema(spec, value.items, `${resolved.pointer}/items`, resolved.stack);
+    const item = resolveSchema(spec, value.items, `${resolved.pointer}/items`, resolved.stack, semantics);
     const itemRequired = new Set(item.value?.required || []);
     for (const [childName, childSchema] of Object.entries(item.value?.properties || {})) {
       const childPointer = item.propertyPointers.get(childName) || `${item.pointer}/properties/${escapePointer(childName)}`;
@@ -352,7 +424,7 @@ function normalizeField(
   const defaultValue = Object.hasOwn(value, 'default') ? value.default : null;
   return schema.createField({
     name,
-    type: { display: schemaDisplay(spec, raw, pointer, stack), references: [] },
+    type: { display: schemaDisplay(spec, raw, pointer, stack, semantics), references: [] },
     required: required === true,
     defaultValue,
     description: String(value.description || ''),
@@ -364,7 +436,8 @@ function normalizeField(
 }
 
 function normalizeObjectFields(spec, raw, pointer, context, stack = []) {
-  const resolved = resolveSchema(spec, raw, pointer, stack);
+  const semantics = context.openapiSemantics || openapiSemantics(spec, context);
+  const resolved = resolveSchema(spec, raw, pointer, stack, semantics);
   const required = new Set(resolved.value?.required || []);
   return Object.entries(resolved.value?.properties || {}).map(([name, child]) => {
     const childPointer = resolved.propertyPointers.get(name) || `${resolved.pointer}/properties/${escapePointer(name)}`;
@@ -516,6 +589,7 @@ function normalizeSecurity(spec, operation, operationPointer, context) {
 function toReferenceDocument(input, context = {}) {
   const { spec, path, method } = input || {};
   if (!spec || typeof spec !== 'object') throw new TypeError('OpenAPI adapter requires a spec object');
+  const normalizationContext = { ...context, openapiSemantics: openapiSemantics(spec, context) };
   const normalizedMethod = String(method || '').toLowerCase();
   const pathItem = spec.paths?.[path];
   const operation = pathItem?.[normalizedMethod];
@@ -532,7 +606,9 @@ function toReferenceDocument(input, context = {}) {
     pointer: `${operationPointer}/parameters/${index}`,
   }));
   const parameterEntries = mergeParameterEntries(spec, pathParameters, operationParameters);
-  const parameters = parameterEntries.map(({ parameter, pointer }) => normalizeParameter(spec, parameter, pointer, context));
+  const parameters = parameterEntries.map(({ parameter, pointer }) => (
+    normalizeParameter(spec, parameter, pointer, normalizationContext)
+  ));
   const requestBodyPointer = `${operationPointer}/requestBody`;
   const requestBodyResolved = operation.requestBody
     ? resolveNode(spec, operation.requestBody, requestBodyPointer)
@@ -544,7 +620,7 @@ function toReferenceDocument(input, context = {}) {
       spec,
       requestContent.schema,
       `${requestBodyResolved.pointer}/content/${escapePointer(requestContentType)}/schema`,
-      context,
+      normalizationContext,
     )
     : [];
   const request = (parameters.length > 0 || requestBody) ? {
@@ -567,6 +643,7 @@ function toReferenceDocument(input, context = {}) {
       responseSchema,
       `${resolved.pointer}/content/${escapePointer(responseContentType || '')}/schema`,
       resolved.stack,
+      normalizationContext.openapiSemantics,
     );
     const normalized = {
       status,
@@ -581,7 +658,7 @@ function toReferenceDocument(input, context = {}) {
           spec,
           responseSchema,
           `${resolved.pointer}/content/${escapePointer(responseContentType)}/schema`,
-          context,
+          normalizationContext,
           resolved.stack,
         )
         : [],

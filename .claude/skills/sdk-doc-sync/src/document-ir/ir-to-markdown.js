@@ -15,7 +15,8 @@ function escapeText(value) {
 
 function escapeBlockStarts(value) {
   return value.split('\n').map((line) => line
-    .replace(/^(\s*)(?=(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|&gt;\s|`{3,}|~{3,}))/, '$1\\'))
+    .replace(/^ {4}/, '&#32;   ')
+    .replace(/^(\s*)(?=(?:#{1,6}\s|[-+*]\s|\d+[.)]\s|&gt;\s|`{3,}|~{3,}|-(?:\s*-){2,}\s*$|={3,}\s*$))/, '$1\\'))
     .join('\n');
 }
 
@@ -36,6 +37,7 @@ function renderInline(node) {
   if (node.marks.includes('bold')) value = `**${value}**`;
   if (node.marks.includes('italic')) value = `*${value}*`;
   if (node.marks.includes('strikethrough')) value = `~~${value}~~`;
+  if (node.marks.includes('underline')) value = `<u>${value}</u>`;
   return value;
 }
 

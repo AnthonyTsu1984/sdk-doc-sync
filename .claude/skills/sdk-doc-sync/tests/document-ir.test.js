@@ -410,3 +410,83 @@ test('Markdown validation rejects unsafe URLs and audience targets and sanitizes
   assert.equal(markdown.includes('<script>'), false);
   assert.equal(markdown.split('\n').length, 2);
 });
+
+test('Markdown text escaping neutralizes setext, thematic breaks, and indented code', () => {
+  const markdown = renderMarkdown(schema.document([
+    schema.paragraph([schema.text([
+      'title', '---', 'title', '===', '* * *', '_ _ _', '    indented',
+    ].join('\n'))]),
+    schema.unorderedList([
+      schema.listItem([schema.paragraph([schema.text('item')])]),
+    ]),
+  ]));
+
+  assert.ok(markdown.includes('title\n\\---\ntitle\n\\==='));
+  assert.ok(markdown.includes('\\* \\* \\*'));
+  assert.ok(markdown.includes('\\_ \\_ \\_'));
+  assert.ok(markdown.includes('&#32;   indented'));
+  assert.match(markdown, /\n\n- item\n$/);
+});
+
+test('Docx graph validation rejects multiple pages and mismatched parent_id values', () => {
+  assert.throws(() => docxToIr([
+    { block_id: 'page-a', block_type: 1, children: [] },
+    { block_id: 'page-b', block_type: 1, children: [] },
+  ]), (error) => error.code === 'DOCX_GRAPH_MULTIPLE_PAGES' && error.path === '$[1]');
+
+  assert.throws(() => docxToIr([
+    { block_id: 'page', block_type: 1, children: ['child'] },
+    { block_id: 'child', block_type: 2, parent_id: 'other', text: { elements: [] } },
+  ]), (error) => error.code === 'DOCX_GRAPH_PARENT_MISMATCH' && error.path === '$[0].children[0]');
+});
+
+test('Docx graphs without pages derive one root from incoming edges and reject ambiguous roots', () => {
+  const ir = docxToIr([
+    { block_id: 'root', block_type: 19, parent_id: 'stale-external-parent', children: ['child'] },
+    { block_id: 'child', block_type: 2, parent_id: 'root', text: { elements: [] } },
+  ]);
+  assert.deepEqual(ir.children.map((node) => node.sourceId), ['root']);
+
+  assert.throws(() => docxToIr([
+    { block_id: 'one', block_type: 2, text: { elements: [] } },
+    { block_id: 'two', block_type: 2, text: { elements: [] } },
+  ]), (error) => error.code === 'DOCX_GRAPH_AMBIGUOUS_ROOT' && error.path === '$');
+});
+
+test('underline is preserved semantically and rendered around escaped safe text', () => {
+  const ir = docxToIr([
+    { block_id: 'page', block_type: 1, children: ['text'] },
+    {
+      block_id: 'text',
+      block_type: 2,
+      parent_id: 'page',
+      text: { elements: [{
+        text_run: { content: '<em>safe</em>', text_element_style: { underline: true } },
+      }] },
+    },
+  ]);
+  assert.deepEqual(ir.children[0].children[0].marks, ['underline']);
+  assert.equal(renderMarkdown(ir), '<u>&lt;em&gt;safe&lt;/em&gt;</u>\n');
+});
+
+test('empty table cells are valid and render as empty Markdown cells', () => {
+  const ir = schema.document([schema.table([
+    schema.tableRow([schema.tableCell([]), schema.tableCell([])]),
+  ])]);
+  assert.equal(validateDocumentIr(ir).valid, true);
+  assert.equal(renderMarkdown(ir), '|  |  |\n| --- | --- |\n');
+});
+
+test('Docx tables reject cell edges that do not reference table-cell blocks', () => {
+  assert.throws(() => docxToIr([
+    { block_id: 'page', block_type: 1, children: ['table'] },
+    {
+      block_id: 'table',
+      block_type: 31,
+      parent_id: 'page',
+      table: { property: { row_size: 1, column_size: 1 }, cells: ['not-cell'] },
+    },
+    { block_id: 'not-cell', block_type: 2, parent_id: 'table', text: { elements: [] } },
+  ]), (error) => error.code === 'DOCX_TABLE_CELL_TYPE'
+    && error.path === '$[1].table.cells[0]');
+});

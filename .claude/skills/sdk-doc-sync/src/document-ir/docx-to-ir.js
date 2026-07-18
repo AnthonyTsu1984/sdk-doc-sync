@@ -42,6 +42,16 @@ function docxToIr(input, { metadata } = {}) {
     indexById.set(id, index);
   }
 
+  const pages = blocks.filter((block) => block.block_type === 1);
+  if (pages.length > 1) {
+    const duplicatePage = pages[1];
+    throw new DocxToIrError(
+      'DOCX_GRAPH_MULTIPLE_PAGES',
+      `$[${indexById.get(duplicatePage.block_id)}]`,
+      'Docx graph must contain at most one page block',
+    );
+  }
+
   const edges = new Map();
   const incoming = new Map();
   for (const block of blocks) {
@@ -57,6 +67,13 @@ function docxToIr(input, { metadata } = {}) {
       children.forEach((childId, childIndex) => {
         const childPath = `${path}[${childIndex}]`;
         if (!byId.has(childId)) throw new DocxToIrError('DOCX_GRAPH_MISSING_CHILD', childPath, `referenced child ${childId} does not exist`);
+        const childBlock = byId.get(childId);
+        if (childBlock.parent_id !== undefined && childBlock.parent_id !== block.block_id) {
+          throw new DocxToIrError('DOCX_GRAPH_PARENT_MISMATCH', childPath, `child ${childId} declares parent ${childBlock.parent_id}, expected ${block.block_id}`);
+        }
+        if (field === 'table.cells' && childBlock.block_type !== 32) {
+          throw new DocxToIrError('DOCX_TABLE_CELL_TYPE', childPath, `table cell ${childId} must have block_type 32`);
+        }
         if (local.has(childId)) throw new DocxToIrError('DOCX_GRAPH_REPEATED_EDGE', childPath, `child ${childId} is referenced more than once by ${block.block_id}`);
         local.add(childId);
         const previous = incoming.get(childId);
@@ -83,7 +100,7 @@ function docxToIr(input, { metadata } = {}) {
   for (const id of byId.keys()) checkCycle(id, `$[${indexById.get(id)}]`);
 
   const visited = new Set();
-  const page = blocks.find((block) => block.block_type === 1);
+  const page = pages[0];
   if (page) {
     const reachable = new Set();
     const mark = (id) => {
@@ -121,6 +138,7 @@ function docxToIr(input, { metadata } = {}) {
         if (style.bold) marks.push('bold');
         if (style.italic) marks.push('italic');
         if (style.strikethrough) marks.push('strikethrough');
+        if (style.underline) marks.push('underline');
         if (style.inline_code) marks.push('inlineCode');
         result.push(schema.text(content, marks));
       } else if (element.mention_doc) {
@@ -296,11 +314,20 @@ function docxToIr(input, { metadata } = {}) {
     return result;
   }
 
-  const rootIds = page
-    ? (page.children || [])
-    : blocks
-      .filter((block) => block.block_type !== 1 && (!block.parent_id || !byId.has(block.parent_id)))
-      .map((block) => block.block_id);
+  let rootIds;
+  if (page) {
+    rootIds = page.children || [];
+  } else {
+    const roots = blocks.filter((block) => !incoming.has(block.block_id));
+    if (roots.length !== 1) {
+      throw new DocxToIrError(
+        'DOCX_GRAPH_AMBIGUOUS_ROOT',
+        '$',
+        `Docx graph without a page must have exactly one incoming-edge root; found ${roots.length}`,
+      );
+    }
+    rootIds = [roots[0].block_id];
+  }
   if (page) visited.add(page.block_id);
 
   return schema.document(convertSequence(rootIds), {

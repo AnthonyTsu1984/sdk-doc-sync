@@ -15,7 +15,7 @@ const BLOCK_TYPES = new Set([
   'opaque',
 ]);
 const INLINE_TYPES = new Set(['text', 'citation', 'documentReference']);
-const MARKS = new Set(['bold', 'italic', 'strikethrough', 'inlineCode']);
+const MARKS = new Set(['bold', 'italic', 'strikethrough', 'inlineCode', 'underline']);
 const CALLOUT_KINDS = new Set(['note', 'info', 'tip', 'warning', 'danger']);
 const AUDIENCE_TARGET = /^[A-Za-z0-9._-]+$/;
 
@@ -176,9 +176,6 @@ function validateDocumentIr(ir, { lossless = true } = {}) {
       case 'tableCell':
       case 'callout':
       case 'audience': {
-        if (node.type === 'tableCell' && Array.isArray(node.children) && node.children.length === 0) {
-          report(errors, `${path}.children`, 'table cells must not be empty', 'INVALID_TABLE');
-        }
         if (node.type === 'callout' && !CALLOUT_KINDS.has(node.kind)) {
           report(errors, `${path}.kind`, 'callout kind must be note, info, tip, warning, or danger', 'INVALID_CALLOUT');
         }

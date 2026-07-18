@@ -98,11 +98,15 @@ test('converts tables, audience regions, media, and unknown blocks without silen
   const raw = [
     { block_id: 'page', block_type: 1, children: ['audience', 'table', 'image', 'file', 'iframe', 'board', 'unknown'] },
     { block_id: 'audience', block_type: 2, parent_id: 'page', text: { elements: [{ text_run: { content: '<include target="milvus">Visible</include>', text_element_style: {} } }] } },
-    { block_id: 'table', block_type: 31, parent_id: 'page', table: { row_size: 1, column_size: 2, cells: ['cell-a', 'cell-b'] } },
+    { block_id: 'table', block_type: 31, parent_id: 'page', table: { property: { row_size: 2, column_size: 2 }, cells: ['cell-a', 'cell-b', 'cell-c', 'cell-d'] } },
     { block_id: 'cell-a', block_type: 32, parent_id: 'table', children: ['cell-a-text'] },
     { block_id: 'cell-b', block_type: 32, parent_id: 'table', children: ['cell-b-text'] },
+    { block_id: 'cell-c', block_type: 32, parent_id: 'table', children: ['cell-c-text'] },
+    { block_id: 'cell-d', block_type: 32, parent_id: 'table', children: ['cell-d-text'] },
     { block_id: 'cell-a-text', block_type: 2, parent_id: 'cell-a', text: { elements: [{ text_run: { content: 'Name', text_element_style: {} } }] } },
     { block_id: 'cell-b-text', block_type: 2, parent_id: 'cell-b', text: { elements: [{ text_run: { content: 'Type', text_element_style: {} } }] } },
+    { block_id: 'cell-c-text', block_type: 2, parent_id: 'cell-c', text: { elements: [{ text_run: { content: 'collection_name', text_element_style: {} } }] } },
+    { block_id: 'cell-d-text', block_type: 2, parent_id: 'cell-d', text: { elements: [{ text_run: { content: 'string', text_element_style: {} } }] } },
     { block_id: 'image', block_type: 27, parent_id: 'page', image: { token: 'image-token' } },
     { block_id: 'file', block_type: 23, parent_id: 'page', file: { token: 'file-token', name: 'schema.json' } },
     { block_id: 'iframe', block_type: 26, parent_id: 'page', iframe: { component: { url: 'https://example.test/embed' } } },
@@ -116,12 +120,16 @@ test('converts tables, audience regions, media, and unknown blocks without silen
     'audience', 'table', 'media', 'media', 'media', 'media', 'opaque',
   ]);
   assert.equal(ir.children[0].mode, 'include');
+  assert.equal(ir.children[1].rows.length, 2);
+  assert.deepEqual(ir.children[1].rows.map((row) => row.cells.length), [2, 2]);
   assert.equal(ir.children[1].rows[0].cells[1].children[0].type, 'paragraph');
+  assert.equal(ir.children[1].rows[1].cells[0].children[0].children[0].value, 'collection_name');
   assert.deepEqual(ir.children.slice(2, 6).map((node) => node.kind), [
     'image', 'file', 'iframe', 'board',
   ]);
-  assert.deepEqual(ir.children[6].raw, raw[11]);
-  assert.notEqual(ir.children[6].raw, raw[11]);
+  assert.deepEqual(ir.children[6].raw, raw[15]);
+  assert.notEqual(ir.children[6].raw, raw[15]);
+  assert.match(renderMarkdown(schema.document([ir.children[1]])), /\| Name \| Type \|\n\| --- \| --- \|\n\| collection\\_name \| string \|/);
 });
 
 test('converts ordered lists and quote blocks into valid IR', () => {

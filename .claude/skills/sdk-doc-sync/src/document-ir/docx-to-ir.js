@@ -159,7 +159,7 @@ function docxToIr(input, { metadata } = {}) {
       });
     }
     if (block.block_type === 31) {
-      const columnCount = block.table?.column_size || 1;
+      const columnCount = block.table?.property?.column_size || block.table?.column_size || 1;
       const cells = block.table?.cells || [];
       const rows = [];
       for (let offset = 0; offset < cells.length; offset += columnCount) {

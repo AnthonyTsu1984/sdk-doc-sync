@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "prompt": "Use $sdk-doc-sync to find the latest changes in python 2.6.x",
+  "requiredCommands": [
+    "sdk-release-scout",
+    "sdk-doc-sync --release-scope"
+  ],
+  "expected": {
+    "baselineTag": "v2.6.12",
+    "targetTag": "v2.6.17",
+    "approvalGrade": true,
+    "writesPerformed": false,
+    "scanStateUpdated": false,
+    "stableIds": [
+      "python:Management:compact",
+      "python:Vector:FieldOp"
+    ]
+  }
+}

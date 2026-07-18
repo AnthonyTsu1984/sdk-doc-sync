@@ -2,10 +2,28 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 test('sdk-doc-sync test runner path exists', () => {
   const runner = path.resolve(__dirname, 'run-all.js');
   assert.equal(fs.existsSync(runner), true, `Missing expected test runner: ${runner}`);
+});
+
+test('sdk-doc-sync --list reports sorted tests without executing them', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const runner = path.join(__dirname, 'run-all.js');
+  const result = spawnSync(process.execPath, [runner, '--list'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  assert.deepEqual(result.stdout.trim().split('\n'), [
+    '.claude/skills/sdk-doc-sync/tests/lark-doc-writer.test.js',
+    '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js',
+    '.claude/skills/sdk-doc-sync/tests/script-paths.test.js',
+  ]);
 });
 
 test('package.json test scripts point to existing files', () => {

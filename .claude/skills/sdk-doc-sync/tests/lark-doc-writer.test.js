@@ -48,5 +48,5 @@ test('mapped-null Docx block type 16 renders an explicit unsupported marker', as
 
   const markdown = await writer.__markdown([unsupportedBlock]);
 
-  assert.match(markdown, /\[Unsupported block type(?: 16)?\]/);
+  assert.equal(markdown, '[Unsupported block type: 16]');
 });

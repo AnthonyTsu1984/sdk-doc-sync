@@ -1,0 +1,18 @@
+{
+  "name": "Index",
+  "kind": "interface",
+  "parentClass": "Management",
+  "signature": "type Index interface {\n    Name() string\n    Params() map[string]string\n}",
+  "docstring": "Defines an index configuration.",
+  "fields": [],
+  "params": [],
+  "optionMethods": [],
+  "methods": [
+    { "name": "Name", "params": "", "returnType": "string", "fullSignature": "Name() string" },
+    { "name": "Params", "params": "", "returnType": "map[string]string", "fullSignature": "Params() map[string]string" }
+  ],
+  "filePath": "client/index/index.go",
+  "lineNumber": 12,
+  "pkg": "index",
+  "example": null
+}

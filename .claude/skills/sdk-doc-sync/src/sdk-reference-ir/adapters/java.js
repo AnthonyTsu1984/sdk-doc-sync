@@ -1,10 +1,24 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const common = require('./common');
 
+function withSignatureOverload(symbol, context) {
+  if (context.overloadKey !== undefined || symbol.overloadKey !== undefined) return context;
+  const kind = String(symbol.kind || '').toLowerCase();
+  if (!['method', 'function'].includes(kind) || !symbol.signature) return context;
+  const normalized = String(symbol.signature).trim().replace(/\s+/g, ' ');
+  const hash = crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 10);
+  return { ...context, overloadKey: `sig-${hash}` };
+}
+
 function toReferenceDocument(symbol, context = {}) {
-  const evidence = common.collectEvidence(symbol, context);
-  const signatures = [common.makeSignature(symbol.signature || '', [], evidence, { symbol, context })];
+  const effectiveContext = withSignatureOverload(symbol, context);
+  const evidence = common.collectEvidence(symbol, effectiveContext);
+  const signatures = [common.makeSignature(symbol.signature || '', [], evidence, {
+    symbol,
+    context: effectiveContext,
+  })];
   const requestVariants = [];
   const callableMembers = [];
   if (symbol.requestClass) {
@@ -12,8 +26,14 @@ function toReferenceDocument(symbol, context = {}) {
       ...param,
       required: typeof param.required === 'boolean'
         ? param.required
-        : (param.default === null || param.default === undefined)
-          && (param.defaultValue === null || param.defaultValue === undefined),
+        : param.default !== null && param.default !== undefined
+          ? false
+          : param.defaultValue !== null && param.defaultValue !== undefined
+            ? false
+            : typeof effectiveContext.fieldMetadata?.[param.name]?.required === 'boolean'
+              ? effectiveContext.fieldMetadata[param.name].required
+              : Array.isArray(effectiveContext.requiredFields)
+                && effectiveContext.requiredFields.includes(param.name),
     }));
     requestVariants.push(common.makeRequestVariant({
       id: symbol.requestClass,
@@ -21,7 +41,7 @@ function toReferenceDocument(symbol, context = {}) {
       description: '',
       signature: `${symbol.requestClass}.builder()`,
       inputs: params,
-    }, evidence, { symbol, context }));
+    }, evidence, { symbol, context: effectiveContext }));
     for (const param of params) {
       const methodName = param.method || param.name || '';
       const input = { ...param, name: param.name || methodName };
@@ -30,15 +50,15 @@ function toReferenceDocument(symbol, context = {}) {
       callableMembers.push(common.makeCallableMember('builder', {
         ...param,
         name: methodName,
-      }, evidence, display, [input], { symbol, context }));
+      }, evidence, display, [input], { symbol, context: effectiveContext }));
     }
   }
   const result = symbol.returnType && symbol.returnType !== 'void'
-    ? common.makeResult({ type: symbol.returnType }, evidence, { symbol, context })
+    ? common.makeResult({ type: symbol.returnType }, evidence, { symbol, context: effectiveContext })
     : null;
   return common.buildReferenceDocument({
     symbol,
-    context,
+    context: effectiveContext,
     language: 'java',
     signatures,
     requestVariants,

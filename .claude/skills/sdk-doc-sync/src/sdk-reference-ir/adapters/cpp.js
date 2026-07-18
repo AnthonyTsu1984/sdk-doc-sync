@@ -2,6 +2,16 @@
 
 const common = require('./common');
 
+const LEADING_QUALIFIERS = /^(?:(?:static|virtual|inline|constexpr|friend|explicit)\s+)+/;
+
+function parseReturnType(symbol) {
+  if (symbol.returnType) return String(symbol.returnType).trim();
+  if (typeof symbol.signature !== 'string' || !symbol.name) return '';
+  const escapedName = String(symbol.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = symbol.signature.trim().match(new RegExp(`^(.*?)\\b${escapedName}\\s*\\(`));
+  return match ? match[1].trim().replace(LEADING_QUALIFIERS, '').trim() : '';
+}
+
 function toReferenceDocument(symbol, context = {}) {
   const kindMap = {
     method: 'method',
@@ -64,9 +74,7 @@ function toReferenceDocument(symbol, context = {}) {
     member.argName ? [{ ...member, name: member.argName }] : [],
     { symbol, context },
   )) : [];
-  const inferredStatus = typeof symbol.signature === 'string'
-    ? symbol.signature.trim().split(/\s+/)[0]
-    : '';
+  const inferredStatus = parseReturnType(symbol);
   const resultInput = callable
     ? context.result || symbol.result || (inferredStatus ? { type: inferredStatus } : null)
     : null;

@@ -1,0 +1,24 @@
+{
+  "name": "Collection",
+  "kind": "struct",
+  "parentClass": "Collections",
+  "signature": "type Collection struct {\n    Name string\n    Schema *Schema\n}",
+  "docstring": "Represents a collection description.",
+  "fields": [
+    { "name": "Name", "type": "string", "description": "Collection name." },
+    { "name": "Schema", "type": "*Schema", "description": "Collection schema." }
+  ],
+  "params": [
+    { "name": "name", "type": "string", "kind": "required" }
+  ],
+  "optionMethods": [
+    { "name": "WithSchema", "params": "schema *Schema", "fullSignature": "WithSchema(schema *Schema)", "description": "Sets the schema." }
+  ],
+  "methods": [
+    { "name": "GetColumn", "params": "fieldName string", "returnType": "Column", "description": "Returns a field column." }
+  ],
+  "filePath": "client/entity/collection.go",
+  "lineNumber": 24,
+  "pkg": "entity",
+  "example": null
+}

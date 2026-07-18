@@ -70,6 +70,7 @@ function context(language, category, overrides = {}) {
     }],
     notes: ['The adapter preserves scanner-owned structure.'],
     related: [{ title: 'Related guide', url: '/docs/related' }],
+    ...(language === 'java' ? { requiredFields: ['collectionName'] } : {}),
     ...overrides,
   };
 }
@@ -113,7 +114,11 @@ test('all scanner adapters produce immutable deterministic production-valid docu
     assert.deepEqual(first, second, `${language} output is not deterministic`);
     assert.equal(Object.isFrozen(first), true, `${language} document is not frozen`);
     assert.equal(Object.isFrozen(first.identity), true, `${language} identity is not frozen`);
-    assert.equal(first.identity.stableId, `${language}:${category}:${symbol.name}`);
+    if (language === 'java') {
+      assert.match(first.identity.stableId, /^java:Collections:createCollection:sig-[0-9a-f]{10}$/);
+    } else {
+      assert.equal(first.identity.stableId, `${language}:${category}:${symbol.name}`);
+    }
     assert.equal(first.source.file, symbol.filePath);
     assert.equal(first.source.line, symbol.lineNumber);
     assert.ok(first.evidence.some((item) => item.locator === `${symbol.filePath}:${symbol.lineNumber}`));
@@ -210,6 +215,37 @@ test('Java explicit required wins and derived request evidence needs document re
   assert.ok(validation.errors.some((error) => error.code === 'MISSING_REVIEWED_EVIDENCE'));
 });
 
+test('Java derives deterministic signature suffixes for raw overloads and preserves explicit overrides', () => {
+  const base = {
+    name: 'describeCollection', kind: 'method', docstring: null, params: [],
+    filePath: 'src/main/java/io/milvus/v2/client/MilvusClientV2.java',
+    lineNumber: 210, parentClass: 'Collections', returnType: 'DescribeCollectionResp',
+    requestClass: null, decorators: [], baseClasses: [],
+  };
+  const byName = { ...base, signature: 'public DescribeCollectionResp describeCollection(String collectionName)' };
+  const byRequest = { ...base, signature: 'public DescribeCollectionResp describeCollection(DescribeCollectionReq request)' };
+  const nameDoc = javaAdapter.toReferenceDocument(byName, context('java', 'Collections'));
+  const nameDocAgain = javaAdapter.toReferenceDocument(byName, context('java', 'Collections'));
+  const requestDoc = javaAdapter.toReferenceDocument(byRequest, context('java', 'Collections'));
+  const explicit = javaAdapter.toReferenceDocument(byName, context('java', 'Collections', { overloadKey: 'by-name' }));
+
+  assert.match(nameDoc.identity.stableId, /^java:Collections:describeCollection:sig-[0-9a-f]{10}$/);
+  assert.equal(nameDoc.identity.stableId, nameDocAgain.identity.stableId);
+  assert.notEqual(nameDoc.identity.stableId, requestDoc.identity.stableId);
+  assert.equal(explicit.identity.stableId, 'java:Collections:describeCollection:by-name');
+});
+
+test('Java unknown no-default fields stay optional unless reviewed metadata marks them required', () => {
+  const symbol = fixture('java-create-collection.json');
+  symbol.params.push({ name: 'description', kind: 'keyword', type: 'String', default: null });
+  const doc = javaAdapter.toReferenceDocument(symbol, context('java', 'Collections'));
+  const fields = Object.fromEntries(doc.requestVariants[0].inputs.map((field) => [field.name, field]));
+
+  assert.equal(fields.collectionName.required, true);
+  assert.equal(fields.description.required, false);
+  assert.equal(fields.description.defaultValue, null);
+});
+
 test('Node preserves explicit request variants and recursively normalizes nested fields', () => {
   const doc = nodeAdapter.toReferenceDocument(
     fixture('node-create-collection.json'),
@@ -284,6 +320,54 @@ test('Go keeps constructor inputs and option method full signatures', () => {
   assert.equal(doc.result.type.display, 'error');
 });
 
+test('Go normalizes real struct fields recursively without inventing option members', () => {
+  const symbol = fixture('go-collection-struct.json');
+  symbol.fields[1].children = [{ name: 'Fields', type: '[]*Field', description: 'Schema fields.' }];
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Collections', {
+    summary: 'Describes a Milvus collection.',
+    examples: [],
+  }));
+
+  assert.equal(doc.identity.kind, 'struct');
+  assert.equal(doc.result.type.display, 'Collection');
+  assert.deepEqual(doc.result.fields.map((field) => field.name), ['Name', 'Schema']);
+  assert.equal(doc.result.fields[1].children[0].name, 'Fields');
+  assert.equal(doc.result.fields[0].evidence[0].confidence, 'derived');
+  assert.deepEqual(doc.callableMembers, []);
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('Go normalizes real enum values without callable members', () => {
+  const doc = goAdapter.toReferenceDocument(
+    fixture('go-consistency-level-enum.json'),
+    context('go', 'Collections', { summary: 'Lists Go consistency levels.', examples: [] }),
+  );
+
+  assert.equal(doc.identity.kind, 'enum');
+  assert.equal(doc.result.type.display, 'ConsistencyLevel');
+  assert.deepEqual(doc.result.fields.map((field) => field.name), ['ClStrong', 'ClBounded']);
+  assert.deepEqual(doc.result.fields.map((field) => field.defaultValue), ['0', '2']);
+  assert.deepEqual(doc.callableMembers, []);
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('Go preserves real interface method signatures with derived evidence', () => {
+  const doc = goAdapter.toReferenceDocument(
+    fixture('go-index-interface.json'),
+    context('go', 'Management', { summary: 'Defines the Go index interface.', examples: [] }),
+  );
+
+  assert.equal(doc.identity.kind, 'interface');
+  assert.deepEqual(doc.signatures.map((signature) => signature.display), [
+    'Name() string',
+    'Params() map[string]string',
+  ]);
+  assert.equal(doc.signatures[0].evidence[0].confidence, 'derived');
+  assert.deepEqual(doc.callableMembers, []);
+  assert.equal(doc.result, null);
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
 test('C++ keeps request methods and canonical Status/result structure', () => {
   const requestEvidence = [{
     kind: 'source',
@@ -334,6 +418,25 @@ test('C++ direct methods use params as direct inputs and never invent request me
   assert.deepEqual(doc.requestVariants.map((variant) => variant.id), ['default']);
   assert.deepEqual(doc.requestVariants[0].inputs.map((field) => field.name), ['version']);
   assert.deepEqual(doc.callableMembers, []);
+});
+
+test('C++ parses qualified template return types and prefers explicit returnType', () => {
+  const create = {
+    name: 'Create', kind: 'method',
+    signature: 'static std::shared_ptr<MilvusClientV2> Create()',
+    docstring: 'Creates a client.', params: [], filePath: 'include/milvus/MilvusClientV2.h',
+    lineNumber: 45, parentClass: 'Client', requestClass: null, responseClass: null,
+  };
+  const parsed = cppAdapter.toReferenceDocument(create, context('cpp', 'Client', {
+    summary: 'Creates a C++ Milvus client.',
+  }));
+  const explicit = cppAdapter.toReferenceDocument({ ...create, returnType: 'ClientPtr' }, context('cpp', 'Client', {
+    summary: 'Creates a C++ Milvus client.',
+  }));
+
+  assert.equal(parsed.result.type.display, 'std::shared_ptr<MilvusClientV2>');
+  assert.notEqual(parsed.result.type.display, 'static');
+  assert.equal(explicit.result.type.display, 'ClientPtr');
 });
 
 test('C++ enums preserve values without request or callable sections', () => {

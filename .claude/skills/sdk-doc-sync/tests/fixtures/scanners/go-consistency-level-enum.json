@@ -1,0 +1,19 @@
+{
+  "name": "ConsistencyLevel",
+  "kind": "enum",
+  "parentClass": "Collections",
+  "signature": "type ConsistencyLevel int",
+  "docstring": "Specifies the consistency guarantee.",
+  "values": [
+    { "name": "ClStrong", "value": "0", "description": "Strong consistency." },
+    { "name": "ClBounded", "value": "2", "description": "Bounded consistency." }
+  ],
+  "fields": [],
+  "params": [],
+  "optionMethods": [],
+  "methods": [],
+  "filePath": "client/entity/schema.go",
+  "lineNumber": 18,
+  "pkg": "entity",
+  "example": null
+}

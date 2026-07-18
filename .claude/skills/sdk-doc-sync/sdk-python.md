@@ -74,6 +74,7 @@ When this exception is raised.
   - Snapshot: `RoBzflamplZFzYd1ZSWccuVfnnc`
   - Vector: `KSDYfo9pCl89wKdRNGccbzT2nid`
 - **v2.6.x MilvusClient categories** (`B2fdfjb1nl9Pjidkaa9cM6lAngd`)
+  - The executable canonical map is `references/identity/python-v26.json`. Update that file and its release-scope golden tests when adding or correcting category mappings. Do not rely on prose-only slug examples for deterministic release plans.
   - Authentication: `Tjnufe7LvlX9wtddOfEctVJ6nKB`
   - Collections: `CqXrfDyXZlkNSrdh5eJcI0Fznjh`
   - CollectionSchema: `GkYpfpsV4likQDdoQLncs4NUnud`

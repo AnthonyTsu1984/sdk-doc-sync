@@ -21,6 +21,16 @@ node --test .claude/skills/sdk-doc-sync/tests/sdk-renderers.test.js .claude/skil
 node --test .claude/skills/sdk-doc-sync/tests/lark-doc-writer.test.js .claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js
 ```
 
+Release-scope harness checks:
+
+```bash
+node --test .claude/skills/sdk-doc-sync/tests/release-scope.test.js
+node --test .claude/skills/sdk-doc-sync/tests/release-scout-cli.test.js
+node --test .claude/skills/sdk-doc-sync/tests/agent-harness.test.js
+```
+
+These tests verify deterministic release-scout artifacts, scoped scanner use, canonical identity mapping, and rejection of raw full-scan dumps as final approval artifacts.
+
 The offline suites cover scanner adapters, SDK Reference IR validation, Document IR validation, deterministic renderers, sync planning, approved execution behavior, CLI dry-runs, legacy writer preservation, and path/link wiring.
 
 ## Offline Schema-First Dry Runs

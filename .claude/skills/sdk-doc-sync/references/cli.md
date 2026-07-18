@@ -10,6 +10,33 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js --help
 
 Required dry-run inputs include `--sdk-dir`, `--sdk-name`, and `--sdk-version`. Use space-separated option values.
 
+## Release Scout
+
+Run release scout before approval-grade SDK release scans:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language python \
+  --sdk-name pymilvus \
+  --track v2.6.x \
+  --json \
+  --output tmp/sdk-release-scout/python-v26.json
+```
+
+Then run the scoped sync dry-run:
+
+```bash
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+  --language python \
+  --sdk-dir repos/pymilvus/pymilvus \
+  --sdk-name pymilvus \
+  --sdk-version v2.6.x \
+  --release-scope tmp/sdk-release-scout/python-v26.json \
+  --dry-run \
+  --json
+```
+
 ## Feishu Documents And Bitables
 
 ```bash

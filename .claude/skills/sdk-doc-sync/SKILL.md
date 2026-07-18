@@ -44,23 +44,43 @@ Read only what the task requires:
 
 ## Workflow
 
-### 1. Check Scan State
+### 1. Create The Release Scope
 
-1. Read `scan-state.json` for the SDK's last scanned tag.
-2. Fetch tags in the SDK repository.
-3. Resolve the requested or latest target tag.
-4. Stop with a no-change report when the target is already scanned.
+1. Read `scan-state.json`.
+2. Run `sdk-release-scout` for SDK release requests before any full scanner dry-run.
+3. Treat the release-scout JSON as the only approval-grade release discovery artifact.
+4. Stop with a no-change report when `scannerDiagnostics` includes `NO_RELEASE_CHANGES`.
 
-### 2. Diff The Release
+Example:
 
-Use `git diff <baseline>..<target>` to identify changed public source files and symbols. Classify:
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language python \
+  --sdk-name pymilvus \
+  --track v2.6.x \
+  --json \
+  --output tmp/sdk-release-scout/python-v26.json
+```
 
-- `CREATE`: newly public symbol or command.
-- `UPDATE`: signature, parameter, response, behavior, or example changed.
-- `DEPRECATE`: removed, renamed, or explicitly deprecated surface.
-- `BACKFILL`: symbol predates the release but lacks correct documentation.
+The artifact must validate with `schemaVersion: 1`, `approvalGrade: true`, `writesPerformed: false`, and `scanStateUpdated: false`. Do not ask for approval when this artifact is absent, invalid, or diagnostic-only.
 
-Verify first appearance before assigning version metadata.
+### 2. Run A Scoped Dry-Run
+
+Use the release-scout artifact to constrain the scanner and canonical slugs:
+
+```bash
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+  --language python \
+  --sdk-dir repos/pymilvus/pymilvus \
+  --sdk-name pymilvus \
+  --sdk-version v2.6.x \
+  --release-scope tmp/sdk-release-scout/python-v26.json \
+  --dry-run \
+  --json
+```
+
+Full-package dry-runs are diagnostic health checks only. They are not approval-grade release plans.
 
 ### 3. Scan Only Relevant Symbols
 

@@ -71,7 +71,7 @@ class larkDriveWriter extends larkDocWriter {
                                 notebook: 'false',
                                 sidebar_position: index+1,
                                 sidebar_label: meta['labels'],
-                                keywords: this.keyword_picker().concat('zilliz', 'zilliz cloud', 'cloud', source.name, this.manual),
+                                keywords: this.__keywords(source.name),
                                 doc_card_list: false,
                                 addedSince: addedSince,
                                 lastModified: lastModified,
@@ -108,7 +108,7 @@ class larkDriveWriter extends larkDocWriter {
                                 page_description: description,
                                 sidebar_position: index+1,
                                 sidebar_label: meta['labels'],
-                                keywords: this.keyword_picker().concat('zilliz', 'zilliz cloud', 'cloud', source.name, this.manual).join(','),
+                                keywords: this.__keywords(source.name).join(','),
                                 doc_card_list: true,
                                 addedSince: addedSince,
                                 lastModified: lastModified,
@@ -143,7 +143,7 @@ class larkDriveWriter extends larkDocWriter {
 
         let obj;
         var current_path = path
-        var keywords = this.keyword_picker().concat('zilliz', 'zilliz cloud', 'cloud', page_title, this.manual).join(',')
+        var keywords = this.__keywords(page_title).join(',')
 
         if (page_token) {
             obj = this.__fetch_doc_source('token', page_token)
@@ -210,7 +210,7 @@ class larkDriveWriter extends larkDocWriter {
                 })
 
                 front_matter = front_matter.split('\n')
-                front_matter.splice(front_matter.length - 1, 0, `displayed_sidbar: ${this.displayedSidebar}`)
+                front_matter.splice(front_matter.length - 1, 0, `displayed_sidebar: ${this.displayedSidebar}`)
                 front_matter.splice(5, 0, `added_since: ${addedSince ? addedSince : 'FALSE'}`)
                 front_matter.splice(6, 0, `last_modified: ${lastModified ? lastModified : 'FALSE'}`)
                 front_matter.splice(7, 0, `deprecate_since: ${deprecateSince ? deprecateSince : 'FALSE'}`)
@@ -219,6 +219,10 @@ class larkDriveWriter extends larkDocWriter {
                 fs.writeFileSync(current_path, front_matter + '\n\n' + imports + '\n\n' + markdown)
             }
         }
+    }
+
+    __keywords(pageTitle) {
+        return ['zilliz', 'zilliz cloud', 'cloud', pageTitle, this.manual].filter(Boolean)
     }
 }
 

@@ -389,11 +389,11 @@ class MarkdownToFeishu {
                 if (children.length > 0) block.children = children;
                 blocks.push(block);
             } else {
-                // Tight list: item.text has all content joined by \n.
-                // First line becomes bullet text; remaining lines become child text blocks.
-                const lines = (item.text || '').split('\n');
-                const bulletText = lines[0];
-                const childLines = lines.slice(1).filter(l => l.trim() !== '');
+                // Tight list: nested lists are represented both in item.text and as
+                // structural list tokens. Use the tokens so nested labels are emitted once.
+                const contentTokens = (item.tokens || []).filter(childToken => childToken.type !== 'space');
+                const firstTextToken = contentTokens.find(childToken => childToken.type !== 'list');
+                const bulletText = firstTextToken?.text || (item.text || '').split('\n')[0];
 
                 const block = {
                     block_type: block_type,
@@ -404,14 +404,14 @@ class MarkdownToFeishu {
                 };
 
                 const children = [];
-                for (const line of childLines) {
-                    children.push(this.__create_text_block({ text: line }));
-                }
-
-                // Also handle nested list tokens
-                for (const childToken of (item.tokens || [])) {
+                let usedBulletText = false;
+                for (const childToken of contentTokens) {
                     if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
+                    } else if (!usedBulletText) {
+                        usedBulletText = true;
+                    } else if (childToken.text?.trim()) {
+                        children.push(this.__create_text_block(childToken));
                     }
                 }
 

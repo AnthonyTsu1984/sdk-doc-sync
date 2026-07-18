@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const LarkDocWriter = require('../lib/lark-docs/larkDocWriter');
+const LarkDriveWriter = require('../lib/lark-docs/larkDriveWriter');
 const FeishuToMarkdown = require('../src/feishu-to-markdown');
 
 const fixturePath = path.join(__dirname, 'fixtures', 'docx', 'cpp-code.json');
@@ -29,16 +30,19 @@ test('preserves Feishu C++ language ID 9 as a fenced C++ block', async () => {
   assert.match(markdown, /#include <iostream>/);
 });
 
-test('default FeishuToMarkdown target retains matching include content', () => {
+test('default FeishuToMarkdown target retains include and exclude region bodies', () => {
   const converter = new FeishuToMarkdown({
     sourceType: 'drive',
     rootToken: null,
     baseToken: null,
   });
 
-  const markdown = converter.__filter_content('<include target="milvus">x</include>', converter.targets);
+  const markdown = converter.__filter_content(
+    '<include target="milvus">x</include><exclude target="zilliz">y</exclude>',
+    converter.targets,
+  );
 
-  assert.equal(markdown, 'x');
+  assert.equal(markdown, 'xy');
 });
 
 test('mapped-null Docx block type 16 renders an explicit unsupported marker', async () => {
@@ -49,4 +53,133 @@ test('mapped-null Docx block type 16 renders an explicit unsupported marker', as
   const markdown = await writer.__markdown([unsupportedBlock]);
 
   assert.equal(markdown, '[Unsupported block type: 16]');
+});
+
+test('get_markdown emits exactly one front matter delimiter pair', async () => {
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  converter.describe_document = async () => ({
+    metadata: {
+      title: 'Example',
+      link: 'https://example.test/doc/doc-token',
+      slug: 'example',
+      token: 'doc-token',
+    },
+  });
+  converter.__fetch_doc_blocks = async () => [{
+    block_id: 'summary',
+    block_type: 2,
+    text: { elements: [] },
+  }];
+  converter.__get_reference_syncd_blocks = async (blocks) => blocks;
+  converter.__raw_content = async () => 'Summary';
+  converter.__markdown = async () => '# Example';
+
+  const markdown = await converter.get_markdown({ id: 'doc-id' });
+
+  assert.equal((markdown.match(/^---$/gm) || []).length, 2);
+  assert.match(markdown, /^---\ntitle:/);
+  assert.match(markdown, /---\n\n# Example$/);
+});
+
+test('reference-synced expansion appends each source descendant once', async () => {
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const blocks = [{
+    block_id: 'parent',
+    block_type: 2,
+    children: ['reference'],
+  }, {
+    block_id: 'reference',
+    parent_id: 'parent',
+    block_type: 50,
+    reference_synced: {
+      source_document_id: 'source-doc',
+      source_block_id: 'source-root',
+    },
+  }, {
+    block_id: 'after-reference',
+    block_type: 2,
+  }];
+  converter.__fetch_doc_blocks = async () => [{
+    block_id: 'source-root',
+    block_type: 2,
+    children: ['source-child'],
+  }, {
+    block_id: 'source-child',
+    parent_id: 'source-root',
+    block_type: 2,
+    children: ['source-grandchild'],
+  }, {
+    block_id: 'source-grandchild',
+    parent_id: 'source-child',
+    block_type: 2,
+  }];
+
+  const expanded = await converter.__get_reference_syncd_blocks(blocks);
+  const ids = expanded.map((block) => block.block_id);
+
+  assert.deepEqual(ids, [
+    'parent',
+    'source-root',
+    'after-reference',
+    'source-child',
+    'source-grandchild',
+  ]);
+  assert.deepEqual(expanded[0].children, ['source-root']);
+  assert.equal(new Set(ids).size, ids.length);
+});
+
+test('Drive writer provides deterministic keywords', () => {
+  const writer = new LarkDriveWriter(null, null, 'docsSidebar', __dirname, '', 'all', true, false, 'manual');
+
+  assert.deepEqual(writer.__keywords('Page title'), [
+    'zilliz',
+    'zilliz cloud',
+    'cloud',
+    'Page title',
+    'manual',
+  ]);
+});
+
+test('Drive writer emits the correctly spelled displayed_sidebar field', async () => {
+  const outputDir = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'lark-drive-writer-'));
+  const writer = new LarkDriveWriter(null, null, 'docsSidebar', __dirname, '', 'all', true, false, 'manual');
+  writer.__fetch_doc_source = () => ({
+    blocks: {
+      items: [{ block_id: 'page', block_type: 1, children: ['body'] }],
+    },
+  });
+  writer.__retrieve_block_by_id = () => ({ block_id: 'body', block_type: 2 });
+  writer.__write_page = async () => ({
+    front_matter: '---\ntitle: "Page"\n---',
+    imports: '',
+    markdown: '# Page',
+  });
+
+  try {
+    await writer.write_doc({
+      path: outputDir,
+      page_title: 'Page',
+      page_slug: 'page',
+      page_type: 'docx',
+      page_token: 'token',
+      page_beta: false,
+      notebook: false,
+      sidebar_position: 1,
+      sidebar_label: 'Page',
+    });
+    const markdown = fs.readFileSync(path.join(outputDir, 'page.md'), 'utf8');
+
+    assert.match(markdown, /\ndisplayed_sidebar: docsSidebar\n/);
+    assert.doesNotMatch(markdown, /displayed_sidbar/);
+  } finally {
+    fs.rmSync(outputDir, { recursive: true, force: true });
+  }
 });

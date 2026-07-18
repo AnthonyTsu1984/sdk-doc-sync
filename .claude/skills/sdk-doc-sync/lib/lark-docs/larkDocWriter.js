@@ -407,15 +407,16 @@ class larkDocWriter {
             var preText = markdown.slice(0, matches[0].startIndex)
             var matchText = markdown.slice(matches[0].startIndex, matches[0].endIndex)
             var postText = markdown.slice(matches[0].endIndex)
-            var isTargetValid = targets.split('.').includes(matches[0].target.trim())
+            var preserveAllTargets = targets === 'all'
+            var isTargetValid = preserveAllTargets || targets.split('.').includes(matches[0].target.trim())
             var startTagLength = `<${matches[0].tag} target="${matches[0].target}">`.length
             var endTagLength = `</${matches[0].tag}>`.length
 
-            if (matches[0].tag == 'include' && isTargetValid || matches[0].tag == 'exclude' && !isTargetValid) {
+            if (preserveAllTargets || matches[0].tag == 'include' && isTargetValid || matches[0].tag == 'exclude' && !isTargetValid) {
                 matchText = matchText.slice(startTagLength, -endTagLength)
             }
 
-            if (matches[0].tag == 'include' && !isTargetValid || matches[0].tag == 'exclude' &&  isTargetValid) {
+            if (!preserveAllTargets && (matches[0].tag == 'include' && !isTargetValid || matches[0].tag == 'exclude' &&  isTargetValid)) {
                 matchText = ""
             }
  
@@ -647,9 +648,10 @@ class larkDocWriter {
             const prev_block = idx > 0 ? blocks[idx-1] : null;
             const next_block = idx < blocks.length-1 ? blocks[idx+1] : null;
 
-            if (this.block_types[block['block_type']-1] === undefined) {
-                markdown.push('[Unsupported block type]');
-            } else if (this.block_types[block['block_type']-1] === 'text') {
+            const blockType = this.block_types[block['block_type']-1];
+            if (blockType == null) {
+                markdown.push(`[Unsupported block type: ${block['block_type']}]`);
+            } else if (blockType === 'text') {
                 let content = await this.__text(block['text']);
                 if (content.trim().indexOf('\n') > 0) {
                     content = content.split('\n').map(line => idt + line).join('\n');
@@ -991,8 +993,6 @@ class larkDocWriter {
             return content
         }))).join('') 
 
-        if (lang === 'C++') return; // to be removed once c++ is supported
-
         if (valid_langs.includes(lang)) {
             const prev_type = prev ? this.block_types[prev['block_type']-1] : null;
             const next_type = next ? this.block_types[next['block_type']-1] : null;
@@ -1006,7 +1006,6 @@ class larkDocWriter {
             ) {
                 console.log('first block')
                 const values = this.__code_tabs(code, prev, next, blocks)
-                    .filter(tab => tab.value !== 'c++'); // to be removed once c++ is supported
 
                 return this.__code_block_split(elements, indent, lang, 'first', values);
             }

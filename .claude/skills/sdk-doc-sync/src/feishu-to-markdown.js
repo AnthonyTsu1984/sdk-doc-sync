@@ -1,8 +1,8 @@
 const larkDocWriter = require('../lib/lark-docs/larkDocWriter');
 
 class FeishuToMarkdown extends larkDocWriter {
-    constructor({ sourceType, rootToken, baseToken }) {
-        super(rootToken, baseToken, null, null, '', null, true, false);
+    constructor({ sourceType, rootToken, baseToken, targets = 'all' }) {
+        super(rootToken, baseToken, null, null, '', targets, true, false);
         this.source_type = sourceType;
         this.base_token = baseToken;
         this.root_token = rootToken;
@@ -105,7 +105,7 @@ class FeishuToMarkdown extends larkDocWriter {
             summary
         )
 
-        let content = `---\n${front_matters}---\n\n`;
+        let content = `${front_matters}\n\n`;
         content += await this.__markdown(this.page_blocks);
         return content;
     }
@@ -132,7 +132,7 @@ class FeishuToMarkdown extends larkDocWriter {
 
     async __get_reference_syncd_blocks(blocks) {
         const replacements = [];
-        let append_blocks = [];
+        const append_blocks = [];
 
         if (!blocks) throw new Error("No blocks provided");
         
@@ -142,21 +142,27 @@ class FeishuToMarkdown extends larkDocWriter {
                 const source_blocks = await this.__fetch_doc_blocks(source_document_id);
                 const source_block = source_blocks.find(b => b.block_id == source_block_id)
                 if (source_block) {
-                    const block_id = block.block_id
+                    const reference_block_id = block.block_id
                     const parent_id = block.parent_id
-                    // replace reference_synced block with actual block
-                    Object.keys(block).forEach(key => delete block[key])
-                    Object.keys(source_block).forEach(key => block[key] = source_block[key])
-                    block.parent_id = parent_id
-                    // append child blocks from source document
-                    for (let child of block.children) {
-                        append_blocks.push(source_blocks.find(b => b.block_id == child))
+                    const replacement_block = { ...source_block, parent_id }
+                    const pending_children = [...(source_block.children || [])]
+                    const collected_ids = new Set()
+
+                    while (pending_children.length > 0) {
+                        const child_id = pending_children.shift()
+                        if (collected_ids.has(child_id)) continue
+                        const child = source_blocks.find(b => b.block_id == child_id)
+                        if (!child) continue
+                        collected_ids.add(child_id)
+                        append_blocks.push(child)
+                        pending_children.push(...(child.children || []))
                     }
 
                     replacements.push({
                         parent_id,
-                        reference_block_id: block_id,
+                        reference_block_id,
                         source_block_id: source_block_id,
+                        replacement_block,
                     })
 
                     // save source document if not already saved
@@ -164,24 +170,39 @@ class FeishuToMarkdown extends larkDocWriter {
                 }               
             }
 
-            if (append_blocks.length > 0) {
-                console.log(`7. Appending ${append_blocks.length} blocks to the current document`)
-                blocks = blocks.concat(append_blocks)
-            }
-
-            if (replacements.length > 0) {
-                for (let replacement of replacements) {
-                    const parent = blocks.find(b => b.block_id == replacement.parent_id)
-                    if (parent) {
-                        const index = parent.children.findIndex(child => child == replacement.reference_block_id)
-                        if (index !== -1) {
-                            parent.children[index] = replacement.source_block_id
-                        }
-                    }
-                }
-                console.log(`8. Replaced ${replacements.length} reference_synced blocks in the current document`)
-            } 
         }
+
+        for (let replacement of replacements) {
+            const parent = blocks.find(b => b.block_id == replacement.parent_id)
+            if (parent) {
+                const index = parent.children.findIndex(child => child == replacement.reference_block_id)
+                if (index !== -1) {
+                    parent.children[index] = replacement.source_block_id
+                }
+            }
+        }
+
+        if (replacements.length > 0) {
+            const replacements_by_id = new Map(
+                replacements.map(replacement => [replacement.reference_block_id, replacement.replacement_block])
+            )
+            blocks = blocks.map(block => replacements_by_id.get(block.block_id) || block)
+            console.log(`8. Replaced ${replacements.length} reference_synced blocks in the current document`)
+        }
+
+        if (append_blocks.length > 0) {
+            console.log(`7. Appending ${append_blocks.length} blocks to the current document`)
+            blocks = blocks.concat(append_blocks)
+        }
+
+        const seen = new Set()
+        blocks = blocks.filter(block => {
+            if (!block || seen.has(block.block_id)) {
+                return false
+            }
+            seen.add(block.block_id)
+            return true
+        })
 
         return blocks;
     } 

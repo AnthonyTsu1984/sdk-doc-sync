@@ -1,0 +1,11 @@
+{
+  "python": [
+    "Authentication",
+    "BulkImport",
+    "Client",
+    "Collections",
+    "CollectionSchema",
+    "Management",
+    "Vector"
+  ]
+}

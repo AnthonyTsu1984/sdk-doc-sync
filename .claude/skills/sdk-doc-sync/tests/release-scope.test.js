@@ -176,3 +176,49 @@ test('filterSymbolsByChangedFiles accepts scanner paths relative to package root
   });
   assert.deepEqual(filtered.map(publicIdentity), ['FieldOp', 'MilvusClient.compact']);
 });
+
+const {
+  loadIdentityMap,
+  normalizeDelta,
+} = require('../src/sdk-doc-sync/release-scope/identity-normalizer');
+
+test('identity normalizer maps raw Python scanner symbols to canonical docs', () => {
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'));
+  const delta = classifySymbolDeltas({
+    baseline: readFixture('python-v26-scanned-baseline.json'),
+    target: readFixture('python-v26-scanned-target.json'),
+  }).find((item) => item.symbolIdentity === 'MilvusClient.compact');
+
+  assert.deepEqual(normalizeDelta(delta, map), {
+    type: 'UPDATE',
+    stableId: 'python:Management:compact',
+    canonicalSlug: 'Management-compact',
+    symbol: 'MilvusClient.compact',
+    source: {
+      file: 'pymilvus/milvus_client/milvus_client.py',
+      line: 1835,
+    },
+    reason: 'signature changed',
+  });
+});
+
+test('identity normalizer gives unmapped symbols explicit diagnostics', () => {
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'));
+  const normalized = normalizeDelta({
+    type: 'CREATE',
+    symbolIdentity: 'MilvusClient.unknown_method',
+    symbol: {
+      name: 'unknown_method',
+      kind: 'method',
+      parentClass: 'MilvusClient',
+      filePath: 'milvus_client/milvus_client.py',
+      lineNumber: 2000,
+    },
+    reason: 'new public method',
+  }, map);
+  assert.deepEqual(normalized.diagnostic, {
+    level: 'warn',
+    code: 'UNMAPPED_CANONICAL_IDENTITY',
+    message: 'No canonical identity mapping for MilvusClient.unknown_method in python v2.6.x.',
+  });
+});

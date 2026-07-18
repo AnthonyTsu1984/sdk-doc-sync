@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "language": "python",
+  "track": "v2.6.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "pymilvus/",
+  "symbols": {
+    "MilvusClient.compact": {
+      "stableId": "python:Management:compact",
+      "canonicalSlug": "Management-compact",
+      "category": "Management"
+    },
+    "bulk_import": {
+      "stableId": "python:BulkImport:bulk_import",
+      "canonicalSlug": "BulkImport-bulk_import",
+      "category": "BulkImport"
+    },
+    "MilvusClient.alter_role": {
+      "stableId": "python:Authentication:alter_role",
+      "canonicalSlug": "Authentication-alter_role",
+      "category": "Authentication"
+    },
+    "FieldOp": {
+      "stableId": "python:Vector:FieldOp",
+      "canonicalSlug": "FieldOp",
+      "category": "Vector"
+    }
+  }
+}

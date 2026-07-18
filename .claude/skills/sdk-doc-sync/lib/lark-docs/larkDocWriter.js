@@ -345,22 +345,34 @@ class larkDocWriter {
     async __listed_docs() {
         const token = await this.tokenFetcher.token()
         let url = `${process.env.FEISHU_HOST}/open-apis/bitable/v1/apps/${this.base_token}/tables`
-        const table_id = (await (await fetch(url, {
+        const tableData = await (await fetch(url, {
             method: "get",
             headers: {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Authorization': `Bearer ${token}`
             }
-        })).json()).data.items[0].table_id
+        })).json()
+        if (tableData.code !== 0) {
+            throw new Error(`Failed to list bitable tables for ${this.base_token}: ${tableData.msg || tableData.message || 'unknown error'}`)
+        }
+        const tables = tableData.data?.items || []
+        if (tables.length === 0 || !tables[0]?.table_id) {
+            throw new Error(`No table found in bitable base ${this.base_token}; check BASE_TOKEN or pass an explicit baseline token`)
+        }
+        const table_id = tables[0].table_id
 
         url = `${process.env.FEISHU_HOST}/open-apis/bitable/v1/apps/${this.base_token}/tables/${table_id}/records?page_size=500`
-        this.records = (await (await fetch(url, {
+        const recordsData = await (await fetch(url, {
             method: "get",
             headers: {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Authorization': `Bearer ${token}`
             }
-        })).json()).data.items
+        })).json()
+        if (recordsData.code !== 0) {
+            throw new Error(`Failed to list bitable records for ${this.base_token}/${table_id}: ${recordsData.msg || recordsData.message || 'unknown error'}`)
+        }
+        this.records = recordsData.data?.items || []
     }
 
     async __is_to_publish (title, slug, token=null) {

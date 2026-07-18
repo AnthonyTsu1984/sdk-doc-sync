@@ -35,9 +35,28 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
   --sdk-name pymilvus \
   --sdk-version v2.6.x \
   --release-scope tmp/sdk-release-scout/python-v26.json \
+  --changed-only \
+  --summary-json tmp/sdk-release-scout/python-v26-dryrun-summary.json \
   --dry-run \
   --json
 ```
+
+Use the same artifact naming pattern for all SDKs:
+
+- release scope: `tmp/sdk-release-scout/<language>-<track>.json`
+- bounded dry-run summary: `tmp/sdk-release-scout/<language>-<track>-dryrun-summary.json`
+
+Use compact track names such as `v26`, `v30`, or `v14`.
+
+Compare two scan artifacts when repeated sessions disagree:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/compare-scan-artifacts.js \
+  tmp/sdk-release-scout/python-v26.json \
+  tmp/sdk-release-scout/python-v26-dryrun-summary.json
+```
+
+If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
 ## Feishu Documents And Bitables
 

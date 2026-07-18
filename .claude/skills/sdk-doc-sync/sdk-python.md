@@ -64,6 +64,20 @@ When this exception is raised.
 - Python v2.6.x bitable records use category-prefixed slugs, while the generic scanner may emit raw class or function slugs. Normalize changed symbols through the canonical folder/category map before comparing with Feishu records.
 - Examples: `MilvusClient.compact` maps to `Management-compact`, `bulk_import` maps to `BulkImport-bulk_import`, and `MilvusClient.alter_role` maps to `Authentication-alter_role`.
 - An unfiltered full-package dry-run can show many false `CREATE` and `ORPHAN` actions when scanner slugs do not match bitable slugs. Treat that as non-approval-grade; use Git diff for release scope and targeted scanner extraction for changed symbols.
+- Treat release scout output as public-surface candidates, not as final docs. Prefer docs for exported or user-facing APIs: `MilvusClient`, `AsyncMilvusClient`, `CollectionSchema`, `FieldSchema`, `StructFieldSchema`, `AnnSearchRequest`, `FieldOp`, `FieldOpType`, BulkImport/DataImport functions, volume managers/writers, result classes, and existing ORM/utility pages when behavior changes.
+- Do not create standalone docs for generated `grpc_gen/*`, protobuf `DESCRIPTOR`, low-level `GrpcHandler` / `AsyncGrpcHandler`, `Prepare` request builders, `_version.py`, `type_info`, `field_data_extractors`, or internal validators unless existing Feishu records already expose them and the task explicitly asks to keep them documented.
+
+**v2.6.x release triage notes from `v2.6.12..v2.6.17`:**
+
+- Bulk import/DataImport docs need updates for `project_id`, `region_id`, `db_name`, Zilliz Volume import with `volume_name` / `data_paths`, and `verify` / `cert` behavior.
+- Volume docs need updates or creates for `VolumeManager`, `create_volume()`, `list_volumes()`, `describe_volume()`, `VolumeBulkWriter`, `VolumeFileManager.upload_file_to_volume()`, and `UploadProgress`.
+- `MilvusClient.compact()` and `AsyncMilvusClient.compact()` need `target_size` and `target_size_unit`; `target_size` must be a positive non-bool int, and valid units are `b`, `kb`, `mb`, `gb`, `tb`, and `pb`.
+- RBAC docs need user and role descriptions: `create_user()`, `update_password()`, `update_user()`, `create_role()`, `alter_role()`, `describe_user()`, and `describe_role()`.
+- Replication/data-salvage docs need `get_replicate_configuration()`, `get_replicate_info()`, `dump_messages()`, and async equivalents.
+- Partial array update docs need exported `FieldOp` / `FieldOpType` plus `field_ops` on sync and async `upsert()`. The example requires Milvus server `v2.7+` even though the PyMilvus client API appears in `v2.6.x`; call out that server-version caveat.
+- `AnnSearchRequest` needs `filter` as an alias of `expr`, including the validation that callers cannot provide both.
+- Schema docs need `StructFieldSchema(nullable=False, description="")`, the `.nullable` property, nullable struct-array behavior in `CollectionSchema.add_field()`, and embedded struct-field support in `construct_from_dict()`.
+- ORM-style `Collection`, `Role`, `db.*`, and `utility.*` pages need deprecation notices where applicable. The warning category is `PyMilvusDeprecationWarning`, the replacement is `MilvusClient`, and scheduled removal is PyMilvus `3.1`.
 
 **Canonical Python folder map (verified 2026-05-09):**
 

@@ -44,6 +44,8 @@ Read only what the task requires:
 - For every record whose document content, document link, parent, or editable metadata is changed in a run, leave the `Targets` field blank and set `Progress` to `WIP`. Verified Python version bitables use exact field names `Targets` and `Progress`, with progress option `WIP`.
 - Do not add visible version-changelog sections to API reference pages unless the user explicitly requests release notes.
 - Do not write until the user has reviewed the exact dry-run action list and given explicit approval.
+- Treat production validation failures as publish blockers, not as failed release discovery. If a scoped dry-run reports `planCount: 0`, nonzero `planningErrorCount`, or missing evidence/summary/example validation errors, report the release triage separately and state that the dry-run is not approval-ready.
+- Use consistent release artifacts: `tmp/sdk-release-scout/<language>-<track>.json` for release scout and `tmp/sdk-release-scout/<language>-<track>-dryrun-summary.json` for bounded dry-run summaries, where `<track>` is compact, such as `v26`, `v30`, or `v14`.
 
 ## Workflow
 
@@ -67,6 +69,14 @@ node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
 
 The artifact must validate with `schemaVersion: 1`, `approvalGrade: true`, `writesPerformed: false`, and `scanStateUpdated: false`. Do not ask for approval when this artifact is absent, invalid, or diagnostic-only.
 
+When comparing repeated scans, use:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/compare-scan-artifacts.js \
+  tmp/sdk-release-scout/python-v26.json \
+  tmp/sdk-release-scout/python-v26-dryrun-summary.json
+```
+
 ### 2. Run A Scoped Dry-Run
 
 Use the release-scout artifact to constrain the scanner and canonical slugs:
@@ -81,11 +91,31 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
   --sdk-name pymilvus \
   --sdk-version v2.6.x \
   --release-scope tmp/sdk-release-scout/python-v26.json \
+  --changed-only \
   --dry-run \
+  --summary-json tmp/sdk-release-scout/python-v26-dryrun-summary.json \
   --json
 ```
 
 Full-package dry-runs are diagnostic health checks only. They are not approval-grade release plans.
+
+After the dry-run, inspect the bounded summary before reporting:
+
+```bash
+jq '{releaseScope,scannedCount,indexedCount,diffCount,planCount,planningErrorCount,approvedCount,resultCount}' \
+  tmp/sdk-release-scout/python-v26-dryrun-summary.json
+```
+
+If `planningErrorCount` is nonzero, do not ask for write approval. Continue with source-backed triage, identify which public docs need work, and call out that schema-first generation still needs reviewed evidence, summaries, examples, placement, or identity fixes before execution.
+
+For blocked generation, report exactly:
+
+- baseline tag, target tag, and release range;
+- release scout artifact and dry-run summary artifact;
+- `scannedCount`, `diffCount`, `planCount`, and `planningErrorCount`;
+- public documentation candidates and excluded scanner noise;
+- next step to build reviewed `--reference-context` and rerun validation;
+- that no approval is requested, no writes were performed, and `scan-state.json` was not updated.
 
 ### 3. Scan Only Relevant Symbols
 
@@ -119,7 +149,13 @@ Fetch only the relevant records where feasible. For every proposed action, recor
 
 ### 5. Preview And Approve
 
-Show the exact action list and dry-run result, including unresolved placement or version-sharing risks. Obtain explicit approval before any live create, patch, move, copy, bitable update, or OpenAPI edit.
+Show the exact action list and dry-run result, including unresolved placement or version-sharing risks. Separate three statuses:
+
+- **Release triage:** source-backed list of public documentation work from release scout, Git diff, implementation, examples, and tests.
+- **Blocked generation:** scanner found release changes but schema-first validation or planning failed; report blocker counts and do not request write approval.
+- **Approval-ready plan:** every action has reviewed content, target placement, preconditions, postconditions, and validation passed.
+
+Obtain explicit approval before any live create, patch, move, copy, bitable update, or OpenAPI edit. Only request approval for an approval-ready plan.
 
 ### 6. Execute Approved Actions
 
@@ -167,5 +203,6 @@ Report:
 - created or updated document and record links;
 - version-placement and shared-token decisions;
 - post-write verification results;
-- deferred backlog, unsupported surfaces, and failures;
+- deferred backlog, unsupported surfaces, validation blockers, and failures;
+- exact next step when generation is blocked before planning;
 - whether `scan-state.json` was updated.

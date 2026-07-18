@@ -30,6 +30,10 @@ Run production validation on the SDK Reference IR before rendering. Production v
 
 Warnings such as external type references or shallow examples must be reviewed before approval. They are not automatic publish blockers, but the approval summary must call them out.
 
+If validation fails because generated drafts are missing reviewed evidence, source repository/revision, summaries, examples, or typed parameter details, classify the run as release triage only. Preserve the scanner output as evidence for changed symbols, but do not call the result an approval-ready dry-run and do not request Feishu write approval. The next step is to author reviewed Reference IR/context for the public symbols that matter and rerun validation.
+
+Blocked-generation reports must name the blocker counts and the recovery path: build a reviewed `--reference-context` with source evidence, examples, category placement, related links, and type details for the public symbols; rerun validation; then plan only after validation passes.
+
 ### 4. Render
 
 Render the validated SDK Reference IR into Document IR with the language renderer, then validate the Document IR with lossless policy. Render Markdown from Document IR only after both validations pass.
@@ -65,6 +69,10 @@ Plan action selection:
 Present the exact action list, rendered artifact summary, target folders, parent records, preconditions, postconditions, warnings, and recovery implications. Mutating execution requires explicit user approval.
 
 Do not use `--auto-approve` for production Feishu writes unless the user has explicitly approved that exact run and its full action list.
+
+Never request approval from a dry-run with `planCount: 0`, nonzero `planningErrorCount`, or validation errors. Report the blockers and the manually reviewed documentation work needed instead.
+
+The approval boundary is the immutable plan plus reviewed rendered artifact. A release-scout artifact or blocked dry-run summary is evidence for triage, not approval to mutate Feishu.
 
 ### 7. Execute
 
@@ -126,5 +134,6 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
   --sdk-name <name> \
   --sdk-version <version> \
   --reference-context <file> \
+  --summary-json tmp/sdk-release-scout/<language>-<track>-dryrun-summary.json \
   --dry-run
 ```

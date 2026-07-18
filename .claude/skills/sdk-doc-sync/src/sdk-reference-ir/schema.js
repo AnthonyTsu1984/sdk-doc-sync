@@ -40,7 +40,7 @@ function createEvidence({ kind, locator, revision, confidence = 'direct' } = {})
 }
 
 function createTypeReference({ id, display = '', external = false } = {}) {
-  return immutable({ id, display, external: Boolean(external) });
+  return immutable({ id, display, external });
 }
 
 function createField({
@@ -58,14 +58,14 @@ function createField({
   return immutable({
     name,
     type,
-    required: Boolean(required),
+    required,
     defaultValue,
     description,
     constraints,
     children,
     appliesWhen,
     evidence,
-    ...(allowRequiredDefault ? { allowRequiredDefault: true } : {}),
+    allowRequiredDefault,
   });
 }
 
@@ -136,7 +136,7 @@ function createReferenceDocument({
     related,
     audienceVariants,
     evidence,
-    ...(exampleOptional ? { exampleOptional: true } : {}),
+    exampleOptional,
   });
 }
 

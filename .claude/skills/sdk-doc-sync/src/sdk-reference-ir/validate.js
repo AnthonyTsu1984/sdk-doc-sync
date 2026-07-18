@@ -10,7 +10,13 @@ const {
 
 const MIN_EXAMPLE_CODE_LENGTH = 12;
 const AUDIENCE_VALUE = /^[a-z0-9][a-z0-9.-]*$/;
-const PLACEHOLDER = /\b(?:TODO|TBD)\b|Brief description|Usage example|List relevant exceptions|<!--[\s\S]*?\b(?:TODO|TBD)\b[\s\S]*?-->/i;
+const NAMED_PLACEHOLDER = /Brief description|Usage example|List relevant exceptions/i;
+const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp']);
+const MEMBER_KIND_BY_LANGUAGE = new Map([
+  ['java', 'builder'],
+  ['go', 'option'],
+  ['cpp', 'request'],
+]);
 const SIGNATURE_REQUIRED = new Set(['method', 'function', 'command', 'rest-operation']);
 const EXAMPLE_REQUIRED = new Set(['method', 'function', 'class', 'command', 'rest-operation']);
 
@@ -24,12 +30,22 @@ function isNonEmptyString(value) {
 
 function isSafeRelatedUrl(value) {
   if (!isNonEmptyString(value) || /[\u0000-\u001F<>]/.test(value)) return false;
+  if (value.startsWith('//')) return false;
   if (value.startsWith('/') || value.startsWith('./') || value.startsWith('../') || value.startsWith('#')) return true;
   try {
-    return ['http:', 'https:'].includes(new URL(value).protocol);
+    return ['http:', 'https:', 'mailto:'].includes(new URL(value).protocol);
   } catch {
     return false;
   }
+}
+
+function containsPlaceholder(value) {
+  const trimmed = value.trim();
+  return /^(?:todo|tbd)$/i.test(trimmed)
+    || /\b(?:TODO|TBD)\b/.test(value)
+    || /\b(?:todo|tbd)\s*:/i.test(value)
+    || /<!--[\s\S]*?\b(?:todo|tbd)\b[\s\S]*?-->/i.test(value)
+    || NAMED_PLACEHOLDER.test(value);
 }
 
 function validateReferenceDocument(doc, { production = false, knownTypeIds = [] } = {}) {
@@ -92,20 +108,22 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   }
 
   function evidenceStatus(ownEvidence) {
-    const own = Array.isArray(ownEvidence) ? ownEvidence : [];
-    const documentEvidence = Array.isArray(doc?.evidence) ? doc.evidence : [];
-    const candidates = [...own, ...documentEvidence].filter(isObject);
-    const reviewed = candidates.some((item) => item.confidence === 'reviewed'
+    const isValid = (item) => isObject(item)
       && EVIDENCE_KINDS.includes(item.kind)
+      && CONFIDENCE_LEVELS.includes(item.confidence)
       && isNonEmptyString(item.locator)
-      && isNonEmptyString(item.revision));
+      && isNonEmptyString(item.revision);
+    const hasOwnEvidence = Array.isArray(ownEvidence) && ownEvidence.length > 0;
+    const own = Array.isArray(ownEvidence) ? ownEvidence.filter(isValid) : [];
+    const documentEvidence = Array.isArray(doc?.evidence) ? doc.evidence.filter(isValid) : [];
+    const candidates = hasOwnEvidence ? own : documentEvidence;
+    const reviewed = candidates.some((item) => item.confidence === 'reviewed');
+    const documentReviewed = documentEvidence.some((item) => item.confidence === 'reviewed');
     const derived = candidates.some((item) => item.confidence === 'derived');
     const direct = candidates.some((item) => item.confidence === 'direct'
-      && ['source', 'openapi'].includes(item.kind)
-      && isNonEmptyString(item.locator)
-      && isNonEmptyString(item.revision));
+      && ['source', 'openapi'].includes(item.kind));
     if (reviewed) return { valid: true, derived };
-    if (derived) return { valid: false, derived: true };
+    if (derived) return { valid: documentReviewed, derived: true };
     return { valid: direct, derived: false };
   }
 
@@ -130,6 +148,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     requireString(type.display, `${path}.display`, 'type display');
     const references = requireArray(type.references, `${path}.references`, 'type references');
     if (!references) return;
+    const ids = new Map();
     references.forEach((reference, index) => {
       const referencePath = `${path}.references[${index}]`;
       if (!isObject(reference)) {
@@ -137,12 +156,29 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         return;
       }
       const validId = requireString(reference.id, `${referencePath}.id`, 'type reference ID');
+      if (validId) {
+        if (ids.has(reference.id)) {
+          error(
+            `${referencePath}.id`,
+            `type reference ID ${reference.id} duplicates ${ids.get(reference.id)}`,
+            'DUPLICATE_TYPE_REFERENCE_ID',
+          );
+        } else {
+          ids.set(reference.id, `${referencePath}.id`);
+        }
+      }
+      let validDisplay = true;
       if (reference.display !== undefined) {
-        requireString(reference.display, `${referencePath}.display`, 'type reference display', { nonEmpty: false });
+        validDisplay = requireString(
+          reference.display,
+          `${referencePath}.display`,
+          'type reference display',
+          { nonEmpty: false },
+        );
       }
       if (typeof reference.external !== 'boolean') {
         error(`${referencePath}.external`, 'external must be a boolean', 'INVALID_TYPE_REFERENCE');
-      } else if (reference.external) {
+      } else if (reference.external && validId && validDisplay) {
         warning(
           referencePath,
           `external type reference ${reference.id || '(unknown)'} cannot be resolved locally`,
@@ -193,6 +229,9 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     validateType(field.type, `${path}.type`);
     if (typeof field.required !== 'boolean') {
       error(`${path}.required`, 'required must be a boolean', 'INVALID_FIELD');
+    }
+    if (typeof field.allowRequiredDefault !== 'boolean') {
+      error(`${path}.allowRequiredDefault`, 'allowRequiredDefault must be a boolean', 'INVALID_FIELD');
     }
     if (typeof field.description !== 'string') {
       error(`${path}.description`, 'field description must be a string', 'INVALID_FIELD');
@@ -418,7 +457,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   function scanPlaceholders(value, path, seen = new WeakSet(), skip = false) {
     if (!production) return;
     if (typeof value === 'string') {
-      if (!skip && PLACEHOLDER.test(value)) {
+      if (!skip && containsPlaceholder(value)) {
         error(path, 'production authored content contains placeholder text', 'PLACEHOLDER_CONTENT');
       }
       return;
@@ -430,7 +469,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       return;
     }
     for (const [key, child] of Object.entries(value)) {
-      const childSkip = skip || key === 'evidence' || key === 'source';
+      const childSkip = skip || ['evidence', 'identity', 'source', 'type'].includes(key);
       scanPlaceholders(child, `${path}.${key}`, seen, childSkip);
     }
   }
@@ -470,6 +509,9 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   }
 
   if (typeof doc.summary !== 'string') error('$.summary', 'summary must be a string', 'INVALID_SUMMARY');
+  if (typeof doc.exampleOptional !== 'boolean') {
+    error('$.exampleOptional', 'exampleOptional must be a boolean', 'INVALID_DOCUMENT');
+  }
   const signatures = requireArray(doc.signatures, '$.signatures', 'signatures');
   signatures?.forEach((signature, index) => validateSignature(signature, `$.signatures[${index}]`));
   validateRequestVariants(doc.requestVariants, '$.requestVariants');
@@ -492,6 +534,31 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       requireProductionEvidence(doc, '$');
     }
     const kind = doc.identity?.kind;
+    const language = doc.identity?.language;
+    const expectedLanguage = kind === 'command' ? 'zilliz-cli' : kind === 'rest-operation' ? 'rest' : null;
+    const compatibleLanguage = expectedLanguage ? language === expectedLanguage : SDK_LANGUAGES.has(language);
+    if (DOCUMENT_KINDS.includes(kind) && LANGUAGES.includes(language) && !compatibleLanguage) {
+      error(
+        '$.identity.language',
+        `${kind} documents are not compatible with ${language}`,
+        'INCOMPATIBLE_DOCUMENT_LANGUAGE',
+      );
+    }
+    if (Array.isArray(doc.callableMembers)) {
+      const allowedMemberKind = MEMBER_KIND_BY_LANGUAGE.get(language);
+      doc.callableMembers.forEach((member, index) => {
+        if (!isObject(member) || !MEMBER_KINDS.includes(member.kind)) return;
+        if (member.kind !== allowedMemberKind) {
+          error(
+            `$.callableMembers[${index}].kind`,
+            allowedMemberKind
+              ? `${language} callable members must use kind ${allowedMemberKind}`
+              : `${language} documents must not define callable members`,
+            'INCOMPATIBLE_MEMBER_KIND',
+          );
+        }
+      });
+    }
     if (SIGNATURE_REQUIRED.has(kind) && (!Array.isArray(doc.signatures) || doc.signatures.length === 0)) {
       error('$.signatures', `${kind} documents require at least one signature`, 'MISSING_SIGNATURE');
     }

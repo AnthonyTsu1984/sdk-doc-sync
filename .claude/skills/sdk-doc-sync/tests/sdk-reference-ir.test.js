@@ -136,6 +136,39 @@ test('constructors deep-clone and freeze nested SDK reference data without freez
   }, TypeError);
 });
 
+test('constructors preserve supplied boolean values for validation instead of coercing them', () => {
+  const reference = createTypeReference({ id: 'node.Filter', external: 'false' });
+  const field = createField({
+    name: 'filter',
+    type: { display: 'Filter', references: [reference] },
+    required: 'false',
+    allowRequiredDefault: 'false',
+  });
+  const doc = completeMethod({
+    signatures: [createSignature({ display: 'search(filter)', inputs: [field] })],
+    exampleOptional: 'false',
+  });
+
+  assert.equal(reference.external, 'false');
+  assert.equal(field.required, 'false');
+  assert.equal(field.allowRequiredDefault, 'false');
+  assert.equal(doc.exampleOptional, 'false');
+  assert.equal(createTypeReference({ id: 'node.Filter' }).external, false);
+  assert.equal(createField({ name: 'filter' }).required, false);
+  assert.equal(createField({ name: 'filter' }).allowRequiredDefault, false);
+  assert.equal(createReferenceDocument().exampleOptional, false);
+
+  const errors = validateReferenceDocument(doc).errors;
+  for (const path of [
+    '$.signatures[0].inputs[0].type.references[0].external',
+    '$.signatures[0].inputs[0].required',
+    '$.signatures[0].inputs[0].allowRequiredDefault',
+    '$.exampleOptional',
+  ]) {
+    assert.ok(errors.some((error) => error.path === path), path);
+  }
+});
+
 test('validates one complete production method with recursive result and input fields', () => {
   const result = validateReferenceDocument(completeMethod(), {
     production: true,
@@ -293,7 +326,8 @@ test('enforces command and enum forbidden-section policies in production', () =>
 test('production rejects every placeholder pattern anywhere in authored content', () => {
   const placeholders = [
     'TODO explain this',
-    'tBd after review',
+    'TBD after review',
+    'todo:',
     'Brief description of the method',
     'Usage example goes here',
     'List relevant exceptions',
@@ -308,6 +342,40 @@ test('production rejects every placeholder pattern anywhere in authored content'
     assert.ok(error, placeholder);
     assert.equal(error.path, '$.notes[0]');
   }
+});
+
+test('placeholder scanning permits Todo identifiers and type names but rejects exact lowercase tokens', () => {
+  const todoType = createField({
+    name: 'item',
+    type: {
+      display: 'Todo',
+      references: [createTypeReference({ id: 'java.Todo', display: 'Todo' })],
+    },
+    description: 'The item managed by the Todo client.',
+  });
+  const legitimate = completeMethod({
+    identity: {
+      kind: 'method', language: 'java', name: 'Todo',
+      title: 'Todo', stableId: 'java.Todo.search',
+    },
+    source: {
+      repository: 'milvus-sdk-java', revision: 'v2.6.0', file: 'Todo.java', line: 10,
+    },
+    summary: 'Todo clients manage task records.',
+    signatures: [createSignature({ display: 'Todo search(Todo item)', inputs: [todoType] })],
+  });
+  const legitimateErrors = validateReferenceDocument(legitimate, {
+    production: true,
+    knownTypeIds: ['java.Todo'],
+  }).errors;
+  assert.equal(legitimateErrors.some((error) => error.code === 'PLACEHOLDER_CONTENT'), false);
+
+  const placeholderErrors = validateReferenceDocument(completeMethod({ notes: ['todo'] }), {
+    production: true,
+    knownTypeIds: ['node.SearchReq'],
+  }).errors;
+  assert.ok(placeholderErrors.some((error) => error.code === 'PLACEHOLDER_CONTENT'
+    && error.path === '$.notes[0]'));
 });
 
 test('production requires summaries, signatures, and examples', () => {
@@ -368,6 +436,106 @@ test('production validates evidence confidence and requires reviewed support for
     production: true,
     knownTypeIds: ['node.SearchReq'],
   }).valid, true);
+});
+
+test('production evidence scope prefers node evidence and uses document reviews only as approval', () => {
+  const derived = sourceEvidence({ confidence: 'derived' });
+  const reviewed = createEvidence({
+    kind: 'curated', locator: 'review/sdk-reference-456', revision: '2026-07-18', confidence: 'reviewed',
+  });
+  const signature = (evidence) => createSignature({ display: 'search()', inputs: [], evidence });
+  const signatureEvidencePath = '$.signatures[0].evidence';
+
+  const directNode = validateReferenceDocument(completeMethod({
+    signatures: [signature([sourceEvidence()])],
+    evidence: [derived],
+  }), { production: true }).errors;
+  assert.equal(directNode.some((error) => error.path === signatureEvidencePath), false);
+
+  const reviewedDerivedNode = validateReferenceDocument(completeMethod({
+    signatures: [signature([derived])],
+    evidence: [reviewed],
+  }), { production: true }).errors;
+  assert.equal(reviewedDerivedNode.some((error) => error.path === signatureEvidencePath), false);
+
+  const unrelatedDerived = validateReferenceDocument(completeMethod({
+    signatures: [signature([derived])],
+    evidence: [derived],
+  }), { production: true }).errors;
+  assert.ok(unrelatedDerived.some((error) => error.code === 'MISSING_REVIEWED_EVIDENCE'
+    && error.path === signatureEvidencePath));
+
+  const inheritedDirect = validateReferenceDocument(completeMethod({
+    signatures: [signature([])],
+    evidence: [sourceEvidence()],
+  }), { production: true }).errors;
+  assert.equal(inheritedDirect.some((error) => error.path === signatureEvidencePath), false);
+
+  const inheritedDerived = validateReferenceDocument(completeMethod({
+    signatures: [signature([])],
+    evidence: [derived],
+  }), { production: true }).errors;
+  assert.ok(inheritedDerived.some((error) => error.code === 'MISSING_REVIEWED_EVIDENCE'
+    && error.path === signatureEvidencePath));
+});
+
+test('production enforces document family and language compatibility', () => {
+  const incompatible = [
+    ['command', 'node'],
+    ['rest-operation', 'python'],
+    ['method', 'rest'],
+  ];
+  for (const [kind, language] of incompatible) {
+    const doc = completeMethod({
+      identity: { kind, language, name: 'search', title: 'search', stableId: `${language}.search` },
+    });
+    assert.ok(validateReferenceDocument(doc, {
+      production: true,
+      knownTypeIds: ['node.SearchReq'],
+    }).errors.some((error) => error.code === 'INCOMPATIBLE_DOCUMENT_LANGUAGE'
+      && error.path === '$.identity.language'), `${kind}/${language}`);
+  }
+
+  for (const [kind, language] of [['command', 'zilliz-cli'], ['rest-operation', 'rest'], ['method', 'cpp']]) {
+    const doc = completeMethod({
+      identity: { kind, language, name: 'search', title: 'search', stableId: `${language}.search` },
+      ...(kind === 'command' ? { result: null, errors: [] } : {}),
+    });
+    assert.equal(validateReferenceDocument(doc, {
+      production: true,
+      knownTypeIds: ['node.SearchReq'],
+    }).errors.some((error) => error.code === 'INCOMPATIBLE_DOCUMENT_LANGUAGE'), false, `${kind}/${language}`);
+  }
+});
+
+test('production enforces language-specific callable member kinds', () => {
+  const member = (kind) => createCallableMember({
+    kind,
+    name: `with-${kind}`,
+    signature: createSignature({ display: `${kind}()`, inputs: [] }),
+  });
+  for (const [language, kind] of [['java', 'builder'], ['go', 'option'], ['cpp', 'request']]) {
+    const doc = completeMethod({
+      identity: { kind: 'method', language, name: 'search', title: 'search', stableId: `${language}.search` },
+      callableMembers: [member(kind)],
+    });
+    assert.equal(validateReferenceDocument(doc, {
+      production: true,
+      knownTypeIds: ['node.SearchReq'],
+    }).errors.some((error) => error.code === 'INCOMPATIBLE_MEMBER_KIND'), false, `${language}/${kind}`);
+  }
+
+  for (const [language, kind] of [['java', 'option'], ['go', 'request'], ['cpp', 'builder'], ['node', 'builder']]) {
+    const doc = completeMethod({
+      identity: { kind: 'method', language, name: 'search', title: 'search', stableId: `${language}.search` },
+      callableMembers: [member(kind)],
+    });
+    assert.ok(validateReferenceDocument(doc, {
+      production: true,
+      knownTypeIds: ['node.SearchReq'],
+    }).errors.some((error) => error.code === 'INCOMPATIBLE_MEMBER_KIND'
+      && error.path === '$.callableMembers[0].kind'), `${language}/${kind}`);
+  }
 });
 
 test('production rejects required defaults and unresolved internal type references', () => {
@@ -473,4 +641,44 @@ test('warnings cover external references, missing related links, and shallow exa
     && warning.path === '$.related'));
   assert.ok(result.warnings.some((warning) => warning.code === 'SHALLOW_EXAMPLE'
     && warning.path === '$.examples[0].code'));
+});
+
+test('type references reject duplicate IDs and warn only for structurally valid external references', () => {
+  const doc = completeMethod({
+    signatures: [createSignature({
+      display: 'search(options)',
+      inputs: [createField({
+        name: 'options',
+        type: {
+          display: 'Options',
+          references: [
+            createTypeReference({ id: 'vendor.Options', external: true }),
+            createTypeReference({ id: 'vendor.Options', external: true }),
+            createTypeReference({ id: '', display: 10, external: true }),
+          ],
+        },
+      })],
+    })],
+  });
+  const result = validateReferenceDocument(doc);
+
+  assert.ok(result.errors.some((error) => error.code === 'DUPLICATE_TYPE_REFERENCE_ID'
+    && error.path === '$.signatures[0].inputs[0].type.references[1].id'));
+  assert.equal(result.warnings.filter((warning) => warning.code === 'EXTERNAL_TYPE_REFERENCE').length, 2);
+  assert.equal(result.warnings.some((warning) => warning.path
+    === '$.signatures[0].inputs[0].type.references[2]'), false);
+});
+
+test('related links reject protocol-relative URLs and retain supported destinations', () => {
+  const urls = [
+    '/guide', './guide', '../guide', '#search',
+    'http://docs.example.test/search', 'https://docs.example.test/search',
+    'mailto:docs@example.test', '//attacker.example.test/search',
+  ];
+  const result = validateReferenceDocument(completeMethod({
+    related: urls.map((url) => ({ title: url, url })),
+  }));
+
+  assert.deepEqual(result.errors.filter((error) => error.code === 'INVALID_RELATED_LINK')
+    .map((error) => error.path), ['$.related[7].url']);
 });

@@ -50,11 +50,47 @@ test('normalizeFeishuMessageEvent extracts JSON text content with mention markup
   assert.equal(parseApprovalCommand(event.text).action, 'help');
 });
 
+test('normalizeFeishuMessageEvent collects SDK sender id candidates', () => {
+  const event = normalizeFeishuMessageEvent({
+    sender: {
+      sender_id: {
+        open_id: 'ou_open',
+        user_id: 'user_local',
+        union_id: 'on_union',
+      },
+    },
+    message: {
+      chat_id: 'oc_chat',
+      message_id: 'om_msg',
+      content: JSON.stringify({ text: '@ztrans help' }),
+    },
+  });
+  assert.equal(event.senderId, 'ou_open');
+  assert.deepEqual(event.senderIds, ['ou_open', 'user_local', 'on_union']);
+});
+
+test('normalizeFeishuMessageEvent handles object sender id fallback', () => {
+  const event = normalizeFeishuMessageEvent({
+    chat_id: 'oc_chat',
+    sender: { id: { user_id: 'user_local', union_id: 'on_union' } },
+    message_id: 'om_msg',
+    content: 'approve loc-scan-1',
+  });
+  assert.equal(event.senderId, 'user_local');
+  assert.deepEqual(event.senderIds, ['user_local', 'on_union']);
+});
+
 test('parseApprovalCommand strips ztrans mention and friendly dry run alias', () => {
   const parsed = parseApprovalCommand('@ztrans dry run loc-scan-1 123456');
   assert.equal(parsed.action, 'dry_run_only');
   assert.equal(parsed.taskId, 'loc-scan-1');
   assert.equal(parsed.sourceRunId, '123456');
+});
+
+test('parseApprovalCommand strips Feishu SDK mention placeholders', () => {
+  assert.equal(parseApprovalCommand('@_user_1 help').action, 'help');
+  assert.equal(parseApprovalCommand('＠_user_1 help').action, 'help');
+  assert.equal(parseApprovalCommand('ztrans help').action, 'help');
 });
 
 test('parseApprovalCommand supports friendly approve live write alias', () => {

@@ -15,6 +15,7 @@
     "test:list": "node .claude/skills/sdk-doc-sync/tests/run-all.js --list",
     "test:agent-team": "node --test .claude/agent-team/tests/*.test.js",
     "doc-agent:scan": "node .claude/agent-team/bin/doc-agent-scan.js",
+    "doc-agent:approval": "node .claude/agent-team/bin/doc-agent-approval-consumer.js",
     "doc-agent:webhook": "node .claude/agent-team/bin/doc-agent-webhook-consumer.js",
     "doc-agent:worker:dev": "npx wrangler dev --config .claude/agent-team/cloudflare-worker/wrangler.jsonc",
     "doc-agent:worker:deploy": "npx wrangler deploy --config .claude/agent-team/cloudflare-worker/wrangler.jsonc",

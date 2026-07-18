@@ -21,7 +21,9 @@ function jsonResponse(body, status = 200) {
 function stripBotMention(text) {
   return String(text || '')
     .replace(/^@\s*ztrans\b[:,]?\s*/i, '')
+    .replace(/^ztrans\b[:,]?\s*/i, '')
     .replace(/^<at[^>]*>[^<]*<\/at>\s*/i, '')
+    .replace(/^[＠@]_[a-zA-Z0-9_-]+\s*/i, '')
     .trim();
 }
 
@@ -88,12 +90,37 @@ function normalizeFeishuCallbackEvent(payload) {
   return payload?.event || payload;
 }
 
+function addSenderCandidate(candidates, value) {
+  if (!value) return;
+  if (typeof value === 'string') {
+    candidates.push(value);
+    return;
+  }
+  if (typeof value !== 'object') return;
+  for (const key of ['open_id', 'user_id', 'union_id', 'id']) {
+    addSenderCandidate(candidates, value[key]);
+  }
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 function normalizeFeishuMessageEvent(event) {
   const root = event.event || event;
   const content = root.text || root.content || root.message?.content || '';
+  const senderCandidates = [];
+  addSenderCandidate(senderCandidates, root.sender_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id?.open_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id?.user_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id?.union_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id);
+  addSenderCandidate(senderCandidates, root.sender?.id);
+  const senderIds = unique(senderCandidates);
   return {
     chatId: root.chat_id || root.message?.chat_id || '',
-    senderId: root.sender_id || root.sender?.sender_id?.open_id || root.sender?.id || '',
+    senderId: senderIds[0] || '',
+    senderIds,
     messageId: root.message_id || root.message?.message_id || root.id || root.event_id || '',
     threadId: root.thread_id || root.message?.thread_id || '',
     text: textFromFeishuContent(content),
@@ -240,7 +267,10 @@ async function dispatchGithub({ config, decision, env }) {
 async function handleEvent({ config, event, env }) {
   const normalized = normalizeFeishuMessageEvent(event);
   if (normalized.chatId !== config.feishu.chatId) return { ignored: true, reason: 'chat mismatch' };
-  if (!config.feishu.approverIds.includes(normalized.senderId)) return { ignored: true, reason: 'sender not allowed' };
+  const senderIds = normalized.senderIds?.length ? normalized.senderIds : [normalized.senderId];
+  if (!senderIds.some(id => config.feishu.approverIds.includes(id))) {
+    return { ignored: true, reason: 'sender not allowed', senderIds: normalized.senderIds || [] };
+  }
 
   const parsed = parseApprovalCommand(normalized.text);
   if (!parsed) return { ignored: true, reason: 'not an approval command' };

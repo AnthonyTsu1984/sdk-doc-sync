@@ -12,7 +12,9 @@ const ACTION_ALIASES = Object.freeze({
 function stripBotMention(text) {
   return String(text || '')
     .replace(/^@\s*ztrans\b[:,]?\s*/i, '')
+    .replace(/^ztrans\b[:,]?\s*/i, '')
     .replace(/^<at[^>]*>[^<]*<\/at>\s*/i, '')
+    .replace(/^[＠@]_[a-zA-Z0-9_-]+\s*/i, '')
     .trim();
 }
 
@@ -70,12 +72,37 @@ function textFromFeishuContent(content) {
   }
 }
 
+function addSenderCandidate(candidates, value) {
+  if (!value) return;
+  if (typeof value === 'string') {
+    candidates.push(value);
+    return;
+  }
+  if (typeof value !== 'object') return;
+  for (const key of ['open_id', 'user_id', 'union_id', 'id']) {
+    addSenderCandidate(candidates, value[key]);
+  }
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 function normalizeFeishuMessageEvent(event) {
   const root = event.event || event;
   const content = root.text || root.content || root.message?.content || '';
+  const senderCandidates = [];
+  addSenderCandidate(senderCandidates, root.sender_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id?.open_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id?.user_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id?.union_id);
+  addSenderCandidate(senderCandidates, root.sender?.sender_id);
+  addSenderCandidate(senderCandidates, root.sender?.id);
+  const senderIds = unique(senderCandidates);
   return {
     chatId: root.chat_id || root.message?.chat_id || '',
-    senderId: root.sender_id || root.sender?.sender_id?.open_id || root.sender?.id || '',
+    senderId: senderIds[0] || '',
+    senderIds,
     messageId: root.message_id || root.message?.message_id || '',
     threadId: root.thread_id || root.message?.thread_id || '',
     text: textFromFeishuContent(content),

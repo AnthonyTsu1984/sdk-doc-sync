@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { handleEvent, runSdkEventConsumer } = require('../src/event-consumer');
+const { formatIgnoredResult, handleEvent, runSdkEventConsumer } = require('../src/event-consumer');
 
 function config(logPath) {
   return {
@@ -25,6 +25,42 @@ test('handleEvent ignores unauthorized sender before dispatch', async () => {
   assert.equal(result.ignored, true);
   assert.equal(result.reason, 'sender not allowed');
   assert.equal(dispatched.length, 0);
+});
+
+test('handleEvent allows any normalized sender id candidate', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
+  const localConfig = config(path.join(dir, 'decisions.jsonl'));
+  localConfig.feishu.approverIds = ['on_allowed_union'];
+  const dispatched = [];
+  const result = await handleEvent({
+    config: localConfig,
+    githubToken: 'token',
+    event: {
+      sender: { sender_id: { user_id: 'user_local', union_id: 'on_allowed_union' } },
+      message: {
+        chat_id: localConfig.feishu.chatId,
+        message_id: 'om_1',
+        content: 'approve loc-scan-1',
+      },
+    },
+    dispatch: async decision => dispatched.push(decision),
+  });
+  assert.equal(result.ok, true);
+  assert.equal(dispatched.length, 1);
+});
+
+test('formatIgnoredResult includes sender candidates for allowlist diagnosis', () => {
+  assert.equal(
+    formatIgnoredResult({ reason: 'sender not allowed', senderIds: ['user_local', 'on_union'] }),
+    'sender not allowed (user_local, on_union)'
+  );
+});
+
+test('formatIgnoredResult includes text preview for command parser misses', () => {
+  assert.equal(
+    formatIgnoredResult({ reason: 'not an approval command', text: 'hello there' }),
+    'not an approval command (hello there)'
+  );
 });
 
 test('handleEvent appends decision and dispatches once', async () => {

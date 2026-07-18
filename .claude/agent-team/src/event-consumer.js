@@ -39,6 +39,21 @@ function createDecision({ parsed, event, sourceRunId = null }) {
   };
 }
 
+function isAllowedSender(config, normalized) {
+  const allowedIds = config.feishu.approverIds || [];
+  const senderIds = normalized.senderIds?.length ? normalized.senderIds : [normalized.senderId];
+  return senderIds.some(id => allowedIds.includes(id));
+}
+
+function formatIgnoredResult(result) {
+  if (result?.reason === 'not an approval command' && result.text) {
+    const preview = String(result.text).replace(/\s+/g, ' ').trim().slice(0, 120);
+    return `${result.reason} (${preview})`;
+  }
+  if (result?.reason !== 'sender not allowed' || !result.senderIds?.length) return result.reason;
+  return `${result.reason} (${result.senderIds.join(', ')})`;
+}
+
 function localResponseText(parsed) {
   if (parsed.action === 'help') {
     return [
@@ -67,9 +82,11 @@ async function handleEvent({
 }) {
   const normalized = normalizeFeishuMessageEvent(event);
   if (normalized.chatId !== config.feishu.chatId) return { ignored: true, reason: 'chat mismatch' };
-  if (!config.feishu.approverIds.includes(normalized.senderId)) return { ignored: true, reason: 'sender not allowed' };
+  if (!isAllowedSender(config, normalized)) {
+    return { ignored: true, reason: 'sender not allowed', senderIds: normalized.senderIds || [] };
+  }
   const parsed = parseApprovalCommand(normalized.text);
-  if (!parsed) return { ignored: true, reason: 'not an approval command' };
+  if (!parsed) return { ignored: true, reason: 'not an approval command', text: normalized.text };
   if (parsed.local) {
     const responseText = localResponseText(parsed);
     if (respond) {
@@ -134,7 +151,7 @@ async function runEventConsumer({ config, githubToken }) {
           respond: message => im.sendText(message),
         }))
         .then(result => {
-          if (result?.ignored) console.error(`[doc-agent] ignored event: ${result.reason}`);
+          if (result?.ignored) console.error(`[doc-agent] ignored event: ${formatIgnoredResult(result)}`);
           else if (result?.duplicate) console.error(`[doc-agent] duplicate decision: ${result.decision.decisionId}`);
           else if (result?.local) console.error(`[doc-agent] sent local response: ${result.parsed.action}`);
           else if (result?.ok) console.error(`[doc-agent] dispatched decision: ${result.decision.decisionId}`);
@@ -180,7 +197,7 @@ async function runSdkEventConsumer({
           githubToken,
           respond: message => im.sendText(message),
         });
-        if (result?.ignored) console.error(`[doc-agent] ignored event: ${result.reason}`);
+        if (result?.ignored) console.error(`[doc-agent] ignored event: ${formatIgnoredResult(result)}`);
         else if (result?.duplicate) console.error(`[doc-agent] duplicate decision: ${result.decision.decisionId}`);
         else if (result?.local) console.error(`[doc-agent] sent local response: ${result.parsed.action}`);
         else if (result?.ok) console.error(`[doc-agent] dispatched decision: ${result.decision.decisionId}`);
@@ -197,6 +214,7 @@ async function runSdkEventConsumer({
 module.exports = {
   appendDecision,
   createDecision,
+  formatIgnoredResult,
   handleEvent,
   localResponseText,
   runEventConsumer,

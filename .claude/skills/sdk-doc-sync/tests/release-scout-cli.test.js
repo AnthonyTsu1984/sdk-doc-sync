@@ -68,6 +68,14 @@ class MilvusClient:
         return 1
 `);
   git(repo, ['add', '.']);
+  git(repo, [
+    'update-index',
+    '--add',
+    '--cacheinfo',
+    '160000',
+    '882e58722273dc27b37b11a20de5b4592fe02da9',
+    'pymilvus/grpc_gen/milvus-proto',
+  ]);
   git(repo, ['commit', '-m', 'baseline']);
   git(repo, ['tag', 'v2.6.12']);
   writeText(path.join(repo, 'pymilvus', 'milvus_client', 'milvus_client.py'), `
@@ -80,6 +88,14 @@ class FieldOp:
     pass
 `);
   git(repo, ['add', '.']);
+  git(repo, [
+    'update-index',
+    '--add',
+    '--cacheinfo',
+    '160000',
+    '882e58722273dc27b37b11a20de5b4592fe02da9',
+    'pymilvus/grpc_gen/milvus-proto',
+  ]);
   git(repo, ['commit', '-m', 'target']);
   git(repo, ['tag', 'v2.6.17']);
 

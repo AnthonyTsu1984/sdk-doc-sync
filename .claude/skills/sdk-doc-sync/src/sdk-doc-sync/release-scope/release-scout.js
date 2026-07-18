@@ -49,8 +49,19 @@ function materializeSnapshot({
 
   const snapshotRoot = fs.mkdtempSync(path.join(os.tmpdir(), `sdk-release-scout-${ref.replace(/[^A-Za-z0-9_.-]/g, '-')}-`));
   try {
-    const output = runGit(['ls-tree', '-r', '--name-only', ref, '--', ...roots], { cwd: repoDir });
-    const files = output.split('\n').map((line) => line.trim()).filter(Boolean);
+    const output = runGit(['ls-tree', '-r', ref, '--', ...roots], { cwd: repoDir });
+    const files = output
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .map((line) => {
+        const match = line.match(/^(\d+)\s+(\S+)\s+\S+\s+(.+)$/);
+        if (!match) return null;
+        const [, mode, type, file] = match;
+        if (mode === '160000' || type === 'commit') return null;
+        return file;
+      })
+      .filter(Boolean);
     for (const file of files) {
       const content = runGit(['show', `${ref}:${file}`], { cwd: repoDir });
       const destination = path.join(snapshotRoot, file);

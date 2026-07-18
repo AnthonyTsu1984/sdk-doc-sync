@@ -11,6 +11,8 @@
 | v2.6.x  | J3Qzbv7AWazzivsv7vqcqlGCnFc | `IaWgf4osAlpdwqdVIclct97wnCg` |
 | v3.0.x  | Hk05b5eI6aXXSSsd6j9cqwwMn5a | `UxyTfjS3wl0TF8dn9tZcRT39nUe` |
 
+For scoped dry-runs, set `BASE_TOKEN` to the row's Bitable Token and `ROOT_TOKEN` to the row's Drive Folder token. For Python v2.6.x, use `BASE_TOKEN=J3Qzbv7AWazzivsv7vqcqlGCnFc` and `ROOT_TOKEN=IaWgf4osAlpdwqdVIclct97wnCg`.
+
 **Doc format:**
 
 ```

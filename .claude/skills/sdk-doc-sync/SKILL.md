@@ -71,6 +71,8 @@ The artifact must validate with `schemaVersion: 1`, `approvalGrade: true`, `writ
 
 Use the release-scout artifact to constrain the scanner and canonical slugs:
 
+Resolve `BASE_TOKEN` and `ROOT_TOKEN` from the per-SDK version table before running the command. `BASE_TOKEN` is the version's Bitable Token, and `ROOT_TOKEN` is the version's Drive Folder token. Ensure the local SDK checkout, or a temporary worktree passed as `--sdk-dir`, is at the release-scout target tag before using the dry-run output as source evidence.
+
 ```bash
 BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
 node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \

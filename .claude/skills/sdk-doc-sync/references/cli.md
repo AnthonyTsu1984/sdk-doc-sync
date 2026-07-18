@@ -10,7 +10,7 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js --help
 
 Required dry-run inputs include `--sdk-dir`, `--sdk-name`, and `--sdk-version`. Use space-separated option values.
 
-`--dry-run` is read-only, but it is not necessarily offline: release comparison against existing Feishu records needs a base token. Provide `BASE_TOKEN` or `--previous-base-token`; provide `ROOT_TOKEN` when folder placement is part of the plan.
+`--dry-run` is read-only, but it is not necessarily offline: release comparison against existing Feishu records needs a base token. For SDK release work, resolve `BASE_TOKEN` from the target version's Bitable Token in the per-SDK reference table, and resolve `ROOT_TOKEN` from the same row's Drive Folder token when folder placement is part of the plan. Provide `BASE_TOKEN` or `--previous-base-token`; provide `ROOT_TOKEN` when folder placement is part of the plan.
 
 ## Release Scout
 

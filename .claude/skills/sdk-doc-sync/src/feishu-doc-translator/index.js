@@ -26,6 +26,7 @@ class FeishuDocTranslator {
         this.translatorType = options.translatorType || 'claude';
         this.dryRun = options.dryRun || false;
         this.approvalCallback = options.approvalCallback || null;
+        this.sourceDocumentReader = options.sourceDocumentReader || null;
 
         // Initialize components
         this.sourceReader = new BitableReader({ baseToken: this.sourceBitable, tableId: this.sourceTableId });
@@ -34,7 +35,7 @@ class FeishuDocTranslator {
         this.diff = new TranslationDiff({ strict: true });
 
         // Initialize translator
-        this.translator = this._createTranslator();
+        this.translator = options.translator || this._createTranslator();
         this.docTranslator = new DocTranslator({
             translator: this.translator,
             sourceLang: this.sourceLang,
@@ -200,9 +201,7 @@ class FeishuDocTranslator {
 
         // Fetch source document
         console.log(`  Fetching source: ${sourceRecord.metadata.link}`);
-        const sourceMarkdown = await this.sourceReader_md.get_markdown({
-            slug: sourceRecord.metadata.slug,
-        });
+        const sourceMarkdown = await this._fetchSourceMarkdown(sourceRecord);
 
         if (!sourceMarkdown) {
             throw new Error('Failed to fetch source document');
@@ -277,9 +276,7 @@ class FeishuDocTranslator {
 
         // Fetch source document
         console.log(`  Fetching source: ${sourceRecord.metadata.link}`);
-        const sourceMarkdown = await this.sourceReader_md.get_markdown({
-            slug: sourceRecord.metadata.slug,
-        });
+        const sourceMarkdown = await this._fetchSourceMarkdown(sourceRecord);
 
         if (!sourceMarkdown) {
             throw new Error('Failed to fetch source document');
@@ -378,6 +375,15 @@ class FeishuDocTranslator {
             nodeToken: nodeToken || this.targetRoot,
             slug: targetParent.metadata.slug,
         };
+    }
+
+    async _fetchSourceMarkdown(sourceRecord) {
+        if (this.sourceDocumentReader) {
+            return await this.sourceDocumentReader.readMarkdown(sourceRecord);
+        }
+        return await this.sourceReader_md.get_markdown({
+            slug: sourceRecord.metadata.slug,
+        });
     }
 
     /**

@@ -19,11 +19,52 @@ const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 require('dotenv').config({ path: path.join(PROJECT_ROOT, '.env'), quiet: true });
 
-const FeishuToMarkdown = require('../src/feishu-to-markdown');
+const fetch = require('node-fetch');
+const FeishuClient = require('../src/feishu/feishu-client');
+const DocxReader = require('../src/feishu/docx-reader');
+const { docxToIr } = require('../src/document-ir/docx-to-ir');
+const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
+const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 function extractToken(input) {
-    const match = input.match(/(?:docx|wiki)\/([a-zA-Z0-9]+)/);
+    const match = input.match(/(?:docx|wiki)\/([^/?#]+)/);
     return match ? match[1] : input;
+}
+
+function createDocumentReader({ sourceType = 'drive' } = {}) {
+    const tokenFetcher = new larkTokenFetcher();
+    const client = new FeishuClient({
+        host: process.env.FEISHU_HOST || 'https://open.feishu.cn',
+        tokenProvider: () => tokenFetcher.token(),
+        transport: ({ url, method, headers, body }) => fetch(url, { method, headers, body }),
+    });
+    const reader = new DocxReader({ client, sourceType });
+    return {
+        async readMarkdown(token) {
+            const blocks = await reader.expandReferences(await reader.readBlocks(token));
+            const ir = docxToIr(blocks, { metadata: { token } });
+            return renderMarkdown(ir, { lossy: true }).replace(/import .* from .*/g, '').trim();
+        },
+    };
+}
+
+async function exportDocument({
+    input,
+    outputFile = 'exported.md',
+    documentReader = createDocumentReader(),
+    writeFile = (file, content) => fs.writeFileSync(file, content, 'utf8'),
+    log = console.log,
+} = {}) {
+    if (!input) throw new TypeError('input is required');
+    const token = extractToken(input);
+    log(`Exporting Feishu doc: ${token}`);
+    const markdown = await documentReader.readMarkdown(token);
+    if (typeof markdown !== 'string' || markdown.length === 0) {
+        throw new Error('No markdown returned for document export');
+    }
+    writeFile(outputFile, markdown);
+    log(`Done. Markdown written to: ${path.resolve(outputFile)}`);
+    return { token, outputFile, markdown };
 }
 
 async function main() {
@@ -35,49 +76,14 @@ async function main() {
         process.exit(1);
     }
 
-    const docToken = extractToken(rawInput);
-    console.log(`Exporting Feishu doc: ${docToken}`);
-
-    const converter = new FeishuToMarkdown({
-        sourceType: 'drive',
-        rootToken: null,
-        baseToken: null
-    });
-
-    converter.targets = 'all';
-
-    console.log('Fetching document blocks...');
-    const blocks = await converter.__fetch_doc_blocks(docToken);
-
-    if (!blocks || blocks.length === 0) {
-        console.error('No blocks found or failed to fetch document.');
-        process.exit(1);
-    }
-
-    converter.page_blocks = blocks;
-
-    const pageBlock = blocks.find(b => b.block_type === 1);
-    if (!pageBlock) {
-        console.error('No page block (block_type === 1) found in document.');
-        process.exit(1);
-    }
-
-    converter.blocks = pageBlock.children
-        ? pageBlock.children.map(childId => converter.__retrieve_block_by_id(childId)).filter(Boolean)
-        : [];
-
-    console.log(`Found ${blocks.length} blocks, ${converter.blocks.length} top-level.`);
-    console.log('Converting to markdown...');
-
-    let markdown = await converter.__markdown();
-
-    markdown = markdown.replace(/import .* from .*/g, '').trim();
-
-    fs.writeFileSync(outputFile, markdown, 'utf8');
-    console.log(`Done. Markdown written to: ${path.resolve(outputFile)}`);
+    await exportDocument({ input: rawInput, outputFile });
 }
 
-main().catch(err => {
-    console.error('Error:', err.message);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch(err => {
+        console.error('Error:', err.message);
+        process.exit(1);
+    });
+}
+
+module.exports = { exportDocument, extractToken, createDocumentReader };

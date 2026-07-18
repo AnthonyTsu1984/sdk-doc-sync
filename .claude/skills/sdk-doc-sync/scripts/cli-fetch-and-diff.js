@@ -2,170 +2,210 @@
 /**
  * Zilliz CLI Documentation Fetch & Diff Script
  *
- * Fetches current CLI doc pages from Feishu, generates scaffold versions,
- * and produces a side-by-side comparison to identify manual adjustments.
- *
- * Usage:
- *   node .claude/skills/sdk-doc-sync/scripts/cli-fetch-and-diff.js [--resource=Name] [--method=name] [--list-only]
- *
- * Options:
- *   --list-only     Just list all Function records (no fetching)
- *   --resource=X    Only fetch docs for resource X (e.g., Cluster, Vector)
- *   --method=X      Only fetch doc for method X (e.g., list, search)
+ * Fetches current CLI doc pages, generates scaffold versions, and reports
+ * identical, different, fetch-only, scanner-only, and failed documents.
  */
 
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
+'use strict';
 
 const fs = require('fs');
+const path = require('path');
+
+require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
+
 const FeishuToMarkdown = require('../src/feishu-to-markdown');
 const ZillizCliScanner = require('../src/sdk-doc-sync/scanners/zilliz-cli-scanner');
 const DocGenerator = require('../src/sdk-doc-sync/doc-generator');
 
-const BITABLE_TOKEN = 'OAK4bJaNuac501sX6Y1cS3OGnzf';
-const SDK_DIR = path.resolve(__dirname, '../../../../repos/zilliz-cloud/vdc/zilliz-cli');
-const OUTPUT_DIR = path.resolve(__dirname, '../../../../tmp/cli-docs');
+const DEFAULT_BITABLE_TOKEN = 'OAK4bJaNuac501sX6Y1cS3OGnzf';
+const DEFAULT_SDK_DIR = path.resolve(__dirname, '../../../../repos/zilliz-cloud/vdc/zilliz-cli');
+const DEFAULT_OUTPUT_DIR = path.resolve(__dirname, '../../../../tmp/cli-docs');
+const DEFAULT_DELAY_MS = 600;
 
-const args = process.argv.slice(2);
-const LIST_ONLY = args.includes('--list-only');
-const ONLY_RESOURCE = args.find(a => a.startsWith('--resource='))?.split('=')[1];
-const ONLY_METHOD = args.find(a => a.startsWith('--method='))?.split('=')[1];
-const DELAY_MS = 600;
+function parseArgs(argv = process.argv.slice(2)) {
+    const options = {
+        listOnly: false,
+        resource: null,
+        method: null,
+        baseToken: DEFAULT_BITABLE_TOKEN,
+        sdkDir: DEFAULT_SDK_DIR,
+        sdkVersion: 'v0.1.x',
+        outputDir: DEFAULT_OUTPUT_DIR,
+    };
+    for (const arg of argv) {
+        if (arg === '--list-only') options.listOnly = true;
+        else if (arg.startsWith('--resource=')) options.resource = arg.slice('--resource='.length);
+        else if (arg.startsWith('--method=')) options.method = arg.slice('--method='.length);
+        else if (arg.startsWith('--base-token=')) options.baseToken = arg.slice('--base-token='.length);
+        else if (arg.startsWith('--sdk-dir=')) options.sdkDir = arg.slice('--sdk-dir='.length);
+        else if (arg.startsWith('--sdk-version=')) options.sdkVersion = arg.slice('--sdk-version='.length);
+        else if (arg.startsWith('--output-dir=')) options.outputDir = arg.slice('--output-dir='.length);
+        else throw new Error(`Unknown argument: ${arg}`);
+    }
+    return options;
+}
 
-function delay(ms = DELAY_MS) {
+function delay(ms = DEFAULT_DELAY_MS) {
     return new Promise(r => setTimeout(r, ms));
 }
 
-async function main() {
-    // 1. List all records from bitable
-    console.log('=== Step 1: Fetching bitable records ===\n');
-    const f2m = new FeishuToMarkdown({
-        sourceType: 'drive',
-        baseToken: BITABLE_TOKEN,
-    });
-    const allDocs = await f2m.list_documents();
-    const fnDocs = allDocs.filter(d => d.metadata.type === 'Function');
+function slugForSymbol(symbol) {
+    return `${symbol.parentClass}-${symbol.name}`;
+}
 
-    console.log(`  Total records: ${allDocs.length}`);
-    console.log(`  Function records: ${fnDocs.length}\n`);
+function normalizeMarkdown(value) {
+    return String(value || '').replace(/^---[\s\S]*?---\n\n/, '').trim().replace(/\r\n/g, '\n');
+}
 
-    // Group by parent to show resource grouping
+function groupByResource(allDocs) {
     const parentMap = {};
-    const vnDocs = allDocs.filter(d => d.metadata.type === 'VirtualNode');
-    for (const vn of vnDocs) {
-        parentMap[vn.id] = vn.metadata.title;
+    for (const doc of allDocs.filter(d => d.metadata.type === 'VirtualNode')) {
+        parentMap[doc.id] = doc.metadata.title;
     }
 
     const byResource = {};
-    for (const doc of fnDocs) {
-        const resource = parentMap[doc.parent] || 'Unknown';
+    for (const doc of allDocs.filter(d => d.metadata.type === 'Function')) {
+        const resource = parentMap[doc.parent] || doc.metadata.slug?.split('-')[0] || 'Unknown';
         if (!byResource[resource]) byResource[resource] = [];
         byResource[resource].push(doc);
     }
+    return byResource;
+}
 
-    console.log('  Commands by resource:');
-    for (const [resource, docs] of Object.entries(byResource).sort()) {
-        console.log(`    ${resource} (${docs.length}): ${docs.map(d => d.metadata.title).join(', ')}`);
-    }
-
-    if (LIST_ONLY) {
-        console.log('\n  --list-only mode, stopping here.');
-        return;
-    }
-
-    // 2. Scan CLI source to get generated scaffolds
-    console.log('\n=== Step 2: Scanning CLI source ===\n');
-    const scanner = new ZillizCliScanner({ rootDir: SDK_DIR });
-    const symbols = await scanner.scan();
-    console.log(`  Scanned ${symbols.length} symbols\n`);
-
-    const generator = new DocGenerator({
+async function runCliFetchAndDiff({
+    listOnly = false,
+    resource = null,
+    method = null,
+    baseToken = DEFAULT_BITABLE_TOKEN,
+    sdkDir = DEFAULT_SDK_DIR,
+    sdkVersion = 'v0.1.x',
+    outputDir = DEFAULT_OUTPUT_DIR,
+    indexReader = null,
+    documentReader = null,
+    scanner = null,
+    generator = null,
+    mkdir = (dir) => fs.mkdirSync(dir, { recursive: true }),
+    writeFile = (file, content) => fs.writeFileSync(file, content, 'utf8'),
+    log = console.log,
+    delay: wait = delay,
+} = {}) {
+    const reader = indexReader || new FeishuToMarkdown({
+        sourceType: 'drive',
+        baseToken,
+    });
+    const readDocuments = reader.listDocuments
+        ? () => reader.listDocuments()
+        : () => reader.list_documents();
+    const docReader = documentReader || {
+        readMarkdown: (doc) => reader.get_markdown({ id: doc.id }),
+    };
+    const sourceScanner = scanner || new ZillizCliScanner({ rootDir: sdkDir });
+    const docGenerator = generator || new DocGenerator({
         sdkName: 'Zilliz CLI',
-        sdkVersion: 'v0.1.x',
+        sdkVersion,
         targets: ['Zilliz CLI'],
         language: 'zilliz-cli',
     });
 
-    // Build slug → symbol map
-    const symbolMap = {};
-    for (const sym of symbols) {
-        const slug = `${sym.parentClass}-${sym.name}`;
-        symbolMap[slug] = sym;
+    log('=== Step 1: Fetching bitable records ===\n');
+    const allDocs = await readDocuments();
+    const byResource = groupByResource(allDocs);
+    const fnDocs = Object.values(byResource).flat();
+    log(`  Total records: ${allDocs.length}`);
+    log(`  Function records: ${fnDocs.length}\n`);
+
+    for (const [name, docs] of Object.entries(byResource).sort()) {
+        log(`    ${name} (${docs.length}): ${docs.map(d => d.metadata.title).join(', ')}`);
     }
 
-    // 3. Fetch each doc and compare
-    console.log('=== Step 3: Fetching docs & generating diffs ===\n');
-    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+    if (listOnly) {
+        return {
+            totalRecords: allDocs.length,
+            functionRecords: fnDocs.length,
+            results: [],
+            identical: 0,
+            different: 0,
+            fetchOnly: 0,
+            scannerOnly: 0,
+            failed: 0,
+        };
+    }
 
-    let fetched = 0;
-    let diffCount = 0;
-    const diffs = [];
+    log('\n=== Step 2: Scanning CLI source ===\n');
+    const symbols = await sourceScanner.scan();
+    const symbolMap = new Map(symbols.map((symbol) => [slugForSymbol(symbol), symbol]));
+    const seenSymbols = new Set();
+    log(`  Scanned ${symbols.length} symbols\n`);
 
-    for (const [resource, docs] of Object.entries(byResource).sort()) {
-        if (ONLY_RESOURCE && resource !== ONLY_RESOURCE) continue;
+    log('=== Step 3: Fetching docs & generating diffs ===\n');
+    mkdir(outputDir);
 
+    const results = [];
+    for (const [resourceName, docs] of Object.entries(byResource).sort()) {
+        if (resource && resourceName !== resource) continue;
         for (const doc of docs) {
-            if (ONLY_METHOD && doc.metadata.title !== ONLY_METHOD) continue;
-
-            const slug = `${resource}-${doc.metadata.title}`;
-            const docDir = path.join(OUTPUT_DIR, slug);
-            fs.mkdirSync(docDir, { recursive: true });
-
-            // Fetch from Feishu
+            if (method && doc.metadata.title !== method) continue;
+            const slug = doc.metadata.slug || `${resourceName}-${doc.metadata.title}`;
+            const docDir = path.join(outputDir, slug);
+            mkdir(docDir);
             try {
-                const markdown = await f2m.get_markdown({ id: doc.id });
-                if (!markdown) {
-                    console.log(`  SKIP ${slug} — no markdown returned`);
-                    continue;
-                }
+                const markdown = await docReader.readMarkdown(doc);
+                const body = normalizeMarkdown(markdown);
+                writeFile(path.join(docDir, 'feishu.md'), body);
 
-                // Strip front matter for comparison
-                const body = markdown.replace(/^---[\s\S]*?---\n\n/, '');
-                fs.writeFileSync(path.join(docDir, 'feishu.md'), body);
-                fetched++;
-
-                // Generate scaffold
-                const sym = symbolMap[slug];
-                if (sym) {
-                    const generated = generator.generate(sym);
-                    fs.writeFileSync(path.join(docDir, 'generated.md'), generated);
-
-                    // Simple diff: compare normalized content
-                    const normFeishu = body.trim().replace(/\r\n/g, '\n');
-                    const normGenerated = generated.trim().replace(/\r\n/g, '\n');
-
-                    if (normFeishu !== normGenerated) {
-                        diffCount++;
-                        diffs.push({ slug, resource, method: doc.metadata.title });
-                        console.log(`  DIFF ${slug}`);
-                    } else {
-                        console.log(`  SAME ${slug}`);
-                    }
+                const symbol = symbolMap.get(slug);
+                if (!symbol) {
+                    results.push({ slug, status: 'fetch-only' });
+                    log(`  FETCH-ONLY ${slug}`);
                 } else {
-                    console.log(`  FETCH-ONLY ${slug} (no matching scanner symbol)`);
+                    seenSymbols.add(slug);
+                    const generated = normalizeMarkdown(docGenerator.generate(symbol));
+                    writeFile(path.join(docDir, 'generated.md'), generated);
+                    const status = body === generated ? 'identical' : 'different';
+                    results.push({ slug, status });
+                    log(`  ${status === 'identical' ? 'SAME' : 'DIFF'} ${slug}`);
                 }
-
-                await delay();
-            } catch (err) {
-                console.error(`  ERROR ${slug}: ${err.message}`);
+                await wait();
+            } catch (error) {
+                results.push({ slug, status: 'failed', error: error.message });
+                log(`  ERROR ${slug}: ${error.message}`);
             }
         }
     }
 
-    // 4. Summary
-    console.log(`\n=== Summary ===\n`);
-    console.log(`  Fetched: ${fetched}`);
-    console.log(`  With diffs: ${diffCount}`);
-    console.log(`  Identical: ${fetched - diffCount}`);
-
-    if (diffs.length > 0) {
-        console.log(`\n  Modified docs:`);
-        for (const d of diffs) {
-            console.log(`    - ${d.slug}`);
+    for (const [slug] of symbolMap) {
+        if (!seenSymbols.has(slug)) {
+            results.push({ slug, status: 'scanner-only' });
         }
-        console.log(`\n  Diff files saved to: ${OUTPUT_DIR}`);
-        console.log(`  Compare with: diff tmp/cli-docs/{slug}/feishu.md tmp/cli-docs/{slug}/generated.md`);
     }
+
+    const summary = {
+        totalRecords: allDocs.length,
+        functionRecords: fnDocs.length,
+        results,
+        identical: results.filter((entry) => entry.status === 'identical').length,
+        different: results.filter((entry) => entry.status === 'different').length,
+        fetchOnly: results.filter((entry) => entry.status === 'fetch-only').length,
+        scannerOnly: results.filter((entry) => entry.status === 'scanner-only').length,
+        failed: results.filter((entry) => entry.status === 'failed').length,
+    };
+
+    log('\n=== Summary ===\n');
+    log(`  Identical: ${summary.identical}`);
+    log(`  Different: ${summary.different}`);
+    log(`  Fetch-only: ${summary.fetchOnly}`);
+    log(`  Scanner-only: ${summary.scannerOnly}`);
+    log(`  Failed: ${summary.failed}`);
+    return summary;
 }
 
-main().catch(err => { console.error('FATAL:', err); process.exit(1); });
+async function main() {
+    const options = parseArgs();
+    await runCliFetchAndDiff(options);
+}
+
+if (require.main === module) {
+    main().catch(err => { console.error('FATAL:', err); process.exit(1); });
+}
+
+module.exports = { parseArgs, runCliFetchAndDiff };

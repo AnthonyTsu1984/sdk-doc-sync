@@ -1,0 +1,19 @@
+[
+  {
+    "name": "compact",
+    "kind": "method",
+    "signature": "def compact(self, collection_name: str, is_clustering: Optional[bool] = False, is_l0: Optional[bool] = False, timeout: Optional[float] = None, **kwargs) -> int:",
+    "params": [
+      { "name": "collection_name", "kind": "positional", "type": "str", "default": null },
+      { "name": "is_clustering", "kind": "keyword", "type": "Optional[bool]", "default": "False" },
+      { "name": "is_l0", "kind": "keyword", "type": "Optional[bool]", "default": "False" },
+      { "name": "timeout", "kind": "keyword", "type": "Optional[float]", "default": "None" },
+      { "name": "kwargs", "kind": "kwargs", "type": null, "default": null }
+    ],
+    "filePath": "milvus_client/milvus_client.py",
+    "lineNumber": 1798,
+    "parentClass": "MilvusClient",
+    "decorators": [],
+    "returnType": "int"
+  }
+]

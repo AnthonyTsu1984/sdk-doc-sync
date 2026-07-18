@@ -136,3 +136,43 @@ test('changedFilesInRange returns sorted public SDK paths only', () => {
     'pymilvus/milvus_client/milvus_client.py',
   ]);
 });
+
+const {
+  publicIdentity,
+  classifySymbolDeltas,
+  filterSymbolsByChangedFiles,
+} = require('../src/sdk-doc-sync/release-scope/symbol-inventory');
+
+test('publicIdentity is stable across line-number changes', () => {
+  assert.equal(publicIdentity({
+    parentClass: 'MilvusClient',
+    name: 'compact',
+  }), 'MilvusClient.compact');
+  assert.equal(publicIdentity({
+    parentClass: null,
+    name: 'bulk_import',
+  }), 'bulk_import');
+});
+
+test('classifySymbolDeltas detects creates and signature updates', () => {
+  const baseline = readFixture('python-v26-scanned-baseline.json');
+  const target = readFixture('python-v26-scanned-target.json');
+  const deltas = classifySymbolDeltas({ baseline, target });
+  assert.deepEqual(deltas.map((delta) => [delta.type, delta.symbolIdentity, delta.reason]), [
+    ['UPDATE', 'MilvusClient.compact', 'signature changed'],
+    ['CREATE', 'FieldOp', 'new public class'],
+  ]);
+});
+
+test('filterSymbolsByChangedFiles accepts scanner paths relative to package root', () => {
+  const target = readFixture('python-v26-scanned-target.json');
+  const filtered = filterSymbolsByChangedFiles({
+    symbols: target,
+    changedFiles: [
+      'pymilvus/client/field_ops.py',
+      'pymilvus/milvus_client/milvus_client.py',
+    ],
+    sdkPackagePrefix: 'pymilvus/',
+  });
+  assert.deepEqual(filtered.map(publicIdentity), ['FieldOp', 'MilvusClient.compact']);
+});

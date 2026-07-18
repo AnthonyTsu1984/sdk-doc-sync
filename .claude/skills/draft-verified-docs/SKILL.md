@@ -36,6 +36,8 @@ For concrete repo paths, reusable commands, and report format, read [references/
 6. Draft the document.
    - Write from verified behavior. Use reference docs for structure and context only after checking factual claims.
    - Keep examples realistic and consistent with verified SDK/API usage. Do not invent SDK methods, endpoint fields, flags, statuses, or outputs.
+   - Place new material according to the target page's role. Keep overview/concept pages concise and put step-by-step workflows, long examples, and operational details on manage/how-to/use-case pages.
+   - Do not add empty placeholder headings or skeletal sections. If a section has no verified body content, omit it until content is ready.
    - Include a short "Needs further verification" section in the draft when unresolved items remain, unless the user explicitly wants that list outside the doc.
 7. Patch the target Feishu page.
    - Prepare a Markdown draft first.
@@ -64,8 +66,11 @@ Use these existing assets when needed:
 - Use precise product names: Milvus, Zilliz Cloud, Zilliz CLI, PyMilvus, Milvus Java SDK, Milvus Go SDK, Milvus Node.js SDK, Milvus C++ SDK.
 - Keep credentials, endpoints, project IDs, cluster IDs, collection names, and object storage paths as placeholders unless the source reference provides safe sample values.
 - Avoid unsupported absolutes such as "always", "all", or "automatically" unless code confirms them.
+- Preserve the target documentation set's navigation and code-example conventions. For multi-language procedure docs, keep existing language order, code tabs/placeholders, and real page anchors unless the user asks to restructure them.
+- If adding a feature that affects multiple related docs, avoid duplicating the same long explanation across pages. Prefer a brief conceptual note or restriction on overview pages, a workflow section on manage/how-to pages, and a scenario-oriented example on use-case pages.
 - Do not mark a behavior unresolved solely because the local sparse checkout lacks the relevant Milvus or Zilliz Cloud path; first try to expand the checkout or explicitly report why expansion could not be done.
 - If a generated example cannot be syntax-checked or compile-checked, say why in the final report.
+- When the user edits or trims published drafts, compare their version against your draft and propose any reusable style, placement, or patching rule. Update this skill or its workflow notes only when the user explicitly asks.
 
 ## Final Report
 

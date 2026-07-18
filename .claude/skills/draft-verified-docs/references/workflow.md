@@ -207,12 +207,32 @@ Choose the structure that fits the target page, but most docs should include:
 6. Error handling or caveats when verified.
 7. "Needs further verification" when unresolved items remain.
 
+Match the page's role in the doc set:
+
+- Overview/concept pages should explain what the feature is and carry durable constraints or limits. Do not insert long operational workflows there when a manage/how-to/use-case page exists.
+- Manage/how-to pages are the right place for ordered workflows, prerequisites, request syntax, and full SDK/API examples.
+- Use-case pages should describe why and when to use the feature, then link into or summarize the manage/how-to workflow. Keep scenario examples focused.
+- Do not add placeholder headings such as "Create X", "Restore X", or "Drop X" unless the heading has verified body content or an existing publishing system fills it.
+- For repeated facts across related pages, use a short restriction/caveat on secondary pages and keep the full explanation in one primary workflow page.
+
 Keep Feishu Markdown converter constraints in mind:
 
 - Avoid deeply nested bullets for parameter docs.
 - Use tight lists when writing parameter lists.
 - Use fenced code blocks with correct language labels.
 - Keep each logical paragraph or list item as its own Markdown line/block.
+- Preserve existing code-tab conventions. When a page has examples for Python, Java, Go, Node.js, and cURL, keep that language order and include explicit placeholder blocks only if the page already uses placeholders for unsupported languages.
+- Use real code fence language labels (`python`, `java`, `go`, `javascript`, `bash`) rather than generic `plaintext` for SDK/API snippets.
+
+## Learning From User Edits
+
+When the user edits a page after publication and asks for the rules:
+
+1. Export the current page and diff it against the draft or final export saved under `tmp/draft-verified-docs/`.
+2. Classify removed content as placement, style, factual, example, or tooling/rendering feedback.
+3. Treat repeated edits across pages as candidate reusable rules. Report them and update the skill only when the user explicitly asks.
+4. Do not re-add removed content unless the user explicitly asks; the edited page is the newest source of editorial intent.
+5. Keep a short note in the final report naming the inferred rules and, when an update was requested, the skill files changed.
 
 ## Feishu Write-Back
 
@@ -240,6 +260,8 @@ node .claude/skills/sdk-doc-sync/bin/export-doc.js <target-doc-id> tmp/draft-ver
 
 Inspect the result for lost headings, malformed lists, incorrect code block languages, broken links, and missing "Needs further verification" items.
 
+Do not use whole-page overwrite as a repair shortcut for existing docs with synced blocks, code-tab groups, includes, reference blocks, tables, or hand-maintained anchors unless the user explicitly requests a rebuild. Whole-page overwrite can flatten code tabs, change language metadata, delete synced/reference structures, and replace anchorable block IDs. If a smart patch creates duplicated leading blocks, malformed code fences, or block-order issues, stop and switch to precise `lark-cli` block operations after refetching current block IDs.
+
 ## Feishu/Lark CLI Patching
 
 Use this path when a page is not editable through the Node helper, when the user explicitly asks for `lark-cli`, or when a precise block-level patch is safer than a whole-page smart patch.
@@ -258,6 +280,7 @@ Patch rules:
 - Run dependent block updates sequentially. Parallel writes can return revisions out of order; always refetch before continuing if multiple updates touch the same section.
 - If Markdown `str_replace` dry-runs but live matching fails, switch to `block_replace` with XML and current block IDs.
 - Keep raw conditional publishing tags such as `&lt;include target="milvus"&gt;...&lt;/include&gt;` escaped in XML content. In fetched Markdown they may appear as literal `<include ...>` tags.
+- When updating a table of contents, preserve or refresh real Feishu block links rather than replacing them with `null` links or plain text.
 - When using XML `block_replace` on list items, do not put paragraphs after a nested `<ul>` in the same `<li>`; Feishu may drop or move them. Put required prose before the nested list, or include it as list items.
 - For label-style bullets, use `<b>Label</b><br/>Text` and do not insert leading spaces after `<br/>`. Leading spaces render as visible indentation in Feishu.
 - For formatting verification, refetch as Markdown and grep for run-together or indented patterns, for example `\*\*Label\*\*Text`, `field\.The`, `below:Keep`, or lines beginning with two unintended spaces.

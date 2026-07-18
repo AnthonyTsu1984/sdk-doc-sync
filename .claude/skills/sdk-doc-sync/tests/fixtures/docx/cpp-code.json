@@ -1,0 +1,45 @@
+{
+  "items": [
+    {
+      "block_id": "page-block",
+      "block_type": 1,
+      "page": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "C++ example",
+              "text_element_style": {}
+            }
+          }
+        ]
+      },
+      "children": [
+        "cpp-code-block",
+        "mapped-null-block"
+      ]
+    },
+    {
+      "block_id": "cpp-code-block",
+      "block_type": 14,
+      "parent_id": "page-block",
+      "code": {
+        "elements": [
+          {
+            "text_run": {
+              "content": "#include <iostream>\n\nint main() {\n    return 0;\n}",
+              "text_element_style": {}
+            }
+          }
+        ],
+        "style": {
+          "language": 9
+        }
+      }
+    },
+    {
+      "block_id": "mapped-null-block",
+      "block_type": 16,
+      "parent_id": "page-block"
+    }
+  ]
+}

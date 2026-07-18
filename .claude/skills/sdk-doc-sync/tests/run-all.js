@@ -20,6 +20,11 @@ function main() {
     process.exit(0);
   }
 
+  if (process.argv.includes('--list')) {
+    files.forEach((file) => console.log(path.relative(process.cwd(), file)));
+    return;
+  }
+
   const args = ['--test', ...files];
   const result = spawnSync(process.execPath, args, { stdio: 'inherit' });
   process.exit(result.status ?? 1);

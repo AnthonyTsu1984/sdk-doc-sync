@@ -1,0 +1,14 @@
+{
+  "name": "GetServerVersion",
+  "kind": "method",
+  "signature": "Status GetServerVersion(std::string& version)",
+  "docstring": "Gets the server version.",
+  "params": [
+    { "name": "version", "kind": "keyword", "type": "std::string&", "description": "Receives the server version." }
+  ],
+  "filePath": "include/milvus/MilvusClientV2.h",
+  "lineNumber": 156,
+  "parentClass": "Client",
+  "requestClass": null,
+  "responseClass": null
+}

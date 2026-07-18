@@ -4,7 +4,7 @@ const common = require('./common');
 
 function toReferenceDocument(symbol, context = {}) {
   const evidence = common.collectEvidence(symbol, context);
-  const signatures = [common.makeSignature(symbol.signature || '', symbol.params, evidence)];
+  const signatures = [common.makeSignature(symbol.signature || '', symbol.params, evidence, { symbol, context })];
   return common.buildReferenceDocument({
     symbol,
     context,

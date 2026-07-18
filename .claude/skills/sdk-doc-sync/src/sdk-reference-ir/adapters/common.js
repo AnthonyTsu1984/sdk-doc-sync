@@ -35,6 +35,33 @@ function collectEvidence(symbol, context = {}) {
   return Array.from(unique.values());
 }
 
+function evidenceForNode(node, symbol, context = {}, role = 'field', key = node?.name) {
+  const revision = context.revision;
+  const file = node?.filePath || node?.sourceFile;
+  const line = node?.lineNumber || node?.sourceLine;
+  if (revision && file && Number.isInteger(line) && line > 0) {
+    return [schema.createEvidence({
+      kind: 'source',
+      locator: `${file}:${line}`,
+      revision,
+      confidence: 'direct',
+    })];
+  }
+  const mapping = context[`${role}Evidence`] || context.nodeEvidence;
+  if (mapping && Array.isArray(mapping[key]) && mapping[key].length > 0) {
+    return mapping[key].map((item) => schema.createEvidence(item));
+  }
+  if (revision && symbol.filePath && Number.isInteger(symbol.lineNumber) && symbol.lineNumber > 0) {
+    return [schema.createEvidence({
+      kind: 'source',
+      locator: `${symbol.filePath}:${symbol.lineNumber}`,
+      revision,
+      confidence: 'derived',
+    })];
+  }
+  return [];
+}
+
 function typeOf(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const references = Array.isArray(value.references)
@@ -47,7 +74,7 @@ function typeOf(value) {
   return { display: value == null ? '' : String(value), references: [] };
 }
 
-function normalizeField(field = {}, evidence = [], overrides = {}) {
+function normalizeField(field = {}, evidence = [], overrides = {}, options = {}) {
   const constraints = Array.isArray(field.constraints) ? Array.from(field.constraints) : [];
   if (field.kind && field.kind !== 'separator') constraints.push(`kind: ${field.kind}`);
   if (Array.isArray(field.choices) && field.choices.length > 0) {
@@ -65,63 +92,82 @@ function normalizeField(field = {}, evidence = [], overrides = {}) {
     ? field.required
     : ['positional', 'required'].includes(field.kind) && defaultValue === null;
   const children = field.children || field.fields || [];
+  const name = String(overrides.name ?? field.name ?? field.argName ?? '');
+  const nodeEvidence = Array.isArray(field.evidence) && field.evidence.length > 0
+    ? field.evidence
+    : options.symbol
+      ? evidenceForNode(field, options.symbol, options.context, options.role || 'field', name)
+      : evidence;
   return schema.createField({
-    name: String(overrides.name ?? field.name ?? field.argName ?? ''),
+    name,
     type: typeOf(overrides.type ?? field.type),
     required: overrides.required ?? required,
     defaultValue,
     description: String(overrides.description ?? field.description ?? ''),
     constraints,
-    children: Array.isArray(children) ? children.map((child) => normalizeField(child, evidence)) : [],
+    children: Array.isArray(children)
+      ? children.map((child) => normalizeField(child, evidence, {}, options))
+      : [],
     appliesWhen: field.appliesWhen ?? field.requiredWhen ?? null,
-    evidence: Array.isArray(field.evidence) && field.evidence.length > 0 ? field.evidence : evidence,
+    evidence: nodeEvidence,
     allowRequiredDefault: field.allowRequiredDefault === true,
   });
 }
 
-function normalizeFields(fields, evidence) {
+function normalizeFields(fields, evidence, options = {}) {
   if (!Array.isArray(fields)) return [];
   return fields
     .filter((field) => field && field.kind !== 'separator' && field.name !== '*')
-    .map((field) => normalizeField(field, evidence));
+    .map((field) => normalizeField(field, evidence, {}, options));
 }
 
-function makeSignature(display, inputs, evidence) {
+function makeSignature(display, inputs, evidence, options = {}) {
   return schema.createSignature({
     display: display == null ? '' : String(display),
-    inputs: normalizeFields(inputs, evidence),
+    inputs: normalizeFields(inputs, evidence, options),
     evidence,
   });
 }
 
-function makeRequestVariant(variant, evidence) {
-  const inputs = normalizeFields(variant.inputs || variant.params, evidence);
+function makeRequestVariant(variant, evidence, options = {}) {
+  const inputs = normalizeFields(variant.inputs || variant.params, evidence, options);
   return schema.createRequestVariant({
     id: String(variant.id || ''),
     title: String(variant.title || ''),
     description: String(variant.description || ''),
-    signature: makeSignature(variant.signature || '', variant.signatureInputs || variant.inputs || variant.params, evidence),
+    signature: makeSignature(
+      variant.signature || '',
+      variant.signatureInputs || variant.inputs || variant.params,
+      evidence,
+      options,
+    ),
     inputs,
     evidence,
   });
 }
 
-function makeCallableMember(kind, member, evidence, signatureDisplay, signatureInputs = []) {
+function makeCallableMember(kind, member, evidence, signatureDisplay, signatureInputs = [], options = {}) {
+  const memberEvidence = options.symbol
+    ? evidenceForNode(member, options.symbol, options.context, 'member', member.name)
+    : evidence;
   return schema.createCallableMember({
     kind,
     name: String(member.name || ''),
-    signature: makeSignature(signatureDisplay, signatureInputs, evidence),
+    signature: makeSignature(signatureDisplay, signatureInputs, memberEvidence, {
+      ...options,
+      role: 'field',
+    }),
     description: String(member.description || ''),
-    evidence,
+    evidence: memberEvidence,
   });
 }
 
-function makeResult(result, evidence) {
+function makeResult(result, evidence, options = {}) {
   if (!result) return null;
   return schema.createResult({
     type: typeOf(result.type || result.returnType),
     description: String(result.description || ''),
-    fields: normalizeFields(result.fields, evidence),
+    fields: normalizeFields(result.fields, evidence, options),
     evidence,
   });
 }
@@ -153,12 +199,17 @@ function makeExamples(symbol, context, language, evidence) {
 function buildIdentity(symbol, context, language, kind) {
   const category = context.category || symbol.parentClass || symbol.category || '';
   const name = String(symbol.name || '');
+  const stableIdParts = [language, category, name];
+  const overloadKey = context.overloadKey ?? symbol.overloadKey;
+  if (overloadKey !== undefined && overloadKey !== null && String(overloadKey) !== '') {
+    stableIdParts.push(String(overloadKey));
+  }
   return {
     kind: normalizeKind(kind || symbol.kind, kind || 'method'),
     language,
     name,
     title: String(context.title || (kind === 'command' ? symbol.signature || name : `${name}()`)),
-    stableId: [language, category, name].join(':'),
+    stableId: stableIdParts.join(':'),
   };
 }
 
@@ -192,6 +243,7 @@ function buildReferenceDocument({
   callableMembers = [],
   result = null,
   errors = [],
+  notes,
 }) {
   const evidence = collectEvidence(symbol, context);
   return schema.createReferenceDocument({
@@ -204,7 +256,7 @@ function buildReferenceDocument({
     result,
     errors,
     examples: makeExamples(symbol, context, language, evidence),
-    notes: Array.isArray(context.notes) ? context.notes : [],
+    notes: Array.isArray(notes) ? notes : Array.isArray(context.notes) ? context.notes : [],
     related: Array.isArray(context.related) ? context.related : [],
     audienceVariants: buildAudienceVariants(context, evidence),
     evidence,
@@ -213,6 +265,7 @@ function buildReferenceDocument({
 
 module.exports = {
   collectEvidence,
+  evidenceForNode,
   typeOf,
   normalizeField,
   normalizeFields,

@@ -97,8 +97,8 @@ Options:
   --help, -h                       Show this help
 
 Environment (.env):
-  ROOT_TOKEN    Drive folder or Wiki parent node token (required unless --dry-run)
-  BASE_TOKEN    Bitable base token for the new version (required unless --dry-run)
+  ROOT_TOKEN    Drive folder or Wiki parent node token (required for live writes)
+  BASE_TOKEN    Bitable base token for the target version (required for diff baseline unless --previous-base-token is set)
   APP_ID        Feishu app ID
   APP_SECRET    Feishu app secret
   FEISHU_HOST   Feishu API host (default: https://open.feishu.cn)
@@ -352,9 +352,15 @@ async function runCli({
 
     const rootToken = env.ROOT_TOKEN;
     const baseToken = env.BASE_TOKEN;
+    const indexBaseToken = args.previousBaseToken || baseToken;
 
     if (!args.dryRun && (!rootToken || !baseToken)) {
-        err('Error: ROOT_TOKEN and BASE_TOKEN must be set in .env (or use --dry-run)');
+        err('Error: ROOT_TOKEN and BASE_TOKEN must be set in .env for live writes');
+        exit(1);
+        return null;
+    }
+    if (!indexBaseToken && !dependencies.indexReader) {
+        err('Error: BASE_TOKEN is required for dry-run diff baseline; set BASE_TOKEN or pass --previous-base-token');
         exit(1);
         return null;
     }

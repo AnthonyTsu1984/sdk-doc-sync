@@ -57,6 +57,12 @@ When this exception is raised.
 - **Folder structure:** MilvusClient docs live in category subfolders (e.g., `Client`, `Vector`, `Collections`, `Management`). Create missing folders via Feishu API before pushing docs. Never place docs in the MilvusClient root or in an ORM folder.
 - **Async methods:** The scanner regex must match `async def` as well as `def`. If `AsyncMilvusClient` shows only a handful of methods, the regex is broken. Both the detection regex (`/^\s+(?:async\s+)?def\s+(\w+)\s*\(/`) and the signature parsing regex must include `(?:async\s+)?`.
 
+**v2.6.x scanner identity notes:**
+
+- Python v2.6.x bitable records use category-prefixed slugs, while the generic scanner may emit raw class or function slugs. Normalize changed symbols through the canonical folder/category map before comparing with Feishu records.
+- Examples: `MilvusClient.compact` maps to `Management-compact`, `bulk_import` maps to `BulkImport-bulk_import`, and `MilvusClient.alter_role` maps to `Authentication-alter_role`.
+- An unfiltered full-package dry-run can show many false `CREATE` and `ORPHAN` actions when scanner slugs do not match bitable slugs. Treat that as non-approval-grade; use Git diff for release scope and targeted scanner extraction for changed symbols.
+
 **Canonical Python folder map (verified 2026-05-09):**
 
 - **v3.0.x root** `UxyTfjS3wl0TF8dn9tZcRT39nUe`

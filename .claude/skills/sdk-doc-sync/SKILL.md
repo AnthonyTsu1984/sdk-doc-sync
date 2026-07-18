@@ -30,6 +30,9 @@ Read only what the task requires:
 
 - Read `scan-state.json` before scanning. Update it only after a successful synchronization.
 - Diff the last scanned tag against the target tag; do not treat a full repository scan as the release delta.
+- Treat Git diff/log as authoritative for release scope, changed files, and first appearance. Treat the scanner as structured extraction for symbols, signatures, parameters, and existing-doc comparison.
+- Filter scanner output to release-changed public files or symbols before classifying actions. A full scanner dry-run is a health check or backlog signal, not an approval-grade release plan.
+- Normalize scanner symbols to canonical documentation identities before comparing with Feishu records. Raw scanner slugs often differ from bitable or folder slugs.
 - Separate release changes from older undocumented backlog before assigning `Added Since`.
 - Never write the auto-populated `Slug` field.
 - Resolve destination folders from the canonical version root in the per-SDK reference, not from possibly stale Module or VirtualNode links.
@@ -94,6 +97,8 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
   --sdk-version v2.6.x \
   --dry-run
 ```
+
+If a full dry-run reports broad false `CREATE` or `ORPHAN` noise, report it as non-approval-grade and continue with the release-scoped Git diff plus targeted scanner extraction. Do not ask for approval on an unfiltered dry-run action list.
 
 Read the public implementation, examples, and tests for each action. Do not publish raw scanner scaffolds or source docstrings as finished documentation.
 

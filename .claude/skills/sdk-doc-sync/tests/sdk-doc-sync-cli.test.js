@@ -275,6 +275,46 @@ test('schema-first CLI surfaces invalid schema failures before planning', async 
   assert.match(stdout.join('\n'), /Unsupported OpenAPI version/);
 });
 
+test('dry-run without injected index reader requires BASE_TOKEN for diff baseline', async () => {
+  const stderr = [];
+  const exitCodes = [];
+  let scanned = false;
+
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--dry-run',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      scanner: {
+        rootDir: '/fixtures/sdk',
+        async scan() {
+          scanned = true;
+          return [];
+        },
+      },
+      onStderr: (line) => stderr.push(line),
+      exit: (code) => exitCodes.push(code),
+    },
+  });
+
+  assert.equal(result, null);
+  assert.deepEqual(exitCodes, [1]);
+  assert.equal(scanned, false);
+  assert.match(stderr.join('\n'), /BASE_TOKEN is required for dry-run diff baseline/);
+});
+
 test('schema-first CLI filters scanned symbols through release scope', async () => {
   const stdout = [];
   const scope = {

@@ -127,6 +127,8 @@ test('SyncExecutor creates a target document before creating the Bitable record'
   assert.equal(calls[1][1].title, 'createCollection()');
   assert.equal(calls[1][1].link, 'https://docs.example/doc-new');
   assert.equal(calls[1][1].parentRecordId, 'parent-v26');
+  assert.equal(calls[1][1].progress, 'WIP');
+  assert.deepEqual(calls[1][1].targets, []);
   assert.equal(result.completedSteps.at(-1), 'createRecord');
 });
 
@@ -193,6 +195,8 @@ test('SyncExecutor patches in-place only against the planned target-local token'
   assert.equal(calls[1][1], 'rec-v26');
   assert.equal(calls[1][2].link, undefined);
   assert.equal(calls[1][2].lastModified, 'v2.6.x');
+  assert.equal(calls[1][2].progress, 'WIP');
+  assert.deepEqual(calls[1][2].targets, []);
 });
 
 test('SyncExecutor creates and repoints before preserving recovery details on record failure', async () => {
@@ -214,6 +218,8 @@ test('SyncExecutor creates and repoints before preserving recovery details on re
   assert.equal(calls[1][1], 'rec-v26');
   assert.equal(calls[1][2].title, 'createCollection()');
   assert.equal(calls[1][2].link, 'https://docs.example/doc-new');
+  assert.equal(calls[1][2].progress, 'WIP');
+  assert.deepEqual(calls[1][2].targets, []);
   assert.match(result.suggestedRecovery, /repoint record rec-v26/i);
 });
 

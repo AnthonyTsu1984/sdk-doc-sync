@@ -20,6 +20,10 @@ function artifactMetadata(artifact) {
   return artifact?.metadata || {};
 }
 
+function editedRecordMetadata() {
+  return { progress: 'WIP', targets: [] };
+}
+
 function containsLegacyScaffold(content) {
   return typeof content === 'string'
     && (/<!--\s*TODO:/i.test(content)
@@ -155,7 +159,7 @@ class SyncExecutor {
     result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
       description: metadata.description,
       lastModified: plan.target.version,
-      progress: metadata.progress,
+      ...editedRecordMetadata(),
     });
     result.completedSteps.push('updateRecord');
   }
@@ -172,7 +176,7 @@ class SyncExecutor {
         link: linkFromCreated(created),
         description: metadata.description,
         lastModified: plan.target.version,
-        progress: metadata.progress,
+        ...editedRecordMetadata(),
         parentRecordId: plan.target.parentRecordId,
       });
       result.completedSteps.push('updateRecord');
@@ -249,11 +253,11 @@ class SyncExecutor {
     return await this.bitableWriter.createRecord({
       title: artifactTitle(plan, artifact, action),
       link: linkFromCreated(created),
-      progress: metadata.progress,
+      progress: editedRecordMetadata().progress,
       addedSince: plan.target.version,
       description: metadata.description,
       type: metadata.type,
-      targets: metadata.targets,
+      targets: editedRecordMetadata().targets,
       parentRecordId: plan.target.parentRecordId,
     });
   }

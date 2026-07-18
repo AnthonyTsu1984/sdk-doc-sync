@@ -14,11 +14,12 @@ Builder signatures, typed return fields, and exception labels must not be joined
 
 ## Record And Folder Checks
 
-1. Use `bitable-show` to verify `Docs.link`, `父记录`, type, version metadata, and progress fields.
-2. Use `list-folder` to verify the target document exists under the intended canonical version folder.
-3. When moving a version-local document, verify it is absent from the old folder.
-4. When copying across versions, verify the older snapshot still exists and remains unchanged.
-5. After creating a category folder, update the matching VirtualNode or Module record so its `Docs` field contains the folder URL.
+1. Use `bitable-show` to verify `Docs.link`, `父记录`, type, version metadata, `Targets`, and `Progress`.
+2. For every edited record, verify `Targets` is blank and `Progress` is `WIP`.
+3. Use `list-folder` to verify the target document exists under the intended canonical version folder.
+4. When moving a version-local document, verify it is absent from the old folder.
+5. When copying across versions, verify the older snapshot still exists and remains unchanged.
+6. After creating a category folder, update the matching VirtualNode or Module record so its `Docs` field contains the folder URL.
 
 ## Repair Utilities
 

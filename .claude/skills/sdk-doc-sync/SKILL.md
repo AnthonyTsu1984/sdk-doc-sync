@@ -35,7 +35,10 @@ Read only what the task requires:
 - Resolve destination folders from the canonical version root in the per-SDK reference, not from possibly stale Module or VirtualNode links.
 - Never patch an older-version source document in place for a newer release.
 - Keep the older-version doc as a historical snapshot whenever it is the source for a newer version. Deletion requires a separate cleanup request and explicit approval.
+- Treat each SDK version folder as sparse: it contains only documents created or updated for that version. Treat each version bitable as complete: it must retain records for all classes, methods, functions, commands, and related entries in that version.
+- For unchanged entries in a new version bitable, keep their existing document links unless a version-local document was created or updated, but repoint `父记录` to the matching category or parent record in the current version when that parent exists.
 - When repointing a `Docs` field, pass both `title` and `link` to `updateRecord()`.
+- For every record whose document content, document link, parent, or editable metadata is changed in a run, leave the `Targets` field blank and set `Progress` to `WIP`. Verified Python version bitables use exact field names `Targets` and `Progress`, with progress option `WIP`.
 - Do not add visible version-changelog sections to API reference pages unless the user explicitly requests release notes.
 - Do not write until the user has reviewed the exact dry-run action list and given explicit approval.
 
@@ -83,6 +86,8 @@ Fetch only the relevant records where feasible. For every proposed action, recor
 - parameter-level differences for updates;
 - target version, category, folder, and parent record;
 - current document token and whether older versions share it;
+- whether the target-version bitable row should link a new/current-version doc or retain an unchanged older doc link while updating `父记录`;
+- exact `Targets` and `Progress` post-write values for every edited record;
 - planned metadata and post-write checks.
 
 ### 5. Preview And Approve

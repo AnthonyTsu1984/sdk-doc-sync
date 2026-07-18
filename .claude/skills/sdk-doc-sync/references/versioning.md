@@ -6,6 +6,12 @@ Use this reference for same-version edits, cross-version updates, backfills, and
 
 Older-version documents are historical snapshots. A newer release must never mutate an older-version source document in place. Deletion is not part of routine synchronization; it requires a separate cleanup request and explicit approval.
 
+Each SDK version Drive folder is sparse: it lists only documents created or updated for that version. Each SDK version bitable is complete: it contains every entry for that version, including unchanged classes, methods, functions, commands, and related rows.
+
+For unchanged entries in a new version, keep the bitable record and keep its `Docs` link pointing to the existing unchanged document unless an approved action creates or updates a version-local document. Still update `父记录` to the matching current-version category or parent record when that parent exists, so the bitable hierarchy reflects the current version even when the document lives in an older sparse folder.
+
+Every record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Verify exact field names from the target bitable when working outside the known SDK bases; sampled Python version bitables use `Targets` and `Progress`, and the progress option is `WIP`.
+
 ## Required Preflight
 
 Before any update:
@@ -15,7 +21,10 @@ Before any update:
 3. Resolve the current document token from `Docs.link`.
 4. Inspect its actual folder ancestry.
 5. Check whether older-version bitables reference the same token.
-6. Choose same-version, cross-version, or backfill behavior explicitly.
+6. Determine whether the entry is changed for this version or unchanged carry-forward.
+7. For unchanged carry-forward rows, resolve the current-version parent record to use in `父记录` while preserving the existing `Docs` link.
+8. Confirm the target bitable has writable `Targets` and `Progress` fields and a `WIP` progress option before planning live edits.
+9. Choose same-version, cross-version, or backfill behavior explicitly.
 
 ## Same-Version Update
 
@@ -64,11 +73,25 @@ Use this flow when symbols already exist but documentation, categories, or paren
 
 Top-level modules must be direct children of the version root unless a per-SDK reference defines another structure. Never follow a stale Module or VirtualNode link into another version lineage.
 
+## Complete Bitable, Sparse Folder
+
+When preparing a new version bitable:
+
+1. Include all current-version entries, not only changed entries.
+2. For changed or newly documented entries, link `Docs` to the current-version document in the sparse version folder.
+3. For unchanged entries, retain their existing `Docs` link, even if that document is stored in an older version folder.
+4. Repoint `父记录` for every row to the current-version category or parent record when one exists.
+5. For every row touched while preparing the new version bitable, clear `Targets` and set `Progress` to `WIP`.
+6. Do not create duplicate current-version documents solely to make the Drive folder complete.
+7. Verify that the Drive folder contains only changed or added docs, while the bitable contains the full API surface for that version.
+
 ## Post-Update Checks
 
 - `Docs.link` points to the intended target-version document.
 - `父记录` points to the intended target-version category.
-- The target document exists in the canonical folder.
+- Edited records have blank `Targets` and `Progress` set to `WIP`.
+- Changed or added target documents exist in the canonical sparse version folder.
+- Unchanged carry-forward records keep their approved existing document links.
 - Older-version pages are unchanged.
 - No visible release-note section was introduced into the API reference.
 - Full rewrites preserve formatting-sensitive Docx block structure.

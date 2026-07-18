@@ -1544,24 +1544,20 @@ class MarkdownToFeishu {
     async update_document({ document_id, blocks }) {
         // For updates, we need to delete existing blocks and recreate
         // This is a simplified approach - a more sophisticated one would do differential updates
-        const token = await this.tokenFetcher.token();
-
         // Get existing blocks
         const existingBlocks = await this.get_document_blocks(document_id);
         const pageBlock = existingBlocks.find(b => b.block_type === 1);
 
-        // Delete all children of page block
-        for (let block of existingBlocks) {
-            if (block.block_id !== pageBlock.block_id && block.parent_id === pageBlock.block_id) {
-                const deleteUrl = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks/${block.block_id}`;
-                await fetch(deleteUrl, {
-                    method: 'DELETE',
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-            }
+        if (!pageBlock) {
+            throw new Error('Page block not found');
         }
+
+        // Delete all children of page block.
+        await this.__delete_child_blocks_by_id({
+            document_id,
+            parentBlock: pageBlock,
+            childBlockIds: pageBlock.children || [],
+        });
 
         // Create new blocks
         return await this.create_blocks({ document_id, blocks });
@@ -1643,14 +1639,15 @@ class MarkdownToFeishu {
 
             // Delete extra existing blocks
             if (existingChildren.length > blocks.length) {
-                for (let i = blocks.length; i < existingChildren.length; i++) {
-                    const deleteUrl = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks/${existingChildren[i].block_id}`;
-                    await fetch(deleteUrl, {
-                        method: 'DELETE',
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    result.deleted++;
-                }
+                const childBlockIds = existingChildren
+                    .slice(blocks.length)
+                    .map(block => block.block_id);
+                result.deleted += await this.__delete_child_blocks_by_id({
+                    document_id,
+                    parentBlock: pageBlock,
+                    childBlockIds,
+                    token,
+                });
             }
 
             // Create new blocks if we have more than existing
@@ -1693,14 +1690,12 @@ class MarkdownToFeishu {
         }
 
         // Step 2: Delete unmatched blocks
-        for (const block of toDelete) {
-            const deleteUrl = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks/${block.block_id}`;
-            await fetch(deleteUrl, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-            result.deleted++;
-        }
+        result.deleted += await this.__delete_child_blocks_by_id({
+            document_id,
+            parentBlock: pageBlock,
+            childBlockIds: toDelete.map(block => block.block_id),
+            token,
+        });
 
         // Step 3: Create new blocks
         if (toCreate.length > 0) {
@@ -2074,6 +2069,75 @@ class MarkdownToFeishu {
         }
 
         return results;
+    }
+
+    __build_child_delete_ranges(parentBlock, childBlockIds) {
+        /**
+         * Convert direct child block ids to bottom-up contiguous ranges for
+         * /children/batch_delete. Deleting from the end prevents earlier
+         * indexes from shifting before later deletes run.
+         */
+        if (!childBlockIds || childBlockIds.length === 0) {
+            return [];
+        }
+
+        const children = parentBlock.children || [];
+        const indexes = [...new Set(childBlockIds)]
+            .map(id => {
+                const index = children.indexOf(id);
+                if (index === -1) {
+                    throw new Error(`Cannot delete block ${id}: not a direct child of ${parentBlock.block_id}`);
+                }
+                return index;
+            })
+            .sort((a, b) => a - b);
+
+        const ranges = [];
+        let start = indexes[0];
+        let end = start + 1;
+
+        for (let i = 1; i < indexes.length; i++) {
+            const index = indexes[i];
+            if (index === end) {
+                end++;
+            } else {
+                ranges.push({ start_index: start, end_index: end });
+                start = index;
+                end = index + 1;
+            }
+        }
+        ranges.push({ start_index: start, end_index: end });
+
+        return ranges.reverse();
+    }
+
+    async __delete_child_blocks_by_id({ document_id, parentBlock, childBlockIds, token = null }) {
+        if (!childBlockIds || childBlockIds.length === 0) {
+            return 0;
+        }
+
+        const authToken = token || await this.tokenFetcher.token();
+        const ranges = this.__build_child_delete_ranges(parentBlock, childBlockIds);
+        const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks/${parentBlock.block_id}/children/batch_delete`;
+
+        let deleted = 0;
+        for (const range of ranges) {
+            const response = await fetch(url, {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${authToken}`,
+                },
+                body: JSON.stringify(range),
+            });
+            const data = await response.json();
+            if (data.code !== 0) {
+                throw new Error(`batch_delete failed for children [${range.start_index}, ${range.end_index}): ${data.msg} (code ${data.code})`);
+            }
+            deleted += range.end_index - range.start_index;
+        }
+
+        return deleted;
     }
 
     async push_markdown({

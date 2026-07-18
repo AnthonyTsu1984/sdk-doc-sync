@@ -72,9 +72,9 @@ Execute only approved immutable plans with `src/sdk-doc-sync/sync-executor.js`.
 
 Execution behavior:
 
-- Create: push the reviewed Markdown to the target folder, then create the bitable record without writing `Slug`.
-- Update in place: patch the existing target-version document, then update metadata.
-- Create and repoint: push the reviewed Markdown to the target folder, then update the existing record with both `title` and `link`.
+- Create: push the reviewed Markdown to the target folder, then create the bitable record without writing `Slug`; leave `Targets` blank and set `Progress` to `WIP`.
+- Update in place: patch the existing target-version document, then update metadata; leave `Targets` blank and set `Progress` to `WIP`.
+- Create and repoint: push the reviewed Markdown to the target folder, then update the existing record with both `title` and `link`; leave `Targets` blank and set `Progress` to `WIP`.
 - Deprecate: set deprecation metadata and progress only.
 - Orphan/no-op: leave Feishu untouched.
 
@@ -88,6 +88,7 @@ Refetch the document and record after every mutation. Verify:
 - artifact digest when available;
 - `Docs.link` and document title;
 - `父记录` / parent record;
+- `Targets` is blank and `Progress` is `WIP` for edited create/update/repoint records;
 - target version metadata;
 - deprecation state when applicable;
 - older-version source token still exists and remains unchanged for cross-version updates.

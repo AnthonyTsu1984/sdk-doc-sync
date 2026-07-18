@@ -9,6 +9,11 @@ test('sdk-doc-sync test runner path exists', () => {
   assert.equal(fs.existsSync(runner), true, `Missing expected test runner: ${runner}`);
 });
 
+test('sdk-release-scout CLI path exists', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-release-scout.js')), true);
+});
+
 test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
   const runner = path.join(__dirname, 'run-all.js');
@@ -30,6 +35,8 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-patch.test.js',
     '.claude/skills/sdk-doc-sync/tests/read-consumers.test.js',
+    '.claude/skills/sdk-doc-sync/tests/release-scope.test.js',
+    '.claude/skills/sdk-doc-sync/tests/release-scout-cli.test.js',
     '.claude/skills/sdk-doc-sync/tests/scanner-adapters.test.js',
     '.claude/skills/sdk-doc-sync/tests/script-paths.test.js',
     '.claude/skills/sdk-doc-sync/tests/sdk-doc-sync-cli.test.js',

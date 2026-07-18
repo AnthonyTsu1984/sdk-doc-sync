@@ -53,6 +53,8 @@ class SdkDocSync {
         bitableWriter = null,
         docGenerator = null,
         printPlans = true,
+        releaseScope = null,
+        changedOnly = false,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -66,6 +68,8 @@ class SdkDocSync {
         this.artifactProvider = artifactProvider || artifacts;
         this.planningContextProvider = planningContextProvider;
         this.printPlans = printPlans;
+        this.releaseScope = releaseScope;
+        this.changedOnly = changedOnly;
         this._planningContexts = new WeakMap();
 
         // Build scanner if not provided
@@ -141,7 +145,16 @@ class SdkDocSync {
 
         // Phase 1: SCAN
         this.onProgress('SCAN', `Scanning source code in ${this.scanner.rootDir}...`);
-        result.scanned = await this.scanner.scan();
+        result.scanned = this._filterByReleaseScope(await this.scanner.scan());
+        if (this.releaseScope) {
+            result.releaseScope = {
+                baselineTag: this.releaseScope.baselineTag,
+                targetTag: this.releaseScope.targetTag,
+                releaseRange: this.releaseScope.releaseRange,
+                approvalGrade: this.releaseScope.approvalGrade,
+                actionCount: this.releaseScope.actions.length,
+            };
+        }
         this.onProgress('SCAN', `Found ${result.scanned.length} symbols`);
 
         // Phase 2: INDEX (read previous version's bitable as baseline)
@@ -152,7 +165,11 @@ class SdkDocSync {
 
         // Phase 3: DIFF
         this.onProgress('DIFF', 'Computing diff between source and KB...');
+        this._applyReleaseScopeCategoryMap();
         result.diff = this.diffEngine.diff(result.scanned, result.indexed);
+        if (this.changedOnly) {
+            result.diff = result.diff.filter((action) => action.type !== 'SKIP');
+        }
 
         const summary = this._summarizeDiff(result.diff);
         this.onProgress('DIFF', `${summary.create} new, ${summary.update} updated, ${summary.deprecate} deprecated, ${summary.skip} unchanged, ${summary.orphan} orphaned`);
@@ -250,6 +267,28 @@ class SdkDocSync {
             return await this.indexReader.listRecords();
         }
         throw new TypeError('indexReader must be a function or expose list_documents()/listRecords()');
+    }
+
+    _symbolDisplayName(symbol) {
+        return symbol.parentClass ? `${symbol.parentClass}.${symbol.name}` : symbol.name;
+    }
+
+    _filterByReleaseScope(symbols) {
+        if (!this.releaseScope) return symbols;
+        const allowed = new Set(this.releaseScope.actions.map((action) => action.symbol));
+        return symbols.filter((symbol) => allowed.has(this._symbolDisplayName(symbol)));
+    }
+
+    _applyReleaseScopeCategoryMap() {
+        if (!this.releaseScope) return;
+        const scopedCategoryMap = Object.fromEntries(this.releaseScope.actions.map((action) => [
+            action.symbol.replace('.', '-'),
+            action.canonicalSlug,
+        ]));
+        this.diffEngine.categoryMap = { ...this.diffEngine.categoryMap, ...scopedCategoryMap };
+        this.diffEngine._categoryMapLower = Object.fromEntries(
+            Object.entries(this.diffEngine.categoryMap).map(([key, value]) => [key.toLowerCase(), value]),
+        );
     }
 
     async _planningContextFor(action, index, result) {

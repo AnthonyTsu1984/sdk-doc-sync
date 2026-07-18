@@ -10,6 +10,7 @@ const SdkDocSync = require('../src/sdk-doc-sync');
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
 const { validateDocumentIr } = require('../src/document-ir/validate');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
+const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 
 const adapters = Object.freeze({
     python: require('../src/sdk-reference-ir/adapters/python'),
@@ -49,12 +50,18 @@ function parseArgs(argv) {
             args.previousBaseToken = argv[++i];
         } else if (arg === '--reference-context' && argv[i + 1]) {
             args.referenceContext = argv[++i];
+        } else if (arg === '--release-scope' && argv[i + 1]) {
+            args.releaseScope = argv[++i];
         } else if (arg === '--targets' && argv[i + 1]) {
             args.targets = argv[++i].split(',').map(t => t.trim());
         } else if (arg === '--exclude' && argv[i + 1]) {
             args.exclude = (args.exclude || []).concat(argv[++i]);
         } else if (arg === '--dry-run') {
             args.dryRun = true;
+        } else if (arg === '--changed-only') {
+            args.changedOnly = true;
+        } else if (arg === '--summary-json' && argv[i + 1]) {
+            args.summaryJson = argv[++i];
         } else if (arg === '--json') {
             args.json = true;
         } else if (arg === '--auto-approve') {
@@ -79,9 +86,12 @@ Options:
   --source-type <type>             Feishu source type: drive or wiki (default: drive)
   --previous-base-token <token>    Bitable token of previous version (for incremental diff)
   --reference-context <file>       JSON file with reviewed schema-first generation context
+  --release-scope <file>           Release-scout JSON artifact for approval-grade scoped planning
   --targets <list>                 Comma-separated target platforms (e.g., Milvus,Zilliz)
   --exclude <pattern>              Glob pattern to exclude (repeatable)
   --dry-run                        Show diff without executing changes
+  --changed-only                   Require release scope and scan only release-scoped symbols
+  --summary-json <file>            Write bounded run summary JSON to a file
   --json                           Print the run result as formatted JSON
   --auto-approve                   Skip interactive approval
   --help, -h                       Show this help
@@ -290,6 +300,30 @@ async function runCli({
     const err = dependencies.onStderr || ((line) => console.error(line));
     const exit = dependencies.exit || ((code) => process.exit(code));
     const args = parseArgs(argv);
+    const readFile = dependencies.readFile || ((file) => fs.readFileSync(file, 'utf8'));
+    const writeFile = dependencies.writeFile || ((file, content) => fs.writeFileSync(file, content));
+
+    let releaseScope = null;
+    if (args.releaseScope) {
+        const releaseScopePath = path.resolve(args.releaseScope);
+        releaseScope = JSON.parse(readFile(releaseScopePath));
+        const validation = validateReleaseScope(releaseScope);
+        if (!validation.valid) {
+            err(`Error: invalid --release-scope: ${JSON.stringify(validation.errors)}`);
+            exit(1);
+            return null;
+        }
+        if (releaseScope.approvalGrade !== true) {
+            err('Error: --release-scope must be approvalGrade=true');
+            exit(1);
+            return null;
+        }
+    }
+    if (args.changedOnly && !releaseScope) {
+        err('Error: --changed-only requires --release-scope');
+        exit(1);
+        return null;
+    }
 
     if (!args.sdkDir) {
         err('Error: --sdk-dir is required');
@@ -341,6 +375,8 @@ async function runCli({
         previousBaseToken: args.previousBaseToken || null,
         targets: args.targets || [],
         dryRun: args.dryRun || false,
+        changedOnly: args.changedOnly || false,
+        releaseScope,
         exclude: args.exclude || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
         artifactProvider,
@@ -353,6 +389,9 @@ async function runCli({
     });
 
     const result = await sync.run();
+    if (args.summaryJson) {
+        writeFile(path.resolve(args.summaryJson), `${JSON.stringify(createBoundedSummary(result), null, 2)}\n`);
+    }
 
     if (args.json) {
         out(JSON.stringify(result, null, 2));
@@ -369,6 +408,29 @@ async function runCli({
     return result;
 }
 
+function createBoundedSummary(result) {
+    return {
+        scannedCount: result.scanned.length,
+        indexedCount: result.indexed.length,
+        diffCount: result.diff.length,
+        planCount: result.plans.length,
+        planningErrorCount: result.planningErrors.length,
+        approvedCount: result.approved.length,
+        resultCount: result.results.length,
+        releaseScope: result.releaseScope || null,
+        diff: result.diff.map((action) => ({
+            type: action.type,
+            slug: action.slug,
+            stableId: action.stableId || action.symbol?.identity?.stableId || action.symbol?.stableId || null,
+            symbol: action.symbol
+                ? `${action.symbol.parentClass ? action.symbol.parentClass + '.' : ''}${action.symbol.name}`
+                : null,
+            reason: action.reason,
+        })),
+        planningErrors: result.planningErrors,
+    };
+}
+
 if (require.main === module) {
     runCli().catch(err => {
         console.error('Fatal error:', err.message);
@@ -380,4 +442,5 @@ module.exports = {
     parseArgs,
     runCli,
     createSchemaFirstArtifactProvider,
+    createBoundedSummary,
 };

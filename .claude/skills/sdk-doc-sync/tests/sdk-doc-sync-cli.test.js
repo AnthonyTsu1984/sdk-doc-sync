@@ -275,6 +275,96 @@ test('schema-first CLI surfaces invalid schema failures before planning', async 
   assert.match(stdout.join('\n'), /Unsupported OpenAPI version/);
 });
 
+test('schema-first CLI filters scanned symbols through release scope', async () => {
+  const stdout = [];
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:Management:compact',
+      canonicalSlug: 'Management-compact',
+      symbol: 'MilvusClient.compact',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 1835 },
+      reason: 'signature changed',
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/release-scope.json',
+      '--dry-run',
+      '--json',
+    ],
+    env: { BASE_TOKEN: 'base-v26', ROOT_TOKEN: 'root-v26' },
+    dependencies: {
+      loadEnv: false,
+      readFile(file) {
+        assert.equal(file, path.resolve('/tmp/release-scope.json'));
+        return JSON.stringify(scope);
+      },
+      scanner: {
+        rootDir: '/fixtures/sdk',
+        async scan() {
+          return [
+            fixture('python-search.json'),
+            {
+              name: 'compact',
+              kind: 'method',
+              parentClass: 'MilvusClient',
+              filePath: 'milvus_client/milvus_client.py',
+              lineNumber: 1835,
+              signature: 'def compact(self, collection_name: str, target_size: Optional[int] = None) -> int:',
+              params: [],
+              returnType: 'int',
+              decorators: [],
+            },
+          ];
+        },
+      },
+      indexReader: async () => [{
+        id: 'rec-compact',
+        metadata: {
+          slug: 'Management-compact',
+          description: 'Old compact description.',
+          token: 'doc-compact',
+          version: 'v2.6.x',
+          folderToken: 'folder-management',
+        },
+      }],
+      referenceContextProvider: () => sdkContext('python'),
+      onStdout: (line) => stdout.push(line),
+    },
+  });
+
+  assert.equal(result.scanned.length, 1);
+  assert.equal(result.scanned[0].name, 'compact');
+  assert.equal(result.diff[0].slug, 'Management-compact');
+  assert.match(stdout.join('\n'), /"releaseScope"/);
+});
+
 test('real CLI scanner factory supports Node schema-first dry-run with a reference context file', async () => {
   const sdkDir = tempDir('sdk-doc-sync-node');
   writeText(path.join(sdkDir, 'milvus', 'MilvusClient.ts'), `

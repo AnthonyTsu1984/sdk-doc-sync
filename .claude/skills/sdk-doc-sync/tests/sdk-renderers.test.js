@@ -132,12 +132,6 @@ function context(language) {
         name: 'Status', condition: 'status.IsOk() is false.',
         description: 'Inspect the status code and message for failure details.',
       }],
-      memberInputs: {
-        AddExtraParam: [
-          { name: 'key', type: 'std::string', description: 'The extra parameter key.' },
-          { name: 'value', type: 'std::string', description: 'The extra parameter value.' },
-        ],
-      },
       typeUrls: { CreateCollectionResponse: '/reference/cpp/create-collection-response' },
     },
   }[language];
@@ -199,6 +193,12 @@ function enrich(language, symbol) {
       fullArgStr: 'const std::string& key, const std::string& value',
       fullSignature: 'AddExtraParam(const std::string& key, const std::string& value)',
       description: 'Adds an extra request parameter.',
+    });
+    symbol.params.push({
+      name: 'WithMetadata', kind: 'keyword', type: 'std::map<std::string, std::string>',
+      fullArgStr: 'const std::map<std::string, std::string>& values, int limit = compute_limit("a,b", std::array<int, 2>{1, 2})',
+      fullSignature: 'WithMetadata(const std::map<std::string, std::string>& values, int limit = 10)',
+      description: 'Adds metadata with a result limit.',
     });
   }
   return symbol;
@@ -285,7 +285,8 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.cpp, /```c\+\+\n/);
   assert.match(rendered.cpp, /\*\*REQUEST METHODS:\*\*/);
   assert.match(rendered.cpp, /\.EnableDynamicField\(\)/);
-  assert.match(rendered.cpp, /\.AddExtraParam\(key, value\);/);
+  assert.match(rendered.cpp, /\.AddExtraParam\(key, value\)/);
+  assert.match(rendered.cpp, /\.WithMetadata\(values, limit\);/);
   assert.match(rendered.cpp, /\*\*ERROR HANDLING:\*\*/);
   assert.doesNotMatch(rendered.cpp, /\*\*EXCEPTIONS:\*\*/);
   assert.match(rendered.cpp, /status code and message/);
@@ -325,6 +326,34 @@ test('Go request syntax is explicit Reference IR metadata and is independent fro
   const withoutRequest = goAdapter.toReferenceDocument(symbol, withoutRequestContext);
   assert.deepEqual(withoutRequest.requestVariants, []);
   assert.doesNotMatch(renderMarkdown(goRenderer.render(withoutRequest)), /Request Syntax/);
+});
+
+test('C++ request member inputs are derived from raw fullArgStr without context overrides', () => {
+  const reference = cppAdapter.toReferenceDocument(
+    enrich('cpp', fixture('cpp-create-collection.json')),
+    context('cpp'),
+  );
+  const byName = Object.fromEntries(reference.callableMembers.map((member) => [member.name, member]));
+
+  assert.deepEqual(byName.EnableDynamicField.signature.inputs, []);
+  assert.deepEqual(byName.AddExtraParam.signature.inputs.map((input) => [input.name, input.type.display]), [
+    ['key', 'const std::string&'],
+    ['value', 'const std::string&'],
+  ]);
+  assert.deepEqual(byName.WithMetadata.signature.inputs.map((input) => [input.name, input.type.display]), [
+    ['values', 'const std::map<std::string, std::string>&'],
+    ['limit', 'int'],
+  ]);
+
+  const malformed = fixture('cpp-create-collection.json');
+  malformed.params.push({
+    name: 'BrokenMember', kind: 'keyword', type: 'std::string',
+    fullArgStr: 'const std::string&', fullSignature: 'BrokenMember(const std::string&)',
+  });
+  assert.throws(
+    () => cppAdapter.toReferenceDocument(malformed, context('cpp')),
+    /Cannot parse C\+\+ request member BrokenMember argument "const std::string&"/,
+  );
 });
 
 test('example fence metadata is validated and preserved with example titles', () => {

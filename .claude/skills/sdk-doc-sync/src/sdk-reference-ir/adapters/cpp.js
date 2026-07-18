@@ -4,6 +4,87 @@ const common = require('./common');
 
 const LEADING_QUALIFIERS = /^(?:(?:static|virtual|inline|constexpr|friend|explicit)\s+)+/;
 
+function scanCppExpression(value, { splitCommas = false, findDefault = false } = {}) {
+  const parts = [];
+  let start = 0;
+  let quote = null;
+  let escaped = false;
+  const depth = { '<': 0, '(': 0, '[': 0, '{': 0 };
+  const opening = new Set(Object.keys(depth));
+  const closing = { '>': '<', ')': '(', ']': '[', '}': '{' };
+  const atTopLevel = () => Object.values(depth).every((valueAtDepth) => valueAtDepth === 0);
+
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (quote) {
+      if (escaped) escaped = false;
+      else if (character === '\\') escaped = true;
+      else if (character === quote) quote = null;
+      continue;
+    }
+    if (character === '"' || character === "'") {
+      quote = character;
+      continue;
+    }
+    if (findDefault && character === '=' && atTopLevel()) return index;
+    if (splitCommas && character === ',' && atTopLevel()) {
+      parts.push(value.slice(start, index).trim());
+      start = index + 1;
+      continue;
+    }
+    if (opening.has(character)) {
+      depth[character] += 1;
+      continue;
+    }
+    const opener = closing[character];
+    if (opener) {
+      if (depth[opener] === 0) throw new TypeError(`unbalanced ${character}`);
+      depth[opener] -= 1;
+    }
+  }
+  if (quote || !atTopLevel()) throw new TypeError('unterminated nested expression');
+  if (splitCommas) {
+    parts.push(value.slice(start).trim());
+    return parts;
+  }
+  return -1;
+}
+
+function parseRequestMemberInputs(member) {
+  const fullArgStr = String(member.fullArgStr || '').trim();
+  if (!fullArgStr || fullArgStr === 'void') return [];
+  let argumentsList;
+  try {
+    argumentsList = scanCppExpression(fullArgStr, { splitCommas: true });
+  } catch (error) {
+    throw new TypeError(
+      `Cannot parse C++ request member ${member.name || '(unknown)'} argument list "${fullArgStr}": ${error.message}`,
+    );
+  }
+  return argumentsList.map((argument) => {
+    let declaration = argument;
+    try {
+      const defaultIndex = scanCppExpression(argument, { findDefault: true });
+      if (defaultIndex >= 0) declaration = argument.slice(0, defaultIndex).trim();
+    } catch (error) {
+      throw new TypeError(
+        `Cannot parse C++ request member ${member.name || '(unknown)'} argument "${argument}": ${error.message}`,
+      );
+    }
+    const match = declaration.match(/([A-Za-z_]\w*)\s*((?:\[[^\]]*\]\s*)*)$/);
+    const name = match?.[1];
+    const arraySuffix = match?.[2]?.trim() || '';
+    let type = match ? declaration.slice(0, match.index).trim() : '';
+    if (arraySuffix) type = `${type}${arraySuffix}`;
+    if (!name || !type) {
+      throw new TypeError(
+        `Cannot parse C++ request member ${member.name || '(unknown)'} argument "${argument}"`,
+      );
+    }
+    return { name, type, description: '' };
+  });
+}
+
 function parseReturnType(symbol) {
   if (symbol.returnType) return String(symbol.returnType).trim();
   if (typeof symbol.signature !== 'string' || !symbol.name) return '';
@@ -72,7 +153,9 @@ function toReferenceDocument(symbol, context = {}) {
       ? contextualInputs
       : Array.isArray(member.inputs)
         ? member.inputs
-        : member.argName ? [{ ...member, name: member.argName }] : [];
+        : member.fullArgStr
+          ? parseRequestMemberInputs(member)
+          : member.argName ? [{ ...member, name: member.argName }] : [];
     return common.makeCallableMember(
       'request',
       member,

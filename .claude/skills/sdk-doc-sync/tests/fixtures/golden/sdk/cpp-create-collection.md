@@ -18,7 +18,8 @@ auto request = CreateCollectionRequest()
     .WithDimension(dimension)
     .AddField(field)
     .EnableDynamicField()
-    .AddExtraParam(key, value);
+    .AddExtraParam(key, value)
+    .WithMetadata(values, limit);
 ```
 
 **REQUEST METHODS:**
@@ -33,6 +34,8 @@ auto request = CreateCollectionRequest()
   Enables the dynamic field.
 - `AddExtraParam(const std::string& key, const std::string& value)`
   Adds an extra request parameter.
+- `WithMetadata(const std::map<std::string, std::string>& values, int limit = 10)`
+  Adds metadata with a result limit.
 
 **RETURNS:**
 

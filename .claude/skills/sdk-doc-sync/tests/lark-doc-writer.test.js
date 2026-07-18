@@ -69,6 +69,42 @@ test('malformed filter regions remain unchanged and emit warnings under all targ
   ]);
 });
 
+test('valid exclude is processed before a malformed include region', (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (message) => warnings.push(message));
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+    targets: 'zilliz',
+  });
+  const markdown = '<exclude target="zilliz">private</exclude><include target="milvus">broken';
+
+  assert.equal(
+    converter.__filter_content(markdown, converter.targets),
+    '<include target="milvus">broken',
+  );
+  assert.deepEqual(warnings, ['No matching end tag for include tag at index 42']);
+});
+
+test('valid include is processed before a malformed exclude region', (t) => {
+  const warnings = [];
+  t.mock.method(console, 'warn', (message) => warnings.push(message));
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+    targets: 'zilliz',
+  });
+  const markdown = '<include target="zilliz">public</include><exclude target="milvus">broken';
+
+  assert.equal(
+    converter.__filter_content(markdown, converter.targets),
+    'public<exclude target="milvus">broken',
+  );
+  assert.deepEqual(warnings, ['No matching end tag for exclude tag at index 41']);
+});
+
 test('mapped-null Docx block type 16 renders an explicit unsupported marker', async (t) => {
   suppressDebugLogs(t);
   const fixture = loadFixture();

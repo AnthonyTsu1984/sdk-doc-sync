@@ -400,31 +400,37 @@ class larkDocWriter {
         
     }
 
-    __filter_content (markdown, targets) {
+    __filter_content (markdown, targets, warnedMalformedTags=new Set()) {
         const matches = this.__match_filter_tags(markdown)
 
-        if (matches.some(match => match.endIndex === -1)) {
-            return markdown
+        for (const match of matches.filter(match => match.endIndex === -1)) {
+            const malformedTag = markdown.slice(match.startIndex)
+            if (!warnedMalformedTags.has(malformedTag)) {
+                console.warn(`No matching end tag for ${match.tag} tag at index ${match.startIndex}`)
+                warnedMalformedTags.add(malformedTag)
+            }
         }
 
-        if (matches.length > 0) {
-            var preText = markdown.slice(0, matches[0].startIndex)
-            var matchText = markdown.slice(matches[0].startIndex, matches[0].endIndex)
-            var postText = markdown.slice(matches[0].endIndex)
-            var preserveAllTargets = targets === 'all'
-            var isTargetValid = preserveAllTargets || targets.split('.').includes(matches[0].target.trim())
-            var startTagLength = `<${matches[0].tag} target="${matches[0].target}">`.length
-            var endTagLength = `</${matches[0].tag}>`.length
+        const match = matches.find(match => match.endIndex !== -1)
 
-            if (preserveAllTargets || matches[0].tag == 'include' && isTargetValid || matches[0].tag == 'exclude' && !isTargetValid) {
+        if (match) {
+            var preText = markdown.slice(0, match.startIndex)
+            var matchText = markdown.slice(match.startIndex, match.endIndex)
+            var postText = markdown.slice(match.endIndex)
+            var preserveAllTargets = targets === 'all'
+            var isTargetValid = preserveAllTargets || targets.split('.').includes(match.target.trim())
+            var startTagLength = `<${match.tag} target="${match.target}">`.length
+            var endTagLength = `</${match.tag}>`.length
+
+            if (preserveAllTargets || match.tag == 'include' && isTargetValid || match.tag == 'exclude' && !isTargetValid) {
                 matchText = matchText.slice(startTagLength, -endTagLength)
             }
 
-            if (!preserveAllTargets && (matches[0].tag == 'include' && !isTargetValid || matches[0].tag == 'exclude' &&  isTargetValid)) {
+            if (!preserveAllTargets && (match.tag == 'include' && !isTargetValid || match.tag == 'exclude' &&  isTargetValid)) {
                 matchText = ""
             }
  
-            markdown = this.__filter_content(preText + matchText + postText, targets)
+            markdown = this.__filter_content(preText + matchText + postText, targets, warnedMalformedTags)
         }
 
         return markdown.replace(/(\s*\n){3,}/g, '\n\n')
@@ -462,8 +468,6 @@ class larkDocWriter {
                     break
                 }
             }
-
-            if (endIndex === -1) console.warn(`No matching end tag for ${tag} tag at index ${match.index}`)
 
             returns.push({
                 tag: tag,

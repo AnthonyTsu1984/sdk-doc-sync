@@ -11,6 +11,7 @@ const {
 const MIN_EXAMPLE_CODE_LENGTH = 12;
 const AUDIENCE_VALUE = /^[a-z0-9][a-z0-9.-]*$/;
 const NAMED_PLACEHOLDER = /Brief description|Usage example|List relevant exceptions/i;
+const TODO_WORKFLOW = /\btodo\s+(?:later|fix|pending|replace|add|update|review|implement|document|describe|example)\b/i;
 const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp']);
 const MEMBER_KIND_BY_LANGUAGE = new Map([
   ['java', 'builder'],
@@ -29,11 +30,15 @@ function isNonEmptyString(value) {
 }
 
 function isSafeRelatedUrl(value) {
-  if (!isNonEmptyString(value) || /[\u0000-\u001F<>]/.test(value)) return false;
+  if (!isNonEmptyString(value) || value !== value.trim() || /[\u0000-\u001F<>]/.test(value)) return false;
   if (value.startsWith('//')) return false;
   if (value.startsWith('/') || value.startsWith('./') || value.startsWith('../') || value.startsWith('#')) return true;
   try {
-    return ['http:', 'https:', 'mailto:'].includes(new URL(value).protocol);
+    const parsed = new URL(value);
+    if (parsed.protocol === 'mailto:') {
+      return value.slice(value.indexOf(':') + 1).split('?')[0].trim() !== '';
+    }
+    return ['http:', 'https:'].includes(parsed.protocol);
   } catch {
     return false;
   }
@@ -42,8 +47,10 @@ function isSafeRelatedUrl(value) {
 function containsPlaceholder(value) {
   const trimmed = value.trim();
   return /^(?:todo|tbd)$/i.test(trimmed)
-    || /\b(?:TODO|TBD)\b/.test(value)
-    || /\b(?:todo|tbd)\s*:/i.test(value)
+    || /\bTBD\b/i.test(value)
+    || /\bTODO\b/.test(value)
+    || /\btodo\s*[-:]/i.test(value)
+    || TODO_WORKFLOW.test(value)
     || /<!--[\s\S]*?\b(?:todo|tbd)\b[\s\S]*?-->/i.test(value)
     || NAMED_PLACEHOLDER.test(value);
 }
@@ -123,7 +130,9 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     const direct = candidates.some((item) => item.confidence === 'direct'
       && ['source', 'openapi'].includes(item.kind));
     if (reviewed) return { valid: true, derived };
-    if (derived) return { valid: documentReviewed, derived: true };
+    if (direct) return { valid: true, derived };
+    if (hasOwnEvidence && own.length > 0 && documentReviewed) return { valid: true, derived };
+    if (derived) return { valid: false, derived: true };
     return { valid: direct, derived: false };
   }
 
@@ -156,8 +165,10 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         return;
       }
       const validId = requireString(reference.id, `${referencePath}.id`, 'type reference ID');
+      let duplicateId = false;
       if (validId) {
         if (ids.has(reference.id)) {
+          duplicateId = true;
           error(
             `${referencePath}.id`,
             `type reference ID ${reference.id} duplicates ${ids.get(reference.id)}`,
@@ -178,7 +189,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       }
       if (typeof reference.external !== 'boolean') {
         error(`${referencePath}.external`, 'external must be a boolean', 'INVALID_TYPE_REFERENCE');
-      } else if (reference.external && validId && validDisplay) {
+      } else if (reference.external && validId && validDisplay && !duplicateId) {
         warning(
           referencePath,
           `external type reference ${reference.id || '(unknown)'} cannot be resolved locally`,
@@ -230,7 +241,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     if (typeof field.required !== 'boolean') {
       error(`${path}.required`, 'required must be a boolean', 'INVALID_FIELD');
     }
-    if (typeof field.allowRequiredDefault !== 'boolean') {
+    if (field.allowRequiredDefault !== undefined && typeof field.allowRequiredDefault !== 'boolean') {
       error(`${path}.allowRequiredDefault`, 'allowRequiredDefault must be a boolean', 'INVALID_FIELD');
     }
     if (typeof field.description !== 'string') {
@@ -509,7 +520,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   }
 
   if (typeof doc.summary !== 'string') error('$.summary', 'summary must be a string', 'INVALID_SUMMARY');
-  if (typeof doc.exampleOptional !== 'boolean') {
+  if (doc.exampleOptional !== undefined && typeof doc.exampleOptional !== 'boolean') {
     error('$.exampleOptional', 'exampleOptional must be a boolean', 'INVALID_DOCUMENT');
   }
   const signatures = requireArray(doc.signatures, '$.signatures', 'signatures');

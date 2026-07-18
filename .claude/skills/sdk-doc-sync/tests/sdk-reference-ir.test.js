@@ -169,6 +169,35 @@ test('constructors preserve supplied boolean values for validation instead of co
   }
 });
 
+test('optional raw boolean flags treat undefined as false but reject supplied non-booleans', () => {
+  const original = completeMethod();
+  const input = { ...original.signatures[0].inputs[0] };
+  delete input.allowRequiredDefault;
+  const doc = {
+    ...original,
+    signatures: [{ ...original.signatures[0], inputs: [input] }],
+  };
+  delete doc.exampleOptional;
+
+  const omittedErrors = validateReferenceDocument(doc).errors;
+  assert.equal(omittedErrors.some((error) => error.path
+    === '$.signatures[0].inputs[0].allowRequiredDefault'), false);
+  assert.equal(omittedErrors.some((error) => error.path === '$.exampleOptional'), false);
+
+  const malformed = {
+    ...doc,
+    exampleOptional: 'false',
+    signatures: [{
+      ...doc.signatures[0],
+      inputs: [{ ...input, allowRequiredDefault: 'false' }],
+    }],
+  };
+  const malformedErrors = validateReferenceDocument(malformed).errors;
+  assert.ok(malformedErrors.some((error) => error.path
+    === '$.signatures[0].inputs[0].allowRequiredDefault'));
+  assert.ok(malformedErrors.some((error) => error.path === '$.exampleOptional'));
+});
+
 test('validates one complete production method with recursive result and input fields', () => {
   const result = validateReferenceDocument(completeMethod(), {
     production: true,
@@ -326,8 +355,19 @@ test('enforces command and enum forbidden-section policies in production', () =>
 test('production rejects every placeholder pattern anywhere in authored content', () => {
   const placeholders = [
     'TODO explain this',
-    'TBD after review',
+    'tBd after review',
     'todo:',
+    'ToDo-later',
+    'todo fix this',
+    'todo pending approval',
+    'todo replace this value',
+    'todo add validation',
+    'todo update the example',
+    'todo review this path',
+    'todo implement retries',
+    'todo document the result',
+    'todo describe the error',
+    'todo example',
     'Brief description of the method',
     'Usage example goes here',
     'List relevant exceptions',
@@ -457,6 +497,14 @@ test('production evidence scope prefers node evidence and uses document reviews 
     evidence: [reviewed],
   }), { production: true }).errors;
   assert.equal(reviewedDerivedNode.some((error) => error.path === signatureEvidencePath), false);
+
+  const reviewedCuratedDirectNode = validateReferenceDocument(completeMethod({
+    signatures: [signature([createEvidence({
+      kind: 'curated', locator: 'curated/sdk-reference-456', revision: '2026-07-18', confidence: 'direct',
+    })])],
+    evidence: [reviewed],
+  }), { production: true }).errors;
+  assert.equal(reviewedCuratedDirectNode.some((error) => error.path === signatureEvidencePath), false);
 
   const unrelatedDerived = validateReferenceDocument(completeMethod({
     signatures: [signature([derived])],
@@ -664,7 +712,11 @@ test('type references reject duplicate IDs and warn only for structurally valid 
 
   assert.ok(result.errors.some((error) => error.code === 'DUPLICATE_TYPE_REFERENCE_ID'
     && error.path === '$.signatures[0].inputs[0].type.references[1].id'));
-  assert.equal(result.warnings.filter((warning) => warning.code === 'EXTERNAL_TYPE_REFERENCE').length, 2);
+  assert.equal(result.warnings.filter((warning) => warning.code === 'EXTERNAL_TYPE_REFERENCE').length, 1);
+  assert.ok(result.warnings.some((warning) => warning.path
+    === '$.signatures[0].inputs[0].type.references[0]'));
+  assert.equal(result.warnings.some((warning) => warning.path
+    === '$.signatures[0].inputs[0].type.references[1]'), false);
   assert.equal(result.warnings.some((warning) => warning.path
     === '$.signatures[0].inputs[0].type.references[2]'), false);
 });
@@ -674,11 +726,16 @@ test('related links reject protocol-relative URLs and retain supported destinati
     '/guide', './guide', '../guide', '#search',
     'http://docs.example.test/search', 'https://docs.example.test/search',
     'mailto:docs@example.test', '//attacker.example.test/search',
+    ' https://docs.example.test/search', 'https://docs.example.test/search ',
+    'mailto:', 'mailto:?subject=search',
   ];
   const result = validateReferenceDocument(completeMethod({
     related: urls.map((url) => ({ title: url, url })),
   }));
 
   assert.deepEqual(result.errors.filter((error) => error.code === 'INVALID_RELATED_LINK')
-    .map((error) => error.path), ['$.related[7].url']);
+    .map((error) => error.path), [
+      '$.related[7].url', '$.related[8].url', '$.related[9].url',
+      '$.related[10].url', '$.related[11].url',
+    ]);
 });

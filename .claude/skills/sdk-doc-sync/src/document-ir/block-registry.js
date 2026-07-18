@@ -146,7 +146,7 @@ const LANGUAGE_ALIASES = Object.freeze({
   cpp: 9,
   'c++': 9,
   bash: 7,
-  shell: 62,
+  shell: 61,
   plaintext: 1,
   text: 1,
 });

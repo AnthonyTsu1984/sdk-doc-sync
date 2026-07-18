@@ -50,6 +50,7 @@ class SdkDocSync {
         documentWriter = null,
         bitableWriter = null,
         docGenerator = null,
+        printPlans = true,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -62,6 +63,7 @@ class SdkDocSync {
         this.onProgress = onProgress || ((phase, msg) => console.log(`[${phase}] ${msg}`));
         this.artifactProvider = artifactProvider || artifacts;
         this.planningContextProvider = planningContextProvider;
+        this.printPlans = printPlans;
         this._planningContexts = new WeakMap();
 
         // Build scanner if not provided
@@ -156,10 +158,14 @@ class SdkDocSync {
         for (const [index, action] of result.diff.entries()) {
             try {
                 const context = await this._planningContextFor(action, index, result);
-                const plan = this.planner.planAction(action, context);
+                const schemaStableId = context.artifact?.reference?.identity?.stableId;
+                const plannableAction = schemaStableId && !action.stableId
+                    ? { ...action, stableId: schemaStableId }
+                    : action;
+                const plan = this.planner.planAction(plannableAction, context);
                 result.plans.push(plan);
-                plannedActions.push({ action, plan, context });
-                this._planningContexts.set(action, context);
+                plannedActions.push({ action: plannableAction, plan, context });
+                this._planningContexts.set(plannableAction, context);
             } catch (error) {
                 result.planningErrors.push({
                     stableId: this._stableIdFor(action),
@@ -173,7 +179,7 @@ class SdkDocSync {
 
         if (this.dryRun) {
             this.onProgress('APPROVE', 'Dry run — showing plans without executing');
-            this._printPlans(result.plans);
+            if (this.printPlans) this._printPlans(result.plans);
             result.approved = [];
             return result;
         }

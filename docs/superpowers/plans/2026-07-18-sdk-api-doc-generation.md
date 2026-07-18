@@ -600,11 +600,11 @@ git commit -m "refactor: migrate sdk document readers to document ir"
 - Modify: `.claude/skills/sdk-doc-sync/src/sdk-doc-sync/doc-generator.js`
 - Create: `.claude/skills/sdk-doc-sync/tests/sdk-doc-sync-cli.test.js`
 
-- [ ] **Step 1: Write CLI tests for generation and planning**
+- [x] **Step 1: Write CLI tests for generation and planning**
 
 Cover `python`, `java`, `node`, `go`, `cpp`, `zilliz-cli`, and `rest`; `--dry-run`; missing reviewed artifacts; invalid schema; and JSON plan output.
 
-- [ ] **Step 2: Route scanners through adapters and renderers**
+- [x] **Step 2: Route scanners through adapters and renderers**
 
 The orchestrator pipeline becomes:
 
@@ -616,11 +616,11 @@ validateDocumentIr(documentIr, { lossless: true });
 const markdown = renderMarkdown(documentIr);
 ```
 
-- [ ] **Step 3: Deprecate direct scaffold publication**
+- [x] **Step 3: Deprecate direct scaffold publication**
 
 Keep `DocGenerator` temporarily for comparison-only commands. Throw if its output is passed to `SyncExecutor`.
 
-- [ ] **Step 4: Run CLI and aggregate tests**
+- [x] **Step 4: Run CLI and aggregate tests**
 
 Run: `node --test .claude/skills/sdk-doc-sync/tests/sdk-doc-sync-cli.test.js`
 
@@ -630,7 +630,7 @@ Run: `npm test`
 
 Expected: all repository suites PASS.
 
-- [ ] **Step 5: Commit the integration**
+- [x] **Step 5: Commit the integration**
 
 ```bash
 git add .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js .claude/skills/sdk-doc-sync/src/sdk-doc-sync .claude/skills/sdk-doc-sync/tests/sdk-doc-sync-cli.test.js

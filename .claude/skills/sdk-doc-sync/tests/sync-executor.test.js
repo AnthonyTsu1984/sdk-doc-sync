@@ -63,7 +63,7 @@ function plan(type, context = planningContext()) {
   }, context);
 }
 
-function spies({ failRecordUpdate = false } = {}) {
+function spies({ failRecordCreate = false, failRecordUpdate = false } = {}) {
   const calls = [];
   const documentWriter = {
     async createDocument(input) {
@@ -83,6 +83,7 @@ function spies({ failRecordUpdate = false } = {}) {
   const bitableWriter = {
     async createRecord(fields) {
       calls.push(['createRecord', fields]);
+      if (failRecordCreate) throw new Error('record create failed');
       return { record_id: 'rec-new', fields };
     },
     async updateRecord(recordId, fields) {
@@ -127,6 +128,38 @@ test('SyncExecutor creates a target document before creating the Bitable record'
   assert.equal(calls[1][1].link, 'https://docs.example/doc-new');
   assert.equal(calls[1][1].parentRecordId, 'parent-v26');
   assert.equal(result.completedSteps.at(-1), 'createRecord');
+});
+
+test('SyncExecutor preserves CREATE recovery details when record creation fails', async () => {
+  const { calls, documentWriter, bitableWriter } = spies({ failRecordCreate: true });
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(plan('CREATE', planningContext({ current: null })), {
+    artifact: artifact(),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.failedStep, 'createRecord');
+  assert.equal(result.createdDocument.token, 'doc-new');
+  assert.equal(result.originalRecord, null);
+  assert.deepEqual(calls.map((entry) => entry[0]), ['createDocument', 'createRecord']);
+  assert.match(result.suggestedRecovery, /create the missing record/i);
+});
+
+test('SyncExecutor rejects legacy DocGenerator scaffold artifacts', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(plan('CREATE', planningContext({ current: null })), {
+    artifact: artifact('# createCollection\n\n<!-- TODO: Add description. -->\n'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.failedStep, 'createDocument');
+  assert.equal(result.error.code, 'LEGACY_SCAFFOLD_ARTIFACT');
+  assert.deepEqual(calls, []);
 });
 
 test('SyncExecutor patches in-place only against the planned target-local token', async () => {
@@ -214,6 +247,22 @@ test('SyncVerifier reports postcondition drift with actionable errors', async ()
   assert.ok(verification.errors.some((error) => error.code === 'TARGET_LINK'));
   assert.ok(verification.errors.some((error) => error.code === 'TARGET_PARENT'));
   assert.ok(verification.errors.some((error) => error.code === 'TARGET_VERSION'));
+});
+
+test('SyncVerifier verifies deprecation metadata postconditions', async () => {
+  let recordReads = 0;
+  const verifier = new SyncVerifier({
+    async readRecord(recordId) {
+      recordReads++;
+      return { recordId, version: 'v2.6.x', state: 'Active' };
+    },
+  });
+
+  const verification = await verifier.verify(plan('DEPRECATE'));
+
+  assert.equal(recordReads, 1);
+  assert.equal(verification.ok, false);
+  assert.ok(verification.errors.some((error) => error.code === 'TARGET_METADATA_STATE'));
 });
 
 test('BitableWriter rejects document Docs writes that omit the link', () => {

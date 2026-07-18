@@ -3,9 +3,30 @@
 const readline = require('readline');
 const path = require('path');
 
-require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
-
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
+const { validateDocumentIr } = require('../src/document-ir/validate');
+const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
+
+const adapters = Object.freeze({
+    python: require('../src/sdk-reference-ir/adapters/python'),
+    java: require('../src/sdk-reference-ir/adapters/java'),
+    node: require('../src/sdk-reference-ir/adapters/node'),
+    go: require('../src/sdk-reference-ir/adapters/go'),
+    cpp: require('../src/sdk-reference-ir/adapters/cpp'),
+    'zilliz-cli': require('../src/sdk-reference-ir/adapters/zilliz-cli'),
+    rest: require('../src/sdk-reference-ir/adapters/openapi'),
+});
+
+const renderers = Object.freeze({
+    python: require('../src/renderers/languages/python'),
+    java: require('../src/renderers/languages/java'),
+    node: require('../src/renderers/languages/node'),
+    go: require('../src/renderers/languages/go'),
+    cpp: require('../src/renderers/languages/cpp'),
+    'zilliz-cli': require('../src/renderers/cli-renderer'),
+    rest: require('../src/renderers/rest-renderer'),
+});
 
 function parseArgs(argv) {
     const args = {};
@@ -29,6 +50,8 @@ function parseArgs(argv) {
             args.exclude = (args.exclude || []).concat(argv[++i]);
         } else if (arg === '--dry-run') {
             args.dryRun = true;
+        } else if (arg === '--json') {
+            args.json = true;
         } else if (arg === '--auto-approve') {
             args.autoApprove = true;
         } else if (arg === '--help' || arg === '-h') {
@@ -53,6 +76,7 @@ Options:
   --targets <list>                 Comma-separated target platforms (e.g., Milvus,Zilliz)
   --exclude <pattern>              Glob pattern to exclude (repeatable)
   --dry-run                        Show diff without executing changes
+  --json                           Print the run result as formatted JSON
   --auto-approve                   Skip interactive approval
   --help, -h                       Show this help
 
@@ -114,36 +138,160 @@ function createApprovalCallback(autoApprove) {
     };
 }
 
-async function main() {
-    const args = parseArgs(process.argv);
+function validationError(code, message, details = {}) {
+    const error = new Error(message);
+    error.code = code;
+    error.details = details;
+    return error;
+}
+
+function firstValidationCode(validation, fallback) {
+    return validation.errors?.[0]?.code || fallback;
+}
+
+function defaultReferenceContext(action) {
+    return {
+        repository: '',
+        revision: '',
+        category: action.symbol?.category || '',
+        reviewedEvidence: [],
+        related: [],
+        notes: [],
+    };
+}
+
+function createSchemaFirstArtifactProvider({
+    language,
+    referenceContextProvider = null,
+} = {}) {
+    const adapter = adapters[language];
+    const renderer = renderers[language];
+    if (!adapter || !renderer) {
+        throw new Error(`Unsupported language: ${language}. Supported: ${Object.keys(adapters).join(', ')}`);
+    }
+
+    return async (action, scope = {}) => {
+        if (!['CREATE', 'UPDATE'].includes(action?.type)) return undefined;
+        try {
+            const context = referenceContextProvider
+                ? await referenceContextProvider(action, scope)
+                : defaultReferenceContext(action);
+            const source = language === 'rest' && context?.input ? context.input : action.symbol;
+            const reference = adapter.toReferenceDocument(source, context || {});
+            const referenceValidation = validateReferenceDocument(reference, { production: true });
+            if (!referenceValidation.valid) {
+                throw validationError(
+                    firstValidationCode(referenceValidation, 'INVALID_REFERENCE_DOCUMENT'),
+                    `Reference document validation failed: ${JSON.stringify(referenceValidation.errors)}`,
+                    { validation: referenceValidation },
+                );
+            }
+            const documentIr = renderer.render(reference, { typeUrls: context?.typeUrls || {} });
+            const documentValidation = validateDocumentIr(documentIr, { lossless: true });
+            if (!documentValidation.valid) {
+                throw validationError(
+                    firstValidationCode(documentValidation, 'INVALID_DOCUMENT_IR'),
+                    `Document IR validation failed: ${JSON.stringify(documentValidation.errors)}`,
+                    { validation: documentValidation },
+                );
+            }
+            return {
+                title: reference.identity.title,
+                content: renderMarkdown(documentIr),
+                reference,
+                documentIr,
+                reviewed: true,
+                validated: true,
+                validation: { valid: true, errors: [], warnings: documentValidation.warnings },
+                metadata: {
+                    description: reference.summary,
+                    type: reference.identity.kind,
+                    progress: 'Draft',
+                    targets: [],
+                    source: 'schema-first',
+                },
+            };
+        } catch (error) {
+            if (error.code) throw error;
+            throw validationError(
+                'SCHEMA_FIRST_GENERATION_FAILED',
+                `Schema-first generation failed for ${action?.slug || action?.symbol?.name || '(unknown)'}: ${error.message}`,
+                { cause: error.message },
+            );
+        }
+    };
+}
+
+function createDefaultPlanningContextProvider({ rootToken, sdkVersion }) {
+    return async () => ({
+        target: {
+            version: sdkVersion,
+            folderToken: rootToken || 'dummy',
+            versionRootToken: rootToken || 'dummy',
+            ancestryVerified: true,
+        },
+    });
+}
+
+async function runCli({
+    argv = process.argv,
+    env = process.env,
+    dependencies = {},
+} = {}) {
+    if (dependencies.loadEnv !== false) {
+        require('dotenv').config({
+            path: path.resolve(__dirname, '../../../..', '.env'),
+            processEnv: env,
+            quiet: true,
+        });
+    }
+
+    const out = dependencies.onStdout || ((line) => console.log(line));
+    const err = dependencies.onStderr || ((line) => console.error(line));
+    const exit = dependencies.exit || ((code) => process.exit(code));
+    const args = parseArgs(argv);
 
     if (!args.sdkDir) {
-        console.error('Error: --sdk-dir is required');
+        err('Error: --sdk-dir is required');
         printUsage();
-        process.exit(1);
+        exit(1);
+        return null;
     }
     if (!args.sdkName) {
-        console.error('Error: --sdk-name is required');
+        err('Error: --sdk-name is required');
         printUsage();
-        process.exit(1);
+        exit(1);
+        return null;
     }
     if (!args.sdkVersion) {
-        console.error('Error: --sdk-version is required');
+        err('Error: --sdk-version is required');
         printUsage();
-        process.exit(1);
+        exit(1);
+        return null;
     }
 
-    const rootToken = process.env.ROOT_TOKEN;
-    const baseToken = process.env.BASE_TOKEN;
+    const rootToken = env.ROOT_TOKEN;
+    const baseToken = env.BASE_TOKEN;
 
     if (!args.dryRun && (!rootToken || !baseToken)) {
-        console.error('Error: ROOT_TOKEN and BASE_TOKEN must be set in .env (or use --dry-run)');
-        process.exit(1);
+        err('Error: ROOT_TOKEN and BASE_TOKEN must be set in .env (or use --dry-run)');
+        exit(1);
+        return null;
     }
 
+    const language = args.language || 'python';
+    const artifactProvider = dependencies.artifactProvider || createSchemaFirstArtifactProvider({
+        language,
+        referenceContextProvider: dependencies.referenceContextProvider,
+    });
+    const planningContextProvider = dependencies.planningContextProvider
+        || createDefaultPlanningContextProvider({ rootToken: rootToken || 'dummy', sdkVersion: args.sdkVersion });
+
     const sync = new SdkDocSync({
+        scanner: dependencies.scanner || null,
+        indexReader: dependencies.indexReader || null,
         sdkDir: args.sdkDir,
-        language: args.language || 'python',
+        language,
         sdkName: args.sdkName,
         sdkVersion: args.sdkVersion,
         sourceType: args.sourceType || 'drive',
@@ -154,20 +302,41 @@ async function main() {
         dryRun: args.dryRun || false,
         exclude: args.exclude || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
+        artifactProvider,
+        planningContextProvider,
+        onProgress: dependencies.onProgress || (() => {}),
+        documentWriter: dependencies.documentWriter || null,
+        bitableWriter: dependencies.bitableWriter || null,
+        executor: dependencies.executor || null,
+        printPlans: args.json !== true,
     });
 
     const result = await sync.run();
 
+    if (args.json) {
+        out(JSON.stringify(result, null, 2));
+        return result;
+    }
+
     if (args.dryRun) {
-        console.log(`\nDry run complete. ${result.scanned.length} symbols scanned, ${result.diff.length} diff actions.`);
+        out(`\nDry run complete. ${result.scanned.length} symbols scanned, ${result.diff.length} diff actions.`);
     } else {
         const succeeded = result.results.filter(r => r.status === 'success').length;
         const failed = result.results.filter(r => r.status === 'error').length;
-        console.log(`\nSync complete. ${succeeded} succeeded, ${failed} failed.`);
+        out(`\nSync complete. ${succeeded} succeeded, ${failed} failed.`);
     }
+    return result;
 }
 
-main().catch(err => {
-    console.error('Fatal error:', err.message);
-    process.exit(1);
-});
+if (require.main === module) {
+    runCli().catch(err => {
+        console.error('Fatal error:', err.message);
+        process.exit(1);
+    });
+}
+
+module.exports = {
+    parseArgs,
+    runCli,
+    createSchemaFirstArtifactProvider,
+};

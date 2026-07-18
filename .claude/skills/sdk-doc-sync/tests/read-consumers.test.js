@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { exportDocument } = require('../bin/export-doc');
-const { runCliFetchAndDiff } = require('../scripts/cli-fetch-and-diff');
+const { parseArgs, runCliFetchAndDiff } = require('../scripts/cli-fetch-and-diff');
 const FeishuDocTranslator = require('../src/feishu-doc-translator');
 
 test('exportDocument reads through an injected Document IR markdown reader and writes once', async () => {
@@ -85,6 +85,20 @@ test('runCliFetchAndDiff classifies identical, different, fetch-only, scanner-on
   assert.ok(written.some(([file]) => file.endsWith('/Cluster-diff/generated.md')));
 });
 
+test('cli-fetch-and-diff accepts table-id alongside base token and SDK inputs', () => {
+  const options = parseArgs([
+    '--base-token=base123',
+    '--table-id=tbl123',
+    '--sdk-dir=/tmp/zilliz-cli',
+    '--sdk-version=v0.2.x',
+  ]);
+
+  assert.equal(options.baseToken, 'base123');
+  assert.equal(options.tableId, 'tbl123');
+  assert.equal(options.sdkDir, '/tmp/zilliz-cli');
+  assert.equal(options.sdkVersion, 'v0.2.x');
+});
+
 test('FeishuDocTranslator reads source Markdown through an injected reader pipeline', async () => {
   const calls = [];
   const translator = new FeishuDocTranslator({
@@ -110,4 +124,38 @@ test('FeishuDocTranslator reads source Markdown through an injected reader pipel
 
   assert.equal(markdown, '# translated source\n');
   assert.deepEqual(calls, ['Collections-createCollection']);
+});
+
+test('FeishuDocTranslator default source Markdown fallback uses the shared document reader pipeline', async () => {
+  const calls = [];
+  const translator = new FeishuDocTranslator({
+    sourceBitable: 'source-base',
+    targetBitable: 'target-base',
+    sourceRoot: 'source-root',
+    targetRoot: 'target-root',
+    dryRun: true,
+    translator: {
+      async translateMarkdown(markdown) { return markdown; },
+    },
+    createSourceDocumentReader() {
+      return {
+        async readMarkdown(token) {
+          calls.push(['readMarkdown', token]);
+          return '# shared reader source\n';
+        },
+      };
+    },
+  });
+
+  const markdown = await translator._fetchSourceMarkdown({
+    id: 'rec-source',
+    metadata: {
+      slug: 'Collections-createCollection',
+      token: 'doc-source',
+      link: 'https://example.feishu.cn/docx/doc-source',
+    },
+  });
+
+  assert.equal(markdown, '# shared reader source\n');
+  assert.deepEqual(calls, [['readMarkdown', 'doc-source']]);
 });

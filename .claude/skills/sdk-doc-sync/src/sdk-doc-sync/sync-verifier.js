@@ -21,6 +21,11 @@ function documentTokenFor(plan, execution) {
   return plan.source.documentToken;
 }
 
+function normalizedState(record) {
+  const value = record?.state ?? record?.progress ?? (record?.deprecateSince ? 'DEPRECATED' : null);
+  return typeof value === 'string' ? value.toUpperCase() : value;
+}
+
 class SyncVerifier {
   constructor({ readDocument = null, readRecord = null } = {}) {
     this.readDocument = readDocument;
@@ -33,6 +38,7 @@ class SyncVerifier {
     const targetLink = postcondition(plan, 'TARGET_LINK');
     const targetParent = postcondition(plan, 'TARGET_PARENT');
     const targetVersion = postcondition(plan, 'TARGET_VERSION');
+    const targetMetadata = postcondition(plan, 'TARGET_METADATA');
     const olderSource = postcondition(plan, 'OLDER_SOURCE_UNCHANGED');
 
     const token = documentTokenFor(plan, execution);
@@ -56,7 +62,7 @@ class SyncVerifier {
     }
 
     let record = null;
-    if ((targetLink || targetParent || targetVersion) && this.readRecord) {
+    if ((targetLink || targetParent || targetVersion || targetMetadata) && this.readRecord) {
       record = await this.readRecord(targetLink?.recordId || plan.source.recordId);
       if (targetLink && record?.documentToken !== token) {
         errors.push({ code: 'TARGET_LINK', expected: token, actual: record?.documentToken ?? null });
@@ -66,6 +72,14 @@ class SyncVerifier {
       }
       if (targetVersion && record?.version !== targetVersion.version) {
         errors.push({ code: 'TARGET_VERSION', expected: targetVersion.version, actual: record?.version ?? null });
+      }
+      if (targetMetadata) {
+        if (targetMetadata.version && record?.version !== targetMetadata.version) {
+          errors.push({ code: 'TARGET_METADATA_VERSION', expected: targetMetadata.version, actual: record?.version ?? null });
+        }
+        if (targetMetadata.state && normalizedState(record) !== targetMetadata.state) {
+          errors.push({ code: 'TARGET_METADATA_STATE', expected: targetMetadata.state, actual: normalizedState(record) });
+        }
       }
     }
 

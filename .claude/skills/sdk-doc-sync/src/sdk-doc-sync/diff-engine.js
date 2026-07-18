@@ -111,9 +111,14 @@ class DiffEngine {
      * Preserves original casing.
      */
     _symbolSlug(symbol) {
+        if (symbol?.spec && symbol.path && symbol.method) {
+            const operation = symbol.spec.paths?.[symbol.path]?.[String(symbol.method).toLowerCase()];
+            if (operation?.operationId) return operation.operationId;
+        }
         const rawSlug = symbol.parentClass
             ? `${symbol.parentClass}-${symbol.name}`
             : symbol.name;
+        if (!rawSlug) throw new TypeError('Scanned symbol must include a name or OpenAPI operationId');
         return this.categoryMap[rawSlug] || this._categoryMapLower[rawSlug.toLowerCase()] || rawSlug;
     }
 

@@ -1,0 +1,261 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
+
+const {
+  createSchemaFirstArtifactProvider,
+  runCli,
+} = require('../bin/sdk-doc-sync');
+
+const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
+
+function fixture(name) {
+  return JSON.parse(fs.readFileSync(path.join(scannerDir, name), 'utf8'));
+}
+
+function reviewedEvidence(language) {
+  return [{
+    kind: 'curated',
+    locator: `reviews/${language}-cli-integration.md`,
+    revision: 'v2.6.0',
+    confidence: 'reviewed',
+  }];
+}
+
+function sdkContext(language) {
+  const values = {
+    python: {
+      fixture: 'python-search.json',
+      category: 'Vector',
+      repository: 'milvus-io/pymilvus',
+      summary: 'Searches vectors in a collection and returns nearest matches.',
+      examples: [{
+        title: 'Search a collection',
+        description: 'Runs a vector search.',
+        language: 'python',
+        code: 'results = client.search(collection_name="docs", data=[[0.1, 0.2]], limit=10)\nprint(results)',
+      }],
+      result: {
+        type: 'list[SearchResult]',
+        description: 'Returns the matching entities ordered by similarity.',
+        fields: [],
+      },
+      exceptions: [{
+        name: 'MilvusException',
+        condition: 'The server rejects the search request.',
+        description: 'Reports the server error code and message.',
+      }],
+    },
+    java: {
+      fixture: 'java-create-collection.json',
+      category: 'Collections',
+      repository: 'zilliztech/milvus-sdk-java',
+      summary: 'Creates a collection through the Java v2 client.',
+      requiredFields: ['collectionName', 'dimension'],
+      examples: [{
+        title: 'Create a collection',
+        description: 'Builds and submits a collection request.',
+        language: 'java',
+        code: 'client.createCollection(CreateCollectionReq.builder()\n    .collectionName("docs")\n    .dimension(128)\n    .build());',
+      }],
+      result: { type: 'void', description: 'Completes after the collection is created.', fields: [] },
+      exceptions: [{
+        name: 'MilvusClientException',
+        condition: 'The request cannot be completed.',
+        description: 'Reports client or server failures.',
+      }],
+    },
+    node: {
+      fixture: 'node-create-collection.json',
+      category: 'Collections',
+      repository: 'zilliztech/milvus-sdk-node',
+      summary: 'Creates a collection through the Node.js client.',
+      examples: [{
+        title: 'Create a collection',
+        description: 'Creates a simple collection.',
+        language: 'node',
+        fence: 'JavaScript',
+        code: 'await client.createCollection({ collection_name: "docs", dimension: 128 });',
+      }],
+      exceptions: [{
+        name: 'MilvusError',
+        condition: 'The promise is rejected.',
+        description: 'Contains the operation failure details.',
+      }],
+    },
+    go: {
+      fixture: 'go-create-collection.json',
+      category: 'Collections',
+      repository: 'milvus-io/milvus-sdk-go',
+      summary: 'Creates a collection through the Go client.',
+      requestSyntax: 'option := milvusclient.SimpleCreateCollectionOptions("docs", 128)\nerr := client.CreateCollection(ctx, option)',
+      examples: [{
+        title: 'Create a collection',
+        description: 'Creates a collection and checks the returned error.',
+        language: 'go',
+        code: 'option := milvusclient.SimpleCreateCollectionOptions("docs", 128)\nerr := client.CreateCollection(ctx, option)\nif err != nil {\n    log.Fatal(err)\n}',
+      }],
+      result: { type: 'error', description: 'Returns nil on success or an error on failure.', fields: [] },
+      exceptions: [{
+        name: 'error',
+        condition: 'The operation fails.',
+        description: 'Check the returned error for failure details.',
+      }],
+    },
+    cpp: {
+      fixture: 'cpp-create-collection.json',
+      category: 'Collections',
+      repository: 'zilliztech/milvus-sdk-cpp',
+      summary: 'Creates a collection through the C++ client.',
+      examples: [{
+        title: 'Create a collection',
+        description: 'Builds a request and checks the returned status.',
+        language: 'cpp',
+        code: 'auto request = milvus::CreateCollectionRequest().WithCollectionName("docs").WithDimension(128);\nauto status = client->CreateCollection(request, response);',
+      }],
+      result: {
+        type: 'Status',
+        description: 'Returns the operation status and fills the response object.',
+        fields: [{ name: 'response', type: 'CreateCollectionResponse', required: true, description: 'The created collection response.' }],
+      },
+      exceptions: [{
+        name: 'Status',
+        condition: 'status.IsOk() is false.',
+        description: 'Inspect the status code and message for failure details.',
+      }],
+    },
+    'zilliz-cli': {
+      fixture: 'cli-project-create.json',
+      category: 'Project',
+      repository: 'zilliztech/zilliz-cli',
+      title: 'zilliz project create',
+      summary: 'Creates a Zilliz Cloud project.',
+      examples: [{
+        title: 'Create a project',
+        description: '',
+        language: 'zilliz-cli',
+        fence: 'Bash',
+        code: 'zilliz project create --name docs --region aws-us-west-2 --plan serverless',
+      }],
+      notes: ['The --api-key option overrides the configured API key for this command.'],
+    },
+  }[language];
+  return {
+    revision: 'v2.6.0',
+    reviewedEvidence: reviewedEvidence(language),
+    audienceVariants: [{ audience: 'milvus', summary: 'Available to Milvus users.' }],
+    related: [],
+    notes: [],
+    ...values,
+  };
+}
+
+function restContext() {
+  return {
+    input: {
+      spec: fixture('openapi-create-collection.json'),
+      path: '/v2/vectordb/collections',
+      method: 'post',
+    },
+    repository: 'zilliztech/cloud-openapi',
+    revision: '2026-07-18',
+    file: 'openapi/data-plane.json',
+    line: 1,
+    category: 'Collections',
+    related: [],
+    notes: [],
+  };
+}
+
+function scannerFor(symbol) {
+  return {
+    rootDir: '/fixtures/sdk',
+    async scan() {
+      return [symbol];
+    },
+  };
+}
+
+function baseArgs(language) {
+  return [
+    'node',
+    'sdk-doc-sync',
+    '--sdk-dir',
+    '/fixtures/sdk',
+    '--language',
+    language,
+    '--sdk-name',
+    language === 'rest' ? 'cloud-rest' : language,
+    '--sdk-version',
+    'v2.6.0',
+    '--dry-run',
+    '--json',
+  ];
+}
+
+async function runDryCli(language, symbol, context) {
+  const stdout = [];
+  const stderr = [];
+  const exitCodes = [];
+  const result = await runCli({
+    argv: baseArgs(language),
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      scanner: scannerFor(symbol),
+      indexReader: async () => [],
+      referenceContextProvider: () => context,
+      onStdout: (line) => stdout.push(line),
+      onStderr: (line) => stderr.push(line),
+      exit: (code) => exitCodes.push(code),
+    },
+  });
+  return { result, stdout, stderr, exitCodes };
+}
+
+test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and REST surface', async () => {
+  for (const language of ['python', 'java', 'node', 'go', 'cpp', 'zilliz-cli']) {
+    const context = sdkContext(language);
+    const { result, stdout, stderr, exitCodes } = await runDryCli(language, fixture(context.fixture), context);
+
+    assert.deepEqual(exitCodes, [], language);
+    assert.deepEqual(stderr, [], language);
+    assert.equal(result.plans.length, 1, language);
+    assert.equal(result.planningErrors.length, 0, language);
+    assert.equal(result.plans[0].metadata.artifactKind, 'content', language);
+    assert.match(stdout.join('\n'), /"plans"/, language);
+    assert.doesNotMatch(stdout.join('\n'), /TODO|TBD|Brief description|Usage example/i, language);
+  }
+
+  const rest = restContext();
+  const { result, stdout, stderr, exitCodes } = await runDryCli('rest', rest.input, rest);
+  assert.deepEqual(exitCodes, []);
+  assert.deepEqual(stderr, []);
+  assert.equal(result.plans.length, 1);
+  assert.equal(result.planningErrors.length, 0);
+  assert.equal(result.plans[0].stableId, 'rest:Collections:createCollection');
+  assert.match(stdout.join('\n'), /"stableId": "rest:Collections:createCollection"/);
+});
+
+test('schema-first CLI reports missing reviewed artifacts instead of falling back to scaffolds', async () => {
+  const context = { ...sdkContext('python'), reviewedEvidence: [] };
+  const { result, stdout } = await runDryCli('python', fixture(context.fixture), context);
+
+  assert.equal(result.plans.length, 0);
+  assert.equal(result.planningErrors.length, 1);
+  assert.equal(result.planningErrors[0].code, 'MISSING_REVIEWED_EVIDENCE');
+  assert.match(stdout.join('\n'), /MISSING_REVIEWED_EVIDENCE/);
+});
+
+test('schema-first CLI surfaces invalid schema failures before planning', async () => {
+  const invalid = fixture('openapi-create-collection.json');
+  invalid.openapi = '2.0';
+  const context = { ...restContext(), input: { spec: invalid, path: '/v2/vectordb/collections', method: 'post' } };
+  const { result, stdout } = await runDryCli('rest', context.input, context);
+
+  assert.equal(result.plans.length, 0);
+  assert.equal(result.planningErrors.length, 1);
+  assert.equal(result.planningErrors[0].code, 'SCHEMA_FIRST_GENERATION_FAILED');
+  assert.match(stdout.join('\n'), /Unsupported OpenAPI version/);
+});

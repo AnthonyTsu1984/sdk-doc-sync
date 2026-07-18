@@ -20,6 +20,12 @@ function artifactMetadata(artifact) {
   return artifact?.metadata || {};
 }
 
+function containsLegacyScaffold(content) {
+  return typeof content === 'string'
+    && (/<!--\s*TODO:/i.test(content)
+      || /\b(?:Brief description|Usage example|List relevant exceptions)\b/i.test(content));
+}
+
 function linkFromCreated(created) {
   return created?.url || created?.wiki_url || created?.link || created?.documentUrl || '';
 }
@@ -57,6 +63,7 @@ class SyncExecutor {
       patchedDocument: null,
       record: null,
       verification: null,
+      originalRecord: plan.source?.recordId ? { ...plan.source } : null,
     };
 
     try {
@@ -116,7 +123,13 @@ class SyncExecutor {
     result.createdDocument = created;
     result.completedSteps.push('createDocument');
 
-    const record = await this._createRecord(plan, artifact, action, created);
+    let record;
+    try {
+      record = await this._createRecord(plan, artifact, action, created);
+    } catch (error) {
+      error.step = 'createRecord';
+      throw error;
+    }
     result.record = record;
     result.completedSteps.push('createRecord');
   }
@@ -168,6 +181,12 @@ class SyncExecutor {
   async _createDocument(plan, artifact, action) {
     if (!artifact || !nonEmptyString(artifact.content)) {
       throw new SyncExecutionError('ARTIFACT_CONTENT_REQUIRED', `Reviewed artifact content is required for ${plan.stableId}`);
+    }
+    if (containsLegacyScaffold(artifact.content)) {
+      throw new SyncExecutionError(
+        'LEGACY_SCAFFOLD_ARTIFACT',
+        `Legacy scaffold content cannot be published for ${plan.stableId}; provide a reviewed schema-first artifact`,
+      );
     }
     const input = {
       title: artifactTitle(plan, artifact, action),

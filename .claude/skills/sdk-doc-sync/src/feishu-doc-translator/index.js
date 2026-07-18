@@ -5,9 +5,9 @@ const FeishuTranslator = require('./translators/feishu-translator');
 const ClaudeTranslator = require('./translators/claude-translator');
 const DeepLTranslator = require('./translators/deepl-translator');
 const OllamaTranslator = require('./translators/ollama-translator');
-const FeishuToMarkdown = require('../feishu-to-markdown');
 const MarkdownToFeishu = require('../markdown-to-feishu');
 const BitableWriter = require('../sdk-doc-sync/bitable-writer');
+const { createDocumentReader } = require('../../bin/export-doc');
 
 /**
  * FeishuDocTranslator - Main orchestrator for documentation translation
@@ -26,7 +26,11 @@ class FeishuDocTranslator {
         this.translatorType = options.translatorType || 'claude';
         this.dryRun = options.dryRun || false;
         this.approvalCallback = options.approvalCallback || null;
-        this.sourceDocumentReader = options.sourceDocumentReader || null;
+        this.sourceDocumentReaderReceivesRecord = Boolean(options.sourceDocumentReader);
+        this.sourceDocumentReader = options.sourceDocumentReader
+            || (options.createSourceDocumentReader
+                ? options.createSourceDocumentReader({ sourceType: this.driveType })
+                : createDocumentReader({ sourceType: this.driveType }));
 
         // Initialize components
         this.sourceReader = new BitableReader({ baseToken: this.sourceBitable, tableId: this.sourceTableId });
@@ -40,13 +44,6 @@ class FeishuDocTranslator {
             translator: this.translator,
             sourceLang: this.sourceLang,
             targetLang: this.targetLang,
-        });
-
-        // Initialize markdown converters
-        this.sourceReader_md = new FeishuToMarkdown({
-            sourceType: this.driveType,
-            rootToken: this.sourceRoot,
-            baseToken: this.sourceBitable,
         });
 
         this.targetWriter_md = new MarkdownToFeishu({
@@ -378,12 +375,17 @@ class FeishuDocTranslator {
     }
 
     async _fetchSourceMarkdown(sourceRecord) {
-        if (this.sourceDocumentReader) {
+        if (!this.sourceDocumentReader || typeof this.sourceDocumentReader.readMarkdown !== 'function') {
+            throw new TypeError('sourceDocumentReader must expose readMarkdown()');
+        }
+        if (this.sourceDocumentReaderReceivesRecord) {
             return await this.sourceDocumentReader.readMarkdown(sourceRecord);
         }
-        return await this.sourceReader_md.get_markdown({
-            slug: sourceRecord.metadata.slug,
-        });
+        const token = sourceRecord.metadata?.token
+            || sourceRecord.metadata?.link
+            || sourceRecord.id
+            || sourceRecord.metadata?.slug;
+        return await this.sourceDocumentReader.readMarkdown(token);
     }
 
     /**

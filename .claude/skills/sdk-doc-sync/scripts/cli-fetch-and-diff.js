@@ -28,6 +28,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         resource: null,
         method: null,
         baseToken: DEFAULT_BITABLE_TOKEN,
+        tableId: null,
         sdkDir: DEFAULT_SDK_DIR,
         sdkVersion: 'v0.1.x',
         outputDir: DEFAULT_OUTPUT_DIR,
@@ -37,6 +38,7 @@ function parseArgs(argv = process.argv.slice(2)) {
         else if (arg.startsWith('--resource=')) options.resource = arg.slice('--resource='.length);
         else if (arg.startsWith('--method=')) options.method = arg.slice('--method='.length);
         else if (arg.startsWith('--base-token=')) options.baseToken = arg.slice('--base-token='.length);
+        else if (arg.startsWith('--table-id=')) options.tableId = arg.slice('--table-id='.length);
         else if (arg.startsWith('--sdk-dir=')) options.sdkDir = arg.slice('--sdk-dir='.length);
         else if (arg.startsWith('--sdk-version=')) options.sdkVersion = arg.slice('--sdk-version='.length);
         else if (arg.startsWith('--output-dir=')) options.outputDir = arg.slice('--output-dir='.length);
@@ -77,6 +79,7 @@ async function runCliFetchAndDiff({
     resource = null,
     method = null,
     baseToken = DEFAULT_BITABLE_TOKEN,
+    tableId = null,
     sdkDir = DEFAULT_SDK_DIR,
     sdkVersion = 'v0.1.x',
     outputDir = DEFAULT_OUTPUT_DIR,
@@ -92,6 +95,7 @@ async function runCliFetchAndDiff({
     const reader = indexReader || new FeishuToMarkdown({
         sourceType: 'drive',
         baseToken,
+        tableId,
     });
     const readDocuments = reader.listDocuments
         ? () => reader.listDocuments()

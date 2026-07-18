@@ -648,19 +648,19 @@ git commit -m "feat: integrate schema-first sdk doc generation"
 - Modify: `.claude/skills/sdk-doc-sync/docs/development/integration-testing.md`
 - Modify: `.claude/skills/sdk-doc-sync/tests/script-paths.test.js`
 
-- [ ] **Step 1: Replace references to nonexistent integration tests**
+- [x] **Step 1: Replace references to nonexistent integration tests**
 
 Document the actual offline commands and identify the smoke test as manual, mutating, disposable, and approval-required.
 
-- [ ] **Step 2: Document the production workflow**
+- [x] **Step 2: Document the production workflow**
 
 Describe scan, normalize, validate, render, plan, approve, execute, and verify. Include plan artifact fields and recovery behavior.
 
-- [ ] **Step 3: Document the smoke test**
+- [x] **Step 3: Document the smoke test**
 
 The procedure creates a disposable folder/document/record, verifies C++ code, nested lists, includes, citations, patch/refetch, and then requests explicit approval before cleanup.
 
-- [ ] **Step 4: Validate links and run the full suite**
+- [x] **Step 4: Validate links and run the full suite**
 
 Run: `npm run validate:skills`
 
@@ -670,7 +670,7 @@ Run: `npm test`
 
 Expected: all repository suites PASS, including the new writer, IR, renderer, planner, executor, and consumer tests.
 
-- [ ] **Step 5: Commit documentation**
+- [x] **Step 5: Commit documentation**
 
 ```bash
 git add .claude/skills/sdk-doc-sync/SKILL.md .claude/skills/sdk-doc-sync/references .claude/skills/sdk-doc-sync/docs/development/integration-testing.md .claude/skills/sdk-doc-sync/tests/script-paths.test.js

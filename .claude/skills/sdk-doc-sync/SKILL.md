@@ -20,6 +20,8 @@ Read only what the task requires:
 - REST/OpenAPI: [sdk-rest.md](sdk-rest.md)
 - Cross-SDK alignment: [sdk-alignment.md](sdk-alignment.md)
 - Same-version, cross-version, and backfill behavior: [references/versioning.md](references/versioning.md)
+- Schema-first production workflow: [references/schema-first-generation.md](references/schema-first-generation.md)
+- Manual release smoke procedure: [references/release-smoke-test.md](references/release-smoke-test.md)
 - Formatting and post-write checks: [references/post-write-verification.md](references/post-write-verification.md)
 - Supported CLI entry points: [references/cli.md](references/cli.md)
 - Known failure patterns: [references/troubleshooting.md](references/troubleshooting.md)
@@ -88,6 +90,8 @@ Fetch only the relevant records where feasible. For every proposed action, recor
 Show the exact action list and dry-run result, including unresolved placement or version-sharing risks. Obtain explicit approval before any live create, patch, move, copy, bitable update, or OpenAPI edit.
 
 ### 6. Execute Approved Actions
+
+For schema-first production generation, follow [references/schema-first-generation.md](references/schema-first-generation.md): scan, normalize, validate, render, plan, approve, execute, and verify. The immutable plan and reviewed artifact are the approval boundary for live writes.
 
 For creates:
 

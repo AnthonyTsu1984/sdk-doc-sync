@@ -1,401 +1,70 @@
-# Integration Testing Guide
+# SDK Doc Sync Validation And Smoke Testing
 
-This guide explains how to run integration tests that validate the complete round-trip workflow between Feishu and Markdown.
+This guide lists the validation commands that exist in this repository and the live release smoke procedure used before approving a schema-first SDK/API documentation release.
 
-## Overview
+## Offline Validation
 
-The integration tests demonstrate:
-1. **Reading** documents from Feishu (F2M)
-2. **Modifying** markdown content
-3. **Updating** documents back to Feishu (M2F) using `patch_document()`
-4. **Verifying** changes were applied correctly
-
-## Prerequisites
-
-### 1. Fix node-fetch Compatibility
-
-**Required:** Install node-fetch v2.7.0 (not v3)
+Run offline checks from the repository root. These commands do not call Feishu and are the default verification path for development changes.
 
 ```bash
-npm uninstall node-fetch
-npm install node-fetch@2.7.0
-```
-
-**Why?** node-fetch v3 is ESM-only and incompatible with CommonJS `require()`.
-
-### 2. Environment Variables
-
-Create/verify `.env` file:
-
-```env
-APP_ID=your_app_id
-APP_SECRET=your_app_secret
-FEISHU_HOST=https://open.feishu.cn
-```
-
-### 3. Document Access
-
-Ensure you have:
-- ✅ Valid document ID (test uses: `recu1vL7rq1jvb`)
-- ✅ Read permissions
-- ✅ Write permissions
-- ✅ Valid root/base tokens
-
-## Available Integration Tests
-
-### 1. Simple Integration Test (Recommended First)
-
-**File:** `tests/test-integration-simple.js`
-
-Quick validation of basic round-trip workflow.
-
-```bash
-node tests/test-integration-simple.js
-```
-
-**What it does:**
-- Reads document from Feishu
-- Adds timestamp header
-- Updates using `patch_document()` with smart strategy
-- Verifies changes
-
-**Expected output:**
-```
-Simple Integration Test
-
-1. Reading document...
-   ✅ Read "Document Title" (1234 chars)
-
-2. Modifying content...
-   ✅ Added timestamp header
-
-3. Updating with patch_document...
-   ✅ Updated: 2, Created: 1, Deleted: 0
-
-4. Verifying...
-   ✅ Verified
-
-✅ Integration test complete!
-View document: https://...
-```
-
-**Duration:** ~10 seconds
-
-### 2. Comprehensive Integration Test
-
-**File:** `tests/test-integration-roundtrip.js`
-
-Full-featured test with detailed reporting and multiple strategies.
-
-```bash
-node tests/test-integration-roundtrip.js
-```
-
-**What it does:**
-- Step 1: Read document and show metadata
-- Step 2: Modify with frontmatter, test section, and timestamp
-- Step 3: Update with `patch_document()` smart strategy
-- Step 4: Verify by reading back
-- Step 5: Show statistics
-- Step 6: Test append strategy
-- Step 7: Optional restoration
-
-**Expected output:**
-```
-======================================================================
-Integration Test: Feishu Document Round-Trip
-======================================================================
-
-Step 1: Reading document from Feishu...
-----------------------------------------------------------------------
-Document Info:
-  ID: recu1vL7rq1jvb
-  Title: Test Document
-  Link: https://...
-
-✅ Successfully read document (1234 characters)
-
-Step 2: Modifying markdown content...
-----------------------------------------------------------------------
-Modifications made:
-  - Added timestamp: 2026-02-05T12:00:00.000Z
-  - Added test section
-  - Modified existing content
-
-Step 3: Updating document with patch_document (smart strategy)...
-----------------------------------------------------------------------
-Parsed 15 blocks from modified markdown
-
-✅ Patch complete:
-  Updated: 3 blocks
-  Created: 8 blocks
-  Deleted: 0 blocks
-  Unchanged: 5 blocks
-
-... (more output)
-```
-
-**Duration:** ~30 seconds
-
-### 3. Original F2M Test
-
-**File:** `tests/test-feishu-to-markdown.js`
-
-Basic read-only test from original codebase.
-
-```bash
-node tests/test-feishu-to-markdown.js
-```
-
-## Test Document
-
-**Document ID:** `recu1vL7rq1jvb`
-
-This document is used by all integration tests.
-
-⚠️ **Warning:** Integration tests will **modify** this document.
-
-**To use your own document:**
-1. Change `DOCUMENT_ID` in test files
-2. Update `ROOT_TOKEN` and `BASE_TOKEN` if needed
-
-```javascript
-const DOCUMENT_ID = 'your_doc_id_here';
-const ROOT_TOKEN = 'your_root_token';
-const BASE_TOKEN = 'your_base_token';
-```
-
-## What Gets Tested
-
-### Read Operations (F2M)
-- ✅ `describe_document()` - Get document metadata
-- ✅ `get_markdown()` - Convert Feishu document to markdown
-
-### Write Operations (M2F)
-- ✅ `parse_markdown()` - Parse markdown with frontmatter
-- ✅ `markdown_to_blocks()` - Convert to Feishu block structures
-- ✅ `patch_document()` - Non-destructive updates
-  - Smart strategy
-  - Append strategy
-
-### Verification
-- ✅ Content preservation
-- ✅ Block matching accuracy
-- ✅ Update statistics
-- ✅ Round-trip consistency
-
-## Strategy Testing
-
-The comprehensive test validates all three `patch_document()` strategies:
-
-### Smart Strategy
-```javascript
-await m2f.patch_document({
-    document_id: DOCUMENT_ID,
-    blocks: blocks,
-    strategy: 'smart'
-});
-```
-
-**Validates:**
-- Intelligent block matching
-- Content similarity detection
-- Minimal updates (only changes)
-- Block ID preservation
-
-### Append Strategy
-```javascript
-await m2f.patch_document({
-    document_id: DOCUMENT_ID,
-    blocks: blocks,
-    strategy: 'append'
-});
-```
-
-**Validates:**
-- Existing content preservation
-- New content appended at end
-- No deletions
-
-## Restoring Original Content
-
-The comprehensive test includes commented-out restoration code:
-
-```javascript
-// In test-integration-roundtrip.js, Step 7:
-// Uncomment to restore original content
-
-console.log('Restoring original content...');
-const { tokens: originalTokens } = await m2f.parse_markdown(originalMarkdown);
-const originalBlocks = await m2f.markdown_to_blocks(originalTokens);
-
-const restoreResult = await m2f.patch_document({
-    document_id: DOCUMENT_ID,
-    blocks: originalBlocks,
-    strategy: 'smart'
-});
-```
-
-**To restore:**
-1. Edit `tests/test-integration-roundtrip.js`
-2. Uncomment the restoration code in Step 7
-3. Run the test again
-
-Or manually restore via Feishu's version history.
-
-## Troubleshooting
-
-### Error: `fetch is not a function`
-
-**Cause:** Using node-fetch v3 (ESM-only)
-
-**Solution:**
-```bash
-npm install node-fetch@2.7.0
-```
-
-### Error: `Failed to get document`
-
-**Cause:** Invalid credentials or document ID
-
-**Solution:**
-1. Check `.env` has correct `APP_ID` and `APP_SECRET`
-2. Verify document ID exists and is accessible
-3. Confirm you have read permissions
-
-### Error: `Failed to batch update blocks`
-
-**Cause:** Missing write permissions or invalid block structure
-
-**Solution:**
-1. Verify you have edit permissions on the document
-2. Check document is not locked or read-only
-3. Ensure ROOT_TOKEN and BASE_TOKEN are correct
-
-### Verification fails but no error
-
-**Cause:** Feishu may need time to sync
-
-**Solution:**
-- Wait 5-10 seconds and read document again
-- Check document manually in Feishu web interface
-- Feishu API has eventual consistency
-
-## Performance Metrics
-
-Expected performance for typical documents:
-
-| Operation | Time | API Calls |
-|-----------|------|-----------|
-| Read document | 1-2s | 2 calls |
-| Parse markdown | <100ms | 0 calls |
-| Smart update (50 blocks, 3 changes) | 2-3s | ~5 calls |
-| Append update | 1-2s | 2 calls |
-| Verify | 1-2s | 2 calls |
-
-**Total test duration:** 10-30 seconds
-
-## Continuous Integration
-
-### Running in CI/CD
-
-```yaml
-# .github/workflows/integration-test.yml
-name: Integration Tests
-
-on: [push, pull_request]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-      - run: npm install
-      - run: npm install node-fetch@2.7.0
-      - name: Run integration tests
-        env:
-          APP_ID: ${{ secrets.FEISHU_APP_ID }}
-          APP_SECRET: ${{ secrets.FEISHU_APP_SECRET }}
-          FEISHU_HOST: https://open.feishu.cn
-        run: node tests/test-integration-simple.js
-```
-
-### Test Coverage
-
-Create a test suite:
-
-```bash
-# Run all tests
+npm run validate:skills
 npm test
-
-# Or create package.json script:
-{
-  "scripts": {
-    "test:unit": "node tests/test-patch-logic.js",
-    "test:integration": "node tests/test-integration-simple.js",
-    "test:full": "node tests/test-integration-roundtrip.js",
-    "test": "npm run test:unit && npm run test:integration"
-  }
-}
 ```
 
-## Best Practices
+Useful scoped checks:
 
-### 1. Use Separate Test Document
-
-Don't test on production documents. Create a dedicated test document:
-
-```javascript
-// Create test document once
-const testDoc = await m2f.create_document({
-    title: 'Integration Test Document',
-    folder_token: 'test_folder'
-});
-
-// Use testDoc.document_id for all tests
+```bash
+node .claude/skills/sdk-doc-sync/tests/run-all.js --list
+node --test .claude/skills/sdk-doc-sync/tests/script-paths.test.js
+node --test .claude/skills/sdk-doc-sync/tests/sdk-doc-sync-cli.test.js
+node --test .claude/skills/sdk-doc-sync/tests/sdk-renderers.test.js .claude/skills/sdk-doc-sync/tests/cli-rest-renderers.test.js
+node --test .claude/skills/sdk-doc-sync/tests/lark-doc-writer.test.js .claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js
 ```
 
-### 2. Clean Up After Tests
+The offline suites cover scanner adapters, SDK Reference IR validation, Document IR validation, deterministic renderers, sync planning, approved execution behavior, CLI dry-runs, legacy writer preservation, and path/link wiring.
 
-Always restore or delete test data:
+## Offline Schema-First Dry Runs
 
-```javascript
-try {
-    // Run test
-    await runTest();
-} finally {
-    // Clean up
-    await restoreOriginal();
-}
+Use dry-runs to exercise scan, schema-first rendering, and planning without Feishu writes. Provide `--reference-context` when production validation requires reviewed evidence, related links, type URLs, or REST OpenAPI context.
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+  --language node \
+  --sdk-dir /path/to/node-sdk \
+  --sdk-name milvus-sdk-node \
+  --sdk-version vX.Y.x \
+  --reference-context /path/to/reference-context.json \
+  --dry-run
 ```
 
-### 3. Validate Before and After
-
-Always capture initial state:
-
-```javascript
-const before = await f2m.get_markdown({ id: docId });
-// ... run test ...
-const after = await f2m.get_markdown({ id: docId });
-// Assert expected changes
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+  --language rest \
+  --sdk-dir /path/to/openapi-fixture \
+  --sdk-name zilliz-rest \
+  --sdk-version vX.Y.x \
+  --reference-context /path/to/reference-context.json \
+  --dry-run \
+  --json
 ```
 
-### 4. Test Edge Cases
+Dry-run output is the review artifact. Inspect the scanned symbols, diff actions, immutable plans, target folders, artifact validation, and any planning errors before asking for approval.
 
-```javascript
-// Empty document
-// Very large document (>1000 blocks)
-// Documents with special characters
-// Documents with embedded media
-// Documents with tables and complex formatting
-```
+## Live Release Smoke Test
 
-## See Also
+The release smoke test is manual, mutating, disposable, and approval-required. It creates temporary Feishu resources and must not run in CI.
 
-- [patch_document() Guide](./patch-document.md)
-- [Examples](./examples.md)
-- [API Reference](../README.md)
-- [Feishu API Documentation](https://open.feishu.cn/document/home/index)
+Before running it:
+
+- Confirm the operator has Feishu read/write access for a disposable Drive folder and disposable Bitable.
+- Confirm `.env` has `APP_ID`, `APP_SECRET`, `FEISHU_HOST`, `ROOT_TOKEN`, and `BASE_TOKEN` for disposable resources only.
+- Ask for explicit approval to create the disposable folder, document, and record.
+- Record every created folder token, document token, document URL, base token, table ID, and record ID in the smoke log.
+
+Use the full procedure in [../../references/release-smoke-test.md](../../references/release-smoke-test.md). That procedure verifies C++ code block preservation, nested-list rendering, include handling, citations, patch/refetch behavior, and cleanup approval.
+
+## Cleanup Policy
+
+Cleanup is a separate approval gate. After the smoke checks pass or fail, report the exact disposable resources that would be deleted or archived and ask for explicit cleanup approval. Do not delete smoke resources automatically, even after a successful run.
+
+If cleanup approval is denied or unavailable, leave the resources in the recorded disposable location and report the remaining tokens as unresolved cleanup work.

@@ -74,3 +74,41 @@ test('default npm test uses the complete repository test runner', () => {
     assert.match(runner, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
 });
+
+test('sdk-doc-sync operational references exist and are linked from the skill', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
+
+  for (const reference of [
+    'references/schema-first-generation.md',
+    'references/release-smoke-test.md',
+    'references/post-write-verification.md',
+  ]) {
+    assert.equal(
+      fs.existsSync(path.join(skillRoot, reference)),
+      true,
+      `Missing sdk-doc-sync reference: ${reference}`,
+    );
+    assert.match(skill, new RegExp(reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('integration guide uses real offline commands and links the manual smoke procedure', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const guidePath = path.join(skillRoot, 'docs', 'development', 'integration-testing.md');
+  const guide = fs.readFileSync(guidePath, 'utf8');
+
+  for (const command of [
+    'npm run validate:skills',
+    'npm test',
+    'node .claude/skills/sdk-doc-sync/tests/run-all.js --list',
+    'node --test .claude/skills/sdk-doc-sync/tests/script-paths.test.js',
+  ]) {
+    assert.match(guide, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+
+  assert.match(guide, /\bmanual, mutating, disposable, and approval-required\b/);
+  assert.match(guide, /\.\.\/\.\.\/references\/release-smoke-test\.md/);
+  assert.doesNotMatch(guide, /tests\/test-integration-(?:simple|roundtrip)\.js/);
+  assert.doesNotMatch(guide, /tests\/test-feishu-to-markdown\.js/);
+});

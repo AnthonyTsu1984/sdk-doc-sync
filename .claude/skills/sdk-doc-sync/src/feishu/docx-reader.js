@@ -99,18 +99,20 @@ class DocxReader {
       }
     }
 
-    const replacementRoots = new Set(replacements.values());
     for (const block of output) {
       if (Array.isArray(block.children)) {
         const seenReplacementRoots = new Set();
-        block.children = block.children
-          .map((id) => replacements.get(id) || id)
-          .filter((id) => {
-            if (!replacementRoots.has(id)) return true;
-            if (seenReplacementRoots.has(id)) return false;
-            seenReplacementRoots.add(id);
-            return true;
-          });
+        const rewrittenChildren = [];
+        for (const originalId of block.children) {
+          const replacement = replacements.get(originalId);
+          if (replacement === undefined) {
+            rewrittenChildren.push(originalId);
+          } else if (!seenReplacementRoots.has(replacement)) {
+            rewrittenChildren.push(replacement);
+            seenReplacementRoots.add(replacement);
+          }
+        }
+        block.children = rewrittenChildren;
       }
     }
     return output;

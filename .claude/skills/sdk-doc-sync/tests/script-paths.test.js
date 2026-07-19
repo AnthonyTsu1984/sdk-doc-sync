@@ -12,6 +12,8 @@ test('sdk-doc-sync test runner path exists', () => {
 test('sdk-release-scout CLI path exists', () => {
   const skillRoot = path.resolve(__dirname, '..');
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-release-scout.js')), true);
+  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-release-impact.js')), true);
+  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-handwritten-audit.js')), true);
 });
 
 test('sdk-doc-sync --list reports sorted tests without executing them', () => {
@@ -45,6 +47,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/sdk-doc-sync/tests/sdk-renderers.test.js',
     '.claude/skills/sdk-doc-sync/tests/sync-executor.test.js',
     '.claude/skills/sdk-doc-sync/tests/sync-planner.test.js',
+    '.claude/skills/sdk-doc-sync/tests/zilliz-cli-release-impact.test.js',
   ]);
 });
 

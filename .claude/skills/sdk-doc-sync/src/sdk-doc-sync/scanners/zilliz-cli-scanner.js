@@ -1205,4 +1205,6 @@ class ZillizCliScanner extends BaseScanner {
     }
 }
 
+ZillizCliScanner.RUST_HANDWRITTEN_OP_PARAMS = RUST_HANDWRITTEN_OP_PARAMS;
+
 module.exports = ZillizCliScanner;

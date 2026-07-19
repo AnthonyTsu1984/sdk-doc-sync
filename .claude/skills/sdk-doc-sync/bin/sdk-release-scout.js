@@ -23,6 +23,7 @@ function parseArgs(argv) {
     else if (arg === '--implementation-sdk-dir') args.implementationSdkDir = argv[++i];
     else if (arg === '--implementation-baseline-ref') args.implementationBaselineRef = argv[++i];
     else if (arg === '--implementation-target-ref') args.implementationTargetRef = argv[++i];
+    else if (arg === '--release-impact') args.releaseImpactPath = argv[++i];
     else if (arg === '--baseline-tag') args.baselineTag = argv[++i];
     else if (arg === '--target-tag') args.targetTag = argv[++i];
     else if (arg === '--identity-map') args.identityMapPath = argv[++i];
@@ -39,6 +40,11 @@ function printUsage(out = console.log) {
 
 function loadScanState() {
   return JSON.parse(fs.readFileSync(path.join(SKILL_ROOT, 'scan-state.json'), 'utf8'));
+}
+
+function loadReleaseImpact(file) {
+  if (!file) return null;
+  return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
 function defaultsFor(args) {
@@ -177,6 +183,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     implementationBaselineRef: args.implementationBaselineRef || null,
     implementationTargetRef: args.implementationTargetRef || null,
     implementationPublicRoots: defaults.implementationPublicRoots || [],
+    releaseImpact: args.releaseImpactPath
+      ? (dependencies.loadReleaseImpact ? dependencies.loadReleaseImpact(args.releaseImpactPath) : loadReleaseImpact(args.releaseImpactPath))
+      : null,
     identityMapPath,
   });
   const json = stableReleaseScopeJson(scope);

@@ -1040,6 +1040,57 @@ test('runReleaseScout requires explicit Zilliz CLI implementation target for rel
   }]);
 });
 
+test('runReleaseScout downgrades Zilliz CLI release-note impacts without source-backed actions', async () => {
+  const scope = await runReleaseScout({
+    language: 'zilliz-cli',
+    sdkName: 'zilliz-cli',
+    track: 'v1.4.x',
+    scanState: { 'zilliz-cli': { lastScannedTag: 'zilliz-v1.4.4', lastScannedImplementationCommit: 'impl-base' } },
+    targetTag: 'zilliz-v1.4.5',
+    repoDir: '/repo/zilliz-cli',
+    sdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationRepoDir: '/repo/zilliz-cloud',
+    implementationSdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationBaselineRef: 'impl-base',
+    implementationTargetRef: 'impl-target',
+    implementationPublicRoots: ['vdc/zilliz-tui/src/'],
+    publicRoots: ['README.md'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'zilliz-cli-v14.json'),
+    baselineSymbols: [],
+    targetSymbols: [],
+    releaseImpact: {
+      needsSourceValidation: true,
+      candidateDocImpacts: [{
+        type: 'CREATE',
+        command: 'cluster create',
+        flags: ['--replica'],
+      }],
+      diagnostics: [{
+        level: 'warn',
+        code: 'SOURCE_VALIDATION_REQUIRED',
+        message: 'Validate release-note command impacts against source.',
+      }],
+    },
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 zilliz-v1.4.5': 'public-target\n',
+        'show -s --format=%cI zilliz-v1.4.5': '2026-06-24T10:00:00+08:00\n',
+        'diff --name-only zilliz-v1.4.4..zilliz-v1.4.5': 'README.md\n',
+        'diff --name-only impl-base..impl-target': 'vdc/zilliz-tui/src/cli/cluster.rs\n',
+        'rev-list -n 1 impl-target': 'impl-target-commit\n',
+      }[key];
+    },
+  });
+
+  assert.equal(scope.approvalGrade, false);
+  assert.deepEqual(scope.actions, []);
+  assert.deepEqual(scope.scannerDiagnostics.map((diagnostic) => diagnostic.code), [
+    'FULL_SCAN_DIAGNOSTIC_ONLY',
+    'SOURCE_VALIDATION_REQUIRED',
+  ]);
+});
+
 test('NodeScanner includes request type fields so upsert field_ops changes are diffable', async () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'node-scanner-types-'));
   writeText(path.join(repo, 'milvus', 'grpc', 'Data.ts'), `

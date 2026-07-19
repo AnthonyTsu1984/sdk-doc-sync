@@ -58,6 +58,41 @@ node .claude/skills/sdk-doc-sync/bin/compare-scan-artifacts.js \
 
 If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
+## Zilliz CLI Release Impact
+
+Before scanning a new public `zilliz-cli` release, extract release-note command impacts:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/zilliz-cli-release-impact.js \
+  --baseline-tag zilliz-v1.4.4 \
+  --target-tag zilliz-v1.4.5 \
+  --json \
+  --output tmp/sdk-release-scout/zilliz-cli-v14-impact.json
+```
+
+Pass the artifact to release scout:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language zilliz-cli \
+  --sdk-name zilliz-cli \
+  --track v1.4.x \
+  --release-impact tmp/sdk-release-scout/zilliz-cli-v14-impact.json \
+  --json \
+  --output tmp/sdk-release-scout/zilliz-cli-v14.json
+```
+
+Audit Rust hand-written command metadata after source changes:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/zilliz-cli-handwritten-audit.js \
+  --sdk-dir repos/zilliz-cloud/vdc/zilliz-tui \
+  --json \
+  --output tmp/sdk-release-scout/zilliz-cli-v14-handwritten-audit.json
+```
+
+Treat `SOURCE_VALIDATION_REQUIRED`, `HANDWRITTEN_FLAG_MISSING`, and `HANDWRITTEN_METADATA_MISSING` as blockers for approval-ready sync plans.
+
 ## Feishu Documents And Bitables
 
 ```bash

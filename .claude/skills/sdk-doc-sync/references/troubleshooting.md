@@ -35,3 +35,7 @@ Treat canonical version-root mappings as authoritative. If a Module or VirtualNo
 ## Broad Repair Noise
 
 When post-write dry-runs find unrelated issues, scope repair utilities to the current document titles. Report pre-existing findings separately rather than silently modifying them.
+
+## Zilliz CLI Release Notes Need Source Validation
+
+If release scout reports `SOURCE_VALIDATION_REQUIRED`, do not ask for write approval from release notes alone. Pin the matching `zilliz-cloud/vdc/zilliz-tui` implementation refs, rerun release scout with `--release-impact`, and validate hand-written Rust command metadata with `zilliz-cli-handwritten-audit.js` when raw CLI modules changed.

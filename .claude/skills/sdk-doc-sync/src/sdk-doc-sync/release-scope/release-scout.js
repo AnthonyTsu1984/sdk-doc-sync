@@ -130,6 +130,7 @@ async function runReleaseScout({
   implementationBaselineRef = null,
   implementationTargetRef = null,
   implementationPublicRoots = [],
+  releaseImpact = null,
   baselineSymbols = null,
   targetSymbols = null,
   baselineScanner = null,
@@ -152,6 +153,7 @@ async function runReleaseScout({
       implementationBaselineRef,
       implementationTargetRef,
       implementationPublicRoots,
+      releaseImpact,
       baselineSymbols,
       targetSymbols,
       baselineScanner,
@@ -270,6 +272,7 @@ async function runZillizCliReleaseScout({
   implementationBaselineRef = null,
   implementationTargetRef = null,
   implementationPublicRoots = [],
+  releaseImpact = null,
   baselineSymbols = null,
   targetSymbols = null,
   baselineScanner = null,
@@ -303,6 +306,7 @@ async function runZillizCliReleaseScout({
       cwd: implRepo,
     })
     : [];
+  const releaseImpactDiagnostics = diagnosticsFromReleaseImpact(releaseImpact);
 
   if (range.noChanges) {
     return createReleaseScope({
@@ -310,9 +314,10 @@ async function runZillizCliReleaseScout({
       language,
       changedFiles: implChangedFiles,
       actions: [],
-      approvalGrade: implChangedFiles.length === 0,
+      approvalGrade: implChangedFiles.length === 0 && !releaseImpactRequiresSourceBackedActions(releaseImpact),
       scannerDiagnostics: [
         { level: 'info', code: 'NO_RELEASE_CHANGES', message: `${language} is already scanned at ${range.targetTag}.` },
+        ...releaseImpactDiagnostics,
         ...(implChangedFiles.length > 0 ? [{
           level: 'warn',
           code: 'UNRELEASED_IMPLEMENTATION_CHANGES',
@@ -337,11 +342,14 @@ async function runZillizCliReleaseScout({
       changedFiles: publicChangedFiles,
       actions: [],
       approvalGrade: false,
-      scannerDiagnostics: [{
-        level: 'error',
-        code: 'IMPLEMENTATION_RANGE_REQUIRED',
-        message: 'zilliz-cli public releases require a matching zilliz-tui implementation baseline and target before scanner actions are approval-ready.',
-      }],
+      scannerDiagnostics: [
+        ...releaseImpactDiagnostics,
+        {
+          level: 'error',
+          code: 'IMPLEMENTATION_RANGE_REQUIRED',
+          message: 'zilliz-cli public releases require a matching zilliz-tui implementation baseline and target before scanner actions are approval-ready.',
+        },
+      ],
     });
   }
 
@@ -407,6 +415,7 @@ async function runZillizCliReleaseScout({
   const actions = normalized.map(({ diagnostic, ...action }) => action);
   const scannerDiagnostics = [
     { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
+    ...releaseImpactDiagnostics,
     ...normalized.map((item) => item.diagnostic).filter(Boolean),
   ];
   const scope = createReleaseScope({
@@ -415,12 +424,29 @@ async function runZillizCliReleaseScout({
     changedFiles: implChangedFiles,
     actions,
     scannerDiagnostics,
+    approvalGrade: releaseImpactRequiresSourceBackedActions(releaseImpact) ? actions.length > 0 : undefined,
   });
   const validation = validateReleaseScope(scope);
   if (!validation.valid) {
     throw new Error(`Invalid release scope: ${JSON.stringify(validation.errors)}`);
   }
   return scope;
+}
+
+function diagnosticsFromReleaseImpact(releaseImpact) {
+  if (!releaseImpact) return [];
+  return (releaseImpact.diagnostics || []).map((diagnostic) => ({
+    level: diagnostic.level || 'warn',
+    code: diagnostic.code,
+    message: diagnostic.message,
+  }));
+}
+
+function releaseImpactRequiresSourceBackedActions(releaseImpact) {
+  return !!releaseImpact
+    && releaseImpact.needsSourceValidation === true
+    && Array.isArray(releaseImpact.candidateDocImpacts)
+    && releaseImpact.candidateDocImpacts.length > 0;
 }
 
 function defaultIdentityMapPath({ skillRoot, language, track }) {

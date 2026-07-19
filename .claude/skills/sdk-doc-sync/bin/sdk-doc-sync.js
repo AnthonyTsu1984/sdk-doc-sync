@@ -247,7 +247,7 @@ function createSchemaFirstArtifactProvider({
                     { validation: documentValidation },
                 );
             }
-            return {
+            const artifact = {
                 title: reference.identity.title,
                 content: renderMarkdown(documentIr),
                 reference,
@@ -263,6 +263,17 @@ function createSchemaFirstArtifactProvider({
                     source: 'schema-first',
                 },
             };
+            if (context?.target || context?.current || context?.existingRecordLookup || context?.copySource || Object.prototype.hasOwnProperty.call(context || {}, 'tokenReferencedByOlderVersions')) {
+                return {
+                    artifact,
+                    target: context.target,
+                    current: context.current,
+                    existingRecordLookup: context.existingRecordLookup,
+                    copySource: context.copySource,
+                    tokenReferencedByOlderVersions: context.tokenReferencedByOlderVersions,
+                };
+            }
+            return artifact;
         } catch (error) {
             if (error.code) throw error;
             throw validationError(

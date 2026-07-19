@@ -8,6 +8,7 @@ const {
   createSchemaFirstArtifactProvider,
   runCli,
 } = require('../bin/sdk-doc-sync');
+const SdkDocSync = require('../src/sdk-doc-sync');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -148,6 +149,24 @@ function sdkContext(language) {
     audienceVariants: [{ audience: 'milvus', summary: 'Available to Milvus users.' }],
     related: [],
     notes: [],
+    target: {
+      version: 'v2.6.0',
+      parentRecordId: `${language}-parent-record`,
+      folderToken: `${language}-folder`,
+      versionRootToken: `${language}-root`,
+      ancestryVerified: true,
+    },
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: `${language}-base`,
+      tableId: `${language}-table`,
+      parentRecordId: `${language}-parent-record`,
+      criteria: {
+        canonicalSlug: `${values.category}-fixture`,
+        title: values.title || values.summary,
+      },
+    },
     ...values,
   };
 }
@@ -166,6 +185,24 @@ function restContext() {
     category: 'Collections',
     related: [],
     notes: [],
+    target: {
+      version: 'v2.6.0',
+      parentRecordId: 'rest-parent-record',
+      folderToken: 'rest-folder',
+      versionRootToken: 'rest-root',
+      ancestryVerified: true,
+    },
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'rest-base',
+      tableId: 'rest-table',
+      parentRecordId: 'rest-parent-record',
+      criteria: {
+        canonicalSlug: 'Collections-createCollection',
+        title: 'Create collection',
+      },
+    },
   };
 }
 
@@ -253,6 +290,25 @@ test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and 
   assert.match(stdout.join('\n'), /"stableId": "rest:Collections:createCollection"/);
 });
 
+test('live SdkDocSync wires the default Feishu operational verifier', () => {
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+    indexReader: { async readIndex() { return []; } },
+    documentWriter: {},
+    bitableWriter: {},
+    rootToken: 'root-token',
+    baseToken: 'base-token',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    dryRun: false,
+  });
+
+  assert.equal(typeof sync.verifier.beforeMutation, 'function');
+  assert.equal(typeof sync.verifier.verifyDocument, 'function');
+  assert.equal(typeof sync.verifier.rollback, 'function');
+  assert.equal(sync.executor.verifier, sync.verifier);
+});
+
 test('schema-first CLI reports missing reviewed artifacts instead of falling back to scaffolds', async () => {
   const context = { ...sdkContext('python'), reviewedEvidence: [] };
   const { result, stdout } = await runDryCli('python', fixture(context.fixture), context);
@@ -273,6 +329,24 @@ test('schema-first CLI surfaces invalid schema failures before planning', async 
   assert.equal(result.planningErrors.length, 1);
   assert.equal(result.planningErrors[0].code, 'SCHEMA_FIRST_GENERATION_FAILED');
   assert.match(stdout.join('\n'), /Unsupported OpenAPI version/);
+});
+
+test('schema-first CLI rejects internal review notes and generic return placeholders before planning', async () => {
+  const context = {
+    ...sdkContext('python'),
+    result: {
+      type: 'object',
+      description: 'Return value for search.',
+      fields: [],
+    },
+    notes: ['Reviewed grouping approved for pymilvus v2.6.12..v2.6.17.'],
+  };
+  const { result, stdout } = await runDryCli('python', fixture(context.fixture), context);
+
+  assert.equal(result.plans.length, 0);
+  assert.equal(result.planningErrors.length, 1);
+  assert.match(result.planningErrors[0].code, /INTERNAL_REVIEW_NOTE|GENERIC_RETURN_PLACEHOLDER/);
+  assert.match(stdout.join('\n'), /INTERNAL_REVIEW_NOTE|GENERIC_RETURN_PLACEHOLDER/);
 });
 
 test('dry-run without injected index reader requires BASE_TOKEN for diff baseline', async () => {
@@ -428,9 +502,21 @@ test('schema-first CLI preserves release-scope planning targets over default ROO
       planningContext: {
         target: {
           version: 'v2.6.x',
+          parentRecordId: 'vector-parent-record',
           folderToken: 'category-vector-folder',
           versionRootToken: 'version-root-folder',
           ancestryVerified: true,
+        },
+        existingRecordLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          parentRecordId: 'vector-parent-record',
+          criteria: {
+            canonicalSlug: 'Vector-search',
+            title: 'search()',
+          },
         },
       },
     }],
@@ -740,6 +826,24 @@ export class MilvusClient {
       description: 'Contains the operation failure details.',
     }],
     reviewedEvidence: reviewedEvidence('node'),
+    target: {
+      version: 'v2.6.0',
+      parentRecordId: 'collections-parent-record',
+      folderToken: 'collections-folder',
+      versionRootToken: 'node-root',
+      ancestryVerified: true,
+    },
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'node-base',
+      tableId: 'node-table',
+      parentRecordId: 'collections-parent-record',
+      criteria: {
+        canonicalSlug: 'Collections-createCollection',
+        title: 'createCollection()',
+      },
+    },
   });
   const stdout = [];
 
@@ -779,6 +883,24 @@ test('real CLI scanner factory supports REST OpenAPI dry-run with a reference co
     category: 'Collections',
     related: [],
     notes: [],
+    target: {
+      version: 'v2',
+      parentRecordId: 'collections-parent-record',
+      folderToken: 'collections-folder',
+      versionRootToken: 'rest-root',
+      ancestryVerified: true,
+    },
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'rest-base',
+      tableId: 'rest-table',
+      parentRecordId: 'collections-parent-record',
+      criteria: {
+        canonicalSlug: 'Collections-createCollection',
+        title: 'Create collection',
+      },
+    },
   });
   const stdout = [];
 

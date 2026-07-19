@@ -3,6 +3,7 @@ const MarkdownToFeishu = require('../markdown-to-feishu');
 const BitableWriter = require('./bitable-writer');
 const DiffEngine = require('./diff-engine');
 const DocGenerator = require('./doc-generator');
+const { FeishuOperationalVerifier } = require('./feishu-operational-verifier');
 const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
 const PythonScanner = require('./scanners/python-scanner');
@@ -103,6 +104,7 @@ class SdkDocSync {
         if (!dryRun) {
             this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
             this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken });
+            this.verifier = this.verifier || new FeishuOperationalVerifier();
             this.executor = this.executor || new SyncExecutor({
                 documentWriter: this.m2f,
                 bitableWriter: this.bitableWriter,
@@ -353,6 +355,8 @@ class SdkDocSync {
             && (Object.prototype.hasOwnProperty.call(supplied, 'artifact')
                 || supplied.target
                 || supplied.current
+                || supplied.existingRecordLookup
+                || supplied.copySource
                 || Object.prototype.hasOwnProperty.call(supplied, 'tokenReferencedByOlderVersions'))
             ? supplied
             : { artifact: supplied };
@@ -368,9 +372,9 @@ class SdkDocSync {
             folderToken: metadata.folderToken ?? null,
             parentRecordId: metadata.parentRecordId ?? null,
             ancestryVerified: false,
-            ...(actionContext.current || {}),
             ...(suppliedContext.current || {}),
             ...(extraContext.current || {}),
+            ...(actionContext.current || {}),
         };
         const target = {
             version: this.sdkVersion,
@@ -378,17 +382,19 @@ class SdkDocSync {
             folderToken: this.rootToken || null,
             versionRootToken: this.rootToken || null,
             ancestryVerified: false,
-            ...(actionContext.target || {}),
             ...(suppliedContext.target || {}),
             ...(extraContext.target || {}),
+            ...(actionContext.target || {}),
         };
         return {
-            ...actionContext,
             ...suppliedContext,
             ...extraContext,
+            ...actionContext,
             artifact: extraContext.artifact ?? suppliedContext.artifact ?? actionContext.artifact,
             current,
             target,
+            existingRecordLookup: actionContext.existingRecordLookup ?? extraContext.existingRecordLookup ?? suppliedContext.existingRecordLookup,
+            copySource: actionContext.copySource ?? extraContext.copySource ?? suppliedContext.copySource,
         };
     }
 

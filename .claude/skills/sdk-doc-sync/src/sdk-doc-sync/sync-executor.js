@@ -1,5 +1,10 @@
 'use strict';
 
+const {
+  FeishuBlockSafetyError,
+  assertPublishableContent,
+} = require('./feishu-block-safety');
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
@@ -24,17 +29,27 @@ function editedRecordMetadata() {
   return { progress: 'WIP', targets: [] };
 }
 
-function containsLegacyScaffold(content) {
-  return typeof content === 'string'
-    && (/<!--\s*TODO:/i.test(content)
-      || /\b(?:Brief description|Usage example|List relevant exceptions)\b/i.test(content));
+function containsLegacyTodo(content) {
+  return typeof content === 'string' && /<!--\s*TODO:/i.test(content);
 }
 
 function assertPublishableArtifact(plan, artifact) {
   if (!artifact || !nonEmptyString(artifact.content)) {
     throw new SyncExecutionError('ARTIFACT_CONTENT_REQUIRED', `Reviewed artifact content is required for ${plan.stableId}`);
   }
-  if (containsLegacyScaffold(artifact.content)) {
+  try {
+    assertPublishableContent(artifact.content);
+  } catch (error) {
+    if (error instanceof FeishuBlockSafetyError) {
+      throw new SyncExecutionError(
+        error.code,
+        `${error.message} (${plan.stableId})`,
+        error.details,
+      );
+    }
+    throw error;
+  }
+  if (containsLegacyTodo(artifact.content)) {
     throw new SyncExecutionError(
       'LEGACY_SCAFFOLD_ARTIFACT',
       `Legacy scaffold content cannot be published for ${plan.stableId}; provide a reviewed schema-first artifact`,
@@ -43,11 +58,26 @@ function assertPublishableArtifact(plan, artifact) {
 }
 
 function linkFromCreated(created) {
-  return created?.url || created?.wiki_url || created?.link || created?.documentUrl || '';
+  const link = created?.url || created?.wiki_url || created?.link || created?.documentUrl || '';
+  if (link) return link;
+  const token = tokenFromCreated(created);
+  if (!token) return '';
+  const host = (process.env.FEISHU_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+  return `${host}/docx/${token}`;
 }
 
 function tokenFromCreated(created) {
   return created?.token || created?.documentToken || created?.document_id || created?.obj_token || null;
+}
+
+function normalizedCreatedDocument(created) {
+  const token = tokenFromCreated(created);
+  const url = linkFromCreated(created);
+  return {
+    ...created,
+    token,
+    url,
+  };
 }
 
 class SyncExecutionError extends Error {
@@ -78,6 +108,8 @@ class SyncExecutor {
       createdDocument: null,
       patchedDocument: null,
       record: null,
+      rollback: null,
+      documentVerification: null,
       verification: null,
       originalRecord: plan.source?.recordId ? { ...plan.source } : null,
     };
@@ -91,7 +123,12 @@ class SyncExecutor {
           await this._executeUpdateInPlace(plan, artifact, action, result);
           break;
         case 'CREATE_AND_REPOINT':
-          await this._executeCreateAndRepoint(plan, artifact, action, result);
+          throw new SyncExecutionError(
+            'LEGACY_PLAN_ACTION',
+            'CREATE_AND_REPOINT is no longer executable; regenerate the plan as COPY_PATCH_AND_REPOINT with copySource evidence',
+          );
+        case 'COPY_PATCH_AND_REPOINT':
+          await this._executeCopyPatchAndRepoint(plan, artifact, action, result);
           break;
         case 'DEPRECATE':
           await this._executeDeprecate(plan, result);
@@ -108,13 +145,16 @@ class SyncExecutor {
         result.verification = await this.verifier.verify(plan, result);
         completedSteps.push('verify');
         if (!result.verification.ok) {
-          throw new SyncExecutionError('VERIFICATION_FAILED', 'Plan verification failed', {
+          const error = new SyncExecutionError('VERIFICATION_FAILED', 'Plan verification failed', {
             errors: result.verification.errors,
           });
+          error.step = 'verify';
+          throw error;
         }
       }
       return result;
     } catch (error) {
+      await this._rollbackInPlaceMutation(plan, result, error);
       return {
         ...result,
         status: 'error',
@@ -138,29 +178,45 @@ class SyncExecutor {
     const created = await this._createDocument(plan, artifact, action);
     result.createdDocument = created;
     result.completedSteps.push('createDocument');
-
-    let record;
     try {
-      record = await this._createRecord(plan, artifact, action, created);
+      this._assertCreatedDocumentLink(plan, created);
+
+      await this._verifyDocumentBeforeBitableMutation(plan, result);
+
+      result.record = await this._createRecord(plan, artifact, action, created);
+      result.completedSteps.push('createRecord');
     } catch (error) {
-      error.step = 'createRecord';
+      if (error.code === 'DOCUMENT_LINK_REQUIRED') {
+        error.step = 'createDocument';
+      } else if (!error.step && !result.completedSteps.includes('verifyDocument')) {
+        error.step = 'createRecord';
+      }
+      await this._cleanupCreatedDocument(created, result);
       throw error;
     }
-    result.record = record;
-    result.completedSteps.push('createRecord');
   }
 
   async _executeUpdateInPlace(plan, artifact, action, result) {
+    assertPublishableArtifact(plan, artifact);
+    await this._captureRollbackBeforeMutation(plan, result);
+
     const patched = await this._patchDocument(plan, artifact);
     result.patchedDocument = patched;
     result.completedSteps.push('patchDocument');
 
+    await this._verifyDocumentBeforeBitableMutation(plan, result);
+
     const metadata = artifactMetadata(artifact);
-    result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
-      description: metadata.description,
-      lastModified: plan.target.version,
-      ...editedRecordMetadata(),
-    });
+    try {
+      result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
+        description: metadata.description,
+        lastModified: plan.target.version,
+        ...editedRecordMetadata(),
+      });
+    } catch (error) {
+      error.step = 'updateRecord';
+      throw error;
+    }
     result.completedSteps.push('updateRecord');
   }
 
@@ -168,6 +224,9 @@ class SyncExecutor {
     const created = await this._createDocument(plan, artifact, action);
     result.createdDocument = created;
     result.completedSteps.push('createDocument');
+    this._assertCreatedDocumentLink(plan, created);
+
+    await this._verifyDocumentBeforeBitableMutation(plan, result);
 
     const metadata = artifactMetadata(artifact);
     try {
@@ -182,6 +241,45 @@ class SyncExecutor {
       result.completedSteps.push('updateRecord');
     } catch (error) {
       error.step = 'updateRecord';
+      await this._cleanupCreatedDocument(created, result);
+      throw error;
+    }
+  }
+
+  async _executeCopyPatchAndRepoint(plan, artifact, action, result) {
+    assertPublishableArtifact(plan, artifact);
+    await this._captureRollbackBeforeMutation(plan, result);
+
+    const copied = await this._copyDocument(plan, artifact, action);
+    result.createdDocument = copied;
+    result.completedSteps.push('copyDocument');
+
+    try {
+      this._assertCreatedDocumentLink(plan, copied);
+
+      const patched = await this._patchDocument(plan, artifact, copied.token);
+      result.patchedDocument = patched;
+      result.completedSteps.push('patchDocument');
+
+      await this._verifyDocumentBeforeBitableMutation(plan, result);
+
+      const metadata = artifactMetadata(artifact);
+      result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
+        title: artifactTitle(plan, artifact, action),
+        link: linkFromCreated(copied),
+        description: metadata.description,
+        lastModified: plan.target.version,
+        ...editedRecordMetadata(),
+        parentRecordId: plan.target.parentRecordId,
+      });
+      result.completedSteps.push('updateRecord');
+    } catch (error) {
+      if (error.code === 'DOCUMENT_LINK_REQUIRED') {
+        error.step = 'copyDocument';
+      } else if (!error.step) {
+        error.step = result.completedSteps.includes('patchDocument') ? 'updateRecord' : 'patchDocument';
+      }
+      await this._cleanupCreatedDocument(copied, result);
       throw error;
     }
   }
@@ -204,7 +302,7 @@ class SyncExecutor {
       stableId: plan.stableId,
     };
     if (typeof this.documentWriter.createDocument === 'function') {
-      return await this.documentWriter.createDocument(input);
+      return normalizedCreatedDocument(await this.documentWriter.createDocument(input));
     }
     if (typeof this.documentWriter.push_markdown === 'function') {
       const created = await this.documentWriter.push_markdown({
@@ -212,21 +310,38 @@ class SyncExecutor {
         title: input.title,
         folder_token: input.folderToken,
       });
-      return {
+      return normalizedCreatedDocument({
         ...created,
         token: tokenFromCreated(created),
         url: linkFromCreated(created),
         title: input.title,
         folderToken: input.folderToken,
-      };
+      });
     }
     throw new TypeError('documentWriter must expose createDocument() or push_markdown()');
   }
 
-  async _patchDocument(plan, artifact) {
+  async _copyDocument(plan, artifact, action) {
+    const input = {
+      sourceDocumentToken: plan.copySource?.documentToken,
+      sourceLink: plan.copySource?.link,
+      title: artifactTitle(plan, artifact, action),
+      folderToken: plan.target.folderToken,
+      stableId: plan.stableId,
+    };
+    if (!nonEmptyString(input.sourceDocumentToken) || !nonEmptyString(input.sourceLink)) {
+      throw new SyncExecutionError('COPY_SOURCE_REQUIRED', `Copy source evidence is required for ${plan.stableId}`);
+    }
+    if (typeof this.documentWriter.copyDocument !== 'function') {
+      throw new TypeError('documentWriter must expose copyDocument() for COPY_PATCH_AND_REPOINT');
+    }
+    return normalizedCreatedDocument(await this.documentWriter.copyDocument(input));
+  }
+
+  async _patchDocument(plan, artifact, documentToken = plan.source.documentToken) {
     assertPublishableArtifact(plan, artifact);
     const input = {
-      documentToken: plan.source.documentToken,
+      documentToken,
       content: artifact.content,
       artifactDigest: plan.artifactDigest,
     };
@@ -262,11 +377,97 @@ class SyncExecutor {
     });
   }
 
+  async _verifyDocumentBeforeBitableMutation(plan, result) {
+    if (typeof this.verifier?.verifyDocument !== 'function') return;
+    const documentVerification = await this.verifier.verifyDocument(plan, result);
+    result.documentVerification = documentVerification;
+    result.completedSteps.push('verifyDocument');
+    if (!documentVerification.ok) {
+      const error = new SyncExecutionError(
+        'DOCUMENT_VERIFICATION_FAILED',
+        'Document verification failed before Bitable mutation',
+        { errors: documentVerification.errors },
+      );
+      error.step = 'verifyDocument';
+      throw error;
+    }
+  }
+
+  async _captureRollbackBeforeMutation(plan, result) {
+    if (typeof this.verifier?.beforeMutation !== 'function' || !plan.source?.documentToken) return;
+    try {
+      result.rollback = await this.verifier.beforeMutation(plan);
+      result.completedSteps.push('captureRollback');
+    } catch (error) {
+      error.step = 'captureRollback';
+      throw error;
+    }
+  }
+
+  _assertCreatedDocumentLink(plan, created) {
+    if (!nonEmptyString(tokenFromCreated(created)) || !nonEmptyString(linkFromCreated(created))) {
+      throw new SyncExecutionError(
+        'DOCUMENT_LINK_REQUIRED',
+        `A created document token and link are required before mutating the Bitable record for ${plan.stableId}`,
+      );
+    }
+  }
+
+  async _cleanupCreatedDocument(created, result) {
+    const documentToken = tokenFromCreated(created);
+    if (!documentToken || typeof this.documentWriter.deleteDocument !== 'function') return;
+    try {
+      await this.documentWriter.deleteDocument({ documentToken });
+      result.completedSteps.push('deleteDocument');
+    } catch (error) {
+      result.cleanupError = {
+        step: 'deleteDocument',
+        documentToken,
+        message: error.message,
+      };
+      result.completedSteps.push('deleteDocumentFailed');
+    }
+  }
+
+  async _rollbackInPlaceMutation(plan, result, originalError) {
+    if (plan.action !== 'UPDATE_IN_PLACE') return;
+    if (!result.completedSteps.includes('patchDocument')) return;
+    if (result.completedSteps.includes('rollbackRevert') || result.completedSteps.includes('rollbackRevertFailed')) return;
+    if (typeof this.verifier?.rollback !== 'function') return;
+    try {
+      result.rollbackResult = await this.verifier.rollback(plan, result, originalError);
+      result.completedSteps.push('rollbackRevert');
+    } catch (error) {
+      result.rollbackError = {
+        step: 'rollbackRevert',
+        message: error.message,
+      };
+      result.completedSteps.push('rollbackRevertFailed');
+    }
+  }
+
   _inferFailedStep(plan, completedSteps) {
     if (completedSteps.length === 0) {
+      if (plan.action === 'COPY_PATCH_AND_REPOINT') return 'copyDocument';
       return plan.action === 'UPDATE_IN_PLACE' ? 'patchDocument' : 'createDocument';
     }
-    if (completedSteps.includes('createDocument') && !completedSteps.includes('updateRecord') && plan.action === 'CREATE_AND_REPOINT') {
+    if (completedSteps.includes('captureRollback') && completedSteps.length === 1) {
+      return plan.action === 'UPDATE_IN_PLACE' ? 'patchDocument' : 'copyDocument';
+    }
+    if (plan.action === 'COPY_PATCH_AND_REPOINT'
+      && completedSteps.includes('copyDocument')
+      && !completedSteps.includes('patchDocument')) {
+      return 'patchDocument';
+    }
+    if (plan.action === 'COPY_PATCH_AND_REPOINT'
+      && completedSteps.includes('patchDocument')
+      && !completedSteps.includes('verifyDocument')
+      && !completedSteps.includes('updateRecord')) {
+      return 'verifyDocument';
+    }
+    if (plan.action === 'COPY_PATCH_AND_REPOINT'
+      && completedSteps.includes('patchDocument')
+      && !completedSteps.includes('updateRecord')) {
       return 'updateRecord';
     }
     return 'execute';
@@ -274,7 +475,7 @@ class SyncExecutor {
 
   _recovery(plan, result, error) {
     const failedStep = result.failedStep || error.step;
-    if (plan.action === 'CREATE_AND_REPOINT' && result.createdDocument && failedStep === 'updateRecord') {
+    if (plan.action === 'COPY_PATCH_AND_REPOINT' && result.createdDocument && failedStep === 'updateRecord') {
       return `Repoint record ${plan.source.recordId} to ${linkFromCreated(result.createdDocument)} or remove created document ${tokenFromCreated(result.createdDocument)} after inspection.`;
     }
     if (plan.action === 'CREATE' && result.createdDocument && failedStep === 'createRecord') {

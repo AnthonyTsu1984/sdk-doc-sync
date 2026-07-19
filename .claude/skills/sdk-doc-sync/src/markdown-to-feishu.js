@@ -1192,6 +1192,45 @@ class MarkdownToFeishu {
         }
     }
 
+    async copyDocument({ sourceDocumentToken, title, folderToken }) {
+        if (this.source_type === 'wiki') {
+            throw new Error('copyDocument currently supports drive docx files only');
+        }
+        if (!sourceDocumentToken || !folderToken) {
+            throw new Error('sourceDocumentToken and folderToken are required to copy a document');
+        }
+        const token = await this.tokenFetcher.token();
+        const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${sourceDocumentToken}/copy`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+                name: title,
+                type: 'docx',
+                folder_token: folderToken
+            })
+        });
+
+        const data = await response.json();
+
+        if (data.code !== 0) {
+            throw new Error(`Failed to copy document: ${data.msg}`);
+        }
+
+        const file = data.data?.file || {};
+        return {
+            token: file.token,
+            documentToken: file.token,
+            url: file.url,
+            title: file.name || title,
+            type: file.type,
+            folderToken: file.parent_token || folderToken,
+        };
+    }
+
     async __create_drive_document({ title, folder_token = null }) {
         const token = await this.tokenFetcher.token();
 

@@ -5,6 +5,13 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
+function parseLabeledFields(section) {
+  return Object.fromEntries(
+    [...section.matchAll(/^\*\*([^*]+):\*\*\s*(.+)$/gm)]
+      .map((match) => [match[1], match[2].trim()]),
+  );
+}
+
 test('sdk-doc-sync test runner path exists', () => {
   const runner = path.resolve(__dirname, 'run-all.js');
   assert.equal(fs.existsSync(runner), true, `Missing expected test runner: ${runner}`);
@@ -228,6 +235,110 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
     );
     assert.match(skill, new RegExp(reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('sdk-doc-sync pressure scenario artifact records the five GREEN safety checks', () => {
+  const artifactPath = path.resolve(__dirname, 'skill-pressure-scenarios.md');
+  assert.equal(fs.existsSync(artifactPath), true, `Missing pressure scenario artifact: ${artifactPath}`);
+
+  const artifact = fs.readFileSync(artifactPath, 'utf8');
+  const scenarioNames = [
+    'Changed inherited document',
+    'Four inherited current-folder misses',
+    'Free-form grouping approval',
+    'Markdown-only write preview',
+    'Garbled formatting rollback',
+  ];
+  const headingMatches = [...artifact.matchAll(/^## (.+)$/gm)];
+  assert.deepEqual(headingMatches.map((match) => match[1]), scenarioNames);
+
+  const sections = new Map(headingMatches.map((match, index) => {
+    const nextMatch = headingMatches[index + 1];
+    return [match[1], artifact.slice(match.index, nextMatch ? nextMatch.index : artifact.length)];
+  }));
+  const fieldsByScenario = new Map(
+    [...sections].map(([scenarioName, section]) => [scenarioName, parseLabeledFields(section)]),
+  );
+  const requiredFields = [
+    'Prompt',
+    'Expected safe decisions',
+    'Natural no-skill RED observation',
+    'Pre-refactor observation',
+    'Current streamlined-skill GREEN result',
+    'GREEN run ID',
+    'Representative GREEN excerpt',
+    'PASS/FAIL',
+    'Residual ambiguity/risk',
+  ];
+
+  for (const scenarioName of scenarioNames) {
+    const fields = fieldsByScenario.get(scenarioName);
+    for (const field of requiredFields) {
+      assert.ok(fields[field], `${scenarioName} missing or empty ${field}`);
+    }
+    assert.equal(fields['PASS/FAIL'], 'PASS', `${scenarioName} must record PASS`);
+    assert.match(fields['Residual ambiguity/risk'], /\S/, `${scenarioName} must record residual risk`);
+    assert.match(fields['GREEN run ID'], /^019f[0-9a-f-]+$/, `${scenarioName} has invalid GREEN run ID`);
+    assert.match(fields['Representative GREEN excerpt'], /^".+"$/, `${scenarioName} needs a quoted GREEN excerpt`);
+  }
+
+  const changedFields = fieldsByScenario.get('Changed inherited document');
+  const changedInherited = changedFields['Current streamlined-skill GREEN result'];
+  assert.match(changedInherited, /COPY_PATCH_AND_REPOINT/);
+  assert.match(changedInherited, /APPROVE_GROUPING/);
+  assert.match(changedInherited, /APPROVE_WRITES/);
+  assert.match(changedInherited, /source[^.]*\binvariant\b|\binvariant\b[^.]*source/i);
+  assert.equal(changedFields['GREEN run ID'], '019f7b0a-2807-7b81-9f29-55b6d82fa381');
+  assert.match(changedFields['Representative GREEN excerpt'], /Do not patch the v2\.5\.x source Docx/);
+  assert.match(changedFields['Representative GREEN excerpt'], /exact executable plan action is COPY_PATCH_AND_REPOINT/);
+
+  const fourFields = fieldsByScenario.get('Four inherited current-folder misses');
+  const fourMisses = fourFields['Current streamlined-skill GREEN result'];
+  assert.match(fourMisses, /placement audit/i);
+  assert.match(fourMisses, /v2\.5\.x/);
+  assert.match(fourMisses, /v2\.4\.x/);
+  assert.match(fourMisses, /unchanged[^\n]*inherited[^\n]*`?Docs\.link`?/i);
+  assert.match(fourMisses, /changed[^\n]*COPY_PATCH_AND_REPOINT/i);
+  assert.match(fourMisses, /rejected all four `CREATE` actions/i);
+  assert.match(fourFields['Pre-refactor observation'], /^Unavailable\b/i);
+  assert.equal(fourFields['GREEN run ID'], '019f7b0a-2871-7d92-8a92-998b5232707a');
+  assert.match(fourFields['Representative GREEN excerpt'], /Reject all four CREATE classifications/);
+  assert.match(fourFields['Representative GREEN excerpt'], /sparse Drive-folder absence does not mean missing documentation/);
+
+  const freeFormFields = fieldsByScenario.get('Free-form grouping approval');
+  const freeForm = freeFormFields['Current streamlined-skill GREEN result'];
+  assert.match(freeForm, /(?:free-form[^\n]*(?:non-transition|reject)|(?:non-transition|reject)[^\n]*free-form)/i);
+  assert.match(freeForm, /(?:exact[^\n]*APPROVE_GROUPING|APPROVE_GROUPING[^\n]*exact)/i);
+  assert.match(freeForm, /grouping_review_required/);
+  assert.equal(freeFormFields['GREEN run ID'], '019f7b0a-28df-7e81-a256-d0d6942de1e7');
+  assert.match(freeFormFields['Representative GREEN excerpt'], /Phase 3 may not start/);
+  assert.match(freeFormFields['Representative GREEN excerpt'], /free-form approval and therefore a non-transition/);
+
+  const markdownFields = fieldsByScenario.get('Markdown-only write preview');
+  const markdownOnly = markdownFields['Current streamlined-skill GREEN result'];
+  assert.match(markdownOnly, /Markdown-only[^\n]*not approval-grade/i);
+  assert.match(markdownOnly, /create[^\n]*block-safety/i);
+  assert.match(markdownOnly, /update[^\n]*before\/after/i);
+  assert.match(markdownOnly, /copy-patch[^\n]*source\/target\/patch/i);
+  assert.match(markdownOnly, /new[^\n]*APPROVE_WRITES/i);
+  assert.equal(markdownFields['GREEN run ID'], '019f7b0a-2950-7f71-8d47-4664d20f3e7e');
+  assert.match(markdownFields['Representative GREEN excerpt'], /Execution may not start/);
+  assert.match(markdownFields['Representative GREEN excerpt'], /Markdown-only previews are explicitly non-approval-grade/);
+
+  const rollbackFields = fieldsByScenario.get('Garbled formatting rollback');
+  const rollback = rollbackFields['Current streamlined-skill GREEN result'];
+  assert.match(rollback, /history-revert-status/);
+  assert.match(rollback, /--detail full/);
+  assert.match(rollback, /partial_failed/);
+  assert.match(rollback, /\bfailed\b/);
+  assert.match(rollback, /failed_block_tokens/);
+  assert.match(rollback, /no older-source mutation/i);
+  assert.match(rollback, /scan-state unchanged/i);
+  assert.match(rollback, /new[^\n]*APPROVE_WRITES/i);
+  assert.match(rollbackFields['Pre-refactor observation'], /^Unavailable\b/i);
+  assert.equal(rollbackFields['GREEN run ID'], '019f7b0b-5a91-7042-aaaa-fb76a50a503d');
+  assert.match(rollbackFields['Representative GREEN excerpt'], /Recovery is pending/);
+  assert.match(rollbackFields['Representative GREEN excerpt'], /do not advance scan-state\.json/);
 });
 
 test('sdk-doc-sync core skill stays below 1,800 words', () => {

@@ -199,6 +199,7 @@ function assertCandidateIdentity({ action, spec, category }) {
     if (!spec.groupingReview || spec.groupingReview.reviewed !== true) {
       throw new Error(`Grouped candidate ${groupedSources.join(', ')} must have groupingReview.reviewed=true before approval-ready context`);
     }
+    throw new Error(`Grouped candidate ${groupedSources.join(', ')} must not group multiple interface actions into one documentation identity`);
   }
 
   return {
@@ -206,6 +207,101 @@ function assertCandidateIdentity({ action, spec, category }) {
     canonicalSlug: effectiveCanonicalSlug,
     symbol: docIdentity.symbol || spec.symbol || action.symbol,
   };
+}
+
+function assertExistingRecordEvidence({ action, spec, identity }) {
+  if (action.type !== 'UPDATE') return null;
+  const existing = spec.existingRecord || null;
+  if (!existing || !existing.recordId || !existing.documentToken || !existing.parentRecordId) {
+    throw new Error(`Candidate ${action.canonicalSlug} existingRecord evidence is required for UPDATE ${identity.stableId}`);
+  }
+  if (!existing.placement
+    || existing.placement.verified !== true
+    || !existing.placement.version
+    || !existing.placement.folderToken
+    || typeof existing.placement.referencedByOlderVersions !== 'boolean') {
+    throw new Error(`verified current placement is required for UPDATE ${identity.stableId}`);
+  }
+  return {
+    recordId: existing.recordId,
+    documentToken: existing.documentToken,
+    parentRecordId: existing.parentRecordId,
+    version: existing.placement.version,
+    folderToken: existing.placement.folderToken,
+    ancestryVerified: true,
+    placementVerified: true,
+    referencedByOlderVersions: existing.placement.referencedByOlderVersions,
+  };
+}
+
+function assertCreateMissingEvidence({ action, spec, identity }) {
+  if (action.type !== 'CREATE') return null;
+  if (spec.existingRecord?.recordId) {
+    throw new Error(`Candidate ${action.canonicalSlug} is CREATE but existingRecord ${spec.existingRecord.recordId} was found for ${identity.stableId}`);
+  }
+  const lookup = spec.existingRecordLookup || null;
+  const criteria = lookup?.criteria || {};
+  const canonicalSlugs = Array.isArray(criteria.canonicalSlugs)
+    ? criteria.canonicalSlugs
+    : [criteria.canonicalSlug].filter(Boolean);
+  if (!lookup
+    || lookup.checked !== true
+    || lookup.absent !== true
+    || !lookup.baseToken
+    || !lookup.tableId
+    || !lookup.parentRecordId
+    || !canonicalSlugs.includes(identity.canonicalSlug)
+    || !criteria.title) {
+    throw new Error(`Candidate ${action.canonicalSlug} must include explicit absent existingRecordLookup evidence before CREATE ${identity.stableId}`);
+  }
+  return {
+    checked: true,
+    absent: true,
+    baseToken: lookup.baseToken,
+    tableId: lookup.tableId,
+    parentRecordId: lookup.parentRecordId,
+    criteria: clone(criteria),
+  };
+}
+
+function requiresCopySource({ current, targetVersion, targetFolderToken }) {
+  if (!current) return false;
+  if (current.version && targetVersion && current.version !== targetVersion) return true;
+  if (current.folderToken && targetFolderToken && current.folderToken !== targetFolderToken) return true;
+  if (current.referencedByOlderVersions === true) return true;
+  return false;
+}
+
+function assertCopySourceEvidence({ action, spec, identity, current, targetVersion, targetFolderToken }) {
+  if (action.type !== 'UPDATE') return null;
+  if (!requiresCopySource({ current, targetVersion, targetFolderToken })) return null;
+  const copySource = spec.copySource || null;
+  if (!copySource || !copySource.documentToken || !copySource.link) {
+    throw new Error(`Candidate ${action.canonicalSlug} copySource evidence is required before changing inherited doc ${identity.stableId}`);
+  }
+  return {
+    documentToken: copySource.documentToken,
+    link: copySource.link,
+    title: copySource.title || null,
+  };
+}
+
+function assertNoSyntheticGroupAcrossExistingRecords({ spec, identity }) {
+  const records = Array.isArray(spec.existingRecords) ? spec.existingRecords.filter((item) => item?.recordId) : [];
+  const recordIds = [...new Set(records.map((item) => item.recordId))];
+  if (recordIds.length > 1 && spec.docIdentity?.stableId === identity.stableId) {
+    throw new Error(`Candidate ${identity.stableId} groups multiple existing interface records: ${recordIds.join(', ')}`);
+  }
+}
+
+const REVIEWED_ACTION_TYPES = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL']);
+
+function actionForPlanning(action, spec) {
+  const reviewedType = spec.actionIntent || spec.reviewedActionType || action.type;
+  if (!REVIEWED_ACTION_TYPES.has(reviewedType)) {
+    throw new Error(`Candidate ${action.canonicalSlug} has invalid reviewed action type ${reviewedType}`);
+  }
+  return { ...action, type: reviewedType };
 }
 
 const INHERITANCE_STATUSES = new Set([
@@ -341,11 +437,15 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   for (const action of releaseScope.actions || []) {
     const spec = candidates[action.canonicalSlug];
     if (!spec) continue;
+    const planningAction = actionForPlanning(action, spec);
     selectedSlugs.add(action.canonicalSlug);
 
-    const category = required(spec.category, `Candidate ${action.canonicalSlug} is missing category`);
-    const identity = assertCandidateIdentity({ action, spec, category });
-    const inheritanceReview = assertInheritanceReview({ action, spec, requiredSuccessorTracks });
+    const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
+    const identity = assertCandidateIdentity({ action: planningAction, spec, category });
+    assertNoSyntheticGroupAcrossExistingRecords({ spec, identity });
+    const existingRecord = assertExistingRecordEvidence({ action: planningAction, spec, identity });
+    const existingRecordLookup = assertCreateMissingEvidence({ action: planningAction, spec, identity });
+    const inheritanceReview = assertInheritanceReview({ action: planningAction, spec, requiredSuccessorTracks });
     const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
     for (const sourceSlug of groupedSources) {
       if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
@@ -354,6 +454,14 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     emittedDocIdentities.add(identity.stableId);
 
     const folderToken = required(spec.folderToken || folders[category], `Candidate ${action.canonicalSlug} has no folder token for category ${category}`);
+    const copySource = assertCopySourceEvidence({
+      action: planningAction,
+      spec,
+      identity,
+      current: existingRecord,
+      targetVersion: version,
+      targetFolderToken: folderToken,
+    });
     const evidence = evidenceFor(action, spec, releaseScope);
     const sourceVariants = groupedSources
       .map((canonicalSlug) => (releaseScope.actions || []).find((item) => item.canonicalSlug === canonicalSlug))
@@ -366,7 +474,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         reason: item.reason,
       }));
     const selectedAction = {
-      ...action,
+      ...planningAction,
       stableId: identity.stableId,
       canonicalSlug: identity.canonicalSlug,
       symbol: identity.symbol,
@@ -374,13 +482,17 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       inheritanceReview,
       planningContext: {
         ...(action.planningContext || {}),
+        current: existingRecord || undefined,
+        existingRecordLookup: existingRecordLookup || undefined,
+        copySource,
         target: {
           version,
           folderToken,
+          parentRecordId: existingRecord?.parentRecordId || existingRecordLookup?.parentRecordId || null,
           versionRootToken,
           ancestryVerified: true,
         },
-        tokenReferencedByOlderVersions: action.type === 'UPDATE',
+        tokenReferencedByOlderVersions: existingRecord?.referencedByOlderVersions ?? false,
       },
     };
     selected.push(selectedAction);

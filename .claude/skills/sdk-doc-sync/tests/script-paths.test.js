@@ -16,6 +16,17 @@ test('sdk-release-scout CLI path exists', () => {
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-handwritten-audit.js')), true);
 });
 
+test('sdk-doc-sync planning helper scripts exist', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  for (const script of [
+    'build-current-placement-audit.js',
+    'build-reviewed-release-context.js',
+    'render-grouping-inheritance-table.js',
+  ]) {
+    assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);
+  }
+});
+
 test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
   const runner = path.join(__dirname, 'run-all.js');
@@ -28,13 +39,18 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   assert.equal(result.stderr, '');
   assert.deepEqual(result.stdout.trim().split('\n'), [
     '.claude/skills/sdk-doc-sync/tests/agent-harness.test.js',
+    '.claude/skills/sdk-doc-sync/tests/bitable-record-index.test.js',
     '.claude/skills/sdk-doc-sync/tests/bitable-repository.test.js',
     '.claude/skills/sdk-doc-sync/tests/block-registry.test.js',
     '.claude/skills/sdk-doc-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/sdk-doc-sync/tests/document-ir.test.js',
     '.claude/skills/sdk-doc-sync/tests/docx-reader.test.js',
+    '.claude/skills/sdk-doc-sync/tests/docx-section-patcher.test.js',
+    '.claude/skills/sdk-doc-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/sdk-doc-sync/tests/feishu-client.test.js',
+    '.claude/skills/sdk-doc-sync/tests/lark-cli-ops.test.js',
     '.claude/skills/sdk-doc-sync/tests/lark-doc-writer.test.js',
+    '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-copy.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-patch.test.js',
     '.claude/skills/sdk-doc-sync/tests/read-consumers.test.js',

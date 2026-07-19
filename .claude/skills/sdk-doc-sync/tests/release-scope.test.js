@@ -17,10 +17,94 @@ function readFixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8'));
 }
 
+function absentLookup({ canonicalSlug, title, parentRecordId }) {
+  return {
+    checked: true,
+    absent: true,
+    baseToken: 'base-v26',
+    tableId: 'table-v26',
+    parentRecordId,
+    criteria: {
+      canonicalSlug,
+      title,
+    },
+  };
+}
+
+function verifiedPlacement({ version = 'v2.6.x', folderToken, referencedByOlderVersions = false }) {
+  return {
+    verified: true,
+    version,
+    folderToken,
+    referencedByOlderVersions,
+  };
+}
+
 test('release-scope schema accepts the Python v2.6 golden artifact', () => {
   const scope = readFixture('python-v26-expected.json');
   const validation = validateReleaseScope(scope);
   assert.deepEqual(validation, { valid: true, errors: [] });
+});
+
+test('skill instructions forbid synthetic merge proposals from stale grouping artifacts', () => {
+  const skillText = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
+  assert.equal(skillText.includes('merge into one doc action'), false);
+  assert.match(skillText, /Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists/);
+});
+
+test('placement audit resolves inherited docs from supplied older version roots', async () => {
+  assert.deepEqual(parseSourceVersionRoot('v2.5.x:root-v25'), {
+    version: 'v2.5.x',
+    rootToken: 'root-v25',
+  });
+
+  const proposal = {
+    proposals: [{
+      id: 'proposal:python:Volume:upload_file_to_volume',
+      docIdentity: {
+        stableId: 'python:Volume:upload_file_to_volume',
+        canonicalSlug: 'Volume-upload_file_to_volume',
+        title: 'upload_file_to_volume',
+        targetFolderToken: 'volume-folder-v26',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'rec-upload',
+        currentDocumentToken: 'doc-upload-v25',
+        parentRecordIds: ['rec-volume'],
+      },
+    }],
+  };
+  const indexes = {
+    'root-v26': new Map(),
+    'root-v25': new Map([['doc-upload-v25', {
+      token: 'doc-upload-v25',
+      type: 'docx',
+      parentFolderToken: 'volume-folder-v25',
+      ancestors: ['root-v25', 'volume-folder-v25'],
+      name: 'upload_file_to_volume',
+    }]]),
+  };
+
+  const artifact = await buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    sourceVersionRoots: [{ version: 'v2.5.x', rootToken: 'root-v25' }],
+    indexer: async (rootToken) => indexes[rootToken],
+  });
+
+  assert.equal(artifact.status, 'placement_audit_ready');
+  assert.deepEqual(artifact.blocked, []);
+  assert.deepEqual(artifact.entries[0].placement, {
+    verified: true,
+    status: 'inherited_source',
+    version: 'v2.5.x',
+    folderToken: 'volume-folder-v25',
+    versionRootToken: 'root-v25',
+    referencedByOlderVersions: true,
+    ancestry: ['root-v25', 'volume-folder-v25'],
+  });
 });
 
 test('release-scope schema rejects missing approval and mutation flags', () => {
@@ -160,6 +244,10 @@ const {
   resolveDetectedSuccessorTracks,
   resolveRequiredSuccessorTracks,
 } = require('../scripts/build-reviewed-release-context');
+const {
+  buildPlacementAudit,
+  parseSourceVersionRoot,
+} = require('../scripts/build-current-placement-audit');
 
 test('publicIdentity is stable across line-number changes', () => {
   assert.equal(publicIdentity({
@@ -365,6 +453,11 @@ test('reviewed release context builder filters candidates and carries scoped pla
     groups: [{
       category: 'Vector',
       canonicalSlugs: ['FieldOp'],
+      existingRecordLookup: absentLookup({
+        canonicalSlug: 'FieldOp',
+        title: 'FieldOp()',
+        parentRecordId: 'vector-parent',
+      }),
       summary: 'Builds field-level partial-update operations for array fields.',
       example: {
         code: 'from pymilvus import FieldOp\nop = FieldOp.array_append()',
@@ -379,6 +472,7 @@ test('reviewed release context builder filters candidates and carries scoped pla
   assert.deepEqual(result.filteredScope.actions[0].planningContext.target, {
     version: 'v2.6.x',
     folderToken: 'vector-folder',
+    parentRecordId: 'vector-parent',
     versionRootToken: 'root-v26',
     ancestryVerified: true,
   });
@@ -476,7 +570,7 @@ test('reviewed release context builder rejects category and documentation identi
   );
 });
 
-test('reviewed release context builder folds reviewed sync and async variants into one documentation identity', () => {
+test('reviewed release context builder rejects grouping multiple interface actions into one documentation identity', () => {
   const releaseScope = createReleaseScope({
     language: 'python',
     sdkName: 'pymilvus',
@@ -525,18 +619,25 @@ test('reviewed release context builder folds reviewed sync and async variants in
         reviewed: true,
         decision: 'Document sync and async wrappers under the Authentication create_user API identity.',
       },
+      existingRecordLookup: {
+        checked: true,
+        absent: true,
+        baseToken: 'base-v26',
+        tableId: 'table-v26',
+        criteria: {
+          canonicalSlugs: ['MilvusClient-create_user', 'AsyncMilvusClient-create_user'],
+          title: 'create_user()',
+        },
+      },
       summary: 'Creates a Milvus user for RBAC authentication.',
       example: { code: 'client.create_user(user_name="alice", password="password")' },
     }],
   };
 
-  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
-
-  assert.equal(result.selectedCount, 1);
-  assert.deepEqual(result.filteredScope.actions.map((action) => action.stableId), ['python:Authentication:create_user']);
-  assert.equal(result.filteredScope.actions[0].canonicalSlug, 'Authentication-create_user');
-  assert.equal(result.filteredScope.actions[0].sourceVariants.length, 2);
-  assert.equal(result.referenceContext.contexts['python:Authentication:create_user'].category, 'Authentication');
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    /must not group multiple interface actions into one documentation identity/,
+  );
 });
 
 test('reviewed release context builder requires reviewed grouping for multi-symbol doc identities', () => {
@@ -627,6 +728,11 @@ test('reviewed release context builder requires inheritance review for configure
     candidates: {
       'Authentication-create_user': {
         category: 'Authentication',
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'Authentication-create_user',
+          title: 'create_user()',
+          parentRecordId: 'auth-parent',
+        }),
         summary: 'Creates a user for RBAC authentication.',
         example: { code: 'client.create_user(user_name="alice", password="password")' },
       },
@@ -669,6 +775,11 @@ test('reviewed release context builder detects successor tracks from SDK referen
     candidates: {
       'Authentication-create_user': {
         category: 'Authentication',
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'Authentication-create_user',
+          title: 'create_user()',
+          parentRecordId: 'auth-parent',
+        }),
         summary: 'Creates a user for RBAC authentication.',
         example: { code: 'client.create_user(user_name="alice", password="password")' },
       },
@@ -778,6 +889,11 @@ test('reviewed release context builder carries reviewed successor-track inherita
     candidates: {
       'Authentication-create_user': {
         category: 'Authentication',
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'Authentication-create_user',
+          title: 'create_user()',
+          parentRecordId: 'auth-parent',
+        }),
         summary: 'Creates a user for RBAC authentication.',
         example: { code: 'client.create_user(user_name="alice", password="password")' },
         inheritanceReview: {
@@ -837,6 +953,11 @@ test('reviewed release context builder requires complete successor doc identity 
     candidates: {
       'Authentication-create_user': {
         category: 'Authentication',
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'Authentication-create_user',
+          title: 'create_user()',
+          parentRecordId: 'auth-parent',
+        }),
         summary: 'Creates a user for RBAC authentication.',
         example: { code: 'client.create_user(user_name="alice", password="password")' },
         inheritanceReview: {
@@ -893,6 +1014,11 @@ test('reviewed release context builder rejects unresolved successor-track inheri
     candidates: {
       'Authentication-create_user': {
         category: 'Authentication',
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'Authentication-create_user',
+          title: 'create_user()',
+          parentRecordId: 'auth-parent',
+        }),
         summary: 'Creates a user for RBAC authentication.',
         example: { code: 'client.create_user(user_name="alice", password="password")' },
         inheritanceReview: {
@@ -946,6 +1072,11 @@ test('reviewed release context builder rejects contradictory successor-track dec
     candidates: {
       'Authentication-create_user': {
         category: 'Authentication',
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'Authentication-create_user',
+          title: 'create_user()',
+          parentRecordId: 'auth-parent',
+        }),
         summary: 'Creates a user for RBAC authentication.',
         example: { code: 'client.create_user(user_name="alice", password="password")' },
         inheritanceReview: {
@@ -982,5 +1113,402 @@ test('reviewed release context CLI parser rejects malformed arguments', () => {
   assert.deepEqual(
     parseArgs(['node', 'script', '--sdk-reference', 'sdk-python.md']),
     { sdkReference: 'sdk-python.md' },
+  );
+});
+
+test('reviewed release context builder rejects UPDATE candidates without existingRecord evidence', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+      symbol: 'bulk_import',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 109 },
+      reason: 'signature changed',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-import-folder' },
+    },
+    candidates: {
+      'BulkImport-bulk_import': {
+        category: 'BulkImport',
+        folderToken: 'bulk-import-folder',
+        summary: 'Starts a bulk import job.',
+        example: { code: 'from pymilvus.bulk_writer import bulk_import' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    /existingRecord evidence is required/,
+  );
+});
+
+test('reviewed release context builder rejects UPDATE without verified current placement', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:list_import_jobs',
+      canonicalSlug: 'list_import_jobs',
+      symbol: 'list_import_jobs',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 314 },
+      reason: 'signature changed',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-folder-v26' },
+    },
+    candidates: {
+      list_import_jobs: {
+        actionIntent: 'UPDATE',
+        category: 'BulkImport',
+        docIdentity: {
+          stableId: 'python:BulkImport:list_import_jobs',
+          canonicalSlug: 'BulkImport-list_import_jobs',
+          title: 'list_import_jobs',
+        },
+        existingRecord: {
+          recordId: 'rec-list',
+          documentToken: 'doc-list',
+          parentRecordId: 'rec-bulk-folder',
+        },
+        copySource: {
+          documentToken: 'doc-list',
+          link: 'https://zilliverse.feishu.cn/docx/doc-list',
+          title: 'list_import_jobs()',
+        },
+        summary: 'Lists import jobs with project database filters.',
+        example: { code: 'from pymilvus.bulk_writer import list_import_jobs' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    /verified current placement is required for UPDATE python:BulkImport:list_import_jobs/,
+  );
+});
+
+test('reviewed release context builder rejects CREATE candidates without explicit absent lookup evidence', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/client/field_ops.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:FieldOp',
+      canonicalSlug: 'FieldOp',
+      symbol: 'FieldOp',
+      source: { file: 'pymilvus/client/field_ops.py', line: 12 },
+      reason: 'new public class',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'vector-folder' },
+    },
+    candidates: {
+      FieldOp: {
+        category: 'Vector',
+        createMissing: true,
+        existingRecordChecked: true,
+        parentRecordId: 'vector-parent',
+        summary: 'Builds field-level partial-update operations for array fields.',
+        example: { code: 'from pymilvus import FieldOp' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    /must include explicit absent existingRecordLookup evidence/,
+  );
+});
+
+test('reviewed release context builder carries existing record and copy source evidence into planning context', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+      symbol: 'bulk_import',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 109 },
+      reason: 'signature changed',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-import-folder' },
+    },
+    candidates: {
+      'BulkImport-bulk_import': {
+        category: 'BulkImport',
+        folderToken: 'bulk-import-folder',
+        existingRecord: {
+          recordId: 'rec-bulk',
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          parentRecordId: 'rec-bulk-parent',
+          placement: verifiedPlacement({
+            version: 'v2.5.x',
+            folderToken: 'bulk-import-folder-v25',
+            referencedByOlderVersions: true,
+          }),
+        },
+        copySource: {
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+        },
+        summary: 'Starts a bulk import job.',
+        example: { code: 'from pymilvus.bulk_writer import bulk_import' },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.current, {
+    recordId: 'rec-bulk',
+    documentToken: 'doc-bulk',
+    parentRecordId: 'rec-bulk-parent',
+    version: 'v2.5.x',
+    folderToken: 'bulk-import-folder-v25',
+    ancestryVerified: true,
+    placementVerified: true,
+    referencedByOlderVersions: true,
+  });
+  assert.equal(result.filteredScope.actions[0].planningContext.target.parentRecordId, 'rec-bulk-parent');
+  assert.equal(result.filteredScope.actions[0].planningContext.target.folderToken, 'bulk-import-folder');
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.copySource, {
+    documentToken: 'doc-bulk',
+    link: 'https://zilliverse.feishu.cn/docx/docBulk',
+    title: 'bulk_import()',
+  });
+});
+
+test('reviewed release context builder allows safe target-local UPDATE without copySource evidence', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+      symbol: 'bulk_import',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 109 },
+      reason: 'signature changed',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-import-folder' },
+    },
+    candidates: {
+      'BulkImport-bulk_import': {
+        category: 'BulkImport',
+        folderToken: 'bulk-import-folder',
+        existingRecord: {
+          recordId: 'rec-bulk',
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          parentRecordId: 'rec-bulk-parent',
+          placement: verifiedPlacement({ folderToken: 'bulk-import-folder' }),
+        },
+        summary: 'Starts a bulk import job.',
+        example: { code: 'from pymilvus.bulk_writer import bulk_import' },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+
+  assert.equal(result.filteredScope.actions[0].planningContext.copySource, null);
+  assert.equal(result.filteredScope.actions[0].planningContext.current.version, 'v2.6.x');
+  assert.equal(result.filteredScope.actions[0].planningContext.current.folderToken, 'bulk-import-folder');
+});
+
+test('reviewed release context builder rejects changed inherited docs without copySource evidence', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+      symbol: 'bulk_import',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 109 },
+      reason: 'signature changed',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-import-folder' },
+    },
+    candidates: {
+      'BulkImport-bulk_import': {
+        category: 'BulkImport',
+        folderToken: 'bulk-import-folder',
+        existingRecord: {
+          recordId: 'rec-bulk',
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          parentRecordId: 'rec-bulk-parent',
+          placement: verifiedPlacement({
+            version: 'v2.5.x',
+            folderToken: 'bulk-import-folder-v25',
+            referencedByOlderVersions: true,
+          }),
+        },
+        summary: 'Starts a bulk import job.',
+        example: { code: 'from pymilvus.bulk_writer import bulk_import' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    /copySource evidence is required/,
+  );
+});
+
+test('reviewed release context builder rejects synthetic grouping across multiple existing records', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [
+      {
+        type: 'UPDATE',
+        stableId: 'python:Authentication:update_user',
+        canonicalSlug: 'Authentication-update_user',
+        symbol: 'MilvusClient.update_user',
+        source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+        reason: 'signature changed',
+      },
+      {
+        type: 'UPDATE',
+        stableId: 'python:Authentication:alter_role',
+        canonicalSlug: 'Authentication-alter_role',
+        symbol: 'MilvusClient.alter_role',
+        source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 120 },
+        reason: 'signature changed',
+      },
+    ],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    groups: [{
+      category: 'Authentication',
+      canonicalSlugs: ['Authentication-update_user', 'Authentication-alter_role'],
+      docIdentity: {
+        stableId: 'python:Authentication:rbac_descriptions',
+        canonicalSlug: 'Authentication-rbac_descriptions',
+      },
+      groupingReview: { reviewed: true, decision: 'Create one RBAC descriptions page.' },
+      existingRecords: [
+        { canonicalSlug: 'Authentication-update_user', recordId: 'rec-update-user', documentToken: 'doc-update-user', parentRecordId: 'auth-parent' },
+        { canonicalSlug: 'Authentication-alter_role', recordId: 'rec-alter-role', documentToken: 'doc-alter-role', parentRecordId: 'auth-parent' },
+      ],
+      existingRecord: {
+        recordId: 'rec-update-user',
+        documentToken: 'doc-update-user',
+        parentRecordId: 'auth-parent',
+        placement: verifiedPlacement({ folderToken: 'auth-folder' }),
+      },
+      copySource: {
+        documentToken: 'doc-update-user',
+        link: 'https://zilliverse.feishu.cn/docx/docUpdateUser',
+      },
+      summary: 'Updates RBAC description fields.',
+      example: { code: 'client.update_user("alice", description="Owner")' },
+    }],
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    /must not group multiple interface actions into one documentation identity/,
   );
 });

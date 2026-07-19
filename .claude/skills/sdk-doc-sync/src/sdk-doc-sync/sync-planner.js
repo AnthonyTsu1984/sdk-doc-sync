@@ -2,6 +2,8 @@
 
 const crypto = require('node:crypto');
 
+const { assertPublishableContent } = require('./feishu-block-safety');
+
 const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE']);
 const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP']);
 
@@ -59,6 +61,7 @@ function nonEmptyString(value) {
 
 function artifactBytes(artifact) {
   if (nonEmptyString(artifact.content) && artifact.content.trim().length > 0) {
+    assertPublishableContent(artifact.content);
     return { bytes: Buffer.from(artifact.content, 'utf8'), kind: 'content' };
   }
   if (artifact.documentIr && typeof artifact.documentIr === 'object') {
@@ -89,6 +92,27 @@ function targetFrom(context) {
     parentRecordId: target.parentRecordId ?? null,
     folderToken: target.folderToken ?? null,
     versionRootToken: target.versionRootToken ?? null,
+  };
+}
+
+function copySourceFrom(context) {
+  const copySource = context.copySource || {};
+  return {
+    documentToken: copySource.documentToken ?? null,
+    link: copySource.link ?? null,
+    title: copySource.title ?? null,
+  };
+}
+
+function existingRecordLookupFrom(context) {
+  const lookup = context.existingRecordLookup || {};
+  return {
+    checked: lookup.checked === true,
+    absent: lookup.absent === true,
+    baseToken: lookup.baseToken ?? null,
+    tableId: lookup.tableId ?? null,
+    parentRecordId: lookup.parentRecordId ?? null,
+    criteria: lookup.criteria ?? null,
   };
 }
 
@@ -145,6 +169,7 @@ class SyncPlanner {
     if (!nonEmptyString(target.version)
       || (WRITE_ACTIONS.has(diffAction) && (
         !nonEmptyString(target.folderToken)
+        || !nonEmptyString(target.parentRecordId)
         || !nonEmptyString(target.versionRootToken)
         || targetProof.ancestryVerified !== true
       ))) {
@@ -180,6 +205,57 @@ class SyncPlanner {
 
     const shared = context.tokenReferencedByOlderVersions === true;
     const currentProof = context.current || {};
+    if (diffAction === 'CREATE' && (
+      nonEmptyString(currentProof.recordId)
+      || nonEmptyString(currentProof.documentToken)
+      || nonEmptyString(source.recordId)
+      || nonEmptyString(source.documentToken)
+    )) {
+      throw new SyncPlanningError(
+        'CREATE_RECORD_ALREADY_EXISTS',
+        `CREATE ${stableId} requires the release Bitable interface record to be absent`,
+        {
+          recordId: currentProof.recordId || source.recordId || null,
+          documentToken: currentProof.documentToken || source.documentToken || null,
+        },
+      );
+    }
+    if (diffAction === 'CREATE') {
+      const lookup = existingRecordLookupFrom(context);
+      if (lookup.checked !== true
+        || lookup.absent !== true
+        || !nonEmptyString(lookup.baseToken)
+        || !nonEmptyString(lookup.tableId)
+        || !nonEmptyString(lookup.parentRecordId)
+        || !lookup.criteria) {
+        throw new SyncPlanningError(
+          'CREATE_LOOKUP_REQUIRED',
+          `CREATE ${stableId} requires explicit absent existingRecordLookup evidence`,
+        );
+      }
+    }
+    if (diffAction === 'UPDATE' && (!nonEmptyString(currentProof.recordId) || !nonEmptyString(currentProof.documentToken))) {
+      throw new SyncPlanningError(
+        'UPDATE_SOURCE_REQUIRED',
+        `UPDATE ${stableId} requires existing release record and document token evidence`,
+        { recordId: currentProof.recordId || null, documentToken: currentProof.documentToken || null },
+      );
+    }
+    if (diffAction === 'UPDATE' && (
+      !nonEmptyString(source.version)
+      || !nonEmptyString(source.folderToken)
+      || currentProof.placementVerified !== true
+    )) {
+      throw new SyncPlanningError(
+        'UPDATE_PLACEMENT_REQUIRED',
+        `UPDATE ${stableId} requires verified current document placement before planning`,
+        {
+          version: source.version || null,
+          folderToken: source.folderToken || null,
+          placementVerified: currentProof.placementVerified === true,
+        },
+      );
+    }
     const preconditions = [];
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });
     preconditions.push({
@@ -213,8 +289,19 @@ class SyncPlanner {
           && nonEmptyString(source.documentToken)
           && source.folderToken === target.folderToken
           && currentProof.ancestryVerified === true
+          && currentProof.placementVerified === true
           && !shared;
-        plannedAction = safeInPlace ? 'UPDATE_IN_PLACE' : 'CREATE_AND_REPOINT';
+        let copySource = null;
+        if (!safeInPlace) {
+          copySource = copySourceFrom(context);
+          if (!nonEmptyString(copySource.documentToken) || !nonEmptyString(copySource.link)) {
+            throw new SyncPlanningError(
+              'COPY_SOURCE_REQUIRED',
+              `Unsafe UPDATE ${stableId} requires copySource document evidence before patching inherited docs`,
+            );
+          }
+        }
+        plannedAction = safeInPlace ? 'UPDATE_IN_PLACE' : 'COPY_PATCH_AND_REPOINT';
         postconditions = this._writePostconditions(target, source, plannedAction);
         if (source.version && source.version !== target.version) {
           postconditions.push({
@@ -223,6 +310,8 @@ class SyncPlanner {
             documentToken: source.documentToken,
           });
         }
+        metadata.copyBeforePatch = !safeInPlace;
+        metadata.copySourceTitle = copySource?.title || null;
         break;
       }
       case 'DEPRECATE':
@@ -248,6 +337,8 @@ class SyncPlanner {
       stableId,
       artifactDigest,
       source,
+      existingRecordLookup: plannedAction === 'CREATE' ? existingRecordLookupFrom(context) : undefined,
+      copySource: plannedAction === 'COPY_PATCH_AND_REPOINT' ? copySourceFrom(context) : undefined,
       target,
       preconditions,
       postconditions,

@@ -54,6 +54,23 @@ function planningContext(overrides = {}) {
       folderToken: 'collections-v26',
       parentRecordId: 'parent-v26',
       ancestryVerified: true,
+      placementVerified: true,
+    },
+    copySource: {
+      documentToken: 'doc-v26',
+      link: 'https://docs.example/docx/doc-v26',
+      title: 'createCollection()',
+    },
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v26',
+      tableId: 'table-v26',
+      parentRecordId: 'parent-v26',
+      criteria: {
+        canonicalSlug: 'Collections-createCollection',
+        title: 'createCollection()',
+      },
     },
     tokenReferencedByOlderVersions: false,
     ...overrides,
@@ -104,6 +121,97 @@ test('SyncPlanner plans CREATE from reviewed validated content with an exact SHA
   });
 });
 
+test('SyncPlanner rejects writes without a target parent record', () => {
+  assert.throws(
+    () => new SyncPlanner().planAction({
+      type: 'CREATE',
+      stableId: 'node:Collections:createCollection',
+      doc: null,
+      reason: 'new symbol',
+    }, planningContext({
+      current: null,
+      target: { ...planningContext().target, parentRecordId: null },
+    })),
+    (error) => error.code === 'TARGET_ANCESTRY_REQUIRED',
+  );
+});
+
+test('SyncPlanner rejects CREATE when an existing release record is present', () => {
+  assert.throws(
+    () => new SyncPlanner().planAction({
+      type: 'CREATE',
+      stableId: 'node:Collections:createCollection',
+      doc: null,
+      reason: 'new symbol',
+    }, planningContext()),
+    (error) => error.code === 'CREATE_RECORD_ALREADY_EXISTS',
+  );
+});
+
+test('SyncPlanner rejects CREATE without explicit absent lookup evidence', () => {
+  assert.throws(
+    () => new SyncPlanner().planAction({
+      type: 'CREATE',
+      stableId: 'node:Collections:createCollection',
+      doc: null,
+      reason: 'new symbol',
+    }, planningContext({ current: null, existingRecordLookup: null })),
+    (error) => error.code === 'CREATE_LOOKUP_REQUIRED',
+  );
+});
+
+test('SyncPlanner rejects CREATE when existing record evidence is present on the action doc', () => {
+  assert.throws(
+    () => new SyncPlanner().planAction({
+      type: 'CREATE',
+      stableId: 'node:Collections:createCollection',
+      doc: {
+        id: 'rec-existing',
+        metadata: {
+          token: 'doc-existing',
+          version: 'v2.6.x',
+          folderToken: 'collections-v26',
+        },
+      },
+      reason: 'new symbol',
+    }, planningContext({ current: null })),
+    (error) => error.code === 'CREATE_RECORD_ALREADY_EXISTS',
+  );
+});
+
+test('SyncPlanner rejects UPDATE without existing release record and document token evidence', () => {
+  const planner = new SyncPlanner();
+
+  assert.throws(
+    () => planner.planAction(updateAction({ doc: null }), planningContext({ current: null })),
+    (error) => error.code === 'UPDATE_SOURCE_REQUIRED',
+  );
+  assert.throws(
+    () => planner.planAction(updateAction(), planningContext({
+      current: { ...planningContext().current, documentToken: null },
+    })),
+    (error) => error.code === 'UPDATE_SOURCE_REQUIRED',
+  );
+});
+
+test('SyncPlanner rejects UPDATE with unknown current document placement', () => {
+  const planner = new SyncPlanner();
+  const base = planningContext();
+
+  assert.throws(
+    () => planner.planAction(updateAction(), planningContext({
+      current: {
+        ...base.current,
+        version: null,
+        folderToken: null,
+        placementVerified: false,
+      },
+    })),
+    (error) => error.code === 'UPDATE_PLACEMENT_REQUIRED'
+      && /requires verified current document placement/.test(error.message),
+  );
+});
+
 test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshared document', () => {
   const plan = new SyncPlanner().planAction(updateAction(), planningContext());
 
@@ -128,22 +236,88 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
   });
 });
 
-test('SyncPlanner uses CREATE_AND_REPOINT for every unsafe update location', () => {
+test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location with copy source evidence', () => {
   const cases = [
     ['older version', { current: { ...planningContext().current, version: 'v2.5.x' } }],
     ['shared token', { tokenReferencedByOlderVersions: true }],
     ['wrong folder', { current: { ...planningContext().current, folderToken: 'wrong-folder' } }],
     ['missing current ancestry proof', { current: { ...planningContext().current, ancestryVerified: false } }],
-    ['missing target-local link', { current: { ...planningContext().current, documentToken: null } }],
   ];
 
   for (const [label, contextOverride] of cases) {
     const plan = new SyncPlanner().planAction(updateAction(), planningContext(contextOverride));
-    assert.equal(plan.action, 'CREATE_AND_REPOINT', label);
+    assert.equal(plan.action, 'COPY_PATCH_AND_REPOINT', label);
+    assert.deepEqual(plan.copySource, {
+      documentToken: 'doc-v26',
+      link: 'https://docs.example/docx/doc-v26',
+      title: 'createCollection()',
+    }, label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_DOCUMENT'), label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_LINK'), label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_PARENT'), label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_VERSION'), label);
+  }
+});
+
+test('SyncPlanner rejects unsafe UPDATEs without copy source evidence', () => {
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), planningContext({
+      current: { ...planningContext().current, version: 'v2.5.x' },
+      copySource: null,
+    })),
+    (error) => error.code === 'COPY_SOURCE_REQUIRED',
+  );
+});
+
+test('changed inherited Python docs plan as copy-patch-repoint with source preservation evidence', () => {
+  const inheritedCases = [
+    ['python:Volume:upload_file_to_volume', 'v2.5.x'],
+    ['python:CollectionSchema:FieldSchema', 'v2.4.x'],
+    ['python:Authentication:create_user', 'v2.4.x'],
+    ['python:Authentication:update_password', 'v2.4.x'],
+  ];
+
+  for (const [stableId, sourceVersion] of inheritedCases) {
+    const documentToken = `${stableId}:doc`;
+    const title = `${stableId.split(':').at(-1)}()`;
+    const plan = new SyncPlanner().planAction(
+      updateAction({
+        slug: stableId.replace(/^python:/, '').replace(/:/g, '-'),
+        symbol: {
+          name: stableId.split(':').at(-1),
+          identity: { stableId },
+        },
+      }),
+      planningContext({
+        current: {
+          ...planningContext().current,
+          recordId: `${stableId}:record`,
+          documentToken,
+          version: sourceVersion,
+          folderToken: `inherited-${sourceVersion}`,
+          ancestryVerified: true,
+          placementVerified: true,
+        },
+        copySource: {
+          documentToken,
+          link: `https://docs.example/docx/${encodeURIComponent(documentToken)}`,
+          title,
+        },
+        tokenReferencedByOlderVersions: true,
+      }),
+    );
+
+    assert.equal(plan.action, 'COPY_PATCH_AND_REPOINT', stableId);
+    assert.deepEqual(plan.copySource, {
+      documentToken,
+      link: `https://docs.example/docx/${encodeURIComponent(documentToken)}`,
+      title,
+    }, stableId);
+    assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'OLDER_SOURCE_UNCHANGED'), {
+      type: 'OLDER_SOURCE_UNCHANGED',
+      version: sourceVersion,
+      documentToken,
+    }, stableId);
   }
 });
 
@@ -152,7 +326,7 @@ test('cross-version plans preserve the older source document and link', () => {
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   }));
 
-  assert.equal(plan.action, 'CREATE_AND_REPOINT');
+  assert.equal(plan.action, 'COPY_PATCH_AND_REPOINT');
   assert.deepEqual(plan.source, {
     version: 'v2.5.x',
     recordId: 'rec-v26',

@@ -40,23 +40,23 @@ If a block type must change and block-level update cannot represent it, perform 
 
 ## Cross-Version Update
 
-When the current link points to an older-version location, create a target-version document and repoint only the target-version record.
+When a changed interface's current `Docs` link points to an older-version location, always use `COPY_PATCH_AND_REPOINT`. This is the required release-sync action for changed inherited Docx pages.
 
-Preferred one-write flow for Markdown-compatible pages:
+1. Copy the older Docx into the canonical target-version folder at the correct hierarchy position.
+2. Patch only the copy with the reviewed target-version changes.
+3. Validate the copied document's block structure and approval-reviewed content before changing the Bitable record.
+4. Repoint the target-version Bitable record to the validated copy with both `title` and `link`.
+5. Refetch the copied document and target-version record and verify their content, folder ancestry, link, parent, and metadata.
+6. Verify the older-version source remains unchanged in content, token, and folder placement.
 
-1. Export the older document as Markdown.
-2. Merge target-version changes in memory into the normal API reference sections.
-3. Push the final document once into the correct target-version folder.
-4. Update the target-version bitable record with both `title` and `link`.
-5. Refetch and verify the new document and record.
-6. Confirm the older-version document remains unchanged.
+Do not substitute a reconstructed Markdown document for this inherited-Docx release-sync flow. Never patch or repoint an older-version record as part of the newer release action.
 
-Fallback for pages that cannot round-trip safely through Markdown:
+## Current-Release Repointing And Placement
 
-1. Copy the older document into the target-version folder.
-2. Patch only the copy.
-3. Repoint the target-version record with both `title` and `link`.
-4. Verify the old document was not modified.
+- Creating a current-release folder requires repointing its corresponding Module or VirtualNode Bitable record to that folder.
+- Creating or copying a current-release document requires repointing the corresponding interface Bitable record to that document.
+- Use the most specific nested canonical folder represented by the current-version Bitable hierarchy, not merely a broad category folder.
+- Python `bulk_import()` belongs under `DataImport > BulkImport`. Resolve or create `BulkImport` under `DataImport`, repoint the `BulkImport` record to that folder, and put the copied doc there, not in the broad category.
 
 ## Backfill And Reparent
 

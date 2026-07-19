@@ -12,6 +12,39 @@ const {
 } = require('../src/sdk-doc-sync/release-scope/schema');
 
 const fixtureDir = path.join(__dirname, 'fixtures', 'release-scope');
+const skillRoot = path.join(__dirname, '..');
+
+function readSkillFile(relativePath) {
+  return fs.readFileSync(path.join(skillRoot, relativePath), 'utf8');
+}
+
+function readCoreSkill() {
+  return readSkillFile('SKILL.md');
+}
+
+function readPhaseGates() {
+  return readSkillFile('references/phase-gates.md');
+}
+
+function readReviewAndApproval() {
+  return readSkillFile('references/review-and-approval.md');
+}
+
+function readVersioning() {
+  return readSkillFile('references/versioning.md');
+}
+
+function readRoutedSkillPackage() {
+  return [readCoreSkill(), readPhaseGates(), readReviewAndApproval(), readVersioning()].join('\n');
+}
+
+function readFencedLinesAfter(text, marker) {
+  const markerIndex = text.indexOf(marker);
+  assert.notEqual(markerIndex, -1, `Missing marker: ${marker}`);
+  const fenced = text.slice(markerIndex + marker.length).match(/^\s*```[^\n]*\n([\s\S]*?)\n```/);
+  assert.ok(fenced, `Missing fenced block after: ${marker}`);
+  return fenced[1].split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+}
 
 function readFixture(name) {
   return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8'));
@@ -46,10 +79,112 @@ test('release-scope schema accepts the Python v2.6 golden artifact', () => {
   assert.deepEqual(validation, { valid: true, errors: [] });
 });
 
-test('skill instructions forbid synthetic merge proposals from stale grouping artifacts', () => {
-  const skillText = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
-  assert.equal(skillText.includes('merge into one doc action'), false);
-  assert.match(skillText, /Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists/);
+test('review reference rejects every downstream stale grouping artifact type', () => {
+  const reviewText = readReviewAndApproval();
+  const staleSection = reviewText.match(/## Stale Artifacts[\s\S]*?(?=\n## |$)/)?.[0] || '';
+  assert.match(staleSection, /grouping proposal[^.]*stale/i);
+  for (const artifact of [
+    /candidate spec/i,
+    /reviewed context/i,
+    /scoped dry-run/i,
+    /approval TSV/i,
+    /execution artifact/i,
+  ]) {
+    assert.match(staleSection, artifact);
+  }
+  assert.match(staleSection, /regenerate Phase 2|report the newer artifact/i);
+});
+
+test('core owns exact phase approval tokens and write-state invariants', () => {
+  const coreText = readCoreSkill();
+  assert.match(coreText, /APPROVE_GROUPING/);
+  assert.match(coreText, /APPROVE_WRITES/);
+  assert.match(coreText, /scan-state\.json[^.]*only after[^.]*verified completion/i);
+  assert.match(coreText, /no writes? before exact dry-run review/i);
+});
+
+test('review reference owns exact closed accepted-command sets and rejects shorthand approval', () => {
+  const reviewText = readReviewAndApproval();
+  assert.deepEqual(readFencedLinesAfter(reviewText, 'Grouping review accepts only:'), [
+    'APPROVE_GROUPING',
+    'REVISE_GROUPING <proposal-id> <decision>',
+    'REVISE_INHERITANCE <inheritance-id> <decision>',
+    'DEFER_GROUPING <proposal-id>',
+    'REJECT_GROUPING',
+  ]);
+  assert.deepEqual(readFencedLinesAfter(reviewText, 'Write review accepts only:'), [
+    'APPROVE_WRITES',
+    'REJECT_WRITES',
+    'REQUEST_CHANGES <action-id>',
+  ]);
+  assert.match(reviewText, /no free-form approval/i);
+  assert.match(reviewText, /`ok`[^.]*`yes`[^.]*`go ahead`[^.]*do not approve/i);
+  assert.match(reviewText, /APPROVE_GROUPING[^.]*never implies[^.]*APPROVE_WRITES/i);
+});
+
+test('routed package contains no shorthand approval contradictions', () => {
+  const packageText = readRoutedSkillPackage();
+  assert.equal(packageText.includes('merge into one doc action'), false);
+  const contradictions = packageText.split('\n').filter((line) => (
+    /(?:`ok`|`yes`|`go ahead`)[^\n]*(?:approv|transition)/i.test(line)
+      && !/(?:do not|does not|not approved|not approval|never)/i.test(line)
+  ));
+  assert.deepEqual(contradictions, []);
+});
+
+test('cross-version guidance mandates copy patch and repoint without a Markdown rebuild preference', () => {
+  const versioningText = readVersioning();
+  const crossVersionSection = versioningText.match(/## Cross-Version Update[\s\S]*?(?=\n## |$)/)?.[0] || '';
+
+  assert.match(crossVersionSection, /COPY_PATCH_AND_REPOINT/);
+  assert.match(crossVersionSection, /copy[^.]*older Docx[^.]*canonical target-version folder/i);
+  assert.match(crossVersionSection, /patch only the copy/i);
+  assert.match(crossVersionSection, /validate[^.]*block structure/i);
+  assert.match(crossVersionSection, /repoint[^.]*target-version[^.]*record[^.]*title[^.]*link/i);
+  assert.match(crossVersionSection, /older[^.]*source[^.]*unchanged/i);
+  assert.doesNotMatch(crossVersionSection, /Preferred one-write flow|Export the older document as Markdown|Merge target-version changes in memory|Push the final document once/i);
+});
+
+test('versioning reference owns inherited, repoint, and nested hierarchy contracts', () => {
+  const versioningText = readVersioning();
+
+  assert.match(versioningText, /version Drive folder[^.]*sparse/i);
+  assert.match(versioningText, /unchanged[^.]*keep[^.]*Docs[^.]*link|keep[^.]*Docs[^.]*link[^.]*unchanged/i);
+  assert.match(versioningText, /COPY_PATCH_AND_REPOINT/);
+  assert.match(versioningText, /never mutate[^.]*older-version source[^.]*in place|never patch[^.]*older-version/i);
+  assert.match(versioningText, /creat(?:e|ing)[^.]*current-release folder[^.]*repoint[^.]*Module or VirtualNode[^.]*Bitable record/i);
+  assert.match(versioningText, /creat(?:e|ing) or copy(?:ing)?[^.]*current-release document[^.]*repoint[^.]*interface Bitable record/i);
+  assert.match(versioningText, /most specific[^.]*canonical[^.]*folder/i);
+  assert.match(versioningText, /bulk_import\(\)[^.]*DataImport\s*>\s*BulkImport/i);
+  assert.match(versioningText, /resolve or create[^.]*BulkImport[^.]*under[^.]*DataImport/i);
+  assert.match(versioningText, /repoint[^.]*BulkImport[^.]*record/i);
+  assert.match(versioningText, /copied doc[^.]*BulkImport|put[^.]*copied[^.]*doc[^.]*there/i);
+  assert.match(versioningText, /not[^.]*broad category/i);
+});
+
+test('review reference owns placement, preview, content, and lark-cli recovery contracts', () => {
+  const reviewText = readReviewAndApproval();
+
+  assert.match(reviewText, /placement audit[^.]*before[^.]*approval|before[^.]*approval[^.]*placement audit/i);
+  assert.match(reviewText, /Markdown-only previews?[^.]*not approval-grade/i);
+  assert.match(reviewText, /`CREATE`[^.]*content preview[^.]*block-safety validation/i);
+  assert.match(reviewText, /`UPDATE_IN_PLACE`[^.]*before\/after block preview/i);
+  assert.match(reviewText, /`COPY_PATCH_AND_REPOINT`[^.]*exact patch blocks/i);
+  assert.match(reviewText, /internal notes/i);
+  assert.match(reviewText, /generic returns/i);
+  assert.match(reviewText, /escaped identifiers/i);
+  assert.match(reviewText, /lark-cli[^.]*auth[^.]*history[^.]*fetch[^.]*rollback[^.]*cleanup[^.]*not content decisions/i);
+});
+
+test('review reference requires full-detail fetch and asynchronous revert completion checks', () => {
+  const reviewText = readReviewAndApproval();
+
+  assert.match(reviewText, /lark-cli docs \+fetch --doc <doc-token>[^\n]*--detail full/);
+  assert.match(reviewText, /lark-cli docs \+history-revert-status --doc <doc-token> --task-id <task_id>/);
+  assert.match(reviewText, /status[^.]*running[^.]*poll[^.]*history-revert-status[^.]*until[^.]*not running/i);
+  assert.match(reviewText, /refetch[^.]*--detail full/i);
+  assert.match(reviewText, /partial_failed[^.]*failed[^.]*requires?[^.]*reporting[^.]*failed_block_tokens/i);
+  assert.match(reviewText, /no success claim/i);
 });
 
 test('placement audit resolves inherited docs from supplied older version roots', async () => {

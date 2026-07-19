@@ -214,9 +214,12 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
 
   for (const reference of [
+    'references/phase-gates.md',
+    'references/review-and-approval.md',
     'references/schema-first-generation.md',
     'references/release-smoke-test.md',
     'references/post-write-verification.md',
+    'references/troubleshooting.md',
   ]) {
     assert.equal(
       fs.existsSync(path.join(skillRoot, reference)),
@@ -225,6 +228,12 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
     );
     assert.match(skill, new RegExp(reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('sdk-doc-sync core skill stays below 1,800 words', () => {
+  const skillPath = path.resolve(__dirname, '..', 'SKILL.md');
+  const wordCount = fs.readFileSync(skillPath, 'utf8').trim().split(/\s+/).length;
+  assert.ok(wordCount < 1800, `Expected SKILL.md below 1,800 words, found ${wordCount}`);
 });
 
 test('integration guide uses real offline commands and links the manual smoke procedure', () => {

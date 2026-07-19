@@ -37,7 +37,20 @@ Read only what the task requires:
 - Filter scanner output to release-changed public files or symbols before classifying actions. A full scanner dry-run is a health check or backlog signal, not an approval-grade release plan.
 - Normalize scanner symbols to canonical documentation identities before comparing with Feishu records. Raw scanner slugs often differ from bitable or folder slugs.
 - Documentation identity must represent the user-facing API page, not an SDK wrapper class, unless the docs intentionally maintain separate wrapper pages. Category, stable ID, canonical slug, target folder, and parent record must agree before a plan can be approval-ready.
-- When multiple raw SDK symbols can map to one documentation identity, produce a grouping proposal and get user review before building reviewed context or an approval-ready action list.
+- Preserve the repository's documentation granularity. For SDK API references, default to one document per public interface record. Do not create synthetic topic pages that combine multiple existing interface records, even when a release change affects a shared behavior or parameter.
+- Locate existing Bitable records before proposing writes. A candidate is not approval-ready unless it states whether each affected interface record already exists, its record ID, current Docs title/link/token, parent record, and target folder. The release Bitable should contain every available class, method, function, command, and related interface in that release; absence from the current release Drive folder does not imply absence from the Bitable.
+- Before Phase 3 approval-ready planning, verify current placement for every UPDATE candidate by resolving the current Docs token's actual Drive ancestry. Do not infer current placement from target folder, Bitable parent, record title, or slug. If any UPDATE has unknown current version, current folder, or shared-token status, report `planning_blocked` and do not generate an approval TSV.
+- Treat release Drive folders as sparse version-local deltas. Unchanged interfaces may keep inheriting Docs links from previous release folders. Create current-release folders or documents only when an interface or folder-level grouping changed in the current release, or when explicitly backfilling.
+- For a changed interface, copy its previous counterpart document into the current release folder at the correct hierarchy position, then patch that copied document. Repoint the existing Bitable record to the copied-and-patched current-release document. Do not patch the inherited previous-release document in place.
+- `lark-cli` is required for Phase 4 operational safety: auth preflight, history capture, independent Docx block fetch, rollback, and cleanup. Do not use it as the content decision engine.
+- Markdown-only previews are not approval-grade for API-reference writes. Approval-ready artifacts must include either a create preview plus block-safety validation or an in-place/copy patch preview naming the exact sections and blocks to change.
+- Never publish internal run notes, grouping-review text, generic return placeholders such as `Return value for <symbol>.`, or escaped Python identifiers such as `dump\_messages`.
+- For a changed interface whose current `Docs` token is inherited from an older release folder, use `COPY_PATCH_AND_REPOINT`: copy the older Docx into the current version folder, patch only the copy, and repoint the current version Bitable record.
+- For unchanged inherited records, keep the inherited `Docs.link` and only adjust current-version Bitable parent metadata when approved.
+- If a folder is created in the current release folder, repoint the corresponding Module or VirtualNode Bitable record to that created folder. If a document is created or copied into the current release folder, repoint the corresponding interface Bitable record to that document.
+- Place documents in the interface's canonical folder, not the broad category folder, when the Bitable hierarchy has a more specific interface group. Example: Python `bulk_import()` belongs under `DataImport > BulkImport`; if that folder does not yet exist in the current release folder and `bulk_import()` changed, create or resolve the `BulkImport` folder under `DataImport`, repoint the `BulkImport` Bitable record to it, then place the copied current-release `bulk_import()` doc inside it.
+- Treat parameter-only changes as updates to every affected interface document. Do not replace several method pages with one umbrella page for a shared parameter addition such as `description`.
+- When multiple raw SDK symbols appear related, produce a grouping proposal and get user review before building reviewed context or an approval-ready action list. Approval-ready context must preserve one document per public interface record unless the current Bitable already has one intentional shared interface record.
 - When a maintained track has active successor tracks, check inheritance before grouping approval. A candidate cannot be approval-ready until successor-track status and decision are reviewed or explicitly deferred.
 - Separate release changes from older undocumented backlog before assigning `Added Since`.
 - Never write the auto-populated `Slug` field.
@@ -69,16 +82,28 @@ Drive every release sync through these phases. For chat or Feishu bot runs, repo
 Use these transition rules:
 
 - Phase 1 may read source repos, `scan-state.json`, and existing Feishu state needed for comparison. It must not mutate Feishu or `scan-state.json`.
-- Phase 2 is a proposal, not an approval-ready action list. It may include proposed `CREATE`, `UPDATE`, `DEPRECATE`, `BACKFILL`, `REPOINT`, `MERGE`, `SPLIT`, `EXCLUDE`, `DEFER`, and successor-track inheritance decisions, but it must not ask for write approval.
-- Phase 3 may start only after grouping review is accepted or edited. Encode the accepted grouping in the candidate spec before building reviewed context or approval TSV.
+- Phase 2 is a proposal, not an approval-ready action list. It may include proposed `CREATE`, `UPDATE`, `DEPRECATE`, `BACKFILL`, `REPOINT`, `SPLIT`, `EXCLUDE`, `DEFER`, and successor-track inheritance decisions, but it must not ask for write approval. For every proposed write, resolve the live Bitable record first and label the action as update-existing or create-missing from evidence, not from guessed placement. Do not present a synthetic combined documentation identity as the recommendation when the current Bitable has or should have separate interface records.
+- Phase 3 may start only after grouping review is accepted or edited with an explicit valid grouping-review reply. Encode the accepted grouping in the candidate spec before building reviewed context or approval TSV.
 - Phase 4 may start only after explicit approval of the exact Phase 3 action list and dry-run artifacts.
 
 For Feishu bot channels, make every stop point structured and easy to reply to:
 
-- Grouping review prompt: include `Decision requested: GROUPING_REVIEW`, artifact paths, a compact table of proposal IDs and inheritance IDs, and allowed replies: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, or `REJECT_GROUPING`.
+- At every stop point, include an informational `Next step:` note that states the next valid transition or recovery action. Keep it separate from the requested decision, and do not phrase it as approval unless the current phase is already approval-ready.
+- Grouping review prompt: include `Decision requested: GROUPING_REVIEW`, artifact paths, a compact table of proposal IDs and inheritance IDs, and allowed replies: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, or `REJECT_GROUPING`. When a proposal artifact has `inheritance.id`, list those IDs explicitly; write `Inheritance IDs: none` only after checking the artifact and finding no inheritance entries.
 - Write approval prompt: include `Decision requested: WRITE_APPROVAL`, artifact paths, action count, blocked count, and allowed replies: `APPROVE_WRITES`, `REJECT_WRITES`, or `REQUEST_CHANGES <action-id>`.
 - Treat missing, ambiguous, partial, or free-form replies as not approved. Summarize the interpreted decision and wait for a valid transition command.
+- Do not interpret shorthand such as `ok`, `yes`, `continue`, `go ahead`, `generate the action list`, or `make the TSV` as grouping approval. Only `APPROVE_GROUPING` or explicit `REVISE_GROUPING` / `REVISE_INHERITANCE` decisions can transition from Phase 2 to Phase 3.
 - Keep action IDs stable within one run. Prefer deterministic IDs derived from reviewed documentation identity, such as `<phase>:<stableId>`, not row order.
+
+For all chat stop reports, including non-bot interactive runs, use tables instead of prose-only summaries whenever the user must review or revise items:
+
+- Phase 1 `release_scope_ready`: include a compact release-scope table with columns `Action`, `Symbol`, `Type`, `Reason`, `Canonical slug`, and `Source`. If the raw scout has too many rows, include the highest-signal user-facing rows plus a row count by action type and the artifact path that contains the complete table. Do not summarize candidates only as comma-separated names.
+- Phase 1 `release_scope_blocked` or `no_release_changes`: include a diagnostic table with columns `Code`, `Level`, `Count`, and `Meaning`, plus baseline tag, target tag, and artifact path.
+- Phase 2 `grouping_review_required`: include a proposal table with columns `Proposal ID`, `Action`, `Decision`, `Doc identity`, `Existing record`, `Target folder`, `Inheritance ID`, `Inheritance decision`, and `Risk/notes`. Every row must show a proposal ID that can be copied into `REVISE_GROUPING` or `DEFER_GROUPING`. Do not replace this table with a prose list such as "Proposed updates include ...".
+- Phase 2 must also include a complete deterministic inheritance inventory for every proposal, not a prose tail such as "remaining proposals are in the artifact." Generate it from the current proposal artifact with `node .claude/skills/sdk-doc-sync/scripts/render-grouping-inheritance-table.js <proposal-artifact>`. Use the exact columns `Proposal ID`, `Action`, `Doc identity`, `v2.6.x decision`, and `v3.0.x inheritance`.
+- Phase 2 must also include an exclusions table with columns `Excluded surface`, `Reason`, and `Evidence`, when scanner noise or deferred backlog was filtered out.
+- If the table is long, show at least all blocked, missing-record, create, deprecate, and successor-action rows inline, then state the artifact path for the complete table. Keep IDs visible inline for any row the user may need to revise.
+- After every grouping table, repeat the exact allowed reply commands. The user must be able to copy a proposal ID or inheritance ID from the message without opening the JSON artifact.
 
 ### 1. Create The Release Scope
 
@@ -101,6 +126,12 @@ node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
 ```
 
 The artifact must validate with `schemaVersion: 1`, `approvalGrade: true`, `writesPerformed: false`, and `scanStateUpdated: false`. Do not ask for approval when this artifact is absent, invalid, or diagnostic-only.
+
+Every Phase 1 stop report must include an informational `Next step:` note:
+
+- `release_scope_ready`: `Next step: proceed to candidate proposal only after reviewing the release-scope artifact; do not request write approval in Phase 1.`
+- `no_release_changes`: `Next step: no synchronization work is needed for this track unless the baseline or target tag is changed.`
+- `release_scope_blocked`: `Next step: fix the release-scout blocker or source checkout/tag problem, then rerun Phase 1; do not substitute a full scanner dry-run as approval-grade release scope.`
 
 When comparing repeated scans, use:
 
@@ -149,20 +180,48 @@ For blocked generation, report exactly:
 - public documentation candidates and excluded scanner noise;
 - next step to build reviewed `--reference-context` and rerun validation;
 - that no approval is requested, no writes were performed, and `scan-state.json` was not updated.
+- Treat any existing recovered scope, reviewed context, full dry-run, summary, or approval TSV as historical until it is regenerated from the current reviewed candidate spec. Do not call historical artifacts valid, current, approval-ready, or usable for approval.
 
 ### 2a. Recover A Blocked Scoped Dry-Run
 
-When the scoped dry-run found release changes but schema-first planning failed, build a reviewed user-facing scope and reference context instead of asking for approval. Author the candidate spec as a run-local artifact under `tmp/sdk-release-scout/`; it represents the current Feishu approval batch and can become stale after writes complete.
+When the scoped dry-run found release changes but schema-first planning failed, build a reviewed user-facing scope and reference context instead of asking for approval.
 
-Before writing the candidate spec, report a grouping proposal for user review whenever raw scanner symbols are wrappers, aliases, sync/async pairs, overloads, or category-moved methods that may share a documentation page. If successor tracks are active for the requested track, include the inheritance check in the same review proposal. The proposal must list:
+First create a grouping/inheritance proposal as chat output or as `tmp/sdk-release-scout/<language>-<track>-grouping-proposal.json`. This proposal is not executable approval context. Do not write or reuse `tmp/sdk-release-scout/<language>-<track>-candidates.json` as a reviewed candidate spec until the user gives a valid grouping-review reply.
 
+Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists for the same language and track. In that case, either regenerate Phase 2 from the current release scope or report the newer artifact's exact status; do not summarize the stale proposal as the current recommendation.
+
+Report the grouping proposal for user review whenever raw scanner symbols are wrappers, aliases, sync/async pairs, overloads, or category-moved methods that may map to existing documentation records. If successor tracks are active for the requested track, include the inheritance check in the same review proposal. The proposal must list:
+
+- stable proposal ID, preferably `proposal:<documentation-stable-id>`;
 - documentation identity: category, stable ID, canonical slug, title, target folder;
+- existing Bitable identity: matching record ID when present, current Docs title/link/token, parent record ID, and whether the target document will be updated or created;
 - source variants: raw symbol, scanner stable ID, canonical slug, source file, reason;
-- decision: merge into one doc action, keep separate docs, exclude as scanner noise, or defer;
+- decision: map to existing shared record, split into separate interface records, exclude as scanner noise, or defer;
+- grouping review field that will be encoded after approval: `groupingReview.reviewed=true` with the reviewed decision text;
 - successor-track decision when required: inherited, separate successor action, intentionally not applicable, exclude, or defer;
+- stable inheritance ID, preferably `proposal:<documentation-stable-id>#<successor-track>`;
+- inheritance review field that will be encoded after approval: `inheritanceReview.reviewed=true` with one reviewed entry per required successor track;
 - evidence and risks: existing Feishu records, wrapper equivalence, behavior differences, and version-sharing risks.
 
+If the Bitable lookup shows separate public interface records for the affected symbols, use `SPLIT` into those existing records. If no record exists but the SDK surface exposes separate public interfaces, propose separate create-missing actions. Do not encode a reviewed candidate spec that combines multiple existing or expected interface records into one umbrella page; update or create each affected interface document instead.
+
+After a valid grouping-review reply, encode the reviewed decisions in the run-local candidate spec under `tmp/sdk-release-scout/`; it represents the current Feishu approval batch and can become stale after writes complete or after any release scope, source checkout, grouping, inheritance, target folder, or reference-context input changes.
+
 Do not proceed to approval-ready TSV from an unreviewed grouping proposal. If the user edits the grouping or inheritance decision, encode the reviewed decision in the candidate spec. Multi-symbol groups must include `docIdentity.stableId`, `docIdentity.canonicalSlug`, and `groupingReview.reviewed: true`; successor-track checks must include `inheritanceReview.reviewed: true` when the reviewed-context builder detects required successor tracks from the SDK reference table or when the candidate spec adds extra successor tracks. Otherwise `scripts/build-reviewed-release-context.js` rejects the run.
+
+If `scripts/build-reviewed-release-context.js` rejects the candidate spec for missing `docIdentity`, `groupingReview`, `inheritanceReview`, target placement, summaries, examples, or evidence, report `planning_blocked`. Do not generate, refresh, present, or request approval for an approval TSV from an older full dry-run artifact. A stale full dry-run can be mentioned only as historical context; it is not the current approval boundary.
+
+Before building reviewed context, verify the current Drive placement for every matched existing record:
+
+```bash
+node .claude/skills/sdk-doc-sync/scripts/build-current-placement-audit.js \
+  --proposal tmp/sdk-release-scout/python-v26-grouping-proposal.json \
+  --version v2.6.x \
+  --version-root IaWgf4osAlpdwqdVIclct97wnCg \
+  --output tmp/sdk-release-scout/python-v26-placement-audit.json
+```
+
+If the placement audit reports `placement_audit_blocked` or any blocked entries, stop with `planning_blocked`.
 
 ```bash
 node .claude/skills/sdk-doc-sync/scripts/build-reviewed-release-context.js \
@@ -189,11 +248,13 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
   --json > tmp/sdk-release-scout/python-v26-user-facing-dryrun-full.json
 ```
 
-Only call a recovered run approval-ready when `planCount == diffCount`, `planningErrorCount == 0`, target folders are category folders under the version root, the full dry-run JSON is saved, and the artifacts still have `writesPerformed: false` and `scanStateUpdated: false`. Release-scope actions may carry `planningContext.target`; treat that target as authoritative and do not override it with the default `ROOT_TOKEN` folder.
+Only call a recovered run approval-ready when `planCount == diffCount`, `planningErrorCount == 0`, target folders are canonical hierarchy folders under the version root, the full dry-run JSON is saved, and the artifacts still have `writesPerformed: false` and `scanStateUpdated: false`. Use the most specific parent folder required by the Bitable hierarchy, such as `DataImport > BulkImport` for Python `bulk_import()`, not merely the broad category folder. Release-scope actions may carry `planningContext.target`; treat that target as authoritative and do not override it with the default `ROOT_TOKEN` folder.
 
 Also verify that every planned action's stable ID category and canonical slug category match the reviewed target category. A category-targeted action must not keep a wrapper-class identity; fix the identity map or use a reviewed `docIdentity` before asking for approval.
 
-For an approval TSV from the full dry-run JSON:
+Also verify every UPDATE plan has non-null `source.version`, non-null `source.folderToken`, and placement-derived `SHARED_TOKEN`; any null value is a blocker, not a reason to default to `COPY_PATCH_AND_REPOINT`.
+
+For an approval TSV from the newly generated full dry-run JSON:
 
 ```bash
 jq -r '.plans[] | [.action,.stableId,.target.folderToken,.source.recordId,.source.documentToken,.metadata.diffAction,.artifactDigest] | @tsv' \
@@ -201,92 +262,18 @@ jq -r '.plans[] | [.action,.stableId,.target.folderToken,.source.recordId,.sourc
   > tmp/sdk-release-scout/python-v26-approval-actions.tsv
 ```
 
-### 3. Scan Only Relevant Symbols
+Create this TSV only after the current run has successfully rebuilt reviewed context, rerun the scoped dry-run, saved the full dry-run JSON, and confirmed `planCount == diffCount` and `planningErrorCount == 0`.
 
-Run the scanner and filter it to the changed files or symbols. Example:
+### 3. Finish The Run
 
-```bash
-node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
-  --language python \
-  --sdk-dir repos/pymilvus/pymilvus \
-  --sdk-name pymilvus \
-  --sdk-version v2.6.x \
-  --dry-run
-```
+- Scan only release-relevant symbols. Treat broad full-package dry-runs as diagnostics, not approval plans.
+- Compare source, examples, tests, and Feishu state before drafting content. Do not publish scanner scaffolds or source docstrings as finished documentation.
+- Show exact dry-run actions and unresolved placement/version-sharing risks. Separate release triage, blocked generation, and approval-ready status.
+- Obtain explicit approval before any live create, patch, move, copy, bitable update, or OpenAPI edit.
+- Execute only approved actions. For creates, write source-backed docs, resolve/create the canonical folder, create the document, then create the Bitable record without setting `Slug`. For updates and backfills, choose the version-safe flow in [references/versioning.md](references/versioning.md).
+- After live writes, refetch document and Bitable record, verify content, folder ancestry, `Docs.link`, `父记录`, version metadata, language/formatting, and older-source preservation, then run [references/post-write-verification.md](references/post-write-verification.md).
+- Update `scan-state.json` only when all approved actions are complete or explicitly recorded as deferred.
 
-If a full dry-run reports broad false `CREATE` or `ORPHAN` noise, report it as non-approval-grade and continue with the release-scoped Git diff plus targeted scanner extraction. Do not ask for approval on an unfiltered dry-run action list.
+## Reporting
 
-Read the public implementation, examples, and tests for each action. Do not publish raw scanner scaffolds or source docstrings as finished documentation.
-
-### 4. Index And Compare Feishu State
-
-Fetch only the relevant records where feasible. For every proposed action, record:
-
-- symbol and source location;
-- action type and reason;
-- parameter-level differences for updates;
-- target version, category, folder, and parent record;
-- current document token and whether older versions share it;
-- whether the target-version bitable row should link a new/current-version doc or retain an unchanged older doc link while updating `父记录`;
-- exact `Targets` and `Progress` post-write values for every edited record;
-- planned metadata and post-write checks.
-
-### 5. Preview And Approve
-
-Show the exact action list and dry-run result, including unresolved placement or version-sharing risks. Separate three statuses:
-
-- **Release triage:** source-backed list of public documentation work from release scout, Git diff, implementation, examples, and tests.
-- **Blocked generation:** scanner found release changes but schema-first validation or planning failed; report blocker counts and do not request write approval.
-- **Approval-ready plan:** every action has reviewed content, target placement, preconditions, postconditions, and validation passed.
-
-Obtain explicit approval before any live create, patch, move, copy, bitable update, or OpenAPI edit. Only request approval for an approval-ready plan.
-
-### 6. Execute Approved Actions
-
-For schema-first production generation, follow [references/schema-first-generation.md](references/schema-first-generation.md): scan, normalize, validate, render, plan, approve, execute, and verify. The immutable plan and reviewed artifact are the approval boundary for live writes.
-
-For creates:
-
-1. Write source-backed documentation in the per-SDK format.
-2. Resolve or create the correct category folder under the canonical version root.
-3. Create the document.
-4. Create its bitable record without setting `Slug`.
-
-For updates and backfills, choose the version-safe flow in [references/versioning.md](references/versioning.md). Apply only approved actions.
-
-### 7. Refetch And Verify
-
-After every live write:
-
-1. Refetch the document and bitable record.
-2. Verify document content, folder ancestry, `Docs.link`, `父记录`, version metadata, and language/formatting details.
-3. Run the scoped checks in [references/post-write-verification.md](references/post-write-verification.md).
-4. Confirm older-version documents remain unchanged.
-5. Report successful, failed, skipped, and unresolved actions separately.
-
-### 8. Update Scan State
-
-Update `scan-state.json` only when all approved actions for the scan are complete or explicitly recorded as deferred. Do not advance the tag after a partially failed run without explaining the recovery state.
-
-## Documentation Quality
-
-- Explain when and why to use a method, not only what its name says.
-- Describe valid parameter values, constraints, defaults, and interactions.
-- Use public SDK APIs and runnable examples.
-- List exceptions and response details verified from source.
-- Keep builder methods, typed return fields, and exception descriptions in separate rendered blocks.
-- Preserve the established page structure and integrate changes into their normal sections.
-
-## Completion Report
-
-Report:
-
-- baseline and target tags;
-- scanned repositories and symbols;
-- approved actions executed;
-- created or updated document and record links;
-- version-placement and shared-token decisions;
-- post-write verification results;
-- deferred backlog, unsupported surfaces, validation blockers, and failures;
-- exact next step when generation is blocked before planning;
-- whether `scan-state.json` was updated.
+Report baseline/target tags, scanned symbols, executed or blocked actions, document/record links, placement and shared-token decisions, verification results, blockers, next phase step, and whether `scan-state.json` changed.

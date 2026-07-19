@@ -47,10 +47,12 @@ Build immutable plans with `src/sdk-doc-sync/sync-planner.js`. Planning is read-
 Each plan artifact has these fields:
 
 - `schemaVersion`: currently `1`.
-- `action`: one of `CREATE`, `UPDATE_IN_PLACE`, `CREATE_AND_REPOINT`, `DEPRECATE`, `ORPHAN`, or `NOOP`.
+- `action`: one of `CREATE`, `UPDATE_IN_PLACE`, `COPY_PATCH_AND_REPOINT`, `DEPRECATE`, `ORPHAN`, or `NOOP`.
 - `stableId`: stable symbol identity used for review, execution, and recovery.
 - `artifactDigest`: digest of the reviewed content or Document IR for write actions.
 - `source`: current version, record ID, document token, and folder token.
+- `existingRecordLookup`: explicit checked-and-absent Bitable lookup evidence for `CREATE` plans.
+- `copySource`: previous counterpart document evidence for `COPY_PATCH_AND_REPOINT`.
 - `target`: target version, parent record ID, folder token, and version root token.
 - `preconditions`: artifact digest, current record state, current document token, target ancestry proof, and shared-token status.
 - `postconditions`: expected target document location, bitable link, parent, version metadata, deprecation metadata, no-mutation state, or older-source preservation.
@@ -58,9 +60,9 @@ Each plan artifact has these fields:
 
 Plan action selection:
 
-- `CREATE` creates a new document and record.
+- `CREATE` creates a new document and record only when `existingRecordLookup` proves the complete release Bitable was checked and the interface record is absent.
 - `UPDATE_IN_PLACE` patches only when the current document is already in the target version folder, ancestry is verified, and no older-version bitable shares the token.
-- `CREATE_AND_REPOINT` creates a target-version document and repoints the target record when the source is cross-version, shared, or not safely patchable in place.
+- `COPY_PATCH_AND_REPOINT` copies the inherited previous counterpart document into the target version folder, patches the copy, and repoints the existing Bitable record when the source is cross-version, shared, or not safely patchable in place.
 - `DEPRECATE` updates metadata only.
 - `ORPHAN` and `NOOP` perform no mutation.
 
@@ -78,13 +80,15 @@ The approval boundary is the immutable plan plus reviewed rendered artifact. A r
 
 Execute only approved immutable plans with `src/sdk-doc-sync/sync-executor.js`.
 
-Execution behavior:
+Execution must use the narrowest document strategy:
 
-- Create: push the reviewed Markdown to the target folder, then create the bitable record without writing `Slug`; leave `Targets` blank and set `Progress` to `WIP`.
-- Update in place: patch the existing target-version document, then update metadata; leave `Targets` blank and set `Progress` to `WIP`.
-- Create and repoint: push the reviewed Markdown to the target folder, then update the existing record with both `title` and `link`; leave `Targets` blank and set `Progress` to `WIP`.
+- `CREATE`: create the reviewed page, refetch blocks, validate rendered structure, then create the Bitable record without writing `Slug`; leave `Targets` blank and set `Progress` to `WIP`.
+- `UPDATE_IN_PLACE`: capture history, apply a minimal block-level patch to the target-version doc, refetch blocks, validate rendered structure, then update metadata; leave `Targets` blank and set `Progress` to `WIP`.
+- `COPY_PATCH_AND_REPOINT`: copy the older Docx into the target folder, patch the copy, refetch blocks, validate rendered structure, then repoint the Bitable record with both `title` and `link`; leave `Targets` blank and set `Progress` to `WIP`.
 - Deprecate: set deprecation metadata and progress only.
 - Orphan/no-op: leave Feishu untouched.
+
+Do not update a Bitable `Docs` field until the document has passed rendered-block validation.
 
 If a step fails, stop the current plan and report `failedStep`, completed steps, and suggested recovery. Do not continue with dependent actions until the recovery is understood.
 

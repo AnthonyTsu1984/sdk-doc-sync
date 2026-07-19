@@ -12,6 +12,14 @@ Use these checks after document creation, a full rewrite, category movement, or 
 
 Builder signatures, typed return fields, and exception labels must not be joined to their descriptions in one rendered text run.
 
+Failure patterns that must block completion:
+
+- visible backslash escapes in identifiers, for example `dump\_messages`;
+- visible internal workflow text, for example `Reviewed grouping approved`;
+- generic generated content, for example `Return value for <symbol>`;
+- extra `Notes` sections added only to carry internal release context;
+- changed inherited docs still pointing to older version folders after execution.
+
 ## Record And Folder Checks
 
 1. Use `bitable-show` to verify `Docs.link`, `父记录`, type, version metadata, `Targets`, and `Progress`.

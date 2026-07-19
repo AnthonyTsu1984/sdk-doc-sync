@@ -55,10 +55,53 @@ function defaultsFor(args) {
       ],
     };
   }
+  if (args.language === 'node') {
+    return {
+      sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-node'),
+      repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-node'),
+      publicRoots: [
+        'milvus/',
+        'docs/content/operations/',
+      ],
+    };
+  }
+  if (args.language === 'go') {
+    return {
+      sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-go'),
+      repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-go'),
+      publicRoots: [
+        'client/',
+      ],
+    };
+  }
   return {
     sdkDir: args.sdkDir,
     repoDir: args.repoDir,
     publicRoots: [],
+  };
+}
+
+function compactTrack(track) {
+  const match = /^v(\d+)\.(\d+)\.x$/.exec(track || '');
+  if (!match) return null;
+  return `v${match[1]}${match[2]}`;
+}
+
+function scanStateKeyForOverride({ language, track, scanState }) {
+  const compact = compactTrack(track);
+  const versionedKey = compact ? `${language}-${compact}` : null;
+  if (versionedKey && scanState && scanState[versionedKey]) return versionedKey;
+  return language;
+}
+
+function loadCliScanState({ args, dependencies }) {
+  const scanState = dependencies.loadScanState ? dependencies.loadScanState() : loadScanState();
+  if (!args.baselineTag) return scanState;
+  return {
+    ...scanState,
+    [scanStateKeyForOverride({ language: args.language, track: args.track, scanState })]: {
+      lastScannedTag: args.baselineTag,
+    },
   };
 }
 
@@ -87,9 +130,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     language: args.language,
     sdkName: args.sdkName,
     track: args.track,
-    scanState: args.baselineTag
-      ? { ...(dependencies.loadScanState ? dependencies.loadScanState() : loadScanState()), [args.language]: { lastScannedTag: args.baselineTag } }
-      : dependencies.loadScanState ? dependencies.loadScanState() : loadScanState(),
+    scanState: loadCliScanState({ args, dependencies }),
     targetTag: args.targetTag || null,
     sdkDir: defaults.sdkDir,
     repoDir: defaults.repoDir,

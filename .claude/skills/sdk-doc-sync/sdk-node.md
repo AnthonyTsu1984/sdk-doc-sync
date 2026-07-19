@@ -2,6 +2,7 @@
 
 **Scanner:** `src/sdk-doc-sync/scanners/node-scanner.js`
 **Root dir:** `repos/milvus-sdk-node` (repo root)
+**Release scout sdk-name:** `milvus-sdk-node`
 **Latest release:** `v3.0.3` (as of 2026-06-17)
 **Category mapping:** Data.ts→Vector, Collection.ts→Collections, etc.
 
@@ -151,6 +152,7 @@ When a parameter type is a complex object (e.g., `HybridSearchSingleReq[]`, `Fun
 **CRITICAL — No markdown links inside bullet descriptions.** A markdown link (`[text](#anchor)`) inside a bullet description causes a Feishu schema mismatch error that silently drops that bullet's content AND all subsequent bullets. Use plain text references instead.
 
 **Scripts:**
+- `bin/sdk-release-scout.js --language node --sdk-name milvus-sdk-node --track v2.6.x` — v2.6.x release scope discovery
 - `scripts/node-v26-update.js` — v2.6.x create/update run
 - `scripts/node-v26-request-syntax.js` — doc rebuild (version migration reference)
 - `scripts/node-v2610-fix.js`, `scripts/node-v2610-update.js` — v2.6.10 patch runs

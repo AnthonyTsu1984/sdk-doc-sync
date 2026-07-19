@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const BaseScanner = require('./base-scanner');
 
 // Category assignment for 86 methods
@@ -73,6 +74,11 @@ const METHOD_CATEGORIES = {
     SearchIterator: 'Vector',
     QueryIterator: 'Vector',
 
+    // CDC / replication
+    UpdateReplicateConfiguration: 'CDC',
+    GetReplicateConfiguration: 'CDC',
+    GetReplicateInfo: 'CDC',
+
     // Authentication (22)
     ListUsers: 'Authentication',
     DescribeUser: 'Authentication',
@@ -114,8 +120,6 @@ const SKIP_METHODS = new Set([
     'GrantV2',
     'RevokeV2',
     'MetadataUnaryInterceptor',
-    'UpdateReplicateConfiguration',
-    'GetReplicateInfo',
     'CreateReplicateStream',
     // Internal/private methods
     'dialOptions',
@@ -137,8 +141,12 @@ const SKIP_METHODS = new Set([
 // Entity type definitions: { name, category, pkg, file, kind, docstring }
 // pkg: 'entity' = client/entity/, 'index' = client/index/, 'milvusclient' = client/milvusclient/
 const ENTITY_DEFS = [
+    // Client
+    { name: 'ClientConfig', category: 'Client', pkg: 'milvusclient', file: 'client_config.go', kind: 'struct', docstring: 'Configuration for creating a Milvus client, including address, authentication, TLS, database, and gRPC options.' },
+
     // Collections
     { name: 'Schema', category: 'Collections', pkg: 'entity', file: 'schema.go', kind: 'struct', docstring: 'Represents the schema of a collection, including field definitions, functions, and dynamic field settings.' },
+    { name: 'StructSchema', category: 'Collections', pkg: 'entity', file: 'field.go', kind: 'struct', docstring: 'Represents the schema of a struct field, including nested field definitions.' },
     { name: 'Field', category: 'Collections', pkg: 'entity', file: 'field.go', kind: 'struct', docstring: 'Defines a field in a collection schema, including its data type, constraints, and indexing properties.' },
     { name: 'FieldType', category: 'Collections', pkg: 'entity', file: 'field.go', kind: 'enum', docstring: 'Enumerates the supported data types for collection fields.' },
     { name: 'Collection', category: 'Collections', pkg: 'entity', file: 'collection.go', kind: 'struct', docstring: 'Represents a collection description returned by DescribeCollection, including schema, shards, and properties.' },
@@ -170,6 +178,11 @@ const ENTITY_DEFS = [
     { name: 'QueryIterator', category: 'Vector', pkg: 'milvusclient', file: 'iterator.go', kind: 'interface', docstring: 'Provides paginated access to query results. Call Next() repeatedly until io.EOF.' },
     { name: 'Vector', category: 'Vector', pkg: 'entity', file: 'vectors.go', kind: 'interface', docstring: 'Interface for vector data. Implementations include FloatVector, BinaryVector, Float16Vector, BFloat16Vector, Int8Vector, and Text.' },
     { name: 'AnnParam', category: 'Vector', pkg: 'index', file: 'ann_param.go', kind: 'interface', docstring: 'Interface for approximate nearest neighbor search parameters. Use NewCustomAnnParam() to create a configurable instance.' },
+    { name: 'ColumnFloatVectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector float-vector data in struct array fields.' },
+    { name: 'ColumnFloat16VectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector float16-vector data in struct array fields.' },
+    { name: 'ColumnBFloat16VectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector bfloat16-vector data in struct array fields.' },
+    { name: 'ColumnBinaryVectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector binary-vector data in struct array fields.' },
+    { name: 'ColumnInt8VectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector int8-vector data in struct array fields.' },
 
     // Authentication
     { name: 'User', category: 'Authentication', pkg: 'entity', file: 'rbac.go', kind: 'struct', docstring: 'Represents a user with their assigned roles, returned by DescribeUser.' },
@@ -180,6 +193,9 @@ const ENTITY_DEFS = [
     // ResourceGroup
     { name: 'ResourceGroup', category: 'ResourceGroup', pkg: 'entity', file: 'resource_group.go', kind: 'struct', docstring: 'Represents a resource group description including node capacity, replica distribution, and configuration.' },
     { name: 'ResourceGroupConfig', category: 'ResourceGroup', pkg: 'entity', file: 'resource_group.go', kind: 'struct', docstring: 'Configuration for creating or updating a resource group, including node limits and transfer policies.' },
+
+    // CDC
+    { name: 'ReplicateConfigurationBuilder', category: 'CDC', pkg: 'milvusclient', file: 'replicate_builder.go', kind: 'interface', docstring: 'Builder for replicate configuration update requests.' },
 ];
 
 class GoScanner extends BaseScanner {
@@ -205,6 +221,7 @@ class GoScanner extends BaseScanner {
                     method.params = optInfo.constructorParams;
                     method.optionMethods = optInfo.withMethods;
                     method.altConstructors = optInfo.altConstructors;
+                    method.relatedFiles = optInfo.sourceFiles || [];
                 }
             }
         }
@@ -283,6 +300,7 @@ class GoScanner extends BaseScanner {
                     filePath: relPath,
                     lineNumber: i + 1,
                     parentClass: METHOD_CATEGORIES[name],
+                    bodyHash: this._bodyFingerprint(this._extractFuncBody(lines, i)),
                     example: null,
                 });
             }
@@ -380,13 +398,13 @@ class GoScanner extends BaseScanner {
 
         for (const file of optFiles) {
             const content = fs.readFileSync(file, 'utf-8');
-            this._parseOptionFile(content, index);
+            this._parseOptionFile(content, index, path.relative(this.rootDir, file));
         }
 
         return index;
     }
 
-    _parseOptionFile(content, index) {
+    _parseOptionFile(content, index, sourceFile = null) {
         const lines = content.split('\n');
 
         // Pass 1: Find all exported option interfaces and their unexported struct names
@@ -394,6 +412,10 @@ class GoScanner extends BaseScanner {
         // type fooOption struct { -> struct name
         const interfaces = new Map(); // FooOption -> true
         const structs = new Map();    // fooOption -> true
+        const concreteOptionInterfaces = new Map([
+            ['columnBasedDataOption', ['InsertOption', 'UpsertOption']],
+            ['rowBasedDataOption', ['InsertOption', 'UpsertOption']],
+        ]);
 
         for (const line of lines) {
             const ifMatch = line.match(/^type\s+([A-Z]\w*Option)\s+interface\s*\{/);
@@ -418,50 +440,84 @@ class GoScanner extends BaseScanner {
             const structName = ctorMatch[3] || null;
             const ifaceName = ctorMatch[4] || null;
 
-            // Determine which exported interface this constructor serves
-            let optionInterface = null;
+            // Determine which exported interface this constructor serves.
+            let optionInterfaces = [];
 
             if (ifaceName && interfaces.has(ifaceName)) {
-                optionInterface = ifaceName;
+                optionInterfaces = [ifaceName];
             } else if (structName) {
                 // Map unexported struct to exported interface
                 // e.g., createCollectionOption -> CreateCollectionOption
                 const capitalized = structName.charAt(0).toUpperCase() + structName.slice(1);
                 if (interfaces.has(capitalized)) {
-                    optionInterface = capitalized;
+                    optionInterfaces = [capitalized];
+                } else if (concreteOptionInterfaces.has(structName)) {
+                    optionInterfaces = concreteOptionInterfaces.get(structName)
+                        .filter((name) => interfaces.has(name));
                 }
             }
 
-            if (!optionInterface) continue;
+            if (optionInterfaces.length === 0) continue;
 
             // Parse constructor params
             const constructorParams = this._parseParams(paramStr);
 
-            // Initialize or get existing entry
+            for (const optionInterface of optionInterfaces) {
+                // Initialize or get existing entry
+                if (!index.has(optionInterface)) {
+                    index.set(optionInterface, {
+                        constructorParams: [],
+                        withMethods: [],
+                        altConstructors: [],
+                        primaryConstructor: null,
+                        structName: structName || (ifaceName ? ifaceName.charAt(0).toLowerCase() + ifaceName.slice(1) : null),
+                        sourceFiles: [],
+                    });
+                }
+
+                const entry = index.get(optionInterface);
+                if (sourceFile && !entry.sourceFiles.includes(sourceFile)) {
+                    entry.sourceFiles.push(sourceFile);
+                }
+
+                if (ctorName.startsWith('New')) {
+                    entry.constructorParams = constructorParams;
+                    entry.primaryConstructor = ctorName;
+                } else {
+                    // Alternative constructor (e.g., SimpleFooOptions)
+                    entry.altConstructors.push({
+                        name: ctorName,
+                        params: paramStr,
+                        fullSignature: `${ctorName}(${paramStr})`,
+                    });
+                }
+            }
+        }
+
+        const structToInterfaces = (structName) => {
+            const capitalized = structName.charAt(0).toUpperCase() + structName.slice(1);
+            if (interfaces.has(capitalized)) return [capitalized];
+            return (concreteOptionInterfaces.get(structName) || [])
+                .filter((name) => interfaces.has(name));
+        };
+
+        const ensureEntry = (optionInterface, structName) => {
             if (!index.has(optionInterface)) {
                 index.set(optionInterface, {
                     constructorParams: [],
                     withMethods: [],
                     altConstructors: [],
                     primaryConstructor: null,
-                    structName: structName || (ifaceName ? ifaceName.charAt(0).toLowerCase() + ifaceName.slice(1) : null),
+                    structName,
+                    sourceFiles: [],
                 });
             }
-
             const entry = index.get(optionInterface);
-
-            if (ctorName.startsWith('New')) {
-                entry.constructorParams = constructorParams;
-                entry.primaryConstructor = ctorName;
-            } else {
-                // Alternative constructor (e.g., SimpleCreateCollectionOptions)
-                entry.altConstructors.push({
-                    name: ctorName,
-                    params: paramStr,
-                    fullSignature: `${ctorName}(${paramStr})`,
-                });
+            if (sourceFile && !entry.sourceFiles.includes(sourceFile)) {
+                entry.sourceFiles.push(sourceFile);
             }
-        }
+            return entry;
+        };
 
         // Pass 3: Find With* methods on option structs
         for (let i = 0; i < lines.length; i++) {
@@ -476,30 +532,23 @@ class GoScanner extends BaseScanner {
             const paramStr = withMatch[3].trim();
 
             // Map struct to interface
-            const capitalized = structName.charAt(0).toUpperCase() + structName.slice(1);
-            if (!interfaces.has(capitalized)) continue;
-
-            if (!index.has(capitalized)) {
-                index.set(capitalized, {
-                    constructorParams: [],
-                    withMethods: [],
-                    altConstructors: [],
-                    primaryConstructor: null,
-                    structName,
-                });
-            }
-
-            const entry = index.get(capitalized);
+            const optionInterfaces = structToInterfaces(structName);
+            if (optionInterfaces.length === 0) continue;
 
             // Extract docstring
             const docstring = this._extractGoDoc(lines, i);
-
-            entry.withMethods.push({
-                name: methodName,
-                params: paramStr,
-                fullSignature: `${methodName}(${paramStr})`,
-                description: docstring || '',
-            });
+            for (const optionInterface of optionInterfaces) {
+                const entry = ensureEntry(optionInterface, structName);
+                if (entry.withMethods.some((method) => method.fullSignature === `${methodName}(${paramStr})`)) {
+                    continue;
+                }
+                entry.withMethods.push({
+                    name: methodName,
+                    params: paramStr,
+                    fullSignature: `${methodName}(${paramStr})`,
+                    description: docstring || '',
+                });
+            }
         }
     }
 
@@ -631,6 +680,7 @@ class GoScanner extends BaseScanner {
 
     _resolveEntityPath(def) {
         const pkgDirs = {
+            column: path.join(this.rootDir, 'client', 'column'),
             entity: path.join(this.rootDir, 'client', 'entity'),
             index: path.join(this.rootDir, 'client', 'index'),
             milvusclient: this._milvusClientDir,
@@ -727,6 +777,7 @@ class GoScanner extends BaseScanner {
                     params: match[2].trim(),
                     returnType: match[3].trim().replace(/^\(/, '').replace(/\)$/, ''),
                     description: docstring || '',
+                    bodyHash: this._bodyFingerprint(this._extractFuncBody(lines, i)),
                 });
             }
         }
@@ -821,6 +872,12 @@ class GoScanner extends BaseScanner {
             }
         }
 
+        const methods = this._extractReceiverMethods({
+            typeName: def.name,
+            lines,
+            skipMethods: new Set(),
+        });
+
         return {
             name: def.name,
             kind: 'enum',
@@ -831,7 +888,7 @@ class GoScanner extends BaseScanner {
             fields: [],
             params: [],
             optionMethods: [],
-            methods: [],
+            methods,
             filePath: path.relative(this.rootDir, filePath),
             lineNumber: typeLine + 1,
             pkg: def.pkg,
@@ -1087,6 +1144,35 @@ class GoScanner extends BaseScanner {
 
         const minIndent = Math.min(...nonEmpty.map(l => l.match(/^(\s*)/)[1].length));
         return bodyLines.map(l => l.substring(minIndent)).join('\n').trim();
+    }
+
+    _extractReceiverMethods({ typeName, lines, skipMethods }) {
+        const methods = [];
+        const methodRegex = new RegExp(`^func\\s+\\(\\w+\\s+\\*?${typeName}\\)\\s+([A-Z]\\w+)\\s*\\(([^)]*)\\)\\s*(.*?)\\s*\\{`);
+        for (let i = 0; i < lines.length; i++) {
+            const match = lines[i].match(methodRegex);
+            if (!match || skipMethods.has(match[1])) continue;
+            const docstring = this._extractGoDoc(lines, i);
+            methods.push({
+                name: match[1],
+                params: match[2].trim(),
+                returnType: match[3].trim().replace(/^\(/, '').replace(/\)$/, ''),
+                description: docstring || '',
+                bodyHash: this._bodyFingerprint(this._extractFuncBody(lines, i)),
+            });
+        }
+        return methods;
+    }
+
+    _bodyFingerprint(body) {
+        if (!body) return null;
+        const normalized = body
+            .split('\n')
+            .map((line) => line.replace(/\/\/.*$/, '').trim())
+            .filter(Boolean)
+            .join('\n');
+        if (!normalized) return null;
+        return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
     }
 }
 

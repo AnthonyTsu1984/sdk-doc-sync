@@ -9,14 +9,46 @@ function comparableSignature(symbol) {
     kind: symbol.kind || null,
     signature: symbol.signature || '',
     params: symbol.params || [],
+    fields: symbol.fields || [],
+    values: symbol.values || [],
+    methods: symbol.methods || [],
+    optionMethods: symbol.optionMethods || [],
+    altConstructors: symbol.altConstructors || [],
     returnType: symbol.returnType || null,
     decorators: symbol.decorators || [],
+    bodyHash: symbol.bodyHash || null,
   });
+}
+
+function sameValue(left, right) {
+  return JSON.stringify(left || null) === JSON.stringify(right || null);
+}
+
+function updateReason(previous, symbol) {
+  if ((previous.signature || '') !== (symbol.signature || '')) return 'signature changed';
+  if (!sameValue(previous.params || [], symbol.params || [])) return 'parameters changed';
+  if (!sameValue(previous.optionMethods || [], symbol.optionMethods || [])) return 'builder methods changed';
+  if (!sameValue(previous.altConstructors || [], symbol.altConstructors || [])) return 'constructors changed';
+  if (!sameValue(previous.fields || [], symbol.fields || [])) return 'fields changed';
+  if (!sameValue(previous.values || [], symbol.values || [])) return 'enum values changed';
+  if (!sameValue(previous.methods || [], symbol.methods || [])) return 'public member methods changed';
+  if ((previous.bodyHash || null) !== (symbol.bodyHash || null)) return 'public method behavior changed';
+  if ((previous.returnType || null) !== (symbol.returnType || null)) return 'return type changed';
+  if (!sameValue(previous.decorators || [], symbol.decorators || [])) return 'decorators changed';
+  return 'public surface changed';
 }
 
 function sourceOf(symbol, sdkPackagePrefix = '') {
   const file = `${sdkPackagePrefix}${symbol.filePath}`.replace(/\\/g, '/');
   return { file, line: symbol.lineNumber || 1 };
+}
+
+function relatedSourceFiles(symbol, sdkPackagePrefix = '') {
+  const files = [sourceOf(symbol, sdkPackagePrefix).file];
+  for (const file of symbol.relatedFiles || []) {
+    files.push(`${sdkPackagePrefix}${file}`.replace(/\\/g, '/'));
+  }
+  return [...new Set(files)];
 }
 
 function classifySymbolDeltas({ baseline, target } = {}) {
@@ -42,7 +74,7 @@ function classifySymbolDeltas({ baseline, target } = {}) {
         symbolIdentity: identity,
         symbol,
         previous,
-        reason: 'signature changed',
+        reason: updateReason(previous, symbol),
       });
     }
   }
@@ -67,13 +99,14 @@ function classifySymbolDeltas({ baseline, target } = {}) {
 function filterSymbolsByChangedFiles({ symbols, changedFiles, sdkPackagePrefix = '' } = {}) {
   const changed = new Set(changedFiles || []);
   return (symbols || [])
-    .filter((symbol) => changed.has(sourceOf(symbol, sdkPackagePrefix).file))
+    .filter((symbol) => relatedSourceFiles(symbol, sdkPackagePrefix).some((file) => changed.has(file)))
     .sort((a, b) => publicIdentity(a).localeCompare(publicIdentity(b)));
 }
 
 module.exports = {
   publicIdentity,
   sourceOf,
+  relatedSourceFiles,
   classifySymbolDeltas,
   filterSymbolsByChangedFiles,
 };

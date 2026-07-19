@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "language": "go",
+  "track": "v2.6.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "Client.New": {
+      "stableId": "go:Client:New",
+      "canonicalSlug": "v2-Client-New",
+      "category": "Client"
+    },
+    "Client.Close": {
+      "stableId": "go:Client:Close",
+      "canonicalSlug": "v2-Client-Close",
+      "category": "Client"
+    },
+    "Client.ClientConfig": {
+      "stableId": "go:Client:ClientConfig",
+      "canonicalSlug": "v2-Client-ClientConfig",
+      "category": "Client"
+    },
+    "CDC.GetReplicateConfiguration": {
+      "stableId": "go:CDC:GetReplicateConfiguration",
+      "canonicalSlug": "CDC-GetReplicateConfiguration",
+      "category": "CDC"
+    },
+    "CDC.GetReplicateInfo": {
+      "stableId": "go:CDC:GetReplicateInfo",
+      "canonicalSlug": "CDC-GetReplicateInfo",
+      "category": "CDC"
+    },
+    "CDC.ReplicateConfigurationBuilder": {
+      "stableId": "go:CDC:ReplicateConfigurationBuilder",
+      "canonicalSlug": "CDC-ReplicateConfigurationBuilder",
+      "category": "CDC"
+    },
+    "CDC.UpdateReplicateConfiguration": {
+      "stableId": "go:CDC:UpdateReplicateConfiguration",
+      "canonicalSlug": "CDC-UpdateReplicateConfiguration",
+      "category": "CDC"
+    },
+    "Collections.AddCollectionField": {
+      "stableId": "go:Collections:AddCollectionField",
+      "canonicalSlug": "v2-Collection-AddCollectionField",
+      "category": "Collections"
+    },
+    "Collections.CreateCollection": {
+      "stableId": "go:Collections:CreateCollection",
+      "canonicalSlug": "v2-Collection-CreateCollection",
+      "category": "Collections"
+    },
+    "Collections.Field": {
+      "stableId": "go:Collections:Field",
+      "canonicalSlug": "v2-Collection-Field",
+      "category": "Collections"
+    },
+    "Collections.FieldType": {
+      "stableId": "go:Collections:FieldType",
+      "canonicalSlug": "v2-Collection-FieldType",
+      "category": "Collections"
+    },
+    "Collections.Schema": {
+      "stableId": "go:Collections:Schema",
+      "canonicalSlug": "v2-Collection-Schema",
+      "category": "Collections"
+    },
+    "Collections.StructSchema": {
+      "stableId": "go:Collections:StructSchema",
+      "canonicalSlug": "v2-Collection-StructSchema",
+      "category": "Collections"
+    },
+    "Vector.ColumnBFloat16VectorArray": {
+      "stableId": "go:Vector:ColumnBFloat16VectorArray",
+      "canonicalSlug": "v2-Vector-ColumnBFloat16VectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnBinaryVectorArray": {
+      "stableId": "go:Vector:ColumnBinaryVectorArray",
+      "canonicalSlug": "v2-Vector-ColumnBinaryVectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnFloat16VectorArray": {
+      "stableId": "go:Vector:ColumnFloat16VectorArray",
+      "canonicalSlug": "v2-Vector-ColumnFloat16VectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnFloatVectorArray": {
+      "stableId": "go:Vector:ColumnFloatVectorArray",
+      "canonicalSlug": "v2-Vector-ColumnFloatVectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnInt8VectorArray": {
+      "stableId": "go:Vector:ColumnInt8VectorArray",
+      "canonicalSlug": "v2-Vector-ColumnInt8VectorArray",
+      "category": "Vector"
+    },
+    "Vector.Insert": {
+      "stableId": "go:Vector:Insert",
+      "canonicalSlug": "v2-Vector-Insert",
+      "category": "Vector"
+    },
+    "Vector.Upsert": {
+      "stableId": "go:Vector:Upsert",
+      "canonicalSlug": "v2-Vector-Upsert",
+      "category": "Vector"
+    },
+    "Vector.Vector": {
+      "stableId": "go:Vector:Vector",
+      "canonicalSlug": "v2-Vector",
+      "category": "Vector"
+    }
+  }
+}

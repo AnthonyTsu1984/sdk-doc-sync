@@ -2,7 +2,9 @@
 
 **Scanner:** `src/sdk-doc-sync/scanners/go-scanner.js`
 **Root dir:** `repos/milvus-sdk-go`; source dir: `client/milvusclient/`
-**Latest release:** `client/v2.6.3` (as of 2026-04-14) — tags use `client/vX.Y.Z` prefix, not plain `vX.Y.Z`
+**Release scout sdk-name:** `milvus`
+**Tag format:** `client/vX.Y.Z` for Go SDK releases. Always fetch tags and resolve the latest `client/v*` tag; do not rely on server `vX.Y.Z` tags.
+**Public roots:** `client/` only. The repository is the Milvus monorepo and includes large server-side changes that must be excluded from SDK release scope.
 
 | Version | Bitable Token | Drive Root (v2.6.x) |
 |---------|---------------|---------------------|
@@ -146,6 +148,10 @@ Some scanner entity types share a name with their category VirtualNode. The bita
 4. Entity types via ENTITY_DEFS
 5. Index/AnnParam constructors from `client/index/`
 
+Release-scout comparison includes public method body fingerprints for Go `*Client` methods and entity receiver methods. This is intentional: Go v2.6.x includes behavior-only public API changes such as schema validation calls where the method signature does not change. The fingerprint is only used for diff classification; generated release artifacts keep source locators and canonical actions, not raw method bodies.
+
+Entity extraction must cover doc-worthy public helper methods on structs and enums. In v2.6.x this includes `ClientConfig.WithGrpcAuthority()`, `Schema.Validate()`, `StructSchema.Validate()`, and `FieldType.IsVectorType()`. If a changed public type is missing from `ENTITY_DEFS`, release scout will miss method-only changes even when the source file is in the Git range.
+
 Entity hierarchy: Index entity + 25 `New*Index` constructors in `Index/` subfolder; AnnParam entity + 9 `New*AnnParam` constructors in `AnnParam/` subfolder
 
 **Skip list:** GetService, OperatePrivilegeGroup, GrantV2, RevokeV2, all Replicate methods, NewRTreeIndexWithParams, NewRTreeIndexBuilder
@@ -153,6 +159,35 @@ Entity hierarchy: Index entity + 25 `New*Index` constructors in `Index/` subfold
 **Duplicate symbol cleanup:** After greenfield, Class-type stubs may share a slug with their Method version (e.g., `SearchIterator` class vs `SearchIterator()` method). Keep the Method version; delete the Class doc + bitable record.
 
 ## Scripts
+
+For v2.6.x release discovery, use:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language go \
+  --sdk-name milvus \
+  --track v2.6.x \
+  --json \
+  --output tmp/sdk-release-scout/go-v26.json
+```
+
+Then run the scoped dry-run only from a target-tag checkout or worktree:
+
+```bash
+BASE_TOKEN=Yc7gbtmgSal2ewsdqlhcLWVanbh ROOT_TOKEN=Pzejf3x4WlXq1HdtTndcfMjVnxh \
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+  --language go \
+  --sdk-dir tmp/milvus-sdk-go-v26-target \
+  --sdk-name milvus-sdk-go \
+  --sdk-version v2.6.x \
+  --release-scope tmp/sdk-release-scout/go-v26.json \
+  --changed-only \
+  --dry-run \
+  --summary-json tmp/sdk-release-scout/go-v26-dryrun-summary.json \
+  --json
+```
+
+If release scout fails because the Go identity map or scanner coverage is incomplete, do not run an unscoped full dry-run as a substitute. Report a blocked release-scout state, then use Git-scoped source triage over `client/` changed files only. A full Go dry-run is diagnostic backlog noise and is not approval-grade.
 
 | Script | Purpose |
 |--------|---------|

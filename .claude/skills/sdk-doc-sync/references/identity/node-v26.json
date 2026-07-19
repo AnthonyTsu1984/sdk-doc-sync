@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "language": "node",
+  "track": "v2.6.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "Vector.upsert": {
+      "stableId": "node:Vector:upsert",
+      "canonicalSlug": "v2-Vector-upsert",
+      "category": "Vector"
+    },
+    "DataImport.BulkWriter": {
+      "stableId": "node:DataImport:BulkWriter",
+      "canonicalSlug": "v2-DataImport-BulkWriter",
+      "category": "Data Import"
+    },
+    "DataImport.BulkWriterOptions": {
+      "stableId": "node:DataImport:BulkWriterOptions",
+      "canonicalSlug": "v2-DataImport-BulkWriterOptions",
+      "category": "Data Import"
+    },
+    "DataImport.BulkWriterSchema": {
+      "stableId": "node:DataImport:BulkWriterSchema",
+      "canonicalSlug": "v2-DataImport-BulkWriterSchema",
+      "category": "Data Import"
+    },
+    "DataImport.Formatter": {
+      "stableId": "node:DataImport:Formatter",
+      "canonicalSlug": "v2-DataImport-Formatter",
+      "category": "Data Import"
+    },
+    "DataImport.Storage": {
+      "stableId": "node:DataImport:Storage",
+      "canonicalSlug": "v2-DataImport-Storage",
+      "category": "Data Import"
+    }
+  }
+}

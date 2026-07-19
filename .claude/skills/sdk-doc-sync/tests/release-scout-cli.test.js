@@ -9,6 +9,8 @@ const { spawnSync } = require('node:child_process');
 
 const { runReleaseScout } = require('../src/sdk-doc-sync/release-scope/release-scout');
 const { runCli } = require('../bin/sdk-release-scout');
+const NodeScanner = require('../src/sdk-doc-sync/scanners/node-scanner');
+const GoScanner = require('../src/sdk-doc-sync/scanners/go-scanner');
 
 const fixtureDir = path.join(__dirname, 'fixtures', 'release-scope');
 
@@ -198,6 +200,530 @@ test('runReleaseScout maps Java v2.6 core and bulk-writer symbols from repo-rela
   ]);
 });
 
+test('runReleaseScout maps Node v2.6 request type changes to canonical docs', async () => {
+  const baselineSymbols = [
+    {
+      name: 'upsert',
+      parentClass: 'Vector',
+      kind: 'Function',
+      filePath: 'milvus/grpc/Data.ts',
+      lineNumber: 61,
+      params: [{
+        name: 'data',
+        type: 'UpsertReq',
+        typeDetail: {
+          name: 'UpsertReq',
+          fields: [{ name: 'partial_update', optional: true, type: 'boolean' }],
+        },
+      }],
+    },
+    {
+      name: 'Formatter',
+      parentClass: 'DataImport',
+      kind: 'Class',
+      filePath: 'milvus/bulkwriter/ParquetFormatter.ts',
+      lineNumber: 263,
+      params: [],
+      methods: [{ name: 'persist', params: 'columns: Map<string, any[]>', returnType: 'Promise<string[]>' }],
+      bodyHash: 'formatter-before',
+    },
+  ];
+  const targetSymbols = [
+    {
+      ...baselineSymbols[0],
+      params: [{
+        name: 'data',
+        type: 'UpsertReq',
+        typeDetail: {
+          name: 'UpsertReq',
+          fields: [
+            { name: 'partial_update', optional: true, type: 'boolean' },
+            { name: 'field_ops', optional: true, type: 'FieldPartialUpdateOp[]' },
+          ],
+        },
+      }],
+    },
+    {
+      ...baselineSymbols[1],
+      bodyHash: 'formatter-after',
+    },
+  ];
+
+  const scope = await runReleaseScout({
+    language: 'node',
+    sdkName: 'milvus-sdk-node',
+    track: 'v2.6.x',
+    scanState: { 'node-v26': { lastScannedTag: 'v2.6.14' } },
+    targetTag: 'v2.6.17',
+    repoDir: '/repo/milvus-sdk-node',
+    sdkDir: '/repo/milvus-sdk-node',
+    publicRoots: ['milvus/', 'docs/content/operations/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'node-v26.json'),
+    baselineSymbols,
+    targetSymbols,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v2.6.17': '85c757f0df76e21ba515c870a78cf1a75e4b7d0f\n',
+        'show -s --format=%cI v2.6.17': '2026-06-02T10:38:24+08:00\n',
+        'diff --name-only v2.6.14..v2.6.17': [
+          'docs/content/operations/bulk-writer.mdx',
+          'milvus/bulkwriter/ParquetFormatter.ts',
+          'milvus/grpc/Data.ts',
+          'milvus/types/Insert.ts',
+          'milvus/const/milvus.ts',
+        ].join('\n'),
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.canonicalSlug, action.source.file]), [
+    ['UPDATE', 'node:DataImport:Formatter', 'v2-DataImport-Formatter', 'milvus/bulkwriter/ParquetFormatter.ts'],
+    ['UPDATE', 'node:Vector:upsert', 'v2-Vector-upsert', 'milvus/grpc/Data.ts'],
+  ]);
+  assert.deepEqual(scope.scannerDiagnostics, [{
+    level: 'warn',
+    code: 'FULL_SCAN_DIAGNOSTIC_ONLY',
+    message: 'Full scanner output is not approval-grade for node v2.6.x.',
+  }]);
+});
+
+test('runReleaseScout maps Go v2.6 client changes from monorepo client paths', async () => {
+  const baselineSymbols = [
+    {
+      name: 'UpdateReplicateConfiguration',
+      kind: 'method',
+      signature: 'func (c *Client) UpdateReplicateConfiguration(ctx context.Context, config *commonpb.ReplicateConfiguration, opts ...grpc.CallOption) error',
+      params: [],
+      optionMethods: [],
+      altConstructors: [],
+      returnType: 'error',
+      filePath: 'client/milvusclient/replicate.go',
+      lineNumber: 16,
+      parentClass: 'CDC',
+    },
+    {
+      name: 'Upsert',
+      kind: 'method',
+      signature: 'func (c *Client) Upsert(ctx context.Context, option UpsertOption, callOptions ...grpc.CallOption) (UpsertResult, error)',
+      params: [],
+      optionMethods: [{ name: 'WithPartialUpdate', params: 'partialUpdate bool', fullSignature: 'WithPartialUpdate(partialUpdate bool)', description: '' }],
+      altConstructors: [],
+      returnType: 'UpsertResult, error',
+      filePath: 'client/milvusclient/write.go',
+      lineNumber: 94,
+      parentClass: 'Vector',
+      relatedFiles: ['client/milvusclient/write_options.go'],
+    },
+  ];
+  const targetSymbols = [
+    {
+      ...baselineSymbols[0],
+      signature: 'func (c *Client) UpdateReplicateConfiguration(ctx context.Context, req *milvuspb.UpdateReplicateConfigurationRequest, opts ...grpc.CallOption) error',
+    },
+    {
+      name: 'GetReplicateConfiguration',
+      kind: 'method',
+      signature: 'func (c *Client) GetReplicateConfiguration(ctx context.Context, opts ...grpc.CallOption) (*commonpb.ReplicateConfiguration, error)',
+      params: [],
+      optionMethods: [],
+      altConstructors: [],
+      returnType: '*commonpb.ReplicateConfiguration, error',
+      filePath: 'client/milvusclient/replicate.go',
+      lineNumber: 25,
+      parentClass: 'CDC',
+    },
+    {
+      ...baselineSymbols[1],
+      optionMethods: [
+        ...baselineSymbols[1].optionMethods,
+        { name: 'WithArrayAppend', params: 'fieldName string', fullSignature: 'WithArrayAppend(fieldName string)', description: '' },
+      ],
+    },
+  ];
+
+  const scope = await runReleaseScout({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v2.6.x',
+    scanState: { go: { lastScannedTag: 'client/v2.6.3' } },
+    targetTag: 'client/v2.6.5',
+    repoDir: '/repo/milvus',
+    sdkDir: '/repo/milvus',
+    publicRoots: ['client/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'go-v26.json'),
+    baselineSymbols,
+    targetSymbols,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 client/v2.6.5': '1942b751f6c7c988ac2163139f360f42549b4b4c\n',
+        'show -s --format=%cI client/v2.6.5': '2026-05-26T06:32:32+08:00\n',
+        'diff --name-only client/v2.6.3..client/v2.6.5': [
+          'client/milvusclient/replicate.go',
+          'client/milvusclient/write_options.go',
+          'pkg/internal/server_noise.go',
+        ].join('\n'),
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.changedFiles, [
+    'client/milvusclient/replicate.go',
+    'client/milvusclient/write_options.go',
+  ]);
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.canonicalSlug, action.source.file]), [
+    ['CREATE', 'go:CDC:GetReplicateConfiguration', 'CDC-GetReplicateConfiguration', 'client/milvusclient/replicate.go'],
+    ['UPDATE', 'go:CDC:UpdateReplicateConfiguration', 'CDC-UpdateReplicateConfiguration', 'client/milvusclient/replicate.go'],
+    ['UPDATE', 'go:Vector:Upsert', 'v2-Vector-Upsert', 'client/milvusclient/write.go'],
+  ]);
+});
+
+test('runReleaseScout maps Go v2.6 behavior-only and entity method changes', async () => {
+  const baselineSymbols = [
+    {
+      name: 'ClientConfig',
+      kind: 'struct',
+      signature: 'type ClientConfig struct {\n    Address string\n}',
+      params: [],
+      optionMethods: [],
+      methods: [],
+      filePath: 'client/milvusclient/client_config.go',
+      lineNumber: 8,
+      parentClass: 'Client',
+    },
+    {
+      name: 'CreateCollection',
+      kind: 'method',
+      signature: 'func (c *Client) CreateCollection(ctx context.Context, option CreateCollectionOption) error',
+      params: [],
+      optionMethods: [],
+      altConstructors: [],
+      returnType: 'error',
+      bodyHash: 'before-create',
+      filePath: 'client/milvusclient/collection.go',
+      lineNumber: 20,
+      parentClass: 'Collections',
+    },
+    {
+      name: 'AddCollectionField',
+      kind: 'method',
+      signature: 'func (c *Client) AddCollectionField(ctx context.Context, option AddCollectionFieldOption) error',
+      params: [],
+      optionMethods: [],
+      altConstructors: [],
+      returnType: 'error',
+      bodyHash: 'before-add-field',
+      filePath: 'client/milvusclient/collection.go',
+      lineNumber: 60,
+      parentClass: 'Collections',
+    },
+    {
+      name: 'Schema',
+      kind: 'struct',
+      signature: 'type Schema struct {\n    CollectionName string\n}',
+      params: [],
+      optionMethods: [],
+      methods: [],
+      filePath: 'client/entity/schema.go',
+      lineNumber: 12,
+      parentClass: 'Collections',
+    },
+    {
+      name: 'StructSchema',
+      kind: 'struct',
+      signature: 'type StructSchema struct {\n    Fields []*Field\n}',
+      params: [],
+      optionMethods: [],
+      methods: [],
+      filePath: 'client/entity/field.go',
+      lineNumber: 18,
+      parentClass: 'Collections',
+    },
+    {
+      name: 'FieldType',
+      kind: 'enum',
+      signature: 'type FieldType int',
+      values: [{ name: 'FieldTypeFloatVector', value: '101', description: '' }],
+      methods: [],
+      filePath: 'client/entity/field.go',
+      lineNumber: 4,
+      parentClass: 'Collections',
+    },
+  ];
+  const targetSymbols = [
+    {
+      ...baselineSymbols[0],
+      optionMethods: [{ name: 'WithGrpcAuthority', params: 'authority string', fullSignature: 'WithGrpcAuthority(authority string)', description: '' }],
+    },
+    { ...baselineSymbols[1], bodyHash: 'after-create' },
+    { ...baselineSymbols[2], bodyHash: 'after-add-field' },
+    {
+      ...baselineSymbols[3],
+      methods: [{ name: 'Validate', params: '', returnType: 'error', description: '', bodyHash: 'schema-validate' }],
+    },
+    {
+      ...baselineSymbols[4],
+      methods: [{ name: 'Validate', params: '', returnType: 'error', description: '', bodyHash: 'struct-schema-validate' }],
+    },
+    {
+      ...baselineSymbols[5],
+      methods: [{ name: 'IsVectorType', params: '', returnType: 'bool', description: '', bodyHash: 'field-type-vector' }],
+    },
+  ];
+
+  const scope = await runReleaseScout({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v2.6.x',
+    scanState: { go: { lastScannedTag: 'client/v2.6.3' } },
+    targetTag: 'client/v2.6.5',
+    repoDir: '/repo/milvus',
+    sdkDir: '/repo/milvus',
+    publicRoots: ['client/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'go-v26.json'),
+    baselineSymbols,
+    targetSymbols,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 client/v2.6.5': '1942b751f6c7c988ac2163139f360f42549b4b4c\n',
+        'show -s --format=%cI client/v2.6.5': '2026-05-26T06:32:32+08:00\n',
+        'diff --name-only client/v2.6.3..client/v2.6.5': [
+          'client/entity/field.go',
+          'client/entity/schema.go',
+          'client/milvusclient/client_config.go',
+          'client/milvusclient/collection.go',
+        ].join('\n'),
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.canonicalSlug, action.source.file]), [
+    ['UPDATE', 'go:Client:ClientConfig', 'v2-Client-ClientConfig', 'client/milvusclient/client_config.go'],
+    ['UPDATE', 'go:Collections:AddCollectionField', 'v2-Collection-AddCollectionField', 'client/milvusclient/collection.go'],
+    ['UPDATE', 'go:Collections:CreateCollection', 'v2-Collection-CreateCollection', 'client/milvusclient/collection.go'],
+    ['UPDATE', 'go:Collections:FieldType', 'v2-Collection-FieldType', 'client/entity/field.go'],
+    ['UPDATE', 'go:Collections:Schema', 'v2-Collection-Schema', 'client/entity/schema.go'],
+    ['UPDATE', 'go:Collections:StructSchema', 'v2-Collection-StructSchema', 'client/entity/field.go'],
+  ]);
+});
+
+test('GoScanner attaches concrete insert/upsert option methods to public write APIs', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'go-scanner-options-'));
+  writeText(path.join(repo, 'client', 'milvusclient', 'write.go'), `
+package milvusclient
+
+import "context"
+
+type Client struct{}
+type UpsertResult struct{}
+type InsertResult struct{}
+
+func (c *Client) Insert(ctx context.Context, option InsertOption) (InsertResult, error) { return InsertResult{}, nil }
+func (c *Client) Upsert(ctx context.Context, option UpsertOption) (UpsertResult, error) { return UpsertResult{}, nil }
+`);
+  writeText(path.join(repo, 'client', 'milvusclient', 'write_options.go'), `
+package milvusclient
+
+type InsertOption interface{}
+type UpsertOption interface{}
+type columnBasedDataOption struct{}
+
+func NewColumnBasedInsertOption(collName string) *columnBasedDataOption { return &columnBasedDataOption{} }
+func (opt *columnBasedDataOption) WithPartialUpdate(partialUpdate bool) *columnBasedDataOption { return opt }
+func (opt *columnBasedDataOption) WithArrayAppend(fieldName string) *columnBasedDataOption { return opt }
+func (opt *columnBasedDataOption) WithStructArrayColumn(colName string) *columnBasedDataOption { return opt }
+`);
+
+  const symbols = await new GoScanner({ rootDir: repo, publicOnly: true }).scan();
+  const upsert = symbols.find((symbol) => symbol.name === 'Upsert');
+  const insert = symbols.find((symbol) => symbol.name === 'Insert');
+
+  assert.ok(upsert, 'Upsert symbol should be scanned');
+  assert.ok(insert, 'Insert symbol should be scanned');
+  assert.deepEqual(upsert.optionMethods.map((method) => method.name), [
+    'WithPartialUpdate',
+    'WithArrayAppend',
+    'WithStructArrayColumn',
+  ]);
+  assert.deepEqual(insert.optionMethods.map((method) => method.name), [
+    'WithPartialUpdate',
+    'WithArrayAppend',
+    'WithStructArrayColumn',
+  ]);
+});
+
+test('GoScanner emits public config, validation, enum methods, and behavior hashes', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'go-scanner-validation-'));
+  writeText(path.join(repo, 'client', 'milvusclient', 'client_config.go'), `
+package milvusclient
+
+type ClientConfig struct {
+    Address string
+}
+
+func (cfg *ClientConfig) WithGrpcAuthority(authority string) *ClientConfig {
+    cfg.Address = authority
+    return cfg
+}
+`);
+  writeText(path.join(repo, 'client', 'milvusclient', 'collection.go'), `
+package milvusclient
+
+import "context"
+
+type Client struct{}
+type CreateCollectionOption interface{}
+type AddCollectionFieldOption interface{}
+
+func (c *Client) CreateCollection(ctx context.Context, option CreateCollectionOption) error {
+    if err := validateCollection(option); err != nil {
+        return err
+    }
+    return nil
+}
+
+func (c *Client) AddCollectionField(ctx context.Context, option AddCollectionFieldOption) error {
+    if err := validateField(option); err != nil {
+        return err
+    }
+    return nil
+}
+`);
+  writeText(path.join(repo, 'client', 'entity', 'schema.go'), `
+package entity
+
+type Schema struct {
+    CollectionName string
+}
+
+func (s *Schema) Validate() error {
+    return nil
+}
+`);
+  writeText(path.join(repo, 'client', 'entity', 'field.go'), `
+package entity
+
+type FieldType int
+
+const (
+    FieldTypeFloatVector FieldType = 101
+)
+
+func (ft FieldType) IsVectorType() bool {
+    return ft == FieldTypeFloatVector
+}
+
+type StructSchema struct {
+    Fields []*Field
+}
+
+type Field struct {
+    Name string
+}
+
+func (s *StructSchema) Validate() error {
+    return nil
+}
+`);
+
+  const symbols = await new GoScanner({ rootDir: repo, publicOnly: true }).scan();
+  const byIdentity = new Map(symbols.map((symbol) => [`${symbol.parentClass}.${symbol.name}`, symbol]));
+
+  assert.deepEqual(byIdentity.get('Client.ClientConfig').optionMethods.map((method) => method.name), ['WithGrpcAuthority']);
+  assert.deepEqual(byIdentity.get('Collections.Schema').methods.map((method) => method.name), ['Validate']);
+  assert.deepEqual(byIdentity.get('Collections.StructSchema').methods.map((method) => method.name), ['Validate']);
+  assert.deepEqual(byIdentity.get('Collections.FieldType').methods.map((method) => method.name), ['IsVectorType']);
+  assert.match(byIdentity.get('Collections.CreateCollection').bodyHash, /^[a-f0-9]{16}$/);
+  assert.match(byIdentity.get('Collections.AddCollectionField').bodyHash, /^[a-f0-9]{16}$/);
+});
+
+test('NodeScanner includes request type fields so upsert field_ops changes are diffable', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'node-scanner-types-'));
+  writeText(path.join(repo, 'milvus', 'grpc', 'Data.ts'), `
+export class Data {
+  async upsert(data: UpsertReq): Promise<MutationResult> {
+    return this._insert(data, true);
+  }
+}
+`);
+  writeText(path.join(repo, 'milvus', 'types', 'Insert.ts'), `
+export type UpsertReq = {
+  partial_update?: boolean;
+  field_ops?: FieldPartialUpdateOp[];
+};
+export interface FieldPartialUpdateOp {
+  field_name: string;
+  op: FieldPartialUpdateOpValue;
+}
+export type FieldPartialUpdateOpValue = FieldPartialUpdateOpType | FieldPartialUpdateOpName;
+`);
+  writeText(path.join(repo, 'milvus', 'const', 'milvus.ts'), `
+export enum FieldPartialUpdateOpType {
+  REPLACE = 0,
+  ARRAY_APPEND = 1,
+  ARRAY_REMOVE = 2,
+}
+`);
+  writeText(path.join(repo, 'milvus', 'bulkwriter', 'BulkWriter.ts'), `
+export class BulkWriter {
+  async append(row: Record<string, any>): Promise<void> {}
+  async close(): Promise<string[][]> { return []; }
+}
+`);
+  writeText(path.join(repo, 'milvus', 'bulkwriter', 'ParquetFormatter.ts'), `
+import { Formatter, BulkWriterSchema } from './Types';
+
+export class ParquetFormatter implements Formatter {
+  readonly extension = '.parquet';
+  async persist(columns: Map<string, any[]>, dynamicRows: Record<string, any>[], rowCount: number, dir: string, schema: BulkWriterSchema): Promise<string[]> {
+    return [dir];
+  }
+}
+`);
+  writeText(path.join(repo, 'milvus', 'bulkwriter', 'Types.ts'), `
+export interface Formatter {
+  readonly extension: string;
+  persist(columns: Map<string, any[]>, dynamicRows: Record<string, any>[], rowCount: number, dir: string, schema: BulkWriterSchema): Promise<string[]>;
+}
+export interface Storage {
+  write(localPath: string, remotePath: string): Promise<string>;
+}
+export interface BulkWriterSchema {
+  fields: FieldType[];
+  enable_dynamic_field?: boolean;
+}
+export interface BulkWriterOptions {
+  schema: BulkWriterSchema;
+  storage?: Storage;
+}
+`);
+
+  const symbols = await new NodeScanner({ rootDir: repo, publicOnly: true }).scan();
+  const upsert = symbols.find((symbol) => symbol.parentClass === 'Vector' && symbol.name === 'upsert');
+  const formatter = symbols.find((symbol) => symbol.parentClass === 'DataImport' && symbol.name === 'Formatter');
+  const options = symbols.find((symbol) => symbol.parentClass === 'DataImport' && symbol.name === 'BulkWriterOptions');
+
+  assert.ok(upsert, 'upsert symbol should be scanned');
+  assert.ok(formatter, 'Formatter symbol should be scanned from ParquetFormatter');
+  assert.ok(options, 'BulkWriterOptions symbol should be scanned from Types.ts');
+  assert.deepEqual(upsert.params[0].typeDetail.fields.map((field) => [field.name, field.optional, field.type]), [
+    ['partial_update', true, 'boolean'],
+    ['field_ops', true, 'FieldPartialUpdateOp[]'],
+  ]);
+  assert.deepEqual(upsert.params[0].typeDetail.fields[1].elementType.fields.map((field) => [field.name, field.type]), [
+    ['field_name', 'string'],
+    ['op', 'FieldPartialUpdateOpValue'],
+  ]);
+  assert.equal(formatter.filePath, 'milvus/bulkwriter/ParquetFormatter.ts');
+  assert.match(formatter.bodyHash, /^[a-f0-9]{16}$/);
+  assert.deepEqual(options.fields.map((field) => [field.name, field.optional, field.type]), [
+    ['schema', false, 'BulkWriterSchema'],
+    ['storage', true, 'Storage'],
+  ]);
+});
+
 test('sdk-release-scout CLI writes JSON and does not print raw scanner dumps', async () => {
   const stdout = [];
   const stderr = [];
@@ -248,4 +774,59 @@ test('sdk-release-scout CLI writes JSON and does not print raw scanner dumps', a
   assert.equal(writes[0][0], '/tmp/python-v26-release-scope.json');
   assert.match(stdout.join('\n'), /"approvalGrade": true/);
   assert.doesNotMatch(stdout.join('\n'), /"scanned": \[/);
+});
+
+test('sdk-release-scout CLI applies baseline override to versioned scan-state keys', async () => {
+  let receivedScanState = null;
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-release-scout',
+      '--language',
+      'node',
+      '--sdk-name',
+      'milvus-sdk-node',
+      '--track',
+      'v2.6.x',
+      '--baseline-tag',
+      'v2.6.15',
+      '--target-tag',
+      'v2.6.17',
+      '--json',
+    ],
+    dependencies: {
+      loadScanState() {
+        return {
+          node: { lastScannedTag: 'v3.0.3' },
+          'node-v26': { lastScannedTag: 'v2.6.14' },
+        };
+      },
+      runReleaseScout: async ({ scanState }) => {
+        receivedScanState = scanState;
+        return {
+          schemaVersion: 1,
+          language: 'node',
+          sdkName: 'milvus-sdk-node',
+          track: 'v2.6.x',
+          baselineTag: scanState['node-v26'].lastScannedTag,
+          targetTag: 'v2.6.17',
+          targetCommit: '85c757f0df76e21ba515c870a78cf1a75e4b7d0f',
+          targetDate: '2026-06-02T10:38:24.000Z',
+          releaseRange: `${scanState['node-v26'].lastScannedTag}..v2.6.17`,
+          approvalGrade: true,
+          changedFiles: [],
+          actions: [],
+          scannerDiagnostics: [],
+          writesPerformed: false,
+          scanStateUpdated: false,
+        };
+      },
+      onStdout() {},
+      onStderr(line) { throw new Error(line); },
+    },
+  });
+
+  assert.equal(result.baselineTag, 'v2.6.15');
+  assert.equal(receivedScanState.node.lastScannedTag, 'v3.0.3');
+  assert.equal(receivedScanState['node-v26'].lastScannedTag, 'v2.6.15');
 });

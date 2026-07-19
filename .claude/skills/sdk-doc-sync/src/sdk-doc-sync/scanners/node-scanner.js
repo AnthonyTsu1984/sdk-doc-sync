@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const BaseScanner = require('./base-scanner');
 
 /**
@@ -26,6 +27,7 @@ const BaseScanner = require('./base-scanner');
 class NodeScanner extends BaseScanner {
     constructor(opts) {
         super(opts);
+        this._typeIndex = null;
         // Methods in Data.ts that belong to Management, not Vector
         this._dataManagementMethods = new Set([
             'flush', 'flushSync', 'getFlushState', 'loadBalance',
@@ -111,6 +113,9 @@ class NodeScanner extends BaseScanner {
         // Scan enums from types
         const enumSymbols = this._extractEnums();
         symbols.push(...enumSymbols);
+
+        // Scan BulkWriter/Data Import public surfaces
+        symbols.push(...this._extractDataImportSymbols());
 
         // Add MilvusClient class symbol
         symbols.push({
@@ -318,13 +323,194 @@ class NodeScanner extends BaseScanner {
                         let type = pm[2] || 'any';
                         // Resolve generic type vars to their constraints
                         if (genericMap[type]) type = genericMap[type];
-                        params.push({ name: pm[1], type });
+                        const param = { name: pm[1], type };
+                        const typeDetail = this._describeType(type);
+                        if (typeDetail) param.typeDetail = typeDetail;
+                        params.push(param);
                     }
                 }
             }
         }
 
         return params;
+    }
+
+    _describeType(type, seen = new Set()) {
+        const name = this._baseTypeName(type);
+        if (!name || seen.has(name)) return null;
+        const index = this._loadTypeIndex();
+        const entry = index.get(name);
+        if (!entry) return null;
+        const nextSeen = new Set(seen);
+        nextSeen.add(name);
+
+        if (entry.kind === 'enum') {
+            return {
+                name,
+                kind: 'enum',
+                values: entry.values,
+            };
+        }
+
+        const detail = {
+            name,
+            kind: entry.kind,
+            fields: entry.fields.map((field) => {
+                const item = { ...field };
+                const elementName = this._arrayElementTypeName(field.type);
+                if (elementName) {
+                    const elementType = this._describeType(elementName, nextSeen);
+                    if (elementType) item.elementType = elementType;
+                } else {
+                    const fieldType = this._describeType(field.type, nextSeen);
+                    if (fieldType) item.typeDetail = fieldType;
+                }
+                return item;
+            }),
+        };
+        return detail;
+    }
+
+    _baseTypeName(type) {
+        if (!type) return null;
+        const value = String(type).trim();
+        const array = this._arrayElementTypeName(value);
+        const candidate = array || value;
+        const match = candidate.match(/^([A-Za-z_$][\w$]*)$/);
+        return match ? match[1] : null;
+    }
+
+    _arrayElementTypeName(type) {
+        const match = String(type || '').trim().match(/^([A-Za-z_$][\w$]*)\[\]$/);
+        return match ? match[1] : null;
+    }
+
+    _loadTypeIndex() {
+        if (this._typeIndex) return this._typeIndex;
+        const index = new Map();
+        const candidates = [
+            path.join(this.rootDir, 'milvus', 'const', 'milvus.ts'),
+            path.join(this.rootDir, 'milvus', 'types'),
+            path.join(this.rootDir, 'milvus', 'bulkwriter', 'Types.ts'),
+        ];
+
+        for (const candidate of candidates) {
+            if (!fs.existsSync(candidate)) continue;
+            const stat = fs.statSync(candidate);
+            const files = stat.isDirectory()
+                ? fs.readdirSync(candidate)
+                    .filter((name) => name.endsWith('.ts'))
+                    .map((name) => path.join(candidate, name))
+                : [candidate];
+            for (const file of files) {
+                this._indexTypesFromFile(file, index);
+            }
+        }
+
+        this._typeIndex = index;
+        return this._typeIndex;
+    }
+
+    _indexTypesFromFile(file, index) {
+        const content = fs.readFileSync(file, 'utf8');
+        for (const entry of this._extractExportedBlocks(content, 'interface')) {
+            index.set(entry.name, {
+                kind: 'interface',
+                fields: this._parseObjectFields(entry.body),
+            });
+        }
+        for (const entry of this._extractExportedBlocks(content, 'enum')) {
+            index.set(entry.name, {
+                kind: 'enum',
+                values: entry.body
+                    .split(',')
+                    .map((line) => line.trim())
+                    .filter(Boolean)
+                    .map((line) => line.replace(/\/\/.*$/, '').trim())
+                    .filter(Boolean)
+                    .map((line) => line.split('=')[0].trim())
+                    .filter(Boolean),
+            });
+        }
+        for (const alias of this._extractTypeAliases(content)) {
+            const fields = this._parseObjectFields(alias.body);
+            if (fields.length > 0) {
+                index.set(alias.name, {
+                    kind: 'type',
+                    fields,
+                });
+            }
+        }
+    }
+
+    _extractExportedBlocks(content, kind) {
+        const blocks = [];
+        const regex = new RegExp(`export\\s+${kind}\\s+(\\w+)[^{]*\\{`, 'g');
+        let match;
+        while ((match = regex.exec(content))) {
+            const open = content.indexOf('{', match.index);
+            const close = this._matchingBrace(content, open);
+            if (close < 0) continue;
+            blocks.push({
+                name: match[1],
+                body: content.slice(open + 1, close),
+            });
+            regex.lastIndex = close + 1;
+        }
+        return blocks;
+    }
+
+    _extractTypeAliases(content) {
+        const aliases = [];
+        const regex = /export\s+type\s+(\w+)\s*=/g;
+        let match;
+        while ((match = regex.exec(content))) {
+            const start = regex.lastIndex;
+            const end = this._findTypeAliasEnd(content, start);
+            aliases.push({
+                name: match[1],
+                body: content.slice(start, end),
+            });
+            regex.lastIndex = end + 1;
+        }
+        return aliases;
+    }
+
+    _findTypeAliasEnd(content, start) {
+        let braceDepth = 0;
+        for (let i = start; i < content.length; i++) {
+            const ch = content[i];
+            if (ch === '{') braceDepth++;
+            else if (ch === '}') braceDepth--;
+            else if (ch === ';' && braceDepth === 0) return i;
+        }
+        return content.length;
+    }
+
+    _matchingBrace(content, open) {
+        let depth = 0;
+        for (let i = open; i < content.length; i++) {
+            if (content[i] === '{') depth++;
+            else if (content[i] === '}') {
+                depth--;
+                if (depth === 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    _parseObjectFields(body) {
+        const fields = [];
+        const fieldRegex = /^\s*([A-Za-z_$][\w$]*)\s*(\?)?\s*:\s*([^;,\n]+)[;,]?/gm;
+        let match;
+        while ((match = fieldRegex.exec(body))) {
+            fields.push({
+                name: match[1],
+                optional: match[2] === '?',
+                type: match[3].trim(),
+            });
+        }
+        return fields;
     }
 
     _extractEnums() {
@@ -360,6 +546,102 @@ class NodeScanner extends BaseScanner {
         }
 
         return symbols;
+    }
+
+    _extractDataImportSymbols() {
+        const symbols = [];
+        const bulkWriterDir = path.join(this.rootDir, 'milvus', 'bulkwriter');
+        if (!fs.existsSync(bulkWriterDir)) return symbols;
+
+        const pushClass = ({ name, sourceName = name, file, docstring }) => {
+            const fullPath = path.join(bulkWriterDir, file);
+            if (!fs.existsSync(fullPath)) return;
+            const content = fs.readFileSync(fullPath, 'utf8');
+            const lines = content.split('\n');
+            const classLine = lines.findIndex((line) => line.match(new RegExp(`\\bexport\\s+class\\s+${sourceName}\\b`)));
+            if (classLine < 0) return;
+            const open = content.indexOf('{', content.indexOf(`class ${sourceName}`));
+            const close = open >= 0 ? this._matchingBrace(content, open) : -1;
+            const body = close > open ? content.slice(open + 1, close) : '';
+            symbols.push({
+                name,
+                parentClass: 'DataImport',
+                kind: 'Class',
+                docstring,
+                filePath: path.join('milvus', 'bulkwriter', file),
+                lineNumber: classLine + 1,
+                params: [],
+                methods: this._extractClassMethods(body),
+                bodyHash: this._bodyFingerprint(content),
+                relatedFiles: ['docs/content/operations/bulk-writer.mdx'],
+            });
+        };
+
+        pushClass({
+            name: 'BulkWriter',
+            file: 'BulkWriter.ts',
+            docstring: 'Writes collection rows to import-ready local or remote files.',
+        });
+        pushClass({
+            name: 'Formatter',
+            sourceName: 'ParquetFormatter',
+            file: 'ParquetFormatter.ts',
+            docstring: 'Formats buffered BulkWriter rows as Parquet import files.',
+        });
+
+        const typesPath = path.join(bulkWriterDir, 'Types.ts');
+        if (fs.existsSync(typesPath)) {
+            const content = fs.readFileSync(typesPath, 'utf8');
+            const lines = content.split('\n');
+            for (const typeName of ['Storage', 'BulkWriterSchema', 'BulkWriterOptions']) {
+                const entry = this._extractExportedBlocks(content, 'interface')
+                    .find((item) => item.name === typeName);
+                if (!entry) continue;
+                const lineNumber = lines.findIndex((line) => line.match(new RegExp(`\\binterface\\s+${typeName}\\b`))) + 1;
+                symbols.push({
+                    name: typeName,
+                    parentClass: 'DataImport',
+                    kind: 'Interface',
+                    docstring: `${typeName} interface for BulkWriter data import.`,
+                    filePath: 'milvus/bulkwriter/Types.ts',
+                    lineNumber: lineNumber || 1,
+                    params: [],
+                    fields: this._parseObjectFields(entry.body),
+                    bodyHash: this._bodyFingerprint(entry.body),
+                    relatedFiles: ['docs/content/operations/bulk-writer.mdx'],
+                });
+            }
+        }
+
+        return symbols;
+    }
+
+    _extractClassMethods(body) {
+        const methods = [];
+        const methodRegex = /^\s*(?:async\s+)?([A-Za-z_$][\w$]*)\s*\(([^)]*)\)\s*:?\s*([^{;\n]*)\{/gm;
+        let match;
+        while ((match = methodRegex.exec(body))) {
+            const name = match[1];
+            if (['if', 'for', 'while', 'switch', 'catch'].includes(name)) continue;
+            if (name.startsWith('_')) continue;
+            methods.push({
+                name,
+                params: match[2].trim(),
+                returnType: match[3].trim(),
+            });
+        }
+        return methods;
+    }
+
+    _bodyFingerprint(body) {
+        if (!body) return null;
+        const normalized = body
+            .split('\n')
+            .map((line) => line.replace(/\/\/.*$/, '').trim())
+            .filter(Boolean)
+            .join('\n');
+        if (!normalized) return null;
+        return crypto.createHash('sha256').update(normalized).digest('hex').slice(0, 16);
     }
 }
 

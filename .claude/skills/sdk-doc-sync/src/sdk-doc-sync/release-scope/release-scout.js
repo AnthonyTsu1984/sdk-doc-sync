@@ -6,6 +6,8 @@ const os = require('node:os');
 
 const PythonScanner = require('../scanners/python-scanner');
 const JavaScanner = require('../scanners/java-scanner');
+const NodeScanner = require('../scanners/node-scanner');
+const GoScanner = require('../scanners/go-scanner');
 const { createReleaseScope, validateReleaseScope } = require('./schema');
 const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
@@ -14,7 +16,22 @@ const { loadIdentityMap, normalizeDelta } = require('./identity-normalizer');
 function scannerFor(language, sdkDir) {
   if (language === 'python') return new PythonScanner({ rootDir: sdkDir, publicOnly: true });
   if (language === 'java') return new JavaScanner({ rootDir: sdkDir, publicOnly: true });
+  if (language === 'node') return new NodeScanner({ rootDir: sdkDir, publicOnly: true });
+  if (language === 'go') return new GoScanner({ rootDir: sdkDir, publicOnly: true });
   throw new Error(`Release scout scanner is not configured for ${language}`);
+}
+
+function compactTrack(track) {
+  const match = /^v(\d+)\.(\d+)\.x$/.exec(track || '');
+  if (!match) return null;
+  return `v${match[1]}${match[2]}`;
+}
+
+function scanStateKeyFor({ language, track, scanState }) {
+  const compact = compactTrack(track);
+  const versionedKey = compact ? `${language}-${compact}` : null;
+  if (versionedKey && scanState && scanState[versionedKey]) return versionedKey;
+  return language;
 }
 
 async function scanSymbols({ scanner, sdkDir, language }) {
@@ -111,17 +128,19 @@ async function runReleaseScout({
   runGit,
 } = {}) {
   const range = resolveReleaseRange({
-    languageKey: language,
+    languageKey: scanStateKeyFor({ language, track, scanState }),
     sdkName,
     track,
     scanState,
     targetTag,
+    tagPrefix: language === 'go' ? 'client/' : '',
     runGit,
     cwd: repoDir,
   });
   if (range.noChanges) {
     return createReleaseScope({
       ...range,
+      language,
       changedFiles: [],
       actions: [],
       scannerDiagnostics: [{ level: 'info', code: 'NO_RELEASE_CHANGES', message: `${language} is already scanned at ${range.targetTag}.` }],
@@ -187,6 +206,7 @@ async function runReleaseScout({
   ];
   const scope = createReleaseScope({
     ...range,
+    language,
     changedFiles,
     actions,
     scannerDiagnostics,
@@ -204,6 +224,12 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
   }
   if (language === 'java' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'java-v26.json');
+  }
+  if (language === 'node' && track === 'v2.6.x') {
+    return path.join(skillRoot, 'references', 'identity', 'node-v26.json');
+  }
+  if (language === 'go' && track === 'v2.6.x') {
+    return path.join(skillRoot, 'references', 'identity', 'go-v26.json');
   }
   throw new Error(`No default identity map for ${language} ${track}`);
 }

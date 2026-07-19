@@ -55,6 +55,7 @@ Read only what the task requires:
 2. Run `sdk-release-scout` for SDK release requests before any full scanner dry-run.
 3. Treat the release-scout JSON as the only approval-grade release discovery artifact.
 4. Stop with a no-change report when `scannerDiagnostics` includes `NO_RELEASE_CHANGES`.
+5. If release scout cannot produce a valid artifact for an SDK/track, do not replace it with a full scanner dry-run. Report release-scout as blocked, then perform source-backed Git triage only until scanner coverage or identity maps are fixed.
 
 Example:
 

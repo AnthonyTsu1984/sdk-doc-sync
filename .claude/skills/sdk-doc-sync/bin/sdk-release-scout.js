@@ -19,6 +19,10 @@ function parseArgs(argv) {
     else if (arg === '--track') args.track = argv[++i];
     else if (arg === '--sdk-dir') args.sdkDir = argv[++i];
     else if (arg === '--repo-dir') args.repoDir = argv[++i];
+    else if (arg === '--implementation-repo-dir') args.implementationRepoDir = argv[++i];
+    else if (arg === '--implementation-sdk-dir') args.implementationSdkDir = argv[++i];
+    else if (arg === '--implementation-baseline-ref') args.implementationBaselineRef = argv[++i];
+    else if (arg === '--implementation-target-ref') args.implementationTargetRef = argv[++i];
     else if (arg === '--baseline-tag') args.baselineTag = argv[++i];
     else if (arg === '--target-tag') args.targetTag = argv[++i];
     else if (arg === '--identity-map') args.identityMapPath = argv[++i];
@@ -71,6 +75,39 @@ function defaultsFor(args) {
       repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-go'),
       publicRoots: [
         'client/',
+      ],
+    };
+  }
+  if (args.language === 'cpp') {
+    return {
+      sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-cpp'),
+      repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-cpp'),
+      publicRoots: [
+        'src/include/milvus/',
+        'src/impl/MilvusClientV2Impl.cpp',
+        'README.md',
+        'CHANGELOG.md',
+      ],
+    };
+  }
+  if (args.language === 'zilliz-cli') {
+    const implementationRepoDir = args.implementationRepoDir || path.join(PROJECT_ROOT, 'repos', 'zilliz-cloud');
+    return {
+      sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'zilliz-cloud', 'vdc', 'zilliz-tui'),
+      repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'zilliz-cli'),
+      implementationRepoDir,
+      implementationSdkDir: args.implementationSdkDir || path.join(implementationRepoDir, 'vdc', 'zilliz-tui'),
+      implementationPublicRoots: [
+        'vdc/zilliz-tui/src/',
+        'vdc/zilliz-tui/CHANGELOG.md',
+        'vdc/zilliz-tui/Cargo.toml',
+        'vdc/zilliz-tui/Cargo.lock',
+      ],
+      publicRoots: [
+        'README.md',
+        'install.sh',
+        'install.ps1',
+        'docs/',
       ],
     };
   }
@@ -135,6 +172,11 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     sdkDir: defaults.sdkDir,
     repoDir: defaults.repoDir,
     publicRoots: defaults.publicRoots,
+    implementationRepoDir: args.implementationRepoDir || defaults.implementationRepoDir,
+    implementationSdkDir: args.implementationSdkDir || defaults.implementationSdkDir,
+    implementationBaselineRef: args.implementationBaselineRef || null,
+    implementationTargetRef: args.implementationTargetRef || null,
+    implementationPublicRoots: defaults.implementationPublicRoots || [],
     identityMapPath,
   });
   const json = stableReleaseScopeJson(scope);

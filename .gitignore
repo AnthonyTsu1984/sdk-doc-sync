@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 .env
+.venv/
 
 # Temp scripts
 scripts/_tmp_*

@@ -8,6 +8,8 @@ const PythonScanner = require('../scanners/python-scanner');
 const JavaScanner = require('../scanners/java-scanner');
 const NodeScanner = require('../scanners/node-scanner');
 const GoScanner = require('../scanners/go-scanner');
+const CppScanner = require('../scanners/cpp-scanner');
+const ZillizCliScanner = require('../scanners/zilliz-cli-scanner');
 const { createReleaseScope, validateReleaseScope } = require('./schema');
 const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
@@ -18,6 +20,8 @@ function scannerFor(language, sdkDir) {
   if (language === 'java') return new JavaScanner({ rootDir: sdkDir, publicOnly: true });
   if (language === 'node') return new NodeScanner({ rootDir: sdkDir, publicOnly: true });
   if (language === 'go') return new GoScanner({ rootDir: sdkDir, publicOnly: true });
+  if (language === 'cpp') return new CppScanner({ rootDir: sdkDir, publicOnly: true });
+  if (language === 'zilliz-cli') return new ZillizCliScanner({ rootDir: sdkDir, publicOnly: true });
   throw new Error(`Release scout scanner is not configured for ${language}`);
 }
 
@@ -121,12 +125,41 @@ async function runReleaseScout({
   repoDir = null,
   publicRoots = [],
   identityMapPath,
+  implementationRepoDir = null,
+  implementationSdkDir = null,
+  implementationBaselineRef = null,
+  implementationTargetRef = null,
+  implementationPublicRoots = [],
   baselineSymbols = null,
   targetSymbols = null,
   baselineScanner = null,
   targetScanner = null,
   runGit,
 } = {}) {
+  if (language === 'zilliz-cli') {
+    return await runZillizCliReleaseScout({
+      language,
+      sdkName,
+      track,
+      scanState,
+      targetTag,
+      sdkDir,
+      repoDir,
+      publicRoots,
+      identityMapPath,
+      implementationRepoDir,
+      implementationSdkDir,
+      implementationBaselineRef,
+      implementationTargetRef,
+      implementationPublicRoots,
+      baselineSymbols,
+      targetSymbols,
+      baselineScanner,
+      targetScanner,
+      runGit,
+    });
+  }
+
   const range = resolveReleaseRange({
     languageKey: scanStateKeyFor({ language, track, scanState }),
     sdkName,
@@ -218,6 +251,178 @@ async function runReleaseScout({
   return scope;
 }
 
+function targetCommitForRef({ ref, runGit, cwd }) {
+  return runGit(['rev-list', '-n', '1', ref], { cwd }).trim();
+}
+
+async function runZillizCliReleaseScout({
+  language,
+  sdkName,
+  track,
+  scanState,
+  targetTag = null,
+  sdkDir = null,
+  repoDir = null,
+  publicRoots = [],
+  identityMapPath,
+  implementationRepoDir = null,
+  implementationSdkDir = null,
+  implementationBaselineRef = null,
+  implementationTargetRef = null,
+  implementationPublicRoots = [],
+  baselineSymbols = null,
+  targetSymbols = null,
+  baselineScanner = null,
+  targetScanner = null,
+  runGit,
+} = {}) {
+  const stateKey = scanStateKeyFor({ language, track, scanState });
+  const resolvedRunGit = runGit || defaultRunGit;
+  const range = resolveReleaseRange({
+    languageKey: stateKey,
+    sdkName,
+    track,
+    scanState,
+    targetTag,
+    tagPrefix: 'zilliz-',
+    runGit: resolvedRunGit,
+    cwd: repoDir,
+  });
+
+  const state = scanState?.[stateKey] || {};
+  const implRepo = implementationRepoDir || repoDir;
+  const implSdk = implementationSdkDir || sdkDir;
+  const implBaseline = implementationBaselineRef || state.lastScannedImplementationCommit || null;
+  const implTarget = implementationTargetRef || (range.noChanges && implBaseline ? 'origin/master' : null);
+  const implChangedFiles = implBaseline && implTarget && implBaseline !== implTarget
+    ? changedFilesInRange({
+      baselineTag: implBaseline,
+      targetTag: implTarget,
+      publicRoots: implementationPublicRoots,
+      runGit: resolvedRunGit,
+      cwd: implRepo,
+    })
+    : [];
+
+  if (range.noChanges) {
+    return createReleaseScope({
+      ...range,
+      language,
+      changedFiles: implChangedFiles,
+      actions: [],
+      approvalGrade: implChangedFiles.length === 0,
+      scannerDiagnostics: [
+        { level: 'info', code: 'NO_RELEASE_CHANGES', message: `${language} is already scanned at ${range.targetTag}.` },
+        ...(implChangedFiles.length > 0 ? [{
+          level: 'warn',
+          code: 'UNRELEASED_IMPLEMENTATION_CHANGES',
+          message: `Implementation has ${implChangedFiles.length} changed public file(s) in ${implBaseline}..${implTarget}; wait for a public zilliz-cli release before sync approval.`,
+        }] : []),
+      ],
+    });
+  }
+
+  const publicChangedFiles = changedFilesInRange({
+    baselineTag: range.baselineTag,
+    targetTag: range.targetTag,
+    publicRoots,
+    runGit: resolvedRunGit,
+    cwd: repoDir,
+  });
+
+  if (!implBaseline || !implTarget) {
+    return createReleaseScope({
+      ...range,
+      language,
+      changedFiles: publicChangedFiles,
+      actions: [],
+      approvalGrade: false,
+      scannerDiagnostics: [{
+        level: 'error',
+        code: 'IMPLEMENTATION_RANGE_REQUIRED',
+        message: 'zilliz-cli public releases require a matching zilliz-tui implementation baseline and target before scanner actions are approval-ready.',
+      }],
+    });
+  }
+
+  const map = loadIdentityMap(identityMapPath);
+  const baseline = baselineSymbols
+    || await (baselineScanner
+      ? scanSymbols({ scanner: baselineScanner, sdkDir: implSdk, language })
+      : scanRefSymbols({
+        ref: implBaseline,
+        repoDir: implRepo,
+        sdkDir: implSdk,
+        publicRoots: implementationPublicRoots,
+        language,
+        runGit: resolvedRunGit,
+      }));
+  const target = targetSymbols
+    || await (targetScanner
+      ? scanSymbols({ scanner: targetScanner, sdkDir: implSdk, language })
+      : scanRefSymbols({
+        ref: implTarget,
+        repoDir: implRepo,
+        sdkDir: implSdk,
+        publicRoots: implementationPublicRoots,
+        language,
+        runGit: resolvedRunGit,
+      }));
+  const scopedBaseline = filterSymbolsByChangedFiles({
+    symbols: baseline,
+    changedFiles: implChangedFiles,
+    sdkPackagePrefix: map.packagePrefix || '',
+  });
+  const scopedTarget = filterSymbolsByChangedFiles({
+    symbols: target,
+    changedFiles: implChangedFiles,
+    sdkPackagePrefix: map.packagePrefix || '',
+  });
+  const scopedIdentities = new Set([
+    ...scopedBaseline.map(publicIdentity),
+    ...scopedTarget.map(publicIdentity),
+  ]);
+  const deltas = classifySymbolDeltas({ baseline, target })
+    .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
+  const implTargetCommit = targetCommitForRef({ ref: implTarget, runGit: resolvedRunGit, cwd: implRepo });
+  const normalized = deltas.map((delta) => {
+    const item = normalizeDelta(delta, map);
+    const action = {
+      ...item,
+      source: {
+        ...item.source,
+        repository: 'zilliztech/zilliz-cloud',
+        revision: implTargetCommit,
+      },
+      evidence: [{
+        kind: 'source',
+        locator: `${item.source.file}:${item.source.line}`,
+        revision: implTargetCommit,
+        confidence: 'direct',
+      }],
+    };
+    return action;
+  });
+
+  const actions = normalized.map(({ diagnostic, ...action }) => action);
+  const scannerDiagnostics = [
+    { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
+    ...normalized.map((item) => item.diagnostic).filter(Boolean),
+  ];
+  const scope = createReleaseScope({
+    ...range,
+    language,
+    changedFiles: implChangedFiles,
+    actions,
+    scannerDiagnostics,
+  });
+  const validation = validateReleaseScope(scope);
+  if (!validation.valid) {
+    throw new Error(`Invalid release scope: ${JSON.stringify(validation.errors)}`);
+  }
+  return scope;
+}
+
 function defaultIdentityMapPath({ skillRoot, language, track }) {
   if (language === 'python' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'python-v26.json');
@@ -230,6 +435,12 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
   }
   if (language === 'go' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'go-v26.json');
+  }
+  if (language === 'cpp' && track === 'v2.6.x') {
+    return path.join(skillRoot, 'references', 'identity', 'cpp-v26.json');
+  }
+  if (language === 'zilliz-cli' && track === 'v1.4.x') {
+    return path.join(skillRoot, 'references', 'identity', 'zilliz-cli-v14.json');
   }
   throw new Error(`No default identity map for ${language} ${track}`);
 }

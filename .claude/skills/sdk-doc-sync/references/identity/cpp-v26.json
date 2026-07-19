@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "language": "cpp",
+  "track": "v2.6.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "CDC.GetReplicateConfiguration": {
+      "stableId": "cpp:CDC:GetReplicateConfiguration",
+      "canonicalSlug": "CDC-GetReplicateConfiguration",
+      "category": "CDC"
+    },
+    "CDC.GetReplicateInfo": {
+      "stableId": "cpp:CDC:GetReplicateInfo",
+      "canonicalSlug": "CDC-GetReplicateInfo",
+      "category": "CDC"
+    },
+    "CDC.UpdateReplicateConfiguration": {
+      "stableId": "cpp:CDC:UpdateReplicateConfiguration",
+      "canonicalSlug": "CDC-UpdateReplicateConfiguration",
+      "category": "CDC"
+    },
+    "Management.FlushAll": {
+      "stableId": "cpp:Management:FlushAll",
+      "canonicalSlug": "v2-Management-FlushAll",
+      "category": "Management"
+    },
+    "Management.GetFlushAllState": {
+      "stableId": "cpp:Management:GetFlushAllState",
+      "canonicalSlug": "v2-Management-GetFlushAllState",
+      "category": "Management"
+    },
+    "Management.GetLoadState": {
+      "stableId": "cpp:Management:GetLoadState",
+      "canonicalSlug": "v2-Management-GetLoadState",
+      "category": "Management"
+    },
+    "Management.LoadCollection": {
+      "stableId": "cpp:Management:LoadCollection",
+      "canonicalSlug": "v2-Management-LoadCollection",
+      "category": "Management"
+    },
+    "Management.ListPersistentSegments": {
+      "stableId": "cpp:Management:ListPersistentSegments",
+      "canonicalSlug": "v2-Management-ListPersistentSegments",
+      "category": "Management"
+    },
+    "Management.ListQuerySegments": {
+      "stableId": "cpp:Management:ListQuerySegments",
+      "canonicalSlug": "v2-Management-ListQuerySegments",
+      "category": "Management"
+    },
+    "Management.SegmentLevel": {
+      "stableId": "cpp:Management:SegmentLevel",
+      "canonicalSlug": "v2-Management-SegmentLevel",
+      "category": "Management"
+    },
+    "Partitions.LoadPartitions": {
+      "stableId": "cpp:Partitions:LoadPartitions",
+      "canonicalSlug": "v2-Partition-LoadPartitions",
+      "category": "Partitions"
+    }
+  }
+}

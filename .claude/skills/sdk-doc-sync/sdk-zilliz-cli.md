@@ -71,7 +71,24 @@ Data Operations/
 
 ### Scanner status
 
-`src/sdk-doc-sync/scanners/zilliz-cli-scanner.js` currently parses Python/Click only. Rust support (auto-detect Cargo.toml + clap regex parser) is pending.
+`src/sdk-doc-sync/scanners/zilliz-cli-scanner.js` supports both the legacy Python/Click layout and the current Rust `zilliz-tui` layout. Rust mode parses JSON model resources, clap-derived top-level commands, and the hand-written operation registry in `src/cli/help.rs`. Hand-written commands still use curated option metadata; update `RUST_HANDWRITTEN_OP_PARAMS` when Rust modules parse raw args or print help manually.
+
+Release scout support for v1.4.x uses a cross-repo boundary:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language zilliz-cli \
+  --sdk-name zilliz-cli \
+  --track v1.4.x \
+  --json \
+  --output tmp/sdk-release-scout/zilliz-cli-v14.json
+```
+
+- Public release discovery comes from `repos/zilliz-cli`.
+- Implementation drift comes from `repos/zilliz-cloud/vdc/zilliz-tui`.
+- If the latest public release still equals `scan-state.json.lastScannedTag`, report `NO_RELEASE_CHANGES`; implementation-only changes are `UNRELEASED_IMPLEMENTATION_CHANGES` and are not approval-ready.
+- For a new public release, pass `--implementation-baseline-ref` and `--implementation-target-ref` pinned to the matching `zilliz-tui` implementation commits. Do not use `origin/master` as an approval-grade release target.
+- Only ask for sync approval after a public release exists and the release-scout artifact has no unmapped identity diagnostics.
 
 ### Cross-repo mapping workflow (zilliz-cli ↔ zilliz-cloud/vdc/zilliz-tui)
 
@@ -89,6 +106,7 @@ Use this when public release tags are in `zilliztech/zilliz-cli` but implementat
 4. Validate each release-note command in source repo:
    - `grep -R "<command-or-flag>" -n repos/zilliz-cloud/vdc/zilliz-tui/src`
    - `grep -R "<resource-or-path>" -n repos/zilliz-cloud/vdc/zilliz-tui/src/model/builtin_models/*.json`
+   - For hand-written Rust commands, verify `RUST_HANDWRITTEN_OP_PARAMS` in `zilliz-cli-scanner.js` matches the module's raw arg parser and `--help` output.
 5. Build a doc-impact matrix with three outcomes:
    - **Docs Required (CREATE):** new command/resource/action appears.
    - **Docs Required (UPDATE):** existing command changed flags/constraints/examples/path/behavior.
@@ -108,6 +126,13 @@ Use this when public release tags are in `zilliztech/zilliz-cli` but implementat
 Storage-integration docs are handled by `.claude/skills/sdk-doc-sync/scripts/zilliz-cli-v14x/update-v144-v145.js`. Run dry-run first; the script also updates related records' `Last Modified At` and deprecates removed `completion` behavior.
 
 Important: the public `zilliz-cli` repo can be release-oriented and may not contain full Rust source at each tag. Do not infer “no command changes” from file diffs alone; always parse release notes and then validate against `zilliz-cloud/vdc/zilliz-tui` source/model files.
+
+### Current unreleased candidates after `zilliz-v1.4.4`
+
+Do not sync these until a public release after `zilliz-v1.4.4` exists:
+
+- `cluster create`: dedicated clusters support `--replica`, `--autoscaling-cu-min`, and `--autoscaling-cu-max`. Dynamic CU min/max must be supplied together and cannot be combined with `--cu-size`.
+- `stage`: resource is deprecated in favor of `volume`; hidden from grouped help, shell completion, and available-resource hints, but `stage list/create/delete/apply` remain executable for compatibility.
 
 ---
 

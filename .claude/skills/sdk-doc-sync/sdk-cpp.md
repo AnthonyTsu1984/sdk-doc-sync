@@ -2,8 +2,8 @@
 
 **Scanner:** `src/sdk-doc-sync/scanners/cpp-scanner.js`
 **Root dir:** `repos/milvus-sdk-cpp`; include dir: `src/include/milvus/`
-**Latest release:** `v2.6.2` (as of 2026-04-14)
-**Note:** 3-phase scan — MilvusClientV2.h virtual methods → request header With*/Add* params (with base class inheritance) → enum types. `using` aliases resolved via alias chain.
+**Latest verified v2.6.x release:** `v2.6.4` (2026-06-17)
+**Note:** 3-phase scan — MilvusClientV2.h virtual methods → request header With*/Add* params (with base class inheritance) → enum types. `using` aliases resolved via alias chain. Export macros such as `MILVUS_SDK_API` must not change symbol identity.
 
 | Version | Bitable Token              | Drive Root            | v2.6.x Folder         |
 |---------|----------------------------|-----------------------|-----------------------|
@@ -11,6 +11,32 @@
 | v3.0.x  | QdLkbfmnFatl4TsThKDc5Dobn5g | `NVjgfJr5aleBsedDoKCcDpnJn9b` | `NVjgfJr5aleBsedDoKCcDpnJn9b` |
 
 **Note:** C++ bitable has 8 shared VirtualNodes (targets=Milvus,Zilliz) — reuse them, do NOT create new ones. Live folder/record tokens in `memory/cpp-doc-audit.md`.
+
+## Release Scanning
+
+Use release scout first:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language cpp \
+  --sdk-name milvus-sdk-cpp \
+  --track v2.6.x \
+  --baseline-tag v2.6.3 \
+  --target-tag v2.6.4 \
+  --json \
+  --output tmp/sdk-release-scout/cpp-v26.json
+```
+
+Do not rely on the legacy `cpp` scan-state key when it points at `origin/master`; pass an explicit v2.6.x baseline until a successful approved sync advances a versioned C++ baseline. Do not update `scan-state.json` during discovery.
+
+For v2.6.4, source-backed public documentation candidates are:
+
+- New methods: `FlushAll`, `GetFlushAllState`, `GetReplicateConfiguration`, `UpdateReplicateConfiguration`, `GetReplicateInfo`.
+- New support docs: `FlushAllRequest`, `FlushAllResponse`, `GetFlushAllStateRequest`, `GetFlushAllStateResponse`, CDC request/response classes, and `ReplicateConfiguration` helper types.
+- Updates: `LoadCollection`, `LoadPartitions`, `GetLoadState` load/refresh progress behavior; `SegmentInfo`, `QuerySegmentInfo`, and `SegmentLevel` segment metadata.
+- Build/reference note: `MILVUS_SDK_API` export annotations are packaging visibility changes; document only if the page exposes class signatures or build guidance.
+
+If release scout emits unmapped identity diagnostics, fix `references/identity/cpp-v26.json` before asking for write approval. A full C++ scanner dry-run remains diagnostic only.
 
 **Doc format — Methods (API functions):**
 

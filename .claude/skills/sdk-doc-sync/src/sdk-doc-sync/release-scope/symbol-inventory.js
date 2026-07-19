@@ -16,6 +16,7 @@ function comparableSignature(symbol) {
     altConstructors: symbol.altConstructors || [],
     returnType: symbol.returnType || null,
     decorators: symbol.decorators || [],
+    hidden: symbol.hidden || false,
     bodyHash: symbol.bodyHash || null,
   });
 }
@@ -35,6 +36,7 @@ function updateReason(previous, symbol) {
   if ((previous.bodyHash || null) !== (symbol.bodyHash || null)) return 'public method behavior changed';
   if ((previous.returnType || null) !== (symbol.returnType || null)) return 'return type changed';
   if (!sameValue(previous.decorators || [], symbol.decorators || [])) return 'decorators changed';
+  if ((previous.hidden || false) !== (symbol.hidden || false)) return 'visibility changed';
   return 'public surface changed';
 }
 

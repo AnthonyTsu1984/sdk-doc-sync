@@ -11,6 +11,8 @@ const { runReleaseScout } = require('../src/sdk-doc-sync/release-scope/release-s
 const { runCli } = require('../bin/sdk-release-scout');
 const NodeScanner = require('../src/sdk-doc-sync/scanners/node-scanner');
 const GoScanner = require('../src/sdk-doc-sync/scanners/go-scanner');
+const CppScanner = require('../src/sdk-doc-sync/scanners/cpp-scanner');
+const ZillizCliScanner = require('../src/sdk-doc-sync/scanners/zilliz-cli-scanner');
 
 const fixtureDir = path.join(__dirname, 'fixtures', 'release-scope');
 
@@ -637,6 +639,405 @@ func (s *StructSchema) Validate() error {
   assert.deepEqual(byIdentity.get('Collections.FieldType').methods.map((method) => method.name), ['IsVectorType']);
   assert.match(byIdentity.get('Collections.CreateCollection').bodyHash, /^[a-f0-9]{16}$/);
   assert.match(byIdentity.get('Collections.AddCollectionField').bodyHash, /^[a-f0-9]{16}$/);
+});
+
+test('CppScanner extracts v2.6.4 exported request classes and flush-all symbols', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-scanner-v264-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    static std::shared_ptr<MilvusClientV2>
+    Create();
+
+    /**
+     * @brief Flush all insert buffer data into storage.
+     */
+    virtual Status
+    FlushAll(const FlushAllRequest& request, FlushAllResponse& response) = 0;
+
+    virtual Status
+    GetReplicateConfiguration(const GetReplicateConfigurationRequest& request,
+                              GetReplicateConfigurationResponse& response) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'utility', 'FlushAllRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API FlushAllRequest {
+ public:
+    const std::string&
+    DatabaseName() const;
+    FlushAllRequest&
+    WithDatabaseName(const std::string& db_name);
+    int64_t
+    WaitFlushedMs() const;
+    FlushAllRequest&
+    WithWaitFlushedMs(int64_t ms);
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'cdc', 'GetReplicateConfigurationRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API GetReplicateConfigurationRequest {
+ public:
+    GetReplicateConfigurationRequest() = default;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'SegmentInfo.h'), `
+#pragma once
+namespace milvus {
+enum class SegmentLevel {
+    UNKNOWN = -1,
+    LEGACY = 0,
+    L0 = 1,
+    L1 = 2,
+    L2 = 3,
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'impl', 'MilvusClientV2Impl.cpp'), `
+namespace milvus {
+Status
+MilvusClientV2Impl::FlushAll(const FlushAllRequest& request, FlushAllResponse& response) {
+    return client_.FlushAll(request, response);
+}
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const flushAll = symbols.find((symbol) => symbol.parentClass === 'Management' && symbol.name === 'FlushAll');
+  const getReplicateConfiguration = symbols.find(
+    (symbol) => symbol.parentClass === 'CDC' && symbol.name === 'GetReplicateConfiguration',
+  );
+  const segmentLevel = symbols.find((symbol) => symbol.parentClass === 'Management' && symbol.name === 'SegmentLevel');
+
+  assert.ok(flushAll, 'FlushAll symbol should be scanned');
+  assert.deepEqual(flushAll.params.map((param) => [param.name, param.type]), [
+    ['WithDatabaseName', 'const std::string&'],
+    ['WithWaitFlushedMs', 'int64_t'],
+  ]);
+  assert.ok(flushAll.relatedFiles.includes('src/include/milvus/request/utility/FlushAllRequest.h'));
+  assert.match(flushAll.bodyHash, /^[a-f0-9]{16}$/);
+  assert.ok(flushAll.relatedFiles.includes('src/impl/MilvusClientV2Impl.cpp'));
+  assert.ok(getReplicateConfiguration, 'multiline GetReplicateConfiguration symbol should be scanned');
+  assert.ok(segmentLevel, 'SegmentLevel enum should be scanned');
+  assert.deepEqual(segmentLevel.params.map((value) => [value.name, value.value]), [
+    ['UNKNOWN', '-1'],
+    ['LEGACY', '0'],
+    ['L0', '1'],
+    ['L1', '2'],
+    ['L2', '3'],
+  ]);
+});
+
+test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs', async () => {
+  const baselineSymbols = [
+    {
+      name: 'GetLoadState',
+      kind: 'method',
+      signature: 'Status GetLoadState(const GetLoadStateRequest& request, GetLoadStateResponse& response)',
+      params: [{ name: 'WithCollectionName', kind: 'keyword', type: 'const std::string&', description: '' }],
+      filePath: 'src/include/milvus/MilvusClientV2.h',
+      lineNumber: 250,
+      parentClass: 'Management',
+      requestClass: 'GetLoadStateRequest',
+      responseClass: 'GetLoadStateResponse',
+    },
+  ];
+  const targetSymbols = [
+    {
+      name: 'FlushAll',
+      kind: 'method',
+      signature: 'Status FlushAll(const FlushAllRequest& request, FlushAllResponse& response)',
+      params: [
+        { name: 'WithDatabaseName', kind: 'keyword', type: 'const std::string&', description: '' },
+        { name: 'WithWaitFlushedMs', kind: 'keyword', type: 'int64_t', description: '' },
+      ],
+      filePath: 'src/include/milvus/MilvusClientV2.h',
+      lineNumber: 834,
+      parentClass: 'Management',
+      requestClass: 'FlushAllRequest',
+      responseClass: 'FlushAllResponse',
+      relatedFiles: ['src/include/milvus/request/utility/FlushAllRequest.h'],
+    },
+    {
+      name: 'GetReplicateInfo',
+      kind: 'method',
+      signature: 'Status GetReplicateInfo(const GetReplicateInfoRequest& request, GetReplicateInfoResponse& response)',
+      params: [
+        { name: 'WithSourceClusterID', kind: 'keyword', type: 'const std::string&', description: '' },
+        { name: 'WithTargetPChannel', kind: 'keyword', type: 'const std::string&', description: '' },
+      ],
+      filePath: 'src/include/milvus/MilvusClientV2.h',
+      lineNumber: 946,
+      parentClass: 'CDC',
+      requestClass: 'GetReplicateInfoRequest',
+      responseClass: 'GetReplicateInfoResponse',
+      relatedFiles: ['src/include/milvus/request/cdc/GetReplicateInfoRequest.h'],
+    },
+    {
+      ...baselineSymbols[0],
+      params: baselineSymbols[0].params,
+      bodyHash: 'after-load-progress',
+    },
+  ];
+
+  const scope = await runReleaseScout({
+    language: 'cpp',
+    sdkName: 'milvus-sdk-cpp',
+    track: 'v2.6.x',
+    scanState: { cpp: { lastScannedTag: 'v2.6.3' } },
+    targetTag: 'v2.6.4',
+    repoDir: '/repo/milvus-sdk-cpp',
+    sdkDir: '/repo/milvus-sdk-cpp',
+    publicRoots: ['src/include/milvus/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'cpp-v26.json'),
+    baselineSymbols,
+    targetSymbols,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v2.6.4': '426cbf50e832975b94b8de65b8b22d1c3252afc5\n',
+        'show -s --format=%cI v2.6.4': '2026-06-17T19:02:18+08:00\n',
+        'diff --name-only v2.6.3..v2.6.4': [
+          'src/include/milvus/MilvusClientV2.h',
+          'src/include/milvus/request/cdc/GetReplicateInfoRequest.h',
+          'src/include/milvus/request/utility/FlushAllRequest.h',
+        ].join('\n'),
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.canonicalSlug, action.source.file]), [
+    ['CREATE', 'cpp:CDC:GetReplicateInfo', 'CDC-GetReplicateInfo', 'src/include/milvus/MilvusClientV2.h'],
+    ['CREATE', 'cpp:Management:FlushAll', 'v2-Management-FlushAll', 'src/include/milvus/MilvusClientV2.h'],
+    ['UPDATE', 'cpp:Management:GetLoadState', 'v2-Management-GetLoadState', 'src/include/milvus/MilvusClientV2.h'],
+  ]);
+});
+
+function writeMinimalRustZillizCli(repo, { stageHidden = false } = {}) {
+  writeText(path.join(repo, 'Cargo.toml'), '[package]\nname = "zilliz-tui"\nversion = "1.4.5"\n');
+  writeText(path.join(repo, 'src', 'cli', 'args.rs'), `
+use clap::Subcommand;
+
+#[derive(Subcommand)]
+pub enum Commands {
+}
+`);
+  writeText(path.join(repo, 'src', 'cli', 'help.rs'), `
+const HAND_WRITTEN_OPS: &[(&str, &str, &str)] = &[
+    ("cluster", "create", "Create a new cluster."),
+];
+`);
+  writeText(path.join(repo, 'src', 'model', 'builtin_models', 'data-plane.json'), '{"resources":{}}');
+  writeText(path.join(repo, 'src', 'model', 'builtin_models', 'control-plane.json'), JSON.stringify({
+    resources: {
+      stage: {
+        description: 'Manage import stages.',
+        ...(stageHidden ? { hidden: true } : {}),
+        operations: {
+          list: {
+            description: 'List import stages.',
+            http: { method: 'GET', path: '/v2/stages' },
+            params: [{ name: 'projectId', type: 'string', cli: '--project-id' }],
+          },
+          create: {
+            description: 'Create an import stage.',
+            http: { method: 'POST', path: '/v2/stages/create' },
+            params: [{ name: 'projectId', type: 'string', cli: '--project-id', required: true }],
+          },
+          delete: {
+            description: 'Delete an import stage.',
+            http: { method: 'DELETE', path: '/v2/stages/{stageName}' },
+            params: [{ name: 'stageName', type: 'string', cli: '--stage-name', required: true }],
+          },
+          apply: {
+            description: 'Apply a stage.',
+            http: { method: 'POST', path: '/v2/stages/apply' },
+            params: [{ name: 'stageName', type: 'string', cli: '--stage-name', required: true }],
+          },
+        },
+      },
+    },
+  }, null, 2));
+}
+
+test('ZillizCliScanner extracts Rust cluster create dynamic CU flags and hidden resources', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'zilliz-cli-scanner-'));
+  writeMinimalRustZillizCli(repo, { stageHidden: true });
+
+  const symbols = await new ZillizCliScanner({ rootDir: repo, publicOnly: true }).scan();
+  const clusterCreate = symbols.find((symbol) => symbol.parentClass === 'Cluster' && symbol.name === 'create');
+  const stageList = symbols.find((symbol) => symbol.parentClass === 'Stage' && symbol.name === 'list');
+
+  assert.ok(clusterCreate, 'cluster create should be scanned');
+  assert.deepEqual(
+    clusterCreate.params
+      .filter((param) => ['--replica', '--autoscaling-cu-min', '--autoscaling-cu-max'].includes(param.name))
+      .map((param) => [param.name, param.type, param.required]),
+    [
+      ['--replica', 'integer', false],
+      ['--autoscaling-cu-min', 'integer', false],
+      ['--autoscaling-cu-max', 'integer', false],
+    ],
+  );
+  assert.ok(stageList, 'stage list should be scanned');
+  assert.equal(stageList.hidden, true);
+  assert.equal(stageList.filePath, 'src/model/builtin_models/control-plane.json');
+});
+
+test('runReleaseScout maps Zilliz CLI v1.4 cluster and stage visibility changes', async () => {
+  const baselineSymbols = [
+    {
+      name: 'create',
+      parentClass: 'Cluster',
+      kind: 'command',
+      signature: 'zilliz cluster create [OPTIONS]',
+      params: [
+        { name: '--name', type: 'string', required: true },
+        { name: '--cu-size', type: 'integer', required: false },
+      ],
+      filePath: 'src/cli/help.rs',
+      relatedFiles: ['src/cli/cluster.rs'],
+      lineNumber: 12,
+    },
+    {
+      name: 'list',
+      parentClass: 'Stage',
+      kind: 'command',
+      signature: 'zilliz stage list [OPTIONS]',
+      params: [{ name: '--project-id', type: 'string', required: false }],
+      filePath: 'src/model/builtin_models/control-plane.json',
+      lineNumber: 1318,
+      hidden: false,
+    },
+  ];
+  const targetSymbols = [
+    {
+      ...baselineSymbols[0],
+      params: [
+        ...baselineSymbols[0].params,
+        { name: '--replica', type: 'integer', required: false },
+        { name: '--autoscaling-cu-min', type: 'integer', required: false },
+        { name: '--autoscaling-cu-max', type: 'integer', required: false },
+      ],
+    },
+    { ...baselineSymbols[1], hidden: true },
+  ];
+
+  const scope = await runReleaseScout({
+    language: 'zilliz-cli',
+    sdkName: 'zilliz-cli',
+    track: 'v1.4.x',
+    scanState: { 'zilliz-cli': { lastScannedTag: 'zilliz-v1.4.4', lastScannedImplementationCommit: 'impl-base' } },
+    targetTag: 'zilliz-v1.4.5',
+    repoDir: '/repo/zilliz-cli',
+    sdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationRepoDir: '/repo/zilliz-cloud',
+    implementationSdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationBaselineRef: 'impl-base',
+    implementationTargetRef: 'impl-target',
+    implementationPublicRoots: ['vdc/zilliz-tui/src/'],
+    publicRoots: ['README.md'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'zilliz-cli-v14.json'),
+    baselineSymbols,
+    targetSymbols,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 zilliz-v1.4.5': 'public-target\n',
+        'show -s --format=%cI zilliz-v1.4.5': '2026-06-24T10:00:00+08:00\n',
+        'diff --name-only zilliz-v1.4.4..zilliz-v1.4.5': 'README.md\n',
+        'diff --name-only impl-base..impl-target': [
+          'vdc/zilliz-tui/src/cli/cluster.rs',
+          'vdc/zilliz-tui/src/model/builtin_models/control-plane.json',
+        ].join('\n'),
+        'rev-list -n 1 impl-target': 'impl-target-commit\n',
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.reason]), [
+    ['UPDATE', 'zilliz-cli:Cloud Management:Cluster-create', 'parameters changed'],
+    ['UPDATE', 'zilliz-cli:Cloud Management:Stage-list', 'visibility changed'],
+  ]);
+  assert.deepEqual(scope.scannerDiagnostics, [{
+    level: 'warn',
+    code: 'FULL_SCAN_DIAGNOSTIC_ONLY',
+    message: 'Full scanner output is not approval-grade for zilliz-cli v1.4.x.',
+  }]);
+});
+
+test('runReleaseScout reports unreleased Zilliz CLI implementation drift without approval', async () => {
+  const scope = await runReleaseScout({
+    language: 'zilliz-cli',
+    sdkName: 'zilliz-cli',
+    track: 'v1.4.x',
+    scanState: { 'zilliz-cli': { lastScannedTag: 'zilliz-v1.4.4', lastScannedImplementationCommit: 'impl-base' } },
+    targetTag: 'zilliz-v1.4.4',
+    repoDir: '/repo/zilliz-cli',
+    sdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationRepoDir: '/repo/zilliz-cloud',
+    implementationSdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationBaselineRef: 'impl-base',
+    implementationTargetRef: 'impl-target',
+    implementationPublicRoots: ['vdc/zilliz-tui/src/'],
+    publicRoots: ['README.md'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'zilliz-cli-v14.json'),
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 zilliz-v1.4.4': 'public-target\n',
+        'show -s --format=%cI zilliz-v1.4.4': '2026-06-11T04:08:15Z\n',
+        'diff --name-only impl-base..impl-target': 'vdc/zilliz-tui/src/cli/cluster.rs\n',
+      }[key];
+    },
+  });
+
+  assert.equal(scope.approvalGrade, false);
+  assert.deepEqual(scope.actions, []);
+  assert.deepEqual(scope.scannerDiagnostics.map((item) => item.code), [
+    'NO_RELEASE_CHANGES',
+    'UNRELEASED_IMPLEMENTATION_CHANGES',
+  ]);
+});
+
+test('runReleaseScout requires explicit Zilliz CLI implementation target for released sync', async () => {
+  const scope = await runReleaseScout({
+    language: 'zilliz-cli',
+    sdkName: 'zilliz-cli',
+    track: 'v1.4.x',
+    scanState: { 'zilliz-cli': { lastScannedTag: 'zilliz-v1.4.4', lastScannedImplementationCommit: 'impl-base' } },
+    targetTag: 'zilliz-v1.4.5',
+    repoDir: '/repo/zilliz-cli',
+    sdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationRepoDir: '/repo/zilliz-cloud',
+    implementationSdkDir: '/repo/zilliz-cloud/vdc/zilliz-tui',
+    implementationPublicRoots: ['vdc/zilliz-tui/src/'],
+    publicRoots: ['README.md'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'zilliz-cli-v14.json'),
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 zilliz-v1.4.5': 'public-target\n',
+        'show -s --format=%cI zilliz-v1.4.5': '2026-06-24T10:00:00+08:00\n',
+        'diff --name-only zilliz-v1.4.4..zilliz-v1.4.5': 'README.md\n',
+      }[key];
+    },
+  });
+
+  assert.equal(scope.approvalGrade, false);
+  assert.deepEqual(scope.actions, []);
+  assert.deepEqual(scope.scannerDiagnostics, [{
+    level: 'error',
+    code: 'IMPLEMENTATION_RANGE_REQUIRED',
+    message: 'zilliz-cli public releases require a matching zilliz-tui implementation baseline and target before scanner actions are approval-ready.',
+  }]);
 });
 
 test('NodeScanner includes request type fields so upsert field_ops changes are diffable', async () => {

@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "language": "zilliz-cli",
+  "track": "v1.4.x",
+  "defaultCategory": "Cloud Management",
+  "packagePrefix": "vdc/zilliz-tui/",
+  "symbols": {
+    "Cluster.create": {
+      "stableId": "zilliz-cli:Cloud Management:Cluster-create",
+      "canonicalSlug": "Cloud-Management-Cluster-create",
+      "category": "Cloud Management"
+    },
+    "Stage.apply": {
+      "stableId": "zilliz-cli:Cloud Management:Stage-apply",
+      "canonicalSlug": "Cloud-Management-Stage-apply",
+      "category": "Cloud Management"
+    },
+    "Stage.create": {
+      "stableId": "zilliz-cli:Cloud Management:Stage-create",
+      "canonicalSlug": "Cloud-Management-Stage-create",
+      "category": "Cloud Management"
+    },
+    "Stage.delete": {
+      "stableId": "zilliz-cli:Cloud Management:Stage-delete",
+      "canonicalSlug": "Cloud-Management-Stage-delete",
+      "category": "Cloud Management"
+    },
+    "Stage.list": {
+      "stableId": "zilliz-cli:Cloud Management:Stage-list",
+      "canonicalSlug": "Cloud-Management-Stage-list",
+      "category": "Cloud Management"
+    }
+  }
+}

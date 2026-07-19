@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const BaseScanner = require('./base-scanner');
 
-// Category assignment for all 91 methods (90 virtual + 1 static Create)
+// Category assignment for public MilvusClientV2 methods.
 const METHOD_CATEGORIES = {
     // Client (10)
     Create: 'Client',
@@ -30,6 +31,11 @@ const METHOD_CATEGORIES = {
     AlterCollectionFieldProperties: 'Collections',
     DropCollectionFieldProperties: 'Collections',
     AddCollectionField: 'Collections',
+    AddCollectionFunction: 'Collections',
+    AlterCollectionFunction: 'Collections',
+    BatchDescribeCollections: 'Collections',
+    DescribeReplicas: 'Collections',
+    DropCollectionFunction: 'Collections',
     CreateAlias: 'Collections',
     DropAlias: 'Collections',
     AlterAlias: 'Collections',
@@ -48,6 +54,7 @@ const METHOD_CATEGORIES = {
     LoadCollection: 'Management',
     ReleaseCollection: 'Management',
     GetLoadState: 'Management',
+    RefreshLoad: 'Management',
     CreateIndex: 'Management',
     DescribeIndex: 'Management',
     ListIndexes: 'Management',
@@ -55,11 +62,19 @@ const METHOD_CATEGORIES = {
     AlterIndexProperties: 'Management',
     DropIndexProperties: 'Management',
     Flush: 'Management',
+    FlushAll: 'Management',
+    GetFlushAllState: 'Management',
     ListPersistentSegments: 'Management',
     ListQuerySegments: 'Management',
     Compact: 'Management',
+    Optimize: 'Management',
     GetCompactionState: 'Management',
     GetCompactionPlans: 'Management',
+
+    // CDC (3)
+    GetReplicateConfiguration: 'CDC',
+    UpdateReplicateConfiguration: 'CDC',
+    GetReplicateInfo: 'CDC',
 
     // Partitions (7)
     CreatePartition: 'Partitions',
@@ -118,6 +133,7 @@ const ENUM_DEFS = [
     { name: 'MetricType', category: 'Management', file: 'types/MetricType.h' },
     { name: 'ConsistencyLevel', category: 'Collections', file: 'types/ConsistencyLevel.h' },
     { name: 'LoadState', category: 'Collections', file: 'types/LoadState.h' },
+    { name: 'SegmentLevel', category: 'Management', file: 'types/SegmentInfo.h' },
 ];
 
 class CppScanner extends BaseScanner {
@@ -143,11 +159,14 @@ class CppScanner extends BaseScanner {
         for (const method of methods) {
             if (method.requestClass) {
                 method.params = this._getRequestParams(method.requestClass);
+                method.relatedFiles = this._relatedFilesForRequest(method.requestClass);
             } else if (method.directParams && method.directParams.length > 0) {
                 method.params = method.directParams;
             }
             delete method.directParams;
         }
+
+        this._attachImplementationHashes(methods);
 
         // Phase 3: Extract enums
         const enums = this._extractEnums();
@@ -169,10 +188,14 @@ class CppScanner extends BaseScanner {
             const isStatic = trimmed === 'static std::shared_ptr<MilvusClientV2>';
 
             if (!isVirtual && !isStatic) continue;
-            if (i + 1 >= lines.length) continue;
+            const declarationLines = [];
+            for (let j = i + 1; j < lines.length; j++) {
+                declarationLines.push(lines[j].trim());
+                if (lines[j].includes(';')) break;
+            }
 
-            const nextLine = lines[i + 1].trim();
-            const match = nextLine.match(/^(\w+)\(([^)]*)\)/);
+            const declaration = declarationLines.join(' ').replace(/\s+/g, ' ');
+            const match = declaration.match(/^(\w+)\s*\(([\s\S]*)\)\s*(?:=\s*0)?\s*;/);
             if (!match) continue;
 
             let name = match[1];
@@ -286,6 +309,43 @@ class CppScanner extends BaseScanner {
         return briefs.join(' ').trim() || null;
     }
 
+    _attachImplementationHashes(methods) {
+        const implFile = path.join(this.rootDir, 'src', 'impl', 'MilvusClientV2Impl.cpp');
+        if (!fs.existsSync(implFile)) return;
+
+        const content = fs.readFileSync(implFile, 'utf-8');
+        const relPath = path.relative(this.rootDir, implFile).replace(/\\/g, '/');
+        for (const method of methods) {
+            const body = this._extractImplementationBody(content, method.name);
+            if (!body) continue;
+            method.bodyHash = crypto
+                .createHash('sha256')
+                .update(body.replace(/\s+/g, ' ').trim())
+                .digest('hex')
+                .slice(0, 16);
+            method.relatedFiles = [...new Set([...(method.relatedFiles || []), relPath])];
+        }
+    }
+
+    _extractImplementationBody(content, methodName) {
+        const marker = `MilvusClientV2Impl::${methodName}`;
+        const methodIndex = content.indexOf(marker);
+        if (methodIndex === -1) return null;
+
+        const bodyStart = content.indexOf('{', methodIndex);
+        if (bodyStart === -1) return null;
+
+        let depth = 0;
+        for (let i = bodyStart; i < content.length; i++) {
+            if (content[i] === '{') depth++;
+            else if (content[i] === '}') {
+                depth--;
+                if (depth === 0) return content.slice(bodyStart, i + 1);
+            }
+        }
+        return null;
+    }
+
     // ── Phase 2: Request param extraction ─────────────────────────────
 
     _buildRequestIndex() {
@@ -306,7 +366,7 @@ class CppScanner extends BaseScanner {
             const content = fs.readFileSync(file, 'utf-8');
 
             // Extract class definitions
-            const classRegex = /class\s+(\w+)\s*(?::\s*([^{]+))?\s*\{/g;
+            const classRegex = /class\s+(?:(?:MILVUS_SDK_API|MILVUS_DEPRECATED)\s+)?(\w+)\s*(?::\s*([^{]+))?\s*\{/g;
             let classMatch;
             while ((classMatch = classRegex.exec(content)) !== null) {
                 const className = classMatch[1];
@@ -427,6 +487,28 @@ class CppScanner extends BaseScanner {
         }
 
         return this._collectParams(resolved, new Set());
+    }
+
+    _relatedFilesForRequest(requestClassName) {
+        const { classes, aliases } = this._requestIndex;
+        let resolved = requestClassName;
+        const visited = new Set();
+        while (aliases.has(resolved) && !visited.has(resolved)) {
+            visited.add(resolved);
+            resolved = aliases.get(resolved);
+        }
+
+        const files = new Set();
+        const collect = (className, seen) => {
+            if (seen.has(className)) return;
+            seen.add(className);
+            const classInfo = classes.get(className);
+            if (!classInfo) return;
+            files.add(path.relative(this.rootDir, classInfo.file));
+            for (const baseName of classInfo.baseClasses) collect(baseName, seen);
+        };
+        collect(resolved, new Set());
+        return [...files].map((file) => file.replace(/\\/g, '/'));
     }
 
     _collectParams(className, visited) {

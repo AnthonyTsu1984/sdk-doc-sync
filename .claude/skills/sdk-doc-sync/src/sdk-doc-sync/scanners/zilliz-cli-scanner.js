@@ -40,6 +40,9 @@ const RUST_HANDWRITTEN_OP_PARAMS = {
         { name: '--region',     shorthand: null, type: 'string', required: false, description: 'Cloud region (e.g. `aws-us-west-2`).' },
         { name: '--cu-type',    shorthand: null, type: 'string', required: false, description: 'Compute unit type for Dedicated clusters.', choices: ['Performance-optimized', 'Capacity-optimized'] },
         { name: '--cu-size',    shorthand: null, type: 'integer', required: false, description: 'Compute unit count for Dedicated clusters.' },
+        { name: '--replica',    shorthand: null, type: 'integer', required: false, description: 'Replica count for Dedicated clusters.' },
+        { name: '--autoscaling-cu-min', shorthand: null, type: 'integer', required: false, description: 'Dynamic Query CU minimum for Dedicated clusters. Required with --autoscaling-cu-max and mutually exclusive with --cu-size.' },
+        { name: '--autoscaling-cu-max', shorthand: null, type: 'integer', required: false, description: 'Dynamic Query CU maximum for Dedicated clusters. Required with --autoscaling-cu-min and mutually exclusive with --cu-size.' },
         { name: '--plan',       shorthand: null, type: 'string', required: false, description: 'Subscription plan (Standard, Enterprise).' },
     ],
     'cluster-metrics': [
@@ -347,6 +350,7 @@ class ZillizCliScanner extends BaseScanner {
         const symbols = [];
         for (const file of ['control-plane.json', 'data-plane.json']) {
             const filePath = path.join(modelsDir, file);
+            const relFilePath = path.relative(this.rootDir, filePath).replace(/\\/g, '/');
             const plane = file === 'control-plane.json' ? 'control' : 'data';
             let model;
             try {
@@ -359,6 +363,7 @@ class ZillizCliScanner extends BaseScanner {
             for (const [resourceName, resource] of Object.entries(resources)) {
                 const parentClass = this._capitalize(resourceName);
                 const resourceDedicatedOnly = resource.dedicatedOnly || false;
+                const resourceHidden = resource.hidden || false;
                 const operations = resource.operations || {};
 
                 for (const [opName, op] of Object.entries(operations)) {
@@ -386,7 +391,7 @@ class ZillizCliScanner extends BaseScanner {
                         signature,
                         params,
                         returnType: null,
-                        filePath: filePath,
+                        filePath: relFilePath,
                         lineNumber: 0,
                         category: ZillizCliScanner.CATEGORY_MAP[resourceName] || 'Data Operations',
                         // CLI-specific metadata
@@ -397,6 +402,7 @@ class ZillizCliScanner extends BaseScanner {
                         bodyParam: op.bodyParam || null,
                         examples: op.examples || [],
                         dedicatedOnly: op.dedicatedOnly || resourceDedicatedOnly,
+                        hidden: resourceHidden,
                     });
                 }
             }
@@ -710,8 +716,9 @@ class ZillizCliScanner extends BaseScanner {
         const topEnum = enumMap.get('Commands');
         if (!topEnum) return symbols;
 
+        const relFilePath = path.relative(this.rootDir, this._rustArgsFile).replace(/\\/g, '/');
         for (const variant of topEnum.variants) {
-            this._processClapVariant(variant, null, enumMap, symbols, this._rustArgsFile);
+            this._processClapVariant(variant, null, enumMap, symbols, relFilePath);
         }
         return symbols;
     }
@@ -1023,7 +1030,7 @@ class ZillizCliScanner extends BaseScanner {
             } else {
                 const key = `${resource}-${op}`;
                 const config = RUST_HANDWRITTEN_OP_PARAMS[key];
-                const params = config ? (config.params || []) : [];
+                const params = Array.isArray(config) ? config : (config?.params || []);
                 symbols.push(this._buildHandwrittenSymbol(resource, op, desc, params));
             }
         }
@@ -1034,6 +1041,8 @@ class ZillizCliScanner extends BaseScanner {
         const parentClass = this._capitalize(resource);
         const hasOpts = params.length > 0;
         const signature = `zilliz ${resource} ${op}${hasOpts ? ' [OPTIONS]' : ''}`;
+        const relFilePath = path.relative(this.rootDir, this._rustHelpFile).replace(/\\/g, '/');
+        const moduleFile = `src/cli/${resource.replace(/-/g, '_')}.rs`;
         return {
             name: op,
             parentClass,
@@ -1042,7 +1051,7 @@ class ZillizCliScanner extends BaseScanner {
             signature,
             params: params.map(p => ({ ...p })),
             returnType: null,
-            filePath: this._rustHelpFile,
+            filePath: relFilePath,
             lineNumber: 0,
             category: ZillizCliScanner.CATEGORY_MAP[resource] || 'Cloud Management',
             httpMethod: null,
@@ -1053,6 +1062,7 @@ class ZillizCliScanner extends BaseScanner {
             examples: [],
             dedicatedOnly: false,
             handwritten: true,
+            relatedFiles: [moduleFile],
         };
     }
 

@@ -171,7 +171,7 @@ async function main(argv = process.argv) {
   console.log(JSON.stringify({
     output: args.output,
     status: artifact.status,
-    entries: entries.length,
+    entries: artifact.entries.length,
     blocked: artifact.blocked.length,
   }, null, 2));
 }

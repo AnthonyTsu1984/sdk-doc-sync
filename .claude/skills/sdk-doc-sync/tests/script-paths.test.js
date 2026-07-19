@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -25,6 +26,81 @@ test('sdk-doc-sync planning helper scripts exist', () => {
   ]) {
     assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);
   }
+});
+
+test('build-current-placement-audit CLI reports the generated artifact summary', (t) => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const script = path.join(skillRoot, 'scripts', 'build-current-placement-audit.js');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'placement-audit-cli-'));
+  const proposalPath = path.join(tempDir, 'proposal.json');
+  const outputPath = path.join(tempDir, 'placement-audit.json');
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  fs.writeFileSync(proposalPath, JSON.stringify({
+    proposals: [{
+      id: 'proposal-1',
+      docIdentity: {
+        stableId: 'stable-1',
+        canonicalSlug: 'sample',
+        title: 'Sample',
+        targetFolderToken: 'target-folder',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'record-1',
+        currentDocumentToken: 'document-1',
+        parentRecordIds: [],
+      },
+    }],
+  }));
+
+  const bootstrap = `
+    const Module = require('node:module');
+    const originalLoad = Module._load;
+    Module._load = function patchedLoad(request, parent, isMain) {
+      if (request === 'node-fetch') {
+        return async () => ({
+          json: async () => ({ code: 0, data: { files: [], has_more: false } }),
+        });
+      }
+      if (request.endsWith('larkTokenFetcher')) {
+        return class OfflineTokenFetcher {
+          async token() { return 'offline-token'; }
+        };
+      }
+      return originalLoad.call(this, request, parent, isMain);
+    };
+    process.argv = [
+      process.execPath,
+      process.env.PLACEMENT_AUDIT_SCRIPT,
+      ...JSON.parse(process.env.PLACEMENT_AUDIT_ARGS),
+    ];
+    Module.runMain();
+  `;
+  const result = spawnSync(process.execPath, ['-e', bootstrap], {
+    cwd: path.resolve(skillRoot, '..', '..', '..'),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PLACEMENT_AUDIT_SCRIPT: script,
+      PLACEMENT_AUDIT_ARGS: JSON.stringify([
+        '--proposal', proposalPath,
+        '--version', 'v2.6.x',
+        '--version-root', 'version-root',
+        '--output', outputPath,
+      ]),
+    },
+  });
+
+  assert.equal(result.status, 0, result.stderr);
+  assert.equal(result.stderr, '');
+  const artifact = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+  assert.deepEqual(JSON.parse(result.stdout), {
+    output: outputPath,
+    status: artifact.status,
+    entries: artifact.entries.length,
+    blocked: artifact.blocked.length,
+  });
 });
 
 test('sdk-doc-sync --list reports sorted tests without executing them', () => {

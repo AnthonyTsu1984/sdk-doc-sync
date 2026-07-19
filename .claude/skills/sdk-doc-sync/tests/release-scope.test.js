@@ -153,6 +153,10 @@ const {
   classifySymbolDeltas,
   filterSymbolsByChangedFiles,
 } = require('../src/sdk-doc-sync/release-scope/symbol-inventory');
+const {
+  buildReviewedReleaseContext,
+  parseArgs,
+} = require('../scripts/build-reviewed-release-context');
 
 test('publicIdentity is stable across line-number changes', () => {
   assert.equal(publicIdentity({
@@ -315,4 +319,125 @@ test('compare-scan-artifacts reports planning error set changes', () => {
   assert.deepEqual(result.a.planningErrorCodes, { MISSING_SUMMARY: 1 });
   assert.deepEqual(result.b.planningErrorCodes, { MISSING_REVIEWED_EVIDENCE: 1 });
   assert.equal(result.planningErrorsChanged, true);
+});
+
+test('reviewed release context builder filters candidates and carries scoped planning targets', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/client/field_ops.py', 'pymilvus/grpc_gen/schema_pb2.py'],
+    actions: [
+      {
+        type: 'CREATE',
+        stableId: 'python:Vector:FieldOp',
+        canonicalSlug: 'FieldOp',
+        symbol: 'FieldOp',
+        source: { file: 'pymilvus/client/field_ops.py', line: 12 },
+        reason: 'new public class',
+      },
+      {
+        type: 'CREATE',
+        stableId: 'python:Client:DESCRIPTOR',
+        canonicalSlug: 'DESCRIPTOR',
+        symbol: 'DESCRIPTOR',
+        source: { file: 'pymilvus/grpc_gen/schema_pb2.py', line: 5 },
+        reason: 'generated scanner noise',
+      },
+    ],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    repository: 'milvus-io/pymilvus',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'vector-folder' },
+    },
+    groups: [{
+      category: 'Vector',
+      canonicalSlugs: ['FieldOp'],
+      summary: 'Builds field-level partial-update operations for array fields.',
+      example: {
+        code: 'from pymilvus import FieldOp\nop = FieldOp.array_append()',
+      },
+    }],
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+
+  assert.equal(result.selectedCount, 1);
+  assert.deepEqual(result.filteredScope.actions.map((action) => action.canonicalSlug), ['FieldOp']);
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.target, {
+    version: 'v2.6.x',
+    folderToken: 'vector-folder',
+    versionRootToken: 'root-v26',
+    ancestryVerified: true,
+  });
+  assert.equal(result.filteredScope.writesPerformed, false);
+  assert.equal(result.filteredScope.scanStateUpdated, false);
+  assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].category, 'Vector');
+  assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].reviewedEvidence[0].confidence, 'reviewed');
+});
+
+test('reviewed release context builder rejects stale or empty candidate specs', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/client/field_ops.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:FieldOp',
+      canonicalSlug: 'FieldOp',
+      symbol: 'FieldOp',
+      source: { file: 'pymilvus/client/field_ops.py', line: 12 },
+      reason: 'new public class',
+    }],
+  });
+  const target = {
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    folders: { Vector: 'vector-folder' },
+  };
+  const staleSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target,
+    groups: [{
+      category: 'Vector',
+      canonicalSlugs: ['FieldOp', 'FieldOp-array_append'],
+      summary: 'Builds field-level partial-update operations for array fields.',
+      example: { code: 'from pymilvus import FieldOp' },
+    }],
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: staleSpec }),
+    /not present in release scope: FieldOp-array_append/,
+  );
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: { language: 'python', track: 'v2.6.x', target } }),
+    /must configure at least one candidate/,
+  );
+});
+
+test('reviewed release context CLI parser rejects malformed arguments', () => {
+  assert.throws(
+    () => parseArgs(['node', 'script', '--release-scope', '--candidate-spec', 'spec.json']),
+    /Missing value for --release-scope/,
+  );
+  assert.throws(
+    () => parseArgs(['node', 'script', '--unknown']),
+    /Unknown argument: --unknown/,
+  );
 });

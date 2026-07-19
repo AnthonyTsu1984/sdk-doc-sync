@@ -275,14 +275,17 @@ function createSchemaFirstArtifactProvider({
 }
 
 function createDefaultPlanningContextProvider({ rootToken, sdkVersion }) {
-    return async () => ({
+    return async (action = {}) => {
+        if (action.planningContext?.target) return {};
+        return {
         target: {
             version: sdkVersion,
             folderToken: rootToken || 'dummy',
             versionRootToken: rootToken || 'dummy',
             ancestryVerified: true,
         },
-    });
+        };
+    };
 }
 
 async function runCli({

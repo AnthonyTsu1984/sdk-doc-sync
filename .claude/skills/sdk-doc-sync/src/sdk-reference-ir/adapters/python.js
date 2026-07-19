@@ -2,7 +2,24 @@
 
 const common = require('./common');
 
+function normalizePythonParam(param) {
+  if (!param || typeof param !== 'object') return param;
+  if ((param.kind === 'kwargs' || param.kind === 'varargs') && !param.type) {
+    return { ...param, type: 'Any' };
+  }
+  return param;
+}
+
+function normalizePythonSymbol(symbol) {
+  if (!symbol || typeof symbol !== 'object' || !Array.isArray(symbol.params)) return symbol;
+  return {
+    ...symbol,
+    params: symbol.params.map(normalizePythonParam),
+  };
+}
+
 function toReferenceDocument(symbol, context = {}) {
+  symbol = normalizePythonSymbol(symbol);
   const kindMap = {
     method: 'method',
     function: 'function',

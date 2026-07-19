@@ -405,6 +405,74 @@ test('schema-first CLI filters scanned symbols through release scope', async () 
   assert.match(stdout.join('\n'), /"releaseScope"/);
 });
 
+test('schema-first CLI preserves release-scope planning targets over default ROOT_TOKEN target', async () => {
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:search',
+      canonicalSlug: 'Vector-search',
+      symbol: 'MilvusClient.search',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
+      reason: 'new public method',
+      planningContext: {
+        target: {
+          version: 'v2.6.x',
+          folderToken: 'category-vector-folder',
+          versionRootToken: 'version-root-folder',
+          ancestryVerified: true,
+        },
+      },
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/release-scope.json',
+      '--dry-run',
+      '--json',
+    ],
+    env: { BASE_TOKEN: 'base-v26', ROOT_TOKEN: 'wrong-root-token' },
+    dependencies: {
+      loadEnv: false,
+      readFile: () => JSON.stringify(scope),
+      scanner: scannerFor(fixture('python-search.json')),
+      indexReader: async () => [],
+      referenceContextProvider: () => sdkContext('python'),
+      onStdout: () => {},
+    },
+  });
+
+  assert.equal(result.planningErrors.length, 0);
+  assert.equal(result.plans.length, 1);
+  assert.equal(result.plans[0].target.folderToken, 'category-vector-folder');
+  assert.equal(result.plans[0].target.versionRootToken, 'version-root-folder');
+});
+
 test('schema-first CLI rejects release-scope line drift instead of silently dropping symbols', async () => {
   const scope = {
     schemaVersion: 1,

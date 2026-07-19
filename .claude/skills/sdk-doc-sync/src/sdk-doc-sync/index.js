@@ -340,6 +340,7 @@ class SdkDocSync {
                 type: scoped.type,
                 stableId: scoped.stableId,
                 reason: scoped.reason || action.reason,
+                planningContext: scoped.planningContext || action.planningContext,
                 releaseScopeAction: scoped,
             };
         });

@@ -25,6 +25,7 @@ Read only what the task requires:
 - Formatting and post-write checks: [references/post-write-verification.md](references/post-write-verification.md)
 - Supported CLI entry points: [references/cli.md](references/cli.md)
 - Known failure patterns: [references/troubleshooting.md](references/troubleshooting.md)
+- Run-local reviewed candidate specs: `tmp/sdk-release-scout/<language>-<track>-candidates.json` when blocked schema-first planning needs reviewed context.
 
 ## Non-Negotiable Invariants
 
@@ -118,6 +119,45 @@ For blocked generation, report exactly:
 - public documentation candidates and excluded scanner noise;
 - next step to build reviewed `--reference-context` and rerun validation;
 - that no approval is requested, no writes were performed, and `scan-state.json` was not updated.
+
+### 2a. Recover A Blocked Scoped Dry-Run
+
+When the scoped dry-run found release changes but schema-first planning failed, build a reviewed user-facing scope and reference context instead of asking for approval. Author the candidate spec as a run-local artifact under `tmp/sdk-release-scout/`; it represents the current Feishu approval batch and can become stale after writes complete.
+
+```bash
+node .claude/skills/sdk-doc-sync/scripts/build-reviewed-release-context.js \
+  --release-scope tmp/sdk-release-scout/python-v26.json \
+  --candidate-spec tmp/sdk-release-scout/python-v26-candidates.json \
+  --output-scope tmp/sdk-release-scout/python-v26-user-facing.json \
+  --output-context tmp/sdk-release-scout/python-v26-reviewed-context.json
+```
+
+Then rerun the scoped dry-run with the filtered scope and reviewed context:
+
+```bash
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+  --language python \
+  --sdk-dir repos/pymilvus/pymilvus \
+  --sdk-name pymilvus \
+  --sdk-version v2.6.x \
+  --release-scope tmp/sdk-release-scout/python-v26-user-facing.json \
+  --reference-context tmp/sdk-release-scout/python-v26-reviewed-context.json \
+  --changed-only \
+  --dry-run \
+  --summary-json tmp/sdk-release-scout/python-v26-user-facing-dryrun-summary.json \
+  --json > tmp/sdk-release-scout/python-v26-user-facing-dryrun-full.json
+```
+
+Only call a recovered run approval-ready when `planCount == diffCount`, `planningErrorCount == 0`, target folders are category folders under the version root, the full dry-run JSON is saved, and the artifacts still have `writesPerformed: false` and `scanStateUpdated: false`. Release-scope actions may carry `planningContext.target`; treat that target as authoritative and do not override it with the default `ROOT_TOKEN` folder.
+
+For an approval TSV from the full dry-run JSON:
+
+```bash
+jq -r '.plans[] | [.action,.stableId,.target.folderToken,.source.recordId,.source.documentToken,.metadata.diffAction,.artifactDigest] | @tsv' \
+  tmp/sdk-release-scout/python-v26-user-facing-dryrun-full.json \
+  > tmp/sdk-release-scout/python-v26-approval-actions.tsv
+```
 
 ### 3. Scan Only Relevant Symbols
 

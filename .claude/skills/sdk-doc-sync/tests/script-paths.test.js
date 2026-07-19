@@ -28,6 +28,36 @@ test('sdk-doc-sync planning helper scripts exist', () => {
   }
 });
 
+test('sdk-doc-sync scripts documentation classifies supported and historical helpers', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const readmePath = path.join(skillRoot, 'scripts', 'README.md');
+  assert.equal(fs.existsSync(readmePath), true, `Missing scripts documentation: ${readmePath}`);
+
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  assert.match(readme, /supported workflow helpers/i);
+  assert.match(readme, /historical(?: and|\/|-)one-off migration scripts/i);
+
+  for (const script of [
+    'build-current-placement-audit.js',
+    'build-reviewed-release-context.js',
+    'render-grouping-inheritance-table.js',
+    'feishu-doc.js',
+  ]) {
+    assert.match(
+      readme,
+      new RegExp(`supported workflow helpers?[^#]*${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'),
+    );
+  }
+
+  assert.match(readme, /src\/sdk-doc-sync\/doc-generator\.js[^\n]*DocGenerator[^\n]*legacy scaffold infrastructure/i);
+  assert.match(readme, /TODO-generating scaffold output[^\n]*(?:not approval-grade|not publishable)[^\n]*(?:not approval-grade|not publishable)/i);
+  assert.match(readme, /SyncExecutor[^\n]*actively rejects legacy TODO scaffold artifacts/i);
+  assert.match(readme, /historical[^\n]*(?:version|create|update|fix)[^\n]*source review before reuse/i);
+
+  const cliReference = fs.readFileSync(path.join(skillRoot, 'references', 'cli.md'), 'utf8');
+  assert.match(cliReference, /\.\.\/scripts\/README\.md/);
+});
+
 test('build-current-placement-audit CLI reports the generated artifact summary', (t) => {
   const skillRoot = path.resolve(__dirname, '..');
   const script = path.join(skillRoot, 'scripts', 'build-current-placement-audit.js');

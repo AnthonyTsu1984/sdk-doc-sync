@@ -5,9 +5,20 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 
+const SDK_REFERENCE_BY_LANGUAGE = {
+  cpp: 'sdk-cpp.md',
+  go: 'sdk-go.md',
+  java: 'sdk-java.md',
+  node: 'sdk-node.md',
+  python: 'sdk-python.md',
+  rest: 'sdk-rest.md',
+  zilliz_cli: 'sdk-zilliz-cli.md',
+  'zilliz-cli': 'sdk-zilliz-cli.md',
+};
+
 function parseArgs(argv = process.argv) {
   const args = {};
-  const valueOptions = new Set(['--release-scope', '--candidate-spec', '--output-scope', '--output-context']);
+  const valueOptions = new Set(['--release-scope', '--candidate-spec', '--output-scope', '--output-context', '--sdk-reference']);
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--help' || arg === '-h') {
@@ -25,7 +36,7 @@ function parseArgs(argv = process.argv) {
 }
 
 function usage() {
-  return `Usage: build-reviewed-release-context --release-scope <file> --candidate-spec <file> --output-scope <file> --output-context <file>
+  return `Usage: build-reviewed-release-context --release-scope <file> --candidate-spec <file> --output-scope <file> --output-context <file> [--sdk-reference <file>]
 
 Filters a release-scout artifact to reviewed user-facing candidates and builds
 the --reference-context JSON required for schema-first dry-runs.
@@ -49,6 +60,72 @@ function required(value, message) {
 function clone(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
+}
+
+function trackParts(track) {
+  const match = String(track || '').match(/^v(\d+)\.(\d+)\.x$/);
+  if (!match) return null;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+  };
+}
+
+function compareTracks(left, right) {
+  const a = trackParts(left);
+  const b = trackParts(right);
+  if (!a || !b) return String(left).localeCompare(String(right));
+  if (a.major !== b.major) return a.major - b.major;
+  return a.minor - b.minor;
+}
+
+function defaultSdkReferencePath(language) {
+  const fileName = SDK_REFERENCE_BY_LANGUAGE[language];
+  if (!fileName) return null;
+  return path.join(__dirname, '..', fileName);
+}
+
+function readSdkReference({ language, filePath }) {
+  const resolvedPath = filePath || defaultSdkReferencePath(language);
+  if (!resolvedPath || !fs.existsSync(resolvedPath)) return '';
+  return fs.readFileSync(resolvedPath, 'utf8');
+}
+
+function detectVersionTracksFromReference(markdown) {
+  const tracks = new Set();
+  let inVersionTable = false;
+  for (const line of String(markdown || '').split(/\r?\n/)) {
+    if (!line.includes('|')) {
+      inVersionTable = false;
+      continue;
+    }
+    const cells = line
+      .trim()
+      .split('|')
+      .map((cell) => cell.trim())
+      .filter(Boolean);
+    if (cells.length === 0) continue;
+    const firstCell = cells[0]?.replace(/`/g, '').trim();
+    if (/^:?-{3,}:?$/.test(firstCell)) continue;
+    if (/^version$/i.test(firstCell)) {
+      inVersionTable = true;
+      continue;
+    }
+    if (!inVersionTable) continue;
+    const version = firstCell;
+    if (/^v\d+\.\d+\.x$/.test(version)) {
+      tracks.add(version);
+    } else {
+      inVersionTable = false;
+    }
+  }
+  return [...tracks].sort(compareTracks);
+}
+
+function resolveDetectedSuccessorTracks({ releaseScope, sdkReference }) {
+  const tracks = detectVersionTracksFromReference(sdkReference);
+  if (!tracks.includes(releaseScope.track)) return [];
+  return tracks.filter((track) => compareTracks(track, releaseScope.track) > 0);
 }
 
 function titleFor(action) {
@@ -131,6 +208,84 @@ function assertCandidateIdentity({ action, spec, category }) {
   };
 }
 
+const INHERITANCE_STATUSES = new Set([
+  'inherited',
+  'missing',
+  'renamed',
+  'changed',
+  'not_applicable',
+  'deferred',
+  'successor_action_planned',
+]);
+
+const INHERITANCE_DECISIONS = new Set([
+  'no_successor_action',
+  'include_successor_action',
+  'defer',
+  'exclude',
+]);
+
+const ALLOWED_INHERITANCE_DECISIONS_BY_STATUS = {
+  inherited: new Set(['no_successor_action']),
+  missing: new Set(['include_successor_action', 'defer', 'exclude']),
+  renamed: new Set(['include_successor_action', 'defer']),
+  changed: new Set(['include_successor_action', 'defer']),
+  not_applicable: new Set(['no_successor_action', 'exclude']),
+  deferred: new Set(['defer']),
+  successor_action_planned: new Set(['include_successor_action']),
+};
+
+function resolveRequiredSuccessorTracks({ releaseScope, candidateSpec, sdkReference }) {
+  const explicitTracks = candidateSpec.inheritance?.requiredSuccessorTracks || [];
+  const effectiveSdkReference = sdkReference === undefined
+    ? readSdkReference({ language: releaseScope.language })
+    : sdkReference;
+  const detectedTracks = resolveDetectedSuccessorTracks({ releaseScope, sdkReference: effectiveSdkReference });
+  return [...new Set([...detectedTracks, ...explicitTracks])].sort(compareTracks);
+}
+
+function assertInheritanceReview({ action, spec, requiredSuccessorTracks }) {
+  if (requiredSuccessorTracks.length === 0) return undefined;
+
+  const review = spec.inheritanceReview;
+  if (!review || review.reviewed !== true) {
+    throw new Error(`Candidate ${action.canonicalSlug} must have inheritanceReview.reviewed=true for successor tracks: ${requiredSuccessorTracks.join(', ')}`);
+  }
+  const successors = Array.isArray(review.successors) ? review.successors : [];
+  const byTrack = new Map(successors.map((item) => [item.track, item]));
+  for (const track of requiredSuccessorTracks) {
+    const successor = byTrack.get(track);
+    if (!successor) {
+      throw new Error(`Candidate ${action.canonicalSlug} is missing inheritance review for successor track ${track}`);
+    }
+    if (!INHERITANCE_STATUSES.has(successor.status)) {
+      throw new Error(`Candidate ${action.canonicalSlug} has invalid inheritance status ${successor.status} for successor track ${track}`);
+    }
+    if (!INHERITANCE_DECISIONS.has(successor.decision)) {
+      throw new Error(`Candidate ${action.canonicalSlug} has invalid inheritance decision ${successor.decision} for successor track ${track}`);
+    }
+    if (['missing', 'renamed', 'changed'].includes(successor.status) && successor.decision === 'no_successor_action') {
+      throw new Error(
+        `Candidate ${action.canonicalSlug} successor track ${track} is ${successor.status}; ` +
+        'use include_successor_action, defer, or exclude instead of no_successor_action',
+      );
+    }
+    if (!ALLOWED_INHERITANCE_DECISIONS_BY_STATUS[successor.status].has(successor.decision)) {
+      throw new Error(
+        `Candidate ${action.canonicalSlug} successor track ${track} status ${successor.status} ` +
+        `cannot use decision ${successor.decision}`,
+      );
+    }
+    if (successor.status === 'needs_review') {
+      throw new Error(`Candidate ${action.canonicalSlug} still needs inheritance review for successor track ${track}`);
+    }
+    if (successor.decision === 'include_successor_action' && (!successor.docIdentity?.stableId || !successor.docIdentity?.canonicalSlug)) {
+      throw new Error(`Candidate ${action.canonicalSlug} successor track ${track} include_successor_action requires docIdentity.stableId and docIdentity.canonicalSlug`);
+    }
+  }
+  return clone(review);
+}
+
 function defaultExceptions(action, spec, evidence) {
   if (spec.exceptions) return spec.exceptions.map((item) => ({ ...item, evidence: clone(item.evidence) || evidence }));
   return [{
@@ -155,7 +310,7 @@ function exampleFor(action, spec, evidence) {
   }));
 }
 
-function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
+function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference }) {
   if (candidateSpec.language && candidateSpec.language !== releaseScope.language) {
     throw new Error(`Candidate spec language ${candidateSpec.language} does not match release scope language ${releaseScope.language}`);
   }
@@ -164,6 +319,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
   }
 
   const candidates = expandCandidateSpec(candidateSpec);
+  const requiredSuccessorTracks = resolveRequiredSuccessorTracks({ releaseScope, candidateSpec, sdkReference });
   const configuredSlugs = Object.keys(candidates).sort();
   if (configuredSlugs.length === 0) {
     throw new Error('Candidate spec must configure at least one candidate');
@@ -189,6 +345,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
 
     const category = required(spec.category, `Candidate ${action.canonicalSlug} is missing category`);
     const identity = assertCandidateIdentity({ action, spec, category });
+    const inheritanceReview = assertInheritanceReview({ action, spec, requiredSuccessorTracks });
     const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
     for (const sourceSlug of groupedSources) {
       if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
@@ -214,6 +371,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
       canonicalSlug: identity.canonicalSlug,
       symbol: identity.symbol,
       sourceVariants: sourceVariants.length > 1 ? sourceVariants : undefined,
+      inheritanceReview,
       planningContext: {
         ...(action.planningContext || {}),
         target: {
@@ -236,6 +394,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
       result: clone(spec.result),
       exceptions: defaultExceptions(action, spec, evidence),
       examples: exampleFor(action, { ...candidateSpec.defaults, ...spec, version }, evidence),
+      inheritanceReview,
       notes: spec.notes || candidateSpec.notes || [`Reviewed for ${releaseScope.sdkName} ${releaseScope.releaseRange}.`],
     };
   }
@@ -285,9 +444,14 @@ function main(argv = process.argv) {
     if (!args[name]) throw new Error(`Missing required --${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`);
   }
 
+  const releaseScope = readJson(args.releaseScope);
   const result = buildReviewedReleaseContext({
-    releaseScope: readJson(args.releaseScope),
+    releaseScope,
     candidateSpec: readJson(args.candidateSpec),
+    sdkReference: readSdkReference({
+      language: releaseScope.language,
+      filePath: args.sdkReference,
+    }),
   });
   writeJson(args.outputScope, result.filteredScope);
   writeJson(args.outputContext, result.referenceContext);
@@ -310,6 +474,12 @@ if (require.main === module) {
 
 module.exports = {
   buildReviewedReleaseContext,
+  compareTracks,
+  detectVersionTracksFromReference,
   expandCandidateSpec,
   parseArgs,
+  readSdkReference,
+  resolveDetectedSuccessorTracks,
+  resolveRequiredSuccessorTracks,
+  trackParts,
 };

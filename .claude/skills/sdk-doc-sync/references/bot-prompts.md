@@ -2,6 +2,17 @@
 
 Use these prompts when testing a Feishu bot channel for `sdk-doc-sync`. Replace placeholders before sending them to the agent or model behind the bot.
 
+## Contents
+
+- [System Prompt](#system-prompt)
+- [Release Request Prompt](#release-request-prompt)
+- [Grouping Review Gate Message](#grouping-review-gate-message)
+- [Grouping Revision Parser Prompt](#grouping-revision-parser-prompt)
+- [Write Approval Gate Message](#write-approval-gate-message)
+- [Write Approval Parser Prompt](#write-approval-parser-prompt)
+- [Ambiguous Reply Response](#ambiguous-reply-response)
+- [Test Scenarios](#test-scenarios)
+
 ## System Prompt
 
 ```text
@@ -20,6 +31,7 @@ At each stop point, report Session, Phase, Status, Artifacts, Summary, Decision 
 Accept only these gate commands:
 - APPROVE_GROUPING
 - REVISE_GROUPING <proposal-id> <decision>
+- REVISE_INHERITANCE <inheritance-id> <decision>
 - DEFER_GROUPING <proposal-id>
 - REJECT_GROUPING
 - APPROVE_WRITES
@@ -42,7 +54,7 @@ Inputs:
 - outputPrefix: tmp/sdk-release-scout/<language>-<track-token>
 - channel: feishu-bot
 
-Start at phase release_scope. Produce no writes. If release scope is ready, continue to candidate_proposal and stop at GROUPING_REVIEW with a structured proposal.
+Start at phase release_scope. Produce no writes. If release scope is ready, continue to candidate_proposal and stop at GROUPING_REVIEW with a structured proposal. Detect required successor tracks from the per-SDK reference version table. If the requested track has detected successor tracks, include inheritance status and proposed successor decisions in the grouping proposal.
 ```
 
 ## Grouping Review Gate Message
@@ -55,11 +67,13 @@ Status: grouping_review_required
 Artifacts:
 - Release scope: <path>
 - Candidate proposal: <path>
+- Inheritance proposal: <path-or-none>
 
 Summary:
 - Proposed docs: <n>
 - Proposed merges: <n>
 - Proposed exclusions: <n>
+- Successor decisions: <n>
 - Deferred or blocked: <n>
 
 Decision requested: GROUPING_REVIEW
@@ -67,13 +81,14 @@ Decision requested: GROUPING_REVIEW
 Allowed replies:
 - APPROVE_GROUPING
 - REVISE_GROUPING <proposal-id> <decision>
+- REVISE_INHERITANCE <inheritance-id> <decision>
 - DEFER_GROUPING <proposal-id>
 - REJECT_GROUPING
 
 Proposal table:
-| Proposal ID | Decision | Documentation identity | Source variants | Target category | Risk |
-|-------------|----------|------------------------|-----------------|-----------------|------|
-| <proposal:id> | <merge/split/exclude/defer> | <stable-id> | <symbols> | <category> | <risk> |
+| Proposal ID | Decision | Documentation identity | Source variants | Target category | Successor decision | Risk |
+|-------------|----------|------------------------|-----------------|-----------------|--------------------|------|
+| <proposal:id> | <merge/split/exclude/defer> | <stable-id> | <symbols> | <category> | <inheritance-id>: <status/decision> | <risk> |
 ```
 
 ## Grouping Revision Parser Prompt
@@ -84,6 +99,7 @@ Parse the user's reply for the active GROUPING_REVIEW gate.
 Valid commands:
 - APPROVE_GROUPING
 - REVISE_GROUPING <proposal-id> <decision>
+- REVISE_INHERITANCE <inheritance-id> <decision>
 - DEFER_GROUPING <proposal-id>
 - REJECT_GROUPING
 
@@ -92,7 +108,10 @@ Return JSON only:
   "valid": true,
   "command": "<command>",
   "proposalId": "<proposal-id-or-null>",
+  "inheritanceId": "<inheritance-id-or-null>",
+  "successorTrack": "<successor-track-or-null>",
   "decision": "<decision-or-null>",
+  "inheritanceDecision": "<decision-or-null>",
   "nextPhase": "reviewed_planning|candidate_proposal|blocked"
 }
 
@@ -187,3 +206,4 @@ Use these minimal conversations to test the channel:
 4. User replies `APPROVE_WRITES` before `WRITE_APPROVAL`. Bot rejects it because the phase is wrong.
 5. User replies `REQUEST_CHANGES action:<id>`. Bot stays in reviewed planning and reports the requested change as a blocker.
 6. User replies `APPROVE_WRITES` after any artifact changed. Bot rejects it and returns to the appropriate earlier gate.
+7. A source-track candidate lacks a required successor-track decision. Bot stays in `GROUPING_REVIEW` and does not build approval-ready actions.

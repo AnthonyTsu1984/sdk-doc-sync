@@ -20,6 +20,7 @@ Read only what the task requires:
 - REST/OpenAPI: [sdk-rest.md](sdk-rest.md)
 - Cross-SDK alignment: [sdk-alignment.md](sdk-alignment.md)
 - Same-version, cross-version, and backfill behavior: [references/versioning.md](references/versioning.md)
+- Active-track inheritance: [references/active-track-inheritance.md](references/active-track-inheritance.md) when a maintained track has successor tracks that should inherit user-facing changes.
 - Schema-first production workflow: [references/schema-first-generation.md](references/schema-first-generation.md)
 - Manual release smoke procedure: [references/release-smoke-test.md](references/release-smoke-test.md)
 - Formatting and post-write checks: [references/post-write-verification.md](references/post-write-verification.md)
@@ -37,6 +38,7 @@ Read only what the task requires:
 - Normalize scanner symbols to canonical documentation identities before comparing with Feishu records. Raw scanner slugs often differ from bitable or folder slugs.
 - Documentation identity must represent the user-facing API page, not an SDK wrapper class, unless the docs intentionally maintain separate wrapper pages. Category, stable ID, canonical slug, target folder, and parent record must agree before a plan can be approval-ready.
 - When multiple raw SDK symbols can map to one documentation identity, produce a grouping proposal and get user review before building reviewed context or an approval-ready action list.
+- When a maintained track has active successor tracks, check inheritance before grouping approval. A candidate cannot be approval-ready until successor-track status and decision are reviewed or explicitly deferred.
 - Separate release changes from older undocumented backlog before assigning `Added Since`.
 - Never write the auto-populated `Slug` field.
 - Resolve destination folders from the canonical version root in the per-SDK reference, not from possibly stale Module or VirtualNode links.
@@ -60,20 +62,20 @@ Drive every release sync through these phases. For chat or Feishu bot runs, repo
 | Phase | Status | Required output | Next gate |
 |-------|--------|-----------------|-----------|
 | 1. Release scope | `release_scope_ready`, `no_release_changes`, or `release_scope_blocked` | Release-scout JSON with no writes, or a blocked/no-change report | Continue only when `release_scope_ready` |
-| 2. Candidate proposal | `grouping_review_required` or `generation_blocked` | Proposed user-facing candidates, exclusions, grouping decisions, doc identities, target categories/folders, and evidence | Stop for grouping review |
+| 2. Candidate proposal | `grouping_review_required` or `generation_blocked` | Proposed user-facing candidates, exclusions, grouping decisions, inheritance decisions, doc identities, target categories/folders, and evidence | Stop for grouping and inheritance review |
 | 3. Reviewed planning | `approval_ready` or `planning_blocked` | Reviewed candidate spec, filtered scope, reviewed reference context, full scoped dry-run JSON, summary JSON, and exact action list | Stop for write approval |
 | 4. Execution | `executed`, `partially_executed`, or `execution_blocked` | Approved writes only, refetch results, verification results, and scan-state decision | Stop unless cleanup or recovery needs separate approval |
 
 Use these transition rules:
 
 - Phase 1 may read source repos, `scan-state.json`, and existing Feishu state needed for comparison. It must not mutate Feishu or `scan-state.json`.
-- Phase 2 is a proposal, not an approval-ready action list. It may include proposed `CREATE`, `UPDATE`, `DEPRECATE`, `BACKFILL`, `REPOINT`, `MERGE`, `SPLIT`, `EXCLUDE`, and `DEFER` decisions, but it must not ask for write approval.
+- Phase 2 is a proposal, not an approval-ready action list. It may include proposed `CREATE`, `UPDATE`, `DEPRECATE`, `BACKFILL`, `REPOINT`, `MERGE`, `SPLIT`, `EXCLUDE`, `DEFER`, and successor-track inheritance decisions, but it must not ask for write approval.
 - Phase 3 may start only after grouping review is accepted or edited. Encode the accepted grouping in the candidate spec before building reviewed context or approval TSV.
 - Phase 4 may start only after explicit approval of the exact Phase 3 action list and dry-run artifacts.
 
 For Feishu bot channels, make every stop point structured and easy to reply to:
 
-- Grouping review prompt: include `Decision requested: GROUPING_REVIEW`, artifact paths, a compact table of proposal IDs, and allowed replies: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `DEFER_GROUPING <proposal-id>`, or `REJECT_GROUPING`.
+- Grouping review prompt: include `Decision requested: GROUPING_REVIEW`, artifact paths, a compact table of proposal IDs and inheritance IDs, and allowed replies: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, or `REJECT_GROUPING`.
 - Write approval prompt: include `Decision requested: WRITE_APPROVAL`, artifact paths, action count, blocked count, and allowed replies: `APPROVE_WRITES`, `REJECT_WRITES`, or `REQUEST_CHANGES <action-id>`.
 - Treat missing, ambiguous, partial, or free-form replies as not approved. Summarize the interpreted decision and wait for a valid transition command.
 - Keep action IDs stable within one run. Prefer deterministic IDs derived from reviewed documentation identity, such as `<phase>:<stableId>`, not row order.
@@ -152,14 +154,15 @@ For blocked generation, report exactly:
 
 When the scoped dry-run found release changes but schema-first planning failed, build a reviewed user-facing scope and reference context instead of asking for approval. Author the candidate spec as a run-local artifact under `tmp/sdk-release-scout/`; it represents the current Feishu approval batch and can become stale after writes complete.
 
-Before writing the candidate spec, report a grouping proposal for user review whenever raw scanner symbols are wrappers, aliases, sync/async pairs, overloads, or category-moved methods that may share a documentation page. The proposal must list:
+Before writing the candidate spec, report a grouping proposal for user review whenever raw scanner symbols are wrappers, aliases, sync/async pairs, overloads, or category-moved methods that may share a documentation page. If successor tracks are active for the requested track, include the inheritance check in the same review proposal. The proposal must list:
 
 - documentation identity: category, stable ID, canonical slug, title, target folder;
 - source variants: raw symbol, scanner stable ID, canonical slug, source file, reason;
 - decision: merge into one doc action, keep separate docs, exclude as scanner noise, or defer;
+- successor-track decision when required: inherited, separate successor action, intentionally not applicable, exclude, or defer;
 - evidence and risks: existing Feishu records, wrapper equivalence, behavior differences, and version-sharing risks.
 
-Do not proceed to approval-ready TSV from an unreviewed grouping proposal. If the user edits the grouping, encode the reviewed decision in the candidate spec. Multi-symbol groups must include `docIdentity.stableId`, `docIdentity.canonicalSlug`, and `groupingReview.reviewed: true`; otherwise `scripts/build-reviewed-release-context.js` rejects the run.
+Do not proceed to approval-ready TSV from an unreviewed grouping proposal. If the user edits the grouping or inheritance decision, encode the reviewed decision in the candidate spec. Multi-symbol groups must include `docIdentity.stableId`, `docIdentity.canonicalSlug`, and `groupingReview.reviewed: true`; successor-track checks must include `inheritanceReview.reviewed: true` when the reviewed-context builder detects required successor tracks from the SDK reference table or when the candidate spec adds extra successor tracks. Otherwise `scripts/build-reviewed-release-context.js` rejects the run.
 
 ```bash
 node .claude/skills/sdk-doc-sync/scripts/build-reviewed-release-context.js \

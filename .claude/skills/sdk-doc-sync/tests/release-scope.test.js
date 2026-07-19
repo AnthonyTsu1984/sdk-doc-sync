@@ -155,7 +155,10 @@ const {
 } = require('../src/sdk-doc-sync/release-scope/symbol-inventory');
 const {
   buildReviewedReleaseContext,
+  detectVersionTracksFromReference,
   parseArgs,
+  resolveDetectedSuccessorTracks,
+  resolveRequiredSuccessorTracks,
 } = require('../scripts/build-reviewed-release-context');
 
 test('publicIdentity is stable across line-number changes', () => {
@@ -369,7 +372,7 @@ test('reviewed release context builder filters candidates and carries scoped pla
     }],
   };
 
-  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
 
   assert.equal(result.selectedCount, 1);
   assert.deepEqual(result.filteredScope.actions.map((action) => action.canonicalSlug), ['FieldOp']);
@@ -422,11 +425,11 @@ test('reviewed release context builder rejects stale or empty candidate specs', 
   };
 
   assert.throws(
-    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: staleSpec }),
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: staleSpec, sdkReference: '' }),
     /not present in release scope: FieldOp-array_append/,
   );
   assert.throws(
-    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: { language: 'python', track: 'v2.6.x', target } }),
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: { language: 'python', track: 'v2.6.x', target }, sdkReference: '' }),
     /must configure at least one candidate/,
   );
 });
@@ -468,7 +471,7 @@ test('reviewed release context builder rejects category and documentation identi
   };
 
   assert.throws(
-    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
     /category Authentication does not match documentation identity python:Client:MilvusClient:create_user/,
   );
 });
@@ -527,7 +530,7 @@ test('reviewed release context builder folds reviewed sync and async variants in
     }],
   };
 
-  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
 
   assert.equal(result.selectedCount, 1);
   assert.deepEqual(result.filteredScope.actions.map((action) => action.stableId), ['python:Authentication:create_user']);
@@ -586,8 +589,384 @@ test('reviewed release context builder requires reviewed grouping for multi-symb
   };
 
   assert.throws(
-    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
     /must have groupingReview.reviewed=true/,
+  );
+});
+
+test('reviewed release context builder requires inheritance review for configured successor tracks', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    inheritance: {
+      requiredSuccessorTracks: ['v3.0.x'],
+    },
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'Authentication-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    /must have inheritanceReview.reviewed=true for successor tracks: v3.0.x/,
+  );
+});
+
+test('reviewed release context builder detects successor tracks from SDK reference tables', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'Authentication-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+      },
+    },
+  };
+  const sdkReference = [
+    '| Version | Bitable Token | Drive Folder |',
+    '|---------|---------------|--------------|',
+    '| v2.5.x | base-v25      | folder-v25   |',
+    '| v2.6.x | base-v26      | folder-v26   |',
+    '| v3.0.x | base-v30      | folder-v30   |',
+  ].join('\n');
+
+  assert.deepEqual(detectVersionTracksFromReference(sdkReference), ['v2.5.x', 'v2.6.x', 'v3.0.x']);
+  assert.deepEqual(
+    resolveDetectedSuccessorTracks({ releaseScope, sdkReference }),
+    ['v3.0.x'],
+  );
+  assert.deepEqual(
+    resolveRequiredSuccessorTracks({ releaseScope, candidateSpec, sdkReference }),
+    ['v3.0.x'],
+  );
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference }),
+    /must have inheritanceReview.reviewed=true for successor tracks: v3.0.x/,
+  );
+});
+
+test('reviewed release context builder ignores version-looking rows outside the SDK version table', () => {
+  const sdkReference = [
+    '| Feature | Notes |',
+    '|---------|-------|',
+    '| v9.9.x | Mentioned in prose-like table but not a version table |',
+    '',
+    '| Version | Bitable Token | Drive Folder |',
+    '|---------|---------------|--------------|',
+    '| v2.6.x | base-v26      | folder-v26   |',
+    '| v3.0.x | base-v30      | folder-v30   |',
+    '| Compatibility | Notes |',
+    '|---------------|-------|',
+    '| v4.0.x | A future compatibility note, not an active doc track |',
+  ].join('\n');
+
+  assert.deepEqual(detectVersionTracksFromReference(sdkReference), ['v2.6.x', 'v3.0.x']);
+});
+
+test('default SDK reference marks active Python successor tracks', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+
+  assert.deepEqual(
+    resolveRequiredSuccessorTracks({
+      releaseScope,
+      candidateSpec: { language: 'python', track: 'v2.6.x' },
+      sdkReference: undefined,
+    }),
+    ['v3.0.x'],
+  );
+});
+
+test('reviewed release context builder carries reviewed successor-track inheritance decisions', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    inheritance: {
+      requiredSuccessorTracks: ['v3.0.x'],
+    },
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'Authentication-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+        inheritanceReview: {
+          reviewed: true,
+          successors: [{
+            track: 'v3.0.x',
+            status: 'successor_action_planned',
+            decision: 'include_successor_action',
+            docIdentity: {
+              stableId: 'python:Authentication:create_user',
+              canonicalSlug: 'Authentication-create_user',
+            },
+            evidence: [{ kind: 'source', locator: 'pymilvus/milvus_client/milvus_client.py:120' }],
+          }],
+        },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+
+  assert.equal(result.selectedCount, 1);
+  assert.deepEqual(result.filteredScope.actions[0].inheritanceReview.successors.map((item) => item.track), ['v3.0.x']);
+  assert.equal(result.referenceContext.contexts['python:Authentication:create_user'].inheritanceReview.successors[0].decision, 'include_successor_action');
+});
+
+test('reviewed release context builder requires complete successor doc identity for planned successor actions', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    inheritance: {
+      requiredSuccessorTracks: ['v3.0.x'],
+    },
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'Authentication-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+        inheritanceReview: {
+          reviewed: true,
+          successors: [{
+            track: 'v3.0.x',
+            status: 'successor_action_planned',
+            decision: 'include_successor_action',
+            docIdentity: {
+              stableId: 'python:Authentication:create_user',
+            },
+          }],
+        },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    /requires docIdentity.stableId and docIdentity.canonicalSlug/,
+  );
+});
+
+test('reviewed release context builder rejects unresolved successor-track inheritance decisions', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    inheritance: {
+      requiredSuccessorTracks: ['v3.0.x'],
+    },
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'Authentication-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+        inheritanceReview: {
+          reviewed: true,
+          successors: [{
+            track: 'v3.0.x',
+            status: 'missing',
+            decision: 'no_successor_action',
+          }],
+        },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    /successor track v3.0.x is missing; use include_successor_action, defer, or exclude/,
+  );
+});
+
+test('reviewed release context builder rejects contradictory successor-track decision pairs', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Authentication:create_user',
+      canonicalSlug: 'Authentication-create_user',
+      symbol: 'create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    inheritance: {
+      requiredSuccessorTracks: ['v3.0.x'],
+    },
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'Authentication-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+        inheritanceReview: {
+          reviewed: true,
+          successors: [{
+            track: 'v3.0.x',
+            status: 'deferred',
+            decision: 'include_successor_action',
+            docIdentity: {
+              stableId: 'python:Authentication:create_user',
+              canonicalSlug: 'Authentication-create_user',
+            },
+          }],
+        },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    /status deferred cannot use decision include_successor_action/,
   );
 });
 
@@ -599,5 +978,9 @@ test('reviewed release context CLI parser rejects malformed arguments', () => {
   assert.throws(
     () => parseArgs(['node', 'script', '--unknown']),
     /Unknown argument: --unknown/,
+  );
+  assert.deepEqual(
+    parseArgs(['node', 'script', '--sdk-reference', 'sdk-python.md']),
+    { sdkReference: 'sdk-python.md' },
   );
 });

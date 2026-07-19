@@ -1,15 +1,35 @@
 # SDK Doc Sync Scripts
 
-This directory contains both supported workflow helpers and retained historical/one-off migration scripts. Presence here does not make every script a current workflow entry point.
+This directory contains generalized workflow helpers, SDK-reference-scoped recipes, and retained historical/one-off migration scripts. Presence here does not make every script a current workflow entry point.
 
 ## Supported Workflow Helpers
+
+This list is exhaustive for generalized supported workflow helpers referenced by `SKILL.md`, general references, and docs.
+
+### Planning/operations
 
 - `build-current-placement-audit.js` builds the current document-placement audit used during planning.
 - `build-reviewed-release-context.js` assembles reviewed release context for downstream generation.
 - `render-grouping-inheritance-table.js` renders reviewed grouping and inheritance decisions.
 - `feishu-doc.js` provides the maintained Feishu document, Drive, and Bitable operations described in the CLI reference.
 
+### OpenAPI editing
+
+- `edit-openapi.js` provides the maintained OpenAPI editing operations described in the CLI reference.
+
+### Post-write hygiene
+
+- `fix-leading-spaces.js` repairs leading-space formatting defects after writes.
+- `add-type-links.js` adds reviewed type links after writes.
+- `post-fix-links.js` applies the final link hygiene pass after writes.
+
 These helpers support current workflows, but mutating commands still require the documented dry-run, review, and approval controls.
+
+## SDK-reference-scoped recipes
+
+Root `sdk-*.md` files may explicitly route release-specific scripts. Those scripts are conditional, version/release-specific recipes, not generalized supported helpers. Run or reuse them only when the applicable current `sdk-*.md` directly instructs it, after source review and under the normal dry-run and approval controls.
+
+Scripts neither in the generalized list nor directly routed by the applicable `sdk-*.md` remain historical/one-off.
 
 ## Legacy Scaffold Infrastructure
 
@@ -17,6 +37,6 @@ These helpers support current workflows, but mutating commands still require the
 
 ## Historical/One-Off Migration Scripts
 
-Most SDK-, release-, or dataset-specific scripts are retained as implementation history. Representative patterns include language and version prefixes such as `node-v30-*`, `java-v2614-*`, `go-v262-*`, `cpp-v263-*`, `cli-v01-*`, and the `zilliz-cli-v13x/` or `zilliz-cli-v14x/` directories. Historical version/create/update/fix scripts require source review before reuse because they may embed obsolete document IDs, release assumptions, content snapshots, or mutation behavior.
+Unrouted SDK-, release-, or dataset-specific scripts are retained as implementation history. Representative patterns include language and version prefixes such as `node-v30-*`, `java-v2614-*`, `go-v262-*`, `cpp-v263-*`, `cli-v01-*`, and the `zilliz-cli-v13x/` or `zilliz-cli-v14x/` directories. Historical version/create/update/fix scripts require source review before reuse because they may embed obsolete document IDs, release assumptions, content snapshots, or mutation behavior.
 
 Preserve these scripts for auditability. Do not treat them as supported entry points or run them against current data solely because their names resemble a new task.

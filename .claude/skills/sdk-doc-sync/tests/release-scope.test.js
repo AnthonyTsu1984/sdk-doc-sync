@@ -163,6 +163,22 @@ test('core owns exact phase approval tokens and write-state invariants', () => {
   assert.match(coreText, /no writes? before exact dry-run review/i);
 });
 
+test('core quick start follows the prerequisite first step', () => {
+  const coreText = readCoreSkill();
+  const runSequence = coreText.match(/## Minimal Run Sequence[\s\S]*?(?=\n## |$)/)?.[0] || '';
+  const prerequisite = runSequence.match(/^1\.\s+(.+)$/m)?.[0] || '';
+  assert.match(prerequisite, /SDK\/version table/i);
+  assert.match(prerequisite, /scan-state\.json/i);
+  assert.match(prerequisite, /source checkout/i);
+  assert.match(prerequisite, /references/i);
+
+  const prerequisiteIndex = runSequence.indexOf(prerequisite);
+  const quickStartIndex = runSequence.indexOf('node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js');
+  assert.notEqual(quickStartIndex, -1, 'Missing concrete release-scout quick start');
+  assert.ok(quickStartIndex > prerequisiteIndex, 'Quick start must follow the prerequisite first step');
+  assert.match(runSequence.slice(prerequisiteIndex, quickStartIndex), /After completing step 1/i);
+});
+
 test('review reference owns exact closed accepted-command sets and rejects shorthand approval', () => {
   const reviewText = readReviewAndApproval();
   assert.deepEqual(readFencedLinesAfter(reviewText, 'Grouping review accepts only:'), [
@@ -251,6 +267,26 @@ test('review reference requires full-detail fetch and asynchronous revert comple
   assert.match(reviewText, /refetch[^.]*--detail full/i);
   assert.match(reviewText, /partial_failed[^.]*failed[^.]*requires?[^.]*reporting[^.]*failed_block_tokens/i);
   assert.match(reviewText, /no success claim/i);
+});
+
+test('review reference requires version-matched lark-cli guidance before operational commands', () => {
+  const reviewText = readReviewAndApproval();
+  const recoverySection = reviewText.match(/## lark-cli Operational Recovery[\s\S]*?(?=\n## |$)/)?.[0] || '';
+  const operationalBlockIndex = recoverySection.indexOf('```bash');
+  assert.notEqual(operationalBlockIndex, -1, 'Missing lark-cli operational command block');
+
+  const prerequisiteText = recoverySection.slice(0, operationalBlockIndex);
+  for (const command of [
+    'lark-cli skills read lark-shared',
+    'lark-cli skills read lark-doc references/lark-doc-fetch.md',
+    'lark-cli skills read lark-doc references/lark-doc-history.md',
+  ]) {
+    assert.match(prerequisiteText, new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+  assert.match(
+    prerequisiteText,
+    /mandatory[^.]*before[^.]*selecting flags[^.]*auth[^.]*fetch[^.]*history operations/i,
+  );
 });
 
 test('placement audit preserves explicit shared=true for a target-local document', async () => {

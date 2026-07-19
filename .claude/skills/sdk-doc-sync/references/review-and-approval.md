@@ -168,6 +168,14 @@ Block previews must reject internal notes, grouping text, generic returns, escap
 
 `lark-cli` supplies auth/history/fetch/rollback/cleanup evidence, not content decisions.
 
+Read the installed, version-matched guidance first:
+
+- `lark-cli skills read lark-shared`
+- `lark-cli skills read lark-doc references/lark-doc-fetch.md`
+- `lark-cli skills read lark-doc references/lark-doc-history.md`
+
+These reads are mandatory before selecting flags or running the corresponding auth, fetch, and history operations.
+
 ```bash
 lark-cli auth status --json --verify
 lark-cli docs +history-list --doc <doc-token> --page-size 20 --as user --format json

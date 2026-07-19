@@ -12,6 +12,33 @@ function parseLabeledFields(section) {
   );
 }
 
+function walkMarkdownFiles(rootDir) {
+  if (!fs.existsSync(rootDir)) return [];
+  return fs.readdirSync(rootDir, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) return walkMarkdownFiles(entryPath);
+    return entry.isFile() && entry.name.endsWith('.md') ? [entryPath] : [];
+  });
+}
+
+function referencedScriptPaths(filePaths, { scriptsDir } = {}) {
+  return new Set(filePaths.flatMap((filePath) => {
+    const text = fs.readFileSync(filePath, 'utf8');
+    const explicitPaths = [...text.matchAll(/(?:\.claude\/skills\/sdk-doc-sync\/)?scripts\/([A-Za-z0-9_./-]+\.js)/g)]
+      .map((match) => match[1]);
+    if (!scriptsDir) return explicitPaths;
+
+    const bareBasenames = [...text.matchAll(/`([^`\n]+)`/g)]
+      .map((match) => match[1].trim().split(/\s+/)[0])
+      .filter((token) => /^[A-Za-z0-9_.-]+\.js$/.test(token))
+      .filter((token) => {
+        const scriptPath = path.join(scriptsDir, token);
+        return fs.existsSync(scriptPath) && fs.statSync(scriptPath).isFile();
+      });
+    return [...explicitPaths, ...bareBasenames];
+  }));
+}
+
 test('sdk-doc-sync test runner path exists', () => {
   const runner = path.resolve(__dirname, 'run-all.js');
   assert.equal(fs.existsSync(runner), true, `Missing expected test runner: ${runner}`);
@@ -44,17 +71,79 @@ test('sdk-doc-sync scripts documentation classifies supported and historical hel
   assert.match(readme, /supported workflow helpers/i);
   assert.match(readme, /historical(?: and|\/|-)one-off migration scripts/i);
 
-  for (const script of [
+  const supportedScripts = [
     'build-current-placement-audit.js',
     'build-reviewed-release-context.js',
     'render-grouping-inheritance-table.js',
     'feishu-doc.js',
-  ]) {
+    'edit-openapi.js',
+    'fix-leading-spaces.js',
+    'add-type-links.js',
+    'post-fix-links.js',
+  ];
+  const supportedSection = readme.match(/## Supported Workflow Helpers[\s\S]*?(?=\n## |$)/)?.[0] || '';
+  for (const script of supportedScripts) {
     assert.match(
-      readme,
-      new RegExp(`supported workflow helpers?[^#]*${script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'i'),
+      supportedSection,
+      new RegExp(script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
     );
   }
+
+  assert.match(readme, /planning\/operations/i);
+  assert.match(readme, /OpenAPI editing/i);
+  assert.match(readme, /post-write hygiene/i);
+  assert.match(readme, /exhaustive[^.]*generalized supported workflow helpers[^.]*SKILL\.md[^.]*general references[^.]*docs/i);
+  assert.match(
+    readme,
+    /scripts neither in (?:this|the) generalized list nor directly routed by the applicable[^.]*sdk-\*\.md[^.]*historical\/one-off/i,
+  );
+
+  const generalWorkflowDocs = [
+    path.join(skillRoot, 'SKILL.md'),
+    ...walkMarkdownFiles(path.join(skillRoot, 'references')),
+    ...walkMarkdownFiles(path.join(skillRoot, 'docs')),
+  ];
+  const generalReferencedScripts = referencedScriptPaths(generalWorkflowDocs);
+  assert.deepEqual([...generalReferencedScripts].sort(), [...supportedScripts].sort());
+
+  const classifiedScripts = new Set(
+    [...supportedSection.matchAll(/`(?:[^`/]+\/)*([^`/]+\.js)`/g)].map((match) => match[1]),
+  );
+  for (const scriptPath of generalReferencedScripts) {
+    assert.ok(
+      classifiedScripts.has(path.basename(scriptPath)),
+      `Workflow-referenced script is not classified as supported: ${scriptPath}`,
+    );
+  }
+
+  const sdkReferenceDocs = fs.readdirSync(skillRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^sdk-.*\.md$/.test(entry.name))
+    .map((entry) => path.join(skillRoot, entry.name));
+  assert.ok(sdkReferenceDocs.length > 0, 'Missing root sdk-*.md references');
+  const sdkReferencedScripts = referencedScriptPaths(sdkReferenceDocs, {
+    scriptsDir: path.join(skillRoot, 'scripts'),
+  });
+  assert.ok(sdkReferencedScripts.size > 0, 'Root sdk-*.md references must exercise scoped recipes');
+  assert.equal(sdkReferencedScripts.has('add-type-links.js'), true);
+  assert.equal(sdkReferencedScripts.has('feishu-doc.js'), true);
+  assert.equal(sdkReferencedScripts.has('sdk-release-scout.js'), false);
+  assert.equal(sdkReferencedScripts.has('zilliz-cli-release-impact.js'), false);
+  for (const scriptPath of sdkReferencedScripts) {
+    assert.equal(
+      fs.existsSync(path.join(skillRoot, 'scripts', scriptPath)),
+      true,
+      `SDK-reference-scoped script does not exist: ${scriptPath}`,
+    );
+  }
+
+  const scopedSection = readme.match(/## SDK-reference-scoped recipes[\s\S]*?(?=\n## |$)/i)?.[0] || '';
+  assert.match(scopedSection, /root[^.]*sdk-\*\.md/i);
+  assert.match(scopedSection, /conditional[^.]*version\/release-specific recipes/i);
+  assert.match(scopedSection, /not generalized supported helpers/i);
+  assert.match(scopedSection, /only when[^.]*applicable current[^.]*sdk-\*\.md[^.]*directly instructs/i);
+  assert.match(scopedSection, /source review/i);
+  assert.match(scopedSection, /dry-run/i);
+  assert.match(scopedSection, /approval controls/i);
 
   assert.match(readme, /src\/sdk-doc-sync\/doc-generator\.js[^\n]*DocGenerator[^\n]*legacy scaffold infrastructure/i);
   assert.match(readme, /TODO-generating scaffold output[^\n]*(?:not approval-grade|not publishable)[^\n]*(?:not approval-grade|not publishable)/i);
@@ -290,6 +379,11 @@ test('sdk-doc-sync pressure scenario artifact records the five GREEN safety chec
   assert.equal(fs.existsSync(artifactPath), true, `Missing pressure scenario artifact: ${artifactPath}`);
 
   const artifact = fs.readFileSync(artifactPath, 'utf8');
+  const intro = artifact.slice(0, artifact.indexOf('\n## '));
+  assert.match(intro, /IDs and excerpts[^.]*local audit provenance/i);
+  assert.match(intro, /repository tests validate structure and exact recorded IDs/i);
+  assert.match(intro, /cannot independently resolve external\/session logs in CI/i);
+  assert.match(intro, /known limitation[^.]*not proof of truthfulness/i);
   const scenarioNames = [
     'Changed inherited document',
     'Four inherited current-folder misses',
@@ -311,7 +405,9 @@ test('sdk-doc-sync pressure scenario artifact records the five GREEN safety chec
     'Prompt',
     'Expected safe decisions',
     'Natural no-skill RED observation',
+    'Natural RED run ID',
     'Pre-refactor observation',
+    'Pre-refactor run ID',
     'Current streamlined-skill GREEN result',
     'GREEN run ID',
     'Representative GREEN excerpt',
@@ -328,6 +424,34 @@ test('sdk-doc-sync pressure scenario artifact records the five GREEN safety chec
     assert.match(fields['Residual ambiguity/risk'], /\S/, `${scenarioName} must record residual risk`);
     assert.match(fields['GREEN run ID'], /^019f[0-9a-f-]+$/, `${scenarioName} has invalid GREEN run ID`);
     assert.match(fields['Representative GREEN excerpt'], /^".+"$/, `${scenarioName} needs a quoted GREEN excerpt`);
+  }
+
+  const expectedPressureProvenance = {
+    'Changed inherited document': {
+      natural: '019f7ae5-1655-75a3-870f-da377f37fe47',
+      preRefactor: '019f7aff-9b0c-7cd2-b91d-7479be2bd892',
+    },
+    'Four inherited current-folder misses': {
+      natural: '019f7ae5-15ee-7e91-a6c4-1de7b74d1146',
+      preRefactor: 'Unavailable',
+    },
+    'Free-form grouping approval': {
+      natural: '019f7ae5-16bf-79e0-aaf9-d517cecdff89',
+      preRefactor: '019f7aff-9bdf-7b11-a069-ad8afb1df2e8',
+    },
+    'Markdown-only write preview': {
+      natural: '019f7ae5-16bf-79e0-aaf9-d517cecdff89',
+      preRefactor: '019f7aff-9bdf-7b11-a069-ad8afb1df2e8',
+    },
+    'Garbled formatting rollback': {
+      natural: '019f7ae5-16bf-79e0-aaf9-d517cecdff89',
+      preRefactor: 'Unavailable',
+    },
+  };
+  for (const [scenarioName, expected] of Object.entries(expectedPressureProvenance)) {
+    const fields = fieldsByScenario.get(scenarioName);
+    assert.equal(fields['Natural RED run ID'], expected.natural);
+    assert.equal(fields['Pre-refactor run ID'], expected.preRefactor);
   }
 
   const changedFields = fieldsByScenario.get('Changed inherited document');
@@ -361,6 +485,21 @@ test('sdk-doc-sync pressure scenario artifact records the five GREEN safety chec
   assert.equal(freeFormFields['GREEN run ID'], '019f7b0a-28df-7e81-a256-d0d6942de1e7');
   assert.match(freeFormFields['Representative GREEN excerpt'], /Phase 3 may not start/);
   assert.match(freeFormFields['Representative GREEN excerpt'], /free-form approval and therefore a non-transition/);
+
+  const freeFormSection = sections.get('Free-form grouping approval');
+  const inheritanceEvidence = freeFormSection.match(
+    /### Ambiguous grouping with active v3\.0\.x pre-refactor evidence[\s\S]*?(?=\n### |\n## |$)/,
+  )?.[0] || '';
+  const inheritanceFields = parseLabeledFields(inheritanceEvidence);
+  assert.equal(inheritanceFields['Run ID'], '019f7aff-9b6d-7b32-be76-0b9ff77cd92e');
+  assert.match(inheritanceFields['Faithful prompt summary'], /ambiguous shared-vs-split symbols/i);
+  assert.match(inheritanceFields['Faithful prompt summary'], /active v3\.0\.x/i);
+  assert.match(inheritanceFields['Faithful prompt summary'], /pressure to skip inheritance review/i);
+  assert.match(inheritanceFields.Result, /stopped at Phase 2/i);
+  assert.match(inheritanceFields.Result, /grouping\/inheritance review/i);
+  assert.match(inheritanceFields.Ambiguity, /DEFER_INHERITANCE/);
+  assert.match(inheritanceFields.Ambiguity, /canonical decision spelling/i);
+  assert.equal(inheritanceFields['Representative excerpt'], '"Stop at Phase 2 with grouping_review_required."');
 
   const markdownFields = fieldsByScenario.get('Markdown-only write preview');
   const markdownOnly = markdownFields['Current streamlined-skill GREEN result'];

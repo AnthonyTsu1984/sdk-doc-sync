@@ -32,7 +32,7 @@ Then load only the applicable SDK reference: [Python](sdk-python.md), [Java](sdk
 - Release Drive folders are sparse version-local deltas; release Bitables are complete inventories. Missing documents in the current release folder are not automatically missing documentation.
 - Keep unchanged inherited `Docs.link` values. Repoint only approved current-version parent metadata where needed; do not copy unchanged inherited documents merely to fill a release folder.
 - A changed inherited document must use `COPY_PATCH_AND_REPOINT`: copy the older Docx into the canonical current-release folder, patch only the copy, validate it, then repoint the current-version Bitable record with both `title` and `link`.
-- Never patch an older-version or older-release source document in place for a newer release. This is a hard history invariant, not an action unlocked by approval. The older source remains unchanged.
+- Keep the older-version doc as a historical snapshot. Never patch an older-version or older-release source document in place for a newer release. This is a hard history invariant, not an action unlocked by approval. The older source remains unchanged.
 - `lark-cli` is for auth, history, independent block fetch, rollback, and approved cleanup, not content decisions. Use source, tests, examples, existing docs, and reviewed context to decide content.
 - Markdown-only previews are not approval-grade. Require block/create/patch preview evidence before writes: a create preview plus block-safety validation, or an in-place/copy patch preview naming exact sections and blocks.
 - Never publish internal run notes, grouping-review text, generic return placeholders such as `Return value for <symbol>.`, or escaped identifiers such as `dump\_messages`.
@@ -55,6 +55,17 @@ Never skip a phase because approval-like wording arrived early. Follow the detai
 ## Minimal Run Sequence
 
 1. Read the SDK/version table, `scan-state.json`, source checkout, and applicable references.
+
+After completing step 1, run a concrete Python release-scope scout:
+
+```bash
+node .claude/skills/sdk-doc-sync/bin/sdk-release-scout.js \
+  --language python --sdk-name pymilvus --track v2.6.x --json \
+  --output tmp/sdk-release-scout/python-v26.json
+```
+
+See the [CLI reference](references/cli.md) for other languages and flags.
+
 2. Run release scout against the exact baseline and target tags. For Zilliz CLI, build release-impact evidence first.
 3. If scope is ready, classify only changed public interfaces; locate live records and propose reviewed documentation identities, exclusions, grouping, placement, and successor inheritance.
 4. Stop for `APPROVE_GROUPING` or explicit revision syntax. Encode accepted decisions in a new run-local candidate spec.

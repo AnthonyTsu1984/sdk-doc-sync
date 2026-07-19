@@ -59,6 +59,22 @@ Downstream artifacts are stale after any release scope, source checkout/revision
 
 Resolve actual placement from each current Bitable `Docs` token, including older version roots. Do not assume four current-release folder misses should be copied forward: release folders are sparse, unchanged inherited links remain unchanged, and only changed inherited docs use `COPY_PATCH_AND_REPOINT`.
 
+Placement approval also requires explicit cross-version Bitable token-reference evidence at `existingBitable.sharedTokenEvidence` on every matched proposal entry. Record `checked: true`, a boolean `referencedByOlderVersions`, and unique `versions` that exactly match the older source-version roots whose Bitables were checked, with no target version, extras, or omissions. Drive ancestry proves document location, not sharing, so never derive shared-token status from the current or older Drive root containing the document.
+
+```json
+{
+  "existingBitable": {
+    "sharedTokenEvidence": {
+      "checked": true,
+      "referencedByOlderVersions": true,
+      "versions": ["v2.5.x", "v2.4.x"]
+    }
+  }
+}
+```
+
+The `versions` array exactly equals the reviewed older source versions. For zero older roots, use `referencedByOlderVersions: false` and `versions: []`. Duplicate source versions or root tokens, and target root or version reuse, are invalid and stop before audit traversal.
+
 ```bash
 node .claude/skills/sdk-doc-sync/scripts/build-current-placement-audit.js \
   --proposal tmp/sdk-release-scout/python-v26-grouping-proposal.json \

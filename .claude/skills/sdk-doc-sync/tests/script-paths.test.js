@@ -65,14 +65,10 @@ test('sdk-doc-sync scripts documentation classifies supported and historical hel
   assert.match(cliReference, /\.\.\/scripts\/README\.md/);
 });
 
-test('build-current-placement-audit CLI reports the generated artifact summary', (t) => {
-  const skillRoot = path.resolve(__dirname, '..');
+function runPlacementAuditCli({ skillRoot, tempDir, name, sharedTokenEvidence }) {
   const script = path.join(skillRoot, 'scripts', 'build-current-placement-audit.js');
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'placement-audit-cli-'));
-  const proposalPath = path.join(tempDir, 'proposal.json');
-  const outputPath = path.join(tempDir, 'placement-audit.json');
-  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
-
+  const proposalPath = path.join(tempDir, `${name}-proposal.json`);
+  const outputPath = path.join(tempDir, `${name}-placement-audit.json`);
   fs.writeFileSync(proposalPath, JSON.stringify({
     proposals: [{
       id: 'proposal-1',
@@ -87,6 +83,7 @@ test('build-current-placement-audit CLI reports the generated artifact summary',
         recordId: 'record-1',
         currentDocumentToken: 'document-1',
         parentRecordIds: [],
+        ...(sharedTokenEvidence === undefined ? {} : { sharedTokenEvidence }),
       },
     }],
   }));
@@ -97,7 +94,17 @@ test('build-current-placement-audit CLI reports the generated artifact summary',
     Module._load = function patchedLoad(request, parent, isMain) {
       if (request === 'node-fetch') {
         return async () => ({
-          json: async () => ({ code: 0, data: { files: [], has_more: false } }),
+          json: async () => ({
+            code: 0,
+            data: {
+              files: [{
+                token: 'document-1',
+                type: 'docx',
+                name: 'Sample',
+              }],
+              has_more: false,
+            },
+          }),
         });
       }
       if (request.endsWith('larkTokenFetcher')) {
@@ -129,14 +136,55 @@ test('build-current-placement-audit CLI reports the generated artifact summary',
     },
   });
 
-  assert.equal(result.status, 0, result.stderr);
-  assert.equal(result.stderr, '');
-  const artifact = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
-  assert.deepEqual(JSON.parse(result.stdout), {
-    output: outputPath,
-    status: artifact.status,
-    entries: artifact.entries.length,
-    blocked: artifact.blocked.length,
+  return {
+    result,
+    outputPath,
+    artifact: result.status === 0 ? JSON.parse(fs.readFileSync(outputPath, 'utf8')) : null,
+  };
+}
+
+test('build-current-placement-audit CLI reports ready and blocked evidence summaries', (t) => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'placement-audit-cli-'));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  const ready = runPlacementAuditCli({
+    skillRoot,
+    tempDir,
+    name: 'ready',
+    sharedTokenEvidence: {
+      checked: true,
+      referencedByOlderVersions: false,
+      versions: [],
+    },
+  });
+  assert.equal(ready.result.status, 0, ready.result.stderr);
+  assert.equal(ready.result.stderr, '');
+  assert.equal(ready.artifact.status, 'placement_audit_ready');
+  assert.equal(ready.artifact.entries.length, 1);
+  assert.equal(ready.artifact.blocked.length, 0);
+  assert.deepEqual(JSON.parse(ready.result.stdout), {
+    output: ready.outputPath,
+    status: 'placement_audit_ready',
+    entries: 1,
+    blocked: 0,
+  });
+
+  const blocked = runPlacementAuditCli({
+    skillRoot,
+    tempDir,
+    name: 'blocked',
+  });
+  assert.equal(blocked.result.status, 0, blocked.result.stderr);
+  assert.equal(blocked.result.stderr, '');
+  assert.equal(blocked.artifact.status, 'placement_audit_blocked');
+  assert.equal(blocked.artifact.entries.length, 1);
+  assert.equal(blocked.artifact.blocked.length, 1);
+  assert.deepEqual(JSON.parse(blocked.result.stdout), {
+    output: blocked.outputPath,
+    status: 'placement_audit_blocked',
+    entries: 1,
+    blocked: 1,
   });
 });
 

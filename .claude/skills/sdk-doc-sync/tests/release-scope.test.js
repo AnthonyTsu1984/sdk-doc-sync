@@ -73,6 +73,66 @@ function verifiedPlacement({ version = 'v2.6.x', folderToken, referencedByOlderV
   };
 }
 
+function sharedTokenEvidence(referencedByOlderVersions, versions = ['v2.5.x']) {
+  return {
+    checked: true,
+    referencedByOlderVersions,
+    versions,
+  };
+}
+
+function placementProposal({ documentToken = 'doc-upload', evidence } = {}) {
+  return {
+    proposals: [{
+      id: 'proposal:python:Volume:upload_file_to_volume',
+      docIdentity: {
+        stableId: 'python:Volume:upload_file_to_volume',
+        canonicalSlug: 'Volume-upload_file_to_volume',
+        title: 'upload_file_to_volume',
+        targetFolderToken: 'volume-folder-v26',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'rec-upload',
+        currentDocumentToken: documentToken,
+        parentRecordIds: ['rec-volume'],
+        ...(evidence === undefined ? {} : { sharedTokenEvidence: evidence }),
+      },
+    }],
+  };
+}
+
+function placementIndex({ documentToken = 'doc-upload', rootToken, folderToken }) {
+  return new Map([[documentToken, {
+    token: documentToken,
+    type: 'docx',
+    parentFolderToken: folderToken,
+    ancestors: [rootToken, folderToken],
+    name: 'upload_file_to_volume',
+  }]]);
+}
+
+async function auditPlacement({
+  proposal,
+  targetIndex = new Map(),
+  sourceIndex = new Map(),
+  sourceVersionRoots = [{ version: 'v2.5.x', rootToken: 'root-v25' }],
+  sourceIndexes = {},
+}) {
+  const indexes = {
+    'root-v26': targetIndex,
+    'root-v25': sourceIndex,
+    ...sourceIndexes,
+  };
+  return buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    sourceVersionRoots,
+    indexer: async (rootToken) => indexes[rootToken],
+  });
+}
+
 test('release-scope schema accepts the Python v2.6 golden artifact', () => {
   const scope = readFixture('python-v26-expected.json');
   const validation = validateReleaseScope(scope);
@@ -166,6 +226,12 @@ test('review reference owns placement, preview, content, and lark-cli recovery c
   const reviewText = readReviewAndApproval();
 
   assert.match(reviewText, /placement audit[^.]*before[^.]*approval|before[^.]*approval[^.]*placement audit/i);
+  assert.match(reviewText, /explicit[^.]*cross-version[^.]*Bitable[^.]*token-reference evidence/i);
+  assert.match(reviewText, /Drive ancestry[^.]*location[^.]*not sharing/i);
+  assert.match(reviewText, /versions[^.]*exactly match[^.]*older source-version roots[^.]*Bitables[^.]*checked/i);
+  assert.match(reviewText, /"sharedTokenEvidence"\s*:\s*\{/);
+  assert.match(reviewText, /zero older roots[^.]*referencedByOlderVersions[^.]*false[^.]*versions[^.]*\[\]/i);
+  assert.match(reviewText, /duplicate source versions[^.]*root tokens[^.]*target root[^.]*version reuse[^.]*stop[^.]*before[^.]*audit traversal/i);
   assert.match(reviewText, /Markdown-only previews?[^.]*not approval-grade/i);
   assert.match(reviewText, /`CREATE`[^.]*content preview[^.]*block-safety validation/i);
   assert.match(reviewText, /`UPDATE_IN_PLACE`[^.]*before\/after block preview/i);
@@ -187,46 +253,94 @@ test('review reference requires full-detail fetch and asynchronous revert comple
   assert.match(reviewText, /no success claim/i);
 });
 
-test('placement audit resolves inherited docs from supplied older version roots', async () => {
+test('placement audit preserves explicit shared=true for a target-local document', async () => {
+  const artifact = await auditPlacement({
+    proposal: placementProposal({ evidence: sharedTokenEvidence(true) }),
+    targetIndex: placementIndex({
+      rootToken: 'root-v26',
+      folderToken: 'volume-folder-v26',
+    }),
+  });
+
+  assert.equal(artifact.status, 'placement_audit_ready');
+  assert.deepEqual(artifact.blocked, []);
+  assert.equal(artifact.entries[0].placement.status, 'current_version_local');
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, true);
+  assert.deepEqual(artifact.entries[0].sharedTokenEvidence, {
+    source: 'proposal.existingBitable.sharedTokenEvidence',
+    status: 'verified',
+    checked: true,
+    referencedByOlderVersions: true,
+    versions: ['v2.5.x'],
+  });
+});
+
+test('placement audit preserves explicit shared=false for a target-local document', async () => {
+  const artifact = await auditPlacement({
+    proposal: placementProposal({ evidence: sharedTokenEvidence(false) }),
+    targetIndex: placementIndex({
+      rootToken: 'root-v26',
+      folderToken: 'volume-folder-v26',
+    }),
+  });
+
+  assert.equal(artifact.status, 'placement_audit_ready');
+  assert.deepEqual(artifact.blocked, []);
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, false);
+});
+
+test('placement audit blocks a target-local document when sharing evidence is missing', async () => {
+  const artifact = await auditPlacement({
+    proposal: placementProposal(),
+    targetIndex: placementIndex({
+      rootToken: 'root-v26',
+      folderToken: 'volume-folder-v26',
+    }),
+  });
+
+  assert.equal(artifact.entries[0].placement.verified, true);
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, null);
+  assert.equal(artifact.status, 'placement_audit_blocked');
+  assert.deepEqual(artifact.entries[0].blockedReasons, [{
+    code: 'SHARED_TOKEN_EVIDENCE_MISSING',
+    message: 'Explicit cross-version Bitable shared-token evidence is required.',
+  }]);
+  assert.deepEqual(artifact.blocked, [artifact.entries[0]]);
+});
+
+test('placement audit blocks an inherited document when sharing evidence is missing', async () => {
+  const artifact = await auditPlacement({
+    proposal: placementProposal({ documentToken: 'doc-upload-v25' }),
+    sourceIndex: placementIndex({
+      documentToken: 'doc-upload-v25',
+      rootToken: 'root-v25',
+      folderToken: 'volume-folder-v25',
+    }),
+  });
+
+  assert.equal(artifact.entries[0].placement.verified, true);
+  assert.equal(artifact.entries[0].placement.status, 'inherited_source');
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, null);
+  assert.equal(artifact.status, 'placement_audit_blocked');
+  assert.deepEqual(artifact.blocked, [artifact.entries[0]]);
+});
+
+test('placement audit resolves inherited docs with explicit sharing evidence', async () => {
   assert.deepEqual(parseSourceVersionRoot('v2.5.x:root-v25'), {
     version: 'v2.5.x',
     rootToken: 'root-v25',
   });
 
-  const proposal = {
-    proposals: [{
-      id: 'proposal:python:Volume:upload_file_to_volume',
-      docIdentity: {
-        stableId: 'python:Volume:upload_file_to_volume',
-        canonicalSlug: 'Volume-upload_file_to_volume',
-        title: 'upload_file_to_volume',
-        targetFolderToken: 'volume-folder-v26',
-      },
-      existingBitable: {
-        status: 'matched',
-        recordId: 'rec-upload',
-        currentDocumentToken: 'doc-upload-v25',
-        parentRecordIds: ['rec-volume'],
-      },
-    }],
-  };
-  const indexes = {
-    'root-v26': new Map(),
-    'root-v25': new Map([['doc-upload-v25', {
-      token: 'doc-upload-v25',
-      type: 'docx',
-      parentFolderToken: 'volume-folder-v25',
-      ancestors: ['root-v25', 'volume-folder-v25'],
-      name: 'upload_file_to_volume',
-    }]]),
-  };
-
-  const artifact = await buildPlacementAudit({
-    proposal,
-    version: 'v2.6.x',
-    versionRootToken: 'root-v26',
-    sourceVersionRoots: [{ version: 'v2.5.x', rootToken: 'root-v25' }],
-    indexer: async (rootToken) => indexes[rootToken],
+  const artifact = await auditPlacement({
+    proposal: placementProposal({
+      documentToken: 'doc-upload-v25',
+      evidence: sharedTokenEvidence(true),
+    }),
+    sourceIndex: placementIndex({
+      documentToken: 'doc-upload-v25',
+      rootToken: 'root-v25',
+      folderToken: 'volume-folder-v25',
+    }),
   });
 
   assert.equal(artifact.status, 'placement_audit_ready');
@@ -240,6 +354,191 @@ test('placement audit resolves inherited docs from supplied older version roots'
     referencedByOlderVersions: true,
     ancestry: ['root-v25', 'volume-folder-v25'],
   });
+});
+
+test('placement audit blocks malformed checked and boolean sharing evidence', async (t) => {
+  for (const [name, evidence] of [
+    ['unchecked evidence', sharedTokenEvidence(true)],
+    ['non-boolean sharing value', sharedTokenEvidence('true')],
+    ['missing checked versions', sharedTokenEvidence(false, [])],
+  ]) {
+    if (name === 'unchecked evidence') evidence.checked = false;
+    await t.test(name, async () => {
+      const artifact = await auditPlacement({
+        proposal: placementProposal({ evidence }),
+        targetIndex: placementIndex({
+          rootToken: 'root-v26',
+          folderToken: 'volume-folder-v26',
+        }),
+      });
+
+      assert.equal(artifact.entries[0].placement.verified, true);
+      assert.equal(artifact.entries[0].placement.referencedByOlderVersions, null);
+      assert.equal(artifact.entries[0].sharedTokenEvidence.status, 'malformed');
+      assert.equal(artifact.status, 'placement_audit_blocked');
+      assert.deepEqual(artifact.entries[0].blockedReasons, [{
+        code: 'SHARED_TOKEN_EVIDENCE_MALFORMED',
+        message: 'Shared-token evidence requires checked=true, a boolean referencedByOlderVersions, and each reviewed older source version exactly once.',
+      }]);
+    });
+  }
+});
+
+test('placement audit rejects sharing evidence versions outside the reviewed source-root set', async (t) => {
+  const cases = [
+    ['target version included', ['v2.5.x', 'v2.6.x']],
+    ['arbitrary version included', ['v2.5.x', 'v1.x']],
+    ['duplicate version included', ['v2.5.x', 'v2.5.x']],
+  ];
+
+  for (const [name, versions] of cases) {
+    await t.test(name, async () => {
+      const artifact = await auditPlacement({
+        proposal: placementProposal({ evidence: sharedTokenEvidence(false, versions) }),
+        targetIndex: placementIndex({
+          rootToken: 'root-v26',
+          folderToken: 'volume-folder-v26',
+        }),
+      });
+
+      assert.equal(artifact.entries[0].sharedTokenEvidence.status, 'malformed');
+      assert.equal(artifact.entries[0].placement.referencedByOlderVersions, null);
+      assert.equal(artifact.status, 'placement_audit_blocked');
+    });
+  }
+});
+
+test('placement audit requires every reviewed older source version exactly once', async () => {
+  const sourceVersionRoots = [
+    { version: 'v2.5.x', rootToken: 'root-v25' },
+    { version: 'v2.4.x', rootToken: 'root-v24' },
+  ];
+  const targetIndex = placementIndex({
+    rootToken: 'root-v26',
+    folderToken: 'volume-folder-v26',
+  });
+
+  const missing = await auditPlacement({
+    proposal: placementProposal({ evidence: sharedTokenEvidence(false, ['v2.5.x']) }),
+    targetIndex,
+    sourceVersionRoots,
+    sourceIndexes: { 'root-v24': new Map() },
+  });
+  assert.equal(missing.entries[0].sharedTokenEvidence.status, 'malformed');
+  assert.equal(missing.status, 'placement_audit_blocked');
+
+  const exact = await auditPlacement({
+    proposal: placementProposal({
+      evidence: sharedTokenEvidence(false, ['v2.5.x', 'v2.4.x']),
+    }),
+    targetIndex,
+    sourceVersionRoots,
+    sourceIndexes: { 'root-v24': new Map() },
+  });
+  assert.equal(exact.entries[0].sharedTokenEvidence.status, 'verified');
+  assert.equal(exact.entries[0].placement.referencedByOlderVersions, false);
+  assert.equal(exact.status, 'placement_audit_ready');
+  assert.deepEqual(exact.blocked, []);
+});
+
+test('placement audit accepts reviewed empty-set evidence only for unshared first-version docs', async () => {
+  const targetIndex = placementIndex({
+    rootToken: 'root-v26',
+    folderToken: 'volume-folder-v26',
+  });
+  const ready = await auditPlacement({
+    proposal: placementProposal({ evidence: sharedTokenEvidence(false, []) }),
+    targetIndex,
+    sourceVersionRoots: [],
+  });
+  assert.equal(ready.entries[0].sharedTokenEvidence.status, 'verified');
+  assert.equal(ready.entries[0].placement.referencedByOlderVersions, false);
+  assert.equal(ready.status, 'placement_audit_ready');
+  assert.deepEqual(ready.blocked, []);
+
+  for (const evidence of [
+    sharedTokenEvidence(true, []),
+    sharedTokenEvidence(false, ['v2.5.x']),
+  ]) {
+    const blocked = await auditPlacement({
+      proposal: placementProposal({ evidence }),
+      targetIndex,
+      sourceVersionRoots: [],
+    });
+    assert.equal(blocked.entries[0].sharedTokenEvidence.status, 'malformed');
+    assert.equal(blocked.entries[0].placement.referencedByOlderVersions, null);
+    assert.equal(blocked.status, 'placement_audit_blocked');
+  }
+});
+
+test('placement audit rejects invalid source-root configurations before indexing', async (t) => {
+  const cases = [
+    {
+      name: 'duplicate version labels',
+      sourceVersionRoots: [
+        { version: 'v2.5.x', rootToken: 'root-v25-a' },
+        { version: 'v2.5.x', rootToken: 'root-v25-b' },
+      ],
+      message: 'Invalid sourceVersionRoots: duplicate version label "v2.5.x"',
+    },
+    {
+      name: 'duplicate root tokens',
+      sourceVersionRoots: [
+        { version: 'v2.5.x', rootToken: 'root-shared' },
+        { version: 'v2.4.x', rootToken: 'root-shared' },
+      ],
+      message: 'Invalid sourceVersionRoots: duplicate rootToken "root-shared"',
+    },
+    {
+      name: 'target version reuse',
+      sourceVersionRoots: [{ version: 'v2.6.x', rootToken: 'root-source' }],
+      message: 'Invalid sourceVersionRoots[0]: source version "v2.6.x" must differ from target version',
+    },
+    {
+      name: 'target root reuse',
+      sourceVersionRoots: [{ version: 'v2.5.x', rootToken: 'root-v26' }],
+      message: 'Invalid sourceVersionRoots[0]: source rootToken "root-v26" must differ from target versionRootToken',
+    },
+    {
+      name: 'empty version',
+      sourceVersionRoots: [{ version: ' ', rootToken: 'root-v25' }],
+      message: 'Invalid sourceVersionRoots[0].version: expected a nonempty string',
+    },
+    {
+      name: 'empty root token',
+      sourceVersionRoots: [{ version: 'v2.5.x', rootToken: '' }],
+      message: 'Invalid sourceVersionRoots[0].rootToken: expected a nonempty string',
+    },
+  ];
+
+  for (const item of cases) {
+    await t.test(item.name, async () => {
+      assert.throws(
+        () => validateVersionRoots({
+          version: 'v2.6.x',
+          versionRootToken: 'root-v26',
+          sourceVersionRoots: item.sourceVersionRoots,
+        }),
+        (error) => error.message === item.message,
+      );
+
+      let indexCalls = 0;
+      await assert.rejects(
+        buildPlacementAudit({
+          proposal: placementProposal({ evidence: sharedTokenEvidence(false, []) }),
+          version: 'v2.6.x',
+          versionRootToken: 'root-v26',
+          sourceVersionRoots: item.sourceVersionRoots,
+          indexer: async () => {
+            indexCalls += 1;
+            return new Map();
+          },
+        }),
+        (error) => error.message === item.message,
+      );
+      assert.equal(indexCalls, 0);
+    });
+  }
 });
 
 test('release-scope schema rejects missing approval and mutation flags', () => {
@@ -382,6 +681,7 @@ const {
 const {
   buildPlacementAudit,
   parseSourceVersionRoot,
+  validateVersionRoots,
 } = require('../scripts/build-current-placement-audit');
 
 test('publicIdentity is stable across line-number changes', () => {
@@ -1464,6 +1764,7 @@ test('reviewed release context builder carries existing record and copy source e
   });
   assert.equal(result.filteredScope.actions[0].planningContext.target.parentRecordId, 'rec-bulk-parent');
   assert.equal(result.filteredScope.actions[0].planningContext.target.folderToken, 'bulk-import-folder');
+  assert.equal(result.filteredScope.actions[0].planningContext.tokenReferencedByOlderVersions, true);
   assert.deepEqual(result.filteredScope.actions[0].planningContext.copySource, {
     documentToken: 'doc-bulk',
     link: 'https://zilliverse.feishu.cn/docx/docBulk',
@@ -1521,6 +1822,8 @@ test('reviewed release context builder allows safe target-local UPDATE without c
   assert.equal(result.filteredScope.actions[0].planningContext.copySource, null);
   assert.equal(result.filteredScope.actions[0].planningContext.current.version, 'v2.6.x');
   assert.equal(result.filteredScope.actions[0].planningContext.current.folderToken, 'bulk-import-folder');
+  assert.equal(result.filteredScope.actions[0].planningContext.current.referencedByOlderVersions, false);
+  assert.equal(result.filteredScope.actions[0].planningContext.tokenReferencedByOlderVersions, false);
 });
 
 test('reviewed release context builder rejects changed inherited docs without copySource evidence', () => {

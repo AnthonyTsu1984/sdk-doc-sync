@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"block_id":"signature","block_type":14,"code":{"elements":[{"text_run":{"content":"client.create_user(user_name, password, timeout=None, description=None)","text_element_style":{}}}],"language":37}},
+    {"block_type":12,"bullet":{"elements":[{"text_run":{"content":"description - Optional user description.","text_element_style":{}}}]}}
+  ]
+}

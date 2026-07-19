@@ -1,0 +1,15 @@
+{
+  "items": [
+    {"block_id":"root","block_type":1,"children":["title","summary","request","signature","parameters","param1","returns","returnText","examples","exampleCode"]},
+    {"block_id":"title","block_type":3,"heading1":{"elements":[{"text_run":{"content":"create_user()","text_element_style":{}}}]}},
+    {"block_id":"summary","block_type":2,"text":{"elements":[{"text_run":{"content":"Creates a user.","text_element_style":{}}}]}},
+    {"block_id":"request","block_type":4,"heading2":{"elements":[{"text_run":{"content":"Request Syntax","text_element_style":{}}}]}},
+    {"block_id":"signature","block_type":14,"code":{"elements":[{"text_run":{"content":"client.create_user(user_name, password, timeout=None)","text_element_style":{}}}],"language":37}},
+    {"block_id":"parameters","block_type":2,"text":{"elements":[{"text_run":{"content":"PARAMETERS:","text_element_style":{"bold":true}}}]}},
+    {"block_id":"param1","block_type":12,"bullet":{"elements":[{"text_run":{"content":"user_name - The user name.","text_element_style":{}}}]}},
+    {"block_id":"returns","block_type":2,"text":{"elements":[{"text_run":{"content":"RETURNS:","text_element_style":{"bold":true}}}]}},
+    {"block_id":"returnText","block_type":2,"text":{"elements":[{"text_run":{"content":"None","text_element_style":{}}}]}},
+    {"block_id":"examples","block_type":4,"heading2":{"elements":[{"text_run":{"content":"Examples","text_element_style":{}}}]}},
+    {"block_id":"exampleCode","block_type":14,"code":{"elements":[{"text_run":{"content":"client.create_user(\"analyst\", \"Milvus123\")","text_element_style":{}}}],"language":37}}
+  ]
+}

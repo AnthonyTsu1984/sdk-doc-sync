@@ -431,6 +431,166 @@ test('reviewed release context builder rejects stale or empty candidate specs', 
   );
 });
 
+test('reviewed release context builder rejects category and documentation identity mismatches', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Client:MilvusClient:create_user',
+      canonicalSlug: 'MilvusClient-create_user',
+      symbol: 'MilvusClient.create_user',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    candidates: {
+      'MilvusClient-create_user': {
+        category: 'Authentication',
+        summary: 'Creates a user for RBAC authentication.',
+        example: { code: 'client.create_user(user_name="alice", password="password")' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    /category Authentication does not match documentation identity python:Client:MilvusClient:create_user/,
+  );
+});
+
+test('reviewed release context builder folds reviewed sync and async variants into one documentation identity', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py', 'pymilvus/milvus_client/async_milvus_client.py'],
+    actions: [
+      {
+        type: 'CREATE',
+        stableId: 'python:Client:AsyncMilvusClient:create_user',
+        canonicalSlug: 'AsyncMilvusClient-create_user',
+        symbol: 'AsyncMilvusClient.create_user',
+        source: { file: 'pymilvus/milvus_client/async_milvus_client.py', line: 110 },
+        reason: 'new public method',
+      },
+      {
+        type: 'CREATE',
+        stableId: 'python:Client:MilvusClient:create_user',
+        canonicalSlug: 'MilvusClient-create_user',
+        symbol: 'MilvusClient.create_user',
+        source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+        reason: 'new public method',
+      },
+    ],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    groups: [{
+      category: 'Authentication',
+      canonicalSlugs: ['MilvusClient-create_user', 'AsyncMilvusClient-create_user'],
+      docIdentity: {
+        stableId: 'python:Authentication:create_user',
+        canonicalSlug: 'Authentication-create_user',
+        symbol: 'create_user',
+      },
+      groupingReview: {
+        reviewed: true,
+        decision: 'Document sync and async wrappers under the Authentication create_user API identity.',
+      },
+      summary: 'Creates a Milvus user for RBAC authentication.',
+      example: { code: 'client.create_user(user_name="alice", password="password")' },
+    }],
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+
+  assert.equal(result.selectedCount, 1);
+  assert.deepEqual(result.filteredScope.actions.map((action) => action.stableId), ['python:Authentication:create_user']);
+  assert.equal(result.filteredScope.actions[0].canonicalSlug, 'Authentication-create_user');
+  assert.equal(result.filteredScope.actions[0].sourceVariants.length, 2);
+  assert.equal(result.referenceContext.contexts['python:Authentication:create_user'].category, 'Authentication');
+});
+
+test('reviewed release context builder requires reviewed grouping for multi-symbol doc identities', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py', 'pymilvus/milvus_client/async_milvus_client.py'],
+    actions: [
+      {
+        type: 'CREATE',
+        stableId: 'python:Client:AsyncMilvusClient:create_user',
+        canonicalSlug: 'AsyncMilvusClient-create_user',
+        symbol: 'AsyncMilvusClient.create_user',
+        source: { file: 'pymilvus/milvus_client/async_milvus_client.py', line: 110 },
+        reason: 'new public method',
+      },
+      {
+        type: 'CREATE',
+        stableId: 'python:Client:MilvusClient:create_user',
+        canonicalSlug: 'MilvusClient-create_user',
+        symbol: 'MilvusClient.create_user',
+        source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 100 },
+        reason: 'new public method',
+      },
+    ],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Authentication: 'auth-folder' },
+    },
+    groups: [{
+      category: 'Authentication',
+      canonicalSlugs: ['MilvusClient-create_user', 'AsyncMilvusClient-create_user'],
+      docIdentity: {
+        stableId: 'python:Authentication:create_user',
+        canonicalSlug: 'Authentication-create_user',
+      },
+      summary: 'Creates a Milvus user for RBAC authentication.',
+      example: { code: 'client.create_user(user_name="alice", password="password")' },
+    }],
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec }),
+    /must have groupingReview.reviewed=true/,
+  );
+});
+
 test('reviewed release context CLI parser rejects malformed arguments', () => {
   assert.throws(
     () => parseArgs(['node', 'script', '--release-scope', '--candidate-spec', 'spec.json']),

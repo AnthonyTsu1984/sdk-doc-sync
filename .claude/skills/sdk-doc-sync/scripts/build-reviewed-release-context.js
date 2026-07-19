@@ -71,18 +71,64 @@ function expandCandidateSpec(candidateSpec) {
     candidates[canonicalSlug] = { ...spec, canonicalSlug };
   }
 
-  for (const group of candidateSpec.groups || []) {
+  for (const [groupIndex, group] of (candidateSpec.groups || []).entries()) {
+    const sourceCanonicalSlugs = [...(group.canonicalSlugs || [])];
     for (const canonicalSlug of group.canonicalSlugs || []) {
       candidates[canonicalSlug] = {
         ...group,
         ...(group.overrides?.[canonicalSlug] || {}),
         canonicalSlug,
+        sourceCanonicalSlugs,
+        groupIndex,
       };
       delete candidates[canonicalSlug].canonicalSlugs;
       delete candidates[canonicalSlug].overrides;
     }
   }
   return candidates;
+}
+
+function categoryFromStableId(stableId) {
+  const parts = String(stableId || '').split(':');
+  return parts.length >= 3 ? parts[1] : '';
+}
+
+function assertCandidateIdentity({ action, spec, category }) {
+  const docIdentity = spec.docIdentity || {};
+  const effectiveStableId = docIdentity.stableId || spec.stableId || action.stableId;
+  const effectiveCanonicalSlug = docIdentity.canonicalSlug || spec.canonicalSlug || action.canonicalSlug;
+  const stableCategory = categoryFromStableId(effectiveStableId);
+  if (stableCategory && stableCategory !== category) {
+    throw new Error(
+      `Candidate ${action.canonicalSlug} category ${category} does not match documentation identity ${effectiveStableId}. ` +
+      'Fix the identity map or candidate docIdentity before building approval-ready context.',
+    );
+  }
+  if (effectiveCanonicalSlug.includes('-')) {
+    const slugCategory = effectiveCanonicalSlug.split('-')[0];
+    if (slugCategory && slugCategory !== category) {
+      throw new Error(
+        `Candidate ${action.canonicalSlug} category ${category} does not match canonical slug ${effectiveCanonicalSlug}. ` +
+        'Use a category-based documentation slug before building approval-ready context.',
+      );
+    }
+  }
+
+  const groupedSources = spec.sourceCanonicalSlugs || [];
+  if (groupedSources.length > 1) {
+    if (!docIdentity.stableId || !docIdentity.canonicalSlug) {
+      throw new Error(`Grouped candidate ${groupedSources.join(', ')} must declare docIdentity.stableId and docIdentity.canonicalSlug`);
+    }
+    if (!spec.groupingReview || spec.groupingReview.reviewed !== true) {
+      throw new Error(`Grouped candidate ${groupedSources.join(', ')} must have groupingReview.reviewed=true before approval-ready context`);
+    }
+  }
+
+  return {
+    stableId: effectiveStableId,
+    canonicalSlug: effectiveCanonicalSlug,
+    symbol: docIdentity.symbol || spec.symbol || action.symbol,
+  };
 }
 
 function defaultExceptions(action, spec, evidence) {
@@ -122,9 +168,15 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
   if (configuredSlugs.length === 0) {
     throw new Error('Candidate spec must configure at least one candidate');
   }
+  const releaseSlugs = new Set((releaseScope.actions || []).map((action) => action.canonicalSlug));
+  const missingConfiguredSlugs = configuredSlugs.filter((canonicalSlug) => !releaseSlugs.has(canonicalSlug));
+  if (missingConfiguredSlugs.length > 0) {
+    throw new Error(`Candidate spec includes ${missingConfiguredSlugs.length} entries not present in release scope: ${missingConfiguredSlugs.join(', ')}`);
+  }
   const selected = [];
   const selectedSlugs = new Set();
   const contexts = {};
+  const emittedDocIdentities = new Set();
   const target = required(candidateSpec.target, 'Candidate spec is missing target');
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
@@ -136,10 +188,32 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
     selectedSlugs.add(action.canonicalSlug);
 
     const category = required(spec.category, `Candidate ${action.canonicalSlug} is missing category`);
+    const identity = assertCandidateIdentity({ action, spec, category });
+    const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
+    for (const sourceSlug of groupedSources) {
+      if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
+    }
+    if (emittedDocIdentities.has(identity.stableId)) continue;
+    emittedDocIdentities.add(identity.stableId);
+
     const folderToken = required(spec.folderToken || folders[category], `Candidate ${action.canonicalSlug} has no folder token for category ${category}`);
     const evidence = evidenceFor(action, spec, releaseScope);
+    const sourceVariants = groupedSources
+      .map((canonicalSlug) => (releaseScope.actions || []).find((item) => item.canonicalSlug === canonicalSlug))
+      .filter(Boolean)
+      .map((item) => ({
+        stableId: item.stableId,
+        canonicalSlug: item.canonicalSlug,
+        symbol: item.symbol,
+        source: clone(item.source),
+        reason: item.reason,
+      }));
     const selectedAction = {
       ...action,
+      stableId: identity.stableId,
+      canonicalSlug: identity.canonicalSlug,
+      symbol: identity.symbol,
+      sourceVariants: sourceVariants.length > 1 ? sourceVariants : undefined,
       planningContext: {
         ...(action.planningContext || {}),
         target: {
@@ -152,11 +226,11 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
       },
     };
     selected.push(selectedAction);
-    contexts[action.stableId] = {
+    contexts[identity.stableId] = {
       repository: spec.repository || candidateSpec.repository || action.source?.repository || releaseScope.sdkName,
       revision: spec.revision || releaseScope.targetCommit,
       category,
-      title: spec.title || titleFor(action),
+      title: spec.title || titleFor({ ...action, symbol: identity.symbol }),
       summary: required(spec.summary, `Candidate ${action.canonicalSlug} is missing summary`),
       reviewedEvidence: evidence,
       result: clone(spec.result),
@@ -166,10 +240,6 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec }) {
     };
   }
 
-  const missing = configuredSlugs.filter((canonicalSlug) => !selectedSlugs.has(canonicalSlug));
-  if (missing.length > 0) {
-    throw new Error(`Candidate spec includes ${missing.length} entries not present in release scope: ${missing.join(', ')}`);
-  }
   if (selected.length === 0) {
     throw new Error('Candidate spec did not match any release-scope actions');
   }

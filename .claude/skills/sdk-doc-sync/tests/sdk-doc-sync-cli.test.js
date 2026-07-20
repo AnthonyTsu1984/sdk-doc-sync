@@ -6,11 +6,25 @@ const path = require('node:path');
 
 const {
   createSchemaFirstArtifactProvider,
+  parseArgs,
   runCli,
 } = require('../bin/sdk-doc-sync');
 const SdkDocSync = require('../src/sdk-doc-sync');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
+
+test('CLI accepts repeatable token-specific repair approvals', () => {
+  const args = parseArgs([
+    'node',
+    'sdk-doc-sync',
+    '--repair-approve',
+    'doc-1',
+    '--repair-approve',
+    'doc-2',
+  ]);
+
+  assert.deepEqual(args.repairApprove, ['doc-1', 'doc-2']);
+});
 
 function fixture(name) {
   return JSON.parse(fs.readFileSync(path.join(scannerDir, name), 'utf8'));

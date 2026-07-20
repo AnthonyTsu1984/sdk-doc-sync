@@ -67,6 +67,8 @@ function parseArgs(argv) {
             args.json = true;
         } else if (arg === '--auto-approve') {
             args.autoApprove = true;
+        } else if (arg === '--repair-approve' && argv[i + 1]) {
+            args.repairApprove = (args.repairApprove || []).concat(argv[++i]);
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -95,6 +97,7 @@ Options:
   --summary-json <file>            Write bounded run summary JSON to a file
   --json                           Print the run result as formatted JSON
   --auto-approve                   Skip interactive approval
+  --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
   --help, -h                       Show this help
 
 Environment (.env):
@@ -152,6 +155,22 @@ function createApprovalCallback(autoApprove) {
 
         rl.close();
         return approved;
+    };
+}
+
+function createExecutionApprovalProvider(repairTokens = []) {
+    const approvedRepairs = new Set(repairTokens);
+    return (plan) => {
+        const repair = plan.apiPatchPlan?.approval;
+        if (repair?.required !== true || !approvedRepairs.has(repair.documentToken)) {
+            return { approved: true };
+        }
+        return {
+            approved: true,
+            repairApproved: true,
+            documentToken: repair.documentToken,
+            preserveBlockIds: repair.preservedBlockIds || [],
+        };
     };
 }
 
@@ -428,6 +447,7 @@ async function runCli({
         releaseScope,
         exclude: args.exclude || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
+        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove),
         artifactProvider,
         planningContextProvider,
         onProgress: dependencies.onProgress || (() => {}),
@@ -496,5 +516,6 @@ module.exports = {
     parseArgs,
     runCli,
     createSchemaFirstArtifactProvider,
+    createExecutionApprovalProvider,
     createBoundedSummary,
 };

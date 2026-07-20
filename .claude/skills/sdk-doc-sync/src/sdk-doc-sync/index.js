@@ -40,6 +40,7 @@ class SdkDocSync {
         sdkDir = null,
         targets = [],
         approvalCallback = null,
+        executionApprovalProvider = null,
         onProgress = null,
         dryRun = false,
         publicOnly = true,
@@ -70,6 +71,7 @@ class SdkDocSync {
         this.sdkName = sdkName;
         this.dryRun = dryRun;
         this.approvalCallback = approvalCallback;
+        this.executionApprovalProvider = executionApprovalProvider;
         this.onProgress = onProgress || ((phase, msg) => console.log(`[${phase}] ${msg}`));
         this.artifactProvider = artifactProvider || artifacts;
         this.planningContextProvider = planningContextProvider;
@@ -248,10 +250,13 @@ class SdkDocSync {
                 const planned = plannedActions.find((entry) => entry.action === action)
                     || plannedActions.find((entry) => entry.plan === action);
                 if (!planned) throw new Error(`Approved action was not planned: ${this._stableIdFor(action) || '(unknown)'}`);
+                const approval = this.executionApprovalProvider
+                    ? await this.executionApprovalProvider(planned.plan, planned.action)
+                    : { approved: true };
                 const execResult = await this.executor.execute(planned.plan, {
                     action: planned.action,
                     artifact: planned.context.artifact,
-                    approval: { approved: true },
+                    approval,
                 });
                 result.results.push({ action, status: 'success', ...execResult });
                 if (execResult.status === 'error') {

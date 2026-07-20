@@ -618,6 +618,36 @@ test('dry and live modes produce identical plans before approval or execution', 
   assert.equal(liveCalls.recordMutations, 0);
 });
 
+test('live execution receives the plan-specific approval envelope', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const approvals = [];
+  const sync = syncFixture({
+    dryRun: false,
+    calls,
+    approvalCallback: async (actions) => actions,
+  });
+  sync.executionApprovalProvider = (plan) => ({
+    approved: true,
+    repairApproved: true,
+    documentToken: plan.source.documentToken,
+  });
+  sync.executor = {
+    async execute(plan, input) {
+      approvals.push(input.approval);
+      return { status: 'success', plan };
+    },
+  };
+
+  const result = await sync.run();
+
+  assert.equal(result.results.length, 1);
+  assert.deepEqual(approvals, [{
+    approved: true,
+    repairApproved: true,
+    documentToken: 'doc-v26',
+  }]);
+});
+
 test('orchestrator returns typed planning errors and does not approve invalid write actions', async () => {
   const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
   let approved = false;

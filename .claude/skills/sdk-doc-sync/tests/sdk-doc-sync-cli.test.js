@@ -9,6 +9,7 @@ const {
   createSchemaFirstArtifactProvider,
   parseArgs,
   runCli,
+  withJsonConsoleIsolation,
 } = require('../bin/sdk-doc-sync');
 const SdkDocSync = require('../src/sdk-doc-sync');
 
@@ -55,6 +56,20 @@ test('execution approval provider rejects an approved plan digest mismatch', () 
     () => provider({ ...plan, stableId: 'python:Category:other' }),
     /PLAN_NOT_APPROVED/,
   );
+});
+
+test('JSON console isolation redirects writer progress away from stdout and restores console.log', async () => {
+  const progress = [];
+  const original = console.log;
+
+  const result = await withJsonConsoleIsolation(true, (line) => progress.push(line), async () => {
+    console.log('Created blocks 15/15');
+    return 'done';
+  });
+
+  assert.equal(result, 'done');
+  assert.deepEqual(progress, ['Created blocks 15/15']);
+  assert.equal(console.log, original);
 });
 
 function fixture(name) {

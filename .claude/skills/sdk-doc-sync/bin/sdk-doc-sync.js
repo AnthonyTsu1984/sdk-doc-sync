@@ -193,6 +193,17 @@ function createExecutionApprovalProvider(repairTokens = [], digestApprovals = []
     };
 }
 
+async function withJsonConsoleIsolation(enabled, err, operation) {
+    if (!enabled) return operation();
+    const originalLog = console.log;
+    console.log = (...values) => err(values.join(' '));
+    try {
+        return await operation();
+    } finally {
+        console.log = originalLog;
+    }
+}
+
 function validationError(code, message, details = {}) {
     const error = new Error(message);
     error.code = code;
@@ -479,7 +490,7 @@ async function runCli({
         printPlans: args.json !== true,
     });
 
-    const result = await sync.run();
+    const result = await withJsonConsoleIsolation(args.json === true, err, () => sync.run());
     if (args.summaryJson) {
         writeFile(path.resolve(args.summaryJson), `${JSON.stringify(createBoundedSummary(result), null, 2)}\n`);
     }
@@ -537,4 +548,5 @@ module.exports = {
     createSchemaFirstArtifactProvider,
     createExecutionApprovalProvider,
     createBoundedSummary,
+    withJsonConsoleIsolation,
 };

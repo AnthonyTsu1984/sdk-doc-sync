@@ -73,6 +73,8 @@ class MarkdownToFeishu {
             return [this.__create_text_element(text || '')];
         }
 
+        text = text.replace(/\\([\\`*_[\]{}()#+\-.!>])/g, '$1');
+
         const elements = [];
         let buffer = '';
 

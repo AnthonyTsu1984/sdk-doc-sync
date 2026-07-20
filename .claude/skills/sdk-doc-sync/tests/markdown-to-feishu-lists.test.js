@@ -39,6 +39,23 @@ function countLabels(nodes, labels, counts = new Map()) {
   return counts;
 }
 
+test('Markdown conversion removes syntax escapes from visible API identifiers and labels', async () => {
+  const converter = new MarkdownToFeishu({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const { tokens } = await converter.parse_markdown(
+    'describe\\_user returns user\\_name.\n\n- **user\\_name** - **\\[REQUIRED\\]**\n',
+  );
+  const blocks = await converter.markdown_to_blocks(tokens);
+  const visible = blocks.map(blockLabel).join('\n');
+
+  assert.match(visible, /describe_user returns user_name/);
+  assert.match(visible, /user_name.*\[REQUIRED\]/s);
+  assert.doesNotMatch(visible, /\\[_\[\]]/);
+});
+
 test('nested list conversion preserves exact hierarchy without duplicate labels', async () => {
   const markdown = fs.readFileSync(fixturePath, 'utf8');
   const converter = new MarkdownToFeishu({

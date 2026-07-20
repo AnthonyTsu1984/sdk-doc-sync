@@ -95,10 +95,12 @@ class LarkCliOps {
 
   fetchDocBlocks(documentToken, as = 'bot') {
     return this.run('lark-cli', [
-      'docs',
-      '+fetch',
-      '--doc',
-      documentToken,
+      'api',
+      'GET',
+      `/open-apis/docx/v1/documents/${documentToken}/blocks`,
+      '--params',
+      '{"page_size":500}',
+      '--page-all',
       '--as',
       as,
       '--format',

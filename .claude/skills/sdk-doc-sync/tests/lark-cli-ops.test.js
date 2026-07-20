@@ -27,7 +27,7 @@ test('authStatus builds lark-cli auth status argv', async () => {
   }]);
 });
 
-test('fetchDocBlocks builds lark-cli docs fetch argv with bot default', async () => {
+test('fetchDocBlocks builds a raw paginated Docx blocks API argv with bot default', async () => {
   const { calls, run } = recorder();
   const ops = new LarkCliOps({ run });
 
@@ -35,7 +35,18 @@ test('fetchDocBlocks builds lark-cli docs fetch argv with bot default', async ()
 
   assert.deepEqual(calls, [{
     command: 'lark-cli',
-    args: ['docs', '+fetch', '--doc', 'doc-token', '--as', 'bot', '--format', 'json'],
+    args: [
+      'api',
+      'GET',
+      '/open-apis/docx/v1/documents/doc-token/blocks',
+      '--params',
+      '{"page_size":500}',
+      '--page-all',
+      '--as',
+      'bot',
+      '--format',
+      'json',
+    ],
   }]);
 });
 

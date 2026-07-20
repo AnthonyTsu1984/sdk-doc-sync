@@ -914,7 +914,9 @@ test('FeishuOperationalVerifier rejects malformed semantic layout and missing pr
   const verifier = new FeishuOperationalVerifier({
     ops: {
       async authStatus() { return { stdout: '{}' }; },
-      async fetchDocBlocks() { return { stdout: JSON.stringify({ items: blocks }) }; },
+      async fetchDocBlocks() {
+        return { stdout: `[page 1] fetching...\n${JSON.stringify({ data: { items: blocks } })}` };
+      },
     },
   });
   const verification = await verifier.verifyDocument(Object.freeze({

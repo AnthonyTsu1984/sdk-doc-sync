@@ -9,7 +9,9 @@ const { languageId } = require('../document-ir/block-registry');
 
 function parseJsonOutput(result) {
   const text = String(result?.stdout || '').trim();
-  return text ? JSON.parse(text) : {};
+  if (!text) return {};
+  const start = text.indexOf('{');
+  return JSON.parse(start >= 0 ? text.slice(start) : text);
 }
 
 function blocksFromPayload(payload) {

@@ -49,6 +49,13 @@ function validateRenderedApiBlocks(blocks) {
         text: entry.text,
       });
     }
+    if (/\\[\[\]*]/.test(entry.text)) {
+      errors.push({
+        code: 'VISIBLE_MARKDOWN_ESCAPE',
+        blockId: entry.blockId,
+        text: entry.text,
+      });
+    }
     try {
       assertPublishableContent(entry.text);
     } catch (error) {

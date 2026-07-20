@@ -60,6 +60,15 @@ test('rejects escaped identifiers with digits or leading underscores', () => {
   ]);
 });
 
+test('rejects visible Markdown punctuation escapes in rendered Docx blocks', () => {
+  const result = validateRenderedApiBlocks([
+    textBlock('\\[REQUIRED\\]'),
+  ]);
+
+  assert.equal(result.ok, false);
+  assert.deepEqual(result.errors.map((error) => error.code), ['VISIBLE_MARKDOWN_ESCAPE']);
+});
+
 test('accepts normal API-reference block text', () => {
   const result = validateRenderedApiBlocks([
     textBlock('dump_messages()'),

@@ -69,6 +69,8 @@ function parseArgs(argv) {
             args.autoApprove = true;
         } else if (arg === '--repair-approve' && argv[i + 1]) {
             args.repairApprove = (args.repairApprove || []).concat(argv[++i]);
+        } else if (arg === '--approve-plan-digest' && argv[i + 1]) {
+            args.approvePlanDigest = (args.approvePlanDigest || []).concat(argv[++i]);
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -98,6 +100,7 @@ Options:
   --json                           Print the run result as formatted JSON
   --auto-approve                   Skip interactive approval
   --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
+  --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --help, -h                       Show this help
 
 Environment (.env):
@@ -158,9 +161,25 @@ function createApprovalCallback(autoApprove) {
     };
 }
 
-function createExecutionApprovalProvider(repairTokens = []) {
+function createExecutionApprovalProvider(repairTokens = [], digestApprovals = []) {
     const approvedRepairs = new Set(repairTokens);
+    const approvedDigests = new Map(digestApprovals.map((entry) => {
+        const separator = entry.lastIndexOf('=');
+        if (separator <= 0 || separator === entry.length - 1) {
+            throw new TypeError(`Invalid --approve-plan-digest value: ${entry}`);
+        }
+        return [entry.slice(0, separator), entry.slice(separator + 1)];
+    }));
     return (plan) => {
+        const approvedDigest = approvedDigests.get(plan.stableId);
+        if (approvedDigests.size > 0 && !approvedDigest) {
+            throw new Error(`PLAN_NOT_APPROVED: ${plan.stableId}`);
+        }
+        if (approvedDigest && approvedDigest !== plan.artifactDigest) {
+            throw new Error(
+                `APPROVED_PLAN_DIGEST_MISMATCH: ${plan.stableId} expected ${approvedDigest}, got ${plan.artifactDigest}`,
+            );
+        }
         const repair = plan.apiPatchPlan?.approval;
         if (repair?.required !== true || !approvedRepairs.has(repair.documentToken)) {
             return { approved: true };
@@ -447,7 +466,7 @@ async function runCli({
         releaseScope,
         exclude: args.exclude || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
-        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove),
+        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest),
         artifactProvider,
         planningContextProvider,
         onProgress: dependencies.onProgress || (() => {}),

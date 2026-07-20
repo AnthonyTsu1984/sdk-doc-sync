@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const {
+  createExecutionApprovalProvider,
   createSchemaFirstArtifactProvider,
   parseArgs,
   runCli,
@@ -21,9 +22,39 @@ test('CLI accepts repeatable token-specific repair approvals', () => {
     'doc-1',
     '--repair-approve',
     'doc-2',
+    '--approve-plan-digest',
+    'python:Category:item=sha256:abc123',
   ]);
 
   assert.deepEqual(args.repairApprove, ['doc-1', 'doc-2']);
+  assert.deepEqual(args.approvePlanDigest, ['python:Category:item=sha256:abc123']);
+});
+
+test('execution approval provider rejects an approved plan digest mismatch', () => {
+  const provider = createExecutionApprovalProvider(
+    ['doc-1'],
+    ['python:Category:item=sha256:approved'],
+  );
+  const plan = {
+    stableId: 'python:Category:item',
+    artifactDigest: 'sha256:changed',
+    apiPatchPlan: {
+      approval: {
+        required: true,
+        documentToken: 'doc-1',
+        preservedBlockIds: [],
+      },
+    },
+  };
+
+  assert.throws(
+    () => provider(plan),
+    /APPROVED_PLAN_DIGEST_MISMATCH/,
+  );
+  assert.throws(
+    () => provider({ ...plan, stableId: 'python:Category:other' }),
+    /PLAN_NOT_APPROVED/,
+  );
 });
 
 function fixture(name) {

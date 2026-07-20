@@ -7,16 +7,20 @@ function text(value, marks = []) {
   return ir.text(String(value), marks);
 }
 
-function paragraph(value, marks = []) {
-  return ir.paragraph([text(value, marks)]);
+function semantic(role, key = null, extra = {}) {
+  return { metadata: { role, ...(key && { key }), ...extra } };
 }
 
-function heading(level, value) {
-  return ir.heading(level, [text(value)]);
+function paragraph(value, marks = [], options = {}) {
+  return ir.paragraph([text(value, marks)], options);
 }
 
-function label(value) {
-  return paragraph(value, ['bold']);
+function heading(level, value, options = {}) {
+  return ir.heading(level, [text(value)], options);
+}
+
+function label(value, options = {}) {
+  return paragraph(value, ['bold'], options);
 }
 
 function sentence(value) {
@@ -70,7 +74,7 @@ function fieldDetails(field) {
   return details.join('. ');
 }
 
-function renderFields(fields, context, role = 'field') {
+function renderFields(fields, context, role = 'parameters-list') {
   const items = fields.map((field) => {
     const children = [fieldHeader(field, context)];
     const description = sentence(field.description);
@@ -82,16 +86,16 @@ function renderFields(fields, context, role = 'field') {
     }
     return ir.listItem(children);
   });
-  return ir.unorderedList(items, { metadata: { role } });
+  return ir.unorderedList(items, semantic(role));
 }
 
-function renderMembers(members, context) {
+function renderMembers(members) {
   return ir.unorderedList(members.map((member) => {
     const children = [ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])])];
     const description = sentence(member.description);
     if (description) children.push(paragraph(description));
     return ir.listItem(children);
-  }), { metadata: { role: 'member' } });
+  }), semantic('members-list'));
 }
 
 function renderErrors(errors) {
@@ -101,7 +105,7 @@ function renderErrors(errors) {
       ir.paragraph([text(item.name, ['bold'])]),
       paragraph(details),
     ]);
-  }), { metadata: { role: 'error' } });
+  }), semantic('exceptions-list'));
 }
 
 function renderRelated(items) {
@@ -109,7 +113,7 @@ function renderRelated(items) {
   if (safe.length === 0) return null;
   return ir.unorderedList(safe.map((item) => ir.listItem([
     ir.paragraph([ir.citation(item.title, item.url)]),
-  ])), { metadata: { role: 'related' } });
+  ])), semantic('related-list'));
 }
 
 function requestEntries(document, policy) {
@@ -120,100 +124,176 @@ function requestEntries(document, policy) {
 function renderRequest(document, policy, context) {
   const entries = requestEntries(document, policy).filter((entry) => entry && entry.signature);
   if (entries.length === 0) return [];
-  const blocks = [heading(2, policy.requestHeading)];
+  const blocks = [heading(2, policy.requestHeading, semantic('request-heading'))];
   for (const entry of entries) {
-    if (policy.variantHeadings) blocks.push(heading(3, entry.title || entry.id));
-    if (entry.description) blocks.push(paragraph(entry.description));
+    const entryKey = entry.id || entry.title || null;
+    if (policy.variantHeadings) {
+      blocks.push(heading(3, entry.title || entry.id, semantic('request-variant-heading', entryKey)));
+    }
+    if (entry.description) {
+      blocks.push(paragraph(entry.description, [], semantic('request-description', entryKey)));
+    }
     const signature = typeof policy.requestSignature === 'function'
       ? policy.requestSignature(document, entry)
       : entry.signature.display;
-    if (signature) blocks.push(ir.codeBlock(signature, policy.requestFence));
+    if (signature) blocks.push(ir.codeBlock(signature, policy.requestFence, semantic('request-signature', entryKey)));
     if (policy.variantFields && Array.isArray(entry.inputs) && entry.inputs.length > 0) {
-      blocks.push(label(policy.parametersLabel), renderFields(entry.inputs, context));
+      blocks.push(
+        label(policy.parametersLabel, semantic('parameters-label', entryKey)),
+        renderFields(entry.inputs, context, 'parameters-list'),
+      );
     }
   }
   return blocks;
 }
 
-function renderResult(document, policy, context) {
+function renderResultType(document, policy, context) {
   const result = document.result;
-  if (!result) return [];
-  const blocks = [];
-  if (policy.resultTypeLabel) {
-    blocks.push(label(policy.resultTypeLabel));
-    blocks.push(ir.paragraph(typeInlines(result.type, context)));
+  if (!result || !policy.resultTypeLabel) return [];
+  return [
+    label(policy.resultTypeLabel, semantic('result-type-label')),
+    ir.paragraph(typeInlines(result.type, context), semantic('result-type-value')),
+  ];
+}
+
+function renderReturns(document, policy, context) {
+  const result = document.result;
+  if (!result || !policy.returnsLabel) return [];
+  const blocks = [label(policy.returnsLabel, semantic('returns-label'))];
+  if (!policy.resultTypeLabel) {
+    blocks.push(ir.paragraph(typeInlines(result.type, context), semantic('returns-type-value')));
   }
-  if (policy.returnsLabel) {
-    blocks.push(label(policy.returnsLabel));
-    if (!policy.resultTypeLabel) blocks.push(ir.paragraph(typeInlines(result.type, context)));
-    blocks.push(paragraph(sentence(result.description)));
-    if (Array.isArray(result.fields) && result.fields.length > 0) {
-      blocks.push(renderFields(result.fields, context, 'result'));
-    }
+  blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
+  if (Array.isArray(result.fields) && result.fields.length > 0) {
+    blocks.push(renderFields(result.fields, context, 'result-fields'));
   }
   return blocks;
+}
+
+function renderAudience(document) {
+  return (document.audienceVariants || []).map((variant) => ir.audienceRegion(
+    'include',
+    variant.audience,
+    [paragraph(variant.summary)],
+    semantic('audience', variant.audience),
+  ));
+}
+
+function renderCanonicalSignatures(document, policy) {
+  if (policy.profile.canonicalSignature === 'omit') return [];
+  return (document.signatures || [])
+    .filter((signature) => signature.display)
+    .map((signature, index) => ir.codeBlock(
+      signature.display,
+      policy.canonicalFence,
+      semantic('canonical-signature', signature.id || String(index)),
+    ));
+}
+
+function renderPrimaryInputs(document, policy, context) {
+  const primaryInputs = typeof policy.primaryInputs === 'function'
+    ? policy.primaryInputs(document)
+    : [];
+  if (primaryInputs.length === 0) return [];
+  return [
+    label(policy.parametersLabel, semantic('parameters-label')),
+    renderFields(primaryInputs, context, 'parameters-list'),
+  ];
+}
+
+function renderCallableMembers(document, policy) {
+  if (!policy.memberKind) return [];
+  const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
+  if (members.length === 0) return [];
+  return [
+    label(policy.membersLabel, semantic('members-label')),
+    renderMembers(members),
+  ];
+}
+
+function renderErrorsSection(document, policy) {
+  const errors = typeof policy.errors === 'function'
+    ? policy.errors(document)
+    : document.errors || [];
+  if (errors.length === 0) return [];
+  return [
+    label(policy.errorsLabel, semantic('exceptions-label')),
+    renderErrors(errors),
+  ];
+}
+
+function renderExamples(document, policy) {
+  if (!Array.isArray(document.examples) || document.examples.length === 0) return [];
+  const blocks = [heading(2, policy.exampleHeading, semantic('examples-heading'))];
+  for (const [index, example] of document.examples.entries()) {
+    const exampleKey = example.id || example.title || String(index);
+    const baseHeading = policy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();
+    const distinctTitle = example.title
+      && ![baseHeading, baseHeading.replace(/s$/, '')].includes(example.title.toLowerCase());
+    if (document.examples.length > 1 || distinctTitle) {
+      blocks.push(heading(3, example.title, semantic('example-heading', exampleKey)));
+    }
+    if (example.description) {
+      blocks.push(paragraph(example.description, [], semantic('example-description', exampleKey)));
+    }
+    blocks.push(ir.codeBlock(
+      example.code,
+      example.fence || policy.exampleFence,
+      semantic('example-code', exampleKey),
+    ));
+  }
+  return blocks;
+}
+
+function renderExtensions(document, policy, context) {
+  return typeof policy.renderExtensions === 'function'
+    ? policy.renderExtensions(document, context)
+    : [];
+}
+
+function renderNotes(document) {
+  if (!Array.isArray(document.notes) || document.notes.length === 0) return [];
+  return [
+    heading(2, 'Notes', semantic('notes-heading')),
+    ir.unorderedList(document.notes.map((note) => ir.listItem([paragraph(note)])), semantic('notes-list')),
+  ];
+}
+
+function renderRelatedSection(document) {
+  const related = renderRelated(document.related || []);
+  return related ? [heading(2, 'Related', semantic('related-section')), related] : [];
 }
 
 function createSdkRenderer(policy) {
+  if (!policy?.profile) throw new TypeError('SDK renderer policy requires a layout profile');
   const frozenPolicy = Object.freeze({ ...policy });
   function render(document, context = {}) {
-    const blocks = [
-      heading(1, document.identity.title),
-      paragraph(document.summary),
-    ];
-
-    for (const variant of document.audienceVariants || []) {
-      blocks.push(ir.audienceRegion('include', variant.audience, [paragraph(variant.summary)]));
-    }
-
-    for (const signature of document.signatures || []) {
-      if (signature.display) blocks.push(ir.codeBlock(signature.display, frozenPolicy.canonicalFence));
-    }
-
-    blocks.push(...renderRequest(document, frozenPolicy, context));
-
-    const primaryInputs = typeof frozenPolicy.primaryInputs === 'function'
-      ? frozenPolicy.primaryInputs(document)
-      : [];
-    if (primaryInputs.length > 0) {
-      blocks.push(label(frozenPolicy.parametersLabel), renderFields(primaryInputs, context));
-    }
-
-    if (frozenPolicy.memberKind) {
-      const members = (document.callableMembers || []).filter((member) => member.kind === frozenPolicy.memberKind);
-      if (members.length > 0) blocks.push(label(frozenPolicy.membersLabel), renderMembers(members, context));
-    }
-
-    blocks.push(...renderResult(document, frozenPolicy, context));
-
-    const errors = typeof frozenPolicy.errors === 'function'
-      ? frozenPolicy.errors(document)
-      : document.errors || [];
-    if (errors.length > 0) blocks.push(label(frozenPolicy.errorsLabel), renderErrors(errors));
-
-    if (Array.isArray(document.examples) && document.examples.length > 0) {
-      blocks.push(heading(2, frozenPolicy.exampleHeading));
-      for (const example of document.examples) {
-        const baseHeading = frozenPolicy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();
-        const distinctTitle = example.title
-          && ![baseHeading, baseHeading.replace(/s$/, '')].includes(example.title.toLowerCase());
-        if (document.examples.length > 1 || distinctTitle) blocks.push(heading(3, example.title));
-        if (example.description) blocks.push(paragraph(example.description));
-        blocks.push(ir.codeBlock(example.code, example.fence || frozenPolicy.exampleFence));
-      }
-    }
-
-    if (Array.isArray(document.notes) && document.notes.length > 0) {
-      blocks.push(heading(2, 'Notes'));
-      blocks.push(ir.unorderedList(document.notes.map((note) => ir.listItem([paragraph(note)]))));
-    }
-
-    const related = renderRelated(document.related || []);
-    if (related) blocks.push(heading(2, 'Related'), related);
-
-    return ir.document(blocks, { metadata: { title: document.identity.title, renderer: frozenPolicy.id } });
+    const sections = {
+      summary: [paragraph(document.summary, [], semantic('summary'))],
+      audience: renderAudience(document),
+      'canonical-signature': renderCanonicalSignatures(document, frozenPolicy),
+      request: renderRequest(document, frozenPolicy, context),
+      parameters: renderPrimaryInputs(document, frozenPolicy, context),
+      members: renderCallableMembers(document, frozenPolicy),
+      'result-type': renderResultType(document, frozenPolicy, context),
+      returns: renderReturns(document, frozenPolicy, context),
+      exceptions: renderErrorsSection(document, frozenPolicy),
+      examples: renderExamples(document, frozenPolicy),
+      extensions: renderExtensions(document, frozenPolicy, context),
+      notes: renderNotes(document),
+      related: renderRelatedSection(document),
+    };
+    const blocks = frozenPolicy.profile.order.flatMap((name) => sections[name] || []);
+    return ir.document(blocks, {
+      metadata: {
+        title: document.identity.title,
+        renderer: frozenPolicy.id,
+        layoutProfile: frozenPolicy.profile.id,
+        layoutProfileVersion: frozenPolicy.profile.version,
+      },
+    });
   }
-  return Object.freeze({ policy: frozenPolicy, render });
+  return Object.freeze({ profile: frozenPolicy.profile, policy: frozenPolicy, render });
 }
 
 module.exports = { createSdkRenderer, renderFields, typeInlines };

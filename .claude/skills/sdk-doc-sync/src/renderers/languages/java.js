@@ -1,6 +1,7 @@
 'use strict';
 
 const { createSdkRenderer } = require('../sdk-renderer');
+const profiles = require('../sdk-layout-profiles');
 
 function requestSignature(document, variant) {
   const members = document.callableMembers.filter((member) => member.kind === 'builder');
@@ -14,6 +15,7 @@ function requestSignature(document, variant) {
 
 module.exports = createSdkRenderer({
   id: 'java',
+  profile: profiles.java,
   canonicalFence: 'Java',
   requestFence: 'Java',
   exampleFence: 'Java',

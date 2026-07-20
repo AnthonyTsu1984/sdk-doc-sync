@@ -1,5 +1,3 @@
-# createCollection()
-
 Creates a collection through the Node.js client.
 
 <include target="milvus">

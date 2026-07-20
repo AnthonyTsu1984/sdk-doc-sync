@@ -230,6 +230,16 @@ function renderCase(item) {
   return { reference, ir: first, markdown };
 }
 
+function topLevelRoles(documentIr) {
+  return documentIr.children.map((node) => node.metadata?.role).filter(Boolean);
+}
+
+function codeValues(documentIr, role) {
+  return documentIr.children
+    .filter((node) => node.type === 'codeBlock' && node.metadata?.role === role)
+    .map((node) => node.value.trim());
+}
+
 test('scanner fixtures render through production Reference IR and lossless Document IR to language goldens', () => {
   for (const item of cases) {
     const { ir, markdown } = renderCase(item);
@@ -299,6 +309,32 @@ test('language policies control exact sections, fences, and conditional request 
   assert.equal(validateReferenceDocument(directReference, { production: true }).valid, true);
   const directMarkdown = renderMarkdown(javaRenderer.render(directReference, { typeUrls: directContext.typeUrls }));
   assert.doesNotMatch(directMarkdown, /Request Syntax|BUILDER METHODS/);
+});
+
+test('SDK layouts omit body H1 and enforce language-specific signature roles', () => {
+  for (const item of cases) {
+    const { ir } = renderCase(item);
+    assert.equal(
+      ir.children.some((node) => node.type === 'heading' && node.level === 1),
+      false,
+      item.language,
+    );
+    assert.equal(topLevelRoles(ir)[0], 'summary', item.language);
+  }
+
+  const python = renderCase(cases.find((item) => item.language === 'python')).ir;
+  assert.deepEqual(codeValues(python, 'canonical-signature'), []);
+  assert.equal(codeValues(python, 'request-signature').length, 1);
+
+  for (const language of ['java', 'go', 'cpp']) {
+    const ir = renderCase(cases.find((item) => item.language === language)).ir;
+    assert.equal(codeValues(ir, 'canonical-signature').length, 1, language);
+    assert.equal(codeValues(ir, 'request-signature').length, 1, language);
+  }
+
+  const node = renderCase(cases.find((item) => item.language === 'node')).ir;
+  assert.equal(codeValues(node, 'canonical-signature').length, 1);
+  assert.ok(codeValues(node, 'request-signature').length >= 1);
 });
 
 test('Go request syntax is explicit Reference IR metadata and is independent from examples', () => {
@@ -378,7 +414,7 @@ test('empty field and member descriptions do not create blank list paragraphs', 
   const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), javaContext);
   const rendered = javaRenderer.render(reference);
   const memberList = rendered.children.find((node) => node.type === 'unorderedList'
-    && node.metadata?.role === 'member');
+    && node.metadata?.role === 'members-list');
   assert.ok(memberList);
   assert.equal(memberList.items[0].children.length, 1);
 
@@ -392,7 +428,9 @@ test('parameter, member, result, and error lists keep signature and description 
     const lists = [];
     const visit = (node) => {
       if (!node || typeof node !== 'object') return;
-      if (node.type === 'unorderedList' && ['field', 'member', 'result', 'error'].includes(node.metadata?.role)) {
+      if (node.type === 'unorderedList' && [
+        'parameters-list', 'members-list', 'result-fields', 'exceptions-list',
+      ].includes(node.metadata?.role)) {
         lists.push(node);
       }
       for (const value of Object.values(node)) {

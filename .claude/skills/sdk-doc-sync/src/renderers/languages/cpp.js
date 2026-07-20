@@ -1,6 +1,7 @@
 'use strict';
 
 const { createSdkRenderer } = require('../sdk-renderer');
+const profiles = require('../sdk-layout-profiles');
 
 function requestSignature(document, variant) {
   const members = document.callableMembers.filter((member) => member.kind === 'request');
@@ -17,6 +18,7 @@ function requestSignature(document, variant) {
 
 module.exports = createSdkRenderer({
   id: 'cpp',
+  profile: profiles.cpp,
   canonicalFence: 'C++',
   requestFence: 'C++',
   exampleFence: 'C++',

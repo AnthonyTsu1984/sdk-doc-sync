@@ -1,14 +1,8 @@
-# search()
-
 Searches vectors in a collection and returns the nearest matches.
 
 <include target="milvus">
 Available to Milvus users.
 </include>
-
-```python
-def search(self, collection_name: str, data: list[list[float]], *, limit: int = 10, **kwargs: Any) -> list[SearchResult]:
-```
 
 ## Request Syntax{#request-syntax}
 

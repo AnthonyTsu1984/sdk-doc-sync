@@ -1,5 +1,3 @@
-# createCollection()
-
 Creates a collection through the Java v2 client.
 
 <include target="milvus">

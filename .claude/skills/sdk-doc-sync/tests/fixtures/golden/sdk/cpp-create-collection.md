@@ -1,5 +1,3 @@
-# CreateCollection()
-
 Creates a collection through the C++ client.
 
 <include target="milvus">

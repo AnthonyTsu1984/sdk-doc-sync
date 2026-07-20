@@ -1,9 +1,11 @@
 'use strict';
 
 const { createSdkRenderer } = require('../sdk-renderer');
+const profiles = require('../sdk-layout-profiles');
 
 module.exports = createSdkRenderer({
   id: 'python',
+  profile: profiles.python,
   canonicalFence: 'Python',
   requestFence: 'Python',
   exampleFence: 'Python',

@@ -1,9 +1,11 @@
 'use strict';
 
 const { createSdkRenderer } = require('../sdk-renderer');
+const profiles = require('../sdk-layout-profiles');
 
 module.exports = createSdkRenderer({
   id: 'go',
+  profile: profiles.go,
   canonicalFence: 'Go',
   requestFence: 'Go',
   exampleFence: 'Go',

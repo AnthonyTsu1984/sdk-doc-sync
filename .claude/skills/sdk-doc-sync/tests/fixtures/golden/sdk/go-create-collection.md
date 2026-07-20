@@ -1,5 +1,3 @@
-# CreateCollection()
-
 Creates a collection through the Go client.
 
 <include target="milvus">

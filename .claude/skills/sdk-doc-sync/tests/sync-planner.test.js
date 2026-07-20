@@ -447,6 +447,36 @@ test('Document IR digest uses stable key serialization and overload stable IDs r
   assert.notEqual(first.stableId, second.stableId);
 });
 
+test('SDK Document IR digest and immutable plan include the layout profile version', () => {
+  const planner = new SyncPlanner();
+  const documentIr = { type: 'document', children: [] };
+  const base = {
+    content: 'same markdown\n',
+    documentIr,
+    reviewed: true,
+    validated: true,
+  };
+  const first = planner.planAction(
+    { type: 'CREATE', stableId: 'python:Vector:search-v1' },
+    planningContext({
+      current: null,
+      artifact: { ...base, layout: { profileId: 'python', profileVersion: 1 } },
+    }),
+  );
+  const second = planner.planAction(
+    { type: 'CREATE', stableId: 'python:Vector:search-v2' },
+    planningContext({
+      current: null,
+      artifact: { ...base, layout: { profileId: 'python', profileVersion: 2 } },
+    }),
+  );
+
+  assert.notEqual(first.artifactDigest, second.artifactDigest);
+  assert.deepEqual(first.layout, { profileId: 'python', profileVersion: 1 });
+  assert.equal(Object.isFrozen(first.layout), true);
+  assert.equal(first.metadata.artifactKind, 'sdk-document-ir');
+});
+
 test('planAll documents the batch API and returns frozen plans in input order', () => {
   const planner = new SyncPlanner();
   const actions = [

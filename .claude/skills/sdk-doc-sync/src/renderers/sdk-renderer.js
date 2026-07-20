@@ -74,7 +74,7 @@ function fieldDetails(field) {
   return details.join('. ');
 }
 
-function renderFields(fields, context, role = 'parameters-list') {
+function renderFields(fields, context, role = 'parameters-list', key = null) {
   const items = fields.map((field) => {
     const children = [fieldHeader(field, context)];
     const description = sentence(field.description);
@@ -82,11 +82,11 @@ function renderFields(fields, context, role = 'parameters-list') {
     const details = fieldDetails(field);
     if (details) children.push(paragraph(sentence(details)));
     if (Array.isArray(field.children) && field.children.length > 0) {
-      children.push(renderFields(field.children, context, role));
+      children.push(renderFields(field.children, context, role, key));
     }
     return ir.listItem(children);
   });
-  return ir.unorderedList(items, semantic(role));
+  return ir.unorderedList(items, semantic(role, key));
 }
 
 function renderMembers(members) {
@@ -140,7 +140,7 @@ function renderRequest(document, policy, context) {
     if (policy.variantFields && Array.isArray(entry.inputs) && entry.inputs.length > 0) {
       blocks.push(
         label(policy.parametersLabel, semantic('parameters-label', entryKey)),
-        renderFields(entry.inputs, context, 'parameters-list'),
+        renderFields(entry.inputs, context, 'parameters-list', entryKey),
       );
     }
   }
@@ -181,8 +181,14 @@ function renderAudience(document) {
 
 function renderCanonicalSignatures(document, policy) {
   if (policy.profile.canonicalSignature === 'omit') return [];
+  const requestSignatures = new Set(requestEntries(document, policy)
+    .map((entry) => entry?.signature?.display)
+    .filter(Boolean)
+    .map((value) => String(value).replace(/\s+/g, ' ').trim().replace(/;$/, '')));
   return (document.signatures || [])
     .filter((signature) => signature.display)
+    .filter((signature) => policy.profile.canonicalSignature !== 'when-distinct'
+      || !requestSignatures.has(String(signature.display).replace(/\s+/g, ' ').trim().replace(/;$/, '')))
     .map((signature, index) => ir.codeBlock(
       signature.display,
       policy.canonicalFence,

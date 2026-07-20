@@ -10,6 +10,7 @@ const SdkDocSync = require('../src/sdk-doc-sync');
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
 const { validateDocumentIr } = require('../src/document-ir/validate');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
+const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 
 const adapters = Object.freeze({
@@ -247,6 +248,16 @@ function createSchemaFirstArtifactProvider({
                     { validation: documentValidation },
                 );
             }
+            const layoutValidation = renderer.profile
+                ? validateSdkLayout(documentIr, renderer.profile)
+                : { valid: true, errors: [], warnings: [] };
+            if (!layoutValidation.valid) {
+                throw validationError(
+                    firstValidationCode(layoutValidation, 'INVALID_SDK_LAYOUT'),
+                    `SDK layout validation failed: ${JSON.stringify(layoutValidation.errors)}`,
+                    { validation: layoutValidation },
+                );
+            }
             const artifact = {
                 title: reference.identity.title,
                 content: renderMarkdown(documentIr),
@@ -254,7 +265,18 @@ function createSchemaFirstArtifactProvider({
                 documentIr,
                 reviewed: true,
                 validated: true,
-                validation: { valid: true, errors: [], warnings: documentValidation.warnings },
+                ...(renderer.profile && {
+                    layout: {
+                        profileId: renderer.profile.id,
+                        profileVersion: renderer.profile.version,
+                    },
+                }),
+                validation: {
+                    valid: true,
+                    errors: [],
+                    warnings: [...documentValidation.warnings, ...layoutValidation.warnings],
+                    ...(renderer.profile && { layout: layoutValidation }),
+                },
                 metadata: {
                     description: reference.summary,
                     type: reference.identity.kind,

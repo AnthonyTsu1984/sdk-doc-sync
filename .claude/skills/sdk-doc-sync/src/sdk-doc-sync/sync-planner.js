@@ -60,6 +60,18 @@ function nonEmptyString(value) {
 }
 
 function artifactBytes(artifact) {
+  if (artifact.documentIr && typeof artifact.documentIr === 'object' && artifact.layout) {
+    if (nonEmptyString(artifact.content) && artifact.content.trim().length > 0) {
+      assertPublishableContent(artifact.content);
+    }
+    return {
+      bytes: Buffer.from(stableSerialize({
+        documentIr: artifact.documentIr,
+        layout: artifact.layout,
+      }), 'utf8'),
+      kind: 'sdk-document-ir',
+    };
+  }
   if (nonEmptyString(artifact.content) && artifact.content.trim().length > 0) {
     assertPublishableContent(artifact.content);
     return { bytes: Buffer.from(artifact.content, 'utf8'), kind: 'content' };
@@ -336,6 +348,7 @@ class SyncPlanner {
       action: plannedAction,
       stableId,
       artifactDigest,
+      layout: context.artifact?.layout,
       source,
       existingRecordLookup: plannedAction === 'CREATE' ? existingRecordLookupFrom(context) : undefined,
       copySource: plannedAction === 'COPY_PATCH_AND_REPOINT' ? copySourceFrom(context) : undefined,

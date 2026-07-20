@@ -275,7 +275,14 @@ test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and 
     assert.deepEqual(stderr, [], language);
     assert.equal(result.plans.length, 1, language);
     assert.equal(result.planningErrors.length, 0, language);
-    assert.equal(result.plans[0].metadata.artifactKind, 'content', language);
+    assert.equal(
+      result.plans[0].metadata.artifactKind,
+      language === 'zilliz-cli' ? 'content' : 'sdk-document-ir',
+      language,
+    );
+    if (language !== 'zilliz-cli') {
+      assert.deepEqual(result.plans[0].layout, { profileId: language, profileVersion: 1 });
+    }
     assert.match(stdout.join('\n'), /"plans"/, language);
     assert.doesNotMatch(stdout.join('\n'), /TODO|TBD|Brief description|Usage example/i, language);
   }
@@ -866,8 +873,8 @@ export class MilvusClient {
     },
   });
 
+  assert.equal(result.planningErrors.length, 0, JSON.stringify(result.planningErrors));
   assert.ok(result.plans.some((plan) => plan.stableId === 'node:Collections:createCollection'));
-  assert.equal(result.planningErrors.length, 0);
   assert.match(stdout.join('\n'), /node:Collections:createCollection/);
 });
 

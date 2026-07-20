@@ -84,30 +84,25 @@ test('preserves rich blocks attached to a replaced section', () => {
   assert.deepEqual(patch.operations[0].preserveBlockIds, ['callout']);
 });
 
-test('blocks a scrambled page until a matching reviewed rebuild approval is supplied', () => {
+test('plans a scrambled page as a rebuild preview that requires repair-specific approval', () => {
   const current = pythonDoc();
   current[0].children = ['summary', 'examples', 'example-code', 'request', 'request-code', 'parameters', 'param', 'returns', 'returns-value'];
 
-  const blocked = planApiReferencePatch({
+  const preview = planApiReferencePatch({
     currentBlocks: current,
     desiredBlocks: pythonDoc(),
     profile: profiles.python,
     documentToken: 'doc-1',
   });
-  assert.equal(blocked.validation.valid, false);
-  assert.equal(blocked.strategy, 'planning-blocked');
-  assert.ok(blocked.validation.errors.some((error) => error.code === 'REVIEWED_REBUILD_REQUIRED'));
-
-  const approved = planApiReferencePatch({
-    currentBlocks: current,
-    desiredBlocks: pythonDoc(),
-    profile: profiles.python,
+  assert.equal(preview.validation.valid, true);
+  assert.equal(preview.strategy, 'reviewed-full-body-rebuild');
+  assert.deepEqual(preview.approval, {
+    required: true,
+    kind: 'REPAIR_WRITE_APPROVAL',
     documentToken: 'doc-1',
-    repairApproval: { approved: true, documentToken: 'doc-1', preserveBlockIds: [] },
+    preservedBlockIds: [],
   });
-  assert.equal(approved.validation.valid, true);
-  assert.equal(approved.strategy, 'reviewed-full-body-rebuild');
-  assert.deepEqual(approved.operations.map((operation) => operation.type), ['rebuild-body']);
+  assert.deepEqual(preview.operations.map((operation) => operation.type), ['rebuild-body']);
 });
 
 test('blocks planning when the live page structure cannot be modeled', () => {

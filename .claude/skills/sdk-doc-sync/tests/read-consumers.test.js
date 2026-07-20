@@ -2,10 +2,17 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 
 const { exportDocument } = require('../bin/export-doc');
 const { parseArgs, runCliFetchAndDiff } = require('../scripts/cli-fetch-and-diff');
 const FeishuDocTranslator = require('../src/feishu-doc-translator');
+
+test('Feishu document block reads do not print document tokens into JSON command output', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'src', 'feishu-to-markdown.js'), 'utf8');
+  assert.doesNotMatch(source, /console\.log\(document_id\)/);
+});
 
 test('exportDocument reads through an injected Document IR markdown reader and writes once', async () => {
   const calls = [];

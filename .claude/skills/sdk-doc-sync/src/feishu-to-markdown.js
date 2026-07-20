@@ -213,7 +213,6 @@ class FeishuToMarkdown extends larkDocWriter {
     } 
 
     async __fetch_doc_blocks(document_id, page_token=null, blocks=[]) {
-        console.log(document_id)
         const token = await this.tokenFetcher.token()
         let document_token = document_id
 

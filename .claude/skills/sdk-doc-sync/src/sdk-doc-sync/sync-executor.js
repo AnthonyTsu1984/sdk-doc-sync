@@ -33,6 +33,11 @@ function containsLegacyTodo(content) {
   return typeof content === 'string' && /<!--\s*TODO:/i.test(content);
 }
 
+function sameStringSet(left, right) {
+  if (!Array.isArray(left) || !Array.isArray(right) || left.length !== right.length) return false;
+  return JSON.stringify([...left].sort()) === JSON.stringify([...right].sort());
+}
+
 function assertPublishableArtifact(plan, artifact) {
   if (!artifact || !nonEmptyString(artifact.content)) {
     throw new SyncExecutionError('ARTIFACT_CONTENT_REQUIRED', `Reviewed artifact content is required for ${plan.stableId}`);
@@ -170,6 +175,19 @@ class SyncExecutor {
       throw new SyncExecutionError(
         'APPROVED_PLAN_REQUIRED',
         'An approved immutable plan is required before SDK document execution',
+      );
+    }
+    const repair = plan.apiPatchPlan?.approval;
+    const preservedBlockIds = repair?.preservedBlockIds || [];
+    if (repair?.required === true && (
+      approval.repairApproved !== true
+      || approval.documentToken !== repair.documentToken
+      || (preservedBlockIds.length > 0 && !sameStringSet(approval.preserveBlockIds, preservedBlockIds))
+    )) {
+      throw new SyncExecutionError(
+        'REPAIR_APPROVAL_REQUIRED',
+        `Repair-specific approval is required for full-body rebuild of ${repair.documentToken}`,
+        { documentToken: repair.documentToken, preservedBlockIds },
       );
     }
   }
@@ -411,9 +429,27 @@ class SyncExecutor {
   }
 
   async _captureRollbackBeforeMutation(plan, result) {
-    if (typeof this.verifier?.beforeMutation !== 'function' || !plan.source?.documentToken) return;
+    const repairRequiresHistory = plan.apiPatchPlan?.approval?.required === true;
+    if (typeof this.verifier?.beforeMutation !== 'function' || !plan.source?.documentToken) {
+      if (repairRequiresHistory) {
+        const error = new SyncExecutionError(
+          'REPAIR_HISTORY_REQUIRED',
+          `Rollback history is required before full-body rebuild of ${plan.source?.documentToken || plan.stableId}`,
+        );
+        error.step = 'captureRollback';
+        throw error;
+      }
+      return;
+    }
     try {
       result.rollback = await this.verifier.beforeMutation(plan);
+      if (repairRequiresHistory && !nonEmptyString(result.rollback?.historyVersionId)) {
+        throw new SyncExecutionError(
+          'REPAIR_HISTORY_REQUIRED',
+          `A usable history version is required before full-body rebuild of ${plan.source.documentToken}`,
+          { documentToken: plan.source.documentToken },
+        );
+      }
       result.completedSteps.push('captureRollback');
     } catch (error) {
       error.step = 'captureRollback';

@@ -22,7 +22,13 @@ function blocksFromPayload(payload) {
 }
 
 function historyVersionId(payload) {
-  const items = payload.items || payload.histories || payload.data?.items || payload.data?.histories || [];
+  const items = payload.items
+    || payload.histories
+    || payload.entries
+    || payload.data?.items
+    || payload.data?.histories
+    || payload.data?.entries
+    || [];
   const first = Array.isArray(items) ? items[0] : null;
   return first?.history_version_id
     || first?.version_id

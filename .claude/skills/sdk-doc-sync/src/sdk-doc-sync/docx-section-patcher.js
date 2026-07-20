@@ -94,29 +94,18 @@ function planApiReferencePatch({
 
   const preservedBlockIds = currentModel.preserved.map((item) => item.blockId);
   if (currentModel.requiresReviewedRebuild) {
-    const approved = repairApproval?.approved === true
-      && (!documentToken || repairApproval.documentToken === documentToken);
-    if (!approved) {
-      return blockedPlan(profile, currentModel, desiredModel, [{
-        code: 'REVIEWED_REBUILD_REQUIRED',
-        documentToken,
-        errors: currentModel.errors,
-      }]);
-    }
-    const approvedPreserved = new Set(repairApproval.preserveBlockIds || []);
-    const unhandled = preservedBlockIds.filter((id) => !approvedPreserved.has(id));
-    if (unhandled.length > 0) {
-      return blockedPlan(profile, currentModel, desiredModel, [{
-        code: 'PRESERVED_BLOCK_REVIEW_REQUIRED',
-        blockIds: unhandled,
-      }]);
-    }
     const desiredById = blocksById(desiredBlocks);
     const desiredTopLevel = desiredModel.topLevelBlockIds.map((id) => desiredById.get(id)).filter(Boolean);
     return deepFreeze({
       schemaVersion: 1,
       profile: { id: profile.id, version: profile.version },
       strategy: 'reviewed-full-body-rebuild',
+      approval: {
+        required: true,
+        kind: 'REPAIR_WRITE_APPROVAL',
+        documentToken,
+        preservedBlockIds,
+      },
       currentModel,
       desiredRoleSequence: desiredModel.sections.map((section) => section.role),
       preservedBlockIds,

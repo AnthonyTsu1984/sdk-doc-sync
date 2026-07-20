@@ -320,6 +320,126 @@ test('SyncExecutor routes SDK API updates through the reviewed semantic patch pl
   assert.deepEqual(calls[0][1].patchPlan, updatePlan.apiPatchPlan);
 });
 
+test('SyncExecutor requires repair-specific approval for a reviewed full-body rebuild', async () => {
+  const calls = [];
+  const documentWriter = {
+    async applyApiPatch(input) {
+      calls.push(['applyApiPatch', input]);
+      return { token: input.documentToken };
+    },
+  };
+  const bitableWriter = {
+    async updateRecord(recordId, fields) {
+      calls.push(['updateRecord', recordId, fields]);
+      return { recordId, fields };
+    },
+  };
+  const verifier = {
+    async beforeMutation() {
+      calls.push(['beforeMutation']);
+      return { documentToken: 'doc-v26', historyVersionId: 'history-1' };
+    },
+    async verify() {
+      return { ok: true, errors: [] };
+    },
+  };
+  const apiPatchPlan = {
+    schemaVersion: 1,
+    profile: { id: 'node', version: 1 },
+    strategy: 'reviewed-full-body-rebuild',
+    approval: {
+      required: true,
+      kind: 'REPAIR_WRITE_APPROVAL',
+      documentToken: 'doc-v26',
+      preservedBlockIds: ['callout-1'],
+    },
+    operations: [{ type: 'rebuild-body', deleteBlockIds: [], blocks: [] }],
+    validation: { valid: true, errors: [] },
+  };
+  const updatePlan = plan('UPDATE', planningContext({ artifact: sdkArtifact(), apiPatchPlan }));
+  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+
+  await assert.rejects(
+    () => executor.execute(updatePlan, {
+      artifact: sdkArtifact(),
+      approval: { approved: true },
+    }),
+    (error) => error.code === 'REPAIR_APPROVAL_REQUIRED',
+  );
+  assert.deepEqual(calls, []);
+
+  await assert.rejects(
+    () => executor.execute(updatePlan, {
+      artifact: sdkArtifact(),
+      approval: { approved: true, repairApproved: true, documentToken: 'doc-v26' },
+    }),
+    (error) => error.code === 'REPAIR_APPROVAL_REQUIRED',
+  );
+  assert.deepEqual(calls, []);
+
+  const result = await executor.execute(updatePlan, {
+    artifact: sdkArtifact(),
+    approval: {
+      approved: true,
+      repairApproved: true,
+      documentToken: 'doc-v26',
+      preserveBlockIds: ['callout-1'],
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.deepEqual(calls.map((entry) => entry[0]), ['beforeMutation', 'applyApiPatch', 'updateRecord']);
+});
+
+test('SyncExecutor refuses a reviewed full-body rebuild when rollback history is unavailable', async () => {
+  const calls = [];
+  const executor = new SyncExecutor({
+    documentWriter: {
+      async applyApiPatch() {
+        calls.push('applyApiPatch');
+        return { token: 'doc-v26' };
+      },
+    },
+    bitableWriter: {
+      async updateRecord() {
+        calls.push('updateRecord');
+        return {};
+      },
+    },
+    verifier: {
+      async beforeMutation() {
+        calls.push('beforeMutation');
+        return { documentToken: 'doc-v26', historyVersionId: null };
+      },
+    },
+  });
+  const updatePlan = plan('UPDATE', planningContext({
+    artifact: sdkArtifact(),
+    apiPatchPlan: {
+      schemaVersion: 1,
+      profile: { id: 'node', version: 1 },
+      strategy: 'reviewed-full-body-rebuild',
+      approval: {
+        required: true,
+        kind: 'REPAIR_WRITE_APPROVAL',
+        documentToken: 'doc-v26',
+        preservedBlockIds: [],
+      },
+      operations: [{ type: 'rebuild-body', deleteBlockIds: [], blocks: [] }],
+      validation: { valid: true, errors: [] },
+    },
+  }));
+
+  const result = await executor.execute(updatePlan, {
+    artifact: sdkArtifact(),
+    approval: { approved: true, repairApproved: true, documentToken: 'doc-v26' },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.failedStep, 'captureRollback');
+  assert.equal(result.error.code, 'REPAIR_HISTORY_REQUIRED');
+  assert.deepEqual(calls, ['beforeMutation']);
+});
+
 test('SyncExecutor rolls back an in-place patch when document verification fails', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
   const verifier = {
@@ -752,6 +872,33 @@ test('BitableWriter rejects document Docs writes that omit the link', () => {
     text: 'createCollection()',
     link: 'https://docs.example/doc',
   });
+});
+
+test('FeishuOperationalVerifier captures rollback history from the live lark-cli data.entries shape', async () => {
+  const verifier = new FeishuOperationalVerifier({
+    ops: {
+      async authStatus() { return { stdout: '{}' }; },
+      async historyList() {
+        return {
+          stdout: JSON.stringify({
+            ok: true,
+            data: {
+              entries: [
+                { history_version_id: '5120', revision_id: 11 },
+              ],
+            },
+          }),
+        };
+      },
+    },
+  });
+
+  const rollback = await verifier.beforeMutation({
+    source: { documentToken: 'doc-v26' },
+  });
+
+  assert.equal(rollback.documentToken, 'doc-v26');
+  assert.equal(rollback.historyVersionId, '5120');
 });
 
 test('FeishuOperationalVerifier rejects malformed semantic layout and missing preserved blocks', async () => {

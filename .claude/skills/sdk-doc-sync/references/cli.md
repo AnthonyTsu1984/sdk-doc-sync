@@ -1,6 +1,7 @@
 # SDK Doc Sync CLI Reference
 
 Run commands from the repository root. Prefer each command's `--help` output over copied flag lists.
+See [Script classifications](../scripts/README.md) before reusing helpers from `scripts/`.
 
 ## Core Sync
 

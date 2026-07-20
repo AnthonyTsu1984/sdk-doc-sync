@@ -212,7 +212,39 @@ test('SyncPlanner rejects UPDATE with unknown current document placement', () =>
   );
 });
 
-test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshared document', () => {
+test('SyncPlanner rejects UPDATE without explicit boolean shared-token evidence', () => {
+  const missing = planningContext();
+  delete missing.tokenReferencedByOlderVersions;
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), missing),
+    (error) => error.code === 'UPDATE_SHARED_TOKEN_EVIDENCE_REQUIRED'
+      && /explicit boolean shared-token evidence/.test(error.message),
+  );
+
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), planningContext({
+      tokenReferencedByOlderVersions: 'false',
+    })),
+    (error) => error.code === 'UPDATE_SHARED_TOKEN_EVIDENCE_REQUIRED',
+  );
+});
+
+test('SyncPlanner rejects contradictory shared-token evidence', () => {
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), planningContext({
+      tokenReferencedByOlderVersions: false,
+      current: {
+        ...planningContext().current,
+        referencedByOlderVersions: true,
+      },
+    })),
+    (error) => error.code === 'UPDATE_SHARED_TOKEN_EVIDENCE_CONFLICT'
+      && error.details.tokenReferencedByOlderVersions === false
+      && error.details.currentReferencedByOlderVersions === true,
+  );
+});
+
+test('SyncPlanner permits UPDATE_IN_PLACE with explicit false shared-token evidence', () => {
   const plan = new SyncPlanner().planAction(updateAction(), planningContext());
 
   assert.equal(plan.action, 'UPDATE_IN_PLACE');
@@ -236,10 +268,24 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
   });
 });
 
+test('SyncPlanner forces the copy path with explicit true shared-token evidence', () => {
+  const plan = new SyncPlanner().planAction(updateAction(), planningContext({
+    tokenReferencedByOlderVersions: true,
+    current: {
+      ...planningContext().current,
+      referencedByOlderVersions: true,
+    },
+  }));
+
+  assert.equal(plan.action, 'COPY_PATCH_AND_REPOINT');
+  assert.deepEqual(condition(plan, 'SHARED_TOKEN'), {
+    type: 'SHARED_TOKEN', referencedByOlderVersions: true,
+  });
+});
+
 test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location with copy source evidence', () => {
   const cases = [
     ['older version', { current: { ...planningContext().current, version: 'v2.5.x' } }],
-    ['shared token', { tokenReferencedByOlderVersions: true }],
     ['wrong folder', { current: { ...planningContext().current, folderToken: 'wrong-folder' } }],
     ['missing current ancestry proof', { current: { ...planningContext().current, ancestryVerified: false } }],
   ];

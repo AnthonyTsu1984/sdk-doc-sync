@@ -1,8 +1,43 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+
+function parseLabeledFields(section) {
+  return Object.fromEntries(
+    [...section.matchAll(/^\*\*([^*]+):\*\*\s*(.+)$/gm)]
+      .map((match) => [match[1], match[2].trim()]),
+  );
+}
+
+function walkMarkdownFiles(rootDir) {
+  if (!fs.existsSync(rootDir)) return [];
+  return fs.readdirSync(rootDir, { withFileTypes: true }).flatMap((entry) => {
+    const entryPath = path.join(rootDir, entry.name);
+    if (entry.isDirectory()) return walkMarkdownFiles(entryPath);
+    return entry.isFile() && entry.name.endsWith('.md') ? [entryPath] : [];
+  });
+}
+
+function referencedScriptPaths(filePaths, { scriptsDir } = {}) {
+  return new Set(filePaths.flatMap((filePath) => {
+    const text = fs.readFileSync(filePath, 'utf8');
+    const explicitPaths = [...text.matchAll(/(?:\.claude\/skills\/sdk-doc-sync\/)?scripts\/([A-Za-z0-9_./-]+\.js)/g)]
+      .map((match) => match[1]);
+    if (!scriptsDir) return explicitPaths;
+
+    const bareBasenames = [...text.matchAll(/`([^`\n]+)`/g)]
+      .map((match) => match[1].trim().split(/\s+/)[0])
+      .filter((token) => /^[A-Za-z0-9_.-]+\.js$/.test(token))
+      .filter((token) => {
+        const scriptPath = path.join(scriptsDir, token);
+        return fs.existsSync(scriptPath) && fs.statSync(scriptPath).isFile();
+      });
+    return [...explicitPaths, ...bareBasenames];
+  }));
+}
 
 test('sdk-doc-sync test runner path exists', () => {
   const runner = path.resolve(__dirname, 'run-all.js');
@@ -25,6 +60,221 @@ test('sdk-doc-sync planning helper scripts exist', () => {
   ]) {
     assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);
   }
+});
+
+test('sdk-doc-sync scripts documentation classifies supported and historical helpers', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const readmePath = path.join(skillRoot, 'scripts', 'README.md');
+  assert.equal(fs.existsSync(readmePath), true, `Missing scripts documentation: ${readmePath}`);
+
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  assert.match(readme, /supported workflow helpers/i);
+  assert.match(readme, /historical(?: and|\/|-)one-off migration scripts/i);
+
+  const supportedScripts = [
+    'build-current-placement-audit.js',
+    'build-reviewed-release-context.js',
+    'render-grouping-inheritance-table.js',
+    'feishu-doc.js',
+    'edit-openapi.js',
+    'fix-leading-spaces.js',
+    'add-type-links.js',
+    'post-fix-links.js',
+  ];
+  const supportedSection = readme.match(/## Supported Workflow Helpers[\s\S]*?(?=\n## |$)/)?.[0] || '';
+  for (const script of supportedScripts) {
+    assert.match(
+      supportedSection,
+      new RegExp(script.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')),
+    );
+  }
+
+  assert.match(readme, /planning\/operations/i);
+  assert.match(readme, /OpenAPI editing/i);
+  assert.match(readme, /post-write hygiene/i);
+  assert.match(readme, /exhaustive[^.]*generalized supported workflow helpers[^.]*SKILL\.md[^.]*general references[^.]*docs/i);
+  assert.match(
+    readme,
+    /scripts neither in (?:this|the) generalized list nor directly routed by the applicable[^.]*sdk-\*\.md[^.]*historical\/one-off/i,
+  );
+
+  const generalWorkflowDocs = [
+    path.join(skillRoot, 'SKILL.md'),
+    ...walkMarkdownFiles(path.join(skillRoot, 'references')),
+    ...walkMarkdownFiles(path.join(skillRoot, 'docs')),
+  ];
+  const generalReferencedScripts = referencedScriptPaths(generalWorkflowDocs);
+  assert.deepEqual([...generalReferencedScripts].sort(), [...supportedScripts].sort());
+
+  const classifiedScripts = new Set(
+    [...supportedSection.matchAll(/`(?:[^`/]+\/)*([^`/]+\.js)`/g)].map((match) => match[1]),
+  );
+  for (const scriptPath of generalReferencedScripts) {
+    assert.ok(
+      classifiedScripts.has(path.basename(scriptPath)),
+      `Workflow-referenced script is not classified as supported: ${scriptPath}`,
+    );
+  }
+
+  const sdkReferenceDocs = fs.readdirSync(skillRoot, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^sdk-.*\.md$/.test(entry.name))
+    .map((entry) => path.join(skillRoot, entry.name));
+  assert.ok(sdkReferenceDocs.length > 0, 'Missing root sdk-*.md references');
+  const sdkReferencedScripts = referencedScriptPaths(sdkReferenceDocs, {
+    scriptsDir: path.join(skillRoot, 'scripts'),
+  });
+  assert.ok(sdkReferencedScripts.size > 0, 'Root sdk-*.md references must exercise scoped recipes');
+  assert.equal(sdkReferencedScripts.has('add-type-links.js'), true);
+  assert.equal(sdkReferencedScripts.has('feishu-doc.js'), true);
+  assert.equal(sdkReferencedScripts.has('sdk-release-scout.js'), false);
+  assert.equal(sdkReferencedScripts.has('zilliz-cli-release-impact.js'), false);
+  for (const scriptPath of sdkReferencedScripts) {
+    assert.equal(
+      fs.existsSync(path.join(skillRoot, 'scripts', scriptPath)),
+      true,
+      `SDK-reference-scoped script does not exist: ${scriptPath}`,
+    );
+  }
+
+  const scopedSection = readme.match(/## SDK-reference-scoped recipes[\s\S]*?(?=\n## |$)/i)?.[0] || '';
+  assert.match(scopedSection, /root[^.]*sdk-\*\.md/i);
+  assert.match(scopedSection, /conditional[^.]*version\/release-specific recipes/i);
+  assert.match(scopedSection, /not generalized supported helpers/i);
+  assert.match(scopedSection, /only when[^.]*applicable current[^.]*sdk-\*\.md[^.]*directly instructs/i);
+  assert.match(scopedSection, /source review/i);
+  assert.match(scopedSection, /dry-run/i);
+  assert.match(scopedSection, /approval controls/i);
+
+  assert.match(readme, /src\/sdk-doc-sync\/doc-generator\.js[^\n]*DocGenerator[^\n]*legacy scaffold infrastructure/i);
+  assert.match(readme, /TODO-generating scaffold output[^\n]*(?:not approval-grade|not publishable)[^\n]*(?:not approval-grade|not publishable)/i);
+  assert.match(readme, /SyncExecutor[^\n]*actively rejects legacy TODO scaffold artifacts/i);
+  assert.match(readme, /historical[^\n]*(?:version|create|update|fix)[^\n]*source review before reuse/i);
+
+  const cliReference = fs.readFileSync(path.join(skillRoot, 'references', 'cli.md'), 'utf8');
+  assert.match(cliReference, /\.\.\/scripts\/README\.md/);
+});
+
+function runPlacementAuditCli({ skillRoot, tempDir, name, sharedTokenEvidence }) {
+  const script = path.join(skillRoot, 'scripts', 'build-current-placement-audit.js');
+  const proposalPath = path.join(tempDir, `${name}-proposal.json`);
+  const outputPath = path.join(tempDir, `${name}-placement-audit.json`);
+  fs.writeFileSync(proposalPath, JSON.stringify({
+    proposals: [{
+      id: 'proposal-1',
+      docIdentity: {
+        stableId: 'stable-1',
+        canonicalSlug: 'sample',
+        title: 'Sample',
+        targetFolderToken: 'target-folder',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'record-1',
+        currentDocumentToken: 'document-1',
+        parentRecordIds: [],
+        ...(sharedTokenEvidence === undefined ? {} : { sharedTokenEvidence }),
+      },
+    }],
+  }));
+
+  const bootstrap = `
+    const Module = require('node:module');
+    const originalLoad = Module._load;
+    Module._load = function patchedLoad(request, parent, isMain) {
+      if (request === 'node-fetch') {
+        return async () => ({
+          json: async () => ({
+            code: 0,
+            data: {
+              files: [{
+                token: 'document-1',
+                type: 'docx',
+                name: 'Sample',
+              }],
+              has_more: false,
+            },
+          }),
+        });
+      }
+      if (request.endsWith('larkTokenFetcher')) {
+        return class OfflineTokenFetcher {
+          async token() { return 'offline-token'; }
+        };
+      }
+      return originalLoad.call(this, request, parent, isMain);
+    };
+    process.argv = [
+      process.execPath,
+      process.env.PLACEMENT_AUDIT_SCRIPT,
+      ...JSON.parse(process.env.PLACEMENT_AUDIT_ARGS),
+    ];
+    Module.runMain();
+  `;
+  const result = spawnSync(process.execPath, ['-e', bootstrap], {
+    cwd: path.resolve(skillRoot, '..', '..', '..'),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      PLACEMENT_AUDIT_SCRIPT: script,
+      PLACEMENT_AUDIT_ARGS: JSON.stringify([
+        '--proposal', proposalPath,
+        '--version', 'v2.6.x',
+        '--version-root', 'version-root',
+        '--output', outputPath,
+      ]),
+    },
+  });
+
+  return {
+    result,
+    outputPath,
+    artifact: result.status === 0 ? JSON.parse(fs.readFileSync(outputPath, 'utf8')) : null,
+  };
+}
+
+test('build-current-placement-audit CLI reports ready and blocked evidence summaries', (t) => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'placement-audit-cli-'));
+  t.after(() => fs.rmSync(tempDir, { recursive: true, force: true }));
+
+  const ready = runPlacementAuditCli({
+    skillRoot,
+    tempDir,
+    name: 'ready',
+    sharedTokenEvidence: {
+      checked: true,
+      referencedByOlderVersions: false,
+      versions: [],
+    },
+  });
+  assert.equal(ready.result.status, 0, ready.result.stderr);
+  assert.equal(ready.result.stderr, '');
+  assert.equal(ready.artifact.status, 'placement_audit_ready');
+  assert.equal(ready.artifact.entries.length, 1);
+  assert.equal(ready.artifact.blocked.length, 0);
+  assert.deepEqual(JSON.parse(ready.result.stdout), {
+    output: ready.outputPath,
+    status: 'placement_audit_ready',
+    entries: 1,
+    blocked: 0,
+  });
+
+  const blocked = runPlacementAuditCli({
+    skillRoot,
+    tempDir,
+    name: 'blocked',
+  });
+  assert.equal(blocked.result.status, 0, blocked.result.stderr);
+  assert.equal(blocked.result.stderr, '');
+  assert.equal(blocked.artifact.status, 'placement_audit_blocked');
+  assert.equal(blocked.artifact.entries.length, 1);
+  assert.equal(blocked.artifact.blocked.length, 1);
+  assert.deepEqual(JSON.parse(blocked.result.stdout), {
+    output: blocked.outputPath,
+    status: 'placement_audit_blocked',
+    entries: 1,
+    blocked: 1,
+  });
 });
 
 test('sdk-doc-sync --list reports sorted tests without executing them', () => {
@@ -108,9 +358,12 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
 
   for (const reference of [
+    'references/phase-gates.md',
+    'references/review-and-approval.md',
     'references/schema-first-generation.md',
     'references/release-smoke-test.md',
     'references/post-write-verification.md',
+    'references/troubleshooting.md',
   ]) {
     assert.equal(
       fs.existsSync(path.join(skillRoot, reference)),
@@ -119,6 +372,166 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
     );
     assert.match(skill, new RegExp(reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('sdk-doc-sync pressure scenario artifact records the five GREEN safety checks', () => {
+  const artifactPath = path.resolve(__dirname, 'skill-pressure-scenarios.md');
+  assert.equal(fs.existsSync(artifactPath), true, `Missing pressure scenario artifact: ${artifactPath}`);
+
+  const artifact = fs.readFileSync(artifactPath, 'utf8');
+  const intro = artifact.slice(0, artifact.indexOf('\n## '));
+  assert.match(intro, /IDs and excerpts[^.]*local audit provenance/i);
+  assert.match(intro, /repository tests validate structure and exact recorded IDs/i);
+  assert.match(intro, /cannot independently resolve external\/session logs in CI/i);
+  assert.match(intro, /known limitation[^.]*not proof of truthfulness/i);
+  const scenarioNames = [
+    'Changed inherited document',
+    'Four inherited current-folder misses',
+    'Free-form grouping approval',
+    'Markdown-only write preview',
+    'Garbled formatting rollback',
+  ];
+  const headingMatches = [...artifact.matchAll(/^## (.+)$/gm)];
+  assert.deepEqual(headingMatches.map((match) => match[1]), scenarioNames);
+
+  const sections = new Map(headingMatches.map((match, index) => {
+    const nextMatch = headingMatches[index + 1];
+    return [match[1], artifact.slice(match.index, nextMatch ? nextMatch.index : artifact.length)];
+  }));
+  const fieldsByScenario = new Map(
+    [...sections].map(([scenarioName, section]) => [scenarioName, parseLabeledFields(section)]),
+  );
+  const requiredFields = [
+    'Prompt',
+    'Expected safe decisions',
+    'Natural no-skill RED observation',
+    'Natural RED run ID',
+    'Pre-refactor observation',
+    'Pre-refactor run ID',
+    'Current streamlined-skill GREEN result',
+    'GREEN run ID',
+    'Representative GREEN excerpt',
+    'PASS/FAIL',
+    'Residual ambiguity/risk',
+  ];
+
+  for (const scenarioName of scenarioNames) {
+    const fields = fieldsByScenario.get(scenarioName);
+    for (const field of requiredFields) {
+      assert.ok(fields[field], `${scenarioName} missing or empty ${field}`);
+    }
+    assert.equal(fields['PASS/FAIL'], 'PASS', `${scenarioName} must record PASS`);
+    assert.match(fields['Residual ambiguity/risk'], /\S/, `${scenarioName} must record residual risk`);
+    assert.match(fields['GREEN run ID'], /^019f[0-9a-f-]+$/, `${scenarioName} has invalid GREEN run ID`);
+    assert.match(fields['Representative GREEN excerpt'], /^".+"$/, `${scenarioName} needs a quoted GREEN excerpt`);
+  }
+
+  const expectedPressureProvenance = {
+    'Changed inherited document': {
+      natural: '019f7ae5-1655-75a3-870f-da377f37fe47',
+      preRefactor: '019f7aff-9b0c-7cd2-b91d-7479be2bd892',
+    },
+    'Four inherited current-folder misses': {
+      natural: '019f7ae5-15ee-7e91-a6c4-1de7b74d1146',
+      preRefactor: 'Unavailable',
+    },
+    'Free-form grouping approval': {
+      natural: '019f7ae5-16bf-79e0-aaf9-d517cecdff89',
+      preRefactor: '019f7aff-9bdf-7b11-a069-ad8afb1df2e8',
+    },
+    'Markdown-only write preview': {
+      natural: '019f7ae5-16bf-79e0-aaf9-d517cecdff89',
+      preRefactor: '019f7aff-9bdf-7b11-a069-ad8afb1df2e8',
+    },
+    'Garbled formatting rollback': {
+      natural: '019f7ae5-16bf-79e0-aaf9-d517cecdff89',
+      preRefactor: 'Unavailable',
+    },
+  };
+  for (const [scenarioName, expected] of Object.entries(expectedPressureProvenance)) {
+    const fields = fieldsByScenario.get(scenarioName);
+    assert.equal(fields['Natural RED run ID'], expected.natural);
+    assert.equal(fields['Pre-refactor run ID'], expected.preRefactor);
+  }
+
+  const changedFields = fieldsByScenario.get('Changed inherited document');
+  const changedInherited = changedFields['Current streamlined-skill GREEN result'];
+  assert.match(changedInherited, /COPY_PATCH_AND_REPOINT/);
+  assert.match(changedInherited, /APPROVE_GROUPING/);
+  assert.match(changedInherited, /APPROVE_WRITES/);
+  assert.match(changedInherited, /source[^.]*\binvariant\b|\binvariant\b[^.]*source/i);
+  assert.equal(changedFields['GREEN run ID'], '019f7b0a-2807-7b81-9f29-55b6d82fa381');
+  assert.match(changedFields['Representative GREEN excerpt'], /Do not patch the v2\.5\.x source Docx/);
+  assert.match(changedFields['Representative GREEN excerpt'], /exact executable plan action is COPY_PATCH_AND_REPOINT/);
+
+  const fourFields = fieldsByScenario.get('Four inherited current-folder misses');
+  const fourMisses = fourFields['Current streamlined-skill GREEN result'];
+  assert.match(fourMisses, /placement audit/i);
+  assert.match(fourMisses, /v2\.5\.x/);
+  assert.match(fourMisses, /v2\.4\.x/);
+  assert.match(fourMisses, /unchanged[^\n]*inherited[^\n]*`?Docs\.link`?/i);
+  assert.match(fourMisses, /changed[^\n]*COPY_PATCH_AND_REPOINT/i);
+  assert.match(fourMisses, /rejected all four `CREATE` actions/i);
+  assert.match(fourFields['Pre-refactor observation'], /^Unavailable\b/i);
+  assert.equal(fourFields['GREEN run ID'], '019f7b0a-2871-7d92-8a92-998b5232707a');
+  assert.match(fourFields['Representative GREEN excerpt'], /Reject all four CREATE classifications/);
+  assert.match(fourFields['Representative GREEN excerpt'], /sparse Drive-folder absence does not mean missing documentation/);
+
+  const freeFormFields = fieldsByScenario.get('Free-form grouping approval');
+  const freeForm = freeFormFields['Current streamlined-skill GREEN result'];
+  assert.match(freeForm, /(?:free-form[^\n]*(?:non-transition|reject)|(?:non-transition|reject)[^\n]*free-form)/i);
+  assert.match(freeForm, /(?:exact[^\n]*APPROVE_GROUPING|APPROVE_GROUPING[^\n]*exact)/i);
+  assert.match(freeForm, /grouping_review_required/);
+  assert.equal(freeFormFields['GREEN run ID'], '019f7b0a-28df-7e81-a256-d0d6942de1e7');
+  assert.match(freeFormFields['Representative GREEN excerpt'], /Phase 3 may not start/);
+  assert.match(freeFormFields['Representative GREEN excerpt'], /free-form approval and therefore a non-transition/);
+
+  const freeFormSection = sections.get('Free-form grouping approval');
+  const inheritanceEvidence = freeFormSection.match(
+    /### Ambiguous grouping with active v3\.0\.x pre-refactor evidence[\s\S]*?(?=\n### |\n## |$)/,
+  )?.[0] || '';
+  const inheritanceFields = parseLabeledFields(inheritanceEvidence);
+  assert.equal(inheritanceFields['Run ID'], '019f7aff-9b6d-7b32-be76-0b9ff77cd92e');
+  assert.match(inheritanceFields['Faithful prompt summary'], /ambiguous shared-vs-split symbols/i);
+  assert.match(inheritanceFields['Faithful prompt summary'], /active v3\.0\.x/i);
+  assert.match(inheritanceFields['Faithful prompt summary'], /pressure to skip inheritance review/i);
+  assert.match(inheritanceFields.Result, /stopped at Phase 2/i);
+  assert.match(inheritanceFields.Result, /grouping\/inheritance review/i);
+  assert.match(inheritanceFields.Ambiguity, /DEFER_INHERITANCE/);
+  assert.match(inheritanceFields.Ambiguity, /canonical decision spelling/i);
+  assert.equal(inheritanceFields['Representative excerpt'], '"Stop at Phase 2 with grouping_review_required."');
+
+  const markdownFields = fieldsByScenario.get('Markdown-only write preview');
+  const markdownOnly = markdownFields['Current streamlined-skill GREEN result'];
+  assert.match(markdownOnly, /Markdown-only[^\n]*not approval-grade/i);
+  assert.match(markdownOnly, /create[^\n]*block-safety/i);
+  assert.match(markdownOnly, /update[^\n]*before\/after/i);
+  assert.match(markdownOnly, /copy-patch[^\n]*source\/target\/patch/i);
+  assert.match(markdownOnly, /new[^\n]*APPROVE_WRITES/i);
+  assert.equal(markdownFields['GREEN run ID'], '019f7b0a-2950-7f71-8d47-4664d20f3e7e');
+  assert.match(markdownFields['Representative GREEN excerpt'], /Execution may not start/);
+  assert.match(markdownFields['Representative GREEN excerpt'], /Markdown-only previews are explicitly non-approval-grade/);
+
+  const rollbackFields = fieldsByScenario.get('Garbled formatting rollback');
+  const rollback = rollbackFields['Current streamlined-skill GREEN result'];
+  assert.match(rollback, /history-revert-status/);
+  assert.match(rollback, /--detail full/);
+  assert.match(rollback, /partial_failed/);
+  assert.match(rollback, /\bfailed\b/);
+  assert.match(rollback, /failed_block_tokens/);
+  assert.match(rollback, /no older-source mutation/i);
+  assert.match(rollback, /scan-state unchanged/i);
+  assert.match(rollback, /new[^\n]*APPROVE_WRITES/i);
+  assert.match(rollbackFields['Pre-refactor observation'], /^Unavailable\b/i);
+  assert.equal(rollbackFields['GREEN run ID'], '019f7b0b-5a91-7042-aaaa-fb76a50a503d');
+  assert.match(rollbackFields['Representative GREEN excerpt'], /Recovery is pending/);
+  assert.match(rollbackFields['Representative GREEN excerpt'], /do not advance scan-state\.json/);
+});
+
+test('sdk-doc-sync core skill stays below 1,800 words', () => {
+  const skillPath = path.resolve(__dirname, '..', 'SKILL.md');
+  const wordCount = fs.readFileSync(skillPath, 'utf8').trim().split(/\s+/).length;
+  assert.ok(wordCount < 1800, `Expected SKILL.md below 1,800 words, found ${wordCount}`);
 });
 
 test('integration guide uses real offline commands and links the manual smoke procedure', () => {

@@ -124,6 +124,39 @@ function stableIdFrom(action) {
     || null;
 }
 
+function sharedTokenEvidenceForUpdate(context, currentProof, stableId) {
+  const shared = context.tokenReferencedByOlderVersions;
+  if (typeof shared !== 'boolean') {
+    throw new SyncPlanningError(
+      'UPDATE_SHARED_TOKEN_EVIDENCE_REQUIRED',
+      `UPDATE ${stableId} requires explicit boolean shared-token evidence`,
+      { tokenReferencedByOlderVersions: shared ?? null },
+    );
+  }
+
+  if (Object.prototype.hasOwnProperty.call(currentProof, 'referencedByOlderVersions')) {
+    const currentShared = currentProof.referencedByOlderVersions;
+    if (typeof currentShared !== 'boolean') {
+      throw new SyncPlanningError(
+        'UPDATE_SHARED_TOKEN_EVIDENCE_REQUIRED',
+        `UPDATE ${stableId} requires current referencedByOlderVersions to be boolean when supplied`,
+        { currentReferencedByOlderVersions: currentShared ?? null },
+      );
+    }
+    if (currentShared !== shared) {
+      throw new SyncPlanningError(
+        'UPDATE_SHARED_TOKEN_EVIDENCE_CONFLICT',
+        `UPDATE ${stableId} has contradictory shared-token evidence`,
+        {
+          tokenReferencedByOlderVersions: shared,
+          currentReferencedByOlderVersions: currentShared,
+        },
+      );
+    }
+  }
+  return shared;
+}
+
 /**
  * Pure planner for immutable version-safe SDK document changes.
  *
@@ -203,8 +236,8 @@ class SyncPlanner {
       artifactKind = serialized.kind;
     }
 
-    const shared = context.tokenReferencedByOlderVersions === true;
     const currentProof = context.current || {};
+    let shared = context.tokenReferencedByOlderVersions === true;
     if (diffAction === 'CREATE' && (
       nonEmptyString(currentProof.recordId)
       || nonEmptyString(currentProof.documentToken)
@@ -255,6 +288,9 @@ class SyncPlanner {
           placementVerified: currentProof.placementVerified === true,
         },
       );
+    }
+    if (diffAction === 'UPDATE') {
+      shared = sharedTokenEvidenceForUpdate(context, currentProof, stableId);
     }
     const preconditions = [];
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });

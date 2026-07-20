@@ -39,6 +39,119 @@ function tokenFromLink(link) {
   return String(link || '').match(/\/docx\/([^/?#]+)/)?.[1] || '';
 }
 
+function isNonemptyConfigurationString(value) {
+  return typeof value === 'string' && value.trim().length > 0 && value === value.trim();
+}
+
+function validateVersionRoots({ version, versionRootToken, sourceVersionRoots }) {
+  if (!isNonemptyConfigurationString(version)) {
+    throw new Error('Invalid target version: expected a nonempty string');
+  }
+  if (!isNonemptyConfigurationString(versionRootToken)) {
+    throw new Error('Invalid target versionRootToken: expected a nonempty string');
+  }
+  if (!Array.isArray(sourceVersionRoots)) {
+    throw new Error('Invalid sourceVersionRoots: expected an array');
+  }
+
+  const versions = new Set();
+  const rootTokens = new Set();
+  for (let index = 0; index < sourceVersionRoots.length; index += 1) {
+    const root = sourceVersionRoots[index];
+    if (!root || typeof root !== 'object' || Array.isArray(root)) {
+      throw new Error(`Invalid sourceVersionRoots[${index}]: expected an object`);
+    }
+    if (!isNonemptyConfigurationString(root.version)) {
+      throw new Error(`Invalid sourceVersionRoots[${index}].version: expected a nonempty string`);
+    }
+    if (!isNonemptyConfigurationString(root.rootToken)) {
+      throw new Error(`Invalid sourceVersionRoots[${index}].rootToken: expected a nonempty string`);
+    }
+    if (root.version === version) {
+      throw new Error(`Invalid sourceVersionRoots[${index}]: source version "${root.version}" must differ from target version`);
+    }
+    if (root.rootToken === versionRootToken) {
+      throw new Error(`Invalid sourceVersionRoots[${index}]: source rootToken "${root.rootToken}" must differ from target versionRootToken`);
+    }
+    if (versions.has(root.version)) {
+      throw new Error(`Invalid sourceVersionRoots: duplicate version label "${root.version}"`);
+    }
+    if (rootTokens.has(root.rootToken)) {
+      throw new Error(`Invalid sourceVersionRoots: duplicate rootToken "${root.rootToken}"`);
+    }
+    versions.add(root.version);
+    rootTokens.add(root.rootToken);
+  }
+  return true;
+}
+
+function normalizeSharedTokenEvidence(evidence, { targetVersion, sourceVersionRoots }) {
+  const source = 'proposal.existingBitable.sharedTokenEvidence';
+  if (evidence == null) {
+    return {
+      source,
+      status: 'missing',
+      checked: null,
+      referencedByOlderVersions: null,
+      versions: [],
+    };
+  }
+
+  const versionsAreArray = Array.isArray(evidence.versions);
+  const versions = versionsAreArray ? [...evidence.versions] : [];
+  const reviewedVersions = sourceVersionRoots.map((root) => root.version);
+  const reviewedVersionSet = new Set(reviewedVersions);
+  const versionsAreStrings = versions.every(
+    (version) => typeof version === 'string' && version.trim().length > 0,
+  );
+  const versionsAreUnique = new Set(versions).size === versions.length;
+  const versionsMatchReviewedRoots = versions.length === reviewedVersionSet.size
+    && versions.every((version) => reviewedVersionSet.has(version));
+  const emptySetEvidence = reviewedVersionSet.size === 0
+    && evidence.referencedByOlderVersions === false
+    && versions.length === 0;
+  const reviewedOlderVersionEvidence = reviewedVersionSet.size > 0 && versions.length > 0;
+  const valid = evidence.checked === true
+    && typeof evidence.referencedByOlderVersions === 'boolean'
+    && versionsAreArray
+    && versionsAreStrings
+    && versionsAreUnique
+    && !versions.includes(targetVersion)
+    && versionsMatchReviewedRoots
+    && (emptySetEvidence || reviewedOlderVersionEvidence);
+  return {
+    source,
+    status: valid ? 'verified' : 'malformed',
+    checked: evidence.checked ?? null,
+    referencedByOlderVersions: typeof evidence.referencedByOlderVersions === 'boolean'
+      ? evidence.referencedByOlderVersions
+      : null,
+    versions,
+  };
+}
+
+function blockedReasonsFor({ placementVerified, sharedTokenEvidence }) {
+  const reasons = [];
+  if (!placementVerified) {
+    reasons.push({
+      code: 'DRIVE_PLACEMENT_UNVERIFIED',
+      message: 'The current Docs token was not found in the reviewed Drive version roots.',
+    });
+  }
+  if (sharedTokenEvidence.status === 'missing') {
+    reasons.push({
+      code: 'SHARED_TOKEN_EVIDENCE_MISSING',
+      message: 'Explicit cross-version Bitable shared-token evidence is required.',
+    });
+  } else if (sharedTokenEvidence.status === 'malformed') {
+    reasons.push({
+      code: 'SHARED_TOKEN_EVIDENCE_MALFORMED',
+      message: 'Shared-token evidence requires checked=true, a boolean referencedByOlderVersions, and each reviewed older source version exactly once.',
+    });
+  }
+  return reasons;
+}
+
 function proposalEntries(proposal) {
   return (proposal.proposals || [])
     .filter((item) => item.existingBitable?.status === 'matched')
@@ -51,6 +164,7 @@ function proposalEntries(proposal) {
       documentToken: item.existingBitable.currentDocumentToken || tokenFromLink(item.existingBitable.currentDocsLink),
       targetFolderToken: item.docIdentity.targetFolderToken,
       parentRecordId: item.existingBitable.parentRecordIds?.[0] || null,
+      sharedTokenEvidence: item.existingBitable.sharedTokenEvidence ?? null,
     }));
 }
 
@@ -111,6 +225,7 @@ async function buildPlacementAudit({
   sourceVersionRoots = [],
   indexer,
 }) {
+  validateVersionRoots({ version, versionRootToken, sourceVersionRoots });
   const roots = [
     { version, rootToken: versionRootToken, target: true },
     ...sourceVersionRoots.map((item) => ({ ...item, target: false })),
@@ -127,28 +242,42 @@ async function buildPlacementAudit({
     const match = indexes.find((item) => item.index.has(entry.documentToken));
     const placement = match?.index.get(entry.documentToken);
     const verified = Boolean(match && placement);
+    const sharedTokenEvidence = normalizeSharedTokenEvidence(entry.sharedTokenEvidence, {
+      targetVersion: version,
+      sourceVersionRoots,
+    });
+    const blockedReasons = blockedReasonsFor({
+      placementVerified: verified,
+      sharedTokenEvidence,
+    });
     return {
       ...entry,
+      sharedTokenEvidence,
+      blockedReasons,
       placement: {
         verified,
         status: verified ? (match.target ? 'current_version_local' : 'inherited_source') : 'unverified',
         version: verified ? match.version : null,
         folderToken: placement?.parentFolderToken || null,
         versionRootToken: match?.rootToken || null,
-        referencedByOlderVersions: verified ? !match.target : null,
+        referencedByOlderVersions: sharedTokenEvidence.status === 'verified'
+          ? sharedTokenEvidence.referencedByOlderVersions
+          : null,
         ancestry: placement?.ancestors || [],
       },
     };
   });
   return {
     schemaVersion: 1,
-    status: entries.every((entry) => entry.placement.verified) ? 'placement_audit_ready' : 'placement_audit_blocked',
+    status: entries.every((entry) => entry.blockedReasons.length === 0)
+      ? 'placement_audit_ready'
+      : 'placement_audit_blocked',
     generatedAt: new Date().toISOString(),
     version,
     versionRootToken,
     sourceVersionRoots,
     entries,
-    blocked: entries.filter((entry) => !entry.placement.verified),
+    blocked: entries.filter((entry) => entry.blockedReasons.length > 0),
     writesPerformed: false,
   };
 }
@@ -171,7 +300,7 @@ async function main(argv = process.argv) {
   console.log(JSON.stringify({
     output: args.output,
     status: artifact.status,
-    entries: entries.length,
+    entries: artifact.entries.length,
     blocked: artifact.blocked.length,
   }, null, 2));
 }
@@ -189,5 +318,7 @@ module.exports = {
   parseArgs,
   parseSourceVersionRoot,
   proposalEntries,
+  normalizeSharedTokenEvidence,
   tokenFromLink,
+  validateVersionRoots,
 };

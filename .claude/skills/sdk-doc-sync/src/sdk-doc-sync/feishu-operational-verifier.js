@@ -107,7 +107,8 @@ class FeishuOperationalVerifier extends SyncVerifier {
           const expectedFence = profile.fences[signature.role];
           if (!expectedFence) continue;
           const actualFence = byId.get(signature.blockId)?.code?.style?.language;
-          if (languageId(actualFence) !== languageId(expectedFence)) {
+          const actualFenceId = Number.isInteger(actualFence) ? actualFence : languageId(actualFence);
+          if (actualFenceId !== languageId(expectedFence)) {
             semanticErrors.push({
               code: 'CODE_FENCE_POLICY_INVALID',
               blockId: signature.blockId,

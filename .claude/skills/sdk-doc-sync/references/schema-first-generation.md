@@ -38,6 +38,8 @@ Blocked-generation reports must name the blocker counts and the recovery path: b
 
 Render the validated SDK Reference IR into Document IR with the language renderer, then validate the Document IR with lossless policy. Render Markdown from Document IR only after both validations pass.
 
+For SDK API references, the language renderer also supplies a versioned layout profile. Run semantic layout validation after lossless Document IR validation and before Markdown rendering. Semantic validation blocks body H1 titles, forbidden or duplicate signatures, invalid section order/cardinality, missing section content, unknown roles, and role-specific code-fence mismatches.
+
 The rendered artifact must be deterministic. Re-rendering the same Reference IR with the same context should produce the same Document IR and Markdown.
 
 ### 5. Plan
@@ -57,6 +59,8 @@ Each plan artifact has these fields:
 - `preconditions`: artifact digest, current record state, current document token, target ancestry proof, and shared-token status.
 - `postconditions`: expected target document location, bitable link, parent, version metadata, deprecation metadata, no-mutation state, or older-source preservation.
 - `metadata`: diff action, reason, artifact kind, and non-destructive flags for orphan/no-op handling.
+- `layout`: SDK language profile ID and version for SDK API-reference writes.
+- `apiPatchPlan`: for SDK UPDATE actions, the validated current section model, desired role sequence, preserved block IDs, exact operations, and selected semantic strategy.
 
 Plan action selection:
 
@@ -89,6 +93,8 @@ Execution must use the narrowest document strategy:
 - Orphan/no-op: leave Feishu untouched.
 
 Do not update a Bitable `Docs` field until the document has passed rendered-block validation.
+
+SDK API-reference UPDATE execution applies only the immutable `apiPatchPlan`. Do not route SDK artifacts through generic `strategy: smart`. A reviewed full-body rebuild is executable only when the plan records matching repair approval, history evidence, and a complete preserved-block review.
 
 If a step fails, stop the current plan and report `failedStep`, completed steps, and suggested recovery. Do not continue with dependent actions until the recovery is understood.
 

@@ -1602,6 +1602,78 @@ class MarkdownToFeishu {
         return await this.create_blocks({ document_id, blocks });
     }
 
+    __sanitize_api_patch_block(block) {
+        if (Array.isArray(block)) return block.map(item => this.__sanitize_api_patch_block(item));
+        if (!block || typeof block !== 'object') return block;
+        return Object.fromEntries(Object.entries(block)
+            .filter(([key]) => !['block_id', 'parent_id'].includes(key))
+            .map(([key, value]) => [key, this.__sanitize_api_patch_block(value)]));
+    }
+
+    async apply_api_patch({ document_id, patchPlan }) {
+        if (!patchPlan || patchPlan.validation?.valid !== true) {
+            const error = new Error('A validated API patch plan is required');
+            error.code = 'INVALID_API_PATCH_PLAN';
+            throw error;
+        }
+        if (patchPlan.strategy === 'planning-blocked') {
+            const error = new Error('A blocked API patch plan cannot be executed');
+            error.code = 'INVALID_API_PATCH_PLAN';
+            throw error;
+        }
+        const existingBlocks = await this.get_document_blocks(document_id);
+        const pageBlock = existingBlocks.find(block => block.block_type === 1);
+        const actualChildren = pageBlock?.children || [];
+        const expectedChildren = patchPlan.currentModel?.topLevelBlockIds || [];
+        if (!pageBlock || JSON.stringify(actualChildren) !== JSON.stringify(expectedChildren)) {
+            const error = new Error('Live API document blocks changed after patch approval');
+            error.code = 'API_PATCH_PRECONDITION_FAILED';
+            error.details = { expectedChildren, actualChildren };
+            throw error;
+        }
+
+        const result = {
+            updated: 0,
+            created: 0,
+            deleted: 0,
+            unchanged: actualChildren.length,
+            operations: patchPlan.operations.length,
+        };
+        const operations = [...patchPlan.operations].sort((left, right) => {
+            const leftIndex = left.insertAt ?? Number.POSITIVE_INFINITY;
+            const rightIndex = right.insertAt ?? Number.POSITIVE_INFINITY;
+            return rightIndex - leftIndex;
+        });
+
+        for (const operation of operations) {
+            if (operation.type === 'rebuild-body' && patchPlan.strategy !== 'reviewed-full-body-rebuild') {
+                const error = new Error('Full body rebuild requires reviewed-full-body-rebuild strategy');
+                error.code = 'INVALID_API_PATCH_PLAN';
+                throw error;
+            }
+            const deleteBlockIds = operation.deleteBlockIds || [];
+            if (deleteBlockIds.length > 0) {
+                const deleted = await this.__delete_child_blocks_by_id({
+                    document_id,
+                    parentBlock: pageBlock,
+                    childBlockIds: deleteBlockIds,
+                });
+                result.deleted += deleted;
+                result.unchanged -= deleted;
+            }
+            const blocks = this.__sanitize_api_patch_block(operation.blocks || []);
+            if (blocks.length > 0) {
+                await this.create_blocks({
+                    document_id,
+                    blocks,
+                    startIndex: operation.type === 'rebuild-body' ? 0 : operation.insertAt,
+                });
+                result.created += blocks.length;
+            }
+        }
+        return result;
+    }
+
     async patch_document({ document_id, blocks, strategy = 'smart' }) {
         /**
          * Sophisticated document update using PATCH API for non-destructive updates.

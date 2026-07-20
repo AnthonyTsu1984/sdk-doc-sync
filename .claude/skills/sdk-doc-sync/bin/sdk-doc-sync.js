@@ -434,6 +434,9 @@ async function runCli({
         documentWriter: dependencies.documentWriter || null,
         bitableWriter: dependencies.bitableWriter || null,
         executor: dependencies.executor || null,
+        documentBlockReader: dependencies.documentBlockReader || null,
+        artifactBlockRenderer: dependencies.artifactBlockRenderer || null,
+        apiPatchPlanner: dependencies.apiPatchPlanner,
         printPlans: args.json !== true,
     });
 

@@ -6,6 +6,8 @@ const DocGenerator = require('./doc-generator');
 const { FeishuOperationalVerifier } = require('./feishu-operational-verifier');
 const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
+const { planApiReferencePatch } = require('./docx-section-patcher');
+const sdkLayoutProfiles = require('../renderers/sdk-layout-profiles');
 const PythonScanner = require('./scanners/python-scanner');
 const JavaScanner = require('./scanners/java-scanner');
 const NodeScanner = require('./scanners/node-scanner');
@@ -56,6 +58,9 @@ class SdkDocSync {
         printPlans = true,
         releaseScope = null,
         changedOnly = false,
+        documentBlockReader = null,
+        artifactBlockRenderer = null,
+        apiPatchPlanner = planApiReferencePatch,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -96,6 +101,10 @@ class SdkDocSync {
             baseToken: indexBaseToken,
         });
         this.f2m = this.indexReader;
+        this.documentBlockReader = documentBlockReader
+            || (typeof this.indexReader?.readBlocks === 'function' ? this.indexReader : null);
+        this.artifactBlockRenderer = artifactBlockRenderer;
+        this.apiPatchPlanner = apiPatchPlanner;
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
         this.executor = executor || null;
@@ -386,16 +395,66 @@ class SdkDocSync {
             ...(extraContext.target || {}),
             ...(actionContext.target || {}),
         };
+        const artifact = extraContext.artifact ?? suppliedContext.artifact ?? actionContext.artifact;
+        let apiPatchPlan = actionContext.apiPatchPlan ?? extraContext.apiPatchPlan ?? suppliedContext.apiPatchPlan;
+        if (action.type === 'UPDATE' && artifact?.layout && !apiPatchPlan) {
+            if (!this.documentBlockReader || typeof this.documentBlockReader.readBlocks !== 'function') {
+                const error = new Error(`Live document blocks are required to plan SDK UPDATE ${this._stableIdFor(action)}`);
+                error.code = 'DOCUMENT_BLOCK_READER_REQUIRED';
+                throw error;
+            }
+            const profile = sdkLayoutProfiles[artifact.layout.profileId];
+            if (!profile || profile.version !== artifact.layout.profileVersion) {
+                const error = new Error(`Unknown SDK layout profile ${artifact.layout.profileId}@${artifact.layout.profileVersion}`);
+                error.code = 'INVALID_LAYOUT_PROFILE';
+                throw error;
+            }
+            const currentBlocks = await this.documentBlockReader.readBlocks(current.documentToken);
+            const desiredBlocks = await this._renderArtifactBlocks(artifact);
+            apiPatchPlan = this.apiPatchPlanner({
+                currentBlocks,
+                desiredBlocks,
+                profile,
+                documentToken: current.documentToken,
+                repairApproval: actionContext.repairApproval || extraContext.repairApproval || suppliedContext.repairApproval || null,
+            });
+            if (apiPatchPlan.validation?.valid !== true) {
+                const firstError = apiPatchPlan.validation?.errors?.[0];
+                const error = new Error(`API patch planning failed for ${this._stableIdFor(action)}: ${JSON.stringify(apiPatchPlan.validation?.errors || [])}`);
+                error.code = firstError?.code || 'PATCH_PLANNING_BLOCKED';
+                throw error;
+            }
+        }
         return {
             ...suppliedContext,
             ...extraContext,
             ...actionContext,
-            artifact: extraContext.artifact ?? suppliedContext.artifact ?? actionContext.artifact,
+            artifact,
+            apiPatchPlan,
             current,
             target,
             existingRecordLookup: actionContext.existingRecordLookup ?? extraContext.existingRecordLookup ?? suppliedContext.existingRecordLookup,
             copySource: actionContext.copySource ?? extraContext.copySource ?? suppliedContext.copySource,
         };
+    }
+
+    async _renderArtifactBlocks(artifact) {
+        if (Array.isArray(artifact.blocks)) return artifact.blocks;
+        if (typeof this.artifactBlockRenderer === 'function') {
+            return await this.artifactBlockRenderer(artifact);
+        }
+        const renderer = this.m2f || new MarkdownToFeishu({
+            sourceType: this.sourceType,
+            rootToken: this.rootToken,
+            baseToken: this.baseToken,
+        });
+        if (typeof renderer.parse_markdown !== 'function' || typeof renderer.markdown_to_blocks !== 'function') {
+            const error = new Error('A pure artifact block renderer is required for SDK API patch planning');
+            error.code = 'ARTIFACT_BLOCK_RENDERER_REQUIRED';
+            throw error;
+        }
+        const { tokens } = await renderer.parse_markdown(artifact.content);
+        return await renderer.markdown_to_blocks(tokens);
     }
 
     async _artifactFor(action, index, result) {

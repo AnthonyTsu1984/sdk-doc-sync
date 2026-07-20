@@ -7,6 +7,7 @@ const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SyncExecutor = require('../src/sdk-doc-sync/sync-executor');
 const SyncVerifier = require('../src/sdk-doc-sync/sync-verifier');
 const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+const { FeishuOperationalVerifier } = require('../src/sdk-doc-sync/feishu-operational-verifier');
 
 function artifact(content = '# Reviewed documentation\n') {
   return {
@@ -20,6 +21,14 @@ function artifact(content = '# Reviewed documentation\n') {
       progress: 'Done',
       targets: ['milvus'],
     },
+  };
+}
+
+function sdkArtifact() {
+  return {
+    ...artifact('Creates a collection.\n'),
+    documentIr: { type: 'document', children: [] },
+    layout: { profileId: 'node', profileVersion: 1 },
   };
 }
 
@@ -270,6 +279,45 @@ test('SyncExecutor patches in-place only against the planned target-local token'
   assert.equal(calls[1][2].lastModified, 'v2.6.x');
   assert.equal(calls[1][2].progress, 'WIP');
   assert.deepEqual(calls[1][2].targets, []);
+});
+
+test('SyncExecutor routes SDK API updates through the reviewed semantic patch plan', async () => {
+  const calls = [];
+  const documentWriter = {
+    async applyApiPatch(input) {
+      calls.push(['applyApiPatch', input]);
+      return { token: input.documentToken, patched: true };
+    },
+    async patchDocument(input) {
+      calls.push(['patchDocument', input]);
+      throw new Error('generic patchDocument must not be used');
+    },
+  };
+  const bitableWriter = {
+    async updateRecord(recordId, fields) {
+      calls.push(['updateRecord', recordId, fields]);
+      return { recordId, fields };
+    },
+  };
+  const apiPatchPlan = {
+    schemaVersion: 1,
+    profile: { id: 'node', version: 1 },
+    strategy: 'targeted-semantic-patch',
+    operations: [],
+    validation: { valid: true, errors: [] },
+  };
+  const updatePlan = plan('UPDATE', planningContext({ artifact: sdkArtifact(), apiPatchPlan }));
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(updatePlan, {
+    artifact: sdkArtifact(),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.deepEqual(calls.map((entry) => entry[0]), ['applyApiPatch', 'updateRecord']);
+  assert.equal(calls[0][1].documentToken, 'doc-v26');
+  assert.deepEqual(calls[0][1].patchPlan, updatePlan.apiPatchPlan);
 });
 
 test('SyncExecutor rolls back an in-place patch when document verification fails', async () => {
@@ -704,4 +752,34 @@ test('BitableWriter rejects document Docs writes that omit the link', () => {
     text: 'createCollection()',
     link: 'https://docs.example/doc',
   });
+});
+
+test('FeishuOperationalVerifier rejects malformed semantic layout and missing preserved blocks', async () => {
+  const blocks = [
+    { block_id: 'page', block_type: 1, children: ['title', 'summary', 'request', 'request-code', 'examples', 'example-code'], page: { elements: [] } },
+    { block_id: 'title', parent_id: 'page', block_type: 3, heading1: { elements: [{ text_run: { content: 'search()', text_element_style: {} } }] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
+    { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
+    { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
+    { block_id: 'example-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search([[0.1]])', text_element_style: {} } }], style: { language: 49 } } },
+  ];
+  const verifier = new FeishuOperationalVerifier({
+    ops: {
+      async authStatus() { return { stdout: '{}' }; },
+      async fetchDocBlocks() { return { stdout: JSON.stringify({ items: blocks }) }; },
+    },
+  });
+  const verification = await verifier.verifyDocument(Object.freeze({
+    layout: { profileId: 'python', profileVersion: 1 },
+    apiPatchPlan: {
+      desiredRoleSequence: ['summary', 'request', 'examples'],
+      preservedBlockIds: ['callout-missing'],
+    },
+    source: { documentToken: 'doc-1' },
+  }));
+
+  assert.equal(verification.ok, false);
+  assert.ok(verification.errors.some((error) => error.code === 'BODY_TITLE_PRESENT'));
+  assert.ok(verification.errors.some((error) => error.code === 'PRESERVED_BLOCK_MISSING'));
 });

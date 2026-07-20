@@ -316,6 +316,69 @@ test('live SdkDocSync wires the default Feishu operational verifier', () => {
   assert.equal(sync.executor.verifier, sync.verifier);
 });
 
+test('SDK UPDATE planning reads live blocks and stores a validated semantic patch plan', async () => {
+  const calls = [];
+  const rawBlocks = (parameter) => {
+    const blocks = [
+      { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+      { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
+      { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
+      { block_id: 'parameters', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:', text_element_style: { bold: true } } }] } },
+      { block_id: 'param', parent_id: 'page', block_type: 12, bullet: { elements: [{ text_run: { content: parameter, text_element_style: {} } }] } },
+    ];
+    return [{ block_id: 'page', block_type: 1, children: blocks.map((block) => block.block_id), page: { elements: [] } }, ...blocks];
+  };
+  const sdkArtifact = {
+    title: 'search()',
+    content: 'Searches vectors.\n',
+    documentIr: { type: 'document', children: [] },
+    layout: { profileId: 'python', profileVersion: 1 },
+    reviewed: true,
+    validated: true,
+    validation: { valid: true },
+  };
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+    indexReader: async () => [],
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    dryRun: true,
+    artifactProvider: async () => ({ artifact: sdkArtifact }),
+    documentBlockReader: {
+      async readBlocks(token) {
+        calls.push(['readBlocks', token]);
+        return rawBlocks('data - Query vectors.');
+      },
+    },
+    artifactBlockRenderer: async () => rawBlocks('data - Updated query vectors.'),
+  });
+  const action = {
+    type: 'UPDATE',
+    stableId: 'python:Vector:search',
+    slug: 'Vector-search',
+    symbol: { name: 'search' },
+    doc: { id: 'rec-search', metadata: { token: 'doc-search' } },
+    planningContext: {
+      current: {
+        version: 'v2.6.x', recordId: 'rec-search', documentToken: 'doc-search',
+        folderToken: 'vector-v26', ancestryVerified: true, placementVerified: true,
+      },
+      target: {
+        version: 'v2.6.x', parentRecordId: 'parent-vector', folderToken: 'vector-v26',
+        versionRootToken: 'root-v26', ancestryVerified: true,
+      },
+      tokenReferencedByOlderVersions: false,
+    },
+  };
+
+  const context = await sync._planningContextFor(action, 0, {});
+  assert.deepEqual(calls, [['readBlocks', 'doc-search']]);
+  assert.equal(context.apiPatchPlan.validation.valid, true);
+  assert.deepEqual(context.apiPatchPlan.operations.map((operation) => operation.role), ['parameters']);
+});
+
 test('schema-first CLI reports missing reviewed artifacts instead of falling back to scaffolds', async () => {
   const context = { ...sdkContext('python'), reviewedEvidence: [] };
   const { result, stdout } = await runDryCli('python', fixture(context.fixture), context);

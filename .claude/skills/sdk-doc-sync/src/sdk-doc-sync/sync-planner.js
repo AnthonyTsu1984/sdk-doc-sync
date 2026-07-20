@@ -208,7 +208,17 @@ class SyncPlanner {
           `A validated artifact is required for ${diffAction} ${stableId}`,
         );
       }
-      artifactDigest = this.digest(Buffer.from(serialized.bytes));
+      if (diffAction === 'UPDATE' && reviewedArtifact.layout
+        && (!context.apiPatchPlan || context.apiPatchPlan.validation?.valid !== true)) {
+        throw new SyncPlanningError(
+          'API_PATCH_PLAN_REQUIRED',
+          `A validated API patch plan is required for UPDATE ${stableId}`,
+        );
+      }
+      const digestBytes = diffAction === 'UPDATE' && reviewedArtifact.layout
+        ? Buffer.from(`${serialized.bytes.toString('utf8')}\n${stableSerialize(context.apiPatchPlan)}`, 'utf8')
+        : Buffer.from(serialized.bytes);
+      artifactDigest = this.digest(digestBytes);
       if (!nonEmptyString(artifactDigest)) {
         throw new SyncPlanningError('INVALID_DIGEST', `Digest function returned an invalid digest for ${stableId}`);
       }
@@ -349,6 +359,9 @@ class SyncPlanner {
       stableId,
       artifactDigest,
       layout: context.artifact?.layout,
+      apiPatchPlan: context.artifact?.layout && diffAction === 'UPDATE'
+        ? context.apiPatchPlan
+        : undefined,
       source,
       existingRecordLookup: plannedAction === 'CREATE' ? existingRecordLookupFrom(context) : undefined,
       copySource: plannedAction === 'COPY_PATCH_AND_REPOINT' ? copySourceFrom(context) : undefined,

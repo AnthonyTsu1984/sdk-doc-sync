@@ -110,6 +110,11 @@ class FeishuToMarkdown extends larkDocWriter {
         return content;
     }
 
+    async readBlocks(documentToken) {
+        const blocks = await this.__fetch_doc_blocks(documentToken);
+        return this.__get_reference_syncd_blocks(blocks);
+    }
+
     async __raw_content(elements) {
         let paragraph = "";
         for (let element of elements) {

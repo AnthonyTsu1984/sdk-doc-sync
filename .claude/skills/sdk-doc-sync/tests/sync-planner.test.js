@@ -477,6 +477,36 @@ test('SDK Document IR digest and immutable plan include the layout profile versi
   assert.equal(first.metadata.artifactKind, 'sdk-document-ir');
 });
 
+test('SDK UPDATE requires and preserves a validated immutable API patch plan', () => {
+  const planner = new SyncPlanner();
+  const sdkArtifact = {
+    content: 'Searches vectors.\n',
+    documentIr: { type: 'document', children: [] },
+    layout: { profileId: 'python', profileVersion: 1 },
+    reviewed: true,
+    validated: true,
+  };
+
+  assert.throws(
+    () => planner.planAction(updateAction(), planningContext({ artifact: sdkArtifact })),
+    (error) => error.code === 'API_PATCH_PLAN_REQUIRED',
+  );
+
+  const apiPatchPlan = {
+    schemaVersion: 1,
+    profile: { id: 'python', version: 1 },
+    strategy: 'targeted-semantic-patch',
+    operations: [],
+    validation: { valid: true, errors: [] },
+  };
+  const plan = planner.planAction(
+    updateAction(),
+    planningContext({ artifact: sdkArtifact, apiPatchPlan }),
+  );
+  assert.deepEqual(plan.apiPatchPlan, apiPatchPlan);
+  assert.equal(Object.isFrozen(plan.apiPatchPlan), true);
+});
+
 test('planAll documents the batch API and returns frozen plans in input order', () => {
   const planner = new SyncPlanner();
   const actions = [

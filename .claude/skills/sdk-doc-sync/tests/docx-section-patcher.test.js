@@ -2,136 +2,120 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const path = require('node:path');
 
+const profiles = require('../src/renderers/sdk-layout-profiles');
 const { planApiReferencePatch } = require('../src/sdk-doc-sync/docx-section-patcher');
 
-const fixtureDir = path.join(__dirname, 'fixtures', 'docx');
-
-function fixture(name) {
-  return JSON.parse(fs.readFileSync(path.join(fixtureDir, name), 'utf8')).items;
+function block(id, content, blockType = 2, style = {}) {
+  const names = { 2: 'text', 3: 'heading1', 4: 'heading2', 12: 'bullet', 14: 'code' };
+  const name = names[blockType];
+  return {
+    block_id: id,
+    parent_id: 'page',
+    block_type: blockType,
+    [name]: {
+      elements: [{ text_run: { content, text_element_style: style } }],
+      ...(blockType === 14 && { style: { language: 49 } }),
+    },
+  };
 }
 
-test('plans minimal updates for signature and parameter additions', () => {
-  const existingBlocks = fixture('python-api-reference-before.json');
-  const expectedBlocks = fixture('python-api-reference-after.json');
-  const patch = planApiReferencePatch(existingBlocks, {
-    signature: 'client.create_user(user_name, password, timeout=None, description=None)',
-    parameters: [{
-      name: 'description',
-      description: 'Optional user description.',
-    }],
+function pythonDoc({ parameter = 'data - Query vectors.', request = 'client.search(data)', rich = false } = {}) {
+  const blocks = [
+    block('summary', 'Searches vectors.'),
+    block('request', 'Request Syntax', 4),
+    block('request-code', request, 14),
+    block('parameters', 'PARAMETERS:', 2, { bold: true }),
+    block('param', parameter, 12),
+    block('returns', 'RETURNS:', 2, { bold: true }),
+    block('returns-value', 'Returns matches.'),
+    block('examples', 'Examples', 4),
+    block('example-code', 'client.search([[0.1]])', 14),
+  ];
+  if (rich) {
+    blocks.splice(5, 0, {
+      block_id: 'callout', parent_id: 'page', block_type: 19,
+      children: [], callout: { emoji_id: 'bulb' },
+    });
+  }
+  return [
+    { block_id: 'page', block_type: 1, children: blocks.map((entry) => entry.block_id), page: { elements: [] } },
+    ...blocks,
+  ];
+}
+
+test('plans one parameter section replacement without moving returns or examples', () => {
+  const patch = planApiReferencePatch({
+    currentBlocks: pythonDoc(),
+    desiredBlocks: pythonDoc({ parameter: 'data - Updated query vectors.' }),
+    profile: profiles.python,
   });
 
-  assert.equal(patch.ok, true);
-  assert.deepEqual(patch.errors, []);
-  assert.deepEqual(patch.operations.map((operation) => operation.type), [
-    'update_text',
-    'insert_after',
-  ]);
-  assert.deepEqual(patch.operations[0], {
-    type: 'update_text',
-    blockId: 'signature',
-    text: 'client.create_user(user_name, password, timeout=None, description=None)',
-  });
-  assert.equal(patch.operations[1].afterBlockId, 'param1');
-  assert.deepEqual(patch.operations[1].block, expectedBlocks[1]);
+  assert.equal(patch.validation.valid, true);
+  assert.equal(patch.strategy, 'targeted-semantic-patch');
+  assert.deepEqual(patch.operations.map((operation) => operation.role), ['parameters']);
+  assert.deepEqual(patch.operations[0].deleteBlockIds, ['parameters', 'param']);
+  assert.ok(patch.operations[0].blocks.some((entry) => entry.block_id === 'param'));
+  assert.equal(patch.operations.some((operation) => operation.role === 'examples'), false);
+  assert.equal(Object.isFrozen(patch), true);
 });
 
-test('does not plan operations for existing signature and parameters', () => {
-  const existingBlocks = fixture('python-api-reference-before.json');
-  const patch = planApiReferencePatch(existingBlocks, {
-    signature: 'client.create_user(user_name, password, timeout=None)',
-    parameters: [{
-      name: 'user_name',
-      description: 'The user name.',
-    }],
+test('replaces request syntax without matching or replacing example code', () => {
+  const patch = planApiReferencePatch({
+    currentBlocks: pythonDoc(),
+    desiredBlocks: pythonDoc({ request: 'client.search(data, filter=filter)' }),
+    profile: profiles.python,
   });
 
-  assert.equal(patch.ok, true);
-  assert.deepEqual(patch.errors, []);
-  assert.deepEqual(patch.operations, []);
+  assert.deepEqual(patch.operations.map((operation) => operation.role), ['request']);
+  assert.deepEqual(patch.operations[0].deleteBlockIds, ['request', 'request-code']);
+  assert.equal(patch.operations[0].blocks.some((entry) => entry.block_id === 'example-code'), false);
 });
 
-test('updates existing parameter text when its description changes', () => {
-  const existingBlocks = fixture('python-api-reference-before.json');
-  const patch = planApiReferencePatch(existingBlocks, {
-    signature: 'client.create_user(user_name, password, timeout=None)',
-    parameters: [{
-      name: 'user_name',
-      description: 'Updated user name description.',
-    }],
+test('preserves rich blocks attached to a replaced section', () => {
+  const patch = planApiReferencePatch({
+    currentBlocks: pythonDoc({ rich: true }),
+    desiredBlocks: pythonDoc({ parameter: 'data - Updated query vectors.' }),
+    profile: profiles.python,
   });
 
-  assert.equal(patch.ok, true);
-  assert.deepEqual(patch.operations, [{
-    type: 'update_text',
-    blockId: 'param1',
-    text: 'user_name - Updated user name description.',
-  }]);
+  assert.deepEqual(patch.preservedBlockIds, ['callout']);
+  assert.deepEqual(patch.operations[0].deleteBlockIds, ['parameters', 'param']);
+  assert.deepEqual(patch.operations[0].preserveBlockIds, ['callout']);
 });
 
-test('does not update example code when request syntax signature is missing', () => {
-  const existingBlocks = fixture('python-api-reference-before.json')
-    .filter((block) => block.block_id !== 'signature');
-  const patch = planApiReferencePatch(existingBlocks, {
-    signature: 'client.create_user(user_name, password)',
-    parameters: [],
-  });
+test('blocks a scrambled page until a matching reviewed rebuild approval is supplied', () => {
+  const current = pythonDoc();
+  current[0].children = ['summary', 'examples', 'example-code', 'request', 'request-code', 'parameters', 'param', 'returns', 'returns-value'];
 
-  assert.equal(patch.ok, false);
-  assert.deepEqual(patch.errors, [{ code: 'SECTION_NOT_FOUND', section: 'signature' }]);
-  assert.deepEqual(patch.operations, []);
+  const blocked = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: pythonDoc(),
+    profile: profiles.python,
+    documentToken: 'doc-1',
+  });
+  assert.equal(blocked.validation.valid, false);
+  assert.equal(blocked.strategy, 'planning-blocked');
+  assert.ok(blocked.validation.errors.some((error) => error.code === 'REVIEWED_REBUILD_REQUIRED'));
+
+  const approved = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: pythonDoc(),
+    profile: profiles.python,
+    documentToken: 'doc-1',
+    repairApproval: { approved: true, documentToken: 'doc-1', preserveBlockIds: [] },
+  });
+  assert.equal(approved.validation.valid, true);
+  assert.equal(approved.strategy, 'reviewed-full-body-rebuild');
+  assert.deepEqual(approved.operations.map((operation) => operation.type), ['rebuild-body']);
 });
 
-test('plans multiple parameter insertions without synthetic block ids', () => {
-  const existingBlocks = fixture('python-api-reference-before.json');
-  const patch = planApiReferencePatch(existingBlocks, {
-    signature: 'client.create_user(user_name, password, timeout=None)',
-    parameters: [{
-      name: '**kwargs',
-      description: 'Extra keyword arguments.',
-    }, {
-      name: 'collection.name',
-      description: 'Collection name override.',
-    }],
+test('blocks planning when the live page structure cannot be modeled', () => {
+  const patch = planApiReferencePatch({
+    currentBlocks: [block('orphan', 'No page')],
+    desiredBlocks: pythonDoc(),
+    profile: profiles.python,
   });
-
-  assert.equal(patch.ok, true);
-  assert.deepEqual(patch.operations.map((operation) => operation.afterBlockId), ['param1', 'param1']);
-  assert.deepEqual(patch.operations.map((operation) => operation.block), [{
-    block_type: 12,
-    bullet: {
-      elements: [{
-        text_run: {
-          content: '**kwargs - Extra keyword arguments.',
-          text_element_style: {},
-        },
-      }],
-    },
-  }, {
-    block_type: 12,
-    bullet: {
-      elements: [{
-        text_run: {
-          content: 'collection.name - Collection name override.',
-          text_element_style: {},
-        },
-      }],
-    },
-  }]);
-});
-
-test('blocks patching when required sections are missing', () => {
-  const existingBlocks = fixture('python-api-reference-before.json')
-    .filter((block) => block.block_id !== 'parameters');
-  const patch = planApiReferencePatch(existingBlocks, {
-    signature: 'client.create_user(user_name, password)',
-    parameters: [],
-  });
-
-  assert.equal(patch.ok, false);
-  assert.deepEqual(patch.errors, [{ code: 'SECTION_NOT_FOUND', section: 'parameters' }]);
-  assert.deepEqual(patch.operations, []);
+  assert.equal(patch.validation.valid, false);
+  assert.ok(patch.validation.errors.some((error) => error.code === 'PATCH_PLANNING_BLOCKED'));
 });

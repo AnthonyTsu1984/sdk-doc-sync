@@ -340,6 +340,23 @@ class SyncExecutor {
 
   async _patchDocument(plan, artifact, documentToken = plan.source.documentToken) {
     assertPublishableArtifact(plan, artifact);
+    if (artifact.layout && plan.apiPatchPlan) {
+      if (typeof this.documentWriter.applyApiPatch === 'function') {
+        return await this.documentWriter.applyApiPatch({
+          documentToken,
+          patchPlan: plan.apiPatchPlan,
+          artifactDigest: plan.artifactDigest,
+        });
+      }
+      if (typeof this.documentWriter.apply_api_patch === 'function') {
+        return await this.documentWriter.apply_api_patch({
+          document_id: documentToken,
+          patchPlan: plan.apiPatchPlan,
+          artifactDigest: plan.artifactDigest,
+        });
+      }
+      throw new TypeError('documentWriter must expose applyApiPatch() for SDK API artifacts');
+    }
     const input = {
       documentToken,
       content: artifact.content,

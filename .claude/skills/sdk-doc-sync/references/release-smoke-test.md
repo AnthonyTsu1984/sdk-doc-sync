@@ -80,7 +80,7 @@ Zilliz-only include body.
 See [Milvus API reference](https://milvus.io/docs) for the published reference surface.
 ````
 
-If the release changes SDK renderer output, replace or extend the body with one rendered schema-first artifact that includes the same C++ code, nested-list, include, and citation coverage.
+If the release changes SDK renderer output, create one representative disposable page for each affected language profile. Each page must omit a body H1 and include that language's canonical/request signature pattern. Across the smoke set, retain the same C++ code, nested-list, include, citation, and rich-block coverage.
 
 ## Procedure
 
@@ -135,7 +135,7 @@ Ask for approval to patch only the disposable smoke document. Include the docume
 
 ### 6. Patch And Refetch
 
-Patch the disposable document with a small change that exercises smart update behavior. For example:
+Patch each disposable SDK document with one small section change that exercises the reviewed semantic API patch plan. Do not use generic smart matching. For example:
 
 - add one C++ statement inside the code block;
 - add one nested-list sibling;

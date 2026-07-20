@@ -5,10 +5,11 @@ Use these checks after document creation, a full rewrite, category movement, or 
 ## Document Checks
 
 1. Refetch the live Docx blocks rather than trusting the local Markdown draft.
-2. Verify exactly one title/H1 and no duplicated old fragments.
+2. Verify the title exists only as Feishu document metadata; the API-reference body contains no H1 and no duplicated old fragments.
 3. Verify request syntax, parameters, builder methods, returns, exceptions, examples, and response types remain in their normal sections.
 4. Confirm code block languages and visible line breaks.
 5. For list-sensitive pages, inspect the block tree. Markdown export may flatten correct parent/child list blocks.
+6. Rebuild the live semantic section model and verify its role sequence, signature cardinality, code fences, and preserved rich block IDs against the approved language profile and patch plan.
 
 Builder signatures, typed return fields, and exception labels must not be joined to their descriptions in one rendered text run.
 

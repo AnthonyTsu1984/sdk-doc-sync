@@ -15,6 +15,7 @@ const CppScanner = require('./scanners/cpp-scanner');
 const GoScanner = require('./scanners/go-scanner');
 const ZillizCliScanner = require('./scanners/zilliz-cli-scanner');
 const OpenApiScanner = require('./scanners/openapi-scanner');
+const { buildTypeUrlIndex } = require('./type-url-index');
 
 /**
  * SdkDocSync — orchestrates the 5-phase pipeline: SCAN → INDEX → DIFF → APPROVE → EXECUTE
@@ -47,6 +48,7 @@ class SdkDocSync {
         include = [],
         exclude = [],
         indexReader = null,
+        typeIndexReader = null,
         planner = null,
         executor = null,
         verifier = null,
@@ -102,6 +104,8 @@ class SdkDocSync {
             rootToken,
             baseToken: indexBaseToken,
         });
+        this.typeIndexReader = typeIndexReader || this.indexReader;
+        this.typeUrls = Object.freeze({});
         this.f2m = this.indexReader;
         this.documentBlockReader = documentBlockReader
             || (typeof this.indexReader?.readBlocks === 'function' ? this.indexReader : null);
@@ -173,7 +177,12 @@ class SdkDocSync {
         // Phase 2: INDEX (read previous version's bitable as baseline)
         const source = this.previousBaseToken ? 'previous version' : 'current';
         this.onProgress('INDEX', `Fetching ${source} KB index...`);
-        result.indexed = this._filterIndexedByReleaseScope(await this._readIndex());
+        const completeIndex = await this._readIndex();
+        const typeIndex = this.typeIndexReader === this.indexReader
+            ? completeIndex
+            : await this._readTypeIndex();
+        this.typeUrls = buildTypeUrlIndex(typeIndex);
+        result.indexed = this._filterIndexedByReleaseScope(completeIndex);
         this.onProgress('INDEX', `Found ${result.indexed.length} existing documents`);
 
         // Phase 3: DIFF
@@ -283,6 +292,17 @@ class SdkDocSync {
             return await this.indexReader.listRecords();
         }
         throw new TypeError('indexReader must be a function or expose list_documents()/listRecords()');
+    }
+
+    async _readTypeIndex() {
+        if (typeof this.typeIndexReader === 'function') return await this.typeIndexReader();
+        if (typeof this.typeIndexReader?.list_documents === 'function') {
+            return await this.typeIndexReader.list_documents();
+        }
+        if (typeof this.typeIndexReader?.listRecords === 'function') {
+            return await this.typeIndexReader.listRecords();
+        }
+        throw new TypeError('typeIndexReader must be a function or expose list_documents()/listRecords()');
     }
 
     _symbolDisplayName(symbol) {
@@ -465,7 +485,7 @@ class SdkDocSync {
     async _artifactFor(action, index, result) {
         if (!this.artifactProvider) return undefined;
         if (typeof this.artifactProvider === 'function') {
-            return await this.artifactProvider(action, { index, result });
+            return await this.artifactProvider(action, { index, result, typeUrls: this.typeUrls });
         }
         const stableId = this._stableIdFor(action);
         if (this.artifactProvider instanceof Map) {

@@ -7,11 +7,13 @@ const fs = require('fs');
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 
 const SdkDocSync = require('../src/sdk-doc-sync');
+const FeishuToMarkdown = require('../src/feishu-to-markdown');
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
 const { validateDocumentIr } = require('../src/document-ir/validate');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
+const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
 
 const adapters = Object.freeze({
     python: require('../src/sdk-reference-ir/adapters/python'),
@@ -288,7 +290,11 @@ function createSchemaFirstArtifactProvider({
                     { validation: referenceValidation },
                 );
             }
-            const documentIr = renderer.render(reference, { typeUrls: context?.typeUrls || {} });
+            const typeUrls = withoutSelfTypeUrls({
+                ...(scope.typeUrls || {}),
+                ...(context?.typeUrls || {}),
+            }, reference.identity.title);
+            const documentIr = renderer.render(reference, { typeUrls });
             const documentValidation = validateDocumentIr(documentIr, { lossless: true });
             if (!documentValidation.valid) {
                 throw validationError(
@@ -459,10 +465,23 @@ async function runCli({
     });
     const planningContextProvider = dependencies.planningContextProvider
         || createDefaultPlanningContextProvider({ rootToken: rootToken || 'dummy', sdkVersion: args.sdkVersion });
+    const typeIndexReader = dependencies.typeIndexReader || (
+        !dependencies.indexReader
+        && args.previousBaseToken
+        && baseToken
+        && args.previousBaseToken !== baseToken
+            ? new FeishuToMarkdown({
+                sourceType: args.sourceType || 'drive',
+                rootToken: rootToken || 'dummy',
+                baseToken,
+            })
+            : null
+    );
 
     const sync = new SdkDocSync({
         scanner: dependencies.scanner || null,
         indexReader: dependencies.indexReader || null,
+        typeIndexReader,
         sdkDir: args.sdkDir,
         language,
         sdkName: args.sdkName,

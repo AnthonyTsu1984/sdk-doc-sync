@@ -65,6 +65,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/sdk-doc-sync/tests/sdk-renderers.test.js',
     '.claude/skills/sdk-doc-sync/tests/sync-executor.test.js',
     '.claude/skills/sdk-doc-sync/tests/sync-planner.test.js',
+    '.claude/skills/sdk-doc-sync/tests/type-url-index.test.js',
     '.claude/skills/sdk-doc-sync/tests/zilliz-cli-release-impact.test.js',
   ]);
 });

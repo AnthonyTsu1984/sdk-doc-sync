@@ -333,6 +333,67 @@ async function runDryCli(language, symbol, context) {
   return { result, stdout, stderr, exitCodes };
 }
 
+function citationsIn(value, out = []) {
+  if (!value || typeof value !== 'object') return out;
+  if (value.type === 'citation') out.push(value);
+  for (const child of Object.values(value)) {
+    if (Array.isArray(child)) child.forEach((entry) => citationsIn(entry, out));
+    else citationsIn(child, out);
+  }
+  return out;
+}
+
+async function pythonArtifactWithTypeUrls({ automatic = {}, reviewed = {}, type = 'DataType' } = {}) {
+  const context = sdkContext('python');
+  context.params = context.params.map((field) => field.name === 'collection_name'
+    ? { ...field, type }
+    : field);
+  context.typeUrls = reviewed;
+  const provider = createSchemaFirstArtifactProvider({
+    language: 'python',
+    referenceContextProvider: async () => context,
+  });
+  const output = await provider({
+    type: 'CREATE',
+    stableId: 'python:Vector:search',
+    slug: 'Vector-search',
+    symbol: fixture('python-search.json'),
+  }, { typeUrls: automatic });
+  return output.artifact || output;
+}
+
+test('Bitable type URLs are embedded in schema-first Document IR and Markdown', async () => {
+  const url = 'https://zilliverse.feishu.cn/docx/data-type-auto';
+  const artifact = await pythonArtifactWithTypeUrls({ automatic: { DataType: url } });
+
+  assert.ok(citationsIn(artifact.documentIr).some((citation) => citation.title === 'DataType'
+    && citation.url === url));
+  assert.match(artifact.content, /\[DataType\]\(https:\/\/zilliverse\.feishu\.cn\/docx\/data-type-auto\)/);
+});
+
+test('reviewed type URL overrides take precedence over automatic Bitable URLs', async () => {
+  const artifact = await pythonArtifactWithTypeUrls({
+    automatic: { DataType: 'https://zilliverse.feishu.cn/docx/data-type-auto' },
+    reviewed: { DataType: 'https://zilliverse.feishu.cn/docx/data-type-reviewed' },
+  });
+  const dataType = citationsIn(artifact.documentIr).find((citation) => citation.title === 'DataType');
+
+  assert.equal(dataType.url, 'https://zilliverse.feishu.cn/docx/data-type-reviewed');
+});
+
+test('self type links are omitted during schema-first rendering', async () => {
+  const artifact = await pythonArtifactWithTypeUrls({
+    automatic: {
+      search: 'https://zilliverse.feishu.cn/docx/search-self',
+      'search()': 'https://zilliverse.feishu.cn/docx/search-self',
+    },
+    type: 'search',
+  });
+
+  assert.equal(citationsIn(artifact.documentIr).some((citation) => citation.title === 'search'), false);
+  assert.match(artifact.content, /\(\*search\*\)/);
+});
+
 test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and REST surface', async () => {
   for (const language of ['python', 'java', 'node', 'go', 'cpp', 'zilliz-cli']) {
     const context = sdkContext(language);
@@ -614,6 +675,89 @@ test('schema-first CLI filters scanned symbols through release scope', async () 
   assert.equal(result.scanned[0].name, 'compact');
   assert.equal(result.diff[0].slug, 'Management-compact');
   assert.match(stdout.join('\n'), /"releaseScope"/);
+});
+
+test('complete Bitable type index reaches artifact generation while diff records remain release-scoped', async () => {
+  let observedTypeUrls = null;
+  const dataTypeUrl = 'https://zilliverse.feishu.cn/docx/data-type-token';
+  const releaseScope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:search',
+      canonicalSlug: 'Vector-search',
+      symbol: 'MilvusClient.search',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
+      reason: 'new public method',
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const sync = new SdkDocSync({
+    scanner: scannerFor(fixture('python-search.json')),
+    indexReader: async () => [{
+      id: 'rec-data-type',
+      metadata: {
+        title: 'DataType',
+        link: dataTypeUrl,
+        slug: 'MilvusClient-DataType',
+        type: 'Enum',
+      },
+    }],
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    releaseScope,
+    changedOnly: true,
+    dryRun: true,
+    artifactProvider: async (action, scope) => {
+      observedTypeUrls = scope.typeUrls;
+      return {
+        artifact: {
+          title: 'search()',
+          content: 'Searches vectors in a collection.',
+          reviewed: true,
+          validated: true,
+          validation: { valid: true },
+        },
+        target: {
+          version: 'v2.6.x',
+          parentRecordId: 'parent-vector',
+          folderToken: 'folder-vector',
+          versionRootToken: 'root-v26',
+          ancestryVerified: true,
+        },
+        existingRecordLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          parentRecordId: 'parent-vector',
+          criteria: { canonicalSlug: action.slug, title: 'search()' },
+        },
+      };
+    },
+  });
+
+  const result = await sync.run();
+
+  assert.deepEqual(result.indexed, []);
+  assert.deepEqual(observedTypeUrls, {
+    DataType: dataTypeUrl,
+    'DataType()': dataTypeUrl,
+  });
+  assert.equal(result.plans.length, 1);
+  assert.equal(result.planningErrors.length, 0);
 });
 
 test('schema-first CLI preserves release-scope planning targets over default ROOT_TOKEN target', async () => {

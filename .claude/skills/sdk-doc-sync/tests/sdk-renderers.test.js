@@ -424,6 +424,60 @@ test('empty field and member descriptions do not create blank list paragraphs', 
   assert.equal(emptyParagraph, false);
 });
 
+test('parameter qualifiers render on their own line before the description', () => {
+  const { ir, markdown } = renderCase(cases.find((item) => item.language === 'python'));
+  const parameterList = ir.children.find((node) => node.type === 'unorderedList'
+    && node.metadata?.role === 'parameters-list');
+  assert.ok(parameterList);
+
+  const required = parameterList.items.find((item) => item.children[0]?.children[0]?.value === 'collection_name');
+  assert.deepEqual(required.children.map((child) => child.type), ['paragraph', 'paragraph', 'paragraph']);
+  assert.deepEqual(required.children[1].children, [{
+    type: 'text',
+    value: '[REQUIRED]',
+    marks: ['bold'],
+  }]);
+  assert.equal(required.children[2].children[0].value, 'The name of the target collection.');
+
+  const withDefault = parameterList.items.find((item) => item.children[0]?.children[0]?.value === 'limit');
+  assert.deepEqual(withDefault.children.map((child) => child.type), [
+    'paragraph', 'paragraph', 'paragraph', 'paragraph',
+  ]);
+  assert.deepEqual(withDefault.children[1].children, [
+    { type: 'text', value: 'Default: ', marks: [] },
+    { type: 'text', value: '10', marks: ['inlineCode'] },
+  ]);
+  assert.equal(withDefault.children[2].children[0].value, 'The maximum number of matches to return.');
+  assert.ok(markdown.includes(
+    '- **collection\\_name** ([str](/reference/python/str)) -\n'
+      + '  **\\[REQUIRED\\]**\n'
+      + '  The name of the target collection.',
+  ));
+  assert.match(markdown, /- \*\*limit\*\* \(\*int\*\) -\n  Default: `10`\n  The maximum/);
+});
+
+test('authored prose renders single-backtick spans as inline code', () => {
+  const symbol = enrich('python', fixture('python-search.json'));
+  symbol.params = symbol.params.map((field) => field.name === 'collection_name'
+    ? { ...field, description: 'Uses `source_cluster_id` with `DataType`.' }
+    : field);
+  const adapterContext = context('python');
+  const reference = pythonAdapter.toReferenceDocument(symbol, adapterContext);
+  const ir = pythonRenderer.render(reference, { typeUrls: adapterContext.typeUrls });
+  const parameterList = ir.children.find((node) => node.type === 'unorderedList'
+    && node.metadata?.role === 'parameters-list');
+  const description = parameterList.items[0].children.at(-1);
+
+  assert.deepEqual(description.children, [
+    { type: 'text', value: 'Uses ', marks: [] },
+    { type: 'text', value: 'source_cluster_id', marks: ['inlineCode'] },
+    { type: 'text', value: ' with ', marks: [] },
+    { type: 'text', value: 'DataType', marks: ['inlineCode'] },
+    { type: 'text', value: '.', marks: [] },
+  ]);
+  assert.match(renderMarkdown(ir), /Uses `source_cluster_id` with `DataType`\./);
+});
+
 test('parameter, member, result, and error lists keep signature and description as separate logical blocks', () => {
   for (const item of cases) {
     const { ir } = renderCase(item);
@@ -445,7 +499,8 @@ test('parameter, member, result, and error lists keep signature and description 
     for (const list of lists) {
       for (const listItem of list.items) {
         assert.equal(listItem.children[0]?.type, 'paragraph', `${item.language} missing signature paragraph`);
-        assert.equal(listItem.children[1]?.type, 'paragraph', `${item.language} missing description paragraph`);
+        const descriptionIndex = listItem.children[1]?.metadata?.role === 'field-qualifier' ? 2 : 1;
+        assert.equal(listItem.children[descriptionIndex]?.type, 'paragraph', `${item.language} missing description paragraph`);
       }
     }
   }

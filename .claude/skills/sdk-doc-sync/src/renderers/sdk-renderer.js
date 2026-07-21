@@ -11,8 +11,26 @@ function semantic(role, key = null, extra = {}) {
   return { metadata: { role, ...(key && { key }), ...extra } };
 }
 
+function proseInlines(value, baseMarks = []) {
+  const source = String(value);
+  const children = [];
+  const pattern = /`([^`\n]+)`/g;
+  let cursor = 0;
+  let match;
+  while ((match = pattern.exec(source)) !== null) {
+    const before = match.index > 0 ? source[match.index - 1] : '';
+    const after = pattern.lastIndex < source.length ? source[pattern.lastIndex] : '';
+    if (before === '`' || after === '`') continue;
+    if (match.index > cursor) children.push(text(source.slice(cursor, match.index), baseMarks));
+    children.push(text(match[1], [...new Set([...baseMarks, 'inlineCode'])]));
+    cursor = pattern.lastIndex;
+  }
+  if (cursor < source.length) children.push(text(source.slice(cursor), baseMarks));
+  return children.length > 0 ? children : [text(source, baseMarks)];
+}
+
 function paragraph(value, marks = [], options = {}) {
-  return ir.paragraph([text(value, marks)], options);
+  return ir.paragraph(proseInlines(value, marks), options);
 }
 
 function heading(level, value, options = {}) {
@@ -57,11 +75,20 @@ function fieldHeader(field, context) {
   const renderedType = typeInlines(field.type, context);
   if (renderedType.length > 0) children.push(text(' ('), ...renderedType, text(')'));
   children.push(text(' -'));
-  if (field.required === true) children.push(text(' '), text('[REQUIRED]', ['bold']));
-  if (field.defaultValue !== null && field.defaultValue !== undefined) {
-    children.push(text(' Default: '), text(String(field.defaultValue), ['inlineCode']));
-  }
   return ir.paragraph(children);
+}
+
+function fieldQualifier(field) {
+  if (field.required === true) {
+    return ir.paragraph([text('[REQUIRED]', ['bold'])], semantic('field-qualifier'));
+  }
+  if (field.defaultValue !== null && field.defaultValue !== undefined) {
+    return ir.paragraph([
+      text('Default: '),
+      text(String(field.defaultValue), ['inlineCode']),
+    ], semantic('field-qualifier'));
+  }
+  return null;
 }
 
 function fieldDetails(field) {
@@ -79,6 +106,8 @@ function fieldDetails(field) {
 function renderFields(fields, context, role = 'parameters-list', key = null) {
   const items = fields.map((field) => {
     const children = [fieldHeader(field, context)];
+    const qualifier = fieldQualifier(field);
+    if (qualifier) children.push(qualifier);
     const description = sentence(field.description);
     if (description) children.push(paragraph(description));
     const details = fieldDetails(field);

@@ -12,11 +12,14 @@ def search(self, collection_name: str, data: list[list[float]], *, limit: int = 
 
 **PARAMETERS:**
 
-- **collection\_name** ([str](/reference/python/str)) - **\[REQUIRED\]**
+- **collection\_name** ([str](/reference/python/str)) -
+  **\[REQUIRED\]**
   The name of the target collection.
-- **data** (*list\[list\[float\]\]*) - **\[REQUIRED\]**
+- **data** (*list\[list\[float\]\]*) -
+  **\[REQUIRED\]**
   The query vectors.
-- **limit** (*int*) - Default: `10`
+- **limit** (*int*) -
+  Default: `10`
   The maximum number of matches to return.
   Constraints: Must be positive; choices: 10, 20.
 - **kwargs** (*Any*) -
@@ -30,9 +33,11 @@ def search(self, collection_name: str, data: list[list[float]], *, limit: int = 
 
 Returns the matching entities ordered by similarity.
 
-- **items** ([SearchResult\[\]](/reference/python/search-result)) - **\[REQUIRED\]**
+- **items** ([SearchResult\[\]](/reference/python/search-result)) -
+  **\[REQUIRED\]**
   The matching entities.
-  - **score** (*float*) - **\[REQUIRED\]**
+  - **score** (*float*) -
+    **\[REQUIRED\]**
     The similarity score.
 
 **EXCEPTIONS:**

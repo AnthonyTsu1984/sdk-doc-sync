@@ -12,13 +12,16 @@ zilliz project create [OPTIONS]
 
 ## Options
 
-- **--name** (*string*) - **\[REQUIRED\]**
+- **--name** (*string*) -
+  **\[REQUIRED\]**
   Project name.
   Constraints: shorthand: -n; api-name: name.
-- **--region** (*string*) - **\[REQUIRED\]**
+- **--region** (*string*) -
+  **\[REQUIRED\]**
   Deployment region.
   Constraints: choices: aws-us-west-2, gcp-us-west1; repeatable; shorthand: -r; api-name: region.
-- **--plan** (*string*) - Default: `serverless`
+- **--plan** (*string*) -
+  Default: `serverless`
   Subscription plan.
   Constraints: choices: serverless, dedicated; api-name: plan.
 - **--api-key** (*string*) -

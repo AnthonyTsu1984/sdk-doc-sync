@@ -16,7 +16,8 @@ POST /v2/vectordb/collections
 
 ### Query
 
-- **dbName** (*string*) - Default: `default`
+- **dbName** (*string*) -
+  Default: `default`
   Database name.
 
 ### Header
@@ -29,21 +30,26 @@ POST /v2/vectordb/collections
 
 Content type: `application/json`
 
-- **collectionName** (*string*) - **\[REQUIRED\]**
+- **collectionName** (*string*) -
+  **\[REQUIRED\]**
   Collection name.
-- **dimension** (*integer*) - **\[REQUIRED\]**
+- **dimension** (*integer*) -
+  **\[REQUIRED\]**
   Vector dimension.
   Constraints: format: int64.
-- **consistencyLevel** (*string*) - Default: `Bounded`
+- **consistencyLevel** (*string*) -
+  Default: `Bounded`
   Consistency level.
   Constraints: enum: Strong, Bounded, Eventually.
 - **schema** (*object*) -
   Optional custom schema.
   - **fields** (*array&lt;object&gt;*) -
     Field definitions.
-    - **name** (*string*) - **\[REQUIRED\]**
+    - **name** (*string*) -
+      **\[REQUIRED\]**
       Field name.
-    - **dataType** (*string*) - **\[REQUIRED\]**
+    - **dataType** (*string*) -
+      **\[REQUIRED\]**
       Field data type.
       Constraints: enum: Int64, VarChar, FloatVector.
     - **description** (*string*) -
@@ -56,20 +62,25 @@ Content type: `application/json`
 
 Collection created.
 
-- **code** (*integer*) - **\[REQUIRED\]**
+- **code** (*integer*) -
+  **\[REQUIRED\]**
   Status code.
-- **data** (*object*) - **\[REQUIRED\]**
+- **data** (*object*) -
+  **\[REQUIRED\]**
   Created collection metadata.
-  - **collectionName** (*string*) - **\[REQUIRED\]**
+  - **collectionName** (*string*) -
+    **\[REQUIRED\]**
     Created collection name.
 
 ### 400
 
 Invalid collection definition.
 
-- **code** (*integer*) - **\[REQUIRED\]**
+- **code** (*integer*) -
+  **\[REQUIRED\]**
   Error code.
-- **message** (*string*) - **\[REQUIRED\]**
+- **message** (*string*) -
+  **\[REQUIRED\]**
   Error message.
 
 ## Examples

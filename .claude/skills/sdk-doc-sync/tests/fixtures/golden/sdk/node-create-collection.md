@@ -20,9 +20,11 @@ await client.createCollection({ collection_name, dimension })
 
 **PARAMETERS:**
 
-- **collection\_name** (*string*) - **\[REQUIRED\]**
+- **collection\_name** (*string*) -
+  **\[REQUIRED\]**
   Collection name.
-- **dimension** (*number*) - **\[REQUIRED\]**
+- **dimension** (*number*) -
+  **\[REQUIRED\]**
   Vector dimension.
   Constraints: Must be positive.
 
@@ -36,13 +38,17 @@ await client.createCollection({ collection_name, schema })
 
 **PARAMETERS:**
 
-- **collection\_name** (*string*) - **\[REQUIRED\]**
+- **collection\_name** (*string*) -
+  **\[REQUIRED\]**
   Collection name.
-- **schema** ([FieldType\[\]](/reference/node/field-type)) - **\[REQUIRED\]**
+- **schema** ([FieldType\[\]](/reference/node/field-type)) -
+  **\[REQUIRED\]**
   Collection fields.
-  - **name** (*string*) - **\[REQUIRED\]**
+  - **name** (*string*) -
+    **\[REQUIRED\]**
     Field name.
-  - **data\_type** ([DataType](/reference/node/data-type)) - **\[REQUIRED\]**
+  - **data\_type** ([DataType](/reference/node/data-type)) -
+    **\[REQUIRED\]**
     Field data type.
 
 **RETURNS:**
@@ -51,7 +57,8 @@ await client.createCollection({ collection_name, schema })
 
 Resolves after the collection is created.
 
-- **status** (*Status*) - **\[REQUIRED\]**
+- **status** (*Status*) -
+  **\[REQUIRED\]**
   Operation status.
 
 **EXCEPTIONS:**

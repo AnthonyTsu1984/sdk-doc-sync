@@ -16,19 +16,21 @@ const MarkdownToFeishu = require('../src/markdown-to-feishu');
 
 test('resolves common language aliases to Feishu language IDs', () => {
   assert.equal(languageId('cpp'), 9);
-  assert.equal(languageId('ts'), 64);
+  assert.equal(languageId('python'), 49);
+  assert.equal(languageId('R'), 50);
+  assert.equal(languageId('ts'), 63);
 });
 
-test('canonical Shell lookup does not collide with Swift ID 62', () => {
-  assert.equal(languageId('Shell'), 61);
-  assert.equal(languageId('shell'), 61);
-  assert.equal(languageName(61), 'Shell');
-  assert.equal(languageName(62), 'Swift');
+test('canonical Shell lookup does not collide with Swift ID 61', () => {
+  assert.equal(languageId('Shell'), 60);
+  assert.equal(languageId('shell'), 60);
+  assert.equal(languageName(60), 'Shell');
+  assert.equal(languageName(61), 'Swift');
 });
 
 test('resolves Feishu language IDs to canonical names', () => {
   assert.equal(languageName(9), 'C++');
-  assert.equal(languageName(64), 'TypeScript');
+  assert.equal(languageName(63), 'TypeScript');
 });
 
 test('resolves Feishu block IDs and names', () => {
@@ -48,7 +50,6 @@ test('round trips every canonical language and block mapping', () => {
 
 test('preserves explicit registry holes and null behavior for unknown lookups', () => {
   assert.equal(blockName(16), null);
-  assert.equal(languageName(49), null);
   assert.equal(languageId('unknown'), null);
   assert.equal(languageName(999), null);
   assert.equal(blockId('unknown'), null);
@@ -67,12 +68,12 @@ test('legacy compatibility methods return isolated copies', () => {
   const firstBlockTypes = writer.__block_types();
   const firstCodeLangs = writer.__code_langs();
   firstBlockTypes[0] = 'mutated';
-  firstCodeLangs[61] = 'mutated';
+  firstCodeLangs[60] = 'mutated';
 
   assert.equal(writer.__block_types()[0], 'page');
-  assert.equal(writer.__code_langs()[61], 'Shell');
+  assert.equal(writer.__code_langs()[60], 'Shell');
   assert.equal(blockName(1), 'page');
-  assert.equal(languageName(61), 'Shell');
+  assert.equal(languageName(60), 'Shell');
 
   const converter = new MarkdownToFeishu({
     sourceType: 'drive',
@@ -82,12 +83,12 @@ test('legacy compatibility methods return isolated copies', () => {
   const firstBlockMap = converter.__create_block_type_map();
   const firstLangMap = converter.__create_lang_map();
   firstBlockMap.code = 999;
-  firstLangMap[61] = 'mutated';
+  firstLangMap[60] = 'mutated';
 
   assert.equal(converter.__create_block_type_map().code, 14);
-  assert.equal(converter.__create_lang_map()[61], 'Shell');
+  assert.equal(converter.__create_lang_map()[60], 'Shell');
   assert.equal(BLOCK_NAME_TO_ID.code, 14);
-  assert.equal(LANGUAGE_ID_TO_NAME[61], 'Shell');
+  assert.equal(LANGUAGE_ID_TO_NAME[60], 'Shell');
 });
 
 test('Markdown-to-Feishu compatibility falls back to PlainText', () => {

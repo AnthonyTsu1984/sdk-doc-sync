@@ -87,6 +87,18 @@ const cases = [
 test('all scanner adapters produce immutable deterministic production-valid documents', () => {
   for (const [name, adapter, language, category] of cases) {
     const symbol = fixture(name);
+    if (language === 'python') {
+      const descriptions = {
+        collection_name: 'Name of the target collection.',
+        data: 'Query vectors.',
+        limit: 'Maximum number of matches to return.',
+        kwargs: 'Additional search options.',
+      };
+      symbol.params = symbol.params.map((field) => field.name === '*' ? field : {
+        ...field,
+        description: descriptions[field.name],
+      });
+    }
     const before = JSON.stringify(symbol);
     const adapterContext = context(language, category, language === 'python' ? {
       exceptions: [{
@@ -151,6 +163,47 @@ test('Python preserves direct parameter semantics, return type, and supplied exc
   assert.ok(doc.signatures[0].inputs[2].constraints.includes('kind: keyword'));
   assert.equal(doc.result.type.display, 'list[SearchResult]');
   assert.equal(doc.errors[0].name, 'MilvusException');
+});
+
+test('Python reviewed context can replace a scanner signature and parameters for a public constructor', () => {
+  const doc = pythonAdapter.toReferenceDocument({
+    name: 'FieldSchema',
+    kind: 'class',
+    signature: 'FieldSchema(raw: Any)',
+    params: [{ name: 'raw', type: 'Any', kind: 'positional' }],
+    filePath: 'pymilvus/client/abstract.py',
+    lineNumber: 22,
+  }, context('python', 'MilvusClient', {
+    signature: 'FieldSchema(\n    name: str,\n    dtype: DataType,\n    description: str = "",\n    **kwargs\n)',
+    params: [
+      { name: 'name', type: 'str', kind: 'positional', description: 'Name of the field.' },
+      { name: 'dtype', type: 'DataType', kind: 'positional', description: 'Data type of the field.' },
+      { name: 'description', type: 'str', kind: 'keyword', default: '""', description: 'Description of the field.' },
+      { name: 'kwargs', type: 'Any', kind: 'kwargs', description: 'Additional field options.' },
+    ],
+    result: {
+      type: 'FieldSchema',
+      description: 'A field schema with the configured options.',
+    },
+  }));
+
+  assert.equal(doc.signatures[0].display, 'FieldSchema(\n    name: str,\n    dtype: DataType,\n    description: str = "",\n    **kwargs\n)');
+  assert.deepEqual(doc.signatures[0].inputs.map((field) => field.name), [
+    'name', 'dtype', 'description', 'kwargs',
+  ]);
+  assert.equal(doc.signatures[0].inputs[0].description, 'Name of the field.');
+  assert.equal(doc.requestVariants[0].signature.display, doc.signatures[0].display);
+  assert.equal(doc.requestVariants[0].inputs[3].description, 'Additional field options.');
+});
+
+test('production validation rejects Python parameters without user-facing descriptions', () => {
+  const symbol = fixture('python-search.json');
+  symbol.params[0].description = '';
+  const doc = pythonAdapter.toReferenceDocument(symbol, context('python', 'Vector'));
+  const validation = validateReferenceDocument(doc, { production: true });
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === 'MISSING_FIELD_DESCRIPTION'));
 });
 
 test('Java maps request fields to a request variant and builder members only when requestClass exists', () => {

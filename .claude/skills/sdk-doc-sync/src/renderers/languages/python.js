@@ -16,4 +16,5 @@ module.exports = createSdkRenderer({
   returnsLabel: 'RETURNS:',
   errorsLabel: 'EXCEPTIONS:',
   exampleHeading: 'Examples',
+  showExampleTitles: false,
 });

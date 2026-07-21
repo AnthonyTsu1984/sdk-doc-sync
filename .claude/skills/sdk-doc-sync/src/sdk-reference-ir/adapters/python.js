@@ -30,19 +30,25 @@ function toReferenceDocument(symbol, context = {}) {
   const kind = kindMap[String(symbol.kind || '').toLowerCase()];
   if (!kind) throw new TypeError(`Unsupported Python scanner kind: ${symbol.kind}`);
   const evidence = common.collectEvidence(symbol, context);
-  const callable = ['method', 'function'].includes(kind);
+  const reviewedParams = Array.isArray(context.params)
+    ? context.params.map(normalizePythonParam)
+    : null;
+  const params = reviewedParams || symbol.params;
+  const signature = context.signature ?? symbol.signature ?? '';
+  const callable = ['method', 'function'].includes(kind)
+    || (['class'].includes(kind) && (reviewedParams !== null || context.signature !== undefined));
   const inputs = callable
-    ? common.normalizeFields(symbol.params, evidence, { symbol, context })
+    ? common.normalizeFields(params, evidence, { symbol, context })
     : [];
   const signatures = callable
-    ? [common.makeSignature(symbol.signature || '', symbol.params, evidence, { symbol, context })]
+    ? [common.makeSignature(signature, params, evidence, { symbol, context })]
     : [];
   const requestVariants = callable && inputs.length > 0 ? [common.makeRequestVariant({
     id: 'primary',
     title: `${symbol.name || ''} parameters`,
     description: '',
-    signature: symbol.signature || '',
-    inputs: symbol.params,
+    signature,
+    inputs: params,
   }, evidence, { symbol, context })] : [];
   const result = callable && (context.result || symbol.result || symbol.returnType)
     ? common.makeResult(context.result || symbol.result || { type: symbol.returnType }, evidence, { symbol, context })

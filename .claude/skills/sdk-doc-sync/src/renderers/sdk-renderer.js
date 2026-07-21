@@ -67,8 +67,10 @@ function fieldHeader(field, context) {
 function fieldDetails(field) {
   const details = [];
   if (Array.isArray(field.constraints) && field.constraints.length > 0) {
-    const constraints = field.constraints.map((value) => String(value).replace(/[.!?]+$/, ''));
-    details.push(`Constraints: ${constraints.join('; ')}`);
+    const constraints = field.constraints
+      .map((value) => String(value).replace(/[.!?]+$/, ''))
+      .filter((value) => !/^kind:\s*(?:positional|keyword|kwargs|varargs|separator)$/i.test(value));
+    if (constraints.length > 0) details.push(`Constraints: ${constraints.join('; ')}`);
   }
   if (field.appliesWhen) details.push(`Applies when: ${field.appliesWhen}`);
   return details.join('. ');
@@ -236,7 +238,7 @@ function renderExamples(document, policy) {
     const baseHeading = policy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();
     const distinctTitle = example.title
       && ![baseHeading, baseHeading.replace(/s$/, '')].includes(example.title.toLowerCase());
-    if (document.examples.length > 1 || distinctTitle) {
+    if (policy.showExampleTitles !== false && (document.examples.length > 1 || distinctTitle)) {
       blocks.push(heading(3, example.title, semantic('example-heading', exampleKey)));
     }
     if (example.description) {

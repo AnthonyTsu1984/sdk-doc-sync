@@ -14,16 +14,13 @@ def search(self, collection_name: str, data: list[list[float]], *, limit: int = 
 
 - **collection\_name** ([str](/reference/python/str)) - **\[REQUIRED\]**
   The name of the target collection.
-  Constraints: kind: positional.
 - **data** (*list\[list\[float\]\]*) - **\[REQUIRED\]**
   The query vectors.
-  Constraints: kind: positional.
 - **limit** (*int*) - Default: `10`
   The maximum number of matches to return.
-  Constraints: Must be positive; kind: keyword; choices: 10, 20.
+  Constraints: Must be positive; choices: 10, 20.
 - **kwargs** (*Any*) -
   Additional search options.
-  Constraints: kind: kwargs.
 
 **RETURN TYPE:**
 
@@ -44,8 +41,6 @@ Returns the matching entities ordered by similarity.
   The server rejects the search request. Reports the server error code and message.
 
 ## Examples
-
-### Search a collection
 
 Runs a vector search.
 

@@ -907,9 +907,9 @@ test('FeishuOperationalVerifier rejects malformed semantic layout and missing pr
     { block_id: 'title', parent_id: 'page', block_type: 3, heading1: { elements: [{ text_run: { content: 'search()', text_element_style: {} } }] } },
     { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
     { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
-    { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 50 } } },
+    { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
     { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
-    { block_id: 'example-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search([[0.1]])', text_element_style: {} } }], style: { language: 50 } } },
+    { block_id: 'example-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search([[0.1]])', text_element_style: {} } }], style: { language: 49 } } },
   ];
   const verifier = new FeishuOperationalVerifier({
     ops: {
@@ -938,9 +938,9 @@ test('FeishuOperationalVerifier accepts a valid Python semantic layout and numer
     { block_id: 'page', block_type: 1, children: ['summary', 'request', 'request-code', 'examples', 'example-code'], page: { elements: [] } },
     { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
     { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
-    { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 50 } } },
+    { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
     { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
-    { block_id: 'example-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search([[0.1]])', text_element_style: {} } }], style: { language: 50 } } },
+    { block_id: 'example-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search([[0.1]])', text_element_style: {} } }], style: { language: 49 } } },
   ];
   const verifier = new FeishuOperationalVerifier({
     ops: {

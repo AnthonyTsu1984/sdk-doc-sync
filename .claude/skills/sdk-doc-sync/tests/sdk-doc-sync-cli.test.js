@@ -92,6 +92,13 @@ function sdkContext(language) {
       category: 'Vector',
       repository: 'milvus-io/pymilvus',
       summary: 'Searches vectors in a collection and returns nearest matches.',
+      params: [
+        { name: 'collection_name', kind: 'positional', type: 'str', default: null, description: 'Name of the target collection.' },
+        { name: 'data', kind: 'positional', type: 'list[list[float]]', default: null, description: 'Query vectors.' },
+        { name: '*', kind: 'separator', type: null, default: null },
+        { name: 'limit', kind: 'keyword', type: 'int', default: '10', description: 'Maximum number of matches to return.' },
+        { name: 'kwargs', kind: 'kwargs', type: 'Any', default: null, description: 'Additional search options.' },
+      ],
       examples: [{
         title: 'Search a collection',
         description: 'Runs a vector search.',

@@ -109,7 +109,6 @@ const LANGUAGE_ID_TO_NAME = Object.freeze([
   'Power',
   'Prolog',
   'ProtoBuf',
-  null,
   'Python',
   'R',
   'RPG',
@@ -141,12 +140,12 @@ const LANGUAGE_ID_TO_NAME = Object.freeze([
 
 const LANGUAGE_ALIASES = Object.freeze({
   js: 30,
-  ts: 64,
-  py: 50,
+  ts: 63,
+  py: 49,
   cpp: 9,
   'c++': 9,
   bash: 7,
-  shell: 61,
+  shell: 60,
   plaintext: 1,
   text: 1,
 });

@@ -258,7 +258,9 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.python, /\*\*PARAMETERS:\*\*/);
   assert.match(rendered.python, /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
   assert.match(rendered.python, /## Examples\n/);
-  assert.match(rendered.python, /### Search a collection/);
+  assert.doesNotMatch(rendered.python, /### Search a collection/);
+  assert.doesNotMatch(rendered.python, /kind: (?:positional|keyword|kwargs|varargs)/);
+  assert.match(rendered.python, /Constraints: Must be positive; choices: 10, 20\./);
   assert.match(rendered.python, /\[str\]\(\/reference\/python\/str\)/);
 
   const pythonContext = context('python');

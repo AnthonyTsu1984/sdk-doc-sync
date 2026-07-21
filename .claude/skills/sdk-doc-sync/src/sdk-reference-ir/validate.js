@@ -247,6 +247,12 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     }
     if (typeof field.description !== 'string') {
       error(`${path}.description`, 'field description must be a string', 'INVALID_FIELD');
+    } else if (production && doc?.identity?.language === 'python' && field.description.trim() === '') {
+      error(
+        `${path}.description`,
+        'production fields require a user-facing description',
+        'MISSING_FIELD_DESCRIPTION',
+      );
     }
     const constraints = requireArray(field.constraints, `${path}.constraints`, 'field constraints');
     constraints?.forEach((constraint, index) => {

@@ -18,6 +18,40 @@ function normalizePythonSymbol(symbol) {
   };
 }
 
+function docstringParamDescriptions(docstring) {
+  const descriptions = new Map();
+  let inParameters = false;
+  let currentName = null;
+  for (const line of String(docstring || '').split(/\r?\n/)) {
+    if (/^\s*(?:Args|Arguments|Parameters):\s*$/.test(line)) {
+      inParameters = true;
+      currentName = null;
+      continue;
+    }
+    if (!inParameters) continue;
+    if (/^\s*(?:Returns?|Raises?|Examples?|Notes?|Yields?):\s*$/.test(line)) break;
+    const entry = line.match(/^\s*(\*{0,2}[A-Za-z_]\w*)\s*(?:\([^)]*\))?\s*:\s*(.*)$/);
+    if (entry) {
+      currentName = entry[1].replace(/^\*+/, '');
+      descriptions.set(currentName, entry[2].trim());
+      continue;
+    }
+    const continuation = line.trim();
+    if (currentName && continuation) {
+      descriptions.set(currentName, `${descriptions.get(currentName)} ${continuation}`.trim());
+    }
+  }
+  return descriptions;
+}
+
+function applyDocstringParamDescriptions(params, docstring) {
+  const descriptions = docstringParamDescriptions(docstring);
+  return (params || []).map((param) => {
+    if (!param || param.description || !descriptions.has(param.name)) return param;
+    return { ...param, description: descriptions.get(param.name) };
+  });
+}
+
 function toReferenceDocument(symbol, context = {}) {
   symbol = normalizePythonSymbol(symbol);
   const kindMap = {
@@ -33,7 +67,7 @@ function toReferenceDocument(symbol, context = {}) {
   const reviewedParams = Array.isArray(context.params)
     ? context.params.map(normalizePythonParam)
     : null;
-  const params = reviewedParams || symbol.params;
+  const params = applyDocstringParamDescriptions(reviewedParams || symbol.params, symbol.docstring);
   const signature = context.signature ?? symbol.signature ?? '';
   const callable = ['method', 'function'].includes(kind)
     || (['class'].includes(kind) && (reviewedParams !== null || context.signature !== undefined));

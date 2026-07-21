@@ -459,6 +459,14 @@ test('reviewed release context builder filters candidates and carries scoped pla
         parentRecordId: 'vector-parent',
       }),
       summary: 'Builds field-level partial-update operations for array fields.',
+      signature: 'FieldOp(field_name: str)',
+      params: [{
+        name: 'field_name',
+        type: 'str',
+        kind: 'positional',
+        required: true,
+        description: 'Name of the field to update.',
+      }],
       example: {
         code: 'from pymilvus import FieldOp\nop = FieldOp.array_append()',
       },
@@ -480,6 +488,14 @@ test('reviewed release context builder filters candidates and carries scoped pla
   assert.equal(result.filteredScope.scanStateUpdated, false);
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].category, 'Vector');
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].reviewedEvidence[0].confidence, 'reviewed');
+  assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].signature, 'FieldOp(field_name: str)');
+  assert.deepEqual(result.referenceContext.contexts['python:Vector:FieldOp'].params, [{
+    name: 'field_name',
+    type: 'str',
+    kind: 'positional',
+    required: true,
+    description: 'Name of the field to update.',
+  }]);
 });
 
 test('reviewed release context builder rejects stale or empty candidate specs', () => {

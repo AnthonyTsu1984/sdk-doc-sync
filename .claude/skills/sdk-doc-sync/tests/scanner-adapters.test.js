@@ -206,6 +206,29 @@ test('production validation rejects Python parameters without user-facing descri
   assert.ok(validation.errors.some((error) => error.code === 'MISSING_FIELD_DESCRIPTION'));
 });
 
+test('Python extracts source-backed parameter descriptions from Google-style docstrings', () => {
+  const symbol = {
+    name: 'upload',
+    kind: 'method',
+    signature: 'def upload(self, source: str, retries: int = 3, **kwargs):',
+    params: [
+      { name: 'source', type: 'str', kind: 'positional' },
+      { name: 'retries', type: 'int', kind: 'keyword', default: '3' },
+      { name: 'kwargs', type: null, kind: 'kwargs' },
+    ],
+    docstring: `Uploads a file.\n\nArgs:\n    source (str): Local source path.\n    retries (int): Maximum retry count.\n        Retries apply to each file.\n    **kwargs: Additional upload options.\n\nReturns:\n    dict: Upload result.`,
+    filePath: 'pymilvus/upload.py',
+    lineNumber: 10,
+  };
+  const doc = pythonAdapter.toReferenceDocument(symbol, context('python', 'DataImport'));
+
+  assert.deepEqual(doc.signatures[0].inputs.map((field) => field.description), [
+    'Local source path.',
+    'Maximum retry count. Retries apply to each file.',
+    'Additional upload options.',
+  ]);
+});
+
 test('Java maps request fields to a request variant and builder members only when requestClass exists', () => {
   const symbol = fixture('java-create-collection.json');
   const requestEvidence = [{

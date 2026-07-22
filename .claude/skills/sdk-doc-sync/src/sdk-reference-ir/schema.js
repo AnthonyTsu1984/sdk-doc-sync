@@ -48,7 +48,9 @@ function createField({
   type = { display: '', references: [] },
   required = false,
   defaultValue = null,
+  audience = 'shared',
   description = '',
+  descriptions = null,
   constraints = [],
   children = [],
   appliesWhen = null,
@@ -60,7 +62,9 @@ function createField({
     type,
     required,
     defaultValue,
+    audience,
     description,
+    descriptions,
     constraints,
     children,
     appliesWhen,
@@ -77,11 +81,13 @@ function createRequestVariant({
   id,
   title = '',
   description = '',
+  audience = 'shared',
+  parameters = [],
   signature = null,
   inputs = [],
   evidence = [],
 } = {}) {
-  return immutable({ id, title, description, signature, inputs, evidence });
+  return immutable({ id, title, description, audience, parameters, signature, inputs, evidence });
 }
 
 function createCallableMember({ kind, name, signature = null, description = '', evidence = [] } = {}) {
@@ -101,10 +107,11 @@ function createError({ name, condition = '', description = '', evidence = [] } =
   return immutable({ name, condition, description, evidence });
 }
 
-function createExample({ title, description = '', language, code, fence, evidence = [] } = {}) {
+function createExample({ title, description = '', audience = 'shared', language, code, fence, evidence = [] } = {}) {
   return immutable({
     title,
     description,
+    audience,
     language,
     code,
     ...(fence !== undefined ? { fence } : {}),

@@ -103,7 +103,11 @@ function normalizeField(field = {}, evidence = [], overrides = {}, options = {})
     type: typeOf(overrides.type ?? field.type),
     required: overrides.required ?? required,
     defaultValue,
+    audience: field.audience || 'shared',
     description: String(overrides.description ?? field.description ?? ''),
+    descriptions: field.descriptions && typeof field.descriptions === 'object'
+      ? { ...field.descriptions }
+      : null,
     constraints,
     children: Array.isArray(children)
       ? children.map((child) => normalizeField(child, evidence, {}, options))
@@ -135,6 +139,8 @@ function makeRequestVariant(variant, evidence, options = {}) {
     id: String(variant.id || ''),
     title: String(variant.title || ''),
     description: String(variant.description || ''),
+    audience: variant.audience || 'shared',
+    parameters: Array.isArray(variant.parameters) ? [...variant.parameters] : [],
     signature: makeSignature(
       variant.signature || '',
       variant.signatureInputs || variant.inputs || variant.params,
@@ -190,6 +196,7 @@ function makeExamples(symbol, context, language, evidence) {
   return items.map((item) => schema.createExample({
     title: String(item.title || ''),
     description: String(item.description || ''),
+    audience: item.audience || 'shared',
     language: item.language || language,
     code: String(item.code || ''),
     ...(item.fence !== undefined ? { fence: item.fence } : {}),

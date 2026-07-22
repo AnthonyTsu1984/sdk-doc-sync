@@ -337,7 +337,7 @@ The Python v2.6.x run layer contains reviewed data and disposable transformation
 - previews, platform projections, validation reports, and approval manifests;
 - canary-specific investigation notes and cleanup scripts.
 
-These artifacts stay under `tmp/sdk-release-scout/` or another explicit run directory. They do not become imports, fixtures, lookup tables, or special cases in `.claude/skills/sdk-doc-sync/src/`.
+These artifacts stay under the standardized `tmp/sdk-doc-sync-runs/<track>/<run-id>/` directory. They do not become imports, fixtures, lookup tables, or special cases in `.claude/skills/sdk-doc-sync/src/`.
 
 One-off scripts may call stable core APIs, but stable core code may not call or require one-off scripts.
 
@@ -354,7 +354,7 @@ One-off scripts may call stable core APIs, but stable core code may not call or 
 | `.claude/skills/sdk-doc-sync/src/renderers/sdk-renderer.js` | Stable structural rendering integration |
 | `.claude/skills/sdk-doc-sync/tests/` | Stable synthetic regression tests |
 | `.claude/skills/sdk-doc-sync/sdk-python.md` | Stable authoring and platform terminology guidance |
-| `tmp/sdk-release-scout/python-v26-platform-content/` | One-off reviewed content, migrations, previews, and reports |
+| `tmp/sdk-doc-sync-runs/python-v26/<run-id>/` | One-off reviewed content, migrations, previews, and reports |
 
 The exact filenames may change during the implementation plan if an existing focused module already owns the responsibility, but the dependency direction and ownership classification do not change.
 
@@ -396,6 +396,57 @@ Before any commit, produce a run-local change-classification report listing:
 - unexpected or unclassified changes that block the commit.
 
 Core commits must be isolated from run-content commits. An approval-grade run cannot proceed while files remain unclassified.
+
+## Post-Implementation Repository Hygiene
+
+The cleanup scope is limited to artifacts created by this implementation and its Python v2.6.x run. It does not remove or untrack unrelated legacy files already present under `tmp/`, and it does not alter unrelated dirty worktree changes.
+
+The repository already ignores `tmp/`. The implementation therefore standardizes one-off SDK runs under:
+
+```text
+tmp/sdk-doc-sync-runs/<track>/<run-id>/
+```
+
+Each run directory has predictable subdirectories:
+
+```text
+input/       reviewed source and candidate context
+migrations/  one-time transformation scripts and migration reports
+preview/     generated Markdown, IR, and per-platform projections
+audit/       validation, classification, and write receipts
+retained/    the minimal handoff bundle kept after completion
+```
+
+This layout is a runtime convention, not a tracked template. The stable core creates directories as needed and does not require a committed `.gitkeep` file.
+
+### Cleanup sequence
+
+After the implementation and v2.6.x write batch are verified:
+
+1. Generate the final change-classification report.
+2. Move or rewrite every reusable implementation into stable-core paths with tests.
+3. Confirm no stable-core module imports or reads from the run directory.
+4. Delete run intermediates that are reproducible and no longer needed.
+5. Keep only the reviewed context, final platform projections, validation summary, write receipts, and classification report under `retained/` until the batch is accepted.
+6. Confirm no file below `tmp/sdk-doc-sync-runs/` is tracked by Git.
+7. Confirm `git status --short` shows no task-created one-off files or accidental core changes.
+8. Report any pre-existing unrelated worktree changes separately rather than modifying them.
+
+After batch acceptance, the retained ignored bundle may be deleted as a separate recoverability decision. The implementation plan must not use destructive cleanup before the retained evidence has been verified.
+
+### Boundary verification
+
+The final verification must demonstrate all of the following:
+
+- `.gitignore` covers the chosen run root;
+- `git ls-files tmp/sdk-doc-sync-runs/` returns no files;
+- stable source and tests contain no run IDs, v2.6.x record IDs, or imports from `tmp/`;
+- core tests pass without the run directory present;
+- deleting or moving the ignored run directory cannot change generator behavior;
+- the stable-core commit can be reviewed independently of release content;
+- the repository has no task-created unclassified files.
+
+The implementation is not complete merely because generated documents were written successfully. It is complete only after this boundary verification and cleanup pass succeeds.
 
 ## Core Versus Run-Local Deliverables
 
@@ -467,7 +518,9 @@ A synthetic BulkImport fixture covers both audiences end to end. It must produce
 7. Apply the reviewed model to the remaining v2.6.x documents through run-local data.
 8. Generate the change-classification report and resolve every unclassified file.
 9. Commit stable core changes separately from any approved release-content changes.
-10. Remove or archive temporary migration tooling after the batch is verified.
+10. Run the post-implementation repository-hygiene sequence.
+11. Verify the stable core passes without the ignored run directory present.
+12. Remove or archive temporary migration tooling after the batch is verified.
 
 No Feishu write becomes approval-ready until both platform views pass validation and human review.
 
@@ -481,3 +534,5 @@ No Feishu write becomes approval-ready until both platform views pass validation
 - No new HTML-like audience tags appear inside code.
 - Re-running the release workflow does not require new method-specific core logic.
 - The committed core diff contains reusable behavior and tests, while release-specific content remains reviewable and disposable.
+- The ignored v2.6.x run bundle can be moved or deleted without changing stable-core behavior.
+- Git tracks no files from the standardized one-off run directory.

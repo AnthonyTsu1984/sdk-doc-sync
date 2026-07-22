@@ -357,19 +357,41 @@ class MarkdownToFeishu {
             return this.__create_table_block(html);
         }
 
-        // Check if it's an include/exclude tag - preserve as-is in a text block
-        if (html.includes('<include') || html.includes('<exclude')) {
+        // Preserve audience markers while parsing the enclosed Markdown into
+        // normal rich blocks. Treating the complete region as one text block
+        // exposes Markdown escapes such as object\_url in the live Docx.
+        const audience = html.match(/^\s*<(include|exclude)\s+target="([^"]+)">\s*\n?([\s\S]*?)\n?\s*<\/\1>\s*$/i);
+        if (audience) {
+            const [, mode, target, body] = audience;
+            const innerBlocks = marked.lexer(body)
+                .flatMap(innerToken => this.__token_to_blocks(innerToken));
             return {
-                block_type: this.block_type_map.text,
-                text: {
-                    elements: [this.__create_text_element(html)],
-                    style: {}
-                }
+                __audience_blocks: [
+                    this.__create_audience_marker_block(`<${mode.toLowerCase()} target="${target}">`),
+                    ...innerBlocks,
+                    this.__create_audience_marker_block(`</${mode.toLowerCase()}>`),
+                ]
             };
+        }
+
+        // Preserve malformed or marker-only audience HTML verbatim so the
+        // caller can surface it for review instead of silently dropping it.
+        if (html.includes('<include') || html.includes('<exclude')) {
+            return this.__create_audience_marker_block(html);
         }
 
         // Default: create text block with HTML
         return this.__create_text_block({ text: html });
+    }
+
+    __create_audience_marker_block(text) {
+        return {
+            block_type: this.block_type_map.text,
+            text: {
+                elements: [this.__create_text_element(text)],
+                style: {}
+            }
+        };
     }
 
     __parse_admonition(html) {
@@ -1060,6 +1082,8 @@ class MarkdownToFeishu {
                 // Check if it's a Tabs result with multiple blocks
                 if (parsed.__tabs_blocks) {
                     blocks.push(...parsed.__tabs_blocks);
+                } else if (parsed.__audience_blocks) {
+                    blocks.push(...parsed.__audience_blocks);
                 } else {
                     blocks.push(parsed);
                 }

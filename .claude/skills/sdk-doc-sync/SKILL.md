@@ -24,6 +24,7 @@ Read only what the task requires:
 - Schema-first production workflow: [references/schema-first-generation.md](references/schema-first-generation.md)
 - Manual release smoke procedure: [references/release-smoke-test.md](references/release-smoke-test.md)
 - Formatting and post-write checks: [references/post-write-verification.md](references/post-write-verification.md)
+- Stable-core and run-local ownership: [references/stable-core-boundary.md](references/stable-core-boundary.md)
 - Supported CLI entry points: [references/cli.md](references/cli.md)
 - Known failure patterns: [references/troubleshooting.md](references/troubleshooting.md)
 - Feishu bot integration: [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md) when wiring or testing a bot channel for deterministic review and approval gates.
@@ -68,6 +69,7 @@ Read only what the task requires:
 - Do not write until the user has reviewed the exact dry-run action list and given explicit approval.
 - Treat production validation failures as publish blockers, not as failed release discovery. If a scoped dry-run reports `planCount: 0`, nonzero `planningErrorCount`, or missing evidence/summary/example validation errors, report the release triage separately and state that the dry-run is not approval-ready.
 - Use consistent release artifacts: `tmp/sdk-release-scout/<language>-<track>.json` for release scout and `tmp/sdk-release-scout/<language>-<track>-dryrun-summary.json` for bounded dry-run summaries, where `<track>` is compact, such as `v26`, `v30`, or `v14`.
+- Classify every changed file before commit. Reusable release-independent behavior and its synthetic tests belong to the stable core; exact release prose, IDs, migrations, previews, manifests, receipts, and repair scripts belong under the ignored run root; `scan-state.json` is tracked operational state and must be committed separately from reusable core changes.
 
 ## Workflow
 

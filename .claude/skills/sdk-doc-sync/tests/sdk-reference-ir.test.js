@@ -169,6 +169,47 @@ test('constructors preserve supplied boolean values for validation instead of co
   }
 });
 
+test('production Python examples require one argument per line in multi-argument keyword calls', () => {
+  const compact = completeMethod({
+    identity: {
+      kind: 'method', language: 'python', name: 'hybrid_search',
+      title: 'hybrid_search()', stableId: 'python:Vector:hybrid_search',
+    },
+    examples: [createExample({
+      title: 'Hybrid search',
+      description: 'Runs a hybrid search.',
+      language: 'python',
+      code: 'request = AnnSearchRequest(data=[[0.1]], anns_field="vector", limit=10)',
+    })],
+  });
+  const compactErrors = validateReferenceDocument(compact, {
+    production: true,
+    knownTypeIds: ['node.SearchReq'],
+  }).errors;
+  assert.ok(compactErrors.some((error) => error.code === 'PYTHON_CALL_ARGUMENTS_NOT_MULTILINE'));
+
+  const readable = completeMethod({
+    identity: compact.identity,
+    examples: [createExample({
+      title: 'Hybrid search',
+      description: 'Runs a hybrid search.',
+      language: 'python',
+      code: [
+        'request = AnnSearchRequest(',
+        '    data=[[0.1]],',
+        '    anns_field="vector",',
+        '    limit=10,',
+        ')',
+      ].join('\n'),
+    })],
+  });
+  const readableErrors = validateReferenceDocument(readable, {
+    production: true,
+    knownTypeIds: ['node.SearchReq'],
+  }).errors;
+  assert.equal(readableErrors.some((error) => error.code === 'PYTHON_CALL_ARGUMENTS_NOT_MULTILINE'), false);
+});
+
 test('optional raw boolean flags treat undefined as false but reject supplied non-booleans', () => {
   const original = completeMethod();
   const input = { ...original.signatures[0].inputs[0] };
@@ -238,6 +279,135 @@ test('supports two unique Node request variants and rejects duplicate variant ID
     && error.path === '$.requestVariants[1].id'));
   assert.ok(errors.some((error) => error.code === 'DUPLICATE_FIELD_NAME'
     && error.path === '$.requestVariants[1].inputs[1].name'));
+});
+
+function platformPythonMethod(overrides = {}) {
+  const url = createField({
+    name: 'url',
+    type: { display: 'str', references: [] },
+    required: true,
+    audience: 'shared',
+    descriptions: {
+      milvus: 'The Milvus server endpoint, such as `http://localhost:19530`.',
+      zilliz: 'The Zilliz Cloud API server endpoint, which is `https://api.cloud.zilliz.com`.',
+    },
+  });
+  const files = createField({
+    name: 'files',
+    type: { display: 'list[str]', references: [] },
+    audience: 'milvus',
+    description: 'The files containing the data to import.',
+  });
+  const projectId = createField({
+    name: 'project_id',
+    type: { display: 'str', references: [] },
+    audience: 'zilliz',
+    description: 'The ID of the Zilliz Cloud project containing the target database.',
+  });
+  const fields = [url, files, projectId];
+  const variant = (audience, parameters) => createRequestVariant({
+    id: audience,
+    title: `${audience} request`,
+    audience,
+    parameters,
+    signature: createSignature({
+      display: `submit(${parameters.join(', ')})`,
+      inputs: fields.filter((field) => parameters.includes(field.name)),
+    }),
+    inputs: fields.filter((field) => parameters.includes(field.name)),
+  });
+  return createReferenceDocument({
+    identity: {
+      kind: 'function', language: 'python', name: 'submit', title: 'submit()', stableId: 'python.submit',
+    },
+    source: {
+      repository: 'milvus-io/pymilvus', revision: 'v2.6.0', file: 'client.py', line: 10,
+    },
+    summary: 'Submits data to the configured service.',
+    signatures: [createSignature({ display: 'submit(url, files=None, project_id="")', inputs: fields })],
+    requestVariants: [
+      variant('milvus', ['url', 'files']),
+      variant('zilliz', ['url', 'project_id']),
+    ],
+    result: createResult({
+      type: { display: 'Response', references: [] },
+      description: 'The service response.',
+      fields: [],
+    }),
+    examples: [
+      createExample({
+        title: 'Milvus example', audience: 'milvus', language: 'python',
+        code: 'submit(url="http://localhost:19530", files=["data.json"])',
+      }),
+      createExample({
+        title: 'Zilliz Cloud example', audience: 'zilliz', language: 'python',
+        code: 'submit(url="https://api.cloud.zilliz.com", project_id="project")',
+      }),
+    ],
+    evidence: [sourceEvidence({ locator: 'client.py#L10-L30' })],
+    ...overrides,
+  });
+}
+
+test('production rejects invalid audience description shapes', () => {
+  const doc = platformPythonMethod();
+  const malformedUrl = {
+    ...doc.signatures[0].inputs[0],
+    description: 'The server endpoint.',
+  };
+  const malformed = {
+    ...doc,
+    signatures: [{ ...doc.signatures[0], inputs: [malformedUrl, ...doc.signatures[0].inputs.slice(1)] }],
+  };
+
+  const errors = validateReferenceDocument(malformed, { production: true }).errors;
+  assert.ok(errors.some((error) => error.code === 'INVALID_AUDIENCE_DESCRIPTION_SHAPE'
+    && error.path === '$.signatures[0].inputs[0]'));
+});
+
+test('production rejects unknown and cross-audience request parameters', () => {
+  const doc = platformPythonMethod();
+  const invalid = {
+    ...doc,
+    requestVariants: [{
+      ...doc.requestVariants[0],
+      parameters: ['url', 'project_id', 'missing'],
+      inputs: [doc.signatures[0].inputs[0], doc.signatures[0].inputs[2], createField({
+        name: 'missing', type: { display: 'str', references: [] }, description: 'The missing value.',
+      })],
+    }, doc.requestVariants[1]],
+  };
+
+  const errors = validateReferenceDocument(invalid, { production: true }).errors;
+  assert.ok(errors.some((error) => error.code === 'UNKNOWN_VARIANT_PARAMETER'));
+  assert.ok(errors.some((error) => error.code === 'AUDIENCE_PARAMETER_LEAK'));
+});
+
+test('production requires request and example coverage for every platform audience', () => {
+  const doc = platformPythonMethod({
+    requestVariants: [platformPythonMethod().requestVariants[0]],
+    examples: [platformPythonMethod().examples[0]],
+  });
+
+  const errors = validateReferenceDocument(doc, { production: true }).errors;
+  assert.ok(errors.some((error) => error.code === 'MISSING_REQUEST_AUDIENCE'
+    && error.path === '$.requestVariants'));
+  assert.ok(errors.some((error) => error.code === 'MISSING_EXAMPLE_AUDIENCE'
+    && error.path === '$.examples'));
+});
+
+test('production enforces platform-correct example endpoints', () => {
+  const doc = platformPythonMethod();
+  const invalid = {
+    ...doc,
+    examples: [
+      { ...doc.examples[0], code: 'submit(url="https://api.cloud.zilliz.com", files=["data.json"])' },
+      { ...doc.examples[1], code: 'submit(url="https://cloud.example.test", project_id="project")' },
+    ],
+  };
+
+  const errors = validateReferenceDocument(invalid, { production: true }).errors;
+  assert.equal(errors.filter((error) => error.code === 'INVALID_PLATFORM_ENDPOINT').length, 2);
 });
 
 test('preserves recursive field details and reports duplicate sibling field names at exact paths', () => {

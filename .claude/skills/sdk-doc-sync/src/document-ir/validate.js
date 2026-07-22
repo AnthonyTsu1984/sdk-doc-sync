@@ -147,7 +147,7 @@ function validateDocumentIr(ir, { lossless = true } = {}) {
       }
       case 'listItem': {
         const children = requireArray(node, 'children', path);
-        if (children) visitChildren(children, `${path}.children`, new Set(['paragraph', 'unorderedList', 'orderedList']));
+        if (children) visitChildren(children, `${path}.children`, new Set(['paragraph', 'unorderedList', 'orderedList', 'audience']));
         break;
       }
       case 'codeBlock':

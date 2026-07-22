@@ -51,6 +51,25 @@ When this exception is raised.
 ```
 ```
 
+## Platform-aware parameter prose
+
+Treat sentence-start checks as lint signals, not as a writing template. A reviewed parameter description must be a complete, human-readable sentence that explains what the value represents, names the applicable platform when relevant, and includes important constraints or examples. Prefer an article-led sentence such as `The name of the target collection.` or a natural plural subject such as `Files containing the import data.` Never repair source text by mechanically prefixing `The`.
+
+Classify every reviewed field explicitly as `shared`, `milvus`, or `zilliz`; do not infer ownership from a parameter name or a marker such as `(cloud)`. A shared field with the same meaning uses `description`. A shared field whose meaning differs by platform uses one `descriptions` object with `milvus` and `zilliz` entries so the field header, type, required state, and default render once. A platform-only field wraps the complete parameter entry for that audience.
+
+Use precise endpoint vocabulary:
+
+- The Milvus server endpoint, such as `http://localhost:19530`.
+- The Zilliz Cloud API server endpoint, which is `https://api.cloud.zilliz.com`.
+
+Audience wrappers and code variants have different representations. Parameter prose uses structural `<include target="milvus">` and `<include target="zilliz">` regions outside code blocks. Request syntax and examples use complete-line zdoc comment directives inside one physical Python block: `# include-start milvus`, `# include-start zilliz`, and `# include-end`. Never place HTML-like include or exclude tags inside code.
+
+Reviewed request variants must list their canonical parameters explicitly. Validation rejects unknown parameters, cross-platform parameter leakage, missing request/example audience coverage, platform-inconsistent endpoints, malformed directives, and audience tags inside code blocks. A genuinely shared request or example remains directive-free.
+
+Keep Python examples readable without horizontal scrolling. When a constructor or API call passes multiple arguments and uses keyword arguments, place the opening parenthesis, every top-level argument, and the closing parenthesis on separate lines. Nested values may span additional lines when needed. Production validation rejects compact multi-argument calls such as `Request(data=..., limit=...)`.
+
+Keep the core release-independent. Do not add method names, record IDs, release lookup tables, or exact one-run wording to adapters, renderers, or validators. Store release classifications, reviewed prose, migrations, previews, approval manifests, and receipts under the ignored run root `tmp/sdk-doc-sync-runs/<language>-<track>/<run-id>/`. Stable code must run with that directory absent.
+
 **v3.0.x specific notes:**
 
 - **Tag + commit tracking:** v3.0.x now has tag `v3.0.0`. Track both `lastScannedTag` and `lastScannedCommit` in `scan-state.json` under `python-v3`.

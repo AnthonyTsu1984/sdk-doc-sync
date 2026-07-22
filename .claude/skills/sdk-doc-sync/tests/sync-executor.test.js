@@ -959,3 +959,35 @@ test('FeishuOperationalVerifier accepts a valid Python semantic layout and numer
   assert.deepEqual(verification.errors, []);
   assert.equal(verification.ok, true);
 });
+
+test('FeishuOperationalVerifier rejects malformed code directives and HTML audience tags inside code', async () => {
+  const blocks = [
+    {
+      block_id: 'bad-directive',
+      block_type: 14,
+      code: {
+        elements: [{ text_run: { content: 'value = 1 # include-start milvus', text_element_style: {} } }],
+        style: { language: 49 },
+      },
+    },
+    {
+      block_id: 'html-tag',
+      block_type: 14,
+      code: {
+        elements: [{ text_run: { content: '<include target="zilliz">\nvalue = 2\n</include>', text_element_style: {} } }],
+        style: { language: 49 },
+      },
+    },
+  ];
+  const verifier = new FeishuOperationalVerifier({
+    ops: {
+      async authStatus() { return { stdout: '{}' }; },
+      async fetchDocBlocks() { return { stdout: JSON.stringify({ items: blocks }) }; },
+    },
+  });
+
+  const verification = await verifier.verifyDocument({ source: { documentToken: 'doc-variants' } });
+
+  assert.ok(verification.errors.some((error) => error.code === 'INVALID_CODE_VARIANT_DIRECTIVE'));
+  assert.ok(verification.errors.some((error) => error.code === 'HTML_AUDIENCE_TAG_IN_CODE'));
+});

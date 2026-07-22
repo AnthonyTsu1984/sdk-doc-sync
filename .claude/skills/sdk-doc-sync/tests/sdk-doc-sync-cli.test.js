@@ -93,17 +93,17 @@ function sdkContext(language) {
       repository: 'milvus-io/pymilvus',
       summary: 'Searches vectors in a collection and returns nearest matches.',
       params: [
-        { name: 'collection_name', kind: 'positional', type: 'str', default: null, description: 'Name of the target collection.' },
-        { name: 'data', kind: 'positional', type: 'list[list[float]]', default: null, description: 'Query vectors.' },
+        { name: 'collection_name', kind: 'positional', type: 'str', default: null, description: 'The name of the target collection.' },
+        { name: 'data', kind: 'positional', type: 'list[list[float]]', default: null, description: 'The query vectors.' },
         { name: '*', kind: 'separator', type: null, default: null },
-        { name: 'limit', kind: 'keyword', type: 'int', default: '10', description: 'Maximum number of matches to return.' },
-        { name: 'kwargs', kind: 'kwargs', type: 'Any', default: null, description: 'Additional search options.' },
+        { name: 'limit', kind: 'keyword', type: 'int', default: '10', description: 'The maximum number of matches to return.' },
+        { name: 'kwargs', kind: 'kwargs', type: 'Any', default: null, description: 'Additional search options forwarded to the request.' },
       ],
       examples: [{
         title: 'Search a collection',
         description: 'Runs a vector search.',
         language: 'python',
-        code: 'results = client.search(collection_name="docs", data=[[0.1, 0.2]], limit=10)\nprint(results)',
+        code: 'results = client.search(\n    collection_name="docs",\n    data=[[0.1, 0.2]],\n    limit=10,\n)\nprint(results)',
       }],
       result: {
         type: 'list[SearchResult]',
@@ -505,6 +505,67 @@ test('SDK UPDATE planning reads live blocks and stores a validated semantic patc
   assert.deepEqual(calls, [['readBlocks', 'doc-search']]);
   assert.equal(context.apiPatchPlan.validation.valid, true);
   assert.deepEqual(context.apiPatchPlan.operations.map((operation) => operation.role), ['parameters']);
+});
+
+test('SDK UPDATE planning rejects desired Feishu blocks with visible Markdown escapes', async () => {
+  const blocks = (parameter) => {
+    const children = [
+      { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Imports data.', text_element_style: {} } }] } },
+      { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
+      { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'bulk_import(url)', text_element_style: {} } }], style: { language: 49 } } },
+      { block_id: 'parameters', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:', text_element_style: { bold: true } } }] } },
+      { block_id: 'param', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: parameter, text_element_style: {} } }] } },
+    ];
+    return [{ block_id: 'page', block_type: 1, children: children.map((block) => block.block_id), page: { elements: [] } }, ...children];
+  };
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+    indexReader: async () => [],
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    dryRun: true,
+    artifactProvider: async () => ({ artifact: {
+      title: 'bulk_import()',
+      content: 'Imports data.\n',
+      documentIr: { type: 'document', children: [] },
+      layout: { profileId: 'python', profileVersion: 1 },
+      reviewed: true,
+      validated: true,
+      validation: { valid: true },
+    } }),
+    documentBlockReader: {
+      async readBlocks() { return blocks('url - The server endpoint.'); },
+    },
+    artifactBlockRenderer: async () => blocks(
+      '<include target="zilliz">\n- **object\\_url** (*str*) -\n</include>',
+    ),
+  });
+  const action = {
+    type: 'UPDATE',
+    stableId: 'python:BulkImport:bulk_import',
+    slug: 'BulkImport-bulk_import',
+    symbol: { name: 'bulk_import' },
+    doc: { id: 'rec-import', metadata: { token: 'doc-import' } },
+    planningContext: {
+      current: {
+        version: 'v2.6.x', recordId: 'rec-import', documentToken: 'doc-import',
+        folderToken: 'bulk-import-v26', ancestryVerified: true, placementVerified: true,
+      },
+      target: {
+        version: 'v2.6.x', parentRecordId: 'parent-import', folderToken: 'bulk-import-v26',
+        versionRootToken: 'root-v26', ancestryVerified: true,
+      },
+      tokenReferencedByOlderVersions: false,
+    },
+  };
+
+  await assert.rejects(
+    () => sync._planningContextFor(action, 0, {}),
+    (error) => error.code === 'DESIRED_BLOCK_SAFETY_FAILED'
+      && /ESCAPED_IDENTIFIER/.test(error.message),
+  );
 });
 
 test('schema-first CLI reports missing reviewed artifacts instead of falling back to scaffolds', async () => {

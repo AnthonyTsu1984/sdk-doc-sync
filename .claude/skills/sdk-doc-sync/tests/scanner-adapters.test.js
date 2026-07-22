@@ -22,7 +22,13 @@ function context(language, category, overrides = {}) {
     python: {
       repository: 'milvus-io/pymilvus',
       summary: 'Searches vectors in a Milvus collection.',
-      example: 'client.search(collection_name="docs", data=[[0.1, 0.2]], limit=10)',
+      example: [
+        'client.search(',
+        '    collection_name="docs",',
+        '    data=[[0.1, 0.2]],',
+        '    limit=10,',
+        ')',
+      ].join('\n'),
     },
     java: {
       repository: 'zilliztech/milvus-sdk-java',
@@ -194,6 +200,63 @@ test('Python reviewed context can replace a scanner signature and parameters for
   assert.equal(doc.signatures[0].inputs[0].description, 'Name of the field.');
   assert.equal(doc.requestVariants[0].signature.display, doc.signatures[0].display);
   assert.equal(doc.requestVariants[0].inputs[3].description, 'Additional field options.');
+});
+
+test('Python preserves reviewed audience fields, request variants, and examples', () => {
+  const doc = pythonAdapter.toReferenceDocument({
+    name: 'bulk_import',
+    kind: 'function',
+    signature: 'bulk_import(url, collection_name, files=None, project_id="")',
+    docstring: 'Args:\n    url (str): url of the server.\n    collection_name (str): name of the collection.',
+    params: [],
+    filePath: 'pymilvus/bulk_writer/bulk_import.py',
+    lineNumber: 109,
+  }, context('python', 'BulkImport', {
+    signature: 'bulk_import(url: str, collection_name: str, files=None, project_id: str = "")',
+    params: [{
+      name: 'url', type: 'str', kind: 'positional', required: true, audience: 'shared',
+      descriptions: {
+        milvus: 'The Milvus server endpoint, such as `http://localhost:19530`.',
+        zilliz: 'The Zilliz Cloud API server endpoint, which is `https://api.cloud.zilliz.com`.',
+      },
+    }, {
+      name: 'collection_name', type: 'str', kind: 'positional', required: true,
+      description: 'The name of the target collection.',
+    }, {
+      name: 'files', type: 'list', kind: 'keyword', default: 'None', audience: 'milvus',
+      description: 'The files containing the data to import.',
+    }, {
+      name: 'project_id', type: 'str', kind: 'keyword', default: '""', audience: 'zilliz',
+      description: 'The ID of the Zilliz Cloud project containing the target database.',
+    }],
+    requestVariants: [{
+      id: 'milvus', audience: 'milvus', parameters: ['url', 'collection_name', 'files'],
+      signature: 'bulk_import(url: str, collection_name: str, files=None)',
+    }, {
+      id: 'zilliz', audience: 'zilliz', parameters: ['url', 'collection_name', 'project_id'],
+      signature: 'bulk_import(url: str, collection_name: str, project_id: str = "")',
+    }],
+    examples: [{
+      title: 'Milvus example', audience: 'milvus', language: 'python',
+      description: 'The example starts a Milvus import.',
+      code: 'bulk_import(\n    url="http://localhost:19530",\n    collection_name="docs",\n    files=[["data.json"]],\n)',
+    }, {
+      title: 'Zilliz Cloud example', audience: 'zilliz', language: 'python',
+      description: 'The example starts a Zilliz Cloud import.',
+      code: 'bulk_import(\n    url="https://api.cloud.zilliz.com",\n    collection_name="docs",\n    project_id="proj",\n)',
+    }],
+  }));
+
+  assert.deepEqual(doc.signatures[0].inputs[0].descriptions, {
+    milvus: 'The Milvus server endpoint, such as `http://localhost:19530`.',
+    zilliz: 'The Zilliz Cloud API server endpoint, which is `https://api.cloud.zilliz.com`.',
+  });
+  assert.equal(doc.signatures[0].inputs[0].description, '');
+  assert.equal(doc.signatures[0].inputs[3].audience, 'zilliz');
+  assert.deepEqual(doc.requestVariants.map((item) => item.audience), ['milvus', 'zilliz']);
+  assert.deepEqual(doc.requestVariants[0].parameters, ['url', 'collection_name', 'files']);
+  assert.deepEqual(doc.requestVariants[0].inputs.map((item) => item.name), ['url', 'collection_name', 'files']);
+  assert.deepEqual(doc.examples.map((item) => item.audience), ['milvus', 'zilliz']);
 });
 
 test('production validation rejects Python parameters without user-facing descriptions', () => {

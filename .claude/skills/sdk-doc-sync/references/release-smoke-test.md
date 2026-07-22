@@ -75,6 +75,30 @@ Milvus-only include body.
 Zilliz-only include body.
 </include>
 
+## Platform-aware Parameter
+
+- **url** (*str*) -
+  **[REQUIRED]**
+
+  <include target="milvus">
+  The Milvus server endpoint, such as `http://localhost:19530`.
+  </include>
+
+  <include target="zilliz">
+  The Zilliz Cloud API server endpoint, which is `https://api.cloud.zilliz.com`.
+  </include>
+
+## Python Code Variants
+
+```python
+# include-start milvus
+client = MilvusClient(uri="http://localhost:19530")
+# include-end
+# include-start zilliz
+response = bulk_import(url="https://api.cloud.zilliz.com", project_id="project-id")
+# include-end
+```
+
 ## Citation
 
 See [Milvus API reference](https://milvus.io/docs) for the published reference surface.
@@ -125,6 +149,10 @@ Verify:
 - the C++ fence is still C++ and contains both `#include` lines;
 - nested list items are present once each and keep parent/child/grandchild structure;
 - include bodies are preserved or filtered according to the requested target behavior;
+- the `url` field renders once, with separate Milvus and Zilliz Cloud prose regions outside code;
+- the Python variant directives occupy complete lines inside one code block, with no HTML audience tags in code;
+- the Milvus projection contains `http://localhost:19530` and no Zilliz Cloud-only parameters;
+- the Zilliz projection contains `https://api.cloud.zilliz.com` and no Milvus-only parameters;
 - citation link text and URL are present;
 - the bitable record points to the disposable document URL;
 - the record parent and version metadata match the smoke setup.
@@ -186,6 +214,7 @@ The smoke passes only when:
 - creation approval, patch approval, and cleanup approval or cleanup deferral were recorded;
 - disposable folder, document, and record were created or identified successfully;
 - C++ code, nested lists, includes, and citations survived create/refetch;
+- platform-aware parameter prose and Python code variants survived create/refetch and projected without audience leakage;
 - patch/refetch preserved existing content and applied the approved change;
 - bitable record state matched the expected disposable document link and metadata;
 - cleanup was completed or explicitly deferred with tokens recorded.

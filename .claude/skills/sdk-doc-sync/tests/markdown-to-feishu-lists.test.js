@@ -56,6 +56,31 @@ test('Markdown conversion removes syntax escapes from visible API identifiers an
   assert.doesNotMatch(visible, /\\[_\[\]]/);
 });
 
+test('audience wrappers preserve markers while rendering enclosed parameter Markdown as rich blocks', async () => {
+  const converter = new MarkdownToFeishu({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const { tokens } = await converter.parse_markdown([
+    '<include target="zilliz">',
+    '- **object\\_urls** (*Optional\\[List\\[List\\[str\\]\\]\\]*) -',
+    '  Default: `None`',
+    '  The object-storage URLs containing the import data.',
+    '</include>',
+    '',
+  ].join('\n'));
+
+  const blocks = await converter.markdown_to_blocks(tokens);
+  const visible = blocks.map(blockLabel);
+
+  assert.deepEqual(blocks.map((block) => block.block_type), [2, 12, 2]);
+  assert.equal(visible[0], '<include target="zilliz">');
+  assert.match(visible[1], /object_urls.*Optional\[List\[List\[str\]\]\].*Default: None/s);
+  assert.doesNotMatch(visible[1], /\\[_\[\]]/);
+  assert.equal(visible[2], '</include>');
+});
+
 test('nested list conversion preserves exact hierarchy without duplicate labels', async () => {
   const markdown = fs.readFileSync(fixturePath, 'utf8');
   const converter = new MarkdownToFeishu({

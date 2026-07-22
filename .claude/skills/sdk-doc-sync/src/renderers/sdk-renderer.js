@@ -1,7 +1,9 @@
 'use strict';
 
 const ir = require('../document-ir/schema');
+const audience = require('../sdk-reference-ir/audience');
 const { isSafeUrl } = require('../document-ir/validate');
+const { composeCodeVariants } = require('./code-variants');
 
 function text(value, marks = []) {
   return ir.text(String(value), marks);
@@ -103,21 +105,59 @@ function fieldDetails(field) {
   return details.join('. ');
 }
 
-function renderFields(fields, context, role = 'parameters-list', key = null) {
-  const items = fields.map((field) => {
-    const children = [fieldHeader(field, context)];
-    const qualifier = fieldQualifier(field);
-    if (qualifier) children.push(qualifier);
-    const description = sentence(field.description);
-    if (description) children.push(paragraph(description));
-    const details = fieldDetails(field);
-    if (details) children.push(paragraph(sentence(details)));
-    if (Array.isArray(field.children) && field.children.length > 0) {
-      children.push(renderFields(field.children, context, role, key));
+function renderFieldItem(field, context, role = 'parameters-list', key = null) {
+  const children = [fieldHeader(field, context)];
+  const qualifier = fieldQualifier(field);
+  if (qualifier) children.push(qualifier);
+  for (const entry of audience.descriptionEntries(field)) {
+    const description = sentence(entry.description);
+    if (!description) continue;
+    const descriptionBlock = paragraph(description);
+    if (audience.normalizeAudience(field.audience) === 'shared' && entry.audience !== 'shared') {
+      children.push(ir.audienceRegion('include', entry.audience, [descriptionBlock]));
+    } else {
+      children.push(descriptionBlock);
     }
-    return ir.listItem(children);
-  });
-  return ir.unorderedList(items, semantic(role, key));
+  }
+  const details = fieldDetails(field);
+  if (details) children.push(paragraph(sentence(details)));
+  if (Array.isArray(field.children) && field.children.length > 0) {
+    children.push(...renderFieldBlocks(field.children, context, role, key));
+  }
+  return ir.listItem(children);
+}
+
+function renderFields(fields, context, role = 'parameters-list', key = null) {
+  return ir.unorderedList(
+    fields.map((field) => renderFieldItem(field, context, role, key)),
+    semantic(role, key),
+  );
+}
+
+function renderFieldBlocks(fields, context, role = 'parameters-list', key = null) {
+  const blocks = [];
+  let shared = [];
+  const flushShared = () => {
+    if (shared.length === 0) return;
+    blocks.push(renderFields(shared, context, role, key));
+    shared = [];
+  };
+  for (const field of fields) {
+    const target = audience.normalizeAudience(field.audience);
+    if (target === 'shared') {
+      shared.push(field);
+      continue;
+    }
+    flushShared();
+    blocks.push(ir.audienceRegion(
+      'include',
+      target,
+      [renderFields([field], context, role, key)],
+      semantic(role, key),
+    ));
+  }
+  flushShared();
+  return blocks;
 }
 
 function renderMembers(members) {
@@ -149,7 +189,20 @@ function renderRelated(items) {
 
 function requestEntries(document, policy) {
   if (typeof policy.requestEntries === 'function') return policy.requestEntries(document);
-  return document.requestVariants || [];
+  const entries = document.requestVariants || [];
+  if (!policy.codeVariantPolicy || entries.length === 0) return entries;
+  return [{
+    id: 'audience-variants',
+    title: '',
+    description: '',
+    signature: {
+      display: composeCodeVariants(entries.map((entry) => ({
+        audience: entry.audience,
+        code: entry.signature?.display || '',
+      })), policy.codeVariantPolicy),
+    },
+    inputs: [],
+  }];
 }
 
 function renderRequest(document, policy, context) {
@@ -171,7 +224,7 @@ function renderRequest(document, policy, context) {
     if (policy.variantFields && Array.isArray(entry.inputs) && entry.inputs.length > 0) {
       blocks.push(
         label(policy.parametersLabel, semantic('parameters-label', entryKey)),
-        renderFields(entry.inputs, context, 'parameters-list', entryKey),
+        ...renderFieldBlocks(entry.inputs, context, 'parameters-list', entryKey),
       );
     }
   }
@@ -196,7 +249,7 @@ function renderReturns(document, policy, context) {
   }
   blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
   if (Array.isArray(result.fields) && result.fields.length > 0) {
-    blocks.push(renderFields(result.fields, context, 'result-fields'));
+      blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
   }
   return blocks;
 }
@@ -234,7 +287,7 @@ function renderPrimaryInputs(document, policy, context) {
   if (primaryInputs.length === 0) return [];
   return [
     label(policy.parametersLabel, semantic('parameters-label')),
-    renderFields(primaryInputs, context, 'parameters-list'),
+    ...renderFieldBlocks(primaryInputs, context, 'parameters-list'),
   ];
 }
 
@@ -262,6 +315,30 @@ function renderErrorsSection(document, policy) {
 function renderExamples(document, policy) {
   if (!Array.isArray(document.examples) || document.examples.length === 0) return [];
   const blocks = [heading(2, policy.exampleHeading, semantic('examples-heading'))];
+  if (policy.codeVariantPolicy) {
+    const examples = document.examples;
+    const hasAudienceVariants = examples.some((example) => audience.normalizeAudience(example.audience) !== 'shared');
+    if (hasAudienceVariants) {
+      for (const example of examples) {
+        if (!example.description) continue;
+        blocks.push(ir.audienceRegion(
+          'include',
+          audience.normalizeAudience(example.audience),
+          [paragraph(example.description)],
+          semantic('example-description', example.id || example.title || example.audience),
+        ));
+      }
+      blocks.push(ir.codeBlock(
+        composeCodeVariants(examples.map((example) => ({
+          audience: example.audience,
+          code: example.code,
+        })), policy.codeVariantPolicy),
+        examples[0].fence || policy.exampleFence,
+        semantic('example-code', 'audience-variants'),
+      ));
+      return blocks;
+    }
+  }
   for (const [index, example] of document.examples.entries()) {
     const exampleKey = example.id || example.title || String(index);
     const baseHeading = policy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();

@@ -42,7 +42,7 @@ function context(language) {
       summary: 'Searches vectors in a collection and returns the nearest matches.',
       examples: [{
         title: 'Search a collection', description: 'Runs a vector search.', language: 'python',
-        code: 'results = client.search(collection_name="docs", data=[[0.1, 0.2]], limit=10)\nprint(results)',
+        code: 'results = client.search(\n    collection_name="docs",\n    data=[[0.1, 0.2]],\n    limit=10,\n)\nprint(results)',
       }],
       result: {
         type: 'list[SearchResult]',
@@ -454,6 +454,120 @@ test('parameter qualifiers render on their own line before the description', () 
       + '  The name of the target collection.',
   ));
   assert.match(markdown, /- \*\*limit\*\* \(\*int\*\) -\n  Default: `10`\n  The maximum/);
+});
+
+test('Python renders documented kwargs as an ordered nested parameter sublist', () => {
+  const adapterContext = {
+    ...context('python'),
+    category: 'Vector',
+    signature: 'upsert(collection_name: str, **kwargs)',
+    params: [{
+      name: 'collection_name', type: 'str', kind: 'positional', required: true,
+      description: 'The name of the collection.',
+    }, {
+      name: 'kwargs', type: 'Any', kind: 'kwargs',
+      description: 'The additional upsert options.',
+      children: [{
+        name: 'partial_update', type: 'bool', kind: 'keyword', default: 'False',
+        description: 'The flag that controls whether only specified fields are updated.',
+      }, {
+        name: 'field_ops', type: 'Optional[Dict[str, Any]]', kind: 'keyword', default: 'None',
+        description: 'The per-field merge operations applied during a partial update.',
+      }],
+    }],
+  };
+  const reference = pythonAdapter.toReferenceDocument({
+    name: 'upsert', kind: 'method', params: [],
+    filePath: 'pymilvus/milvus_client/milvus_client.py', lineNumber: 272,
+  }, adapterContext);
+  const ir = pythonRenderer.render(reference);
+  const parameterList = ir.children.find((node) => node.type === 'unorderedList'
+    && node.metadata?.role === 'parameters-list');
+  const kwargs = parameterList.items.find((item) => item.children[0]?.children[0]?.value === 'kwargs');
+  const nested = kwargs.children.find((node) => node.type === 'unorderedList');
+
+  assert.deepEqual(nested.items.map((item) => item.children[0].children[0].value), [
+    'partial_update', 'field_ops',
+  ]);
+  assert.match(renderMarkdown(ir), /- \*\*kwargs\*\*[\s\S]*  - \*\*partial\\_update\*\*[\s\S]*  - \*\*field\\_ops\*\*/);
+});
+
+test('Python renders shared description variants and platform-only parameter entries', () => {
+  const adapterContext = {
+    ...context('python'),
+    category: 'BulkImport',
+    signature: 'bulk_import(url: str, collection_name: str, project_id: str = "")',
+    params: [{
+      name: 'url', type: 'str', kind: 'positional', required: true, audience: 'shared',
+      descriptions: {
+        milvus: 'The Milvus server endpoint, such as `http://localhost:19530`.',
+        zilliz: 'The Zilliz Cloud API server endpoint, which is `https://api.cloud.zilliz.com`.',
+      },
+    }, {
+      name: 'collection_name', type: 'str', kind: 'positional', required: true,
+      description: 'The name of the target collection.',
+    }, {
+      name: 'project_id', type: 'str', kind: 'keyword', default: '""', audience: 'zilliz',
+      description: 'The ID of the Zilliz Cloud project containing the target database.',
+    }],
+  };
+  const reference = pythonAdapter.toReferenceDocument({
+    name: 'bulk_import', kind: 'function', params: [],
+    filePath: 'pymilvus/bulk_writer/bulk_import.py', lineNumber: 109,
+  }, adapterContext);
+  const markdown = renderMarkdown(pythonRenderer.render(reference));
+
+  assert.equal((markdown.match(/- \*\*url\*\*/g) || []).length, 1);
+  assert.match(markdown, /- \*\*url\*\*[\s\S]*<include target="milvus">[\s\S]*The Milvus server endpoint/);
+  assert.match(markdown, /- \*\*url\*\*[\s\S]*<include target="zilliz">[\s\S]*The Zilliz Cloud API server endpoint/);
+  assert.match(markdown, /<include target="zilliz">\n- \*\*project\\_id\*\*/);
+  assert.doesNotMatch(markdown, /<include target="milvus">\n- \*\*collection\\_name\*\*/);
+});
+
+test('Python composes audience request syntax and examples with zdoc directives', () => {
+  const adapterContext = {
+    ...context('python'),
+    category: 'BulkImport',
+    signature: 'bulk_import(url: str, collection_name: str)',
+    params: [{
+      name: 'url', type: 'str', kind: 'positional', required: true,
+      description: 'The server endpoint.',
+    }, {
+      name: 'collection_name', type: 'str', kind: 'positional', required: true,
+      description: 'The name of the target collection.',
+    }],
+    requestVariants: [{
+      id: 'milvus', audience: 'milvus', parameters: ['url', 'collection_name'],
+      signature: 'bulk_import(url="http://localhost:19530", collection_name="docs")',
+    }, {
+      id: 'zilliz', audience: 'zilliz', parameters: ['url', 'collection_name'],
+      signature: 'bulk_import(url="https://api.cloud.zilliz.com", collection_name="docs")',
+    }],
+    examples: [{
+      title: 'Milvus example', audience: 'milvus', language: 'python',
+      description: 'The example uses Milvus.',
+      code: 'bulk_import(\n    url="http://localhost:19530",\n    collection_name="docs",\n)',
+    }, {
+      title: 'Zilliz Cloud example', audience: 'zilliz', language: 'python',
+      description: 'The example uses Zilliz Cloud.',
+      code: 'bulk_import(\n    url="https://api.cloud.zilliz.com",\n    collection_name="docs",\n)',
+    }],
+  };
+  const reference = pythonAdapter.toReferenceDocument({
+    name: 'bulk_import', kind: 'function', params: [],
+    filePath: 'pymilvus/bulk_writer/bulk_import.py', lineNumber: 109,
+  }, adapterContext);
+  const ir = pythonRenderer.render(reference);
+  const markdown = renderMarkdown(ir);
+
+  const requestCode = codeValues(ir, 'request-signature');
+  const exampleCode = codeValues(ir, 'example-code');
+  assert.equal(requestCode.length, 1);
+  assert.equal(exampleCode.length, 1);
+  assert.match(markdown, /# include-start milvus\nbulk_import\(url="http:\/\/localhost:19530"/);
+  assert.match(markdown, /# include-start zilliz\nbulk_import\(url="https:\/\/api\.cloud\.zilliz\.com"/);
+  assert.doesNotMatch(requestCode[0], /<include target=/);
+  assert.doesNotMatch(exampleCode[0], /<include target=/);
 });
 
 test('authored prose renders single-backtick spans as inline code', () => {

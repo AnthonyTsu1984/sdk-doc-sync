@@ -4,6 +4,7 @@ const BitableWriter = require('./bitable-writer');
 const DiffEngine = require('./diff-engine');
 const DocGenerator = require('./doc-generator');
 const { FeishuOperationalVerifier } = require('./feishu-operational-verifier');
+const { validateRenderedApiBlocks } = require('./feishu-block-safety');
 const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
 const { planApiReferencePatch } = require('./docx-section-patcher');
@@ -436,6 +437,15 @@ class SdkDocSync {
             }
             const currentBlocks = await this.documentBlockReader.readBlocks(current.documentToken);
             const desiredBlocks = await this._renderArtifactBlocks(artifact);
+            const desiredBlockSafety = validateRenderedApiBlocks(desiredBlocks);
+            if (!desiredBlockSafety.ok) {
+                const error = new Error(
+                    `Desired Feishu blocks failed publication safety for ${this._stableIdFor(action)}: ${JSON.stringify(desiredBlockSafety.errors)}`,
+                );
+                error.code = 'DESIRED_BLOCK_SAFETY_FAILED';
+                error.details = { errors: desiredBlockSafety.errors };
+                throw error;
+            }
             apiPatchPlan = this.apiPatchPlanner({
                 currentBlocks,
                 desiredBlocks,

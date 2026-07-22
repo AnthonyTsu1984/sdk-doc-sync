@@ -8,6 +8,8 @@ const {
   CONFIDENCE_LEVELS,
 } = require('./schema');
 const { descriptionDiagnostics } = require('./prose-quality');
+const { pythonExampleCallLayoutDiagnostics } = require('./python-example-style');
+const { AUDIENCES, PLATFORM_AUDIENCES } = require('./audience');
 
 const MIN_EXAMPLE_CODE_LENGTH = 12;
 const EXAMPLE_FENCE = /^[A-Za-z][A-Za-z0-9+.#_-]{0,31}$/;
@@ -257,6 +259,20 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       ? Object.entries(field.descriptions).filter(([, value]) => typeof value === 'string' && value.trim() !== '')
       : [];
     const plainDescription = typeof field.description === 'string' ? field.description.trim() : '';
+    const hasDescriptionObject = isObject(field.descriptions);
+    const validDescriptionKeys = hasDescriptionObject
+      && Object.keys(field.descriptions).every((audience) => PLATFORM_AUDIENCES.includes(audience));
+    if (!AUDIENCES.includes(field.audience)
+      || (plainDescription !== '' && audienceDescriptions.length > 0)
+      || (hasDescriptionObject && (field.audience !== 'shared'
+        || audienceDescriptions.length === 0
+        || !validDescriptionKeys))) {
+      error(
+        path,
+        'field audience descriptions must use exactly one shared description shape',
+        'INVALID_AUDIENCE_DESCRIPTION_SHAPE',
+      );
+    }
     if (pythonProduction && plainDescription === '' && audienceDescriptions.length === 0) {
       error(
         `${path}.description`,
@@ -338,6 +354,12 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       }
       if (typeof variant.description !== 'string') {
         error(`${variantPath}.description`, 'request variant description must be a string', 'INVALID_REQUEST_VARIANT');
+      }
+      if (!AUDIENCES.includes(variant.audience)) {
+        error(`${variantPath}.audience`, `unsupported request audience ${variant.audience}`, 'INVALID_AUDIENCE');
+      }
+      if (!Array.isArray(variant.parameters)) {
+        error(`${variantPath}.parameters`, 'request variant parameters must be an array', 'INVALID_REQUEST_VARIANT');
       }
       validateSignature(variant.signature, `${variantPath}.signature`);
       validateFieldList(variant.inputs, `${variantPath}.inputs`);
@@ -426,6 +448,9 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       if (typeof item.description !== 'string') {
         error(`${itemPath}.description`, 'example description must be a string', 'INVALID_EXAMPLE');
       }
+      if (!AUDIENCES.includes(item.audience)) {
+        error(`${itemPath}.audience`, `unsupported example audience ${item.audience}`, 'INVALID_AUDIENCE');
+      }
       if (!LANGUAGES.includes(item.language)) {
         error(`${itemPath}.language`, `unsupported example language ${item.language}`, 'INVALID_EXAMPLE_LANGUAGE');
       }
@@ -442,6 +467,15 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
             'SHALLOW_EXAMPLE',
           );
         }
+        if (production && item.language === 'python') {
+          for (const diagnostic of pythonExampleCallLayoutDiagnostics(item.code)) {
+            error(
+              `${itemPath}.code`,
+              `${diagnostic.message} Offending call starts on line ${diagnostic.line}.`,
+              diagnostic.code,
+            );
+          }
+        }
       }
       if (item.fence !== undefined
         && (typeof item.fence !== 'string' || !EXAMPLE_FENCE.test(item.fence))) {
@@ -454,6 +488,95 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       validateEvidenceList(item.evidence, `${itemPath}.evidence`);
       requireProductionEvidence(item, itemPath);
     });
+  }
+
+  function canonicalInputMap() {
+    const inputs = Array.isArray(doc?.signatures?.[0]?.inputs) ? doc.signatures[0].inputs : [];
+    return new Map(inputs
+      .filter((field) => isObject(field) && isNonEmptyString(field.name))
+      .map((field) => [field.name, field]));
+  }
+
+  function requiredPlatformAudiences() {
+    const required = new Set();
+    const visit = (field) => {
+      if (!isObject(field)) return;
+      if (PLATFORM_AUDIENCES.includes(field.audience)) required.add(field.audience);
+      if (isObject(field.descriptions)) {
+        for (const audience of Object.keys(field.descriptions)) {
+          if (PLATFORM_AUDIENCES.includes(audience)) required.add(audience);
+        }
+      }
+      for (const child of field.children || []) visit(child);
+    };
+    for (const field of canonicalInputMap().values()) visit(field);
+    return [...required];
+  }
+
+  function validateAudienceCoverage() {
+    if (!production) return;
+    const canonical = canonicalInputMap();
+    const requiredAudiences = requiredPlatformAudiences();
+    if (requiredAudiences.length === 0) return;
+
+    for (const [index, variant] of (doc.requestVariants || []).entries()) {
+      if (!isObject(variant) || !Array.isArray(variant.parameters)) continue;
+      for (const [parameterIndex, name] of variant.parameters.entries()) {
+        const field = canonical.get(name);
+        if (!field) {
+          error(
+            `$.requestVariants[${index}].parameters[${parameterIndex}]`,
+            `request parameter ${name} is not in the canonical signature`,
+            'UNKNOWN_VARIANT_PARAMETER',
+          );
+          continue;
+        }
+        if (PLATFORM_AUDIENCES.includes(variant.audience)
+          && PLATFORM_AUDIENCES.includes(field.audience)
+          && variant.audience !== field.audience) {
+          error(
+            `$.requestVariants[${index}].parameters[${parameterIndex}]`,
+            `parameter ${name} is not visible to the ${variant.audience} audience`,
+            'AUDIENCE_PARAMETER_LEAK',
+          );
+        }
+      }
+    }
+
+    const requestAudiences = new Set((doc.requestVariants || [])
+      .filter(isObject)
+      .map((variant) => variant.audience));
+    const exampleAudiences = new Set((doc.examples || [])
+      .filter(isObject)
+      .map((example) => example.audience));
+    for (const audience of requiredAudiences) {
+      if (!requestAudiences.has('shared') && !requestAudiences.has(audience)) {
+        error(
+          '$.requestVariants',
+          `request syntax does not cover the ${audience} audience`,
+          'MISSING_REQUEST_AUDIENCE',
+        );
+      }
+      if (!exampleAudiences.has('shared') && !exampleAudiences.has(audience)) {
+        error('$.examples', `examples do not cover the ${audience} audience`, 'MISSING_EXAMPLE_AUDIENCE');
+      }
+    }
+  }
+
+  function validatePlatformEndpoints() {
+    if (!production) return;
+    for (const [index, example] of (doc.examples || []).entries()) {
+      if (!isObject(example) || typeof example.code !== 'string') continue;
+      const path = `$.examples[${index}].code`;
+      if (example.audience === 'milvus' && /api\.cloud\.zilliz\.com/i.test(example.code)) {
+        error(path, 'Milvus examples must not use the Zilliz Cloud API endpoint', 'INVALID_PLATFORM_ENDPOINT');
+      }
+      if (example.audience === 'zilliz'
+        && /\burl\s*=/i.test(example.code)
+        && !/https:\/\/api\.cloud\.zilliz\.com\b/i.test(example.code)) {
+        error(path, 'Zilliz Cloud URL assignments must use the API server endpoint', 'INVALID_PLATFORM_ENDPOINT');
+      }
+    }
   }
 
   function validateRelated(value, path) {
@@ -732,6 +855,8 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   validateResult(doc.result, '$.result');
   validateErrors(doc.errors, '$.errors');
   validateExamples(doc.examples, '$.examples');
+  validateAudienceCoverage();
+  validatePlatformEndpoints();
 
   const notes = requireArray(doc.notes, '$.notes', 'notes');
   notes?.forEach((note, index) => requireString(note, `$.notes[${index}]`, 'note'));

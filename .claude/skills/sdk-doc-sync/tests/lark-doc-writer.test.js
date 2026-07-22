@@ -147,6 +147,41 @@ test('get_markdown emits exactly one front matter delimiter pair', async (t) => 
   assert.match(markdown, /---\n\n# Example$/);
 });
 
+test('readBlocks preserves raw reference-synced block IDs for immutable patch preconditions', async () => {
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const blocks = [{
+    block_id: 'page',
+    block_type: 1,
+    children: ['summary', 'reference-wrapper'],
+  }, {
+    block_id: 'summary',
+    parent_id: 'page',
+    block_type: 2,
+    text: { elements: [] },
+  }, {
+    block_id: 'reference-wrapper',
+    parent_id: 'page',
+    block_type: 50,
+    reference_synced: {
+      source_document_id: 'source-doc',
+      source_block_id: 'source-root',
+    },
+  }];
+  converter.__fetch_doc_blocks = async () => blocks;
+  converter.__get_reference_syncd_blocks = async () => {
+    throw new Error('readBlocks must not expand reference wrappers');
+  };
+
+  const actual = await converter.readBlocks('doc-token');
+
+  assert.equal(actual, blocks);
+  assert.deepEqual(actual[0].children, ['summary', 'reference-wrapper']);
+});
+
 test('reference-synced expansion appends each source descendant once', async (t) => {
   suppressDebugLogs(t);
   const converter = new FeishuToMarkdown({

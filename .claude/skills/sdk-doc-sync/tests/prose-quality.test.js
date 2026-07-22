@@ -26,3 +26,10 @@ test('requires terminal punctuation and normal parenthesis spacing', () => {
   assert.ok(descriptionDiagnostics('The project(cloud).')
     .some((item) => item.code === 'DESCRIPTION_SPACING'));
 });
+
+test('allows callable names and signatures inside inline code', () => {
+  assert.deepEqual(
+    descriptionDiagnostics('The message ID returned by `get_replicate_info()`.'),
+    [],
+  );
+});

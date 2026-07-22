@@ -9,6 +9,7 @@ module.exports = createSdkRenderer({
   canonicalFence: 'Python',
   requestFence: 'Python',
   exampleFence: 'Python',
+  codeVariantPolicy: { lineComment: '#' },
   requestHeading: 'Request Syntax{#request-syntax}',
   parametersLabel: 'PARAMETERS:',
   primaryInputs: (document) => document.signatures[0]?.inputs || [],

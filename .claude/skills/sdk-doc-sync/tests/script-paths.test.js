@@ -40,10 +40,12 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   assert.deepEqual(result.stdout.trim().split('\n'), [
     '.claude/skills/sdk-doc-sync/tests/agent-harness.test.js',
     '.claude/skills/sdk-doc-sync/tests/api-section-model.test.js',
+    '.claude/skills/sdk-doc-sync/tests/audience.test.js',
     '.claude/skills/sdk-doc-sync/tests/bitable-record-index.test.js',
     '.claude/skills/sdk-doc-sync/tests/bitable-repository.test.js',
     '.claude/skills/sdk-doc-sync/tests/block-registry.test.js',
     '.claude/skills/sdk-doc-sync/tests/cli-rest-renderers.test.js',
+    '.claude/skills/sdk-doc-sync/tests/code-variants.test.js',
     '.claude/skills/sdk-doc-sync/tests/document-ir.test.js',
     '.claude/skills/sdk-doc-sync/tests/docx-reader.test.js',
     '.claude/skills/sdk-doc-sync/tests/docx-section-patcher.test.js',
@@ -54,6 +56,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-copy.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-patch.test.js',
+    '.claude/skills/sdk-doc-sync/tests/prose-quality.test.js',
     '.claude/skills/sdk-doc-sync/tests/read-consumers.test.js',
     '.claude/skills/sdk-doc-sync/tests/release-scope.test.js',
     '.claude/skills/sdk-doc-sync/tests/release-scout-cli.test.js',
@@ -121,6 +124,32 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
       `Missing sdk-doc-sync reference: ${reference}`,
     );
     assert.match(skill, new RegExp(reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  }
+});
+
+test('stable-core boundary keeps runtime code independent from ignored run artifacts', () => {
+  const root = path.join(__dirname, '..');
+  const skill = fs.readFileSync(path.join(root, 'SKILL.md'), 'utf8');
+  const boundaryPath = path.join(root, 'references', 'stable-core-boundary.md');
+  const gitignore = fs.readFileSync(path.join(root, '..', '..', '..', '.gitignore'), 'utf8');
+
+  assert.match(skill, /references\/stable-core-boundary\.md/);
+  assert.equal(fs.existsSync(boundaryPath), true);
+  assert.match(gitignore, /^tmp\/$/m);
+
+  const runtimeRoots = [path.join(root, 'src'), path.join(root, 'bin')];
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const entryPath = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(entryPath);
+      else if (/\.(?:js|json)$/.test(entry.name)) files.push(entryPath);
+    }
+  };
+  runtimeRoots.forEach(visit);
+  for (const file of files) {
+    const source = fs.readFileSync(file, 'utf8');
+    assert.doesNotMatch(source, /tmp\/sdk-doc-sync-runs|tmp\/sdk-release-scout/, file);
   }
 });
 

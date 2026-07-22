@@ -176,6 +176,28 @@ test('renders SDK method Markdown with tight nested lists and separate blocks', 
   ].join('\n'));
 });
 
+test('allows audience descriptions inside one list item', () => {
+  const ir = schema.document([
+    schema.unorderedList([
+      schema.listItem([
+        schema.paragraph([schema.text('url', ['bold'])]),
+        schema.audienceRegion('include', 'milvus', [
+          schema.paragraph([schema.text('The Milvus server endpoint.')]),
+        ]),
+      ]),
+    ]),
+  ]);
+
+  assert.deepEqual(validateDocumentIr(ir), { valid: true, errors: [], warnings: [] });
+  assert.equal(renderMarkdown(ir), [
+    '- **url**',
+    '  <include target="milvus">',
+    '  The Milvus server endpoint.',
+    '  </include>',
+    '',
+  ].join('\n'));
+});
+
 test('renders all supported general nodes and requires explicit lossy opaque rendering', () => {
   const ir = schema.document([
     schema.codeBlock('const value: number = 1;', 'TypeScript'),

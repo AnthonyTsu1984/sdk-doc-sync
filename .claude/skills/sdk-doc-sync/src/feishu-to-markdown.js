@@ -111,8 +111,12 @@ class FeishuToMarkdown extends larkDocWriter {
     }
 
     async readBlocks(documentToken) {
-        const blocks = await this.__fetch_doc_blocks(documentToken);
-        return this.__get_reference_syncd_blocks(blocks);
+        // Immutable patch plans must bind to the block IDs that exist in the
+        // target document. Expanding a reference-synced wrapper replaces its
+        // live block ID with the source block ID, which cannot satisfy the
+        // executor's live top-level precondition and cannot be preserved by a
+        // patch against the target document.
+        return this.__fetch_doc_blocks(documentToken);
     }
 
     async __raw_content(elements) {

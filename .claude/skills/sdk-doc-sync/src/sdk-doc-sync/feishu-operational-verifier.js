@@ -40,6 +40,35 @@ function historyVersionId(payload) {
     || null;
 }
 
+function codeBlockText(block) {
+  if (!block?.code?.elements) return '';
+  return block.code.elements.map((element) => element.text_run?.content || '').join('');
+}
+
+function validateCodeVariantDirectives(blocks) {
+  const errors = [];
+  const directiveToken = /\b(?:include|exclude)-(?:next-line|start|end)\b/;
+  const completeDirective = /^\s*(?:#|\/\/)\s+(?:(?:include|exclude)-(?:next-line|start)\s+[a-z0-9][a-z0-9.-]*|(?:include|exclude)-end)\s*$/;
+  for (const block of blocks || []) {
+    const text = codeBlockText(block);
+    if (!text) continue;
+    if (/<\s*\/?\s*(?:include|exclude)\b/i.test(text)) {
+      errors.push({ code: 'HTML_AUDIENCE_TAG_IN_CODE', blockId: block.block_id });
+    }
+    for (const [lineIndex, line] of text.split(/\r?\n/).entries()) {
+      if (directiveToken.test(line) && !completeDirective.test(line)) {
+        errors.push({
+          code: 'INVALID_CODE_VARIANT_DIRECTIVE',
+          blockId: block.block_id,
+          line: lineIndex + 1,
+          text: line,
+        });
+      }
+    }
+  }
+  return errors;
+}
+
 class FeishuOperationalVerifier extends SyncVerifier {
   constructor({ ops = new LarkCliOps(), readDocument = null, readRecord = null } = {}) {
     super({ readDocument, readRecord });
@@ -74,7 +103,7 @@ class FeishuOperationalVerifier extends SyncVerifier {
     const payload = parseJsonOutput(await this.ops.fetchDocBlocks(token));
     const blocks = blocksFromPayload(payload);
     const rendered = validateRenderedApiBlocks(blocks);
-    const semanticErrors = [];
+    const semanticErrors = validateCodeVariantDirectives(blocks);
     if (plan.layout) {
       const profile = sdkLayoutProfiles[plan.layout.profileId];
       if (!profile || profile.version !== plan.layout.profileVersion) {
@@ -152,4 +181,5 @@ module.exports = {
   FeishuOperationalVerifier,
   blocksFromPayload,
   historyVersionId,
+  validateCodeVariantDirectives,
 };

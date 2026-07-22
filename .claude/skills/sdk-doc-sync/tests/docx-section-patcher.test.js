@@ -84,6 +84,36 @@ test('preserves rich blocks attached to a replaced section', () => {
   assert.deepEqual(patch.operations[0].preserveBlockIds, ['callout']);
 });
 
+test('preserves the live reference-synced wrapper instead of its source block ID', () => {
+  const current = pythonDoc();
+  current[0].children.splice(1, 0, 'reference-wrapper');
+  current.splice(2, 0, {
+    block_id: 'reference-wrapper',
+    parent_id: 'page',
+    block_type: 50,
+    reference_synced: {
+      source_document_id: 'insert-source-doc',
+      source_block_id: 'insert-source-block',
+    },
+  });
+  const desired = pythonDoc();
+  desired[1].text.elements[0].text_run.content = 'Updated summary.';
+
+  const patch = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: desired,
+    profile: profiles.python,
+  });
+
+  assert.equal(patch.validation.valid, true);
+  assert.deepEqual(patch.currentModel.topLevelBlockIds.slice(0, 3), [
+    'summary', 'reference-wrapper', 'request',
+  ]);
+  assert.deepEqual(patch.preservedBlockIds, ['reference-wrapper']);
+  assert.deepEqual(patch.operations[0].preserveBlockIds, ['reference-wrapper']);
+  assert.doesNotMatch(JSON.stringify(patch), /insert-source-block/);
+});
+
 test('plans a scrambled page as a rebuild preview that requires repair-specific approval', () => {
   const current = pythonDoc();
   current[0].children = ['summary', 'examples', 'example-code', 'request', 'request-code', 'parameters', 'param', 'returns', 'returns-value'];

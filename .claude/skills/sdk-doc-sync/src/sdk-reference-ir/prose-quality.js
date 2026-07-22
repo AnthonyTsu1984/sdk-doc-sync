@@ -6,14 +6,15 @@ const FRAGMENT_START = /^(?:url|uri|id|name|path|key|token|description)\s+of\b/i
 
 function descriptionDiagnostics(value) {
   const text = String(value || '').trim();
+  const proseText = text.replace(/`[^`]*`/g, '');
   const diagnostics = [];
   if (!/[.!?]$/.test(text)) diagnostics.push({ code: 'DESCRIPTION_PUNCTUATION' });
   if (FRAGMENT_START.test(text)) diagnostics.push({ code: 'DESCRIPTION_FRAGMENT' });
   if (!ARTICLE_START.test(text) && !PLURAL_PHRASE_START.test(text)) {
     diagnostics.push({ code: 'DESCRIPTION_START' });
   }
-  if (/\w\(/.test(text) || /\)\w/.test(text)) diagnostics.push({ code: 'DESCRIPTION_SPACING' });
-  if (/\(cloud\)/i.test(text)) diagnostics.push({ code: 'VAGUE_PLATFORM_MARKER' });
+  if (/\w\(/.test(proseText) || /\)\w/.test(proseText)) diagnostics.push({ code: 'DESCRIPTION_SPACING' });
+  if (/\(cloud\)/i.test(proseText)) diagnostics.push({ code: 'VAGUE_PLATFORM_MARKER' });
   return diagnostics;
 }
 

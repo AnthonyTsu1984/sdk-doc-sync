@@ -50,7 +50,11 @@ Returns the matching entities ordered by similarity.
 Runs a vector search.
 
 ```python
-results = client.search(collection_name="docs", data=[[0.1, 0.2]], limit=10)
+results = client.search(
+    collection_name="docs",
+    data=[[0.1, 0.2]],
+    limit=10,
+)
 print(results)
 ```
 

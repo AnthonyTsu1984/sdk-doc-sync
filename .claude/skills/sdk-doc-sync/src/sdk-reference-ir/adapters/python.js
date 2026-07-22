@@ -47,8 +47,18 @@ function docstringParamDescriptions(docstring) {
 function applyDocstringParamDescriptions(params, docstring) {
   const descriptions = docstringParamDescriptions(docstring);
   return (params || []).map((param) => {
-    if (!param || param.description || !descriptions.has(param.name)) return param;
+    if (!param || param.description || param.descriptions || !descriptions.has(param.name)) return param;
     return { ...param, description: descriptions.get(param.name) };
+  });
+}
+
+function requestVariantInputs(params, names) {
+  if (!Array.isArray(names) || names.length === 0) return params;
+  const byName = new Map(params.map((param) => [param.name, param]));
+  return names.map((name) => byName.get(name) || {
+    name,
+    type: '',
+    description: '',
   });
 }
 
@@ -77,13 +87,25 @@ function toReferenceDocument(symbol, context = {}) {
   const signatures = callable
     ? [common.makeSignature(signature, params, evidence, { symbol, context })]
     : [];
-  const requestVariants = callable && inputs.length > 0 ? [common.makeRequestVariant({
-    id: 'primary',
-    title: `${symbol.name || ''} parameters`,
-    description: '',
-    signature,
-    inputs: params,
-  }, evidence, { symbol, context })] : [];
+  let requestVariants = [];
+  if (callable && Array.isArray(context.requestVariants) && context.requestVariants.length > 0) {
+    requestVariants = context.requestVariants.map((variant) => {
+      const variantInputs = requestVariantInputs(params, variant.parameters);
+      return common.makeRequestVariant({
+        ...variant,
+        inputs: variantInputs,
+        signatureInputs: variantInputs,
+      }, evidence, { symbol, context });
+    });
+  } else if (callable && inputs.length > 0) {
+    requestVariants = [common.makeRequestVariant({
+      id: 'primary',
+      title: `${symbol.name || ''} parameters`,
+      description: '',
+      signature,
+      inputs: params,
+    }, evidence, { symbol, context })];
+  }
   const result = callable && (context.result || symbol.result || symbol.returnType)
     ? common.makeResult(context.result || symbol.result || { type: symbol.returnType }, evidence, { symbol, context })
     : null;

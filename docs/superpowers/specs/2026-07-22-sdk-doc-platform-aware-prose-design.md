@@ -278,17 +278,137 @@ The data flow becomes:
 
 The scanner must not infer `zilliz` from `(cloud)`, parameter names, or example URLs. Missing audience review is a blocker when platform-specific behavior is detected.
 
-## Core Versus Run-Local Changes
+## Implementation Boundaries
+
+The implementation has two deliberately separate layers. Release content depends on the stable core; the stable core never imports, reads, or names a release artifact.
+
+### Stable core
+
+The stable core contains small, data-driven units with no method, release, or document IDs embedded in their behavior.
+
+#### Audience model
+
+Owns the audience vocabulary and projection rules:
+
+- validates `shared`, `milvus`, and `zilliz`;
+- determines whether a field is visible to an audience;
+- validates shared versus audience-specific descriptions;
+- compares the audiences represented by fields, request variants, and examples.
+
+This logic belongs in a focused reference-IR module rather than being repeated in the Python adapter and renderer.
+
+#### Prose-quality validator
+
+Owns deterministic human-readability checks:
+
+- sentence completion and terminal punctuation;
+- fragment and identifier-derived opening detection;
+- capitalization and spacing defects;
+- vague platform markers such as bare `(cloud)`;
+- platform terminology requirements when an audience is declared.
+
+It reports defects but never rewrites prose. It must not contain parameter-name-specific replacements such as `url -> The URL...`.
+
+#### Code-variant composer
+
+Accepts structured shared or audience-specific code variants and a language directive policy. It returns code text with complete-line zdoc directives.
+
+The initial policy supports Python `#` comments. The composer itself is language-neutral and must not contain `bulk_import`, endpoint values, or v2.6.x logic.
+
+#### Reference adapter and renderer integration
+
+The Python adapter maps reviewed audience data into reference IR without interpreting its meaning. The SDK renderer consumes that IR through the shared audience model and code-variant composer.
+
+The adapter must not infer audiences or polish descriptions. The renderer must not branch on method names.
+
+#### Core validation and tests
+
+Core tests use synthetic names and compact fixtures wherever possible. One end-to-end BulkImport-shaped fixture is acceptable to demonstrate the interaction, but it must be authored as a stable synthetic fixture rather than copied from the 25-document run context.
+
+### One-off release content
+
+The Python v2.6.x run layer contains reviewed data and disposable transformation tooling:
+
+- parameter classifications for the 25 documents;
+- exact human-authored descriptions;
+- complete Milvus and Zilliz request signatures;
+- platform-specific examples and endpoint values;
+- migration scripts that convert the existing reviewed context to the new schema;
+- previews, platform projections, validation reports, and approval manifests;
+- canary-specific investigation notes and cleanup scripts.
+
+These artifacts stay under `tmp/sdk-release-scout/` or another explicit run directory. They do not become imports, fixtures, lookup tables, or special cases in `.claude/skills/sdk-doc-sync/src/`.
+
+One-off scripts may call stable core APIs, but stable core code may not call or require one-off scripts.
+
+### Proposed file ownership
+
+| Path | Ownership |
+|---|---|
+| `.claude/skills/sdk-doc-sync/src/sdk-reference-ir/audience.js` | Stable audience vocabulary, visibility, and coverage rules |
+| `.claude/skills/sdk-doc-sync/src/sdk-reference-ir/prose-quality.js` | Stable deterministic prose checks |
+| `.claude/skills/sdk-doc-sync/src/renderers/code-variants.js` | Stable directive composition and language policies |
+| `.claude/skills/sdk-doc-sync/src/sdk-reference-ir/schema.js` | Stable IR shape additions |
+| `.claude/skills/sdk-doc-sync/src/sdk-reference-ir/validate.js` | Stable production validation integration |
+| `.claude/skills/sdk-doc-sync/src/sdk-reference-ir/adapters/python.js` | Stable reviewed-context adaptation |
+| `.claude/skills/sdk-doc-sync/src/renderers/sdk-renderer.js` | Stable structural rendering integration |
+| `.claude/skills/sdk-doc-sync/tests/` | Stable synthetic regression tests |
+| `.claude/skills/sdk-doc-sync/sdk-python.md` | Stable authoring and platform terminology guidance |
+| `tmp/sdk-release-scout/python-v26-platform-content/` | One-off reviewed content, migrations, previews, and reports |
+
+The exact filenames may change during the implementation plan if an existing focused module already owns the responsibility, but the dependency direction and ownership classification do not change.
+
+### Forbidden coupling
+
+The following implementation patterns are explicitly out of scope:
+
+- `if (symbol.name === 'bulk_import')` or equivalent method-name branches in core code;
+- maps of v2.6.x parameter names to audiences in committed source;
+- hard-coded 25-document IDs, slugs, or descriptions in validators or renderers;
+- copying the complete reviewed release context into test fixtures;
+- embedding code-variant directive strings manually in every reviewed code sample;
+- keeping a temporary repair path in core after the run has been migrated.
+
+## Promotion and Commit Policy
+
+Every changed file is classified before commit.
+
+| Classification | Definition | Action |
+|---|---|---|
+| Stable core | Reusable schema, projection, rendering, validation, or guidance that is independent of method and release | Commit with focused tests |
+| Stable fixture | Minimal synthetic evidence needed to lock a reusable behavior | Commit with the core test |
+| Run content | Exact wording, classifications, signatures, examples, previews, and reports for the current batch | Keep in the run directory; do not include in a core commit |
+| Migration tool | Script needed only to reshape or repair this batch | Keep run-local and delete or archive after verified use |
+| Suspected reusable rule | A pattern observed during the run but not yet expressed generically | Pause and either generalize with a failing core test or leave it run-local |
+
+A release detail may move into the stable core only when all of these are true:
+
+1. It can be stated without naming a method, document, release, or record ID.
+2. It represents a schema contract, rendering rule, validation invariant, or stable platform term.
+3. It has a synthetic failing test that demonstrates the reusable behavior.
+4. The core implementation does not need a release-content lookup table.
+
+Before any commit, produce a run-local change-classification report listing:
+
+- files proposed for the stable core commit;
+- files retained as run content;
+- temporary files to discard after validation;
+- unexpected or unclassified changes that block the commit.
+
+Core commits must be isolated from run-content commits. An approval-grade run cannot proceed while files remain unclassified.
+
+## Core Versus Run-Local Deliverables
 
 ### Commit to the core
 
 - Audience-aware field, request-variant, and example schema.
-- Python adapter support for reviewed variants.
-- Structural prose rendering.
-- Python code-directive rendering.
-- Readability and audience-consistency validators.
+- Shared audience projection and consistency logic.
+- Deterministic prose-quality validation without automatic rewriting.
+- Language-neutral code-variant composition with a Python directive policy.
+- Python adapter and structural renderer integration.
 - Small synthetic fixtures and regression tests.
 - Durable Python authoring guidance and stable platform terminology.
+- The run-change classification contract.
 
 ### Keep run-local
 
@@ -297,8 +417,9 @@ The scanner must not infer `zilliz` from `(cloud)`, parameter names, or example 
 - Release-specific request signatures and examples.
 - Generated previews, audits, dry-run JSON, and review notes.
 - Temporary migration or cleanup scripts that only repair the current batch.
+- The generated change-classification report itself.
 
-A release-specific behavior is promoted into the core only when it represents a reusable schema rule, renderer contract, validation invariant, or stable terminology. Method-specific wording and one-time corrections remain outside the core.
+A release-specific behavior is promoted into the core only through the promotion policy above. Method-specific wording and one-time corrections remain outside the core.
 
 ## Test Strategy
 
@@ -338,13 +459,15 @@ A synthetic BulkImport fixture covers both audiences end to end. It must produce
 ## Rollout
 
 1. Add failing tests for schema, prose validation, audience coverage, and directive rendering.
-2. Extend the reference IR and Python adapter minimally until the tests pass.
-3. Add renderer and rendered-output validation.
+2. Implement the stable audience model, prose validator, and code-variant composer until those tests pass.
+3. Integrate the Python adapter, renderer, and rendered-output validation without method-specific branches.
 4. Update durable Python guidance.
-5. Migrate one BulkImport canary in run-local reviewed context.
+5. Create a run-local migration tool and migrate one BulkImport canary.
 6. Generate and review Milvus and Zilliz views of the canary.
-7. Apply the reviewed model to the remaining v2.6.x documents.
-8. Separate reusable core changes from one-off run artifacts before committing.
+7. Apply the reviewed model to the remaining v2.6.x documents through run-local data.
+8. Generate the change-classification report and resolve every unclassified file.
+9. Commit stable core changes separately from any approved release-content changes.
+10. Remove or archive temporary migration tooling after the batch is verified.
 
 No Feishu write becomes approval-ready until both platform views pass validation and human review.
 

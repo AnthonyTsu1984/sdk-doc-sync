@@ -7,6 +7,7 @@ const {
   EVIDENCE_KINDS,
   CONFIDENCE_LEVELS,
 } = require('./schema');
+const { descriptionDiagnostics } = require('./prose-quality');
 
 const MIN_EXAMPLE_CODE_LENGTH = 12;
 const EXAMPLE_FENCE = /^[A-Za-z][A-Za-z0-9+.#_-]{0,31}$/;
@@ -245,14 +246,39 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     if (field.allowRequiredDefault !== undefined && typeof field.allowRequiredDefault !== 'boolean') {
       error(`${path}.allowRequiredDefault`, 'allowRequiredDefault must be a boolean', 'INVALID_FIELD');
     }
+    const pythonProduction = production && doc?.identity?.language === 'python';
     if (typeof field.description !== 'string') {
       error(`${path}.description`, 'field description must be a string', 'INVALID_FIELD');
-    } else if (production && doc?.identity?.language === 'python' && field.description.trim() === '') {
+    }
+    if (field.descriptions !== null && field.descriptions !== undefined && !isObject(field.descriptions)) {
+      error(`${path}.descriptions`, 'field descriptions must be null or an object', 'INVALID_FIELD');
+    }
+    const audienceDescriptions = isObject(field.descriptions)
+      ? Object.entries(field.descriptions).filter(([, value]) => typeof value === 'string' && value.trim() !== '')
+      : [];
+    const plainDescription = typeof field.description === 'string' ? field.description.trim() : '';
+    if (pythonProduction && plainDescription === '' && audienceDescriptions.length === 0) {
       error(
         `${path}.description`,
         'production fields require a user-facing description',
         'MISSING_FIELD_DESCRIPTION',
       );
+    }
+    if (pythonProduction && plainDescription !== '') {
+      for (const diagnostic of descriptionDiagnostics(field.description)) {
+        error(`${path}.description`, 'field description must be a complete human-readable sentence', diagnostic.code);
+      }
+    }
+    if (pythonProduction) {
+      for (const [audience, description] of audienceDescriptions) {
+        for (const diagnostic of descriptionDiagnostics(description)) {
+          error(
+            `${path}.descriptions.${audience}`,
+            'audience field description must be a complete human-readable sentence',
+            diagnostic.code,
+          );
+        }
+      }
     }
     const constraints = requireArray(field.constraints, `${path}.constraints`, 'field constraints');
     constraints?.forEach((constraint, index) => {

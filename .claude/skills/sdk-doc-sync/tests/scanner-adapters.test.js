@@ -89,9 +89,9 @@ test('all scanner adapters produce immutable deterministic production-valid docu
     const symbol = fixture(name);
     if (language === 'python') {
       const descriptions = {
-        collection_name: 'Name of the target collection.',
-        data: 'Query vectors.',
-        limit: 'Maximum number of matches to return.',
+        collection_name: 'The name of the target collection.',
+        data: 'The query vectors.',
+        limit: 'The maximum number of matches to return.',
         kwargs: 'Additional search options.',
       };
       symbol.params = symbol.params.map((field) => field.name === '*' ? field : {
@@ -204,6 +204,22 @@ test('production validation rejects Python parameters without user-facing descri
 
   assert.equal(validation.valid, false);
   assert.ok(validation.errors.some((error) => error.code === 'MISSING_FIELD_DESCRIPTION'));
+});
+
+test('production validation rejects identifier-derived Python parameter fragments', () => {
+  const symbol = fixture('python-search.json');
+  symbol.params = symbol.params.map((field) => field.name === '*' ? field : {
+    ...field,
+    description: field.name === 'collection_name'
+      ? 'url of the server.'
+      : 'The parameter value.',
+  });
+  const doc = pythonAdapter.toReferenceDocument(symbol, context('python', 'Vector'));
+  const validation = validateReferenceDocument(doc, { production: true });
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === 'DESCRIPTION_FRAGMENT'));
+  assert.ok(validation.errors.some((error) => error.code === 'DESCRIPTION_START'));
 });
 
 test('Python extracts source-backed parameter descriptions from Google-style docstrings', () => {

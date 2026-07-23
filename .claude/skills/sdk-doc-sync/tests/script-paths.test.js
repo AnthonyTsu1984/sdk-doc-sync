@@ -56,6 +56,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-copy.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-lists.test.js',
     '.claude/skills/sdk-doc-sync/tests/markdown-to-feishu-patch.test.js',
+    '.claude/skills/sdk-doc-sync/tests/operational-harness.test.js',
     '.claude/skills/sdk-doc-sync/tests/prose-quality.test.js',
     '.claude/skills/sdk-doc-sync/tests/read-consumers.test.js',
     '.claude/skills/sdk-doc-sync/tests/release-scope.test.js',

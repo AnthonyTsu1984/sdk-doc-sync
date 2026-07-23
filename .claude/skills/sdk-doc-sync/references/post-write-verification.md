@@ -10,6 +10,10 @@ Use these checks after document creation, a full rewrite, category movement, or 
 4. Confirm code block languages and visible line breaks.
 5. For list-sensitive pages, inspect the block tree. Markdown export may flatten correct parent/child list blocks.
 6. Rebuild the live semantic section model and verify its role sequence, signature cardinality, code fences, and preserved rich block IDs against the approved language profile and patch plan.
+7. For Java builder lists, verify each bullet's own text contains only the inline-code signature and each description is a child paragraph block. Markdown export may concatenate them visually and is not sufficient evidence.
+8. For Java prose, inspect rich-text runs to confirm SDK identifiers and literal values use inline code, canonical type references link to the exact current/owning document when available, and user-significant numeric defaults or limits are bold.
+9. For each unlinked Java type reference, verify the execution evidence records a canonical lookup result of `no exact target`; absence of a lookup is a blocker.
+10. For platform-specific Java builder methods, verify the signature and all associated prose/examples are inside the same audience region so no platform-only signature leaks into another target.
 
 Builder signatures, typed return fields, and exception labels must not be joined to their descriptions in one rendered text run.
 
@@ -19,7 +23,11 @@ Failure patterns that must block completion:
 - visible internal workflow text, for example `Reviewed grouping approved`;
 - generic generated content, for example `Return value for <symbol>`;
 - extra `Notes` sections added only to carry internal release context;
-- changed inherited docs still pointing to older version folders after execution.
+- changed inherited docs still pointing to older version folders after execution;
+- bot/API fetch succeeds but human-visible access is unverified;
+- the execution journal lacks a result for any approved action or lacks its completion sentinel;
+- a Java page contains a nested `Java example` heading beneath `Example`;
+- an embedded helper identity still has a standalone Bitable record or document.
 
 ## Record And Folder Checks
 
@@ -47,5 +55,14 @@ node .claude/skills/sdk-doc-sync/scripts/post-fix-links.js --bitable <token> --d
 For C++ pointer aliases such as `XxxPtr`, use `cpp-add-ptr-type-links.js` after the general type-link pass.
 
 ## Completion Evidence
+
+Run the operational harness against the run-local manifest before declaring completion:
+
+```bash
+node .claude/skills/sdk-doc-sync/scripts/verify-operational-harness.js \
+  --manifest tmp/sdk-doc-sync-runs/<language>-<track>/<run-id>/operational-manifest.json
+```
+
+Any finding blocks completion. The manifest must include the approved-action journal and completion sentinel, canonical tenant host and folder evidence, explicit human-visible access evidence, and—when applicable—Java post-write blocks and embedded-helper ownership/standalone-record results.
 
 Record the commands, document IDs, record IDs, folder tokens, counts, and unresolved findings in the final report. Do not report a successful migration based only on a generated URL or local Markdown file.

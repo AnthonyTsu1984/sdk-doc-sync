@@ -13,6 +13,11 @@
     "lastScannedCommit": "944cc80ff2794fca31259caa91afd0187ac9a509",
     "lastScanDate": "2026-06-17"
   },
+  "java-v26": {
+    "lastScannedTag": "v2.6.22",
+    "lastScannedCommit": "73ea2a20df76e21ba515c870a78cf1a75e4b7d0f",
+    "lastScanDate": "2026-07-23"
+  },
   "node": {
     "lastScannedTag": "v3.0.3",
     "lastScannedCommit": "b85dfcd618ef2692e687464478d1f0f9ba1d6875",

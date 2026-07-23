@@ -320,6 +320,105 @@ test('SyncExecutor routes SDK API updates through the reviewed semantic patch pl
   assert.deepEqual(calls[0][1].patchPlan, updatePlan.apiPatchPlan);
 });
 
+test('SyncExecutor identifies the approved source document when patching a copied SDK API page', async () => {
+  const calls = [];
+  const documentWriter = {
+    async copyDocument(input) {
+      calls.push(['copyDocument', input]);
+      return { token: 'doc-copy', url: 'https://docs.example/doc-copy' };
+    },
+    async applyApiPatch(input) {
+      calls.push(['applyApiPatch', input]);
+      return { token: input.documentToken };
+    },
+  };
+  const bitableWriter = {
+    async updateRecord(recordId, fields) {
+      calls.push(['updateRecord', recordId, fields]);
+      return { recordId, fields };
+    },
+  };
+  const apiPatchPlan = {
+    schemaVersion: 1,
+    profile: { id: 'node', version: 1 },
+    strategy: 'targeted-semantic-patch',
+    operations: [],
+    validation: { valid: true, errors: [] },
+  };
+  const context = planningContext({
+    artifact: sdkArtifact(),
+    apiPatchPlan,
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(copyPlan, {
+    artifact: sdkArtifact(),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(calls[1][1].documentToken, 'doc-copy');
+  assert.equal(calls[1][1].sourceDocumentToken, copyPlan.copySource.documentToken);
+});
+
+test('SyncExecutor rebuilds only the copied document and removes it when verification fails', async () => {
+  const calls = [];
+  const documentWriter = {
+    async copyDocument(input) {
+      calls.push(['copyDocument', input.sourceDocumentToken]);
+      return { token: 'doc-copy', url: 'https://docs.example/doc-copy' };
+    },
+    async applyApiPatch(input) {
+      calls.push(['applyApiPatch', input.documentToken, input.sourceDocumentToken, input.patchPlan.strategy]);
+      return { token: input.documentToken };
+    },
+    async deleteDocument(input) {
+      calls.push(['deleteDocument', input.documentToken]);
+    },
+  };
+  const bitableWriter = {
+    async updateRecord() {
+      calls.push(['updateRecord']);
+      return {};
+    },
+  };
+  const verifier = {
+    async verifyDocument() {
+      calls.push(['verifyDocument']);
+      return { ok: false, errors: [{ code: 'SECTION_SEQUENCE_MISMATCH' }] };
+    },
+  };
+  const context = planningContext({
+    artifact: sdkArtifact(),
+    apiPatchPlan: {
+      schemaVersion: 1,
+      profile: { id: 'node', version: 1 },
+      strategy: 'copy-full-body-rebuild',
+      currentModel: { topLevelBlockIds: ['old'] },
+      operations: [{ type: 'rebuild-body', deleteBlockIds: ['old'], blocks: [] }],
+      validation: { valid: true, errors: [] },
+    },
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+
+  const result = await executor.execute(copyPlan, {
+    artifact: sdkArtifact(),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.deepEqual(calls, [
+    ['copyDocument', copyPlan.copySource.documentToken],
+    ['applyApiPatch', 'doc-copy', copyPlan.copySource.documentToken, 'copy-full-body-rebuild'],
+    ['verifyDocument'],
+    ['deleteDocument', 'doc-copy'],
+  ]);
+});
+
 test('SyncExecutor requires repair-specific approval for a reviewed full-body rebuild', async () => {
   const calls = [];
   const documentWriter = {
@@ -473,6 +572,54 @@ test('SyncExecutor rolls back an in-place patch when document verification fails
   assert.deepEqual(calls.map((entry) => entry[0]), ['beforeMutation', 'patchDocument', 'verifyDocument', 'rollback']);
   assert.deepEqual(result.completedSteps, ['captureRollback', 'patchDocument', 'verifyDocument', 'rollbackRevert']);
   assert.deepEqual(result.rollbackResult, { ok: true });
+});
+
+test('SyncExecutor rolls back when an in-place patch fails after mutation starts', async () => {
+  const calls = [];
+  const executor = new SyncExecutor({
+    documentWriter: {
+      async applyApiPatch() {
+        calls.push(['applyApiPatch']);
+        throw new Error('partial patch failure');
+      },
+    },
+    bitableWriter: {
+      async updateRecord() {
+        calls.push(['updateRecord']);
+        return {};
+      },
+    },
+    verifier: {
+      async beforeMutation() {
+        calls.push(['beforeMutation']);
+        return { documentToken: 'doc-v26', historyVersionId: 'history-1' };
+      },
+      async rollback() {
+        calls.push(['rollback']);
+        return { ok: true };
+      },
+    },
+  });
+
+  const updatePlan = plan('UPDATE', planningContext({
+    artifact: sdkArtifact(),
+    apiPatchPlan: {
+      schemaVersion: 1,
+      profile: { id: 'node', version: 1 },
+      strategy: 'targeted-semantic-patch',
+      operations: [],
+      validation: { valid: true, errors: [] },
+    },
+  }));
+
+  const result = await executor.execute(updatePlan, {
+    artifact: sdkArtifact(),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.failedStep, 'patchDocument');
+  assert.deepEqual(calls, [['beforeMutation'], ['applyApiPatch'], ['rollback']]);
 });
 
 test('SyncExecutor rejects legacy CREATE_AND_REPOINT plans before mutation', async () => {

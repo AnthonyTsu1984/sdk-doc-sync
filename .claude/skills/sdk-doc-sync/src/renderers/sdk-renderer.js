@@ -16,15 +16,16 @@ function semantic(role, key = null, extra = {}) {
 function proseInlines(value, baseMarks = []) {
   const source = String(value);
   const children = [];
-  const pattern = /`([^`\n]+)`/g;
+  const pattern = /`([^`\n]+)`|\*\*([^*\n]+)\*\*/g;
   let cursor = 0;
   let match;
   while ((match = pattern.exec(source)) !== null) {
-    const before = match.index > 0 ? source[match.index - 1] : '';
-    const after = pattern.lastIndex < source.length ? source[pattern.lastIndex] : '';
-    if (before === '`' || after === '`') continue;
     if (match.index > cursor) children.push(text(source.slice(cursor, match.index), baseMarks));
-    children.push(text(match[1], [...new Set([...baseMarks, 'inlineCode'])]));
+    if (match[1] !== undefined) {
+      children.push(text(match[1], [...new Set([...baseMarks, 'inlineCode'])]));
+    } else {
+      children.push(text(match[2], [...new Set([...baseMarks, 'bold'])]));
+    }
     cursor = pattern.lastIndex;
   }
   if (cursor < source.length) children.push(text(source.slice(cursor), baseMarks));
@@ -72,9 +73,10 @@ function typeInlines(type, context, { italic = true } = {}) {
   return [text(display, italic ? ['italic'] : [])];
 }
 
-function fieldHeader(field, context) {
-  const children = [text(field.name, ['bold'])];
-  const renderedType = typeInlines(field.type, context);
+function fieldHeader(field, context, role = 'parameters-list') {
+  const nameMarks = role === 'member-fields' ? ['inlineCode'] : ['bold'];
+  const children = [text(field.name, nameMarks)];
+  const renderedType = role === 'member-fields' ? [] : typeInlines(field.type, context);
   if (renderedType.length > 0) children.push(text(' ('), ...renderedType, text(')'));
   children.push(text(' -'));
   return ir.paragraph(children);
@@ -106,7 +108,7 @@ function fieldDetails(field) {
 }
 
 function renderFieldItem(field, context, role = 'parameters-list', key = null) {
-  const children = [fieldHeader(field, context)];
+  const children = [fieldHeader(field, context, role)];
   const qualifier = fieldQualifier(field);
   if (qualifier) children.push(qualifier);
   for (const entry of audience.descriptionEntries(field)) {
@@ -160,11 +162,14 @@ function renderFieldBlocks(fields, context, role = 'parameters-list', key = null
   return blocks;
 }
 
-function renderMembers(members) {
+function renderMembers(members, context) {
   return ir.unorderedList(members.map((member) => {
     const children = [ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])])];
     const description = sentence(member.description);
     if (description) children.push(paragraph(description));
+    if (Array.isArray(member.fields) && member.fields.length > 0) {
+      children.push(renderFields(member.fields, context, 'member-fields', member.name));
+    }
     return ir.listItem(children);
   }), semantic('members-list'));
 }
@@ -187,10 +192,28 @@ function renderRelated(items) {
   ])), semantic('related-list'));
 }
 
+function audienceDirective(policy, value) {
+  const target = audience.normalizeAudience(value);
+  if (target === 'shared') return null;
+  if (typeof policy.audienceDirective === 'function') {
+    const directive = policy.audienceDirective(target);
+    if (directive?.mode && directive?.target) return directive;
+  }
+  return { mode: 'include', target };
+}
+
+function wrapAudience(policy, value, children, options = {}) {
+  const directive = audienceDirective(policy, value);
+  return directive
+    ? [ir.audienceRegion(directive.mode, directive.target, children, options)]
+    : children;
+}
+
 function requestEntries(document, policy) {
   if (typeof policy.requestEntries === 'function') return policy.requestEntries(document);
   const entries = document.requestVariants || [];
   if (!policy.codeVariantPolicy || entries.length === 0) return entries;
+  if (!entries.some((entry) => audience.normalizeAudience(entry.audience) !== 'shared')) return entries;
   return [{
     id: 'audience-variants',
     title: '',
@@ -198,7 +221,9 @@ function requestEntries(document, policy) {
     signature: {
       display: composeCodeVariants(entries.map((entry) => ({
         audience: entry.audience,
-        code: entry.signature?.display || '',
+        code: typeof policy.requestSignature === 'function'
+          ? policy.requestSignature(document, entry)
+          : entry.signature?.display || '',
       })), policy.codeVariantPolicy),
     },
     inputs: [],
@@ -211,7 +236,10 @@ function renderRequest(document, policy, context) {
   const blocks = [heading(2, policy.requestHeading, semantic('request-heading'))];
   for (const entry of entries) {
     const entryKey = entry.id || entry.title || null;
-    if (policy.variantHeadings) {
+    const showVariantHeading = typeof policy.variantHeadings === 'function'
+      ? policy.variantHeadings(document, entry)
+      : policy.variantHeadings;
+    if (showVariantHeading) {
       blocks.push(heading(3, entry.title || entry.id, semantic('request-variant-heading', entryKey)));
     }
     if (entry.description) {
@@ -221,11 +249,39 @@ function renderRequest(document, policy, context) {
       ? policy.requestSignature(document, entry)
       : entry.signature.display;
     if (signature) blocks.push(ir.codeBlock(signature, policy.requestFence, semantic('request-signature', entryKey)));
-    if (policy.variantFields && Array.isArray(entry.inputs) && entry.inputs.length > 0) {
+    const showVariantFields = typeof policy.variantFields === 'function'
+      ? policy.variantFields(document, entry)
+      : policy.variantFields;
+    if (showVariantFields && Array.isArray(entry.inputs) && entry.inputs.length > 0) {
       blocks.push(
         label(policy.parametersLabel, semantic('parameters-label', entryKey)),
         ...renderFieldBlocks(entry.inputs, context, 'parameters-list', entryKey),
       );
+    }
+  }
+  if (policy.audienceVariantDetails && policy.codeVariantPolicy) {
+    for (const entry of document.requestVariants || []) {
+      if (!entry?.signature || audience.normalizeAudience(entry.audience) === 'shared') continue;
+      const entryKey = entry.id || entry.title || entry.audience;
+      const details = [];
+      if (entry.title || entry.id) {
+        details.push(heading(3, entry.title || entry.id, semantic('request-variant-heading', entryKey)));
+      }
+      if (entry.description) {
+        details.push(paragraph(entry.description, [], semantic('request-description', entryKey)));
+      }
+      if (Array.isArray(entry.inputs) && entry.inputs.length > 0) {
+        details.push(
+          label(policy.parametersLabel, semantic('parameters-label', entryKey)),
+          renderFields(entry.inputs, context, 'parameters-list', entryKey),
+        );
+      }
+      blocks.push(...wrapAudience(
+        policy,
+        entry.audience,
+        details,
+        semantic('request-variant-audience', entryKey),
+      ));
     }
   }
   return blocks;
@@ -254,9 +310,9 @@ function renderReturns(document, policy, context) {
   return blocks;
 }
 
-function renderAudience(document) {
-  return (document.audienceVariants || []).map((variant) => ir.audienceRegion(
-    'include',
+function renderAudience(document, policy) {
+  return (document.audienceVariants || []).flatMap((variant) => wrapAudience(
+    policy,
     variant.audience,
     [paragraph(variant.summary)],
     semantic('audience', variant.audience),
@@ -291,13 +347,13 @@ function renderPrimaryInputs(document, policy, context) {
   ];
 }
 
-function renderCallableMembers(document, policy) {
+function renderCallableMembers(document, policy, context) {
   if (!policy.memberKind) return [];
   const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
   if (members.length === 0) return [];
   return [
     label(policy.membersLabel, semantic('members-label')),
-    renderMembers(members),
+    renderMembers(members, context),
   ];
 }
 
@@ -321,9 +377,9 @@ function renderExamples(document, policy) {
     if (hasAudienceVariants) {
       for (const example of examples) {
         if (!example.description) continue;
-        blocks.push(ir.audienceRegion(
-          'include',
-          audience.normalizeAudience(example.audience),
+        blocks.push(...wrapAudience(
+          policy,
+          example.audience,
           [paragraph(example.description)],
           semantic('example-description', example.id || example.title || example.audience),
         ));
@@ -384,11 +440,11 @@ function createSdkRenderer(policy) {
   function render(document, context = {}) {
     const sections = {
       summary: [paragraph(document.summary, [], semantic('summary'))],
-      audience: renderAudience(document),
+      audience: renderAudience(document, frozenPolicy),
       'canonical-signature': renderCanonicalSignatures(document, frozenPolicy),
       request: renderRequest(document, frozenPolicy, context),
       parameters: renderPrimaryInputs(document, frozenPolicy, context),
-      members: renderCallableMembers(document, frozenPolicy),
+      members: renderCallableMembers(document, frozenPolicy, context),
       'result-type': renderResultType(document, frozenPolicy, context),
       returns: renderReturns(document, frozenPolicy, context),
       exceptions: renderErrorsSection(document, frozenPolicy),

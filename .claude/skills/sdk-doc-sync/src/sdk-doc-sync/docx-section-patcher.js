@@ -66,12 +66,31 @@ function normalizeDesiredDocument(blocks) {
   }, ...normalized];
 }
 
+function desiredInsertionForPreserved(currentModel, desiredModel, preserved) {
+  const desiredByRole = new Map(desiredModel.sections.map((section) => [section.role, section]));
+  const containingIndex = currentModel.sections.findIndex((section) => section.blockIds.includes(preserved.blockId));
+  const containing = currentModel.sections[containingIndex];
+  const sameRole = desiredByRole.get(preserved.attachedToRole);
+  if (sameRole) return sameRole.endIndex;
+
+  for (let index = containingIndex - 1; index >= 0; index -= 1) {
+    const desired = desiredByRole.get(currentModel.sections[index].role);
+    if (desired) return desired.endIndex;
+  }
+  for (let index = containingIndex + 1; index < currentModel.sections.length; index += 1) {
+    const desired = desiredByRole.get(currentModel.sections[index].role);
+    if (desired) return desired.startIndex;
+  }
+  return desiredModel.topLevelBlockIds.length;
+}
+
 function planApiReferencePatch({
   currentBlocks,
   desiredBlocks,
   profile,
   documentToken = null,
   repairApproval = null,
+  copyOnWrite = false,
 } = {}) {
   if (!profile?.id) throw new TypeError('planApiReferencePatch requires a layout profile');
   desiredBlocks = normalizeDesiredDocument(desiredBlocks);
@@ -96,6 +115,26 @@ function planApiReferencePatch({
   if (currentModel.requiresReviewedRebuild) {
     const desiredById = blocksById(desiredBlocks);
     const desiredTopLevel = desiredModel.topLevelBlockIds.map((id) => desiredById.get(id)).filter(Boolean);
+    if (copyOnWrite) {
+      return deepFreeze({
+        schemaVersion: 1,
+        profile: { id: profile.id, version: profile.version },
+        strategy: 'copy-full-body-rebuild',
+        currentModel,
+        desiredRoleSequence: desiredModel.sections.map((section) => section.role),
+        preservedBlockIds: [],
+        operations: [{
+          type: 'rebuild-body',
+          deleteBlockIds: [...currentModel.topLevelBlockIds],
+          blocks: clone(desiredTopLevel),
+        }],
+        validation: { valid: true, errors: [] },
+      });
+    }
+    const preservedPlacements = currentModel.preserved.map((item) => ({
+      blockId: item.blockId,
+      insertAt: desiredInsertionForPreserved(currentModel, desiredModel, item),
+    }));
     return deepFreeze({
       schemaVersion: 1,
       profile: { id: profile.id, version: profile.version },
@@ -111,7 +150,8 @@ function planApiReferencePatch({
       preservedBlockIds,
       operations: [{
         type: 'rebuild-body',
-        deleteBlockIds: currentModel.topLevelBlockIds,
+        deleteBlockIds: currentModel.topLevelBlockIds.filter((id) => !preservedBlockIds.includes(id)),
+        preservedPlacements,
         blocks: clone(desiredTopLevel),
       }],
       validation: { valid: true, errors: [] },
@@ -157,6 +197,25 @@ function planApiReferencePatch({
       role: currentSection.role,
       deleteBlockIds: currentSection.blockIds.filter((id) => !preserveBlockIds.includes(id)),
       preserveBlockIds: [...preserveBlockIds],
+    });
+  }
+
+  if (structuralChange && copyOnWrite) {
+    const desiredById = blocksById(desiredBlocks);
+    const desiredTopLevel = desiredModel.topLevelBlockIds.map((id) => desiredById.get(id)).filter(Boolean);
+    return deepFreeze({
+      schemaVersion: 1,
+      profile: { id: profile.id, version: profile.version },
+      strategy: 'copy-full-body-rebuild',
+      currentModel,
+      desiredRoleSequence: desiredModel.sections.map((section) => section.role),
+      preservedBlockIds: [],
+      operations: [{
+        type: 'rebuild-body',
+        deleteBlockIds: [...currentModel.topLevelBlockIds],
+        blocks: clone(desiredTopLevel),
+      }],
+      validation: { valid: true, errors: [] },
     });
   }
 

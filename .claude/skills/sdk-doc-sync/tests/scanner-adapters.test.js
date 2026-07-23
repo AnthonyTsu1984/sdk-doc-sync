@@ -105,6 +105,17 @@ test('all scanner adapters produce immutable deterministic production-valid docu
         description: descriptions[field.name],
       });
     }
+    if (language === 'java') {
+      const descriptions = {
+        collectionName: 'The name of the collection to create.',
+        dimension: 'The number of dimensions in the vector field.',
+        metricType: 'The metric used to compare vectors.',
+      };
+      symbol.params = symbol.params.map((field) => ({
+        ...field,
+        description: descriptions[field.name],
+      }));
+    }
     const before = JSON.stringify(symbol);
     const adapterContext = context(language, category, language === 'python' ? {
       exceptions: [{
@@ -356,6 +367,15 @@ test('Java maps request fields to a request variant and builder members only whe
 
 test('Java explicit required wins and derived request evidence needs document review', () => {
   const symbol = fixture('java-create-collection.json');
+  const descriptions = {
+    collectionName: 'The name of the collection to create.',
+    dimension: 'The number of dimensions in the vector field.',
+    metricType: 'The metric used to compare vectors.',
+  };
+  symbol.params = symbol.params.map((field) => ({
+    ...field,
+    description: descriptions[field.name],
+  }));
   symbol.params[0].required = false;
   const reviewed = javaAdapter.toReferenceDocument(symbol, context('java', 'Collections'));
   assert.equal(reviewed.requestVariants[0].inputs[0].required, false);
@@ -388,6 +408,87 @@ test('Java derives deterministic signature suffixes for raw overloads and preser
   assert.equal(nameDoc.identity.stableId, nameDocAgain.identity.stableId);
   assert.notEqual(nameDoc.identity.stableId, requestDoc.identity.stableId);
   assert.equal(explicit.identity.stableId, 'java:Collections:describeCollection:by-name');
+});
+
+test('Java applies reviewed documentation identity and class builder members', () => {
+  const symbol = {
+    name: 'VolumeBulkWriterParam',
+    kind: 'class',
+    signature: 'public class VolumeBulkWriterParam',
+    params: [{
+      name: 'withVolumeName',
+      method: 'withVolumeName',
+      type: 'String',
+      paramName: 'volumeName',
+      fullSignature: 'withVolumeName(String volumeName)',
+      returnType: 'Builder',
+    }],
+    filePath: 'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/VolumeBulkWriterParam.java',
+    lineNumber: 36,
+    parentClass: null,
+    returnType: null,
+    requestClass: null,
+  };
+  const doc = javaAdapter.toReferenceDocument(symbol, context('java', 'v2-DataImport', {
+    symbolName: 'VolumeBulkWriter',
+    title: 'VolumeBulkWriter',
+    signature: 'public class VolumeBulkWriter',
+    params: symbol.params,
+    exceptions: [],
+  }));
+
+  assert.equal(doc.identity.name, 'VolumeBulkWriter');
+  assert.equal(doc.identity.title, 'VolumeBulkWriter');
+  assert.equal(doc.identity.stableId, 'java:v2-DataImport:VolumeBulkWriter');
+  assert.equal(doc.signatures[0].display, 'public class VolumeBulkWriter');
+  assert.equal(doc.callableMembers[0].name, 'withVolumeName');
+  assert.equal(doc.callableMembers[0].signature.display, 'withVolumeName(String volumeName)');
+  assert.deepEqual(doc.errors, []);
+});
+
+test('Java accepts reviewed request variants without dropping sibling request classes', () => {
+  const symbol = {
+    name: 'CloudDescribeImportRequest',
+    kind: 'class',
+    signature: 'public class CloudDescribeImportRequest',
+    params: [],
+    filePath: 'CloudDescribeImportRequest.java',
+    lineNumber: 22,
+  };
+  const requestVariants = [
+    {
+      id: 'MilvusDescribeImportRequest',
+      title: 'MilvusDescribeImportRequest',
+      signature: 'MilvusDescribeImportRequest.builder()',
+      inputs: [{ name: 'jobId', type: 'String', description: 'The import job ID.' }],
+    },
+    {
+      id: 'CloudDescribeImportRequest',
+      title: 'CloudDescribeImportRequest',
+      signature: 'CloudDescribeImportRequest.builder()',
+      inputs: [
+        { name: 'projectId', type: 'String', description: 'The project ID.' },
+        { name: 'regionId', type: 'String', description: 'The region ID.' },
+        { name: 'jobId', type: 'String', description: 'The import job ID.' },
+      ],
+    },
+  ];
+  const doc = javaAdapter.toReferenceDocument(symbol, context('java', 'v2-BulkImport', {
+    symbolName: 'getImportProgress',
+    title: 'getImportProgress()',
+    kind: 'method',
+    signature: 'public static String getImportProgress(String url, BaseDescribeImportRequest request)',
+    requestVariants,
+    result: { type: 'String', description: 'The import job status.' },
+  }));
+
+  assert.deepEqual(doc.requestVariants.map((variant) => variant.id), [
+    'MilvusDescribeImportRequest',
+    'CloudDescribeImportRequest',
+  ]);
+  assert.equal(doc.identity.kind, 'method');
+  assert.deepEqual(doc.requestVariants[1].inputs.map((field) => field.name), ['projectId', 'regionId', 'jobId']);
+  assert.deepEqual(doc.callableMembers, []);
 });
 
 test('Java unknown no-default fields stay optional unless reviewed metadata marks them required', () => {

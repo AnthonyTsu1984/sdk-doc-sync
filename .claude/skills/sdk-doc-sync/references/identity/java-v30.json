@@ -1,25 +1,10 @@
 {
   "schemaVersion": 1,
   "language": "java",
-  "track": "v2.6.x",
+  "track": "v3.0.x",
   "defaultCategory": "Client",
   "packagePrefix": "",
   "symbols": {
-    "CloudDescribeImportRequest": {
-      "stableId": "java:v2-BulkImport:getImportProgress",
-      "canonicalSlug": "v2-BulkImport-getImportProgress",
-      "category": "BulkImport"
-    },
-    "CloudImportRequest": {
-      "stableId": "java:v2-BulkImport:bulkImport",
-      "canonicalSlug": "v2-BulkImport-bulkImport",
-      "category": "BulkImport"
-    },
-    "CloudListImportJobsRequest": {
-      "stableId": "java:v2-BulkImport:listImportJobs",
-      "canonicalSlug": "v2-BulkImport-listImportJobs",
-      "category": "BulkImport"
-    },
     "CreateVolumeRequest": {
       "stableId": "java:v2-Volume:createVolume",
       "canonicalSlug": "v2-Volume-createVolume",
@@ -35,10 +20,35 @@
       "canonicalSlug": "v2-Volume-listVolumes",
       "category": "Volume"
     },
-    "MilvusClientV2.batchDescribeCollection": {
-      "stableId": "java:v2-Collections:batchDescribeCollection",
-      "canonicalSlug": "v2-Collections-batchDescribeCollection",
+    "CloudDescribeImportRequest": {
+      "stableId": "java:v2-BulkImport:getImportProgress",
+      "canonicalSlug": "v2-BulkImport-getImportProgress",
+      "category": "BulkImport"
+    },
+    "CloudImportRequest": {
+      "stableId": "java:v2-BulkImport:bulkImport",
+      "canonicalSlug": "v2-BulkImport-bulkImport",
+      "category": "BulkImport"
+    },
+    "CloudListImportJobsRequest": {
+      "stableId": "java:v2-BulkImport:listImportJobs",
+      "canonicalSlug": "v2-BulkImport-listImportJobs",
+      "category": "BulkImport"
+    },
+    "MilvusClientV2.addCollectionStructField": {
+      "stableId": "java:v2-Collections:addCollectionStructField",
+      "canonicalSlug": "v2-Collections-addCollectionStructField",
       "category": "Collections"
+    },
+    "MilvusClientV2.addFunctionField": {
+      "stableId": "java:v2-Collections:addFunctionField",
+      "canonicalSlug": "v2-Collections-addFunctionField",
+      "category": "Collections"
+    },
+    "MilvusClientV2.alterRole": {
+      "stableId": "java:v2-Authentication:alterRole",
+      "canonicalSlug": "v2-Authentication-alterRole",
+      "category": "Authentication"
     },
     "MilvusClientV2.close": {
       "stableId": "java:v2-Client:close",
@@ -60,64 +70,44 @@
       "canonicalSlug": "v2-Authentication-createUser",
       "category": "Authentication"
     },
-    "MilvusClientV2.describeCollection": {
-      "stableId": "java:v2-Collections:describeCollection",
-      "canonicalSlug": "v2-Collections-describeCollection",
+    "MilvusClientV2.dropCollectionField": {
+      "stableId": "java:v2-Collections:dropCollectionField",
+      "canonicalSlug": "v2-Collections-dropCollectionField",
       "category": "Collections"
     },
-    "MilvusClientV2.renameCollection": {
-      "stableId": "java:v2-Collections:renameCollection",
-      "canonicalSlug": "v2-Collections-renameCollection",
+    "MilvusClientV2.dropFunctionField": {
+      "stableId": "java:v2-Collections:dropFunctionField",
+      "canonicalSlug": "v2-Collections-dropFunctionField",
       "category": "Collections"
     },
-    "MilvusClientV2.updatePassword": {
-      "stableId": "java:v2-Authentication:updatePassword",
-      "canonicalSlug": "v2-Authentication-updatePassword",
-      "category": "Authentication"
-    },
-    "MilvusClientV2.upsert": {
-      "stableId": "java:v2-Vector:upsert",
-      "canonicalSlug": "v2-Vector-upsert",
-      "category": "Vector"
-    },
-    "MilvusClientV2.getLoadStateV2": {
-      "stableId": "java:v2-Management:getLoadStateV2",
-      "canonicalSlug": "v2-Management-getLoadStateV2",
-      "category": "Management"
-    },
-    "MilvusClientV2.updateUser": {
-      "stableId": "java:v2-Authentication:updateUser",
-      "canonicalSlug": "v2-Authentication-updateUser",
-      "category": "Authentication"
-    },
-    "MilvusClientV2.alterRole": {
-      "stableId": "java:v2-Authentication:alterRole",
-      "canonicalSlug": "v2-Authentication-alterRole",
-      "category": "Authentication"
+    "MilvusClientV2.dumpMessages": {
+      "stableId": "java:v2-CDC:dumpMessages",
+      "canonicalSlug": "v2-CDC-dumpMessages",
+      "category": "CDC"
     },
     "MilvusClientV2.flushAll": {
       "stableId": "java:v2-Management:flushAll",
       "canonicalSlug": "v2-Management-flushAll",
       "category": "Management"
     },
+    "MilvusClientV2.get": {
+      "stableId": "java:v2-Vector:get",
+      "canonicalSlug": "v2-Vector-get",
+      "category": "Vector"
+    },
     "MilvusClientV2.getFlushAllState": {
       "stableId": "java:v2-Management:getFlushAllState",
       "canonicalSlug": "v2-Management-getFlushAllState",
       "category": "Management"
     },
-    "MilvusClientV2.getServerVersion": {
-      "stableId": "java:v2-Management:getServerVersion",
-      "canonicalSlug": "v2-Management-getServerVersion",
+    "MilvusClientV2.getLoadStateV2": {
+      "stableId": "java:v2-Management:getLoadStateV2",
+      "canonicalSlug": "v2-Management-getLoadStateV2",
       "category": "Management"
     },
-    "MilvusClientV2.getServerVersionV2": {
-      "stableId": "java:v2-Management:getServerVersionV2",
-      "canonicalSlug": "v2-Management-getServerVersionV2",
-      "category": "Management"
-    },
-    "MilvusClientV2.dumpMessages": {
-      "stableId": "java:v2-CDC:dumpMessages",
-      "canonicalSlug": "v2-CDC-dumpMessages",
+    "MilvusClientV2.getReplicateConfiguration": {
+      "stableId": "java:v2-CDC:getReplicateConfiguration",
+      "canonicalSlug": "v2-CDC-getReplicateConfiguration",
       "category": "CDC"
     },
     "MilvusClientV2.getReplicateInfo": {
@@ -125,15 +115,65 @@
       "canonicalSlug": "v2-CDC-getReplicateInfo",
       "category": "CDC"
     },
-    "MilvusClientV2.getReplicateConfiguration": {
-      "stableId": "java:v2-CDC:getReplicateConfiguration",
-      "canonicalSlug": "v2-CDC-getReplicateConfiguration",
-      "category": "CDC"
+    "MilvusClientV2.getServerVersionV2": {
+      "stableId": "java:v2-Management:getServerVersionV2",
+      "canonicalSlug": "v2-Management-getServerVersionV2",
+      "category": "Management"
     },
-    "MilvusClientV2.updateReplicateConfiguration": {
-      "stableId": "java:v2-CDC:updateReplicateConfiguration",
-      "canonicalSlug": "v2-CDC-updateReplicateConfiguration",
-      "category": "CDC"
+    "MilvusClientV2.hybridSearch": {
+      "stableId": "java:v2-Vector:hybridSearch",
+      "canonicalSlug": "v2-Vector-hybridSearch",
+      "category": "Vector"
+    },
+    "MilvusClientV2.query": {
+      "stableId": "java:v2-Vector:query",
+      "canonicalSlug": "v2-Vector-query",
+      "category": "Vector"
+    },
+    "MilvusClientV2.queryIterator": {
+      "stableId": "java:v2-Vector:queryIterator",
+      "canonicalSlug": "v2-Vector-queryIterator",
+      "category": "Vector"
+    },
+    "MilvusClientV2.renameCollection": {
+      "stableId": "java:v2-Collections:renameCollection",
+      "canonicalSlug": "v2-Collections-renameCollection",
+      "category": "Collections"
+    },
+    "MilvusClientV2.search": {
+      "stableId": "java:v2-Vector:search",
+      "canonicalSlug": "v2-Vector-search",
+      "category": "Vector"
+    },
+    "MilvusClientV2.searchIterator": {
+      "stableId": "java:v2-Vector:searchIterator",
+      "canonicalSlug": "v2-Vector-searchIterator",
+      "category": "Vector"
+    },
+    "MilvusClientV2.searchIteratorV2": {
+      "stableId": "java:v2-Vector:searchIteratorV2",
+      "canonicalSlug": "v2-Vector-searchIteratorV2",
+      "category": "Vector"
+    },
+    "MilvusClientV2.session": {
+      "stableId": "java:v2-Client:session",
+      "canonicalSlug": "v2-Client-session",
+      "category": "Client"
+    },
+    "MilvusClientV2.updatePassword": {
+      "stableId": "java:v2-Authentication:updatePassword",
+      "canonicalSlug": "v2-Authentication-updatePassword",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.updateUser": {
+      "stableId": "java:v2-Authentication:updateUser",
+      "canonicalSlug": "v2-Authentication-updateUser",
+      "category": "Authentication"
+    },
+    "MilvusClientV2.upsert": {
+      "stableId": "java:v2-Vector:upsert",
+      "canonicalSlug": "v2-Vector-upsert",
+      "category": "Vector"
     },
     "UploadFilesRequest": {
       "targets": [
@@ -163,20 +203,10 @@
         }
       ]
     },
-    "VolumeBulkWriter.close": {
-      "stableId": "java:v2-DataImport:VolumeBulkWriter-close",
-      "canonicalSlug": "v2-DataImport-VolumeBulkWriter-close",
-      "category": "Data Import"
-    },
     "VolumeBulkWriterParam": {
       "stableId": "java:v2-DataImport:VolumeBulkWriter",
       "canonicalSlug": "v2-DataImport-VolumeBulkWriter",
       "category": "Data Import"
-    },
-    "VolumeFileManager.shutdownGracefully": {
-      "stableId": "java:v2-Volume:VolumeFileManager-shutdownGracefully",
-      "canonicalSlug": "v2-Volume-VolumeFileManager-shutdownGracefully",
-      "category": "Volume"
     },
     "VolumeFileManager.uploadFiles": {
       "stableId": "java:v2-Volume:VolumeFileManager-uploadFiles",

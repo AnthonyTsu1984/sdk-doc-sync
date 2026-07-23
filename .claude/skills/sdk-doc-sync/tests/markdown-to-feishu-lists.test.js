@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const MarkdownToFeishu = require('../src/markdown-to-feishu');
+const schema = require('../src/document-ir/schema');
+const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 
 const fixturePath = path.join(__dirname, 'fixtures', 'markdown', 'nested-lists.md');
 
@@ -56,6 +58,26 @@ test('Markdown conversion removes syntax escapes from visible API identifiers an
   assert.doesNotMatch(visible, /\\[_\[\]]/);
 });
 
+test('Markdown conversion decodes escaped generic type delimiters in styled text', async () => {
+  const converter = new MarkdownToFeishu({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const document = schema.document([
+    schema.paragraph([
+      schema.text('List<DescribeCollectionResp>', ['italic']),
+    ]),
+  ]);
+
+  const { tokens } = await converter.parse_markdown(renderMarkdown(document));
+  const blocks = await converter.markdown_to_blocks(tokens);
+  const element = blocks[0].text.elements[0].text_run;
+
+  assert.equal(element.content, 'List<DescribeCollectionResp>');
+  assert.equal(element.text_element_style.italic, true);
+});
+
 test('audience wrappers preserve markers while rendering enclosed parameter Markdown as rich blocks', async () => {
   const converter = new MarkdownToFeishu({
     sourceType: 'drive',
@@ -73,10 +95,12 @@ test('audience wrappers preserve markers while rendering enclosed parameter Mark
 
   const blocks = await converter.markdown_to_blocks(tokens);
   const visible = blocks.map(blockLabel);
+  const parameterDetails = (blocks[1].children || []).map(blockLabel).join('\n');
 
   assert.deepEqual(blocks.map((block) => block.block_type), [2, 12, 2]);
   assert.equal(visible[0], '<include target="zilliz">');
-  assert.match(visible[1], /object_urls.*Optional\[List\[List\[str\]\]\].*Default: None/s);
+  assert.match(visible[1], /object_urls.*Optional\[List\[List\[str\]\]\]/s);
+  assert.match(parameterDetails, /Default: None.*object-storage URLs/s);
   assert.doesNotMatch(visible[1], /\\[_\[\]]/);
   assert.equal(visible[2], '</include>');
 });
@@ -160,4 +184,30 @@ test('tight task list uses the label token once and preserves nested list hierar
       },
     },
   );
+});
+
+test('Document IR list descriptions become child paragraph blocks instead of flattened bullet text', async () => {
+  const document = schema.document([
+    schema.unorderedList([
+      schema.listItem([
+        schema.paragraph([schema.text('collectionName(String collectionName)', ['inlineCode'])]),
+        schema.paragraph([schema.text('The name of the collection to create.')]),
+      ]),
+    ]),
+  ]);
+  const converter = new MarkdownToFeishu({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+
+  const { tokens } = await converter.parse_markdown(renderMarkdown(document));
+  const blocks = await converter.markdown_to_blocks(tokens);
+
+  assert.equal(blocks.length, 1);
+  assert.equal(blocks[0].block_type, 12);
+  assert.equal(blockLabel(blocks[0]), 'collectionName(String collectionName)');
+  assert.deepEqual((blocks[0].children || []).map(blockLabel), [
+    'The name of the collection to create.',
+  ]);
 });

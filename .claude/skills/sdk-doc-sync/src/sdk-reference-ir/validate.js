@@ -379,7 +379,10 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         return;
       }
       if (MEMBER_KINDS.includes(member.kind) && isNonEmptyString(member.name)) {
-        const key = JSON.stringify([member.kind, member.name]);
+        const signatureDisplay = isObject(member.signature) && typeof member.signature.display === 'string'
+          ? member.signature.display.trim().replace(/\s+/g, ' ')
+          : '';
+        const key = JSON.stringify([member.kind, member.name, signatureDisplay]);
         if (keys.has(key)) {
           error(
             memberPath,
@@ -398,6 +401,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
         error(`${memberPath}.description`, 'callable member description must be a string', 'INVALID_CALLABLE_MEMBER');
       }
       validateSignature(member.signature, `${memberPath}.signature`);
+      validateFieldList(member.fields, `${memberPath}.fields`);
       validateEvidenceList(member.evidence, `${memberPath}.evidence`);
       requireProductionEvidence(member, memberPath);
     });
@@ -900,6 +904,13 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
               ? `${language} callable members must use kind ${allowedMemberKind}`
               : `${language} documents must not define callable members`,
             'INCOMPATIBLE_MEMBER_KIND',
+          );
+        }
+        if (language === 'java' && member.kind === 'builder' && !isNonEmptyString(member.description)) {
+          error(
+            `$.callableMembers[${index}].description`,
+            'production Java builder methods require a user-facing description',
+            'MISSING_CALLABLE_MEMBER_DESCRIPTION',
           );
         }
       });

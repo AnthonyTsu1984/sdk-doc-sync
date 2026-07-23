@@ -7,6 +7,8 @@ const path = require('node:path');
 
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
 const { validateDocumentIr } = require('../src/document-ir/validate');
+const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
+const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const pythonAdapter = require('../src/sdk-reference-ir/adapters/python');
 const javaAdapter = require('../src/sdk-reference-ir/adapters/java');
@@ -278,7 +280,7 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.java, /## Request Syntax\{#request-syntax\}/);
   assert.match(rendered.java, /\*\*BUILDER METHODS:\*\*/);
   assert.match(rendered.java, /## Example\{#example\}/);
-  assert.match(rendered.java, /### Create a collection/);
+  assert.doesNotMatch(rendered.java, /### Create a collection/);
 
   assert.match(rendered.go, /```go\n/);
   assert.match(rendered.go, /\*\*PARAMETERS:\*\*/);
@@ -311,6 +313,131 @@ test('language policies control exact sections, fences, and conditional request 
   assert.equal(validateReferenceDocument(directReference, { production: true }).valid, true);
   const directMarkdown = renderMarkdown(javaRenderer.render(directReference, { typeUrls: directContext.typeUrls }));
   assert.doesNotMatch(directMarkdown, /Request Syntax|BUILDER METHODS/);
+});
+
+test('Java renders multiple reviewed request variants with scoped fields', () => {
+  const javaContext = context('java');
+  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), {
+    ...javaContext,
+    requestVariants: [
+      {
+        id: 'MilvusImportRequest',
+        title: 'MilvusImportRequest',
+        signature: 'MilvusImportRequest.builder()',
+        inputs: [{ name: 'files', type: 'List<List<String>>', description: 'Files visible to Milvus.' }],
+      },
+      {
+        id: 'CloudImportRequest',
+        title: 'CloudImportRequest',
+        signature: 'CloudImportRequest.builder()',
+        inputs: [{ name: 'projectId', type: 'String', description: 'The Zilliz Cloud project ID.' }],
+      },
+    ],
+  });
+  const markdown = renderMarkdown(javaRenderer.render(reference));
+
+  assert.match(markdown, /### MilvusImportRequest/);
+  assert.match(markdown, /MilvusImportRequest\.builder\(\)[\s\S]*\.files\(files\)/);
+  assert.match(markdown, /### CloudImportRequest/);
+  assert.match(markdown, /CloudImportRequest\.builder\(\)[\s\S]*\.projectId\(projectId\)/);
+  assert.match(markdown, /\*\*PARAMETERS:\*\*[\s\S]*\*\*files/);
+  assert.match(markdown, /\*\*PARAMETERS:\*\*[\s\S]*\*\*projectId/);
+  assert.doesNotMatch(markdown, /\*\*BUILDER METHODS:\*\*/);
+});
+
+test('Java composes platform request variants inside one directive-aware code block', () => {
+  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), {
+    ...context('java'),
+    requestVariants: [
+      {
+        id: 'MilvusImportRequest', audience: 'milvus', title: 'MilvusImportRequest',
+        signature: 'MilvusImportRequest.builder()',
+        inputs: [{ name: 'files', type: 'List<List<String>>', description: 'The files to import into Milvus.' }],
+      },
+      {
+        id: 'CloudImportRequest', audience: 'zilliz', title: 'CloudImportRequest',
+        signature: 'CloudImportRequest.builder()',
+        inputs: [{ name: 'objectUrls', type: 'List<List<String>>', description: 'The object URLs to import into Zilliz Cloud.' }],
+      },
+    ],
+  });
+  const ir = javaRenderer.render(reference);
+  const requestCode = codeValues(ir, 'request-signature');
+
+  assert.equal(requestCode.length, 1);
+  assert.match(requestCode[0], /\/\/ include-start milvus\nMilvusImportRequest\.builder\(\)/);
+  assert.match(requestCode[0], /\/\/ include-start zilliz\nCloudImportRequest\.builder\(\)/);
+  assert.equal((requestCode[0].match(/\/\/ include-end/g) || []).length, 2);
+});
+
+test('Java scopes request variant headings and parameters with include and exclude tags', () => {
+  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), {
+    ...context('java'),
+    requestVariants: [
+      {
+        id: 'MilvusImportRequest', audience: 'milvus', title: 'MilvusImportRequest',
+        signature: 'MilvusImportRequest.builder()',
+        inputs: [{ name: 'files', type: 'List<List<String>>', description: 'The files to import into Milvus.' }],
+      },
+      {
+        id: 'CloudImportRequest', audience: 'zilliz', title: 'CloudImportRequest',
+        signature: 'CloudImportRequest.builder()',
+        inputs: [{ name: 'objectUrls', type: 'List<List<String>>', description: 'The object URLs to import into Zilliz Cloud.' }],
+      },
+    ],
+  });
+  const markdown = renderMarkdown(javaRenderer.render(reference));
+
+  assert.match(markdown, /<exclude target="zilliz">[\s\S]*### MilvusImportRequest[\s\S]*\*\*files\*\*[\s\S]*<\/exclude>/);
+  assert.match(markdown, /<include target="zilliz">[\s\S]*### CloudImportRequest[\s\S]*\*\*objectUrls\*\*[\s\S]*<\/include>/);
+});
+
+test('Java audience-scoped request details remain valid layout sections', () => {
+  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), {
+    ...context('java'),
+    requestVariants: [
+      {
+        id: 'MilvusImportRequest', audience: 'milvus', title: 'MilvusImportRequest',
+        signature: 'MilvusImportRequest.builder()',
+        inputs: [{ name: 'files', type: 'List<List<String>>', description: 'The files to import into Milvus.' }],
+      },
+      {
+        id: 'CloudImportRequest', audience: 'zilliz', title: 'CloudImportRequest',
+        signature: 'CloudImportRequest.builder()',
+        inputs: [{ name: 'objectUrls', type: 'List<List<String>>', description: 'The object URLs to import into Zilliz Cloud.' }],
+      },
+    ],
+  });
+  const validation = validateSdkLayout(javaRenderer.render(reference), sdkLayoutProfiles.java);
+
+  assert.deepEqual(validation.errors, []);
+});
+
+test('Java composes platform examples with Java code directives and scoped descriptions', () => {
+  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), {
+    ...context('java'),
+    examples: [
+      {
+        title: 'Milvus import', audience: 'milvus', language: 'java',
+        description: 'Imports prepared files into Milvus.',
+        code: 'BulkImportUtils.bulkImport(MILVUS_URL, milvusRequest);',
+      },
+      {
+        title: 'Zilliz Cloud import', audience: 'zilliz', language: 'java',
+        description: 'Imports object URLs into Zilliz Cloud.',
+        code: 'BulkImportUtils.bulkImport(CLOUD_URL, cloudRequest);',
+      },
+    ],
+  });
+  const ir = javaRenderer.render(reference);
+  const markdown = renderMarkdown(ir);
+  const exampleCode = codeValues(ir, 'example-code');
+
+  assert.equal(exampleCode.length, 1);
+  assert.match(exampleCode[0], /\/\/ include-start milvus\nBulkImportUtils\.bulkImport\(MILVUS_URL/);
+  assert.match(exampleCode[0], /\/\/ include-start zilliz\nBulkImportUtils\.bulkImport\(CLOUD_URL/);
+  assert.match(markdown, /<exclude target="zilliz">\nImports prepared files into Milvus\./);
+  assert.match(markdown, /<include target="zilliz">\nImports object URLs into Zilliz Cloud\./);
 });
 
 test('SDK layouts omit body H1 and enforce language-specific signature roles', () => {
@@ -413,7 +540,9 @@ test('example fence metadata is validated and preserved with example titles', ()
 
 test('empty field and member descriptions do not create blank list paragraphs', () => {
   const javaContext = context('java');
-  const reference = javaAdapter.toReferenceDocument(fixture('java-create-collection.json'), javaContext);
+  const symbol = fixture('java-create-collection.json');
+  symbol.params = symbol.params.map((param) => ({ ...param, description: '' }));
+  const reference = javaAdapter.toReferenceDocument(symbol, javaContext);
   const rendered = javaRenderer.render(reference);
   const memberList = rendered.children.find((node) => node.type === 'unorderedList'
     && node.metadata?.role === 'members-list');
@@ -618,4 +747,45 @@ test('parameter, member, result, and error lists keep signature and description 
       }
     }
   }
+});
+
+test('Java prose preserves bold numeric defaults and inline-code SDK identifiers', () => {
+  const symbol = enrich('java', fixture('java-create-collection.json'));
+  symbol.params[0] = {
+    ...symbol.params[0],
+    description: 'Uses `CollectionSchemaParam` with a default limit of **5**.',
+  };
+  const reference = javaAdapter.toReferenceDocument(symbol, context('java'));
+  const markdown = renderMarkdown(javaRenderer.render(reference));
+
+  assert.match(markdown, /Uses `CollectionSchemaParam` with a default limit of \*\*5\*\*\./);
+  assert.doesNotMatch(markdown, /\\\*\\\*5\\\*\\\*/);
+});
+
+test('Java builder members render embedded helper fields beneath the owning method', () => {
+  const symbol = enrich('java', fixture('java-create-collection.json'));
+  symbol.params[0] = {
+    ...symbol.params[0],
+    name: 'fieldOps',
+    type: 'List<FieldPartialUpdateOp>',
+    description: 'The per-field update operations.',
+    children: [
+      {
+        name: 'fieldName(String fieldName)',
+        type: '',
+        description: 'The field to update.',
+      },
+      {
+        name: 'opType(OpType opType)',
+        type: '',
+        description: 'The operation type. Defaults to **REPLACE**.',
+      },
+    ],
+  };
+  const reference = javaAdapter.toReferenceDocument(symbol, context('java'));
+  const markdown = renderMarkdown(javaRenderer.render(reference));
+
+  assert.match(markdown, /- `fieldOps\(List<FieldPartialUpdateOp> fieldOps\)`/);
+  assert.match(markdown, /  - `fieldName\(String fieldName\)` -[\s\S]*The field to update\./);
+  assert.match(markdown, /  - `opType\(OpType opType\)` -[\s\S]*Defaults to \*\*REPLACE\*\*\./);
 });

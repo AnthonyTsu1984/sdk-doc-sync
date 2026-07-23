@@ -296,6 +296,7 @@ test('filterSymbolsByChangedFiles accepts scanner paths relative to package root
 const {
   loadIdentityMap,
   normalizeDelta,
+  normalizeDeltas,
 } = require('../src/sdk-doc-sync/release-scope/identity-normalizer');
 const { compare } = require('../bin/compare-scan-artifacts');
 
@@ -338,6 +339,42 @@ test('identity normalizer gives unmapped symbols explicit diagnostics', () => {
     code: 'UNMAPPED_CANONICAL_IDENTITY',
     message: 'No canonical identity mapping for MilvusClient.unknown_method in python v2.6.x.',
   });
+});
+
+test('identity normalizer fans one helper change out to each owning interface', () => {
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'java-v30.json'));
+  const normalized = normalizeDeltas({
+    type: 'UPDATE',
+    symbolIdentity: 'UploadFilesRequest',
+    symbol: {
+      name: 'UploadFilesRequest',
+      kind: 'class',
+      filePath: 'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/request/volume/UploadFilesRequest.java',
+      lineNumber: 24,
+    },
+    reason: 'parameters changed',
+  }, map);
+
+  assert.deepEqual(normalized.map((item) => [item.stableId, item.canonicalSlug]), [
+    ['java:v2-Volume:VolumeFileManager-uploadFiles', 'v2-Volume-VolumeFileManager-uploadFiles'],
+    ['java:v2-Volume:VolumeFileManager-uploadFilesAsync', 'v2-Volume-VolumeFileManager-uploadFilesAsync'],
+  ]);
+
+  const progressActions = normalizeDeltas({
+    type: 'CREATE',
+    symbolIdentity: 'UploadProgress',
+    symbol: {
+      name: 'UploadProgress',
+      kind: 'class',
+      filePath: 'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/model/UploadProgress.java',
+      lineNumber: 22,
+    },
+    reason: 'new public class',
+  }, map);
+  assert.deepEqual(progressActions.map((item) => item.stableId), [
+    'java:v2-Volume:VolumeFileManager-uploadFiles',
+    'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+  ]);
 });
 
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
@@ -496,6 +533,78 @@ test('reviewed release context builder filters candidates and carries scoped pla
     required: true,
     description: 'Name of the field to update.',
   }]);
+});
+
+test('reviewed release context builder accepts hyphenated Java documentation categories', () => {
+  const releaseScope = createReleaseScope({
+    language: 'java',
+    sdkName: 'milvus-sdk-java',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.18',
+    targetTag: 'v2.6.22',
+    targetCommit: '73ea2a20df76e21ba515c870a78cf1a75e4b7d0f',
+    targetDate: '2026-06-29T02:38:24.000Z',
+    changedFiles: ['sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'java:v2-Authentication:alterRole',
+      canonicalSlug: 'v2-Authentication-alterRole',
+      symbol: 'MilvusClientV2.alterRole',
+      source: { file: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java', line: 1001 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'java',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { 'v2-Authentication': 'authentication-folder' },
+    },
+    candidates: {
+      'v2-Authentication-alterRole': {
+        category: 'v2-Authentication',
+        docIdentity: {
+          stableId: 'java:v2-Authentication:alterRole',
+          canonicalSlug: 'v2-Authentication-alterRole',
+          symbol: 'alterRole',
+        },
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'v2-Authentication-alterRole',
+          title: 'alterRole()',
+          parentRecordId: 'authentication-parent',
+        }),
+        summary: 'Changes the description stored for an existing role.',
+        requestVariants: [{
+          id: 'AlterRoleReq',
+          title: 'AlterRoleReq',
+          signature: 'AlterRoleReq.builder()',
+          inputs: [{ name: 'description', type: 'String', description: 'The new role description.' }],
+        }],
+        example: {
+          language: 'java',
+          code: 'client.alterRole(AlterRoleReq.builder().roleName("analyst").description("Read-only role").build());',
+        },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+
+  assert.equal(result.selectedCount, 1);
+  assert.equal(result.filteredScope.actions[0].stableId, 'java:v2-Authentication:alterRole');
+  assert.equal(result.filteredScope.actions[0].symbol, 'alterRole');
+  assert.deepEqual(result.filteredScope.actions[0].sourceVariants, [{
+    stableId: 'java:v2-Authentication:alterRole',
+    canonicalSlug: 'v2-Authentication-alterRole',
+    symbol: 'MilvusClientV2.alterRole',
+    source: { file: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java', line: 1001 },
+    reason: 'new public method',
+  }]);
+  assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].category, 'v2-Authentication');
+  assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].symbolName, 'alterRole');
+  assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].requestVariants[0].id, 'AlterRoleReq');
 });
 
 test('reviewed release context builder rejects stale or empty candidate specs', () => {

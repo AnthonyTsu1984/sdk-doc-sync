@@ -4,9 +4,9 @@
   "signature": "public void createCollection(CreateCollectionReq request)",
   "docstring": null,
   "params": [
-    { "name": "collectionName", "kind": "keyword", "type": "String", "default": null },
-    { "name": "dimension", "kind": "keyword", "type": "Integer", "default": null },
-    { "name": "metricType", "kind": "keyword", "type": "MetricType", "default": "MetricType.COSINE" }
+    { "name": "collectionName", "kind": "keyword", "type": "String", "default": null, "description": "The name of the collection to create." },
+    { "name": "dimension", "kind": "keyword", "type": "Integer", "default": null, "description": "The number of dimensions in the vector field." },
+    { "name": "metricType", "kind": "keyword", "type": "MetricType", "default": "MetricType.COSINE", "description": "The metric used to compare vectors." }
   ],
   "filePath": "src/main/java/io/milvus/v2/client/MilvusClientV2.java",
   "lineNumber": 184,

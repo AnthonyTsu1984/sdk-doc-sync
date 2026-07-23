@@ -13,7 +13,7 @@ const ZillizCliScanner = require('../scanners/zilliz-cli-scanner');
 const { createReleaseScope, validateReleaseScope } = require('./schema');
 const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
-const { loadIdentityMap, normalizeDelta } = require('./identity-normalizer');
+const { loadIdentityMap, normalizeDeltas } = require('./identity-normalizer');
 
 function scannerFor(language, sdkDir) {
   if (language === 'python') return new PythonScanner({ rootDir: sdkDir, publicOnly: true });
@@ -216,8 +216,7 @@ async function runReleaseScout({
   const deltas = classifySymbolDeltas({ baseline, target })
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
 
-  const normalized = deltas.map((delta) => {
-    const item = normalizeDelta(delta, map);
+  const normalized = deltas.flatMap((delta) => normalizeDeltas(delta, map).map((item) => {
     const action = {
       ...item,
       source: {
@@ -233,7 +232,7 @@ async function runReleaseScout({
       }],
     };
     return action;
-  });
+  }));
   const actions = normalized.map(({ diagnostic, ...action }) => action);
   const scannerDiagnostics = [
     { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
@@ -393,8 +392,7 @@ async function runZillizCliReleaseScout({
   const deltas = classifySymbolDeltas({ baseline, target })
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
   const implTargetCommit = targetCommitForRef({ ref: implTarget, runGit: resolvedRunGit, cwd: implRepo });
-  const normalized = deltas.map((delta) => {
-    const item = normalizeDelta(delta, map);
+  const normalized = deltas.flatMap((delta) => normalizeDeltas(delta, map).map((item) => {
     const action = {
       ...item,
       source: {
@@ -410,7 +408,7 @@ async function runZillizCliReleaseScout({
       }],
     };
     return action;
-  });
+  }));
 
   const actions = normalized.map(({ diagnostic, ...action }) => action);
   const scannerDiagnostics = [
@@ -455,6 +453,9 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
   }
   if (language === 'java' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'java-v26.json');
+  }
+  if (language === 'java' && track === 'v3.0.x') {
+    return path.join(skillRoot, 'references', 'identity', 'java-v30.json');
   }
   if (language === 'node' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'node-v26.json');

@@ -1,8 +1,8 @@
 Creates a collection through the Java v2 client.
 
-<include target="milvus">
+<exclude target="zilliz">
 Available to Milvus users.
-</include>
+</exclude>
 
 ```java
 public void createCollection(CreateCollectionReq request)
@@ -39,8 +39,6 @@ Completes after the collection is created.
   The request cannot be completed. Reports client or server failures.
 
 ## Example{#example}
-
-### Create a collection
 
 Builds and submits a collection request.
 

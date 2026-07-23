@@ -409,7 +409,10 @@ test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and 
       language,
     );
     if (language !== 'zilliz-cli') {
-      assert.deepEqual(result.plans[0].layout, { profileId: language, profileVersion: 1 });
+      assert.deepEqual(result.plans[0].layout, {
+        profileId: language,
+        profileVersion: language === 'java' ? 2 : 1,
+      });
     }
     assert.match(stdout.join('\n'), /"plans"/, language);
     assert.doesNotMatch(stdout.join('\n'), /TODO|TBD|Brief description|Usage example/i, language);
@@ -970,6 +973,46 @@ test('schema-first CLI rejects release-scope line drift instead of silently drop
     }),
     /Release scope source line mismatch.*05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4.*MilvusClient\.compact/,
   );
+});
+
+test('changed-only scanning resolves reviewed documentation identities through raw source variants', () => {
+  const releaseScope = {
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'java:v2-Authentication:alterRole',
+      canonicalSlug: 'v2-Authentication-alterRole',
+      symbol: 'alterRole',
+      source: { file: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java', line: 1001 },
+      sourceVariants: [{
+        stableId: 'java:v2-Authentication:alterRole',
+        canonicalSlug: 'v2-Authentication-alterRole',
+        symbol: 'MilvusClientV2.alterRole',
+        source: { file: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java', line: 1001 },
+        reason: 'new public method',
+      }],
+    }],
+  };
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', scan: async () => [] },
+    indexReader: async () => [],
+    language: 'java',
+    sdkName: 'milvus-sdk-java',
+    sdkVersion: 'v2.6.x',
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    releaseScope,
+    changedOnly: true,
+    dryRun: true,
+  });
+  const sourceSymbol = {
+    name: 'alterRole',
+    parentClass: 'MilvusClientV2',
+    lineNumber: 1001,
+  };
+
+  assert.deepEqual(sync._filterByReleaseScope([sourceSymbol]), [sourceSymbol]);
+  sync._applyReleaseScopeCategoryMap();
+  assert.equal(sync.diffEngine.categoryMap['MilvusClientV2-alterRole'], 'v2-Authentication-alterRole');
 });
 
 test('schema-first CLI rejects mutated release-scope artifacts', async () => {

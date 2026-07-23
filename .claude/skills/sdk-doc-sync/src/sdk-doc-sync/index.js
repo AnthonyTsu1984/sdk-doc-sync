@@ -310,13 +310,21 @@ class SdkDocSync {
         return symbol.parentClass ? `${symbol.parentClass}.${symbol.name}` : symbol.name;
     }
 
+    _releaseScopeSourceVariants(action) {
+        return Array.isArray(action.sourceVariants) && action.sourceVariants.length > 0
+            ? action.sourceVariants
+            : [action];
+    }
+
     _filterByReleaseScope(symbols) {
         if (!this.releaseScope) return symbols;
         const allowed = new Map();
         for (const action of this.releaseScope.actions) {
-            const lines = allowed.get(action.symbol) || new Set();
-            if (Number.isInteger(action.source?.line)) lines.add(action.source.line);
-            allowed.set(action.symbol, lines);
+            for (const variant of this._releaseScopeSourceVariants(action)) {
+                const lines = allowed.get(variant.symbol) || new Set();
+                if (Number.isInteger(variant.source?.line)) lines.add(variant.source.line);
+                allowed.set(variant.symbol, lines);
+            }
         }
         const byDisplayName = new Map();
         for (const symbol of symbols) {
@@ -356,10 +364,12 @@ class SdkDocSync {
 
     _applyReleaseScopeCategoryMap() {
         if (!this.releaseScope) return;
-        const scopedCategoryMap = Object.fromEntries(this.releaseScope.actions.map((action) => [
-            action.symbol.replace('.', '-'),
-            action.canonicalSlug,
-        ]));
+        const scopedCategoryMap = Object.fromEntries(this.releaseScope.actions.flatMap((action) =>
+            this._releaseScopeSourceVariants(action).map((variant) => [
+                variant.symbol.replace('.', '-'),
+                action.canonicalSlug,
+            ]),
+        ));
         this.diffEngine.categoryMap = { ...this.diffEngine.categoryMap, ...scopedCategoryMap };
         this.diffEngine._categoryMapLower = Object.fromEntries(
             Object.entries(this.diffEngine.categoryMap).map(([key, value]) => [key.toLowerCase(), value]),
@@ -452,6 +462,11 @@ class SdkDocSync {
                 profile,
                 documentToken: current.documentToken,
                 repairApproval: actionContext.repairApproval || extraContext.repairApproval || suppliedContext.repairApproval || null,
+                copyOnWrite: current.version !== target.version
+                    || current.folderToken !== target.folderToken
+                    || actionContext.tokenReferencedByOlderVersions === true
+                    || extraContext.tokenReferencedByOlderVersions === true
+                    || suppliedContext.tokenReferencedByOlderVersions === true,
             });
             if (apiPatchPlan.validation?.valid !== true) {
                 const firstError = apiPatchPlan.validation?.errors?.[0];

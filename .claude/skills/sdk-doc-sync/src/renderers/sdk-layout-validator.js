@@ -9,6 +9,7 @@ const ROLE_GROUPS = Object.freeze({
   'request-heading': 'request',
   'request-description': 'request',
   'request-variant-heading': 'request',
+  'request-variant-audience': 'request',
   'request-signature': 'request',
   'parameters-label': 'parameters',
   'parameters-list': 'parameters',

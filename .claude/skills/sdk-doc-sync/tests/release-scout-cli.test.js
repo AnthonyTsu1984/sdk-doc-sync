@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { runReleaseScout } = require('../src/sdk-doc-sync/release-scope/release-scout');
+const { runReleaseScout, defaultIdentityMapPath } = require('../src/sdk-doc-sync/release-scope/release-scout');
 const { runCli } = require('../bin/sdk-release-scout');
 const NodeScanner = require('../src/sdk-doc-sync/scanners/node-scanner');
 const GoScanner = require('../src/sdk-doc-sync/scanners/go-scanner');
@@ -30,6 +30,113 @@ function git(repo, args) {
   assert.equal(result.status, 0, `git ${args.join(' ')} failed: ${result.stderr}`);
   return result.stdout.trim();
 }
+
+test('Java v3.0.x has a default canonical identity map', () => {
+  const identityMapPath = defaultIdentityMapPath({
+    skillRoot: path.join(__dirname, '..'),
+    language: 'java',
+    track: 'v3.0.x',
+  });
+  const map = JSON.parse(fs.readFileSync(identityMapPath, 'utf8'));
+
+  assert.equal(path.basename(identityMapPath), 'java-v30.json');
+  assert.equal(map.track, 'v3.0.x');
+  assert.deepEqual(map.symbols['MilvusClientV2.addFunctionField'], {
+    stableId: 'java:v2-Collections:addFunctionField',
+    canonicalSlug: 'v2-Collections-addFunctionField',
+    category: 'Collections',
+  });
+  assert.deepEqual(map.symbols['MilvusClientV2.search'], {
+    stableId: 'java:v2-Vector:search',
+    canonicalSlug: 'v2-Vector-search',
+    category: 'Vector',
+  });
+  assert.deepEqual(map.symbols.VolumeBulkWriterParam, {
+    stableId: 'java:v2-DataImport:VolumeBulkWriter',
+    canonicalSlug: 'v2-DataImport-VolumeBulkWriter',
+    category: 'Data Import',
+  });
+  assert.deepEqual(map.symbols.VolumeInfo, {
+    stableId: 'java:v2-Volume:describeVolume',
+    canonicalSlug: 'v2-Volume-describeVolume',
+    category: 'Volume',
+  });
+  assert.equal(map.symbols.UploadFilesRequest.targets.length, 2);
+  assert.deepEqual(map.symbols.UploadProgress, {
+    targets: [
+      {
+        stableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+        canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFiles',
+        category: 'Volume',
+      },
+      {
+        stableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+        canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFilesAsync',
+        category: 'Volume',
+      },
+    ],
+  });
+});
+
+test('Java identity maps embed Cloud import request helpers in their owning method docs', () => {
+  for (const track of ['v26', 'v30']) {
+    const map = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', 'references', 'identity', `java-${track}.json`),
+      'utf8',
+    ));
+    assert.deepEqual(map.symbols.CloudImportRequest, {
+      stableId: 'java:v2-BulkImport:bulkImport',
+      canonicalSlug: 'v2-BulkImport-bulkImport',
+      category: 'BulkImport',
+    });
+    assert.deepEqual(map.symbols.CloudDescribeImportRequest, {
+      stableId: 'java:v2-BulkImport:getImportProgress',
+      canonicalSlug: 'v2-BulkImport-getImportProgress',
+      category: 'BulkImport',
+    });
+    assert.deepEqual(map.symbols.CloudListImportJobsRequest, {
+      stableId: 'java:v2-BulkImport:listImportJobs',
+      canonicalSlug: 'v2-BulkImport-listImportJobs',
+      category: 'BulkImport',
+    });
+  }
+});
+
+test('Java identity maps embed volume helpers in their owning method docs', () => {
+  for (const track of ['v26', 'v30']) {
+    const map = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', 'references', 'identity', `java-${track}.json`),
+      'utf8',
+    ));
+    assert.deepEqual(map.symbols.CreateVolumeRequest, {
+      stableId: 'java:v2-Volume:createVolume',
+      canonicalSlug: 'v2-Volume-createVolume',
+      category: 'Volume',
+    });
+    assert.deepEqual(map.symbols.DescribeVolumeRequest, {
+      stableId: 'java:v2-Volume:describeVolume',
+      canonicalSlug: 'v2-Volume-describeVolume',
+      category: 'Volume',
+    });
+    assert.deepEqual(map.symbols.ListVolumesRequest, {
+      stableId: 'java:v2-Volume:listVolumes',
+      canonicalSlug: 'v2-Volume-listVolumes',
+      category: 'Volume',
+    });
+    assert.deepEqual(map.symbols.VolumeInfo, {
+      stableId: 'java:v2-Volume:describeVolume',
+      canonicalSlug: 'v2-Volume-describeVolume',
+      category: 'Volume',
+    });
+    assert.deepEqual(map.symbols.VolumeBulkWriterParam, {
+      stableId: 'java:v2-DataImport:VolumeBulkWriter',
+      canonicalSlug: 'v2-DataImport-VolumeBulkWriter',
+      category: 'Data Import',
+    });
+    assert.equal(map.symbols.UploadFilesRequest.targets.length, 2);
+    assert.deepEqual(map.symbols.UploadProgress, map.symbols.UploadFilesRequest);
+  }
+});
 
 test('runReleaseScout emits the bounded Python v2.6 release artifact', async () => {
   const scope = await runReleaseScout({

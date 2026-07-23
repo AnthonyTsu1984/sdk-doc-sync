@@ -19,10 +19,10 @@ const profiles = Object.freeze({
     cardinality: { 'canonical-signature': [0, 0], 'request-signature': [0, 1] },
   }),
   java: freezeProfile({
-    id: 'java', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    id: 'java', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
     order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'Java', 'request-signature': 'Java', 'example-code': 'Java' },
-    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
+    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, Number.POSITIVE_INFINITY] },
   }),
   node: freezeProfile({
     id: 'node', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',

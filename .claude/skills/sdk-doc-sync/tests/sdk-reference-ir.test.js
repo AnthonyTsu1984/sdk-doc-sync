@@ -454,6 +454,37 @@ test('validates callable member kinds and signatures with path-aware errors', ()
   assert.ok(errors.some((error) => error.path === '$.callableMembers[1].signature'));
 });
 
+test('production Java references reject builder methods without descriptions', () => {
+  const evidence = [sourceEvidence()];
+  const doc = completeMethod({
+    identity: {
+      kind: 'method',
+      language: 'java',
+      name: 'describeCollection',
+      title: 'describeCollection()',
+      stableId: 'java:v2-Collections:describeCollection',
+    },
+    callableMembers: [createCallableMember({
+      kind: 'builder',
+      name: 'collectionName',
+      signature: createSignature({
+        display: 'collectionName(String collectionName)',
+        inputs: [],
+        evidence,
+      }),
+      description: '',
+      evidence,
+    })],
+  });
+
+  const errors = validateReferenceDocument(doc, { production: true }).errors;
+
+  assert.ok(errors.some((error) => (
+    error.path === '$.callableMembers[0].description'
+      && error.code === 'MISSING_CALLABLE_MEMBER_DESCRIPTION'
+  )));
+});
+
 test('rejects duplicate callable member kind and name keys at the second member', () => {
   const member = (kind, name) => createCallableMember({
     kind,
@@ -486,6 +517,22 @@ test('allows callable members with distinct kinds or names', () => {
   });
 
   assert.equal(validateReferenceDocument(doc).valid, true);
+});
+
+test('allows overloaded callable members with distinct signatures', () => {
+  const member = (display) => createCallableMember({
+    kind: 'builder',
+    name: 'withCollectionSchema',
+    signature: createSignature({ display, inputs: [] }),
+  });
+  const validation = validateReferenceDocument(completeMethod({
+    callableMembers: [
+      member('withCollectionSchema(CollectionSchemaParam collectionSchema)'),
+      member('withCollectionSchema(CreateCollectionReq.CollectionSchema collectionSchema)'),
+    ],
+  }));
+
+  assert.equal(validation.errors.some((error) => error.code === 'DUPLICATE_CALLABLE_MEMBER'), false);
 });
 
 test('enforces command and enum forbidden-section policies in production', () => {

@@ -22,17 +22,30 @@ function fallbackIdentity(delta, map) {
   };
 }
 
-function normalizeDelta(delta, map) {
-  const mapped = map.symbols[delta.symbolIdentity];
-  const identity = mapped || fallbackIdentity(delta, map);
-  const normalized = {
+function normalizedItem(delta, identity) {
+  return {
     type: delta.type,
     stableId: identity.stableId,
     canonicalSlug: identity.canonicalSlug,
     symbol: delta.symbolIdentity,
-    source: sourceOf(delta.symbol, map.packagePrefix || ''),
+    source: sourceOf(delta.symbol, identity.packagePrefix || ''),
     reason: delta.reason,
   };
+}
+
+function normalizeDeltas(delta, map) {
+  const mapped = map.symbols[delta.symbolIdentity];
+  if (mapped?.targets) {
+    return mapped.targets.map((identity) => normalizedItem(delta, {
+      ...identity,
+      packagePrefix: map.packagePrefix || '',
+    }));
+  }
+  const identity = mapped || fallbackIdentity(delta, map);
+  const normalized = normalizedItem(delta, {
+    ...identity,
+    packagePrefix: map.packagePrefix || '',
+  });
   if (!mapped) {
     normalized.diagnostic = {
       level: 'warn',
@@ -40,10 +53,15 @@ function normalizeDelta(delta, map) {
       message: `No canonical identity mapping for ${delta.symbolIdentity} in ${map.language} ${map.track}.`,
     };
   }
-  return normalized;
+  return [normalized];
+}
+
+function normalizeDelta(delta, map) {
+  return normalizeDeltas(delta, map)[0];
 }
 
 module.exports = {
   loadIdentityMap,
   normalizeDelta,
+  normalizeDeltas,
 };

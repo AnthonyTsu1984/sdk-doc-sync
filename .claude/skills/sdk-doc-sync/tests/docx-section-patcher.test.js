@@ -135,6 +135,92 @@ test('plans a scrambled page as a rebuild preview that requires repair-specific 
   assert.deepEqual(preview.operations.map((operation) => operation.type), ['rebuild-body']);
 });
 
+test('reviewed rebuild excludes preserved rich blocks from deletion and records their desired placement', () => {
+  const current = pythonDoc({ rich: true });
+  current[0].children = ['summary', 'examples', 'example-code', 'request', 'request-code', 'parameters', 'param', 'callout', 'returns', 'returns-value'];
+
+  const preview = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: pythonDoc(),
+    profile: profiles.python,
+    documentToken: 'doc-rich',
+  });
+
+  assert.equal(preview.strategy, 'reviewed-full-body-rebuild');
+  assert.equal(preview.operations[0].deleteBlockIds.includes('callout'), false);
+  assert.deepEqual(preview.operations[0].preservedPlacements, [{ blockId: 'callout', insertAt: 5 }]);
+});
+
+test('scrambled source copied for a newer version rebuilds only the copy without repair approval', () => {
+  const current = pythonDoc();
+  current[0].children = ['summary', 'examples', 'example-code', 'request', 'request-code', 'parameters', 'param', 'returns', 'returns-value'];
+
+  const preview = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: pythonDoc(),
+    profile: profiles.python,
+    documentToken: 'historical-source',
+    copyOnWrite: true,
+  });
+
+  assert.equal(preview.strategy, 'copy-full-body-rebuild');
+  assert.equal(preview.approval, undefined);
+  assert.deepEqual(preview.operations[0].deleteBlockIds, current[0].children);
+});
+
+test('structural copy updates rebuild the new copy in complete desired role order without repair approval', () => {
+  const current = pythonDoc();
+  const desired = pythonDoc();
+  desired.splice(5, 0, block('members', 'BUILDER METHODS:', 2, { bold: true }), block('member', 'name - Member name.', 12));
+  desired[0].children.splice(4, 0, 'members', 'member');
+
+  const preview = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: desired,
+    profile: profiles.python,
+    documentToken: 'source-doc',
+    copyOnWrite: true,
+  });
+
+  assert.equal(preview.strategy, 'copy-full-body-rebuild');
+  assert.equal(preview.approval, undefined);
+  assert.deepEqual(preview.operations.map((operation) => operation.type), ['rebuild-body']);
+  assert.deepEqual(preview.operations[0].deleteBlockIds, current[0].children);
+  assert.deepEqual(preview.operations[0].blocks.map((entry) => entry.block_id), desired[0].children);
+});
+
+test('copy rebuild retains nested desired block hierarchy in the immutable patch plan', () => {
+  const desired = pythonDoc();
+  desired[5].children = [{
+    block_id: 'nested-member',
+    parent_id: 'param',
+    block_type: 12,
+    bullet: { elements: [{ text_run: { content: 'nested member' } }] },
+    children: [],
+  }];
+
+  const preview = planApiReferencePatch({
+    currentBlocks: pythonDoc({ request: 'client.search(data, old=true)' }),
+    desiredBlocks: desired,
+    profile: profiles.python,
+    copyOnWrite: true,
+  });
+
+  assert.equal(preview.strategy, 'targeted-semantic-patch');
+
+  desired.splice(5, 0, block('members', 'BUILDER METHODS:', 2, { bold: true }));
+  desired[0].children.splice(4, 0, 'members');
+  const structuralPreview = planApiReferencePatch({
+    currentBlocks: pythonDoc(),
+    desiredBlocks: desired,
+    profile: profiles.python,
+    copyOnWrite: true,
+  });
+  const parameterBlock = structuralPreview.operations[0].blocks.find((entry) => entry.block_id === 'param');
+  assert.equal(Object.isFrozen(parameterBlock.children[0]), true);
+  assert.equal(parameterBlock.children[0].bullet.elements[0].text_run.content, 'nested member');
+});
+
 test('blocks planning when the live page structure cannot be modeled', () => {
   const patch = planApiReferencePatch({
     currentBlocks: [block('orphan', 'No page')],

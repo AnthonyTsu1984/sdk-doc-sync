@@ -13,6 +13,13 @@ function withSignatureOverload(symbol, context) {
 }
 
 function toReferenceDocument(symbol, context = {}) {
+  symbol = {
+    ...(symbol || {}),
+    ...(context.symbolName !== undefined ? { name: context.symbolName } : {}),
+    ...(context.kind !== undefined ? { kind: context.kind } : {}),
+    ...(context.signature !== undefined ? { signature: context.signature } : {}),
+    ...(Array.isArray(context.params) ? { params: context.params } : {}),
+  };
   const effectiveContext = withSignatureOverload(symbol, context);
   const evidence = common.collectEvidence(symbol, effectiveContext);
   const signatures = [common.makeSignature(symbol.signature || '', [], evidence, {
@@ -21,7 +28,11 @@ function toReferenceDocument(symbol, context = {}) {
   })];
   const requestVariants = [];
   const callableMembers = [];
-  if (symbol.requestClass) {
+  if (Array.isArray(effectiveContext.requestVariants) && effectiveContext.requestVariants.length > 0) {
+    for (const variant of effectiveContext.requestVariants) {
+      requestVariants.push(common.makeRequestVariant(variant, evidence, { symbol, context: effectiveContext }));
+    }
+  } else if (symbol.requestClass) {
     const params = (symbol.params || []).map((param) => ({
       ...param,
       required: typeof param.required === 'boolean'
@@ -52,6 +63,18 @@ function toReferenceDocument(symbol, context = {}) {
         name: methodName,
       }, evidence, display, [input], { symbol, context: effectiveContext }));
     }
+  } else if (String(symbol.kind || '').toLowerCase() === 'class') {
+    for (const param of symbol.params || []) {
+      if (!param.method && !param.fullSignature) continue;
+      const methodName = param.method || param.name || '';
+      const input = { ...param, name: param.paramName || param.name || methodName };
+      const display = param.fullSignature
+        || `${methodName}(${param.type || ''} ${input.name})`;
+      callableMembers.push(common.makeCallableMember('builder', {
+        ...param,
+        name: methodName,
+      }, evidence, display, [input], { symbol, context: effectiveContext }));
+    }
   }
   const result = effectiveContext.result || symbol.result || (symbol.returnType && symbol.returnType !== 'void')
     ? common.makeResult(
@@ -60,7 +83,10 @@ function toReferenceDocument(symbol, context = {}) {
       { symbol, context: effectiveContext },
     )
     : null;
-  const errors = common.makeErrors(effectiveContext.exceptions || symbol.exceptions, evidence);
+  const callable = ['method', 'function'].includes(String(symbol.kind || '').toLowerCase());
+  const errors = callable
+    ? common.makeErrors(effectiveContext.exceptions || symbol.exceptions, evidence)
+    : [];
   return common.buildReferenceDocument({
     symbol,
     context: effectiveContext,

@@ -74,6 +74,14 @@ class MarkdownToFeishu {
         }
 
         text = text.replace(/\\([\\`*_[\]{}()#+\-.!>])/g, '$1');
+        text = text.replace(/&(?:amp|lt|gt|quot|#39|#x27);/gi, entity => ({
+            '&amp;': '&',
+            '&lt;': '<',
+            '&gt;': '>',
+            '&quot;': '"',
+            '&#39;': "'",
+            '&#x27;': "'",
+        })[entity.toLowerCase()] || entity);
 
         const elements = [];
         let buffer = '';
@@ -264,7 +272,10 @@ class MarkdownToFeishu {
                     if (!bulletText && childToken.type === 'paragraph') {
                         bulletText = childToken.text;
                     } else if (childToken.type === 'paragraph') {
-                        children.push(this.__create_text_block(childToken));
+                        children.push(this.__create_text_block({
+                            ...childToken,
+                            text: String(childToken.text || '').replace(/^\s+/, ''),
+                        }));
                     } else if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
                     }
@@ -288,7 +299,11 @@ class MarkdownToFeishu {
                     childToken.type !== 'checkbox' &&
                     childToken.text?.trim()
                 );
-                const bulletText = labelToken?.text || (item.text || '').split('\n')[0];
+                const labelLines = String(labelToken?.text || item.text || '')
+                    .split(/\r?\n/)
+                    .map(line => line.trim())
+                    .filter(Boolean);
+                const bulletText = labelLines.shift() || '';
 
                 const block = {
                     block_type: block_type,
@@ -299,13 +314,19 @@ class MarkdownToFeishu {
                 };
 
                 const children = [];
+                for (const continuation of labelLines) {
+                    children.push(this.__create_text_block({ type: 'text', text: continuation }));
+                }
                 for (const childToken of contentTokens) {
                     if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
                     } else if (childToken.type === 'checkbox' || childToken === labelToken) {
                         continue;
                     } else if (childToken.text?.trim()) {
-                        children.push(this.__create_text_block(childToken));
+                        children.push(this.__create_text_block({
+                            ...childToken,
+                            text: String(childToken.text || '').replace(/^\s+/, ''),
+                        }));
                     }
                 }
 
@@ -1257,6 +1278,21 @@ class MarkdownToFeishu {
         };
     }
 
+    async deleteDocument({ documentToken }) {
+        if (!documentToken) throw new Error('documentToken is required to delete a document');
+        const token = await this.tokenFetcher.token();
+        const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${documentToken}?type=docx`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        const data = await response.json();
+        if (data.code !== 0) throw new Error(`Failed to delete document: ${data.msg}`);
+        return data.data || {};
+    }
+
     async __create_drive_document({ title, folder_token = null }) {
         const token = await this.tokenFetcher.token();
 
@@ -1636,7 +1672,49 @@ class MarkdownToFeishu {
             .map(([key, value]) => [key, this.__sanitize_api_patch_block(value)]));
     }
 
-    async apply_api_patch({ document_id, patchPlan }) {
+    __api_patch_comparable_block(block, idMap = new Map()) {
+        if (Array.isArray(block)) return block.map(item => this.__api_patch_comparable_block(item, idMap));
+        if (!block || typeof block !== 'object') {
+            if (typeof block !== 'string' || idMap.size === 0) return block;
+            let normalized = block;
+            for (const [sourceId, copyId] of idMap) normalized = normalized.split(sourceId).join(copyId);
+            return normalized;
+        }
+        return Object.fromEntries(Object.entries(block)
+            .filter(([key]) => !['block_id', 'parent_id', 'children', 'comment_ids'].includes(key))
+            .map(([key, value]) => [key, this.__api_patch_comparable_block(value, idMap)]));
+    }
+
+    __api_patch_copy_id_map(sourceBlocks, copyBlocks, sourcePage, copyPage) {
+        const sourceById = new Map(sourceBlocks.map(block => [block.block_id, block]));
+        const copyById = new Map(copyBlocks.map(block => [block.block_id, block]));
+        const idMap = new Map([[sourcePage.block_id, copyPage.block_id]]);
+        const pairChildren = (sourceChildren = [], copyChildren = []) => {
+            if (sourceChildren.length !== copyChildren.length) return false;
+            for (let index = 0; index < sourceChildren.length; index += 1) {
+                const sourceId = sourceChildren[index];
+                const copyId = copyChildren[index];
+                const sourceBlock = sourceById.get(sourceId);
+                const copyBlock = copyById.get(copyId);
+                if (!sourceBlock || !copyBlock) return false;
+                idMap.set(sourceId, copyId);
+                if (!pairChildren(sourceBlock.children || [], copyBlock.children || [])) return false;
+            }
+            return true;
+        };
+        return pairChildren(sourcePage.children || [], copyPage.children || []) ? idMap : null;
+    }
+
+    __rebind_api_patch_plan(patchPlan, idMap) {
+        if (Array.isArray(patchPlan)) return patchPlan.map(item => this.__rebind_api_patch_plan(item, idMap));
+        if (!patchPlan || typeof patchPlan !== 'object') {
+            return typeof patchPlan === 'string' && idMap.has(patchPlan) ? idMap.get(patchPlan) : patchPlan;
+        }
+        return Object.fromEntries(Object.entries(patchPlan)
+            .map(([key, value]) => [key, this.__rebind_api_patch_plan(value, idMap)]));
+    }
+
+    async apply_api_patch({ document_id, source_document_id, patchPlan }) {
         if (!patchPlan || patchPlan.validation?.valid !== true) {
             const error = new Error('A validated API patch plan is required');
             error.code = 'INVALID_API_PATCH_PLAN';
@@ -1648,10 +1726,32 @@ class MarkdownToFeishu {
             throw error;
         }
         const existingBlocks = await this.get_document_blocks(document_id);
-        const pageBlock = existingBlocks.find(block => block.block_type === 1);
+        let pageBlock = existingBlocks.find(block => block.block_type === 1);
         const actualChildren = pageBlock?.children || [];
         const expectedChildren = patchPlan.currentModel?.topLevelBlockIds || [];
-        if (!pageBlock || JSON.stringify(actualChildren) !== JSON.stringify(expectedChildren)) {
+        let effectivePatchPlan = patchPlan;
+        if (pageBlock && JSON.stringify(actualChildren) !== JSON.stringify(expectedChildren) && source_document_id) {
+            const sourceBlocks = await this.get_document_blocks(source_document_id);
+            const sourcePage = sourceBlocks.find(block => block.block_type === 1);
+            const sourceChildren = sourcePage?.children || [];
+            const sourceById = new Map(sourceBlocks.map(block => [block.block_id, block]));
+            const copyById = new Map(existingBlocks.map(block => [block.block_id, block]));
+            const idMap = sourcePage && pageBlock
+                ? this.__api_patch_copy_id_map(sourceBlocks, existingBlocks, sourcePage, pageBlock)
+                : null;
+            const equivalentCopy = JSON.stringify(sourceChildren) === JSON.stringify(expectedChildren)
+                && actualChildren.length === expectedChildren.length
+                && idMap
+                && expectedChildren.every((sourceId, index) => (
+                    JSON.stringify(this.__api_patch_comparable_block(sourceById.get(sourceId), idMap))
+                    === JSON.stringify(this.__api_patch_comparable_block(copyById.get(actualChildren[index])))
+                ));
+            if (equivalentCopy) {
+                effectivePatchPlan = this.__rebind_api_patch_plan(patchPlan, idMap);
+            }
+        }
+        const effectiveExpectedChildren = effectivePatchPlan.currentModel?.topLevelBlockIds || [];
+        if (!pageBlock || JSON.stringify(actualChildren) !== JSON.stringify(effectiveExpectedChildren)) {
             const error = new Error('Live API document blocks changed after patch approval');
             error.code = 'API_PATCH_PRECONDITION_FAILED';
             error.details = { expectedChildren, actualChildren };
@@ -1663,17 +1763,26 @@ class MarkdownToFeishu {
             created: 0,
             deleted: 0,
             unchanged: actualChildren.length,
-            operations: patchPlan.operations.length,
+            operations: effectivePatchPlan.operations.length,
         };
-        const operations = [...patchPlan.operations].sort((left, right) => {
-            const leftIndex = left.insertAt ?? Number.POSITIVE_INFINITY;
-            const rightIndex = right.insertAt ?? Number.POSITIVE_INFINITY;
+        const operationIndex = (operation) => {
+            if (Number.isInteger(operation.insertAt)) return operation.insertAt;
+            const indexes = (operation.deleteBlockIds || [])
+                .map((id) => effectiveExpectedChildren.indexOf(id))
+                .filter((index) => index >= 0);
+            return indexes.length > 0 ? Math.min(...indexes) : Number.NEGATIVE_INFINITY;
+        };
+        const operations = [...effectivePatchPlan.operations].sort((left, right) => {
+            const leftIndex = operationIndex(left);
+            const rightIndex = operationIndex(right);
             return rightIndex - leftIndex;
         });
 
         for (const operation of operations) {
-            if (operation.type === 'rebuild-body' && patchPlan.strategy !== 'reviewed-full-body-rebuild') {
-                const error = new Error('Full body rebuild requires reviewed-full-body-rebuild strategy');
+            let mutated = false;
+            if (operation.type === 'rebuild-body'
+                && !['reviewed-full-body-rebuild', 'copy-full-body-rebuild'].includes(effectivePatchPlan.strategy)) {
+                const error = new Error('Full body rebuild requires an approved rebuild strategy');
                 error.code = 'INVALID_API_PATCH_PLAN';
                 throw error;
             }
@@ -1686,15 +1795,57 @@ class MarkdownToFeishu {
                 });
                 result.deleted += deleted;
                 result.unchanged -= deleted;
+                mutated = true;
             }
             const blocks = this.__sanitize_api_patch_block(operation.blocks || []);
             if (blocks.length > 0) {
-                await this.create_blocks({
-                    document_id,
-                    blocks,
-                    startIndex: operation.type === 'rebuild-body' ? 0 : operation.insertAt,
-                });
+                const placements = operation.type === 'rebuild-body'
+                    ? [...(operation.preservedPlacements || [])].sort((left, right) => left.insertAt - right.insertAt)
+                    : [];
+                if (placements.length === 0) {
+                    await this.create_blocks({
+                        document_id,
+                        blocks,
+                        startIndex: operation.type === 'rebuild-body'
+                            ? 0
+                            : Math.min(operation.insertAt, (pageBlock.children || []).length),
+                    });
+                } else {
+                    let desiredCursor = 0;
+                    let preservedBefore = 0;
+                    for (const placement of placements) {
+                        const segment = blocks.slice(desiredCursor, placement.insertAt);
+                        if (segment.length > 0) {
+                            await this.create_blocks({
+                                document_id,
+                                blocks: segment,
+                                startIndex: desiredCursor + preservedBefore,
+                            });
+                        }
+                        desiredCursor = placement.insertAt;
+                        preservedBefore += 1;
+                    }
+                    const tail = blocks.slice(desiredCursor);
+                    if (tail.length > 0) {
+                        await this.create_blocks({
+                            document_id,
+                            blocks: tail,
+                            startIndex: desiredCursor + preservedBefore,
+                        });
+                    }
+                }
                 result.created += blocks.length;
+                mutated = true;
+            }
+            if (mutated) {
+                const refreshedBlocks = await this.get_document_blocks(document_id);
+                const refreshedPage = refreshedBlocks.find(block => block.block_type === 1);
+                if (!refreshedPage) {
+                    const error = new Error('Page block disappeared while applying API patch');
+                    error.code = 'API_PATCH_PAGE_MISSING';
+                    throw error;
+                }
+                pageBlock = refreshedPage;
             }
         }
         return result;

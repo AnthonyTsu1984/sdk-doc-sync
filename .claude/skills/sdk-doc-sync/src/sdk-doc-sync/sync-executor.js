@@ -117,6 +117,7 @@ class SyncExecutor {
       documentVerification: null,
       verification: null,
       originalRecord: plan.source?.recordId ? { ...plan.source } : null,
+      patchAttempted: false,
     };
 
     try {
@@ -163,7 +164,7 @@ class SyncExecutor {
       return {
         ...result,
         status: 'error',
-        failedStep: error.step || this._inferFailedStep(plan, completedSteps),
+        failedStep: error.step || this._inferFailedStep(plan, completedSteps, result),
         error,
         suggestedRecovery: this._recovery(plan, result, error),
       };
@@ -218,6 +219,7 @@ class SyncExecutor {
     assertPublishableArtifact(plan, artifact);
     await this._captureRollbackBeforeMutation(plan, result);
 
+    result.patchAttempted = true;
     const patched = await this._patchDocument(plan, artifact);
     result.patchedDocument = patched;
     result.completedSteps.push('patchDocument');
@@ -275,7 +277,9 @@ class SyncExecutor {
     try {
       this._assertCreatedDocumentLink(plan, copied);
 
-      const patched = await this._patchDocument(plan, artifact, copied.token);
+      const patched = await this._patchDocument(plan, artifact, copied.token, {
+        sourceDocumentToken: plan.copySource.documentToken,
+      });
       result.patchedDocument = patched;
       result.completedSteps.push('patchDocument');
 
@@ -356,12 +360,13 @@ class SyncExecutor {
     return normalizedCreatedDocument(await this.documentWriter.copyDocument(input));
   }
 
-  async _patchDocument(plan, artifact, documentToken = plan.source.documentToken) {
+  async _patchDocument(plan, artifact, documentToken = plan.source.documentToken, options = {}) {
     assertPublishableArtifact(plan, artifact);
     if (artifact.layout && plan.apiPatchPlan) {
       if (typeof this.documentWriter.applyApiPatch === 'function') {
         return await this.documentWriter.applyApiPatch({
           documentToken,
+          sourceDocumentToken: options.sourceDocumentToken,
           patchPlan: plan.apiPatchPlan,
           artifactDigest: plan.artifactDigest,
         });
@@ -369,6 +374,7 @@ class SyncExecutor {
       if (typeof this.documentWriter.apply_api_patch === 'function') {
         return await this.documentWriter.apply_api_patch({
           document_id: documentToken,
+          source_document_id: options.sourceDocumentToken,
           patchPlan: plan.apiPatchPlan,
           artifactDigest: plan.artifactDigest,
         });
@@ -484,7 +490,7 @@ class SyncExecutor {
 
   async _rollbackInPlaceMutation(plan, result, originalError) {
     if (plan.action !== 'UPDATE_IN_PLACE') return;
-    if (!result.completedSteps.includes('patchDocument')) return;
+    if (!result.patchAttempted && !result.completedSteps.includes('patchDocument')) return;
     if (result.completedSteps.includes('rollbackRevert') || result.completedSteps.includes('rollbackRevertFailed')) return;
     if (typeof this.verifier?.rollback !== 'function') return;
     try {
@@ -499,12 +505,18 @@ class SyncExecutor {
     }
   }
 
-  _inferFailedStep(plan, completedSteps) {
+  _inferFailedStep(plan, completedSteps, result = {}) {
+    if (plan.action === 'UPDATE_IN_PLACE'
+      && result.patchAttempted
+      && !completedSteps.includes('patchDocument')) {
+      return 'patchDocument';
+    }
     if (completedSteps.length === 0) {
       if (plan.action === 'COPY_PATCH_AND_REPOINT') return 'copyDocument';
       return plan.action === 'UPDATE_IN_PLACE' ? 'patchDocument' : 'createDocument';
     }
     if (completedSteps.includes('captureRollback') && completedSteps.length === 1) {
+      if (result.patchAttempted) return 'patchDocument';
       return plan.action === 'UPDATE_IN_PLACE' ? 'patchDocument' : 'copyDocument';
     }
     if (plan.action === 'COPY_PATCH_AND_REPOINT'

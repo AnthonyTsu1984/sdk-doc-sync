@@ -182,8 +182,9 @@ function assertCandidateIdentity({ action, spec, category }) {
     );
   }
   if (effectiveCanonicalSlug.includes('-')) {
-    const slugCategory = effectiveCanonicalSlug.split('-')[0];
-    if (slugCategory && slugCategory !== category) {
+    const hasCategoryPrefix = effectiveCanonicalSlug === category
+      || effectiveCanonicalSlug.startsWith(`${category}-`);
+    if (!hasCategoryPrefix) {
       throw new Error(
         `Candidate ${action.canonicalSlug} category ${category} does not match canonical slug ${effectiveCanonicalSlug}. ` +
         'Use a category-based documentation slug before building approval-ready context.',
@@ -466,19 +467,21 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     const sourceVariants = groupedSources
       .map((canonicalSlug) => (releaseScope.actions || []).find((item) => item.canonicalSlug === canonicalSlug))
       .filter(Boolean)
-      .map((item) => ({
-        stableId: item.stableId,
-        canonicalSlug: item.canonicalSlug,
-        symbol: item.symbol,
-        source: clone(item.source),
-        reason: item.reason,
-      }));
+      .flatMap((item) => Array.isArray(item.sourceVariants) && item.sourceVariants.length > 0
+        ? item.sourceVariants.map((variant) => clone(variant))
+        : [{
+          stableId: item.stableId,
+          canonicalSlug: item.canonicalSlug,
+          symbol: item.symbol,
+          source: clone(item.source),
+          reason: item.reason,
+        }]);
     const selectedAction = {
       ...planningAction,
       stableId: identity.stableId,
       canonicalSlug: identity.canonicalSlug,
       symbol: identity.symbol,
-      sourceVariants: sourceVariants.length > 1 ? sourceVariants : undefined,
+      sourceVariants: sourceVariants.length > 0 ? sourceVariants : undefined,
       inheritanceReview,
       planningContext: {
         ...(action.planningContext || {}),
@@ -500,10 +503,13 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       repository: spec.repository || candidateSpec.repository || action.source?.repository || releaseScope.sdkName,
       revision: spec.revision || releaseScope.targetCommit,
       category,
+      symbolName: identity.symbol,
+      kind: spec.kind,
       title: spec.title || titleFor({ ...action, symbol: identity.symbol }),
       summary: required(spec.summary, `Candidate ${action.canonicalSlug} is missing summary`),
       signature: clone(spec.signature),
       params: clone(spec.params),
+      requestVariants: clone(spec.requestVariants),
       reviewedEvidence: evidence,
       result: clone(spec.result),
       exceptions: defaultExceptions(action, spec, evidence),

@@ -9,9 +9,9 @@
     "lastScanDate": "2026-05-09"
   },
   "java": {
-    "lastScannedTag": "v3.0.0",
-    "lastScannedCommit": "944cc80ff2794fca31259caa91afd0187ac9a509",
-    "lastScanDate": "2026-06-17"
+    "lastScannedTag": "origin/master",
+    "lastScannedCommit": "d662ea44a9f6152950152b032cdf4a8e5cf86140",
+    "lastScanDate": "2026-07-24"
   },
   "java-v26": {
     "lastScannedTag": "v2.6.22",

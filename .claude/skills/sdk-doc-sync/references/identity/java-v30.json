@@ -5,6 +5,30 @@
   "defaultCategory": "Client",
   "packagePrefix": "",
   "symbols": {
+    "BulkImportUtils.abortImport": {
+      "stableId": "java:v2-BulkImport:abortImport",
+      "canonicalSlug": "v2-BulkImport-abortImport",
+      "category": "BulkImport"
+    },
+    "BulkImportUtils.commitImport": {
+      "stableId": "java:v2-BulkImport:commitImport",
+      "canonicalSlug": "v2-BulkImport-commitImport",
+      "category": "BulkImport"
+    },
+    "BulkWriter.appendRow": {
+      "targets": [
+        {
+          "stableId": "java:v2-LocalBulkWriter:appendRow",
+          "canonicalSlug": "v2-LocalBulkWriter-appendRow",
+          "category": "Data Import"
+        },
+        {
+          "stableId": "java:v2-RemoteBulkWriter:appendRow",
+          "canonicalSlug": "v2-RemoteBulkWriter-appendRow",
+          "category": "Data Import"
+        }
+      ]
+    },
     "CreateVolumeRequest": {
       "stableId": "java:v2-Volume:createVolume",
       "canonicalSlug": "v2-Volume-createVolume",

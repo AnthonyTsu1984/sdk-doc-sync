@@ -164,6 +164,7 @@ function makeCallableMember(kind, member, evidence, signatureDisplay, signatureI
       role: 'field',
     }),
     description: String(member.description || ''),
+    audience: member.audience || 'shared',
     fields: normalizeFields(member.children || member.fields, memberEvidence, {
       ...options,
       role: 'field',

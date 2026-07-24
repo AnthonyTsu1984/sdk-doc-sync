@@ -32,7 +32,7 @@ Read only what the task requires:
 
 ## Non-Negotiable Invariants
 
-- Read `scan-state.json` before scanning. Update it only after a successful synchronization.
+- Read `scan-state.json` before scanning. Do not update it after writes alone: advance it only during Acceptance Finalization, after the user explicitly accepts all touched documentation and every touched record is verified as `Progress: Draft`.
 - Diff the last scanned tag against the target tag; do not treat a full repository scan as the release delta.
 - Treat Git diff/log as authoritative for release scope, changed files, and first appearance. Treat the scanner as structured extraction for symbols, signatures, parameters, and existing-doc comparison.
 - Filter scanner output to release-changed public files or symbols before classifying actions. A full scanner dry-run is a health check or backlog signal, not an approval-grade release plan.
@@ -47,6 +47,7 @@ Read only what the task requires:
 - Bot/API readability does not prove human-visible access. Before completing a link or placement repair, verify the canonical tenant host, canonical folder ancestry, and human-visible access; if human verification is unavailable, report access as unverified.
 - Phase 4 execution must append one durable result per approved action and finish with a durable completion sentinel. If a wrapper loses output while writes may still be running, do not relaunch; reconcile every approved action and verify that the original worker stopped or the live state stabilized first.
 - Markdown-only previews are not approval-grade for API-reference writes. Approval-ready artifacts must include either a create preview plus block-safety validation or an in-place/copy patch preview naming the exact sections and blocks to change.
+- For Java Phase 3 previews, validate the simulated Feishu rich-text runs, not only the source Markdown. Automatically block linked API identifiers when their text still contains Markdown backticks or `inline_code` is not true, and declare every resolved canonical reference so the exact target URL is also checked; do not defer these checks to Phase 4.
 - SDK API-reference artifacts must carry a versioned language layout profile and pass semantic layout validation before Markdown generation. The Feishu document title is metadata; generated API-reference bodies must not contain a duplicate H1.
 - Every SDK API-reference UPDATE must carry a validated immutable semantic patch plan. `strategy: smart` is forbidden for SDK API-reference execution; it remains available only to non-API Markdown workflows.
 - A full-body API-reference rebuild requires history capture, a complete rich/opaque block inventory, a before/after structural preview, and explicit repair approval for the exact document token.
@@ -66,7 +67,7 @@ Read only what the task requires:
 - Treat each SDK version folder as sparse: it contains only documents created or updated for that version. Treat each version bitable as complete: it must retain records for all classes, methods, functions, commands, and related entries in that version.
 - For unchanged entries in a new version bitable, keep their existing document links unless a version-local document was created or updated, but repoint `父记录` to the matching category or parent record in the current version when that parent exists.
 - When repointing a `Docs` field, pass both `title` and `link` to `updateRecord()`.
-- For every record whose document content, document link, parent, or editable metadata is changed in a run, leave the `Targets` field blank and set `Progress` to `WIP`. Verified Python version bitables use exact field names `Targets` and `Progress`, with progress option `WIP`.
+- For every record whose document content, document link, parent, or editable metadata is changed in a run, leave the `Targets` field blank and set `Progress` to `WIP`. Keep it `WIP` through execution and review. Only Acceptance Finalization may change every accepted touched record from `WIP` to `Draft`. Verified Python version bitables use exact field names `Targets` and `Progress`.
 - Do not add visible version-changelog sections to API reference pages unless the user explicitly requests release notes.
 - Do not write until the user has reviewed the exact dry-run action list and given explicit approval.
 - Treat production validation failures as publish blockers, not as failed release discovery. If a scoped dry-run reports `planCount: 0`, nonzero `planningErrorCount`, or missing evidence/summary/example validation errors, report the release triage separately and state that the dry-run is not approval-ready.
@@ -84,7 +85,8 @@ Drive every release sync through these phases. For chat or Feishu bot runs, repo
 | 1. Release scope | `release_scope_ready`, `no_release_changes`, or `release_scope_blocked` | Release-scout JSON with no writes, or a blocked/no-change report | Continue only when `release_scope_ready` |
 | 2. Candidate proposal | `grouping_review_required` or `generation_blocked` | Proposed user-facing candidates, exclusions, grouping decisions, inheritance decisions, doc identities, target categories/folders, and evidence | Stop for grouping and inheritance review |
 | 3. Reviewed planning | `approval_ready` or `planning_blocked` | Reviewed candidate spec, filtered scope, reviewed reference context, full scoped dry-run JSON, summary JSON, and exact action list | Stop for write approval |
-| 4. Execution | `executed`, `partially_executed`, or `execution_blocked` | Approved writes only, refetch results, verification results, and scan-state decision | Stop unless cleanup or recovery needs separate approval |
+| 4. Execution | `executed`, `partially_executed`, or `execution_blocked` | Approved writes only, refetch results, verification results, touched records left as `WIP`, and `scanStateUpdated: false` | Stop for user review or separate cleanup/recovery approval |
+| 5. Acceptance Finalization | `acceptance_review_required`, `accepted`, or `acceptance_blocked` | Explicit user acceptance, verified `WIP` to `Draft` transitions for every touched record, and updated `scan-state.json` | Complete only when all acceptance evidence passes |
 
 Use these transition rules:
 
@@ -92,12 +94,15 @@ Use these transition rules:
 - Phase 2 is a proposal, not an approval-ready action list. It may include proposed `CREATE`, `UPDATE`, `DEPRECATE`, `BACKFILL`, `REPOINT`, `SPLIT`, `EXCLUDE`, `DEFER`, and successor-track inheritance decisions, but it must not ask for write approval. For every proposed write, resolve the live Bitable record first and label the action as update-existing or create-missing from evidence, not from guessed placement. Do not present a synthetic combined documentation identity as the recommendation when the current Bitable has or should have separate interface records.
 - Phase 3 may start only after grouping review is accepted or edited with an explicit valid grouping-review reply. Encode the accepted grouping in the candidate spec before building reviewed context or approval TSV.
 - Phase 4 may start only after explicit approval of the exact Phase 3 action list and dry-run artifacts.
+- Phase 4 completion does not authorize `scan-state.json`. Stop with `acceptance_review_required` while touched records remain `WIP`.
+- Phase 5 may start only after the user explicitly confirms that all touched documentation is accepted. Change every accepted touched record from `WIP` to `Draft`, refetch and verify the exact value, then update `scan-state.json`. If acceptance is partial, any record is not `Draft`, or verification is missing, report `acceptance_blocked` and leave scan state unchanged.
 
 For Feishu bot channels, make every stop point structured and easy to reply to:
 
 - At every stop point, include an informational `Next step:` note that states the next valid transition or recovery action. Keep it separate from the requested decision, and do not phrase it as approval unless the current phase is already approval-ready.
 - Grouping review prompt: include `Decision requested: GROUPING_REVIEW`, artifact paths, a compact table of proposal IDs and inheritance IDs, and allowed replies: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, or `REJECT_GROUPING`. When a proposal artifact has `inheritance.id`, list those IDs explicitly; write `Inheritance IDs: none` only after checking the artifact and finding no inheritance entries.
 - Write approval prompt: include `Decision requested: WRITE_APPROVAL`, artifact paths, action count, blocked count, and allowed replies: `APPROVE_WRITES`, `REJECT_WRITES`, or `REQUEST_CHANGES <action-id>`.
+- Acceptance prompt: after successful execution and review, include `Decision requested: ACCEPTANCE_REVIEW`, the touched record inventory, and allowed replies: `APPROVE_ACCEPTANCE`, `REQUEST_ACCEPTANCE_CHANGES <action-id>`, or `REJECT_ACCEPTANCE`. Do not infer acceptance from write approval.
 - Treat missing, ambiguous, partial, or free-form replies as not approved. Summarize the interpreted decision and wait for a valid transition command.
 - Do not interpret shorthand such as `ok`, `yes`, `continue`, `go ahead`, `generate the action list`, or `make the TSV` as grouping approval. Only `APPROVE_GROUPING` or explicit `REVISE_GROUPING` / `REVISE_INHERITANCE` decisions can transition from Phase 2 to Phase 3.
 - Keep action IDs stable within one run. Prefer deterministic IDs derived from reviewed documentation identity, such as `<phase>:<stableId>`, not row order.
@@ -279,7 +284,9 @@ Create this TSV only after the current run has successfully rebuilt reviewed con
 - Obtain explicit approval before any live create, patch, move, copy, bitable update, or OpenAPI edit.
 - Execute only approved actions. For creates, write source-backed docs, resolve/create the canonical folder, create the document, then create the Bitable record without setting `Slug`. For updates and backfills, choose the version-safe flow in [references/versioning.md](references/versioning.md).
 - After live writes, refetch document and Bitable record, verify content, folder ancestry, `Docs.link`, `父记录`, version metadata, language/formatting, and older-source preservation, then run [references/post-write-verification.md](references/post-write-verification.md).
-- Update `scan-state.json` only when all approved actions are complete or explicitly recorded as deferred.
+- After Phase 4, report `acceptance_review_required`, keep touched records at `WIP`, and leave `scan-state.json` unchanged.
+- During Acceptance Finalization, require explicit user confirmation, update every touched record from `WIP` to `Draft`, refetch the records, and verify the transitions.
+- Once all acceptance checks pass, update `scan-state.json` in the same finalization step. Explicit acceptance with verified `Draft` records requires the scan-state update; never leave an accepted run on the old baseline.
 
 ## Reporting
 

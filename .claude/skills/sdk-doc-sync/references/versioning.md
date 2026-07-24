@@ -12,6 +12,8 @@ For unchanged entries in a new version, keep the bitable record and keep its `Do
 
 Every record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Verify exact field names from the target bitable when working outside the known SDK bases; sampled Python version bitables use `Targets` and `Progress`, and the progress option is `WIP`.
 
+Keep edited records at `WIP` through post-write verification and user review. After the user explicitly accepts all touched documentation, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`. Partial acceptance never advances the baseline.
+
 ## Required Preflight
 
 Before any update:

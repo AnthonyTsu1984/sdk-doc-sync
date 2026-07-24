@@ -8,7 +8,7 @@ Use this workflow for production SDK, CLI, and REST API reference changes. It se
 
 Read `scan-state.json`, fetch SDK tags, and diff the last scanned tag against the target release. Scan only the changed public files or symbols identified by the diff.
 
-Do not advance `scan-state.json` during scanning. The state file changes only after approved work is complete or explicitly deferred.
+Do not advance `scan-state.json` during scanning or immediately after writes. The state file changes only during Acceptance Finalization, after the user accepts all touched documentation and every touched record is verified as `Draft`.
 
 ### 2. Normalize
 

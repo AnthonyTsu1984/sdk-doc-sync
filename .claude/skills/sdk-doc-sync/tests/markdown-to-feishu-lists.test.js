@@ -10,7 +10,7 @@ const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const fixturePath = path.join(__dirname, 'fixtures', 'markdown', 'nested-lists.md');
 
 function blockLabel(block) {
-  const body = block.bullet || block.ordered || block.text;
+  const body = block.bullet || block.ordered || block.text || block.heading3;
   return (body?.elements || [])
     .map((element) => element.text_run?.content || '')
     .join('');
@@ -103,6 +103,32 @@ test('audience wrappers preserve markers while rendering enclosed parameter Mark
   assert.match(parameterDetails, /Default: None.*object-storage URLs/s);
   assert.doesNotMatch(visible[1], /\\[_\[\]]/);
   assert.equal(visible[2], '</include>');
+});
+
+test('audience wrappers render enclosed headings as heading blocks instead of literal Markdown', async () => {
+  const converter = new MarkdownToFeishu({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const { tokens } = await converter.parse_markdown([
+    '<exclude target="zilliz">',
+    '### MilvusDescribeImportRequest',
+    '',
+    'Uses `MilvusDescribeImportRequest` for a Milvus deployment.',
+    '</exclude>',
+    '',
+  ].join('\n'));
+
+  const blocks = await converter.markdown_to_blocks(tokens);
+  assert.deepEqual(blocks.map((block) => block.block_type), [2, 5, 2, 2]);
+  assert.deepEqual(blocks.map(blockLabel), [
+    '<exclude target="zilliz">',
+    'MilvusDescribeImportRequest',
+    'Uses MilvusDescribeImportRequest for a Milvus deployment.',
+    '</exclude>',
+  ]);
+  assert.equal(blocks[2].text.elements[1].text_run.text_element_style.inline_code, true);
 });
 
 test('nested list conversion preserves exact hierarchy without duplicate labels', async () => {

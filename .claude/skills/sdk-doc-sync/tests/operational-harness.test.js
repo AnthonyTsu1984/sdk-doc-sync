@@ -95,6 +95,59 @@ test('Java post-write layout rejects a nested Java example heading', () => {
   assert.deepEqual(result.errors.map((error) => error.code), ['REDUNDANT_JAVA_EXAMPLE_HEADING']);
 });
 
+test('Java rich-text verification rejects linked identifiers rendered as literal backticks', () => {
+  assert.equal(typeof harness.verifyJavaRichTextLayout, 'function', 'verifyJavaRichTextLayout must exist');
+  const result = harness.verifyJavaRichTextLayout({
+    blocks: [{
+      block_id: 'linked-type',
+      block_type: 2,
+      text: {
+        elements: [{
+          text_run: {
+            content: '`StructFieldSchema`',
+            text_element_style: {
+              link: { url: 'https://zilliverse.feishu.cn/docx/TargetToken' },
+              inline_code: false,
+            },
+          },
+        }],
+      },
+    }],
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors.map((error) => error.code), [
+    'LINKED_CODE_RENDERED_AS_LITERAL_BACKTICKS',
+  ]);
+});
+
+test('Java rich-text verification enforces declared canonical inline-code references', () => {
+  const url = 'https://zilliverse.feishu.cn/docx/TargetToken';
+  const result = harness.verifyJavaRichTextLayout({
+    linkedInlineCodeRequirements: [{ text: 'StructFieldSchema', url }],
+    blocks: [{
+      block_id: 'linked-type',
+      block_type: 2,
+      text: {
+        elements: [{
+          text_run: {
+            content: 'StructFieldSchema',
+            text_element_style: {
+              link: { url },
+              inline_code: false,
+            },
+          },
+        }],
+      },
+    }],
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors.map((error) => error.code), [
+    'REQUIRED_LINKED_INLINE_CODE_MISSING',
+  ]);
+});
+
 test('embedded helper audit rejects a standalone helper record', () => {
   assert.equal(typeof harness.verifyEmbeddedHelpers, 'function', 'verifyEmbeddedHelpers must exist');
   const result = harness.verifyEmbeddedHelpers({
@@ -156,6 +209,136 @@ test('operational manifest cannot pass by omitting required execution and public
   ]);
 });
 
+test('Java operational manifest requires live post-write block evidence', () => {
+  const result = harness.verifyOperationalManifest({
+    language: 'java',
+    approvedActions: [{ actionId: 'update-java-doc' }],
+    execution: {
+      status: 'executed',
+      completionSentinel: true,
+      results: [{ actionId: 'update-java-doc', status: 'success' }],
+    },
+    tenantHost: 'https://zilliverse.feishu.cn',
+    publicationAccess: [{
+      recordId: 'record-java-doc',
+      documentToken: 'doc-java-doc',
+      docsLink: 'https://zilliverse.feishu.cn/docx/doc-java-doc',
+      actualFolderToken: 'folder-java',
+      targetFolderToken: 'folder-java',
+      humanAccessVerified: true,
+    }],
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors.map((error) => error.code), [
+    'MISSING_JAVA_DOCUMENT_EVIDENCE',
+  ]);
+});
+
+test('Java operational manifest requires live block evidence for every published document', () => {
+  const result = harness.verifyOperationalManifest({
+    language: 'java',
+    approvedActions: [
+      { actionId: 'update-java-doc-a' },
+      { actionId: 'update-java-doc-b' },
+    ],
+    execution: {
+      status: 'executed',
+      completionSentinel: true,
+      results: [
+        { actionId: 'update-java-doc-a', status: 'success' },
+        { actionId: 'update-java-doc-b', status: 'success' },
+      ],
+    },
+    tenantHost: 'https://zilliverse.feishu.cn',
+    publicationAccess: [
+      {
+        recordId: 'record-java-doc-a',
+        documentToken: 'doc-java-a',
+        docsLink: 'https://zilliverse.feishu.cn/docx/doc-java-a',
+        actualFolderToken: 'folder-java',
+        targetFolderToken: 'folder-java',
+        humanAccessVerified: true,
+      },
+      {
+        recordId: 'record-java-doc-b',
+        documentToken: 'doc-java-b',
+        docsLink: 'https://zilliverse.feishu.cn/docx/doc-java-b',
+        actualFolderToken: 'folder-java',
+        targetFolderToken: 'folder-java',
+        humanAccessVerified: true,
+      },
+    ],
+    javaDocuments: [{ documentToken: 'doc-java-a', blocks: [] }],
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors.map((error) => error.code), [
+    'MISSING_JAVA_DOCUMENT_EVIDENCE',
+  ]);
+  assert.equal(result.errors[0].documentToken, 'doc-java-b');
+});
+
+test('accepted documentation requires scan-state finalization', () => {
+  assert.equal(typeof harness.verifyAcceptanceFinalization, 'function', 'verifyAcceptanceFinalization must exist');
+  const result = harness.verifyAcceptanceFinalization({
+    scanStateUpdated: false,
+    touchedRecordIds: ['record-a'],
+    acceptance: {
+      userConfirmed: true,
+      records: [{
+        recordId: 'record-a',
+        beforeProgress: 'WIP',
+        afterProgress: 'Draft',
+        verified: true,
+      }],
+    },
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors.map((error) => error.code), [
+    'ACCEPTED_SCAN_STATE_NOT_UPDATED',
+  ]);
+});
+
+test('scan-state cannot advance before explicit acceptance and verified WIP to Draft transitions', () => {
+  const result = harness.verifyAcceptanceFinalization({
+    scanStateUpdated: true,
+    touchedRecordIds: ['record-a', 'record-b'],
+    acceptance: {
+      userConfirmed: false,
+      records: [{
+        recordId: 'record-a',
+        beforeProgress: 'WIP',
+        afterProgress: 'Draft',
+        verified: true,
+      }],
+    },
+  });
+
+  assert.equal(result.valid, false);
+  assert.deepEqual(result.errors.map((error) => error.code).sort(), [
+    'ACCEPTANCE_NOT_CONFIRMED',
+    'MISSING_DRAFT_ACCEPTANCE_EVIDENCE',
+  ]);
+});
+
+test('acceptance finalization passes after every touched record is verified as Draft', () => {
+  const result = harness.verifyAcceptanceFinalization({
+    scanStateUpdated: true,
+    touchedRecordIds: ['record-a', 'record-b'],
+    acceptance: {
+      userConfirmed: true,
+      records: [
+        { recordId: 'record-a', beforeProgress: 'WIP', afterProgress: 'Draft', verified: true },
+        { recordId: 'record-b', beforeProgress: 'WIP', afterProgress: 'Draft', verified: true },
+      ],
+    },
+  });
+
+  assert.deepEqual(result, { valid: true, errors: [] });
+});
+
 test('complete operational manifest passes', () => {
   const result = harness.verifyOperationalManifest({
     approvedActions: [{ actionId: 'update-close' }],
@@ -184,11 +367,16 @@ test('sdk-doc-sync guidance requires human-visible access and durable execution 
   assert.match(skill, /human-visible access/i);
   assert.match(skill, /completion sentinel/i);
   assert.match(skill, /do not relaunch/i);
+  assert.match(skill, /Acceptance Finalization/i);
+  assert.match(skill, /WIP.*Draft/i);
+  assert.match(skill, /scan-state\.json/i);
 });
 
 test('Java and post-write guidance route the new operational harness', () => {
   const java = fs.readFileSync(path.join(__dirname, '..', 'sdk-java.md'), 'utf8');
   const postWrite = fs.readFileSync(path.join(__dirname, '..', 'references', 'post-write-verification.md'), 'utf8');
   assert.match(java, /must not render a nested.*Java example/i);
+  assert.match(java, /Phase 3[^\n]*linked inline-code[^\n]*rich-text run/i);
   assert.match(postWrite, /verify-operational-harness\.js/);
+  assert.match(postWrite, /literal backticks/i);
 });

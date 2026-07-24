@@ -400,6 +400,9 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       if (typeof member.description !== 'string') {
         error(`${memberPath}.description`, 'callable member description must be a string', 'INVALID_CALLABLE_MEMBER');
       }
+      if (!AUDIENCES.includes(member.audience)) {
+        error(`${memberPath}.audience`, `unsupported callable member audience ${member.audience}`, 'INVALID_AUDIENCE');
+      }
       validateSignature(member.signature, `${memberPath}.signature`);
       validateFieldList(member.fields, `${memberPath}.fields`);
       validateEvidenceList(member.evidence, `${memberPath}.evidence`);

@@ -72,6 +72,7 @@ class SdkDocSync {
         this.sourceType = sourceType;
         this.sdkVersion = sdkVersion;
         this.sdkName = sdkName;
+        this.language = language;
         this.dryRun = dryRun;
         this.approvalCallback = approvalCallback;
         this.executionApprovalProvider = executionApprovalProvider;
@@ -432,6 +433,10 @@ class SdkDocSync {
             ...(actionContext.target || {}),
         };
         const artifact = extraContext.artifact ?? suppliedContext.artifact ?? actionContext.artifact;
+        const requiredLinkedInlineCode = actionContext.requiredLinkedInlineCode
+            ?? extraContext.requiredLinkedInlineCode
+            ?? suppliedContext.requiredLinkedInlineCode
+            ?? [];
         let apiPatchPlan = actionContext.apiPatchPlan ?? extraContext.apiPatchPlan ?? suppliedContext.apiPatchPlan;
         if (action.type === 'UPDATE' && artifact?.layout && !apiPatchPlan) {
             if (!this.documentBlockReader || typeof this.documentBlockReader.readBlocks !== 'function') {
@@ -447,7 +452,10 @@ class SdkDocSync {
             }
             const currentBlocks = await this.documentBlockReader.readBlocks(current.documentToken);
             const desiredBlocks = await this._renderArtifactBlocks(artifact);
-            const desiredBlockSafety = validateRenderedApiBlocks(desiredBlocks);
+            const desiredBlockSafety = validateRenderedApiBlocks(desiredBlocks, {
+                requiredLinkedInlineCode,
+                requireLinkedIdentifiersInlineCode: this.language === 'java',
+            });
             if (!desiredBlockSafety.ok) {
                 const error = new Error(
                     `Desired Feishu blocks failed publication safety for ${this._stableIdFor(action)}: ${JSON.stringify(desiredBlockSafety.errors)}`,
@@ -481,6 +489,7 @@ class SdkDocSync {
             ...actionContext,
             artifact,
             apiPatchPlan,
+            requiredLinkedInlineCode,
             current,
             target,
             existingRecordLookup: actionContext.existingRecordLookup ?? extraContext.existingRecordLookup ?? suppliedContext.existingRecordLookup,

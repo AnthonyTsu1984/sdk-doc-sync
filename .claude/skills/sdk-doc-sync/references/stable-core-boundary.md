@@ -45,6 +45,6 @@ Before committing:
 4. Confirm the stable test suite passes with no dependency on the run directory.
 5. Review stable runtime additions for method names, release numbers, Feishu tokens, or per-run lookup tables.
 6. Commit stable core and its tests together.
-7. Commit `scan-state.json` separately after post-write verification succeeds.
+7. Commit `scan-state.json` separately only after Acceptance Finalization: explicit user acceptance and verified `WIP` to `Draft` transitions for every touched record.
 
 Do not delete retained run evidence as part of the core commit. Retention or cleanup is a separate recoverability decision.

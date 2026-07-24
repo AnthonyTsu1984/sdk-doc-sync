@@ -1,5 +1,7 @@
 'use strict';
 
+const { validateRenderedApiBlocks } = require('./feishu-block-safety');
+
 function finding(code, message, details = {}) {
   return { code, message, ...details };
 }
@@ -136,6 +138,30 @@ function verifyJavaExampleLayout({ blocks = [] } = {}) {
   return result(errors);
 }
 
+function verifyJavaRichTextLayout({ blocks = [], linkedInlineCodeRequirements = [] } = {}) {
+  const errors = validateRenderedApiBlocks(blocks, {
+    requiredLinkedInlineCode: linkedInlineCodeRequirements,
+    requireLinkedIdentifiersInlineCode: true,
+  }).errors
+    .filter((error) => [
+      'LINKED_CODE_RENDERED_AS_LITERAL_BACKTICKS',
+      'LINKED_API_IDENTIFIER_NOT_INLINE_CODE',
+      'REQUIRED_LINKED_INLINE_CODE_MISSING',
+    ].includes(error.code))
+    .map((error) => finding(
+      error.code,
+      error.code === 'REQUIRED_LINKED_INLINE_CODE_MISSING'
+        ? 'A declared Java canonical reference is missing a rich-text run that combines the exact link and inline-code style.'
+        : 'A linked Java identifier must use a real inline-code rich-text style, not plain text or visible Markdown backticks.',
+      {
+        blockId: error.blockId || null,
+        text: error.text || null,
+        link: error.link || null,
+      },
+    ));
+  return result(errors);
+}
+
 function verifyEmbeddedHelpers({ embeddedHelpers = [], records = [] } = {}) {
   const errors = [];
   const recordsByStableId = new Map(records
@@ -169,6 +195,49 @@ function verifyEmbeddedHelpers({ embeddedHelpers = [], records = [] } = {}) {
   return result(errors);
 }
 
+function verifyAcceptanceFinalization({
+  scanStateUpdated = false,
+  touchedRecordIds = [],
+  acceptance = null,
+} = {}) {
+  const errors = [];
+  const userConfirmed = acceptance?.userConfirmed === true;
+  const acceptanceByRecord = new Map((acceptance?.records || [])
+    .filter((record) => record?.recordId)
+    .map((record) => [record.recordId, record]));
+
+  if (scanStateUpdated === true && !userConfirmed) {
+    errors.push(finding(
+      'ACCEPTANCE_NOT_CONFIRMED',
+      'scan-state.json cannot advance until the user explicitly confirms that all touched documentation is accepted.',
+    ));
+  }
+  if (userConfirmed && scanStateUpdated !== true) {
+    errors.push(finding(
+      'ACCEPTED_SCAN_STATE_NOT_UPDATED',
+      'After acceptance and verified WIP-to-Draft transitions, scan-state.json must be updated.',
+    ));
+  }
+
+  if (scanStateUpdated === true || userConfirmed) {
+    for (const recordId of [...new Set(touchedRecordIds.filter(Boolean))]) {
+      const record = acceptanceByRecord.get(recordId);
+      if (!record
+        || record.beforeProgress !== 'WIP'
+        || record.afterProgress !== 'Draft'
+        || record.verified !== true) {
+        errors.push(finding(
+          'MISSING_DRAFT_ACCEPTANCE_EVIDENCE',
+          `Touched record ${recordId} lacks a verified WIP-to-Draft acceptance transition.`,
+          { recordId },
+        ));
+      }
+    }
+  }
+
+  return result(errors);
+}
+
 function verifyOperationalManifest(manifest = {}) {
   const errors = [];
   if (!manifest.execution && !manifest.approvedActions) {
@@ -193,8 +262,35 @@ function verifyOperationalManifest(manifest = {}) {
       records: manifest.publicationAccess,
     }).errors);
   }
+  if (String(manifest.language || '').toLowerCase() === 'java'
+    && (!Array.isArray(manifest.javaDocuments) || manifest.javaDocuments.length === 0)) {
+    errors.push(finding(
+      'MISSING_JAVA_DOCUMENT_EVIDENCE',
+      'A Java operational manifest must include refetched live blocks for every touched Java document.',
+    ));
+  }
+  if (String(manifest.language || '').toLowerCase() === 'java'
+    && Array.isArray(manifest.javaDocuments)
+    && manifest.javaDocuments.length > 0) {
+    const evidencedTokens = new Set((manifest.javaDocuments || [])
+      .map((document) => document?.documentToken)
+      .filter(Boolean));
+    for (const record of manifest.publicationAccess || []) {
+      if (record?.documentToken && !evidencedTokens.has(record.documentToken)) {
+        errors.push(finding(
+          'MISSING_JAVA_DOCUMENT_EVIDENCE',
+          `Java document ${record.documentToken} lacks refetched live block evidence.`,
+          { documentToken: record.documentToken, recordId: record.recordId || null },
+        ));
+      }
+    }
+  }
   for (const document of manifest.javaDocuments || []) {
     errors.push(...verifyJavaExampleLayout(document).errors.map((error) => ({
+      ...error,
+      documentToken: document.documentToken || error.documentToken || null,
+    })));
+    errors.push(...verifyJavaRichTextLayout(document).errors.map((error) => ({
       ...error,
       documentToken: document.documentToken || error.documentToken || null,
     })));
@@ -205,13 +301,22 @@ function verifyOperationalManifest(manifest = {}) {
       records: manifest.records || [],
     }).errors);
   }
+  if (Object.prototype.hasOwnProperty.call(manifest, 'scanStateUpdated') || manifest.acceptance) {
+    errors.push(...verifyAcceptanceFinalization({
+      scanStateUpdated: manifest.scanStateUpdated === true,
+      touchedRecordIds: (manifest.publicationAccess || []).map((record) => record?.recordId).filter(Boolean),
+      acceptance: manifest.acceptance || null,
+    }).errors);
+  }
   return result(errors);
 }
 
 module.exports = {
+  verifyAcceptanceFinalization,
   verifyEmbeddedHelpers,
   verifyExecutionJournal,
   verifyJavaExampleLayout,
+  verifyJavaRichTextLayout,
   verifyOperationalManifest,
   verifyPublicationAccess,
 };

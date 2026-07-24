@@ -342,7 +342,7 @@ test('Java renders multiple reviewed request variants with scoped fields', () =>
   assert.match(markdown, /CloudImportRequest\.builder\(\)[\s\S]*\.projectId\(projectId\)/);
   assert.match(markdown, /\*\*PARAMETERS:\*\*[\s\S]*\*\*files/);
   assert.match(markdown, /\*\*PARAMETERS:\*\*[\s\S]*\*\*projectId/);
-  assert.doesNotMatch(markdown, /\*\*BUILDER METHODS:\*\*/);
+  assert.match(markdown, /\*\*BUILDER METHODS:\*\*/);
 });
 
 test('Java composes platform request variants inside one directive-aware code block', () => {
@@ -390,6 +390,42 @@ test('Java scopes request variant headings and parameters with include and exclu
 
   assert.match(markdown, /<exclude target="zilliz">[\s\S]*### MilvusImportRequest[\s\S]*\*\*files\*\*[\s\S]*<\/exclude>/);
   assert.match(markdown, /<include target="zilliz">[\s\S]*### CloudImportRequest[\s\S]*\*\*objectUrls\*\*[\s\S]*<\/include>/);
+});
+
+test('Java keeps reviewed builder methods when request variants are platform scoped', () => {
+  const javaFixture = fixture('java-create-collection.json');
+  javaFixture.params = [
+    {
+      name: 'jobId', kind: 'keyword', type: 'String', required: true,
+      description: 'The import job identifier.',
+    },
+    {
+      name: 'clusterId', kind: 'keyword', type: 'String', audience: 'zilliz',
+      description: 'The Zilliz Cloud cluster identifier.',
+    },
+  ];
+  const reference = javaAdapter.toReferenceDocument(javaFixture, {
+    ...context('java'),
+    requestVariants: [
+      {
+        id: 'MilvusDescribeImportRequest', audience: 'milvus', title: 'MilvusDescribeImportRequest',
+        signature: 'MilvusDescribeImportRequest.builder()\n    .jobId(jobId)\n    .build();',
+      },
+      {
+        id: 'CloudDescribeImportRequest', audience: 'zilliz', title: 'CloudDescribeImportRequest',
+        signature: 'CloudDescribeImportRequest.builder()\n    .clusterId(clusterId)\n    .jobId(jobId)\n    .build();',
+      },
+    ],
+  });
+  const markdown = renderMarkdown(javaRenderer.render(reference));
+
+  assert.match(markdown, /\*\*BUILDER METHODS:\*\*/);
+  assert.match(markdown, /`jobId\(String jobId\)`[\s\S]*The import job identifier\./);
+  assert.match(markdown, /<include target="zilliz">[\s\S]*`clusterId\(String clusterId\)`[\s\S]*The Zilliz Cloud cluster identifier\.[\s\S]*<\/include>/);
+  assert.match(markdown, /\/\/ include-start milvus[\s\S]*MilvusDescribeImportRequest\.builder\(\)/);
+  assert.match(markdown, /\/\/ include-start zilliz[\s\S]*CloudDescribeImportRequest\.builder\(\)/);
+  assert.doesNotMatch(markdown, /### audience-variants/);
+  assert.deepEqual(validateSdkLayout(javaRenderer.render(reference), sdkLayoutProfiles.java).errors, []);
 });
 
 test('Java audience-scoped request details remain valid layout sections', () => {

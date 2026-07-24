@@ -46,6 +46,10 @@ function collectDocumentAudiences(document) {
     add(variant.audience);
     for (const field of variant.inputs || []) visitField(field);
   }
+  for (const member of document?.callableMembers || []) {
+    add(member.audience);
+    for (const field of member.fields || []) visitField(field);
+  }
   for (const example of document?.examples || []) add(example.audience);
   return PLATFORM_AUDIENCES.filter((audience) => found.has(audience));
 }

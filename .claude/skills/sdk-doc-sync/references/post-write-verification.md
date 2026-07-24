@@ -11,7 +11,7 @@ Use these checks after document creation, a full rewrite, category movement, or 
 5. For list-sensitive pages, inspect the block tree. Markdown export may flatten correct parent/child list blocks.
 6. Rebuild the live semantic section model and verify its role sequence, signature cardinality, code fences, and preserved rich block IDs against the approved language profile and patch plan.
 7. For Java builder lists, verify each bullet's own text contains only the inline-code signature and each description is a child paragraph block. Markdown export may concatenate them visually and is not sufficient evidence.
-8. For Java prose, inspect rich-text runs to confirm SDK identifiers and literal values use inline code, canonical type references link to the exact current/owning document when available, and user-significant numeric defaults or limits are bold.
+8. For Java prose, inspect rich-text runs to confirm SDK identifiers and literal values use inline code, canonical type references link to the exact current/owning document when available, and user-significant numeric defaults or limits are bold. Carry every resolved canonical reference into the operational manifest as a `linkedInlineCodeRequirements` entry so the harness verifies the exact text, link, and inline-code style together. The harness also rejects linked API identifiers without inline-code styling even if the declared inventory is incomplete.
 9. For each unlinked Java type reference, verify the execution evidence records a canonical lookup result of `no exact target`; absence of a lookup is a blocker.
 10. For platform-specific Java builder methods, verify the signature and all associated prose/examples are inside the same audience region so no platform-only signature leaks into another target.
 
@@ -27,6 +27,7 @@ Failure patterns that must block completion:
 - bot/API fetch succeeds but human-visible access is unverified;
 - the execution journal lacks a result for any approved action or lacks its completion sentinel;
 - a Java page contains a nested `Java example` heading beneath `Example`;
+- a linked Java identifier renders with literal backticks, lacks the inline-code rich-text style, or loses its canonical link;
 - an embedded helper identity still has a standalone Bitable record or document.
 
 ## Record And Folder Checks
@@ -37,6 +38,16 @@ Failure patterns that must block completion:
 4. When moving a version-local document, verify it is absent from the old folder.
 5. When copying across versions, verify the older snapshot still exists and remains unchanged.
 6. After creating a category folder, update the matching VirtualNode or Module record so its `Docs` field contains the folder URL.
+
+## Acceptance Finalization
+
+Post-write verification ends with touched records at `WIP` and `scanStateUpdated: false`. After the user explicitly accepts all touched documentation:
+
+1. Update every touched record from `Progress: WIP` to `Progress: Draft` without changing unrelated fields.
+2. Refetch every record and verify the exact `Draft` value.
+3. Record `userConfirmed: true` and one verified `WIP` to `Draft` transition per touched record in the operational manifest.
+4. Update `scan-state.json` only after all transitions pass. If acceptance is partial or any record is not verified as `Draft`, leave scan state unchanged.
+5. Run the operational harness again. `ACCEPTANCE_NOT_CONFIRMED`, `MISSING_DRAFT_ACCEPTANCE_EVIDENCE`, or `ACCEPTED_SCAN_STATE_NOT_UPDATED` blocks final completion.
 
 ## Repair Utilities
 
@@ -63,6 +74,6 @@ node .claude/skills/sdk-doc-sync/scripts/verify-operational-harness.js \
   --manifest tmp/sdk-doc-sync-runs/<language>-<track>/<run-id>/operational-manifest.json
 ```
 
-Any finding blocks completion. The manifest must include the approved-action journal and completion sentinel, canonical tenant host and folder evidence, explicit human-visible access evidence, and—when applicable—Java post-write blocks and embedded-helper ownership/standalone-record results.
+Any finding blocks completion. Set the manifest `language` explicitly. The manifest must include the approved-action journal and completion sentinel, canonical tenant host and folder evidence, explicit human-visible access evidence, and—when `language` is `java`—one refetched Java post-write block entry for every document token in `publicationAccess`, plus applicable embedded-helper ownership/standalone-record results.
 
 Record the commands, document IDs, record IDs, folder tokens, counts, and unresolved findings in the final report. Do not report a successful migration based only on a generated URL or local Markdown file.

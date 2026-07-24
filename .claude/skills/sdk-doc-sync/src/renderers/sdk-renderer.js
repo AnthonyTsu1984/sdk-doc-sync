@@ -162,7 +162,7 @@ function renderFieldBlocks(fields, context, role = 'parameters-list', key = null
   return blocks;
 }
 
-function renderMembers(members, context) {
+function renderMembers(members, context, options = {}) {
   return ir.unorderedList(members.map((member) => {
     const children = [ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])])];
     const description = sentence(member.description);
@@ -171,7 +171,7 @@ function renderMembers(members, context) {
       children.push(renderFields(member.fields, context, 'member-fields', member.name));
     }
     return ir.listItem(children);
-  }), semantic('members-list'));
+  }), options);
 }
 
 function renderErrors(errors) {
@@ -216,6 +216,7 @@ function requestEntries(document, policy) {
   if (!entries.some((entry) => audience.normalizeAudience(entry.audience) !== 'shared')) return entries;
   return [{
     id: 'audience-variants',
+    composedAudienceVariants: true,
     title: '',
     description: '',
     signature: {
@@ -239,7 +240,7 @@ function renderRequest(document, policy, context) {
     const showVariantHeading = typeof policy.variantHeadings === 'function'
       ? policy.variantHeadings(document, entry)
       : policy.variantHeadings;
-    if (showVariantHeading) {
+    if (showVariantHeading && entry.composedAudienceVariants !== true) {
       blocks.push(heading(3, entry.title || entry.id, semantic('request-variant-heading', entryKey)));
     }
     if (entry.description) {
@@ -351,10 +352,29 @@ function renderCallableMembers(document, policy, context) {
   if (!policy.memberKind) return [];
   const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
   if (members.length === 0) return [];
-  return [
-    label(policy.membersLabel, semantic('members-label')),
-    renderMembers(members, context),
-  ];
+  const blocks = [label(policy.membersLabel, semantic('members-label'))];
+  let shared = [];
+  const flushShared = () => {
+    if (shared.length === 0) return;
+    blocks.push(renderMembers(shared, context, semantic('members-list')));
+    shared = [];
+  };
+  for (const member of members) {
+    const target = audience.normalizeAudience(member.audience);
+    if (target === 'shared') {
+      shared.push(member);
+      continue;
+    }
+    flushShared();
+    blocks.push(...wrapAudience(
+      policy,
+      target,
+      [renderMembers([member], context, semantic('members-list', member.name))],
+      semantic('member-audience', member.name),
+    ));
+  }
+  flushShared();
+  return blocks;
 }
 
 function renderErrorsSection(document, policy) {

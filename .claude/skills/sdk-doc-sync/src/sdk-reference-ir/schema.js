@@ -90,8 +90,16 @@ function createRequestVariant({
   return immutable({ id, title, description, audience, parameters, signature, inputs, evidence });
 }
 
-function createCallableMember({ kind, name, signature = null, description = '', fields = [], evidence = [] } = {}) {
-  return immutable({ kind, name, signature, description, fields, evidence });
+function createCallableMember({
+  kind,
+  name,
+  signature = null,
+  description = '',
+  audience = 'shared',
+  fields = [],
+  evidence = [],
+} = {}) {
+  return immutable({ kind, name, signature, description, audience, fields, evidence });
 }
 
 function createResult({

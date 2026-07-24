@@ -401,8 +401,10 @@ function exampleFor(action, spec, evidence) {
   return examples.map((example) => ({
     title: example.title || `${action.symbol} example`,
     description: example.description || `Shows a typical ${action.symbol} call for the ${spec.version || 'target'} API.`,
+    audience: example.audience || 'shared',
     language: example.language || spec.language || 'python',
     code: required(example.code, `Candidate ${action.canonicalSlug} example is missing code`),
+    ...(example.fence !== undefined ? { fence: example.fence } : {}),
     evidence: clone(example.evidence) || evidence,
   }));
 }
@@ -515,7 +517,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       exceptions: defaultExceptions(action, spec, evidence),
       examples: exampleFor(action, { ...candidateSpec.defaults, ...spec, version }, evidence),
       inheritanceReview,
-      notes: spec.notes || candidateSpec.notes || [`Reviewed for ${releaseScope.sdkName} ${releaseScope.releaseRange}.`],
+      notes: spec.notes || candidateSpec.notes || [],
     };
   }
 

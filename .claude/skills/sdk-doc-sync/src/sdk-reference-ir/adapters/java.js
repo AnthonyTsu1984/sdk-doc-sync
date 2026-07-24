@@ -12,6 +12,35 @@ function withSignatureOverload(symbol, context) {
   return { ...context, overloadKey: `sig-${hash}` };
 }
 
+function requestParams(symbol, context) {
+  return (symbol.params || []).map((param) => ({
+    ...param,
+    required: typeof param.required === 'boolean'
+      ? param.required
+      : param.default !== null && param.default !== undefined
+        ? false
+        : param.defaultValue !== null && param.defaultValue !== undefined
+          ? false
+          : typeof context.fieldMetadata?.[param.name]?.required === 'boolean'
+            ? context.fieldMetadata[param.name].required
+            : Array.isArray(context.requiredFields)
+              && context.requiredFields.includes(param.name),
+  }));
+}
+
+function appendBuilderMembers(callableMembers, params, evidence, symbol, context) {
+  for (const param of params) {
+    const methodName = param.method || param.name || '';
+    const input = { ...param, name: param.name || methodName };
+    const display = param.fullSignature
+      || `${methodName}(${param.type || ''} ${param.name || methodName})`;
+    callableMembers.push(common.makeCallableMember('builder', {
+      ...param,
+      name: methodName,
+    }, evidence, display, [input], { symbol, context }));
+  }
+}
+
 function toReferenceDocument(symbol, context = {}) {
   symbol = {
     ...(symbol || {}),
@@ -28,24 +57,15 @@ function toReferenceDocument(symbol, context = {}) {
   })];
   const requestVariants = [];
   const callableMembers = [];
+  const params = requestParams(symbol, effectiveContext);
   if (Array.isArray(effectiveContext.requestVariants) && effectiveContext.requestVariants.length > 0) {
     for (const variant of effectiveContext.requestVariants) {
       requestVariants.push(common.makeRequestVariant(variant, evidence, { symbol, context: effectiveContext }));
     }
+    if (symbol.requestClass) {
+      appendBuilderMembers(callableMembers, params, evidence, symbol, effectiveContext);
+    }
   } else if (symbol.requestClass) {
-    const params = (symbol.params || []).map((param) => ({
-      ...param,
-      required: typeof param.required === 'boolean'
-        ? param.required
-        : param.default !== null && param.default !== undefined
-          ? false
-          : param.defaultValue !== null && param.defaultValue !== undefined
-            ? false
-            : typeof effectiveContext.fieldMetadata?.[param.name]?.required === 'boolean'
-              ? effectiveContext.fieldMetadata[param.name].required
-              : Array.isArray(effectiveContext.requiredFields)
-                && effectiveContext.requiredFields.includes(param.name),
-    }));
     requestVariants.push(common.makeRequestVariant({
       id: symbol.requestClass,
       title: symbol.requestClass,
@@ -53,16 +73,7 @@ function toReferenceDocument(symbol, context = {}) {
       signature: `${symbol.requestClass}.builder()`,
       inputs: params,
     }, evidence, { symbol, context: effectiveContext }));
-    for (const param of params) {
-      const methodName = param.method || param.name || '';
-      const input = { ...param, name: param.name || methodName };
-      const display = param.fullSignature
-        || `${methodName}(${param.type || ''} ${param.name || methodName})`;
-      callableMembers.push(common.makeCallableMember('builder', {
-        ...param,
-        name: methodName,
-      }, evidence, display, [input], { symbol, context: effectiveContext }));
-    }
+    appendBuilderMembers(callableMembers, params, evidence, symbol, effectiveContext);
   } else if (String(symbol.kind || '').toLowerCase() === 'class') {
     for (const param of symbol.params || []) {
       if (!param.method && !param.fullSignature) continue;

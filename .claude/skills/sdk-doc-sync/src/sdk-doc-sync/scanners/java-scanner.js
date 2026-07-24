@@ -23,6 +23,7 @@ class JavaScanner extends BaseScanner {
         const clientRelPath = path.relative(this.rootDir, clientFile);
         const methods = this._extractClientMethods(clientContent, clientRelPath);
         methods.push(...this._extractBulkWriterSymbols(allFiles));
+        methods.push(...this._extractSelectedCoreTypes(allFiles));
 
         // Phase 2: For each method with a Req parameter, find and parse the Request class
         const reqFiles = this._indexReqFiles(allFiles);
@@ -128,6 +129,9 @@ class JavaScanner extends BaseScanner {
             'VolumeFileManager',
             'VolumeBulkWriter',
             'BulkWriter',
+            'LocalBulkWriter',
+            'RemoteBulkWriter',
+            'BulkImportUtils',
         ]);
         const publicTypeDirs = [
             '/request/',
@@ -146,7 +150,8 @@ class JavaScanner extends BaseScanner {
             const relPath = path.relative(this.rootDir, file).split(path.sep).join('/');
             if (!relPath.includes('sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/')) continue;
             if (relPath.includes('/storage/') || relPath.includes('/writer/') || relPath.includes('/resolver/')) continue;
-            if (relPath.includes('/restful/') || relPath.includes('/common/') || relPath.includes('/utils/')) continue;
+            if ((relPath.includes('/restful/') && path.basename(file, '.java') !== 'BulkImportUtils')
+                || relPath.includes('/common/') || relPath.includes('/utils/')) continue;
 
             const basename = path.basename(file, '.java');
             const content = fs.readFileSync(file, 'utf-8');
@@ -164,6 +169,20 @@ class JavaScanner extends BaseScanner {
         return symbols;
     }
 
+    _extractSelectedCoreTypes(allFiles) {
+        const symbols = [];
+        const selectedTypes = new Set(['FunctionType']);
+        for (const file of allFiles) {
+            const basename = path.basename(file, '.java');
+            if (!selectedTypes.has(basename)) continue;
+            const relPath = path.relative(this.rootDir, file).split(path.sep).join('/');
+            const content = fs.readFileSync(file, 'utf-8');
+            const symbol = this._extractClassSymbol(content, relPath, basename);
+            if (symbol) symbols.push(symbol);
+        }
+        return symbols;
+    }
+
     _extractTopLevelClassName(content) {
         const match = content.match(/^\s*public\s+(?:abstract\s+|final\s+)?class\s+(\w+)/m);
         return match ? match[1] : null;
@@ -171,15 +190,18 @@ class JavaScanner extends BaseScanner {
 
     _extractClassSymbol(content, filePath, fallbackName) {
         const lines = content.split('\n');
-        const name = this._extractTopLevelClassName(content) || fallbackName;
-        const lineIndex = lines.findIndex(line => new RegExp(`\\bclass\\s+${name}\\b`).test(line));
+        const enumMatch = content.match(/^\s*public\s+enum\s+(\w+)/m);
+        const isEnum = Boolean(enumMatch);
+        const name = this._extractTopLevelClassName(content) || enumMatch?.[1] || fallbackName;
+        const keyword = isEnum ? 'enum' : 'class';
+        const lineIndex = lines.findIndex(line => new RegExp(`\\b${keyword}\\s+${name}\\b`).test(line));
         const params = this._extractBuilderFields(content);
         const builderMethods = this._extractBuilderMethods(content);
 
         return {
             name,
-            kind: 'class',
-            signature: `public class ${name}`,
+            kind: isEnum ? 'enum' : 'class',
+            signature: `public ${keyword} ${name}`,
             docstring: null,
             params: builderMethods.length > 0 ? builderMethods : params,
             filePath,

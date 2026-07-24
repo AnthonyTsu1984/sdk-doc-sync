@@ -498,6 +498,7 @@ async function runCli({
         approvalCallback: createApprovalCallback(args.autoApprove),
         executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest),
         artifactProvider,
+        planner: dependencies.planner || null,
         planningContextProvider,
         onProgress: dependencies.onProgress || (() => {}),
         documentWriter: dependencies.documentWriter || null,

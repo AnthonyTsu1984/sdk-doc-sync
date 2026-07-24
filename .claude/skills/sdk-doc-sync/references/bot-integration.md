@@ -9,8 +9,8 @@ Each bot run has one active release-sync session. Store these fields outside the
 ```json
 {
   "sessionId": "sdk-doc-sync:<language>:<track>:<timestamp-or-run-id>",
-  "phase": "release_scope|candidate_proposal|reviewed_planning|execution",
-  "status": "release_scope_ready|grouping_review_required|approval_ready|executed|blocked",
+  "phase": "release_scope|candidate_proposal|reviewed_planning|execution|acceptance_finalization",
+  "status": "release_scope_ready|grouping_review_required|approval_ready|executed|acceptance_review_required|accepted|blocked",
   "language": "<sdk-language>",
   "sdkName": "<sdk-name>",
   "track": "<version-track>",
@@ -25,7 +25,7 @@ Each bot run has one active release-sync session. Store these fields outside the
     "dryRunSummary": "<path>",
     "approvalActions": "<path>"
   },
-  "pendingDecision": "GROUPING_REVIEW|WRITE_APPROVAL|null",
+  "pendingDecision": "GROUPING_REVIEW|WRITE_APPROVAL|ACCEPTANCE_REVIEW|null",
   "proposalIds": [],
   "actionIds": []
 }
@@ -40,7 +40,8 @@ The bot may read artifacts and run dry-runs. It must not call mutating Feishu to
 | `release_scope` | Run release scout and validate no-write flags. | Stop only on no changes or blocked discovery. |
 | `candidate_proposal` | Build proposed user-facing candidates, exclusions, grouping decisions, version-table detected inheritance decisions, doc identities, and target placements. | Send `Decision requested: GROUPING_REVIEW`. |
 | `reviewed_planning` | Convert approved grouping to candidate spec, build reviewed context, rerun scoped dry-run, and generate exact action list. | Send `Decision requested: WRITE_APPROVAL`. |
-| `execution` | Execute only exact approved actions, refetch, verify, and report scan-state update decision. | Stop on completion, partial failure, or cleanup approval need. |
+| `execution` | Execute only exact approved actions, refetch, verify, leave touched records at `WIP`, and leave scan state unchanged. | Stop with `ACCEPTANCE_REVIEW` on success, or on partial failure/cleanup approval need. |
+| `acceptance_finalization` | After explicit acceptance, change every touched record from `WIP` to `Draft`, refetch and verify, then update scan state. | Stop as `accepted` only when every transition and scan-state update passes. |
 
 ## Decision Parsing
 
@@ -48,6 +49,7 @@ Accept only command-style replies for gates:
 
 - Grouping review: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, `REJECT_GROUPING`
 - Write approval: `APPROVE_WRITES`, `REJECT_WRITES`, `REQUEST_CHANGES <action-id>`
+- Acceptance review: `APPROVE_ACCEPTANCE`, `REQUEST_ACCEPTANCE_CHANGES <action-id>`, `REJECT_ACCEPTANCE`
 
 If a reply is conversational or ambiguous, do not transition phases. Respond with:
 
@@ -91,6 +93,8 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - `APPROVE_GROUPING` only permits building reviewed planning artifacts. It does not permit writes.
 - `APPROVE_GROUPING` also approves inheritance decisions shown in the same grouping review prompt. If a successor-track decision is absent, ambiguous, or stale, keep the session in `candidate_proposal`.
 - `APPROVE_WRITES` applies only to the exact action list and artifact digests shown in the write approval prompt.
+- `APPROVE_WRITES` does not accept the resulting documentation and never authorizes a scan-state update.
+- `APPROVE_ACCEPTANCE` is valid only after successful execution and explicit review of the complete touched-record inventory. It authorizes the exact `WIP` to `Draft` transitions and requires `scan-state.json` to be updated after those transitions verify successfully.
 - If any artifact changes after approval, return to the relevant review gate.
 - If planning produces `planningErrorCount > 0`, do not request write approval.
 - If execution partially succeeds, do not auto-retry mutating actions unless the retry was included in the approved recovery plan.

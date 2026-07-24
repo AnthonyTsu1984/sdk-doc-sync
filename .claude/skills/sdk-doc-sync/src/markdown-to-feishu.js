@@ -1152,6 +1152,25 @@ class MarkdownToFeishu {
          * so marked.js doesn't try to parse their contents.
          */
 
+        // Extract top-level audience regions before marked.js tokenizes their
+        // Markdown body. Without this protection, a heading immediately after
+        // an opening marker is folded into one literal text block, exposing
+        // strings such as "### CloudImportRequest" in the live Docx.
+        content = content.replace(
+            /^<(include|exclude)\s+target="([^"]+)">[ \t]*\r?\n([\s\S]*?)^<\/\1>[ \t]*$/gmi,
+            (match, mode, target, body) => {
+                const placeholder = `<!--JSX_COMPONENT_${componentsArray.length}-->`;
+                componentsArray.push({
+                    type: 'Audience',
+                    mode: mode.toLowerCase(),
+                    target,
+                    body,
+                    fullMatch: match,
+                });
+                return placeholder;
+            },
+        );
+
         // Extract Grid blocks
         content = content.replace(/<Grid([^>]*)>([\s\S]*?)<\/Grid>/g, (match, attrs, body) => {
             const placeholder = `<!--JSX_COMPONENT_${componentsArray.length}-->`;

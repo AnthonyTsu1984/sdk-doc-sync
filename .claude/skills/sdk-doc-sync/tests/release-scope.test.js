@@ -582,10 +582,12 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
           signature: 'AlterRoleReq.builder()',
           inputs: [{ name: 'description', type: 'String', description: 'The new role description.' }],
         }],
-        example: {
+        examples: [{
+          audience: 'milvus',
+          fence: 'Java',
           language: 'java',
           code: 'client.alterRole(AlterRoleReq.builder().roleName("analyst").description("Read-only role").build());',
-        },
+        }],
       },
     },
   };
@@ -605,6 +607,9 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
   assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].category, 'v2-Authentication');
   assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].symbolName, 'alterRole');
   assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].requestVariants[0].id, 'AlterRoleReq');
+  assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].examples[0].audience, 'milvus');
+  assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].examples[0].fence, 'Java');
+  assert.deepEqual(result.referenceContext.contexts['java:v2-Authentication:alterRole'].notes, []);
 });
 
 test('reviewed release context builder rejects stale or empty candidate specs', () => {

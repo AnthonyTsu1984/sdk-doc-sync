@@ -571,6 +571,87 @@ test('SDK UPDATE planning rejects desired Feishu blocks with visible Markdown es
   );
 });
 
+test('Java SDK UPDATE planning enforces declared canonical linked inline-code references', async () => {
+  const url = 'https://zilliverse.feishu.cn/docx/StructFieldSchemaToken';
+  const page = {
+    block_id: 'page',
+    block_type: 1,
+    children: ['summary'],
+    page: { elements: [] },
+  };
+  const summary = {
+    block_id: 'summary',
+    parent_id: 'page',
+    block_type: 2,
+    text: {
+      elements: [{
+        text_run: {
+          content: 'StructFieldSchema',
+          text_element_style: {
+            link: { url },
+            inline_code: false,
+          },
+        },
+      }],
+    },
+  };
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+    indexReader: async () => [],
+    rootToken: 'root-v30',
+    baseToken: 'base-v30',
+    sdkName: 'milvus-sdk-java',
+    sdkVersion: 'v3.0.x',
+    language: 'java',
+    dryRun: true,
+    artifactProvider: async () => ({ artifact: {
+      title: 'appendRow()',
+      content: 'Appends a row.\n',
+      documentIr: { type: 'document', children: [] },
+      layout: { profileId: 'java', profileVersion: 2 },
+      reviewed: true,
+      validated: true,
+      validation: { valid: true },
+    } }),
+    documentBlockReader: {
+      async readBlocks() { return [page, summary]; },
+    },
+    artifactBlockRenderer: async () => [page, summary],
+  });
+  const action = {
+    type: 'UPDATE',
+    stableId: 'java:v2-LocalBulkWriter:appendRow',
+    slug: 'v2-LocalBulkWriter-appendRow',
+    symbol: { name: 'appendRow' },
+    doc: { id: 'rec-append-row', metadata: { token: 'doc-append-row' } },
+    planningContext: {
+      requiredLinkedInlineCode: [{ text: 'StructFieldSchema', url }],
+      current: {
+        version: 'v3.0.x', recordId: 'rec-append-row', documentToken: 'doc-append-row',
+        folderToken: 'bulk-writer-v30', ancestryVerified: true, placementVerified: true,
+      },
+      target: {
+        version: 'v3.0.x', parentRecordId: 'parent-bulk-writer', folderToken: 'bulk-writer-v30',
+        versionRootToken: 'root-v30', ancestryVerified: true,
+      },
+      tokenReferencedByOlderVersions: false,
+    },
+  };
+
+  await assert.rejects(
+    () => sync._planningContextFor(action, 0, {}),
+    (error) => error.code === 'DESIRED_BLOCK_SAFETY_FAILED'
+      && /REQUIRED_LINKED_INLINE_CODE_MISSING/.test(error.message),
+  );
+
+  delete action.planningContext.requiredLinkedInlineCode;
+  await assert.rejects(
+    () => sync._planningContextFor(action, 0, {}),
+    (error) => error.code === 'DESIRED_BLOCK_SAFETY_FAILED'
+      && /LINKED_API_IDENTIFIER_NOT_INLINE_CODE/.test(error.message),
+  );
+});
+
 test('schema-first CLI reports missing reviewed artifacts instead of falling back to scaffolds', async () => {
   const context = { ...sdkContext('python'), reviewedEvidence: [] };
   const { result, stdout } = await runDryCli('python', fixture(context.fixture), context);

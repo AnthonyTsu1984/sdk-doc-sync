@@ -78,6 +78,61 @@ test('Java v3.0.x has a default canonical identity map', () => {
   });
 });
 
+test('Python v3.0.x has a default canonical identity map', () => {
+  const identityMapPath = defaultIdentityMapPath({
+    skillRoot: path.join(__dirname, '..'),
+    language: 'python',
+    track: 'v3.0.x',
+  });
+  const map = JSON.parse(fs.readFileSync(identityMapPath, 'utf8'));
+
+  assert.equal(path.basename(identityMapPath), 'python-v30.json');
+  assert.equal(map.track, 'v3.0.x');
+  assert.deepEqual(map.symbols['FieldSchema.__init__'], {
+    stableId: 'python:MilvusClient:FieldSchema',
+    canonicalSlug: 'MilvusClient-FieldSchema',
+    category: 'MilvusClient',
+  });
+  assert.deepEqual(map.symbols['UserItem.description'], {
+    stableId: 'python:Authentication:describe_user',
+    canonicalSlug: 'Authentication-describe_user',
+    category: 'Authentication',
+  });
+  assert.deepEqual(map.symbols['RoleItem.description'], {
+    stableId: 'python:Authentication:describe_role',
+    canonicalSlug: 'Authentication-describe_role',
+    category: 'Authentication',
+  });
+});
+
+test('runReleaseScout resolves Python v3.0.x from the python-v3 scan-state key', async () => {
+  const scope = await runReleaseScout({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v3.0.x',
+    scanState: {
+      python: { lastScannedTag: 'v2.6.17' },
+      'python-v3': { lastScannedTag: 'v3.0.0' },
+    },
+    targetTag: 'v3.0.0',
+    publicRoots: ['pymilvus/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'),
+    baselineSymbols: [],
+    targetSymbols: [],
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v3.0.0': 'f63a1aa2816205c165f04d33e658b06e9b1cee11\n',
+        'show -s --format=%cI f63a1aa2816205c165f04d33e658b06e9b1cee11': '2026-05-07T23:01:56+08:00\n',
+      }[key];
+    },
+  });
+
+  assert.equal(scope.baselineTag, 'v3.0.0');
+  assert.equal(scope.releaseRange, 'v3.0.0..v3.0.0');
+  assert.deepEqual(scope.scannerDiagnostics.map((item) => item.code), ['NO_RELEASE_CHANGES']);
+});
+
 test('Java identity maps embed Cloud import request helpers in their owning method docs', () => {
   for (const track of ['v26', 'v30']) {
     const map = JSON.parse(fs.readFileSync(
@@ -153,7 +208,7 @@ test('runReleaseScout emits the bounded Python v2.6 release artifact', async () 
       const key = args.join(' ');
       return {
         'rev-list -n 1 v2.6.17': '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4\n',
-        'show -s --format=%cI v2.6.17': '2026-07-15T16:32:32+08:00\n',
+        'show -s --format=%cI 05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4': '2026-07-15T16:32:32+08:00\n',
         'diff --name-only v2.6.12..v2.6.17': 'pymilvus/client/field_ops.py\npymilvus/milvus_client/milvus_client.py\n',
       }[key];
     },
@@ -294,7 +349,7 @@ test('runReleaseScout maps Java v2.6 core and bulk-writer symbols from repo-rela
       const key = args.join(' ');
       return {
         'rev-list -n 1 v2.6.22': '73ea2a20df76e21ba515c870a78cf1a75e4b7d0f\n',
-        'show -s --format=%cI v2.6.22': '2026-06-29T10:38:24+08:00\n',
+        'show -s --format=%cI 73ea2a20df76e21ba515c870a78cf1a75e4b7d0f': '2026-06-29T10:38:24+08:00\n',
         'diff --name-only v2.6.18..v2.6.22': [
           'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java',
           'sdk-bulkwriter/src/main/java/io/milvus/bulkwriter/VolumeFileManager.java',
@@ -374,7 +429,7 @@ test('runReleaseScout maps Node v2.6 request type changes to canonical docs', as
       const key = args.join(' ');
       return {
         'rev-list -n 1 v2.6.17': '85c757f0df76e21ba515c870a78cf1a75e4b7d0f\n',
-        'show -s --format=%cI v2.6.17': '2026-06-02T10:38:24+08:00\n',
+        'show -s --format=%cI 85c757f0df76e21ba515c870a78cf1a75e4b7d0f': '2026-06-02T10:38:24+08:00\n',
         'diff --name-only v2.6.14..v2.6.17': [
           'docs/content/operations/bulk-writer.mdx',
           'milvus/bulkwriter/ParquetFormatter.ts',
@@ -467,7 +522,7 @@ test('runReleaseScout maps Go v2.6 client changes from monorepo client paths', a
       const key = args.join(' ');
       return {
         'rev-list -n 1 client/v2.6.5': '1942b751f6c7c988ac2163139f360f42549b4b4c\n',
-        'show -s --format=%cI client/v2.6.5': '2026-05-26T06:32:32+08:00\n',
+        'show -s --format=%cI 1942b751f6c7c988ac2163139f360f42549b4b4c': '2026-05-26T06:32:32+08:00\n',
         'diff --name-only client/v2.6.3..client/v2.6.5': [
           'client/milvusclient/replicate.go',
           'client/milvusclient/write_options.go',
@@ -597,7 +652,7 @@ test('runReleaseScout maps Go v2.6 behavior-only and entity method changes', asy
       const key = args.join(' ');
       return {
         'rev-list -n 1 client/v2.6.5': '1942b751f6c7c988ac2163139f360f42549b4b4c\n',
-        'show -s --format=%cI client/v2.6.5': '2026-05-26T06:32:32+08:00\n',
+        'show -s --format=%cI 1942b751f6c7c988ac2163139f360f42549b4b4c': '2026-05-26T06:32:32+08:00\n',
         'diff --name-only client/v2.6.3..client/v2.6.5': [
           'client/entity/field.go',
           'client/entity/schema.go',
@@ -910,7 +965,7 @@ test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs'
       const key = args.join(' ');
       return {
         'rev-list -n 1 v2.6.4': '426cbf50e832975b94b8de65b8b22d1c3252afc5\n',
-        'show -s --format=%cI v2.6.4': '2026-06-17T19:02:18+08:00\n',
+        'show -s --format=%cI 426cbf50e832975b94b8de65b8b22d1c3252afc5': '2026-06-17T19:02:18+08:00\n',
         'diff --name-only v2.6.3..v2.6.4': [
           'src/include/milvus/MilvusClientV2.h',
           'src/include/milvus/request/cdc/GetReplicateInfoRequest.h',
@@ -1058,7 +1113,7 @@ test('runReleaseScout maps Zilliz CLI v1.4 cluster and stage visibility changes'
       const key = args.join(' ');
       return {
         'rev-list -n 1 zilliz-v1.4.5': 'public-target\n',
-        'show -s --format=%cI zilliz-v1.4.5': '2026-06-24T10:00:00+08:00\n',
+        'show -s --format=%cI public-target': '2026-06-24T10:00:00+08:00\n',
         'diff --name-only zilliz-v1.4.4..zilliz-v1.4.5': 'README.md\n',
         'diff --name-only impl-base..impl-target': [
           'vdc/zilliz-tui/src/cli/cluster.rs',
@@ -1100,7 +1155,7 @@ test('runReleaseScout reports unreleased Zilliz CLI implementation drift without
       const key = args.join(' ');
       return {
         'rev-list -n 1 zilliz-v1.4.4': 'public-target\n',
-        'show -s --format=%cI zilliz-v1.4.4': '2026-06-11T04:08:15Z\n',
+        'show -s --format=%cI public-target': '2026-06-11T04:08:15Z\n',
         'diff --name-only impl-base..impl-target': 'vdc/zilliz-tui/src/cli/cluster.rs\n',
       }[key];
     },
@@ -1132,7 +1187,7 @@ test('runReleaseScout requires explicit Zilliz CLI implementation target for rel
       const key = args.join(' ');
       return {
         'rev-list -n 1 zilliz-v1.4.5': 'public-target\n',
-        'show -s --format=%cI zilliz-v1.4.5': '2026-06-24T10:00:00+08:00\n',
+        'show -s --format=%cI public-target': '2026-06-24T10:00:00+08:00\n',
         'diff --name-only zilliz-v1.4.4..zilliz-v1.4.5': 'README.md\n',
       }[key];
     },
@@ -1182,7 +1237,7 @@ test('runReleaseScout downgrades Zilliz CLI release-note impacts without source-
       const key = args.join(' ');
       return {
         'rev-list -n 1 zilliz-v1.4.5': 'public-target\n',
-        'show -s --format=%cI zilliz-v1.4.5': '2026-06-24T10:00:00+08:00\n',
+        'show -s --format=%cI public-target': '2026-06-24T10:00:00+08:00\n',
         'diff --name-only zilliz-v1.4.4..zilliz-v1.4.5': 'README.md\n',
         'diff --name-only impl-base..impl-target': 'vdc/zilliz-tui/src/cli/cluster.rs\n',
         'rev-list -n 1 impl-target': 'impl-target-commit\n',
@@ -1388,4 +1443,58 @@ test('sdk-release-scout CLI applies baseline override to versioned scan-state ke
   assert.equal(result.baselineTag, 'v2.6.15');
   assert.equal(receivedScanState.node.lastScannedTag, 'v3.0.3');
   assert.equal(receivedScanState['node-v26'].lastScannedTag, 'v2.6.15');
+});
+
+test('sdk-release-scout CLI applies Python v3 baseline override to the legacy major-track key', async () => {
+  let receivedScanState = null;
+  await runCli({
+    argv: [
+      'node',
+      'sdk-release-scout',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--track',
+      'v3.0.x',
+      '--baseline-tag',
+      'v3.0.0',
+      '--target-tag',
+      'v3.0.1',
+      '--json',
+    ],
+    dependencies: {
+      loadScanState() {
+        return {
+          python: { lastScannedTag: 'v2.6.17' },
+          'python-v3': { lastScannedTag: 'v3.0.0-rc.1' },
+        };
+      },
+      runReleaseScout: async ({ scanState }) => {
+        receivedScanState = scanState;
+        return {
+          schemaVersion: 1,
+          language: 'python',
+          sdkName: 'pymilvus',
+          track: 'v3.0.x',
+          baselineTag: scanState['python-v3'].lastScannedTag,
+          targetTag: 'v3.0.1',
+          targetCommit: 'abc123',
+          targetDate: '2026-07-27T04:00:00.000Z',
+          releaseRange: `${scanState['python-v3'].lastScannedTag}..v3.0.1`,
+          approvalGrade: true,
+          changedFiles: [],
+          actions: [],
+          scannerDiagnostics: [],
+          writesPerformed: false,
+          scanStateUpdated: false,
+        };
+      },
+      onStdout() {},
+      onStderr(line) { throw new Error(line); },
+    },
+  });
+
+  assert.equal(receivedScanState.python.lastScannedTag, 'v2.6.17');
+  assert.equal(receivedScanState['python-v3'].lastScannedTag, 'v3.0.0');
 });

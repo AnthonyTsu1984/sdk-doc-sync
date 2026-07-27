@@ -134,6 +134,9 @@ function scanStateKeyForOverride({ language, track, scanState }) {
   const compact = compactTrack(track);
   const versionedKey = compact ? `${language}-${compact}` : null;
   if (versionedKey && scanState && scanState[versionedKey]) return versionedKey;
+  const major = /^v(\d+)\./.exec(track || '')?.[1];
+  const majorKey = major ? `${language}-v${major}` : null;
+  if (majorKey && scanState && scanState[majorKey]) return majorKey;
   return language;
 }
 

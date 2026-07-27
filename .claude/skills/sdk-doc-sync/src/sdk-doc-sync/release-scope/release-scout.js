@@ -35,6 +35,9 @@ function scanStateKeyFor({ language, track, scanState }) {
   const compact = compactTrack(track);
   const versionedKey = compact ? `${language}-${compact}` : null;
   if (versionedKey && scanState && scanState[versionedKey]) return versionedKey;
+  const major = /^v(\d+)\./.exec(track || '')?.[1];
+  const majorKey = major ? `${language}-v${major}` : null;
+  if (majorKey && scanState && scanState[majorKey]) return majorKey;
   return language;
 }
 
@@ -450,6 +453,9 @@ function releaseImpactRequiresSourceBackedActions(releaseImpact) {
 function defaultIdentityMapPath({ skillRoot, language, track }) {
   if (language === 'python' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'python-v26.json');
+  }
+  if (language === 'python' && track === 'v3.0.x') {
+    return path.join(skillRoot, 'references', 'identity', 'python-v30.json');
   }
   if (language === 'java' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'java-v26.json');

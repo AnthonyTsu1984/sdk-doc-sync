@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "language": "python",
+  "track": "v3.0.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "pymilvus/",
+  "symbols": {
+    "AnnSearchRequest": {
+      "stableId": "python:Vector:hybrid_search",
+      "canonicalSlug": "Vector-hybrid_search",
+      "category": "Vector"
+    },
+    "AnnSearchRequest.filter": {
+      "stableId": "python:Vector:hybrid_search",
+      "canonicalSlug": "Vector-hybrid_search",
+      "category": "Vector"
+    },
+    "FieldOp": {
+      "stableId": "python:FieldOp:FieldOp",
+      "canonicalSlug": "FieldOp-FieldOp",
+      "category": "FieldOp"
+    },
+    "FieldOp.replace": {
+      "stableId": "python:FieldOp:replace",
+      "canonicalSlug": "FieldOp-replace",
+      "category": "FieldOp"
+    },
+    "FieldOp.array_append": {
+      "stableId": "python:FieldOp:array_append",
+      "canonicalSlug": "FieldOp-array_append",
+      "category": "FieldOp"
+    },
+    "FieldOp.array_remove": {
+      "stableId": "python:FieldOp:array_remove",
+      "canonicalSlug": "FieldOp-array_remove",
+      "category": "FieldOp"
+    },
+    "FieldOpType": {
+      "stableId": "python:FieldOp:FieldOpType",
+      "canonicalSlug": "FieldOp-FieldOpType",
+      "category": "FieldOp"
+    },
+    "FieldSchema.__init__": {
+      "stableId": "python:MilvusClient:FieldSchema",
+      "canonicalSlug": "MilvusClient-FieldSchema",
+      "category": "MilvusClient"
+    },
+    "UserItem": {
+      "stableId": "python:Authentication:describe_user",
+      "canonicalSlug": "Authentication-describe_user",
+      "category": "Authentication"
+    },
+    "UserItem.description": {
+      "stableId": "python:Authentication:describe_user",
+      "canonicalSlug": "Authentication-describe_user",
+      "category": "Authentication"
+    },
+    "RoleItem": {
+      "stableId": "python:Authentication:describe_role",
+      "canonicalSlug": "Authentication-describe_role",
+      "category": "Authentication"
+    },
+    "RoleItem.description": {
+      "stableId": "python:Authentication:describe_role",
+      "canonicalSlug": "Authentication-describe_role",
+      "category": "Authentication"
+    }
+  }
+}

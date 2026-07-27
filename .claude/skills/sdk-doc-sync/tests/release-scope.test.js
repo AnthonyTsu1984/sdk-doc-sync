@@ -187,6 +187,17 @@ test('latestTagInTrack resolves the highest semver tag in a track', () => {
   assert.equal(tag, 'v2.6.17');
 });
 
+test('latestTagInTrack ignores higher-version tags that do not contain the scanned baseline', () => {
+  const tag = latestTagInTrack({
+    track: 'v3.0.x',
+    baselineTag: 'v3.0.0',
+    runGit: fakeGit({
+      'tag --contains v3.0.0 --list v3.0.* --sort=v:refname': 'v3.0.0\n',
+    }),
+  });
+  assert.equal(tag, 'v3.0.0');
+});
+
 test('resolveReleaseRange uses scan-state baseline and latest target', () => {
   const range = resolveReleaseRange({
     languageKey: 'python',
@@ -194,9 +205,9 @@ test('resolveReleaseRange uses scan-state baseline and latest target', () => {
     track: 'v2.6.x',
     scanState: { python: { lastScannedTag: 'v2.6.12' } },
     runGit: fakeGit({
-      'tag --list v2.6.* --sort=v:refname': 'v2.6.13\nv2.6.17\n',
+      'tag --contains v2.6.12 --list v2.6.* --sort=v:refname': 'v2.6.13\nv2.6.17\n',
       'rev-list -n 1 v2.6.17': '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4\n',
-      'show -s --format=%cI v2.6.17': '2026-07-15T16:32:32+08:00\n',
+      'show -s --format=%cI 05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4': '2026-07-15T16:32:32+08:00\n',
     }),
   });
   assert.deepEqual(range, {
@@ -210,6 +221,23 @@ test('resolveReleaseRange uses scan-state baseline and latest target', () => {
     releaseRange: 'v2.6.12..v2.6.17',
     noChanges: false,
   });
+});
+
+test('resolveReleaseRange reads target date from the peeled commit for annotated tags', () => {
+  const range = resolveReleaseRange({
+    languageKey: 'python-v3',
+    sdkName: 'pymilvus',
+    track: 'v3.0.x',
+    scanState: { 'python-v3': { lastScannedTag: 'v3.0.0' } },
+    targetTag: 'v3.0.1',
+    runGit: fakeGit({
+      'rev-list -n 1 v3.0.1': 'abc123\n',
+      'show -s --format=%cI abc123': '2026-07-27T12:00:00+08:00\n',
+    }),
+  });
+
+  assert.equal(range.targetCommit, 'abc123');
+  assert.equal(range.targetDate, '2026-07-27T04:00:00.000Z');
 });
 
 test('changedFilesInRange returns sorted public SDK paths only', () => {

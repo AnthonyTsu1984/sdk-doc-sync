@@ -16,9 +16,12 @@ function tagPatternFromTrack(track, { tagPrefix = '' } = {}) {
   return `${tagPrefix}v${match[1]}.${match[2]}.*`;
 }
 
-function latestTagInTrack({ track, tagPrefix = '', runGit = defaultRunGit, cwd } = {}) {
+function latestTagInTrack({ track, baselineTag = null, tagPrefix = '', runGit = defaultRunGit, cwd } = {}) {
   const pattern = tagPatternFromTrack(track, { tagPrefix });
-  const output = runGit(['tag', '--list', pattern, '--sort=v:refname'], { cwd });
+  const args = ['tag'];
+  if (baselineTag) args.push('--contains', baselineTag);
+  args.push('--list', pattern, '--sort=v:refname');
+  const output = runGit(args, { cwd });
   const tags = output.split('\n').map((line) => line.trim()).filter(Boolean);
   if (tags.length === 0) throw new Error(`No tags found for track ${track}`);
   return tags[tags.length - 1];
@@ -40,9 +43,9 @@ function resolveReleaseRange({
 } = {}) {
   const baselineTag = scanState?.[languageKey]?.lastScannedTag;
   if (!baselineTag) throw new Error(`scan-state missing lastScannedTag for ${languageKey}`);
-  const resolvedTarget = targetTag || latestTagInTrack({ track, tagPrefix, runGit, cwd });
+  const resolvedTarget = targetTag || latestTagInTrack({ track, baselineTag, tagPrefix, runGit, cwd });
   const targetCommit = runGit(['rev-list', '-n', '1', resolvedTarget], { cwd }).trim();
-  const targetDate = isoDateFromGit(runGit(['show', '-s', '--format=%cI', resolvedTarget], { cwd }));
+  const targetDate = isoDateFromGit(runGit(['show', '-s', '--format=%cI', targetCommit], { cwd }));
   return {
     language: languageKey,
     sdkName,

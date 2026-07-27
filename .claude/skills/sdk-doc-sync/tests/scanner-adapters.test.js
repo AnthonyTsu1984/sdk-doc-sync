@@ -157,6 +157,40 @@ test('all scanner adapters produce immutable deterministic production-valid docu
   }
 });
 
+test('Go struct adapter accepts reviewed constructor syntax and public methods', () => {
+  const symbol = {
+    name: 'StructSchema',
+    kind: 'struct',
+    signature: 'type StructSchema struct { Fields []*Field }',
+    docstring: 'Defines the sub-fields of a struct array field.',
+    fields: [{ name: 'Fields', type: '[]*Field', description: 'The struct sub-fields.' }],
+    params: [],
+    filePath: 'client/entity/field.go',
+    lineNumber: 484,
+    parentClass: 'Collections',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Collection', {
+    title: 'StructSchema',
+    requestVariants: [{
+      id: 'constructor',
+      signature: 'entity.NewStructSchema()',
+      description: 'Creates an empty struct schema.',
+      inputs: [],
+    }],
+    callableMembers: [{
+      kind: 'option',
+      name: 'Validate',
+      signature: 'Validate(parentName string) error',
+      description: 'Checks the struct-array sub-field rules.',
+    }],
+  }));
+
+  assert.equal(doc.requestVariants[0].signature.display, 'entity.NewStructSchema()');
+  assert.equal(doc.callableMembers[0].name, 'Validate');
+  assert.equal(doc.callableMembers[0].signature.display, 'Validate(parentName string) error');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
 test('Python preserves direct parameter semantics, return type, and supplied exceptions', () => {
   const doc = pythonAdapter.toReferenceDocument(
     fixture('python-search.json'),

@@ -284,7 +284,7 @@ test('language policies control exact sections, fences, and conditional request 
 
   assert.match(rendered.go, /```go\n/);
   assert.match(rendered.go, /\*\*PARAMETERS:\*\*/);
-  assert.match(rendered.go, /\*\*OPTION METHODS:\*\*/);
+  assert.match(rendered.go, /\*\*BUILDER METHODS:\*\*/);
   assert.match(rendered.go, /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
   assert.match(rendered.go, /\*\*ERROR HANDLING:\*\*/);
   assert.doesNotMatch(rendered.go, /\*\*EXCEPTIONS:\*\*/);

@@ -18,6 +18,22 @@ function toReferenceDocument(symbol, context = {}) {
     const signatures = symbol.signature
       ? [common.makeSignature(symbol.signature, [], evidence, { symbol, context })]
       : [];
+    const requestVariants = Array.isArray(context.requestVariants)
+      ? context.requestVariants.map((variant) => common.makeRequestVariant({
+        ...variant,
+        inputs: variant.inputs || symbol.params,
+      }, evidence, { symbol, context }))
+      : [];
+    const callableMembers = Array.isArray(context.callableMembers)
+      ? context.callableMembers.map((member) => common.makeCallableMember(
+        member.kind || 'option',
+        member,
+        evidence,
+        member.signature || member.fullSignature || '',
+        member.inputs || [],
+        { symbol, context },
+      ))
+      : [];
     const result = common.makeResult({
       type: symbol.name,
       description: symbol.docstring || '',
@@ -29,7 +45,8 @@ function toReferenceDocument(symbol, context = {}) {
       language: 'go',
       kind,
       signatures,
-      callableMembers: [],
+      requestVariants,
+      callableMembers,
       result,
     });
   }

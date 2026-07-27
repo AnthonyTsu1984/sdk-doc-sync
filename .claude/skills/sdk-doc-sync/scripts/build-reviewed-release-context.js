@@ -183,7 +183,8 @@ function assertCandidateIdentity({ action, spec, category }) {
   }
   if (effectiveCanonicalSlug.includes('-')) {
     const hasCategoryPrefix = effectiveCanonicalSlug === category
-      || effectiveCanonicalSlug.startsWith(`${category}-`);
+      || effectiveCanonicalSlug.startsWith(`${category}-`)
+      || new RegExp(`^v\\d+-${category.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}-`).test(effectiveCanonicalSlug);
     if (!hasCategoryPrefix) {
       throw new Error(
         `Candidate ${action.canonicalSlug} category ${category} does not match canonical slug ${effectiveCanonicalSlug}. ` +
@@ -512,6 +513,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       signature: clone(spec.signature),
       params: clone(spec.params),
       requestVariants: clone(spec.requestVariants),
+      callableMembers: clone(spec.callableMembers),
       reviewedEvidence: evidence,
       result: clone(spec.result),
       exceptions: defaultExceptions(action, spec, evidence),

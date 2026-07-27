@@ -13,7 +13,9 @@ module.exports = createSdkRenderer({
   parametersLabel: 'PARAMETERS:',
   primaryInputs: (document) => document.signatures[0]?.inputs || [],
   memberKind: 'option',
-  membersLabel: 'OPTION METHODS:',
+  membersLabel: (document) => ['struct', 'class'].includes(document.identity.kind)
+    ? 'METHODS:'
+    : 'BUILDER METHODS:',
   resultTypeLabel: 'RETURN TYPE:',
   returnsLabel: 'RETURNS:',
   errorsLabel: 'ERROR HANDLING:',

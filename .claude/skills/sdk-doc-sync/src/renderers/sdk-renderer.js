@@ -352,7 +352,10 @@ function renderCallableMembers(document, policy, context) {
   if (!policy.memberKind) return [];
   const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
   if (members.length === 0) return [];
-  const blocks = [label(policy.membersLabel, semantic('members-label'))];
+  const membersLabel = typeof policy.membersLabel === 'function'
+    ? policy.membersLabel(document)
+    : policy.membersLabel;
+  const blocks = [label(membersLabel, semantic('members-label'))];
   let shared = [];
   const flushShared = () => {
     if (shared.length === 0) return;

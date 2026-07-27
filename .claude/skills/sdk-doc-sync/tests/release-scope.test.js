@@ -640,6 +640,58 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
   assert.deepEqual(result.referenceContext.contexts['java:v2-Authentication:alterRole'].notes, []);
 });
 
+test('reviewed release context builder accepts version-prefixed Go slugs with unversioned categories', () => {
+  const releaseScope = createReleaseScope({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v2.6.x',
+    baselineTag: 'client/v2.6.3',
+    targetTag: 'client/v2.6.5',
+    targetCommit: '1942b751f6c7c988ac2163139f360f42549b4b4c',
+    targetDate: '2026-05-25T22:32:32.000Z',
+    changedFiles: ['client/entity/field.go'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'go:Collections:StructSchema',
+      canonicalSlug: 'v2-Collection-StructSchema',
+      symbol: 'Collections.StructSchema',
+      source: { file: 'client/entity/field.go', line: 484 },
+      reason: 'new public struct',
+    }],
+  });
+  const candidateSpec = {
+    language: 'go',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Collection: 'collection-folder' },
+    },
+    candidates: {
+      'v2-Collection-StructSchema': {
+        category: 'Collection',
+        docIdentity: {
+          stableId: 'go:Collection:StructSchema',
+          canonicalSlug: 'v2-Collection-StructSchema',
+          symbol: 'StructSchema',
+        },
+        existingRecordLookup: absentLookup({
+          canonicalSlug: 'v2-Collection-StructSchema',
+          title: 'StructSchema',
+          parentRecordId: 'collection-parent',
+        }),
+        summary: 'Defines the sub-fields of a struct array field.',
+        examples: [{ code: 'schema := entity.NewStructSchema()' }],
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+
+  assert.equal(result.filteredScope.actions[0].stableId, 'go:Collection:StructSchema');
+  assert.equal(result.referenceContext.contexts['go:Collection:StructSchema'].category, 'Collection');
+});
+
 test('reviewed release context builder rejects stale or empty candidate specs', () => {
   const releaseScope = createReleaseScope({
     language: 'python',

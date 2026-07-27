@@ -26,7 +26,7 @@ err := client.CreateCollection(ctx, option)
   The vector field dimension.
   Constraints: kind: required.
 
-**OPTION METHODS:**
+**BUILDER METHODS:**
 
 - `WithMetricType(metricType entity.MetricType)`
   This sets the metric type.

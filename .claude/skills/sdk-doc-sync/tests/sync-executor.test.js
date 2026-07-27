@@ -190,7 +190,7 @@ test('SyncExecutor builds a document URL fallback from document_id before writin
 
   assert.equal(result.status, 'success');
   assert.equal(calls[1][0], 'createRecord');
-  assert.equal(calls[1][1].link, `${(process.env.FEISHU_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/docx/doc-from-id`);
+  assert.equal(calls[1][1].link, `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/docx/doc-from-id`);
 });
 
 test('SyncExecutor stops before Bitable mutation when a created document has no usable link or token', async () => {

@@ -67,7 +67,7 @@ function linkFromCreated(created) {
   if (link) return link;
   const token = tokenFromCreated(created);
   if (!token) return '';
-  const host = (process.env.FEISHU_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+  const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
   return `${host}/docx/${token}`;
 }
 

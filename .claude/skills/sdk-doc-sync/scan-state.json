@@ -29,8 +29,14 @@
     "lastScanDate": "2026-06-17"
   },
   "go": {
-    "lastScannedTag": "client/v2.6.3",
-    "lastScanDate": "2026-04-14"
+    "lastScannedTag": "client/v2.6.5",
+    "lastScannedCommit": "1942b751f6c7c988ac2163139f360f42549b4b4c",
+    "lastScanDate": "2026-07-27"
+  },
+  "go-v3": {
+    "lastScannedTag": "client/v3.0.0-beta",
+    "lastScannedCommit": "bd6f2f8d1ce16e2aab4743831a2787cc4a940c23",
+    "lastScanDate": "2026-07-27"
   },
   "rest": {
     "lastScannedTag": "v2.6.14",

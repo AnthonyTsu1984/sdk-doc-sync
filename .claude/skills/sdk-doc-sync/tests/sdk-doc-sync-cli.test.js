@@ -1198,10 +1198,14 @@ test('schema-first CLI blocks ambiguous release-scope ownership instead of plann
   ]);
 });
 
-test('release-scope helper ownership fans one source symbol out to every canonical owner plan', async () => {
+test('release-scope helper ownership consolidates two source helpers into one plan per canonical owner', async () => {
   const owners = [
     { stableId: 'python:Vector:search', canonicalSlug: 'Vector-search', category: 'Vector' },
     { stableId: 'python:Vector:query', canonicalSlug: 'Vector-query', category: 'Vector' },
+  ];
+  const helpers = [
+    { symbol: 'SearchHelper', file: 'pymilvus/client/search_helper.py', line: 9 },
+    { symbol: 'FilterHelper', file: 'pymilvus/client/filter_helper.py', line: 17 },
   ];
   const planningContext = (owner) => ({
     target: {
@@ -1220,6 +1224,21 @@ test('release-scope helper ownership fans one source symbol out to every canonic
       criteria: { canonicalSlug: owner.canonicalSlug },
     },
   });
+  const scopedActions = helpers.flatMap((helper) => owners.map((owner) => ({
+    type: 'CREATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: helper.symbol,
+    source: { file: helper.file, line: helper.line },
+    reason: 'embedded helper surface changed',
+    documentationOwnership: {
+      classification: 'method_owned',
+      owners,
+      selectedOwnerStableId: owner.stableId,
+    },
+    planningContext: planningContext(owner),
+  })));
+  scopedActions.push(structuredClone(scopedActions[0]));
   const releaseScope = {
     schemaVersion: 1,
     language: 'python',
@@ -1231,21 +1250,8 @@ test('release-scope helper ownership fans one source symbol out to every canonic
     targetDate: '2026-07-15T08:32:32.000Z',
     releaseRange: 'v2.6.12..v2.6.17',
     approvalGrade: true,
-    changedFiles: ['pymilvus/client/shared_helper.py'],
-    actions: owners.map((owner) => ({
-      type: 'CREATE',
-      stableId: owner.stableId,
-      canonicalSlug: owner.canonicalSlug,
-      symbol: 'SharedHelper',
-      source: { file: 'pymilvus/client/shared_helper.py', line: 9 },
-      reason: 'embedded helper surface changed',
-      documentationOwnership: {
-        classification: 'method_owned',
-        owners,
-        selectedOwnerStableId: owner.stableId,
-      },
-      planningContext: planningContext(owner),
-    })),
+    changedFiles: helpers.map((helper) => helper.file),
+    actions: scopedActions,
     scannerDiagnostics: [],
     writesPerformed: false,
     scanStateUpdated: false,
@@ -1273,16 +1279,21 @@ test('release-scope helper ownership fans one source symbol out to every canonic
     dependencies: {
       loadEnv: false,
       readFile: () => JSON.stringify(releaseScope),
-      scanner: scannerFor({
-        name: 'SharedHelper',
-        kind: 'class',
-        parentClass: null,
-        filePath: 'pymilvus/client/shared_helper.py',
-        lineNumber: 9,
-        signature: 'class SharedHelper:',
-        params: [],
-        decorators: [],
-      }),
+      scanner: {
+        rootDir: '/fixtures/sdk',
+        async scan() {
+          return helpers.map((helper) => ({
+            name: helper.symbol,
+            kind: 'class',
+            parentClass: null,
+            filePath: helper.file,
+            lineNumber: helper.line,
+            signature: `class ${helper.symbol}:`,
+            params: [],
+            decorators: [],
+          }));
+        },
+      },
       indexReader: async () => [],
       artifactProvider: async (action) => {
         renderedOwners.push(action.stableId);
@@ -1298,18 +1309,146 @@ test('release-scope helper ownership fans one source symbol out to every canonic
     },
   });
 
-  assert.equal(result.scanned.length, 1);
+  assert.equal(result.scanned.length, 2);
   assert.deepEqual(result.diff.map((action) => [action.type, action.stableId, action.slug]), [
     ['CREATE', 'python:Vector:search', 'Vector-search'],
     ['CREATE', 'python:Vector:query', 'Vector-query'],
   ]);
-  assert.ok(result.diff.every((action) => action.symbol?.name === 'SharedHelper'));
+  assert.ok(result.diff.every((action) => action.symbol?.name === 'SearchHelper'));
+  assert.deepEqual(result.diff.map((action) => action.sourceVariants.map((variant) => variant.symbol)), [
+    ['SearchHelper', 'FilterHelper'],
+    ['SearchHelper', 'FilterHelper'],
+  ]);
   assert.equal(result.diff.some((action) => action.type === 'ORPHAN'), false);
+  assert.equal(new Set(result.diff.map((action) => action.stableId)).size, 2);
   assert.deepEqual(result.plans.map((plan) => plan.stableId), [
     'python:Vector:search',
     'python:Vector:query',
   ]);
   assert.deepEqual(renderedOwners, ['python:Vector:search', 'python:Vector:query']);
+  const summary = createBoundedSummary(result);
+  assert.deepEqual(summary.diff.map((action) => action.sourceVariants.map((variant) => variant.symbol)), [
+    ['SearchHelper', 'FilterHelper'],
+    ['SearchHelper', 'FilterHelper'],
+  ]);
+  assert.ok(summary.diff.every((action) => action.reasons.includes('embedded helper surface changed')));
+});
+
+test('release-scope duplicate owner actions reject incompatible planning targets before rendering', async () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const helpers = [
+    { symbol: 'SearchHelper', file: 'pymilvus/client/search_helper.py', line: 9, folder: 'folder-vector' },
+    { symbol: 'FilterHelper', file: 'pymilvus/client/filter_helper.py', line: 17, folder: 'wrong-folder' },
+  ];
+  const releaseScope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: helpers.map((helper) => helper.file),
+    actions: helpers.map((helper) => ({
+      type: 'CREATE',
+      stableId: owner.stableId,
+      canonicalSlug: owner.canonicalSlug,
+      symbol: helper.symbol,
+      source: { file: helper.file, line: helper.line },
+      reason: 'embedded helper surface changed',
+      documentationOwnership: {
+        classification: 'method_owned',
+        owners: [owner],
+        selectedOwnerStableId: owner.stableId,
+      },
+      planningContext: {
+        target: {
+          version: 'v2.6.x',
+          parentRecordId: 'parent-vector',
+          folderToken: helper.folder,
+          versionRootToken: 'root-v26',
+          ancestryVerified: true,
+        },
+        existingRecordLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          parentRecordId: 'parent-vector',
+          criteria: { canonicalSlug: owner.canonicalSlug },
+        },
+      },
+    })),
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  let rendered = 0;
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/release-scope.json',
+      '--changed-only',
+      '--dry-run',
+      '--json',
+    ],
+    env: { BASE_TOKEN: 'base-v26', ROOT_TOKEN: 'root-v26' },
+    dependencies: {
+      loadEnv: false,
+      readFile: () => JSON.stringify(releaseScope),
+      scanner: {
+        rootDir: '/fixtures/sdk',
+        async scan() {
+          return helpers.map((helper) => ({
+            name: helper.symbol,
+            kind: 'class',
+            parentClass: null,
+            filePath: helper.file,
+            lineNumber: helper.line,
+            signature: `class ${helper.symbol}:`,
+            params: [],
+            decorators: [],
+          }));
+        },
+      },
+      indexReader: async () => [],
+      artifactProvider: async () => {
+        rendered += 1;
+        return {
+          title: 'search()',
+          content: 'Searches vectors in a collection.',
+          reviewed: true,
+          validated: true,
+          validation: { valid: true },
+        };
+      },
+      onStdout: () => {},
+    },
+  });
+
+  assert.equal(result.diff.length, 1);
+  assert.equal(result.plans.length, 0);
+  assert.equal(rendered, 0);
+  assert.deepEqual(result.planningErrors.map((error) => error.code), [
+    'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+  ]);
 });
 
 test('schema-first CLI rejects mutated release-scope artifacts', async () => {

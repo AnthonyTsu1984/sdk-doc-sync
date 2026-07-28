@@ -549,7 +549,9 @@ function createBoundedSummary(result) {
                 ? `${action.symbol.parentClass ? action.symbol.parentClass + '.' : ''}${action.symbol.name}`
                 : null,
             reason: action.reason,
+            reasons: action.reasons || [action.reason].filter(Boolean),
             source: action.releaseScopeAction?.source || null,
+            sourceVariants: action.sourceVariants || action.releaseScopeAction?.sourceVariants || [],
             evidence: action.releaseScopeAction?.evidence || [],
         })),
         planningErrors: result.planningErrors,

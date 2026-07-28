@@ -1,3 +1,5 @@
+const { isDeepStrictEqual } = require('node:util');
+
 const FeishuToMarkdown = require('../feishu-to-markdown');
 const MarkdownToFeishu = require('../markdown-to-feishu');
 const BitableWriter = require('./bitable-writer');
@@ -217,6 +219,13 @@ class SdkDocSync {
         const plannedActions = [];
         for (const [index, action] of result.diff.entries()) {
             try {
+                if (action.planningConflict) {
+                    throw new SyncPlanner.SyncPlanningError(
+                        action.planningConflict.code,
+                        action.planningConflict.message,
+                        action.planningConflict.details,
+                    );
+                }
                 const context = await this._planningContextFor(action, index, result);
                 const schemaStableId = context.artifact?.reference?.identity?.stableId;
                 const plannableAction = schemaStableId && !action.stableId
@@ -400,20 +409,139 @@ class SdkDocSync {
 
     _applyReleaseScopeDiffActions(actions) {
         if (!this.releaseScope) return actions;
-        const scopedBySlug = new Map(this.releaseScope.actions.map((action) => [action.canonicalSlug, action]));
-        return actions.map((action) => {
-            const scoped = scopedBySlug.get(action.slug);
-            if (!scoped) return action;
-            return {
-                ...action,
-                type: scoped.type,
-                stableId: scoped.stableId,
-                reason: scoped.reason || action.reason,
-                planningContext: scoped.planningContext || action.planningContext,
-                documentationOwnership: scoped.documentationOwnership || action.documentationOwnership,
-                releaseScopeAction: scoped,
-            };
+        const scopedBySlug = new Map();
+        for (const scoped of this.releaseScope.actions) {
+            const entries = scopedBySlug.get(scoped.canonicalSlug) || [];
+            entries.push(scoped);
+            scopedBySlug.set(scoped.canonicalSlug, entries);
+        }
+        const mapped = actions.flatMap((action) => {
+            const candidates = scopedBySlug.get(action.slug) || [];
+            const displayName = action.symbol ? this._symbolDisplayName(action.symbol) : null;
+            const lineNumber = action.symbol?.lineNumber;
+            const sourceMatches = displayName ? candidates.filter((scoped) => (
+                this._releaseScopeSourceVariants(scoped).some((variant) => (
+                    variant.symbol === displayName
+                    && (!Number.isInteger(variant.source?.line)
+                        || !Number.isInteger(lineNumber)
+                        || variant.source.line === lineNumber)
+                ))
+            )) : [];
+            const matches = sourceMatches.length > 0 ? sourceMatches : candidates;
+            if (matches.length === 0) return [action];
+            return matches.map((scoped) => {
+                const sourceVariants = this._releaseScopeReviewVariants(scoped);
+                return {
+                    ...action,
+                    type: scoped.type,
+                    stableId: scoped.stableId,
+                    reason: scoped.reason || action.reason,
+                    reasons: [scoped.reason, ...sourceVariants.map((variant) => variant.reason), action.reason]
+                        .filter((reason) => typeof reason === 'string' && reason.length > 0),
+                    evidence: [
+                        ...(scoped.evidence || []),
+                        ...sourceVariants.flatMap((variant) => variant.evidence || []),
+                    ],
+                    sourceVariants,
+                    planningContext: scoped.planningContext || action.planningContext,
+                    target: scoped.target || action.target,
+                    documentationOwnership: scoped.documentationOwnership || action.documentationOwnership,
+                    releaseScopeAction: scoped,
+                };
+            });
         });
+        return this._consolidateReleaseScopeDiffActions(mapped);
+    }
+
+    _releaseScopeReviewVariants(action) {
+        const variants = Array.isArray(action.sourceVariants) && action.sourceVariants.length > 0
+            ? action.sourceVariants
+            : [{
+                stableId: action.stableId,
+                canonicalSlug: action.canonicalSlug,
+                symbol: action.symbol,
+                source: action.source,
+                reason: action.reason,
+                evidence: action.evidence,
+            }];
+        return variants.map((variant) => ({
+            ...variant,
+            stableId: variant.stableId || action.stableId,
+            canonicalSlug: variant.canonicalSlug || action.canonicalSlug,
+            reason: variant.reason || action.reason,
+            evidence: variant.evidence || action.evidence || [],
+        }));
+    }
+
+    _appendUnique(target, values) {
+        for (const value of values) {
+            if (!target.some((existing) => isDeepStrictEqual(existing, value))) target.push(value);
+        }
+    }
+
+    _consolidateReleaseScopeDiffActions(actions) {
+        const consolidated = new Map();
+        for (const action of actions) {
+            const existing = consolidated.get(action.slug);
+            if (!existing) {
+                const primary = {
+                    ...action,
+                    reasons: [],
+                    evidence: [],
+                    sourceVariants: [],
+                };
+                this._appendUnique(primary.reasons, action.reasons || [action.reason].filter(Boolean));
+                this._appendUnique(primary.evidence, action.evidence || []);
+                this._appendUnique(primary.sourceVariants, action.sourceVariants || []);
+                consolidated.set(action.slug, primary);
+                continue;
+            }
+
+            const conflictFields = [];
+            if (existing.type !== action.type) conflictFields.push('type');
+            if (existing.stableId !== action.stableId) conflictFields.push('stableId');
+            const existingOwnership = existing.documentationOwnership || {};
+            const actionOwnership = action.documentationOwnership || {};
+            if (existingOwnership.classification !== actionOwnership.classification
+                || existingOwnership.selectedOwnerStableId !== actionOwnership.selectedOwnerStableId) {
+                conflictFields.push('documentationOwnership.selectedOwnerStableId');
+            }
+            if (existing.planningContext !== undefined && action.planningContext !== undefined
+                && !isDeepStrictEqual(existing.planningContext, action.planningContext)) {
+                conflictFields.push('planningContext');
+            }
+            if (existing.target !== undefined && action.target !== undefined
+                && !isDeepStrictEqual(existing.target, action.target)) {
+                conflictFields.push('target');
+            }
+            if (existing.planningContext === undefined && action.planningContext !== undefined) {
+                existing.planningContext = action.planningContext;
+            }
+            if (existing.target === undefined && action.target !== undefined) existing.target = action.target;
+            this._appendUnique(existing.reasons, action.reasons || [action.reason].filter(Boolean));
+            this._appendUnique(existing.evidence, action.evidence || []);
+            this._appendUnique(existing.sourceVariants, action.sourceVariants || []);
+            if (conflictFields.length > 0) {
+                const fields = [...new Set([
+                    ...(existing.planningConflict?.details?.fields || []),
+                    ...conflictFields,
+                ])].sort();
+                existing.planningConflict = {
+                    code: 'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+                    message: `Conflicting release-scope actions for ${action.slug}: ${fields.join(', ')}`,
+                    details: { slug: action.slug, fields },
+                };
+            }
+        }
+        return [...consolidated.values()].map((action) => ({
+            ...action,
+            releaseScopeAction: action.releaseScopeAction ? {
+                ...action.releaseScopeAction,
+                sourceVariants: action.sourceVariants,
+                reasons: action.reasons,
+                evidence: action.evidence,
+            } : action.releaseScopeAction,
+        }));
     }
 
     async _planningContextFor(action, index, result) {

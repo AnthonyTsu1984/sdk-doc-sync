@@ -1,5 +1,7 @@
 # Node.js SDK Reference (milvus2-sdk-node)
 
+**Ownership:** Public helper visibility alone does not create a standalone documentation identity. Embed method-owned request and response helpers in every owning interface document.
+
 **Scanner:** `src/sdk-doc-sync/scanners/node-scanner.js`
 **Root dir:** `repos/milvus-sdk-node` (repo root)
 **Release scout sdk-name:** `milvus-sdk-node`

@@ -1,5 +1,7 @@
 # Go SDK Reference (milvus-sdk-go)
 
+**Ownership:** Public helper visibility alone does not create a standalone documentation identity. Embed method-owned request, option, result, and transport helpers in every owning interface document.
+
 **Scanner:** `src/sdk-doc-sync/scanners/go-scanner.js`
 **Root dir:** `repos/milvus-sdk-go`; source dir: `client/milvusclient/`
 **Release scout sdk-name:** `milvus`

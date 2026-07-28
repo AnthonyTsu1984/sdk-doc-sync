@@ -84,7 +84,7 @@ The scanner returns `parentClass: 'MilvusClientV2'` for all methods. Category mu
 
 **v2.6.x first-level folders verified under the version root:** `Client`, `Collections`, `Data Import`, `Database`, `Management`, `Partitions`, `Vector`, `Volume`. User-approved first-level planning categories also include `Authentication` and `CDC`; create or resolve those physical folders before executing Authentication/CDC document writes. `sdk-bulkwriter` data-import APIs belong under `Data Import`; volume manager and volume request/model APIs belong under `Volume`.
 
-**Canonical identity maps:** load the track-specific map from `references/identity/`. Map request, parameter, and return helper classes to their owning interface record rather than standalone helper pages. When one helper affects multiple interface pages, use the map's `targets` array so release scope carries one source-backed action to each owner. Keep exact helper-to-owner mappings in the identity map and run evidence, not duplicated in this guide.
+**Canonical identity maps:** load the track-specific map from `references/identity/`. The shared scanner/identity ownership harness maps request, parameter, and return helper classes to their owning interface record rather than standalone helper pages. When one helper affects multiple interface pages, use the map's `targets` array so release scope carries one source-backed action to each owner. Keep exact helper-to-owner mappings in the identity map and run evidence, not duplicated in this guide.
 
 **Notes:**
 - Methods without a Req parameter skip the Request Syntax and BUILDER METHODS sections

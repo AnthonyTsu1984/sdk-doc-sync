@@ -59,6 +59,22 @@ test('skill instructions forbid synthetic merge proposals from stale grouping ar
   assert.match(skillText, /Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists/);
 });
 
+test('SDK ownership guidance embeds method-owned helpers and removes C++ sibling-type direction', () => {
+  const skillRoot = path.join(__dirname, '..');
+  const sharedGuidance = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
+  const cppGuidance = fs.readFileSync(path.join(skillRoot, 'sdk-cpp.md'), 'utf8');
+
+  assert.match(sharedGuidance, /`standalone`, `method_owned`, or `ambiguous`/);
+  assert.match(sharedGuidance, /request.*response.*result.*task.*info.*iterator.*descriptor.*transport.*wrapper/s);
+  assert.match(sharedGuidance, /public class.*not.*standalone evidence/i);
+  assert.match(sharedGuidance, /ambiguous ownership blocks planning/i);
+  assert.match(sharedGuidance, /explicit.*reviewed standalone exception/i);
+  assert.match(cppGuidance, /embedded request and result/i);
+  assert.match(cppGuidance, /scanner.*identity ownership harness/i);
+  assert.doesNotMatch(cppGuidance, /New support docs/);
+  assert.doesNotMatch(cppGuidance, /Doc format — Type\/Class docs/);
+});
+
 test('placement audit resolves inherited docs from supplied older version roots', async () => {
   assert.deepEqual(parseSourceVersionRoot('v2.5.x:root-v25'), {
     version: 'v2.5.x',

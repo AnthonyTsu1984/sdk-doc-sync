@@ -553,6 +553,61 @@ test('symbol inventory reports embedded C++ type changes explicitly', () => {
   assert.equal(delta.reason, 'embedded type surface changed');
 });
 
+test('symbol inventory ignores source-location-only shifts in embedded C++ types', () => {
+  const baseline = [{
+    name: 'DescribeReplicas',
+    kind: 'method',
+    parentClass: 'Collections',
+    signature: 'Status DescribeReplicas(const Request&, Response&)',
+    embeddedTypes: [{
+      name: 'ReplicaInfo',
+      kind: 'class',
+      aliases: ['ReplicaInfoPtr'],
+      filePath: 'src/include/milvus/types/ReplicaInfo.h',
+      lineNumber: 20,
+      relatedFiles: ['src/include/milvus/types/ShardReplica.h'],
+      fields: [{
+        name: 'id',
+        type: 'int64_t',
+        description: 'Replica identifier.',
+        filePath: 'src/include/milvus/types/ReplicaInfo.h',
+        lineNumber: 24,
+        evidence: [{ kind: 'source', locator: 'src/include/milvus/types/ReplicaInfo.h:24' }],
+      }],
+      accessors: [{
+        name: 'Shards',
+        type: 'const std::vector<ShardReplica>&',
+        signature: 'const std::vector<ShardReplica>& Shards() const',
+        description: 'Returns shard replicas.',
+        filePath: 'src/include/milvus/types/ReplicaInfo.h',
+        lineNumber: 31,
+      }],
+    }],
+  }];
+  const target = [{
+    ...baseline[0],
+    embeddedTypes: [{
+      ...baseline[0].embeddedTypes[0],
+      filePath: 'src/include/milvus/response/ReplicaInfo.h',
+      lineNumber: 120,
+      relatedFiles: ['src/include/milvus/response/ShardReplica.h'],
+      fields: [{
+        ...baseline[0].embeddedTypes[0].fields[0],
+        filePath: 'src/include/milvus/response/ReplicaInfo.h',
+        lineNumber: 124,
+        evidence: [{ kind: 'source', locator: 'src/include/milvus/response/ReplicaInfo.h:124' }],
+      }],
+      accessors: [{
+        ...baseline[0].embeddedTypes[0].accessors[0],
+        filePath: 'src/include/milvus/response/ReplicaInfo.h',
+        lineNumber: 131,
+      }],
+    }],
+  }];
+
+  assert.deepEqual(classifySymbolDeltas({ baseline, target }), []);
+});
+
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
   const left = {
     actions: [{

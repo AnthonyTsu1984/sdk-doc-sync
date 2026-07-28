@@ -4,6 +4,22 @@ function publicIdentity(symbol) {
   return symbol.parentClass ? `${symbol.parentClass}.${symbol.name}` : symbol.name;
 }
 
+const EMBEDDED_SOURCE_METADATA = new Set([
+  'evidence',
+  'filePath',
+  'lineNumber',
+  'relatedFiles',
+  'source',
+]);
+
+function comparableEmbeddedSurface(value) {
+  if (Array.isArray(value)) return value.map(comparableEmbeddedSurface);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !EMBEDDED_SOURCE_METADATA.has(key))
+    .map(([key, nested]) => [key, comparableEmbeddedSurface(nested)]));
+}
+
 function comparableSignature(symbol) {
   return JSON.stringify({
     kind: symbol.kind || null,
@@ -14,7 +30,7 @@ function comparableSignature(symbol) {
     methods: symbol.methods || [],
     optionMethods: symbol.optionMethods || [],
     altConstructors: symbol.altConstructors || [],
-    embeddedTypes: symbol.embeddedTypes || [],
+    embeddedTypes: comparableEmbeddedSurface(symbol.embeddedTypes || []),
     returnType: symbol.returnType || null,
     decorators: symbol.decorators || [],
     hidden: symbol.hidden || false,
@@ -34,7 +50,10 @@ function updateReason(previous, symbol) {
   if (!sameValue(previous.fields || [], symbol.fields || [])) return 'fields changed';
   if (!sameValue(previous.values || [], symbol.values || [])) return 'enum values changed';
   if (!sameValue(previous.methods || [], symbol.methods || [])) return 'public member methods changed';
-  if (!sameValue(previous.embeddedTypes || [], symbol.embeddedTypes || [])) return 'embedded type surface changed';
+  if (!sameValue(
+    comparableEmbeddedSurface(previous.embeddedTypes || []),
+    comparableEmbeddedSurface(symbol.embeddedTypes || []),
+  )) return 'embedded type surface changed';
   if ((previous.bodyHash || null) !== (symbol.bodyHash || null)) return 'public method behavior changed';
   if ((previous.returnType || null) !== (symbol.returnType || null)) return 'return type changed';
   if (!sameValue(previous.decorators || [], symbol.decorators || [])) return 'decorators changed';

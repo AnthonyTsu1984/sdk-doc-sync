@@ -75,7 +75,7 @@ function stripLineComment(value) {
 
 function parseDoxygen(lines) {
   const text = lines
-    .map((line) => line.replace(/^\s*\/\*\*?\s?/, '').replace(/^\s*\*\s?/, '').replace(/\*\/\s*$/, '').trim())
+    .map((line) => line.replace(/\*\/\s*$/, '').replace(/^\s*\/\*\*?\s?/, '').replace(/^\s*\*\s?/, '').trim())
     .filter((line) => line && !line.startsWith('@param') && !line.startsWith('@return'))
     .map((line) => line.replace(/^@brief\s+/, ''))
     .join(' ')
@@ -161,6 +161,14 @@ function mergeBindings(target, source) {
       ])]);
     }
   }
+}
+
+function builderSignatureKey(builder) {
+  const parameterTypes = (builder.inputs || []).map((input) => String(input.type || '')
+    .replace(/\s+/g, ' ')
+    .replace(/\s*([<>,*&])\s*/g, '$1')
+    .trim());
+  return `${builder.name}(${parameterTypes.join(',')})`;
 }
 
 function normalizeDeclaration(value) {
@@ -498,8 +506,9 @@ class CppTypeGraph {
       if (!node) return;
       for (const baseName of node.baseClasses) collect(baseName);
       for (const builder of node.builders) {
-        if (builder.deleted) params.delete(builder.name);
-        else if (builder.public) params.set(builder.name, {
+        const key = builderSignatureKey(builder);
+        if (builder.deleted) params.delete(key);
+        else if (builder.public) params.set(key, {
           name: builder.name,
           kind: 'keyword',
           type: builder.inputs[0]?.type || '',

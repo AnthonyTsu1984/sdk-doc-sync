@@ -1169,6 +1169,8 @@ class MILVUS_SDK_API SearchRequest {
     WithLimit(int64_t limit);
     SearchRequest&
     WithIDs(std::vector<int64_t>&& id_array);
+    SearchRequest&
+    WithIDs(std::vector<std::string>&& id_array);
 };
 }
 `);
@@ -1201,7 +1203,125 @@ class MILVUS_SDK_API UnrelatedRequest {
   );
 
   assert.ok(searchIterator, 'SearchIterator symbol should be scanned');
-  assert.deepEqual(searchIterator.params.map((param) => param.name), ['WithLimit']);
+  assert.deepEqual(searchIterator.params.map((param) => param.name), ['WithLimit', 'WithIDs']);
+  assert.equal(searchIterator.params[1].fullArgStr, 'std::vector<std::string>&& id_array');
+});
+
+test('CppScanner preserves real-shaped request builder overloads through adapter IR', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-scanner-builder-overloads-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    Get(const GetRequest& request) = 0;
+    virtual Status
+    Search(const SearchRequest& request) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'GetRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API GetRequest {
+ public:
+    GetRequest&
+    WithIDs(std::vector<int64_t>&& id_array);
+    GetRequest&
+    WithIDs(std::vector<std::string>&& id_array);
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'SearchRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchRequest : public SearchRequestVectorAssigner<SearchRequest> {};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'SearchRequestBase.h'), `
+#pragma once
+namespace milvus {
+template <typename T>
+class SearchRequestVectorAssigner {
+ public:
+    T&
+    WithBinaryVectors(const std::vector<std::string>& vectors);
+    T&
+    WithBinaryVectors(std::vector<BinaryVecFieldData::ElementT>&& vectors);
+    T&
+    WithSparseVectors(std::vector<SparseFloatVecFieldData::ElementT>&& vectors);
+    T&
+    WithSparseVectors(const std::vector<nlohmann::json>& vectors);
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const get = symbols.find((symbol) => symbol.name === 'Get');
+  const search = symbols.find((symbol) => symbol.name === 'Search');
+  assert.deepEqual(get.params.map((param) => param.fullArgStr), [
+    'std::vector<int64_t>&& id_array',
+    'std::vector<std::string>&& id_array',
+  ]);
+  assert.deepEqual(search.params.map((param) => param.fullArgStr), [
+    'const std::vector<std::string>& vectors',
+    'std::vector<BinaryVecFieldData::ElementT>&& vectors',
+    'std::vector<SparseFloatVecFieldData::ElementT>&& vectors',
+    'const std::vector<nlohmann::json>& vectors',
+  ]);
+
+  for (const symbol of [get, search]) {
+    const doc = cppAdapter.toReferenceDocument(symbol, {
+      category: 'Vector',
+      repository: 'milvus-io/milvus-sdk-cpp',
+      revision: 'v2.6.4',
+      summary: `Runs ${symbol.name}.`,
+      examples: [],
+    });
+    assert.deepEqual(
+      doc.callableMembers.map((member) => member.signature.display),
+      symbol.params.map((param) => param.fullSignature),
+    );
+  }
+});
+
+test('CppScanner removes multiline Doxygen closing markers from real-shaped descriptions', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-scanner-doxygen-cleanup-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    Search(const SearchRequest& request) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'SearchRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchRequest {
+ public:
+    /**
+     * @brief Set timezone, takes effect for Timestamptz field.
+     * Read the doc for more info:
+     * https://milvus.io/docs/single-vector-search.md#Temporarily-set-a-timezone-for-a-search
+     */
+    SearchRequest&
+    WithTimezone(const std::string& timezone);
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const search = symbols.find((symbol) => symbol.name === 'Search');
+  assert.equal(
+    search.params[0].description,
+    'Set timezone, takes effect for Timestamptz field. Read the doc for more info: '
+      + 'https://milvus.io/docs/single-vector-search.md#Temporarily-set-a-timezone-for-a-search',
+  );
+  assert.equal(search.params[0].description.endsWith(' /'), false);
 });
 
 test('CppScanner inherits implicit-public struct bases but not implicit-private class bases', async () => {

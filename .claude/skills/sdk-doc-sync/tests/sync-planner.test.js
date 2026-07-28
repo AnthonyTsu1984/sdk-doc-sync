@@ -522,6 +522,106 @@ test('planAll documents the batch API and returns frozen plans in input order', 
   assert.equal(Object.isFrozen(plans), true);
 });
 
+test('SyncPlanner creates an approval-gated folder resource plan with optional VirtualNode repointing', () => {
+  const plan = new SyncPlanner().planResource({
+    kind: 'folder',
+    ref: 'folder:cpp:v30:Authentication',
+    name: 'Authentication',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'Authentication',
+    },
+    repointVirtualNode: {
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      recordId: 'rec-auth',
+      title: 'Authentication',
+    },
+  });
+
+  assert.equal(plan.action, 'CREATE_FOLDER');
+  assert.equal(plan.stableId, 'resource:folder:cpp:v30:Authentication');
+  assert.equal(plan.resource.ref, 'folder:cpp:v30:Authentication');
+  assert.deepEqual(plan.dependencies, []);
+  assert.deepEqual(plan.postconditions, [
+    { type: 'RESOURCE_RESOLVED', ref: 'folder:cpp:v30:Authentication', value: 'NEW_FOLDER_TOKEN' },
+    { type: 'TARGET_ANCESTRY', folderRef: 'folder:cpp:v30:Authentication', versionRootToken: 'root-v30' },
+    { type: 'VIRTUAL_NODE_LINK', recordId: 'rec-auth', folderRef: 'folder:cpp:v30:Authentication' },
+  ]);
+  assert.equal(Object.isFrozen(plan), true);
+});
+
+test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
+  const plan = new SyncPlanner().planResource({
+    kind: 'virtual_node',
+    ref: 'parent:cpp:v26:CDC',
+    title: 'CDC',
+    folderRef: 'folder:cpp:v26:CDC',
+    baseToken: 'base-v26',
+    tableId: 'table-v26',
+    version: 'v2.6.x',
+    dependsOn: ['folder:cpp:v26:CDC'],
+    existingLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v26',
+      tableId: 'table-v26',
+      criteria: { title: 'CDC', type: 'VirtualNode' },
+    },
+  });
+
+  assert.equal(plan.action, 'CREATE_VIRTUAL_NODE');
+  assert.deepEqual(plan.dependencies, ['folder:cpp:v26:CDC']);
+  assert.deepEqual(plan.postconditions, [
+    { type: 'RESOURCE_RESOLVED', ref: 'parent:cpp:v26:CDC', value: 'NEW_RECORD_ID' },
+    { type: 'VIRTUAL_NODE_LINK', recordId: 'NEW_RECORD_ID', folderRef: 'folder:cpp:v26:CDC' },
+  ]);
+});
+
+test('SyncPlanner allows document plans to depend on unresolved approved resources', () => {
+  const plan = new SyncPlanner().planAction({
+    type: 'CREATE',
+    stableId: 'cpp:CDC:DumpMessages',
+    reason: 'new public method',
+  }, planningContext({
+    current: null,
+    target: {
+      version: 'v2.6.x',
+      folderRef: 'folder:cpp:v26:CDC',
+      parentRecordRef: 'parent:cpp:v26:CDC',
+      versionRootToken: 'root-v26',
+      ancestryVerified: true,
+    },
+    dependencies: ['folder:cpp:v26:CDC', 'parent:cpp:v26:CDC'],
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v26',
+      tableId: 'table-v26',
+      parentRecordRef: 'parent:cpp:v26:CDC',
+      criteria: { canonicalSlug: 'CDC-DumpMessages', title: 'DumpMessages()' },
+    },
+  }));
+
+  assert.equal(plan.action, 'CREATE');
+  assert.equal(plan.target.folderToken, null);
+  assert.equal(plan.target.folderRef, 'folder:cpp:v26:CDC');
+  assert.equal(plan.target.parentRecordId, null);
+  assert.equal(plan.target.parentRecordRef, 'parent:cpp:v26:CDC');
+  assert.deepEqual(plan.dependencies, ['folder:cpp:v26:CDC', 'parent:cpp:v26:CDC']);
+  assert.deepEqual(condition(plan, 'TARGET_ANCESTRY'), {
+    type: 'TARGET_ANCESTRY',
+    expectedFolderToken: null,
+    expectedFolderRef: 'folder:cpp:v26:CDC',
+    expectedVersionRootToken: 'root-v26',
+    verified: true,
+  });
+});
+
 function syncFixture({ dryRun, approvalCallback = null, calls }) {
   const scanned = [{
     name: 'createCollection',
@@ -542,6 +642,10 @@ function syncFixture({ dryRun, approvalCallback = null, calls }) {
   }];
   const realPlanner = new SyncPlanner();
   const planner = {
+    planResource(resource) {
+      calls.resourcePlanner = (calls.resourcePlanner || 0) + 1;
+      return realPlanner.planResource(resource);
+    },
     planAction(action, context) {
       calls.planner += 1;
       return realPlanner.planAction(action, context);
@@ -596,6 +700,47 @@ test('dry-run scans, reads the real index, plans UPDATE accurately, and performs
   assert.deepEqual(result.planningErrors, []);
   assert.equal(calls.documentMutations, 0);
   assert.equal(calls.recordMutations, 0);
+});
+
+test('dry-run emits immutable dependent resource plans before document plans', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, resourcePlanner: 0, documentMutations: 0, recordMutations: 0 };
+  const sync = syncFixture({ dryRun: true, calls });
+  sync.releaseScope = {
+    baselineTag: 'v2.6.4',
+    targetTag: 'v2.6.5',
+    releaseRange: 'v2.6.4..v2.6.5',
+    approvalGrade: true,
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'node:Collections:createCollection',
+      canonicalSlug: 'Collections-createCollection',
+      symbol: 'Collections.createCollection',
+      source: {},
+      reason: 'description changed',
+    }],
+    resources: [{
+      kind: 'folder',
+      ref: 'folder:node:v26:Collections',
+      name: 'Collections',
+      parentFolderToken: 'root-v26',
+      versionRootToken: 'root-v26',
+      existingLookup: {
+        checked: true,
+        absent: true,
+        parentFolderToken: 'root-v26',
+        name: 'Collections',
+      },
+    }],
+  };
+
+  const result = await sync.run();
+
+  assert.equal(calls.resourcePlanner, 1);
+  assert.equal(result.resourcePlans.length, 1);
+  assert.equal(result.resourcePlans[0].action, 'CREATE_FOLDER');
+  assert.equal(result.resourcePlans[0].stableId, 'resource:folder:node:v26:Collections');
+  assert.equal(Object.isFrozen(result.resourcePlans[0]), true);
+  assert.equal(result.plans.length, 1);
 });
 
 test('dry and live modes produce identical plans before approval or execution', async () => {

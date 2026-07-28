@@ -692,6 +692,95 @@ test('reviewed release context builder accepts version-prefixed Go slugs with un
   assert.equal(result.referenceContext.contexts['go:Collection:StructSchema'].category, 'Collection');
 });
 
+test('reviewed release context builder carries approved dependent folder and VirtualNode resources into planning', () => {
+  const releaseScope = createReleaseScope({
+    language: 'cpp',
+    sdkName: 'milvus-sdk-cpp',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.4',
+    targetTag: 'v2.6.5',
+    targetCommit: '771691a621b07478a1e693d3e6c6686ebb0fbdaa',
+    targetDate: '2026-07-01T00:00:00.000Z',
+    changedFiles: ['src/include/milvus/MilvusClientV2.h'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'cpp:CDC:DumpMessages',
+      canonicalSlug: 'CDC-DumpMessages',
+      symbol: 'CDC.DumpMessages',
+      source: { file: 'src/include/milvus/MilvusClientV2.h', line: 954 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'cpp',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: {},
+      resources: [{
+        kind: 'folder',
+        ref: 'folder:cpp:v26:CDC',
+        name: 'CDC',
+        parentFolderToken: 'root-v26',
+        versionRootToken: 'root-v26',
+        existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v26', name: 'CDC' },
+      }, {
+        kind: 'virtual_node',
+        ref: 'parent:cpp:v26:CDC',
+        title: 'CDC',
+        folderRef: 'folder:cpp:v26:CDC',
+        baseToken: 'base-v26',
+        tableId: 'table-v26',
+        version: 'v2.6.x',
+        dependsOn: ['folder:cpp:v26:CDC'],
+        existingLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          criteria: { title: 'CDC', type: 'VirtualNode' },
+        },
+      }],
+    },
+    candidates: {
+      'CDC-DumpMessages': {
+        category: 'CDC',
+        folderRef: 'folder:cpp:v26:CDC',
+        parentRecordRef: 'parent:cpp:v26:CDC',
+        dependencies: ['folder:cpp:v26:CDC', 'parent:cpp:v26:CDC'],
+        existingRecordLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          parentRecordRef: 'parent:cpp:v26:CDC',
+          criteria: { canonicalSlug: 'CDC-DumpMessages', title: 'DumpMessages()' },
+        },
+        summary: 'Dumps CDC messages from the requested channel and position.',
+        example: { language: 'cpp', fence: 'C++', code: 'client->DumpMessages(request, response);' },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+
+  assert.deepEqual(result.filteredScope.resources, candidateSpec.target.resources);
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.target, {
+    version: 'v2.6.x',
+    folderToken: null,
+    folderRef: 'folder:cpp:v26:CDC',
+    parentRecordId: null,
+    parentRecordRef: 'parent:cpp:v26:CDC',
+    versionRootToken: 'root-v26',
+    ancestryVerified: true,
+  });
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.dependencies, [
+    'folder:cpp:v26:CDC',
+    'parent:cpp:v26:CDC',
+  ]);
+});
+
 test('reviewed release context builder rejects stale or empty candidate specs', () => {
   const releaseScope = createReleaseScope({
     language: 'python',

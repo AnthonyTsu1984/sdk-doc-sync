@@ -251,7 +251,7 @@ function assertCreateMissingEvidence({ action, spec, identity }) {
     || lookup.absent !== true
     || !lookup.baseToken
     || !lookup.tableId
-    || !lookup.parentRecordId
+    || (!lookup.parentRecordId && !lookup.parentRecordRef)
     || !canonicalSlugs.includes(identity.canonicalSlug)
     || !criteria.title) {
     throw new Error(`Candidate ${action.canonicalSlug} must include explicit absent existingRecordLookup evidence before CREATE ${identity.stableId}`);
@@ -262,21 +262,23 @@ function assertCreateMissingEvidence({ action, spec, identity }) {
     baseToken: lookup.baseToken,
     tableId: lookup.tableId,
     parentRecordId: lookup.parentRecordId,
+    parentRecordRef: lookup.parentRecordRef || null,
     criteria: clone(criteria),
   };
 }
 
-function requiresCopySource({ current, targetVersion, targetFolderToken }) {
+function requiresCopySource({ current, targetVersion, targetFolderToken, targetFolderRef }) {
   if (!current) return false;
+  if (targetFolderRef) return true;
   if (current.version && targetVersion && current.version !== targetVersion) return true;
   if (current.folderToken && targetFolderToken && current.folderToken !== targetFolderToken) return true;
   if (current.referencedByOlderVersions === true) return true;
   return false;
 }
 
-function assertCopySourceEvidence({ action, spec, identity, current, targetVersion, targetFolderToken }) {
+function assertCopySourceEvidence({ action, spec, identity, current, targetVersion, targetFolderToken, targetFolderRef }) {
   if (action.type !== 'UPDATE') return null;
-  if (!requiresCopySource({ current, targetVersion, targetFolderToken })) return null;
+  if (!requiresCopySource({ current, targetVersion, targetFolderToken, targetFolderRef })) return null;
   const copySource = spec.copySource || null;
   if (!copySource || !copySource.documentToken || !copySource.link) {
     throw new Error(`Candidate ${action.canonicalSlug} copySource evidence is required before changing inherited doc ${identity.stableId}`);
@@ -437,6 +439,13 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
   const folders = required(target.folders, 'Candidate spec target is missing folders');
+  const resources = clone(target.resources || []);
+  const resourceRefs = new Set();
+  for (const resource of resources) {
+    const ref = required(resource.ref, 'Target resource is missing ref');
+    if (resourceRefs.has(ref)) throw new Error(`Duplicate target resource ref ${ref}`);
+    resourceRefs.add(ref);
+  }
 
   for (const action of releaseScope.actions || []) {
     const spec = candidates[action.canonicalSlug];
@@ -457,7 +466,20 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     if (emittedDocIdentities.has(identity.stableId)) continue;
     emittedDocIdentities.add(identity.stableId);
 
-    const folderToken = required(spec.folderToken || folders[category], `Candidate ${action.canonicalSlug} has no folder token for category ${category}`);
+    const folderToken = spec.folderToken || folders[category] || null;
+    const folderRef = spec.folderRef || null;
+    if (!folderToken && (!folderRef || !resourceRefs.has(folderRef))) {
+      throw new Error(`Candidate ${action.canonicalSlug} has no folder token or approved folder resource for category ${category}`);
+    }
+    const dependencies = [...new Set(spec.dependencies || [])];
+    for (const dependency of dependencies) {
+      if (!resourceRefs.has(dependency)) throw new Error(`Candidate ${action.canonicalSlug} references unknown resource ${dependency}`);
+    }
+    const parentRecordId = existingRecord?.parentRecordId || existingRecordLookup?.parentRecordId || null;
+    const parentRecordRef = spec.parentRecordRef || existingRecordLookup?.parentRecordRef || null;
+    if (!parentRecordId && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
+      throw new Error(`Candidate ${action.canonicalSlug} has no parent record or approved parent resource`);
+    }
     const copySource = assertCopySourceEvidence({
       action: planningAction,
       spec,
@@ -465,6 +487,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       current: existingRecord,
       targetVersion: version,
       targetFolderToken: folderToken,
+      targetFolderRef: folderRef,
     });
     const evidence = evidenceFor(action, spec, releaseScope);
     const sourceVariants = groupedSources
@@ -479,6 +502,15 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
           source: clone(item.source),
           reason: item.reason,
         }]);
+    const planningTarget = {
+      version,
+      folderToken,
+      parentRecordId,
+      versionRootToken,
+      ancestryVerified: true,
+    };
+    if (folderRef) planningTarget.folderRef = folderRef;
+    if (parentRecordRef) planningTarget.parentRecordRef = parentRecordRef;
     const selectedAction = {
       ...planningAction,
       stableId: identity.stableId,
@@ -491,13 +523,8 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         current: existingRecord || undefined,
         existingRecordLookup: existingRecordLookup || undefined,
         copySource,
-        target: {
-          version,
-          folderToken,
-          parentRecordId: existingRecord?.parentRecordId || existingRecordLookup?.parentRecordId || null,
-          versionRootToken,
-          ancestryVerified: true,
-        },
+        target: planningTarget,
+        dependencies,
         tokenReferencedByOlderVersions: existingRecord?.referencedByOlderVersions ?? false,
       },
     };
@@ -530,6 +557,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const filteredScope = {
     ...releaseScope,
     actions: selected,
+    resources,
     scannerDiagnostics: [
       ...(releaseScope.scannerDiagnostics || []).filter((item) => item.code !== 'FILTERED_USER_FACING_SCOPE'),
       {

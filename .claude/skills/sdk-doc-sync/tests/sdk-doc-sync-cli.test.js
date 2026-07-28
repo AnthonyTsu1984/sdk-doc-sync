@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const {
   createExecutionApprovalProvider,
+  createBoundedSummary,
   createSchemaFirstArtifactProvider,
   parseArgs,
   runCli,
@@ -14,6 +15,18 @@ const {
 const SdkDocSync = require('../src/sdk-doc-sync');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
+
+test('bounded dry-run summary reports dependent resource plans separately from document plans', () => {
+  const summary = createBoundedSummary({
+    scanned: [], indexed: [], diff: [],
+    resourcePlans: [{ action: 'CREATE_FOLDER' }, { action: 'CREATE_VIRTUAL_NODE' }],
+    plans: [{ action: 'CREATE' }],
+    planningErrors: [], approved: [], results: [],
+  });
+
+  assert.equal(summary.resourcePlanCount, 2);
+  assert.equal(summary.planCount, 1);
+});
 
 test('CLI accepts repeatable token-specific repair approvals', () => {
   const args = parseArgs([

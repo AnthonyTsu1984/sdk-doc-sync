@@ -535,6 +535,7 @@ function createBoundedSummary(result) {
         scannedCount: result.scanned.length,
         indexedCount: result.indexed.length,
         diffCount: result.diff.length,
+        resourcePlanCount: (result.resourcePlans || []).length,
         planCount: result.plans.length,
         planningErrorCount: result.planningErrors.length,
         approvedCount: result.approved.length,

@@ -156,6 +156,7 @@ class SdkDocSync {
             scanned: [],
             indexed: [],
             diff: [],
+            resourcePlans: [],
             plans: [],
             planningErrors: [],
             approved: [],
@@ -201,6 +202,18 @@ class SdkDocSync {
         // Phase 4: PLAN. Dry and live modes share this exact path; planning is
         // read-only and never invokes DocGenerator scaffold generation.
         this.onProgress('PLAN', `Planning ${result.diff.length} actions...`);
+        for (const resource of this.releaseScope?.resources || []) {
+            try {
+                result.resourcePlans.push(this.planner.planResource(resource));
+            } catch (error) {
+                result.planningErrors.push({
+                    stableId: resource?.ref ? `resource:${resource.ref}` : null,
+                    diffAction: resource?.kind || 'RESOURCE',
+                    code: error.code || 'RESOURCE_PLANNING_FAILED',
+                    message: error.message,
+                });
+            }
+        }
         const plannedActions = [];
         for (const [index, action] of result.diff.entries()) {
             try {
@@ -222,7 +235,7 @@ class SdkDocSync {
                 });
             }
         }
-        this.onProgress('PLAN', `${result.plans.length} planned, ${result.planningErrors.length} failed`);
+        this.onProgress('PLAN', `${result.resourcePlans.length} resources and ${result.plans.length} documents planned, ${result.planningErrors.length} failed`);
 
         if (this.dryRun) {
             this.onProgress('APPROVE', 'Dry run — showing plans without executing');

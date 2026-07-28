@@ -125,6 +125,61 @@
       "canonicalSlug": "v2-Partition-LoadPartitions",
       "category": "Partitions"
     },
+    "Collections.BatchDescribeCollections": {
+      "stableId": "cpp:Collections:BatchDescribeCollections",
+      "canonicalSlug": "Collections-BatchDescribeCollections",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionFunction": {
+      "stableId": "cpp:Collections:AddCollectionFunction",
+      "canonicalSlug": "Collections-AddCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionFunction": {
+      "stableId": "cpp:Collections:AlterCollectionFunction",
+      "canonicalSlug": "Collections-AlterCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionFunction": {
+      "stableId": "cpp:Collections:DropCollectionFunction",
+      "canonicalSlug": "Collections-DropCollectionFunction",
+      "category": "Collections"
+    },
+    "Database.DescribeDatabase": {
+      "stableId": "cpp:Database:DescribeDatabase",
+      "canonicalSlug": "Database-DescribeDatabase",
+      "category": "Database"
+    },
+    "Management.RefreshLoad": {
+      "stableId": "cpp:Management:RefreshLoad",
+      "canonicalSlug": "v2-Management-RefreshLoad",
+      "category": "Management"
+    },
+    "Management.Optimize": {
+      "stableId": "cpp:Management:Optimize",
+      "canonicalSlug": "v2-Management-Optimize",
+      "category": "Management"
+    },
+    "Collections.DescribeReplicas": {
+      "stableId": "cpp:Collections:DescribeReplicas",
+      "canonicalSlug": "Collections-DescribeReplicas",
+      "category": "Collections"
+    },
+    "Vector.Get": {
+      "stableId": "cpp:Vector:Get",
+      "canonicalSlug": "Vector-Get",
+      "category": "Vector"
+    },
+    "Vector.Delete": {
+      "stableId": "cpp:Vector:Delete",
+      "canonicalSlug": "Vector-Delete",
+      "category": "Vector"
+    },
+    "Vector.RunAnalyzer": {
+      "stableId": "cpp:Vector:RunAnalyzer",
+      "canonicalSlug": "Vector-RunAnalyzer",
+      "category": "Vector"
+    },
     "BatchDescribeCollectionsRequest": {
       "targets": [{ "stableId": "cpp:Collections:BatchDescribeCollections", "canonicalSlug": "Collections-BatchDescribeCollections", "category": "Collections" }]
     },

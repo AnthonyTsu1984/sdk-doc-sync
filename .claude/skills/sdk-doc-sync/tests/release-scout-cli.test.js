@@ -13,6 +13,9 @@ const NodeScanner = require('../src/sdk-doc-sync/scanners/node-scanner');
 const GoScanner = require('../src/sdk-doc-sync/scanners/go-scanner');
 const CppScanner = require('../src/sdk-doc-sync/scanners/cpp-scanner');
 const ZillizCliScanner = require('../src/sdk-doc-sync/scanners/zilliz-cli-scanner');
+const cppAdapter = require('../src/sdk-reference-ir/adapters/cpp');
+const { classifySymbolDeltas } = require('../src/sdk-doc-sync/release-scope/symbol-inventory');
+const { loadIdentityMap, normalizeDeltas } = require('../src/sdk-doc-sync/release-scope/identity-normalizer');
 
 const fixtureDir = path.join(__dirname, 'fixtures', 'release-scope');
 
@@ -168,6 +171,50 @@ test('C++ identity maps keep reviewed helper families owned by their public meth
         identities,
         `${helper} should stay method-owned in cpp-${track}`,
       );
+    }
+  }
+});
+
+test('C++ identity maps canonically normalize helper-only deltas on every affected owner method', () => {
+  const owners = [
+    ['Collections.BatchDescribeCollections', 'Collections', 'BatchDescribeCollections'],
+    ['Collections.AddCollectionFunction', 'Collections', 'AddCollectionFunction'],
+    ['Collections.AlterCollectionFunction', 'Collections', 'AlterCollectionFunction'],
+    ['Collections.DropCollectionFunction', 'Collections', 'DropCollectionFunction'],
+    ['Database.DescribeDatabase', 'Database', 'DescribeDatabase'],
+    ['Management.RefreshLoad', 'Management', 'RefreshLoad'],
+    ['Management.Optimize', 'Management', 'Optimize'],
+    ['Collections.DescribeReplicas', 'Collections', 'DescribeReplicas'],
+    ['Vector.Get', 'Vector', 'Get'],
+    ['Vector.Delete', 'Vector', 'Delete'],
+    ['Vector.RunAnalyzer', 'Vector', 'RunAnalyzer'],
+  ];
+
+  for (const track of ['v26', 'v30']) {
+    const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', `cpp-${track}.json`));
+    for (const [identity, category, methodName] of owners) {
+      const baseline = [{
+        name: methodName,
+        kind: 'method',
+        parentClass: category,
+        signature: `Status ${methodName}(const Request&, Response&)`,
+        filePath: 'src/include/milvus/MilvusClientV2.h',
+        lineNumber: 10,
+        embeddedTypes: [{ name: 'OwnedHelper', fields: [{ name: 'before', type: 'int64_t' }] }],
+      }];
+      const target = [{
+        ...baseline[0],
+        embeddedTypes: [{ name: 'OwnedHelper', fields: [{ name: 'after', type: 'int64_t' }] }],
+      }];
+      const [delta] = classifySymbolDeltas({ baseline, target });
+      const [normalized] = normalizeDeltas(delta, map);
+
+      assert.equal(delta.symbolIdentity, identity);
+      assert.equal(delta.reason, 'embedded type surface changed');
+      assert.equal(normalized.stableId, `cpp:${category}:${methodName}`, `${identity} stableId in cpp-${track}`);
+      assert.equal(normalized.documentationOwnership.classification, 'standalone');
+      assert.equal(normalized.diagnostic, undefined, `${identity} must not use fallback Client identity in cpp-${track}`);
+      assert.equal(map.symbols[identity].category, category);
     }
   }
 });
@@ -1156,6 +1203,54 @@ class MILVUS_SDK_API UnrelatedRequest {
   assert.deepEqual(searchIterator.params.map((param) => param.name), ['WithLimit']);
 });
 
+test('CppScanner inherits implicit-public struct bases but not implicit-private class bases', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-struct-inheritance-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    Search(const SearchRequest& request) = 0;
+    virtual Status
+    Query(const QueryRequest& request) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'InheritedRequests.h'), `
+#pragma once
+namespace milvus {
+struct MILVUS_SDK_API BaseStructRequest {
+    BaseStructRequest&
+    WithDatabaseName(const std::string& database_name);
+};
+struct MILVUS_SDK_API SearchRequest : BaseStructRequest {
+    SearchRequest&
+    WithLimit(int64_t limit);
+};
+class MILVUS_SDK_API QueryRequest : BaseStructRequest {
+ public:
+    QueryRequest&
+    WithLimit(int64_t limit);
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const search = symbols.find((symbol) => symbol.name === 'Search');
+  const query = symbols.find((symbol) => symbol.name === 'Query');
+  assert.deepEqual(search.params.map((member) => member.name), ['WithDatabaseName', 'WithLimit']);
+  assert.deepEqual(query.params.map((member) => member.name), ['WithLimit']);
+  assert.deepEqual(
+    search.embeddedTypes.find((type) => type.name === 'SearchRequest').baseClasses,
+    ['BaseStructRequest'],
+  );
+  assert.deepEqual(
+    query.embeddedTypes.find((type) => type.name === 'QueryRequest').baseClasses,
+    [],
+  );
+});
+
 test('CppScanner embeds a cycle-safe transitive alias and inheritance graph in every owning method', async () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-type-graph-'));
   writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
@@ -1357,6 +1452,44 @@ class MILVUS_SDK_API OptimizeResponse {
     optimize.embeddedTypes.find((type) => type.name === 'OptimizeResponse').accessors.map((member) => member.name),
     ['StatusText'],
   );
+});
+
+test('CppScanner never treats Add-prefixed request constructors as builders', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-add-request-constructor-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    AddCollectionFunction(const AddCollectionFunctionRequest& request) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'collection', 'AddCollectionFunctionRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API AddCollectionFunctionRequest {
+ public:
+    AddCollectionFunctionRequest() = default;
+    AddCollectionFunctionRequest&
+    WithCollectionName(const std::string& collection_name);
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const addFunction = symbols.find((symbol) => symbol.name === 'AddCollectionFunction');
+  assert.deepEqual(addFunction.params.map((member) => member.name), ['WithCollectionName']);
+
+  const doc = cppAdapter.toReferenceDocument(addFunction, {
+    category: 'Collections',
+    repository: 'milvus-io/milvus-sdk-cpp',
+    revision: 'v3.0.0',
+    summary: 'Adds a collection function.',
+    examples: [],
+  });
+  assert.deepEqual(doc.callableMembers.map((member) => member.name), ['WithCollectionName']);
 });
 
 test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs', async () => {

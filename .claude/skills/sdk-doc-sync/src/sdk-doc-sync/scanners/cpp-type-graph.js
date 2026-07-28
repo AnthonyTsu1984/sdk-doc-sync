@@ -151,8 +151,8 @@ function parseMemberDeclaration({ declaration, access, className, description, f
       deleted,
       public: access === 'public',
     };
-    if (/^(?:With|Add)\w+/.test(name)) return { category: 'builder', member: common };
     if (name === className || name === `~${className}` || name.startsWith('operator')) return null;
+    if (/^(?:With|Add)\w+/.test(name)) return { category: 'builder', member: common };
     const iteratorAccessor = /Iterator/.test(className) && /^(?:Next|HasNext|Done|Valid)/.test(name);
     const taskAccessor = /Task$/.test(className);
     const useful = access === 'public'
@@ -323,7 +323,11 @@ class CppTypeGraph {
         file,
         lineNumber,
         baseExpressions: classMatch[3]
-          ? classMatch[3].split(',').map((base) => base.trim()).filter((base) => /^public\b/.test(base))
+          ? classMatch[3]
+            .split(',')
+            .map((base) => base.trim())
+            .filter((base) => /^public\b/.test(base)
+              || (kind === 'struct' && !/^(?:private|protected)\b/.test(base)))
           : [],
         baseClasses: [],
         aliases: [],

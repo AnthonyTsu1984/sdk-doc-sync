@@ -19,6 +19,7 @@ const GoScanner = require('./scanners/go-scanner');
 const ZillizCliScanner = require('./scanners/zilliz-cli-scanner');
 const OpenApiScanner = require('./scanners/openapi-scanner');
 const { buildTypeUrlIndex } = require('./type-url-index');
+const { normalizedCopy, resolvePlanningContexts } = require('./release-scope/planning-context');
 
 /**
  * SdkDocSync — orchestrates the 5-phase pipeline: SCAN → INDEX → DIFF → APPROVE → EXECUTE
@@ -486,6 +487,7 @@ class SdkDocSync {
             if (!existing) {
                 const primary = {
                     ...action,
+                    planningContext: normalizedCopy(action.planningContext),
                     reasons: [],
                     evidence: [],
                     sourceVariants: [],
@@ -505,6 +507,10 @@ class SdkDocSync {
             const actionIsStandaloneOwner = action.documentationOwnership?.classification === 'standalone';
             const compatibleOwnerLifecycle = (existingIsHelperUpdate && actionIsStandaloneOwner)
                 || (actionIsHelperUpdate && existingIsStandaloneOwner);
+            const planningContext = resolvePlanningContexts([
+                existing.planningContext,
+                action.planningContext,
+            ]);
             const conflictFields = [];
             if (existing.type !== action.type && !compatibleOwnerLifecycle) conflictFields.push('type');
             if (existing.stableId !== action.stableId) conflictFields.push('stableId');
@@ -516,17 +522,12 @@ class SdkDocSync {
                     conflictFields.push('documentationOwnership.selectedOwnerStableId');
                 }
             }
-            if (existing.planningContext !== undefined && action.planningContext !== undefined
-                && !isDeepStrictEqual(existing.planningContext, action.planningContext)) {
-                conflictFields.push('planningContext');
-            }
+            if (planningContext.conflict) conflictFields.push('planningContext');
             if (existing.target !== undefined && action.target !== undefined
                 && !isDeepStrictEqual(existing.target, action.target)) {
                 conflictFields.push('target');
             }
-            if (existing.planningContext === undefined && action.planningContext !== undefined) {
-                existing.planningContext = action.planningContext;
-            }
+            existing.planningContext = planningContext.value;
             if (existing.target === undefined && action.target !== undefined) existing.target = action.target;
             this._appendUnique(existing.reasons, action.reasons || [action.reason].filter(Boolean));
             this._appendUnique(existing.evidence, action.evidence || []);
@@ -536,6 +537,7 @@ class SdkDocSync {
                     reasons: existing.reasons,
                     evidence: existing.evidence,
                     sourceVariants: existing.sourceVariants,
+                    planningContext: existing.planningContext,
                     planningConflict: existing.planningConflict,
                 };
                 Object.assign(existing, action, aggregate);

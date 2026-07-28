@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
+const { resolvePlanningContexts } = require('../src/sdk-doc-sync/release-scope/planning-context');
 
 const SDK_REFERENCE_BY_LANGUAGE = {
   cpp: 'sdk-cpp.md',
@@ -99,15 +100,21 @@ function assertCompatibleReviewedActions(actions, identity) {
       `Reviewed owner ${identity.stableId} has incompatible release identities: ${stableIds.join(', ')}`,
     );
   }
-  for (const field of ['planningContext', 'target']) {
-    const values = uniqueValues(actions.map((action) => action[field]));
-    if (values.length > 1) {
-      throw reviewedContextError(
-        'CONFLICTING_REVIEWED_PLANNING_CONTEXT',
-        `Reviewed owner ${identity.stableId} has incompatible ${field} values`,
-      );
-    }
+  const planningContext = resolvePlanningContexts(actions.map((action) => action.planningContext));
+  if (planningContext.conflict) {
+    throw reviewedContextError(
+      'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+      `Reviewed owner ${identity.stableId} has incompatible planningContext values`,
+    );
   }
+  const targets = uniqueValues(actions.map((action) => action.target));
+  if (targets.length > 1) {
+    throw reviewedContextError(
+      'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+      `Reviewed owner ${identity.stableId} has incompatible target values`,
+    );
+  }
+  return planningContext.value;
 }
 
 function sourceVariantsFor(actions) {
@@ -574,7 +581,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
     const identity = assertCandidateIdentity({ action: planningAction, spec, category });
-    assertCompatibleReviewedActions(sourceActions, identity);
+    const releasePlanningContext = assertCompatibleReviewedActions(sourceActions, identity);
     if (planningAction.documentationOwnership?.classification === 'method_owned'
       && identity.stableId !== planningAction.documentationOwnership.selectedOwnerStableId) {
       throw ownershipError(
@@ -647,7 +654,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       evidence: releaseEvidence,
       inheritanceReview,
       planningContext: {
-        ...(planningAction.planningContext || {}),
+        ...(releasePlanningContext || {}),
         current: existingRecord || undefined,
         existingRecordLookup: existingRecordLookup || undefined,
         copySource,

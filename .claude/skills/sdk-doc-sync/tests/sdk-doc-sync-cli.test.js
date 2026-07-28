@@ -1335,27 +1335,17 @@ test('release-scope helper ownership consolidates two source helpers into one pl
   assert.ok(summary.diff.every((action) => action.reasons.includes('embedded helper surface changed')));
 });
 
-test('release-scope consolidation prefers a standalone owner lifecycle over helper-derived updates', () => {
+test('release-scope consolidation preserves helper planning context in either lifecycle order', () => {
   const owner = {
     stableId: 'python:Vector:search',
     canonicalSlug: 'Vector-search',
     category: 'Vector',
   };
-  const planningContext = {
-    target: {
-      version: 'v2.6.x',
-      parentRecordId: 'parent-vector',
-      folderToken: 'folder-vector',
-      versionRootToken: 'root-v26',
-      ancestryVerified: true,
-    },
-    existingRecordLookup: {
-      checked: true,
-      absent: true,
-      baseToken: 'base-v26',
-      tableId: 'table-v26',
-      parentRecordId: 'parent-vector',
-      criteria: { canonicalSlug: owner.canonicalSlug },
+  const helperPlanningContext = {
+    requiredLinkedInlineCode: [{ text: 'SearchRequest', url: 'https://example.com/search-request' }],
+    customReviewedConstraints: {
+      preserveRequestExamples: true,
+      reviewId: 'review-search-request',
     },
   };
   const helperOwnership = {
@@ -1363,6 +1353,79 @@ test('release-scope consolidation prefers a standalone owner lifecycle over help
     owners: [owner],
     selectedOwnerStableId: owner.stableId,
   };
+  const helperScopedAction = {
+    type: 'UPDATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: 'SearchRequest',
+    source: { file: 'pymilvus/client/search_request.py', line: 12 },
+    reason: 'new request helper',
+    sourceVariants: [{
+      stableId: owner.stableId,
+      canonicalSlug: owner.canonicalSlug,
+      symbol: 'SearchRequest',
+      source: { file: 'pymilvus/client/search_request.py', line: 12 },
+      reason: 'new request helper',
+      sourceDeltaType: 'CREATE',
+    }],
+    documentationOwnership: helperOwnership,
+    planningContext: helperPlanningContext,
+  };
+  const ownerScopedAction = {
+    type: 'CREATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: 'MilvusClient.search',
+    source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
+    reason: 'new public method',
+    documentationOwnership: { classification: 'standalone' },
+  };
+  const helperDiffAction = {
+    type: 'CREATE',
+    slug: owner.canonicalSlug,
+    symbol: { name: 'SearchRequest', parentClass: null, lineNumber: 12 },
+    reason: 'new public class',
+  };
+  const ownerDiffAction = {
+    type: 'CREATE',
+    slug: owner.canonicalSlug,
+    symbol: { name: 'search', parentClass: 'MilvusClient', lineNumber: 372 },
+    reason: 'new public method',
+  };
+
+  for (const [scopedActions, diffActions] of [
+    [[helperScopedAction, ownerScopedAction], [helperDiffAction, ownerDiffAction]],
+    [[ownerScopedAction, helperScopedAction], [ownerDiffAction, helperDiffAction]],
+  ]) {
+    const sync = new SdkDocSync({
+      scanner: { rootDir: '/fixtures/sdk', scan: async () => [] },
+      indexReader: async () => [],
+      rootToken: 'root-v26',
+      baseToken: 'base-v26',
+      sdkName: 'pymilvus',
+      sdkVersion: 'v2.6.x',
+      releaseScope: { actions: scopedActions },
+      changedOnly: true,
+      dryRun: true,
+    });
+    const [consolidated] = sync._applyReleaseScopeDiffActions(diffActions);
+
+    assert.equal(consolidated.type, 'CREATE');
+    assert.equal(consolidated.planningConflict, undefined);
+    assert.deepEqual(consolidated.documentationOwnership, { classification: 'standalone' });
+    assert.deepEqual(consolidated.planningContext, helperPlanningContext);
+    assert.deepEqual(consolidated.sourceVariants.map((variant) => variant.symbol).sort(), [
+      'MilvusClient.search',
+      'SearchRequest',
+    ]);
+    assert.equal(
+      consolidated.sourceVariants.find((variant) => variant.symbol === 'SearchRequest').sourceDeltaType,
+      'CREATE',
+    );
+  }
+});
+
+test('release-scope consolidation normalizes equivalent planning contexts deterministically', () => {
   const sync = new SdkDocSync({
     scanner: { rootDir: '/fixtures/sdk', scan: async () => [] },
     indexReader: async () => [],
@@ -1370,74 +1433,45 @@ test('release-scope consolidation prefers a standalone owner lifecycle over help
     baseToken: 'base-v26',
     sdkName: 'pymilvus',
     sdkVersion: 'v2.6.x',
-    releaseScope: {
-      actions: [
-        {
-          type: 'UPDATE',
-          stableId: owner.stableId,
-          canonicalSlug: owner.canonicalSlug,
-          symbol: 'SearchRequest',
-          source: { file: 'pymilvus/client/search_request.py', line: 12 },
-          reason: 'new request helper',
-          sourceVariants: [{
-            stableId: owner.stableId,
-            canonicalSlug: owner.canonicalSlug,
-            symbol: 'SearchRequest',
-            source: { file: 'pymilvus/client/search_request.py', line: 12 },
-            reason: 'new request helper',
-            sourceDeltaType: 'CREATE',
-          }],
-          documentationOwnership: helperOwnership,
-          planningContext,
-        },
-        {
-          type: 'CREATE',
-          stableId: owner.stableId,
-          canonicalSlug: owner.canonicalSlug,
-          symbol: 'MilvusClient.search',
-          source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
-          reason: 'new public method',
-          documentationOwnership: { classification: 'standalone' },
-          planningContext,
-        },
-      ],
-    },
     changedOnly: true,
     dryRun: true,
   });
+  const owner = { stableId: 'python:Vector:search', canonicalSlug: 'Vector-search', category: 'Vector' };
+  const ownership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const first = {
+    requiredLinkedInlineCode: [{ url: 'https://example.com/type', text: 'SearchRequest' }],
+    customReviewedConstraints: { reviewId: 'review-search', preserveExamples: true },
+  };
+  const second = {
+    customReviewedConstraints: { preserveExamples: true, reviewId: 'review-search' },
+    requiredLinkedInlineCode: [{ text: 'SearchRequest', url: 'https://example.com/type' }],
+  };
+  const action = (symbol, planningContext) => ({
+    type: 'UPDATE',
+    stableId: owner.stableId,
+    slug: owner.canonicalSlug,
+    symbol: { name: symbol },
+    reason: `${symbol} changed`,
+    reasons: [`${symbol} changed`],
+    sourceVariants: [{ symbol }],
+    documentationOwnership: ownership,
+    planningContext,
+  });
 
-  const consolidated = sync._applyReleaseScopeDiffActions([
-    {
-      type: 'CREATE',
-      slug: owner.canonicalSlug,
-      symbol: {
-        name: 'SearchRequest',
-        parentClass: null,
-        lineNumber: 12,
-      },
-      reason: 'new public class',
-    },
-    {
-      type: 'CREATE',
-      slug: owner.canonicalSlug,
-      symbol: {
-        name: 'search',
-        parentClass: 'MilvusClient',
-        lineNumber: 372,
-      },
-      reason: 'new public method',
-    },
-  ]);
+  const serializations = [
+    [action('SearchRequest', first), action('SearchResult', second)],
+    [action('SearchResult', second), action('SearchRequest', first)],
+  ].map((actions) => JSON.stringify(sync._consolidateReleaseScopeDiffActions(actions)[0].planningContext));
 
-  assert.equal(consolidated.length, 1);
-  assert.equal(consolidated[0].type, 'CREATE');
-  assert.equal(consolidated[0].planningConflict, undefined);
-  assert.deepEqual(consolidated[0].documentationOwnership, { classification: 'standalone' });
-  assert.deepEqual(consolidated[0].sourceVariants.map((variant) => variant.symbol), [
-    'SearchRequest',
-    'MilvusClient.search',
-  ]);
-  assert.equal(consolidated[0].sourceVariants[0].sourceDeltaType, 'CREATE');
+  assert.equal(serializations[0], serializations[1]);
+  assert.equal(serializations[0], JSON.stringify({
+    customReviewedConstraints: { preserveExamples: true, reviewId: 'review-search' },
+    requiredLinkedInlineCode: [{ text: 'SearchRequest', url: 'https://example.com/type' }],
+  }));
 });
 
 test('reviewed helper ownership preserves every source variant through filtered-scope dry-run planning', async () => {

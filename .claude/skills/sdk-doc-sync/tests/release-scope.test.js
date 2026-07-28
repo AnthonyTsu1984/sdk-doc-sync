@@ -1012,6 +1012,100 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
   assert.deepEqual(result.referenceContext.contexts['java:v2-Authentication:alterRole'].notes, []);
 });
 
+test('reviewed release context builder preserves helper planning context in either lifecycle order', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const ownership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const helperPlanningContext = {
+    requiredLinkedInlineCode: [{ text: 'SearchRequest', url: 'https://example.com/search-request' }],
+    customReviewedConstraints: {
+      preserveRequestExamples: true,
+      reviewId: 'review-search-request',
+    },
+  };
+  const helperAction = {
+    type: 'UPDATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: 'SearchRequest',
+    source: { file: 'pymilvus/client/search_request.py', line: 12 },
+    reason: 'new request helper',
+    documentationOwnership: ownership,
+    planningContext: helperPlanningContext,
+  };
+  const ownerAction = {
+    type: 'CREATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: 'MilvusClient.search',
+    source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
+    reason: 'new public method',
+    documentationOwnership: { classification: 'standalone' },
+  };
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'folder-vector' },
+    },
+    candidates: {
+      [owner.canonicalSlug]: {
+        category: 'Vector',
+        docIdentity: { ...owner, symbol: 'search' },
+        existingRecordLookup: absentLookup({
+          canonicalSlug: owner.canonicalSlug,
+          title: 'search()',
+          parentRecordId: 'parent-vector',
+        }),
+        summary: 'Searches vectors in a collection.',
+        example: { code: 'client.search(collection_name="docs", data=[[0.1, 0.2]])' },
+      },
+    },
+  };
+  const baseScope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: [helperAction.source.file, ownerAction.source.file],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+
+  for (const actions of [
+    [helperAction, ownerAction],
+    [ownerAction, helperAction],
+  ]) {
+    const result = buildReviewedReleaseContext({
+      releaseScope: { ...baseScope, actions },
+      candidateSpec,
+      sdkReference: '',
+    });
+    const [selected] = result.filteredScope.actions;
+
+    assert.equal(selected.type, 'CREATE');
+    assert.deepEqual(selected.documentationOwnership, { classification: 'standalone' });
+    assert.deepEqual(selected.planningContext.requiredLinkedInlineCode, helperPlanningContext.requiredLinkedInlineCode);
+    assert.deepEqual(selected.planningContext.customReviewedConstraints, helperPlanningContext.customReviewedConstraints);
+  }
+});
+
 test('reviewed release context builder rejects conflicting planning context for one reviewed owner', () => {
   const owner = {
     stableId: 'python:Vector:search',
@@ -1085,7 +1179,7 @@ test('reviewed release context builder rejects conflicting planning context for 
 
   assert.throws(
     () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
-    (error) => error.code === 'CONFLICTING_REVIEWED_PLANNING_CONTEXT',
+    (error) => error.code === 'CONFLICTING_RELEASE_SCOPE_ACTIONS',
   );
 });
 

@@ -231,3 +231,28 @@ test('CLI refuses hard-link output input collisions', () => {
   assert.notEqual(result.status, 0);
   assert.match(result.stderr, /must not overwrite an input path/);
 });
+
+test('fails closed for missing ownership identities and conflicting canonical ownership', () => {
+  const base = {
+    records: [{ recordId: 'rec-helper', title: 'Helper', documentToken: 'doc-helper' }],
+    ownership: { language: 'cpp', track: 'v2.6.x', entries: [] },
+    ownerDocuments: [{ stableId: 'cpp:Client:Call', embeddedTypeNames: ['Helper'] }],
+  };
+  const entry = (value) => ({ ...base, ownership: { ...base.ownership, entries: [value] } });
+
+  assert.throws(() => buildTypeOwnershipAudit(entry({ classification: 'standalone' })), /Missing documentation ownership type identity/);
+  assert.throws(() => buildTypeOwnershipAudit(entry({
+    typeName: 'Helper', classification: 'standalone', owners: [{ stableId: 'cpp:Client:Call' }],
+  })), /Standalone type Helper cannot retain declared owners/);
+  assert.throws(() => buildTypeOwnershipAudit(entry({
+    typeName: 'Helper', classification: 'standalone',
+    documentationOwnership: { classification: 'method_owned', owners: [{ stableId: 'cpp:Client:Call' }] },
+  })), /Conflicting documentation ownership classification for Helper/);
+  assert.throws(() => buildTypeOwnershipAudit(entry({
+    typeName: 'Helper', classification: 'standalone',
+    documentationOwnership: { classification: 'ambiguous' },
+  })), /Conflicting documentation ownership classification for Helper/);
+  assert.throws(() => buildTypeOwnershipAudit(entry({
+    typeName: 'Helper', documentationOwnership: { classification: 'ambiguous' },
+  })), /Ambiguous documentation ownership for Helper/);
+});

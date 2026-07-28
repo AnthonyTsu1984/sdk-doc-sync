@@ -39,7 +39,7 @@ function ownershipEntries(ownership) {
   throw new TypeError('ownership entries must be an array or types object');
 }
 
-function ownerStableId(owner, typeName) {
+function ownerStableId(owner) {
   return typeof owner === 'string' ? owner : owner?.stableId;
 }
 
@@ -55,32 +55,32 @@ function ownerDocumentIndex(ownerDocuments) {
   return index;
 }
 
-function ownerLists(entry) {
+function typeNameFor(entry) {
+  const typeName = [entry?.typeName, entry?.title, entry?.name]
+    .find((value) => typeof value === 'string' && value.trim().length > 0);
+  if (!typeName) throw new TypeError('Missing documentation ownership type identity');
+  return typeName;
+}
+
+function ownerLists(entry, typeName) {
   const lists = [
     entry.owners,
     entry.targets,
-    entry.documentationOwnership?.owners,
-    entry.documentationOwnership?.targets,
   ].filter((owners) => owners !== undefined);
   for (const owners of lists) {
-    if (!Array.isArray(owners)) throw new TypeError(`Owners for ${entry.typeName || entry.title} must be an array`);
+    if (!Array.isArray(owners)) throw new TypeError(`Owners for ${typeName} must be an array`);
   }
   return lists;
 }
 
-function stableOwners(entry) {
-  const typeName = typeNameFor(entry);
-  return [...new Set(ownerLists(entry).flat().map((owner) => {
-    const stableId = ownerStableId(owner, typeName);
+function stableOwners(lists, typeName) {
+  return [...new Set(lists.flat().map((owner) => {
+    const stableId = ownerStableId(owner);
     if (typeof stableId !== 'string' || stableId.trim().length === 0) {
       throw new TypeError(`Owner for ${typeName} requires a non-empty stableId`);
     }
     return stableId;
   }))].sort();
-}
-
-function typeNameFor(entry) {
-  return entry.typeName || entry.title || entry.name;
 }
 
 function compareRecords(left, right) {
@@ -89,8 +89,36 @@ function compareRecords(left, right) {
   return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
 }
 
-function ownershipClassification(entry) {
-  return entry.classification ?? entry.documentationOwnership?.classification;
+function ownershipForm(entry, typeName) {
+  const lists = ownerLists(entry, typeName);
+  return {
+    classification: entry.classification,
+    hasClassification: entry.classification !== undefined,
+    hasOwners: lists.length > 0,
+    owners: stableOwners(lists, typeName),
+  };
+}
+
+function sameOwners(left, right) {
+  return left.length === right.length && left.every((owner, index) => owner === right[index]);
+}
+
+function resolvedOwnership(entry, typeName) {
+  const topLevel = ownershipForm(entry, typeName);
+  const nested = entry.documentationOwnership && typeof entry.documentationOwnership === 'object'
+    ? ownershipForm(entry.documentationOwnership, typeName)
+    : null;
+  if (nested?.hasClassification && topLevel.hasClassification
+    && nested.classification !== topLevel.classification) {
+    throw new TypeError(`Conflicting documentation ownership classification for ${typeName}`);
+  }
+  if (nested?.hasOwners && topLevel.hasOwners && !sameOwners(nested.owners, topLevel.owners)) {
+    throw new TypeError(`Conflicting documentation ownership owners for ${typeName}`);
+  }
+  const classification = nested?.classification ?? topLevel.classification
+    ?? (nested?.hasOwners || topLevel.hasOwners ? 'method_owned' : undefined);
+  const owners = nested?.hasOwners ? nested.owners : topLevel.owners;
+  return { classification, owners, hasDeclaredOwners: nested?.hasOwners || topLevel.hasOwners };
 }
 
 function ownershipIndex(entries) {
@@ -98,18 +126,19 @@ function ownershipIndex(entries) {
   for (const entry of entries) {
     const typeName = typeNameFor(entry);
     if (index.has(typeName)) throw new TypeError(`Duplicate ownership type name: ${typeName}`);
-    const owners = stableOwners(entry);
-    const declaredClassification = ownershipClassification(entry);
-    const classification = declaredClassification ?? (ownerLists(entry).length > 0 ? 'method_owned' : undefined);
+    const { classification, owners, hasDeclaredOwners } = resolvedOwnership(entry, typeName);
     if (classification === undefined) throw new TypeError(`Missing documentation ownership classification for ${typeName}`);
     if (!CLASSIFICATIONS.has(classification)) {
       throw new TypeError(`Unsupported documentation ownership classification: ${classification}`);
     }
     if (classification === 'ambiguous') throw new TypeError(`Ambiguous documentation ownership for ${typeName}`);
+    if (classification === 'standalone' && hasDeclaredOwners) {
+      throw new TypeError(`Standalone type ${typeName} cannot retain declared owners`);
+    }
     if (classification === 'method_owned' && owners.length === 0) {
       throw new TypeError(`Method-owned type ${typeName} requires at least one owner`);
     }
-    index.set(typeName, { ...entry, classification });
+    index.set(typeName, { classification, owners });
   }
   return index;
 }
@@ -151,9 +180,9 @@ function buildTypeOwnershipAudit({ records, ownership, ownerDocuments }) {
   const invalidSiblingRecords = recordList.flatMap((record) => {
     const typeName = record.typeName || record.title;
     const entry = ownershipByTypeName.get(typeName);
-    const classification = entry?.classification || entry?.documentationOwnership?.classification;
+    const classification = entry?.classification;
     if (classification !== 'method_owned') return [];
-    const owners = stableOwners(entry);
+    const owners = entry.owners;
     return [{
       recordId: record.recordId,
       title: record.title,

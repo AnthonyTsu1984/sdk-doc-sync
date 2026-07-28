@@ -8,6 +8,8 @@ const {
     LANGUAGE_ALIASES,
     languageId,
 } = require('./document-ir/block-registry');
+const layoutProfiles = require('./renderers/sdk-layout-profiles');
+const { buildApiSectionModel } = require('./sdk-doc-sync/api-section-model');
 
 require('dotenv').config();
 
@@ -1484,6 +1486,7 @@ class MarkdownToFeishu {
         const batchSize = 50;
         const results = [];
         const createdBlockIds = [];
+        const createdBlocksByIndex = new Map();
         // Map block index → array of cell block IDs returned by API
         const tableCellIds = new Map();
 
@@ -1544,6 +1547,7 @@ class MarkdownToFeishu {
                         const child = data.data.children[j];
                         const globalIdx = segment.startIdx + i + j;
                         createdBlockIds.push(child.block_id);
+                        createdBlocksByIndex.set(globalIdx, child);
 
                         if (child.block_type === this.block_type_map.table && child.table?.cells) {
                             tableCellIds.set(globalIdx, child.table.cells);
@@ -1598,9 +1602,21 @@ class MarkdownToFeishu {
         }
 
         // Recursively create children for blocks that had them
-        for (const [idx, children] of childrenMap) {
+        for (const [idx, originalChildren] of childrenMap) {
             const blockId = createdBlockIds[idx];
             if (blockId) {
+                let children = originalChildren;
+                const automaticPopulation = this.__build_automatic_child_population({
+                    createdBlock: createdBlocksByIndex.get(idx),
+                    desiredChildren: children,
+                });
+                if (automaticPopulation.handled) {
+                    if (automaticPopulation.updateRequests.length > 0) {
+                        await this.__execute_batch_update(document_id, automaticPopulation.updateRequests);
+                    }
+                    if (automaticPopulation.remainingChildren.length === 0) continue;
+                    children = automaticPopulation.remainingChildren;
+                }
                 // Small delay to avoid API rate limits on nested calls
                 await new Promise(r => setTimeout(r, 200));
                 for (let attempt = 1; attempt <= 3; attempt++) {
@@ -1624,6 +1640,28 @@ class MarkdownToFeishu {
         }
 
         return results;
+    }
+
+    __build_automatic_child_population({ createdBlock, desiredChildren }) {
+        const automaticChildren = createdBlock?.children || [];
+        const firstDesired = desiredChildren?.[0];
+        if (createdBlock?.block_type !== this.block_type_map.callout
+            || automaticChildren.length === 0
+            || firstDesired?.block_type !== this.block_type_map.text
+            || !Array.isArray(firstDesired.text?.elements)) {
+            return { handled: false, updateRequests: [], remainingChildren: desiredChildren || [] };
+        }
+        if (automaticChildren.length !== 1) {
+            throw new Error(`Callout ${createdBlock.block_id || '(unknown)'} created ${automaticChildren.length} automatic children`);
+        }
+        return {
+            handled: true,
+            updateRequests: [{
+                block_id: automaticChildren[0],
+                update_text_elements: { elements: firstDesired.text.elements },
+            }],
+            remainingChildren: desiredChildren.slice(1),
+        };
     }
 
     async __populateTableCell(document_id, cellBlockId, cellContent, token) {
@@ -1694,7 +1732,8 @@ class MarkdownToFeishu {
     __api_patch_comparable_block(block, idMap = new Map()) {
         if (Array.isArray(block)) return block.map(item => this.__api_patch_comparable_block(item, idMap));
         if (!block || typeof block !== 'object') {
-            if (typeof block !== 'string' || idMap.size === 0) return block;
+            if (typeof block !== 'string' || idMap.size === 0
+                || !/(?:https?:\/\/|%3A%2F%2F|\/docx\/|\/wiki\/)/i.test(block)) return block;
             let normalized = block;
             for (const [sourceId, copyId] of idMap) normalized = normalized.split(sourceId).join(copyId);
             return normalized;
@@ -1722,6 +1761,59 @@ class MarkdownToFeishu {
             return true;
         };
         return pairChildren(sourcePage.children || [], copyPage.children || []) ? idMap : null;
+    }
+
+    __api_patch_blocks_equivalent(sourceBlocks, copyBlocks, idMap) {
+        const sourceById = new Map(sourceBlocks.map(block => [block.block_id, block]));
+        const copyById = new Map(copyBlocks.map(block => [block.block_id, block]));
+        return [...idMap].every(([sourceId, copyId]) => (
+            JSON.stringify(this.__api_patch_comparable_block(sourceById.get(sourceId), idMap))
+            === JSON.stringify(this.__api_patch_comparable_block(copyById.get(copyId)))
+        ));
+    }
+
+    __api_patch_semantic_model_shape(model) {
+        const topLevelIndex = new Map((model?.topLevelBlockIds || []).map((id, index) => [id, index]));
+        return {
+            profileId: model?.profileId || null,
+            topLevelCount: model?.topLevelBlockIds?.length || 0,
+            sections: (model?.sections || []).map(section => ({
+                role: section.role,
+                startIndex: section.startIndex,
+                endIndex: section.endIndex,
+                blockIndexes: (section.blockIds || []).map(id => topLevelIndex.get(id)),
+                attachmentIndexes: (section.attachments || []).map(id => topLevelIndex.get(id)),
+            })),
+            preserved: (model?.preserved || []).map(item => ({
+                blockIndex: topLevelIndex.get(item.blockId),
+                blockType: item.blockType,
+                attachedToRole: item.attachedToRole,
+            })),
+            signatures: (model?.signatures || []).map(item => ({
+                blockIndex: topLevelIndex.get(item.blockId),
+                role: item.role,
+                normalized: item.normalized,
+            })),
+            errors: model?.errors || [],
+            requiresReviewedRebuild: model?.requiresReviewedRebuild === true,
+        };
+    }
+
+    __api_patch_approved_to_live_source_id_map(patchPlan, sourceBlocks, sourcePage) {
+        const approvedModel = patchPlan.currentModel;
+        const approvedIds = approvedModel?.topLevelBlockIds || [];
+        const liveIds = sourcePage?.children || [];
+        if (approvedIds.length !== liveIds.length) return null;
+
+        const profile = layoutProfiles[patchPlan.profile?.id];
+        if (!profile || profile.version !== patchPlan.profile?.version) return null;
+        const liveModel = buildApiSectionModel(sourceBlocks, profile);
+        if (JSON.stringify(this.__api_patch_semantic_model_shape(approvedModel))
+            !== JSON.stringify(this.__api_patch_semantic_model_shape(liveModel))) return null;
+
+        const idMap = new Map([[approvedModel.pageBlockId, sourcePage.block_id]]);
+        approvedIds.forEach((approvedId, index) => idMap.set(approvedId, liveIds[index]));
+        return idMap;
     }
 
     __rebind_api_patch_plan(patchPlan, idMap) {
@@ -1753,20 +1845,21 @@ class MarkdownToFeishu {
             const sourceBlocks = await this.get_document_blocks(source_document_id);
             const sourcePage = sourceBlocks.find(block => block.block_type === 1);
             const sourceChildren = sourcePage?.children || [];
-            const sourceById = new Map(sourceBlocks.map(block => [block.block_id, block]));
-            const copyById = new Map(existingBlocks.map(block => [block.block_id, block]));
-            const idMap = sourcePage && pageBlock
+            const sourceToCopyIdMap = sourcePage && pageBlock
                 ? this.__api_patch_copy_id_map(sourceBlocks, existingBlocks, sourcePage, pageBlock)
                 : null;
-            const equivalentCopy = JSON.stringify(sourceChildren) === JSON.stringify(expectedChildren)
-                && actualChildren.length === expectedChildren.length
-                && idMap
-                && expectedChildren.every((sourceId, index) => (
-                    JSON.stringify(this.__api_patch_comparable_block(sourceById.get(sourceId), idMap))
-                    === JSON.stringify(this.__api_patch_comparable_block(copyById.get(actualChildren[index])))
-                ));
+            const approvedToSourceIdMap = JSON.stringify(sourceChildren) === JSON.stringify(expectedChildren)
+                ? new Map([[patchPlan.currentModel?.pageBlockId, sourcePage?.block_id], ...expectedChildren.map(id => [id, id])])
+                : this.__api_patch_approved_to_live_source_id_map(patchPlan, sourceBlocks, sourcePage);
+            const equivalentCopy = actualChildren.length === expectedChildren.length
+                && sourceToCopyIdMap
+                && approvedToSourceIdMap
+                && this.__api_patch_blocks_equivalent(sourceBlocks, existingBlocks, sourceToCopyIdMap);
             if (equivalentCopy) {
-                effectivePatchPlan = this.__rebind_api_patch_plan(patchPlan, idMap);
+                const approvedToCopyIdMap = new Map([...approvedToSourceIdMap].map(([approvedId, sourceId]) => (
+                    [approvedId, sourceToCopyIdMap.get(sourceId)]
+                )));
+                effectivePatchPlan = this.__rebind_api_patch_plan(patchPlan, approvedToCopyIdMap);
             }
         }
         const effectiveExpectedChildren = effectivePatchPlan.currentModel?.topLevelBlockIds || [];
@@ -1783,6 +1876,9 @@ class MarkdownToFeishu {
             deleted: 0,
             unchanged: actualChildren.length,
             operations: effectivePatchPlan.operations.length,
+            ...((effectivePatchPlan.preservedBlockIds || []).length > 0 && {
+                preservedBlockIds: [...effectivePatchPlan.preservedBlockIds],
+            }),
         };
         const operationIndex = (operation) => {
             if (Number.isInteger(operation.insertAt)) return operation.insertAt;

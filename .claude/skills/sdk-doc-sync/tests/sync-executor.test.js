@@ -1107,6 +1107,33 @@ test('FeishuOperationalVerifier accepts a valid Python semantic layout and numer
   assert.equal(verification.ok, true);
 });
 
+test('FeishuOperationalVerifier checks preserved block IDs rebound onto a copied document', async () => {
+  const blocks = [
+    { block_id: 'copy-page', block_type: 1, children: ['summary', 'copy-callout'], page: { elements: [] } },
+    { block_id: 'summary', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'copy-callout', parent_id: 'copy-page', block_type: 19, callout: {} },
+  ];
+  const verifier = new FeishuOperationalVerifier({
+    ops: {
+      async authStatus() { return { stdout: '{}' }; },
+      async fetchDocBlocks() { return { stdout: JSON.stringify({ items: blocks }) }; },
+    },
+  });
+  const verification = await verifier.verifyDocument(Object.freeze({
+    layout: { profileId: 'python', profileVersion: 1 },
+    apiPatchPlan: {
+      desiredRoleSequence: ['summary'],
+      preservedBlockIds: ['approved-callout'],
+    },
+    source: { documentToken: 'source-doc' },
+  }), {
+    createdDocument: { token: 'copy-doc' },
+    patchedDocument: { preservedBlockIds: ['copy-callout'] },
+  });
+
+  assert.equal(verification.ok, true);
+});
+
 test('FeishuOperationalVerifier rejects malformed code directives and HTML audience tags inside code', async () => {
   const blocks = [
     {

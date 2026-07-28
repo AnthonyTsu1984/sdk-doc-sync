@@ -182,6 +182,48 @@ test('readBlocks preserves raw reference-synced block IDs for immutable patch pr
   assert.deepEqual(actual[0].children, ['summary', 'reference-wrapper']);
 });
 
+test('readBlocks returns document blocks after a rate-limited fetch retry', async (t) => {
+  const converter = new FeishuToMarkdown({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: null,
+  });
+  const waits = [];
+  const pageBlock = {
+    block_id: 'page',
+    block_type: 1,
+    children: ['summary'],
+  };
+  let attempts = 0;
+
+  converter.tokenFetcher = { token: async () => 'tenant-token' };
+  converter.__wait = async (duration) => waits.push(duration);
+  t.mock.method(globalThis, 'fetch', async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return {
+        status: 429,
+        headers: { get: (name) => name === 'x-ogw-ratelimit-reset' ? '0.25' : null },
+        json: async () => ({ code: 99991400 }),
+      };
+    }
+    return {
+      status: 200,
+      headers: { get: () => null },
+      json: async () => ({
+        code: 0,
+        data: { items: [pageBlock], has_more: false },
+      }),
+    };
+  });
+
+  const actual = await converter.readBlocks('doc-token');
+
+  assert.deepEqual(actual, [pageBlock]);
+  assert.equal(attempts, 2);
+  assert.deepEqual(waits, [250]);
+});
+
 test('reference-synced expansion appends each source descendant once', async (t) => {
   suppressDebugLogs(t);
   const converter = new FeishuToMarkdown({

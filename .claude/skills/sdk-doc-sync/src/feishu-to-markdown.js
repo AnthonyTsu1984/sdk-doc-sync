@@ -245,9 +245,10 @@ class FeishuToMarkdown extends larkDocWriter {
 
             return blocks;
         } else if (status == 429) {
-            const timeout = headers['x-ogw-ratelimit-reset']
-            await this.__wait(timeout * 1000)
-            await this.__fetch_doc_blocks(document_id, page_token, blocks)
+            const reset = Number(headers?.get?.('x-ogw-ratelimit-reset'))
+            const timeout = Number.isFinite(reset) && reset >= 0 ? reset * 1000 : 1000
+            await this.__wait(timeout)
+            return await this.__fetch_doc_blocks(document_id, page_token, blocks)
         } else {
             return null;
         }

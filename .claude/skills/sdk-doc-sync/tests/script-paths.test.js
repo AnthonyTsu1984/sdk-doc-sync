@@ -38,6 +38,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, '');
   assert.deepEqual(result.stdout.trim().split('\n'), [
+    '.claude/skills/sdk-doc-sync/tests/acceptance-finalizer.test.js',
     '.claude/skills/sdk-doc-sync/tests/agent-harness.test.js',
     '.claude/skills/sdk-doc-sync/tests/api-section-model.test.js',
     '.claude/skills/sdk-doc-sync/tests/audience.test.js',

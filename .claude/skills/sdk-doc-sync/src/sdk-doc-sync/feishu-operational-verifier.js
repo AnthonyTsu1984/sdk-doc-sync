@@ -121,7 +121,10 @@ class FeishuOperationalVerifier extends SyncVerifier {
           });
         }
         const actualBlockIds = new Set(model.topLevelBlockIds);
-        for (const blockId of plan.apiPatchPlan?.preservedBlockIds || []) {
+        const preservedBlockIds = execution.patchedDocument?.preservedBlockIds
+          || plan.apiPatchPlan?.preservedBlockIds
+          || [];
+        for (const blockId of preservedBlockIds) {
           if (!actualBlockIds.has(blockId)) {
             semanticErrors.push({ code: 'PRESERVED_BLOCK_MISSING', blockId });
           }

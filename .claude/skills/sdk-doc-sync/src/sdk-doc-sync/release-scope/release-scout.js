@@ -122,12 +122,19 @@ function directSourceEvidence(item, revision, changedFiles) {
   const changed = new Set(changedFiles || []);
   return [...new Set([item.source.file, ...(item.relatedFiles || [])])]
     .filter((file) => changed.has(file))
-    .map((file) => ({
-      kind: 'source',
-      locator: `${file}:${item.source.line}`,
-      revision,
-      confidence: 'direct',
-    }));
+    .map((file) => file === item.source.file
+      ? {
+        kind: 'source',
+        locator: `${file}:${item.source.line}`,
+        revision,
+        confidence: 'direct',
+      }
+      : {
+        kind: 'source',
+        locator: file,
+        revision,
+        confidence: 'related',
+      });
 }
 
 function hasAmbiguousDocumentationOwnership(actions) {

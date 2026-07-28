@@ -106,9 +106,9 @@ function validateReleaseScope(scope) {
     requireString(`$.actions[${index}].canonicalSlug`, action.canonicalSlug);
     requireString(`$.actions[${index}].symbol`, action.symbol);
     requireString(`$.actions[${index}].reason`, action.reason);
-    if (!isObject(action.documentationOwnership)) {
+    if (action.documentationOwnership !== undefined && !isObject(action.documentationOwnership)) {
       errors.push({ path: `$.actions[${index}].documentationOwnership`, message: 'must be an object' });
-    } else {
+    } else if (action.documentationOwnership !== undefined) {
       const ownership = action.documentationOwnership;
       const ownershipPath = `$.actions[${index}].documentationOwnership`;
       const declaredOwners = [];

@@ -46,6 +46,13 @@ test('release-scope schema accepts the Python v2.6 golden artifact', () => {
   assert.deepEqual(validation, { valid: true, errors: [] });
 });
 
+test('release-scope schema accepts historical v1 actions without documentation ownership', () => {
+  const scope = readFixture('python-v26-expected.json');
+  for (const action of scope.actions) delete action.documentationOwnership;
+
+  assert.deepEqual(validateReleaseScope(scope), { valid: true, errors: [] });
+});
+
 test('skill instructions forbid synthetic merge proposals from stale grouping artifacts', () => {
   const skillText = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
   assert.equal(skillText.includes('merge into one doc action'), false);

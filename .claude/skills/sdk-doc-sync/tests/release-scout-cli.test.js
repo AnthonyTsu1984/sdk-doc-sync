@@ -196,9 +196,9 @@ test('runReleaseScout preserves changed related source evidence and blocks ambig
   assert.equal(scope.actions[0].documentationOwnership.classification, 'ambiguous');
   assert.deepEqual(scope.actions[0].evidence, [{
     kind: 'source',
-    locator: 'src/changed-helper.ts:7',
+    locator: 'src/changed-helper.ts',
     revision: 'target-commit',
-    confidence: 'direct',
+    confidence: 'related',
   }]);
   assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP'));
 });

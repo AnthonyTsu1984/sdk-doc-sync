@@ -91,3 +91,96 @@ test('audit script has no Feishu client dependency', () => {
   assert.doesNotMatch(source, /require\([^)]*(?:feishu|lark|client)[^)]*\)/i);
   assert.doesNotMatch(source, /fetch\(/);
 });
+
+test('accepts targets as canonical method ownership', () => {
+  const audit = buildTypeOwnershipAudit({
+    records: [{ recordId: 'rec-helper', title: 'CreateRequest', documentToken: 'doc-helper' }],
+    ownership: {
+      language: 'java', track: 'v3.0.x',
+      entries: [{
+        typeName: 'CreateRequest',
+        documentationOwnership: {
+          classification: 'method_owned',
+          targets: [{ stableId: 'java:Collections:createCollection' }],
+        },
+      }],
+    },
+    ownerDocuments: [{ stableId: 'java:Collections:createCollection', embeddedTypeNames: ['CreateRequest'] }],
+  });
+
+  assert.deepEqual(audit.invalidSiblingRecords[0].owners, ['java:Collections:createCollection']);
+  assert.equal(audit.invalidSiblingRecords[0].embeddedInAllOwners, true);
+});
+
+test('rejects method-owned entries without owners and ambiguous ownership', () => {
+  const base = {
+    records: [],
+    ownership: { language: 'cpp', track: 'v2.6.x', entries: [] },
+    ownerDocuments: [],
+  };
+
+  assert.throws(() => buildTypeOwnershipAudit({
+    ...base,
+    ownership: { ...base.ownership, entries: [{ typeName: 'NoOwnerRequest', classification: 'method_owned' }] },
+  }), /Method-owned type NoOwnerRequest requires at least one owner/);
+  assert.throws(() => buildTypeOwnershipAudit({
+    ...base,
+    ownership: { ...base.ownership, entries: [{ typeName: 'UnknownResponse', classification: 'ambiguous' }] },
+  }), /Ambiguous documentation ownership for UnknownResponse/);
+});
+
+test('rejects duplicate audit identities and sorts equivalent inputs identically', () => {
+  const base = {
+    records: [{ recordId: 'rec-b', title: 'B', documentToken: 'doc-b' }, { recordId: 'rec-a', title: 'A', documentToken: 'doc-a' }],
+    ownership: {
+      language: 'go', track: 'v2.6.x',
+      entries: [
+        { typeName: 'B', classification: 'method_owned', owners: [{ stableId: 'go:Client:B' }] },
+        { typeName: 'A', classification: 'method_owned', targets: [{ stableId: 'go:Client:A' }] },
+      ],
+    },
+    ownerDocuments: [
+      { stableId: 'go:Client:B', embeddedTypeNames: ['B'] },
+      { stableId: 'go:Client:A', embeddedTypeNames: ['A'] },
+    ],
+  };
+  const reordered = {
+    ...base,
+    records: [...base.records].reverse(),
+    ownership: { ...base.ownership, entries: [...base.ownership.entries].reverse() },
+    ownerDocuments: [...base.ownerDocuments].reverse(),
+  };
+
+  assert.deepEqual(buildTypeOwnershipAudit(base), buildTypeOwnershipAudit(reordered));
+  assert.throws(() => buildTypeOwnershipAudit({
+    ...base,
+    ownership: { ...base.ownership, entries: [...base.ownership.entries, { typeName: 'A', classification: 'standalone' }] },
+  }), /Duplicate ownership type name: A/);
+  assert.throws(() => buildTypeOwnershipAudit({
+    ...base,
+    ownerDocuments: [...base.ownerDocuments, { stableId: 'go:Client:A', embeddedTypeNames: [] }],
+  }), /Duplicate owner document stableId: go:Client:A/);
+});
+
+test('CLI refuses direct and symlink-equivalent output input collisions', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'type-ownership-audit-collision-'));
+  const records = path.join(directory, 'records.json');
+  const ownership = path.join(directory, 'ownership.json');
+  const ownerDocuments = path.join(directory, 'owner-documents.json');
+  const outputSymlink = path.join(directory, 'output.json');
+  fs.writeFileSync(records, '[]');
+  fs.writeFileSync(ownership, JSON.stringify({ language: 'cpp', track: 'v2.6.x', entries: [] }));
+  fs.writeFileSync(ownerDocuments, '[]');
+  fs.symlinkSync(ownership, outputSymlink);
+
+  for (const output of [records, outputSymlink]) {
+    const result = spawnSync(process.execPath, [scriptPath,
+      '--records', records,
+      '--ownership', ownership,
+      '--owner-documents', ownerDocuments,
+      '--output', output,
+    ], { encoding: 'utf8' });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /must not overwrite an input path/);
+  }
+});

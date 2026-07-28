@@ -44,13 +44,27 @@ function ownerStableId(owner) {
 
 function ownerDocumentIndex(ownerDocuments) {
   const documents = listFrom(ownerDocuments, 'ownerDocuments');
-  return new Map(documents.map((document) => [document.stableId, document]));
+  const index = new Map();
+  for (const document of documents) {
+    if (index.has(document.stableId)) {
+      throw new TypeError(`Duplicate owner document stableId: ${document.stableId}`);
+    }
+    index.set(document.stableId, document);
+  }
+  return index;
 }
 
 function stableOwners(entry) {
-  const owners = entry.owners || entry.documentationOwnership?.owners || [];
-  if (!Array.isArray(owners)) throw new TypeError(`Owners for ${entry.typeName || entry.title} must be an array`);
-  return [...new Set(owners.map(ownerStableId).filter(Boolean))].sort();
+  const ownerLists = [
+    entry.owners,
+    entry.targets,
+    entry.documentationOwnership?.owners,
+    entry.documentationOwnership?.targets,
+  ].filter((owners) => owners !== undefined);
+  for (const owners of ownerLists) {
+    if (!Array.isArray(owners)) throw new TypeError(`Owners for ${entry.typeName || entry.title} must be an array`);
+  }
+  return [...new Set(ownerLists.flat().map(ownerStableId).filter(Boolean))].sort();
 }
 
 function typeNameFor(entry) {
@@ -58,14 +72,55 @@ function typeNameFor(entry) {
 }
 
 function compareRecords(left, right) {
-  return [left.recordId, left.title, left.documentToken].join('\u0000')
-    .localeCompare([right.recordId, right.title, right.documentToken].join('\u0000'));
+  const leftKey = [left.recordId, left.title, left.documentToken].join('\u0000');
+  const rightKey = [right.recordId, right.title, right.documentToken].join('\u0000');
+  return leftKey < rightKey ? -1 : leftKey > rightKey ? 1 : 0;
+}
+
+function ownershipClassification(entry) {
+  return entry.classification || entry.documentationOwnership?.classification;
+}
+
+function ownershipIndex(entries) {
+  const index = new Map();
+  for (const entry of entries) {
+    const typeName = typeNameFor(entry);
+    if (index.has(typeName)) throw new TypeError(`Duplicate ownership type name: ${typeName}`);
+    const classification = ownershipClassification(entry);
+    if (classification === 'ambiguous') throw new TypeError(`Ambiguous documentation ownership for ${typeName}`);
+    if (classification === 'method_owned' && stableOwners(entry).length === 0) {
+      throw new TypeError(`Method-owned type ${typeName} requires at least one owner`);
+    }
+    index.set(typeName, entry);
+  }
+  return index;
+}
+
+function canonicalPath(filePath) {
+  const parts = [];
+  let current = path.resolve(filePath);
+  while (!fs.existsSync(current)) {
+    const parent = path.dirname(current);
+    if (parent === current) return path.resolve(filePath);
+    parts.unshift(path.basename(current));
+    current = parent;
+  }
+  return path.join(fs.realpathSync(current), ...parts);
+}
+
+function assertDistinctOutput(args) {
+  const outputPath = canonicalPath(args.output);
+  for (const inputName of ['records', 'ownership', 'ownerDocuments']) {
+    if (outputPath === canonicalPath(args[inputName])) {
+      throw new Error(`--output must not overwrite an input path: ${args[inputName]}`);
+    }
+  }
 }
 
 function buildTypeOwnershipAudit({ records, ownership, ownerDocuments }) {
   const recordList = listFrom(records, 'records');
   const entries = ownershipEntries(ownership);
-  const ownershipByTypeName = new Map(entries.map((entry) => [typeNameFor(entry), entry]));
+  const ownershipByTypeName = ownershipIndex(entries);
   const documentsByOwner = ownerDocumentIndex(ownerDocuments);
   const invalidSiblingRecords = recordList.flatMap((record) => {
     const typeName = record.typeName || record.title;
@@ -94,6 +149,7 @@ function buildTypeOwnershipAudit({ records, ownership, ownerDocuments }) {
 
 function main(argv = process.argv) {
   const args = parseArgs(argv);
+  assertDistinctOutput(args);
   const audit = buildTypeOwnershipAudit({
     records: JSON.parse(fs.readFileSync(args.records, 'utf8')),
     ownership: JSON.parse(fs.readFileSync(args.ownership, 'utf8')),
@@ -113,4 +169,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { buildTypeOwnershipAudit, main, parseArgs };
+module.exports = { assertDistinctOutput, buildTypeOwnershipAudit, main, parseArgs };

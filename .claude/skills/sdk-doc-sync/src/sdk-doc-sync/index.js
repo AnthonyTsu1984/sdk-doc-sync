@@ -378,12 +378,20 @@ class SdkDocSync {
 
     _applyReleaseScopeCategoryMap() {
         if (!this.releaseScope) return;
-        const scopedCategoryMap = Object.fromEntries(this.releaseScope.actions.flatMap((action) =>
-            this._releaseScopeSourceVariants(action).map((variant) => [
-                variant.symbol.replace('.', '-'),
-                action.canonicalSlug,
-            ]),
-        ));
+        const scopedCategoryMap = {};
+        for (const action of this.releaseScope.actions) {
+            for (const variant of this._releaseScopeSourceVariants(action)) {
+                const rawSlug = variant.symbol.replace('.', '-');
+                const existing = scopedCategoryMap[rawSlug];
+                if (!existing) {
+                    scopedCategoryMap[rawSlug] = action.canonicalSlug;
+                } else if (Array.isArray(existing)) {
+                    if (!existing.includes(action.canonicalSlug)) existing.push(action.canonicalSlug);
+                } else if (existing !== action.canonicalSlug) {
+                    scopedCategoryMap[rawSlug] = [existing, action.canonicalSlug];
+                }
+            }
+        }
         this.diffEngine.categoryMap = { ...this.diffEngine.categoryMap, ...scopedCategoryMap };
         this.diffEngine._categoryMapLower = Object.fromEntries(
             Object.entries(this.diffEngine.categoryMap).map(([key, value]) => [key.toLowerCase(), value]),
@@ -402,6 +410,7 @@ class SdkDocSync {
                 stableId: scoped.stableId,
                 reason: scoped.reason || action.reason,
                 planningContext: scoped.planningContext || action.planningContext,
+                documentationOwnership: scoped.documentationOwnership || action.documentationOwnership,
                 releaseScopeAction: scoped,
             };
         });

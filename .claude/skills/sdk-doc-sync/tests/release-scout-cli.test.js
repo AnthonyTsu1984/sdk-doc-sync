@@ -1575,6 +1575,92 @@ class MILVUS_SDK_API OptimizeResponse {
   );
 });
 
+test('CppScanner treats mutable public result references as adapter response outputs', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-public-result-output-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    Search(const SearchArguments& arguments, SearchResults& results) = 0;
+    virtual Status
+    Insert(const InsertArguments& arguments, DmlResults& results) = 0;
+    virtual Status
+    RunAnalyzer(const RunAnalyzerArguments& arguments, AnalyzerResults& results) = 0;
+    virtual Status
+    CreateCollection(const CollectionInfo& info) = 0;
+};
+}
+`);
+  for (const name of ['SearchArguments', 'InsertArguments', 'RunAnalyzerArguments', 'CollectionInfo']) {
+    writeText(path.join(repo, 'src', 'include', 'milvus', 'types', `${name}.h`), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API ${name} {
+ public:
+    const std::string& CollectionName() const;
+};
+}
+`);
+  }
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'SearchResults.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchResults {
+ public:
+    const std::vector<float>& Scores() const;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'DmlResults.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API DmlResults {
+ public:
+    int64_t InsertCount() const;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'AnalyzerResults.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API AnalyzerResults {
+ public:
+    const std::vector<std::string>& Tokens() const;
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const cases = [
+    ['Search', 'SearchArguments', 'SearchResults', 'Scores'],
+    ['Insert', 'InsertArguments', 'DmlResults', 'InsertCount'],
+    ['RunAnalyzer', 'RunAnalyzerArguments', 'AnalyzerResults', 'Tokens'],
+  ];
+  for (const [methodName, inputType, outputType, outputField] of cases) {
+    const symbol = symbols.find((candidate) => candidate.name === methodName);
+    assert.equal(symbol.requestClass, null);
+    assert.equal(symbol.responseClass, outputType);
+    assert.deepEqual(symbol.params.map((param) => param.type), [`const ${inputType}&`]);
+    assert.ok(symbol.embeddedTypes.some((type) => type.name === outputType));
+
+    const doc = cppAdapter.toReferenceDocument(symbol, {
+      category: symbol.parentClass,
+      repository: 'milvus-io/milvus-sdk-cpp',
+      revision: 'v2.6.4',
+      summary: `Runs ${methodName}.`,
+      examples: [],
+    });
+    assert.deepEqual(doc.requestVariants[0].inputs.map((input) => input.type.display), [`const ${inputType}&`]);
+    assert.equal(doc.result.fields[0].type.display, outputType);
+    assert.deepEqual(doc.result.fields[0].children.map((field) => field.name), [outputField]);
+  }
+  const createCollection = symbols.find((candidate) => candidate.name === 'CreateCollection');
+  assert.equal(createCollection.responseClass, null);
+  assert.deepEqual(createCollection.params.map((param) => param.type), ['const CollectionInfo&']);
+});
+
 test('CppScanner keeps a template alias rooted at Iterator with its nested QueryResults type', async () => {
   const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-query-iterator-alias-'));
   writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `

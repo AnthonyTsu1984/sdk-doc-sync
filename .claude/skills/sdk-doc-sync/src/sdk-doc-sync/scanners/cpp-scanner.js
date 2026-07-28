@@ -253,9 +253,9 @@ class CppScanner extends BaseScanner {
                         requestClass = reqMatch[1];
                         continue;
                     }
-                    const resMatch = part.match(/(\w+(?:Response|Ptr))\s*&/);
-                    if (resMatch) {
-                        responseClass = resMatch[1];
+                    const outputClass = this._outputClassFromParameter(part);
+                    if (outputClass) {
+                        responseClass = outputClass;
                         continue;
                     }
                     // Plain param (for non-request methods)
@@ -302,6 +302,15 @@ class CppScanner extends BaseScanner {
         }
 
         return symbols;
+    }
+
+    _outputClassFromParameter(value) {
+        const declaration = value.replace(/\s*=\s*[\s\S]*$/, '').trim();
+        if (/^const\s+/.test(declaration)) return null;
+        const match = declaration.match(/^([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*&\s+[A-Za-z_]\w*$/);
+        if (!match) return null;
+        const typeName = match[1].split('::').pop();
+        return /(?:Response|Results?|Ptr|Task|Info)$/.test(typeName) ? typeName : null;
     }
 
     _extractBulkImportMethods(content, filePath) {

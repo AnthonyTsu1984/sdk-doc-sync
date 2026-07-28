@@ -187,6 +187,7 @@ test('C++ identity maps canonically normalize helper-only deltas on every affect
     ['Collections.DescribeReplicas', 'Collections', 'DescribeReplicas'],
     ['Vector.Get', 'Vector', 'Get'],
     ['Vector.Delete', 'Vector', 'Delete'],
+    ['Vector.QueryIterator', 'Vector', 'QueryIterator'],
     ['Vector.RunAnalyzer', 'Vector', 'RunAnalyzer'],
   ];
 
@@ -1452,6 +1453,74 @@ class MILVUS_SDK_API OptimizeResponse {
     optimize.embeddedTypes.find((type) => type.name === 'OptimizeResponse').accessors.map((member) => member.name),
     ['StatusText'],
   );
+});
+
+test('CppScanner keeps a template alias rooted at Iterator with its nested QueryResults type', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-query-iterator-alias-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    QueryIterator(QueryIteratorRequest& request, QueryIteratorPtr& response) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'QueryIteratorRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API QueryIteratorRequest {
+ public:
+    QueryIteratorRequest&
+    WithCollectionName(const std::string& collection_name);
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'Iterator.h'), `
+#pragma once
+namespace milvus {
+template <typename T>
+class Iterator {
+ public:
+    virtual Status
+    Next(T& results) = 0;
+};
+using QueryIterator = Iterator<QueryResults>;
+using QueryIteratorPtr = std::shared_ptr<QueryIterator>;
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'QueryResults.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API QueryResults {
+ public:
+    uint64_t
+    GetRowCount() const;
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const queryIterator = symbols.find((symbol) => symbol.name === 'QueryIterator');
+  const iterator = queryIterator.embeddedTypes.find((type) => type.name === 'Iterator');
+  const queryResults = queryIterator.embeddedTypes.find((type) => type.name === 'QueryResults');
+
+  assert.deepEqual(iterator.aliases, ['QueryIterator', 'QueryIteratorPtr']);
+  assert.deepEqual(iterator.accessors.map((member) => member.name), ['Next']);
+  assert.deepEqual(iterator.accessors[0].referencedTypes, ['QueryResults']);
+  assert.deepEqual(queryResults.aliases, []);
+
+  const doc = cppAdapter.toReferenceDocument(queryIterator, {
+    category: 'Vector',
+    repository: 'milvus-io/milvus-sdk-cpp',
+    revision: 'v2.6.4',
+    summary: 'Iterates over query results.',
+    examples: [],
+  });
+  const response = doc.result.fields[0];
+  assert.deepEqual(response.children.map((field) => field.name), ['Next']);
+  assert.deepEqual(response.children[0].children.map((field) => field.name), ['GetRowCount']);
 });
 
 test('CppScanner never treats Add-prefixed request constructors as builders', async () => {

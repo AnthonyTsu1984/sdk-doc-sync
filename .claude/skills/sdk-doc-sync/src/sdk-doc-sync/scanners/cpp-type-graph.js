@@ -109,6 +109,60 @@ function parseParameters(value) {
   return parameters;
 }
 
+function splitTopLevel(value) {
+  const parts = [];
+  let start = 0;
+  let angleDepth = 0;
+  for (let index = 0; index <= value.length; index += 1) {
+    const character = value[index];
+    if (character === '<') angleDepth += 1;
+    else if (character === '>' && angleDepth > 0) angleDepth -= 1;
+    if ((character === ',' && angleDepth === 0) || index === value.length) {
+      const part = value.slice(start, index).trim();
+      if (part) parts.push(part);
+      start = index + 1;
+    }
+  }
+  return parts;
+}
+
+function templateParametersBefore(content, index) {
+  const prefix = content.slice(Math.max(0, index - 512), index);
+  const match = prefix.match(/template\s*<([^;{}]*)>\s*$/);
+  if (!match) return [];
+  return splitTopLevel(match[1]).map((declaration) => (
+    declaration.replace(/\s*=\s*[\s\S]*$/, '').match(/([A-Za-z_]\w*)\s*$/)?.[1]
+  )).filter(Boolean);
+}
+
+function templateArgumentsAt(expression, endIndex) {
+  let openingIndex = endIndex;
+  while (/\s/.test(expression[openingIndex] || '')) openingIndex += 1;
+  if (expression[openingIndex] !== '<') return [];
+  let depth = 0;
+  for (let index = openingIndex; index < expression.length; index += 1) {
+    if (expression[index] === '<') depth += 1;
+    else if (expression[index] === '>') {
+      depth -= 1;
+      if (depth === 0) return splitTopLevel(expression.slice(openingIndex + 1, index));
+    }
+  }
+  return [];
+}
+
+function mergeBindings(target, source) {
+  for (const [typeName, parameters] of source) {
+    if (!target.has(typeName)) target.set(typeName, new Map());
+    const targetParameters = target.get(typeName);
+    for (const [parameter, typeNames] of parameters) {
+      targetParameters.set(parameter, [...new Set([
+        ...(targetParameters.get(parameter) || []),
+        ...typeNames,
+      ])]);
+    }
+  }
+}
+
 function normalizeDeclaration(value) {
   return value
     .replace(/\[\[[^\]]+\]\]\s*/g, '')
@@ -330,6 +384,7 @@ class CppTypeGraph {
               || (kind === 'struct' && !/^(?:private|protected)\b/.test(base)))
           : [],
         baseClasses: [],
+        templateParameters: templateParametersBefore(content, classMatch.index),
         aliases: [],
         relatedFiles: [],
         fields: members.fields,
@@ -342,41 +397,72 @@ class CppTypeGraph {
   }
 
   _identifierCandidates(expression) {
-    return String(expression || '')
-      .match(/[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*/g)
-      ?.map((name) => name.split('::').at(-1)) || [];
+    return this._identifierOccurrences(expression).map((occurrence) => occurrence.name);
+  }
+
+  _identifierOccurrences(expression) {
+    return [...String(expression || '').matchAll(/[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*/g)]
+      .map((match) => ({
+        name: match[0].split('::').at(-1),
+        endIndex: match.index + match[0].length,
+      }));
+  }
+
+  _resolveExpression(expression, seen = new Set()) {
+    const names = [];
+    const bindings = new Map();
+    for (const occurrence of this._identifierOccurrences(expression)) {
+      const candidate = occurrence.name;
+      if (this.nodes.has(candidate)) {
+        names.push(candidate);
+        const node = this.nodes.get(candidate);
+        const argumentsList = templateArgumentsAt(String(expression || ''), occurrence.endIndex);
+        for (let index = 0; index < Math.min(node.templateParameters.length, argumentsList.length); index += 1) {
+          const resolvedArgument = this._resolveExpression(argumentsList[index], new Set(seen));
+          if (!bindings.has(candidate)) bindings.set(candidate, new Map());
+          bindings.get(candidate).set(node.templateParameters[index], resolvedArgument.names);
+          names.push(...resolvedArgument.names);
+          mergeBindings(bindings, resolvedArgument.bindings);
+        }
+      } else if (this.aliases.has(candidate)) {
+        const resolvedAlias = this._resolveAlias(candidate, new Set(seen));
+        if (resolvedAlias.root) names.push(resolvedAlias.root, ...resolvedAlias.referencedTypes);
+        mergeBindings(bindings, resolvedAlias.bindings);
+      }
+    }
+    return { names: [...new Set(names)], bindings };
   }
 
   _resolveAlias(aliasName, seen = new Set()) {
-    if (seen.has(aliasName)) return [];
+    if (seen.has(aliasName)) return { root: null, referencedTypes: [], bindings: new Map() };
     seen.add(aliasName);
     const alias = this.aliases.get(aliasName);
-    if (!alias) return this.nodes.has(aliasName) ? [aliasName] : [];
-    const resolved = [];
-    for (const candidate of this._identifierCandidates(alias.expression)) {
-      if (this.nodes.has(candidate)) resolved.push(candidate);
-      else if (this.aliases.has(candidate)) resolved.push(...this._resolveAlias(candidate, new Set(seen)));
+    if (!alias) {
+      return {
+        root: this.nodes.has(aliasName) ? aliasName : null,
+        referencedTypes: [],
+        bindings: new Map(),
+      };
     }
-    return [...new Set(resolved)];
+    const resolved = this._resolveExpression(alias.expression, seen);
+    return {
+      root: resolved.names[0] || null,
+      referencedTypes: resolved.names.slice(1),
+      bindings: resolved.bindings,
+    };
   }
 
   resolveTypeNames(expression) {
-    const resolved = [];
-    for (const candidate of this._identifierCandidates(expression)) {
-      if (this.nodes.has(candidate)) resolved.push(candidate);
-      else if (this.aliases.has(candidate)) resolved.push(...this._resolveAlias(candidate));
-    }
-    return [...new Set(resolved)];
+    return this._resolveExpression(expression).names;
   }
 
   _finalize() {
     for (const aliasName of [...this.aliases.keys()].sort()) {
-      for (const targetName of this._resolveAlias(aliasName)) {
-        const node = this.nodes.get(targetName);
-        if (node) {
-          node.aliases.push(aliasName);
-          node.relatedFiles.push(this.aliases.get(aliasName).filePath);
-        }
+      const targetName = this._resolveAlias(aliasName).root;
+      const node = this.nodes.get(targetName);
+      if (node) {
+        node.aliases.push(aliasName);
+        node.relatedFiles.push(this.aliases.get(aliasName).filePath);
       }
     }
     for (const node of this.nodes.values()) {
@@ -433,6 +519,7 @@ class CppTypeGraph {
 
   embeddedTypesFor(seedExpressions) {
     const visited = new Set();
+    const bindings = new Map();
     const visit = (name) => {
       if (visited.has(name)) return;
       const node = this.nodes.get(name);
@@ -441,12 +528,22 @@ class CppTypeGraph {
       for (const referenced of node.referencedTypes) visit(referenced);
     };
     for (const expression of seedExpressions.filter(Boolean)) {
-      for (const name of this.resolveTypeNames(expression)) visit(name);
+      const resolved = this._resolveExpression(expression);
+      mergeBindings(bindings, resolved.bindings);
+      for (const name of resolved.names) visit(name);
     }
     return [...visited]
       .sort((left, right) => left.localeCompare(right))
       .map((name) => {
         const node = this.nodes.get(name);
+        const nodeBindings = bindings.get(name) || new Map();
+        const specialize = (member) => {
+          const referencedTypes = new Set(member.referencedTypes || []);
+          for (const candidate of this._identifierCandidates(`${member.type || ''} ${member.fullArgStr || ''}`)) {
+            for (const boundType of nodeBindings.get(candidate) || []) referencedTypes.add(boundType);
+          }
+          return { ...member, referencedTypes: [...referencedTypes].sort() };
+        };
         return {
           name: node.name,
           kind: node.kind,
@@ -455,10 +552,13 @@ class CppTypeGraph {
           filePath: node.filePath,
           lineNumber: node.lineNumber,
           baseClasses: [...node.baseClasses],
-          fields: node.fields.map((field) => ({ ...field })),
-          builders: node.builders.filter((builder) => builder.public && !builder.deleted).map((builder) => ({ ...builder })),
-          accessors: node.accessors.map((accessor) => ({ ...accessor })),
-          referencedTypes: [...node.referencedTypes],
+          fields: node.fields.map(specialize),
+          builders: node.builders.filter((builder) => builder.public && !builder.deleted).map(specialize),
+          accessors: node.accessors.map(specialize),
+          referencedTypes: [...new Set([
+            ...node.referencedTypes,
+            ...[...nodeBindings.values()].flat(),
+          ])].sort(),
         };
       });
   }

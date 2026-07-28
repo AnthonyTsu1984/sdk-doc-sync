@@ -175,6 +175,11 @@
       "canonicalSlug": "Vector-Delete",
       "category": "Vector"
     },
+    "Vector.QueryIterator": {
+      "stableId": "cpp:Vector:QueryIterator",
+      "canonicalSlug": "Vector-QueryIterator",
+      "category": "Vector"
+    },
     "Vector.RunAnalyzer": {
       "stableId": "cpp:Vector:RunAnalyzer",
       "canonicalSlug": "Vector-RunAnalyzer",

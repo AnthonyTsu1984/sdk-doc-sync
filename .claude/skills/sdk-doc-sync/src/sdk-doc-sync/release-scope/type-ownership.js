@@ -4,6 +4,14 @@ const CLASSIFICATIONS = new Set(['standalone', 'method_owned', 'ambiguous']);
 const AMBIGUOUS_KINDS = new Set(['class', 'struct', 'interface']);
 const STANDALONE_KINDS = new Set(['method', 'function', 'command', 'enum']);
 
+class DocumentationOwnershipError extends TypeError {
+  constructor(code, message) {
+    super(message);
+    this.name = 'DocumentationOwnershipError';
+    this.code = code;
+  }
+}
+
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
@@ -28,8 +36,14 @@ function owner(owner, index) {
 
 function ownersFor(entry) {
   const ownership = entry?.documentationOwnership || {};
-  const owners = ownership.owners || entry?.owners || entry?.targets || [];
-  return owners.map(owner);
+  const collections = [ownership.owners, ownership.targets, entry?.owners, entry?.targets]
+    .filter((owners) => owners !== undefined);
+  for (const owners of collections) {
+    if (!Array.isArray(owners)) {
+      throw new DocumentationOwnershipError('INVALID_DOCUMENTATION_OWNERS', 'Documentation owners must be an array');
+    }
+  }
+  return collections.flat().map(owner);
 }
 
 function explicitClassification(entry) {
@@ -45,6 +59,12 @@ function classifyDocumentationOwnership({ identityMapEntry = null, symbol = null
 
   const owners = ownersFor(entry);
   const kind = String(symbol?.kind || '').toLowerCase();
+  if (classification === 'standalone' && owners.length > 0) {
+    throw new DocumentationOwnershipError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      'Standalone documentation cannot retain known method owners',
+    );
+  }
   const resolvedClassification = classification
     || (owners.length > 0 ? 'method_owned' : null)
     || (identityMapEntry ? 'standalone' : null)
@@ -70,6 +90,7 @@ module.exports = {
   CLASSIFICATIONS,
   AMBIGUOUS_KINDS,
   STANDALONE_KINDS,
+  DocumentationOwnershipError,
   classifyDocumentationOwnership,
   ownershipFor,
 };

@@ -160,6 +160,15 @@ test('SyncPlanner blocks ambiguous and standalone method-owned document actions'
     }), planningContext()),
     (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
   );
+  assert.throws(
+    () => planner.planAction(updateAction({
+      documentationOwnership: {
+        classification: 'standalone',
+        owners: [owner],
+      },
+    }), planningContext()),
+    (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
+  );
 });
 
 test('SyncPlanner rejects CREATE when an existing release record is present', () => {

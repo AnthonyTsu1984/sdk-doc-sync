@@ -149,6 +149,22 @@ test('release-scope schema requires method-owned actions to select a declared ow
   ]);
 });
 
+test('release-scope schema rejects standalone actions that still declare malformed owners', () => {
+  const scope = readFixture('python-v26-expected.json');
+  scope.actions[0].documentationOwnership = {
+    classification: 'standalone',
+    owners: [{ stableId: '', canonicalSlug: 'Management-compact' }],
+  };
+  const validation = validateReleaseScope(scope);
+
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation.errors.map((error) => error.path), [
+    '$.actions[0].documentationOwnership.owners[0].stableId',
+    '$.actions[0].documentationOwnership.owners[0].category',
+    '$.actions[0].documentationOwnership.classification',
+  ]);
+});
+
 test('createReleaseScope sorts files, actions, and diagnostics deterministically', () => {
   const scope = createReleaseScope({
     language: 'python',
@@ -477,6 +493,36 @@ test('identity normalizer blocks unmapped helper-like types instead of inventing
   assert.equal(normalized.diagnostic.code, 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP');
 });
 
+test('identity normalizer rejects explicit standalone mappings that retain method owners', () => {
+  const owner = {
+    stableId: 'node:Collections:createCollection',
+    canonicalSlug: 'Collections-createCollection',
+    category: 'Collections',
+  };
+  const map = {
+    schemaVersion: 1,
+    language: 'node',
+    track: 'v2.6.x',
+    defaultCategory: 'Default',
+    symbols: {
+      RequestEnvelope: {
+        classification: 'standalone',
+        targets: [owner],
+      },
+    },
+  };
+
+  assert.throws(
+    () => normalizeDeltas({
+      type: 'CREATE',
+      symbolIdentity: 'RequestEnvelope',
+      symbol: { name: 'RequestEnvelope', kind: 'class', filePath: 'src/request-envelope.ts', lineNumber: 7 },
+      reason: 'new public class',
+    }, map),
+    (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
+  );
+});
+
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
   const left = {
     actions: [{
@@ -660,6 +706,39 @@ test('reviewed release context builder rejects ambiguous ownership before candid
   assert.throws(
     () => buildReviewedReleaseContext({ releaseScope, candidateSpec: {}, sdkReference: '' }),
     (error) => error.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+  );
+});
+
+test('reviewed release context builder rejects standalone actions that retain known owners', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:RequestEnvelope',
+      canonicalSlug: 'Vector-RequestEnvelope',
+      symbol: 'RequestEnvelope',
+      source: { file: 'pymilvus/client/request_envelope.py', line: 12 },
+      reason: 'new public class',
+      documentationOwnership: {
+        classification: 'standalone',
+        owners: [{
+          stableId: 'python:Vector:search',
+          canonicalSlug: 'Vector-search',
+          category: 'Vector',
+        }],
+      },
+    }],
+  });
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: {}, sdkReference: '' }),
+    (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
   );
 });
 

@@ -147,14 +147,25 @@ function stableIdFrom(action) {
 function assertDocumentationOwnership(action, stableId) {
   const ownership = action.documentationOwnership;
   if (!ownership) return;
+  const owners = [
+    ...(Array.isArray(ownership.owners) ? ownership.owners : []),
+    ...(Array.isArray(ownership.targets) ? ownership.targets : []),
+  ];
+  const hasDeclaredOwners = ownership.owners !== undefined || ownership.targets !== undefined;
   if (ownership.classification === 'ambiguous') {
     throw new SyncPlanningError(
       'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
       `Documentation ownership is ambiguous for ${stableId}`,
     );
   }
+  if (ownership.classification === 'standalone' && (hasDeclaredOwners || owners.length > 0)) {
+    throw new SyncPlanningError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Standalone documentation cannot retain known method owners for ${stableId}`,
+    );
+  }
   if (ownership.classification !== 'method_owned') return;
-  const declaredOwner = (ownership.owners || []).some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+  const declaredOwner = owners.some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
   if (!declaredOwner || ownership.selectedOwnerStableId !== stableId) {
     throw new SyncPlanningError(
       'METHOD_OWNED_STANDALONE_FORBIDDEN',

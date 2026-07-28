@@ -179,14 +179,25 @@ function ownershipError(code, message) {
 function assertActionDocumentationOwnership(action) {
   const ownership = action.documentationOwnership;
   if (!ownership) return;
+  const owners = [
+    ...(Array.isArray(ownership.owners) ? ownership.owners : []),
+    ...(Array.isArray(ownership.targets) ? ownership.targets : []),
+  ];
+  const hasDeclaredOwners = ownership.owners !== undefined || ownership.targets !== undefined;
   if (ownership.classification === 'ambiguous') {
     throw ownershipError(
       'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
       `Release action ${action.canonicalSlug} has ambiguous documentation ownership`,
     );
   }
+  if (ownership.classification === 'standalone' && (hasDeclaredOwners || owners.length > 0)) {
+    throw ownershipError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Release action ${action.canonicalSlug} cannot be standalone while retaining known method owners`,
+    );
+  }
   if (ownership.classification !== 'method_owned') return;
-  const declaredOwner = (ownership.owners || []).some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+  const declaredOwner = owners.some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
   if (!declaredOwner || ownership.selectedOwnerStableId !== action.stableId) {
     throw ownershipError(
       'METHOD_OWNED_STANDALONE_FORBIDDEN',

@@ -497,14 +497,24 @@ class SdkDocSync {
                 continue;
             }
 
+            const existingIsHelperUpdate = existing.type === 'UPDATE'
+                && existing.documentationOwnership?.classification === 'method_owned';
+            const actionIsHelperUpdate = action.type === 'UPDATE'
+                && action.documentationOwnership?.classification === 'method_owned';
+            const existingIsStandaloneOwner = existing.documentationOwnership?.classification === 'standalone';
+            const actionIsStandaloneOwner = action.documentationOwnership?.classification === 'standalone';
+            const compatibleOwnerLifecycle = (existingIsHelperUpdate && actionIsStandaloneOwner)
+                || (actionIsHelperUpdate && existingIsStandaloneOwner);
             const conflictFields = [];
-            if (existing.type !== action.type) conflictFields.push('type');
+            if (existing.type !== action.type && !compatibleOwnerLifecycle) conflictFields.push('type');
             if (existing.stableId !== action.stableId) conflictFields.push('stableId');
             const existingOwnership = existing.documentationOwnership || {};
             const actionOwnership = action.documentationOwnership || {};
             if (existingOwnership.classification !== actionOwnership.classification
                 || existingOwnership.selectedOwnerStableId !== actionOwnership.selectedOwnerStableId) {
-                conflictFields.push('documentationOwnership.selectedOwnerStableId');
+                if (!compatibleOwnerLifecycle) {
+                    conflictFields.push('documentationOwnership.selectedOwnerStableId');
+                }
             }
             if (existing.planningContext !== undefined && action.planningContext !== undefined
                 && !isDeepStrictEqual(existing.planningContext, action.planningContext)) {
@@ -521,6 +531,15 @@ class SdkDocSync {
             this._appendUnique(existing.reasons, action.reasons || [action.reason].filter(Boolean));
             this._appendUnique(existing.evidence, action.evidence || []);
             this._appendUnique(existing.sourceVariants, action.sourceVariants || []);
+            if (existingIsHelperUpdate && actionIsStandaloneOwner) {
+                const aggregate = {
+                    reasons: existing.reasons,
+                    evidence: existing.evidence,
+                    sourceVariants: existing.sourceVariants,
+                    planningConflict: existing.planningConflict,
+                };
+                Object.assign(existing, action, aggregate);
+            }
             if (conflictFields.length > 0) {
                 const fields = [...new Set([
                     ...(existing.planningConflict?.details?.fields || []),

@@ -13,6 +13,7 @@ const {
   withJsonConsoleIsolation,
 } = require('../bin/sdk-doc-sync');
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { buildReviewedReleaseContext } = require('../scripts/build-reviewed-release-context');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -1332,6 +1333,289 @@ test('release-scope helper ownership consolidates two source helpers into one pl
     ['SearchHelper', 'FilterHelper'],
   ]);
   assert.ok(summary.diff.every((action) => action.reasons.includes('embedded helper surface changed')));
+});
+
+test('release-scope consolidation prefers a standalone owner lifecycle over helper-derived updates', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const planningContext = {
+    target: {
+      version: 'v2.6.x',
+      parentRecordId: 'parent-vector',
+      folderToken: 'folder-vector',
+      versionRootToken: 'root-v26',
+      ancestryVerified: true,
+    },
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v26',
+      tableId: 'table-v26',
+      parentRecordId: 'parent-vector',
+      criteria: { canonicalSlug: owner.canonicalSlug },
+    },
+  };
+  const helperOwnership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', scan: async () => [] },
+    indexReader: async () => [],
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    releaseScope: {
+      actions: [
+        {
+          type: 'UPDATE',
+          stableId: owner.stableId,
+          canonicalSlug: owner.canonicalSlug,
+          symbol: 'SearchRequest',
+          source: { file: 'pymilvus/client/search_request.py', line: 12 },
+          reason: 'new request helper',
+          sourceVariants: [{
+            stableId: owner.stableId,
+            canonicalSlug: owner.canonicalSlug,
+            symbol: 'SearchRequest',
+            source: { file: 'pymilvus/client/search_request.py', line: 12 },
+            reason: 'new request helper',
+            sourceDeltaType: 'CREATE',
+          }],
+          documentationOwnership: helperOwnership,
+          planningContext,
+        },
+        {
+          type: 'CREATE',
+          stableId: owner.stableId,
+          canonicalSlug: owner.canonicalSlug,
+          symbol: 'MilvusClient.search',
+          source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
+          reason: 'new public method',
+          documentationOwnership: { classification: 'standalone' },
+          planningContext,
+        },
+      ],
+    },
+    changedOnly: true,
+    dryRun: true,
+  });
+
+  const consolidated = sync._applyReleaseScopeDiffActions([
+    {
+      type: 'CREATE',
+      slug: owner.canonicalSlug,
+      symbol: {
+        name: 'SearchRequest',
+        parentClass: null,
+        lineNumber: 12,
+      },
+      reason: 'new public class',
+    },
+    {
+      type: 'CREATE',
+      slug: owner.canonicalSlug,
+      symbol: {
+        name: 'search',
+        parentClass: 'MilvusClient',
+        lineNumber: 372,
+      },
+      reason: 'new public method',
+    },
+  ]);
+
+  assert.equal(consolidated.length, 1);
+  assert.equal(consolidated[0].type, 'CREATE');
+  assert.equal(consolidated[0].planningConflict, undefined);
+  assert.deepEqual(consolidated[0].documentationOwnership, { classification: 'standalone' });
+  assert.deepEqual(consolidated[0].sourceVariants.map((variant) => variant.symbol), [
+    'SearchRequest',
+    'MilvusClient.search',
+  ]);
+  assert.equal(consolidated[0].sourceVariants[0].sourceDeltaType, 'CREATE');
+});
+
+test('reviewed helper ownership preserves every source variant through filtered-scope dry-run planning', async () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const ownership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const helpers = [
+    {
+      symbol: 'SearchRequest',
+      file: 'pymilvus/client/search_request.py',
+      line: 12,
+      reason: 'new request helper',
+      sourceDeltaType: 'CREATE',
+      evidence: [{ kind: 'source', locator: 'search_request.py:create', confidence: 'reviewed' }],
+    },
+    {
+      symbol: 'LegacySearchResult',
+      file: 'pymilvus/client/legacy_search_result.py',
+      line: 27,
+      reason: 'removed result helper',
+      sourceDeltaType: 'DEPRECATE',
+      evidence: [{ kind: 'source', locator: 'legacy_search_result.py:remove', confidence: 'reviewed' }],
+    },
+  ];
+  const releaseScope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: helpers.map((helper) => helper.file),
+    actions: helpers.map((helper) => ({
+      type: 'UPDATE',
+      stableId: owner.stableId,
+      canonicalSlug: owner.canonicalSlug,
+      symbol: helper.symbol,
+      source: { file: helper.file, line: helper.line },
+      reason: helper.reason,
+      evidence: helper.evidence,
+      sourceVariants: [{
+        stableId: owner.stableId,
+        canonicalSlug: owner.canonicalSlug,
+        symbol: helper.symbol,
+        source: { file: helper.file, line: helper.line },
+        reason: helper.reason,
+        evidence: helper.evidence,
+        sourceDeltaType: helper.sourceDeltaType,
+      }],
+      documentationOwnership: ownership,
+    })),
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'folder-vector' },
+    },
+    candidates: {
+      [owner.canonicalSlug]: {
+        category: 'Vector',
+        docIdentity: { ...owner, symbol: 'search' },
+        existingRecord: {
+          recordId: 'rec-search',
+          documentToken: 'doc-search',
+          parentRecordId: 'parent-vector',
+          placement: {
+            verified: true,
+            version: 'v2.6.x',
+            folderToken: 'folder-vector',
+            referencedByOlderVersions: false,
+          },
+        },
+        summary: 'Searches vectors in a collection.',
+        example: { code: 'client.search(collection_name="docs", data=[[0.1, 0.2]])' },
+      },
+    },
+  };
+
+  const reviewed = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+  assert.equal(reviewed.filteredScope.actions.length, 1);
+  assert.deepEqual(reviewed.filteredScope.actions[0].sourceVariants.map((variant) => [
+    variant.symbol,
+    variant.sourceDeltaType,
+  ]), [
+    ['SearchRequest', 'CREATE'],
+    ['LegacySearchResult', 'DEPRECATE'],
+  ]);
+  assert.deepEqual(reviewed.filteredScope.actions[0].evidence, helpers.flatMap((helper) => helper.evidence));
+  assert.deepEqual(reviewed.filteredScope.actions[0].reasons, helpers.map((helper) => helper.reason));
+  assert.deepEqual(reviewed.filteredScope.actions[0].documentationOwnership, ownership);
+  const reviewedContext = reviewed.referenceContext.contexts[owner.stableId];
+  assert.deepEqual(reviewedContext.sourceVariants, reviewed.filteredScope.actions[0].sourceVariants);
+  assert.deepEqual(reviewedContext.reasons, helpers.map((helper) => helper.reason));
+  assert.ok(helpers.every((helper) => reviewedContext.reviewedEvidence.some(
+    (evidence) => evidence.locator === helper.evidence[0].locator,
+  )));
+  assert.deepEqual(reviewedContext.documentationOwnership, ownership);
+
+  const result = await runCli({
+    argv: [
+      'node',
+      'sdk-doc-sync',
+      '--sdk-dir',
+      '/fixtures/sdk',
+      '--language',
+      'python',
+      '--sdk-name',
+      'pymilvus',
+      '--sdk-version',
+      'v2.6.x',
+      '--release-scope',
+      '/tmp/reviewed-scope.json',
+      '--changed-only',
+      '--dry-run',
+      '--json',
+    ],
+    env: { BASE_TOKEN: 'base-v26', ROOT_TOKEN: 'root-v26' },
+    dependencies: {
+      loadEnv: false,
+      readFile: () => JSON.stringify(reviewed.filteredScope),
+      scanner: {
+        rootDir: '/fixtures/sdk',
+        async scan() {
+          return helpers.map((helper) => ({
+            name: helper.symbol,
+            kind: 'class',
+            parentClass: null,
+            filePath: helper.file,
+            lineNumber: helper.line,
+            signature: `class ${helper.symbol}:`,
+            params: [],
+            decorators: [],
+          }));
+        },
+      },
+      indexReader: async () => [{
+        id: 'rec-search',
+        metadata: {
+          slug: owner.canonicalSlug,
+          token: 'doc-search',
+          version: 'v2.6.x',
+          folderToken: 'folder-vector',
+          parentRecordId: 'parent-vector',
+        },
+      }],
+      artifactProvider: async () => ({
+        title: 'search()',
+        content: 'Searches vectors in a collection.',
+        reviewed: true,
+        validated: true,
+        validation: { valid: true },
+      }),
+      onStdout: () => {},
+    },
+  });
+
+  assert.equal(result.diff.length, 1);
+  assert.deepEqual(result.diff[0].sourceVariants, reviewed.filteredScope.actions[0].sourceVariants);
+  assert.ok(helpers.every((helper) => result.diff[0].reasons.includes(helper.reason)));
+  assert.equal(result.planningErrors.length, 0);
+  assert.deepEqual(result.plans.map((plan) => plan.action), ['UPDATE_IN_PLACE']);
 });
 
 test('release-scope duplicate owner actions reject incompatible planning targets before rendering', async () => {

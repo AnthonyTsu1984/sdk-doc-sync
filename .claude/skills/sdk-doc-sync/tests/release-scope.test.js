@@ -498,6 +498,53 @@ test('identity normalizer fans one helper change out to each owning interface', 
   ]);
 });
 
+test('identity normalizer converts method-owned helper lifecycles into owner updates with source delta metadata', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const map = {
+    schemaVersion: 1,
+    language: 'python',
+    track: 'v2.6.x',
+    defaultCategory: 'Vector',
+    symbols: {
+      SearchRequest: {
+        classification: 'method_owned',
+        owners: [owner],
+      },
+    },
+  };
+
+  for (const sourceDeltaType of ['CREATE', 'DEPRECATE', 'BACKFILL']) {
+    const evidence = [{ kind: 'source', locator: `search_request.py:${sourceDeltaType}` }];
+    const [normalized] = normalizeDeltas({
+      type: sourceDeltaType,
+      symbolIdentity: 'SearchRequest',
+      symbol: {
+        name: 'SearchRequest',
+        kind: 'class',
+        filePath: 'search_request.py',
+        lineNumber: 12,
+      },
+      reason: `${sourceDeltaType.toLowerCase()} helper lifecycle`,
+      evidence,
+    }, map);
+
+    assert.equal(normalized.type, 'UPDATE');
+    assert.deepEqual(normalized.sourceVariants, [{
+      stableId: owner.stableId,
+      canonicalSlug: owner.canonicalSlug,
+      symbol: 'SearchRequest',
+      source: { file: 'search_request.py', line: 12 },
+      reason: `${sourceDeltaType.toLowerCase()} helper lifecycle`,
+      evidence,
+      sourceDeltaType,
+    }]);
+  }
+});
+
 test('identity normalizer blocks unmapped helper-like types instead of inventing standalone docs', () => {
   const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'));
   const [normalized] = normalizeDeltas({
@@ -963,6 +1010,83 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
   assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].examples[0].audience, 'milvus');
   assert.equal(result.referenceContext.contexts['java:v2-Authentication:alterRole'].examples[0].fence, 'Java');
   assert.deepEqual(result.referenceContext.contexts['java:v2-Authentication:alterRole'].notes, []);
+});
+
+test('reviewed release context builder rejects conflicting planning context for one reviewed owner', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const ownership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    actions: [
+      {
+        type: 'UPDATE',
+        stableId: owner.stableId,
+        canonicalSlug: owner.canonicalSlug,
+        symbol: 'SearchRequest',
+        source: { file: 'pymilvus/client/search_request.py', line: 12 },
+        reason: 'new request helper',
+        documentationOwnership: ownership,
+        planningContext: { target: { folderToken: 'folder-vector' } },
+      },
+      {
+        type: 'UPDATE',
+        stableId: owner.stableId,
+        canonicalSlug: owner.canonicalSlug,
+        symbol: 'SearchResult',
+        source: { file: 'pymilvus/client/search_result.py', line: 24 },
+        reason: 'result helper changed',
+        documentationOwnership: ownership,
+        planningContext: { target: { folderToken: 'wrong-folder' } },
+      },
+    ],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'folder-vector' },
+    },
+    candidates: {
+      [owner.canonicalSlug]: {
+        category: 'Vector',
+        docIdentity: { ...owner, symbol: 'search' },
+        existingRecord: {
+          recordId: 'rec-search',
+          documentToken: 'doc-search',
+          parentRecordId: 'parent-vector',
+          placement: {
+            verified: true,
+            version: 'v2.6.x',
+            folderToken: 'folder-vector',
+            referencedByOlderVersions: false,
+          },
+        },
+        summary: 'Searches vectors in a collection.',
+        example: { code: 'client.search(collection_name="docs", data=[[0.1, 0.2]])' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    (error) => error.code === 'CONFLICTING_REVIEWED_PLANNING_CONTEXT',
+  );
 });
 
 test('reviewed release context builder accepts version-prefixed Go slugs with unversioned categories', () => {

@@ -24,19 +24,33 @@ function fallbackIdentity(delta, map) {
 }
 
 function normalizedItem(delta, identity, documentationOwnership) {
+  const source = sourceOf(delta.symbol, identity.packagePrefix || '');
   const relatedFiles = [...new Set((delta.symbol.relatedFiles || [])
     .map((file) => `${identity.packagePrefix || ''}${file}`.replace(/\\/g, '/')))]
-    .filter((file) => file !== sourceOf(delta.symbol, identity.packagePrefix || '').file);
-  return {
-    type: delta.type,
+    .filter((file) => file !== source.file);
+  const methodOwned = documentationOwnership.classification === 'method_owned';
+  const normalized = {
+    type: methodOwned ? 'UPDATE' : delta.type,
     stableId: identity.stableId,
     canonicalSlug: identity.canonicalSlug,
     symbol: delta.symbolIdentity,
-    source: sourceOf(delta.symbol, identity.packagePrefix || ''),
+    source,
     reason: delta.reason,
     documentationOwnership,
     ...(relatedFiles.length > 0 ? { relatedFiles } : {}),
   };
+  if (methodOwned) {
+    normalized.sourceVariants = [{
+      stableId: identity.stableId,
+      canonicalSlug: identity.canonicalSlug,
+      symbol: delta.symbolIdentity,
+      source,
+      reason: delta.reason,
+      ...(delta.evidence !== undefined ? { evidence: delta.evidence } : {}),
+      sourceDeltaType: delta.type,
+    }];
+  }
+  return normalized;
 }
 
 function normalizeDeltas(delta, map) {

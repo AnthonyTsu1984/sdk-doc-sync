@@ -243,6 +243,7 @@ async function runReleaseScout({
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
 
   const normalized = deltas.flatMap((delta) => normalizeDeltas(delta, map).map((item) => {
+    const evidence = directSourceEvidence(item, range.targetCommit, changedFiles);
     const action = {
       ...item,
       source: {
@@ -250,7 +251,13 @@ async function runReleaseScout({
         repository: `milvus-io/${sdkName}`,
         revision: range.targetCommit,
       },
-      evidence: directSourceEvidence(item, range.targetCommit, changedFiles),
+      evidence,
+      ...(Array.isArray(item.sourceVariants) ? {
+        sourceVariants: item.sourceVariants.map((variant) => ({
+          ...variant,
+          evidence: variant.evidence || evidence,
+        })),
+      } : {}),
     };
     return action;
   }));
@@ -415,6 +422,7 @@ async function runZillizCliReleaseScout({
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
   const implTargetCommit = targetCommitForRef({ ref: implTarget, runGit: resolvedRunGit, cwd: implRepo });
   const normalized = deltas.flatMap((delta) => normalizeDeltas(delta, map).map((item) => {
+    const evidence = directSourceEvidence(item, implTargetCommit, implChangedFiles);
     const action = {
       ...item,
       source: {
@@ -422,7 +430,13 @@ async function runZillizCliReleaseScout({
         repository: 'zilliztech/zilliz-cloud',
         revision: implTargetCommit,
       },
-      evidence: directSourceEvidence(item, implTargetCommit, implChangedFiles),
+      evidence,
+      ...(Array.isArray(item.sourceVariants) ? {
+        sourceVariants: item.sourceVariants.map((variant) => ({
+          ...variant,
+          evidence: variant.evidence || evidence,
+        })),
+      } : {}),
     };
     return action;
   }));

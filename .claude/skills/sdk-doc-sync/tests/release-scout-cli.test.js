@@ -296,6 +296,57 @@ test('runReleaseScout preserves changed related source evidence and blocks ambig
   assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP'));
 });
 
+test('runReleaseScout records helper lifecycle evidence on the owner source variant', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'owned-helper-release-scout-'));
+  const identityMapPath = path.join(directory, 'identity.json');
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  fs.writeFileSync(identityMapPath, JSON.stringify({
+    schemaVersion: 1,
+    language: 'python',
+    track: 'v2.6.x',
+    defaultCategory: 'Vector',
+    symbols: {
+      SearchRequest: {
+        classification: 'method_owned',
+        owners: [owner],
+      },
+    },
+  }), 'utf8');
+
+  const scope = await runReleaseScout({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    scanState: { python: { lastScannedTag: 'v2.6.1' } },
+    targetTag: 'v2.6.2',
+    publicRoots: ['pymilvus/'],
+    identityMapPath,
+    baselineSymbols: [],
+    targetSymbols: [{
+      name: 'SearchRequest',
+      kind: 'class',
+      filePath: 'pymilvus/client/search_request.py',
+      lineNumber: 12,
+    }],
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v2.6.2': 'target-commit\n',
+        'show -s --format=%cI target-commit': '2026-07-28T00:00:00Z\n',
+        'diff --name-only v2.6.1..v2.6.2': 'pymilvus/client/search_request.py\n',
+      }[key];
+    },
+  });
+
+  assert.equal(scope.actions[0].type, 'UPDATE');
+  assert.equal(scope.actions[0].sourceVariants[0].sourceDeltaType, 'CREATE');
+  assert.deepEqual(scope.actions[0].sourceVariants[0].evidence, scope.actions[0].evidence);
+});
+
 test('Java identity maps embed Cloud import request helpers in their owning method docs', () => {
   for (const track of ['v26', 'v30']) {
     const map = JSON.parse(fs.readFileSync(

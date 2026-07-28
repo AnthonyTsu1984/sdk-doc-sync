@@ -3,6 +3,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 
 const SDK_REFERENCE_BY_LANGUAGE = {
@@ -60,6 +61,81 @@ function required(value, message) {
 function clone(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
+}
+
+function uniqueValues(values) {
+  const unique = [];
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (!unique.some((existing) => isDeepStrictEqual(existing, value))) unique.push(clone(value));
+  }
+  return unique;
+}
+
+function reviewedContextError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function preferredReviewedAction(actions, identity) {
+  const standalone = actions.filter((action) => action.documentationOwnership?.classification === 'standalone');
+  const preferred = standalone.length > 0 ? standalone : actions;
+  const lifecycleTypes = [...new Set(preferred.map((action) => action.type))];
+  if (lifecycleTypes.length > 1) {
+    throw reviewedContextError(
+      'CONFLICTING_REVIEWED_ACTIONS',
+      `Reviewed owner ${identity.stableId} has incompatible lifecycle actions: ${lifecycleTypes.join(', ')}`,
+    );
+  }
+  return preferred[0];
+}
+
+function assertCompatibleReviewedActions(actions, identity) {
+  const stableIds = [...new Set(actions.map((action) => action.stableId))];
+  if (stableIds.length > 1) {
+    throw reviewedContextError(
+      'CONFLICTING_REVIEWED_IDENTITY',
+      `Reviewed owner ${identity.stableId} has incompatible release identities: ${stableIds.join(', ')}`,
+    );
+  }
+  for (const field of ['planningContext', 'target']) {
+    const values = uniqueValues(actions.map((action) => action[field]));
+    if (values.length > 1) {
+      throw reviewedContextError(
+        'CONFLICTING_REVIEWED_PLANNING_CONTEXT',
+        `Reviewed owner ${identity.stableId} has incompatible ${field} values`,
+      );
+    }
+  }
+}
+
+function sourceVariantsFor(actions) {
+  return uniqueValues(actions.flatMap((action) => {
+    const variants = Array.isArray(action.sourceVariants) && action.sourceVariants.length > 0
+      ? action.sourceVariants
+      : [{
+        stableId: action.stableId,
+        canonicalSlug: action.canonicalSlug,
+        symbol: action.symbol,
+        source: action.source,
+        reason: action.reason,
+        ...(action.evidence !== undefined ? { evidence: action.evidence } : {}),
+        ...(action.sourceDeltaType !== undefined ? { sourceDeltaType: action.sourceDeltaType } : {}),
+      }];
+    return variants.map((variant) => ({
+      ...clone(variant),
+      stableId: variant.stableId || action.stableId,
+      canonicalSlug: variant.canonicalSlug || action.canonicalSlug,
+      reason: variant.reason || action.reason,
+      ...(variant.evidence === undefined && action.evidence !== undefined
+        ? { evidence: clone(action.evidence) }
+        : {}),
+      ...(variant.sourceDeltaType === undefined && action.sourceDeltaType !== undefined
+        ? { sourceDeltaType: action.sourceDeltaType }
+        : {}),
+    }));
+  }));
 }
 
 function trackParts(track) {
@@ -487,23 +563,29 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   for (const action of releaseScope.actions || []) {
     const spec = candidates[action.canonicalSlug];
     if (!spec) continue;
-    const planningAction = actionForPlanning(action, spec);
+    const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
+    const sourceActions = (releaseScope.actions || [])
+      .filter((item) => groupedSources.includes(item.canonicalSlug));
+    const reviewedAction = preferredReviewedAction(sourceActions, {
+      stableId: spec.docIdentity?.stableId || spec.stableId || action.stableId,
+    });
+    const planningAction = actionForPlanning(reviewedAction, spec);
     selectedSlugs.add(action.canonicalSlug);
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
     const identity = assertCandidateIdentity({ action: planningAction, spec, category });
-    if (action.documentationOwnership?.classification === 'method_owned'
-      && identity.stableId !== action.documentationOwnership.selectedOwnerStableId) {
+    assertCompatibleReviewedActions(sourceActions, identity);
+    if (planningAction.documentationOwnership?.classification === 'method_owned'
+      && identity.stableId !== planningAction.documentationOwnership.selectedOwnerStableId) {
       throw ownershipError(
         'METHOD_OWNED_STANDALONE_FORBIDDEN',
-        `Candidate ${action.canonicalSlug} must retain selected method owner ${action.documentationOwnership.selectedOwnerStableId}`,
+        `Candidate ${action.canonicalSlug} must retain selected method owner ${planningAction.documentationOwnership.selectedOwnerStableId}`,
       );
     }
     assertNoSyntheticGroupAcrossExistingRecords({ spec, identity });
     const existingRecord = assertExistingRecordEvidence({ action: planningAction, spec, identity });
     const existingRecordLookup = assertCreateMissingEvidence({ action: planningAction, spec, identity });
     const inheritanceReview = assertInheritanceReview({ action: planningAction, spec, requiredSuccessorTracks });
-    const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
     for (const sourceSlug of groupedSources) {
       if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
     }
@@ -533,19 +615,19 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       targetFolderToken: folderToken,
       targetFolderRef: folderRef,
     });
-    const evidence = evidenceFor(action, spec, releaseScope);
-    const sourceVariants = groupedSources
-      .map((canonicalSlug) => (releaseScope.actions || []).find((item) => item.canonicalSlug === canonicalSlug))
-      .filter(Boolean)
-      .flatMap((item) => Array.isArray(item.sourceVariants) && item.sourceVariants.length > 0
-        ? item.sourceVariants.map((variant) => clone(variant))
-        : [{
-          stableId: item.stableId,
-          canonicalSlug: item.canonicalSlug,
-          symbol: item.symbol,
-          source: clone(item.source),
-          reason: item.reason,
-        }]);
+    const sourceVariants = sourceVariantsFor(sourceActions);
+    const releaseEvidence = uniqueValues([
+      ...sourceActions.flatMap((item) => item.evidence || []),
+      ...sourceVariants.flatMap((variant) => variant.evidence || []),
+    ]);
+    const evidence = uniqueValues([
+      ...releaseEvidence,
+      ...sourceActions.flatMap((item) => evidenceFor(item, spec, releaseScope)),
+    ]);
+    const reasons = uniqueValues([
+      ...sourceActions.flatMap((item) => item.reasons || [item.reason]),
+      ...sourceVariants.map((variant) => variant.reason),
+    ]);
     const planningTarget = {
       version,
       folderToken,
@@ -561,9 +643,11 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       canonicalSlug: identity.canonicalSlug,
       symbol: identity.symbol,
       sourceVariants: sourceVariants.length > 0 ? sourceVariants : undefined,
+      reasons,
+      evidence: releaseEvidence,
       inheritanceReview,
       planningContext: {
-        ...(action.planningContext || {}),
+        ...(planningAction.planningContext || {}),
         current: existingRecord || undefined,
         existingRecordLookup: existingRecordLookup || undefined,
         copySource,
@@ -574,12 +658,12 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     };
     selected.push(selectedAction);
     contexts[identity.stableId] = {
-      repository: spec.repository || candidateSpec.repository || action.source?.repository || releaseScope.sdkName,
+      repository: spec.repository || candidateSpec.repository || planningAction.source?.repository || releaseScope.sdkName,
       revision: spec.revision || releaseScope.targetCommit,
       category,
       symbolName: identity.symbol,
       kind: spec.kind,
-      title: spec.title || titleFor({ ...action, symbol: identity.symbol }),
+      title: spec.title || titleFor({ ...planningAction, symbol: identity.symbol }),
       summary: required(spec.summary, `Candidate ${action.canonicalSlug} is missing summary`),
       signature: clone(spec.signature),
       params: clone(spec.params),
@@ -587,10 +671,12 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       callableMembers: clone(spec.callableMembers),
       reviewedEvidence: evidence,
       result: clone(spec.result),
-      exceptions: defaultExceptions(action, spec, evidence),
-      examples: exampleFor(action, { ...candidateSpec.defaults, ...spec, version }, evidence),
+      exceptions: defaultExceptions(planningAction, spec, evidence),
+      examples: exampleFor(planningAction, { ...candidateSpec.defaults, ...spec, version }, evidence),
       inheritanceReview,
-      documentationOwnership: clone(action.documentationOwnership),
+      sourceVariants,
+      reasons,
+      documentationOwnership: clone(planningAction.documentationOwnership),
       notes: spec.notes || candidateSpec.notes || [],
     };
   }

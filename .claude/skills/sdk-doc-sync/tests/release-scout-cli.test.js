@@ -127,6 +127,51 @@ test('C++ v3.0.x has a default canonical identity map', () => {
   });
 });
 
+test('C++ identity maps keep reviewed helper families owned by their public methods', () => {
+  const expectedOwners = {
+    BatchDescribeCollectionsRequest: ['Collections.BatchDescribeCollections'],
+    BatchDescribeCollectionsResponse: ['Collections.BatchDescribeCollections'],
+    AddCollectionFunctionRequest: ['Collections.AddCollectionFunction'],
+    AlterCollectionFunctionRequest: ['Collections.AlterCollectionFunction'],
+    DropCollectionFunctionRequest: ['Collections.DropCollectionFunction'],
+    DatabaseDesc: ['Database.DescribeDatabase'],
+    RefreshLoadRequest: ['Management.RefreshLoad'],
+    OptimizeRequest: ['Management.Optimize'],
+    OptimizeResponse: ['Management.Optimize'],
+    OptimizeTask: ['Management.Optimize'],
+    DescribeReplicasRequest: ['Collections.DescribeReplicas'],
+    DescribeReplicasResponse: ['Collections.DescribeReplicas'],
+    ReplicaInfo: ['Collections.DescribeReplicas'],
+    ShardReplica: ['Collections.DescribeReplicas'],
+    FieldData: [
+      'Vector.Get', 'Vector.HybridSearch', 'Vector.Insert', 'Vector.Query',
+      'Vector.QueryIterator', 'Vector.Search', 'Vector.SearchIterator', 'Vector.Upsert',
+    ],
+    DmlResults: ['Vector.Delete', 'Vector.Insert', 'Vector.Upsert'],
+    EmbeddingList: ['Vector.HybridSearch', 'Vector.Search', 'Vector.SearchIterator'],
+    SearchResults: ['Vector.HybridSearch', 'Vector.Search'],
+    FunctionScore: ['Vector.Search', 'Vector.SearchIterator'],
+    SubSearchRequest: ['Vector.HybridSearch'],
+    QueryResults: ['Vector.Get', 'Vector.Query', 'Vector.QueryIterator'],
+    Iterator: ['Vector.QueryIterator', 'Vector.SearchIterator'],
+    AnalyzerResults: ['Vector.RunAnalyzer'],
+  };
+
+  for (const track of ['v26', 'v30']) {
+    const map = JSON.parse(fs.readFileSync(
+      path.join(__dirname, '..', 'references', 'identity', `cpp-${track}.json`),
+      'utf8',
+    ));
+    for (const [helper, identities] of Object.entries(expectedOwners)) {
+      assert.deepEqual(
+        map.symbols[helper]?.targets?.map((owner) => `${owner.category}.${owner.stableId.split(':').at(-1)}`).sort(),
+        identities,
+        `${helper} should stay method-owned in cpp-${track}`,
+      );
+    }
+  }
+});
+
 test('runReleaseScout resolves Python v3.0.x from the python-v3 scan-state key', async () => {
   const scope = await runReleaseScout({
     language: 'python',
@@ -1109,6 +1154,209 @@ class MILVUS_SDK_API UnrelatedRequest {
 
   assert.ok(searchIterator, 'SearchIterator symbol should be scanned');
   assert.deepEqual(searchIterator.params.map((param) => param.name), ['WithLimit']);
+});
+
+test('CppScanner embeds a cycle-safe transitive alias and inheritance graph in every owning method', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-type-graph-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    Search(const SearchRequest& request, SearchResponse& response) = 0;
+    virtual Status
+    Query(const QueryRequest& request, QueryResponse& response) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'SharedRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API BaseRequest {
+ public:
+    BaseRequest&
+    WithCollectionName(const std::string& collection_name);
+};
+class MILVUS_SDK_API SharedRequest : public BaseRequest {
+ public:
+    SharedRequest&
+    WithLimit(int64_t limit);
+    SharedRequest&
+    WithMetric(DataType metric);
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'RequestAliases.h'), `
+#pragma once
+namespace milvus {
+using SearchRequest = SharedRequest;
+using QueryRequest = SearchRequest;
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'DataType.h'), `
+#pragma once
+namespace milvus {
+enum class DataType {
+    FLOAT_VECTOR = 101,
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'response', 'dql', 'SharedResponse.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchEnvelope {
+ public:
+    const SearchResults&
+    Results() const;
+};
+using SearchResponse = SearchEnvelope;
+using QueryResponse = SearchResponse;
+}
+`);
+  const resultNode = path.join(repo, 'src', 'include', 'milvus', 'types', 'ResultNode.h');
+  writeText(resultNode, `
+#pragma once
+namespace milvus {
+struct MILVUS_SDK_API ResultNode {
+    std::vector<float> scores;
+    SearchResults* owner;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'SearchResults.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchResults {
+ public:
+    const ResultNode&
+    Result() const;
+};
+}
+`);
+
+  const baseline = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const baselineSearch = baseline.find((symbol) => symbol.name === 'Search');
+  const baselineQuery = baseline.find((symbol) => symbol.name === 'Query');
+  for (const symbol of [baselineSearch, baselineQuery]) {
+    assert.deepEqual(symbol.params.map((param) => param.name), ['WithCollectionName', 'WithLimit', 'WithMetric']);
+    assert.deepEqual(symbol.embeddedTypes.map((type) => type.name), [
+      'BaseRequest', 'ResultNode', 'SearchEnvelope', 'SearchResults', 'SharedRequest',
+    ]);
+    assert.ok(symbol.relatedFiles.includes('src/include/milvus/types/ResultNode.h'));
+    assert.ok(symbol.relatedFiles.includes('src/include/milvus/request/dql/RequestAliases.h'));
+  }
+  assert.deepEqual(
+    baselineSearch.embeddedTypes.find((type) => type.name === 'SearchEnvelope').aliases,
+    ['QueryResponse', 'SearchResponse'],
+  );
+  assert.equal(baselineSearch.embeddedTypes.length, 5, 'the ResultNode/SearchResults cycle is finite');
+
+  writeText(resultNode, `
+#pragma once
+namespace milvus {
+struct MILVUS_SDK_API ResultNode {
+    std::vector<float> scores;
+    std::vector<std::string> labels;
+    SearchResults* owner;
+};
+}
+`);
+  const target = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const scope = await runReleaseScout({
+    language: 'cpp',
+    sdkName: 'milvus-sdk-cpp',
+    track: 'v3.0.x',
+    scanState: { 'cpp-v3': { lastScannedTag: 'v3.0.0' } },
+    targetTag: 'v3.0.1',
+    repoDir: repo,
+    sdkDir: repo,
+    publicRoots: ['src/include/milvus/'],
+    identityMapPath: path.join(__dirname, '..', 'references', 'identity', 'cpp-v30.json'),
+    baselineSymbols: baseline,
+    targetSymbols: target,
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v3.0.1': 'cpp-target\n',
+        'show -s --format=%cI cpp-target': '2026-07-28T00:00:00Z\n',
+        'diff --name-only v3.0.0..v3.0.1': 'src/include/milvus/types/ResultNode.h\n',
+      }[key];
+    },
+  });
+
+  assert.deepEqual(scope.actions.map((action) => action.stableId), [
+    'cpp:Vector:Query',
+    'cpp:Vector:Search',
+  ]);
+  assert.ok(scope.actions.every((action) => action.reason === 'embedded type surface changed'));
+  assert.ok(scope.actions.every((action) => action.evidence.some((item) => (
+    item.locator === 'src/include/milvus/types/ResultNode.h'
+    && item.confidence === 'related'
+  ))));
+});
+
+test('CppScanner follows public task result methods into response types', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-task-type-graph-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    Optimize(const OptimizeRequest& request, OptimizeTaskPtr& task) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'utility', 'OptimizeRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API OptimizeRequest {
+ public:
+    OptimizeRequest&
+    WithCollectionName(const std::string& collection_name);
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'OptimizeTask.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API OptimizeTask {
+ public:
+    Status
+    GetResult(OptimizeResponse& response);
+    void
+    Start(OptimizeResponse&& response);
+};
+using OptimizeTaskPtr = std::shared_ptr<OptimizeTask>;
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'response', 'utility', 'OptimizeResponse.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API OptimizeResponse {
+ public:
+    const std::string&
+    StatusText() const;
+    void
+    SetStatusText(const std::string& status);
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const optimize = symbols.find((symbol) => symbol.name === 'Optimize');
+  assert.deepEqual(optimize.embeddedTypes.map((type) => type.name), [
+    'OptimizeRequest', 'OptimizeResponse', 'OptimizeTask',
+  ]);
+  assert.deepEqual(
+    optimize.embeddedTypes.find((type) => type.name === 'OptimizeTask').accessors.map((member) => member.name),
+    ['GetResult'],
+  );
+  assert.deepEqual(
+    optimize.embeddedTypes.find((type) => type.name === 'OptimizeResponse').accessors.map((member) => member.name),
+    ['StatusText'],
+  );
 });
 
 test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs', async () => {

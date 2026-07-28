@@ -751,6 +751,38 @@ test('C++ parses qualified template return types and prefers explicit returnType
   assert.equal(explicit.result.type.display, 'ClientPtr');
 });
 
+test('C++ derives nested response fields from embedded types when reviewed result context is absent', () => {
+  const symbol = fixture('cpp-describe-replicas-embedded.json');
+  const doc = cppAdapter.toReferenceDocument(symbol, context('cpp', 'Collections'));
+
+  assert.equal(doc.result.type.display, 'Status');
+  assert.deepEqual(doc.result.fields.map((field) => field.name), ['response']);
+  const response = doc.result.fields[0];
+  assert.equal(response.type.display, 'DescribeReplicasResponse');
+  assert.deepEqual(response.children.map((field) => field.name), ['Replicas']);
+  assert.deepEqual(response.children[0].children.map((field) => field.name), ['id', 'shards']);
+  assert.deepEqual(response.children[0].children[1].children.map((field) => field.name), ['leader']);
+  assert.equal(response.children.some((field) => field.name === 'DescribeReplicasResponse'), false);
+  assert.equal(response.children.some((field) => field.name === 'SetReplicas'), false);
+  assert.deepEqual(response.children[0].evidence, [{
+    kind: 'source',
+    locator: 'src/include/milvus/response/collection/DescribeReplicasResponse.h:38',
+    revision: 'v2.6.0',
+    confidence: 'direct',
+  }]);
+  assert.deepEqual(doc.callableMembers.map((member) => member.name), ['WithCollectionName']);
+
+  const reviewed = cppAdapter.toReferenceDocument(symbol, context('cpp', 'Collections', {
+    result: {
+      type: 'ReviewedStatus',
+      description: 'Uses the reviewed result shape.',
+      fields: [{ name: 'reviewed', type: 'bool', description: 'Reviewed field.' }],
+    },
+  }));
+  assert.equal(reviewed.result.type.display, 'ReviewedStatus');
+  assert.deepEqual(reviewed.result.fields.map((field) => field.name), ['reviewed']);
+});
+
 test('C++ enums preserve values without request or callable sections', () => {
   const symbol = {
     name: 'DataType', kind: 'enum', signature: 'enum class DataType { None = 0, Bool = 1 }',

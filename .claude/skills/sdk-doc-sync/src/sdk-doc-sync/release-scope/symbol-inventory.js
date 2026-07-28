@@ -14,6 +14,7 @@ function comparableSignature(symbol) {
     methods: symbol.methods || [],
     optionMethods: symbol.optionMethods || [],
     altConstructors: symbol.altConstructors || [],
+    embeddedTypes: symbol.embeddedTypes || [],
     returnType: symbol.returnType || null,
     decorators: symbol.decorators || [],
     hidden: symbol.hidden || false,
@@ -33,6 +34,7 @@ function updateReason(previous, symbol) {
   if (!sameValue(previous.fields || [], symbol.fields || [])) return 'fields changed';
   if (!sameValue(previous.values || [], symbol.values || [])) return 'enum values changed';
   if (!sameValue(previous.methods || [], symbol.methods || [])) return 'public member methods changed';
+  if (!sameValue(previous.embeddedTypes || [], symbol.embeddedTypes || [])) return 'embedded type surface changed';
   if ((previous.bodyHash || null) !== (symbol.bodyHash || null)) return 'public method behavior changed';
   if ((previous.returnType || null) !== (symbol.returnType || null)) return 'return type changed';
   if (!sameValue(previous.decorators || [], symbol.decorators || [])) return 'decorators changed';

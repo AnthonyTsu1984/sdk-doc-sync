@@ -134,6 +134,105 @@
       "stableId": "cpp:Vector:Upsert",
       "canonicalSlug": "Vector-Upsert",
       "category": "Vector"
+    },
+    "BatchDescribeCollectionsRequest": {
+      "targets": [{ "stableId": "cpp:Collections:BatchDescribeCollections", "canonicalSlug": "Collections-BatchDescribeCollections", "category": "Collections" }]
+    },
+    "BatchDescribeCollectionsResponse": {
+      "targets": [{ "stableId": "cpp:Collections:BatchDescribeCollections", "canonicalSlug": "Collections-BatchDescribeCollections", "category": "Collections" }]
+    },
+    "AddCollectionFunctionRequest": {
+      "targets": [{ "stableId": "cpp:Collections:AddCollectionFunction", "canonicalSlug": "Collections-AddCollectionFunction", "category": "Collections" }]
+    },
+    "AlterCollectionFunctionRequest": {
+      "targets": [{ "stableId": "cpp:Collections:AlterCollectionFunction", "canonicalSlug": "Collections-AlterCollectionFunction", "category": "Collections" }]
+    },
+    "DropCollectionFunctionRequest": {
+      "targets": [{ "stableId": "cpp:Collections:DropCollectionFunction", "canonicalSlug": "Collections-DropCollectionFunction", "category": "Collections" }]
+    },
+    "DatabaseDesc": {
+      "targets": [{ "stableId": "cpp:Database:DescribeDatabase", "canonicalSlug": "Database-DescribeDatabase", "category": "Database" }]
+    },
+    "RefreshLoadRequest": {
+      "targets": [{ "stableId": "cpp:Management:RefreshLoad", "canonicalSlug": "Management-RefreshLoad", "category": "Management" }]
+    },
+    "OptimizeRequest": {
+      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "Management-Optimize", "category": "Management" }]
+    },
+    "OptimizeResponse": {
+      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "Management-Optimize", "category": "Management" }]
+    },
+    "OptimizeTask": {
+      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "Management-Optimize", "category": "Management" }]
+    },
+    "DescribeReplicasRequest": {
+      "targets": [{ "stableId": "cpp:Collections:DescribeReplicas", "canonicalSlug": "Collections-DescribeReplicas", "category": "Collections" }]
+    },
+    "DescribeReplicasResponse": {
+      "targets": [{ "stableId": "cpp:Collections:DescribeReplicas", "canonicalSlug": "Collections-DescribeReplicas", "category": "Collections" }]
+    },
+    "ReplicaInfo": {
+      "targets": [{ "stableId": "cpp:Collections:DescribeReplicas", "canonicalSlug": "Collections-DescribeReplicas", "category": "Collections" }]
+    },
+    "ShardReplica": {
+      "targets": [{ "stableId": "cpp:Collections:DescribeReplicas", "canonicalSlug": "Collections-DescribeReplicas", "category": "Collections" }]
+    },
+    "FieldData": {
+      "targets": [
+        { "stableId": "cpp:Vector:Get", "canonicalSlug": "Vector-Get", "category": "Vector" },
+        { "stableId": "cpp:Vector:HybridSearch", "canonicalSlug": "Vector-HybridSearch", "category": "Vector" },
+        { "stableId": "cpp:Vector:Insert", "canonicalSlug": "Vector-Insert", "category": "Vector" },
+        { "stableId": "cpp:Vector:Query", "canonicalSlug": "Vector-Query", "category": "Vector" },
+        { "stableId": "cpp:Vector:QueryIterator", "canonicalSlug": "Vector-QueryIterator", "category": "Vector" },
+        { "stableId": "cpp:Vector:Search", "canonicalSlug": "Vector-Search", "category": "Vector" },
+        { "stableId": "cpp:Vector:SearchIterator", "canonicalSlug": "Vector-SearchIterator", "category": "Vector" },
+        { "stableId": "cpp:Vector:Upsert", "canonicalSlug": "Vector-Upsert", "category": "Vector" }
+      ]
+    },
+    "DmlResults": {
+      "targets": [
+        { "stableId": "cpp:Vector:Delete", "canonicalSlug": "Vector-Delete", "category": "Vector" },
+        { "stableId": "cpp:Vector:Insert", "canonicalSlug": "Vector-Insert", "category": "Vector" },
+        { "stableId": "cpp:Vector:Upsert", "canonicalSlug": "Vector-Upsert", "category": "Vector" }
+      ]
+    },
+    "EmbeddingList": {
+      "targets": [
+        { "stableId": "cpp:Vector:HybridSearch", "canonicalSlug": "Vector-HybridSearch", "category": "Vector" },
+        { "stableId": "cpp:Vector:Search", "canonicalSlug": "Vector-Search", "category": "Vector" },
+        { "stableId": "cpp:Vector:SearchIterator", "canonicalSlug": "Vector-SearchIterator", "category": "Vector" }
+      ]
+    },
+    "SearchResults": {
+      "targets": [
+        { "stableId": "cpp:Vector:HybridSearch", "canonicalSlug": "Vector-HybridSearch", "category": "Vector" },
+        { "stableId": "cpp:Vector:Search", "canonicalSlug": "Vector-Search", "category": "Vector" }
+      ]
+    },
+    "FunctionScore": {
+      "targets": [
+        { "stableId": "cpp:Vector:Search", "canonicalSlug": "Vector-Search", "category": "Vector" },
+        { "stableId": "cpp:Vector:SearchIterator", "canonicalSlug": "Vector-SearchIterator", "category": "Vector" }
+      ]
+    },
+    "SubSearchRequest": {
+      "targets": [{ "stableId": "cpp:Vector:HybridSearch", "canonicalSlug": "Vector-HybridSearch", "category": "Vector" }]
+    },
+    "QueryResults": {
+      "targets": [
+        { "stableId": "cpp:Vector:Get", "canonicalSlug": "Vector-Get", "category": "Vector" },
+        { "stableId": "cpp:Vector:Query", "canonicalSlug": "Vector-Query", "category": "Vector" },
+        { "stableId": "cpp:Vector:QueryIterator", "canonicalSlug": "Vector-QueryIterator", "category": "Vector" }
+      ]
+    },
+    "Iterator": {
+      "targets": [
+        { "stableId": "cpp:Vector:QueryIterator", "canonicalSlug": "Vector-QueryIterator", "category": "Vector" },
+        { "stableId": "cpp:Vector:SearchIterator", "canonicalSlug": "Vector-SearchIterator", "category": "Vector" }
+      ]
+    },
+    "AnalyzerResults": {
+      "targets": [{ "stableId": "cpp:Vector:RunAnalyzer", "canonicalSlug": "Vector-RunAnalyzer", "category": "Vector" }]
     }
   }
 }

@@ -530,6 +530,29 @@ test('identity normalizer rejects explicit standalone mappings that retain metho
   );
 });
 
+test('symbol inventory reports embedded C++ type changes explicitly', () => {
+  const baseline = [{
+    name: 'DescribeReplicas',
+    kind: 'method',
+    parentClass: 'Collections',
+    signature: 'Status DescribeReplicas(const Request&, Response&)',
+    filePath: 'src/include/milvus/MilvusClientV2.h',
+    lineNumber: 10,
+    embeddedTypes: [{ name: 'ReplicaInfo', fields: [{ name: 'id', type: 'int64_t' }] }],
+  }];
+  const target = [{
+    ...baseline[0],
+    embeddedTypes: [{
+      name: 'ReplicaInfo',
+      fields: [{ name: 'id', type: 'int64_t' }, { name: 'resourceGroup', type: 'std::string' }],
+    }],
+  }];
+
+  const [delta] = classifySymbolDeltas({ baseline, target });
+  assert.equal(delta.type, 'UPDATE');
+  assert.equal(delta.reason, 'embedded type surface changed');
+});
+
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
   const left = {
     actions: [{

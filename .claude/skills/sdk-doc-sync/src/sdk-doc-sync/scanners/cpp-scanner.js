@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const BaseScanner = require('./base-scanner');
+const CppTypeGraph = require('./cpp-type-graph');
 
 // Category assignment for public MilvusClientV2 methods.
 const METHOD_CATEGORIES = {
@@ -170,15 +171,26 @@ class CppScanner extends BaseScanner {
             ));
         }
 
-        // Phase 2: Parse request headers for With* params
-        this._requestIndex = this._buildRequestIndex();
+        // Phase 2: Build the public request/response/type graph once.
+        this._typeGraph = new CppTypeGraph({ rootDir: this.rootDir, includeDir: this._includeDir });
 
         for (const method of methods) {
             if (method.requestClass) {
                 method.params = this._getRequestParams(method.requestClass);
-                method.relatedFiles = this._relatedFilesForRequest(method.requestClass);
             } else if (method.directParams && method.directParams.length > 0) {
                 method.params = method.directParams;
+            }
+            const embeddedTypes = this._typeGraph.embeddedTypesFor([
+                method.requestClass,
+                method.responseClass,
+                ...(method.directParams || []).map((param) => param.type),
+            ]);
+            if (embeddedTypes.length > 0) {
+                method.embeddedTypes = embeddedTypes;
+                method.relatedFiles = [...new Set(embeddedTypes.flatMap((type) => [
+                    type.filePath,
+                    ...(type.relatedFiles || []),
+                ]))].sort();
             }
             delete method.directParams;
         }
@@ -443,243 +455,8 @@ class CppScanner extends BaseScanner {
 
     // ── Phase 2: Request param extraction ─────────────────────────────
 
-    _buildRequestIndex() {
-        const index = {
-            classes: new Map(),
-            aliases: new Map(),
-        };
-
-        const requestDir = path.join(this._includeDir, 'request');
-        const typesDir = path.join(this._includeDir, 'types');
-
-        const allFiles = [
-            ...this._walkHeaderFiles(requestDir),
-            ...this._walkHeaderFiles(typesDir),
-        ];
-
-        for (const file of allFiles) {
-            const content = fs.readFileSync(file, 'utf-8');
-
-            // Extract class definitions
-            const classRegex = /class\s+(?:(?:MILVUS_SDK_API|MILVUS_DEPRECATED)\s+)?(\w+)\s*(?::\s*([^{]+))?\s*\{/g;
-            let classMatch;
-            while ((classMatch = classRegex.exec(content)) !== null) {
-                const className = classMatch[1];
-                const inheritance = classMatch[2] ? classMatch[2].trim() : '';
-
-                const baseClasses = [];
-                if (inheritance) {
-                    const baseRegex = /public\s+([\w:]+)(?:<[\w:,\s]+>)?/g;
-                    let bm;
-                    while ((bm = baseRegex.exec(inheritance)) !== null) {
-                        baseClasses.push(bm[1].replace(/::/g, ''));
-                    }
-                }
-
-                const classBody = this._extractBracedBody(content, classRegex.lastIndex - 1);
-                const withMethods = this._extractWithMethods(classBody);
-
-                index.classes.set(className, {
-                    file,
-                    baseClasses,
-                    withMethods,
-                });
-            }
-
-            // Extract using aliases
-            const usingRegex = /using\s+(\w+)\s*=\s*(\w+)\s*;/g;
-            let um;
-            while ((um = usingRegex.exec(content)) !== null) {
-                index.aliases.set(um[1], um[2]);
-            }
-        }
-
-        return index;
-    }
-
-    _extractBracedBody(content, openingBraceIndex) {
-        let depth = 0;
-        let state = 'code';
-        for (let i = openingBraceIndex; i < content.length; i++) {
-            const char = content[i];
-            const next = content[i + 1];
-            if (state === 'line-comment') {
-                if (char === '\n') state = 'code';
-                continue;
-            }
-            if (state === 'block-comment') {
-                if (char === '*' && next === '/') {
-                    state = 'code';
-                    i++;
-                }
-                continue;
-            }
-            if (state === 'string') {
-                if (char === '\\') i++;
-                else if (char === '"') state = 'code';
-                continue;
-            }
-            if (state === 'character') {
-                if (char === '\\') i++;
-                else if (char === "'") state = 'code';
-                continue;
-            }
-            if (char === '/' && next === '/') {
-                state = 'line-comment';
-                i++;
-            } else if (char === '/' && next === '*') {
-                state = 'block-comment';
-                i++;
-            } else if (char === '"') {
-                state = 'string';
-            } else if (char === "'") {
-                state = 'character';
-            } else if (char === '{') {
-                depth++;
-            } else if (char === '}') {
-                depth--;
-                if (depth === 0) return content.slice(openingBraceIndex + 1, i);
-            }
-        }
-        return content.slice(openingBraceIndex + 1);
-    }
-
-    _walkHeaderFiles(dir) {
-        const results = [];
-        if (!fs.existsSync(dir)) return results;
-        const walk = (d) => {
-            let entries;
-            try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-            for (const entry of entries) {
-                const full = path.join(d, entry.name);
-                if (entry.isDirectory()) walk(full);
-                else if (entry.name.endsWith('.h')) results.push(full);
-            }
-        };
-        walk(dir);
-        return results;
-    }
-
-    /**
-     * Extract With* and Add* method declarations from header content.
-     * Matches the two-line pattern: ReturnType&\nWithFoo(params)
-     */
-    _extractWithMethods(content) {
-        const methods = [];
-        const lines = content.split('\n');
-        const seen = new Set();
-
-        for (let i = 0; i < lines.length - 1; i++) {
-            const trimmed = lines[i].trim();
-
-            // Line must be a return type ending with &
-            if (!trimmed.match(/&\s*$/)) continue;
-
-            const nextTrimmed = lines[i + 1].trim();
-            const match = nextTrimmed.match(/^(With\w+|Add\w+)\s*\(([^)]*)\)/);
-            if (!match) continue;
-
-            const methodName = match[1];
-            if (seen.has(methodName)) continue;
-            seen.add(methodName);
-
-            const argStr = match[2].trim();
-
-            // Parse parameter type and argument name
-            let paramType = '';
-            let argName = '';
-            if (argStr) {
-                const firstParam = argStr.split(',')[0].trim();
-                const typeMatch = firstParam.match(/^((?:const\s+)?[\w:]+(?:<[\w:,\s]+>)?(?:\s*&{0,2})?)\s+(\w+)/);
-                if (typeMatch) {
-                    paramType = typeMatch[1].trim();
-                    argName = typeMatch[2];
-                }
-            }
-
-            // Full arg string for multi-param methods (e.g., AddExtraParam(key, value))
-            const fullArgStr = argStr;
-
-            const description = this._extractDoxygen(lines, i);
-
-            methods.push({
-                name: methodName,
-                kind: 'keyword',
-                type: paramType,
-                argName,
-                fullArgStr,
-                description: description || '',
-                deleted: /=\s*delete\s*;/.test(nextTrimmed),
-            });
-        }
-
-        return methods;
-    }
-
-    /**
-     * Get all With/Add params for a request class, including inherited ones.
-     */
     _getRequestParams(requestClassName) {
-        const { classes, aliases } = this._requestIndex;
-
-        // Resolve alias chain
-        let resolved = requestClassName;
-        const visited = new Set();
-        while (aliases.has(resolved) && !visited.has(resolved)) {
-            visited.add(resolved);
-            resolved = aliases.get(resolved);
-        }
-
-        return this._collectParams(resolved, new Set());
-    }
-
-    _relatedFilesForRequest(requestClassName) {
-        const { classes, aliases } = this._requestIndex;
-        let resolved = requestClassName;
-        const visited = new Set();
-        while (aliases.has(resolved) && !visited.has(resolved)) {
-            visited.add(resolved);
-            resolved = aliases.get(resolved);
-        }
-
-        const files = new Set();
-        const collect = (className, seen) => {
-            if (seen.has(className)) return;
-            seen.add(className);
-            const classInfo = classes.get(className);
-            if (!classInfo) return;
-            files.add(path.relative(this.rootDir, classInfo.file));
-            for (const baseName of classInfo.baseClasses) collect(baseName, seen);
-        };
-        collect(resolved, new Set());
-        return [...files].map((file) => file.replace(/\\/g, '/'));
-    }
-
-    _collectParams(className, visited) {
-        if (visited.has(className)) return [];
-        visited.add(className);
-
-        const { classes } = this._requestIndex;
-        const classInfo = classes.get(className);
-        if (!classInfo) return [];
-
-        const allParams = new Map();
-
-        // Base class params first
-        for (const baseName of classInfo.baseClasses) {
-            const baseParams = this._collectParams(baseName, visited);
-            for (const p of baseParams) {
-                allParams.set(p.name, p);
-            }
-        }
-
-        // This class's params override base
-        for (const p of classInfo.withMethods) {
-            if (p.deleted) allParams.delete(p.name);
-            else allParams.set(p.name, p);
-        }
-
-        return Array.from(allParams.values());
+        return this._typeGraph.requestParamsFor(requestClassName);
     }
 
     // ── Phase 3: Enum extraction ──────────────────────────────────────

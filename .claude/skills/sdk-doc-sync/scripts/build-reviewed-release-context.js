@@ -170,6 +170,31 @@ function categoryFromStableId(stableId) {
   return parts.length >= 3 ? parts[1] : '';
 }
 
+function ownershipError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function assertActionDocumentationOwnership(action) {
+  const ownership = action.documentationOwnership;
+  if (!ownership) return;
+  if (ownership.classification === 'ambiguous') {
+    throw ownershipError(
+      'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+      `Release action ${action.canonicalSlug} has ambiguous documentation ownership`,
+    );
+  }
+  if (ownership.classification !== 'method_owned') return;
+  const declaredOwner = (ownership.owners || []).some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+  if (!declaredOwner || ownership.selectedOwnerStableId !== action.stableId) {
+    throw ownershipError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Release action ${action.canonicalSlug} must select its declared method owner`,
+    );
+  }
+}
+
 function assertCandidateIdentity({ action, spec, category }) {
   const docIdentity = spec.docIdentity || {};
   const effectiveStableId = docIdentity.stableId || spec.stableId || action.stableId;
@@ -419,6 +444,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   if (candidateSpec.track && candidateSpec.track !== releaseScope.track) {
     throw new Error(`Candidate spec track ${candidateSpec.track} does not match release scope track ${releaseScope.track}`);
   }
+  for (const action of releaseScope.actions || []) assertActionDocumentationOwnership(action);
 
   const candidates = expandCandidateSpec(candidateSpec);
   const requiredSuccessorTracks = resolveRequiredSuccessorTracks({ releaseScope, candidateSpec, sdkReference });
@@ -455,6 +481,13 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
     const identity = assertCandidateIdentity({ action: planningAction, spec, category });
+    if (action.documentationOwnership?.classification === 'method_owned'
+      && identity.stableId !== action.documentationOwnership.selectedOwnerStableId) {
+      throw ownershipError(
+        'METHOD_OWNED_STANDALONE_FORBIDDEN',
+        `Candidate ${action.canonicalSlug} must retain selected method owner ${action.documentationOwnership.selectedOwnerStableId}`,
+      );
+    }
     assertNoSyntheticGroupAcrossExistingRecords({ spec, identity });
     const existingRecord = assertExistingRecordEvidence({ action: planningAction, spec, identity });
     const existingRecordLookup = assertCreateMissingEvidence({ action: planningAction, spec, identity });
@@ -546,6 +579,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       exceptions: defaultExceptions(action, spec, evidence),
       examples: exampleFor(action, { ...candidateSpec.defaults, ...spec, version }, evidence),
       inheritanceReview,
+      documentationOwnership: clone(action.documentationOwnership),
       notes: spec.notes || candidateSpec.notes || [],
     };
   }

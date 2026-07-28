@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const { sourceOf } = require('./symbol-inventory');
+const { ownershipFor } = require('./type-ownership');
 
 function loadIdentityMap(filePath) {
   const map = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -22,7 +23,10 @@ function fallbackIdentity(delta, map) {
   };
 }
 
-function normalizedItem(delta, identity) {
+function normalizedItem(delta, identity, documentationOwnership) {
+  const relatedFiles = [...new Set((delta.symbol.relatedFiles || [])
+    .map((file) => `${identity.packagePrefix || ''}${file}`.replace(/\\/g, '/')))]
+    .filter((file) => file !== sourceOf(delta.symbol, identity.packagePrefix || '').file);
   return {
     type: delta.type,
     stableId: identity.stableId,
@@ -30,23 +34,35 @@ function normalizedItem(delta, identity) {
     symbol: delta.symbolIdentity,
     source: sourceOf(delta.symbol, identity.packagePrefix || ''),
     reason: delta.reason,
+    documentationOwnership,
+    ...(relatedFiles.length > 0 ? { relatedFiles } : {}),
   };
 }
 
 function normalizeDeltas(delta, map) {
   const mapped = map.symbols[delta.symbolIdentity];
-  if (mapped?.targets) {
-    return mapped.targets.map((identity) => normalizedItem(delta, {
-      ...identity,
+  const documentationOwnership = ownershipFor(mapped, delta.symbol);
+  if (documentationOwnership.classification === 'method_owned') {
+    return documentationOwnership.owners.map((owner) => normalizedItem(delta, {
+      ...owner,
       packagePrefix: map.packagePrefix || '',
+    }, {
+      ...documentationOwnership,
+      selectedOwnerStableId: owner.stableId,
     }));
   }
   const identity = mapped || fallbackIdentity(delta, map);
   const normalized = normalizedItem(delta, {
     ...identity,
     packagePrefix: map.packagePrefix || '',
-  });
-  if (!mapped) {
+  }, documentationOwnership);
+  if (documentationOwnership.classification === 'ambiguous') {
+    normalized.diagnostic = {
+      level: 'error',
+      code: 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+      message: `Documentation ownership is ambiguous for ${delta.symbolIdentity} in ${map.language} ${map.track}.`,
+    };
+  } else if (!mapped) {
     normalized.diagnostic = {
       level: 'warn',
       code: 'UNMAPPED_CANONICAL_IDENTITY',

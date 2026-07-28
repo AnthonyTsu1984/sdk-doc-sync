@@ -130,6 +130,25 @@ test('release-scope schema rejects malformed changedFiles entries', () => {
   ]);
 });
 
+test('release-scope schema requires method-owned actions to select a declared owner', () => {
+  const scope = readFixture('python-v26-expected.json');
+  scope.actions[0].documentationOwnership = {
+    classification: 'method_owned',
+    owners: [{
+      stableId: 'python:Management:compact',
+      canonicalSlug: 'Management-compact',
+      category: 'Management',
+    }],
+    selectedOwnerStableId: 'python:Management:notCompact',
+  };
+  const validation = validateReleaseScope(scope);
+
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation.errors.map((error) => error.path), [
+    '$.actions[0].documentationOwnership.selectedOwnerStableId',
+  ]);
+});
+
 test('createReleaseScope sorts files, actions, and diagnostics deterministically', () => {
   const scope = createReleaseScope({
     language: 'python',
@@ -345,6 +364,7 @@ test('identity normalizer maps raw Python scanner symbols to canonical docs', ()
       line: 1835,
     },
     reason: 'signature changed',
+    documentationOwnership: { classification: 'standalone' },
   });
 });
 
@@ -387,6 +407,40 @@ test('identity normalizer fans one helper change out to each owning interface', 
     ['java:v2-Volume:VolumeFileManager-uploadFiles', 'v2-Volume-VolumeFileManager-uploadFiles'],
     ['java:v2-Volume:VolumeFileManager-uploadFilesAsync', 'v2-Volume-VolumeFileManager-uploadFilesAsync'],
   ]);
+  assert.deepEqual(normalized.map((item) => item.documentationOwnership), [
+    {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFiles',
+          category: 'Volume',
+        },
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFilesAsync',
+          category: 'Volume',
+        },
+      ],
+      selectedOwnerStableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+    },
+    {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFiles',
+          category: 'Volume',
+        },
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFilesAsync',
+          category: 'Volume',
+        },
+      ],
+      selectedOwnerStableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+    },
+  ]);
 
   const progressActions = normalizeDeltas({
     type: 'CREATE',
@@ -403,6 +457,24 @@ test('identity normalizer fans one helper change out to each owning interface', 
     'java:v2-Volume:VolumeFileManager-uploadFiles',
     'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
   ]);
+});
+
+test('identity normalizer blocks unmapped helper-like types instead of inventing standalone docs', () => {
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'));
+  const [normalized] = normalizeDeltas({
+    type: 'CREATE',
+    symbolIdentity: 'UnownedRequest',
+    symbol: {
+      name: 'UnownedRequest',
+      kind: 'class',
+      filePath: 'pymilvus/client/unowned_request.py',
+      lineNumber: 12,
+    },
+    reason: 'new public class',
+  }, map);
+
+  assert.deepEqual(normalized.documentationOwnership, { classification: 'ambiguous' });
+  assert.equal(normalized.diagnostic.code, 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP');
 });
 
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
@@ -553,6 +625,8 @@ test('reviewed release context builder filters candidates and carries scoped pla
   assert.equal(result.filteredScope.scanStateUpdated, false);
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].category, 'Vector');
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].reviewedEvidence[0].confidence, 'reviewed');
+  assert.deepEqual(result.filteredScope.actions[0].documentationOwnership, { classification: 'standalone' });
+  assert.deepEqual(result.referenceContext.contexts['python:Vector:FieldOp'].documentationOwnership, { classification: 'standalone' });
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].signature, 'FieldOp(field_name: str)');
   assert.deepEqual(result.referenceContext.contexts['python:Vector:FieldOp'].params, [{
     name: 'field_name',
@@ -561,6 +635,32 @@ test('reviewed release context builder filters candidates and carries scoped pla
     required: true,
     description: 'Name of the field to update.',
   }]);
+});
+
+test('reviewed release context builder rejects ambiguous ownership before candidate filtering', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:UnownedRequest',
+      canonicalSlug: 'Vector-UnownedRequest',
+      symbol: 'UnownedRequest',
+      source: { file: 'pymilvus/client/unowned_request.py', line: 12 },
+      reason: 'new public class',
+      documentationOwnership: { classification: 'ambiguous' },
+    }],
+  });
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: {}, sdkReference: '' }),
+    (error) => error.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+  );
 });
 
 test('reviewed release context builder accepts hyphenated Java documentation categories', () => {

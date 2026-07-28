@@ -23,7 +23,10 @@
         "file": "pymilvus/milvus_client/milvus_client.py",
         "line": 1835
       },
-      "reason": "signature changed"
+      "reason": "signature changed",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
     },
     {
       "type": "CREATE",
@@ -34,7 +37,10 @@
         "file": "pymilvus/client/field_ops.py",
         "line": 45
       },
-      "reason": "new public class"
+      "reason": "new public class",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
     }
   ],
   "scannerDiagnostics": [

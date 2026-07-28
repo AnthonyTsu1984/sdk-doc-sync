@@ -136,6 +136,32 @@ test('SyncPlanner rejects writes without a target parent record', () => {
   );
 });
 
+test('SyncPlanner blocks ambiguous and standalone method-owned document actions', () => {
+  const planner = new SyncPlanner();
+  const owner = {
+    stableId: 'node:Collections:createCollection',
+    canonicalSlug: 'Collections-createCollection',
+    category: 'Collections',
+  };
+
+  assert.throws(
+    () => planner.planAction(updateAction({
+      documentationOwnership: { classification: 'ambiguous' },
+    }), planningContext()),
+    (error) => error.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+  );
+  assert.throws(
+    () => planner.planAction(updateAction({
+      documentationOwnership: {
+        classification: 'method_owned',
+        owners: [owner],
+        selectedOwnerStableId: 'node:Collections:otherAction',
+      },
+    }), planningContext()),
+    (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
+  );
+});
+
 test('SyncPlanner rejects CREATE when an existing release record is present', () => {
   assert.throws(
     () => new SyncPlanner().planAction({

@@ -155,6 +155,54 @@ test('runReleaseScout resolves Python v3.0.x from the python-v3 scan-state key',
   assert.deepEqual(scope.scannerDiagnostics.map((item) => item.code), ['NO_RELEASE_CHANGES']);
 });
 
+test('runReleaseScout preserves changed related source evidence and blocks ambiguous helper types', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'ownership-release-scout-'));
+  const identityMapPath = path.join(directory, 'identity.json');
+  fs.writeFileSync(identityMapPath, JSON.stringify({
+    schemaVersion: 1,
+    language: 'node',
+    track: 'v2.6.x',
+    defaultCategory: 'Default',
+    symbols: {},
+  }), 'utf8');
+
+  const scope = await runReleaseScout({
+    language: 'node',
+    sdkName: 'milvus-sdk-node',
+    track: 'v2.6.x',
+    scanState: { node: { lastScannedTag: 'v2.6.1' } },
+    targetTag: 'v2.6.2',
+    publicRoots: ['src/'],
+    identityMapPath,
+    baselineSymbols: [],
+    targetSymbols: [{
+      name: 'RequestEnvelope',
+      kind: 'class',
+      filePath: 'src/request-envelope.ts',
+      relatedFiles: ['src/changed-helper.ts', 'src/changed-helper.ts'],
+      lineNumber: 7,
+    }],
+    runGit(args) {
+      const key = args.join(' ');
+      return {
+        'rev-list -n 1 v2.6.2': 'target-commit\n',
+        'show -s --format=%cI target-commit': '2026-07-28T00:00:00Z\n',
+        'diff --name-only v2.6.1..v2.6.2': 'src/changed-helper.ts\n',
+      }[key];
+    },
+  });
+
+  assert.equal(scope.approvalGrade, false);
+  assert.equal(scope.actions[0].documentationOwnership.classification, 'ambiguous');
+  assert.deepEqual(scope.actions[0].evidence, [{
+    kind: 'source',
+    locator: 'src/changed-helper.ts:7',
+    revision: 'target-commit',
+    confidence: 'direct',
+  }]);
+  assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP'));
+});
+
 test('Java identity maps embed Cloud import request helpers in their owning method docs', () => {
   for (const track of ['v26', 'v30']) {
     const map = JSON.parse(fs.readFileSync(

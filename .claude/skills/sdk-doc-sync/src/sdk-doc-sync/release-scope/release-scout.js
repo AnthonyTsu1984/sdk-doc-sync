@@ -118,6 +118,22 @@ async function scanRefSymbols({ ref, repoDir, sdkDir, publicRoots, language, run
   }
 }
 
+function directSourceEvidence(item, revision, changedFiles) {
+  const changed = new Set(changedFiles || []);
+  return [...new Set([item.source.file, ...(item.relatedFiles || [])])]
+    .filter((file) => changed.has(file))
+    .map((file) => ({
+      kind: 'source',
+      locator: `${file}:${item.source.line}`,
+      revision,
+      confidence: 'direct',
+    }));
+}
+
+function hasAmbiguousDocumentationOwnership(actions) {
+  return actions.some((action) => action.documentationOwnership?.classification === 'ambiguous');
+}
+
 async function runReleaseScout({
   language,
   sdkName,
@@ -227,12 +243,7 @@ async function runReleaseScout({
         repository: `milvus-io/${sdkName}`,
         revision: range.targetCommit,
       },
-      evidence: [{
-        kind: 'source',
-        locator: `${item.source.file}:${item.source.line}`,
-        revision: range.targetCommit,
-        confidence: 'direct',
-      }],
+      evidence: directSourceEvidence(item, range.targetCommit, changedFiles),
     };
     return action;
   }));
@@ -247,6 +258,7 @@ async function runReleaseScout({
     changedFiles,
     actions,
     scannerDiagnostics,
+    approvalGrade: !hasAmbiguousDocumentationOwnership(actions),
   });
   const validation = validateReleaseScope(scope);
   if (!validation.valid) {
@@ -403,12 +415,7 @@ async function runZillizCliReleaseScout({
         repository: 'zilliztech/zilliz-cloud',
         revision: implTargetCommit,
       },
-      evidence: [{
-        kind: 'source',
-        locator: `${item.source.file}:${item.source.line}`,
-        revision: implTargetCommit,
-        confidence: 'direct',
-      }],
+      evidence: directSourceEvidence(item, implTargetCommit, implChangedFiles),
     };
     return action;
   }));
@@ -425,7 +432,9 @@ async function runZillizCliReleaseScout({
     changedFiles: implChangedFiles,
     actions,
     scannerDiagnostics,
-    approvalGrade: releaseImpactRequiresSourceBackedActions(releaseImpact) ? actions.length > 0 : undefined,
+    approvalGrade: hasAmbiguousDocumentationOwnership(actions)
+      ? false
+      : (releaseImpactRequiresSourceBackedActions(releaseImpact) ? actions.length > 0 : undefined),
   });
   const validation = validateReleaseScope(scope);
   if (!validation.valid) {

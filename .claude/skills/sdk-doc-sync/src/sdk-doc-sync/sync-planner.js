@@ -144,6 +144,25 @@ function stableIdFrom(action) {
     || null;
 }
 
+function assertDocumentationOwnership(action, stableId) {
+  const ownership = action.documentationOwnership;
+  if (!ownership) return;
+  if (ownership.classification === 'ambiguous') {
+    throw new SyncPlanningError(
+      'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+      `Documentation ownership is ambiguous for ${stableId}`,
+    );
+  }
+  if (ownership.classification !== 'method_owned') return;
+  const declaredOwner = (ownership.owners || []).some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+  if (!declaredOwner || ownership.selectedOwnerStableId !== stableId) {
+    throw new SyncPlanningError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Method-owned documentation must plan a declared owner for ${stableId}`,
+    );
+  }
+}
+
 /**
  * Pure planner for immutable version-safe SDK document changes.
  *
@@ -250,6 +269,7 @@ class SyncPlanner {
     if (!nonEmptyString(stableId)) {
       throw new SyncPlanningError('STABLE_ID_REQUIRED', 'A stableId is required to plan an SDK document action');
     }
+    assertDocumentationOwnership(action, stableId);
 
     const source = sourceFrom(action, context);
     const target = targetFrom(context);

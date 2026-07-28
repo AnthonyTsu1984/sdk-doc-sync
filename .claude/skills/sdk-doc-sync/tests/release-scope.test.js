@@ -608,6 +608,51 @@ test('symbol inventory ignores source-location-only shifts in embedded C++ types
   assert.deepEqual(classifySymbolDeltas({ baseline, target }), []);
 });
 
+test('symbol inventory ignores source-location-only shifts in overloaded request builders', () => {
+  const baseline = [{
+    name: 'Get',
+    kind: 'method',
+    parentClass: 'Vector',
+    signature: 'Status Get(const GetRequest& request)',
+    params: [{
+      name: 'WithIDs',
+      kind: 'keyword',
+      type: 'std::vector<int64_t>&&',
+      argName: 'id_array',
+      fullArgStr: 'std::vector<int64_t>&& id_array',
+      fullSignature: 'GetRequest& WithIDs(std::vector<int64_t>&& id_array)',
+      description: 'Sets integer primary keys.',
+      deleted: false,
+      filePath: 'src/include/milvus/request/dql/GetRequest.h',
+      lineNumber: 48,
+      evidence: [{ kind: 'source', locator: 'src/include/milvus/request/dql/GetRequest.h:48' }],
+    }, {
+      name: 'WithIDs',
+      kind: 'keyword',
+      type: 'std::vector<std::string>&&',
+      argName: 'id_array',
+      fullArgStr: 'std::vector<std::string>&& id_array',
+      fullSignature: 'GetRequest& WithIDs(std::vector<std::string>&& id_array)',
+      description: 'Sets string primary keys.',
+      deleted: false,
+      filePath: 'src/include/milvus/request/dql/GetRequest.h',
+      lineNumber: 55,
+      evidence: [{ kind: 'source', locator: 'src/include/milvus/request/dql/GetRequest.h:55' }],
+    }],
+  }];
+  const target = [{
+    ...baseline[0],
+    params: baseline[0].params.map((param, index) => ({
+      ...param,
+      filePath: 'src/include/milvus/request/GetRequest.h',
+      lineNumber: 148 + index * 7,
+      evidence: [{ kind: 'source', locator: `src/include/milvus/request/GetRequest.h:${148 + index * 7}` }],
+    })),
+  }];
+
+  assert.deepEqual(classifySymbolDeltas({ baseline, target }), []);
+});
+
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
   const left = {
     actions: [{

@@ -24,7 +24,7 @@ function comparableSignature(symbol) {
   return JSON.stringify({
     kind: symbol.kind || null,
     signature: symbol.signature || '',
-    params: symbol.params || [],
+    params: comparableEmbeddedSurface(symbol.params || []),
     fields: symbol.fields || [],
     values: symbol.values || [],
     methods: symbol.methods || [],
@@ -44,7 +44,10 @@ function sameValue(left, right) {
 
 function updateReason(previous, symbol) {
   if ((previous.signature || '') !== (symbol.signature || '')) return 'signature changed';
-  if (!sameValue(previous.params || [], symbol.params || [])) return 'parameters changed';
+  if (!sameValue(
+    comparableEmbeddedSurface(previous.params || []),
+    comparableEmbeddedSurface(symbol.params || []),
+  )) return 'parameters changed';
   if (!sameValue(previous.optionMethods || [], symbol.optionMethods || [])) return 'builder methods changed';
   if (!sameValue(previous.altConstructors || [], symbol.altConstructors || [])) return 'constructors changed';
   if (!sameValue(previous.fields || [], symbol.fields || [])) return 'fields changed';

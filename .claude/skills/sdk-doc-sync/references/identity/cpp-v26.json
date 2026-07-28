@@ -20,6 +20,71 @@
       "canonicalSlug": "CDC-UpdateReplicateConfiguration",
       "category": "CDC"
     },
+    "CDC.DumpMessages": {
+      "stableId": "cpp:CDC:DumpMessages",
+      "canonicalSlug": "CDC-DumpMessages",
+      "category": "CDC"
+    },
+    "Authentication.AlterRole": {
+      "stableId": "cpp:Authentication:AlterRole",
+      "canonicalSlug": "Authentication-AlterRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreateRole": {
+      "stableId": "cpp:Authentication:CreateRole",
+      "canonicalSlug": "Authentication-CreateRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreateUser": {
+      "stableId": "cpp:Authentication:CreateUser",
+      "canonicalSlug": "Authentication-CreateUser",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeRole": {
+      "stableId": "cpp:Authentication:DescribeRole",
+      "canonicalSlug": "Authentication-DescribeRole",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeUser": {
+      "stableId": "cpp:Authentication:DescribeUser",
+      "canonicalSlug": "Authentication-DescribeUser",
+      "category": "Authentication"
+    },
+    "Authentication.UpdateUser": {
+      "stableId": "cpp:Authentication:UpdateUser",
+      "canonicalSlug": "Authentication-UpdateUser",
+      "category": "Authentication"
+    },
+    "Vector.HybridSearch": {
+      "stableId": "cpp:Vector:HybridSearch",
+      "canonicalSlug": "Vector-HybridSearch",
+      "category": "Vector"
+    },
+    "Vector.Insert": {
+      "stableId": "cpp:Vector:Insert",
+      "canonicalSlug": "Vector-Insert",
+      "category": "Vector"
+    },
+    "Vector.Query": {
+      "stableId": "cpp:Vector:Query",
+      "canonicalSlug": "Vector-Query",
+      "category": "Vector"
+    },
+    "Vector.Search": {
+      "stableId": "cpp:Vector:Search",
+      "canonicalSlug": "Vector-Search",
+      "category": "Vector"
+    },
+    "Vector.SearchIterator": {
+      "stableId": "cpp:Vector:SearchIterator",
+      "canonicalSlug": "Vector-SearchIterator",
+      "category": "Vector"
+    },
+    "Vector.Upsert": {
+      "stableId": "cpp:Vector:Upsert",
+      "canonicalSlug": "Vector-Upsert",
+      "category": "Vector"
+    },
     "Management.FlushAll": {
       "stableId": "cpp:Management:FlushAll",
       "canonicalSlug": "v2-Management-FlushAll",

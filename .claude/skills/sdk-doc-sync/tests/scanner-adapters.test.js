@@ -695,6 +695,28 @@ test('C++ keeps request methods and canonical Status/result structure', () => {
   assert.equal(doc.callableMembers[0].evidence[0].locator, requestEvidence[0].locator);
 });
 
+test('C++ request variants deduplicate overloaded builder member names and preserve overload callables', () => {
+  const symbol = fixture('cpp-create-collection.json');
+  symbol.params.push({
+    name: 'AddField',
+    kind: 'keyword',
+    type: '',
+    argName: 'field',
+    fullArgStr: 'FieldSchema&& field',
+    description: 'Adds a movable field schema.',
+  });
+
+  const doc = cppAdapter.toReferenceDocument(symbol, context('cpp', 'Collections'));
+
+  assert.deepEqual(doc.requestVariants[0].inputs.map((input) => input.name), [
+    'collection_name',
+    'dimension',
+    'field',
+  ]);
+  assert.equal(doc.callableMembers.filter((member) => member.name === 'AddField').length, 2);
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
 test('C++ direct methods use params as direct inputs and never invent request members', () => {
   const doc = cppAdapter.toReferenceDocument(
     fixture('cpp-get-server-version.json'),

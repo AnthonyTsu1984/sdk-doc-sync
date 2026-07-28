@@ -11,6 +11,7 @@ const METHOD_CATEGORIES = {
     Disconnect: 'Client',
     SetRpcDeadlineMs: 'Client',
     SetRetryParam: 'Client',
+    Session: 'Client',
     GetServerVersion: 'Client',
     GetSDKVersion: 'Client',
     CheckHealth: 'Client',
@@ -31,11 +32,15 @@ const METHOD_CATEGORIES = {
     AlterCollectionFieldProperties: 'Collections',
     DropCollectionFieldProperties: 'Collections',
     AddCollectionField: 'Collections',
+    AddCollectionStructField: 'Collections',
     AddCollectionFunction: 'Collections',
+    AddFunctionField: 'Collections',
     AlterCollectionFunction: 'Collections',
     BatchDescribeCollections: 'Collections',
     DescribeReplicas: 'Collections',
     DropCollectionFunction: 'Collections',
+    DropCollectionField: 'Collections',
+    DropFunctionField: 'Collections',
     CreateAlias: 'Collections',
     DropAlias: 'Collections',
     AlterAlias: 'Collections',
@@ -75,6 +80,7 @@ const METHOD_CATEGORIES = {
     GetReplicateConfiguration: 'CDC',
     UpdateReplicateConfiguration: 'CDC',
     GetReplicateInfo: 'CDC',
+    DumpMessages: 'CDC',
 
     // Partitions (7)
     CreatePartition: 'Partitions',
@@ -100,10 +106,12 @@ const METHOD_CATEGORIES = {
     // Authentication (18)
     CreateUser: 'Authentication',
     UpdatePassword: 'Authentication',
+    UpdateUser: 'Authentication',
     DropUser: 'Authentication',
     DescribeUser: 'Authentication',
     ListUsers: 'Authentication',
     CreateRole: 'Authentication',
+    AlterRole: 'Authentication',
     DropRole: 'Authentication',
     DescribeRole: 'Authentication',
     ListRoles: 'Authentication',
@@ -134,6 +142,7 @@ const ENUM_DEFS = [
     { name: 'ConsistencyLevel', category: 'Collections', file: 'types/ConsistencyLevel.h' },
     { name: 'LoadState', category: 'Collections', file: 'types/LoadState.h' },
     { name: 'SegmentLevel', category: 'Management', file: 'types/SegmentInfo.h' },
+    { name: 'FunctionType', category: 'Collections', file: 'types/FunctionType.h' },
 ];
 
 class CppScanner extends BaseScanner {
@@ -152,6 +161,14 @@ class CppScanner extends BaseScanner {
         const content = fs.readFileSync(clientHeader, 'utf-8');
         const relPath = path.relative(this.rootDir, clientHeader);
         const methods = this._extractMethods(content, relPath);
+
+        const bulkImportHeader = path.join(this._includeDir, 'BulkImport.h');
+        if (fs.existsSync(bulkImportHeader)) {
+            methods.push(...this._extractBulkImportMethods(
+                fs.readFileSync(bulkImportHeader, 'utf-8'),
+                path.relative(this.rootDir, bulkImportHeader),
+            ));
+        }
 
         // Phase 2: Parse request headers for With* params
         this._requestIndex = this._buildRequestIndex();
@@ -184,7 +201,7 @@ class CppScanner extends BaseScanner {
         for (let i = 0; i < lines.length; i++) {
             const trimmed = lines[i].trim();
 
-            const isVirtual = trimmed === 'virtual Status';
+            const isVirtual = /^(?:\[\[deprecated\([^\]]*\)\]\]\s+)?virtual Status$/.test(trimmed);
             const isStatic = trimmed === 'static std::shared_ptr<MilvusClientV2>';
 
             if (!isVirtual && !isStatic) continue;
@@ -217,7 +234,7 @@ class CppScanner extends BaseScanner {
             const directParams = [];
 
             if (paramStr) {
-                const parts = paramStr.split(',').map(s => s.trim());
+                const parts = this._splitParameters(paramStr);
                 for (const part of parts) {
                     const reqMatch = part.match(/(?:const\s+)?(\w+Request)\s*&/);
                     if (reqMatch) {
@@ -268,10 +285,88 @@ class CppScanner extends BaseScanner {
                 parentClass: category,
                 requestClass,
                 responseClass,
+                decorators: trimmed.startsWith('[[deprecated') ? ['deprecated'] : [],
             });
         }
 
         return symbols;
+    }
+
+    _extractBulkImportMethods(content, filePath) {
+        const lines = content.split('\n');
+        const symbols = [];
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim() !== 'static nlohmann::json') continue;
+            const declarationLines = [];
+            for (let j = i + 1; j < lines.length; j++) {
+                declarationLines.push(lines[j].trim());
+                if (lines[j].includes(';')) break;
+            }
+            const declaration = declarationLines.join(' ').replace(/\s+/g, ' ');
+            const match = declaration.match(/^(\w+)\s*\(([\s\S]*)\)\s*;/);
+            if (!match) continue;
+            const name = match[1];
+            const paramStr = match[2].trim();
+            const params = [];
+            for (const part of this._splitParameters(paramStr)) {
+                const withoutDefault = part.replace(/\s*=\s*[\s\S]*$/, '').trim();
+                const plainMatch = withoutDefault.match(/^((?:const\s+)?[\w:]+(?:<[^>]+>)?(?:\s*&{0,2})?)\s+(\w+)$/);
+                if (!plainMatch) continue;
+                params.push({
+                    name: plainMatch[2],
+                    kind: 'keyword',
+                    type: plainMatch[1].trim(),
+                    description: '',
+                });
+            }
+            symbols.push({
+                name,
+                kind: 'method',
+                signature: `static nlohmann::json ${name}(${paramStr})`,
+                docstring: this._extractDoxygen(lines, i),
+                params,
+                filePath,
+                lineNumber: i + 2,
+                parentClass: 'DataImport',
+                requestClass: null,
+                responseClass: null,
+                decorators: [],
+            });
+        }
+        return symbols;
+    }
+
+    _splitParameters(value) {
+        const parts = [];
+        let start = 0;
+        let angleDepth = 0;
+        let parenDepth = 0;
+        let quote = null;
+        let escaped = false;
+        for (let i = 0; i < value.length; i++) {
+            const char = value[i];
+            if (quote) {
+                if (escaped) escaped = false;
+                else if (char === '\\') escaped = true;
+                else if (char === quote) quote = null;
+                continue;
+            }
+            if (char === '"' || char === "'") {
+                quote = char;
+                continue;
+            }
+            if (char === '<') angleDepth++;
+            else if (char === '>' && angleDepth > 0) angleDepth--;
+            else if (char === '(') parenDepth++;
+            else if (char === ')' && parenDepth > 0) parenDepth--;
+            else if (char === ',' && angleDepth === 0 && parenDepth === 0) {
+                parts.push(value.slice(start, i).trim());
+                start = i + 1;
+            }
+        }
+        const tail = value.slice(start).trim();
+        if (tail) parts.push(tail);
+        return parts;
     }
 
     /**
@@ -381,7 +476,8 @@ class CppScanner extends BaseScanner {
                     }
                 }
 
-                const withMethods = this._extractWithMethods(content);
+                const classBody = this._extractBracedBody(content, classRegex.lastIndex - 1);
+                const withMethods = this._extractWithMethods(classBody);
 
                 index.classes.set(className, {
                     file,
@@ -399,6 +495,53 @@ class CppScanner extends BaseScanner {
         }
 
         return index;
+    }
+
+    _extractBracedBody(content, openingBraceIndex) {
+        let depth = 0;
+        let state = 'code';
+        for (let i = openingBraceIndex; i < content.length; i++) {
+            const char = content[i];
+            const next = content[i + 1];
+            if (state === 'line-comment') {
+                if (char === '\n') state = 'code';
+                continue;
+            }
+            if (state === 'block-comment') {
+                if (char === '*' && next === '/') {
+                    state = 'code';
+                    i++;
+                }
+                continue;
+            }
+            if (state === 'string') {
+                if (char === '\\') i++;
+                else if (char === '"') state = 'code';
+                continue;
+            }
+            if (state === 'character') {
+                if (char === '\\') i++;
+                else if (char === "'") state = 'code';
+                continue;
+            }
+            if (char === '/' && next === '/') {
+                state = 'line-comment';
+                i++;
+            } else if (char === '/' && next === '*') {
+                state = 'block-comment';
+                i++;
+            } else if (char === '"') {
+                state = 'string';
+            } else if (char === "'") {
+                state = 'character';
+            } else if (char === '{') {
+                depth++;
+            } else if (char === '}') {
+                depth--;
+                if (depth === 0) return content.slice(openingBraceIndex + 1, i);
+            }
+        }
+        return content.slice(openingBraceIndex + 1);
     }
 
     _walkHeaderFiles(dir) {
@@ -466,6 +609,7 @@ class CppScanner extends BaseScanner {
                 argName,
                 fullArgStr,
                 description: description || '',
+                deleted: /=\s*delete\s*;/.test(nextTrimmed),
             });
         }
 
@@ -531,7 +675,8 @@ class CppScanner extends BaseScanner {
 
         // This class's params override base
         for (const p of classInfo.withMethods) {
-            allParams.set(p.name, p);
+            if (p.deleted) allParams.delete(p.name);
+            else allParams.set(p.name, p);
         }
 
         return Array.from(allParams.values());

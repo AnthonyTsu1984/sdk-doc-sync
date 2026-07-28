@@ -105,6 +105,28 @@ test('Python v3.0.x has a default canonical identity map', () => {
   });
 });
 
+test('C++ v3.0.x has a default canonical identity map', () => {
+  const identityMapPath = defaultIdentityMapPath({
+    skillRoot: path.join(__dirname, '..'),
+    language: 'cpp',
+    track: 'v3.0.x',
+  });
+  const map = JSON.parse(fs.readFileSync(identityMapPath, 'utf8'));
+
+  assert.equal(path.basename(identityMapPath), 'cpp-v30.json');
+  assert.equal(map.track, 'v3.0.x');
+  assert.deepEqual(map.symbols['CDC.DumpMessages'], {
+    stableId: 'cpp:CDC:DumpMessages',
+    canonicalSlug: 'CDC-DumpMessages',
+    category: 'CDC',
+  });
+  assert.deepEqual(map.symbols['DataImport.CommitImport'], {
+    stableId: 'cpp:DataImport:CommitImport',
+    canonicalSlug: 'DataImport-CommitImport',
+    category: 'Data Import',
+  });
+});
+
 test('runReleaseScout resolves Python v3.0.x from the python-v3 scan-state key', async () => {
   const scope = await runReleaseScout({
     language: 'python',
@@ -895,6 +917,150 @@ MilvusClientV2Impl::FlushAll(const FlushAllRequest& request, FlushAllResponse& r
     ['L1', '2'],
     ['L2', '3'],
   ]);
+});
+
+test('CppScanner covers attributed methods, new client APIs, bulk-import statics, and FunctionType', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-scanner-v301-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    DumpMessages(const DumpMessagesRequest& request, const Callback& on_message) = 0;
+
+    virtual Status
+    UpdateUser(const UpdateUserRequest& request) = 0;
+
+    virtual Status
+    AlterRole(const AlterRoleRequest& request) = 0;
+
+    [[deprecated("Use AddFunctionField() instead")]] virtual Status
+    AddCollectionFunction(const AddCollectionFunctionRequest& request) = 0;
+
+    virtual Status
+    AddFunctionField(const AddFunctionFieldRequest& request) = 0;
+
+    virtual Status
+    DropCollectionField(const DropCollectionFieldRequest& request) = 0;
+
+    virtual Status
+    DropFunctionField(const DropFunctionFieldRequest& request) = 0;
+
+    virtual Status
+    Session(const std::string& cluster_id, MilvusClientV2SessionPtr& session) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'BulkImport.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API BulkImport {
+ public:
+    static nlohmann::json
+    CommitImport(const std::string& url, const std::string& job_id,
+                 const std::string& db_name = "default", const std::string& api_key = "");
+    static nlohmann::json
+    AbortImport(const std::string& url, const std::string& job_id,
+                const std::string& db_name = "default", const std::string& api_key = "");
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'types', 'FunctionType.h'), `
+#pragma once
+namespace milvus {
+enum class FunctionType {
+    UNKNOWN = 0,
+    BM25 = 1,
+    MINHASH = 4,
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const byIdentity = new Map(symbols.map((symbol) => [`${symbol.parentClass}.${symbol.name}`, symbol]));
+
+  for (const identity of [
+    'CDC.DumpMessages',
+    'Authentication.UpdateUser',
+    'Authentication.AlterRole',
+    'Collections.AddFunctionField',
+    'Collections.DropCollectionField',
+    'Collections.DropFunctionField',
+    'Client.Session',
+    'DataImport.CommitImport',
+    'DataImport.AbortImport',
+    'Collections.FunctionType',
+  ]) assert.ok(byIdentity.has(identity), `${identity} should be scanned`);
+
+  assert.deepEqual(byIdentity.get('Collections.AddCollectionFunction').decorators, ['deprecated']);
+  assert.deepEqual(byIdentity.get('DataImport.CommitImport').params.map((param) => [param.name, param.type]), [
+    ['url', 'const std::string&'],
+    ['job_id', 'const std::string&'],
+    ['db_name', 'const std::string&'],
+    ['api_key', 'const std::string&'],
+  ]);
+  assert.deepEqual(byIdentity.get('Collections.FunctionType').params.map((value) => [value.name, value.value]), [
+    ['UNKNOWN', '0'],
+    ['BM25', '1'],
+    ['MINHASH', '4'],
+  ]);
+});
+
+test('CppScanner excludes inherited request builders explicitly deleted by a derived request', async () => {
+  const repo = fs.mkdtempSync(path.join(os.tmpdir(), 'cpp-scanner-deleted-builder-'));
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'MilvusClientV2.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API MilvusClientV2 {
+ public:
+    virtual Status
+    SearchIterator(SearchIteratorRequest& request, SearchIteratorPtr& response) = 0;
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'SearchRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchRequest {
+ public:
+    SearchRequest&
+    WithLimit(int64_t limit);
+    SearchRequest&
+    WithIDs(std::vector<int64_t>&& id_array);
+};
+}
+`);
+  writeText(path.join(repo, 'src', 'include', 'milvus', 'request', 'dql', 'SearchIteratorRequest.h'), `
+#pragma once
+namespace milvus {
+class MILVUS_SDK_API SearchIteratorRequest : public SearchRequest {
+ public:
+    /**
+     * @brief Constructor
+     */
+    SearchIteratorRequest();
+
+ private:
+    SearchIteratorRequest&
+    WithIDs(std::vector<int64_t>&& id_array) = delete;
+};
+
+class MILVUS_SDK_API UnrelatedRequest {
+ public:
+    UnrelatedRequest&
+    WithUnrelated(bool enabled);
+};
+}
+`);
+
+  const symbols = await new CppScanner({ rootDir: repo, publicOnly: true }).scan();
+  const searchIterator = symbols.find(
+    (symbol) => symbol.parentClass === 'Vector' && symbol.name === 'SearchIterator',
+  );
+
+  assert.ok(searchIterator, 'SearchIterator symbol should be scanned');
+  assert.deepEqual(searchIterator.params.map((param) => param.name), ['WithLimit']);
 });
 
 test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs', async () => {

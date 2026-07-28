@@ -127,10 +127,18 @@ function toReferenceDocument(symbol, context = {}) {
   const signatures = callable
     ? [common.makeSignature(symbol.signature || '', directParams, evidence, { symbol, context })]
     : [];
-  const requestFields = (symbol.params || []).map((param) => ({
-    ...param,
-    name: param.argName || param.name,
-  }));
+  const requestFields = [];
+  const seenRequestFields = new Set();
+  for (const param of symbol.params || []) {
+    const name = param.argName || param.name;
+    if (!name || seenRequestFields.has(name)) continue;
+    seenRequestFields.add(name);
+    requestFields.push({
+      ...param,
+      name,
+      type: param.type || param.fullArgStr || 'value',
+    });
+  }
   let requestVariants = symbol.requestClass ? [common.makeRequestVariant({
     id: symbol.requestClass,
     title: symbol.requestClass,

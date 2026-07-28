@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "language": "cpp",
+  "track": "v3.0.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "Authentication.AlterRole": {
+      "stableId": "cpp:Authentication:AlterRole",
+      "canonicalSlug": "Authentication-AlterRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreateRole": {
+      "stableId": "cpp:Authentication:CreateRole",
+      "canonicalSlug": "Authentication-CreateRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreateUser": {
+      "stableId": "cpp:Authentication:CreateUser",
+      "canonicalSlug": "Authentication-CreateUser",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeRole": {
+      "stableId": "cpp:Authentication:DescribeRole",
+      "canonicalSlug": "Authentication-DescribeRole",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeUser": {
+      "stableId": "cpp:Authentication:DescribeUser",
+      "canonicalSlug": "Authentication-DescribeUser",
+      "category": "Authentication"
+    },
+    "Authentication.UpdateUser": {
+      "stableId": "cpp:Authentication:UpdateUser",
+      "canonicalSlug": "Authentication-UpdateUser",
+      "category": "Authentication"
+    },
+    "CDC.DumpMessages": {
+      "stableId": "cpp:CDC:DumpMessages",
+      "canonicalSlug": "CDC-DumpMessages",
+      "category": "CDC"
+    },
+    "CDC.GetReplicateInfo": {
+      "stableId": "cpp:CDC:GetReplicateInfo",
+      "canonicalSlug": "CDC-GetReplicateInfo",
+      "category": "CDC"
+    },
+    "Client.Session": {
+      "stableId": "cpp:Client:Session",
+      "canonicalSlug": "Client-Session",
+      "category": "Client"
+    },
+    "Collections.AddCollectionField": {
+      "stableId": "cpp:Collections:AddCollectionField",
+      "canonicalSlug": "Collections-AddCollectionField",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionFunction": {
+      "stableId": "cpp:Collections:AddCollectionFunction",
+      "canonicalSlug": "Collections-AddCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionStructField": {
+      "stableId": "cpp:Collections:AddCollectionStructField",
+      "canonicalSlug": "Collections-AddCollectionStructField",
+      "category": "Collections"
+    },
+    "Collections.AddFunctionField": {
+      "stableId": "cpp:Collections:AddFunctionField",
+      "canonicalSlug": "Collections-AddFunctionField",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionField": {
+      "stableId": "cpp:Collections:DropCollectionField",
+      "canonicalSlug": "Collections-DropCollectionField",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionFunction": {
+      "stableId": "cpp:Collections:DropCollectionFunction",
+      "canonicalSlug": "Collections-DropCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.DropFunctionField": {
+      "stableId": "cpp:Collections:DropFunctionField",
+      "canonicalSlug": "Collections-DropFunctionField",
+      "category": "Collections"
+    },
+    "Collections.FunctionType": {
+      "stableId": "cpp:Collections:FunctionType",
+      "canonicalSlug": "Collections-FunctionType",
+      "category": "Collections"
+    },
+    "DataImport.AbortImport": {
+      "stableId": "cpp:DataImport:AbortImport",
+      "canonicalSlug": "DataImport-AbortImport",
+      "category": "Data Import"
+    },
+    "DataImport.CommitImport": {
+      "stableId": "cpp:DataImport:CommitImport",
+      "canonicalSlug": "DataImport-CommitImport",
+      "category": "Data Import"
+    },
+    "Vector.HybridSearch": {
+      "stableId": "cpp:Vector:HybridSearch",
+      "canonicalSlug": "Vector-HybridSearch",
+      "category": "Vector"
+    },
+    "Vector.Insert": {
+      "stableId": "cpp:Vector:Insert",
+      "canonicalSlug": "Vector-Insert",
+      "category": "Vector"
+    },
+    "Vector.Query": {
+      "stableId": "cpp:Vector:Query",
+      "canonicalSlug": "Vector-Query",
+      "category": "Vector"
+    },
+    "Vector.QueryIterator": {
+      "stableId": "cpp:Vector:QueryIterator",
+      "canonicalSlug": "Vector-QueryIterator",
+      "category": "Vector"
+    },
+    "Vector.Search": {
+      "stableId": "cpp:Vector:Search",
+      "canonicalSlug": "Vector-Search",
+      "category": "Vector"
+    },
+    "Vector.SearchIterator": {
+      "stableId": "cpp:Vector:SearchIterator",
+      "canonicalSlug": "Vector-SearchIterator",
+      "category": "Vector"
+    },
+    "Vector.Upsert": {
+      "stableId": "cpp:Vector:Upsert",
+      "canonicalSlug": "Vector-Upsert",
+      "category": "Vector"
+    }
+  }
+}

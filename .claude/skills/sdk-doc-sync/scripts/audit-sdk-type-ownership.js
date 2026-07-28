@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const REQUIRED_OPTIONS = ['records', 'ownership', 'ownerDocuments', 'output'];
+const CLASSIFICATIONS = new Set(['standalone', 'method_owned', 'ambiguous']);
 
 function parseArgs(argv = process.argv) {
   const args = {};
@@ -38,7 +39,7 @@ function ownershipEntries(ownership) {
   throw new TypeError('ownership entries must be an array or types object');
 }
 
-function ownerStableId(owner) {
+function ownerStableId(owner, typeName) {
   return typeof owner === 'string' ? owner : owner?.stableId;
 }
 
@@ -54,17 +55,28 @@ function ownerDocumentIndex(ownerDocuments) {
   return index;
 }
 
-function stableOwners(entry) {
-  const ownerLists = [
+function ownerLists(entry) {
+  const lists = [
     entry.owners,
     entry.targets,
     entry.documentationOwnership?.owners,
     entry.documentationOwnership?.targets,
   ].filter((owners) => owners !== undefined);
-  for (const owners of ownerLists) {
+  for (const owners of lists) {
     if (!Array.isArray(owners)) throw new TypeError(`Owners for ${entry.typeName || entry.title} must be an array`);
   }
-  return [...new Set(ownerLists.flat().map(ownerStableId).filter(Boolean))].sort();
+  return lists;
+}
+
+function stableOwners(entry) {
+  const typeName = typeNameFor(entry);
+  return [...new Set(ownerLists(entry).flat().map((owner) => {
+    const stableId = ownerStableId(owner, typeName);
+    if (typeof stableId !== 'string' || stableId.trim().length === 0) {
+      throw new TypeError(`Owner for ${typeName} requires a non-empty stableId`);
+    }
+    return stableId;
+  }))].sort();
 }
 
 function typeNameFor(entry) {
@@ -78,7 +90,7 @@ function compareRecords(left, right) {
 }
 
 function ownershipClassification(entry) {
-  return entry.classification || entry.documentationOwnership?.classification;
+  return entry.classification ?? entry.documentationOwnership?.classification;
 }
 
 function ownershipIndex(entries) {
@@ -86,12 +98,18 @@ function ownershipIndex(entries) {
   for (const entry of entries) {
     const typeName = typeNameFor(entry);
     if (index.has(typeName)) throw new TypeError(`Duplicate ownership type name: ${typeName}`);
-    const classification = ownershipClassification(entry);
+    const owners = stableOwners(entry);
+    const declaredClassification = ownershipClassification(entry);
+    const classification = declaredClassification ?? (ownerLists(entry).length > 0 ? 'method_owned' : undefined);
+    if (classification === undefined) throw new TypeError(`Missing documentation ownership classification for ${typeName}`);
+    if (!CLASSIFICATIONS.has(classification)) {
+      throw new TypeError(`Unsupported documentation ownership classification: ${classification}`);
+    }
     if (classification === 'ambiguous') throw new TypeError(`Ambiguous documentation ownership for ${typeName}`);
-    if (classification === 'method_owned' && stableOwners(entry).length === 0) {
+    if (classification === 'method_owned' && owners.length === 0) {
       throw new TypeError(`Method-owned type ${typeName} requires at least one owner`);
     }
-    index.set(typeName, entry);
+    index.set(typeName, { ...entry, classification });
   }
   return index;
 }
@@ -111,10 +129,18 @@ function canonicalPath(filePath) {
 function assertDistinctOutput(args) {
   const outputPath = canonicalPath(args.output);
   for (const inputName of ['records', 'ownership', 'ownerDocuments']) {
-    if (outputPath === canonicalPath(args[inputName])) {
+    const inputPath = args[inputName];
+    if (outputPath === canonicalPath(inputPath) || sameExistingFile(args.output, inputPath)) {
       throw new Error(`--output must not overwrite an input path: ${args[inputName]}`);
     }
   }
+}
+
+function sameExistingFile(leftPath, rightPath) {
+  if (!fs.existsSync(leftPath) || !fs.existsSync(rightPath)) return false;
+  const left = fs.statSync(leftPath);
+  const right = fs.statSync(rightPath);
+  return left.dev === right.dev && left.ino === right.ino;
 }
 
 function buildTypeOwnershipAudit({ records, ownership, ownerDocuments }) {
@@ -156,6 +182,7 @@ function main(argv = process.argv) {
     ownerDocuments: JSON.parse(fs.readFileSync(args.ownerDocuments, 'utf8')),
   });
   fs.mkdirSync(path.dirname(args.output), { recursive: true });
+  assertDistinctOutput(args);
   fs.writeFileSync(args.output, `${JSON.stringify(audit, null, 2)}\n`);
   console.log(JSON.stringify({ output: args.output, invalidSiblingRecords: audit.invalidSiblingRecords.length }, null, 2));
 }

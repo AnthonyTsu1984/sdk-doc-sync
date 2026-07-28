@@ -184,3 +184,50 @@ test('CLI refuses direct and symlink-equivalent output input collisions', () => 
     assert.match(result.stderr, /must not overwrite an input path/);
   }
 });
+
+test('fails closed for unsupported classifications and malformed owners while inferring method ownership', () => {
+  const base = {
+    records: [{ recordId: 'rec-helper', title: 'Helper', documentToken: 'doc-helper' }],
+    ownership: { language: 'node', track: 'v3.0.x', entries: [] },
+    ownerDocuments: [{ stableId: 'node:Client:call', embeddedTypeNames: ['Helper'] }],
+  };
+  const inferred = buildTypeOwnershipAudit({
+    ...base,
+    ownership: {
+      ...base.ownership,
+      entries: [{ typeName: 'Helper', targets: [{ stableId: 'node:Client:call' }] }],
+    },
+  });
+  assert.deepEqual(inferred.invalidSiblingRecords[0].owners, ['node:Client:call']);
+
+  assert.throws(() => buildTypeOwnershipAudit({
+    ...base,
+    ownership: { ...base.ownership, entries: [{ typeName: 'Helper', classification: 'unknown' }] },
+  }), /Unsupported documentation ownership classification: unknown/);
+  assert.throws(() => buildTypeOwnershipAudit({
+    ...base,
+    ownership: { ...base.ownership, entries: [{ typeName: 'Helper', classification: 'method_owned', owners: [{}] }] },
+  }), /Owner for Helper requires a non-empty stableId/);
+});
+
+test('CLI refuses hard-link output input collisions', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'type-ownership-audit-hard-link-'));
+  const records = path.join(directory, 'records.json');
+  const ownership = path.join(directory, 'ownership.json');
+  const ownerDocuments = path.join(directory, 'owner-documents.json');
+  const outputHardLink = path.join(directory, 'output.json');
+  fs.writeFileSync(records, '[]');
+  fs.writeFileSync(ownership, JSON.stringify({ language: 'cpp', track: 'v2.6.x', entries: [] }));
+  fs.writeFileSync(ownerDocuments, '[]');
+  fs.linkSync(ownership, outputHardLink);
+
+  const result = spawnSync(process.execPath, [scriptPath,
+    '--records', records,
+    '--ownership', ownership,
+    '--owner-documents', ownerDocuments,
+    '--output', outputHardLink,
+  ], { encoding: 'utf8' });
+
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /must not overwrite an input path/);
+});

@@ -28,6 +28,11 @@
     "lastScannedCommit": "69a0b657dccde72e5ba409b1ea77f43977f97ac3",
     "lastScanDate": "2026-06-17"
   },
+  "cpp-v30": {
+    "lastScannedTag": "v3.0.1",
+    "lastScannedCommit": "0bde4ab7d35cda6fd7a2a6d8fa148c3641cda12e",
+    "lastScanDate": "2026-07-28"
+  },
   "go": {
     "lastScannedTag": "client/v2.6.5",
     "lastScannedCommit": "1942b751f6c7c988ac2163139f360f42549b4b4c",

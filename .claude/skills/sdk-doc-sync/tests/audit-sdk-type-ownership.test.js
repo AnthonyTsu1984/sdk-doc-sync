@@ -256,3 +256,22 @@ test('fails closed for missing ownership identities and conflicting canonical ow
     typeName: 'Helper', documentationOwnership: { classification: 'ambiguous' },
   })), /Ambiguous documentation ownership for Helper/);
 });
+
+test('rejects malformed owner document embedding inventories before indexing', () => {
+  const base = {
+    records: [{ recordId: 'rec-helper', title: 'Helper', documentToken: 'doc-helper' }],
+    ownership: {
+      language: 'cpp', track: 'v2.6.x',
+      entries: [{ typeName: 'Helper', classification: 'method_owned', owners: [{ stableId: 'cpp:Client:Call' }] }],
+    },
+  };
+
+  for (const ownerDocument of [
+    { stableId: 'cpp:Client:Call', embeddedTypeNames: 'prefix-Helper-suffix' },
+    { stableId: 'cpp:Client:Call', embeddedTypeNames: ['Helper', ''] },
+    { stableId: ' ', embeddedTypeNames: ['Helper'] },
+  ]) {
+    assert.throws(() => buildTypeOwnershipAudit({ ...base, ownerDocuments: [ownerDocument] }),
+      /owner document.*non-empty stableId|embeddedTypeNames.*array of non-empty type names/i);
+  }
+});

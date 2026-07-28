@@ -47,6 +47,14 @@ function ownerDocumentIndex(ownerDocuments) {
   const documents = listFrom(ownerDocuments, 'ownerDocuments');
   const index = new Map();
   for (const document of documents) {
+    if (typeof document?.stableId !== 'string' || document.stableId.trim().length === 0) {
+      throw new TypeError('Owner document requires a non-empty stableId');
+    }
+    if (!Array.isArray(document.embeddedTypeNames)
+      || document.embeddedTypeNames.some((typeName) => typeof typeName !== 'string'
+        || typeName.length === 0 || typeName.trim() !== typeName)) {
+      throw new TypeError('Owner document embeddedTypeNames must be an array of non-empty type names');
+    }
     if (index.has(document.stableId)) {
       throw new TypeError(`Duplicate owner document stableId: ${document.stableId}`);
     }

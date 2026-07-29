@@ -104,7 +104,7 @@ test('exports frozen schema enums with the complete supported vocabulary', () =>
     'method', 'function', 'class', 'enum', 'struct', 'interface', 'command', 'rest-operation',
   ]);
   assert.deepEqual(LANGUAGES, ['python', 'java', 'node', 'go', 'cpp', 'zilliz-cli', 'rest']);
-  assert.deepEqual(MEMBER_KINDS, ['builder', 'option', 'request']);
+  assert.deepEqual(MEMBER_KINDS, ['builder', 'option', 'request', 'implementation']);
   assert.deepEqual(EVIDENCE_KINDS, ['source', 'openapi', 'existing-doc', 'curated']);
   assert.deepEqual(CONFIDENCE_LEVELS, ['direct', 'derived', 'reviewed']);
   for (const value of [DOCUMENT_KINDS, LANGUAGES, MEMBER_KINDS, EVIDENCE_KINDS, CONFIDENCE_LEVELS]) {

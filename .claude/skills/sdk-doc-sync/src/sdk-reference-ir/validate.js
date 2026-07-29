@@ -19,6 +19,7 @@ const TODO_WORKFLOW = /\btodo\s+(?:later|fix|pending|replace|add|update|review|i
 const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp']);
 const MEMBER_KIND_BY_LANGUAGE = new Map([
   ['java', 'builder'],
+  ['node', 'implementation'],
   ['go', 'option'],
   ['cpp', 'request'],
 ]);

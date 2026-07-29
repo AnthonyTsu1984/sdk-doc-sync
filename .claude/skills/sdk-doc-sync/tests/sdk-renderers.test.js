@@ -253,6 +253,116 @@ test('scanner fixtures render through production Reference IR and lossless Docum
   }
 });
 
+test('Node reviewed context overrides scanner request variants for release parameters', () => {
+  const symbol = {
+    name: 'upsert',
+    parentClass: 'Vector',
+    kind: 'Function',
+    docstring: 'Upserts rows.',
+    filePath: 'milvus/grpc/Data.ts',
+    lineNumber: 89,
+    params: [{ name: 'data', type: 'UpsertReq' }],
+  };
+  const adapterContext = {
+    repository: 'milvus-io/milvus-sdk-node',
+    revision: 'v2.6.17',
+    category: 'Vector',
+    title: 'upsert()',
+    summary: 'Inserts or updates rows in a collection.',
+    signature: 'await milvusClient.upsert(data: UpsertReq)',
+    reviewedEvidence: sourceEvidence('node'),
+    requestVariants: [{
+      id: 'default',
+      title: 'Upsert request',
+      signature: 'await milvusClient.upsert({ collection_name, data, field_ops })',
+      inputs: [{
+        name: 'field_ops',
+        type: 'FieldPartialUpdateOp[]',
+        required: false,
+        description: 'Applies partial update operations to array fields.',
+        children: [{
+          name: 'op',
+          type: 'FieldPartialUpdateOpType',
+          required: true,
+          description: 'Uses REPLACE, ARRAY_APPEND, or ARRAY_REMOVE.',
+        }],
+      }],
+    }],
+    result: {
+      type: 'Promise<MutationResult>',
+      description: 'Returns the mutation result.',
+      fields: [],
+    },
+    exceptions: [{
+      name: 'MilvusError',
+      condition: 'The operation fails.',
+      description: 'Contains the failure details.',
+    }],
+    examples: [{
+      title: 'Append array values',
+      description: 'Appends values through field_ops.',
+      language: 'node',
+      code: 'await milvusClient.upsert({ field_ops: [{ field_name: "tags", op: "ARRAY_APPEND" }] });',
+    }],
+  };
+
+  const reference = nodeAdapter.toReferenceDocument(symbol, adapterContext);
+  assert.equal(validateReferenceDocument(reference, { production: true }).valid, true);
+  const markdown = renderMarkdown(nodeRenderer.render(reference));
+  assert.match(markdown, /field\_ops/);
+  assert.match(markdown, /ARRAY_APPEND/);
+  assert.doesNotMatch(markdown, /client\.upsert\(data\)/);
+});
+
+test('Node reviewed context renders concrete implementations inside an interface page', () => {
+  const symbol = {
+    name: 'Formatter',
+    parentClass: 'DataImport',
+    kind: 'Class',
+    docstring: 'Formats buffered rows.',
+    filePath: 'milvus/bulkwriter/ParquetFormatter.ts',
+    lineNumber: 283,
+    params: [],
+  };
+  const adapterContext = {
+    repository: 'milvus-io/milvus-sdk-node',
+    revision: 'v2.6.17',
+    category: 'DataImport',
+    kind: 'interface',
+    title: 'Formatter',
+    summary: 'Serializes buffered BulkWriter columns into import files.',
+    signature: 'interface Formatter',
+    reviewedEvidence: sourceEvidence('node'),
+    callableMembers: [{
+      kind: 'implementation',
+      name: 'JsonFormatter',
+      signature: 'class JsonFormatter implements Formatter',
+      description: 'Writes JSON import files.',
+    }, {
+      kind: 'implementation',
+      name: 'ParquetFormatter',
+      signature: 'class ParquetFormatter implements Formatter',
+      description: 'Writes Parquet import files with @shanghaikid/parquetjs.',
+    }],
+    examples: [{
+      title: 'Select a formatter',
+      description: 'Creates a concrete formatter.',
+      language: 'node',
+      code: 'const formatter = new ParquetFormatter();',
+    }],
+  };
+
+  const reference = nodeAdapter.toReferenceDocument(symbol, adapterContext);
+  assert.equal(reference.identity.kind, 'interface');
+  assert.equal(validateReferenceDocument(reference, { production: true }).valid, true);
+  const markdown = renderMarkdown(nodeRenderer.render(reference));
+  assert.match(markdown, /\*\*IMPLEMENTATIONS:\*\*/);
+  assert.match(markdown, /```typescript\ninterface Formatter\n```/);
+  assert.match(markdown, /class JsonFormatter implements Formatter/);
+  assert.match(markdown, /class ParquetFormatter implements Formatter/);
+  assert.match(markdown, /@shanghaikid\/parquetjs/);
+});
+
 test('language policies control exact sections, fences, and conditional request rendering', () => {
   const rendered = Object.fromEntries(cases.map((item) => [item.language, renderCase(item).markdown]));
 

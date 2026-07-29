@@ -13,6 +13,8 @@ module.exports = createSdkRenderer({
   variantHeadings: true,
   variantFields: true,
   parametersLabel: 'PARAMETERS:',
+  memberKind: 'implementation',
+  membersLabel: 'IMPLEMENTATIONS:',
   returnsLabel: 'RETURNS:',
   errorsLabel: 'EXCEPTIONS:',
   exampleHeading: 'Example{#example}',

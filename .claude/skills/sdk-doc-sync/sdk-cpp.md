@@ -32,7 +32,7 @@ Do not rely on the legacy `cpp` scan-state key when it points at `origin/master`
 For v2.6.4, source-backed public documentation candidates are:
 
 - New methods: `FlushAll`, `GetFlushAllState`, `GetReplicateConfiguration`, `UpdateReplicateConfiguration`, `GetReplicateInfo`.
-- New support docs: `FlushAllRequest`, `FlushAllResponse`, `GetFlushAllStateRequest`, `GetFlushAllStateResponse`, CDC request/response classes, and `ReplicateConfiguration` helper types.
+- Embedded request/result updates: `FlushAllRequest`, `FlushAllResponse`, `GetFlushAllStateRequest`, `GetFlushAllStateResponse`, CDC request/response classes, and `ReplicateConfiguration` helper types belong in each owning method document.
 - Updates: `LoadCollection`, `LoadPartitions`, `GetLoadState` load/refresh progress behavior; `SegmentInfo`, `QuerySegmentInfo`, and `SegmentLevel` segment metadata.
 - Build/reference note: `MILVUS_SDK_API` export annotations are packaging visibility changes; document only if the page exposes class signatures or build guidance.
 
@@ -83,37 +83,9 @@ if (!status.IsOk()) {
 ```
 ```
 
-**Doc format — Type/Class docs (response objects, helper types):**
+**Embedded request and result sections:** Put request builders, responses, result payloads, tasks, iterators, descriptors, transport types, and wrappers in every owning method document. Use its Request Syntax and source-backed field/accessor descriptions; do not create sibling Type/Class records for those helpers.
 
-```
-[Description paragraph. Start with "This class/struct represents ..."]
-
-```cpp
-const TypeName& obj = response.Method();
-```
-
-**METHODS:**
-
-- `ReturnType MethodName() const`
-
-    Description of what this returns.
-
-- `ReturnType OtherMethod() const`
-
-    Description.
-
-## Example{#example}
-
-```cpp
-[usage example]
-```
-```
-
-**Key distinction:** Type docs use `**METHODS:**` (bold paragraph), NOT `## Methods{#methods}` (h2 heading). The h2 format causes formatting inconsistency with PARAMETERS/RETURNS/EXCEPTIONS sections elsewhere in the knowledge base.
-
-For multi-class pages (e.g., SearchResults + SingleResult, Function + subclasses): use `## ClassName{#classname}` h2 per class, then inline **Methods:** or **METHODS:** within each section.
-
-For builder/request types with With* methods: use `## Request Syntax{#request-syntax}` h2 + **REQUEST METHODS:** (same as method docs).
+**Independent types only:** A type receives its own page only when the scanner and identity ownership harness classify it as an explicitly reviewed standalone concept, such as an independently used enum or domain model.
 
 **Notes:**
 - Request Syntax uses chained constructor format (`auto request = Class()\n    .With...;`), NOT two-step

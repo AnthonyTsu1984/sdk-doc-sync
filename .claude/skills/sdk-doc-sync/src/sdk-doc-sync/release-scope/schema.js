@@ -2,6 +2,7 @@
 
 const ACTION_TYPES = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL']);
 const DIAGNOSTIC_LEVELS = new Set(['info', 'warn', 'error']);
+const OWNERSHIP_CLASSIFICATIONS = new Set(['standalone', 'method_owned', 'ambiguous']);
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -36,6 +37,7 @@ function createReleaseScope(input) {
     .map((action) => ({
       ...action,
       canonicalSlug: slugFromAction(action),
+      documentationOwnership: action.documentationOwnership ?? { classification: 'standalone' },
     }));
   const diagnostics = stableSortBy(input.scannerDiagnostics || [], (item) => `${item.level}:${item.code}:${item.message}`);
   return {
@@ -104,6 +106,48 @@ function validateReleaseScope(scope) {
     requireString(`$.actions[${index}].canonicalSlug`, action.canonicalSlug);
     requireString(`$.actions[${index}].symbol`, action.symbol);
     requireString(`$.actions[${index}].reason`, action.reason);
+    if (action.documentationOwnership !== undefined && !isObject(action.documentationOwnership)) {
+      errors.push({ path: `$.actions[${index}].documentationOwnership`, message: 'must be an object' });
+    } else if (action.documentationOwnership !== undefined) {
+      const ownership = action.documentationOwnership;
+      const ownershipPath = `$.actions[${index}].documentationOwnership`;
+      const declaredOwners = [];
+      if (!OWNERSHIP_CLASSIFICATIONS.has(ownership.classification)) {
+        errors.push({ path: `${ownershipPath}.classification`, message: 'must be standalone, method_owned, or ambiguous' });
+      }
+      for (const [key, owners] of [['owners', ownership.owners], ['targets', ownership.targets]]) {
+        if (owners === undefined) continue;
+        const ownerPath = `${ownershipPath}.${key}`;
+        if (!Array.isArray(owners)) {
+          errors.push({ path: ownerPath, message: 'must be an array when provided' });
+        } else {
+          declaredOwners.push(...owners);
+          for (const [ownerIndex, owner] of owners.entries()) {
+            if (!isObject(owner)) {
+              errors.push({ path: `${ownerPath}[${ownerIndex}]`, message: 'must be an object' });
+              continue;
+            }
+            requireString(`${ownerPath}[${ownerIndex}].stableId`, owner.stableId);
+            requireString(`${ownerPath}[${ownerIndex}].canonicalSlug`, owner.canonicalSlug);
+            requireString(`${ownerPath}[${ownerIndex}].category`, owner.category);
+          }
+        }
+      }
+      if (ownership.classification === 'standalone' && Array.isArray(declaredOwners) && declaredOwners.length > 0) {
+        errors.push({ path: `${ownershipPath}.classification`, message: 'standalone actions must not declare method owners' });
+      }
+      if (ownership.classification === 'method_owned') {
+        if (!Array.isArray(declaredOwners) || declaredOwners.length === 0) {
+          errors.push({ path: `${ownershipPath}.owners`, message: 'must contain at least one owner for method_owned actions' });
+        }
+        const selectedPath = `${ownershipPath}.selectedOwnerStableId`;
+        requireString(selectedPath, ownership.selectedOwnerStableId);
+        const declaredOwner = (declaredOwners || []).some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+        if (ownership.selectedOwnerStableId !== action.stableId || !declaredOwner) {
+          errors.push({ path: selectedPath, message: 'must match the action stableId and a declared owner' });
+        }
+      }
+    }
     if (!isObject(action.source)) {
       errors.push({ path: `$.actions[${index}].source`, message: 'must be an object' });
     } else {

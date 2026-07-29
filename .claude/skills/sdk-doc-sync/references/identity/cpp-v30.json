@@ -1,30 +1,10 @@
 {
   "schemaVersion": 1,
   "language": "cpp",
-  "track": "v2.6.x",
+  "track": "v3.0.x",
   "defaultCategory": "Client",
   "packagePrefix": "",
   "symbols": {
-    "CDC.GetReplicateConfiguration": {
-      "stableId": "cpp:CDC:GetReplicateConfiguration",
-      "canonicalSlug": "CDC-GetReplicateConfiguration",
-      "category": "CDC"
-    },
-    "CDC.GetReplicateInfo": {
-      "stableId": "cpp:CDC:GetReplicateInfo",
-      "canonicalSlug": "CDC-GetReplicateInfo",
-      "category": "CDC"
-    },
-    "CDC.UpdateReplicateConfiguration": {
-      "stableId": "cpp:CDC:UpdateReplicateConfiguration",
-      "canonicalSlug": "CDC-UpdateReplicateConfiguration",
-      "category": "CDC"
-    },
-    "CDC.DumpMessages": {
-      "stableId": "cpp:CDC:DumpMessages",
-      "canonicalSlug": "CDC-DumpMessages",
-      "category": "CDC"
-    },
     "Authentication.AlterRole": {
       "stableId": "cpp:Authentication:AlterRole",
       "canonicalSlug": "Authentication-AlterRole",
@@ -55,6 +35,71 @@
       "canonicalSlug": "Authentication-UpdateUser",
       "category": "Authentication"
     },
+    "CDC.DumpMessages": {
+      "stableId": "cpp:CDC:DumpMessages",
+      "canonicalSlug": "CDC-DumpMessages",
+      "category": "CDC"
+    },
+    "CDC.GetReplicateInfo": {
+      "stableId": "cpp:CDC:GetReplicateInfo",
+      "canonicalSlug": "CDC-GetReplicateInfo",
+      "category": "CDC"
+    },
+    "Client.Session": {
+      "stableId": "cpp:Client:Session",
+      "canonicalSlug": "Client-Session",
+      "category": "Client"
+    },
+    "Collections.AddCollectionField": {
+      "stableId": "cpp:Collections:AddCollectionField",
+      "canonicalSlug": "Collections-AddCollectionField",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionFunction": {
+      "stableId": "cpp:Collections:AddCollectionFunction",
+      "canonicalSlug": "Collections-AddCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionStructField": {
+      "stableId": "cpp:Collections:AddCollectionStructField",
+      "canonicalSlug": "Collections-AddCollectionStructField",
+      "category": "Collections"
+    },
+    "Collections.AddFunctionField": {
+      "stableId": "cpp:Collections:AddFunctionField",
+      "canonicalSlug": "Collections-AddFunctionField",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionField": {
+      "stableId": "cpp:Collections:DropCollectionField",
+      "canonicalSlug": "Collections-DropCollectionField",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionFunction": {
+      "stableId": "cpp:Collections:DropCollectionFunction",
+      "canonicalSlug": "Collections-DropCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.DropFunctionField": {
+      "stableId": "cpp:Collections:DropFunctionField",
+      "canonicalSlug": "Collections-DropFunctionField",
+      "category": "Collections"
+    },
+    "Collections.FunctionType": {
+      "stableId": "cpp:Collections:FunctionType",
+      "canonicalSlug": "Collections-FunctionType",
+      "category": "Collections"
+    },
+    "DataImport.AbortImport": {
+      "stableId": "cpp:DataImport:AbortImport",
+      "canonicalSlug": "DataImport-AbortImport",
+      "category": "Data Import"
+    },
+    "DataImport.CommitImport": {
+      "stableId": "cpp:DataImport:CommitImport",
+      "canonicalSlug": "DataImport-CommitImport",
+      "category": "Data Import"
+    },
     "Vector.HybridSearch": {
       "stableId": "cpp:Vector:HybridSearch",
       "canonicalSlug": "Vector-HybridSearch",
@@ -68,6 +113,11 @@
     "Vector.Query": {
       "stableId": "cpp:Vector:Query",
       "canonicalSlug": "Vector-Query",
+      "category": "Vector"
+    },
+    "Vector.QueryIterator": {
+      "stableId": "cpp:Vector:QueryIterator",
+      "canonicalSlug": "Vector-QueryIterator",
       "category": "Vector"
     },
     "Vector.Search": {
@@ -85,64 +135,14 @@
       "canonicalSlug": "Vector-Upsert",
       "category": "Vector"
     },
-    "Management.FlushAll": {
-      "stableId": "cpp:Management:FlushAll",
-      "canonicalSlug": "v2-Management-FlushAll",
-      "category": "Management"
-    },
-    "Management.GetFlushAllState": {
-      "stableId": "cpp:Management:GetFlushAllState",
-      "canonicalSlug": "v2-Management-GetFlushAllState",
-      "category": "Management"
-    },
-    "Management.GetLoadState": {
-      "stableId": "cpp:Management:GetLoadState",
-      "canonicalSlug": "v2-Management-GetLoadState",
-      "category": "Management"
-    },
-    "Management.LoadCollection": {
-      "stableId": "cpp:Management:LoadCollection",
-      "canonicalSlug": "v2-Management-LoadCollection",
-      "category": "Management"
-    },
-    "Management.ListPersistentSegments": {
-      "stableId": "cpp:Management:ListPersistentSegments",
-      "canonicalSlug": "v2-Management-ListPersistentSegments",
-      "category": "Management"
-    },
-    "Management.ListQuerySegments": {
-      "stableId": "cpp:Management:ListQuerySegments",
-      "canonicalSlug": "v2-Management-ListQuerySegments",
-      "category": "Management"
-    },
-    "Management.SegmentLevel": {
-      "stableId": "cpp:Management:SegmentLevel",
-      "canonicalSlug": "v2-Management-SegmentLevel",
-      "category": "Management"
-    },
-    "Partitions.LoadPartitions": {
-      "stableId": "cpp:Partitions:LoadPartitions",
-      "canonicalSlug": "v2-Partition-LoadPartitions",
-      "category": "Partitions"
-    },
     "Collections.BatchDescribeCollections": {
       "stableId": "cpp:Collections:BatchDescribeCollections",
       "canonicalSlug": "Collections-BatchDescribeCollections",
       "category": "Collections"
     },
-    "Collections.AddCollectionFunction": {
-      "stableId": "cpp:Collections:AddCollectionFunction",
-      "canonicalSlug": "Collections-AddCollectionFunction",
-      "category": "Collections"
-    },
     "Collections.AlterCollectionFunction": {
       "stableId": "cpp:Collections:AlterCollectionFunction",
       "canonicalSlug": "Collections-AlterCollectionFunction",
-      "category": "Collections"
-    },
-    "Collections.DropCollectionFunction": {
-      "stableId": "cpp:Collections:DropCollectionFunction",
-      "canonicalSlug": "Collections-DropCollectionFunction",
       "category": "Collections"
     },
     "Database.DescribeDatabase": {
@@ -152,12 +152,12 @@
     },
     "Management.RefreshLoad": {
       "stableId": "cpp:Management:RefreshLoad",
-      "canonicalSlug": "v2-Management-RefreshLoad",
+      "canonicalSlug": "Management-RefreshLoad",
       "category": "Management"
     },
     "Management.Optimize": {
       "stableId": "cpp:Management:Optimize",
-      "canonicalSlug": "v2-Management-Optimize",
+      "canonicalSlug": "Management-Optimize",
       "category": "Management"
     },
     "Collections.DescribeReplicas": {
@@ -173,11 +173,6 @@
     "Vector.Delete": {
       "stableId": "cpp:Vector:Delete",
       "canonicalSlug": "Vector-Delete",
-      "category": "Vector"
-    },
-    "Vector.QueryIterator": {
-      "stableId": "cpp:Vector:QueryIterator",
-      "canonicalSlug": "Vector-QueryIterator",
       "category": "Vector"
     },
     "Vector.RunAnalyzer": {
@@ -204,16 +199,16 @@
       "targets": [{ "stableId": "cpp:Database:DescribeDatabase", "canonicalSlug": "Database-DescribeDatabase", "category": "Database" }]
     },
     "RefreshLoadRequest": {
-      "targets": [{ "stableId": "cpp:Management:RefreshLoad", "canonicalSlug": "v2-Management-RefreshLoad", "category": "Management" }]
+      "targets": [{ "stableId": "cpp:Management:RefreshLoad", "canonicalSlug": "Management-RefreshLoad", "category": "Management" }]
     },
     "OptimizeRequest": {
-      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "v2-Management-Optimize", "category": "Management" }]
+      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "Management-Optimize", "category": "Management" }]
     },
     "OptimizeResponse": {
-      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "v2-Management-Optimize", "category": "Management" }]
+      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "Management-Optimize", "category": "Management" }]
     },
     "OptimizeTask": {
-      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "v2-Management-Optimize", "category": "Management" }]
+      "targets": [{ "stableId": "cpp:Management:Optimize", "canonicalSlug": "Management-Optimize", "category": "Management" }]
     },
     "DescribeReplicasRequest": {
       "targets": [{ "stableId": "cpp:Collections:DescribeReplicas", "canonicalSlug": "Collections-DescribeReplicas", "category": "Collections" }]

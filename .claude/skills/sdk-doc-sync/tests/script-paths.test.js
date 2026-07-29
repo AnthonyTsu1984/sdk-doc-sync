@@ -19,6 +19,7 @@ test('sdk-release-scout CLI path exists', () => {
 test('sdk-doc-sync planning helper scripts exist', () => {
   const skillRoot = path.resolve(__dirname, '..');
   for (const script of [
+    'audit-sdk-type-ownership.js',
     'build-current-placement-audit.js',
     'build-reviewed-release-context.js',
     'render-grouping-inheritance-table.js',
@@ -38,9 +39,11 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, '');
   assert.deepEqual(result.stdout.trim().split('\n'), [
+    '.claude/skills/sdk-doc-sync/tests/acceptance-finalizer.test.js',
     '.claude/skills/sdk-doc-sync/tests/agent-harness.test.js',
     '.claude/skills/sdk-doc-sync/tests/api-section-model.test.js',
     '.claude/skills/sdk-doc-sync/tests/audience.test.js',
+    '.claude/skills/sdk-doc-sync/tests/audit-sdk-type-ownership.test.js',
     '.claude/skills/sdk-doc-sync/tests/bitable-record-index.test.js',
     '.claude/skills/sdk-doc-sync/tests/bitable-repository.test.js',
     '.claude/skills/sdk-doc-sync/tests/block-registry.test.js',

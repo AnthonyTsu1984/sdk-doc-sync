@@ -695,6 +695,28 @@ test('C++ keeps request methods and canonical Status/result structure', () => {
   assert.equal(doc.callableMembers[0].evidence[0].locator, requestEvidence[0].locator);
 });
 
+test('C++ request variants deduplicate overloaded builder member names and preserve overload callables', () => {
+  const symbol = fixture('cpp-create-collection.json');
+  symbol.params.push({
+    name: 'AddField',
+    kind: 'keyword',
+    type: '',
+    argName: 'field',
+    fullArgStr: 'FieldSchema&& field',
+    description: 'Adds a movable field schema.',
+  });
+
+  const doc = cppAdapter.toReferenceDocument(symbol, context('cpp', 'Collections'));
+
+  assert.deepEqual(doc.requestVariants[0].inputs.map((input) => input.name), [
+    'collection_name',
+    'dimension',
+    'field',
+  ]);
+  assert.equal(doc.callableMembers.filter((member) => member.name === 'AddField').length, 2);
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
 test('C++ direct methods use params as direct inputs and never invent request members', () => {
   const doc = cppAdapter.toReferenceDocument(
     fixture('cpp-get-server-version.json'),
@@ -727,6 +749,38 @@ test('C++ parses qualified template return types and prefers explicit returnType
   assert.equal(parsed.result.type.display, 'std::shared_ptr<MilvusClientV2>');
   assert.notEqual(parsed.result.type.display, 'static');
   assert.equal(explicit.result.type.display, 'ClientPtr');
+});
+
+test('C++ derives nested response fields from embedded types when reviewed result context is absent', () => {
+  const symbol = fixture('cpp-describe-replicas-embedded.json');
+  const doc = cppAdapter.toReferenceDocument(symbol, context('cpp', 'Collections'));
+
+  assert.equal(doc.result.type.display, 'Status');
+  assert.deepEqual(doc.result.fields.map((field) => field.name), ['response']);
+  const response = doc.result.fields[0];
+  assert.equal(response.type.display, 'DescribeReplicasResponse');
+  assert.deepEqual(response.children.map((field) => field.name), ['Replicas']);
+  assert.deepEqual(response.children[0].children.map((field) => field.name), ['id', 'shards']);
+  assert.deepEqual(response.children[0].children[1].children.map((field) => field.name), ['leader']);
+  assert.equal(response.children.some((field) => field.name === 'DescribeReplicasResponse'), false);
+  assert.equal(response.children.some((field) => field.name === 'SetReplicas'), false);
+  assert.deepEqual(response.children[0].evidence, [{
+    kind: 'source',
+    locator: 'src/include/milvus/response/collection/DescribeReplicasResponse.h:38',
+    revision: 'v2.6.0',
+    confidence: 'direct',
+  }]);
+  assert.deepEqual(doc.callableMembers.map((member) => member.name), ['WithCollectionName']);
+
+  const reviewed = cppAdapter.toReferenceDocument(symbol, context('cpp', 'Collections', {
+    result: {
+      type: 'ReviewedStatus',
+      description: 'Uses the reviewed result shape.',
+      fields: [{ name: 'reviewed', type: 'bool', description: 'Reviewed field.' }],
+    },
+  }));
+  assert.equal(reviewed.result.type.display, 'ReviewedStatus');
+  assert.deepEqual(reviewed.result.fields.map((field) => field.name), ['reviewed']);
 });
 
 test('C++ enums preserve values without request or callable sections', () => {

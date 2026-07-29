@@ -60,6 +60,25 @@ test('rejects internal review notes in publishable SDK artifacts', () => {
   );
 });
 
+test('rejects release-planning and placement workflow notes', () => {
+  const notes = [
+    'The canonical v3.0.x > Vector folder does not yet exist under root root-token; Phase 3 must plan the version-local folder and Bitable parent/repoint work.',
+    'Current Drive ancestry and shared-token status must be verified by the Phase 3 placement audit before write approval.',
+    'The live v3.0.x record inherits v2.6.x document token old-token; Phase 3 must use COPY_PATCH_AND_REPOINT or a validated version-local rebuild.',
+    'The release action exists in source, but the live track Bitable has no exact interface record; do not fold it into a related method or type page.',
+    'The v2.6.x Bitable has no CDC VirtualNode. Phase 3 must resolve a version-local parent record and folder.',
+  ];
+  for (const note of notes) {
+    assert.throws(
+      () => assertPublishableContent(note),
+      /INTERNAL_WORKFLOW_NOTE/,
+    );
+  }
+  assert.doesNotThrow(() => assertPublishableContent(
+    'This method is deprecated in v3.0.x; use its replacement named in the source declaration.',
+  ));
+});
+
 test('rejects internal helper-grouping instructions in artifacts and rendered blocks', () => {
   const note = 'Keep request, response, builder, ordering, aggregation, and progress helper types embedded in this owning public interface page.';
   assert.throws(

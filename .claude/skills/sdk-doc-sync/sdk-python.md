@@ -4,6 +4,8 @@
 **Root dir:** `repos/pymilvus/pymilvus` (package dir, not repo root)
 **Latest release:** `v3.0.0` (as of 2026-05-09)
 
+**Ownership:** Public helper visibility alone does not create a standalone documentation identity. Embed method-owned request helpers and response wrappers in every owning interface document.
+
 | Version | Bitable Token              | Drive Folder          |
 |---------|----------------------------|-----------------------|
 | v2.4.x  | D1VabelmAansLwsNTvLc2Wxxn1g | `ACKGfinsNlQCovdK2v1cPxiqnle` |

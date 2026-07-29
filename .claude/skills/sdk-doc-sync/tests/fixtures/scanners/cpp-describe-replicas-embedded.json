@@ -1,0 +1,113 @@
+{
+  "name": "DescribeReplicas",
+  "kind": "method",
+  "signature": "Status DescribeReplicas(const DescribeReplicasRequest& request, DescribeReplicasResponse& response)",
+  "docstring": "Describes collection replicas.",
+  "params": [
+    {
+      "name": "WithCollectionName",
+      "kind": "keyword",
+      "type": "const std::string&",
+      "argName": "collection_name",
+      "fullArgStr": "const std::string& collection_name",
+      "description": "Sets the collection name."
+    }
+  ],
+  "filePath": "src/include/milvus/MilvusClientV2.h",
+  "lineNumber": 339,
+  "parentClass": "Collections",
+  "requestClass": "DescribeReplicasRequest",
+  "responseClass": "DescribeReplicasResponse",
+  "embeddedTypes": [
+    {
+      "name": "DescribeReplicasResponse",
+      "kind": "class",
+      "aliases": [],
+      "filePath": "src/include/milvus/response/collection/DescribeReplicasResponse.h",
+      "lineNumber": 29,
+      "baseClasses": [],
+      "fields": [],
+      "builders": [],
+      "accessors": [
+        {
+          "name": "DescribeReplicasResponse",
+          "type": "",
+          "signature": "DescribeReplicasResponse()",
+          "description": "Constructor.",
+          "filePath": "src/include/milvus/response/collection/DescribeReplicasResponse.h",
+          "lineNumber": 32,
+          "referencedTypes": []
+        },
+        {
+          "name": "Replicas",
+          "type": "const std::vector<ReplicaInfo>&",
+          "signature": "const std::vector<ReplicaInfo>& Replicas() const",
+          "description": "Returns replica information.",
+          "filePath": "src/include/milvus/response/collection/DescribeReplicasResponse.h",
+          "lineNumber": 38,
+          "referencedTypes": ["ReplicaInfo"]
+        },
+        {
+          "name": "SetReplicas",
+          "type": "void",
+          "signature": "void SetReplicas(std::vector<ReplicaInfo>&& replicas)",
+          "description": "Internal response mutation.",
+          "filePath": "src/include/milvus/response/collection/DescribeReplicasResponse.h",
+          "lineNumber": 44,
+          "referencedTypes": ["ReplicaInfo"]
+        }
+      ],
+      "referencedTypes": ["ReplicaInfo"]
+    },
+    {
+      "name": "ReplicaInfo",
+      "kind": "struct",
+      "aliases": [],
+      "filePath": "src/include/milvus/types/ReplicaInfo.h",
+      "lineNumber": 27,
+      "baseClasses": [],
+      "fields": [
+        {
+          "name": "id",
+          "type": "int64_t",
+          "description": "Replica identifier.",
+          "filePath": "src/include/milvus/types/ReplicaInfo.h",
+          "lineNumber": 29,
+          "referencedTypes": []
+        },
+        {
+          "name": "shards",
+          "type": "std::vector<ShardReplica>",
+          "description": "Shard replicas.",
+          "filePath": "src/include/milvus/types/ReplicaInfo.h",
+          "lineNumber": 30,
+          "referencedTypes": ["ShardReplica"]
+        }
+      ],
+      "builders": [],
+      "accessors": [],
+      "referencedTypes": ["ShardReplica"]
+    },
+    {
+      "name": "ShardReplica",
+      "kind": "struct",
+      "aliases": [],
+      "filePath": "src/include/milvus/types/ShardReplica.h",
+      "lineNumber": 27,
+      "baseClasses": [],
+      "fields": [
+        {
+          "name": "leader",
+          "type": "std::string",
+          "description": "Leader node address.",
+          "filePath": "src/include/milvus/types/ShardReplica.h",
+          "lineNumber": 29,
+          "referencedTypes": []
+        }
+      ],
+      "builders": [],
+      "accessors": [],
+      "referencedTypes": []
+    }
+  ]
+}

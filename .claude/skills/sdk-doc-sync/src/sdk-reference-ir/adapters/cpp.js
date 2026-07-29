@@ -93,6 +93,66 @@ function parseReturnType(symbol) {
   return match ? match[1].trim().replace(LEADING_QUALIFIERS, '').trim() : '';
 }
 
+function embeddedTypeIndex(symbol) {
+  const index = new Map();
+  for (const type of symbol.embeddedTypes || []) {
+    index.set(type.name, type);
+    for (const alias of type.aliases || []) index.set(alias, type);
+  }
+  return index;
+}
+
+function usefulEmbeddedAccessor(type, accessor) {
+  if (!accessor?.name || accessor.name === type.name || accessor.name === `~${type.name}`) return false;
+  return !/^(?:Set|With|Add|Start|Clear|Reset|Mutable|Emplace|Push|Swap|Assign|Release)/.test(accessor.name);
+}
+
+function embeddedFieldsFor(typeName, index, ancestry = new Set()) {
+  const type = index.get(typeName);
+  if (!type || ancestry.has(type.name)) return [];
+  const nextAncestry = new Set(ancestry).add(type.name);
+  const fields = [];
+  const seen = new Set();
+  const members = [
+    ...(type.fields || []),
+    ...(type.accessors || []).filter((accessor) => usefulEmbeddedAccessor(type, accessor)),
+  ];
+  for (const member of members) {
+    if (!member.name || seen.has(member.name)) continue;
+    seen.add(member.name);
+    const referenced = (member.referencedTypes || [])
+      .map((name) => index.get(name))
+      .find((candidate) => candidate && !nextAncestry.has(candidate.name));
+    fields.push({
+      name: member.name,
+      type: member.type || member.signature || '',
+      description: member.description || '',
+      filePath: member.filePath || type.filePath,
+      lineNumber: member.lineNumber || type.lineNumber,
+      children: referenced ? embeddedFieldsFor(referenced.name, index, nextAncestry) : [],
+    });
+  }
+  return fields;
+}
+
+function inferredResponseResult(symbol, inferredStatus) {
+  if (!symbol.responseClass) return inferredStatus ? { type: inferredStatus } : null;
+  const index = embeddedTypeIndex(symbol);
+  const responseType = index.get(symbol.responseClass);
+  return {
+    type: inferredStatus || 'Status',
+    description: '',
+    fields: [{
+      name: 'response',
+      type: symbol.responseClass,
+      description: '',
+      filePath: responseType?.filePath || symbol.filePath,
+      lineNumber: responseType?.lineNumber || symbol.lineNumber,
+      children: embeddedFieldsFor(symbol.responseClass, index),
+    }],
+  };
+}
+
 function toReferenceDocument(symbol, context = {}) {
   const kindMap = {
     method: 'method',
@@ -127,10 +187,18 @@ function toReferenceDocument(symbol, context = {}) {
   const signatures = callable
     ? [common.makeSignature(symbol.signature || '', directParams, evidence, { symbol, context })]
     : [];
-  const requestFields = (symbol.params || []).map((param) => ({
-    ...param,
-    name: param.argName || param.name,
-  }));
+  const requestFields = [];
+  const seenRequestFields = new Set();
+  for (const param of symbol.params || []) {
+    const name = param.argName || param.name;
+    if (!name || seenRequestFields.has(name)) continue;
+    seenRequestFields.add(name);
+    requestFields.push({
+      ...param,
+      name,
+      type: param.type || param.fullArgStr || 'value',
+    });
+  }
   let requestVariants = symbol.requestClass ? [common.makeRequestVariant({
     id: symbol.requestClass,
     title: symbol.requestClass,
@@ -167,7 +235,9 @@ function toReferenceDocument(symbol, context = {}) {
   }) : [];
   const inferredStatus = parseReturnType(symbol);
   const resultInput = callable
-    ? context.result || symbol.result || (inferredStatus ? { type: inferredStatus } : null)
+    ? Object.hasOwn(context, 'result')
+      ? context.result
+      : symbol.result || inferredResponseResult(symbol, inferredStatus)
     : null;
   const result = common.makeResult(resultInput, evidence, { symbol, context });
   const errors = common.makeErrors(context.exceptions || symbol.exceptions, evidence);

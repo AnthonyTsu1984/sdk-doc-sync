@@ -17,6 +17,12 @@ function assertPublishableContent(content) {
       'Internal grouping review notes must not be published into API reference pages',
     );
   }
+  if (/(?:\bPhase [1-5]\b|\bBitable\b|\bCurrent Drive ancestry and shared-token status\b|\bcurrently share document token\b|\brecord inherits [^\n]{0,120}document token\b)/i.test(value)) {
+    throw new FeishuBlockSafetyError(
+      'INTERNAL_WORKFLOW_NOTE',
+      'Internal release-planning and placement notes must not be published into API reference pages',
+    );
+  }
   if (/\bKeep\b[^\n]{0,240}\bembedded in (?:this|the) owning public interface page\b/i.test(value)) {
     throw new FeishuBlockSafetyError(
       'INTERNAL_GROUPING_NOTE',

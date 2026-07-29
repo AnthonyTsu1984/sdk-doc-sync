@@ -535,6 +535,7 @@ function createBoundedSummary(result) {
         scannedCount: result.scanned.length,
         indexedCount: result.indexed.length,
         diffCount: result.diff.length,
+        resourcePlanCount: (result.resourcePlans || []).length,
         planCount: result.plans.length,
         planningErrorCount: result.planningErrors.length,
         approvedCount: result.approved.length,
@@ -548,7 +549,9 @@ function createBoundedSummary(result) {
                 ? `${action.symbol.parentClass ? action.symbol.parentClass + '.' : ''}${action.symbol.name}`
                 : null,
             reason: action.reason,
+            reasons: action.reasons || [action.reason].filter(Boolean),
             source: action.releaseScopeAction?.source || null,
+            sourceVariants: action.sourceVariants || action.releaseScopeAction?.sourceVariants || [],
             evidence: action.releaseScopeAction?.evidence || [],
         })),
         planningErrors: result.planningErrors,

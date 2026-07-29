@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const BaseScanner = require('./base-scanner');
+const CppTypeGraph = require('./cpp-type-graph');
 
 // Category assignment for public MilvusClientV2 methods.
 const METHOD_CATEGORIES = {
@@ -11,6 +12,7 @@ const METHOD_CATEGORIES = {
     Disconnect: 'Client',
     SetRpcDeadlineMs: 'Client',
     SetRetryParam: 'Client',
+    Session: 'Client',
     GetServerVersion: 'Client',
     GetSDKVersion: 'Client',
     CheckHealth: 'Client',
@@ -31,11 +33,15 @@ const METHOD_CATEGORIES = {
     AlterCollectionFieldProperties: 'Collections',
     DropCollectionFieldProperties: 'Collections',
     AddCollectionField: 'Collections',
+    AddCollectionStructField: 'Collections',
     AddCollectionFunction: 'Collections',
+    AddFunctionField: 'Collections',
     AlterCollectionFunction: 'Collections',
     BatchDescribeCollections: 'Collections',
     DescribeReplicas: 'Collections',
     DropCollectionFunction: 'Collections',
+    DropCollectionField: 'Collections',
+    DropFunctionField: 'Collections',
     CreateAlias: 'Collections',
     DropAlias: 'Collections',
     AlterAlias: 'Collections',
@@ -75,6 +81,7 @@ const METHOD_CATEGORIES = {
     GetReplicateConfiguration: 'CDC',
     UpdateReplicateConfiguration: 'CDC',
     GetReplicateInfo: 'CDC',
+    DumpMessages: 'CDC',
 
     // Partitions (7)
     CreatePartition: 'Partitions',
@@ -100,10 +107,12 @@ const METHOD_CATEGORIES = {
     // Authentication (18)
     CreateUser: 'Authentication',
     UpdatePassword: 'Authentication',
+    UpdateUser: 'Authentication',
     DropUser: 'Authentication',
     DescribeUser: 'Authentication',
     ListUsers: 'Authentication',
     CreateRole: 'Authentication',
+    AlterRole: 'Authentication',
     DropRole: 'Authentication',
     DescribeRole: 'Authentication',
     ListRoles: 'Authentication',
@@ -134,6 +143,7 @@ const ENUM_DEFS = [
     { name: 'ConsistencyLevel', category: 'Collections', file: 'types/ConsistencyLevel.h' },
     { name: 'LoadState', category: 'Collections', file: 'types/LoadState.h' },
     { name: 'SegmentLevel', category: 'Management', file: 'types/SegmentInfo.h' },
+    { name: 'FunctionType', category: 'Collections', file: 'types/FunctionType.h' },
 ];
 
 class CppScanner extends BaseScanner {
@@ -153,15 +163,34 @@ class CppScanner extends BaseScanner {
         const relPath = path.relative(this.rootDir, clientHeader);
         const methods = this._extractMethods(content, relPath);
 
-        // Phase 2: Parse request headers for With* params
-        this._requestIndex = this._buildRequestIndex();
+        const bulkImportHeader = path.join(this._includeDir, 'BulkImport.h');
+        if (fs.existsSync(bulkImportHeader)) {
+            methods.push(...this._extractBulkImportMethods(
+                fs.readFileSync(bulkImportHeader, 'utf-8'),
+                path.relative(this.rootDir, bulkImportHeader),
+            ));
+        }
+
+        // Phase 2: Build the public request/response/type graph once.
+        this._typeGraph = new CppTypeGraph({ rootDir: this.rootDir, includeDir: this._includeDir });
 
         for (const method of methods) {
             if (method.requestClass) {
                 method.params = this._getRequestParams(method.requestClass);
-                method.relatedFiles = this._relatedFilesForRequest(method.requestClass);
             } else if (method.directParams && method.directParams.length > 0) {
                 method.params = method.directParams;
+            }
+            const embeddedTypes = this._typeGraph.embeddedTypesFor([
+                method.requestClass,
+                method.responseClass,
+                ...(method.directParams || []).map((param) => param.type),
+            ]);
+            if (embeddedTypes.length > 0) {
+                method.embeddedTypes = embeddedTypes;
+                method.relatedFiles = [...new Set(embeddedTypes.flatMap((type) => [
+                    type.filePath,
+                    ...(type.relatedFiles || []),
+                ]))].sort();
             }
             delete method.directParams;
         }
@@ -184,7 +213,7 @@ class CppScanner extends BaseScanner {
         for (let i = 0; i < lines.length; i++) {
             const trimmed = lines[i].trim();
 
-            const isVirtual = trimmed === 'virtual Status';
+            const isVirtual = /^(?:\[\[deprecated\([^\]]*\)\]\]\s+)?virtual Status$/.test(trimmed);
             const isStatic = trimmed === 'static std::shared_ptr<MilvusClientV2>';
 
             if (!isVirtual && !isStatic) continue;
@@ -217,16 +246,16 @@ class CppScanner extends BaseScanner {
             const directParams = [];
 
             if (paramStr) {
-                const parts = paramStr.split(',').map(s => s.trim());
+                const parts = this._splitParameters(paramStr);
                 for (const part of parts) {
                     const reqMatch = part.match(/(?:const\s+)?(\w+Request)\s*&/);
                     if (reqMatch) {
                         requestClass = reqMatch[1];
                         continue;
                     }
-                    const resMatch = part.match(/(\w+(?:Response|Ptr))\s*&/);
-                    if (resMatch) {
-                        responseClass = resMatch[1];
+                    const outputClass = this._outputClassFromParameter(part);
+                    if (outputClass) {
+                        responseClass = outputClass;
                         continue;
                     }
                     // Plain param (for non-request methods)
@@ -268,10 +297,97 @@ class CppScanner extends BaseScanner {
                 parentClass: category,
                 requestClass,
                 responseClass,
+                decorators: trimmed.startsWith('[[deprecated') ? ['deprecated'] : [],
             });
         }
 
         return symbols;
+    }
+
+    _outputClassFromParameter(value) {
+        const declaration = value.replace(/\s*=\s*[\s\S]*$/, '').trim();
+        if (/^const\s+/.test(declaration)) return null;
+        const match = declaration.match(/^([A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*&\s+[A-Za-z_]\w*$/);
+        if (!match) return null;
+        const typeName = match[1].split('::').pop();
+        return /(?:Response|Results?|Ptr|Task|Info)$/.test(typeName) ? typeName : null;
+    }
+
+    _extractBulkImportMethods(content, filePath) {
+        const lines = content.split('\n');
+        const symbols = [];
+        for (let i = 0; i < lines.length; i++) {
+            if (lines[i].trim() !== 'static nlohmann::json') continue;
+            const declarationLines = [];
+            for (let j = i + 1; j < lines.length; j++) {
+                declarationLines.push(lines[j].trim());
+                if (lines[j].includes(';')) break;
+            }
+            const declaration = declarationLines.join(' ').replace(/\s+/g, ' ');
+            const match = declaration.match(/^(\w+)\s*\(([\s\S]*)\)\s*;/);
+            if (!match) continue;
+            const name = match[1];
+            const paramStr = match[2].trim();
+            const params = [];
+            for (const part of this._splitParameters(paramStr)) {
+                const withoutDefault = part.replace(/\s*=\s*[\s\S]*$/, '').trim();
+                const plainMatch = withoutDefault.match(/^((?:const\s+)?[\w:]+(?:<[^>]+>)?(?:\s*&{0,2})?)\s+(\w+)$/);
+                if (!plainMatch) continue;
+                params.push({
+                    name: plainMatch[2],
+                    kind: 'keyword',
+                    type: plainMatch[1].trim(),
+                    description: '',
+                });
+            }
+            symbols.push({
+                name,
+                kind: 'method',
+                signature: `static nlohmann::json ${name}(${paramStr})`,
+                docstring: this._extractDoxygen(lines, i),
+                params,
+                filePath,
+                lineNumber: i + 2,
+                parentClass: 'DataImport',
+                requestClass: null,
+                responseClass: null,
+                decorators: [],
+            });
+        }
+        return symbols;
+    }
+
+    _splitParameters(value) {
+        const parts = [];
+        let start = 0;
+        let angleDepth = 0;
+        let parenDepth = 0;
+        let quote = null;
+        let escaped = false;
+        for (let i = 0; i < value.length; i++) {
+            const char = value[i];
+            if (quote) {
+                if (escaped) escaped = false;
+                else if (char === '\\') escaped = true;
+                else if (char === quote) quote = null;
+                continue;
+            }
+            if (char === '"' || char === "'") {
+                quote = char;
+                continue;
+            }
+            if (char === '<') angleDepth++;
+            else if (char === '>' && angleDepth > 0) angleDepth--;
+            else if (char === '(') parenDepth++;
+            else if (char === ')' && parenDepth > 0) parenDepth--;
+            else if (char === ',' && angleDepth === 0 && parenDepth === 0) {
+                parts.push(value.slice(start, i).trim());
+                start = i + 1;
+            }
+        }
+        const tail = value.slice(start).trim();
+        if (tail) parts.push(tail);
+        return parts;
     }
 
     /**
@@ -348,193 +464,8 @@ class CppScanner extends BaseScanner {
 
     // ── Phase 2: Request param extraction ─────────────────────────────
 
-    _buildRequestIndex() {
-        const index = {
-            classes: new Map(),
-            aliases: new Map(),
-        };
-
-        const requestDir = path.join(this._includeDir, 'request');
-        const typesDir = path.join(this._includeDir, 'types');
-
-        const allFiles = [
-            ...this._walkHeaderFiles(requestDir),
-            ...this._walkHeaderFiles(typesDir),
-        ];
-
-        for (const file of allFiles) {
-            const content = fs.readFileSync(file, 'utf-8');
-
-            // Extract class definitions
-            const classRegex = /class\s+(?:(?:MILVUS_SDK_API|MILVUS_DEPRECATED)\s+)?(\w+)\s*(?::\s*([^{]+))?\s*\{/g;
-            let classMatch;
-            while ((classMatch = classRegex.exec(content)) !== null) {
-                const className = classMatch[1];
-                const inheritance = classMatch[2] ? classMatch[2].trim() : '';
-
-                const baseClasses = [];
-                if (inheritance) {
-                    const baseRegex = /public\s+([\w:]+)(?:<[\w:,\s]+>)?/g;
-                    let bm;
-                    while ((bm = baseRegex.exec(inheritance)) !== null) {
-                        baseClasses.push(bm[1].replace(/::/g, ''));
-                    }
-                }
-
-                const withMethods = this._extractWithMethods(content);
-
-                index.classes.set(className, {
-                    file,
-                    baseClasses,
-                    withMethods,
-                });
-            }
-
-            // Extract using aliases
-            const usingRegex = /using\s+(\w+)\s*=\s*(\w+)\s*;/g;
-            let um;
-            while ((um = usingRegex.exec(content)) !== null) {
-                index.aliases.set(um[1], um[2]);
-            }
-        }
-
-        return index;
-    }
-
-    _walkHeaderFiles(dir) {
-        const results = [];
-        if (!fs.existsSync(dir)) return results;
-        const walk = (d) => {
-            let entries;
-            try { entries = fs.readdirSync(d, { withFileTypes: true }); } catch { return; }
-            for (const entry of entries) {
-                const full = path.join(d, entry.name);
-                if (entry.isDirectory()) walk(full);
-                else if (entry.name.endsWith('.h')) results.push(full);
-            }
-        };
-        walk(dir);
-        return results;
-    }
-
-    /**
-     * Extract With* and Add* method declarations from header content.
-     * Matches the two-line pattern: ReturnType&\nWithFoo(params)
-     */
-    _extractWithMethods(content) {
-        const methods = [];
-        const lines = content.split('\n');
-        const seen = new Set();
-
-        for (let i = 0; i < lines.length - 1; i++) {
-            const trimmed = lines[i].trim();
-
-            // Line must be a return type ending with &
-            if (!trimmed.match(/&\s*$/)) continue;
-
-            const nextTrimmed = lines[i + 1].trim();
-            const match = nextTrimmed.match(/^(With\w+|Add\w+)\s*\(([^)]*)\)/);
-            if (!match) continue;
-
-            const methodName = match[1];
-            if (seen.has(methodName)) continue;
-            seen.add(methodName);
-
-            const argStr = match[2].trim();
-
-            // Parse parameter type and argument name
-            let paramType = '';
-            let argName = '';
-            if (argStr) {
-                const firstParam = argStr.split(',')[0].trim();
-                const typeMatch = firstParam.match(/^((?:const\s+)?[\w:]+(?:<[\w:,\s]+>)?(?:\s*&{0,2})?)\s+(\w+)/);
-                if (typeMatch) {
-                    paramType = typeMatch[1].trim();
-                    argName = typeMatch[2];
-                }
-            }
-
-            // Full arg string for multi-param methods (e.g., AddExtraParam(key, value))
-            const fullArgStr = argStr;
-
-            const description = this._extractDoxygen(lines, i);
-
-            methods.push({
-                name: methodName,
-                kind: 'keyword',
-                type: paramType,
-                argName,
-                fullArgStr,
-                description: description || '',
-            });
-        }
-
-        return methods;
-    }
-
-    /**
-     * Get all With/Add params for a request class, including inherited ones.
-     */
     _getRequestParams(requestClassName) {
-        const { classes, aliases } = this._requestIndex;
-
-        // Resolve alias chain
-        let resolved = requestClassName;
-        const visited = new Set();
-        while (aliases.has(resolved) && !visited.has(resolved)) {
-            visited.add(resolved);
-            resolved = aliases.get(resolved);
-        }
-
-        return this._collectParams(resolved, new Set());
-    }
-
-    _relatedFilesForRequest(requestClassName) {
-        const { classes, aliases } = this._requestIndex;
-        let resolved = requestClassName;
-        const visited = new Set();
-        while (aliases.has(resolved) && !visited.has(resolved)) {
-            visited.add(resolved);
-            resolved = aliases.get(resolved);
-        }
-
-        const files = new Set();
-        const collect = (className, seen) => {
-            if (seen.has(className)) return;
-            seen.add(className);
-            const classInfo = classes.get(className);
-            if (!classInfo) return;
-            files.add(path.relative(this.rootDir, classInfo.file));
-            for (const baseName of classInfo.baseClasses) collect(baseName, seen);
-        };
-        collect(resolved, new Set());
-        return [...files].map((file) => file.replace(/\\/g, '/'));
-    }
-
-    _collectParams(className, visited) {
-        if (visited.has(className)) return [];
-        visited.add(className);
-
-        const { classes } = this._requestIndex;
-        const classInfo = classes.get(className);
-        if (!classInfo) return [];
-
-        const allParams = new Map();
-
-        // Base class params first
-        for (const baseName of classInfo.baseClasses) {
-            const baseParams = this._collectParams(baseName, visited);
-            for (const p of baseParams) {
-                allParams.set(p.name, p);
-            }
-        }
-
-        // This class's params override base
-        for (const p of classInfo.withMethods) {
-            allParams.set(p.name, p);
-        }
-
-        return Array.from(allParams.values());
+        return this._typeGraph.requestParamsFor(requestClassName);
     }
 
     // ── Phase 3: Enum extraction ──────────────────────────────────────

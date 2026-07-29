@@ -99,12 +99,15 @@ function sourceFrom(action, context) {
 
 function targetFrom(context) {
   const target = context.target || {};
-  return {
+  const result = {
     version: target.version ?? context.targetVersion ?? null,
     parentRecordId: target.parentRecordId ?? null,
     folderToken: target.folderToken ?? null,
     versionRootToken: target.versionRootToken ?? null,
   };
+  if (target.parentRecordRef !== undefined) result.parentRecordRef = target.parentRecordRef ?? null;
+  if (target.folderRef !== undefined) result.folderRef = target.folderRef ?? null;
+  return result;
 }
 
 function copySourceFrom(context) {
@@ -124,8 +127,13 @@ function existingRecordLookupFrom(context) {
     baseToken: lookup.baseToken ?? null,
     tableId: lookup.tableId ?? null,
     parentRecordId: lookup.parentRecordId ?? null,
+    parentRecordRef: lookup.parentRecordRef ?? null,
     criteria: lookup.criteria ?? null,
   };
+}
+
+function dependenciesFrom(context) {
+  return [...new Set((context.dependencies || []).filter(nonEmptyString))];
 }
 
 function stableIdFrom(action) {
@@ -134,6 +142,36 @@ function stableIdFrom(action) {
     || action.symbol?.stableId
     || action.slug
     || null;
+}
+
+function assertDocumentationOwnership(action, stableId) {
+  const ownership = action.documentationOwnership;
+  if (!ownership) return;
+  const owners = [
+    ...(Array.isArray(ownership.owners) ? ownership.owners : []),
+    ...(Array.isArray(ownership.targets) ? ownership.targets : []),
+  ];
+  const hasDeclaredOwners = ownership.owners !== undefined || ownership.targets !== undefined;
+  if (ownership.classification === 'ambiguous') {
+    throw new SyncPlanningError(
+      'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+      `Documentation ownership is ambiguous for ${stableId}`,
+    );
+  }
+  if (ownership.classification === 'standalone' && (hasDeclaredOwners || owners.length > 0)) {
+    throw new SyncPlanningError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Standalone documentation cannot retain known method owners for ${stableId}`,
+    );
+  }
+  if (ownership.classification !== 'method_owned') return;
+  const declaredOwner = owners.some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+  if (!declaredOwner || ownership.selectedOwnerStableId !== stableId) {
+    throw new SyncPlanningError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Method-owned documentation must plan a declared owner for ${stableId}`,
+    );
+  }
 }
 
 /**
@@ -162,6 +200,74 @@ class SyncPlanner {
     return deepFreeze(plans);
   }
 
+  planResource(resource) {
+    if (!resource || typeof resource !== 'object') {
+      throw new SyncPlanningError('RESOURCE_REQUIRED', 'A resource definition is required');
+    }
+    const ref = resource.ref;
+    if (!nonEmptyString(ref)) {
+      throw new SyncPlanningError('RESOURCE_REF_REQUIRED', 'A stable resource ref is required');
+    }
+    const lookup = resource.existingLookup || {};
+    if (lookup.checked !== true || lookup.absent !== true) {
+      throw new SyncPlanningError('RESOURCE_LOOKUP_REQUIRED', `Resource ${ref} requires checked-and-absent lookup evidence`);
+    }
+    const dependencies = [...new Set((resource.dependsOn || []).filter(nonEmptyString))];
+    let action;
+    let postconditions;
+    if (resource.kind === 'folder') {
+      if (!nonEmptyString(resource.name)
+        || !nonEmptyString(resource.parentFolderToken)
+        || !nonEmptyString(resource.versionRootToken)
+        || lookup.parentFolderToken !== resource.parentFolderToken
+        || lookup.name !== resource.name) {
+        throw new SyncPlanningError('FOLDER_RESOURCE_INVALID', `Folder resource ${ref} requires canonical parent, root, name, and absent lookup evidence`);
+      }
+      action = 'CREATE_FOLDER';
+      postconditions = [
+        { type: 'RESOURCE_RESOLVED', ref, value: 'NEW_FOLDER_TOKEN' },
+        { type: 'TARGET_ANCESTRY', folderRef: ref, versionRootToken: resource.versionRootToken },
+      ];
+      if (resource.repointVirtualNode?.recordId) {
+        postconditions.push({
+          type: 'VIRTUAL_NODE_LINK',
+          recordId: resource.repointVirtualNode.recordId,
+          folderRef: ref,
+        });
+      }
+    } else if (resource.kind === 'virtual_node') {
+      if (!nonEmptyString(resource.title)
+        || !nonEmptyString(resource.folderRef)
+        || !nonEmptyString(resource.baseToken)
+        || !nonEmptyString(resource.tableId)
+        || !nonEmptyString(resource.version)
+        || !dependencies.includes(resource.folderRef)
+        || !nonEmptyString(lookup.baseToken)
+        || !nonEmptyString(lookup.tableId)
+        || !lookup.criteria) {
+        throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires its folder dependency and absent Bitable lookup evidence`);
+      }
+      action = 'CREATE_VIRTUAL_NODE';
+      postconditions = [
+        { type: 'RESOURCE_RESOLVED', ref, value: 'NEW_RECORD_ID' },
+        { type: 'VIRTUAL_NODE_LINK', recordId: 'NEW_RECORD_ID', folderRef: resource.folderRef },
+      ];
+    } else {
+      throw new SyncPlanningError('UNKNOWN_RESOURCE_KIND', `Unknown dependent resource kind: ${resource.kind || '(missing)'}`);
+    }
+    return deepFreeze(deepClone({
+      schemaVersion: 1,
+      action,
+      stableId: `resource:${ref}`,
+      artifactDigest: null,
+      resource,
+      dependencies,
+      preconditions: [{ type: 'RESOURCE_ABSENT', ref, lookup: deepClone(lookup) }],
+      postconditions,
+      metadata: { diffAction: action, artifactKind: 'dependent-resource' },
+    }));
+  }
+
   planAction(action, context = {}) {
     const diffAction = action?.type;
     if (!KNOWN_ACTIONS.has(diffAction)) {
@@ -174,14 +280,20 @@ class SyncPlanner {
     if (!nonEmptyString(stableId)) {
       throw new SyncPlanningError('STABLE_ID_REQUIRED', 'A stableId is required to plan an SDK document action');
     }
+    assertDocumentationOwnership(action, stableId);
 
     const source = sourceFrom(action, context);
     const target = targetFrom(context);
+    const dependencies = dependenciesFrom(context);
     const targetProof = context.target || {};
+    const hasFolderTarget = nonEmptyString(target.folderToken)
+      || (nonEmptyString(target.folderRef) && dependencies.includes(target.folderRef));
+    const hasParentTarget = nonEmptyString(target.parentRecordId)
+      || (nonEmptyString(target.parentRecordRef) && dependencies.includes(target.parentRecordRef));
     if (!nonEmptyString(target.version)
       || (WRITE_ACTIONS.has(diffAction) && (
-        !nonEmptyString(target.folderToken)
-        || !nonEmptyString(target.parentRecordId)
+        !hasFolderTarget
+        || !hasParentTarget
         || !nonEmptyString(target.versionRootToken)
         || targetProof.ancestryVerified !== true
       ))) {
@@ -248,7 +360,8 @@ class SyncPlanner {
         || lookup.absent !== true
         || !nonEmptyString(lookup.baseToken)
         || !nonEmptyString(lookup.tableId)
-        || !nonEmptyString(lookup.parentRecordId)
+        || (!nonEmptyString(lookup.parentRecordId)
+          && !(nonEmptyString(lookup.parentRecordRef) && dependencies.includes(lookup.parentRecordRef)))
         || !lookup.criteria) {
         throw new SyncPlanningError(
           'CREATE_LOOKUP_REQUIRED',
@@ -285,12 +398,14 @@ class SyncPlanner {
       expected: diffAction === 'CREATE' ? 'ABSENT' : source.recordId,
     });
     preconditions.push({ type: 'CURRENT_DOCUMENT_TOKEN', expected: source.documentToken });
-    preconditions.push({
+    const targetAncestry = {
       type: 'TARGET_ANCESTRY',
       expectedFolderToken: target.folderToken,
       expectedVersionRootToken: target.versionRootToken,
       verified: true,
-    });
+    };
+    if (nonEmptyString(target.folderRef)) targetAncestry.expectedFolderRef = target.folderRef;
+    preconditions.push(targetAncestry);
     preconditions.push({ type: 'SHARED_TOKEN', referencedByOlderVersions: shared });
 
     let plannedAction;
@@ -366,6 +481,7 @@ class SyncPlanner {
       existingRecordLookup: plannedAction === 'CREATE' ? existingRecordLookupFrom(context) : undefined,
       copySource: plannedAction === 'COPY_PATCH_AND_REPOINT' ? copySourceFrom(context) : undefined,
       target,
+      dependencies,
       preconditions,
       postconditions,
       metadata,
@@ -376,10 +492,14 @@ class SyncPlanner {
     const documentToken = action === 'UPDATE_IN_PLACE'
       ? source.documentToken
       : 'NEW_DOCUMENT_TOKEN';
+    const targetDocument = { type: 'TARGET_DOCUMENT', folderToken: target.folderToken, documentToken };
+    if (nonEmptyString(target.folderRef)) targetDocument.folderRef = target.folderRef;
+    const targetParent = { type: 'TARGET_PARENT', parentRecordId: target.parentRecordId };
+    if (nonEmptyString(target.parentRecordRef)) targetParent.parentRecordRef = target.parentRecordRef;
     return [
-      { type: 'TARGET_DOCUMENT', folderToken: target.folderToken, documentToken },
+      targetDocument,
       { type: 'TARGET_LINK', recordId: source.recordId || 'NEW_RECORD_ID', documentToken },
-      { type: 'TARGET_PARENT', parentRecordId: target.parentRecordId },
+      targetParent,
       { type: 'TARGET_VERSION', version: target.version },
     ];
   }

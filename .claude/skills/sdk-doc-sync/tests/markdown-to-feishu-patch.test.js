@@ -3,6 +3,28 @@ const assert = require('node:assert/strict');
 
 const MarkdownToFeishu = require('../src/markdown-to-feishu');
 
+test('create_blocks can populate the automatic Feishu callout child instead of adding a duplicate', () => {
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const elements = [{ text_run: { content: 'Deprecated. Use the replacement.', text_element_style: {} } }];
+  assert.equal(typeof m2f.__build_automatic_child_population, 'function');
+  assert.deepEqual(m2f.__build_automatic_child_population({
+    createdBlock: {
+      block_id: 'callout-1',
+      block_type: 19,
+      children: ['automatic-text-1'],
+      callout: { emoji_id: 'warning' },
+    },
+    desiredChildren: [{ block_type: 2, text: { elements, style: { align: 1 } } }],
+  }), {
+    handled: true,
+    updateRequests: [{
+      block_id: 'automatic-text-1',
+      update_text_elements: { elements },
+    }],
+    remainingChildren: [],
+  });
+});
+
 test('builds bottom-up contiguous child delete ranges', () => {
   const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
   const parent = {
@@ -138,13 +160,103 @@ test('rebinds approved source block IDs to an equivalent freshly copied document
     validation: { valid: true, errors: [] },
   };
 
-  await m2f.apply_api_patch({
+  const result = await m2f.apply_api_patch({
     document_id: 'copy-doc',
     source_document_id: 'source-doc',
     patchPlan,
   });
 
   assert.deepEqual(calls[0], ['delete', ['copy-parameters', 'copy-param']]);
+});
+
+test('rebinds rewritten approved and copied block IDs by equivalent semantic position', async () => {
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const calls = [];
+  const sourceBlocks = [
+    { block_id: 'live-page', block_type: 1, children: ['live-summary', 'live-signature', 'live-example-heading', 'live-example'] },
+    { block_id: 'live-summary', parent_id: 'live-page', block_type: 2, text: { elements: [{ text_run: { content: 'Summary' } }] } },
+    { block_id: 'live-signature', parent_id: 'live-page', block_type: 14, code: { elements: [{ text_run: { content: 'Status Insert(const InsertRequest& request)' } }] } },
+    { block_id: 'live-example-heading', parent_id: 'live-page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Example' } }] } },
+    { block_id: 'live-example', parent_id: 'live-page', block_type: 14, code: { elements: [{ text_run: { content: 'client->Insert(request)' } }] } },
+  ];
+  const copiedBlocks = [
+    { block_id: 'copy-page', block_type: 1, children: ['copy-summary', 'copy-signature', 'copy-example-heading', 'copy-example'] },
+    { block_id: 'copy-summary', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'Summary' } }] } },
+    { block_id: 'copy-signature', parent_id: 'copy-page', block_type: 14, code: { elements: [{ text_run: { content: 'Status Insert(const InsertRequest& request)' } }] } },
+    { block_id: 'copy-example-heading', parent_id: 'copy-page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Example' } }] } },
+    { block_id: 'copy-example', parent_id: 'copy-page', block_type: 14, code: { elements: [{ text_run: { content: 'client->Insert(request)' } }] } },
+  ];
+  m2f.get_document_blocks = async (documentId) => documentId === 'source-doc' ? sourceBlocks : copiedBlocks;
+  m2f.__delete_child_blocks_by_id = async (input) => {
+    calls.push(['delete', input.childBlockIds]);
+    return input.childBlockIds.length;
+  };
+  m2f.create_blocks = async () => ({ created: 0 });
+
+  const result = await m2f.apply_api_patch({
+    document_id: 'copy-doc',
+    source_document_id: 'source-doc',
+    patchPlan: {
+      strategy: 'targeted-semantic-patch',
+      profile: { id: 'cpp', version: 1 },
+      currentModel: {
+        profileId: 'cpp',
+        pageBlockId: 'approved-page',
+        topLevelBlockIds: ['approved-summary', 'approved-signature', 'approved-example-heading', 'approved-example'],
+        sections: [
+          { role: 'summary', startIndex: 0, endIndex: 1, blockIds: ['approved-summary'], attachments: [] },
+          { role: 'canonical-signature', startIndex: 1, endIndex: 2, blockIds: ['approved-signature'], attachments: [] },
+          { role: 'examples', startIndex: 2, endIndex: 4, blockIds: ['approved-example-heading', 'approved-example'], attachments: [] },
+        ],
+        preserved: [],
+        signatures: [
+          { blockId: 'approved-signature', role: 'canonical-signature', normalized: 'Status Insert(const InsertRequest& request)' },
+          { blockId: 'approved-example', role: 'example-code', normalized: 'client->Insert(request)' },
+        ],
+        errors: [],
+        requiresReviewedRebuild: false,
+      },
+      preservedBlockIds: ['approved-summary'],
+      operations: [{
+        type: 'replace-section', role: 'examples', insertAt: 2,
+        deleteBlockIds: ['approved-example-heading', 'approved-example'], preserveBlockIds: [],
+        blocks: [],
+      }],
+      validation: { valid: true, errors: [] },
+    },
+  });
+
+  assert.deepEqual(calls[0], ['delete', ['copy-example-heading', 'copy-example']]);
+  assert.deepEqual(result.preservedBlockIds, ['copy-summary']);
+});
+
+test('rejects a copied document when nested block content differs from the live source', async () => {
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const sourceBlocks = [
+    { block_id: 'source-page', block_type: 1, children: ['source-list'] },
+    { block_id: 'source-list', parent_id: 'source-page', block_type: 12, children: ['source-detail'], bullet: { elements: [{ text_run: { content: 'method' } }] } },
+    { block_id: 'source-detail', parent_id: 'source-list', block_type: 2, text: { elements: [{ text_run: { content: 'approved detail' } }] } },
+  ];
+  const copiedBlocks = [
+    { block_id: 'copy-page', block_type: 1, children: ['copy-list'] },
+    { block_id: 'copy-list', parent_id: 'copy-page', block_type: 12, children: ['copy-detail'], bullet: { elements: [{ text_run: { content: 'method' } }] } },
+    { block_id: 'copy-detail', parent_id: 'copy-list', block_type: 2, text: { elements: [{ text_run: { content: 'changed detail' } }] } },
+  ];
+  m2f.get_document_blocks = async (documentId) => documentId === 'source-doc' ? sourceBlocks : copiedBlocks;
+
+  await assert.rejects(
+    () => m2f.apply_api_patch({
+      document_id: 'copy-doc',
+      source_document_id: 'source-doc',
+      patchPlan: {
+        strategy: 'targeted-semantic-patch',
+        currentModel: { pageBlockId: 'source-page', topLevelBlockIds: ['source-list'] },
+        operations: [],
+        validation: { valid: true, errors: [] },
+      },
+    }),
+    (error) => error.code === 'API_PATCH_PRECONDITION_FAILED',
+  );
 });
 
 test('orders delete-only sections by their approved live position before lower replacements', async () => {
@@ -335,6 +447,39 @@ test('copy patch preconditions accept Feishu-rewritten internal document links',
   const copy = [
     { block_id: 'copy-doc', block_type: 1, children: ['copy-child'] },
     textBlock('copy-child', 'copy-doc', 'https%3A%2F%2Fexample.test%2Fdocx%2Fcopy-doc%23copy-child'),
+  ];
+  m2f.get_document_blocks = async (token) => token === 'source-doc' ? source : copy;
+
+  const result = await m2f.apply_api_patch({
+    document_id: 'copy-doc',
+    source_document_id: 'source-doc',
+    patchPlan: {
+      strategy: 'copy-full-body-rebuild',
+      currentModel: { pageBlockId: 'source-doc', topLevelBlockIds: ['source-child'] },
+      operations: [],
+      validation: { valid: true, errors: [] },
+    },
+  });
+
+  assert.equal(result.operations, 0);
+  assert.equal(result.unchanged, 1);
+});
+
+test('copy patch preconditions preserve document tokens mentioned as ordinary prose', async () => {
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const textBlock = (id, parent, content) => ({
+    block_id: id,
+    parent_id: parent,
+    block_type: 2,
+    text: { elements: [{ text_run: { content } }] },
+  });
+  const source = [
+    { block_id: 'source-doc', block_type: 1, children: ['source-child'] },
+    textBlock('source-child', 'source-doc', 'The inherited document token is source-doc.'),
+  ];
+  const copy = [
+    { block_id: 'copy-doc', block_type: 1, children: ['copy-child'] },
+    textBlock('copy-child', 'copy-doc', 'The inherited document token is source-doc.'),
   ];
   m2f.get_document_blocks = async (token) => token === 'source-doc' ? source : copy;
 

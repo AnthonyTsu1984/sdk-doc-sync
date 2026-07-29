@@ -11,7 +11,8 @@
 class DiffEngine {
     /**
      * @param {string} sdkVersion
-     * @param {Object} categoryMap - Optional slug remapping, e.g. { 'MilvusClient-insert': 'Vector-insert' }
+     * @param {Object} categoryMap - Optional slug remapping. A source slug may map
+     *   to one canonical slug or an array when a shared helper belongs to multiple docs.
      */
     constructor({ sdkVersion, categoryMap }) {
         this.sdkVersion = sdkVersion;
@@ -45,45 +46,46 @@ class DiffEngine {
         const matchedSlugs = new Set();
 
         for (const symbol of scannedSymbols) {
-            const slug = this._symbolSlug(symbol);
-            const doc = docsBySlug.get(slug) || docsBySlugLower.get(slug.toLowerCase());
+            for (const slug of this._symbolSlugs(symbol)) {
+                const doc = docsBySlug.get(slug) || docsBySlugLower.get(slug.toLowerCase());
 
-            if (!doc) {
-                actions.push({
-                    type: 'CREATE',
-                    symbol,
-                    slug,
-                    doc: null,
-                    reason: 'New symbol, no matching document found',
-                });
-            } else {
-                matchedSlugs.add(doc.metadata.slug);
-                const isDeprecated = this._isDeprecated(symbol);
-
-                if (isDeprecated && !doc.metadata.deprecate_since) {
+                if (!doc) {
                     actions.push({
-                        type: 'DEPRECATE',
+                        type: 'CREATE',
                         symbol,
                         slug,
-                        doc,
-                        reason: 'Symbol marked as deprecated in source',
-                    });
-                } else if (this._hasChanges(symbol, doc)) {
-                    actions.push({
-                        type: 'UPDATE',
-                        symbol,
-                        slug,
-                        doc,
-                        reason: this._describeChanges(symbol, doc),
+                        doc: null,
+                        reason: 'New symbol, no matching document found',
                     });
                 } else {
-                    actions.push({
-                        type: 'SKIP',
-                        symbol,
-                        slug,
-                        doc,
-                        reason: 'No changes detected',
-                    });
+                    matchedSlugs.add(doc.metadata.slug);
+                    const isDeprecated = this._isDeprecated(symbol);
+
+                    if (isDeprecated && !doc.metadata.deprecate_since) {
+                        actions.push({
+                            type: 'DEPRECATE',
+                            symbol,
+                            slug,
+                            doc,
+                            reason: 'Symbol marked as deprecated in source',
+                        });
+                    } else if (this._hasChanges(symbol, doc)) {
+                        actions.push({
+                            type: 'UPDATE',
+                            symbol,
+                            slug,
+                            doc,
+                            reason: this._describeChanges(symbol, doc),
+                        });
+                    } else {
+                        actions.push({
+                            type: 'SKIP',
+                            symbol,
+                            slug,
+                            doc,
+                            reason: 'No changes detected',
+                        });
+                    }
                 }
             }
         }
@@ -110,16 +112,21 @@ class DiffEngine {
      *   - Top-level: `symbol_name`
      * Preserves original casing.
      */
-    _symbolSlug(symbol) {
+    _symbolSlugs(symbol) {
         if (symbol?.spec && symbol.path && symbol.method) {
             const operation = symbol.spec.paths?.[symbol.path]?.[String(symbol.method).toLowerCase()];
-            if (operation?.operationId) return operation.operationId;
+            if (operation?.operationId) return [operation.operationId];
         }
         const rawSlug = symbol.parentClass
             ? `${symbol.parentClass}-${symbol.name}`
             : symbol.name;
         if (!rawSlug) throw new TypeError('Scanned symbol must include a name or OpenAPI operationId');
-        return this.categoryMap[rawSlug] || this._categoryMapLower[rawSlug.toLowerCase()] || rawSlug;
+        const mapped = this.categoryMap[rawSlug] || this._categoryMapLower[rawSlug.toLowerCase()] || rawSlug;
+        return [...new Set(Array.isArray(mapped) ? mapped : [mapped])];
+    }
+
+    _symbolSlug(symbol) {
+        return this._symbolSlugs(symbol)[0];
     }
 
     _isDeprecated(symbol) {

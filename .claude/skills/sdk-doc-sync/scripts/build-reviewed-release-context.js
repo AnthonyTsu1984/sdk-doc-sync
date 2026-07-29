@@ -3,7 +3,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { isDeepStrictEqual } = require('node:util');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
+const { resolvePlanningContexts } = require('../src/sdk-doc-sync/release-scope/planning-context');
 
 const SDK_REFERENCE_BY_LANGUAGE = {
   cpp: 'sdk-cpp.md',
@@ -60,6 +62,87 @@ function required(value, message) {
 function clone(value) {
   if (value === undefined) return undefined;
   return JSON.parse(JSON.stringify(value));
+}
+
+function uniqueValues(values) {
+  const unique = [];
+  for (const value of values) {
+    if (value === undefined || value === null) continue;
+    if (!unique.some((existing) => isDeepStrictEqual(existing, value))) unique.push(clone(value));
+  }
+  return unique;
+}
+
+function reviewedContextError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function preferredReviewedAction(actions, identity) {
+  const standalone = actions.filter((action) => action.documentationOwnership?.classification === 'standalone');
+  const preferred = standalone.length > 0 ? standalone : actions;
+  const lifecycleTypes = [...new Set(preferred.map((action) => action.type))];
+  if (lifecycleTypes.length > 1) {
+    throw reviewedContextError(
+      'CONFLICTING_REVIEWED_ACTIONS',
+      `Reviewed owner ${identity.stableId} has incompatible lifecycle actions: ${lifecycleTypes.join(', ')}`,
+    );
+  }
+  return preferred[0];
+}
+
+function assertCompatibleReviewedActions(actions, identity) {
+  const stableIds = [...new Set(actions.map((action) => action.stableId))];
+  if (stableIds.length > 1) {
+    throw reviewedContextError(
+      'CONFLICTING_REVIEWED_IDENTITY',
+      `Reviewed owner ${identity.stableId} has incompatible release identities: ${stableIds.join(', ')}`,
+    );
+  }
+  const planningContext = resolvePlanningContexts(actions.map((action) => action.planningContext));
+  if (planningContext.conflict) {
+    throw reviewedContextError(
+      'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+      `Reviewed owner ${identity.stableId} has incompatible planningContext values`,
+    );
+  }
+  const targets = uniqueValues(actions.map((action) => action.target));
+  if (targets.length > 1) {
+    throw reviewedContextError(
+      'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+      `Reviewed owner ${identity.stableId} has incompatible target values`,
+    );
+  }
+  return planningContext.value;
+}
+
+function sourceVariantsFor(actions) {
+  return uniqueValues(actions.flatMap((action) => {
+    const variants = Array.isArray(action.sourceVariants) && action.sourceVariants.length > 0
+      ? action.sourceVariants
+      : [{
+        stableId: action.stableId,
+        canonicalSlug: action.canonicalSlug,
+        symbol: action.symbol,
+        source: action.source,
+        reason: action.reason,
+        ...(action.evidence !== undefined ? { evidence: action.evidence } : {}),
+        ...(action.sourceDeltaType !== undefined ? { sourceDeltaType: action.sourceDeltaType } : {}),
+      }];
+    return variants.map((variant) => ({
+      ...clone(variant),
+      stableId: variant.stableId || action.stableId,
+      canonicalSlug: variant.canonicalSlug || action.canonicalSlug,
+      reason: variant.reason || action.reason,
+      ...(variant.evidence === undefined && action.evidence !== undefined
+        ? { evidence: clone(action.evidence) }
+        : {}),
+      ...(variant.sourceDeltaType === undefined && action.sourceDeltaType !== undefined
+        ? { sourceDeltaType: action.sourceDeltaType }
+        : {}),
+    }));
+  }));
 }
 
 function trackParts(track) {
@@ -170,6 +253,42 @@ function categoryFromStableId(stableId) {
   return parts.length >= 3 ? parts[1] : '';
 }
 
+function ownershipError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function assertActionDocumentationOwnership(action) {
+  const ownership = action.documentationOwnership;
+  if (!ownership) return;
+  const owners = [
+    ...(Array.isArray(ownership.owners) ? ownership.owners : []),
+    ...(Array.isArray(ownership.targets) ? ownership.targets : []),
+  ];
+  const hasDeclaredOwners = ownership.owners !== undefined || ownership.targets !== undefined;
+  if (ownership.classification === 'ambiguous') {
+    throw ownershipError(
+      'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+      `Release action ${action.canonicalSlug} has ambiguous documentation ownership`,
+    );
+  }
+  if (ownership.classification === 'standalone' && (hasDeclaredOwners || owners.length > 0)) {
+    throw ownershipError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Release action ${action.canonicalSlug} cannot be standalone while retaining known method owners`,
+    );
+  }
+  if (ownership.classification !== 'method_owned') return;
+  const declaredOwner = owners.some((owner) => owner?.stableId === ownership.selectedOwnerStableId);
+  if (!declaredOwner || ownership.selectedOwnerStableId !== action.stableId) {
+    throw ownershipError(
+      'METHOD_OWNED_STANDALONE_FORBIDDEN',
+      `Release action ${action.canonicalSlug} must select its declared method owner`,
+    );
+  }
+}
+
 function assertCandidateIdentity({ action, spec, category }) {
   const docIdentity = spec.docIdentity || {};
   const effectiveStableId = docIdentity.stableId || spec.stableId || action.stableId;
@@ -251,7 +370,7 @@ function assertCreateMissingEvidence({ action, spec, identity }) {
     || lookup.absent !== true
     || !lookup.baseToken
     || !lookup.tableId
-    || !lookup.parentRecordId
+    || (!lookup.parentRecordId && !lookup.parentRecordRef)
     || !canonicalSlugs.includes(identity.canonicalSlug)
     || !criteria.title) {
     throw new Error(`Candidate ${action.canonicalSlug} must include explicit absent existingRecordLookup evidence before CREATE ${identity.stableId}`);
@@ -262,21 +381,23 @@ function assertCreateMissingEvidence({ action, spec, identity }) {
     baseToken: lookup.baseToken,
     tableId: lookup.tableId,
     parentRecordId: lookup.parentRecordId,
+    parentRecordRef: lookup.parentRecordRef || null,
     criteria: clone(criteria),
   };
 }
 
-function requiresCopySource({ current, targetVersion, targetFolderToken }) {
+function requiresCopySource({ current, targetVersion, targetFolderToken, targetFolderRef }) {
   if (!current) return false;
+  if (targetFolderRef) return true;
   if (current.version && targetVersion && current.version !== targetVersion) return true;
   if (current.folderToken && targetFolderToken && current.folderToken !== targetFolderToken) return true;
   if (current.referencedByOlderVersions === true) return true;
   return false;
 }
 
-function assertCopySourceEvidence({ action, spec, identity, current, targetVersion, targetFolderToken }) {
+function assertCopySourceEvidence({ action, spec, identity, current, targetVersion, targetFolderToken, targetFolderRef }) {
   if (action.type !== 'UPDATE') return null;
-  if (!requiresCopySource({ current, targetVersion, targetFolderToken })) return null;
+  if (!requiresCopySource({ current, targetVersion, targetFolderToken, targetFolderRef })) return null;
   const copySource = spec.copySource || null;
   if (!copySource || !copySource.documentToken || !copySource.link) {
     throw new Error(`Candidate ${action.canonicalSlug} copySource evidence is required before changing inherited doc ${identity.stableId}`);
@@ -417,6 +538,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   if (candidateSpec.track && candidateSpec.track !== releaseScope.track) {
     throw new Error(`Candidate spec track ${candidateSpec.track} does not match release scope track ${releaseScope.track}`);
   }
+  for (const action of releaseScope.actions || []) assertActionDocumentationOwnership(action);
 
   const candidates = expandCandidateSpec(candidateSpec);
   const requiredSuccessorTracks = resolveRequiredSuccessorTracks({ releaseScope, candidateSpec, sdkReference });
@@ -437,27 +559,60 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
   const folders = required(target.folders, 'Candidate spec target is missing folders');
+  const resources = clone(target.resources || []);
+  const resourceRefs = new Set();
+  for (const resource of resources) {
+    const ref = required(resource.ref, 'Target resource is missing ref');
+    if (resourceRefs.has(ref)) throw new Error(`Duplicate target resource ref ${ref}`);
+    resourceRefs.add(ref);
+  }
 
   for (const action of releaseScope.actions || []) {
     const spec = candidates[action.canonicalSlug];
     if (!spec) continue;
-    const planningAction = actionForPlanning(action, spec);
+    const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
+    const sourceActions = (releaseScope.actions || [])
+      .filter((item) => groupedSources.includes(item.canonicalSlug));
+    const reviewedAction = preferredReviewedAction(sourceActions, {
+      stableId: spec.docIdentity?.stableId || spec.stableId || action.stableId,
+    });
+    const planningAction = actionForPlanning(reviewedAction, spec);
     selectedSlugs.add(action.canonicalSlug);
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
     const identity = assertCandidateIdentity({ action: planningAction, spec, category });
+    const releasePlanningContext = assertCompatibleReviewedActions(sourceActions, identity);
+    if (planningAction.documentationOwnership?.classification === 'method_owned'
+      && identity.stableId !== planningAction.documentationOwnership.selectedOwnerStableId) {
+      throw ownershipError(
+        'METHOD_OWNED_STANDALONE_FORBIDDEN',
+        `Candidate ${action.canonicalSlug} must retain selected method owner ${planningAction.documentationOwnership.selectedOwnerStableId}`,
+      );
+    }
     assertNoSyntheticGroupAcrossExistingRecords({ spec, identity });
     const existingRecord = assertExistingRecordEvidence({ action: planningAction, spec, identity });
     const existingRecordLookup = assertCreateMissingEvidence({ action: planningAction, spec, identity });
     const inheritanceReview = assertInheritanceReview({ action: planningAction, spec, requiredSuccessorTracks });
-    const groupedSources = spec.sourceCanonicalSlugs || [action.canonicalSlug];
     for (const sourceSlug of groupedSources) {
       if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
     }
     if (emittedDocIdentities.has(identity.stableId)) continue;
     emittedDocIdentities.add(identity.stableId);
 
-    const folderToken = required(spec.folderToken || folders[category], `Candidate ${action.canonicalSlug} has no folder token for category ${category}`);
+    const folderToken = spec.folderToken || folders[category] || null;
+    const folderRef = spec.folderRef || null;
+    if (!folderToken && (!folderRef || !resourceRefs.has(folderRef))) {
+      throw new Error(`Candidate ${action.canonicalSlug} has no folder token or approved folder resource for category ${category}`);
+    }
+    const dependencies = [...new Set(spec.dependencies || [])];
+    for (const dependency of dependencies) {
+      if (!resourceRefs.has(dependency)) throw new Error(`Candidate ${action.canonicalSlug} references unknown resource ${dependency}`);
+    }
+    const parentRecordId = existingRecord?.parentRecordId || existingRecordLookup?.parentRecordId || null;
+    const parentRecordRef = spec.parentRecordRef || existingRecordLookup?.parentRecordRef || null;
+    if (!parentRecordId && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
+      throw new Error(`Candidate ${action.canonicalSlug} has no parent record or approved parent resource`);
+    }
     const copySource = assertCopySourceEvidence({
       action: planningAction,
       spec,
@@ -465,50 +620,57 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       current: existingRecord,
       targetVersion: version,
       targetFolderToken: folderToken,
+      targetFolderRef: folderRef,
     });
-    const evidence = evidenceFor(action, spec, releaseScope);
-    const sourceVariants = groupedSources
-      .map((canonicalSlug) => (releaseScope.actions || []).find((item) => item.canonicalSlug === canonicalSlug))
-      .filter(Boolean)
-      .flatMap((item) => Array.isArray(item.sourceVariants) && item.sourceVariants.length > 0
-        ? item.sourceVariants.map((variant) => clone(variant))
-        : [{
-          stableId: item.stableId,
-          canonicalSlug: item.canonicalSlug,
-          symbol: item.symbol,
-          source: clone(item.source),
-          reason: item.reason,
-        }]);
+    const sourceVariants = sourceVariantsFor(sourceActions);
+    const releaseEvidence = uniqueValues([
+      ...sourceActions.flatMap((item) => item.evidence || []),
+      ...sourceVariants.flatMap((variant) => variant.evidence || []),
+    ]);
+    const evidence = uniqueValues([
+      ...releaseEvidence,
+      ...sourceActions.flatMap((item) => evidenceFor(item, spec, releaseScope)),
+    ]);
+    const reasons = uniqueValues([
+      ...sourceActions.flatMap((item) => item.reasons || [item.reason]),
+      ...sourceVariants.map((variant) => variant.reason),
+    ]);
+    const planningTarget = {
+      version,
+      folderToken,
+      parentRecordId,
+      versionRootToken,
+      ancestryVerified: true,
+    };
+    if (folderRef) planningTarget.folderRef = folderRef;
+    if (parentRecordRef) planningTarget.parentRecordRef = parentRecordRef;
     const selectedAction = {
       ...planningAction,
       stableId: identity.stableId,
       canonicalSlug: identity.canonicalSlug,
       symbol: identity.symbol,
       sourceVariants: sourceVariants.length > 0 ? sourceVariants : undefined,
+      reasons,
+      evidence: releaseEvidence,
       inheritanceReview,
       planningContext: {
-        ...(action.planningContext || {}),
+        ...(releasePlanningContext || {}),
         current: existingRecord || undefined,
         existingRecordLookup: existingRecordLookup || undefined,
         copySource,
-        target: {
-          version,
-          folderToken,
-          parentRecordId: existingRecord?.parentRecordId || existingRecordLookup?.parentRecordId || null,
-          versionRootToken,
-          ancestryVerified: true,
-        },
+        target: planningTarget,
+        dependencies,
         tokenReferencedByOlderVersions: existingRecord?.referencedByOlderVersions ?? false,
       },
     };
     selected.push(selectedAction);
     contexts[identity.stableId] = {
-      repository: spec.repository || candidateSpec.repository || action.source?.repository || releaseScope.sdkName,
+      repository: spec.repository || candidateSpec.repository || planningAction.source?.repository || releaseScope.sdkName,
       revision: spec.revision || releaseScope.targetCommit,
       category,
       symbolName: identity.symbol,
       kind: spec.kind,
-      title: spec.title || titleFor({ ...action, symbol: identity.symbol }),
+      title: spec.title || titleFor({ ...planningAction, symbol: identity.symbol }),
       summary: required(spec.summary, `Candidate ${action.canonicalSlug} is missing summary`),
       signature: clone(spec.signature),
       params: clone(spec.params),
@@ -516,9 +678,12 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       callableMembers: clone(spec.callableMembers),
       reviewedEvidence: evidence,
       result: clone(spec.result),
-      exceptions: defaultExceptions(action, spec, evidence),
-      examples: exampleFor(action, { ...candidateSpec.defaults, ...spec, version }, evidence),
+      exceptions: defaultExceptions(planningAction, spec, evidence),
+      examples: exampleFor(planningAction, { ...candidateSpec.defaults, ...spec, version }, evidence),
       inheritanceReview,
+      sourceVariants,
+      reasons,
+      documentationOwnership: clone(planningAction.documentationOwnership),
       notes: spec.notes || candidateSpec.notes || [],
     };
   }
@@ -530,6 +695,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const filteredScope = {
     ...releaseScope,
     actions: selected,
+    resources,
     scannerDiagnostics: [
       ...(releaseScope.scannerDiagnostics || []).filter((item) => item.code !== 'FILTERED_USER_FACING_SCOPE'),
       {

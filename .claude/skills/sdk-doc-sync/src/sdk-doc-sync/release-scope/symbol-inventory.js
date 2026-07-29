@@ -4,16 +4,33 @@ function publicIdentity(symbol) {
   return symbol.parentClass ? `${symbol.parentClass}.${symbol.name}` : symbol.name;
 }
 
+const EMBEDDED_SOURCE_METADATA = new Set([
+  'evidence',
+  'filePath',
+  'lineNumber',
+  'relatedFiles',
+  'source',
+]);
+
+function comparableEmbeddedSurface(value) {
+  if (Array.isArray(value)) return value.map(comparableEmbeddedSurface);
+  if (!value || typeof value !== 'object') return value;
+  return Object.fromEntries(Object.entries(value)
+    .filter(([key]) => !EMBEDDED_SOURCE_METADATA.has(key))
+    .map(([key, nested]) => [key, comparableEmbeddedSurface(nested)]));
+}
+
 function comparableSignature(symbol) {
   return JSON.stringify({
     kind: symbol.kind || null,
     signature: symbol.signature || '',
-    params: symbol.params || [],
+    params: comparableEmbeddedSurface(symbol.params || []),
     fields: symbol.fields || [],
     values: symbol.values || [],
     methods: symbol.methods || [],
     optionMethods: symbol.optionMethods || [],
     altConstructors: symbol.altConstructors || [],
+    embeddedTypes: comparableEmbeddedSurface(symbol.embeddedTypes || []),
     returnType: symbol.returnType || null,
     decorators: symbol.decorators || [],
     hidden: symbol.hidden || false,
@@ -27,12 +44,19 @@ function sameValue(left, right) {
 
 function updateReason(previous, symbol) {
   if ((previous.signature || '') !== (symbol.signature || '')) return 'signature changed';
-  if (!sameValue(previous.params || [], symbol.params || [])) return 'parameters changed';
+  if (!sameValue(
+    comparableEmbeddedSurface(previous.params || []),
+    comparableEmbeddedSurface(symbol.params || []),
+  )) return 'parameters changed';
   if (!sameValue(previous.optionMethods || [], symbol.optionMethods || [])) return 'builder methods changed';
   if (!sameValue(previous.altConstructors || [], symbol.altConstructors || [])) return 'constructors changed';
   if (!sameValue(previous.fields || [], symbol.fields || [])) return 'fields changed';
   if (!sameValue(previous.values || [], symbol.values || [])) return 'enum values changed';
   if (!sameValue(previous.methods || [], symbol.methods || [])) return 'public member methods changed';
+  if (!sameValue(
+    comparableEmbeddedSurface(previous.embeddedTypes || []),
+    comparableEmbeddedSurface(symbol.embeddedTypes || []),
+  )) return 'embedded type surface changed';
   if ((previous.bodyHash || null) !== (symbol.bodyHash || null)) return 'public method behavior changed';
   if ((previous.returnType || null) !== (symbol.returnType || null)) return 'return type changed';
   if (!sameValue(previous.decorators || [], symbol.decorators || [])) return 'decorators changed';

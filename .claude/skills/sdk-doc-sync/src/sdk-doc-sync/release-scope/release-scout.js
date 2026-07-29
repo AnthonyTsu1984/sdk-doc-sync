@@ -118,6 +118,29 @@ async function scanRefSymbols({ ref, repoDir, sdkDir, publicRoots, language, run
   }
 }
 
+function directSourceEvidence(item, revision, changedFiles) {
+  const changed = new Set(changedFiles || []);
+  return [...new Set([item.source.file, ...(item.relatedFiles || [])])]
+    .filter((file) => changed.has(file))
+    .map((file) => file === item.source.file
+      ? {
+        kind: 'source',
+        locator: `${file}:${item.source.line}`,
+        revision,
+        confidence: 'direct',
+      }
+      : {
+        kind: 'source',
+        locator: file,
+        revision,
+        confidence: 'related',
+      });
+}
+
+function hasAmbiguousDocumentationOwnership(actions) {
+  return actions.some((action) => action.documentationOwnership?.classification === 'ambiguous');
+}
+
 async function runReleaseScout({
   language,
   sdkName,
@@ -220,6 +243,7 @@ async function runReleaseScout({
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
 
   const normalized = deltas.flatMap((delta) => normalizeDeltas(delta, map).map((item) => {
+    const evidence = directSourceEvidence(item, range.targetCommit, changedFiles);
     const action = {
       ...item,
       source: {
@@ -227,12 +251,13 @@ async function runReleaseScout({
         repository: `milvus-io/${sdkName}`,
         revision: range.targetCommit,
       },
-      evidence: [{
-        kind: 'source',
-        locator: `${item.source.file}:${item.source.line}`,
-        revision: range.targetCommit,
-        confidence: 'direct',
-      }],
+      evidence,
+      ...(Array.isArray(item.sourceVariants) ? {
+        sourceVariants: item.sourceVariants.map((variant) => ({
+          ...variant,
+          evidence: variant.evidence || evidence,
+        })),
+      } : {}),
     };
     return action;
   }));
@@ -247,6 +272,7 @@ async function runReleaseScout({
     changedFiles,
     actions,
     scannerDiagnostics,
+    approvalGrade: !hasAmbiguousDocumentationOwnership(actions),
   });
   const validation = validateReleaseScope(scope);
   if (!validation.valid) {
@@ -396,6 +422,7 @@ async function runZillizCliReleaseScout({
     .filter((delta) => scopedIdentities.has(delta.symbolIdentity));
   const implTargetCommit = targetCommitForRef({ ref: implTarget, runGit: resolvedRunGit, cwd: implRepo });
   const normalized = deltas.flatMap((delta) => normalizeDeltas(delta, map).map((item) => {
+    const evidence = directSourceEvidence(item, implTargetCommit, implChangedFiles);
     const action = {
       ...item,
       source: {
@@ -403,12 +430,13 @@ async function runZillizCliReleaseScout({
         repository: 'zilliztech/zilliz-cloud',
         revision: implTargetCommit,
       },
-      evidence: [{
-        kind: 'source',
-        locator: `${item.source.file}:${item.source.line}`,
-        revision: implTargetCommit,
-        confidence: 'direct',
-      }],
+      evidence,
+      ...(Array.isArray(item.sourceVariants) ? {
+        sourceVariants: item.sourceVariants.map((variant) => ({
+          ...variant,
+          evidence: variant.evidence || evidence,
+        })),
+      } : {}),
     };
     return action;
   }));
@@ -425,7 +453,9 @@ async function runZillizCliReleaseScout({
     changedFiles: implChangedFiles,
     actions,
     scannerDiagnostics,
-    approvalGrade: releaseImpactRequiresSourceBackedActions(releaseImpact) ? actions.length > 0 : undefined,
+    approvalGrade: hasAmbiguousDocumentationOwnership(actions)
+      ? false
+      : (releaseImpactRequiresSourceBackedActions(releaseImpact) ? actions.length > 0 : undefined),
   });
   const validation = validateReleaseScope(scope);
   if (!validation.valid) {
@@ -471,6 +501,9 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
   }
   if (language === 'cpp' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'cpp-v26.json');
+  }
+  if (language === 'cpp' && track === 'v3.0.x') {
+    return path.join(skillRoot, 'references', 'identity', 'cpp-v30.json');
   }
   if (language === 'zilliz-cli' && track === 'v1.4.x') {
     return path.join(skillRoot, 'references', 'identity', 'zilliz-cli-v14.json');

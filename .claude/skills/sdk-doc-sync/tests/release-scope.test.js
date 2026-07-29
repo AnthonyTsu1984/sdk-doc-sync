@@ -46,10 +46,33 @@ test('release-scope schema accepts the Python v2.6 golden artifact', () => {
   assert.deepEqual(validation, { valid: true, errors: [] });
 });
 
+test('release-scope schema accepts historical v1 actions without documentation ownership', () => {
+  const scope = readFixture('python-v26-expected.json');
+  for (const action of scope.actions) delete action.documentationOwnership;
+
+  assert.deepEqual(validateReleaseScope(scope), { valid: true, errors: [] });
+});
+
 test('skill instructions forbid synthetic merge proposals from stale grouping artifacts', () => {
   const skillText = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
   assert.equal(skillText.includes('merge into one doc action'), false);
   assert.match(skillText, /Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists/);
+});
+
+test('SDK ownership guidance embeds method-owned helpers and removes C++ sibling-type direction', () => {
+  const skillRoot = path.join(__dirname, '..');
+  const sharedGuidance = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
+  const cppGuidance = fs.readFileSync(path.join(skillRoot, 'sdk-cpp.md'), 'utf8');
+
+  assert.match(sharedGuidance, /`standalone`, `method_owned`, or `ambiguous`/);
+  assert.match(sharedGuidance, /request.*response.*result.*task.*info.*iterator.*descriptor.*transport.*wrapper/s);
+  assert.match(sharedGuidance, /public class.*not.*standalone evidence/i);
+  assert.match(sharedGuidance, /ambiguous ownership blocks planning/i);
+  assert.match(sharedGuidance, /explicit.*reviewed standalone exception/i);
+  assert.match(cppGuidance, /embedded request and result/i);
+  assert.match(cppGuidance, /scanner.*identity ownership harness/i);
+  assert.doesNotMatch(cppGuidance, /New support docs/);
+  assert.doesNotMatch(cppGuidance, /Doc format — Type\/Class docs/);
 });
 
 test('placement audit resolves inherited docs from supplied older version roots', async () => {
@@ -127,6 +150,41 @@ test('release-scope schema rejects malformed changedFiles entries', () => {
   assert.deepEqual(validation.errors.map((error) => error.path), [
     '$.changedFiles[1]',
     '$.changedFiles[2]',
+  ]);
+});
+
+test('release-scope schema requires method-owned actions to select a declared owner', () => {
+  const scope = readFixture('python-v26-expected.json');
+  scope.actions[0].documentationOwnership = {
+    classification: 'method_owned',
+    owners: [{
+      stableId: 'python:Management:compact',
+      canonicalSlug: 'Management-compact',
+      category: 'Management',
+    }],
+    selectedOwnerStableId: 'python:Management:notCompact',
+  };
+  const validation = validateReleaseScope(scope);
+
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation.errors.map((error) => error.path), [
+    '$.actions[0].documentationOwnership.selectedOwnerStableId',
+  ]);
+});
+
+test('release-scope schema rejects standalone actions that still declare malformed owners', () => {
+  const scope = readFixture('python-v26-expected.json');
+  scope.actions[0].documentationOwnership = {
+    classification: 'standalone',
+    owners: [{ stableId: '', canonicalSlug: 'Management-compact' }],
+  };
+  const validation = validateReleaseScope(scope);
+
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation.errors.map((error) => error.path), [
+    '$.actions[0].documentationOwnership.owners[0].stableId',
+    '$.actions[0].documentationOwnership.owners[0].category',
+    '$.actions[0].documentationOwnership.classification',
   ]);
 });
 
@@ -345,6 +403,7 @@ test('identity normalizer maps raw Python scanner symbols to canonical docs', ()
       line: 1835,
     },
     reason: 'signature changed',
+    documentationOwnership: { classification: 'standalone' },
   });
 });
 
@@ -387,6 +446,40 @@ test('identity normalizer fans one helper change out to each owning interface', 
     ['java:v2-Volume:VolumeFileManager-uploadFiles', 'v2-Volume-VolumeFileManager-uploadFiles'],
     ['java:v2-Volume:VolumeFileManager-uploadFilesAsync', 'v2-Volume-VolumeFileManager-uploadFilesAsync'],
   ]);
+  assert.deepEqual(normalized.map((item) => item.documentationOwnership), [
+    {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFiles',
+          category: 'Volume',
+        },
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFilesAsync',
+          category: 'Volume',
+        },
+      ],
+      selectedOwnerStableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+    },
+    {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFiles',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFiles',
+          category: 'Volume',
+        },
+        {
+          stableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+          canonicalSlug: 'v2-Volume-VolumeFileManager-uploadFilesAsync',
+          category: 'Volume',
+        },
+      ],
+      selectedOwnerStableId: 'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
+    },
+  ]);
 
   const progressActions = normalizeDeltas({
     type: 'CREATE',
@@ -403,6 +496,224 @@ test('identity normalizer fans one helper change out to each owning interface', 
     'java:v2-Volume:VolumeFileManager-uploadFiles',
     'java:v2-Volume:VolumeFileManager-uploadFilesAsync',
   ]);
+});
+
+test('identity normalizer converts method-owned helper lifecycles into owner updates with source delta metadata', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const map = {
+    schemaVersion: 1,
+    language: 'python',
+    track: 'v2.6.x',
+    defaultCategory: 'Vector',
+    symbols: {
+      SearchRequest: {
+        classification: 'method_owned',
+        owners: [owner],
+      },
+    },
+  };
+
+  for (const sourceDeltaType of ['CREATE', 'DEPRECATE', 'BACKFILL']) {
+    const evidence = [{ kind: 'source', locator: `search_request.py:${sourceDeltaType}` }];
+    const [normalized] = normalizeDeltas({
+      type: sourceDeltaType,
+      symbolIdentity: 'SearchRequest',
+      symbol: {
+        name: 'SearchRequest',
+        kind: 'class',
+        filePath: 'search_request.py',
+        lineNumber: 12,
+      },
+      reason: `${sourceDeltaType.toLowerCase()} helper lifecycle`,
+      evidence,
+    }, map);
+
+    assert.equal(normalized.type, 'UPDATE');
+    assert.deepEqual(normalized.sourceVariants, [{
+      stableId: owner.stableId,
+      canonicalSlug: owner.canonicalSlug,
+      symbol: 'SearchRequest',
+      source: { file: 'search_request.py', line: 12 },
+      reason: `${sourceDeltaType.toLowerCase()} helper lifecycle`,
+      evidence,
+      sourceDeltaType,
+    }]);
+  }
+});
+
+test('identity normalizer blocks unmapped helper-like types instead of inventing standalone docs', () => {
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'python-v26.json'));
+  const [normalized] = normalizeDeltas({
+    type: 'CREATE',
+    symbolIdentity: 'UnownedRequest',
+    symbol: {
+      name: 'UnownedRequest',
+      kind: 'class',
+      filePath: 'pymilvus/client/unowned_request.py',
+      lineNumber: 12,
+    },
+    reason: 'new public class',
+  }, map);
+
+  assert.deepEqual(normalized.documentationOwnership, { classification: 'ambiguous' });
+  assert.equal(normalized.diagnostic.code, 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP');
+});
+
+test('identity normalizer rejects explicit standalone mappings that retain method owners', () => {
+  const owner = {
+    stableId: 'node:Collections:createCollection',
+    canonicalSlug: 'Collections-createCollection',
+    category: 'Collections',
+  };
+  const map = {
+    schemaVersion: 1,
+    language: 'node',
+    track: 'v2.6.x',
+    defaultCategory: 'Default',
+    symbols: {
+      RequestEnvelope: {
+        classification: 'standalone',
+        targets: [owner],
+      },
+    },
+  };
+
+  assert.throws(
+    () => normalizeDeltas({
+      type: 'CREATE',
+      symbolIdentity: 'RequestEnvelope',
+      symbol: { name: 'RequestEnvelope', kind: 'class', filePath: 'src/request-envelope.ts', lineNumber: 7 },
+      reason: 'new public class',
+    }, map),
+    (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
+  );
+});
+
+test('symbol inventory reports embedded C++ type changes explicitly', () => {
+  const baseline = [{
+    name: 'DescribeReplicas',
+    kind: 'method',
+    parentClass: 'Collections',
+    signature: 'Status DescribeReplicas(const Request&, Response&)',
+    filePath: 'src/include/milvus/MilvusClientV2.h',
+    lineNumber: 10,
+    embeddedTypes: [{ name: 'ReplicaInfo', fields: [{ name: 'id', type: 'int64_t' }] }],
+  }];
+  const target = [{
+    ...baseline[0],
+    embeddedTypes: [{
+      name: 'ReplicaInfo',
+      fields: [{ name: 'id', type: 'int64_t' }, { name: 'resourceGroup', type: 'std::string' }],
+    }],
+  }];
+
+  const [delta] = classifySymbolDeltas({ baseline, target });
+  assert.equal(delta.type, 'UPDATE');
+  assert.equal(delta.reason, 'embedded type surface changed');
+});
+
+test('symbol inventory ignores source-location-only shifts in embedded C++ types', () => {
+  const baseline = [{
+    name: 'DescribeReplicas',
+    kind: 'method',
+    parentClass: 'Collections',
+    signature: 'Status DescribeReplicas(const Request&, Response&)',
+    embeddedTypes: [{
+      name: 'ReplicaInfo',
+      kind: 'class',
+      aliases: ['ReplicaInfoPtr'],
+      filePath: 'src/include/milvus/types/ReplicaInfo.h',
+      lineNumber: 20,
+      relatedFiles: ['src/include/milvus/types/ShardReplica.h'],
+      fields: [{
+        name: 'id',
+        type: 'int64_t',
+        description: 'Replica identifier.',
+        filePath: 'src/include/milvus/types/ReplicaInfo.h',
+        lineNumber: 24,
+        evidence: [{ kind: 'source', locator: 'src/include/milvus/types/ReplicaInfo.h:24' }],
+      }],
+      accessors: [{
+        name: 'Shards',
+        type: 'const std::vector<ShardReplica>&',
+        signature: 'const std::vector<ShardReplica>& Shards() const',
+        description: 'Returns shard replicas.',
+        filePath: 'src/include/milvus/types/ReplicaInfo.h',
+        lineNumber: 31,
+      }],
+    }],
+  }];
+  const target = [{
+    ...baseline[0],
+    embeddedTypes: [{
+      ...baseline[0].embeddedTypes[0],
+      filePath: 'src/include/milvus/response/ReplicaInfo.h',
+      lineNumber: 120,
+      relatedFiles: ['src/include/milvus/response/ShardReplica.h'],
+      fields: [{
+        ...baseline[0].embeddedTypes[0].fields[0],
+        filePath: 'src/include/milvus/response/ReplicaInfo.h',
+        lineNumber: 124,
+        evidence: [{ kind: 'source', locator: 'src/include/milvus/response/ReplicaInfo.h:124' }],
+      }],
+      accessors: [{
+        ...baseline[0].embeddedTypes[0].accessors[0],
+        filePath: 'src/include/milvus/response/ReplicaInfo.h',
+        lineNumber: 131,
+      }],
+    }],
+  }];
+
+  assert.deepEqual(classifySymbolDeltas({ baseline, target }), []);
+});
+
+test('symbol inventory ignores source-location-only shifts in overloaded request builders', () => {
+  const baseline = [{
+    name: 'Get',
+    kind: 'method',
+    parentClass: 'Vector',
+    signature: 'Status Get(const GetRequest& request)',
+    params: [{
+      name: 'WithIDs',
+      kind: 'keyword',
+      type: 'std::vector<int64_t>&&',
+      argName: 'id_array',
+      fullArgStr: 'std::vector<int64_t>&& id_array',
+      fullSignature: 'GetRequest& WithIDs(std::vector<int64_t>&& id_array)',
+      description: 'Sets integer primary keys.',
+      deleted: false,
+      filePath: 'src/include/milvus/request/dql/GetRequest.h',
+      lineNumber: 48,
+      evidence: [{ kind: 'source', locator: 'src/include/milvus/request/dql/GetRequest.h:48' }],
+    }, {
+      name: 'WithIDs',
+      kind: 'keyword',
+      type: 'std::vector<std::string>&&',
+      argName: 'id_array',
+      fullArgStr: 'std::vector<std::string>&& id_array',
+      fullSignature: 'GetRequest& WithIDs(std::vector<std::string>&& id_array)',
+      description: 'Sets string primary keys.',
+      deleted: false,
+      filePath: 'src/include/milvus/request/dql/GetRequest.h',
+      lineNumber: 55,
+      evidence: [{ kind: 'source', locator: 'src/include/milvus/request/dql/GetRequest.h:55' }],
+    }],
+  }];
+  const target = [{
+    ...baseline[0],
+    params: baseline[0].params.map((param, index) => ({
+      ...param,
+      filePath: 'src/include/milvus/request/GetRequest.h',
+      lineNumber: 148 + index * 7,
+      evidence: [{ kind: 'source', locator: `src/include/milvus/request/GetRequest.h:${148 + index * 7}` }],
+    })),
+  }];
+
+  assert.deepEqual(classifySymbolDeltas({ baseline, target }), []);
 });
 
 test('compare-scan-artifacts treats source evidence drift as action changes', () => {
@@ -553,6 +864,8 @@ test('reviewed release context builder filters candidates and carries scoped pla
   assert.equal(result.filteredScope.scanStateUpdated, false);
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].category, 'Vector');
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].reviewedEvidence[0].confidence, 'reviewed');
+  assert.deepEqual(result.filteredScope.actions[0].documentationOwnership, { classification: 'standalone' });
+  assert.deepEqual(result.referenceContext.contexts['python:Vector:FieldOp'].documentationOwnership, { classification: 'standalone' });
   assert.equal(result.referenceContext.contexts['python:Vector:FieldOp'].signature, 'FieldOp(field_name: str)');
   assert.deepEqual(result.referenceContext.contexts['python:Vector:FieldOp'].params, [{
     name: 'field_name',
@@ -561,6 +874,65 @@ test('reviewed release context builder filters candidates and carries scoped pla
     required: true,
     description: 'Name of the field to update.',
   }]);
+});
+
+test('reviewed release context builder rejects ambiguous ownership before candidate filtering', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:UnownedRequest',
+      canonicalSlug: 'Vector-UnownedRequest',
+      symbol: 'UnownedRequest',
+      source: { file: 'pymilvus/client/unowned_request.py', line: 12 },
+      reason: 'new public class',
+      documentationOwnership: { classification: 'ambiguous' },
+    }],
+  });
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: {}, sdkReference: '' }),
+    (error) => error.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP',
+  );
+});
+
+test('reviewed release context builder rejects standalone actions that retain known owners', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    actions: [{
+      type: 'CREATE',
+      stableId: 'python:Vector:RequestEnvelope',
+      canonicalSlug: 'Vector-RequestEnvelope',
+      symbol: 'RequestEnvelope',
+      source: { file: 'pymilvus/client/request_envelope.py', line: 12 },
+      reason: 'new public class',
+      documentationOwnership: {
+        classification: 'standalone',
+        owners: [{
+          stableId: 'python:Vector:search',
+          canonicalSlug: 'Vector-search',
+          category: 'Vector',
+        }],
+      },
+    }],
+  });
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: {}, sdkReference: '' }),
+    (error) => error.code === 'METHOD_OWNED_STANDALONE_FORBIDDEN',
+  );
 });
 
 test('reviewed release context builder accepts hyphenated Java documentation categories', () => {
@@ -640,6 +1012,177 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
   assert.deepEqual(result.referenceContext.contexts['java:v2-Authentication:alterRole'].notes, []);
 });
 
+test('reviewed release context builder preserves helper planning context in either lifecycle order', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const ownership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const helperPlanningContext = {
+    requiredLinkedInlineCode: [{ text: 'SearchRequest', url: 'https://example.com/search-request' }],
+    customReviewedConstraints: {
+      preserveRequestExamples: true,
+      reviewId: 'review-search-request',
+    },
+  };
+  const helperAction = {
+    type: 'UPDATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: 'SearchRequest',
+    source: { file: 'pymilvus/client/search_request.py', line: 12 },
+    reason: 'new request helper',
+    documentationOwnership: ownership,
+    planningContext: helperPlanningContext,
+  };
+  const ownerAction = {
+    type: 'CREATE',
+    stableId: owner.stableId,
+    canonicalSlug: owner.canonicalSlug,
+    symbol: 'MilvusClient.search',
+    source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 372 },
+    reason: 'new public method',
+    documentationOwnership: { classification: 'standalone' },
+  };
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'folder-vector' },
+    },
+    candidates: {
+      [owner.canonicalSlug]: {
+        category: 'Vector',
+        docIdentity: { ...owner, symbol: 'search' },
+        existingRecordLookup: absentLookup({
+          canonicalSlug: owner.canonicalSlug,
+          title: 'search()',
+          parentRecordId: 'parent-vector',
+        }),
+        summary: 'Searches vectors in a collection.',
+        example: { code: 'client.search(collection_name="docs", data=[[0.1, 0.2]])' },
+      },
+    },
+  };
+  const baseScope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: [helperAction.source.file, ownerAction.source.file],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+
+  for (const actions of [
+    [helperAction, ownerAction],
+    [ownerAction, helperAction],
+  ]) {
+    const result = buildReviewedReleaseContext({
+      releaseScope: { ...baseScope, actions },
+      candidateSpec,
+      sdkReference: '',
+    });
+    const [selected] = result.filteredScope.actions;
+
+    assert.equal(selected.type, 'CREATE');
+    assert.deepEqual(selected.documentationOwnership, { classification: 'standalone' });
+    assert.deepEqual(selected.planningContext.requiredLinkedInlineCode, helperPlanningContext.requiredLinkedInlineCode);
+    assert.deepEqual(selected.planningContext.customReviewedConstraints, helperPlanningContext.customReviewedConstraints);
+  }
+});
+
+test('reviewed release context builder rejects conflicting planning context for one reviewed owner', () => {
+  const owner = {
+    stableId: 'python:Vector:search',
+    canonicalSlug: 'Vector-search',
+    category: 'Vector',
+  };
+  const ownership = {
+    classification: 'method_owned',
+    owners: [owner],
+    selectedOwnerStableId: owner.stableId,
+  };
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    actions: [
+      {
+        type: 'UPDATE',
+        stableId: owner.stableId,
+        canonicalSlug: owner.canonicalSlug,
+        symbol: 'SearchRequest',
+        source: { file: 'pymilvus/client/search_request.py', line: 12 },
+        reason: 'new request helper',
+        documentationOwnership: ownership,
+        planningContext: { target: { folderToken: 'folder-vector' } },
+      },
+      {
+        type: 'UPDATE',
+        stableId: owner.stableId,
+        canonicalSlug: owner.canonicalSlug,
+        symbol: 'SearchResult',
+        source: { file: 'pymilvus/client/search_result.py', line: 24 },
+        reason: 'result helper changed',
+        documentationOwnership: ownership,
+        planningContext: { target: { folderToken: 'wrong-folder' } },
+      },
+    ],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { Vector: 'folder-vector' },
+    },
+    candidates: {
+      [owner.canonicalSlug]: {
+        category: 'Vector',
+        docIdentity: { ...owner, symbol: 'search' },
+        existingRecord: {
+          recordId: 'rec-search',
+          documentToken: 'doc-search',
+          parentRecordId: 'parent-vector',
+          placement: {
+            verified: true,
+            version: 'v2.6.x',
+            folderToken: 'folder-vector',
+            referencedByOlderVersions: false,
+          },
+        },
+        summary: 'Searches vectors in a collection.',
+        example: { code: 'client.search(collection_name="docs", data=[[0.1, 0.2]])' },
+      },
+    },
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    (error) => error.code === 'CONFLICTING_RELEASE_SCOPE_ACTIONS',
+  );
+});
+
 test('reviewed release context builder accepts version-prefixed Go slugs with unversioned categories', () => {
   const releaseScope = createReleaseScope({
     language: 'go',
@@ -690,6 +1233,95 @@ test('reviewed release context builder accepts version-prefixed Go slugs with un
 
   assert.equal(result.filteredScope.actions[0].stableId, 'go:Collection:StructSchema');
   assert.equal(result.referenceContext.contexts['go:Collection:StructSchema'].category, 'Collection');
+});
+
+test('reviewed release context builder carries approved dependent folder and VirtualNode resources into planning', () => {
+  const releaseScope = createReleaseScope({
+    language: 'cpp',
+    sdkName: 'milvus-sdk-cpp',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.4',
+    targetTag: 'v2.6.5',
+    targetCommit: '771691a621b07478a1e693d3e6c6686ebb0fbdaa',
+    targetDate: '2026-07-01T00:00:00.000Z',
+    changedFiles: ['src/include/milvus/MilvusClientV2.h'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'cpp:CDC:DumpMessages',
+      canonicalSlug: 'CDC-DumpMessages',
+      symbol: 'CDC.DumpMessages',
+      source: { file: 'src/include/milvus/MilvusClientV2.h', line: 954 },
+      reason: 'new public method',
+    }],
+  });
+  const candidateSpec = {
+    language: 'cpp',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: {},
+      resources: [{
+        kind: 'folder',
+        ref: 'folder:cpp:v26:CDC',
+        name: 'CDC',
+        parentFolderToken: 'root-v26',
+        versionRootToken: 'root-v26',
+        existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v26', name: 'CDC' },
+      }, {
+        kind: 'virtual_node',
+        ref: 'parent:cpp:v26:CDC',
+        title: 'CDC',
+        folderRef: 'folder:cpp:v26:CDC',
+        baseToken: 'base-v26',
+        tableId: 'table-v26',
+        version: 'v2.6.x',
+        dependsOn: ['folder:cpp:v26:CDC'],
+        existingLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          criteria: { title: 'CDC', type: 'VirtualNode' },
+        },
+      }],
+    },
+    candidates: {
+      'CDC-DumpMessages': {
+        category: 'CDC',
+        folderRef: 'folder:cpp:v26:CDC',
+        parentRecordRef: 'parent:cpp:v26:CDC',
+        dependencies: ['folder:cpp:v26:CDC', 'parent:cpp:v26:CDC'],
+        existingRecordLookup: {
+          checked: true,
+          absent: true,
+          baseToken: 'base-v26',
+          tableId: 'table-v26',
+          parentRecordRef: 'parent:cpp:v26:CDC',
+          criteria: { canonicalSlug: 'CDC-DumpMessages', title: 'DumpMessages()' },
+        },
+        summary: 'Dumps CDC messages from the requested channel and position.',
+        example: { language: 'cpp', fence: 'C++', code: 'client->DumpMessages(request, response);' },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+
+  assert.deepEqual(result.filteredScope.resources, candidateSpec.target.resources);
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.target, {
+    version: 'v2.6.x',
+    folderToken: null,
+    folderRef: 'folder:cpp:v26:CDC',
+    parentRecordId: null,
+    parentRecordRef: 'parent:cpp:v26:CDC',
+    versionRootToken: 'root-v26',
+    ancestryVerified: true,
+  });
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.dependencies, [
+    'folder:cpp:v26:CDC',
+    'parent:cpp:v26:CDC',
+  ]);
 });
 
 test('reviewed release context builder rejects stale or empty candidate specs', () => {

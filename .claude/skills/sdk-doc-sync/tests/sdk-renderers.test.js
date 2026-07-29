@@ -297,6 +297,7 @@ test('language policies control exact sections, fences, and conditional request 
   assert.doesNotMatch(rendered.node, /```python|def createCollection|BUILDER METHODS/);
 
   assert.match(rendered.cpp, /```c\+\+\n/);
+  assert.match(rendered.cpp, /## Request Syntax\{#request-syntax\}[\s\S]*### CreateCollectionRequest/);
   assert.match(rendered.cpp, /\*\*REQUEST METHODS:\*\*/);
   assert.match(rendered.cpp, /\.EnableDynamicField\(\)/);
   assert.match(rendered.cpp, /\.AddExtraParam\(key, value\)/);
@@ -304,6 +305,7 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.cpp, /\*\*ERROR HANDLING:\*\*/);
   assert.doesNotMatch(rendered.cpp, /\*\*EXCEPTIONS:\*\*/);
   assert.match(rendered.cpp, /status code and message/);
+  assert.doesNotMatch(rendered.cpp, /The CreateCollectionRequest request shape/);
 
   const direct = fixture('java-create-collection.json');
   direct.requestClass = null;
@@ -313,6 +315,33 @@ test('language policies control exact sections, fences, and conditional request 
   assert.equal(validateReferenceDocument(directReference, { production: true }).valid, true);
   const directMarkdown = renderMarkdown(javaRenderer.render(directReference, { typeUrls: directContext.typeUrls }));
   assert.doesNotMatch(directMarkdown, /Request Syntax|BUILDER METHODS/);
+});
+
+test('C++ omits trivial request syntax when no request builder methods exist', () => {
+  const symbol = enrich('cpp', fixture('cpp-create-collection.json'));
+  symbol.params = [];
+  const reference = cppAdapter.toReferenceDocument(symbol, context('cpp'));
+  const markdown = renderMarkdown(cppRenderer.render(reference));
+
+  assert.doesNotMatch(markdown, /Request Syntax|REQUEST METHODS|### CreateCollectionRequest/);
+});
+
+test('C++ excludes request-contract prose from Request Syntax', () => {
+  const original = cppAdapter.toReferenceDocument(
+    enrich('cpp', fixture('cpp-create-collection.json')),
+    context('cpp'),
+  );
+  const reference = {
+    ...original,
+    requestVariants: original.requestVariants.map((variant) => ({
+      ...variant,
+      description: 'Duplicated request contract prose.',
+    })),
+  };
+  const markdown = renderMarkdown(cppRenderer.render(reference));
+
+  assert.doesNotMatch(markdown, /Duplicated request contract prose/);
+  assert.match(markdown, /### CreateCollectionRequest\n\n\*\*REQUEST METHODS:\*\*/);
 });
 
 test('Java renders multiple reviewed request variants with scoped fields', () => {

@@ -37,7 +37,7 @@ const profiles = Object.freeze({
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
   }),
   cpp: freezeProfile({
-    id: 'cpp', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    id: 'cpp', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
     order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'C++', 'request-signature': 'C++', 'example-code': 'C++' },
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },

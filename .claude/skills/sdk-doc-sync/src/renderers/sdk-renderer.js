@@ -243,7 +243,7 @@ function renderRequest(document, policy, context) {
     if (showVariantHeading && entry.composedAudienceVariants !== true) {
       blocks.push(heading(3, entry.title || entry.id, semantic('request-variant-heading', entryKey)));
     }
-    if (entry.description) {
+    if (entry.description && policy.showRequestDescriptions !== false) {
       blocks.push(paragraph(entry.description, [], semantic('request-description', entryKey)));
     }
     const signature = typeof policy.requestSignature === 'function'
@@ -355,7 +355,15 @@ function renderCallableMembers(document, policy, context) {
   const membersLabel = typeof policy.membersLabel === 'function'
     ? policy.membersLabel(document)
     : policy.membersLabel;
-  const blocks = [label(membersLabel, semantic('members-label'))];
+  const membersHeading = typeof policy.membersHeading === 'function'
+    ? policy.membersHeading(document, members)
+    : policy.membersHeading;
+  const blocks = [];
+  if (membersHeading) {
+    const membersHeadingLevel = Number.isInteger(policy.membersHeadingLevel) ? policy.membersHeadingLevel : 2;
+    blocks.push(heading(membersHeadingLevel, membersHeading, semantic('members-heading')));
+  }
+  blocks.push(label(membersLabel, semantic('members-label')));
   let shared = [];
   const flushShared = () => {
     if (shared.length === 0) return;

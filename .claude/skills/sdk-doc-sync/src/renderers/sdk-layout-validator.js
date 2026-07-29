@@ -14,6 +14,7 @@ const ROLE_GROUPS = Object.freeze({
   'parameters-label': 'parameters',
   'parameters-list': 'parameters',
   'members-label': 'members',
+  'members-heading': 'members',
   'members-list': 'members',
   'member-audience': 'members',
   'result-type-label': 'result-type',

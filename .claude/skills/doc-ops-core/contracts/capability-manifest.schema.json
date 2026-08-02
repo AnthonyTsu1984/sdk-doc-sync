@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doc-ops-core/capability-manifest.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "skill", "mustPreserve", "mustFix", "forbidden", "positiveTriggers", "negativeTriggers", "inputContract", "outputContract", "sideEffectPolicy", "allowedSemanticChanges"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "skill": { "type": "string", "minLength": 1 },
+    "mustPreserve": { "$ref": "#/$defs/capabilities" },
+    "mustFix": { "$ref": "#/$defs/capabilities" },
+    "forbidden": { "$ref": "#/$defs/capabilities" },
+    "positiveTriggers": { "type": "array", "minItems": 1 },
+    "negativeTriggers": { "type": "array", "minItems": 1 },
+    "inputContract": { "type": "object" },
+    "outputContract": { "type": "object" },
+    "sideEffectPolicy": { "type": "object" },
+    "allowedSemanticChanges": { "type": "array" }
+  },
+  "$defs": {
+    "capabilities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "fixtureIds"],
+        "properties": {
+          "id": { "type": "string", "pattern": "^[a-z0-9]+(?:[.-][a-z0-9]+)*$" },
+          "fixtureIds": { "type": "array", "minItems": 1, "items": { "type": "string" }, "uniqueItems": true }
+        }
+      }
+    }
+  }
+}

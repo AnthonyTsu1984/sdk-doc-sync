@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const MarkdownToFeishu = require('../src/markdown-to-feishu');
+const layoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 test('create_blocks can populate the automatic Feishu callout child instead of adding a duplicate', () => {
   const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
@@ -198,7 +199,7 @@ test('rebinds rewritten approved and copied block IDs by equivalent semantic pos
     source_document_id: 'source-doc',
     patchPlan: {
       strategy: 'targeted-semantic-patch',
-      profile: { id: 'cpp', version: 1 },
+      profile: { id: 'cpp', version: layoutProfiles.cpp.version },
       currentModel: {
         profileId: 'cpp',
         pageBlockId: 'approved-page',

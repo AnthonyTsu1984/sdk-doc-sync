@@ -1,6 +1,7 @@
 node_modules/
 .DS_Store
 .env
+.env.smoke.local
 .venv/
 
 # Run-local artifacts and one-off scripts. SDK sync runs belong under

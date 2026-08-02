@@ -14,16 +14,35 @@ Get explicit approval before:
 
 Approval must name the target disposable folder/base and the exact resources or actions being approved.
 
+## Shared Harness First
+
+The canonical synthetic corpus, isolation checks, deterministic plan, and hermetic stateful fake tenant live in `../../doc-ops-core/smoke-corpus/` and `../../doc-ops-core/harness/`.
+
+Before requesting any live mutation, run:
+
+```bash
+npm run smoke:corpus
+npm run smoke:doctor
+npm run smoke:plan -- --run-id <YYYYMMDDTHHMMSSZ-xxxxxxxx>
+npm run smoke:simulate -- --run-id <YYYYMMDDTHHMMSSZ-xxxxxxxx>
+```
+
+The tenant and credential bootstrap procedure is [tenant-smoke-environment.md](../../doc-ops-core/references/tenant-smoke-environment.md).
+
 ## Inputs
 
 Use disposable Feishu resources only:
 
-- `APP_ID`
-- `APP_SECRET`
-- `FEISHU_HOST`
-- `ROOT_TOKEN` for a disposable Drive parent folder
-- `BASE_TOKEN` for a disposable Bitable base
-- table ID or confirmed single-table disposable base
+- `SMOKE_PROFILE` for a named test-only `lark-cli` profile
+- `SMOKE_TENANT_MARKER` for the visibly distinct test tenant
+- `SMOKE_APP_ID`
+- `SMOKE_APP_SECRET`, entered locally with hidden input and never printed
+- `SMOKE_FEISHU_HOST`
+- `SMOKE_ROOT_TOKEN` for the approved disposable Drive parent folder
+- `SMOKE_BASE_TOKEN` for the approved disposable Bitable base
+- `SMOKE_TABLE_ID` for the approved test table
+
+The smoke harness must not silently fall back to `APP_ID`, `APP_SECRET`, `ROOT_TOKEN`, `BASE_TOKEN`, or another production variable. If a smoke identifier equals its production counterpart, stop before any network request.
 
 Create a smoke log before running any mutation. Record:
 
@@ -125,7 +144,7 @@ Do not proceed until approval is explicit.
 
 ### 3. Create Disposable Resources
 
-Create or identify a disposable child folder under `ROOT_TOKEN`. Create the smoke document in that folder from the smoke Markdown. Create a matching disposable bitable record that points at the document.
+Create or identify a disposable child folder under `SMOKE_ROOT_TOKEN`. Create the smoke document in that folder from the smoke Markdown. Create a matching disposable bitable record in `SMOKE_BASE_TOKEN` / `SMOKE_TABLE_ID` that points at the document.
 
 The exact helper commands depend on the available disposable base and folder setup. Inspect the helper first:
 

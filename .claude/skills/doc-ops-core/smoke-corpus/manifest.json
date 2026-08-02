@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "doc-ops-smoke-v1",
+  "fixtureMarker": "DOC_OPS_SYNTHETIC_FIXTURE_V1",
+  "canaryPrefix": "__DOC_OPS_SMOKE__",
+  "documents": [
+    {
+      "id": "api-reference-roundtrip",
+      "title": "API Reference Round Trip",
+      "file": "documents/api-reference-roundtrip.md",
+      "patchFile": "patches/api-reference-roundtrip.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["createCollection()", "#include <vector>", "Milvus API reference"],
+        "forbiddenFragments": ["PRODUCTION_TOKEN"]
+      }
+    },
+    {
+      "id": "localized-source-en",
+      "title": "Localization Source EN",
+      "file": "documents/localized-source-en.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Create a collection", "client.createCollection", "DOC_OPS_SYNTHETIC_FIXTURE_V1"],
+        "forbiddenFragments": ["创建集合"]
+      }
+    },
+    {
+      "id": "localized-target-zh",
+      "title": "Localization Target ZH",
+      "file": "documents/localized-target-zh.md",
+      "patchFile": "patches/localized-target-zh.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["创建集合", "client.createCollection", "DOC_OPS_SYNTHETIC_FIXTURE_V1"],
+        "forbiddenFragments": ["TODO_TRANSLATE"]
+      }
+    },
+    {
+      "id": "procedure-language-sync",
+      "title": "Procedure Language Sync",
+      "file": "documents/procedure-language-sync.md",
+      "patchFile": "patches/procedure-language-sync.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Python", "Java", "child item", "include-start milvus"],
+        "forbiddenFragments": ["unrelated prose rewrite"]
+      }
+    },
+    {
+      "id": "source-verified-authoring",
+      "title": "Source Verified Authoring",
+      "file": "documents/source-verified-authoring.md",
+      "patchFile": "patches/source-verified-authoring.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Claim inventory", "Verified", "https://example.invalid/source"],
+        "forbiddenFragments": ["UNVERIFIED_AS_FACT"]
+      }
+    },
+    {
+      "id": "verification-only",
+      "title": "Verification Only",
+      "file": "documents/verification-only.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Raw block", "Scenario", "syntax-only"],
+        "forbiddenFragments": ["WRITE_BACK_APPROVED"]
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "api-release-copy-patch-repoint",
+      "skill": "api-reference-sync",
+      "documentIds": ["api-reference-roundtrip"]
+    },
+    {
+      "id": "verify-without-remediation",
+      "skill": "doc-code-verify",
+      "documentIds": ["verification-only"]
+    },
+    {
+      "id": "source-target-localization",
+      "skill": "localized-doc-sync",
+      "documentIds": ["localized-source-en", "localized-target-zh"]
+    },
+    {
+      "id": "fill-missing-language-examples",
+      "skill": "procedure-code-sync",
+      "documentIds": ["procedure-language-sync"]
+    },
+    {
+      "id": "draft-from-source-evidence",
+      "skill": "verified-doc-authoring",
+      "documentIds": ["source-verified-authoring"]
+    }
+  ]
+}

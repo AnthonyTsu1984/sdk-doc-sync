@@ -1,8 +1,8 @@
 'use strict';
 
-const crypto = require('node:crypto');
-
 const { assertPublishableContent } = require('./feishu-block-safety');
+const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
+const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
 const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE']);
 const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP']);
@@ -33,26 +33,16 @@ function deepFreeze(value, seen = new WeakSet()) {
   return Object.freeze(value);
 }
 
-function stableSerialize(value, seen = new WeakSet()) {
-  if (value === null || typeof value !== 'object') return JSON.stringify(value);
-  if (seen.has(value)) throw new SyncPlanningError('INVALID_ARTIFACT', 'Document IR must not be circular');
-  seen.add(value);
-  let serialized;
-  if (Array.isArray(value)) {
-    serialized = `[${value.map((entry) => stableSerialize(entry, seen)).join(',')}]`;
-  } else {
-    const entries = Object.keys(value)
-      .sort()
-      .filter((key) => value[key] !== undefined)
-      .map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key], seen)}`);
-    serialized = `{${entries.join(',')}}`;
+function stableSerialize(value) {
+  try {
+    return canonicalStringify(value).slice(0, -1);
+  } catch (error) {
+    throw new SyncPlanningError('INVALID_ARTIFACT', error.message);
   }
-  seen.delete(value);
-  return serialized;
 }
 
 function defaultDigest(bytes) {
-  return `sha256:${crypto.createHash('sha256').update(bytes).digest('hex')}`;
+  return sha256Digest(bytes);
 }
 
 function nonEmptyString(value) {

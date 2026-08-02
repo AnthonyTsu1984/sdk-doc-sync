@@ -14,7 +14,13 @@ function verifyExecutionJournal({ approvedActions = [], journal = null } = {}) {
   const errors = [];
   const approvedIds = approvedActions.map((action) => action?.actionId).filter(Boolean);
   const approved = new Set(approvedIds);
-  const results = Array.isArray(journal?.results) ? journal.results : [];
+  const sharedEntries = Array.isArray(journal) ? journal : null;
+  const results = sharedEntries
+    ? sharedEntries.filter(entry => entry?.type === 'observed').map(entry => ({
+      actionId: entry.actionId,
+      status: entry.status,
+    }))
+    : Array.isArray(journal?.results) ? journal.results : [];
   const resultCounts = new Map();
 
   for (const item of results) {
@@ -46,15 +52,18 @@ function verifyExecutionJournal({ approvedActions = [], journal = null } = {}) {
     }
   }
 
-  if (journal?.completionSentinel !== true) {
+  const completion = sharedEntries
+    ? sharedEntries.find(entry => entry?.type === 'completion')
+    : journal;
+  if (completion?.completionSentinel !== true) {
     errors.push(finding(
       'MISSING_COMPLETION_SENTINEL',
       'Execution is not complete until a durable completion sentinel is written after all action results.',
     ));
   }
-  if (journal?.status !== 'executed') {
+  if (completion?.status !== 'executed') {
     errors.push(finding('EXECUTION_NOT_COMPLETE', 'Execution journal status must be executed.', {
-      status: journal?.status || null,
+      status: completion?.status || null,
     }));
   }
 

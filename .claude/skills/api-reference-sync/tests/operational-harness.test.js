@@ -30,6 +30,18 @@ test('execution journal requires one durable result per approved action and a co
   ]);
 });
 
+test('execution journal accepts shared-core append-only entries', () => {
+  const result = harness.verifyExecutionJournal({
+    approvedActions: [{ actionId: 'a' }],
+    journal: [
+      { type: 'prepared', actionId: 'a', batchDigest: 'sha256:batch' },
+      { type: 'observed', actionId: 'a', status: 'success', verified: true },
+      { type: 'completion', status: 'executed', completionSentinel: true },
+    ],
+  });
+  assert.deepEqual(result, { valid: true, errors: [] });
+});
+
 test('publication access rejects wrong hosts, wrong folders, and bot-only verification', () => {
   assert.equal(typeof harness.verifyPublicationAccess, 'function', 'verifyPublicationAccess must exist');
   const result = harness.verifyPublicationAccess({

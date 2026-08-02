@@ -14,6 +14,7 @@ const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
+const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 
 const adapters = Object.freeze({
     python: require('../src/sdk-reference-ir/adapters/python'),
@@ -73,6 +74,8 @@ function parseArgs(argv) {
             args.repairApprove = (args.repairApprove || []).concat(argv[++i]);
         } else if (arg === '--approve-plan-digest' && argv[i + 1]) {
             args.approvePlanDigest = (args.approvePlanDigest || []).concat(argv[++i]);
+        } else if (arg === '--approve-batch-digest' && argv[i + 1]) {
+            args.approveBatchDigest = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -103,6 +106,7 @@ Options:
   --auto-approve                   Skip interactive approval
   --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
+  --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
   --help, -h                       Show this help
 
 Environment (.env):
@@ -163,7 +167,7 @@ function createApprovalCallback(autoApprove) {
     };
 }
 
-function createExecutionApprovalProvider(repairTokens = [], digestApprovals = []) {
+function createExecutionApprovalProvider(repairTokens = [], digestApprovals = [], approvedBatchDigest = null) {
     const approvedRepairs = new Set(repairTokens);
     const approvedDigests = new Map(digestApprovals.map((entry) => {
         const separator = entry.lastIndexOf('=');
@@ -172,7 +176,11 @@ function createExecutionApprovalProvider(repairTokens = [], digestApprovals = []
         }
         return [entry.slice(0, separator), entry.slice(separator + 1)];
     }));
-    return (plan) => {
+    return (plan, action, batch) => {
+        if (!approvedBatchDigest) throw new Error('BATCH_APPROVAL_REQUIRED: --approve-batch-digest is required for live execution');
+        if (approvedBatchDigest !== batch.batchDigest) {
+            throw new Error(`APPROVED_BATCH_DIGEST_MISMATCH: expected ${approvedBatchDigest}, got ${batch.batchDigest}`);
+        }
         const approvedDigest = approvedDigests.get(plan.stableId);
         if (approvedDigests.size > 0 && !approvedDigest) {
             throw new Error(`PLAN_NOT_APPROVED: ${plan.stableId}`);
@@ -184,10 +192,26 @@ function createExecutionApprovalProvider(repairTokens = [], digestApprovals = []
         }
         const repair = plan.apiPatchPlan?.approval;
         if (repair?.required !== true || !approvedRepairs.has(repair.documentToken)) {
-            return { approved: true };
+            return createApprovalEnvelope({
+                skill: batch.skill,
+                operation: batch.operation,
+                batchDigest: batch.batchDigest,
+                actionCount: batch.actions.length,
+                targets: batch.targets,
+                sideEffects: batch.sideEffects,
+                decision: 'approved',
+            });
         }
         return {
-            approved: true,
+            ...createApprovalEnvelope({
+                skill: batch.skill,
+                operation: batch.operation,
+                batchDigest: batch.batchDigest,
+                actionCount: batch.actions.length,
+                targets: batch.targets,
+                sideEffects: batch.sideEffects,
+                decision: 'approved',
+            }),
             repairApproved: true,
             documentToken: repair.documentToken,
             preserveBlockIds: repair.preservedBlockIds || [],
@@ -496,7 +520,7 @@ async function runCli({
         releaseScope,
         exclude: args.exclude || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
-        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest),
+        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest, args.approveBatchDigest),
         artifactProvider,
         planner: dependencies.planner || null,
         planningContextProvider,
@@ -522,6 +546,8 @@ async function runCli({
 
     if (args.dryRun) {
         out(`\nDry run complete. ${result.scanned.length} symbols scanned, ${result.diff.length} diff actions.`);
+        out(`Proposed execution batch: ${result.proposedExecutionBatch.batchDigest} (${result.proposedExecutionBatch.actions.length} actions).`);
+        out('Review the full proposed batch, then rerun live with --approve-batch-digest <hash>.');
     } else {
         const succeeded = result.results.filter(r => r.status === 'success').length;
         const failed = result.results.filter(r => r.status === 'error').length;
@@ -537,6 +563,8 @@ function createBoundedSummary(result) {
         diffCount: result.diff.length,
         resourcePlanCount: (result.resourcePlans || []).length,
         planCount: result.plans.length,
+        proposedBatchDigest: result.proposedExecutionBatch?.batchDigest || null,
+        proposedActionCount: result.proposedExecutionBatch?.actions?.length || 0,
         planningErrorCount: result.planningErrors.length,
         approvedCount: result.approved.length,
         resultCount: result.results.length,

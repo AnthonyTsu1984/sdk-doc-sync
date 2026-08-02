@@ -40,6 +40,7 @@ test('AcceptanceFinalizer verifies every Draft transition before advancing scan 
 
   const result = await finalizer.finalize({
     userConfirmed: true,
+    executionJournalDigest: 'sha256:execution-journal',
     touchedRecords: [
       { actionId: 'action-a', recordId: 'rec-a' },
       { actionId: 'action-b', recordId: 'rec-b' },
@@ -58,6 +59,7 @@ test('AcceptanceFinalizer verifies every Draft transition before advancing scan 
   });
   assert.equal(journals.length, 1);
   assert.equal(journals[0].completionSentinel, true);
+  assert.equal(journals[0].executionJournalDigest, 'sha256:execution-journal');
   assert.deepEqual(journals[0].results.map((item) => [item.recordId, item.beforeProgress, item.afterProgress, item.verified]), [
     ['rec-a', 'WIP', 'Draft', true],
     ['rec-b', 'WIP', 'Draft', true],
@@ -93,6 +95,7 @@ test('AcceptanceFinalizer rolls back partial Draft transitions and preserves sca
   await assert.rejects(
     () => finalizer.finalize({
       userConfirmed: true,
+      executionJournalDigest: 'sha256:execution-journal',
       touchedRecords: [
         { actionId: 'action-a', recordId: 'rec-a' },
         { actionId: 'action-b', recordId: 'rec-b' },
@@ -111,4 +114,20 @@ test('AcceptanceFinalizer rolls back partial Draft transitions and preserves sca
   assert.equal(records.every((item) => item.fields.Progress === 'WIP'), true);
   assert.deepEqual(scanState, originalScanState);
   assert.equal(journalWritten, false);
+});
+
+test('AcceptanceFinalizer refuses acceptance without execution journal lineage', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  const finalizer = new AcceptanceFinalizer({
+    bitableWriter: { async listRecords() { return []; }, async updateRecord() {} },
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async () => {},
+  });
+  await assert.rejects(() => finalizer.finalize({
+    userConfirmed: true,
+    touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }],
+    scanStateKey: 'python-v26',
+    scanStateEntry: { lastScannedTag: 'v2.6.1' },
+  }), /executionJournalDigest is required/);
 });

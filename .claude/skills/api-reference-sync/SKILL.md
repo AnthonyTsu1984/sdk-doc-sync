@@ -7,15 +7,18 @@ description: Use when a Milvus or Zilliz SDK, CLI, REST API, or OpenAPI release 
 
 Synchronize versioned SDK and API reference documentation incrementally. Scripts handle scanning, diffing, and Feishu CRUD; use source inspection and judgment to decide what changed, where documentation belongs, and how to preserve version history.
 
+## Executable Contract
+
+- Capability baseline: [capabilities.json](capabilities.json).
+- Shared artifacts, approval envelopes, journals, states, and results follow `../doc-ops-core/contracts/` and `../doc-ops-core/src/result-contract.js`; ownership, versioning, layout, and content decisions remain domain-local.
+- Dry-run exposes `proposedExecutionBatch.batchDigest`; live execution requires that exact value through `--approve-batch-digest <hash>`. A partial action selection creates a new batch and requires new approval.
+- Existing journals block replay with `EXECUTION_RECONCILIATION_REQUIRED`; reconcile live state instead of rerunning. Acceptance must reference the exact `executionJournalDigest` before advancing `Progress` or `scan-state.json`.
+
 ## Load The Relevant References
 
 Read only what the task requires:
 
-- Python: [sdk-python.md](sdk-python.md)
-- Java: [sdk-java.md](sdk-java.md)
-- Node.js: [sdk-node.md](sdk-node.md)
-- C++: [sdk-cpp.md](sdk-cpp.md)
-- Go: [sdk-go.md](sdk-go.md)
+- SDK-specific: [Python](sdk-python.md), [Java](sdk-java.md), [Node.js](sdk-node.md), [C++](sdk-cpp.md), and [Go](sdk-go.md).
 - Zilliz CLI: [sdk-zilliz-cli.md](sdk-zilliz-cli.md)
 - REST/OpenAPI: [sdk-rest.md](sdk-rest.md)
 - Cross-SDK alignment: [sdk-alignment.md](sdk-alignment.md)
@@ -95,7 +98,7 @@ Use these transition rules:
 - Phase 1 may read source repos, `scan-state.json`, and existing Feishu state needed for comparison. It must not mutate Feishu or `scan-state.json`.
 - Phase 2 is a proposal, not an approval-ready action list. It may include proposed `CREATE`, `UPDATE`, `DEPRECATE`, `BACKFILL`, `REPOINT`, `SPLIT`, `EXCLUDE`, `DEFER`, and successor-track inheritance decisions, but it must not ask for write approval. For every proposed write, resolve the live Bitable record first and label the action as update-existing or create-missing from evidence, not from guessed placement. Do not present a synthetic combined documentation identity as the recommendation when the current Bitable has or should have separate interface records.
 - Phase 3 may start only after grouping review is accepted or edited with an explicit valid grouping-review reply. Encode the accepted grouping in the candidate spec before building reviewed context or approval TSV.
-- Phase 4 may start only after explicit approval of the exact Phase 3 action list and dry-run artifacts.
+- Phase 4 may start only after explicit approval of the exact Phase 3 action list and dry-run artifacts. Use the dry-run `proposedExecutionBatch.batchDigest` with `--approve-batch-digest`; if the approved action set changes, rerun dry-run and approve the new digest.
 - Phase 4 completion does not authorize `scan-state.json`. Stop with `acceptance_review_required` while touched records remain `WIP`.
 - Phase 5 may start only after the user explicitly confirms that all touched documentation is accepted. Change every accepted touched record from `WIP` to `Draft`, refetch and verify the exact value, then update `scan-state.json`. If acceptance is partial, any record is not `Draft`, or verification is missing, report `acceptance_blocked` and leave scan state unchanged.
 
@@ -287,7 +290,7 @@ Create this TSV only after the current run has successfully rebuilt reviewed con
 - Execute only approved actions. For creates, write source-backed docs, resolve/create the canonical folder, create the document, then create the Bitable record without setting `Slug`. For updates and backfills, choose the version-safe flow in [references/versioning.md](references/versioning.md).
 - After live writes, refetch document and Bitable record, verify content, folder ancestry, `Docs.link`, `父记录`, version metadata, language/formatting, and older-source preservation, then run [references/post-write-verification.md](references/post-write-verification.md).
 - After Phase 4, report `acceptance_review_required`, keep touched records at `WIP`, and leave `scan-state.json` unchanged.
-- During Acceptance Finalization, require explicit user confirmation, update every touched record from `WIP` to `Draft`, refetch the records, and verify the transitions.
+- During Acceptance Finalization, require explicit user confirmation and the exact `executionJournalDigest`, update every touched record from `WIP` to `Draft`, refetch the records, and verify the transitions.
 - Once all acceptance checks pass, update `scan-state.json` in the same finalization step. Explicit acceptance with verified `Draft` records requires the scan-state update; never leave an accepted run on the old baseline.
 
 ## Reporting

@@ -4,6 +4,7 @@ const {
   FeishuBlockSafetyError,
   assertPublishableContent,
 } = require('./feishu-block-safety');
+const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -103,8 +104,8 @@ class SyncExecutor {
     this.verifier = verifier;
   }
 
-  async execute(plan, { artifact = null, approval = null, action = null } = {}) {
-    this._assertApprovedPlan(plan, approval);
+  async execute(plan, { artifact = null, approval = null, approvalContext = null, action = null } = {}) {
+    this._assertApprovedPlan(plan, approval, approvalContext);
     const completedSteps = [];
     const result = {
       status: 'success',
@@ -171,8 +172,23 @@ class SyncExecutor {
     }
   }
 
-  _assertApprovedPlan(plan, approval) {
-    if (!plan || plan.schemaVersion !== 1 || Object.isFrozen(plan) !== true || approval?.approved !== true) {
+  _assertApprovedPlan(plan, approval, approvalContext = null) {
+    if (!plan || plan.schemaVersion !== 1 || Object.isFrozen(plan) !== true) {
+      throw new SyncExecutionError(
+        'APPROVED_PLAN_REQUIRED',
+        'An approved immutable plan is required before SDK document execution',
+      );
+    }
+    if (approvalContext) {
+      assertApproval(approval, {
+        skill: approvalContext.skill,
+        operation: approvalContext.operation,
+        batchDigest: approvalContext.batchDigest,
+        actionCount: approvalContext.actions.length,
+        targets: approvalContext.targets,
+        sideEffects: approvalContext.sideEffects,
+      });
+    } else if (approval?.approved !== true) {
       throw new SyncExecutionError(
         'APPROVED_PLAN_REQUIRED',
         'An approved immutable plan is required before SDK document execution',

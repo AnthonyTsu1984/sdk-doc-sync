@@ -3,9 +3,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 
 function artifact(content = '# Reviewed documentation\n') {
   return {
@@ -557,6 +562,27 @@ test('planAll documents the batch API and returns frozen plans in input order', 
   assert.equal(Object.isFrozen(plans), true);
 });
 
+test('execution batch construction cannot bypass an unselected document dependency', () => {
+  const selected = [{
+    plan: {
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId: 'node:Collections:dependent',
+      dependencies: ['node:Collections:prerequisite'],
+      source: { documentToken: 'doc-dependent' },
+      target: {},
+    },
+  }];
+
+  assert.throws(
+    () => SdkDocSync.buildExecutionBatch(selected, new Set([
+      'node:Collections:prerequisite',
+      'node:Collections:dependent',
+    ])),
+    /MISSING_DEPENDENCY/,
+  );
+});
+
 test('SyncPlanner creates an approval-gated folder resource plan with optional VirtualNode repointing', () => {
   const plan = new SyncPlanner().planResource({
     kind: 'folder',
@@ -658,6 +684,7 @@ test('SyncPlanner allows document plans to depend on unresolved approved resourc
 });
 
 function syncFixture({ dryRun, approvalCallback = null, calls }) {
+  const journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-reference-sync-'));
   const scanned = [{
     name: 'createCollection',
     parentClass: 'Collections',
@@ -719,6 +746,13 @@ function syncFixture({ dryRun, approvalCallback = null, calls }) {
     language: 'node',
     dryRun,
     approvalCallback,
+    executionJournalFactory(batch) {
+      return new ExecutionJournal({
+        filePath: path.join(journalDir, 'execution.jsonl'),
+        batchDigest: batch.batchDigest,
+        approvedActionIds: batch.actions.map(action => action.actionId),
+      });
+    },
     onProgress() {},
   });
 }
@@ -733,6 +767,8 @@ test('dry-run scans, reads the real index, plans UPDATE accurately, and performs
   assert.equal(result.diff[0].type, 'UPDATE');
   assert.equal(result.plans[0].action, 'UPDATE_IN_PLACE');
   assert.deepEqual(result.planningErrors, []);
+  assert.match(result.proposedExecutionBatch.batchDigest, /^sha256:/);
+  assert.equal(result.proposedExecutionBatch.actions.length, 1);
   assert.equal(calls.documentMutations, 0);
   assert.equal(calls.recordMutations, 0);
 });
@@ -798,6 +834,164 @@ test('dry and live modes produce identical plans before approval or execution', 
   assert.equal(liveCalls.recordMutations, 0);
 });
 
+test('dry-run proposed batch digest is identical to a full live execution batch', async () => {
+  const dryCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const liveCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const dry = await syncFixture({ dryRun: true, calls: dryCalls }).run();
+  const liveSync = syncFixture({
+    dryRun: false,
+    calls: liveCalls,
+    approvalCallback: async (actions) => actions,
+  });
+  liveSync.executionApprovalProvider = (plan, action, batch) => {
+    assert.equal(batch.batchDigest, dry.proposedExecutionBatch.batchDigest);
+    return createApprovalEnvelope({
+      skill: batch.skill,
+      operation: batch.operation,
+      batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length,
+      targets: batch.targets,
+      sideEffects: batch.sideEffects,
+      decision: 'approved',
+    });
+  };
+  liveSync.executor = { async execute() { return { status: 'success' }; } };
+
+  const live = await liveSync.run();
+
+  assert.equal(live.executionBatch.batchDigest, dry.proposedExecutionBatch.batchDigest);
+  assert.deepEqual(live.executionBatch, dry.proposedExecutionBatch);
+});
+
+test('partial approval creates a new execution batch digest', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const sync = syncFixture({
+    dryRun: false,
+    calls,
+    approvalCallback: async (actions) => [actions[0]],
+  });
+  sync.scanner.scan = async () => [{
+    name: 'createCollection',
+    parentClass: 'Collections',
+    docstring: 'new description',
+    identity: { stableId: 'node:Collections:createCollection' },
+  }, {
+    name: 'dropCollection',
+    parentClass: 'Collections',
+    docstring: 'new drop description',
+    identity: { stableId: 'node:Collections:dropCollection' },
+  }];
+  sync.indexReader.list_documents = async () => [{
+    id: 'rec-v26',
+    metadata: {
+      slug: 'Collections-createCollection',
+      description: 'old description',
+      token: 'doc-v26',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }, {
+    id: 'rec-drop-v26',
+    metadata: {
+      slug: 'Collections-dropCollection',
+      description: 'old drop description',
+      token: 'doc-drop-v26',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }];
+  sync.executionApprovalProvider = (plan, action, batch) => createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  sync.executor = { async execute() { return { status: 'success' }; } };
+
+  const result = await sync.run();
+
+  assert.equal(result.proposedExecutionBatch.actions.length, 2);
+  assert.equal(result.executionBatch.actions.length, 1);
+  assert.notEqual(result.executionBatch.batchDigest, result.proposedExecutionBatch.batchDigest);
+});
+
+test('missing or mismatched exact batch approval blocks the whole batch with zero writes', async () => {
+  for (const approvalProvider of [
+    null,
+    (plan, action, batch) => createApprovalEnvelope({
+      skill: batch.skill,
+      operation: batch.operation,
+      batchDigest: 'sha256:mismatched',
+      actionCount: batch.actions.length,
+      targets: batch.targets,
+      sideEffects: batch.sideEffects,
+      decision: 'approved',
+    }),
+  ]) {
+    const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0, executor: 0 };
+    const sync = syncFixture({
+      dryRun: false,
+      calls,
+      approvalCallback: async (actions) => actions,
+    });
+    sync.executionApprovalProvider = approvalProvider;
+    sync.executor = { async execute() { calls.executor += 1; return { status: 'success' }; } };
+
+    const result = await sync.run();
+
+    assert.equal(result.executionResult.status, 'BLOCKED');
+    assert.equal(result.executionResult.exitCode, 2);
+    assert.equal(calls.executor, 0);
+    assert.equal(calls.documentMutations, 0);
+    assert.equal(calls.recordMutations, 0);
+    assert.equal(result.executionJournalDigest, undefined);
+  }
+});
+
+test('an existing execution journal blocks replay and requests reconciliation', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0, executor: 0 };
+  const sync = syncFixture({
+    dryRun: false,
+    calls,
+    approvalCallback: async (actions) => actions,
+  });
+  sync.executionApprovalProvider = (plan, action, batch) => createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  sync.executionJournalFactory = (batch) => {
+    const journal = new ExecutionJournal({
+      filePath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'api-reference-replay-')), 'execution.jsonl'),
+      batchDigest: batch.batchDigest,
+      approvedActionIds: batch.actions.map(action => action.actionId),
+    });
+    journal.prepared({
+      actionId: batch.actions[0].actionId,
+      dependsOn: [],
+      preconditionDigest: 'sha256:existing',
+      mutation: { action: 'UPDATE_IN_PLACE' },
+    });
+    return journal;
+  };
+  sync.executor = { async execute() { calls.executor += 1; return { status: 'success' }; } };
+
+  const result = await sync.run();
+
+  assert.equal(result.executionResult.status, 'BLOCKED');
+  assert.equal(result.executionResult.diagnostics[0].code, 'EXECUTION_RECONCILIATION_REQUIRED');
+  assert.equal(calls.executor, 0);
+});
+
 test('live execution receives the plan-specific approval envelope', async () => {
   const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
   const approvals = [];
@@ -806,14 +1000,23 @@ test('live execution receives the plan-specific approval envelope', async () => 
     calls,
     approvalCallback: async (actions) => actions,
   });
-  sync.executionApprovalProvider = (plan) => ({
-    approved: true,
+  sync.executionApprovalProvider = (plan, action, batch) => ({
+    ...createApprovalEnvelope({
+      skill: batch.skill,
+      operation: batch.operation,
+      batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length,
+      targets: batch.targets,
+      sideEffects: batch.sideEffects,
+      decision: 'approved',
+    }),
     repairApproved: true,
     documentToken: plan.source.documentToken,
   });
   sync.executor = {
     async execute(plan, input) {
       approvals.push(input.approval);
+      assert.equal(input.approvalContext.batchDigest, input.approval.batchDigest);
       return { status: 'success', plan };
     },
   };
@@ -821,11 +1024,11 @@ test('live execution receives the plan-specific approval envelope', async () => 
   const result = await sync.run();
 
   assert.equal(result.results.length, 1);
-  assert.deepEqual(approvals, [{
-    approved: true,
-    repairApproved: true,
-    documentToken: 'doc-v26',
-  }]);
+  assert.match(result.executionBatch.batchDigest, /^sha256:/);
+  assert.equal(approvals[0].batchDigest, result.executionBatch.batchDigest);
+  assert.equal(approvals[0].repairApproved, true);
+  assert.equal(approvals[0].documentToken, 'doc-v26');
+  assert.match(result.executionJournalDigest, /^sha256:/);
 });
 
 test('orchestrator returns typed planning errors and does not approve invalid write actions', async () => {

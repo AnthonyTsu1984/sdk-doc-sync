@@ -14,6 +14,7 @@ const {
 } = require('../bin/sdk-doc-sync');
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { buildReviewedReleaseContext } = require('../scripts/build-reviewed-release-context');
+const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -22,11 +23,14 @@ test('bounded dry-run summary reports dependent resource plans separately from d
     scanned: [], indexed: [], diff: [],
     resourcePlans: [{ action: 'CREATE_FOLDER' }, { action: 'CREATE_VIRTUAL_NODE' }],
     plans: [{ action: 'CREATE' }],
+    proposedExecutionBatch: { batchDigest: 'sha256:proposed', actions: [{ actionId: 'a' }] },
     planningErrors: [], approved: [], results: [],
   });
 
   assert.equal(summary.resourcePlanCount, 2);
   assert.equal(summary.planCount, 1);
+  assert.equal(summary.proposedBatchDigest, 'sha256:proposed');
+  assert.equal(summary.proposedActionCount, 1);
 });
 
 test('CLI accepts repeatable token-specific repair approvals', () => {
@@ -39,16 +43,20 @@ test('CLI accepts repeatable token-specific repair approvals', () => {
     'doc-2',
     '--approve-plan-digest',
     'python:Category:item=sha256:abc123',
+    '--approve-batch-digest',
+    'sha256:batch',
   ]);
 
   assert.deepEqual(args.repairApprove, ['doc-1', 'doc-2']);
   assert.deepEqual(args.approvePlanDigest, ['python:Category:item=sha256:abc123']);
+  assert.equal(args.approveBatchDigest, 'sha256:batch');
 });
 
 test('execution approval provider rejects an approved plan digest mismatch', () => {
   const provider = createExecutionApprovalProvider(
     ['doc-1'],
     ['python:Category:item=sha256:approved'],
+    'sha256:batch',
   );
   const plan = {
     stableId: 'python:Category:item',
@@ -63,11 +71,11 @@ test('execution approval provider rejects an approved plan digest mismatch', () 
   };
 
   assert.throws(
-    () => provider(plan),
+    () => provider(plan, {}, { batchDigest: 'sha256:batch' }),
     /APPROVED_PLAN_DIGEST_MISMATCH/,
   );
   assert.throws(
-    () => provider({ ...plan, stableId: 'python:Category:other' }),
+    () => provider({ ...plan, stableId: 'python:Category:other' }, {}, { batchDigest: 'sha256:batch' }),
     /PLAN_NOT_APPROVED/,
   );
 });
@@ -425,7 +433,7 @@ test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and 
     if (language !== 'zilliz-cli') {
       assert.deepEqual(result.plans[0].layout, {
         profileId: language,
-        profileVersion: language === 'java' ? 2 : 1,
+        profileVersion: sdkLayoutProfiles[language].version,
       });
     }
     assert.match(stdout.join('\n'), /"plans"/, language);

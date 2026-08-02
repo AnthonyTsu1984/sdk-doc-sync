@@ -8,6 +8,8 @@ const SyncExecutor = require('../src/sdk-doc-sync/sync-executor');
 const SyncVerifier = require('../src/sdk-doc-sync/sync-verifier');
 const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
 const { FeishuOperationalVerifier } = require('../src/sdk-doc-sync/feishu-operational-verifier');
+const { createActionBatch } = require('../../doc-ops-core/src/action-batch');
+const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 
 function artifact(content = '# Reviewed documentation\n') {
   return {
@@ -148,6 +150,44 @@ test('SyncExecutor rejects unapproved plans before any mutation', async () => {
     /approved immutable plan is required/,
   );
   assert.deepEqual(calls, []);
+});
+
+test('SyncExecutor canonical path rejects digest-free approval and accepts the exact batch envelope', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const createPlan = plan('CREATE', planningContext({ current: null }));
+  const batch = createActionBatch({
+    skill: 'api-reference-sync',
+    operation: 'execute',
+    actions: [{
+      actionId: createPlan.stableId,
+      target: createPlan.target.folderToken,
+      dependsOn: createPlan.dependencies,
+      sideEffects: ['feishu.doc.create', 'feishu.bitable.create'],
+    }],
+  });
+  await assert.rejects(() => executor.execute(createPlan, {
+    artifact: artifact(),
+    approval: { approved: true },
+    approvalContext: batch,
+  }), /APPROVAL_REQUIRED/);
+  assert.deepEqual(calls, []);
+
+  const approval = createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: 1,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  const result = await executor.execute(createPlan, {
+    artifact: artifact(),
+    approval,
+    approvalContext: batch,
+  });
+  assert.equal(result.status, 'success');
 });
 
 test('SyncExecutor creates a target document before creating the Bitable record', async () => {

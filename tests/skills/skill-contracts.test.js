@@ -22,6 +22,15 @@ test('api-reference-sync never instructs routine version sync to delete historic
   assert.doesNotMatch(content, /Delete old doc/);
 });
 
+test('api-reference-sync exposes deterministic batch approval, recovery, and acceptance lineage', () => {
+  const content = skill('api-reference-sync');
+  assert.match(content, /capabilities\.json/);
+  assert.match(content, /proposedExecutionBatch/);
+  assert.match(content, /--approve-batch-digest/);
+  assert.match(content, /EXECUTION_RECONCILIATION_REQUIRED/);
+  assert.match(content, /executionJournalDigest/);
+});
+
 test('localized-doc-sync uses current table-aware translator options', () => {
   const content = skill('localized-doc-sync');
   assert.match(content, /--source-table\s+\S+/);

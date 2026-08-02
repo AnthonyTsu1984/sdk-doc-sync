@@ -1,0 +1,10 @@
+[
+  { "id": "release-range", "assertions": { "fullScanIsApprovalGrade": false, "rangeRequired": true } },
+  { "id": "ann-search-request", "assertions": { "symbol": "AnnSearchRequest", "classification": "method_owned", "owner": "hybrid_search()", "standalone": false } },
+  { "id": "response-wrapper-ownership", "assertions": { "symbols": ["RoleItem", "UserItem"], "owners": ["describe_role()", "describe_user()"], "standalone": false } },
+  { "id": "sparse-version-copy", "assertions": { "changedInheritedAction": "COPY_PATCH_AND_REPOINT", "patchOlderVersionInPlace": false } },
+  { "id": "phase-gates", "assertions": { "writeApprovalImpliesAcceptance": false, "groupingApprovalImpliesWrite": false } },
+  { "id": "scan-state-acceptance", "assertions": { "advanceBeforeAcceptance": false, "requiredProgress": "Draft" } },
+  { "id": "exact-approval", "assertions": { "batchDigestRequired": true } },
+  { "id": "recoverable-execution", "assertions": { "preparedBeforeMutation": true, "blindReplay": false } }
+]

@@ -1,0 +1,8 @@
+[
+  { "id": "claim-inventory", "assertions": { "claimsBeforeDraft": true } },
+  { "id": "source-grounding", "assertions": { "behaviorNeedsImplementationEvidence": true, "inventedApi": false } },
+  { "id": "unresolved-visible", "assertions": { "unresolvedSection": true, "uncertaintyHidden": false } },
+  { "id": "preview-refetch", "assertions": { "dryRun": true, "explicitApproval": true, "refetch": true } },
+  { "id": "evidence-contract", "assertions": { "sourceLocator": true, "verificationStatus": true } },
+  { "id": "result-contract", "assertions": { "semanticDigest": true, "sharedExitCode": true } }
+]

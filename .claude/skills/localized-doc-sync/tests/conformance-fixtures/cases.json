@@ -1,0 +1,9 @@
+[
+  { "id": "table-pairs", "assertions": { "visibleTableOnly": false, "allMappedPairs": true } },
+  { "id": "slug-identity", "assertions": { "identityField": "slug", "titleIsIdentity": false } },
+  { "id": "source-read-only", "assertions": { "sourceWrites": false } },
+  { "id": "parent-media", "assertions": { "parentBySlug": true, "preserve": ["board", "figma", "sheet", "supademo"] } },
+  { "id": "orphan-report", "assertions": { "delete": false, "report": true } },
+  { "id": "exact-approval", "assertions": { "batchDigestRequired": true } },
+  { "id": "round-trip", "assertions": { "verifyContent": true, "verifyMetadata": true, "verifyMedia": true } }
+]

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "skill": "localized-doc-sync",
+  "mustPreserve": [
+    { "id": "localization.table-pairs", "description": "Index every configured source and target table pair.", "fixtureIds": ["table-pairs"] },
+    { "id": "localization.slug-identity", "description": "Use stable slug rather than display title as record identity.", "fixtureIds": ["slug-identity"] },
+    { "id": "localization.source-read-only", "description": "Keep source records and documents read-only by default.", "fixtureIds": ["source-read-only"] },
+    { "id": "localization.parent-media", "description": "Preserve mapped hierarchy and protected rich media.", "fixtureIds": ["parent-media"] },
+    { "id": "localization.orphan-report", "description": "Report target-only records without deleting them.", "fixtureIds": ["orphan-report"] }
+  ],
+  "mustFix": [
+    { "id": "localization.exact-approval", "description": "Bind localized writes to an exact action batch.", "fixtureIds": ["exact-approval"] },
+    { "id": "localization.round-trip", "description": "Verify content, metadata, hierarchy, and media after writes.", "fixtureIds": ["round-trip"] }
+  ],
+  "forbidden": [
+    { "id": "localization.no-source-write", "description": "Never overwrite the source side without a separate request.", "fixtureIds": ["source-read-only"] },
+    { "id": "localization.no-orphan-delete", "description": "Never delete orphans without separate approval.", "fixtureIds": ["orphan-report"] }
+  ],
+  "positiveTriggers": [{ "id": "pair-align", "prompt": "Align source and localized Feishu records and preserve media." }],
+  "negativeTriggers": [{ "id": "same-language-release", "prompt": "Scan one SDK release in the same language." }],
+  "inputContract": { "requires": ["sourceBase", "targetBase", "tablePairs", "sourceRoot", "targetRoot"] },
+  "outputContract": { "schemaVersion": 1, "actions": ["NEW", "UPDATE", "SKIP", "ORPHAN", "META_ONLY"] },
+  "sideEffectPolicy": { "source": "read-only", "targetWriteRequires": ["dryRun", "batchDigest", "approval", "refetch"] },
+  "allowedSemanticChanges": ["localization.exact-approval", "localization.round-trip"]
+}

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "skill": "procedure-code-sync",
+  "mustPreserve": [
+    { "id": "procedure.python-led", "description": "Interpret the existing Python procedure before porting examples.", "fixtureIds": ["python-led"] },
+    { "id": "procedure.language-order", "description": "Preserve canonical language order without duplicates.", "fixtureIds": ["language-order"] },
+    { "id": "procedure.source-evidence", "description": "Verify every port against public source APIs.", "fixtureIds": ["source-evidence"] },
+    { "id": "procedure.scoped-patch", "description": "Patch only missing or demonstrably incorrect example blocks.", "fixtureIds": ["scoped-patch"] }
+  ],
+  "mustFix": [
+    { "id": "procedure.exact-approval", "description": "Bind patches to one reviewed block action batch.", "fixtureIds": ["exact-approval"] },
+    { "id": "procedure.round-trip", "description": "Verify protected blocks and resulting language groups after patching.", "fixtureIds": ["round-trip"] }
+  ],
+  "forbidden": [
+    { "id": "procedure.no-release-scan", "description": "Do not expand into release-wide API inventory.", "fixtureIds": ["no-release-scan"] },
+    { "id": "procedure.no-unrelated-prose", "description": "Do not silently rewrite unrelated prose.", "fixtureIds": ["scoped-patch"] }
+  ],
+  "positiveTriggers": [{ "id": "missing-tabs", "prompt": "Add verified Java, Go, Node, REST, CLI, and C++ variants to this Python procedure." }],
+  "negativeTriggers": [{ "id": "verification-only", "prompt": "Only verify the existing snippets; do not patch." }],
+  "inputContract": { "requires": ["procedureDocument", "pythonWorkflow", "requestedLanguages", "sourceRepositories"] },
+  "outputContract": { "schemaVersion": 1, "statuses": ["BLOCKED", "READY", "EXECUTED", "PARTIAL", "VERIFIED"] },
+  "sideEffectPolicy": { "default": "dry-run", "writeRequires": ["exactBlocks", "batchDigest", "approval", "refetch"] },
+  "allowedSemanticChanges": ["procedure.exact-approval", "procedure.round-trip"]
+}

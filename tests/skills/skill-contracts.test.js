@@ -9,6 +9,27 @@ function skill(name) {
   return fs.readFileSync(path.join(REPO_ROOT, '.claude', 'skills', name, 'SKILL.md'), 'utf8');
 }
 
+const CANONICAL_SKILLS = [
+  'api-reference-sync',
+  'procedure-code-sync',
+  'doc-code-verify',
+  'verified-doc-authoring',
+  'localized-doc-sync',
+];
+
+for (const name of CANONICAL_SKILLS) {
+  test(`${name} declares the canonical deterministic skill boundary`, () => {
+    const content = skill(name);
+    assert.match(content, /^## Trigger Boundary$/m);
+    assert.match(content, /^## Permission Boundary$/m);
+    assert.match(content, /^## Shared Contract$/m);
+    assert.match(content, /^## Domain Workflow$/m);
+    assert.match(content, /^## Required References$/m);
+    assert.match(content, /capabilities\.json/);
+    assert.match(content, /doc-ops-core/);
+  });
+}
+
 test('api-reference-sync documents a valid required-argument quick start', () => {
   const content = skill('api-reference-sync');
   assert.match(content, /--language python\b/);

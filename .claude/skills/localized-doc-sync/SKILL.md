@@ -5,83 +5,60 @@ description: Use when aligning paired source and localized Zilliz documentation 
 
 # Localized Doc Sync
 
-Use this skill for Zilliz docs localization workflows where an English Feishu wiki/bitable is the source of truth and another Feishu wiki/bitable is the localized target.
+Align a read-only source documentation set with a localized target while preserving identity, hierarchy, metadata, and rich media.
 
-Before live writes, always produce a dry-run summary and get explicit approval for the concrete records/documents that will be created or updated.
+## Trigger Boundary
 
-## Executable Write Contract
+Use for paired source/target Feishu wiki roots and Bitables that need localization record diffing, document creation/update, metadata alignment, parent mapping, or media preservation.
 
-- Capability baseline: [capabilities.json](capabilities.json)
-- Convert the reviewed `NEW`, `UPDATE`, and `META_ONLY` operations into an immutable batch with `node .claude/skills/doc-ops-core/bin/build-action-batch.js --skill localized-doc-sync --operation sync --input <actions.json> --output <batch.json>`.
-- Approval must match the exact `batchDigest`, targets, action count, and side effects. Recheck live preconditions for record identity, document revision, parent mapping, and media inventory immediately before each write.
-- After each write, refetch the target and apply the shared round-trip guard to content, metadata, hierarchy, boards, Figma, sheets, Supademo, and other protected blocks.
+Do not use for same-language SDK release synchronization, narrative authoring without paired records, or verification-only code checks.
 
-## Core Workflow
+## Permission Boundary
 
-1. Read [references/zilliz-localization.md](references/zilliz-localization.md) for the canonical base tokens, wiki roots, all table IDs, table-pair mapping, field rules, library paths, and media handling notes. For Development -> 开发指南 work, also read [references/development-alignment.md](references/development-alignment.md).
-2. Confirm `.env` has Feishu credentials and any translator/media credentials required by the chosen workflow.
-3. Index every mapped source and target table. Do not limit work to the `table=` parameter in a pasted Base URL; those URLs point at one visible table, while the Base contains multiple required documentation tables.
-4. Align table metadata before touching docs: compare fields, canonical field names, select options, link field behavior, parent-record fields, and required target-only fields.
-5. Diff records by stable slug within each table pair. Treat title as display text, not identity.
-6. Classify each record as `NEW`, `UPDATE`, `SKIP`, `ORPHAN`, or `META_ONLY`.
-7. For `NEW`, create the localized doc under the corresponding localized wiki parent, then create the target bitable record.
-8. For `UPDATE`, fetch English Markdown, translate or merge only the changed content, preserve media metadata, then update the existing localized document.
-9. Refetch the changed records and docs after live writes. Verify links, parent records, slug, type, progress/status, dates, and visible media blocks.
+- Source records and source documents are read-only unless the user separately requests and approves a source-side change.
+- Indexing, diffing, translation previews, and dry-run are allowed by default.
+- Target writes require explicit approval of exact records/documents and batch digest. Never delete `ORPHAN` records without separate approval.
+- Refetch every written record and document; uncertain parent mapping, schema, credentials, or protected media blocks completion.
 
-## Preferred Implementation
+## Shared Contract
 
-Reuse the existing SDK sync library rather than writing one-off Feishu API code. The translator CLI supports table-aware reads and writes through `--source-table` and `--target-table`; always provide both options for these multi-table bases.
+- Capability baseline: [capabilities.json](capabilities.json).
+- Build reviewed `NEW`, `UPDATE`, and `META_ONLY` operations with `node .claude/skills/doc-ops-core/bin/build-action-batch.js --skill localized-doc-sync --operation sync --input <actions.json> --output <batch.json>`.
+- Approval must match the exact `batchDigest`, targets, action count, and side effects. Verify the live precondition for record identity, revision, parent mapping, and media inventory immediately before mutation.
+- After writes, refetch and apply the shared `../doc-ops-core/` round-trip guard to content, metadata, hierarchy, images, boards, Figma, sheets, Supademo, and opaque blocks.
+
+## Domain Workflow
+
+1. Load the canonical table-pair map, wiki roots, fields, and media rules. Index every configured source and target table; a pasted Base URL's visible `table=` is not the full Base.
+2. Align table schemas and diff records by stable slug, not display title.
+3. Classify records as `NEW`, `UPDATE`, `SKIP`, `ORPHAN`, or `META_ONLY`.
+4. Resolve target parents by mapped source-parent slug. Create or align missing parents before child documents.
+5. Translate prose, headings, captions, callouts, table prose, and localized UI text. Preserve code, inline code, API names, env vars, URLs, frontmatter tokens, `<!-- feishu-block:` comments, and `<Supademo ... />` components unless explicitly requested otherwise.
+6. Produce a dry-run for each table pair, build the immutable action batch, and obtain explicit approval.
+7. Apply only approved target writes, then refetch and verify links, parent records, slug, type, progress/status, dates, content, and visible media.
+
+Table-aware dry-run:
 
 ```bash
 npm run translate -- \
-  --source-bitable Ac7xbs2k1ad7bjsCXr0ccHe9nMh \
-  --target-bitable I6YUb1M0JajHrqsJGcLcZNh7neP \
-  --source-table tblWv7PjNDsexddH \
-  --target-table tblYpqCgevikMomb \
-  --source-root OUWXw5c4gia34ZkQUcEcMFbWn6s \
-  --target-root XyeFwdx6kiK9A6kq3yIcLNdEnDd \
+  --source-bitable <source-base> \
+  --target-bitable <target-base> \
+  --source-table <source-table> \
+  --target-table <target-table> \
+  --source-root <source-wiki-root> \
+  --target-root <target-wiki-root> \
   --source-lang en \
   --target-lang zh \
   --drive-type wiki \
   --dry-run
 ```
 
-Run once per mapped table pair using the canonical table IDs in [references/zilliz-localization.md](references/zilliz-localization.md). Use `--action new` or `--action update` only after reviewing the dry-run output and obtaining explicit approval. Add `--translator claude`, `--translator feishu`, `--translator deepl`, or `--translator ollama` according to the available credentials and quality requirements.
+## Required References
 
-## Metadata Rules
+- Canonical tokens, table pairs, field rules, libraries, and media handling: [references/zilliz-localization.md](references/zilliz-localization.md).
+- Development/开发指南 alignment only: [references/development-alignment.md](references/development-alignment.md).
+- Reuse `../api-reference-sync/src/feishu-doc-translator/`, its Markdown converters, and `lark-cli`; do not create one-off Feishu API clients.
 
-- Never overwrite source records while localizing. Source bitable and English docs are read-only unless the user explicitly asks otherwise.
-- Never write auto-derived slug fields directly if the target table computes them.
-- Preserve source `Type`, `Labels`, `Keywords`, `Targets`, and deprecation metadata unless the target table has a documented localized equivalent.
-- Set target `Last Modified At` to the source modification date for content parity, or to the live update date only when the target table tracks localization update time.
-- Preserve parent hierarchy by resolving the source parent slug, then finding the target parent record by slug. If the target parent is missing, create or align the parent before creating child docs.
-- Do not delete orphans without a separate approval. Report them as target-only docs.
+## Output
 
-## Content Rules
-
-- Keep code blocks, inline code, API names, env vars, URLs, and frontmatter tokens unchanged unless the user explicitly asks for localized examples.
-- Translate prose, headings, captions, callouts, table prose, and UI text that should appear localized.
-- Preserve Markdown comments beginning with `<!-- feishu-block:`. They are required to round-trip boards, Figma iframes, and sheets.
-- Preserve `<Supademo ... />` components. They round-trip to Feishu add-on blocks.
-- For image Markdown, let `MarkdownToFeishu.push_markdown()` upload images unless explicitly running a metadata-only dry run.
-- If a doc contains board, Figma, sheet, or Supademo blocks, prefer a scoped update or verified full rewrite. Inspect the result in Feishu blocks afterward because Markdown export alone can hide embed loss.
-
-## Tooling Notes
-
-- Read `.claude/skills/api-reference-sync/SKILL.md` before changing shared SDK sync behavior.
-- Use `.claude/skills/api-reference-sync/src/feishu-doc-translator/` for localization indexing, diffing, translation, creation, and updates.
-- Use `.claude/skills/api-reference-sync/src/markdown-to-feishu.js` and `src/feishu-to-markdown.js` for round-trip conversion.
-- Use `.claude/skills/api-reference-sync/lib/lark-docs/` for lower-level scraping, Markdown export, image downloading, board previews, and Figma preview capture.
-- Use `lark-cli` for direct field/table inspection, targeted record updates, and block-level verification when the library does not expose a safe operation.
-
-## Completion Report
-
-Report:
-
-- Source and target base/table/root tokens used.
-- Dry-run counts by action type.
-- Live write counts by action type.
-- New or updated doc URLs.
-- Metadata fields changed.
-- Media/embed verification results.
-- Any records skipped because parent mapping, field schema, credentials, or media round-trip support was uncertain.
+Report source/target base, table, and root identities; dry-run and live counts by action; batch digest; changed document links and metadata; hierarchy/media verification; orphans; and every blocked or skipped record with reason.

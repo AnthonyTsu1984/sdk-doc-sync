@@ -71,6 +71,27 @@ function selectSandboxEnvelope(value) {
   ));
 }
 
+function documentTokenFromDocsCell(value) {
+  let link = '';
+  if (typeof value === 'string') {
+    const text = value.trim();
+    const markdownLink = text.match(/^\[[^\]]*\]\((https?:\/\/[^\s)]+)\)$/);
+    link = markdownLink?.[1] || text;
+  } else if (value && typeof value === 'object') {
+    link = typeof value.link === 'string'
+      ? value.link.trim()
+      : (typeof value.url === 'string' ? value.url.trim() : '');
+  }
+  if (!link) return '';
+  try {
+    const url = new URL(link);
+    if (!['http:', 'https:'].includes(url.protocol)) return '';
+    return url.pathname.match(/\/(?:docx|wiki)\/([^/]+)\/?$/)?.[1] || '';
+  } catch {
+    return '';
+  }
+}
+
 function createSandboxCommandRunner({ repoRoot }) {
   if (!repoRoot) throw new LiveSmokeError('SMOKE_LIVE_REPO_ROOT_REQUIRED', 'repoRoot is required');
   return async function runLark(args, { input = undefined } = {}) {
@@ -634,9 +655,9 @@ class LarkSandboxAdapter {
       if (record && record.fields?.['Case ID'] !== document.id) diagnostics.push({ code: 'SMOKE_RECORD_CASE_MISMATCH' });
       if (record && record.fields?.['Run ID'] !== context.plan.runId) diagnostics.push({ code: 'SMOKE_RECORD_RUN_MISMATCH' });
       const docsValue = record?.fields?.Docs;
-      const docsUrl = typeof docsValue === 'string' ? docsValue : (docsValue?.link || docsValue?.url || '');
+      const linkedDocumentToken = documentTokenFromDocsCell(docsValue);
       const documentToken = context.state.documents?.[document.id]?.documentToken;
-      if (record && !docsUrl.endsWith(`/${documentToken}`)) diagnostics.push({ code: 'SMOKE_RECORD_LINK_MISMATCH' });
+      if (record && linkedDocumentToken !== documentToken) diagnostics.push({ code: 'SMOKE_RECORD_LINK_MISMATCH' });
       return { diagnostics, ok: diagnostics.length === 0 };
     }
     if (action.actionId.startsWith('doc:patch:')) {

@@ -201,6 +201,79 @@ test('Base record search normalizes the CLI tabular JSON envelope', async () => 
   }]);
 });
 
+test('record verification accepts a Markdown link returned for the Docs cell', async () => {
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async () => { throw new Error('record verification must not call the tenant'); },
+  });
+  const action = { actionId: 'record:create:fixture' };
+  const context = {
+    plan: { runId: '20260802T120000Z-a1b2c3d4' },
+    state: { documents: { fixture: { documentToken: 'doc_test_only' } } },
+  };
+  const observed = {
+    record: {
+      fields: {
+        'Case ID': 'fixture',
+        'Run ID': context.plan.runId,
+        Docs: '[Fixture](https://smoke.invalid/docx/doc_test_only)',
+      },
+    },
+  };
+
+  assert.deepEqual(await adapter.verify(action, { observed }, context), {
+    diagnostics: [],
+    ok: true,
+  });
+});
+
+test('record verification binds supported Docs cell shapes to the exact document token', async () => {
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async () => { throw new Error('record verification must not call the tenant'); },
+  });
+  const action = { actionId: 'record:create:fixture' };
+  const context = {
+    plan: { runId: '20260802T120000Z-a1b2c3d4' },
+    state: { documents: { fixture: { documentToken: 'doc_test_only' } } },
+  };
+  const recordWithDocs = Docs => ({
+    record: {
+      fields: {
+        'Case ID': 'fixture',
+        'Run ID': context.plan.runId,
+        Docs,
+      },
+    },
+  });
+
+  for (const Docs of [
+    'https://smoke.invalid/docx/doc_test_only',
+    '[Fixture](https://smoke.invalid/docx/doc_test_only?from=base#anchor)',
+    { link: 'https://smoke.invalid/docx/doc_test_only' },
+    { url: 'https://smoke.invalid/wiki/doc_test_only' },
+  ]) {
+    assert.deepEqual(await adapter.verify(action, { observed: recordWithDocs(Docs) }, context), {
+      diagnostics: [],
+      ok: true,
+    });
+  }
+
+  for (const Docs of [
+    'https://smoke.invalid/docx/doc_test_only_extra',
+    '[Fixture](https://smoke.invalid/docx/not_the_token?redirect=/doc_test_only)',
+  ]) {
+    assert.deepEqual(await adapter.verify(action, { observed: recordWithDocs(Docs) }, context), {
+      diagnostics: [{ code: 'SMOKE_RECORD_LINK_MISMATCH' }],
+      ok: false,
+    });
+  }
+});
+
 test('record recovery treats an exact-ID tombstone outside search as a verified delete', async () => {
   const identityFingerprint = 'sha256:'.padEnd(71, 'a');
   const adapter = new liveSmoke.LarkSandboxAdapter({

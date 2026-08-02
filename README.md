@@ -23,11 +23,11 @@ Supported SDKs:
 
 ## Project Structure
 
-All core code has been consolidated under `.claude/skills/sdk-doc-sync/`:
+All core code has been consolidated under `.claude/skills/api-reference-sync/`:
 
 ```
 .
-├── .claude/skills/sdk-doc-sync/
+├── .claude/skills/api-reference-sync/
 │   ├── SKILL.md                 # Full skill documentation and workflow
 │   ├── scan-state.json          # Last scanned tag per SDK
 │   ├── sdk-*.md                 # Per-SDK reference files
@@ -76,13 +76,13 @@ git clone https://github.com/milvus-io/pymilvus.git repos/pymilvus
 ### Check for SDK Updates
 
 ```bash
-node .claude/skills/sdk-doc-sync/scripts/check-sdk-updates.js
+node .claude/skills/api-reference-sync/scripts/check-sdk-updates.js
 ```
 
 ### Scan an SDK (Dry Run)
 
 ```bash
-node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
   --language=python \
   --sdk-dir repos/pymilvus/pymilvus \
   --sdk-version v2.6.x \
@@ -92,22 +92,22 @@ node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js \
 ### Feishu Doc CLI
 
 ```bash
-node .claude/skills/sdk-doc-sync/scripts/feishu-doc.js push <file> --folder <token> --title <title>
-node .claude/skills/sdk-doc-sync/scripts/feishu-doc.js list-folder <folder-token>
-node .claude/skills/sdk-doc-sync/scripts/feishu-doc.js bitable-list <base-token>
+node .claude/skills/api-reference-sync/scripts/feishu-doc.js push <file> --folder <token> --title <title>
+node .claude/skills/api-reference-sync/scripts/feishu-doc.js list-folder <folder-token>
+node .claude/skills/api-reference-sync/scripts/feishu-doc.js bitable-list <base-token>
 ```
 
 ### Post-Actions (After Bulk Doc Creation)
 
 ```bash
 # 1. Inject cross-reference links
-node .claude/skills/sdk-doc-sync/scripts/add-type-links.js --bitable <token> --dry-run
+node .claude/skills/api-reference-sync/scripts/add-type-links.js --bitable <token> --dry-run
 
 # 2. Fix leading whitespace
-node .claude/skills/sdk-doc-sync/scripts/fix-leading-spaces.js --bitable <token> --dry-run
+node .claude/skills/api-reference-sync/scripts/fix-leading-spaces.js --bitable <token> --dry-run
 
 # 3. Repair stale links
-node .claude/skills/sdk-doc-sync/scripts/post-fix-links.js --bitable <token> --dry-run
+node .claude/skills/api-reference-sync/scripts/post-fix-links.js --bitable <token> --dry-run
 ```
 
 ## Testing
@@ -116,23 +116,23 @@ Tests live inside the skill folder and should be run from the project root:
 
 ```bash
 # Run from project root (scripts in package.json are currently broken; run directly)
-node .claude/skills/sdk-doc-sync/tests/run-all.js --unit
-node .claude/skills/sdk-doc-sync/tests/run-all.js --offline
-node .claude/skills/sdk-doc-sync/tests/run-all.js --integration
+node .claude/skills/api-reference-sync/tests/run-all.js --unit
+node .claude/skills/api-reference-sync/tests/run-all.js --offline
+node .claude/skills/api-reference-sync/tests/run-all.js --integration
 ```
 
 ## Key Files
 
 | File | Purpose |
 |------|---------|
-| `.claude/skills/sdk-doc-sync/SKILL.md` | Complete workflow documentation |
-| `.claude/skills/sdk-doc-sync/scan-state.json` | Tracks last scanned tag per SDK |
-| `.claude/skills/sdk-doc-sync/sdk-python.md` | Python SDK tokens, format, and scripts |
-| `.claude/skills/sdk-doc-sync/sdk-java.md` | Java SDK tokens, format, and scripts |
-| `.claude/skills/sdk-doc-sync/sdk-node.md` | Node.js SDK tokens, format, and scripts |
-| `.claude/skills/sdk-doc-sync/sdk-go.md` | Go SDK tokens, format, and scripts |
-| `.claude/skills/sdk-doc-sync/sdk-cpp.md` | C++ SDK tokens, format, and scripts |
-| `.claude/skills/sdk-doc-sync/sdk-zilliz-cli.md` | Zilliz CLI tokens, format, and scripts |
+| `.claude/skills/api-reference-sync/SKILL.md` | Complete workflow documentation |
+| `.claude/skills/api-reference-sync/scan-state.json` | Tracks last scanned tag per SDK |
+| `.claude/skills/api-reference-sync/sdk-python.md` | Python SDK tokens, format, and scripts |
+| `.claude/skills/api-reference-sync/sdk-java.md` | Java SDK tokens, format, and scripts |
+| `.claude/skills/api-reference-sync/sdk-node.md` | Node.js SDK tokens, format, and scripts |
+| `.claude/skills/api-reference-sync/sdk-go.md` | Go SDK tokens, format, and scripts |
+| `.claude/skills/api-reference-sync/sdk-cpp.md` | C++ SDK tokens, format, and scripts |
+| `.claude/skills/api-reference-sync/sdk-zilliz-cli.md` | Zilliz CLI tokens, format, and scripts |
 
 ## License
 

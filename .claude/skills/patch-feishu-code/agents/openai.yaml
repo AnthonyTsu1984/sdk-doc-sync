@@ -1,4 +1,4 @@
 interface:
-  display_name: "Patch Feishu Code"
-  short_description: "Add verified SDK language examples"
-  default_prompt: "Use $patch-feishu-code to inspect this Feishu SDK procedure, verify equivalent public APIs, and plan the missing language blocks before requesting approval to patch them."
+  display_name: "Patch Feishu Code (Compatibility)"
+  short_description: "Compatibility alias for Procedure Code Sync"
+  default_prompt: "Use $patch-feishu-code as a compatibility alias and delegate the task to $procedure-code-sync."

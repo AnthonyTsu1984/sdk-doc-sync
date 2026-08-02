@@ -12,10 +12,10 @@
 
 ## Project Layout
 
-All SDK doc sync tooling lives under `.claude/skills/sdk-doc-sync/`:
+All SDK doc sync tooling lives under `.claude/skills/api-reference-sync/`:
 
 ```
-.claude/skills/sdk-doc-sync/
+.claude/skills/api-reference-sync/
   SKILL.md              # Full workflow documentation
   scan-state.json       # Last scanned tag per SDK
   sdk-*.md              # Per-SDK reference (python, java, node, cpp, go, rest, zilliz-cli)
@@ -32,16 +32,16 @@ All SDK doc sync tooling lives under `.claude/skills/sdk-doc-sync/`:
 
 ```bash
 # Check if any SDK has a new release
-node .claude/skills/sdk-doc-sync/scripts/check-sdk-updates.js
+node .claude/skills/api-reference-sync/scripts/check-sdk-updates.js
 
 # Scan an SDK (dry-run first)
-node .claude/skills/sdk-doc-sync/bin/sdk-doc-sync.js --language=python --sdk-dir repos/pymilvus/pymilvus --sdk-version v2.6.x --dry-run
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --language=python --sdk-dir repos/pymilvus/pymilvus --sdk-version v2.6.x --dry-run
 
 # Feishu doc CLI
-node .claude/skills/sdk-doc-sync/scripts/feishu-doc.js <subcommand> [options]
+node .claude/skills/api-reference-sync/scripts/feishu-doc.js <subcommand> [options]
 
 # OpenAPI spec editing
-node .claude/skills/sdk-doc-sync/scripts/edit-openapi.js <subcommand> [options]
+node .claude/skills/api-reference-sync/scripts/edit-openapi.js <subcommand> [options]
 ```
 
 ## Golden Rules

@@ -6,7 +6,7 @@ const suites = [
   {
     name: 'sdk-doc-sync',
     command: process.execPath,
-    args: ['.claude/skills/sdk-doc-sync/tests/run-all.js'],
+    args: ['.claude/skills/api-reference-sync/tests/run-all.js'],
   },
   { name: 'test:skills', command: 'npm', args: ['run', 'test:skills'] },
   { name: 'test:patch-code-blocks', command: 'npm', args: ['run', 'test:patch-code-blocks'] },

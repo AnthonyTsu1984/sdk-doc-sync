@@ -17,6 +17,7 @@ function config() {
     SMOKE_PROFILE: 'doc-ops-smoke',
     SMOKE_TENANT_MARKER: 'DOC_OPS_TEST',
     SMOKE_FEISHU_HOST: 'https://open.feishu.cn',
+    SMOKE_IDENTITY_FINGERPRINT: 'sha256:'.padEnd(71, 'a'),
     SMOKE_ROOT_TOKEN: 'smoke-root-token',
     SMOKE_BASE_TOKEN: 'smoke-base-token',
     SMOKE_TABLE_ID: 'tblSmokeCases',

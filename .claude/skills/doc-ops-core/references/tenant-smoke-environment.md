@@ -71,6 +71,14 @@ npm run smoke:sandbox:status
 
 The verified user name and bot app name must both belong to the test tenant.
 
+The live harness binds every approved action to a SHA-256 identity fingerprint derived from the sandbox profile, app, active identity type, and verified user. Generate it without exposing the source identifiers:
+
+```bash
+npm run smoke:identity
+```
+
+Store only the returned `sha256:...` value as `SMOKE_IDENTITY_FINGERPRINT`; never store or paste the source identifiers in logs, plans, or chat. Recompute the fingerprint after reinitializing the profile, changing the app, or authorizing a different user. A mismatch stops the run before mutation.
+
 ## 4. Bootstrap the persistent smoke roots
 
 After explicit creation approval, create one root folder as the test user:
@@ -127,14 +135,46 @@ npm run smoke:plan -- --run-id 20260802T120000Z-a1b2c3d4
 npm run smoke:simulate -- --run-id 20260802T120000Z-a1b2c3d4
 ```
 
-`smoke:doctor` fails if required `SMOKE_*` values are missing, if a smoke identifier equals the corresponding production environment variable, if the host is unsafe, or if the corpus is invalid. It redacts credentials in its output.
+`smoke:doctor` fails if required `SMOKE_*` values are missing, if the identity fingerprint is malformed, if a smoke identifier equals the corresponding production environment variable, if the host is unsafe, or if the corpus is invalid. It redacts credentials and resource identifiers in its output.
 
 ## 6. Live execution gates
 
-The generated plan contains three independent digests:
+The generated plan contains independent creation and patch digests. The executable cleanup batch does not exist before creation:
 
 1. `creationBatch.batchDigest` authorizes only the disposable child folder, documents, and Base records.
 2. `patchBatch.batchDigest` authorizes only the reviewed smoke patches.
-3. `cleanupBatch.batchDigest` authorizes only deletion of the resources recorded by that run.
+3. After successful creation, `smoke:cleanup:plan` materializes a cleanup batch from the exact folder, document, and record identifiers persisted in that run's state. Its digest authorizes only those recorded resources.
 
-Before each phase, report the target tenant marker, named profile, approved root/Base/table, action list, and exact digest. Refetch after create and patch. Cleanup requires a separate explicit approval and a final parent-folder/Base refetch.
+Before each phase, report only sanitized target labels, action counts, and the exact digest. Do not report folder, document, Base, table, app, or user identifiers. Creation, patch, and cleanup require separate explicit approvals. Refetch and verify every mutation. Cleanup remains optional and requires a final parent-folder/Base refetch.
+
+Run an approved creation batch:
+
+```bash
+npm run smoke:live:create -- \
+  --run-id 20260802T120000Z-a1b2c3d4 \
+  --approve-batch-digest sha256:<approved-creation-digest>
+```
+
+Run the separately approved patch batch:
+
+```bash
+npm run smoke:live:patch -- \
+  --run-id 20260802T120000Z-a1b2c3d4 \
+  --approve-batch-digest sha256:<approved-patch-digest>
+```
+
+Materialize the creation-bound cleanup batch without deleting anything:
+
+```bash
+npm run smoke:cleanup:plan -- --run-id 20260802T120000Z-a1b2c3d4
+```
+
+Only after separately reviewing and approving that newly materialized digest, run cleanup:
+
+```bash
+npm run smoke:live:cleanup -- \
+  --run-id 20260802T120000Z-a1b2c3d4 \
+  --approve-batch-digest sha256:<approved-cleanup-digest>
+```
+
+If a journal already exists for a phase, do not blindly rerun it. Reconcile the recorded receipts and current tenant state first; the live runner intentionally returns `EXECUTION_RECONCILIATION_REQUIRED`.

@@ -6,11 +6,29 @@ const path = require('node:path');
 const { canonicalize } = require('../src/canonical-json');
 const { loadSmokeConfig, redactSmokeConfig } = require('../harness/smoke-config');
 const { loadSmokeCorpus, validateSmokeCorpus } = require('../harness/smoke-corpus');
+const {
+  LarkSandboxAdapter,
+  computeSandboxIdentityFingerprint,
+  createSandboxCommandRunner,
+  executeLivePhase,
+  materializeCleanupBatch,
+} = require('../harness/live-smoke-runner');
 const { buildSmokePlan } = require('../harness/smoke-plan');
 const { simulateSmokeRun } = require('../harness/smoke-simulator');
 
 const DEFAULT_CORPUS_ROOT = path.join(__dirname, '..', 'smoke-corpus');
-const COMMANDS = new Set(['doctor', 'plan', 'simulate', 'validate-corpus']);
+const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
+const LIVE_COMMANDS = new Set(['live-create', 'live-patch', 'live-cleanup']);
+const ASYNC_COMMANDS = new Set([...LIVE_COMMANDS, 'cleanup-plan', 'identity-fingerprint']);
+const COMMANDS = new Set([
+  'doctor',
+  'plan',
+  'simulate',
+  'validate-corpus',
+  'cleanup-plan',
+  'identity-fingerprint',
+  ...LIVE_COMMANDS,
+]);
 
 function parseArgs(argv) {
   const raw = argv.slice(2);
@@ -25,10 +43,23 @@ function parseArgs(argv) {
       result.runId = value;
       continue;
     }
+    if (flag === '--approve-batch-digest') {
+      const value = raw.shift();
+      if (!value || value.startsWith('--')) throw new Error('Missing value for --approve-batch-digest');
+      result.approvedBatchDigest = value;
+      continue;
+    }
     throw new Error(`Unknown argument: ${flag}`);
   }
-  if (['plan', 'simulate'].includes(command) && !result.runId) throw new Error(`${command} requires --run-id`);
-  if (!['plan', 'simulate'].includes(command) && result.runId) throw new Error(`${command} does not accept --run-id`);
+  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', ...LIVE_COMMANDS]);
+  if (runCommands.has(command) && !result.runId) throw new Error(`${command} requires --run-id`);
+  if (!runCommands.has(command) && result.runId) throw new Error(`${command} does not accept --run-id`);
+  if (LIVE_COMMANDS.has(command) && !result.approvedBatchDigest) {
+    throw new Error(`${command} requires --approve-batch-digest`);
+  }
+  if (!LIVE_COMMANDS.has(command) && result.approvedBatchDigest) {
+    throw new Error(`${command} does not accept --approve-batch-digest`);
+  }
   return result;
 }
 
@@ -43,6 +74,9 @@ function main(argv = process.argv, dependencies = {}) {
   const corpusRoot = dependencies.corpusRoot || DEFAULT_CORPUS_ROOT;
   try {
     const args = parseArgs(argv);
+    if (ASYNC_COMMANDS.has(args.command)) {
+      throw new Error(`${args.command} requires the async runCli entry point`);
+    }
     const corpus = loadSmokeCorpus(corpusRoot);
     const corpusValidation = validateSmokeCorpus(corpus, { corpusRoot });
     if (args.command === 'validate-corpus') {
@@ -54,7 +88,7 @@ function main(argv = process.argv, dependencies = {}) {
       return 1;
     }
     if (args.command === 'doctor') {
-      const config = loadSmokeConfig(env, { requireCredentials: true });
+      const config = loadSmokeConfig(env);
       out(stableJson({
         corpusId: corpus.corpusId,
         corpusValid: true,
@@ -83,6 +117,90 @@ function main(argv = process.argv, dependencies = {}) {
   }
 }
 
-if (require.main === module) process.exitCode = main();
+async function runCli(argv = process.argv, dependencies = {}) {
+  const env = dependencies.env || process.env;
+  const out = dependencies.out || (value => process.stdout.write(value));
+  const err = dependencies.err || (value => process.stderr.write(value));
+  let args;
+  try {
+    args = parseArgs(argv);
+    if (!ASYNC_COMMANDS.has(args.command)) return main(argv, dependencies);
+    if (args.command === 'identity-fingerprint') {
+      const runLark = dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT });
+      const authStatus = await runLark(['auth', 'status', '--json', '--verify']);
+      const profile = await runLark(['config', 'show', '--profile', 'doc-ops-smoke']);
+      if (authStatus.identity !== 'user'
+        || authStatus.verified !== true
+        || authStatus.identities?.user?.tokenStatus !== 'valid') {
+        const error = new Error('sandbox user identity is not verified and valid');
+        error.code = 'SMOKE_IDENTITY_INVALID';
+        throw error;
+      }
+      out(stableJson({
+        identityFingerprint: computeSandboxIdentityFingerprint({ authStatus, profile }),
+        profile: profile.profile,
+        verified: true,
+      }));
+      return 0;
+    }
+    const corpusRoot = dependencies.corpusRoot || DEFAULT_CORPUS_ROOT;
+    const corpus = loadSmokeCorpus(corpusRoot);
+    const corpusValidation = validateSmokeCorpus(corpus, { corpusRoot });
+    if (!corpusValidation.valid) {
+      out(stableJson({ code: 'SMOKE_CORPUS_INVALID', ...corpusValidation }));
+      return 1;
+    }
+    const config = loadSmokeConfig(env);
+    let plan = buildSmokePlan({ corpus, corpusRoot, config, runId: args.runId });
+    const runDir = dependencies.runDir || path.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'runs', args.runId);
+    const materializeCleanup = dependencies.materializeCleanup || materializeCleanupBatch;
+    if (args.command === 'cleanup-plan') {
+      const cleanupBatch = materializeCleanup({ plan, runDir });
+      out(stableJson({ cleanupBatch, runId: args.runId }));
+      return 0;
+    }
+    const phase = {
+      'live-create': 'create',
+      'live-patch': 'patch',
+      'live-cleanup': 'cleanup',
+    }[args.command];
+    if (phase === 'cleanup') {
+      plan = { ...plan, cleanupBatch: materializeCleanup({ plan, runDir }) };
+    }
+    const executeLive = dependencies.executeLive || executeLivePhase;
+    const adapter = dependencies.adapter || (dependencies.executeLive ? null : new LarkSandboxAdapter({
+      config,
+      corpus,
+      corpusRoot,
+      runLark: dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT }),
+    }));
+    const result = await executeLive({
+      adapter,
+      approvedBatchDigest: args.approvedBatchDigest,
+      phase,
+      plan,
+      runDir,
+    });
+    out(stableJson(result));
+    return result.status === 'EXECUTED' ? 0 : 1;
+  } catch (error) {
+    err(stableJson({
+      code: error.code || 'SMOKE_CLI_ERROR',
+      message: error.message,
+    }));
+    return 2;
+  }
+}
 
-module.exports = { DEFAULT_CORPUS_ROOT, main, parseArgs, stableJson };
+if (require.main === module) {
+  runCli().then(code => { process.exitCode = code; });
+}
+
+module.exports = {
+  DEFAULT_CORPUS_ROOT,
+  executeLivePhase,
+  main,
+  parseArgs,
+  runCli,
+  stableJson,
+};

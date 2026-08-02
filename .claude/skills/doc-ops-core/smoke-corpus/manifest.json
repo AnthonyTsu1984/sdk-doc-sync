@@ -9,6 +9,23 @@
       "title": "API Reference Round Trip",
       "file": "documents/api-reference-roundtrip.md",
       "patchFile": "patches/api-reference-roundtrip.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "    std::vector<int> ids{1, 2, 3};\n    return static_cast<int>(ids.size());",
+          "after": "    std::vector<int> ids{1, 2, 3};\n    ids.push_back(4);\n    return static_cast<int>(ids.size());"
+        },
+        {
+          "type": "str_replace",
+          "before": "- parent item\n  - child item\n    1. grandchild item",
+          "after": "- parent item\n  - child item\n    1. grandchild item\n  - patched sibling item"
+        },
+        {
+          "type": "str_replace",
+          "before": "See [Milvus API reference](https://milvus.io/docs) for the published reference surface.",
+          "after": "See [Milvus API reference](https://milvus.io/docs) for the published reference surface. This sentence was added by the reviewed smoke patch."
+        }
+      ],
       "synthetic": true,
       "expected": {
         "requiredFragments": ["createCollection()", "#include <vector>", "Milvus API reference"],
@@ -30,6 +47,13 @@
       "title": "Localization Target ZH",
       "file": "documents/localized-target-zh.md",
       "patchFile": "patches/localized-target-zh.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "使用固定维度和仅用于测试的名称创建集合。",
+          "after": "使用固定维度和仅用于测试的名称创建集合；该页面只属于隔离的 smoke tenant。"
+        }
+      ],
       "synthetic": true,
       "expected": {
         "requiredFragments": ["创建集合", "client.createCollection", "DOC_OPS_SYNTHETIC_FIXTURE_V1"],
@@ -41,6 +65,13 @@
       "title": "Procedure Language Sync",
       "file": "documents/procedure-language-sync.md",
       "patchFile": "patches/procedure-language-sync.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "// Deliberately incomplete in the baseline; the smoke patch fills this block only.",
+          "after": "MilvusClientV2 client = new MilvusClientV2(ConnectConfig.builder()\n    .uri(\"http://localhost:19530\")\n    .build());\nclient.createCollection(CreateCollectionReq.builder()\n    .collectionName(\"doc_ops_smoke\")\n    .dimension(8)\n    .build());"
+        }
+      ],
       "synthetic": true,
       "expected": {
         "requiredFragments": ["Python", "Java", "child item", "include-start milvus"],
@@ -52,6 +83,13 @@
       "title": "Source Verified Authoring",
       "file": "documents/source-verified-authoring.md",
       "patchFile": "patches/source-verified-authoring.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "The verified request shape includes a `dimension` field. The default metric remains explicitly unresolved.",
+          "after": "The verified request shape includes a `dimension` field. The default metric remains explicitly unresolved and is not promoted into factual prose."
+        }
+      ],
       "synthetic": true,
       "expected": {
         "requiredFragments": ["Claim inventory", "Verified", "https://example.invalid/source"],

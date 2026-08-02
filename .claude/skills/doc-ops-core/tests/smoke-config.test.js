@@ -13,6 +13,7 @@ function validEnv() {
     SMOKE_PROFILE: 'doc-ops-smoke',
     SMOKE_TENANT_MARKER: 'DOC_OPS_TEST',
     SMOKE_FEISHU_HOST: 'https://open.feishu.cn',
+    SMOKE_IDENTITY_FINGERPRINT: 'sha256:'.padEnd(71, 'a'),
     SMOKE_ROOT_TOKEN: 'smoke-root-token',
     SMOKE_BASE_TOKEN: 'smoke-base-token',
     SMOKE_TABLE_ID: 'tblSmokeCases',
@@ -49,6 +50,7 @@ test('smoke config never exposes credentials in reportable output', () => {
     appSecret: '[redacted]',
     baseToken: 'smok...oken',
     feishuHost: 'https://open.feishu.cn',
+    identityFingerprint: 'sha2...aaaa',
     profile: 'doc-ops-smoke',
     rootToken: 'smok...oken',
     tableId: 'tblS...ases',
@@ -62,4 +64,10 @@ test('smoke config allows local contract simulator only behind an explicit flag'
   assert.throws(() => loadSmokeConfig(env), { code: 'SMOKE_HOST_UNSAFE' });
   env.SMOKE_ALLOW_LOCAL_SIMULATOR = '1';
   assert.equal(loadSmokeConfig(env).feishuHost, 'http://127.0.0.1:43123');
+});
+
+test('smoke config requires a stable hashed sandbox identity', () => {
+  const env = validEnv();
+  env.SMOKE_IDENTITY_FINGERPRINT = 'user@example.com';
+  assert.throws(() => loadSmokeConfig(env), { code: 'SMOKE_IDENTITY_FINGERPRINT_INVALID' });
 });

@@ -84,6 +84,57 @@ function validateSmokeCorpus(corpus, { corpusRoot }) {
         add('CORPUS_LIVE_TOKEN_FORBIDDEN', `${basePath}.${key}`, `${relative} appears to contain a live Feishu token`);
       }
     }
+    if (document?.patchFile !== undefined) {
+      const operations = document?.patchOperations;
+      if (!Array.isArray(operations) || operations.length === 0) {
+        add(
+          'CORPUS_PATCH_OPERATIONS_REQUIRED',
+          `${basePath}.patchOperations`,
+          'patchFile requires at least one exact patch operation',
+        );
+      } else {
+        let patched = null;
+        const sourcePath = safeRelativePath(document.file) ? path.join(corpusRoot, document.file) : null;
+        const patchPath = safeRelativePath(document.patchFile) ? path.join(corpusRoot, document.patchFile) : null;
+        if (sourcePath && fs.existsSync(sourcePath)) patched = fs.readFileSync(sourcePath, 'utf8');
+        operations.forEach((operation, operationIndex) => {
+          const operationPath = `${basePath}.patchOperations[${operationIndex}]`;
+          if (operation?.type !== 'str_replace') {
+            add('CORPUS_PATCH_OPERATION_INVALID', `${operationPath}.type`, 'patch operation type must be str_replace');
+            return;
+          }
+          if (typeof operation.before !== 'string' || operation.before === '' || typeof operation.after !== 'string') {
+            add(
+              'CORPUS_PATCH_OPERATION_INVALID',
+              operationPath,
+              'str_replace requires non-empty before and string after values',
+            );
+            return;
+          }
+          if (patched === null) return;
+          const matches = patched.split(operation.before).length - 1;
+          if (matches !== 1) {
+            add(
+              'CORPUS_PATCH_PRECONDITION_AMBIGUOUS',
+              operationPath,
+              `str_replace before text must occur exactly once, found ${matches}`,
+            );
+            return;
+          }
+          patched = patched.replace(operation.before, operation.after);
+        });
+        if (patched !== null && patchPath && fs.existsSync(patchPath)) {
+          const expectedPatch = fs.readFileSync(patchPath, 'utf8');
+          if (patched !== expectedPatch) {
+            add(
+              'CORPUS_PATCH_RESULT_MISMATCH',
+              `${basePath}.patchOperations`,
+              'exact patch operations do not reproduce patchFile',
+            );
+          }
+        }
+      }
+    }
     if (!document?.expected || !Array.isArray(document.expected.requiredFragments) || document.expected.requiredFragments.length === 0) {
       add('CORPUS_EXPECTED_REQUIRED', `${basePath}.expected`, 'expected.requiredFragments must be non-empty');
     }

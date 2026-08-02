@@ -4,6 +4,7 @@ const REQUIRED_KEYS = [
   'SMOKE_PROFILE',
   'SMOKE_TENANT_MARKER',
   'SMOKE_FEISHU_HOST',
+  'SMOKE_IDENTITY_FINGERPRINT',
   'SMOKE_ROOT_TOKEN',
   'SMOKE_BASE_TOKEN',
   'SMOKE_TABLE_ID',
@@ -78,12 +79,19 @@ function loadSmokeConfig(env = process.env, { requireCredentials = false } = {})
   if (!/^[a-z0-9][a-z0-9._-]{2,63}$/.test(env.SMOKE_PROFILE)) {
     throw new SmokeConfigError('SMOKE_PROFILE_INVALID', 'SMOKE_PROFILE must be a named non-default profile');
   }
+  if (!/^sha256:[a-f0-9]{64}$/.test(env.SMOKE_IDENTITY_FINGERPRINT)) {
+    throw new SmokeConfigError(
+      'SMOKE_IDENTITY_FINGERPRINT_INVALID',
+      'SMOKE_IDENTITY_FINGERPRINT must be a SHA-256 sandbox identity fingerprint',
+    );
+  }
 
   return Object.freeze({
     appId: env.SMOKE_APP_ID || null,
     appSecret: env.SMOKE_APP_SECRET || null,
     baseToken: env.SMOKE_BASE_TOKEN,
     feishuHost: validateHost(env.SMOKE_FEISHU_HOST, env.SMOKE_ALLOW_LOCAL_SIMULATOR === '1'),
+    identityFingerprint: env.SMOKE_IDENTITY_FINGERPRINT,
     profile: env.SMOKE_PROFILE,
     rootToken: env.SMOKE_ROOT_TOKEN,
     tableId: env.SMOKE_TABLE_ID,
@@ -103,6 +111,7 @@ function redactSmokeConfig(config) {
     appSecret: config.appSecret ? '[redacted]' : null,
     baseToken: redactIdentifier(config.baseToken),
     feishuHost: config.feishuHost,
+    identityFingerprint: redactIdentifier(config.identityFingerprint),
     profile: config.profile,
     rootToken: redactIdentifier(config.rootToken),
     tableId: redactIdentifier(config.tableId),

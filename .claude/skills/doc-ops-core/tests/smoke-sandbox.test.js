@@ -99,6 +99,7 @@ test('host wrapper uses an explicit compose project and makes volume reset opt-i
 
 test('operator commands keep all test-tenant lark usage inside the sandbox', () => {
   const packageJson = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const envExample = fs.readFileSync(path.join(repoRoot, '.env.smoke.example'), 'utf8');
   const guide = fs.readFileSync(
     path.join(repoRoot, '.claude', 'skills', 'doc-ops-core', 'references', 'tenant-smoke-environment.md'),
     'utf8',
@@ -115,10 +116,38 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
     packageJson.scripts['smoke:sandbox:lark'],
     'bash .claude/skills/doc-ops-core/sandbox/sandbox.sh lark',
   );
+  assert.equal(
+    packageJson.scripts['smoke:identity'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js identity-fingerprint',
+  );
+  assert.equal(
+    packageJson.scripts['smoke:live:create'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-create',
+  );
+  assert.equal(
+    packageJson.scripts['smoke:live:patch'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-patch',
+  );
+  assert.equal(
+    packageJson.scripts['smoke:cleanup:plan'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js cleanup-plan',
+  );
+  assert.equal(
+    packageJson.scripts['smoke:live:cleanup'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-cleanup',
+  );
+  assert.match(envExample, /^SMOKE_IDENTITY_FINGERPRINT=sha256:<sandbox-identity-fingerprint>$/m);
   assert.doesNotMatch(guide, /^lark-cli\s/m);
   assert.match(guide, /npm run smoke:sandbox:auth-complete --/);
   assert.match(guide, /npm run smoke:sandbox:lark -- drive \+create-folder/);
   assert.match(guide, /npm run smoke:sandbox:lark -- base \+base-create/);
+  assert.match(guide, /SMOKE_IDENTITY_FINGERPRINT/);
+  assert.match(guide, /npm run smoke:identity/);
+  assert.match(guide, /npm run smoke:live:create --\s+\\\s+--run-id/);
+  assert.match(guide, /npm run smoke:live:patch --\s+\\\s+--run-id/);
+  assert.match(guide, /npm run smoke:cleanup:plan -- --run-id/);
+  assert.match(guide, /npm run smoke:live:cleanup --\s+\\\s+--run-id/);
+  assert.match(guide, /Cleanup batch.*after successful creation/is);
 });
 
 test('docker build context excludes local credentials and runtime state', () => {

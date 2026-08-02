@@ -93,6 +93,7 @@ function buildSmokePlan({ corpus, corpusRoot = DEFAULT_CORPUS_ROOT, config, runI
         sideEffects: ['feishu.doc.patch'],
         patchFile: document.patchFile,
         patchDigest: digestSemantic(fs.readFileSync(path.join(corpusRoot, document.patchFile), 'utf8')),
+        patchOperationsDigest: digestSemantic(document.patchOperations),
         strategy: 'reviewed-semantic-patch',
         ...metadata,
       };

@@ -16,9 +16,13 @@
           "after": "    std::vector<int> ids{1, 2, 3};\n    ids.push_back(4);\n    return static_cast<int>(ids.size());"
         },
         {
-          "type": "str_replace",
+          "type": "block_insert_after",
           "before": "- parent item\n  - child item\n    1. grandchild item",
-          "after": "- parent item\n  - child item\n    1. grandchild item\n  - patched sibling item"
+          "after": "- parent item\n  - child item\n    1. grandchild item\n  - patched sibling item",
+          "anchor": { "tag": "li", "text": "child item" },
+          "contentFormat": "xml",
+          "content": "<ul><li>patched sibling item</li></ul>",
+          "expectedFragment": "patched sibling item"
         },
         {
           "type": "str_replace",

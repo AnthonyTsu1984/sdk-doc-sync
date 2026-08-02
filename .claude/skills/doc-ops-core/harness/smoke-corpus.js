@@ -99,8 +99,12 @@ function validateSmokeCorpus(corpus, { corpusRoot }) {
         if (sourcePath && fs.existsSync(sourcePath)) patched = fs.readFileSync(sourcePath, 'utf8');
         operations.forEach((operation, operationIndex) => {
           const operationPath = `${basePath}.patchOperations[${operationIndex}]`;
-          if (operation?.type !== 'str_replace') {
-            add('CORPUS_PATCH_OPERATION_INVALID', `${operationPath}.type`, 'patch operation type must be str_replace');
+          if (!['str_replace', 'block_insert_after'].includes(operation?.type)) {
+            add(
+              'CORPUS_PATCH_OPERATION_INVALID',
+              `${operationPath}.type`,
+              'patch operation type must be str_replace or block_insert_after',
+            );
             return;
           }
           if (typeof operation.before !== 'string' || operation.before === '' || typeof operation.after !== 'string') {
@@ -110,6 +114,24 @@ function validateSmokeCorpus(corpus, { corpusRoot }) {
               'str_replace requires non-empty before and string after values',
             );
             return;
+          }
+          if (operation.type === 'block_insert_after') {
+            if (typeof operation.anchor?.tag !== 'string'
+              || !/^[a-z][a-z0-9]*$/.test(operation.anchor.tag)
+              || typeof operation.anchor?.text !== 'string'
+              || operation.anchor.text === ''
+              || operation.contentFormat !== 'xml'
+              || typeof operation.content !== 'string'
+              || operation.content === ''
+              || typeof operation.expectedFragment !== 'string'
+              || operation.expectedFragment === '') {
+              add(
+                'CORPUS_PATCH_OPERATION_INVALID',
+                operationPath,
+                'block_insert_after requires anchor tag/text, XML content, and expectedFragment',
+              );
+              return;
+            }
           }
           if (patched === null) return;
           const matches = patched.split(operation.before).length - 1;

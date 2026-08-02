@@ -201,6 +201,21 @@ test('Base record search normalizes the CLI tabular JSON envelope', async () => 
   }]);
 });
 
+test('structural patch anchors resolve one exact XML block and reject ambiguity', () => {
+  const anchor = { tag: 'li', text: 'child item' };
+  const xml = [
+    '<ul><li id="parent">parent item<ul>',
+    '<li id="child">child item<ol><li id="grandchild" seq="1">grandchild item</li></ol></li>',
+    '</ul></li></ul>',
+  ].join('');
+
+  assert.equal(liveSmoke.resolveBlockAnchorId(xml, anchor), 'child');
+  assert.throws(
+    () => liveSmoke.resolveBlockAnchorId(`${xml}<li id="duplicate">child item</li>`, anchor),
+    { code: 'SMOKE_PATCH_ANCHOR_AMBIGUOUS' },
+  );
+});
+
 test('record verification accepts a Markdown link returned for the Docs cell', async () => {
   const adapter = new liveSmoke.LarkSandboxAdapter({
     config: {},
@@ -577,17 +592,39 @@ test('sandbox adapter executes the full synthetic create DAG without losing prio
     }
     if (args[0] === 'docs' && args[1] === '+fetch') {
       const token = args[args.indexOf('--doc') + 1];
-      const document = [...documents.values()].find(item => item.token === token);
-      return { ok: true, data: { document: { content: document.content, document_id: token, revision_id: document.revisionId } } };
+      const [documentId, document] = [...documents.entries()].find(([, item]) => item.token === token);
+      const format = args[args.indexOf('--doc-format') + 1];
+      const content = format === 'xml'
+        ? [
+          '<ul><li id="parent">parent item<ul>',
+          '<li id="child">child item<ol><li id="grandchild" seq="1">grandchild item</li></ol></li>',
+          document.content.includes('patched sibling item') ? '<li id="sibling">patched sibling item</li>' : '',
+          '</ul></li></ul>',
+        ].join('')
+        : document.content;
+      assert.equal(Boolean(documentId), true);
+      if (format === 'xml') assert.equal(documentId, 'api-reference-roundtrip');
+      return { ok: true, data: { document: { content, document_id: token, revision_id: document.revisionId } } };
     }
     if (args[0] === 'docs' && args[1] === '+update') {
       const token = args[args.indexOf('--doc') + 1];
-      const pattern = args[args.indexOf('--pattern') + 1];
       const revisionId = Number(args[args.indexOf('--revision-id') + 1]);
-      const document = [...documents.values()].find(item => item.token === token);
+      const [documentId, document] = [...documents.entries()].find(([, item]) => item.token === token);
       assert.equal(document.revisionId, revisionId);
-      assert.equal(document.content.split(pattern).length - 1, 1);
-      document.content = document.content.replace(pattern, options.input);
+      const command = args[args.indexOf('--command') + 1];
+      if (command === 'str_replace') {
+        const pattern = args[args.indexOf('--pattern') + 1];
+        assert.equal(document.content.split(pattern).length - 1, 1);
+        document.content = document.content.replace(pattern, options.input);
+      } else {
+        assert.equal(command, 'block_insert_after');
+        assert.equal(args[args.indexOf('--block-id') + 1], 'child');
+        const definition = corpus.documents.find(item => item.id === documentId);
+        const operation = definition.patchOperations.find(item => item.type === 'block_insert_after');
+        assert.equal(options.input, operation.content);
+        assert.equal(document.content.split(operation.before).length - 1, 1);
+        document.content = document.content.replace(operation.before, operation.after);
+      }
       document.revisionId += 1;
       return { ok: true, data: { document: { revision_id: document.revisionId }, result: 'success' } };
     }

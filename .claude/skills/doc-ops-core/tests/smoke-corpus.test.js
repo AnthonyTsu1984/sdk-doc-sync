@@ -27,7 +27,7 @@ test('shared smoke corpus covers every canonical skill with synthetic tenant-saf
     assert.equal(document.patchOperations.length > 0, true, `${document.id} needs at least one patch operation`);
     let content = fs.readFileSync(path.join(corpusRoot, document.file), 'utf8');
     for (const operation of document.patchOperations) {
-      assert.equal(operation.type, 'str_replace');
+      assert.equal(['str_replace', 'block_insert_after'].includes(operation.type), true);
       assert.equal(content.includes(operation.before), true, `${document.id} patch precondition is absent`);
       content = content.replace(operation.before, operation.after);
     }
@@ -63,6 +63,31 @@ test('corpus validation rejects patch files without exact deterministic operatio
   const validation = validateSmokeCorpus(invalid, { corpusRoot });
   assert.equal(validation.valid, false);
   assert.equal(validation.errors.some(error => error.code === 'CORPUS_PATCH_OPERATIONS_REQUIRED'), true);
+});
+
+test('corpus validation accepts a deterministic block insertion with a unique semantic anchor', () => {
+  const corpus = loadSmokeCorpus(corpusRoot);
+  const valid = {
+    ...corpus,
+    documents: corpus.documents.map(document => {
+      if (document.id !== 'api-reference-roundtrip') return document;
+      return {
+        ...document,
+        patchOperations: document.patchOperations.map((operation, index) => (
+          index !== 1 ? operation : {
+            ...operation,
+            type: 'block_insert_after',
+            anchor: { tag: 'li', text: 'child item' },
+            contentFormat: 'xml',
+            content: '<ul><li>patched sibling item</li></ul>',
+            expectedFragment: 'patched sibling item',
+          }
+        )),
+      };
+    }),
+  };
+
+  assert.deepEqual(validateSmokeCorpus(valid, { corpusRoot }), { valid: true, errors: [] });
 });
 
 test('corpus validation rejects transport-stripped fixture markers as live required fragments', () => {

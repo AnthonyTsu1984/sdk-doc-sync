@@ -92,6 +92,38 @@ function documentTokenFromDocsCell(value) {
   }
 }
 
+function decodeXmlText(value) {
+  return String(value || '')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
+    .replace(/&#([0-9]+);/g, (_, decimal) => String.fromCodePoint(Number.parseInt(decimal, 10)))
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function resolveBlockAnchorId(xml, anchor) {
+  if (!anchor || typeof anchor.tag !== 'string' || !/^[a-z][a-z0-9]*$/.test(anchor.tag)
+    || typeof anchor.text !== 'string' || anchor.text === '') {
+    throw new LiveSmokeError('SMOKE_PATCH_ANCHOR_INVALID', 'structural patch anchor is invalid');
+  }
+  const matches = [];
+  const pattern = new RegExp(`<${anchor.tag}\\b([^>]*)>([^<]*)`, 'g');
+  for (const match of String(xml || '').matchAll(pattern)) {
+    const id = match[1].match(/\bid="([^"]+)"/)?.[1];
+    const text = decodeXmlText(match[2]).replace(/\s+/g, ' ').trim();
+    if (id && text === anchor.text) matches.push(id);
+  }
+  if (matches.length === 0) {
+    throw new LiveSmokeError('SMOKE_PATCH_ANCHOR_MISSING', 'structural patch anchor was not found');
+  }
+  if (matches.length > 1) {
+    throw new LiveSmokeError('SMOKE_PATCH_ANCHOR_AMBIGUOUS', 'structural patch anchor is not unique');
+  }
+  return matches[0];
+}
+
 function createSandboxCommandRunner({ repoRoot }) {
   if (!repoRoot) throw new LiveSmokeError('SMOKE_LIVE_REPO_ROOT_REQUIRED', 'repoRoot is required');
   return async function runLark(args, { input = undefined } = {}) {
@@ -196,6 +228,9 @@ class LarkSandboxAdapter {
     if (!Array.isArray(document.patchOperations) || document.patchOperations.length === 0) {
       throw new LiveSmokeError('SMOKE_PATCH_OPERATIONS_MISSING', `${document.id} has no exact patch operations`);
     }
+    if (digestSemantic(document.patchOperations) !== action.patchOperationsDigest) {
+      throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} patch operations changed after approval`);
+    }
     return { operations: document.patchOperations, patchContent };
   }
 
@@ -206,6 +241,23 @@ class LarkSandboxAdapter {
       '--doc-format', 'markdown',
       '--detail', 'full',
       '--scope', 'full',
+      '--as', 'user',
+      '--json',
+    ]);
+    const document = envelope.data?.document || envelope.data || {};
+    return {
+      content: document.content || '',
+      documentToken: document.document_id || documentToken,
+      revisionId: document.revision_id,
+    };
+  }
+
+  async _fetchDocumentXml(documentToken) {
+    const envelope = await this.runLark([
+      'docs', '+fetch',
+      '--doc', documentToken,
+      '--doc-format', 'xml',
+      '--detail', 'full',
       '--as', 'user',
       '--json',
     ]);
@@ -354,7 +406,20 @@ class LarkSandboxAdapter {
       const parentEntry = (await this._listFolder(context.state.folderToken))
         .find(item => (item.token || item.file_token) === documentState.documentToken);
       if (!parentEntry) throw new LiveSmokeError('SMOKE_DOCUMENT_PARENT_MISMATCH', `${document.id} left the canary folder`);
-      return { ...patch, revisionId: fetched.revisionId };
+      let xml = null;
+      const operations = [];
+      for (const operation of patch.operations) {
+        if (operation.type !== 'block_insert_after') {
+          operations.push(operation);
+          continue;
+        }
+        if (!xml) xml = await this._fetchDocumentXml(documentState.documentToken);
+        if (xml.revisionId !== fetched.revisionId) {
+          throw new LiveSmokeError('SMOKE_DOCUMENT_PRECONDITION_DRIFT', `${document.id} changed during structural anchor resolution`);
+        }
+        operations.push({ ...operation, blockId: resolveBlockAnchorId(xml.content, operation.anchor) });
+      }
+      return { ...patch, operations, revisionId: fetched.revisionId };
     }
     if (action.actionId.startsWith('record:delete:')) {
       const document = this._document(action);
@@ -488,17 +553,26 @@ class LarkSandboxAdapter {
       const documentState = context.state.documents?.[document.id];
       let revisionId = context.precondition.revisionId;
       for (const operation of context.precondition.operations) {
-        const envelope = await this.runLark([
+        const args = [
           'docs', '+update',
           '--doc', documentState.documentToken,
-          '--command', 'str_replace',
-          '--doc-format', 'markdown',
-          '--pattern', operation.before,
+          '--command', operation.type,
+          '--doc-format', operation.type === 'block_insert_after' ? operation.contentFormat : 'markdown',
+        ];
+        if (operation.type === 'block_insert_after') {
+          args.push('--block-id', operation.blockId);
+        } else {
+          args.push('--pattern', operation.before);
+        }
+        args.push(
           '--content', '-',
           '--revision-id', String(revisionId),
           '--as', 'user',
           '--json',
-        ], { input: operation.after });
+        );
+        const envelope = await this.runLark(args, {
+          input: operation.type === 'block_insert_after' ? operation.content : operation.after,
+        });
         const update = envelope.data?.document || envelope.data || {};
         revisionId = update.revision_id;
         if (!Number.isInteger(revisionId)) {
@@ -670,8 +744,11 @@ class LarkSandboxAdapter {
         if (observed.content.includes(fragment)) diagnostics.push({ code: 'SMOKE_FORBIDDEN_FRAGMENT_PRESENT', fragment });
       }
       for (const operation of document.patchOperations || []) {
-        if (!observed.content.includes(operation.after)) {
-          diagnostics.push({ code: 'SMOKE_PATCH_FRAGMENT_MISSING', fragment: operation.after });
+        const expectedFragment = operation.type === 'block_insert_after'
+          ? operation.expectedFragment
+          : operation.after;
+        if (!observed.content.includes(expectedFragment)) {
+          diagnostics.push({ code: 'SMOKE_PATCH_FRAGMENT_MISSING', fragment: expectedFragment });
         }
       }
       if (!observed.parentVerified) diagnostics.push({ code: 'SMOKE_DOCUMENT_PARENT_MISMATCH' });
@@ -1021,4 +1098,5 @@ module.exports = {
   mergeStatePatch,
   saveState,
   selectSandboxEnvelope,
+  resolveBlockAnchorId,
 };

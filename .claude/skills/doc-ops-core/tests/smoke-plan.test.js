@@ -52,6 +52,7 @@ test('smoke plan separates creation patch and cleanup approvals', () => {
     patchAction.patchDigest,
     digestSemantic(fs.readFileSync(path.join(corpusRoot, source.patchFile), 'utf8')),
   );
+  assert.equal(patchAction.patchOperationsDigest, digestSemantic(source.patchOperations));
   assert.match(sourceAction.capabilityContractDigest, /^sha256:[a-f0-9]{64}$/);
   assert.equal(sourceAction.coveredSkill, 'procedure-code-sync');
 });

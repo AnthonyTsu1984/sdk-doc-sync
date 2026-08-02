@@ -33,7 +33,7 @@ Configure the app only inside the container volume:
 npm run smoke:sandbox:init
 ```
 
-The interactive prompt accepts the App ID and hides the App Secret. The secret is passed to container-local `lark-cli` through stdin and stored only in the named Docker volume `doc-ops-smoke-lark-config`. The host `~/.lark-cli` and Keychain are never mounted.
+The interactive prompt accepts the App ID and hides the App Secret. The secret is passed to container-local `lark-cli` through stdin. Profile metadata is stored in `doc-ops-smoke-lark-config`; the encrypted credential and its container-local master key are stored in `doc-ops-smoke-lark-keychain`. The host `~/.lark-cli` and Keychain are never mounted.
 
 Enable only the app permissions needed for the smoke lifecycle:
 

@@ -9,7 +9,7 @@ Security properties:
 - read-only root filesystem;
 - all Linux capabilities dropped;
 - `no-new-privileges` enabled;
-- isolated named volumes for Lark config and smoke state;
+- isolated named volumes for Lark config, its encrypted file-keychain backend, and smoke state;
 - local credentials excluded from the Docker build context;
 - volume deletion requires an explicit reset confirmation variable.
 
@@ -20,7 +20,7 @@ npm run smoke:sandbox:build
 npm run smoke:sandbox:init
 ```
 
-The initialization prompt runs inside the container. Paste the test App ID and App Secret there. The secret is hidden and passed to `lark-cli` through stdin only.
+The initialization prompt runs inside the container. Paste the test App ID and App Secret there. The secret is hidden and passed to `lark-cli` through stdin only. The resulting encrypted credential and its local master key stay in the container-only `doc-ops-smoke-lark-keychain` volume; the host Keychain is never used.
 
 Check the isolated profile:
 

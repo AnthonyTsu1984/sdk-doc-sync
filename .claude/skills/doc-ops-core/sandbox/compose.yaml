@@ -21,6 +21,7 @@ services:
       - /tmp:rw,noexec,nosuid,nodev,size=128m,uid=10001,gid=10001
     volumes:
       - doc_ops_smoke_lark_config:/home/smoke/.lark-cli
+      - doc_ops_smoke_lark_keychain:/home/smoke/.local/share/lark-cli
       - doc_ops_smoke_state:/state
     environment:
       HOME: /home/smoke
@@ -32,5 +33,7 @@ services:
 volumes:
   doc_ops_smoke_lark_config:
     name: doc-ops-smoke-lark-config
+  doc_ops_smoke_lark_keychain:
+    name: doc-ops-smoke-lark-keychain
   doc_ops_smoke_state:
     name: doc-ops-smoke-state

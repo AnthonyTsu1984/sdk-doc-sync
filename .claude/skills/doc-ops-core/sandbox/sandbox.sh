@@ -25,7 +25,7 @@ Commands:
   smoke-corpus              Validate the synthetic corpus in the container
   smoke-simulate <run-id>   Run the hermetic smoke lifecycle in the container
   lark <args...>            Run lark-cli with the isolated profile in the container
-  reset                     Delete sandbox containers and both named volumes;
+  reset                     Delete sandbox containers and all named volumes;
                             requires DOC_OPS_SMOKE_CONFIRM_RESET=YES
 EOF
 }

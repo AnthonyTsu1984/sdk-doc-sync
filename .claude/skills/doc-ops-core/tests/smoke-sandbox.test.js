@@ -17,12 +17,14 @@ function read(relative) {
 test('compose isolates lark configuration in named volumes with a hardened container', () => {
   const compose = read('compose.yaml');
   assert.match(compose, /doc_ops_smoke_lark_config:/);
+  assert.match(compose, /doc_ops_smoke_lark_keychain:/);
   assert.match(compose, /doc_ops_smoke_state:/);
   assert.match(compose, /read_only:\s*true/);
   assert.match(compose, /cap_drop:\s*\n\s*- ALL/);
   assert.match(compose, /no-new-privileges:true/);
   assert.doesNotMatch(compose, /~\/\.lark-cli|\/Users\/|docker\.sock|env_file:/);
   assert.match(compose, /\/home\/smoke\/\.lark-cli/);
+  assert.match(compose, /doc_ops_smoke_lark_keychain:\/home\/smoke\/\.local\/share\/lark-cli/);
 });
 
 test('Docker image pins lark-cli and runs as an unprivileged user', () => {

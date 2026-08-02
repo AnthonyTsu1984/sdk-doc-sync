@@ -322,7 +322,8 @@ class LarkSandboxAdapter {
       if (!documentState?.documentToken || action.target !== `docx-token:${documentState.documentToken}`) {
         throw new LiveSmokeError('SMOKE_CLEANUP_TARGET_MISMATCH', `${document.id} document target is not creation-bound`);
       }
-      if (context.state.records?.[document.id]?.deleted !== true) {
+      if (context.state.records?.[document.id]
+        && context.state.records[document.id].deleted !== true) {
         throw new LiveSmokeError('SMOKE_CLEANUP_DEPENDENCY_FAILED', `${document.id} record must be deleted first`);
       }
       const fetched = await this._fetchDocument(documentState.documentToken);

@@ -11,6 +11,7 @@ const liveSmoke = require('../harness/live-smoke-runner');
 const { loadSmokeCorpus } = require('../harness/smoke-corpus');
 const { buildSmokePlan } = require('../harness/smoke-plan');
 const { createActionBatch } = require('../src/action-batch');
+const { digestSemantic } = require('../src/digest');
 
 function fixturePlan() {
   return {
@@ -117,6 +118,51 @@ test('partial creation evidence materializes an exact recovery cleanup batch', (
     'drive-folder-token:fld_test_only',
   ]);
   assert.match(recovery.batchDigest, /^sha256:[a-f0-9]{64}$/);
+});
+
+test('recovery cleanup allows a created document with no Base record state', async () => {
+  const authStatus = {
+    identity: 'user',
+    verified: true,
+    identities: { user: { openId: 'ou_test_only', tokenStatus: 'valid' } },
+  };
+  const profile = { appId: 'cli_test_only', profile: 'doc-ops-smoke' };
+  const identityFingerprint = liveSmoke.computeSandboxIdentityFingerprint({ authStatus, profile });
+  const content = 'synthetic document content';
+  const runLark = async args => {
+    if (args[0] === 'auth') return authStatus;
+    if (args[0] === 'config') return profile;
+    if (args[0] === 'docs' && args[1] === '+fetch') {
+      return { ok: true, data: { document: { content, document_id: 'doc_test_only', revision_id: 1 } } };
+    }
+    if (args[0] === 'drive' && args[1] === 'files') {
+      return { ok: true, data: { files: [{ name: 'Fixture', token: 'doc_test_only', type: 'docx' }] } };
+    }
+    throw new Error(`unexpected command: ${args.join(' ')}`);
+  };
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: { identityFingerprint },
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    runLark,
+  });
+  const context = {
+    plan: { identityFingerprint, profile: 'doc-ops-smoke' },
+    state: {
+      documents: {
+        fixture: { contentDigest: digestSemantic(content), documentToken: 'doc_test_only', revisionId: 1 },
+      },
+      folderToken: 'fld_test_only',
+      records: {},
+    },
+  };
+  const action = {
+    actionId: 'doc:delete:fixture',
+    identityFingerprint,
+    target: 'docx-token:doc_test_only',
+  };
+
+  assert.deepEqual(await adapter.precondition(action, context), { documentToken: 'doc_test_only' });
 });
 
 test('live execution rejects a changed digest before calling the tenant adapter', async () => {

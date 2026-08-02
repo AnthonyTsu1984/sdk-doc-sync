@@ -1,8 +1,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 process.env.DOTENV_CONFIG_QUIET = 'true';
-const FeishuDocTranslator = require('../../skills/sdk-doc-sync/src/feishu-doc-translator');
-const { parseArgs } = require('../../skills/sdk-doc-sync/bin/feishu-doc-translator');
+const FeishuDocTranslator = require('../../skills/api-reference-sync/src/feishu-doc-translator');
+const { parseArgs } = require('../../skills/api-reference-sync/bin/feishu-doc-translator');
 
 test('FeishuDocTranslator passes table ids into bitable readers and writer', () => {
   const translator = new FeishuDocTranslator({

@@ -1,5 +1,5 @@
 const fetch = require('node-fetch');
-const LarkTokenFetcher = require('../../sdk-doc-sync/lib/lark-docs/larkTokenFetcher');
+const LarkTokenFetcher = require('../../api-reference-sync/lib/lark-docs/larkTokenFetcher');
 
 function parseTarget(target) {
   const url = new URL(target);

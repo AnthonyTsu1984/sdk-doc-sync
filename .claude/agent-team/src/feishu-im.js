@@ -1,5 +1,5 @@
 const fetch = require('node-fetch');
-const larkTokenFetcher = require('../../skills/sdk-doc-sync/lib/lark-docs/larkTokenFetcher');
+const larkTokenFetcher = require('../../skills/api-reference-sync/lib/lark-docs/larkTokenFetcher');
 
 class FeishuImClient {
   constructor({ host = process.env.FEISHU_HOST || 'https://open.feishu.cn' } = {}) {

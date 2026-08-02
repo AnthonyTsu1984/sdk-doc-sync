@@ -2,7 +2,7 @@
 
 const { parseArgs } = require('../src/args');
 const { resolveDocumentId } = require('../src/target');
-const MarkdownToFeishu = require('../../sdk-doc-sync/src/markdown-to-feishu');
+const MarkdownToFeishu = require('../../api-reference-sync/src/markdown-to-feishu');
 const { extractSections } = require('../src/blocks');
 const { filterSectionsForProduct } = require('../src/product-filter');
 const { loadReferenceIndexFromRoot, buildMatrix } = require('../src/reference-scan');

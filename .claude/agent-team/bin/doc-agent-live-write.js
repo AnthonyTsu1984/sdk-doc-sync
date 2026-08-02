@@ -2,8 +2,8 @@
 
 const fs = require('fs');
 const path = require('path');
-const FeishuDocTranslator = require('../../skills/sdk-doc-sync/src/feishu-doc-translator');
-const BitableWriter = require('../../skills/sdk-doc-sync/src/sdk-doc-sync/bitable-writer');
+const FeishuDocTranslator = require('../../skills/api-reference-sync/src/feishu-doc-translator');
+const BitableWriter = require('../../skills/api-reference-sync/src/sdk-doc-sync/bitable-writer');
 const { loadConfig } = require('../src/config');
 const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');

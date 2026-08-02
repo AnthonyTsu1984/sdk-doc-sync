@@ -136,6 +136,14 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
     packageJson.scripts['smoke:live:cleanup'],
     'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-cleanup',
   );
+  assert.equal(
+    packageJson.scripts['smoke:recovery:plan'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js recovery-cleanup-plan',
+  );
+  assert.equal(
+    packageJson.scripts['smoke:live:recovery-cleanup'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-recovery-cleanup',
+  );
   assert.match(envExample, /^SMOKE_IDENTITY_FINGERPRINT=sha256:<sandbox-identity-fingerprint>$/m);
   assert.doesNotMatch(guide, /^lark-cli\s/m);
   assert.match(guide, /npm run smoke:sandbox:auth-complete --/);
@@ -147,6 +155,8 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
   assert.match(guide, /npm run smoke:live:patch --\s+\\\s+--run-id/);
   assert.match(guide, /npm run smoke:cleanup:plan -- --run-id/);
   assert.match(guide, /npm run smoke:live:cleanup --\s+\\\s+--run-id/);
+  assert.match(guide, /npm run smoke:recovery:plan -- --run-id/);
+  assert.match(guide, /npm run smoke:live:recovery-cleanup --\s+\\\s+--run-id/);
   assert.match(guide, /Cleanup batch.*after successful creation/is);
 });
 

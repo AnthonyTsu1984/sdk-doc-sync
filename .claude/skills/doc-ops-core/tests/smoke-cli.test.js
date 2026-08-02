@@ -59,8 +59,49 @@ test('live phases require an explicit approved batch digest', () => {
     command: 'cleanup-plan',
     runId: '20260802T120000Z-a1b2c3d4',
   });
+  assert.deepEqual(parseArgs([
+    'node', 'doc-ops-smoke', 'recovery-cleanup-plan',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ]), {
+    command: 'recovery-cleanup-plan',
+    runId: '20260802T120000Z-a1b2c3d4',
+  });
+  assert.throws(() => parseArgs([
+    'node', 'doc-ops-smoke', 'live-recovery-cleanup',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ]), /live-recovery-cleanup requires --approve-batch-digest/);
   assert.equal(typeof executeLivePhase, 'function');
   assert.equal(typeof runCli, 'function');
+});
+
+test('recovery cleanup planning materializes partial-run targets without deleting them', async () => {
+  const output = capture();
+  let materialized = false;
+  const exitCode = await runCli([
+    'node', 'doc-ops-smoke', 'recovery-cleanup-plan',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ], {
+    env: smokeEnv(),
+    materializeRecoveryCleanup: () => {
+      materialized = true;
+      return {
+        actionCount: 3,
+        actions: [],
+        batchDigest: 'sha256:'.padEnd(71, 'd'),
+        operation: 'smoke-recovery-cleanup',
+        sideEffects: ['feishu.drive.folder.delete'],
+        skill: 'doc-ops-core',
+        targets: [],
+      };
+    },
+    out: output.out,
+    err: output.err,
+    runDir: '/tmp/doc-ops-smoke-partial-run',
+  });
+  assert.equal(exitCode, 0);
+  assert.equal(materialized, true);
+  assert.match(output.stdout.join(''), /"recoveryCleanupBatch"/);
+  assert.match(output.stdout.join(''), /sha256:dddd/);
 });
 
 test('identity fingerprint command emits only the derived digest and verification state', async () => {

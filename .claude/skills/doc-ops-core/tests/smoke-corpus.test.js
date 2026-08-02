@@ -64,3 +64,18 @@ test('corpus validation rejects patch files without exact deterministic operatio
   assert.equal(validation.valid, false);
   assert.equal(validation.errors.some(error => error.code === 'CORPUS_PATCH_OPERATIONS_REQUIRED'), true);
 });
+
+test('corpus validation rejects transport-stripped fixture markers as live required fragments', () => {
+  const corpus = loadSmokeCorpus(corpusRoot);
+  const invalid = {
+    ...corpus,
+    documents: corpus.documents.map((document, index) => (
+      index === 0
+        ? { ...document, expected: { ...document.expected, requiredFragments: [corpus.fixtureMarker] } }
+        : document
+    )),
+  };
+  const validation = validateSmokeCorpus(invalid, { corpusRoot });
+  assert.equal(validation.valid, false);
+  assert.equal(validation.errors.some(error => error.code === 'CORPUS_TRANSPORT_FRAGMENT_INVALID'), true);
+});

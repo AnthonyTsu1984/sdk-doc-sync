@@ -45,6 +45,80 @@ test('sandbox output selection accepts the masked config profile object', () => 
   assert.deepEqual(liveSmoke.selectSandboxEnvelope(`npm noise\n${JSON.stringify(profile)}\n`), profile);
 });
 
+test('partial creation evidence materializes an exact recovery cleanup batch', () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-recovery-plan-'));
+  const identityFingerprint = 'sha256:'.padEnd(71, 'a');
+  const creationBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-create',
+    actions: [
+      { actionId: 'folder:create', target: 'symbolic-folder', dependsOn: [], sideEffects: ['feishu.drive.folder.create'] },
+      {
+        actionId: 'doc:create:fixture',
+        target: 'symbolic-doc',
+        dependsOn: ['folder:create'],
+        sideEffects: ['feishu.doc.create'],
+      },
+    ],
+  });
+  const cleanupBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-cleanup',
+    actions: [
+      {
+        actionId: 'doc:delete:fixture',
+        target: 'symbolic-doc',
+        dependsOn: [],
+        identityFingerprint,
+        sideEffects: ['feishu.doc.delete'],
+      },
+      {
+        actionId: 'folder:delete',
+        target: 'symbolic-folder',
+        dependsOn: ['doc:delete:fixture'],
+        identityFingerprint,
+        sideEffects: ['feishu.drive.folder.delete'],
+      },
+    ],
+  });
+  const plan = {
+    cleanupBatch,
+    creationBatch,
+    profile: 'doc-ops-smoke',
+    runId: '20260802T120000Z-a1b2c3d4',
+    tenantMarker: 'DOC_OPS_TEST',
+  };
+  fs.writeFileSync(path.join(runDir, 'state.json'), JSON.stringify({
+    documents: {
+      fixture: {
+        contentDigest: 'sha256:'.padEnd(71, 'b'),
+        documentToken: 'doc_test_only',
+        revisionId: 1,
+      },
+    },
+    folderToken: 'fld_test_only',
+    profile: plan.profile,
+    runId: plan.runId,
+    tenantMarker: plan.tenantMarker,
+  }));
+  const entries = [
+    { type: 'prepared', actionId: 'folder:create' },
+    { type: 'observed', actionId: 'folder:create', status: 'success', verified: true },
+    { type: 'prepared', actionId: 'doc:create:fixture' },
+    { type: 'observed', actionId: 'doc:create:fixture', status: 'failure', verified: false },
+  ].map(entry => JSON.stringify({ schemaVersion: 1, batchDigest: creationBatch.batchDigest, ...entry })).join('\n');
+  fs.writeFileSync(path.join(runDir, 'create.journal.jsonl'), `${entries}\n`);
+
+  const recovery = liveSmoke.materializeRecoveryCleanupBatch({ plan, runDir });
+  assert.equal(recovery.operation, 'smoke-recovery-cleanup');
+  assert.deepEqual(recovery.actions.map(action => action.actionId), ['doc:delete:fixture', 'folder:delete']);
+  assert.deepEqual(recovery.actions.map(action => action.target), [
+    'docx-token:doc_test_only',
+    'drive-folder-token:fld_test_only',
+  ]);
+  assert.match(recovery.batchDigest, /^sha256:[a-f0-9]{64}$/);
+});
+
 test('live execution rejects a changed digest before calling the tenant adapter', async () => {
   const plan = fixturePlan();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-live-red-'));

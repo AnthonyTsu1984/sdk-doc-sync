@@ -38,7 +38,7 @@
       "file": "documents/localized-source-en.md",
       "synthetic": true,
       "expected": {
-        "requiredFragments": ["Create a collection", "client.createCollection", "DOC_OPS_SYNTHETIC_FIXTURE_V1"],
+        "requiredFragments": ["Create a collection", "client.createCollection"],
         "forbiddenFragments": ["创建集合"]
       }
     },
@@ -56,7 +56,7 @@
       ],
       "synthetic": true,
       "expected": {
-        "requiredFragments": ["创建集合", "client.createCollection", "DOC_OPS_SYNTHETIC_FIXTURE_V1"],
+        "requiredFragments": ["创建集合", "client.createCollection"],
         "forbiddenFragments": ["TODO_TRANSLATE"]
       }
     },

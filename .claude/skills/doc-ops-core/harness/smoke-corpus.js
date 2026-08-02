@@ -137,6 +137,12 @@ function validateSmokeCorpus(corpus, { corpusRoot }) {
     }
     if (!document?.expected || !Array.isArray(document.expected.requiredFragments) || document.expected.requiredFragments.length === 0) {
       add('CORPUS_EXPECTED_REQUIRED', `${basePath}.expected`, 'expected.requiredFragments must be non-empty');
+    } else if (document.expected.requiredFragments.includes(corpus.fixtureMarker)) {
+      add(
+        'CORPUS_TRANSPORT_FRAGMENT_INVALID',
+        `${basePath}.expected.requiredFragments`,
+        'the local synthetic fixture marker is an HTML comment and cannot be a live round-trip invariant',
+      );
     }
   });
 

@@ -24,6 +24,7 @@ const PHASES = Object.freeze({
   create: 'creationBatch',
   patch: 'patchBatch',
   cleanup: 'cleanupBatch',
+  'recovery-cleanup': 'recoveryCleanupBatch',
 });
 
 function extractJsonObjects(value) {
@@ -724,6 +725,94 @@ function materializeCleanupBatch({ plan, runDir } = {}) {
   return createActionBatch({ skill: 'doc-ops-core', operation: 'smoke-cleanup', actions });
 }
 
+function materializeRecoveryCleanupBatch({ plan, runDir } = {}) {
+  if (!plan || !runDir) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_INPUT_REQUIRED', 'plan and runDir are required');
+  }
+  const statePath = path.join(runDir, 'state.json');
+  const journalPath = path.join(runDir, 'create.journal.jsonl');
+  if (!fs.existsSync(statePath) || !fs.existsSync(journalPath)) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_EVIDENCE_MISSING', 'partial creation state and journal are required');
+  }
+  const state = loadState(statePath);
+  if (state.runId !== plan.runId
+    || state.profile !== plan.profile
+    || state.tenantMarker !== plan.tenantMarker) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_STATE_MISMATCH', 'partial state does not belong to this smoke plan');
+  }
+  const journalEntries = fs.readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+  if (journalEntries.some(entry => entry.batchDigest !== plan.creationBatch.batchDigest)) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_JOURNAL_MISMATCH', 'creation journal digest does not match the plan');
+  }
+  if (journalEntries.some(entry => entry.type === 'completion' && entry.completionSentinel === true)) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_NOT_PARTIAL', 'completed creation runs must use the normal cleanup batch');
+  }
+  const prepared = new Set(journalEntries.filter(entry => entry.type === 'prepared').map(entry => entry.actionId));
+  const observed = new Set(journalEntries.filter(entry => entry.type === 'observed').map(entry => entry.actionId));
+  const creationActionIds = new Set((plan.creationBatch.actions || []).map(action => action.actionId));
+  const assertObservedCreation = actionId => {
+    if (!creationActionIds.has(actionId) || !prepared.has(actionId) || !observed.has(actionId)) {
+      throw new LiveSmokeError(
+        'SMOKE_RECOVERY_JOURNAL_EVIDENCE_MISSING',
+        `${actionId} has no complete partial-run journal evidence`,
+      );
+    }
+  };
+  if (!state.folderToken) throw new LiveSmokeError('SMOKE_RECOVERY_FOLDER_MISSING', 'partial state has no canary folder token');
+  assertObservedCreation('folder:create');
+
+  const templateById = new Map((plan.cleanupBatch?.actions || []).map(action => [action.actionId, action]));
+  const documentIds = Object.keys(state.documents || {}).sort();
+  const recordIds = Object.keys(state.records || {}).sort();
+  if (documentIds.length === 0 && recordIds.length === 0) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_RESOURCES_MISSING', 'partial state records no disposable resources');
+  }
+  for (const documentId of recordIds) {
+    if (!state.documents?.[documentId]) {
+      throw new LiveSmokeError('SMOKE_RECOVERY_STATE_INVALID', `${documentId} record has no document state`);
+    }
+  }
+
+  const actions = [];
+  for (const documentId of documentIds) {
+    const documentState = state.documents[documentId];
+    if (!documentState?.documentToken || !documentState?.contentDigest) {
+      throw new LiveSmokeError('SMOKE_RECOVERY_DOCUMENT_INVALID', `${documentId} lacks exact document evidence`);
+    }
+    assertObservedCreation(`doc:create:${documentId}`);
+    const dependencies = [];
+    const recordState = state.records?.[documentId];
+    if (recordState) {
+      if (!recordState.recordId) {
+        throw new LiveSmokeError('SMOKE_RECOVERY_RECORD_INVALID', `${documentId} lacks an exact record ID`);
+      }
+      assertObservedCreation(`record:create:${documentId}`);
+      const recordActionId = `record:delete:${documentId}`;
+      actions.push({
+        ...(templateById.get(recordActionId) || {}),
+        actionId: recordActionId,
+        dependsOn: [],
+        target: `base-record-id:${recordState.recordId}`,
+      });
+      dependencies.push(recordActionId);
+    }
+    const documentActionId = `doc:delete:${documentId}`;
+    actions.push({
+      ...(templateById.get(documentActionId) || {}),
+      actionId: documentActionId,
+      dependsOn: dependencies,
+      target: `docx-token:${documentState.documentToken}`,
+    });
+  }
+  actions.push({
+    ...(templateById.get('folder:delete') || {}),
+    actionId: 'folder:delete',
+    dependsOn: documentIds.map(documentId => `doc:delete:${documentId}`),
+    target: `drive-folder-token:${state.folderToken}`,
+  });
+  return createActionBatch({ skill: 'doc-ops-core', operation: 'smoke-recovery-cleanup', actions });
+}
+
 function requireAdapter(adapter) {
   for (const method of ['precondition', 'mutate', 'refetch', 'verify']) {
     if (typeof adapter?.[method] !== 'function') {
@@ -838,6 +927,7 @@ module.exports = {
   extractJsonObjects,
   loadState,
   materializeCleanupBatch,
+  materializeRecoveryCleanupBatch,
   mergeStatePatch,
   saveState,
   selectSandboxEnvelope,

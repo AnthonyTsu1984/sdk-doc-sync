@@ -178,3 +178,17 @@ npm run smoke:live:cleanup -- \
 ```
 
 If a journal already exists for a phase, do not blindly rerun it. Reconcile the recorded receipts and current tenant state first; the live runner intentionally returns `EXECUTION_RECONCILIATION_REQUIRED`.
+
+If creation stops after one or more resources were observed but before the completion sentinel, generate a recovery-only cleanup batch from the exact partial state and journal:
+
+```bash
+npm run smoke:recovery:plan -- --run-id 20260802T120000Z-a1b2c3d4
+```
+
+This plan includes only creation-bound resources with both persisted state and prepared/observed journal evidence. It cannot reuse the symbolic cleanup digest. After separately approving its exact digest, execute it with:
+
+```bash
+npm run smoke:live:recovery-cleanup -- \
+  --run-id 20260802T120000Z-a1b2c3d4 \
+  --approve-batch-digest sha256:<approved-recovery-cleanup-digest>
+```

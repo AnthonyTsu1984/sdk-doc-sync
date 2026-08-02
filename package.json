@@ -25,6 +25,8 @@
     "smoke:live:patch": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-patch",
     "smoke:cleanup:plan": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js cleanup-plan",
     "smoke:live:cleanup": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-cleanup",
+    "smoke:recovery:plan": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js recovery-cleanup-plan",
+    "smoke:live:recovery-cleanup": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-recovery-cleanup",
     "smoke:sandbox:build": "bash .claude/skills/doc-ops-core/sandbox/sandbox.sh build",
     "smoke:sandbox:init": "bash .claude/skills/doc-ops-core/sandbox/sandbox.sh init-profile",
     "smoke:sandbox:auth-login": "bash .claude/skills/doc-ops-core/sandbox/sandbox.sh auth-login",

@@ -7,6 +7,12 @@ description: Use when drafting or substantially revising Milvus or Zilliz techni
 
 Use this skill to turn reference material into source-verified Milvus/Zilliz documentation. Treat supplied references as leads, not ground truth. The source repos and generated specs are the authority for API shape, service behavior, supported languages, request fields, response fields, examples, and version constraints.
 
+## Executable Contract
+
+- Capability baseline: [capabilities.json](capabilities.json)
+- Shared result and evidence envelope: `../doc-ops-core/contracts/run-artifact.schema.json`
+- Keep source-evidence and unresolved-claim decisions in this skill; use the shared core only for artifact identity, status, approval, and verification-result mechanics.
+
 For concrete repo paths, reusable commands, and report format, read [references/workflow.md](references/workflow.md).
 
 ## Core Workflow

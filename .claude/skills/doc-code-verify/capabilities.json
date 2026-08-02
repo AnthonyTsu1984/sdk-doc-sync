@@ -20,5 +20,5 @@
   "inputContract": { "sources": ["markdown", "docx", "wiki", "bitable"], "liveDefault": false },
   "outputContract": { "schemaVersion": 1, "skill": "doc-code-verify", "operation": "verify" },
   "sideEffectPolicy": { "default": "read-only", "networkRequires": ["live", "allowRun"], "writeBack": "separate-approval" },
-  "allowedSemanticChanges": ["verify.result-contract", "verify.deterministic-diagnostics"]
+  "allowedSemanticChanges": ["verify.result-contract-v1"]
 }

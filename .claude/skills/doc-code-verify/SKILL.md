@@ -7,6 +7,12 @@ description: Use when existing code examples in Feishu/Lark docs, wiki/doc token
 
 Run a read-only verification pass over documentation code examples. Export or extract snippets, classify them, run conservative checks, and write a report. Keep remediation and Feishu write-back separate unless the user explicitly requests them after reviewing the findings.
 
+## Executable Contract
+
+- Capability baseline: [capabilities.json](capabilities.json)
+- Shared result, status, digest, and exit-code behavior: `../doc-ops-core/contracts/run-artifact.schema.json`
+- The JSON report keeps detailed verification data and includes a top-level `contract` result envelope. Runtime timestamps are excluded from its semantic digest.
+
 ## Quick Start
 
 ```bash

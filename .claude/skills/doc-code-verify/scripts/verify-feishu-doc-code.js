@@ -8,7 +8,8 @@ const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
-const SDK_ROOT = path.resolve(__dirname, '../../sdk-doc-sync');
+const SDK_ROOT = path.resolve(__dirname, '../../api-reference-sync');
+const DOC_OPS_CORE = path.resolve(__dirname, '../../doc-ops-core');
 
 process.noDeprecation = true;
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
@@ -18,6 +19,7 @@ require('dotenv').config({ path: path.join(SDK_ROOT, '.env'), quiet: true });
 const BitableWriter = require(path.join(SDK_ROOT, 'src/sdk-doc-sync/bitable-writer'));
 const MarkdownToFeishu = require(path.join(SDK_ROOT, 'src/markdown-to-feishu'));
 const { createScenarioShimContext } = require('./scenario-shims');
+const { createResult } = require(path.join(DOC_OPS_CORE, 'src/result-contract'));
 
 const DEFAULT_REPORT = '/tmp/feishu-code-verify-report.json';
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
@@ -2750,7 +2752,43 @@ async function main() {
     };
 
     const liveVerification = buildLiveVerificationPlan(results, opts);
-    const report = { summary, liveVerification, nodeSdkBuilds: opts.nodeSdkBuilds, mantaRuntime, scenarios: scenarioResults, results };
+    const diagnostics = [];
+    for (const item of results) {
+        if (item.verification.status === 'failed') {
+            diagnostics.push({ code: 'SNIPPET_VERIFICATION_FAILED', target: item.id, detail: item.verification.detail || '' });
+        } else if (item.verification.status === 'manual' && item.scenarioCoverage?.status !== 'passed') {
+            diagnostics.push({ code: 'SNIPPET_VERIFICATION_INCOMPLETE', target: item.id, detail: item.verification.detail || '' });
+        }
+    }
+    for (const scenario of scenarioResults) {
+        if (scenario.status === 'failed') diagnostics.push({ code: 'SCENARIO_VERIFICATION_FAILED', target: scenario.scenarioPath || scenario.language, detail: scenario.detail || '' });
+        else if (scenario.status === 'manual') diagnostics.push({ code: 'SCENARIO_VERIFICATION_INCOMPLETE', target: scenario.scenarioPath || scenario.language, detail: scenario.detail || '' });
+    }
+    if (mantaRuntime?.status === 'failed') diagnostics.push({ code: 'MANTA_VERIFICATION_FAILED', target: 'manta', detail: mantaRuntime.detail || '' });
+    else if (mantaRuntime?.status === 'manual') diagnostics.push({ code: 'MANTA_VERIFICATION_INCOMPLETE', target: 'manta', detail: mantaRuntime.detail || '' });
+
+    const hasFailures = summary.failed > 0 || summary.scenarioFailed > 0 || summary.mantaRuntimeFailed > 0;
+    const hasIncomplete = summary.manualUncovered > 0 || summary.scenarioManual > 0 || summary.mantaRuntimeManual > 0;
+    const contract = createResult({
+        skill: 'doc-code-verify',
+        operation: 'verify',
+        status: hasFailures ? 'FAILED' : hasIncomplete ? 'BLOCKED' : 'VERIFIED',
+        diagnostics,
+        artifactPaths: [opts.report],
+        evidence: {
+            sources: summary.sources,
+            snippets: summary.filteredSnippets,
+            passed: summary.passed,
+            failed: summary.failed,
+            manualUncovered: summary.manualUncovered,
+            scenarioPassed: summary.scenarioPassed,
+            scenarioFailed: summary.scenarioFailed,
+            mantaRuntimePassed: summary.mantaRuntimePassed,
+            mantaRuntimeFailed: summary.mantaRuntimeFailed,
+        },
+        runtime: { generatedAt: summary.generatedAt },
+    });
+    const report = { contract, summary, liveVerification, nodeSdkBuilds: opts.nodeSdkBuilds, mantaRuntime, scenarios: scenarioResults, results };
     fs.writeFileSync(opts.report, JSON.stringify(report, null, 2));
 
     console.log('Feishu code verification summary');
@@ -2774,7 +2812,7 @@ async function main() {
     if (opts.requestLive) printLivePlan(liveVerification);
     console.log(`Report written to ${opts.report}`);
 
-    if (summary.failed > 0 || summary.mantaRuntimeFailed > 0) process.exitCode = 1;
+    process.exitCode = contract.exitCode;
 }
 
 main().catch(err => {

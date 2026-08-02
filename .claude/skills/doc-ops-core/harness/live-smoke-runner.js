@@ -25,6 +25,7 @@ const PHASES = Object.freeze({
   create: 'creationBatch',
   patch: 'patchBatch',
   cleanup: 'cleanupBatch',
+  'cleanup-resume': 'cleanupResumeBatch',
   'recovery-cleanup': 'recoveryCleanupBatch',
 });
 
@@ -389,6 +390,58 @@ class LarkSandboxAdapter {
     }
     const fetched = await this._fetchDocumentXml(documentState.documentToken);
     return inspectSiblingRelation(fetched.content, 'child item', 'patched sibling item');
+  }
+
+  async reconcileCleanup(action, context) {
+    await this._verifyIdentity(context);
+    if (action.actionId.startsWith('record:delete:')) {
+      const document = this._document(action);
+      const recordId = context.state.records?.[document.id]?.recordId;
+      if (!recordId || action.target !== `base-record-id:${recordId}`) {
+        return { status: 'divergent' };
+      }
+      const exactRecord = await this._getRecord(recordId);
+      const searchedRecord = (await this._searchRecords(context.plan.runId))
+        .find(item => (item.record_id || item.id) === recordId) || null;
+      if (!searchedRecord) {
+        const exactFields = exactRecord?.fields || {};
+        const tombstone = !exactRecord
+          || (!exactFields['Case ID'] && !exactFields['Run ID'] && !exactFields.Docs);
+        return tombstone
+          ? { status: 'verified', statePatch: { records: { [document.id]: { deleted: true } } } }
+          : { status: 'unknown' };
+      }
+      if (searchedRecord.fields?.['Case ID'] !== document.id
+        || searchedRecord.fields?.['Run ID'] !== context.plan.runId) {
+        return { status: 'divergent' };
+      }
+      return { status: 'not_started' };
+    }
+    if (action.actionId.startsWith('doc:delete:')) {
+      const document = this._document(action);
+      const documentState = context.state.documents?.[document.id];
+      if (!documentState?.documentToken || action.target !== `docx-token:${documentState.documentToken}`) {
+        return { status: 'divergent' };
+      }
+      const entry = (await this._listFolder(context.state.folderToken))
+        .find(item => (item.token || item.file_token) === documentState.documentToken);
+      if (!entry) return { status: 'verified', statePatch: { documents: { [document.id]: { deleted: true } } } };
+      const fetched = await this._fetchDocument(documentState.documentToken);
+      return digestSemantic(fetched.content) === documentState.contentDigest
+        ? { status: 'not_started' }
+        : { status: 'divergent' };
+    }
+    if (action.actionId === 'folder:delete') {
+      if (!context.state.folderToken || action.target !== `drive-folder-token:${context.state.folderToken}`) {
+        return { status: 'divergent' };
+      }
+      const entry = (await this._listFolder(this.config.rootToken))
+        .find(item => (item.token || item.folder_token) === context.state.folderToken);
+      return entry
+        ? { status: 'not_started' }
+        : { status: 'verified', statePatch: { folderDeleted: true } };
+    }
+    return { status: 'unknown' };
   }
 
   _runTimestamp(runId) {
@@ -916,6 +969,72 @@ function materializeCleanupBatch({ plan, runDir } = {}) {
   return createActionBatch({ skill: 'doc-ops-core', operation: 'smoke-cleanup', actions });
 }
 
+async function materializeCleanupResumeBatch({ plan, runDir, adapter } = {}) {
+  if (!plan || !runDir || typeof adapter?.reconcileCleanup !== 'function') {
+    throw new LiveSmokeError('SMOKE_CLEANUP_RESUME_INPUT_REQUIRED', 'plan, runDir, and reconciliation adapter are required');
+  }
+  const fullBatch = materializeCleanupBatch({ plan, runDir });
+  const journalPath = path.join(runDir, 'cleanup.journal.jsonl');
+  if (!fs.existsSync(journalPath)) {
+    throw new LiveSmokeError('SMOKE_CLEANUP_RESUME_JOURNAL_MISSING', 'partial cleanup journal is required');
+  }
+  const statePath = path.join(runDir, 'state.json');
+  const state = loadState(statePath);
+  const journalNames = [
+    'cleanup.journal.jsonl',
+    ...fs.readdirSync(runDir).filter(name => /^cleanup-resume(?:\.[a-f0-9]+)?\.journal\.jsonl$/.test(name)),
+  ];
+  const entries = journalNames.flatMap(name => fs.readFileSync(path.join(runDir, name), 'utf8').trim()
+    .split('\n').filter(Boolean).map(line => JSON.parse(line)));
+  const originalEntries = entries.filter(entry => journalNames[0] === 'cleanup.journal.jsonl'
+    && entry.batchDigest === fullBatch.batchDigest);
+  const invalidOriginal = fs.readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean)
+    .map(line => JSON.parse(line)).some(entry => entry.batchDigest !== fullBatch.batchDigest);
+  if (invalidOriginal) {
+    throw new LiveSmokeError('SMOKE_CLEANUP_RESUME_JOURNAL_MISMATCH', 'cleanup journal digest does not match exact cleanup batch');
+  }
+  if (originalEntries.some(entry => entry.type === 'completion' && entry.completionSentinel === true)) {
+    throw new LiveSmokeError('SMOKE_CLEANUP_ALREADY_COMPLETE', 'cleanup journal already has a completion sentinel');
+  }
+  await adapter.verifyIdentity?.({ plan, state });
+  const verified = new Set(entries
+    .filter(entry => entry.type === 'observed' && entry.status === 'success' && entry.verified === true)
+    .map(entry => entry.actionId));
+  const attempted = new Set(entries
+    .filter(entry => entry.type === 'prepared' || entry.type === 'observed')
+    .map(entry => entry.actionId));
+  const pending = [];
+  for (const action of fullBatch.actions) {
+    if (verified.has(action.actionId)) continue;
+    if (attempted.has(action.actionId)) {
+      const reconciliation = await adapter.reconcileCleanup(action, { plan, state });
+      if (reconciliation?.status === 'verified') {
+        mergeStatePatch(state, reconciliation.statePatch || {});
+        verified.add(action.actionId);
+        continue;
+      }
+      if (reconciliation?.status !== 'not_started') {
+        throw new LiveSmokeError(
+          'SMOKE_CLEANUP_RECONCILIATION_BLOCKED',
+          `${action.actionId} reconciled as ${reconciliation?.status || 'unknown'}`,
+        );
+      }
+    }
+    pending.push(action);
+  }
+  if (pending.length === 0) {
+    saveState(statePath, state);
+    throw new LiveSmokeError('SMOKE_CLEANUP_ALREADY_COMPLETE', 'all cleanup resources are already verified deleted');
+  }
+  const pendingIds = new Set(pending.map(action => action.actionId));
+  const actions = pending.map(action => ({
+    ...action,
+    dependsOn: (action.dependsOn || []).filter(dependency => pendingIds.has(dependency)),
+  }));
+  saveState(statePath, state);
+  return createActionBatch({ skill: 'doc-ops-core', operation: 'smoke-cleanup-resume', actions });
+}
+
 function materializeRecoveryCleanupBatch({ plan, runDir } = {}) {
   if (!plan || !runDir) {
     throw new LiveSmokeError('SMOKE_RECOVERY_INPUT_REQUIRED', 'plan and runDir are required');
@@ -1047,7 +1166,8 @@ async function executeLivePhase({
   fs.chmodSync(runDir, 0o700);
   const legacyJournalPath = path.join(runDir, `${phase}.journal.jsonl`);
   const digestSuffix = String(batch.batchDigest).replace(/^sha256:/, '').slice(0, 16);
-  const journalPath = phase === 'recovery-cleanup'
+  const resumablePhase = phase === 'recovery-cleanup' || phase === 'cleanup-resume';
+  const journalPath = resumablePhase
     ? path.join(runDir, `${phase}.${digestSuffix}.journal.jsonl`)
     : legacyJournalPath;
   if (phase === 'recovery-cleanup'
@@ -1145,6 +1265,7 @@ module.exports = {
   extractJsonObjects,
   loadState,
   materializeCleanupBatch,
+  materializeCleanupResumeBatch,
   materializeRecoveryCleanupBatch,
   mergeStatePatch,
   saveState,

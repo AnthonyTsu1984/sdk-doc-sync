@@ -141,6 +141,14 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
     'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-cleanup',
   );
   assert.equal(
+    packageJson.scripts['smoke:cleanup:resume-plan'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js cleanup-resume-plan',
+  );
+  assert.equal(
+    packageJson.scripts['smoke:live:cleanup-resume'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-cleanup-resume',
+  );
+  assert.equal(
     packageJson.scripts['smoke:recovery:plan'],
     'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js recovery-cleanup-plan',
   );
@@ -161,6 +169,9 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
   assert.match(guide, /acceptance.*read-only.*five canonical skills/is);
   assert.match(guide, /npm run smoke:cleanup:plan -- --run-id/);
   assert.match(guide, /npm run smoke:live:cleanup --\s+\\\s+--run-id/);
+  assert.match(guide, /npm run smoke:cleanup:resume-plan -- --run-id/);
+  assert.match(guide, /npm run smoke:live:cleanup-resume --\s+\\\s+--run-id/);
+  assert.match(guide, /reconcile.*partial cleanup.*new.*digest/is);
   assert.match(guide, /npm run smoke:recovery:plan -- --run-id/);
   assert.match(guide, /npm run smoke:live:recovery-cleanup --\s+\\\s+--run-id/);
   assert.match(guide, /Cleanup batch.*after successful creation/is);

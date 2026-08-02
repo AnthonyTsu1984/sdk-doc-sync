@@ -70,8 +70,52 @@ test('live phases require an explicit approved batch digest', () => {
     'node', 'doc-ops-smoke', 'live-recovery-cleanup',
     '--run-id', '20260802T120000Z-a1b2c3d4',
   ]), /live-recovery-cleanup requires --approve-batch-digest/);
+  assert.deepEqual(parseArgs([
+    'node', 'doc-ops-smoke', 'cleanup-resume-plan',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ]), {
+    command: 'cleanup-resume-plan',
+    runId: '20260802T120000Z-a1b2c3d4',
+  });
+  assert.throws(() => parseArgs([
+    'node', 'doc-ops-smoke', 'live-cleanup-resume',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ]), /live-cleanup-resume requires --approve-batch-digest/);
   assert.equal(typeof executeLivePhase, 'function');
   assert.equal(typeof runCli, 'function');
+});
+
+test('cleanup resume planning reconciles live state without executing deletion', async () => {
+  const output = capture();
+  let materialized = false;
+  let liveExecutionCalled = false;
+  const exitCode = await runCli([
+    'node', 'doc-ops-smoke', 'cleanup-resume-plan',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ], {
+    env: smokeEnv(),
+    executeLive: async () => {
+      liveExecutionCalled = true;
+      return { status: 'EXECUTED' };
+    },
+    materializeCleanupResume: async () => {
+      materialized = true;
+      return {
+        actions: [],
+        batchDigest: 'sha256:'.padEnd(71, 'e'),
+        operation: 'smoke-cleanup-resume',
+        sideEffects: [],
+        skill: 'doc-ops-core',
+        targets: [],
+      };
+    },
+    out: output.out,
+    err: output.err,
+  });
+  assert.equal(exitCode, 0);
+  assert.equal(materialized, true);
+  assert.equal(liveExecutionCalled, false);
+  assert.match(output.stdout.join(''), /"cleanupResumeBatch"/);
 });
 
 test('smoke acceptance is read-only and neither requires nor accepts a write approval digest', () => {

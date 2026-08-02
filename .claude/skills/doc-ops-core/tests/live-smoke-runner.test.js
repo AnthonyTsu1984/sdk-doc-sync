@@ -384,6 +384,110 @@ test('a new recovery digest can continue after a prior partial recovery journal'
   assert.equal(second.status, 'EXECUTED');
 });
 
+test('partial normal cleanup reconciles verified tombstones into a new exact resume batch', async () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-cleanup-resume-'));
+  const identityFingerprint = 'sha256:'.padEnd(71, 'a');
+  const creationBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-create',
+    actions: [
+      { actionId: 'folder:create', target: 'folder', dependsOn: [], sideEffects: ['create'] },
+      { actionId: 'doc:create:fixture', target: 'doc', dependsOn: ['folder:create'], sideEffects: ['create'] },
+      { actionId: 'record:create:fixture', target: 'record', dependsOn: ['doc:create:fixture'], sideEffects: ['create'] },
+    ],
+  });
+  const cleanupBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-cleanup',
+    actions: [
+      { actionId: 'record:delete:fixture', target: 'record-template', dependsOn: [], identityFingerprint, sideEffects: ['delete'] },
+      { actionId: 'doc:delete:fixture', target: 'doc-template', dependsOn: ['record:delete:fixture'], identityFingerprint, sideEffects: ['delete'] },
+      { actionId: 'folder:delete', target: 'folder-template', dependsOn: ['doc:delete:fixture'], identityFingerprint, sideEffects: ['delete'] },
+    ],
+  });
+  const plan = {
+    cleanupBatch,
+    creationBatch,
+    identityFingerprint,
+    profile: 'doc-ops-smoke',
+    runId: '20260802T120000Z-a1b2c3d4',
+    tenantMarker: 'DOC_OPS_TEST',
+  };
+  fs.writeFileSync(path.join(runDir, 'state.json'), JSON.stringify({
+    documents: { fixture: { contentDigest: 'sha256:'.padEnd(71, 'b'), documentToken: 'doc_test_only' } },
+    folderToken: 'fld_test_only',
+    profile: plan.profile,
+    records: { fixture: { deleted: true, recordId: 'rec_test_only' } },
+    runId: plan.runId,
+    tenantMarker: plan.tenantMarker,
+  }));
+  fs.writeFileSync(path.join(runDir, 'create.journal.jsonl'), `${JSON.stringify({
+    batchDigest: creationBatch.batchDigest,
+    completionSentinel: true,
+    schemaVersion: 1,
+    status: 'executed',
+    type: 'completion',
+  })}\n`);
+  const exactCleanup = liveSmoke.materializeCleanupBatch({ plan, runDir });
+  fs.writeFileSync(path.join(runDir, 'cleanup.journal.jsonl'), [
+    { actionId: 'record:delete:fixture', batchDigest: exactCleanup.batchDigest, schemaVersion: 1, type: 'prepared' },
+    {
+      actionId: 'record:delete:fixture',
+      batchDigest: exactCleanup.batchDigest,
+      diagnostics: [{ code: 'SMOKE_CLEANUP_RESOURCE_REMAINS' }],
+      schemaVersion: 1,
+      status: 'failure',
+      type: 'observed',
+      verified: false,
+    },
+  ].map(entry => JSON.stringify(entry)).join('\n') + '\n');
+  const reconciled = [];
+  const resume = await liveSmoke.materializeCleanupResumeBatch({
+    plan,
+    runDir,
+    adapter: {
+      reconcileCleanup: async action => {
+        reconciled.push(action.actionId);
+        return { status: 'verified', statePatch: { records: { fixture: { deleted: true } } } };
+      },
+    },
+  });
+  assert.deepEqual(reconciled, ['record:delete:fixture']);
+  assert.equal(resume.operation, 'smoke-cleanup-resume');
+  assert.deepEqual(resume.actions.map(action => action.actionId), ['doc:delete:fixture', 'folder:delete']);
+  assert.deepEqual(resume.actions[0].dependsOn, []);
+  assert.deepEqual(resume.actions[1].dependsOn, ['doc:delete:fixture']);
+  assert.match(resume.batchDigest, /^sha256:[a-f0-9]{64}$/);
+});
+
+test('cleanup resume planning blocks unknown attempted mutations instead of replaying them', async () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-cleanup-resume-blocked-'));
+  const plan = fixturePlan();
+  plan.cleanupBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-cleanup',
+    actions: [{ actionId: 'folder:delete', target: 'folder', dependsOn: [], sideEffects: ['delete'] }],
+  });
+  fs.writeFileSync(path.join(runDir, 'state.json'), JSON.stringify({
+    folderToken: 'fld_test_only', runId: plan.runId,
+  }));
+  fs.writeFileSync(path.join(runDir, 'create.journal.jsonl'), `${JSON.stringify({
+    batchDigest: plan.creationBatch.batchDigest, completionSentinel: true, type: 'completion',
+  })}\n`);
+  const exactCleanup = liveSmoke.materializeCleanupBatch({ plan, runDir });
+  fs.writeFileSync(path.join(runDir, 'cleanup.journal.jsonl'), `${JSON.stringify({
+    actionId: 'folder:delete', batchDigest: exactCleanup.batchDigest, type: 'prepared',
+  })}\n`);
+  await assert.rejects(
+    liveSmoke.materializeCleanupResumeBatch({
+      plan,
+      runDir,
+      adapter: { reconcileCleanup: async () => ({ status: 'unknown' }) },
+    }),
+    { code: 'SMOKE_CLEANUP_RECONCILIATION_BLOCKED' },
+  );
+});
+
 test('live execution rejects a changed digest before calling the tenant adapter', async () => {
   const plan = fixturePlan();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-live-red-'));

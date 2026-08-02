@@ -187,6 +187,20 @@ npm run smoke:live:cleanup -- \
 
 If a journal already exists for a phase, do not blindly rerun it. Reconcile the recorded receipts and current tenant state first; the live runner intentionally returns `EXECUTION_RECONCILIATION_REQUIRED`.
 
+If normal cleanup stops after one or more deletion attempts, reconcile the partial cleanup and materialize a new batch:
+
+```bash
+npm run smoke:cleanup:resume-plan -- --run-id 20260802T120000Z-a1b2c3d4
+```
+
+The resume planner performs read-only reconciliation against the cleanup journal and current tenant state. It excludes resources already verified deleted, blocks divergent or unknown mutations, removes satisfied DAG dependencies, and produces a new exact digest only for remaining actions. After separately approving that new digest, execute it with:
+
+```bash
+npm run smoke:live:cleanup-resume -- \
+  --run-id 20260802T120000Z-a1b2c3d4 \
+  --approve-batch-digest sha256:<approved-cleanup-resume-digest>
+```
+
 If creation stops after one or more resources were observed but before the completion sentinel, generate a recovery-only cleanup batch from the exact partial state and journal:
 
 ```bash

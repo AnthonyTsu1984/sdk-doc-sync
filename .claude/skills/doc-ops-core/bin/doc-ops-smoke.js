@@ -12,6 +12,7 @@ const {
   createSandboxCommandRunner,
   executeLivePhase,
   materializeCleanupBatch,
+  materializeCleanupResumeBatch,
   materializeRecoveryCleanupBatch,
 } = require('../harness/live-smoke-runner');
 const { buildSmokePlan } = require('../harness/smoke-plan');
@@ -20,10 +21,11 @@ const { simulateSmokeRun } = require('../harness/smoke-simulator');
 
 const DEFAULT_CORPUS_ROOT = path.join(__dirname, '..', 'smoke-corpus');
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
-const LIVE_COMMANDS = new Set(['live-create', 'live-patch', 'live-cleanup', 'live-recovery-cleanup']);
+const LIVE_COMMANDS = new Set(['live-create', 'live-patch', 'live-cleanup', 'live-cleanup-resume', 'live-recovery-cleanup']);
 const ASYNC_COMMANDS = new Set([
   ...LIVE_COMMANDS,
   'cleanup-plan',
+  'cleanup-resume-plan',
   'recovery-cleanup-plan',
   'identity-fingerprint',
   'acceptance',
@@ -34,6 +36,7 @@ const COMMANDS = new Set([
   'simulate',
   'validate-corpus',
   'cleanup-plan',
+  'cleanup-resume-plan',
   'recovery-cleanup-plan',
   'identity-fingerprint',
   'acceptance',
@@ -61,7 +64,7 @@ function parseArgs(argv) {
     }
     throw new Error(`Unknown argument: ${flag}`);
   }
-  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', 'recovery-cleanup-plan', 'acceptance', ...LIVE_COMMANDS]);
+  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', 'cleanup-resume-plan', 'recovery-cleanup-plan', 'acceptance', ...LIVE_COMMANDS]);
   if (runCommands.has(command) && !result.runId) throw new Error(`${command} requires --run-id`);
   if (!runCommands.has(command) && result.runId) throw new Error(`${command} does not accept --run-id`);
   if (LIVE_COMMANDS.has(command) && !result.approvedBatchDigest) {
@@ -164,6 +167,7 @@ async function runCli(argv = process.argv, dependencies = {}) {
     let plan = buildSmokePlan({ corpus, corpusRoot, config, runId: args.runId });
     const runDir = dependencies.runDir || path.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'runs', args.runId);
     const materializeCleanup = dependencies.materializeCleanup || materializeCleanupBatch;
+    const materializeCleanupResume = dependencies.materializeCleanupResume || materializeCleanupResumeBatch;
     const materializeRecoveryCleanup = dependencies.materializeRecoveryCleanup || materializeRecoveryCleanupBatch;
     if (args.command === 'cleanup-plan') {
       const cleanupBatch = materializeCleanup({ plan, runDir });
@@ -173,6 +177,17 @@ async function runCli(argv = process.argv, dependencies = {}) {
     if (args.command === 'recovery-cleanup-plan') {
       const recoveryCleanupBatch = materializeRecoveryCleanup({ plan, runDir });
       out(stableJson({ recoveryCleanupBatch, runId: args.runId }));
+      return 0;
+    }
+    if (args.command === 'cleanup-resume-plan') {
+      const adapter = dependencies.adapter || (dependencies.materializeCleanupResume ? null : new LarkSandboxAdapter({
+        config,
+        corpus,
+        corpusRoot,
+        runLark: dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT }),
+      }));
+      const cleanupResumeBatch = await materializeCleanupResume({ plan, runDir, adapter });
+      out(stableJson({ cleanupResumeBatch, runId: args.runId }));
       return 0;
     }
     if (args.command === 'acceptance') {
@@ -191,6 +206,7 @@ async function runCli(argv = process.argv, dependencies = {}) {
       'live-create': 'create',
       'live-patch': 'patch',
       'live-cleanup': 'cleanup',
+      'live-cleanup-resume': 'cleanup-resume',
       'live-recovery-cleanup': 'recovery-cleanup',
     }[args.command];
     if (phase === 'cleanup') {
@@ -199,12 +215,25 @@ async function runCli(argv = process.argv, dependencies = {}) {
       plan = { ...plan, recoveryCleanupBatch: materializeRecoveryCleanup({ plan, runDir }) };
     }
     const executeLive = dependencies.executeLive || executeLivePhase;
-    const adapter = dependencies.adapter || (dependencies.executeLive ? null : new LarkSandboxAdapter({
+    let adapter = dependencies.adapter || (dependencies.executeLive ? null : new LarkSandboxAdapter({
       config,
       corpus,
       corpusRoot,
       runLark: dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT }),
     }));
+    if (phase === 'cleanup-resume') {
+      const reconciliationAdapter = adapter || new LarkSandboxAdapter({
+        config,
+        corpus,
+        corpusRoot,
+        runLark: dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT }),
+      });
+      plan = {
+        ...plan,
+        cleanupResumeBatch: await materializeCleanupResume({ plan, runDir, adapter: reconciliationAdapter }),
+      };
+      if (!adapter) adapter = reconciliationAdapter;
+    }
     const result = await executeLive({
       adapter,
       approvedBatchDigest: args.approvedBatchDigest,

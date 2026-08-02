@@ -165,6 +165,31 @@ test('recovery cleanup allows a created document with no Base record state', asy
   assert.deepEqual(await adapter.precondition(action, context), { documentToken: 'doc_test_only' });
 });
 
+test('Base record search normalizes the CLI tabular JSON envelope', async () => {
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: { baseToken: 'base_test_only', tableId: 'tbl_test_only' },
+    corpus: { documents: [] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async args => {
+      assert.equal(args[0], 'base');
+      assert.equal(args[1], '+record-search');
+      return {
+        ok: true,
+        data: {
+          data: [{ 0: 'fixture', 1: '20260802T120000Z-a1b2c3d4' }],
+          fields: ['Case ID', 'Run ID'],
+          record_id_list: ['rec_test_only'],
+        },
+      };
+    },
+  });
+
+  assert.deepEqual(await adapter._searchRecords('20260802T120000Z-a1b2c3d4'), [{
+    fields: { 'Case ID': 'fixture', 'Run ID': '20260802T120000Z-a1b2c3d4' },
+    record_id: 'rec_test_only',
+  }]);
+});
+
 test('live execution rejects a changed digest before calling the tenant adapter', async () => {
   const plan = fixturePlan();
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-live-red-'));

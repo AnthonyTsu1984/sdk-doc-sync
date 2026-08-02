@@ -230,7 +230,7 @@ class LarkSandboxAdapter {
       '--format', 'json',
       '--as', 'user',
     ]);
-    return envelope.data?.records || envelope.data?.items || envelope.records || [];
+    return this._recordsFromEnvelope(envelope);
   }
 
   _recordsFromEnvelope(envelope) {

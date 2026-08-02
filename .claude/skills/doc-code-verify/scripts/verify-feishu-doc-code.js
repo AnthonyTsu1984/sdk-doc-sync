@@ -960,16 +960,23 @@ function indentNonEmpty(text, prefix) {
 
 function verifyCpp(code, tmp, timeout, lang, opts) {
     if (lang === 'c' && !/#include|int\s+main\s*\(/.test(code)) return { status: 'manual', detail: 'c snippet is partial' };
-    if (lang === 'cpp' && !/\b(?:int|auto)\s+main\s*\(/.test(code) && opts.harness) {
+    const cppTranslationUnit = lang === 'cpp' && looksLikeCppTranslationUnit(code);
+    if (lang === 'cpp' && !/\b(?:int|auto)\s+main\s*\(/.test(code) && opts.harness && !cppTranslationUnit) {
         return verifyCppFragment(code, tmp, timeout, opts);
     }
-    if (!/#include|\b(?:int|auto)\s+main\s*\(/.test(code)) return { status: 'manual', detail: `${lang} snippet is partial` };
+    if (!/#include|\b(?:int|auto)\s+main\s*\(/.test(code) && !cppTranslationUnit) return { status: 'manual', detail: `${lang} snippet is partial` };
     const ext = lang === 'c' ? 'c' : 'cpp';
     const compiler = lang === 'c' ? 'cc' : (commandExists('clang++') ? 'clang++' : 'g++');
     const file = writeTemp(tmp, `snippet.${ext}`, code);
     const args = cppCompileArgs(lang, opts, file);
     const result = runCommand(compiler, args, { cwd: tmp, timeout });
-    return cppVerificationResult(result, `${compiler} ${args.filter(arg => arg !== file).join(' ')} passed`, `${compiler} syntax check failed`, null, opts);
+    return cppVerificationResult(
+        result,
+        `${compiler} ${cppTranslationUnit ? 'translation-unit ' : ''}${args.filter(arg => arg !== file).join(' ')} passed`,
+        `${compiler} ${cppTranslationUnit ? 'translation-unit ' : ''}syntax check failed`,
+        cppTranslationUnit ? { type: 'cpp-translation-unit', strength: 'compile' } : null,
+        opts
+    );
 }
 
 function verifyCppFragment(code, tmp, timeout, opts) {
@@ -1006,6 +1013,12 @@ function splitCppIncludes(code) {
         else body.push(line);
     }
     return { includes, body: body.join('\n').trim() };
+}
+
+function looksLikeCppTranslationUnit(code) {
+    const { body } = splitCppIncludes(code);
+    if (/(?:^|\n)\s*(?:class|struct|union|enum(?:\s+class)?|namespace)\b/m.test(body)) return true;
+    return /(?:^|\n)\s*(?:template\s*<[^;{}]+>\s*)?(?:(?:inline|static|constexpr|consteval|extern)\s+)*(?:[\w:<>~*&]+\s+)+[A-Za-z_]\w*(?:::[~A-Za-z_]\w*)*\s*\([^;{}]*\)\s*(?:const\s*)?(?:noexcept(?:\([^)]*\))?\s*)?(?:->\s*[^;{}]+\s*)?\{/m.test(body);
 }
 
 function inferredCppIncludes(body) {

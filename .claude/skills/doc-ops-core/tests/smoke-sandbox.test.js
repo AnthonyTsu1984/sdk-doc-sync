@@ -33,6 +33,7 @@ test('Docker image pins lark-cli and runs as an unprivileged user', () => {
   assert.match(dockerfile, /ARG LARK_CLI_VERSION=1\.0\.65/);
   assert.match(dockerfile, /@larksuite\/cli@\$\{LARK_CLI_VERSION\}/);
   assert.match(dockerfile, /useradd[^\n]+smoke/);
+  assert.match(dockerfile, /mkdir -p[^\n]+\/home\/smoke\/\.local\/share\/lark-cli/);
   assert.match(dockerfile, /USER smoke/);
   assert.match(dockerfile, /ENV HOME=\/home\/smoke/);
 });

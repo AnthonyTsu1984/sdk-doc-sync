@@ -10,7 +10,7 @@ RUN npm install --global "@larksuite/cli@${LARK_CLI_VERSION}" \
     && npm cache clean --force
 
 RUN useradd --create-home --uid 10001 --shell /bin/bash smoke \
-    && mkdir -p /workspace /state /home/smoke/.lark-cli \
+    && mkdir -p /workspace /state /home/smoke/.lark-cli /home/smoke/.local/share/lark-cli \
     && chown -R smoke:smoke /workspace /state /home/smoke
 
 WORKDIR /workspace

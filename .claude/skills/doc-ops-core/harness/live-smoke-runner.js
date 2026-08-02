@@ -94,6 +94,11 @@ function documentTokenFromDocsCell(value) {
   }
 }
 
+function isRecordTombstone(record) {
+  const fields = record?.fields || {};
+  return !record || (!fields['Case ID'] && !fields['Run ID'] && !fields.Docs);
+}
+
 function decodeXmlText(value) {
   return String(value || '')
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(Number.parseInt(hex, 16)))
@@ -342,6 +347,23 @@ class LarkSandboxAdapter {
       .find(record => (record.record_id || record.id) === recordId) || null;
   }
 
+  async _inspectRecordCleanup(recordId, runId) {
+    const [exactRecord, searchedRecords] = await Promise.all([
+      this._getRecord(recordId),
+      this._searchRecords(runId),
+    ]);
+    const searchedRecord = searchedRecords
+      .find(item => (item.record_id || item.id) === recordId) || null;
+    const exactTombstone = isRecordTombstone(exactRecord);
+    return {
+      absent: exactTombstone && !searchedRecord,
+      evidence: exactTombstone ? searchedRecord : exactRecord,
+      exactTombstone,
+      inconsistent: exactTombstone && Boolean(searchedRecord),
+      searchedRecord,
+    };
+  }
+
   async verifyIdentity({ plan }) {
     await this._verifyIdentity({ plan });
   }
@@ -400,19 +422,13 @@ class LarkSandboxAdapter {
       if (!recordId || action.target !== `base-record-id:${recordId}`) {
         return { status: 'divergent' };
       }
-      const exactRecord = await this._getRecord(recordId);
-      const searchedRecord = (await this._searchRecords(context.plan.runId))
-        .find(item => (item.record_id || item.id) === recordId) || null;
-      if (!searchedRecord) {
-        const exactFields = exactRecord?.fields || {};
-        const tombstone = !exactRecord
-          || (!exactFields['Case ID'] && !exactFields['Run ID'] && !exactFields.Docs);
-        return tombstone
-          ? { status: 'verified', statePatch: { records: { [document.id]: { deleted: true } } } }
-          : { status: 'unknown' };
+      const inspection = await this._inspectRecordCleanup(recordId, context.plan.runId);
+      if (inspection.inconsistent) return { status: 'unknown' };
+      if (inspection.absent) {
+        return { status: 'verified', statePatch: { records: { [document.id]: { deleted: true } } } };
       }
-      if (searchedRecord.fields?.['Case ID'] !== document.id
-        || searchedRecord.fields?.['Run ID'] !== context.plan.runId) {
+      if (inspection.evidence?.fields?.['Case ID'] !== document.id
+        || inspection.evidence?.fields?.['Run ID'] !== context.plan.runId) {
         return { status: 'divergent' };
       }
       return { status: 'not_started' };
@@ -531,16 +547,16 @@ class LarkSandboxAdapter {
       if (!recordId || action.target !== `base-record-id:${recordId}`) {
         throw new LiveSmokeError('SMOKE_CLEANUP_TARGET_MISMATCH', `${document.id} record target is not creation-bound`);
       }
-      const exactRecord = await this._getRecord(recordId);
-      const searchedRecord = (await this._searchRecords(context.plan.runId))
-        .find(item => (item.record_id || item.id) === recordId);
-      if (!searchedRecord) return { alreadyAbsent: true, recordId };
-      const record = searchedRecord || exactRecord;
-      if (record.fields?.['Case ID'] !== document.id
-        || record.fields?.['Run ID'] !== context.plan.runId) {
+      const inspection = await this._inspectRecordCleanup(recordId, context.plan.runId);
+      if (inspection.inconsistent) {
+        throw new LiveSmokeError('SMOKE_CLEANUP_PRECONDITION_FAILED', `${document.id} exact record and run search disagree`);
+      }
+      if (inspection.absent) return { alreadyAbsent: true, recordId };
+      if (inspection.evidence?.fields?.['Case ID'] !== document.id
+        || inspection.evidence?.fields?.['Run ID'] !== context.plan.runId) {
         throw new LiveSmokeError('SMOKE_CLEANUP_PRECONDITION_FAILED', `${document.id} record provenance is invalid`);
       }
-      return { alreadyAbsent: !searchedRecord, recordId };
+      return { alreadyAbsent: false, recordId };
     }
     if (action.actionId.startsWith('doc:delete:')) {
       const document = this._document(action);
@@ -774,9 +790,8 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('record:delete:')) {
       const document = this._document(action);
       const recordId = context.state.records?.[document.id]?.recordId;
-      const record = (await this._searchRecords(context.plan.runId))
-        .find(item => (item.record_id || item.id) === recordId);
-      return { absent: !record };
+      const inspection = await this._inspectRecordCleanup(recordId, context.plan.runId);
+      return { absent: inspection.absent };
     }
     if (action.actionId.startsWith('doc:delete:')) {
       const document = this._document(action);
@@ -980,37 +995,51 @@ async function materializeCleanupResumeBatch({ plan, runDir, adapter } = {}) {
   }
   const statePath = path.join(runDir, 'state.json');
   const state = loadState(statePath);
-  const journalNames = [
-    'cleanup.journal.jsonl',
-    ...fs.readdirSync(runDir).filter(name => /^cleanup-resume(?:\.[a-f0-9]+)?\.journal\.jsonl$/.test(name)),
-  ];
-  const entries = journalNames.flatMap(name => fs.readFileSync(path.join(runDir, name), 'utf8').trim()
-    .split('\n').filter(Boolean).map(line => JSON.parse(line)));
-  const originalEntries = entries.filter(entry => journalNames[0] === 'cleanup.journal.jsonl'
-    && entry.batchDigest === fullBatch.batchDigest);
-  const invalidOriginal = fs.readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean)
-    .map(line => JSON.parse(line)).some(entry => entry.batchDigest !== fullBatch.batchDigest);
-  if (invalidOriginal) {
-    throw new LiveSmokeError('SMOKE_CLEANUP_RESUME_JOURNAL_MISMATCH', 'cleanup journal digest does not match exact cleanup batch');
+  const actionIds = new Set(fullBatch.actions.map(action => action.actionId));
+  const journalNames = ['cleanup.journal.jsonl', ...fs.readdirSync(runDir)
+    .filter(name => /^cleanup-resume.*\.journal\.jsonl$/.test(name))
+    .sort()];
+  const entriesByName = new Map();
+  for (const name of journalNames) {
+    let journalEntries;
+    try {
+      journalEntries = fs.readFileSync(path.join(runDir, name), 'utf8').trim()
+        .split('\n').filter(Boolean).map(line => JSON.parse(line));
+    } catch (error) {
+      throw new LiveSmokeError('SMOKE_CLEANUP_RESUME_JOURNAL_MISMATCH', `${name} is not valid JSONL`, { cause: error.message });
+    }
+    const invalidEntry = journalEntries.some(entry => !entry || typeof entry !== 'object' || Array.isArray(entry));
+    const digests = new Set(journalEntries.map(entry => entry?.batchDigest));
+    const invalidAction = journalEntries.some(entry => (
+      (entry?.type === 'prepared' || entry?.type === 'observed' || entry?.actionId !== undefined)
+      && !actionIds.has(entry?.actionId)
+    ));
+    const resumeMatch = name.match(/^cleanup-resume\.([a-f0-9]{16})\.journal\.jsonl$/);
+    const digest = journalEntries[0]?.batchDigest;
+    const invalidDigest = digests.size !== 1 || !/^sha256:[a-f0-9]{64}$/.test(digest || '')
+      || (name === 'cleanup.journal.jsonl'
+        ? digest !== fullBatch.batchDigest
+        : !resumeMatch || resumeMatch[1] !== digest.slice('sha256:'.length, 'sha256:'.length + 16));
+    if (invalidEntry || invalidDigest || invalidAction) {
+      throw new LiveSmokeError('SMOKE_CLEANUP_RESUME_JOURNAL_MISMATCH', `${name} is not bound to the exact cleanup batch`);
+    }
+    entriesByName.set(name, journalEntries);
   }
+  const originalEntries = entriesByName.get('cleanup.journal.jsonl');
+  const entries = [...entriesByName.values()].flat();
   if (originalEntries.some(entry => entry.type === 'completion' && entry.completionSentinel === true)) {
     throw new LiveSmokeError('SMOKE_CLEANUP_ALREADY_COMPLETE', 'cleanup journal already has a completion sentinel');
   }
   await adapter.verifyIdentity?.({ plan, state });
-  const verified = new Set(entries
-    .filter(entry => entry.type === 'observed' && entry.status === 'success' && entry.verified === true)
-    .map(entry => entry.actionId));
   const attempted = new Set(entries
     .filter(entry => entry.type === 'prepared' || entry.type === 'observed')
     .map(entry => entry.actionId));
   const pending = [];
   for (const action of fullBatch.actions) {
-    if (verified.has(action.actionId)) continue;
     if (attempted.has(action.actionId)) {
       const reconciliation = await adapter.reconcileCleanup(action, { plan, state });
       if (reconciliation?.status === 'verified') {
         mergeStatePatch(state, reconciliation.statePatch || {});
-        verified.add(action.actionId);
         continue;
       }
       if (reconciliation?.status !== 'not_started') {

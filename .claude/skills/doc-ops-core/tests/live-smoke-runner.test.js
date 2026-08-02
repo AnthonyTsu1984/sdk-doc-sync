@@ -336,6 +336,7 @@ test('sandbox adapter executes the full synthetic create DAG without losing prio
   const folder = { created: false, token: 'fld_test_only' };
   const documents = new Map();
   const records = new Map();
+  let recordGetCalls = 0;
   const expectedFields = [
     'Docs', 'Case ID', 'Run ID', 'Progress', 'Type', 'Skill',
     'Corpus Version', 'Expected Digest', 'Disposable', 'Last Modified At',
@@ -389,6 +390,22 @@ test('sandbox adapter executes the full synthetic create DAG without losing prio
     if (args[0] === 'base' && args[1] === '+field-list') {
       return { ok: true, data: { fields: expectedFields.map(name => ({ field_name: name, type: 'text' })) } };
     }
+    if (args[0] === 'base' && args[1] === '+record-get') {
+      recordGetCalls += 1;
+      const recordId = args[args.indexOf('--record-id') + 1];
+      const projectedFields = args.flatMap((value, index) => value === '--field-id' ? [args[index + 1]] : []);
+      const record = [...records.values()].find(item => item.record_id === recordId);
+      return {
+        ok: true,
+        data: {
+          data: record ? [Object.fromEntries(projectedFields.map((field, index) => [index, record.fields[field]]))] : [],
+          field_id_list: projectedFields,
+          fields: projectedFields,
+          has_more: false,
+          record_id_list: record ? [recordId] : [],
+        },
+      };
+    }
     if (args[0] === 'base' && args[1] === '+record-search') {
       const keyword = args[args.indexOf('--keyword') + 1];
       return { ok: true, data: { records: [...records.values()].filter(record => record.fields['Run ID'] === keyword) } };
@@ -440,6 +457,7 @@ test('sandbox adapter executes the full synthetic create DAG without losing prio
   assert.equal(Object.keys(state.records).length, corpus.documents.length);
   assert.equal(documents.size, corpus.documents.length);
   assert.equal(records.size, corpus.documents.length);
+  assert.equal(recordGetCalls >= corpus.documents.length, true);
 
   const cleanupBatch = liveSmoke.materializeCleanupBatch({ plan, runDir });
   assert.notEqual(cleanupBatch.batchDigest, plan.cleanupBatch.batchDigest);

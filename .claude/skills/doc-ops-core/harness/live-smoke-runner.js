@@ -233,6 +233,40 @@ class LarkSandboxAdapter {
     return envelope.data?.records || envelope.data?.items || envelope.records || [];
   }
 
+  _recordsFromEnvelope(envelope) {
+    const data = envelope?.data;
+    const records = data?.records || data?.items || envelope?.records;
+    if (Array.isArray(records)) return records;
+    if (!Array.isArray(data?.data) || !Array.isArray(data?.fields)) return [];
+    const recordIds = Array.isArray(data.record_id_list) ? data.record_id_list : [];
+    return data.data.map((row, rowIndex) => ({
+      fields: Object.fromEntries(data.fields.map((field, fieldIndex) => {
+        const key = String(fieldIndex);
+        const value = Array.isArray(row)
+          ? row[fieldIndex]
+          : (Object.hasOwn(row || {}, key) ? row[key] : undefined);
+        return [field, value];
+      })),
+      record_id: recordIds[rowIndex] || null,
+    }));
+  }
+
+  async _getRecord(recordId) {
+    const envelope = await this.runLark([
+      'base', '+record-get',
+      '--base-token', this.config.baseToken,
+      '--table-id', this.config.tableId,
+      '--record-id', recordId,
+      '--field-id', 'Docs',
+      '--field-id', 'Case ID',
+      '--field-id', 'Run ID',
+      '--format', 'json',
+      '--as', 'user',
+    ]);
+    return this._recordsFromEnvelope(envelope)
+      .find(record => (record.record_id || record.id) === recordId) || null;
+  }
+
   _runTimestamp(runId) {
     const match = String(runId).match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z-/);
     if (!match) throw new LiveSmokeError('SMOKE_RUN_ID_INVALID', 'runId timestamp is invalid');
@@ -307,8 +341,7 @@ class LarkSandboxAdapter {
       if (!recordId || action.target !== `base-record-id:${recordId}`) {
         throw new LiveSmokeError('SMOKE_CLEANUP_TARGET_MISMATCH', `${document.id} record target is not creation-bound`);
       }
-      const record = (await this._searchRecords(context.plan.runId))
-        .find(item => (item.record_id || item.id) === recordId);
+      const record = await this._getRecord(recordId);
       if (!record
         || record.fields?.['Case ID'] !== document.id
         || record.fields?.['Run ID'] !== context.plan.runId) {
@@ -519,8 +552,7 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('record:create:')) {
       const document = this._document(action);
       const recordId = context.state.records?.[document.id]?.recordId;
-      const record = (await this._searchRecords(context.plan.runId))
-        .find(item => (item.record_id || item.id) === recordId);
+      const record = await this._getRecord(recordId);
       return { record: record || null };
     }
     if (action.actionId.startsWith('doc:patch:')) {
@@ -534,8 +566,7 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('record:delete:')) {
       const document = this._document(action);
       const recordId = context.state.records?.[document.id]?.recordId;
-      const record = (await this._searchRecords(context.plan.runId))
-        .find(item => (item.record_id || item.id) === recordId);
+      const record = await this._getRecord(recordId);
       return { absent: !record };
     }
     if (action.actionId.startsWith('doc:delete:')) {

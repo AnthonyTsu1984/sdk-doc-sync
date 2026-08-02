@@ -15,6 +15,7 @@ const {
   materializeRecoveryCleanupBatch,
 } = require('../harness/live-smoke-runner');
 const { buildSmokePlan } = require('../harness/smoke-plan');
+const { runSmokeAcceptance } = require('../harness/smoke-acceptance');
 const { simulateSmokeRun } = require('../harness/smoke-simulator');
 
 const DEFAULT_CORPUS_ROOT = path.join(__dirname, '..', 'smoke-corpus');
@@ -25,6 +26,7 @@ const ASYNC_COMMANDS = new Set([
   'cleanup-plan',
   'recovery-cleanup-plan',
   'identity-fingerprint',
+  'acceptance',
 ]);
 const COMMANDS = new Set([
   'doctor',
@@ -34,6 +36,7 @@ const COMMANDS = new Set([
   'cleanup-plan',
   'recovery-cleanup-plan',
   'identity-fingerprint',
+  'acceptance',
   ...LIVE_COMMANDS,
 ]);
 
@@ -58,7 +61,7 @@ function parseArgs(argv) {
     }
     throw new Error(`Unknown argument: ${flag}`);
   }
-  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', 'recovery-cleanup-plan', ...LIVE_COMMANDS]);
+  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', 'recovery-cleanup-plan', 'acceptance', ...LIVE_COMMANDS]);
   if (runCommands.has(command) && !result.runId) throw new Error(`${command} requires --run-id`);
   if (!runCommands.has(command) && result.runId) throw new Error(`${command} does not accept --run-id`);
   if (LIVE_COMMANDS.has(command) && !result.approvedBatchDigest) {
@@ -171,6 +174,18 @@ async function runCli(argv = process.argv, dependencies = {}) {
       const recoveryCleanupBatch = materializeRecoveryCleanup({ plan, runDir });
       out(stableJson({ recoveryCleanupBatch, runId: args.runId }));
       return 0;
+    }
+    if (args.command === 'acceptance') {
+      const runAcceptance = dependencies.runAcceptance || runSmokeAcceptance;
+      const adapter = dependencies.adapter || (dependencies.runAcceptance ? null : new LarkSandboxAdapter({
+        config,
+        corpus,
+        corpusRoot,
+        runLark: dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT }),
+      }));
+      const result = await runAcceptance({ adapter, corpus, plan, runDir });
+      out(stableJson(result));
+      return result.status === 'VERIFIED' ? 0 : 1;
     }
     const phase = {
       'live-create': 'create',

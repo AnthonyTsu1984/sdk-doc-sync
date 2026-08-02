@@ -74,6 +74,47 @@ test('live phases require an explicit approved batch digest', () => {
   assert.equal(typeof runCli, 'function');
 });
 
+test('smoke acceptance is read-only and neither requires nor accepts a write approval digest', () => {
+  assert.deepEqual(parseArgs([
+    'node', 'doc-ops-smoke', 'acceptance',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ]), {
+    command: 'acceptance',
+    runId: '20260802T120000Z-a1b2c3d4',
+  });
+  assert.throws(() => parseArgs([
+    'node', 'doc-ops-smoke', 'acceptance',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+    '--approve-batch-digest', 'sha256:'.padEnd(71, 'a'),
+  ]), /acceptance does not accept --approve-batch-digest/);
+});
+
+test('async CLI dispatches acceptance through the read-only acceptance runner', async () => {
+  const output = capture();
+  let acceptanceCalled = false;
+  let liveExecutionCalled = false;
+  const exitCode = await runCli([
+    'node', 'doc-ops-smoke', 'acceptance',
+    '--run-id', '20260802T120000Z-a1b2c3d4',
+  ], {
+    env: smokeEnv(),
+    executeLive: async () => {
+      liveExecutionCalled = true;
+      return { status: 'EXECUTED' };
+    },
+    runAcceptance: async () => {
+      acceptanceCalled = true;
+      return { liveWritesPerformed: false, status: 'VERIFIED' };
+    },
+    out: output.out,
+    err: output.err,
+  });
+  assert.equal(exitCode, 0);
+  assert.equal(acceptanceCalled, true);
+  assert.equal(liveExecutionCalled, false);
+  assert.match(output.stdout.join(''), /"liveWritesPerformed": false/);
+});
+
 test('recovery cleanup planning materializes partial-run targets without deleting them', async () => {
   const output = capture();
   let materialized = false;

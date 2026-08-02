@@ -23,6 +23,7 @@
     "smoke:simulate": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js simulate",
     "smoke:live:create": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-create",
     "smoke:live:patch": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-patch",
+    "smoke:acceptance": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js acceptance",
     "smoke:cleanup:plan": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js cleanup-plan",
     "smoke:live:cleanup": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-cleanup",
     "smoke:recovery:plan": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js recovery-cleanup-plan",

@@ -129,6 +129,10 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
     'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js live-patch',
   );
   assert.equal(
+    packageJson.scripts['smoke:acceptance'],
+    'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js acceptance',
+  );
+  assert.equal(
     packageJson.scripts['smoke:cleanup:plan'],
     'node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js cleanup-plan',
   );
@@ -153,6 +157,8 @@ test('operator commands keep all test-tenant lark usage inside the sandbox', () 
   assert.match(guide, /npm run smoke:identity/);
   assert.match(guide, /npm run smoke:live:create --\s+\\\s+--run-id/);
   assert.match(guide, /npm run smoke:live:patch --\s+\\\s+--run-id/);
+  assert.match(guide, /npm run smoke:acceptance -- --run-id/);
+  assert.match(guide, /acceptance.*read-only.*five canonical skills/is);
   assert.match(guide, /npm run smoke:cleanup:plan -- --run-id/);
   assert.match(guide, /npm run smoke:live:cleanup --\s+\\\s+--run-id/);
   assert.match(guide, /npm run smoke:recovery:plan -- --run-id/);

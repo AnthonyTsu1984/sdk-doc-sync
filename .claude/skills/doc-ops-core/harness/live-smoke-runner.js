@@ -10,6 +10,7 @@ const { canonicalStringify, canonicalize } = require('../src/canonical-json');
 const { executeDag } = require('../src/dag-executor');
 const { ExecutionJournal } = require('../src/journal');
 const { digestSemantic } = require('../src/digest');
+const { inspectSiblingRelation } = require('./smoke-acceptance');
 
 class LiveSmokeError extends Error {
   constructor(code, message, details = {}) {
@@ -338,6 +339,56 @@ class LarkSandboxAdapter {
     ]);
     return this._recordsFromEnvelope(envelope)
       .find(record => (record.record_id || record.id) === recordId) || null;
+  }
+
+  async verifyIdentity({ plan }) {
+    await this._verifyIdentity({ plan });
+  }
+
+  async listCanaryDocuments({ state }) {
+    const rootEntry = (await this._listFolder(this.config.rootToken))
+      .find(item => (item.token || item.folder_token) === state.folderToken);
+    if (!rootEntry) return [];
+    const entries = await this._listFolder(state.folderToken);
+    const idByToken = new Map(Object.entries(state.documents || {})
+      .map(([id, document]) => [document.documentToken, id]));
+    return entries.map(item => ({ id: idByToken.get(item.token || item.file_token) || null }))
+      .filter(item => item.id);
+  }
+
+  async fetchSyntheticDocument(documentId, { state }) {
+    const documentState = state.documents?.[documentId];
+    if (!documentState?.documentToken) {
+      throw new LiveSmokeError('SMOKE_DOCUMENT_STATE_MISSING', `${documentId} has no recorded document`);
+    }
+    const fetched = await this._fetchDocument(documentState.documentToken);
+    const parentVerified = (await this._listFolder(state.folderToken))
+      .some(item => (item.token || item.file_token) === documentState.documentToken);
+    return {
+      content: fetched.content,
+      contentDigest: digestSemantic(fetched.content),
+      parentVerified,
+    };
+  }
+
+  async verifySyntheticRecordBinding(documentId, { plan, state }) {
+    const recordId = state.records?.[documentId]?.recordId;
+    const documentToken = state.documents?.[documentId]?.documentToken;
+    if (!recordId || !documentToken) return false;
+    const record = await this._getRecord(recordId);
+    return Boolean(record)
+      && record.fields?.['Case ID'] === documentId
+      && record.fields?.['Run ID'] === plan.runId
+      && documentTokenFromDocsCell(record.fields?.Docs) === documentToken;
+  }
+
+  async inspectApiSiblingRelation(documentId, { state }) {
+    const documentState = state.documents?.[documentId];
+    if (!documentState?.documentToken) {
+      throw new LiveSmokeError('SMOKE_DOCUMENT_STATE_MISSING', `${documentId} has no recorded document`);
+    }
+    const fetched = await this._fetchDocumentXml(documentState.documentToken);
+    return inspectSiblingRelation(fetched.content, 'child item', 'patched sibling item');
   }
 
   _runTimestamp(runId) {

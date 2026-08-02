@@ -35,3 +35,17 @@ test('result validation rejects success without required verification evidence',
   assert.equal(validation.valid, false);
   assert.ok(validation.errors.some(error => error.code === 'SUCCESS_EVIDENCE_REQUIRED'));
 });
+
+test('result validation rejects a semantic digest that does not bind the result payload', () => {
+  const result = createResult({
+    skill: 'doc-code-verify',
+    operation: 'verify',
+    status: 'VERIFIED',
+    artifactPaths: ['report.json'],
+    evidence: { passed: 1 },
+  });
+  const tampered = { ...result, evidence: { passed: 2 } };
+  const validation = validateResult(tampered);
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some(error => error.code === 'RESULT_SEMANTIC_DIGEST_MISMATCH'));
+});

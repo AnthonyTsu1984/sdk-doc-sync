@@ -163,6 +163,14 @@ npm run smoke:live:patch -- \
   --approve-batch-digest sha256:<approved-patch-digest>
 ```
 
+Run the post-patch acceptance gate before cleanup:
+
+```bash
+npm run smoke:acceptance -- --run-id 20260802T120000Z-a1b2c3d4
+```
+
+`smoke:acceptance` is read-only and requires no write approval. It refetches only the synthetic canary resources through the sandbox, verifies journal lineage, current document digests, parent placement, exact Base links, skill-specific invariants, and the verifier report, then writes one shared result-contract artifact for each of the five canonical skills under `tmp/doc-ops-smoke/runs/<run-id>/artifacts/skill-acceptance/`. Repeating it against unchanged tenant state must produce the same five semantic digests.
+
 Materialize the creation-bound cleanup batch without deleting anything:
 
 ```bash

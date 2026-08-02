@@ -22,6 +22,11 @@ function diagnosticSort(left, right) {
     || String(left?.target || left?.actionId || '').localeCompare(String(right?.target || right?.actionId || ''));
 }
 
+function resultSemanticPayload(result = {}) {
+  const { semanticDigest, runtime, ...semantic } = result;
+  return canonicalize(semantic);
+}
+
 function createResult({
   skill,
   operation,
@@ -59,10 +64,14 @@ function validateResult(result) {
   if (result?.status && exitCodeForStatus(result.status) !== result.exitCode) errors.push({ code: 'RESULT_EXIT_CODE_MISMATCH' });
   if (!Array.isArray(result?.artifactPaths)) errors.push({ code: 'RESULT_ARTIFACT_PATHS_INVALID' });
   if (!Array.isArray(result?.diagnostics)) errors.push({ code: 'RESULT_DIAGNOSTICS_INVALID' });
+  if (typeof result?.semanticDigest === 'string'
+    && result.semanticDigest !== digestSemantic(resultSemanticPayload(result))) {
+    errors.push({ code: 'RESULT_SEMANTIC_DIGEST_MISMATCH' });
+  }
   if (SUCCESS_STATUSES.has(result?.status) && (!result.evidence || Object.keys(result.evidence).length === 0)) {
     errors.push({ code: 'SUCCESS_EVIDENCE_REQUIRED' });
   }
   return { valid: errors.length === 0, errors };
 }
 
-module.exports = { EXIT_CODES, exitCodeForStatus, createResult, validateResult };
+module.exports = { EXIT_CODES, exitCodeForStatus, createResult, resultSemanticPayload, validateResult };

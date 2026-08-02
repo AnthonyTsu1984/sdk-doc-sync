@@ -9,6 +9,13 @@ Use this skill for Zilliz docs localization workflows where an English Feishu wi
 
 Before live writes, always produce a dry-run summary and get explicit approval for the concrete records/documents that will be created or updated.
 
+## Executable Write Contract
+
+- Capability baseline: [capabilities.json](capabilities.json)
+- Convert the reviewed `NEW`, `UPDATE`, and `META_ONLY` operations into an immutable batch with `node .claude/skills/doc-ops-core/bin/build-action-batch.js --skill localized-doc-sync --operation sync --input <actions.json> --output <batch.json>`.
+- Approval must match the exact `batchDigest`, targets, action count, and side effects. Recheck live preconditions for record identity, document revision, parent mapping, and media inventory immediately before each write.
+- After each write, refetch the target and apply the shared round-trip guard to content, metadata, hierarchy, boards, Figma, sheets, Supademo, and other protected blocks.
+
 ## Core Workflow
 
 1. Read [references/zilliz-localization.md](references/zilliz-localization.md) for the canonical base tokens, wiki roots, all table IDs, table-pair mapping, field rules, library paths, and media handling notes. For Development -> 开发指南 work, also read [references/development-alignment.md](references/development-alignment.md).

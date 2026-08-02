@@ -7,6 +7,13 @@ description: Use when an existing Feishu/Lark SDK procedure document already has
 
 Use this skill when a Feishu doc already has Python procedure examples and needs the corresponding Java, Go, Node.js, RESTful API, Zilliz CLI, and C++ code blocks added.
 
+## Executable Write Contract
+
+- Capability baseline: [capabilities.json](capabilities.json)
+- Before requesting approval, encode the exact block operations with `node .claude/skills/doc-ops-core/bin/build-action-batch.js --skill procedure-code-sync --operation patch --input <actions.json> --output <batch.json>`.
+- Approval must name the resulting `batchDigest`. Immediately before mutation, verify the live precondition for the document revision, parent, and target block identities.
+- After mutation, refetch blocks and apply the shared round-trip guard. Missing protected blocks or unrelated content changes are blockers.
+
 ## Canonical Order
 
 For every code-tab group or consecutive multi-language example, use this exact order:
@@ -92,6 +99,7 @@ When the procedure covers Cloud import jobs, on-demand routing, StructArray/Embe
 ## Patching Guardrails
 
 - Make a dry-run or written insertion plan before the first write: doc token, target groups, insertion point, languages to add, and source files used for each port.
+- Convert that plan into the shared immutable action batch; free-form approval without the exact `batchDigest` is not write authority.
 - Show that exact plan or dry-run and obtain explicit approval before the first live write.
 - Put temporary generated XML, helper scripts, fetch outputs, and verification scratch files in `tmp/patch-feishu-code/`.
 - Do not rewrite unrelated prose, headings, links, or existing correct code blocks.

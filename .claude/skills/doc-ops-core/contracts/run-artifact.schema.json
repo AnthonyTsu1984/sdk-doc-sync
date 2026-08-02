@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doc-ops-core/run-artifact.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "skill", "operation", "status", "exitCode", "semanticDigest", "artifactPaths", "diagnostics", "nextAllowedTransitions"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "skill": { "type": "string", "minLength": 1 },
+    "operation": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "exitCode": { "enum": [0, 1, 2, 64] },
+    "semanticDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "artifactPaths": { "type": "array", "items": { "type": "string" } },
+    "diagnostics": { "type": "array", "items": { "type": "object" } },
+    "nextAllowedTransitions": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

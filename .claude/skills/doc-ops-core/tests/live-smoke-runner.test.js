@@ -201,7 +201,7 @@ test('Base record search normalizes the CLI tabular JSON envelope', async () => 
   }]);
 });
 
-test('record recovery treats search absence as an idempotent verified delete', async () => {
+test('record recovery treats an exact-ID tombstone outside search as a verified delete', async () => {
   const identityFingerprint = 'sha256:'.padEnd(71, 'a');
   const adapter = new liveSmoke.LarkSandboxAdapter({
     config: { identityFingerprint },
@@ -210,10 +210,7 @@ test('record recovery treats search absence as an idempotent verified delete', a
     runLark: async () => { throw new Error('record delete must not be reissued'); },
   });
   adapter.identityVerified = true;
-  adapter._getRecord = async () => ({
-    fields: { 'Case ID': 'fixture', 'Run ID': '20260802T120000Z-a1b2c3d4' },
-    record_id: 'rec_test_only',
-  });
+  adapter._getRecord = async () => ({ fields: {}, record_id: 'rec_test_only' });
   adapter._searchRecords = async () => [];
   const action = {
     actionId: 'record:delete:fixture',

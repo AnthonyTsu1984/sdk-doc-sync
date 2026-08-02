@@ -344,8 +344,8 @@ class LarkSandboxAdapter {
       const exactRecord = await this._getRecord(recordId);
       const searchedRecord = (await this._searchRecords(context.plan.runId))
         .find(item => (item.record_id || item.id) === recordId);
-      const record = exactRecord || searchedRecord;
-      if (!record) return { alreadyAbsent: true, recordId };
+      if (!searchedRecord) return { alreadyAbsent: true, recordId };
+      const record = searchedRecord || exactRecord;
       if (record.fields?.['Case ID'] !== document.id
         || record.fields?.['Run ID'] !== context.plan.runId) {
         throw new LiveSmokeError('SMOKE_CLEANUP_PRECONDITION_FAILED', `${document.id} record provenance is invalid`);

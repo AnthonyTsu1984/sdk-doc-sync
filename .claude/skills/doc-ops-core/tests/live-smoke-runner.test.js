@@ -118,6 +118,17 @@ test('partial creation evidence materializes an exact recovery cleanup batch', (
     'drive-folder-token:fld_test_only',
   ]);
   assert.match(recovery.batchDigest, /^sha256:[a-f0-9]{64}$/);
+
+  fs.writeFileSync(path.join(runDir, 'recovery-cleanup.journal.jsonl'), `${JSON.stringify({
+    actionId: 'doc:delete:fixture',
+    batchDigest: recovery.batchDigest,
+    schemaVersion: 1,
+    status: 'success',
+    type: 'observed',
+    verified: true,
+  })}\n`);
+  const continuedRecovery = liveSmoke.materializeRecoveryCleanupBatch({ plan, runDir });
+  assert.deepEqual(continuedRecovery.actions.map(action => action.actionId), ['folder:delete']);
 });
 
 test('recovery cleanup allows a created document with no Base record state', async () => {
@@ -188,6 +199,77 @@ test('Base record search normalizes the CLI tabular JSON envelope', async () => 
     fields: { 'Case ID': 'fixture', 'Run ID': '20260802T120000Z-a1b2c3d4' },
     record_id: 'rec_test_only',
   }]);
+});
+
+test('record recovery treats search absence as an idempotent verified delete', async () => {
+  const identityFingerprint = 'sha256:'.padEnd(71, 'a');
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: { identityFingerprint },
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async () => { throw new Error('record delete must not be reissued'); },
+  });
+  adapter.identityVerified = true;
+  adapter._getRecord = async () => ({
+    fields: { 'Case ID': 'fixture', 'Run ID': '20260802T120000Z-a1b2c3d4' },
+    record_id: 'rec_test_only',
+  });
+  adapter._searchRecords = async () => [];
+  const action = {
+    actionId: 'record:delete:fixture',
+    identityFingerprint,
+    target: 'base-record-id:rec_test_only',
+  };
+  const context = {
+    plan: {
+      identityFingerprint,
+      runId: '20260802T120000Z-a1b2c3d4',
+    },
+    state: { records: { fixture: { recordId: 'rec_test_only' } } },
+  };
+
+  const precondition = await adapter.precondition(action, context);
+  assert.deepEqual(precondition, { alreadyAbsent: true, recordId: 'rec_test_only' });
+  const mutation = await adapter.mutate(action, { ...context, precondition });
+  assert.deepEqual(mutation.receipt, { alreadyAbsent: true, deleted: false });
+  assert.deepEqual(await adapter.refetch(action, mutation, context), { absent: true });
+});
+
+test('a new recovery digest can continue after a prior partial recovery journal', async () => {
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-recovery-continue-'));
+  const firstBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-recovery-cleanup',
+    actions: [{ actionId: 'doc:delete:first', target: 'doc:first', dependsOn: [], sideEffects: ['delete'] }],
+  });
+  const secondBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-recovery-cleanup',
+    actions: [{ actionId: 'folder:delete', target: 'folder:second', dependsOn: [], sideEffects: ['delete'] }],
+  });
+  const adapter = {
+    precondition: async () => ({ ready: true }),
+    mutate: async () => ({ receipt: { attempted: true } }),
+    refetch: async action => ({ actionId: action.actionId }),
+    verify: async action => ({ diagnostics: [], ok: action.actionId === 'folder:delete' }),
+  };
+  const first = await executeLivePhase({
+    phase: 'recovery-cleanup',
+    plan: { recoveryCleanupBatch: firstBatch, runId: '20260802T120000Z-a1b2c3d4' },
+    approvedBatchDigest: firstBatch.batchDigest,
+    adapter,
+    runDir,
+  });
+  assert.equal(first.status, 'PARTIAL');
+
+  const second = await executeLivePhase({
+    phase: 'recovery-cleanup',
+    plan: { recoveryCleanupBatch: secondBatch, runId: '20260802T120000Z-a1b2c3d4' },
+    approvedBatchDigest: secondBatch.batchDigest,
+    adapter,
+    runDir,
+  });
+  assert.equal(second.status, 'EXECUTED');
 });
 
 test('live execution rejects a changed digest before calling the tenant adapter', async () => {

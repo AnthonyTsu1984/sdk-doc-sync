@@ -341,13 +341,16 @@ class LarkSandboxAdapter {
       if (!recordId || action.target !== `base-record-id:${recordId}`) {
         throw new LiveSmokeError('SMOKE_CLEANUP_TARGET_MISMATCH', `${document.id} record target is not creation-bound`);
       }
-      const record = await this._getRecord(recordId);
+      const exactRecord = await this._getRecord(recordId);
+      const searchedRecord = (await this._searchRecords(context.plan.runId))
+        .find(item => (item.record_id || item.id) === recordId);
+      const record = exactRecord || searchedRecord;
       if (!record
         || record.fields?.['Case ID'] !== document.id
         || record.fields?.['Run ID'] !== context.plan.runId) {
         throw new LiveSmokeError('SMOKE_CLEANUP_PRECONDITION_FAILED', `${document.id} record provenance is invalid`);
       }
-      return { recordId };
+      return { alreadyAbsent: !searchedRecord, recordId };
     }
     if (action.actionId.startsWith('doc:delete:')) {
       const document = this._document(action);
@@ -489,6 +492,12 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('record:delete:')) {
       const document = this._document(action);
       const recordId = context.precondition.recordId;
+      if (context.precondition.alreadyAbsent) {
+        return {
+          receipt: { alreadyAbsent: true, deleted: false },
+          statePatch: { records: { [document.id]: { deleted: true } } },
+        };
+      }
       await this.runLark([
         'base', '+record-delete',
         '--base-token', this.config.baseToken,
@@ -566,7 +575,8 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('record:delete:')) {
       const document = this._document(action);
       const recordId = context.state.records?.[document.id]?.recordId;
-      const record = await this._getRecord(recordId);
+      const record = (await this._searchRecords(context.plan.runId))
+        .find(item => (item.record_id || item.id) === recordId);
       return { absent: !record };
     }
     if (action.actionId.startsWith('doc:delete:')) {
@@ -781,6 +791,16 @@ function materializeRecoveryCleanupBatch({ plan, runDir } = {}) {
   }
   const prepared = new Set(journalEntries.filter(entry => entry.type === 'prepared').map(entry => entry.actionId));
   const observed = new Set(journalEntries.filter(entry => entry.type === 'observed').map(entry => entry.actionId));
+  const verifiedRecoveryActions = new Set();
+  for (const name of fs.readdirSync(runDir).filter(item => /^recovery-cleanup(?:\.[a-f0-9]+)?\.journal\.jsonl$/.test(item))) {
+    const recoveryEntries = fs.readFileSync(path.join(runDir, name), 'utf8').trim()
+      .split('\n').filter(Boolean).map(line => JSON.parse(line));
+    for (const entry of recoveryEntries) {
+      if (entry.type === 'observed' && entry.status === 'success' && entry.verified === true) {
+        verifiedRecoveryActions.add(entry.actionId);
+      }
+    }
+  }
   const creationActionIds = new Set((plan.creationBatch.actions || []).map(action => action.actionId));
   const assertObservedCreation = actionId => {
     if (!creationActionIds.has(actionId) || !prepared.has(actionId) || !observed.has(actionId)) {
@@ -796,9 +816,6 @@ function materializeRecoveryCleanupBatch({ plan, runDir } = {}) {
   const templateById = new Map((plan.cleanupBatch?.actions || []).map(action => [action.actionId, action]));
   const documentIds = Object.keys(state.documents || {}).sort();
   const recordIds = Object.keys(state.records || {}).sort();
-  if (documentIds.length === 0 && recordIds.length === 0) {
-    throw new LiveSmokeError('SMOKE_RECOVERY_RESOURCES_MISSING', 'partial state records no disposable resources');
-  }
   for (const documentId of recordIds) {
     if (!state.documents?.[documentId]) {
       throw new LiveSmokeError('SMOKE_RECOVERY_STATE_INVALID', `${documentId} record has no document state`);
@@ -806,15 +823,10 @@ function materializeRecoveryCleanupBatch({ plan, runDir } = {}) {
   }
 
   const actions = [];
-  for (const documentId of documentIds) {
-    const documentState = state.documents[documentId];
-    if (!documentState?.documentToken || !documentState?.contentDigest) {
-      throw new LiveSmokeError('SMOKE_RECOVERY_DOCUMENT_INVALID', `${documentId} lacks exact document evidence`);
-    }
-    assertObservedCreation(`doc:create:${documentId}`);
-    const dependencies = [];
-    const recordState = state.records?.[documentId];
-    if (recordState) {
+  const outstandingRecordIds = recordIds
+    .filter(documentId => !verifiedRecoveryActions.has(`record:delete:${documentId}`));
+  for (const documentId of outstandingRecordIds) {
+    const recordState = state.records[documentId];
       if (!recordState.recordId) {
         throw new LiveSmokeError('SMOKE_RECOVERY_RECORD_INVALID', `${documentId} lacks an exact record ID`);
       }
@@ -826,22 +838,35 @@ function materializeRecoveryCleanupBatch({ plan, runDir } = {}) {
         dependsOn: [],
         target: `base-record-id:${recordState.recordId}`,
       });
-      dependencies.push(recordActionId);
+  }
+  const outstandingDocumentIds = documentIds
+    .filter(documentId => !verifiedRecoveryActions.has(`doc:delete:${documentId}`));
+  for (const documentId of outstandingDocumentIds) {
+    const documentState = state.documents[documentId];
+    if (!documentState?.documentToken || !documentState?.contentDigest) {
+      throw new LiveSmokeError('SMOKE_RECOVERY_DOCUMENT_INVALID', `${documentId} lacks exact document evidence`);
     }
+    assertObservedCreation(`doc:create:${documentId}`);
+    const recordActionId = `record:delete:${documentId}`;
     const documentActionId = `doc:delete:${documentId}`;
     actions.push({
       ...(templateById.get(documentActionId) || {}),
       actionId: documentActionId,
-      dependsOn: dependencies,
+      dependsOn: outstandingRecordIds.includes(documentId) ? [recordActionId] : [],
       target: `docx-token:${documentState.documentToken}`,
     });
   }
-  actions.push({
-    ...(templateById.get('folder:delete') || {}),
-    actionId: 'folder:delete',
-    dependsOn: documentIds.map(documentId => `doc:delete:${documentId}`),
-    target: `drive-folder-token:${state.folderToken}`,
-  });
+  if (!verifiedRecoveryActions.has('folder:delete')) {
+    actions.push({
+      ...(templateById.get('folder:delete') || {}),
+      actionId: 'folder:delete',
+      dependsOn: outstandingDocumentIds.map(documentId => `doc:delete:${documentId}`),
+      target: `drive-folder-token:${state.folderToken}`,
+    });
+  }
+  if (actions.length === 0) {
+    throw new LiveSmokeError('SMOKE_RECOVERY_ALREADY_COMPLETE', 'all partial-run resources are already verified deleted');
+  }
   return createActionBatch({ skill: 'doc-ops-core', operation: 'smoke-recovery-cleanup', actions });
 }
 
@@ -871,7 +896,19 @@ async function executeLivePhase({
 
   fs.mkdirSync(runDir, { recursive: true, mode: 0o700 });
   fs.chmodSync(runDir, 0o700);
-  const journalPath = path.join(runDir, `${phase}.journal.jsonl`);
+  const legacyJournalPath = path.join(runDir, `${phase}.journal.jsonl`);
+  const digestSuffix = String(batch.batchDigest).replace(/^sha256:/, '').slice(0, 16);
+  const journalPath = phase === 'recovery-cleanup'
+    ? path.join(runDir, `${phase}.${digestSuffix}.journal.jsonl`)
+    : legacyJournalPath;
+  if (phase === 'recovery-cleanup'
+    && fs.existsSync(legacyJournalPath)
+    && fs.readFileSync(legacyJournalPath, 'utf8').includes(batch.batchDigest)) {
+    throw new LiveSmokeError(
+      'EXECUTION_RECONCILIATION_REQUIRED',
+      `${phase} journal already exists for this batch; inspect live state before any relaunch`,
+    );
+  }
   if (fs.existsSync(journalPath) && fs.statSync(journalPath).size > 0) {
     throw new LiveSmokeError(
       'EXECUTION_RECONCILIATION_REQUIRED',

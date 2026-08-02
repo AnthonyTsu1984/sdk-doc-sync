@@ -16,7 +16,6 @@ Commands:
   qrcode <url>              Generate /state/auth-qr.png for the opaque URL
   smoke-corpus              Validate the synthetic corpus
   smoke-simulate <run-id>   Run the hermetic stateful fake tenant
-  shell                     Open an isolated shell
   lark <args...>            Run an explicit lark-cli command inside the sandbox
 EOF
 }
@@ -74,7 +73,8 @@ case "$command_name" in
       printf 'qrcode requires one opaque URL.\n' >&2
       exit 2
     fi
-    exec lark-cli auth qrcode "$1" --output /state/auth-qr.png --profile "$PROFILE_NAME"
+    cd /state
+    exec lark-cli --profile "$PROFILE_NAME" auth qrcode "$1" --output auth-qr.png
     ;;
   smoke-corpus)
     exec npm run smoke:corpus
@@ -86,11 +86,8 @@ case "$command_name" in
     fi
     exec npm run smoke:simulate -- --run-id "$1"
     ;;
-  shell)
-    exec /bin/bash
-    ;;
   lark)
-    exec lark-cli "$@" --profile "$PROFILE_NAME"
+    exec lark-cli --profile "$PROFILE_NAME" "$@"
     ;;
   help|-h|--help)
     usage

@@ -235,6 +235,33 @@ test('record recovery treats search absence as an idempotent verified delete', a
   assert.deepEqual(await adapter.refetch(action, mutation, context), { absent: true });
 });
 
+test('record recovery accepts a creation-bound record that is already fully absent', async () => {
+  const identityFingerprint = 'sha256:'.padEnd(71, 'a');
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: { identityFingerprint },
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async () => { throw new Error('no tenant mutation is expected'); },
+  });
+  adapter.identityVerified = true;
+  adapter._getRecord = async () => null;
+  adapter._searchRecords = async () => [];
+  const action = {
+    actionId: 'record:delete:fixture',
+    identityFingerprint,
+    target: 'base-record-id:rec_test_only',
+  };
+  const context = {
+    plan: { identityFingerprint, runId: '20260802T120000Z-a1b2c3d4' },
+    state: { records: { fixture: { recordId: 'rec_test_only' } } },
+  };
+
+  assert.deepEqual(await adapter.precondition(action, context), {
+    alreadyAbsent: true,
+    recordId: 'rec_test_only',
+  });
+});
+
 test('a new recovery digest can continue after a prior partial recovery journal', async () => {
   const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-recovery-continue-'));
   const firstBatch = createActionBatch({

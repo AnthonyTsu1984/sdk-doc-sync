@@ -1,0 +1,36 @@
+name: doc-ops-smoke
+
+services:
+  lark-cli:
+    image: feishu-markdown-bridge/doc-ops-smoke-lark-cli:1.0.65
+    build:
+      context: ../../../..
+      dockerfile: .claude/skills/doc-ops-core/sandbox/Dockerfile
+      args:
+        LARK_CLI_VERSION: "1.0.65"
+    user: "10001:10001"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    init: true
+    stdin_open: true
+    tty: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=128m,uid=10001,gid=10001
+    volumes:
+      - doc_ops_smoke_lark_config:/home/smoke/.lark-cli
+      - doc_ops_smoke_state:/state
+    environment:
+      HOME: /home/smoke
+      XDG_CONFIG_HOME: /home/smoke/.config
+      XDG_CACHE_HOME: /tmp/cache
+      LARKSUITE_CLI_NO_UPDATE_NOTIFIER: "1"
+      LARKSUITE_CLI_NO_SKILLS_NOTIFIER: "1"
+
+volumes:
+  doc_ops_smoke_lark_config:
+    name: doc-ops-smoke-lark-config
+  doc_ops_smoke_state:
+    name: doc-ops-smoke-state

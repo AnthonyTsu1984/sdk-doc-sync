@@ -1,0 +1,10 @@
+.git/
+.worktrees/
+node_modules/
+tmp/
+.lark-cli
+**/.lark-cli
+.env
+.env.*
+!.env.smoke.example
+.DS_Store

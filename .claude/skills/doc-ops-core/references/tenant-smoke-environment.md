@@ -11,6 +11,7 @@ Use this procedure to establish the persistent test substrate for the shared doc
 - Never paste an app secret, access token, refresh token, folder token, Base token, or table ID into chat.
 - Creation, patch, and cleanup are three independent approval gates. Cleanup is never automatic.
 - Smoke artifacts and state belong under `tmp/doc-ops-smoke/<run-id>/`; never update a production `scan-state.json`.
+- All test-tenant login and profile operations run inside the Docker sandbox under `../sandbox/`. Never initialize or authorize the test app with the host `lark-cli`.
 
 ## 1. Create or select a test tenant
 
@@ -20,25 +21,19 @@ If no test tenant exists, create a separate Feishu organization with a dedicated
 
 ## 2. Create a dedicated custom app
 
-Preferred agent-assisted flow, after explicit approval:
+Create the app in the browser, then build the isolated CLI image:
 
 ```bash
-lark-cli config init --new --name doc-ops-smoke
+npm run smoke:sandbox:build
 ```
 
-The operator must complete the browser flow while signed into the test tenant. The agent must relay the exact verification URL and a QR code, then stop until the operator confirms completion.
-
-If the app already exists, configure it locally without putting the secret in shell history:
+Configure the app only inside the container volume:
 
 ```bash
-read -s "SMOKE_APP_SECRET?Test app secret: "
-printf %s "$SMOKE_APP_SECRET" | lark-cli config init \
-  --app-id "<test-app-id>" \
-  --app-secret-stdin \
-  --brand feishu \
-  --name doc-ops-smoke
-unset SMOKE_APP_SECRET
+npm run smoke:sandbox:init
 ```
+
+The interactive prompt accepts the App ID and hides the App Secret. The secret is passed to container-local `lark-cli` through stdin and stored only in the named Docker volume `doc-ops-smoke-lark-config`. The host `~/.lark-cli` and Keychain are never mounted.
 
 Enable only the app permissions needed for the smoke lifecycle:
 
@@ -53,23 +48,25 @@ Publish and install the app in the test tenant. Add missing scopes incrementally
 Use a test-tenant user who can create Drive folders, documents, and Bases:
 
 ```bash
-lark-cli auth login \
-  --domain docs \
-  --domain drive \
-  --domain base \
-  --no-wait \
-  --json \
-  --profile doc-ops-smoke
+npm run smoke:sandbox:auth-login
 ```
 
-Generate a QR code from the returned verification URL and complete authorization in a later turn with `lark-cli auth login --device-code ...`. Do not poll in the same turn that presents the URL.
+Generate a QR code from the returned verification URL:
+
+```bash
+npm run smoke:sandbox:qrcode -- "<verification-url>"
+```
+
+Complete authorization in a later turn with the returned device code. Do not poll in the same turn that presents the URL:
+
+```bash
+npm run smoke:sandbox:auth-complete -- "<device-code>"
+```
 
 Verify the profile before any write:
 
 ```bash
-LARKSUITE_CLI_NO_UPDATE_NOTIFIER=1 \
-LARKSUITE_CLI_NO_SKILLS_NOTIFIER=1 \
-lark-cli auth status --json --verify --profile doc-ops-smoke
+npm run smoke:sandbox:status
 ```
 
 The verified user name and bot app name must both belong to the test tenant.
@@ -79,23 +76,21 @@ The verified user name and bot app name must both belong to the test tenant.
 After explicit creation approval, create one root folder as the test user:
 
 ```bash
-lark-cli drive +create-folder \
+npm run smoke:sandbox:lark -- drive +create-folder \
   --name "__DOC_OPS_SMOKE_ROOT_V1__" \
-  --as user \
-  --profile doc-ops-smoke
+  --as user
 ```
 
 Create one Base inside that folder. The schema deliberately resembles the fields exercised by API-reference and localization workflows while remaining synthetic:
 
 ```bash
-lark-cli base +base-create \
+npm run smoke:sandbox:lark -- base +base-create \
   --name "__DOC_OPS_SMOKE_INDEX_V1__" \
   --table-name "Cases" \
   --folder-token "<smoke-root-folder-token>" \
   --time-zone "Asia/Shanghai" \
   --fields '[{"type":"text","name":"Docs","style":{"type":"url"}},{"type":"text","name":"Case ID"},{"type":"text","name":"Run ID"},{"type":"select","name":"Progress","multiple":false,"options":[{"name":"WIP"},{"name":"Draft"}]},{"type":"select","name":"Type","multiple":false,"options":[{"name":"Smoke"}]},{"type":"select","name":"Skill","multiple":true,"options":[{"name":"procedure-code-sync"},{"name":"doc-code-verify"},{"name":"verified-doc-authoring"},{"name":"localized-doc-sync"},{"name":"api-reference-sync"}]},{"type":"text","name":"Corpus Version"},{"type":"text","name":"Expected Digest"},{"type":"checkbox","name":"Disposable"},{"type":"datetime","name":"Last Modified At","style":{"format":"yyyy-MM-dd HH:mm"}}]' \
-  --as user \
-  --profile doc-ops-smoke
+  --as user
 ```
 
 Capture the returned root folder token, Base token, and table ID locally. Do not send them through chat. Grant the test app access only to this folder and Base if bot-based adapters will perform the smoke writes.

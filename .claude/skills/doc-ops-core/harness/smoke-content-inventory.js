@@ -77,6 +77,10 @@ function findAudienceRegionClosing(lines, openingIndex, opening) {
   return -1;
 }
 
+function normalizeAudienceBody(body) {
+  return String(body || '').replace(/[ \t]+$/u, '');
+}
+
 function extractAudienceRegions(markdown) {
   const lines = withoutFixtureComment(markdown).split('\n');
   const regions = [];
@@ -107,7 +111,7 @@ function extractAudienceRegions(markdown) {
     const regionIndex = regions.length;
     const sentinel = `DOC_OPS_AUDIENCE_REGION_SENTINEL_${String(regionIndex).padStart(6, '0')}`;
     regions.push({
-      body: lines.slice(index + 1, closingIndex).join('\n'),
+      body: normalizeAudienceBody(lines.slice(index + 1, closingIndex).join('\n')),
       indentation: opening.indentation.length,
       marker: opening.marker,
       sentinel,
@@ -247,7 +251,7 @@ function inventoryMarkdown(markdown) {
     })),
     blocks,
     links,
-    schemaVersion: 2,
+    schemaVersion: 3,
   });
 }
 

@@ -403,6 +403,38 @@ test('Markdown inventory rejects moving an audience region out of its owning lis
   );
 });
 
+test('Markdown inventory tolerates Feishu terminal hard-break spaces before an audience closing marker', () => {
+  const source = [
+    '<include target="milvus">',
+    'The Milvus endpoint.',
+    '</include>',
+  ].join('\n');
+  const serialized = [
+    '&lt;include target="milvus"&gt;',
+    'The Milvus endpoint.  ',
+    '&lt;/include&gt;',
+  ].join('\n');
+
+  assert.equal(compare(source, serialized).ok, true);
+});
+
+test('Markdown inventory preserves hard-break semantics inside an audience region body', () => {
+  const hardBreak = [
+    '<include target="milvus">',
+    'First line.  ',
+    'Second line.',
+    '</include>',
+  ].join('\n');
+  const softBreak = [
+    '&lt;include target="milvus"&gt;',
+    'First line.',
+    'Second line.  ',
+    '&lt;/include&gt;',
+  ].join('\n');
+
+  assert.equal(compare(hardBreak, softBreak).ok, false);
+});
+
 test('Markdown inventory fails closed without allocating an unbounded diff matrix', () => {
   const expected = {
     blocks: Array.from({ length: 1_001 }, (_, index) => ({ kind: 'paragraph', text: `expected-${index}` })),

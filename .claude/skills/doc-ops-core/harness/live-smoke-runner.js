@@ -39,32 +39,60 @@ const DEFAULT_RECORD_READBACK_POLICY = Object.freeze({
   delayMs: 1000,
   maxAttempts: 6,
 });
-const RECORD_READBACK_LIMITS = Object.freeze({
+const DEFAULT_DOCUMENT_PATCH_READBACK_POLICY = Object.freeze({
+  delayMs: 1000,
+  maxAttempts: 6,
+});
+const READBACK_LIMITS = Object.freeze({
   maxAttempts: 10,
   maxDelayMs: 5000,
 });
 
-function normalizeRecordReadbackOptions(options) {
+function normalizeBoundedReadbackPolicy(options, { code, key, defaults, label }) {
   const policy = {
-    ...DEFAULT_RECORD_READBACK_POLICY,
-    ...(options.recordReadbackPolicy || {}),
+    ...defaults,
+    ...(options[key] || {}),
   };
   const validAttempts = Number.isSafeInteger(policy.maxAttempts)
     && policy.maxAttempts >= 1
-    && policy.maxAttempts <= RECORD_READBACK_LIMITS.maxAttempts;
+    && policy.maxAttempts <= READBACK_LIMITS.maxAttempts;
   const validDelay = Number.isSafeInteger(policy.delayMs)
     && policy.delayMs >= 0
-    && policy.delayMs <= RECORD_READBACK_LIMITS.maxDelayMs;
+    && policy.delayMs <= READBACK_LIMITS.maxDelayMs;
+  if (!validAttempts || !validDelay) {
+    throw new LiveSmokeError(
+      code,
+      `${label} must use bounded integer attempts and delay`,
+    );
+  }
+  return Object.freeze(policy);
+}
+
+function normalizeReadbackOptions(options) {
   const sleep = options.sleep === undefined
     ? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)))
     : options.sleep;
-  if (!validAttempts || !validDelay || typeof sleep !== 'function') {
+  if (typeof sleep !== 'function') {
     throw new LiveSmokeError(
       'SMOKE_RECORD_READBACK_POLICY_INVALID',
-      'record readback policy must use bounded integer attempts and delay with a callable sleep',
+      'readback policies require a callable sleep',
     );
   }
-  return { policy: Object.freeze(policy), sleep };
+  return {
+    documentPatchPolicy: normalizeBoundedReadbackPolicy(options, {
+      code: 'SMOKE_DOCUMENT_PATCH_READBACK_POLICY_INVALID',
+      defaults: DEFAULT_DOCUMENT_PATCH_READBACK_POLICY,
+      key: 'documentPatchReadbackPolicy',
+      label: 'document patch readback policy',
+    }),
+    recordPolicy: normalizeBoundedReadbackPolicy(options, {
+      code: 'SMOKE_RECORD_READBACK_POLICY_INVALID',
+      defaults: DEFAULT_RECORD_READBACK_POLICY,
+      key: 'recordReadbackPolicy',
+      label: 'record readback policy',
+    }),
+    sleep,
+  };
 }
 
 function extractJsonObjects(value) {
@@ -216,8 +244,9 @@ class LarkSandboxAdapter {
     if (typeof this.runLark !== 'function') {
       throw new LiveSmokeError('SMOKE_LIVE_COMMAND_RUNNER_REQUIRED', 'runLark is required');
     }
-    const readbackOptions = normalizeRecordReadbackOptions(options);
-    this.recordReadbackPolicy = readbackOptions.policy;
+    const readbackOptions = normalizeReadbackOptions(options);
+    this.documentPatchReadbackPolicy = readbackOptions.documentPatchPolicy;
+    this.recordReadbackPolicy = readbackOptions.recordPolicy;
     this.sleep = readbackOptions.sleep;
     this.identityVerified = false;
     this.fieldNames = null;
@@ -283,7 +312,7 @@ class LarkSandboxAdapter {
   }
 
   _verifyPatchArtifact(action, document) {
-    this._verifyLocalArtifacts(action, document);
+    const source = this._verifyLocalArtifacts(action, document);
     const patchContent = fs.readFileSync(path.join(this.corpusRoot, document.patchFile), 'utf8');
     if (digestSemantic(patchContent) !== action.patchDigest) {
       throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} patch changed after approval`);
@@ -297,7 +326,7 @@ class LarkSandboxAdapter {
     if (digestSemantic(document.patchOperations) !== action.patchOperationsDigest) {
       throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} patch operations changed after approval`);
     }
-    return { operations: document.patchOperations, patchContent };
+    return { operations: document.patchOperations, patchContent, source };
   }
 
   _inventoryDiagnostic(expectedContent, observedContent) {
@@ -311,6 +340,67 @@ class LarkSandboxAdapter {
       missingKinds: [...new Set(comparison.missing.map(item => item.kind))].sort(),
       unexpectedKinds: [...new Set(comparison.unexpected.map(item => item.kind))].sort(),
     };
+  }
+
+  _approvedPatchAction(document, context) {
+    const actionId = `doc:patch:${document.id}`;
+    const patchAction = (context.plan.patchBatch?.actions || [])
+      .find(action => action.actionId === actionId);
+    const journalPath = context.runDir && path.join(context.runDir, 'patch.journal.jsonl');
+    if (!patchAction || !journalPath || !fs.existsSync(journalPath)) return null;
+    let entries;
+    try {
+      entries = fs.readFileSync(journalPath, 'utf8').trim()
+        .split('\n').filter(Boolean).map(line => JSON.parse(line));
+    } catch (error) {
+      throw new LiveSmokeError(
+        'SMOKE_PATCH_APPROVAL_EVIDENCE_INVALID',
+        `${document.id} patch journal is not valid JSONL`,
+        { cause: error.message },
+      );
+    }
+    const approvedActionIds = new Set((context.plan.patchBatch.actions || [])
+      .map(action => action.actionId));
+    const invalidEntry = entries.some(entry => !entry
+      || typeof entry !== 'object'
+      || Array.isArray(entry)
+      || entry.batchDigest !== context.plan.patchBatch.batchDigest
+      || ((entry.type === 'prepared' || entry.type === 'observed' || entry.actionId !== undefined)
+        && !approvedActionIds.has(entry.actionId)));
+    if (invalidEntry) {
+      throw new LiveSmokeError(
+        'SMOKE_PATCH_APPROVAL_EVIDENCE_INVALID',
+        `${document.id} patch journal is not bound to the exact approved patch batch`,
+      );
+    }
+    const approvedAttempt = entries.some(entry => entry.type === 'prepared'
+      && entry.actionId === actionId
+      && entry.batchDigest === context.plan.patchBatch.batchDigest);
+    return approvedAttempt ? patchAction : null;
+  }
+
+  _documentCleanupContentMatchesApprovedState(document, documentState, content, context) {
+    if (digestSemantic(content) === documentState.contentDigest) return true;
+    const observedInventory = inventoryMarkdown(content);
+    if (documentState.creationInventoryDigest
+      && digestSemantic(observedInventory) === documentState.creationInventoryDigest) {
+      return true;
+    }
+    const patchAction = this._approvedPatchAction(document, context);
+    if (!patchAction) return false;
+    const { operations, source } = this._verifyPatchArtifact(patchAction, document);
+    let prefixContent = source;
+    for (const operation of operations) {
+      if (prefixContent.split(operation.before).length - 1 !== 1) {
+        throw new LiveSmokeError(
+          'SMOKE_PATCH_PREFIX_INVALID',
+          `${document.id} patch operation cannot produce one deterministic prefix`,
+        );
+      }
+      prefixContent = prefixContent.replace(operation.before, operation.after);
+      if (compareMarkdownInventory(inventoryMarkdown(prefixContent), observedInventory).ok) return true;
+    }
+    return false;
   }
 
   async _fetchDocument(documentToken) {
@@ -516,7 +606,7 @@ class LarkSandboxAdapter {
         .find(item => (item.token || item.file_token) === documentState.documentToken);
       if (!entry) return { status: 'verified', statePatch: { documents: { [document.id]: { deleted: true } } } };
       const fetched = await this._fetchDocument(documentState.documentToken);
-      return digestSemantic(fetched.content) === documentState.contentDigest
+      return this._documentCleanupContentMatchesApprovedState(document, documentState, fetched.content, context)
         ? { status: 'not_started' }
         : { status: 'divergent' };
     }
@@ -645,7 +735,7 @@ class LarkSandboxAdapter {
         throw new LiveSmokeError('SMOKE_CLEANUP_DEPENDENCY_FAILED', `${document.id} record must be deleted first`);
       }
       const fetched = await this._fetchDocument(documentState.documentToken);
-      if (digestSemantic(fetched.content) !== documentState.contentDigest) {
+      if (!this._documentCleanupContentMatchesApprovedState(document, documentState, fetched.content, context)) {
         throw new LiveSmokeError('SMOKE_DOCUMENT_PRECONDITION_DRIFT', `${document.id} changed after patch verification`);
       }
       const parentEntry = (await this._listFolder(context.state.folderToken))
@@ -780,20 +870,33 @@ class LarkSandboxAdapter {
           '--as', 'user',
           '--json',
         );
-        const envelope = await this.runLark(args, {
+        await this.runLark(args, {
           input: operation.type === 'block_insert_after' ? operation.content : operation.after,
         });
-        const update = envelope.data?.document || envelope.data || {};
-        revisionId = update.revision_id;
-        if (!Number.isInteger(revisionId)) {
-          throw new LiveSmokeError('SMOKE_DOCUMENT_PATCH_INVALID', `${document.id} patch returned no revision`);
+        const expectedFragment = operation.type === 'block_insert_after'
+          ? operation.expectedFragment
+          : operation.after;
+        let confirmed = null;
+        for (let attempt = 1; attempt <= this.documentPatchReadbackPolicy.maxAttempts; attempt += 1) {
+          const fetched = await this._fetchDocument(documentState.documentToken);
+          if (Number.isInteger(fetched.revisionId)
+            && fetched.revisionId > previousRevisionId
+            && fetched.content.includes(expectedFragment)) {
+            confirmed = fetched;
+            break;
+          }
+          if (attempt < this.documentPatchReadbackPolicy.maxAttempts) {
+            await this.sleep(this.documentPatchReadbackPolicy.delayMs);
+          }
         }
-        if (revisionId <= previousRevisionId) {
+        if (!confirmed) {
           throw new LiveSmokeError(
-            'SMOKE_DOCUMENT_PATCH_NOOP',
-            `${document.id} patch did not advance the document revision`,
+            'SMOKE_DOCUMENT_PATCH_READBACK_EXHAUSTED',
+            `${document.id} patch was not confirmed by exact document readback`,
+            { attempts: this.documentPatchReadbackPolicy.maxAttempts },
           );
         }
+        revisionId = confirmed.revisionId;
       }
       return {
         receipt: { operationCount: context.precondition.operations.length, patched: true },
@@ -1000,10 +1103,11 @@ class LarkSandboxAdapter {
       const inventoryDiagnostic = this._inventoryDiagnostic(patchContent, observed.content);
       if (inventoryDiagnostic) diagnostics.push(inventoryDiagnostic);
       if (!observed.parentVerified) diagnostics.push({ code: 'SMOKE_DOCUMENT_PARENT_MISMATCH' });
+      const ok = diagnostics.length === 0;
       return {
         diagnostics,
-        ok: diagnostics.length === 0,
-        statePatch: {
+        ok,
+        statePatch: ok ? {
           documents: {
             [document.id]: {
               contentDigest: digestSemantic(observed.content),
@@ -1011,7 +1115,7 @@ class LarkSandboxAdapter {
               revisionId: observed.revisionId,
             },
           },
-        },
+        } : undefined,
       };
     }
     if (action.actionId.startsWith('record:delete:')

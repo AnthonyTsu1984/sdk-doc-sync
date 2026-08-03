@@ -50,6 +50,24 @@ function withoutStandaloneIncludes(markdown) {
   );
 }
 
+function applyPatchPrefix(content, operations, count) {
+  let patched = content;
+  for (const operation of operations.slice(0, count)) {
+    assert.equal(patched.split(operation.before).length - 1, 1);
+    patched = patched.replace(operation.before, operation.after);
+  }
+  return patched;
+}
+
+function writeApprovedPatchAttempt(runDir, plan, actionId) {
+  fs.writeFileSync(path.join(runDir, 'patch.journal.jsonl'), `${JSON.stringify({
+    actionId,
+    batchDigest: plan.patchBatch.batchDigest,
+    schemaVersion: 1,
+    type: 'prepared',
+  })}\n`);
+}
+
 function fixturePlan() {
   return {
     runId: '20260802T120000Z-a1b2c3d4',
@@ -73,7 +91,7 @@ test('live smoke exposes a sandbox-only Lark adapter', () => {
   assert.equal(typeof liveSmoke.materializeCleanupBatch, 'function');
 });
 
-test('record readback policy rejects unbounded or nondeterministic settings before tenant access', () => {
+test('bounded readback policies reject unbounded or nondeterministic settings before tenant access', () => {
   let tenantCalls = 0;
   const baseOptions = {
     config: {},
@@ -101,6 +119,17 @@ test('record readback policy rejects unbounded or nondeterministic settings befo
       { code: 'SMOKE_RECORD_READBACK_POLICY_INVALID' },
     );
   }
+  for (const options of [
+    { documentPatchReadbackPolicy: { maxAttempts: 0 } },
+    { documentPatchReadbackPolicy: { maxAttempts: Number.POSITIVE_INFINITY } },
+    { documentPatchReadbackPolicy: { delayMs: -1 } },
+    { documentPatchReadbackPolicy: { delayMs: 5001 } },
+  ]) {
+    assert.throws(
+      () => new liveSmoke.LarkSandboxAdapter({ ...baseOptions, ...options }),
+      { code: 'SMOKE_DOCUMENT_PATCH_READBACK_POLICY_INVALID' },
+    );
+  }
   assert.equal(tenantCalls, 0);
 });
 
@@ -118,6 +147,22 @@ test('record readback policy is copied and frozen at adapter construction', () =
   policy.maxAttempts = 9;
   assert.deepEqual(adapter.recordReadbackPolicy, { delayMs: 0, maxAttempts: 2 });
   assert.equal(Object.isFrozen(adapter.recordReadbackPolicy), true);
+});
+
+test('document patch readback policy is copied and frozen at adapter construction', () => {
+  const policy = { delayMs: 0, maxAttempts: 2 };
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus: { documents: [] },
+    corpusRoot: '/tmp/not-used',
+    documentPatchReadbackPolicy: policy,
+    runLark: async () => { throw new Error('tenant must not be called'); },
+    sleep: async () => {},
+  });
+
+  policy.maxAttempts = 9;
+  assert.deepEqual(adapter.documentPatchReadbackPolicy, { delayMs: 0, maxAttempts: 2 });
+  assert.equal(Object.isFrozen(adapter.documentPatchReadbackPolicy), true);
 });
 
 test('sandbox output selection accepts the masked config profile object', () => {
@@ -258,6 +303,192 @@ test('recovery cleanup allows a created document with no Base record state', asy
   };
 
   assert.deepEqual(await adapter.precondition(action, context), { documentToken: 'doc_test_only' });
+});
+
+test('document cleanup accepts an approval-bound intermediate patch inventory', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const source = fs.readFileSync(path.join(CORPUS_ROOT, document.file), 'utf8');
+  const intermediate = applyPatchPrefix(source, document.patchOperations, 1);
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-cleanup-patch-prefix-'));
+  writeApprovedPatchAttempt(runDir, plan, `doc:patch:${document.id}`);
+  const runLark = async args => {
+    if (args[0] === 'auth') {
+      return {
+        identity: 'user',
+        verified: true,
+        identities: { user: { openId: 'ou_test_only', tokenStatus: 'valid' } },
+      };
+    }
+    if (args[0] === 'config') return { appId: 'cli_test_only', profile: 'doc-ops-smoke' };
+    if (args[0] === 'docs' && args[1] === '+fetch') {
+      return { ok: true, data: { document: { content: intermediate, document_id: 'doc_test_only', revision_id: 4 } } };
+    }
+    if (args[0] === 'drive' && args[1] === 'files') {
+      return { ok: true, data: { files: [{ name: document.title, token: 'doc_test_only', type: 'docx' }] } };
+    }
+    throw new Error(`unexpected command: ${args.join(' ')}`);
+  };
+  const adapter = new liveSmoke.LarkSandboxAdapter({ config, corpus, corpusRoot: CORPUS_ROOT, runLark });
+  const action = {
+    actionId: `doc:delete:${document.id}`,
+    identityFingerprint: config.identityFingerprint,
+    target: 'docx-token:doc_test_only',
+  };
+  const context = {
+    plan,
+    runDir,
+    state: {
+      documents: {
+        [document.id]: {
+          contentDigest: digestSemantic(source),
+          creationInventoryDigest: digestSemantic(inventoryMarkdown(source)),
+          documentToken: 'doc_test_only',
+          revisionId: 3,
+        },
+      },
+      folderToken: 'fld_test_only',
+      records: { [document.id]: { deleted: true, recordId: 'rec_test_only' } },
+    },
+  };
+
+  assert.deepEqual(await adapter.precondition(action, context), { documentToken: 'doc_test_only' });
+  assert.deepEqual(await adapter.reconcileCleanup(action, context), { status: 'not_started' });
+});
+
+test('document cleanup rejects a mixed-digest patch approval journal', () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-cleanup-mixed-patch-journal-'));
+  fs.writeFileSync(path.join(runDir, 'patch.journal.jsonl'), [
+    {
+      actionId: `doc:patch:${document.id}`,
+      batchDigest: plan.patchBatch.batchDigest,
+      schemaVersion: 1,
+      type: 'prepared',
+    },
+    {
+      actionId: `doc:patch:${document.id}`,
+      batchDigest: 'sha256:'.padEnd(71, 'f'),
+      schemaVersion: 1,
+      type: 'observed',
+    },
+  ].map(entry => JSON.stringify(entry)).join('\n') + '\n');
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async () => { throw new Error('tenant must not be called'); },
+  });
+
+  assert.throws(
+    () => adapter._approvedPatchAction(document, { plan, runDir }),
+    { code: 'SMOKE_PATCH_APPROVAL_EVIDENCE_INVALID' },
+  );
+});
+
+test('document cleanup rejects unrelated drift outside approval-bound patch prefixes', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const source = fs.readFileSync(path.join(CORPUS_ROOT, document.file), 'utf8');
+  const drifted = `${applyPatchPrefix(source, document.patchOperations, 1)}\n\nUnapproved drift.`;
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-cleanup-patch-drift-'));
+  writeApprovedPatchAttempt(runDir, plan, `doc:patch:${document.id}`);
+  const runLark = async args => {
+    if (args[0] === 'auth') {
+      return {
+        identity: 'user',
+        verified: true,
+        identities: { user: { openId: 'ou_test_only', tokenStatus: 'valid' } },
+      };
+    }
+    if (args[0] === 'config') return { appId: 'cli_test_only', profile: 'doc-ops-smoke' };
+    if (args[0] === 'docs' && args[1] === '+fetch') {
+      return { ok: true, data: { document: { content: drifted, document_id: 'doc_test_only', revision_id: 4 } } };
+    }
+    if (args[0] === 'drive' && args[1] === 'files') {
+      return { ok: true, data: { files: [{ name: document.title, token: 'doc_test_only', type: 'docx' }] } };
+    }
+    throw new Error(`unexpected command: ${args.join(' ')}`);
+  };
+  const adapter = new liveSmoke.LarkSandboxAdapter({ config, corpus, corpusRoot: CORPUS_ROOT, runLark });
+  const action = {
+    actionId: `doc:delete:${document.id}`,
+    identityFingerprint: config.identityFingerprint,
+    target: 'docx-token:doc_test_only',
+  };
+  const context = {
+    plan,
+    runDir,
+    state: {
+      documents: {
+        [document.id]: {
+          contentDigest: digestSemantic(source),
+          creationInventoryDigest: digestSemantic(inventoryMarkdown(source)),
+          documentToken: 'doc_test_only',
+          revisionId: 3,
+        },
+      },
+      folderToken: 'fld_test_only',
+      records: { [document.id]: { deleted: true, recordId: 'rec_test_only' } },
+    },
+  };
+
+  await assert.rejects(adapter.precondition(action, context), { code: 'SMOKE_DOCUMENT_PRECONDITION_DRIFT' });
+  assert.deepEqual(await adapter.reconcileCleanup(action, context), { status: 'divergent' });
+});
+
+test('failed patch verification cannot promote drift into cleanup trusted state', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const source = fs.readFileSync(path.join(CORPUS_ROOT, document.file), 'utf8');
+  const drifted = `${applyPatchPrefix(source, document.patchOperations, 1)}\n\nUNAPPROVED DRIFT`;
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-cleanup-failed-patch-verify-'));
+  writeApprovedPatchAttempt(runDir, plan, `doc:patch:${document.id}`);
+  const runLark = async args => {
+    if (args[0] === 'auth') {
+      return {
+        identity: 'user',
+        verified: true,
+        identities: { user: { openId: 'ou_test_only', tokenStatus: 'valid' } },
+      };
+    }
+    if (args[0] === 'config') return { appId: 'cli_test_only', profile: 'doc-ops-smoke' };
+    if (args[0] === 'docs' && args[1] === '+fetch') {
+      return { ok: true, data: { document: { content: drifted, document_id: 'doc_test_only', revision_id: 4 } } };
+    }
+    if (args[0] === 'drive' && args[1] === 'files') {
+      return { ok: true, data: { files: [{ name: document.title, token: 'doc_test_only', type: 'docx' }] } };
+    }
+    throw new Error(`unexpected command: ${args.join(' ')}`);
+  };
+  const adapter = new liveSmoke.LarkSandboxAdapter({ config, corpus, corpusRoot: CORPUS_ROOT, runLark });
+  const state = {
+    documents: {
+      [document.id]: {
+        contentDigest: digestSemantic(source),
+        creationInventoryDigest: digestSemantic(inventoryMarkdown(source)),
+        documentToken: 'doc_test_only',
+        revisionId: 3,
+      },
+    },
+    folderToken: 'fld_test_only',
+    records: { [document.id]: { deleted: true, recordId: 'rec_test_only' } },
+  };
+  const patchAction = plan.patchBatch.actions
+    .find(item => item.actionId === `doc:patch:${document.id}`);
+  const verification = await adapter.verify(patchAction, {
+    mutationResult: {},
+    observed: { content: drifted, parentVerified: true, revisionId: 4 },
+  }, { plan, runDir, state });
+  assert.equal(verification.ok, false);
+  assert.equal(verification.diagnostics.some(item => item.code === 'SMOKE_CONTENT_INVENTORY_MISMATCH'), true);
+  liveSmoke.mergeStatePatch(state, verification.statePatch);
+  const cleanupAction = {
+    actionId: `doc:delete:${document.id}`,
+    identityFingerprint: config.identityFingerprint,
+    target: 'docx-token:doc_test_only',
+  };
+  const context = { plan, runDir, state };
+
+  await assert.rejects(adapter.precondition(cleanupAction, context), { code: 'SMOKE_DOCUMENT_PRECONDITION_DRIFT' });
+  assert.deepEqual(await adapter.reconcileCleanup(cleanupAction, context), { status: 'divergent' });
 });
 
 test('Base record search normalizes the CLI tabular JSON envelope', async () => {
@@ -1015,26 +1246,100 @@ test('patch verification fails closed when complete patchFile inventory loses bo
   );
 });
 
-test('patch mutation rejects a successful response that does not advance the revision', async () => {
+test('patch mutation confirms a stale update response through exact readback without repeating the write', async () => {
+  let fetchCalls = 0;
   let updateCalls = 0;
+  const delays = [];
   const adapter = new liveSmoke.LarkSandboxAdapter({
     config: {},
     corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
     corpusRoot: '/tmp/not-used',
+    documentPatchReadbackPolicy: { delayMs: 7, maxAttempts: 3 },
     runLark: async args => {
-      assert.deepEqual(args.slice(0, 2), ['docs', '+update']);
-      updateCalls += 1;
-      return {
-        ok: true,
-        identity: 'user',
-        data: {
-          document: { new_blocks: [], revision_id: 3 },
-          result: 'success',
-          updated_blocks_count: 0,
-          warnings: [],
-        },
-      };
+      if (args[0] === 'docs' && args[1] === '+update') {
+        updateCalls += 1;
+        return {
+          ok: true,
+          identity: 'user',
+          data: {
+            document: { new_blocks: [], revision_id: 3 },
+            result: 'success',
+            updated_blocks_count: 0,
+            warnings: [],
+          },
+        };
+      }
+      if (args[0] === 'docs' && args[1] === '+fetch') {
+        fetchCalls += 1;
+        const applied = fetchCalls >= 2;
+        return {
+          ok: true,
+          identity: 'user',
+          data: {
+            document: {
+              content: applied ? '新内容' : '旧内容',
+              document_id: 'doc_test_only',
+              revision_id: applied ? 4 : 3,
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected command: ${args.join(' ')}`);
     },
+    sleep: async milliseconds => { delays.push(milliseconds); },
+  });
+  const action = { actionId: 'doc:patch:fixture' };
+  const context = {
+    plan: { runId: '20260802T120000Z-a1b2c3d4' },
+    precondition: {
+      operations: [{ after: '新内容', before: '旧内容', contentFormat: 'xml', type: 'str_replace' }],
+      revisionId: 3,
+    },
+    state: { documents: { fixture: { documentToken: 'doc_test_only' } } },
+  };
+
+  const mutation = await adapter.mutate(action, context);
+
+  assert.deepEqual(mutation.statePatch, { documents: { fixture: { revisionId: 4 } } });
+  assert.equal(updateCalls, 1);
+  assert.equal(fetchCalls, 2);
+  assert.deepEqual(delays, [7]);
+});
+
+test('patch mutation fails closed after bounded exact readbacks remain stale', async () => {
+  let fetchCalls = 0;
+  let updateCalls = 0;
+  const delays = [];
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    documentPatchReadbackPolicy: { delayMs: 11, maxAttempts: 3 },
+    runLark: async args => {
+      if (args[0] === 'docs' && args[1] === '+update') {
+        updateCalls += 1;
+        return {
+          ok: true,
+          identity: 'user',
+          data: {
+            document: { new_blocks: [], revision_id: 3 },
+            result: 'success',
+            updated_blocks_count: 0,
+            warnings: [],
+          },
+        };
+      }
+      if (args[0] === 'docs' && args[1] === '+fetch') {
+        fetchCalls += 1;
+        return {
+          ok: true,
+          identity: 'user',
+          data: { document: { content: '旧内容', document_id: 'doc_test_only', revision_id: 3 } },
+        };
+      }
+      throw new Error(`unexpected command: ${args.join(' ')}`);
+    },
+    sleep: async milliseconds => { delays.push(milliseconds); },
   });
   const action = { actionId: 'doc:patch:fixture' };
   const context = {
@@ -1048,9 +1353,12 @@ test('patch mutation rejects a successful response that does not advance the rev
 
   await assert.rejects(
     adapter.mutate(action, context),
-    error => error?.code === 'SMOKE_DOCUMENT_PATCH_NOOP',
+    error => error?.code === 'SMOKE_DOCUMENT_PATCH_READBACK_EXHAUSTED'
+      && error?.details?.attempts === 3,
   );
   assert.equal(updateCalls, 1);
+  assert.equal(fetchCalls, 3);
+  assert.deepEqual(delays, [11, 11]);
 });
 
 test('localized inline patch uses the approval-bound XML content format', async () => {
@@ -1063,18 +1371,34 @@ test('localized inline patch uses the approval-bound XML content format', async 
     corpus,
     corpusRoot: CORPUS_ROOT,
     runLark: async (args, options) => {
-      updateArgs = args;
-      updateInput = options.input;
-      return {
-        ok: true,
-        identity: 'user',
-        data: {
-          document: { new_blocks: [], revision_id: 4 },
-          result: 'success',
-          updated_blocks_count: 1,
-          warnings: [],
-        },
-      };
+      if (args[0] === 'docs' && args[1] === '+update') {
+        updateArgs = args;
+        updateInput = options.input;
+        return {
+          ok: true,
+          identity: 'user',
+          data: {
+            document: { new_blocks: [], revision_id: 4 },
+            result: 'success',
+            updated_blocks_count: 1,
+            warnings: [],
+          },
+        };
+      }
+      if (args[0] === 'docs' && args[1] === '+fetch') {
+        return {
+          ok: true,
+          identity: 'user',
+          data: {
+            document: {
+              content: document.patchOperations[0].after,
+              document_id: 'doc_test_only',
+              revision_id: 4,
+            },
+          },
+        };
+      }
+      throw new Error(`unexpected command: ${args.join(' ')}`);
     },
   });
   const action = { actionId: 'doc:patch:localized-target-zh' };

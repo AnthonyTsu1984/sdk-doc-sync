@@ -35,6 +35,38 @@ const PHASES = Object.freeze({
   'recovery-cleanup': 'recoveryCleanupBatch',
 });
 
+const DEFAULT_RECORD_READBACK_POLICY = Object.freeze({
+  delayMs: 1000,
+  maxAttempts: 6,
+});
+const RECORD_READBACK_LIMITS = Object.freeze({
+  maxAttempts: 10,
+  maxDelayMs: 5000,
+});
+
+function normalizeRecordReadbackOptions(options) {
+  const policy = {
+    ...DEFAULT_RECORD_READBACK_POLICY,
+    ...(options.recordReadbackPolicy || {}),
+  };
+  const validAttempts = Number.isSafeInteger(policy.maxAttempts)
+    && policy.maxAttempts >= 1
+    && policy.maxAttempts <= RECORD_READBACK_LIMITS.maxAttempts;
+  const validDelay = Number.isSafeInteger(policy.delayMs)
+    && policy.delayMs >= 0
+    && policy.delayMs <= RECORD_READBACK_LIMITS.maxDelayMs;
+  const sleep = options.sleep === undefined
+    ? (milliseconds => new Promise(resolve => setTimeout(resolve, milliseconds)))
+    : options.sleep;
+  if (!validAttempts || !validDelay || typeof sleep !== 'function') {
+    throw new LiveSmokeError(
+      'SMOKE_RECORD_READBACK_POLICY_INVALID',
+      'record readback policy must use bounded integer attempts and delay with a callable sleep',
+    );
+  }
+  return { policy: Object.freeze(policy), sleep };
+}
+
 function extractJsonObjects(value) {
   const text = String(value || '');
   const objects = [];
@@ -103,6 +135,13 @@ function documentTokenFromDocsCell(value) {
 function isRecordTombstone(record) {
   const fields = record?.fields || {};
   return !record || (!fields['Case ID'] && !fields['Run ID'] && !fields.Docs);
+}
+
+function recordMatchesCreation(record, { documentId, documentToken, runId }) {
+  return Boolean(record)
+    && record.fields?.['Case ID'] === documentId
+    && record.fields?.['Run ID'] === runId
+    && documentTokenFromDocsCell(record.fields?.Docs) === documentToken;
 }
 
 function decodeXmlText(value) {
@@ -177,6 +216,9 @@ class LarkSandboxAdapter {
     if (typeof this.runLark !== 'function') {
       throw new LiveSmokeError('SMOKE_LIVE_COMMAND_RUNNER_REQUIRED', 'runLark is required');
     }
+    const readbackOptions = normalizeRecordReadbackOptions(options);
+    this.recordReadbackPolicy = readbackOptions.policy;
+    this.sleep = readbackOptions.sleep;
     this.identityVerified = false;
     this.fieldNames = null;
   }
@@ -823,8 +865,25 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('record:create:')) {
       const document = this._document(action);
       const recordId = context.state.records?.[document.id]?.recordId;
-      const record = await this._getRecord(recordId);
-      return { record: record || null };
+      const expected = {
+        documentId: document.id,
+        documentToken: context.state.documents?.[document.id]?.documentToken,
+        runId: context.plan.runId,
+      };
+      let record = null;
+      for (let attempt = 1; attempt <= this.recordReadbackPolicy.maxAttempts; attempt += 1) {
+        record = await this._getRecord(recordId);
+        if (recordMatchesCreation(record, expected)) {
+          return { readback: { attempts: attempt, exhausted: false }, record };
+        }
+        if (attempt < this.recordReadbackPolicy.maxAttempts) {
+          await this.sleep(this.recordReadbackPolicy.delayMs);
+        }
+      }
+      return {
+        readback: { attempts: this.recordReadbackPolicy.maxAttempts, exhausted: true },
+        record: record || null,
+      };
     }
     if (action.actionId.startsWith('doc:patch:')) {
       const document = this._document(action);
@@ -901,6 +960,9 @@ class LarkSandboxAdapter {
       const document = this._document(action);
       const record = observed.record;
       const diagnostics = [];
+      if (observed.readback?.exhausted === true) {
+        diagnostics.push({ attempts: observed.readback.attempts, code: 'SMOKE_RECORD_READBACK_EXHAUSTED' });
+      }
       if (!record) diagnostics.push({ code: 'SMOKE_RECORD_MISSING' });
       if (record && record.fields?.['Case ID'] !== document.id) diagnostics.push({ code: 'SMOKE_RECORD_CASE_MISMATCH' });
       if (record && record.fields?.['Run ID'] !== context.plan.runId) diagnostics.push({ code: 'SMOKE_RECORD_RUN_MISMATCH' });

@@ -73,6 +73,53 @@ test('live smoke exposes a sandbox-only Lark adapter', () => {
   assert.equal(typeof liveSmoke.materializeCleanupBatch, 'function');
 });
 
+test('record readback policy rejects unbounded or nondeterministic settings before tenant access', () => {
+  let tenantCalls = 0;
+  const baseOptions = {
+    config: {},
+    corpus: { documents: [] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async () => { tenantCalls += 1; },
+  };
+  const invalidOptions = [
+    { recordReadbackPolicy: { maxAttempts: 0 } },
+    { recordReadbackPolicy: { maxAttempts: -1 } },
+    { recordReadbackPolicy: { maxAttempts: 1.5 } },
+    { recordReadbackPolicy: { maxAttempts: Number.NaN } },
+    { recordReadbackPolicy: { maxAttempts: Number.POSITIVE_INFINITY } },
+    { recordReadbackPolicy: { maxAttempts: 11 } },
+    { recordReadbackPolicy: { delayMs: -1 } },
+    { recordReadbackPolicy: { delayMs: 1.5 } },
+    { recordReadbackPolicy: { delayMs: Number.POSITIVE_INFINITY } },
+    { recordReadbackPolicy: { delayMs: 5001 } },
+    { sleep: 'not-a-function' },
+  ];
+
+  for (const options of invalidOptions) {
+    assert.throws(
+      () => new liveSmoke.LarkSandboxAdapter({ ...baseOptions, ...options }),
+      { code: 'SMOKE_RECORD_READBACK_POLICY_INVALID' },
+    );
+  }
+  assert.equal(tenantCalls, 0);
+});
+
+test('record readback policy is copied and frozen at adapter construction', () => {
+  const policy = { delayMs: 0, maxAttempts: 2 };
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus: { documents: [] },
+    corpusRoot: '/tmp/not-used',
+    recordReadbackPolicy: policy,
+    runLark: async () => { throw new Error('tenant must not be called'); },
+    sleep: async () => {},
+  });
+
+  policy.maxAttempts = 9;
+  assert.deepEqual(adapter.recordReadbackPolicy, { delayMs: 0, maxAttempts: 2 });
+  assert.equal(Object.isFrozen(adapter.recordReadbackPolicy), true);
+});
+
 test('sandbox output selection accepts the masked config profile object', () => {
   const profile = {
     appId: 'cli_test_only',
@@ -324,6 +371,164 @@ test('record verification binds supported Docs cell shapes to the exact document
       ok: false,
     });
   }
+});
+
+function recordCreationReadbackFixture(recordReads, { maxAttempts = 3, delayMs = 7 } = {}) {
+  const runId = '20260802T120000Z-a1b2c3d4';
+  const documentToken = 'doc_test_only';
+  const recordId = 'rec_test_only';
+  const correctRecord = {
+    fields: {
+      'Case ID': 'fixture',
+      'Run ID': runId,
+      Docs: `https://smoke.invalid/docx/${documentToken}`,
+    },
+    record_id: recordId,
+  };
+  let mutationCalls = 0;
+  let recordGetCalls = 0;
+  const delays = [];
+  const envelopeFor = record => ({
+    ok: true,
+    data: {
+      data: record ? [{ 0: record.fields.Docs, 1: record.fields['Case ID'], 2: record.fields['Run ID'] }] : [],
+      field_id_list: ['Docs', 'Case ID', 'Run ID'],
+      fields: ['Docs', 'Case ID', 'Run ID'],
+      has_more: false,
+      record_id_list: record ? [record.record_id] : [],
+    },
+  });
+  const runLark = async args => {
+    if (args[0] === 'base' && args[1] === '+record-batch-create') {
+      mutationCalls += 1;
+      return {
+        ok: true,
+        data: {
+          record_id_list: [recordId],
+          records: [correctRecord],
+        },
+      };
+    }
+    if (args[0] === 'base' && args[1] === '+record-get') {
+      const index = Math.min(recordGetCalls, recordReads.length - 1);
+      recordGetCalls += 1;
+      return envelopeFor(recordReads[index]);
+    }
+    throw new Error(`unexpected command: ${args.join(' ')}`);
+  };
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: { baseToken: 'base_test_only', tableId: 'tbl_test_only' },
+    corpus: {
+      corpusId: 'doc-ops-smoke-v1',
+      documents: [{ id: 'fixture', title: 'Fixture' }],
+    },
+    corpusRoot: '/tmp/not-used',
+    recordReadbackPolicy: { delayMs, maxAttempts },
+    runLark,
+    sleep: async milliseconds => { delays.push(milliseconds); },
+  });
+  const action = {
+    actionId: 'record:create:fixture',
+    coveredSkill: 'fixture-skill',
+    sourceDigest: 'sha256:'.padEnd(71, 'a'),
+  };
+  const context = {
+    plan: { runId },
+    state: {
+      documents: {
+        fixture: {
+          documentToken,
+          url: `https://smoke.invalid/docx/${documentToken}`,
+        },
+      },
+      records: {},
+    },
+  };
+  return {
+    action,
+    adapter,
+    context,
+    correctRecord,
+    counts: () => ({ delays: [...delays], mutationCalls, recordGetCalls }),
+  };
+}
+
+test('record creation polls an exact read after a stale first read without repeating the mutation', async () => {
+  const staleRecord = { fields: {}, record_id: 'rec_test_only' };
+  const reads = [staleRecord, {
+    fields: {
+      'Case ID': 'fixture',
+      'Run ID': '20260802T120000Z-a1b2c3d4',
+      Docs: { link: 'https://smoke.invalid/docx/doc_test_only' },
+    },
+    record_id: 'rec_test_only',
+  }];
+  const exactFixture = recordCreationReadbackFixture(reads);
+
+  const mutation = await exactFixture.adapter.mutate(exactFixture.action, exactFixture.context);
+  exactFixture.context.state.records = mutation.statePatch.records;
+  const observed = await exactFixture.adapter.refetch(exactFixture.action, mutation, exactFixture.context);
+  const verification = await exactFixture.adapter.verify(
+    exactFixture.action,
+    { mutationResult: mutation, observed },
+    exactFixture.context,
+  );
+
+  assert.deepEqual(verification, { diagnostics: [], ok: true });
+  assert.deepEqual(exactFixture.counts(), { delays: [7], mutationCalls: 1, recordGetCalls: 2 });
+});
+
+test('record creation fails closed after the exact bounded count when every read is stale', async () => {
+  const staleRecord = { fields: {}, record_id: 'rec_test_only' };
+  const fixture = recordCreationReadbackFixture([staleRecord], { delayMs: 11, maxAttempts: 3 });
+
+  const mutation = await fixture.adapter.mutate(fixture.action, fixture.context);
+  fixture.context.state.records = mutation.statePatch.records;
+  const observed = await fixture.adapter.refetch(fixture.action, mutation, fixture.context);
+  const verification = await fixture.adapter.verify(
+    fixture.action,
+    { mutationResult: mutation, observed },
+    fixture.context,
+  );
+
+  assert.equal(verification.ok, false);
+  assert.deepEqual(verification.diagnostics, [
+    { attempts: 3, code: 'SMOKE_RECORD_READBACK_EXHAUSTED' },
+    { code: 'SMOKE_RECORD_CASE_MISMATCH' },
+    { code: 'SMOKE_RECORD_RUN_MISMATCH' },
+    { code: 'SMOKE_RECORD_LINK_MISMATCH' },
+  ]);
+  assert.deepEqual(fixture.counts(), { delays: [11, 11], mutationCalls: 1, recordGetCalls: 3 });
+});
+
+test('record creation does not accept stable but incorrect readback values', async () => {
+  const wrongRecord = {
+    fields: {
+      'Case ID': 'wrong-case',
+      'Run ID': '20260802T120000Z-a1b2c3d4',
+      Docs: 'https://smoke.invalid/docx/doc_test_only',
+    },
+    record_id: 'rec_test_only',
+  };
+  const fixture = recordCreationReadbackFixture([wrongRecord], { delayMs: 5, maxAttempts: 2 });
+
+  const mutation = await fixture.adapter.mutate(fixture.action, fixture.context);
+  fixture.context.state.records = mutation.statePatch.records;
+  const observed = await fixture.adapter.refetch(fixture.action, mutation, fixture.context);
+  const verification = await fixture.adapter.verify(
+    fixture.action,
+    { mutationResult: mutation, observed },
+    fixture.context,
+  );
+
+  assert.deepEqual(verification, {
+    diagnostics: [
+      { attempts: 2, code: 'SMOKE_RECORD_READBACK_EXHAUSTED' },
+      { code: 'SMOKE_RECORD_CASE_MISMATCH' },
+    ],
+    ok: false,
+  });
+  assert.deepEqual(fixture.counts(), { delays: [5], mutationCalls: 1, recordGetCalls: 2 });
 });
 
 test('record recovery treats an exact-ID tombstone outside search as a verified delete', async () => {

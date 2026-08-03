@@ -4,7 +4,6 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const crypto = require('crypto');
 const { spawnSync } = require('child_process');
 
 const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
@@ -19,6 +18,11 @@ require('dotenv').config({ path: path.join(SDK_ROOT, '.env'), quiet: true });
 const BitableWriter = require(path.join(SDK_ROOT, 'src/sdk-doc-sync/bitable-writer'));
 const MarkdownToFeishu = require(path.join(SDK_ROOT, 'src/markdown-to-feishu'));
 const { createScenarioShimContext } = require('./scenario-shims');
+const {
+    codeHash,
+    extractMarkdownCodeSnippets,
+    normalizeCodeLanguage,
+} = require(path.join(DOC_OPS_CORE, 'src/markdown-code-snippets'));
 const { createResult } = require(path.join(DOC_OPS_CORE, 'src/result-contract'));
 
 const DEFAULT_REPORT = '/tmp/feishu-code-verify-report.json';
@@ -204,31 +208,6 @@ Controls:
 `);
 }
 
-function normalizeLang(lang) {
-    const v = String(lang || 'plaintext').trim().toLowerCase();
-    const map = {
-        py: 'python',
-        python3: 'python',
-        js: 'javascript',
-        node: 'javascript',
-        nodejs: 'javascript',
-        ts: 'typescript',
-        sh: 'bash',
-        shell: 'bash',
-        zsh: 'bash',
-        cplusplus: 'cpp',
-        'c++': 'cpp',
-        yml: 'yaml',
-        plaintext: 'text',
-        plain: 'text',
-    };
-    return map[v] || v;
-}
-
-function sha(text) {
-    return crypto.createHash('sha256').update(text).digest('hex').slice(0, 12);
-}
-
 function redact(text) {
     return String(text || '')
         .replace(/(api[_-]?key|token|secret|password|credential)(["'\s:=]+)[A-Za-z0-9._\-+/=]{8,}/gi, '$1$2[REDACTED]')
@@ -277,7 +256,7 @@ function blockTitle(block) {
 }
 
 function codeFromBlock(block) {
-    const lang = normalizeLang(LANG_ID[block.code?.style?.language] || 'text');
+    const lang = normalizeCodeLanguage(LANG_ID[block.code?.style?.language] || 'text');
     const code = textFromElements(block.code?.elements);
     return { lang, code };
 }
@@ -327,34 +306,14 @@ function extractFromFeishuBlocks(blocks, source) {
 }
 
 function extractFromMarkdown(markdown, source) {
-    const snippets = [];
-    const headingStack = [];
-    const fence = /(^|\n)(`{3,}|~{3,})([^\n`]*)\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/g;
-    let match;
-
-    while ((match = fence.exec(markdown)) !== null) {
-        const before = markdown.slice(0, match.index);
-        const headings = [...before.matchAll(/^#{1,6}\s+(.+?)\s*(?:\{#[^}]+\})?\s*$/gm)];
-        headingStack.length = 0;
-        for (const h of headings) {
-            const raw = h[0];
-            const level = raw.match(/^#+/)[0].length;
-            headingStack[level - 1] = h[1].replace(/\{#[^}]+\}/g, '').trim();
-            headingStack.length = level;
-        }
-
-        const info = match[3].trim().split(/\s+/)[0];
-        snippets.push(makeSnippet({
-            source,
-            lang: normalizeLang(info || 'text'),
-            code: match[4],
-            section: headingStack.filter(Boolean).join(' > ') || '(root)',
-            blockId: null,
-            index: snippets.length + 1,
-        }));
-    }
-
-    return snippets;
+    return extractMarkdownCodeSnippets(markdown).map(snippet => makeSnippet({
+        source,
+        lang: snippet.language,
+        code: snippet.code,
+        section: snippet.section,
+        blockId: null,
+        index: snippet.index,
+    }));
 }
 
 function parseAnnotations(code) {
@@ -388,9 +347,9 @@ function makeSnippet({ source, lang, code, section, blockId, index }) {
         index,
         blockId,
         section,
-        language: normalizeLang(lang),
+        language: normalizeCodeLanguage(lang),
         code,
-        hash: sha(code),
+        hash: codeHash(code),
         annotations,
     };
 }

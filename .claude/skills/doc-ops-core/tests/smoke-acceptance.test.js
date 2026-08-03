@@ -2,6 +2,7 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const path = require('node:path');
 
 const { createActionBatch } = require('../src/action-batch');
@@ -68,6 +69,14 @@ function journal(batchValue) {
 }
 
 function fixture() {
+  const verificationCode = [
+    '#include <vector>',
+    '',
+    'int size() {',
+    '    std::vector<int> values{1, 2, 3};',
+    '    return static_cast<int>(values.size());',
+    '}',
+  ].join('\n');
   const contents = {
     'api-reference-roundtrip': [
       '## createCollection()',
@@ -122,9 +131,16 @@ function fixture() {
     ].join('\n'),
     'verification-only': [
       '## Raw block',
-      '#include <vector>',
-      'int size() {',
+      '',
+      '```cpp',
+      verificationCode,
+      '```',
+      '',
       'Expected check: compiler `-fsyntax-only`; no network and no write-back.',
+      '',
+      '## Scenario',
+      '',
+      'The scenario wrapper supplies a `main()` function separately and reports raw-block evidence independently from scenario evidence.',
     ].join('\n'),
   };
   const readback = {
@@ -150,6 +166,7 @@ function fixture() {
     corpusId: 'doc-ops-smoke-v1',
     documents: DOCUMENTS.map(([id]) => ({
       id,
+      ...(id === 'verification-only' ? { file: 'documents/verification-only.md' } : {}),
       ...(id === 'api-reference-roundtrip' ? {
         file: 'documents/api-reference-roundtrip.md',
         patchFile: 'patches/api-reference-roundtrip.md',
@@ -193,7 +210,33 @@ function fixture() {
   const verifierReport = {
     contract: verifierContract,
     liveVerification: { enabledThisRun: false, requested: false },
-    summary: { failed: 0, manual: 0, passed: 1, skipped: 0, snippets: 1 },
+    summary: {
+      failed: 0,
+      manual: 0,
+      manualUncovered: 0,
+      passed: 1,
+      skipped: 0,
+      snippets: 1,
+      sources: 1,
+    },
+    results: [{
+      id: 'verification-only.md:1',
+      source: {
+        type: 'markdown',
+        title: 'verification-only.md',
+        path: path.join('/synthetic/corpus', 'documents/verification-only.md'),
+      },
+      index: 1,
+      blockId: null,
+      section: 'Raw block',
+      language: 'cpp',
+      hash: crypto.createHash('sha256').update(verificationCode).digest('hex').slice(0, 12),
+      classification: { action: 'compile', reason: 'default compile check', safetyFlags: [] },
+      verification: {
+        status: 'passed',
+        harness: { type: 'cpp-translation-unit', strength: 'compile' },
+      },
+    }],
   };
   return {
     corpus,
@@ -251,6 +294,77 @@ test('acceptance artifacts fail closed when a source document drifts after the a
   assert.equal(result.status, 'FAILED');
   assert.equal(result.exitCode, 1);
   assert.ok(result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_CONTENT_DRIFT'));
+});
+
+test('doc-code-verify acceptance rejects an unbound result despite a valid summary', () => {
+  const cases = [
+    ['source', report => { report.results[0].source.path = '/synthetic/corpus/documents/unrelated.md'; }],
+    ['hash', report => { report.results[0].hash = '000000000000'; }],
+    ['section', report => { report.results[0].section = 'Unrelated section'; }],
+    ['language', report => { report.results[0].language = 'javascript'; }],
+    ['resultCount', report => { report.results = []; }],
+  ];
+
+  for (const [check, mutate] of cases) {
+    const input = fixture();
+    mutate(input.verifierReport);
+    const result = buildSkillAcceptanceArtifacts(input)['doc-code-verify'];
+
+    assert.equal(result.status, 'FAILED', `${check}: ${JSON.stringify(result)}`);
+    assert.equal(
+      result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_VERIFIER_BINDING_MISMATCH' && item.check === check),
+      true,
+      `${check}: ${JSON.stringify(result.diagnostics)}`,
+    );
+  }
+});
+
+test('doc-code-verify binding ignores only the transport-added title H1', () => {
+  const input = fixture();
+  input.readback.documents['verification-only'].content = [
+    '# Verification Only',
+    '',
+    input.readback.documents['verification-only'].content,
+  ].join('\n');
+  const contents = Object.fromEntries(Object.entries(input.readback.documents)
+    .map(([id, document]) => [id, document.content]));
+  input.plan.creationBatch = batch('smoke-create', DOCUMENTS.flatMap(([id]) => [
+    `doc:create:${id}`,
+    `record:create:${id}`,
+  ]), contents);
+  input.creationJournalEntries = journal(input.plan.creationBatch);
+
+  const result = buildSkillAcceptanceArtifacts(input)['doc-code-verify'];
+
+  assert.equal(result.status, 'VERIFIED', JSON.stringify(result.diagnostics));
+  assert.equal(result.evidence.checks.binding.section, true);
+});
+
+test('doc-code-verify acceptance rejects contract evidence inconsistent with bound results', () => {
+  const input = fixture();
+  input.verifierReport.contract = createResult({
+    skill: 'doc-code-verify',
+    operation: 'verify',
+    status: 'VERIFIED',
+    artifactPaths: [`${RUN_DIR}/artifacts/doc-code-verify.json`],
+    evidence: {
+      failed: 0,
+      manualUncovered: 0,
+      passed: 0,
+      snippets: 1,
+      sources: 1,
+    },
+  });
+
+  const result = buildSkillAcceptanceArtifacts(input)['doc-code-verify'];
+
+  assert.equal(result.status, 'FAILED', JSON.stringify(result));
+  assert.equal(
+    result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_VERIFIER_REPORT_MISMATCH'
+      && item.check === 'contractEvidence'),
+    true,
+    JSON.stringify(result.diagnostics),
+  );
 });
 
 test('API acceptance fails when both endpoint regions are missing from the final readback', () => {

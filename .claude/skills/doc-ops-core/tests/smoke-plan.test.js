@@ -8,6 +8,7 @@ const path = require('node:path');
 const { loadSmokeCorpus } = require('../harness/smoke-corpus');
 const { loadSmokeConfig } = require('../harness/smoke-config');
 const { buildSmokePlan } = require('../harness/smoke-plan');
+const { prepareMarkdownForLarkImport } = require('../harness/smoke-content-inventory');
 const { digestSemantic } = require('../src/digest');
 
 const corpusRoot = path.join(__dirname, '..', 'smoke-corpus');
@@ -47,6 +48,13 @@ test('smoke plan separates creation patch and cleanup approvals', () => {
   assert.equal(
     sourceAction.sourceDigest,
     digestSemantic(fs.readFileSync(path.join(corpusRoot, source.file), 'utf8')),
+  );
+  assert.equal(sourceAction.transportSchemaVersion, 1);
+  assert.equal(
+    sourceAction.transportDigest,
+    digestSemantic(prepareMarkdownForLarkImport(
+      fs.readFileSync(path.join(corpusRoot, source.file), 'utf8'),
+    )),
   );
   assert.equal(
     patchAction.patchDigest,

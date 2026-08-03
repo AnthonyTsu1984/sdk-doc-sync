@@ -10,8 +10,45 @@ const { executeLivePhase } = require('../bin/doc-ops-smoke');
 const liveSmoke = require('../harness/live-smoke-runner');
 const { loadSmokeCorpus } = require('../harness/smoke-corpus');
 const { buildSmokePlan } = require('../harness/smoke-plan');
+const { compareMarkdownInventory, inventoryMarkdown } = require('../harness/smoke-content-inventory');
 const { createActionBatch } = require('../src/action-batch');
 const { digestSemantic } = require('../src/digest');
+
+const CORPUS_ROOT = path.join(__dirname, '..', 'smoke-corpus');
+
+function apiRoundTripFixture() {
+  const corpus = loadSmokeCorpus(CORPUS_ROOT);
+  const authStatus = {
+    identity: 'user',
+    verified: true,
+    identities: { user: { openId: 'ou_test_only', tokenStatus: 'valid' } },
+  };
+  const profile = { appId: 'cli_test_only', profile: 'doc-ops-smoke' };
+  const identityFingerprint = liveSmoke.computeSandboxIdentityFingerprint({ authStatus, profile });
+  const config = {
+    baseToken: 'smoke-base-token',
+    identityFingerprint,
+    profile: 'doc-ops-smoke',
+    rootToken: 'smoke-root-token',
+    tableId: 'tblSmokeCases',
+    tenantMarker: 'DOC_OPS_TEST',
+  };
+  const plan = buildSmokePlan({
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    config,
+    runId: '20260802T120000Z-a1b2c3d4',
+  });
+  const document = corpus.documents.find(item => item.id === 'api-reference-roundtrip');
+  return { config, corpus, document, plan };
+}
+
+function withoutStandaloneIncludes(markdown) {
+  return markdown.replace(
+    /\n?<include target="[^"]+">\n[\s\S]*?\n<\/include>\n?/g,
+    '\n',
+  );
+}
 
 function fixturePlan() {
   return {
@@ -632,8 +669,286 @@ test('sandbox adapter binds the live identity and creates only the approved cana
   assert.equal(calls.some(args => args.includes('__DOC_OPS_SMOKE__run')), true);
 });
 
+test('creation transport protects standalone include wrappers from the generic Markdown importer', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const action = plan.creationBatch.actions.find(item => item.actionId === 'doc:create:api-reference-roundtrip');
+  const source = fs.readFileSync(path.join(CORPUS_ROOT, document.file), 'utf8');
+  let transported = null;
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async (args, options) => {
+      assert.deepEqual(args.slice(0, 2), ['docs', '+create']);
+      transported = options.input;
+      return {
+        ok: true,
+        data: { document: { document_id: 'doc_test_only', revision_id: 1 } },
+      };
+    },
+  });
+
+  await adapter.mutate(action, {
+    plan,
+    state: { folderToken: 'fld_test_only' },
+  });
+
+  assert.notEqual(transported, source, 'raw include wrappers must not be sent unchanged');
+  assert.doesNotMatch(transported, /^<include\b[^>]*>\s*$/m);
+  assert.doesNotMatch(transported, /^<\/include>\s*$/m);
+  assert.match(transported, /target="milvus"/);
+  assert.match(transported, /target="zilliz"/);
+  assert.match(transported, /The Milvus server endpoint is `http:\/\/localhost:19530`\./);
+  assert.match(transported, /The Zilliz Cloud endpoint is `https:\/\/api\.cloud\.zilliz\.com`\./);
+});
+
+test('creation rejects an approval-bound transport digest mismatch before any tenant call', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const approvedAction = plan.creationBatch.actions
+    .find(item => item.actionId === 'doc:create:api-reference-roundtrip');
+  const action = { ...approvedAction, transportDigest: 'sha256:'.padEnd(71, 'f') };
+  let runLarkCalls = 0;
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async () => {
+      runLarkCalls += 1;
+      return { ok: true, data: { document: { document_id: 'doc_test_only', revision_id: 1 } } };
+    },
+  });
+
+  await assert.rejects(
+    adapter.mutate(action, {
+      plan,
+      state: { folderToken: 'fld_test_only' },
+    }),
+    error => error?.code === 'SMOKE_TRANSPORT_DIGEST_MISMATCH',
+  );
+  assert.equal(runLarkCalls, 0);
+});
+
+test('creation rejects an unsupported transport schema before any tenant call', async () => {
+  const { config, corpus, plan } = apiRoundTripFixture();
+  const approvedAction = plan.creationBatch.actions
+    .find(item => item.actionId === 'doc:create:api-reference-roundtrip');
+  const action = { ...approvedAction, transportSchemaVersion: 999 };
+  let runLarkCalls = 0;
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async () => {
+      runLarkCalls += 1;
+      return { ok: true, data: { document: { document_id: 'doc_test_only', revision_id: 1 } } };
+    },
+  });
+
+  await assert.rejects(
+    adapter.mutate(action, {
+      plan,
+      state: { folderToken: 'fld_test_only' },
+    }),
+    error => error?.code === 'SMOKE_TRANSPORT_SCHEMA_MISMATCH',
+  );
+  assert.equal(runLarkCalls, 0);
+});
+
+test('create verification fails closed when complete source inventory loses both endpoint regions', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const action = plan.creationBatch.actions.find(item => item.actionId === 'doc:create:api-reference-roundtrip');
+  const source = fs.readFileSync(path.join(CORPUS_ROOT, document.file), 'utf8');
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async () => { throw new Error('verify seam must not access the tenant'); },
+  });
+
+  const verification = await adapter.verify(action, {
+    mutationResult: { statePatch: { documents: { [document.id]: { documentToken: 'doc_test_only' } } } },
+    observed: {
+      content: withoutStandaloneIncludes(source),
+      parentVerified: true,
+      revisionId: 3,
+    },
+  }, { plan, state: {} });
+
+  assert.equal(verification.ok, false, JSON.stringify(verification));
+  assert.equal(
+    verification.diagnostics.some(item => item.code === 'SMOKE_CONTENT_INVENTORY_MISMATCH'),
+    true,
+    JSON.stringify(verification),
+  );
+});
+
+test('patch verification fails closed when complete patchFile inventory loses both endpoint regions', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const action = plan.patchBatch.actions.find(item => item.actionId === 'doc:patch:api-reference-roundtrip');
+  const expectedPatch = fs.readFileSync(path.join(CORPUS_ROOT, document.patchFile), 'utf8');
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async () => { throw new Error('verify seam must not access the tenant'); },
+  });
+
+  const verification = await adapter.verify(action, {
+    mutationResult: { statePatch: { documents: { [document.id]: { revisionId: 6 } } } },
+    observed: {
+      content: withoutStandaloneIncludes(expectedPatch),
+      parentVerified: true,
+      revisionId: 6,
+    },
+  }, { plan, state: {} });
+
+  assert.equal(verification.ok, false, JSON.stringify(verification));
+  assert.equal(
+    verification.diagnostics.some(item => item.code === 'SMOKE_CONTENT_INVENTORY_MISMATCH'),
+    true,
+    JSON.stringify(verification),
+  );
+});
+
+test('patch precondition rejects an unverified document before any tenant read', async () => {
+  const { config, corpus, document, plan } = apiRoundTripFixture();
+  const action = plan.patchBatch.actions.find(item => item.actionId === 'doc:patch:api-reference-roundtrip');
+  let runLarkCalls = 0;
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config,
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async args => {
+      runLarkCalls += 1;
+      if (args[0] === 'auth') {
+        return {
+          identity: 'user',
+          verified: true,
+          identities: { user: { openId: 'ou_test_only', tokenStatus: 'valid' } },
+        };
+      }
+      if (args[0] === 'config') return { appId: 'cli_test_only', profile: 'doc-ops-smoke' };
+      throw new Error(`unexpected tenant call: ${args.join(' ')}`);
+    },
+  });
+  await adapter.verifyIdentity({ plan });
+  runLarkCalls = 0;
+
+  await assert.rejects(
+    adapter.precondition(action, {
+      plan,
+      state: {
+        creationBatchDigest: plan.creationBatch.batchDigest,
+        documents: {
+          [document.id]: {
+            contentDigest: 'sha256:'.padEnd(71, 'c'),
+            creationVerified: false,
+            documentToken: 'doc_test_only',
+            revisionId: 1,
+          },
+        },
+        folderToken: 'fld_test_only',
+      },
+    }),
+    error => error?.code === 'SMOKE_CREATION_LINEAGE_INVALID',
+  );
+  assert.equal(runLarkCalls, 0);
+});
+
+test('a partial create inventory failure cannot be continued as an independent patch run', async () => {
+  const creationBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-create',
+    actions: [
+      { actionId: 'folder:create', dependsOn: [], sideEffects: ['feishu.drive.folder.create'], target: 'folder' },
+      { actionId: 'doc:create:fixture', dependsOn: ['folder:create'], sideEffects: ['feishu.doc.create'], target: 'doc' },
+    ],
+  });
+  const patchBatch = createActionBatch({
+    skill: 'doc-ops-core',
+    operation: 'smoke-patch',
+    actions: [
+      { actionId: 'doc:patch:fixture', dependsOn: [], sideEffects: ['feishu.doc.patch'], target: 'doc' },
+    ],
+  });
+  const plan = {
+    creationBatch,
+    patchBatch,
+    profile: 'doc-ops-smoke',
+    runId: '20260802T120000Z-a1b2c3d4',
+    tenantMarker: 'DOC_OPS_TEST',
+  };
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-partial-create-'));
+  let patchPreconditions = 0;
+  let patchMutations = 0;
+  const adapter = {
+    precondition: async action => {
+      if (action.actionId.startsWith('doc:patch:')) patchPreconditions += 1;
+      return {};
+    },
+    mutate: async action => {
+      if (action.actionId === 'folder:create') return { statePatch: { folderToken: 'fld_test_only' } };
+      if (action.actionId.startsWith('doc:create:')) {
+        return { statePatch: { documents: { fixture: { documentToken: 'doc_test_only', revisionId: 1 } } } };
+      }
+      patchMutations += 1;
+      return { statePatch: { documents: { fixture: { revisionId: 2 } } } };
+    },
+    refetch: async () => ({}),
+    verify: async action => {
+      if (action.actionId === 'folder:create') return { diagnostics: [], ok: true };
+      if (action.actionId.startsWith('doc:create:')) {
+        return {
+          diagnostics: [{ code: 'SMOKE_CONTENT_INVENTORY_MISMATCH' }],
+          ok: false,
+          statePatch: {
+            documents: {
+              fixture: {
+                contentDigest: 'sha256:'.padEnd(71, 'c'),
+                creationContentDigest: 'sha256:'.padEnd(71, 'c'),
+                creationInventoryDigest: 'sha256:'.padEnd(71, 'd'),
+                creationRevisionId: 1,
+                creationVerified: false,
+                inventoryDigest: 'sha256:'.padEnd(71, 'd'),
+                revisionId: 1,
+              },
+            },
+          },
+        };
+      }
+      return { diagnostics: [], ok: true };
+    },
+  };
+
+  const creation = await executeLivePhase({
+    phase: 'create',
+    plan,
+    approvedBatchDigest: creationBatch.batchDigest,
+    adapter,
+    runDir,
+  });
+  assert.equal(creation.status, 'PARTIAL');
+
+  let patchError = null;
+  try {
+    await executeLivePhase({
+      phase: 'patch',
+      plan,
+      approvedBatchDigest: patchBatch.batchDigest,
+      adapter,
+      runDir,
+    });
+  } catch (error) {
+    patchError = error;
+  }
+  assert.equal(patchError?.code, 'SMOKE_CREATION_LINEAGE_INVALID');
+  assert.equal(patchPreconditions, 0);
+  assert.equal(patchMutations, 0);
+  assert.equal(fs.existsSync(path.join(runDir, 'patch.journal.jsonl')), false);
+});
+
 test('sandbox adapter executes the full synthetic create DAG without losing prior resource state', async () => {
-  const corpusRoot = path.join(__dirname, '..', 'smoke-corpus');
+  const corpusRoot = CORPUS_ROOT;
   const corpus = loadSmokeCorpus(corpusRoot);
   const authStatus = {
     identity: 'user',
@@ -826,10 +1141,20 @@ test('sandbox adapter executes the full synthetic create DAG without losing prio
   assert.equal(patchResult.status, 'EXECUTED');
   assert.equal(patchResult.actionResults.length, corpus.documents.filter(document => document.patchFile).length);
   for (const document of corpus.documents.filter(item => item.patchFile)) {
-    assert.equal(
-      documents.get(document.id).content,
-      fs.readFileSync(path.join(corpusRoot, document.patchFile), 'utf8'),
+    const comparison = compareMarkdownInventory(
+      inventoryMarkdown(fs.readFileSync(path.join(corpusRoot, document.patchFile), 'utf8')),
+      inventoryMarkdown(documents.get(document.id).content),
     );
+    assert.equal(comparison.ok, true, JSON.stringify(comparison));
+  }
+  const patchedState = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
+  for (const document of corpus.documents.filter(item => item.patchFile)) {
+    const created = state.documents[document.id];
+    const patched = patchedState.documents[document.id];
+    assert.equal(patched.creationContentDigest, created.creationContentDigest);
+    assert.equal(patched.creationInventoryDigest, created.creationInventoryDigest);
+    assert.equal(patched.creationRevisionId, created.revisionId);
+    assert.equal(patched.revisionId, documents.get(document.id).revisionId);
   }
 
   const cleanupResult = await executeLivePhase({

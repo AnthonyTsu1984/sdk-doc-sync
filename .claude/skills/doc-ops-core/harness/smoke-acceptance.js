@@ -6,6 +6,7 @@ const path = require('node:path');
 const { canonicalStringify, canonicalize } = require('../src/canonical-json');
 const { digestSemantic } = require('../src/digest');
 const { createResult, validateResult } = require('../src/result-contract');
+const { compareMarkdownInventory, inventoryMarkdown } = require('./smoke-content-inventory');
 
 const CANONICAL_SKILLS = Object.freeze([
   'api-reference-sync',
@@ -89,6 +90,51 @@ function countOccurrences(content, fragment) {
 
 function diagnostic(code, target, details = {}) {
   return { code, target, ...details };
+}
+
+function expectedInventoryAction(plan, documentId) {
+  return (plan?.patchBatch?.actions || []).find(action => action.actionId === `doc:patch:${documentId}`)
+    || (plan?.creationBatch?.actions || []).find(action => action.actionId === `doc:create:${documentId}`)
+    || null;
+}
+
+function validateContentInventory({ corpus, corpusRoot, current, documentId, plan }) {
+  const observedInventory = inventoryMarkdown(current.content);
+  const observedDigest = digestSemantic(observedInventory);
+  const action = expectedInventoryAction(plan, documentId);
+  const document = (corpus?.documents || []).find(item => item.id === documentId);
+  const relativePath = action?.actionId?.startsWith('doc:patch:') ? document?.patchFile : document?.file;
+  if (action?.expectedInventoryDigest) {
+    if (corpusRoot && relativePath) {
+      const expectedInventory = inventoryMarkdown(fs.readFileSync(path.join(corpusRoot, relativePath), 'utf8'));
+      const expectedDigest = digestSemantic(expectedInventory);
+      const comparison = compareMarkdownInventory(expectedInventory, observedInventory);
+      return {
+        diagnostic: expectedDigest === action.expectedInventoryDigest && comparison.ok
+          ? null
+          : diagnostic('SMOKE_ACCEPTANCE_CONTENT_INVENTORY_MISMATCH', documentId, {
+            expectedInventoryDigest: action.expectedInventoryDigest,
+            inventoryDigest: observedDigest,
+          }),
+        inventoryDigest: observedDigest,
+      };
+    }
+    return {
+      diagnostic: observedDigest === action.expectedInventoryDigest
+        ? null
+        : diagnostic('SMOKE_ACCEPTANCE_CONTENT_INVENTORY_MISMATCH', documentId, {
+          expectedInventoryDigest: action.expectedInventoryDigest,
+          inventoryDigest: observedDigest,
+        }),
+      inventoryDigest: observedDigest,
+    };
+  }
+  return {
+    diagnostic: diagnostic('SMOKE_ACCEPTANCE_EXPECTED_INVENTORY_MISSING', documentId, {
+      inventoryDigest: observedDigest,
+    }),
+    inventoryDigest: observedDigest,
+  };
 }
 
 function verifiedJournalActions(batch, entries, diagnostics, target) {
@@ -202,6 +248,7 @@ function contentChecks(skill, corpus, readback, patchActionIds, verifierReport, 
 
 function buildSkillAcceptanceArtifacts({
   corpus,
+  corpusRoot,
   creationJournalEntries,
   patchJournalEntries,
   plan,
@@ -246,6 +293,14 @@ function buildSkillAcceptanceArtifacts({
       if (current.contentDigest !== recorded.contentDigest) {
         diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_CONTENT_DRIFT', documentId));
       }
+      const inventoryValidation = validateContentInventory({
+        corpus,
+        corpusRoot,
+        current,
+        documentId,
+        plan,
+      });
+      if (inventoryValidation.diagnostic) diagnostics.push(inventoryValidation.diagnostic);
       if (!current.parentVerified) diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_PARENT_MISMATCH', documentId));
       if (!current.recordBindingVerified) diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_RECORD_BINDING_MISMATCH', documentId));
       if (!creationActions.has(`doc:create:${documentId}`)
@@ -255,6 +310,7 @@ function buildSkillAcceptanceArtifacts({
       documentEvidence.push({
         contentDigest: current.contentDigest,
         id: documentId,
+        inventoryDigest: inventoryValidation.inventoryDigest,
         parentVerified: current.parentVerified === true,
         recordBindingVerified: current.recordBindingVerified === true,
       });
@@ -311,6 +367,7 @@ async function collectAcceptanceReadback({ adapter, corpus, plan, state }) {
     documents[documentId] = {
       content: fetched.content,
       contentDigest: fetched.contentDigest || digestSemantic(fetched.content),
+      inventoryDigest: fetched.inventoryDigest || digestSemantic(inventoryMarkdown(fetched.content)),
       parentVerified: fetched.parentVerified === true,
       recordBindingVerified: recordBindingVerified === true,
       ...structure,
@@ -327,7 +384,7 @@ function readJournal(filePath) {
   return fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
-async function runSmokeAcceptance({ corpus, plan, runDir, adapter }) {
+async function runSmokeAcceptance({ corpus, corpusRoot, plan, runDir, adapter }) {
   const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
   const creationJournalEntries = readJournal(path.join(runDir, 'create.journal.jsonl'));
   const patchJournalEntries = readJournal(path.join(runDir, 'patch.journal.jsonl'));
@@ -335,6 +392,7 @@ async function runSmokeAcceptance({ corpus, plan, runDir, adapter }) {
   const readback = await collectAcceptanceReadback({ adapter, corpus, plan, state });
   const artifacts = buildSkillAcceptanceArtifacts({
     corpus,
+    corpusRoot,
     creationJournalEntries,
     patchJournalEntries,
     plan,

@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 
 const { createActionBatch } = require('../src/action-batch');
+const { digestSemantic } = require('../src/digest');
 const { createResult, validateResult } = require('../src/result-contract');
+const { inventoryMarkdown } = require('../harness/smoke-content-inventory');
 const {
   buildSkillAcceptanceArtifacts,
   collectAcceptanceReadback,
@@ -14,7 +16,6 @@ const {
 
 const RUN_ID = '20260802T120000Z-a1b2c3d4';
 const RUN_DIR = path.join('tmp', 'doc-ops-smoke', 'runs', RUN_ID);
-
 const DOCUMENTS = [
   ['api-reference-roundtrip', 'api-reference-sync'],
   ['localized-source-en', 'localized-doc-sync'],
@@ -24,16 +25,22 @@ const DOCUMENTS = [
   ['verification-only', 'doc-code-verify'],
 ];
 
-function batch(operation, actionIds) {
+function batch(operation, actionIds, contents = {}) {
   return createActionBatch({
     skill: 'doc-ops-core',
     operation,
-    actions: actionIds.map(actionId => ({
-      actionId,
-      dependsOn: [],
-      sideEffects: operation === 'smoke-create' ? ['feishu.doc.create'] : ['feishu.doc.patch'],
-      target: `synthetic:${actionId}`,
-    })),
+    actions: actionIds.map(actionId => {
+      const documentId = actionId.split(':').slice(2).join(':');
+      return {
+        actionId,
+        dependsOn: [],
+        ...(actionId.startsWith('doc:') ? {
+          expectedInventoryDigest: digestSemantic(inventoryMarkdown(contents[documentId])),
+        } : {}),
+        sideEffects: operation === 'smoke-create' ? ['feishu.doc.create'] : ['feishu.doc.patch'],
+        target: `synthetic:${actionId}`,
+      };
+    }),
   });
 }
 
@@ -61,16 +68,6 @@ function journal(batchValue) {
 }
 
 function fixture() {
-  const creationBatch = batch('smoke-create', DOCUMENTS.flatMap(([id]) => [
-    `doc:create:${id}`,
-    `record:create:${id}`,
-  ]));
-  const patchBatch = batch('smoke-patch', [
-    'doc:patch:api-reference-roundtrip',
-    'doc:patch:localized-target-zh',
-    'doc:patch:procedure-language-sync',
-    'doc:patch:source-verified-authoring',
-  ]);
   const contents = {
     'api-reference-roundtrip': [
       '## createCollection()',
@@ -80,6 +77,12 @@ function fixture() {
       '  - child item',
       '    1. grandchild item',
       '  - patched sibling item',
+      '<include target="milvus">',
+      'The Milvus server endpoint is `http://localhost:19530`.',
+      '</include>',
+      '<include target="zilliz">',
+      'The Zilliz Cloud endpoint is `https://api.cloud.zilliz.com`.',
+      '</include>',
       '[Milvus API reference](https://milvus.io/docs)',
     ].join('\n'),
     'localized-source-en': [
@@ -148,6 +151,8 @@ function fixture() {
     documents: DOCUMENTS.map(([id]) => ({
       id,
       ...(id === 'api-reference-roundtrip' ? {
+        file: 'documents/api-reference-roundtrip.md',
+        patchFile: 'patches/api-reference-roundtrip.md',
         expected: {
           forbiddenFragments: ['PRODUCTION_TOKEN'],
           requiredFragments: ['createCollection()', '#include <vector>', 'Milvus API reference'],
@@ -162,6 +167,16 @@ function fixture() {
       { id: 'draft-from-source-evidence', skill: 'verified-doc-authoring', documentIds: ['source-verified-authoring'] },
     ],
   };
+  const creationBatch = batch('smoke-create', DOCUMENTS.flatMap(([id]) => [
+    `doc:create:${id}`,
+    `record:create:${id}`,
+  ]), contents);
+  const patchBatch = batch('smoke-patch', [
+    'doc:patch:api-reference-roundtrip',
+    'doc:patch:localized-target-zh',
+    'doc:patch:procedure-language-sync',
+    'doc:patch:source-verified-authoring',
+  ], contents);
   const verifierContract = createResult({
     skill: 'doc-code-verify',
     operation: 'verify',
@@ -236,6 +251,33 @@ test('acceptance artifacts fail closed when a source document drifts after the a
   assert.equal(result.status, 'FAILED');
   assert.equal(result.exitCode, 1);
   assert.ok(result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_CONTENT_DRIFT'));
+});
+
+test('API acceptance fails when both endpoint regions are missing from the final readback', () => {
+  const input = fixture();
+  input.readback.documents['api-reference-roundtrip'].content = input.readback.documents['api-reference-roundtrip'].content
+    .replace('<include target="milvus">\nThe Milvus server endpoint is `http://localhost:19530`.\n</include>\n', '')
+    .replace('<include target="zilliz">\nThe Zilliz Cloud endpoint is `https://api.cloud.zilliz.com`.\n</include>\n', '');
+  const results = buildSkillAcceptanceArtifacts(input);
+
+  assert.equal(results['api-reference-sync'].status, 'FAILED');
+  assert.equal(results['api-reference-sync'].exitCode, 1);
+  assert.equal(
+    results['api-reference-sync'].diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_CONTENT_INVENTORY_MISMATCH'),
+    true,
+    JSON.stringify(results['api-reference-sync']),
+  );
+  assert.deepEqual(
+    Object.entries(results)
+      .filter(([skill]) => skill !== 'api-reference-sync')
+      .map(([skill, result]) => [skill, result.status]),
+    [
+      ['doc-code-verify', 'VERIFIED'],
+      ['localized-doc-sync', 'VERIFIED'],
+      ['procedure-code-sync', 'VERIFIED'],
+      ['verified-doc-authoring', 'VERIFIED'],
+    ],
+  );
 });
 
 test('acceptance readback uses only read operations and returns no tenant identifiers', async () => {

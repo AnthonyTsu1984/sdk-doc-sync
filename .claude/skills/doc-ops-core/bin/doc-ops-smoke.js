@@ -198,7 +198,7 @@ async function runCli(argv = process.argv, dependencies = {}) {
         corpusRoot,
         runLark: dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT }),
       }));
-      const result = await runAcceptance({ adapter, corpus, plan, runDir });
+      const result = await runAcceptance({ adapter, corpus, corpusRoot, plan, runDir });
       out(stableJson(result));
       return result.status === 'VERIFIED' ? 0 : 1;
     }

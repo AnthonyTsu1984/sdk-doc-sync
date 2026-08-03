@@ -11,6 +11,12 @@ const { executeDag } = require('../src/dag-executor');
 const { ExecutionJournal } = require('../src/journal');
 const { digestSemantic } = require('../src/digest');
 const { inspectSiblingRelation } = require('./smoke-acceptance');
+const {
+  LARK_IMPORT_TRANSPORT_SCHEMA_VERSION,
+  compareMarkdownInventory,
+  inventoryMarkdown,
+  prepareMarkdownForLarkImport,
+} = require('./smoke-content-inventory');
 
 class LiveSmokeError extends Error {
   constructor(code, message, details = {}) {
@@ -223,6 +229,14 @@ class LarkSandboxAdapter {
     if (digestSemantic(capability) !== action.capabilityContractDigest) {
       throw new LiveSmokeError('CAPABILITY_CONTRACT_DIGEST_MISMATCH', `${action.coveredSkill} capability contract changed`);
     }
+    if (action.actionId.startsWith('doc:create:')) {
+      if (!action.expectedInventoryDigest) {
+        throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} source inventory is not approval-bound`);
+      }
+      if (digestSemantic(inventoryMarkdown(source)) !== action.expectedInventoryDigest) {
+        throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} source inventory changed after approval`);
+      }
+    }
     return source;
   }
 
@@ -232,6 +246,9 @@ class LarkSandboxAdapter {
     if (digestSemantic(patchContent) !== action.patchDigest) {
       throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} patch changed after approval`);
     }
+    if (digestSemantic(inventoryMarkdown(patchContent)) !== action.expectedInventoryDigest) {
+      throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} patch inventory changed after approval`);
+    }
     if (!Array.isArray(document.patchOperations) || document.patchOperations.length === 0) {
       throw new LiveSmokeError('SMOKE_PATCH_OPERATIONS_MISSING', `${document.id} has no exact patch operations`);
     }
@@ -239,6 +256,19 @@ class LarkSandboxAdapter {
       throw new LiveSmokeError('ARTIFACT_DIGEST_MISMATCH', `${document.id} patch operations changed after approval`);
     }
     return { operations: document.patchOperations, patchContent };
+  }
+
+  _inventoryDiagnostic(expectedContent, observedContent) {
+    const comparison = compareMarkdownInventory(
+      inventoryMarkdown(expectedContent),
+      inventoryMarkdown(observedContent),
+    );
+    if (comparison.ok) return null;
+    return {
+      code: 'SMOKE_CONTENT_INVENTORY_MISMATCH',
+      missingKinds: [...new Set(comparison.missing.map(item => item.kind))].sort(),
+      unexpectedKinds: [...new Set(comparison.unexpected.map(item => item.kind))].sort(),
+    };
   }
 
   async _fetchDocument(documentToken) {
@@ -390,6 +420,7 @@ class LarkSandboxAdapter {
     return {
       content: fetched.content,
       contentDigest: digestSemantic(fetched.content),
+      inventoryDigest: digestSemantic(inventoryMarkdown(fetched.content)),
       parentVerified,
     };
   }
@@ -515,6 +546,9 @@ class LarkSandboxAdapter {
       const document = this._document(action);
       const patch = this._verifyPatchArtifact(action, document);
       const documentState = context.state.documents?.[document.id];
+      if (documentState?.creationVerified !== true) {
+        throw new LiveSmokeError('SMOKE_CREATION_LINEAGE_INVALID', `${document.id} creation was not verified`);
+      }
       if (!documentState?.documentToken || !documentState?.contentDigest) {
         throw new LiveSmokeError('SMOKE_DOCUMENT_STATE_MISSING', `${document.id} patch requires verified creation state`);
       }
@@ -607,6 +641,19 @@ class LarkSandboxAdapter {
     if (action.actionId.startsWith('doc:create:')) {
       const document = this._document(action);
       const content = this._verifyLocalArtifacts(action, document);
+      const transportContent = prepareMarkdownForLarkImport(content);
+      if (action.transportSchemaVersion !== LARK_IMPORT_TRANSPORT_SCHEMA_VERSION) {
+        throw new LiveSmokeError(
+          'SMOKE_TRANSPORT_SCHEMA_MISMATCH',
+          `${document.id} creation transport schema is not approval-bound to the current encoder`,
+        );
+      }
+      if (digestSemantic(transportContent) !== action.transportDigest) {
+        throw new LiveSmokeError(
+          'SMOKE_TRANSPORT_DIGEST_MISMATCH',
+          `${document.id} creation transport changed after approval`,
+        );
+      }
       const envelope = await this.runLark([
         'docs', '+create',
         '--doc-format', 'markdown',
@@ -615,7 +662,7 @@ class LarkSandboxAdapter {
         '--parent-token', context.state.folderToken,
         '--as', 'user',
         '--json',
-      ], { input: content });
+      ], { input: transportContent });
       const created = envelope.data?.document || envelope.data || {};
       const documentToken = created.document_id || created.document_token;
       if (!documentToken) throw new LiveSmokeError('SMOKE_DOCUMENT_CREATE_INVALID', `${document.id} returned no document token`);
@@ -819,6 +866,7 @@ class LarkSandboxAdapter {
     }
     if (action.actionId.startsWith('doc:create:')) {
       const document = this._document(action);
+      const source = this._verifyLocalArtifacts(action, document);
       const diagnostics = [];
       for (const fragment of document.expected.requiredFragments || []) {
         if (!observed.content.includes(fragment)) diagnostics.push({ code: 'SMOKE_REQUIRED_FRAGMENT_MISSING', fragment });
@@ -826,14 +874,23 @@ class LarkSandboxAdapter {
       for (const fragment of document.expected.forbiddenFragments || []) {
         if (observed.content.includes(fragment)) diagnostics.push({ code: 'SMOKE_FORBIDDEN_FRAGMENT_PRESENT', fragment });
       }
+      const inventoryDiagnostic = this._inventoryDiagnostic(source, observed.content);
+      if (inventoryDiagnostic) diagnostics.push(inventoryDiagnostic);
       if (!observed.parentVerified) diagnostics.push({ code: 'SMOKE_DOCUMENT_PARENT_MISMATCH' });
+      const contentDigest = digestSemantic(observed.content);
+      const inventoryDigest = digestSemantic(inventoryMarkdown(observed.content));
       return {
         diagnostics,
         ok: diagnostics.length === 0,
         statePatch: {
           documents: {
             [document.id]: {
-              contentDigest: digestSemantic(observed.content),
+              contentDigest,
+              creationContentDigest: contentDigest,
+              creationInventoryDigest: inventoryDigest,
+              creationRevisionId: observed.revisionId,
+              creationVerified: diagnostics.length === 0,
+              inventoryDigest,
               revisionId: observed.revisionId,
             },
           },
@@ -855,6 +912,7 @@ class LarkSandboxAdapter {
     }
     if (action.actionId.startsWith('doc:patch:')) {
       const document = this._document(action);
+      const { patchContent } = this._verifyPatchArtifact(action, document);
       const diagnostics = [];
       for (const fragment of document.expected.requiredFragments || []) {
         if (!observed.content.includes(fragment)) diagnostics.push({ code: 'SMOKE_REQUIRED_FRAGMENT_MISSING', fragment });
@@ -870,6 +928,8 @@ class LarkSandboxAdapter {
           diagnostics.push({ code: 'SMOKE_PATCH_FRAGMENT_MISSING', fragment: expectedFragment });
         }
       }
+      const inventoryDiagnostic = this._inventoryDiagnostic(patchContent, observed.content);
+      if (inventoryDiagnostic) diagnostics.push(inventoryDiagnostic);
       if (!observed.parentVerified) diagnostics.push({ code: 'SMOKE_DOCUMENT_PARENT_MISMATCH' });
       return {
         diagnostics,
@@ -878,6 +938,7 @@ class LarkSandboxAdapter {
           documents: {
             [document.id]: {
               contentDigest: digestSemantic(observed.content),
+              inventoryDigest: digestSemantic(inventoryMarkdown(observed.content)),
               revisionId: observed.revisionId,
             },
           },
@@ -1220,6 +1281,12 @@ async function executeLivePhase({
     runId: plan.runId,
     tenantMarker: plan.tenantMarker || null,
   };
+  if (phase === 'patch' && state.creationBatchDigest !== plan.creationBatch?.batchDigest) {
+    throw new LiveSmokeError(
+      'SMOKE_CREATION_LINEAGE_INVALID',
+      'patch requires a fully verified creation batch from the same plan',
+    );
+  }
   saveState(statePath, state);
 
   const approval = createApprovalEnvelope({
@@ -1269,6 +1336,11 @@ async function executeLivePhase({
       return verification;
     },
   });
+
+  if (phase === 'create' && execution.status === 'EXECUTED') {
+    state.creationBatchDigest = batch.batchDigest;
+    saveState(statePath, state);
+  }
 
   return canonicalize({
     actionResults: execution.results.map(item => ({

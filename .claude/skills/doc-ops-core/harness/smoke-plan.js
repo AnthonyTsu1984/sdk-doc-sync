@@ -6,6 +6,11 @@ const path = require('node:path');
 const { canonicalize } = require('../src/canonical-json');
 const { createActionBatch } = require('../src/action-batch');
 const { digestSemantic } = require('../src/digest');
+const {
+  LARK_IMPORT_TRANSPORT_SCHEMA_VERSION,
+  inventoryMarkdown,
+  prepareMarkdownForLarkImport,
+} = require('./smoke-content-inventory');
 
 const DEFAULT_CORPUS_ROOT = path.join(__dirname, '..', 'smoke-corpus');
 
@@ -63,6 +68,7 @@ function buildSmokePlan({ corpus, corpusRoot = DEFAULT_CORPUS_ROOT, config, runI
   }];
   for (const document of documents) {
     const metadata = artifactMetadata(document);
+    const sourceContent = fs.readFileSync(path.join(corpusRoot, document.file), 'utf8');
     creationActions.push({
       actionId: `doc:create:${document.id}`,
       target: `smoke-doc:${runId}/${document.id}`,
@@ -70,6 +76,9 @@ function buildSmokePlan({ corpus, corpusRoot = DEFAULT_CORPUS_ROOT, config, runI
       sideEffects: ['feishu.doc.create'],
       sourceFile: document.file,
       title: `${folderName} ${document.title}`,
+      expectedInventoryDigest: digestSemantic(inventoryMarkdown(sourceContent)),
+      transportDigest: digestSemantic(prepareMarkdownForLarkImport(sourceContent)),
+      transportSchemaVersion: LARK_IMPORT_TRANSPORT_SCHEMA_VERSION,
       ...metadata,
     });
     creationActions.push({
@@ -86,13 +95,15 @@ function buildSmokePlan({ corpus, corpusRoot = DEFAULT_CORPUS_ROOT, config, runI
     .filter(document => document.patchFile)
     .map(document => {
       const metadata = artifactMetadata(document);
+      const patchContent = fs.readFileSync(path.join(corpusRoot, document.patchFile), 'utf8');
       return {
         actionId: `doc:patch:${document.id}`,
         target: `smoke-doc:${runId}/${document.id}`,
         dependsOn: [],
         sideEffects: ['feishu.doc.patch'],
         patchFile: document.patchFile,
-        patchDigest: digestSemantic(fs.readFileSync(path.join(corpusRoot, document.patchFile), 'utf8')),
+        expectedInventoryDigest: digestSemantic(inventoryMarkdown(patchContent)),
+        patchDigest: digestSemantic(patchContent),
         patchOperationsDigest: digestSemantic(document.patchOperations),
         strategy: 'reviewed-semantic-patch',
         ...metadata,

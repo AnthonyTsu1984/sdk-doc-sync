@@ -109,7 +109,7 @@ function parseArgs(argv) {
         else if (a === '--table' && raw[i + 1]) opts.table = raw[++i];
         else if (a === '--record' && raw[i + 1]) opts.record.push(raw[++i]);
         else if (a === '--slug' && raw[i + 1]) opts.slug.push(raw[++i]);
-        else if (a === '--languages' && raw[i + 1]) opts.languages = new Set(raw[++i].split(',').map(normalizeLang));
+        else if (a === '--languages' && raw[i + 1]) opts.languages = new Set(raw[++i].split(',').map(normalizeCodeLanguage));
         else if (a === '--mode' && raw[i + 1]) opts.mode = raw[++i];
         else if (a === '--report' && raw[i + 1]) opts.report = raw[++i];
         else if (a === '--max-docs' && raw[i + 1]) opts.maxDocs = parseInt(raw[++i], 10);

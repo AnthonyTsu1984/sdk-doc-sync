@@ -89,14 +89,28 @@ function countOccurrences(content, fragment) {
   return String(content || '').split(fragment).length - 1;
 }
 
-function verifierMarkdownSnippets(markdown) {
-  return extractMarkdownCodeSnippets(markdown, { ignoreLeadingTitle: true })
+function verifierMarkdownSnippets(markdown, leadingTitle) {
+  return extractMarkdownCodeSnippets(markdown, { leadingTitle })
     .map(({ hash, index, language, section }) => ({ hash, index, language, section }));
 }
 
-function verifierBindingChecks({ corpus, corpusRoot, readback, verifierReport }) {
+function pathEndsWithSegments(observedPath, relativePath) {
+  if (typeof observedPath !== 'string' || !relativePath) return false;
+  const observed = path.normalize(observedPath).split(path.sep).filter(Boolean);
+  const expected = path.normalize(relativePath).split(path.sep).filter(Boolean);
+  return expected.length > 0
+    && observed.length >= expected.length
+    && expected.every((segment, index) => segment === observed[observed.length - expected.length + index]);
+}
+
+function verifierBindingChecks({ corpus, corpusRoot, plan, readback, verifierReport }) {
   const document = (corpus?.documents || []).find(item => item.id === 'verification-only');
-  const expected = verifierMarkdownSnippets(readback.documents?.['verification-only']?.content || '');
+  const creationAction = (plan?.creationBatch?.actions || [])
+    .find(action => action.actionId === 'doc:create:verification-only');
+  const expected = verifierMarkdownSnippets(
+    readback.documents?.['verification-only']?.content || '',
+    creationAction?.title,
+  );
   const actual = Array.isArray(verifierReport?.results) ? verifierReport.results : [];
   const sourceFile = document?.file || '';
   const expectedPath = corpusRoot && sourceFile ? path.resolve(corpusRoot, sourceFile) : null;
@@ -106,7 +120,7 @@ function verifierBindingChecks({ corpus, corpusRoot, readback, verifierReport })
     const observedPath = result?.source?.path;
     const pathMatches = expectedPath
       ? typeof observedPath === 'string' && path.resolve(observedPath) === expectedPath
-      : typeof observedPath === 'string' && path.normalize(observedPath).endsWith(path.normalize(sourceFile));
+      : pathEndsWithSegments(observedPath, sourceFile);
     return result?.source?.type === 'markdown'
       && result?.source?.title === expectedTitle
       && pathMatches
@@ -127,17 +141,41 @@ function verifierBindingChecks({ corpus, corpusRoot, readback, verifierReport })
   };
 }
 
-function verifierReportConsistent(verifierReport) {
+function verifierReportConsistency(verifierReport) {
+  const results = Array.isArray(verifierReport?.results) ? verifierReport.results : [];
   const evidence = verifierReport?.contract?.evidence || {};
   const summary = verifierReport?.summary || {};
-  const expected = {
+  const sourceKeys = new Set(results.map(result => JSON.stringify({
+    id: result?.source?.id || null,
+    path: result?.source?.path || null,
+    title: result?.source?.title || null,
+    type: result?.source?.type || null,
+  })));
+  const derived = {
+    failed: results.filter(result => result?.verification?.status === 'failed').length,
+    manualUncovered: results.filter(result => result?.verification?.status === 'manual'
+      && result?.scenarioCoverage?.status !== 'passed').length,
+    passed: results.filter(result => result?.verification?.status === 'passed').length,
+    snippets: results.length,
+    sources: sourceKeys.size,
+  };
+  const summaryValues = {
     failed: summary.failed,
     manualUncovered: summary.manualUncovered,
     passed: summary.passed,
     snippets: summary.filteredSnippets ?? summary.snippets,
     sources: summary.sources,
   };
-  return Object.entries(expected).every(([field, value]) => Number.isInteger(value) && evidence[field] === value);
+  const contractEvidence = Object.entries(summaryValues)
+    .every(([field, value]) => Number.isInteger(value) && evidence[field] === value);
+  const resultTotals = Object.entries(derived).every(([field, value]) => summaryValues[field] === value
+    && evidence[field] === value);
+  return {
+    contractEvidence,
+    contractStatus: verifierReport?.contract?.status === 'VERIFIED'
+      && verifierReport?.contract?.exitCode === 0,
+    resultTotals,
+  };
 }
 
 function diagnostic(code, target, details = {}) {
@@ -211,7 +249,7 @@ function verifiedJournalActions(batch, entries, diagnostics, target) {
   return verified;
 }
 
-function contentChecks(skill, corpus, corpusRoot, readback, patchActionIds, verifierReport, diagnostics) {
+function contentChecks(skill, corpus, corpusRoot, plan, readback, patchActionIds, verifierReport, diagnostics) {
   const content = id => readback.documents?.[id]?.content || '';
   if (skill === 'api-reference-sync') {
     const value = content('api-reference-roundtrip');
@@ -283,13 +321,15 @@ function contentChecks(skill, corpus, corpusRoot, readback, patchActionIds, veri
   const contractValidation = validateResult(verifierReport?.contract || {});
   const liveActionsPerformed = verifierReport?.liveVerification?.enabledThisRun === true;
   const summary = verifierReport?.summary || {};
-  const binding = verifierBindingChecks({ corpus, corpusRoot, readback, verifierReport });
-  const reportConsistent = verifierReportConsistent(verifierReport);
+  const binding = verifierBindingChecks({ corpus, corpusRoot, plan, readback, verifierReport });
+  const reportConsistency = verifierReportConsistency(verifierReport);
+  const reportConsistent = Object.values(reportConsistency).every(Boolean);
   const checks = {
     binding,
     contractValid: contractValidation.valid,
     liveActionsPerformed,
     readOnlyVerified: !patchActionIds.has('doc:patch:verification-only') && !liveActionsPerformed,
+    reportConsistency,
     reportConsistent,
     strongestSafeCheckPassed: summary.snippets === 1 && summary.passed === 1 && summary.failed === 0
       && Object.values(binding).every(Boolean) && reportConsistent,
@@ -297,8 +337,8 @@ function contentChecks(skill, corpus, corpusRoot, readback, patchActionIds, veri
   };
   if (!checks.contractValid) diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_VERIFIER_CONTRACT_INVALID', 'doc-code-verify'));
   if (checks.liveActionsPerformed) diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_VERIFIER_LIVE_ACTION', 'doc-code-verify'));
-  if (!reportConsistent) {
-    diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_VERIFIER_REPORT_MISMATCH', 'doc-code-verify', { check: 'contractEvidence' }));
+  for (const [name, ok] of Object.entries(reportConsistency)) {
+    if (!ok) diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_VERIFIER_REPORT_MISMATCH', 'doc-code-verify', { check: name }));
   }
   for (const [name, ok] of Object.entries(binding)) {
     if (!ok) diagnostics.push(diagnostic('SMOKE_ACCEPTANCE_VERIFIER_BINDING_MISMATCH', 'doc-code-verify', { check: name }));
@@ -378,7 +418,7 @@ function buildSkillAcceptanceArtifacts({
         recordBindingVerified: current.recordBindingVerified === true,
       });
     }
-    const checks = contentChecks(skill, corpus, corpusRoot, readback, patchActions, verifierReport, diagnostics);
+    const checks = contentChecks(skill, corpus, corpusRoot, plan, readback, patchActions, verifierReport, diagnostics);
     const expectedPatchIds = new Set((plan?.patchBatch?.actions || [])
       .filter(action => scenario?.documentIds?.some(id => action.actionId === `doc:patch:${id}`))
       .map(action => action.actionId));

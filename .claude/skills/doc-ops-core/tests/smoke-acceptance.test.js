@@ -35,6 +35,7 @@ function batch(operation, actionIds, contents = {}) {
       return {
         actionId,
         dependsOn: [],
+        ...(actionId === 'doc:create:verification-only' ? { title: '__DOC_OPS_SMOKE__RUN Verification Only' } : {}),
         ...(actionId.startsWith('doc:') ? {
           expectedInventoryDigest: digestSemantic(inventoryMarkdown(contents[documentId])),
         } : {}),
@@ -298,7 +299,7 @@ test('acceptance artifacts fail closed when a source document drifts after the a
 
 test('doc-code-verify acceptance rejects an unbound result despite a valid summary', () => {
   const cases = [
-    ['source', report => { report.results[0].source.path = '/synthetic/corpus/documents/unrelated.md'; }],
+    ['source', report => { report.results[0].source.path = '/synthetic/corpus/evil-documents/verification-only.md'; }],
     ['hash', report => { report.results[0].hash = '000000000000'; }],
     ['section', report => { report.results[0].section = 'Unrelated section'; }],
     ['language', report => { report.results[0].language = 'javascript'; }],
@@ -322,7 +323,7 @@ test('doc-code-verify acceptance rejects an unbound result despite a valid summa
 test('doc-code-verify binding ignores only the transport-added title H1', () => {
   const input = fixture();
   input.readback.documents['verification-only'].content = [
-    '# Verification Only',
+    '# \\_\\_DOC_OPS_SMOKE\\_\\_RUN Verification Only',
     '',
     input.readback.documents['verification-only'].content,
   ].join('\n');
@@ -338,6 +339,37 @@ test('doc-code-verify binding ignores only the transport-added title H1', () => 
 
   assert.equal(result.status, 'VERIFIED', JSON.stringify(result.diagnostics));
   assert.equal(result.evidence.checks.binding.section, true);
+});
+
+test('doc-code-verify binding rejects an incorrect or misplaced title H1', () => {
+  const cases = [
+    ['incorrect', ['# Incorrect Title', '']],
+    ['misplaced', ['Intro paragraph.', '', '# Verification Only', '']],
+  ];
+  for (const [label, prefix] of cases) {
+    const input = fixture();
+    input.readback.documents['verification-only'].content = [
+      ...prefix,
+      input.readback.documents['verification-only'].content,
+    ].join('\n');
+    const contents = Object.fromEntries(Object.entries(input.readback.documents)
+      .map(([id, document]) => [id, document.content]));
+    input.plan.creationBatch = batch('smoke-create', DOCUMENTS.flatMap(([id]) => [
+      `doc:create:${id}`,
+      `record:create:${id}`,
+    ]), contents);
+    input.creationJournalEntries = journal(input.plan.creationBatch);
+
+    const result = buildSkillAcceptanceArtifacts(input)['doc-code-verify'];
+
+    assert.equal(result.status, 'FAILED', `${label}: ${JSON.stringify(result)}`);
+    assert.equal(
+      result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_VERIFIER_BINDING_MISMATCH'
+        && item.check === 'section'),
+      true,
+      `${label}: ${JSON.stringify(result.diagnostics)}`,
+    );
+  }
 });
 
 test('doc-code-verify acceptance rejects contract evidence inconsistent with bound results', () => {
@@ -362,6 +394,61 @@ test('doc-code-verify acceptance rejects contract evidence inconsistent with bou
   assert.equal(
     result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_VERIFIER_REPORT_MISMATCH'
       && item.check === 'contractEvidence'),
+    true,
+    JSON.stringify(result.diagnostics),
+  );
+});
+
+test('doc-code-verify acceptance rejects a non-verified contract with passing result fields', () => {
+  const input = fixture();
+  input.verifierReport.contract = createResult({
+    skill: 'doc-code-verify',
+    operation: 'verify',
+    status: 'FAILED',
+    artifactPaths: [`${RUN_DIR}/artifacts/doc-code-verify.json`],
+    evidence: {
+      failed: 0,
+      manualUncovered: 0,
+      passed: 1,
+      snippets: 1,
+      sources: 1,
+    },
+  });
+
+  const result = buildSkillAcceptanceArtifacts(input)['doc-code-verify'];
+
+  assert.equal(result.status, 'FAILED', JSON.stringify(result));
+  assert.equal(
+    result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_VERIFIER_REPORT_MISMATCH'
+      && item.check === 'contractStatus'),
+    true,
+    JSON.stringify(result.diagnostics),
+  );
+});
+
+test('doc-code-verify acceptance derives report totals from bound results', () => {
+  const input = fixture();
+  input.verifierReport.summary.sources = 2;
+  input.verifierReport.contract = createResult({
+    skill: 'doc-code-verify',
+    operation: 'verify',
+    status: 'VERIFIED',
+    artifactPaths: [`${RUN_DIR}/artifacts/doc-code-verify.json`],
+    evidence: {
+      failed: 0,
+      manualUncovered: 0,
+      passed: 1,
+      snippets: 1,
+      sources: 2,
+    },
+  });
+
+  const result = buildSkillAcceptanceArtifacts(input)['doc-code-verify'];
+
+  assert.equal(result.status, 'FAILED', JSON.stringify(result));
+  assert.equal(
+    result.diagnostics.some(item => item.code === 'SMOKE_ACCEPTANCE_VERIFIER_REPORT_MISMATCH'
+      && item.check === 'resultTotals'),
     true,
     JSON.stringify(result.diagnostics),
   );

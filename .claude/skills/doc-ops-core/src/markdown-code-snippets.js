@@ -26,7 +26,7 @@ function codeHash(code) {
   return crypto.createHash('sha256').update(String(code || '')).digest('hex').slice(0, 12);
 }
 
-function extractMarkdownCodeSnippets(markdown, { ignoreLeadingTitle = false } = {}) {
+function extractMarkdownCodeSnippets(markdown, { leadingTitle = null } = {}) {
   const source = String(markdown || '');
   const snippets = [];
   const fence = /(^|\n)(`{3,}|~{3,})([^\n`]*)\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/g;
@@ -37,8 +37,17 @@ function extractMarkdownCodeSnippets(markdown, { ignoreLeadingTitle = false } = 
     const headingStack = [];
     for (const [headingIndex, heading] of headings.entries()) {
       const level = heading[0].match(/^#+/)[0].length;
-      if (ignoreLeadingTitle && headingIndex === 0 && level === 1) continue;
-      headingStack[level - 1] = heading[1].replace(/\{#[^}]+\}/g, '').trim();
+      const headingText = heading[1].replace(/\{#[^}]+\}/g, '').trim();
+      const beforeHeading = before.slice(0, heading.index);
+      const serializedLeadingTitle = typeof leadingTitle === 'string'
+        ? leadingTitle.replace(/__/g, '\\_\\_')
+        : null;
+      if (typeof leadingTitle === 'string'
+        && headingIndex === 0
+        && level === 1
+        && beforeHeading.trim() === ''
+        && (headingText === leadingTitle || headingText === serializedLeadingTitle)) continue;
+      headingStack[level - 1] = headingText;
       headingStack.length = level;
     }
     const code = match[4];

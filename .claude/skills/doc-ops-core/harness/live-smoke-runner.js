@@ -762,11 +762,12 @@ class LarkSandboxAdapter {
       const documentState = context.state.documents?.[document.id];
       let revisionId = context.precondition.revisionId;
       for (const operation of context.precondition.operations) {
+        const previousRevisionId = revisionId;
         const args = [
           'docs', '+update',
           '--doc', documentState.documentToken,
           '--command', operation.type,
-          '--doc-format', operation.type === 'block_insert_after' ? operation.contentFormat : 'markdown',
+          '--doc-format', operation.contentFormat || 'markdown',
         ];
         if (operation.type === 'block_insert_after') {
           args.push('--block-id', operation.blockId);
@@ -786,6 +787,12 @@ class LarkSandboxAdapter {
         revisionId = update.revision_id;
         if (!Number.isInteger(revisionId)) {
           throw new LiveSmokeError('SMOKE_DOCUMENT_PATCH_INVALID', `${document.id} patch returned no revision`);
+        }
+        if (revisionId <= previousRevisionId) {
+          throw new LiveSmokeError(
+            'SMOKE_DOCUMENT_PATCH_NOOP',
+            `${document.id} patch did not advance the document revision`,
+          );
         }
       }
       return {

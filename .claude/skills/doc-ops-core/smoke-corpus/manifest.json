@@ -54,6 +54,7 @@
       "patchOperations": [
         {
           "type": "str_replace",
+          "contentFormat": "xml",
           "before": "使用固定维度和仅用于测试的名称创建集合。",
           "after": "使用固定维度和仅用于测试的名称创建集合；该页面只属于隔离的 smoke tenant。"
         }

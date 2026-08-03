@@ -1015,6 +1015,83 @@ test('patch verification fails closed when complete patchFile inventory loses bo
   );
 });
 
+test('patch mutation rejects a successful response that does not advance the revision', async () => {
+  let updateCalls = 0;
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus: { documents: [{ id: 'fixture', title: 'Fixture' }] },
+    corpusRoot: '/tmp/not-used',
+    runLark: async args => {
+      assert.deepEqual(args.slice(0, 2), ['docs', '+update']);
+      updateCalls += 1;
+      return {
+        ok: true,
+        identity: 'user',
+        data: {
+          document: { new_blocks: [], revision_id: 3 },
+          result: 'success',
+          updated_blocks_count: 0,
+          warnings: [],
+        },
+      };
+    },
+  });
+  const action = { actionId: 'doc:patch:fixture' };
+  const context = {
+    plan: { runId: '20260802T120000Z-a1b2c3d4' },
+    precondition: {
+      operations: [{ after: '新内容', before: '旧内容', contentFormat: 'xml', type: 'str_replace' }],
+      revisionId: 3,
+    },
+    state: { documents: { fixture: { documentToken: 'doc_test_only' } } },
+  };
+
+  await assert.rejects(
+    adapter.mutate(action, context),
+    error => error?.code === 'SMOKE_DOCUMENT_PATCH_NOOP',
+  );
+  assert.equal(updateCalls, 1);
+});
+
+test('localized inline patch uses the approval-bound XML content format', async () => {
+  const corpus = loadSmokeCorpus(CORPUS_ROOT);
+  const document = corpus.documents.find(item => item.id === 'localized-target-zh');
+  let updateArgs = null;
+  let updateInput = null;
+  const adapter = new liveSmoke.LarkSandboxAdapter({
+    config: {},
+    corpus,
+    corpusRoot: CORPUS_ROOT,
+    runLark: async (args, options) => {
+      updateArgs = args;
+      updateInput = options.input;
+      return {
+        ok: true,
+        identity: 'user',
+        data: {
+          document: { new_blocks: [], revision_id: 4 },
+          result: 'success',
+          updated_blocks_count: 1,
+          warnings: [],
+        },
+      };
+    },
+  });
+  const action = { actionId: 'doc:patch:localized-target-zh' };
+  const context = {
+    plan: { runId: '20260802T120000Z-a1b2c3d4' },
+    precondition: { operations: document.patchOperations, revisionId: 3 },
+    state: { documents: { [document.id]: { documentToken: 'doc_test_only' } } },
+  };
+
+  const mutation = await adapter.mutate(action, context);
+
+  assert.equal(updateArgs[updateArgs.indexOf('--doc-format') + 1], 'xml');
+  assert.equal(updateArgs[updateArgs.indexOf('--pattern') + 1], document.patchOperations[0].before);
+  assert.equal(updateInput, document.patchOperations[0].after);
+  assert.deepEqual(mutation.statePatch, { documents: { [document.id]: { revisionId: 4 } } });
+});
+
 test('patch precondition rejects an unverified document before any tenant read', async () => {
   const { config, corpus, document, plan } = apiRoundTripFixture();
   const action = plan.patchBatch.actions.find(item => item.actionId === 'doc:patch:api-reference-roundtrip');

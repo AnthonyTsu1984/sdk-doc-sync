@@ -344,7 +344,8 @@ test('doc-code-verify binding ignores only the transport-added title H1', () => 
 test('doc-code-verify binding rejects an incorrect or misplaced title H1', () => {
   const cases = [
     ['incorrect', ['# Incorrect Title', '']],
-    ['misplaced', ['Intro paragraph.', '', '# Verification Only', '']],
+    ['misplaced-raw', ['Intro paragraph.', '', '# __DOC_OPS_SMOKE__RUN Verification Only', '']],
+    ['misplaced-escaped', ['Intro paragraph.', '', '# \\_\\_DOC_OPS_SMOKE\\_\\_RUN Verification Only', '']],
   ];
   for (const [label, prefix] of cases) {
     const input = fixture();

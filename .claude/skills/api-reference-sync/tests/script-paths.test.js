@@ -167,12 +167,13 @@ test('interactive approval gates require exact digest-bound copy-ready replies',
   for (const source of [skill, integration, prompts]) {
     assert.match(source, /APPROVE_GROUPING sha256:<proposal-digest>/);
     assert.match(source, /APPROVE_WRITES sha256:<batch-digest>/);
-    assert.match(source, /APPROVE_ACCEPTANCE sha256:<execution-journal-digest>/);
+    assert.match(source, /APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>/);
+    assert.match(source, /APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>/);
   }
 
   assert.match(skill, /If approved, reply exactly/i);
   assert.match(skill, /interactive chat.*MUST read.*bot-integration.*bot-prompts/is);
-  assert.match(integration, /bare `APPROVE_GROUPING`, `APPROVE_WRITES`, or `APPROVE_ACCEPTANCE`.*not approved/is);
+  assert.match(integration, /bare approval command.*not approved/is);
   assert.match(prompts, /If approved, reply exactly:/);
   assert.match(prompts, /Structural VirtualNode or Module records.*excluded.*WIP.*Draft/is);
 });

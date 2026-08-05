@@ -26,6 +26,7 @@ const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../../doc-ops-core/src/journal');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { createResult } = require('../../../doc-ops-core/src/result-contract');
+const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
 
 function executionSideEffects(plan) {
     switch (plan.action) {
@@ -214,6 +215,9 @@ class SdkDocSync {
         artifactBlockRenderer = null,
         apiPatchPlanner = planApiReferencePatch,
         executionJournalFactory = null,
+        collaborativeReview = false,
+        reviewUnitId = null,
+        acceptedReviewUnitIds = [],
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -263,6 +267,9 @@ class SdkDocSync {
         this.artifactBlockRenderer = artifactBlockRenderer;
         this.apiPatchPlanner = apiPatchPlanner;
         this.executionJournalFactory = executionJournalFactory;
+        this.collaborativeReview = collaborativeReview === true;
+        this.reviewUnitId = reviewUnitId;
+        this.acceptedReviewUnitIds = new Set(acceptedReviewUnitIds || []);
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
         this.executor = executor || null;
@@ -399,14 +406,88 @@ class SdkDocSync {
         }
         this.onProgress('PLAN', `${result.resourcePlans.length} resources and ${result.plans.length} documents planned, ${result.planningErrors.length} failed`);
 
-        const actionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
-        const actionablePlanIds = new Set(actionablePlanned.map(({ plan }) => plan.stableId));
-        result.proposedExecutionBatch = buildExecutionBatch(actionablePlanned, actionablePlanIds);
+        const fullActionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
+        const fullActionablePlanIds = new Set(fullActionablePlanned.map(({ plan }) => plan.stableId));
+        result.proposedReleaseBatch = buildExecutionBatch(fullActionablePlanned, fullActionablePlanIds);
+        const reviewUnits = buildReviewUnitManifest(fullActionablePlanned, buildExecutionBatch);
+        result.reviewUnitManifest = reviewUnits.manifest;
+        result.reviewUnitPreviews = reviewUnits.units;
+
+        let actionablePlanned = fullActionablePlanned;
+        let actionablePlanIds = fullActionablePlanIds;
+        if (this.collaborativeReview) {
+            if (reviewUnits.manifest.unassignedResourceActionIds.length > 0) {
+                result.planningErrors.push({
+                    stableId: null,
+                    diffAction: 'RESOURCE',
+                    code: 'UNASSIGNED_REVIEW_UNIT_RESOURCE',
+                    message: `Every resource action must belong to one document review unit: ${reviewUnits.manifest.unassignedResourceActionIds.join(', ')}`,
+                });
+            }
+            let selectedUnit = this.reviewUnitId
+                ? reviewUnits.units.find((unit) => unit.reviewUnitId === this.reviewUnitId)
+                : null;
+            if (!selectedUnit && !this.reviewUnitId && reviewUnits.units.length === 1) {
+                [selectedUnit] = reviewUnits.units;
+            }
+            if (this.reviewUnitId && !selectedUnit) {
+                result.planningErrors.push({
+                    stableId: this.reviewUnitId,
+                    diffAction: 'REVIEW_UNIT',
+                    code: 'REVIEW_UNIT_NOT_FOUND',
+                    message: `Unknown review unit: ${this.reviewUnitId}`,
+                });
+            }
+            if (selectedUnit) {
+                const missingPrerequisites = selectedUnit.prerequisiteReviewUnitIds
+                    .filter((unitId) => !this.acceptedReviewUnitIds.has(unitId));
+                if (missingPrerequisites.length > 0) {
+                    result.planningErrors.push({
+                        stableId: selectedUnit.documentStableId,
+                        diffAction: 'REVIEW_UNIT',
+                        code: 'REVIEW_UNIT_PREREQUISITE_NOT_ACCEPTED',
+                        message: `${selectedUnit.reviewUnitId} requires accepted units: ${missingPrerequisites.join(', ')}`,
+                    });
+                }
+                result.activeReviewUnit = selectedUnit;
+                actionablePlanned = reviewUnits.entriesByUnitId.get(selectedUnit.reviewUnitId) || [];
+                actionablePlanIds = new Set(actionablePlanned.map(({ plan }) => plan.stableId));
+            } else if (reviewUnits.units.length > 1) {
+                result.reviewUnitSelectionRequired = true;
+                actionablePlanned = [];
+                actionablePlanIds = new Set();
+            }
+        }
+        result.proposedExecutionBatch = actionablePlanned.length > 0
+            ? buildExecutionBatch(actionablePlanned, actionablePlanIds)
+            : fullActionablePlanned.length === 0
+                ? result.proposedReleaseBatch
+                : null;
 
         if (this.dryRun) {
             this.onProgress('APPROVE', 'Dry run — showing plans without executing');
             if (this.printPlans) this._printPlans(result.plans);
             result.approved = [];
+            return result;
+        }
+
+        if (this.collaborativeReview && result.reviewUnitSelectionRequired) {
+            result.executionResult = blockedExecutionResult({
+                batch: null,
+                proposedBatch: result.proposedReleaseBatch,
+                diagnostics: [{
+                    code: 'REVIEW_UNIT_REQUIRED',
+                    message: 'Select exactly one document review unit before live execution.',
+                }],
+            });
+            return result;
+        }
+        if (this.collaborativeReview && result.planningErrors.length > 0) {
+            result.executionResult = blockedExecutionResult({
+                batch: result.proposedExecutionBatch,
+                proposedBatch: result.proposedReleaseBatch,
+                diagnostics: result.planningErrors.map((error) => diagnosticFor(new Error(error.message), error)),
+            });
             return result;
         }
 
@@ -1136,5 +1217,7 @@ class SdkDocSync {
 }
 
 SdkDocSync.buildExecutionBatch = buildExecutionBatch;
+SdkDocSync.buildAcceptanceManifest = buildAcceptanceManifest;
+SdkDocSync.buildReviewUnitManifest = (plannedEntries) => buildReviewUnitManifest(plannedEntries, buildExecutionBatch);
 
 module.exports = SdkDocSync;

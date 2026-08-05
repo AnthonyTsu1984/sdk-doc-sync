@@ -74,11 +74,17 @@ test('CLI accepts repeatable token-specific repair approvals', () => {
     'python:Category:item=sha256:abc123',
     '--approve-batch-digest',
     'sha256:batch',
+    '--review-unit-id',
+    'review:node:Collections:createCollection',
+    '--accepted-review-unit',
+    'review:node:Collections:parent',
   ]);
 
   assert.deepEqual(args.repairApprove, ['doc-1', 'doc-2']);
   assert.deepEqual(args.approvePlanDigest, ['python:Category:item=sha256:abc123']);
   assert.equal(args.approveBatchDigest, 'sha256:batch');
+  assert.equal(args.reviewUnitId, 'review:node:Collections:createCollection');
+  assert.deepEqual(args.acceptedReviewUnitIds, ['review:node:Collections:parent']);
 });
 
 test('execution approval provider rejects an approved plan digest mismatch', () => {

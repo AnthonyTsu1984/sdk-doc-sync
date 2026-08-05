@@ -9,6 +9,7 @@ const path = require('node:path');
 
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { buildAcceptanceManifest, buildReviewUnitManifest } = require('../src/sdk-doc-sync/review-units');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 
@@ -891,6 +892,98 @@ test('execution batch includes resource plans and normalizes raw resource refs i
   assert.ok(batch.sideEffects.includes('feishu.drive.create_folder'));
 });
 
+test('review-unit manifest creates one deterministic document batch with its required resources', () => {
+  const resource = {
+    kind: 'resource',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'CREATE_FOLDER',
+      stableId: 'resource:folder:node:v30:Authentication',
+      dependencies: [],
+      resource: { parentFolderToken: 'root-v30' },
+    }),
+  };
+  const document = (stableId) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'CREATE',
+      stableId,
+      dependencies: ['folder:node:v30:Authentication'],
+      target: { folderRef: 'folder:node:v30:Authentication' },
+    }),
+  });
+  const entries = [document('node:Authentication:disconnect'), resource, document('node:Authentication:connect')];
+
+  const first = buildReviewUnitManifest(entries, SdkDocSync.buildExecutionBatch);
+  const second = buildReviewUnitManifest([...entries].reverse(), SdkDocSync.buildExecutionBatch);
+
+  assert.equal(first.manifest.manifestDigest, second.manifest.manifestDigest);
+  assert.deepEqual(first.manifest.units.map((unit) => unit.reviewUnitId), [
+    'review:node:Authentication:connect',
+    'review:node:Authentication:disconnect',
+  ]);
+  assert.deepEqual(first.units[0].actionIds, [
+    'resource:folder:node:v30:Authentication',
+    'node:Authentication:connect',
+  ]);
+  assert.deepEqual(first.manifest.unassignedResourceActionIds, []);
+});
+
+test('review-unit manifest records document prerequisites without batching two documents together', () => {
+  const entries = [{
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId: 'node:Collections:parent',
+      dependencies: [],
+      source: { documentToken: 'parent-doc' },
+    }),
+  }, {
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId: 'node:Collections:child',
+      dependencies: ['node:Collections:parent'],
+      source: { documentToken: 'child-doc' },
+    }),
+  }];
+
+  const { units } = buildReviewUnitManifest(entries, SdkDocSync.buildExecutionBatch);
+  const child = units.find((unit) => unit.documentStableId === 'node:Collections:child');
+
+  assert.deepEqual(child.actionIds, ['node:Collections:child']);
+  assert.deepEqual(child.prerequisiteReviewUnitIds, ['review:node:Collections:parent']);
+});
+
+test('acceptance manifest binds every document-unit journal and touched-record inventory', () => {
+  const reviewUnitManifest = {
+    manifestDigest: 'sha256:review-units',
+    units: [
+      { reviewUnitId: 'review:node:Collections:a' },
+      { reviewUnitId: 'review:node:Collections:b' },
+    ],
+  };
+  const accepted = buildAcceptanceManifest(reviewUnitManifest, [{
+    reviewUnitId: 'review:node:Collections:b',
+    executionJournalDigest: 'sha256:journal-b',
+    touchedRecords: [{ recordId: 'rec-b', actionId: 'node:Collections:b' }],
+  }, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalDigest: 'sha256:journal-a',
+    touchedRecords: [{ recordId: 'rec-a', actionId: 'node:Collections:a' }],
+  }]);
+
+  assert.match(accepted.acceptanceManifestDigest, /^sha256:/);
+  assert.deepEqual(accepted.acceptedUnits.map((unit) => unit.reviewUnitId), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.throws(() => buildAcceptanceManifest(reviewUnitManifest, [accepted.acceptedUnits[0]]), /must exactly match/);
+});
+
 test('resource plan changes are bound into the execution batch digest', () => {
   const resource = (name) => new SyncPlanner().planResource({
     kind: 'folder',
@@ -1165,6 +1258,52 @@ test('dry-run emits immutable dependent resource plans before document plans', a
   assert.ok(result.proposedExecutionBatch.actions.some(action => (
     action.actionId === 'resource:folder:node:v26:Collections'
   )));
+  assert.equal(calls.documentMutations, 0);
+  assert.equal(calls.recordMutations, 0);
+});
+
+test('collaborative dry-run refuses a multi-document write batch until one review unit is selected', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const sync = syncFixture({ dryRun: true, calls });
+  sync.collaborativeReview = true;
+  sync.scanner.scan = async () => [{
+    name: 'createCollection',
+    parentClass: 'Collections',
+    docstring: 'new description',
+    identity: { stableId: 'node:Collections:createCollection' },
+  }, {
+    name: 'dropCollection',
+    parentClass: 'Collections',
+    docstring: 'new drop description',
+    identity: { stableId: 'node:Collections:dropCollection' },
+  }];
+  sync.indexReader.list_documents = async () => [{
+    id: 'rec-create',
+    metadata: {
+      slug: 'Collections-createCollection',
+      description: 'old description',
+      token: 'doc-create',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }, {
+    id: 'rec-drop',
+    metadata: {
+      slug: 'Collections-dropCollection',
+      description: 'old drop description',
+      token: 'doc-drop',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }];
+
+  const result = await sync.run();
+
+  assert.equal(result.reviewUnitSelectionRequired, true);
+  assert.equal(result.reviewUnitManifest.units.length, 2);
+  assert.equal(result.proposedExecutionBatch, null);
   assert.equal(calls.documentMutations, 0);
   assert.equal(calls.recordMutations, 0);
 });

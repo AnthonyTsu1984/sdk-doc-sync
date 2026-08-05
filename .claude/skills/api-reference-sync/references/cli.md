@@ -67,6 +67,19 @@ The prompt must show the returned full digest in one copy-ready reply, for examp
 
 If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
+When a release contains more than one document, the first dry-run emits a `reviewUnitManifest` and does not emit an approvable multi-document batch. Select exactly one unit and rerun:
+
+```bash
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
+  <same-reviewed-inputs> \
+  --review-unit-id review:<document-stable-id> \
+  --dry-run \
+  --json
+```
+
+The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`. After execution, stop for document review; if comments change any artifact or plan, rerun the same unit and obtain a new digest. Accepted prerequisite units may be supplied with repeatable `--accepted-review-unit <id>`. Rerun planning against live state before each next unit so already-created shared resources are resolved rather than replayed.
+
 ## Zilliz CLI Release Impact
 
 Before scanning a new public `zilliz-cli` release, extract release-note command impacts:

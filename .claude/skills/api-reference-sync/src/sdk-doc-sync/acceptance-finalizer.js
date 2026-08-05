@@ -40,9 +40,17 @@ class AcceptanceFinalizer {
     if (!targetsBlank(record)) throw new Error(`Acceptance record ${recordId} must keep Targets blank`);
   }
 
-  async finalize({ userConfirmed, executionJournalDigest, touchedRecords, scanStateKey, scanStateEntry }) {
+  async finalize({
+    userConfirmed,
+    acceptanceManifestDigest = null,
+    executionJournalDigest = null,
+    touchedRecords,
+    scanStateKey,
+    scanStateEntry,
+  }) {
     if (userConfirmed !== true) throw new Error('Explicit user acceptance is required');
-    if (!nonEmptyString(executionJournalDigest)) throw new Error('executionJournalDigest is required');
+    const boundAcceptanceDigest = acceptanceManifestDigest || executionJournalDigest;
+    if (!nonEmptyString(boundAcceptanceDigest)) throw new Error('acceptanceManifestDigest is required');
     if (!Array.isArray(touchedRecords) || touchedRecords.length === 0) throw new Error('Touched records are required');
     if (!nonEmptyString(scanStateKey)) throw new Error('scanStateKey is required');
     if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
@@ -84,7 +92,8 @@ class AcceptanceFinalizer {
       const journal = {
         status: 'accepted',
         userConfirmed: true,
-        executionJournalDigest,
+        acceptanceManifestDigest: boundAcceptanceDigest,
+        executionJournalDigest: executionJournalDigest || null,
         results,
         scanStateKey,
         scanStateEntry: clone(scanStateEntry),

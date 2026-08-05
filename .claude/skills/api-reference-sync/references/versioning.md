@@ -12,7 +12,7 @@ For unchanged entries in a new version, keep the bitable record and keep its `Do
 
 Every interface-document record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Structural VirtualNode and Module resources are an exception: repointing their folder link must preserve existing `Targets`, `Progress`, `Slug`, type, and unrelated metadata; creating one requires explicit reviewed structural metadata in the resource plan. Never infer blank targets or `WIP` from the interface-document state machine. Verify exact field names and values from the target bitable.
 
-Keep edited records at `WIP` through post-write verification and user review. After the user explicitly accepts all touched documentation, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`. Partial acceptance never advances the baseline.
+Keep edited records at `WIP` through post-write verification and per-document review. Execute one document review unit at a time, including all of that document's required Drive and Bitable operations, and do not start the next unit until the active document is accepted. A unit acceptance does not change `Progress` or advance the baseline. After every unit is accepted, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`.
 
 ## Required Preflight
 

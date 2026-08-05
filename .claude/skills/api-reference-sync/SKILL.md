@@ -25,10 +25,13 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 
 - Capability baseline: [capabilities.json](capabilities.json).
 - Canonical artifacts, lineage, approval envelopes, journals, state transitions, and result semantics come from `../doc-ops-core/contracts/` and `../doc-ops-core/src/`.
-- Dry-run emits `proposedExecutionBatch.batchDigest`. Live execution requires the exact value through `--approve-batch-digest <hash>`; a partial selection is a new batch and requires new approval.
-- A partial action selection is a write-batch change, not partial Acceptance Finalization. Do not classify omitted actions as `partial acceptance`; acceptance applies only after execution to the complete touched-record inventory.
+- Full-scope planning emits a deterministic `reviewUnitManifest` with exactly one unit per public document. Do not approve or execute a multi-document release batch.
+- The manifest digest binds the stable document sequence and inter-document prerequisites, not stale future write plans. Replan the selected unit against current live state immediately before approval; its separate batch digest binds the actual resource and document operations.
+- Select one unit with `--review-unit-id <id>`, rerun its scoped dry-run, and approve only that unit's `proposedExecutionBatch.batchDigest` through `--approve-batch-digest <hash>`. A changed artifact, resource plan, comment-driven correction, or unit selection creates a new batch and requires new approval.
+- After one unit executes and verifies, stop for `DOCUMENT_REVIEW`. Do not plan or write the next unit until the user accepts the active document. Unit acceptance records review progress only: touched interface records remain `WIP`, and `scan-state.json` remains unchanged until final release acceptance.
+- If the user requests changes or leaves review comments, read all comments on the active document, rebuild only that unit's reviewed artifacts and resource plan, invalidate its old batch and journal digests, and return to scoped write approval. Never continue to the next unit while comments remain unresolved.
 - Journal every approved action before and after mutation and end with a durable completion sentinel. If a journal already exists, return `EXECUTION_RECONCILIATION_REQUIRED`; do not relaunch. Reconcile live state first.
-- Acceptance must reference the exact `executionJournalDigest` before changing `WIP` to `Draft` or updating `scan-state.json`.
+- Final acceptance must reference the exact accepted-unit manifest digest, which binds every accepted unit journal and the complete touched-record inventory, before changing `WIP` to `Draft` or updating `scan-state.json`.
 
 ## Explicit Interactive Gates
 
@@ -40,9 +43,10 @@ At every gate, report the phase, status, complete artifact paths, reviewed scope
 |------|----------------|----------------------------|
 | Grouping review | Complete candidate-proposal semantic digest | `APPROVE_GROUPING sha256:<proposal-digest>` |
 | Write approval | `proposedExecutionBatch.batchDigest` | `APPROVE_WRITES sha256:<batch-digest>` |
-| Acceptance review | `executionJournalDigest` and complete touched-record inventory | `APPROVE_ACCEPTANCE sha256:<execution-journal-digest>` |
+| Document review | Active unit ID and its `executionJournalDigest` | `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` |
+| Acceptance review | Complete accepted-unit manifest and touched-record inventory | `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` |
 
-Replace every placeholder with the current full digest before asking. Bare `APPROVE_GROUPING`, `APPROVE_WRITES`, `APPROVE_ACCEPTANCE`, a digest without its gate command, conversational approval, or a stale digest is not approval. If any bound artifact changes, regenerate the digest and request approval again.
+Replace every placeholder with the current full ID and digest before asking. Bare approval words, a digest without its gate command, conversational approval, or a stale digest is not approval. If any bound artifact changes, regenerate the digest and request approval again.
 
 Generate a grouping or other JSON review digest with:
 
@@ -68,8 +72,8 @@ npm run api-reference-sync -- \
 1. Release scope: read `scan-state.json`, then inspect both Git log and Git diff between the last accepted tag and target tag before deciding the release range. All three evidence sources are mandatory; a reference table, remote tag listing, or full scanner run does not replace the approval-grade Git log/diff scope.
 2. Candidate proposal: normalize raw symbols to user-facing documentation identities, resolve existing Bitable records and live Drive ancestry, and stop for grouping and successor-track review.
 3. Reviewed planning: build source-verified artifacts and immutable plans; require `planCount == diffCount`, zero planning errors, known placement, and exact create/update evidence before requesting approval.
-4. Execution: construct the exact action batch, verify live preconditions, perform only approved writes, refetch documents and records, verify human-visible access and canonical ancestry, and retain durable journal evidence.
-5. Acceptance Finalization: after separate digest-bound user acceptance, change every touched interface-document record from `WIP` to `Draft`, refetch and verify, then update `scan-state.json`. Structural VirtualNode or Module records stay outside this transition. Partial acceptance never advances the baseline and does not consume the gate; continue to require exact `APPROVE_ACCEPTANCE` for the complete execution journal and touched inventory.
+4. Collaborative execution: order the `reviewUnitManifest` deterministically, select one document unit, approve and execute its complete Docx/Drive/Bitable action batch, verify it, then stop for digest-bound document review. Accept the unit or apply comments and repeat that same unit; never write two document units before the user can review the first.
+5. Acceptance Finalization: after every planned unit has its own accepted journal and the user separately approves the complete accepted-unit manifest, change every touched interface-document record from `WIP` to `Draft`, refetch and verify, then update `scan-state.json`. Structural VirtualNode or Module records stay outside this transition. Partial unit acceptance never advances the baseline.
 
 ## Domain Invariants
 

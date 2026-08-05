@@ -76,6 +76,10 @@ function parseArgs(argv) {
             args.approvePlanDigest = (args.approvePlanDigest || []).concat(argv[++i]);
         } else if (arg === '--approve-batch-digest' && argv[i + 1]) {
             args.approveBatchDigest = argv[++i];
+        } else if (arg === '--review-unit-id' && argv[i + 1]) {
+            args.reviewUnitId = argv[++i];
+        } else if (arg === '--accepted-review-unit' && argv[i + 1]) {
+            args.acceptedReviewUnitIds = (args.acceptedReviewUnitIds || []).concat(argv[++i]);
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -107,6 +111,8 @@ Options:
   --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
+  --review-unit-id <id>            Select exactly one document and its required resource operations
+  --accepted-review-unit <id>      Declare an accepted prerequisite review unit (repeatable)
   --help, -h                       Show this help
 
 Environment (.env):
@@ -550,6 +556,9 @@ async function runCli({
         artifactBlockRenderer: dependencies.artifactBlockRenderer || null,
         apiPatchPlanner: dependencies.apiPatchPlanner,
         printPlans: args.json !== true,
+        collaborativeReview: true,
+        reviewUnitId: args.reviewUnitId || null,
+        acceptedReviewUnitIds: args.acceptedReviewUnitIds || [],
     });
 
     const result = await withJsonConsoleIsolation(args.json === true, err, () => sync.run());
@@ -563,11 +572,31 @@ async function runCli({
     }
 
     if (args.dryRun) {
-        const batchDigest = result.proposedExecutionBatch.batchDigest;
         out(`\nDry run complete. ${result.scanned.length} symbols scanned, ${result.diff.length} diff actions.`);
+        if (result.planningErrors.length > 0) {
+            out(`Blocked: ${result.planningErrors.length} planning errors. No write approval is valid.`);
+            return result;
+        }
+        if (result.reviewUnitSelectionRequired) {
+            out(`Review-unit manifest: ${result.reviewUnitManifest.manifestDigest} (${result.reviewUnitManifest.units.length} documents).`);
+            for (const unit of result.reviewUnitPreviews) {
+                out(`- ${unit.reviewUnitId}: ${unit.batchDigest} (${unit.actionIds.length} actions)`);
+            }
+            out('Select one document with --review-unit-id <id>, rerun the dry-run, and approve only that unit digest.');
+            return result;
+        }
+        const batchDigest = result.proposedExecutionBatch.batchDigest;
+        if (result.activeReviewUnit) {
+            out(`Active review unit: ${result.activeReviewUnit.reviewUnitId} (${result.activeReviewUnit.documentStableId}).`);
+        }
         out(`Proposed execution batch: ${batchDigest} (${result.proposedExecutionBatch.actions.length} actions).`);
         out(`If approved, reply exactly: APPROVE_WRITES ${batchDigest}`);
         out(`Live CLI approval flag: --approve-batch-digest ${batchDigest}`);
+    } else if (result.executionResult?.status === 'BLOCKED') {
+        out(`\nSync blocked. ${result.executionResult.diagnostics.length} blocking diagnostics.`);
+        for (const diagnostic of result.executionResult.diagnostics) {
+            out(`- ${diagnostic.code}: ${diagnostic.message}`);
+        }
     } else {
         const succeeded = result.results.filter(r => r.status === 'success').length;
         const failed = result.results.filter(r => r.status === 'error').length;
@@ -585,6 +614,11 @@ function createBoundedSummary(result) {
         planCount: result.plans.length,
         proposedBatchDigest: result.proposedExecutionBatch?.batchDigest || null,
         proposedActionCount: result.proposedExecutionBatch?.actions?.length || 0,
+        proposedReleaseBatchDigest: result.proposedReleaseBatch?.batchDigest || null,
+        reviewUnitManifestDigest: result.reviewUnitManifest?.manifestDigest || null,
+        reviewUnitCount: result.reviewUnitManifest?.units?.length || 0,
+        reviewUnitSelectionRequired: result.reviewUnitSelectionRequired === true,
+        activeReviewUnitId: result.activeReviewUnit?.reviewUnitId || null,
         planningErrorCount: result.planningErrors.length,
         approvedCount: result.approved.length,
         resultCount: result.results.length,

@@ -41,7 +41,9 @@ Failure patterns that must block completion:
 
 ## Acceptance Finalization
 
-Post-write verification ends with touched records at `WIP` and `scanStateUpdated: false`. After the user explicitly accepts all touched documentation:
+Post-write verification for one document unit ends with its touched records at `WIP` and `scanStateUpdated: false`. Stop and expose the live document, record links, unit journal digest, and unresolved comments. Do not start the next unit until the user replies with the exact active-unit acceptance command. A comment-driven revision returns the same unit to reviewed planning and invalidates its previous write and journal digests.
+
+After every document unit is accepted and the user explicitly accepts the complete accepted-unit manifest:
 
 1. Update every touched record from `Progress: WIP` to `Progress: Draft` without changing unrelated fields.
 2. Refetch every record and verify the exact `Draft` value.

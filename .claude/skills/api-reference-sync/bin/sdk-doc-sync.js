@@ -135,6 +135,24 @@ function createApprovalCallback(autoApprove) {
         let approveAll = false;
 
         for (const action of actions) {
+            if (action.kind && action.ref) {
+                console.log(`  ${action.kind.toUpperCase().padEnd(10)} ${action.ref}`);
+                console.log(`             dependent resource — ${action.name || action.title || action.ref}`);
+                if (approveAll) {
+                    approved.push(action);
+                    console.log('             → approved (all)\n');
+                    continue;
+                }
+                const answer = await ask('  [y/N/a(ll)/q(uit)] ');
+                const choice = answer.trim().toLowerCase();
+                if (choice === 'y' || choice === 'yes') approved.push(action);
+                else if (choice === 'a' || choice === 'all') {
+                    approveAll = true;
+                    approved.push(action);
+                } else if (choice === 'q' || choice === 'quit') break;
+                console.log('');
+                continue;
+            }
             const symbol = action.symbol
                 ? `${action.symbol.parentClass ? action.symbol.parentClass + '.' : ''}${action.symbol.name}`
                 : '(orphan)';
@@ -182,7 +200,7 @@ function createExecutionApprovalProvider(repairTokens = [], digestApprovals = []
             throw new Error(`APPROVED_BATCH_DIGEST_MISMATCH: expected ${approvedBatchDigest}, got ${batch.batchDigest}`);
         }
         const approvedDigest = approvedDigests.get(plan.stableId);
-        if (approvedDigests.size > 0 && !approvedDigest) {
+        if (approvedDigests.size > 0 && plan.artifactDigest && !approvedDigest) {
             throw new Error(`PLAN_NOT_APPROVED: ${plan.stableId}`);
         }
         if (approvedDigest && approvedDigest !== plan.artifactDigest) {
@@ -545,9 +563,11 @@ async function runCli({
     }
 
     if (args.dryRun) {
+        const batchDigest = result.proposedExecutionBatch.batchDigest;
         out(`\nDry run complete. ${result.scanned.length} symbols scanned, ${result.diff.length} diff actions.`);
-        out(`Proposed execution batch: ${result.proposedExecutionBatch.batchDigest} (${result.proposedExecutionBatch.actions.length} actions).`);
-        out('Review the full proposed batch, then rerun live with --approve-batch-digest <hash>.');
+        out(`Proposed execution batch: ${batchDigest} (${result.proposedExecutionBatch.actions.length} actions).`);
+        out(`If approved, reply exactly: APPROVE_WRITES ${batchDigest}`);
+        out(`Live CLI approval flag: --approve-batch-digest ${batchDigest}`);
     } else {
         const succeeded = result.results.filter(r => r.status === 'success').length;
         const failed = result.results.filter(r => r.status === 'error').length;

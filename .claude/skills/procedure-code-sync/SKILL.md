@@ -18,6 +18,8 @@ Do not use for release-wide API inventory, narrative drafting, localization, or 
 - Reading the document, inspecting source repositories, and preparing a dry-run are allowed by default.
 - Patch only the exact reviewed code blocks. Do not rewrite unrelated prose, duplicate existing languages, or invent unsupported SDK equivalents.
 - Live mutation requires explicit approval of the immutable action batch. Refetch the document after every patch.
+- A batch being described as reviewed, ready, correct, or smaller is not write approval. Unless the prompt contains the exact approval bound to the current `batchDigest`, `writesAllowed` remains false and no write tool may be called.
+- Treat “reviewed batch” and “approved batch” as different states. A description of exact block operations, prior review, or urgency never substitutes for the current exact digest approval command.
 
 ## Shared Contract
 
@@ -25,6 +27,7 @@ Do not use for release-wide API inventory, narrative drafting, localization, or 
 - Build immutable operations with `node .claude/skills/doc-ops-core/bin/build-action-batch.js --skill procedure-code-sync --operation patch --input <actions.json> --output <batch.json>`.
 - Approval must match the exact `batchDigest`, targets, action count, and side effects. Verify the live precondition for document revision, parent, and target block identities immediately before mutation.
 - After mutation, refetch blocks and run the shared round-trip guard from `../doc-ops-core/`; protected-block loss or unrelated changes block completion.
+- `document_blocks` evidence is mandatory before deciding an exact insert/replace operation and again after mutation. A document record, execution journal, or successful API response does not substitute for block IDs, child indexes, and protected-block readback.
 
 ## Domain Workflow
 
@@ -33,8 +36,8 @@ Do not use for release-wide API inventory, narrative drafting, localization, or 
 3. Verify each requested port against public examples, tests, client APIs, request builders, routes, or CLI definitions in the local SDK repositories. Broaden to the full repository before declaring a gap.
 4. Preserve procedure semantics, values, filters, data shapes, and output intent while using idiomatic language APIs.
 5. Produce a dry-run with exact insert/replace operations, positions, languages, and evidence; obtain explicit approval for its batch digest.
-6. Patch only approved blocks, inserting from highest child index to lowest when positions could shift.
-7. Refetch and verify canonical order, language labels, source fidelity, no duplicates, and protected surrounding content. Run `doc-code-verify` where feasible.
+6. Re-check the current document blocks and patch only digest-approved blocks, inserting from highest child index to lowest when positions could shift.
+7. Refetch the document blocks and verify canonical order, language labels, source fidelity, no duplicates, and protected surrounding content. Do not report completion from mutation success alone. Run `doc-code-verify` where feasible.
 
 Canonical order is: Python, Java, Go, JavaScript, Bash, Shell, C++.
 

@@ -1,0 +1,924 @@
+{
+  "schemaVersion": 1,
+  "language": "node",
+  "track": "v3.0.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "Authentication.addPrivilegesToGroup": {
+      "stableId": "node:Authentication:addPrivilegesToGroup",
+      "canonicalSlug": "Authentication-addPrivilegesToGroup",
+      "category": "Authentication"
+    },
+    "Authentication.addUserToRole": {
+      "stableId": "node:Authentication:addUserToRole",
+      "canonicalSlug": "Authentication-addUserToRole",
+      "category": "Authentication"
+    },
+    "Authentication.alterRole": {
+      "stableId": "node:Authentication:alterRole",
+      "canonicalSlug": "Authentication-alterRole",
+      "category": "Authentication"
+    },
+    "Authentication.backupRBAC": {
+      "stableId": "node:Authentication:backupRBAC",
+      "canonicalSlug": "Authentication-backupRBAC",
+      "category": "Authentication"
+    },
+    "Authentication.createPrivilegeGroup": {
+      "stableId": "node:Authentication:createPrivilegeGroup",
+      "canonicalSlug": "Authentication-createPrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.createRole": {
+      "stableId": "node:Authentication:createRole",
+      "canonicalSlug": "Authentication-createRole",
+      "category": "Authentication"
+    },
+    "Authentication.createUser": {
+      "stableId": "node:Authentication:createUser",
+      "canonicalSlug": "Authentication-createUser",
+      "category": "Authentication"
+    },
+    "Authentication.deleteUser": {
+      "stableId": "node:Authentication:deleteUser",
+      "canonicalSlug": "Authentication-deleteUser",
+      "category": "Authentication"
+    },
+    "Authentication.describeRole": {
+      "stableId": "node:Authentication:describeRole",
+      "canonicalSlug": "Authentication-describeRole",
+      "category": "Authentication"
+    },
+    "Authentication.describeUser": {
+      "stableId": "node:Authentication:describeUser",
+      "canonicalSlug": "Authentication-describeUser",
+      "category": "Authentication"
+    },
+    "Authentication.dropAllRoles": {
+      "stableId": "node:Authentication:dropAllRoles",
+      "canonicalSlug": "Authentication-dropAllRoles",
+      "category": "Authentication"
+    },
+    "Authentication.dropPrivilegeGroup": {
+      "stableId": "node:Authentication:dropPrivilegeGroup",
+      "canonicalSlug": "Authentication-dropPrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.dropRole": {
+      "stableId": "node:Authentication:dropRole",
+      "canonicalSlug": "Authentication-dropRole",
+      "category": "Authentication"
+    },
+    "Authentication.grantPrivilege": {
+      "stableId": "node:Authentication:grantPrivilege",
+      "canonicalSlug": "Authentication-grantPrivilege",
+      "category": "Authentication"
+    },
+    "Authentication.grantPrivilegeV2": {
+      "stableId": "node:Authentication:grantPrivilegeV2",
+      "canonicalSlug": "Authentication-grantPrivilegeV2",
+      "category": "Authentication"
+    },
+    "Authentication.grantRole": {
+      "stableId": "node:Authentication:grantRole",
+      "canonicalSlug": "Authentication-grantRole",
+      "category": "Authentication"
+    },
+    "Authentication.hasRole": {
+      "stableId": "node:Authentication:hasRole",
+      "canonicalSlug": "Authentication-hasRole",
+      "category": "Authentication"
+    },
+    "Authentication.listGrant": {
+      "stableId": "node:Authentication:listGrant",
+      "canonicalSlug": "Authentication-listGrant",
+      "category": "Authentication"
+    },
+    "Authentication.listGrants": {
+      "stableId": "node:Authentication:listGrants",
+      "canonicalSlug": "Authentication-listGrants",
+      "category": "Authentication"
+    },
+    "Authentication.listPrivilegeGroups": {
+      "stableId": "node:Authentication:listPrivilegeGroups",
+      "canonicalSlug": "Authentication-listPrivilegeGroups",
+      "category": "Authentication"
+    },
+    "Authentication.listRoles": {
+      "stableId": "node:Authentication:listRoles",
+      "canonicalSlug": "Authentication-listRoles",
+      "category": "Authentication"
+    },
+    "Authentication.listUsers": {
+      "stableId": "node:Authentication:listUsers",
+      "canonicalSlug": "Authentication-listUsers",
+      "category": "Authentication"
+    },
+    "Authentication.removePrivilegesFromGroup": {
+      "stableId": "node:Authentication:removePrivilegesFromGroup",
+      "canonicalSlug": "Authentication-removePrivilegesFromGroup",
+      "category": "Authentication"
+    },
+    "Authentication.removeUserFromRole": {
+      "stableId": "node:Authentication:removeUserFromRole",
+      "canonicalSlug": "Authentication-removeUserFromRole",
+      "category": "Authentication"
+    },
+    "Authentication.restoreRBAC": {
+      "stableId": "node:Authentication:restoreRBAC",
+      "canonicalSlug": "Authentication-restoreRBAC",
+      "category": "Authentication"
+    },
+    "Authentication.revokePrivilege": {
+      "stableId": "node:Authentication:revokePrivilege",
+      "canonicalSlug": "Authentication-revokePrivilege",
+      "category": "Authentication"
+    },
+    "Authentication.revokePrivilegeV2": {
+      "stableId": "node:Authentication:revokePrivilegeV2",
+      "canonicalSlug": "Authentication-revokePrivilegeV2",
+      "category": "Authentication"
+    },
+    "Authentication.revokeRole": {
+      "stableId": "node:Authentication:revokeRole",
+      "canonicalSlug": "Authentication-revokeRole",
+      "category": "Authentication"
+    },
+    "Authentication.selectGrant": {
+      "stableId": "node:Authentication:listGrant",
+      "canonicalSlug": "Authentication-listGrant",
+      "category": "Authentication",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "node:Authentication:listGrant",
+            "canonicalSlug": "Authentication-listGrant",
+            "category": "Authentication"
+          }
+        ]
+      }
+    },
+    "Authentication.updateUser": {
+      "stableId": "node:Authentication:updateUser",
+      "canonicalSlug": "Authentication-updateUser",
+      "category": "Authentication"
+    },
+    "Client.MilvusClient": {
+      "stableId": "node:Client:MilvusClient",
+      "canonicalSlug": "Client-MilvusClient",
+      "category": "Client"
+    },
+    "Client.addFileResource": {
+      "stableId": "node:FileResources:addFileResource",
+      "canonicalSlug": "FileResources-addFileResource",
+      "category": "FileResources"
+    },
+    "Client.checkCompatibility": {
+      "stableId": "node:Client:checkCompatibility",
+      "canonicalSlug": "Client-checkCompatibility",
+      "category": "Client"
+    },
+    "Client.checkHealth": {
+      "stableId": "node:Client:checkHealth",
+      "canonicalSlug": "Client-checkHealth",
+      "category": "Client"
+    },
+    "Client.close": {
+      "stableId": "node:Client:close",
+      "canonicalSlug": "Client-close",
+      "category": "Client"
+    },
+    "Client.closeConnection": {
+      "stableId": "node:Client:closeConnection",
+      "canonicalSlug": "Client-closeConnection",
+      "category": "Client"
+    },
+    "Client.connect": {
+      "stableId": "node:Client:connect",
+      "canonicalSlug": "Client-connect",
+      "category": "Client"
+    },
+    "Client.getVersion": {
+      "stableId": "node:Client:getVersion",
+      "canonicalSlug": "Client-getVersion",
+      "category": "Client"
+    },
+    "Client.listFileResources": {
+      "stableId": "node:FileResources:listFileResources",
+      "canonicalSlug": "FileResources-listFileResources",
+      "category": "FileResources"
+    },
+    "Client.reconnectToPrimary": {
+      "stableId": "node:Client:reconnectToPrimary",
+      "canonicalSlug": "Client-reconnectToPrimary",
+      "category": "Client"
+    },
+    "Client.removeFileResource": {
+      "stableId": "node:FileResources:removeFileResource",
+      "canonicalSlug": "FileResources-removeFileResource",
+      "category": "FileResources"
+    },
+    "Client.session": {
+      "stableId": "node:Client:session",
+      "canonicalSlug": "Client-session",
+      "category": "Client"
+    },
+    "Client.use": {
+      "stableId": "node:Client:use",
+      "canonicalSlug": "Client-use",
+      "category": "Client"
+    },
+    "Collections.DataType": {
+      "stableId": "node:Collections:DataType",
+      "canonicalSlug": "Collections-DataType",
+      "category": "Collections"
+    },
+    "Collections.FunctionType": {
+      "stableId": "node:Collections:FunctionType",
+      "canonicalSlug": "Collections-FunctionType",
+      "category": "Collections"
+    },
+    "Collections.addCollectionField": {
+      "stableId": "node:Collections:addCollectionField",
+      "canonicalSlug": "Collections-addCollectionField",
+      "category": "Collections"
+    },
+    "Collections.addCollectionFields": {
+      "stableId": "node:Collections:addCollectionFields",
+      "canonicalSlug": "Collections-addCollectionFields",
+      "category": "Collections"
+    },
+    "Collections.addCollectionFunction": {
+      "stableId": "node:Collections:addCollectionFunction",
+      "canonicalSlug": "Collections-addCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.addFunctionField": {
+      "stableId": "node:Collections:addFunctionField",
+      "canonicalSlug": "Collections-addFunctionField",
+      "category": "Collections"
+    },
+    "Collections.alterAlias": {
+      "stableId": "node:Collections:alterAlias",
+      "canonicalSlug": "Collections-alterAlias",
+      "category": "Collections"
+    },
+    "Collections.alterCollectionFieldProperties": {
+      "stableId": "node:Collections:alterCollectionFieldProperties",
+      "canonicalSlug": "Collections-alterCollectionFieldProperties",
+      "category": "Collections"
+    },
+    "Collections.alterCollectionFunction": {
+      "stableId": "node:Collections:alterCollectionFunction",
+      "canonicalSlug": "Collections-alterCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.alterCollectionProperties": {
+      "stableId": "node:Collections:alterCollectionProperties",
+      "canonicalSlug": "Collections-alterCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.alterCollectionSchema": {
+      "stableId": "node:Collections:alterCollectionSchema",
+      "canonicalSlug": "Collections-alterCollectionSchema",
+      "category": "Collections"
+    },
+    "Collections.batchDescribeCollections": {
+      "stableId": "node:Collections:batchDescribeCollections",
+      "canonicalSlug": "Collections-batchDescribeCollections",
+      "category": "Collections"
+    },
+    "Collections.createAlias": {
+      "stableId": "node:Collections:createAlias",
+      "canonicalSlug": "Collections-createAlias",
+      "category": "Collections"
+    },
+    "Collections.createCollection": {
+      "stableId": "node:Collections:createCollection",
+      "canonicalSlug": "Collections-createCollection",
+      "category": "Collections"
+    },
+    "Collections.createSnapshot": {
+      "stableId": "node:Snapshot:createSnapshot",
+      "canonicalSlug": "Snapshot-createSnapshot",
+      "category": "Snapshot"
+    },
+    "Collections.describeAlias": {
+      "stableId": "node:Collections:describeAlias",
+      "canonicalSlug": "Collections-describeAlias",
+      "category": "Collections"
+    },
+    "Collections.describeCollection": {
+      "stableId": "node:Collections:describeCollection",
+      "canonicalSlug": "Collections-describeCollection",
+      "category": "Collections"
+    },
+    "Collections.describeSnapshot": {
+      "stableId": "node:Snapshot:describeSnapshot",
+      "canonicalSlug": "Snapshot-describeSnapshot",
+      "category": "Snapshot"
+    },
+    "Collections.dropAlias": {
+      "stableId": "node:Collections:dropAlias",
+      "canonicalSlug": "Collections-dropAlias",
+      "category": "Collections"
+    },
+    "Collections.dropCollection": {
+      "stableId": "node:Collections:dropCollection",
+      "canonicalSlug": "Collections-dropCollection",
+      "category": "Collections"
+    },
+    "Collections.dropCollectionField": {
+      "stableId": "node:Collections:dropCollectionField",
+      "canonicalSlug": "Collections-dropCollectionField",
+      "category": "Collections"
+    },
+    "Collections.dropCollectionFunction": {
+      "stableId": "node:Collections:dropCollectionFunction",
+      "canonicalSlug": "Collections-dropCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.dropCollectionProperties": {
+      "stableId": "node:Collections:dropCollectionProperties",
+      "canonicalSlug": "Collections-dropCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.dropFunctionField": {
+      "stableId": "node:Collections:dropFunctionField",
+      "canonicalSlug": "Collections-dropFunctionField",
+      "category": "Collections"
+    },
+    "Collections.dropSnapshot": {
+      "stableId": "node:Snapshot:dropSnapshot",
+      "canonicalSlug": "Snapshot-dropSnapshot",
+      "category": "Snapshot"
+    },
+    "Collections.getCollectionStatistics": {
+      "stableId": "node:Collections:getCollectionStatistics",
+      "canonicalSlug": "Collections-getCollectionStatistics",
+      "category": "Collections"
+    },
+    "Collections.getPkField": {
+      "stableId": "node:Collections:getPkField",
+      "canonicalSlug": "Collections-getPkField",
+      "category": "Collections"
+    },
+    "Collections.getPkFieldName": {
+      "stableId": "node:Collections:getPkFieldName",
+      "canonicalSlug": "Collections-getPkFieldName",
+      "category": "Collections"
+    },
+    "Collections.getPkFieldType": {
+      "stableId": "node:Collections:getPkFieldType",
+      "canonicalSlug": "Collections-getPkFieldType",
+      "category": "Collections"
+    },
+    "Collections.getRefreshExternalCollectionProgress": {
+      "stableId": "node:Collections:getRefreshExternalCollectionProgress",
+      "canonicalSlug": "Collections-getRefreshExternalCollectionProgress",
+      "category": "Collections"
+    },
+    "Collections.getRestoreSnapshotState": {
+      "stableId": "node:Snapshot:getRestoreSnapshotState",
+      "canonicalSlug": "Snapshot-getRestoreSnapshotState",
+      "category": "Snapshot"
+    },
+    "Collections.hasCollection": {
+      "stableId": "node:Collections:hasCollection",
+      "canonicalSlug": "Collections-hasCollection",
+      "category": "Collections"
+    },
+    "Collections.listAliases": {
+      "stableId": "node:Collections:listAliases",
+      "canonicalSlug": "Collections-listAliases",
+      "category": "Collections"
+    },
+    "Collections.listCollections": {
+      "stableId": "node:Collections:listCollections",
+      "canonicalSlug": "Collections-listCollections",
+      "category": "Collections"
+    },
+    "Collections.listRefreshExternalCollectionJobs": {
+      "stableId": "node:Collections:listRefreshExternalCollectionJobs",
+      "canonicalSlug": "Collections-listRefreshExternalCollectionJobs",
+      "category": "Collections"
+    },
+    "Collections.listRestoreSnapshotJobs": {
+      "stableId": "node:Snapshot:listRestoreSnapshotJobs",
+      "canonicalSlug": "Snapshot-listRestoreSnapshotJobs",
+      "category": "Snapshot"
+    },
+    "Collections.listSnapshots": {
+      "stableId": "node:Snapshot:listSnapshots",
+      "canonicalSlug": "Snapshot-listSnapshots",
+      "category": "Snapshot"
+    },
+    "Collections.pinSnapshotData": {
+      "stableId": "node:Snapshot:pinSnapshotData",
+      "canonicalSlug": "Snapshot-pinSnapshotData",
+      "category": "Snapshot"
+    },
+    "Collections.refreshExternalCollection": {
+      "stableId": "node:Collections:refreshExternalCollection",
+      "canonicalSlug": "Collections-refreshExternalCollection",
+      "category": "Collections"
+    },
+    "Collections.renameCollection": {
+      "stableId": "node:Collections:renameCollection",
+      "canonicalSlug": "Collections-renameCollection",
+      "category": "Collections"
+    },
+    "Collections.restoreSnapshot": {
+      "stableId": "node:Snapshot:restoreSnapshot",
+      "canonicalSlug": "Snapshot-restoreSnapshot",
+      "category": "Snapshot"
+    },
+    "Collections.runAnalyzer": {
+      "stableId": "node:Collections:runAnalyzer",
+      "canonicalSlug": "Collections-runAnalyzer",
+      "category": "Collections"
+    },
+    "Collections.truncateCollection": {
+      "stableId": "node:Collections:truncateCollection",
+      "canonicalSlug": "Collections-truncateCollection",
+      "category": "Collections"
+    },
+    "Collections.unpinSnapshotData": {
+      "stableId": "node:Snapshot:unpinSnapshotData",
+      "canonicalSlug": "Snapshot-unpinSnapshotData",
+      "category": "Snapshot"
+    },
+    "DataImport.BulkWriter": {
+      "stableId": "node:DataImport:BulkWriter",
+      "canonicalSlug": "DataImport-BulkWriter",
+      "category": "DataImport"
+    },
+    "DataImport.BulkWriterOptions": {
+      "stableId": "node:DataImport:BulkWriterOptions",
+      "canonicalSlug": "DataImport-BulkWriterOptions",
+      "category": "DataImport"
+    },
+    "DataImport.BulkWriterSchema": {
+      "stableId": "node:DataImport:BulkWriterSchema",
+      "canonicalSlug": "DataImport-BulkWriterSchema",
+      "category": "DataImport"
+    },
+    "DataImport.FlushEvent": {
+      "stableId": "node:DataImport:FlushEvent",
+      "canonicalSlug": "DataImport-FlushEvent",
+      "category": "DataImport"
+    },
+    "DataImport.Formatter": {
+      "stableId": "node:DataImport:Formatter",
+      "canonicalSlug": "DataImport-Formatter",
+      "category": "DataImport"
+    },
+    "DataImport.HttpImportCreateReq": {
+      "stableId": "node:DataImport:HttpImportCreateReq",
+      "canonicalSlug": "DataImport-HttpImportCreateReq",
+      "category": "DataImport"
+    },
+    "DataImport.HttpImportCreateResponse": {
+      "stableId": "node:DataImport:HttpImportCreateResponse",
+      "canonicalSlug": "DataImport-HttpImportCreateResponse",
+      "category": "DataImport"
+    },
+    "DataImport.HttpImportListResponse": {
+      "stableId": "node:DataImport:HttpImportListResponse",
+      "canonicalSlug": "DataImport-HttpImportListResponse",
+      "category": "DataImport"
+    },
+    "DataImport.HttpImportProgressReq": {
+      "stableId": "node:DataImport:HttpImportProgressReq",
+      "canonicalSlug": "DataImport-HttpImportProgressReq",
+      "category": "DataImport"
+    },
+    "DataImport.HttpImportProgressResponse": {
+      "stableId": "node:DataImport:HttpImportProgressResponse",
+      "canonicalSlug": "DataImport-HttpImportProgressResponse",
+      "category": "DataImport"
+    },
+    "DataImport.Storage": {
+      "stableId": "node:DataImport:Storage",
+      "canonicalSlug": "DataImport-Storage",
+      "category": "DataImport"
+    },
+    "DataImport.createImportJobs": {
+      "stableId": "node:DataImport:createImportJobs",
+      "canonicalSlug": "DataImport-createImportJobs",
+      "category": "DataImport"
+    },
+    "DataImport.listImportJobs": {
+      "stableId": "node:DataImport:listImportJobs",
+      "canonicalSlug": "DataImport-listImportJobs",
+      "category": "DataImport"
+    },
+    "Database.alterDatabase": {
+      "stableId": "node:Database:alterDatabase",
+      "canonicalSlug": "Database-alterDatabase",
+      "category": "Database"
+    },
+    "Database.alterDatabaseProperties": {
+      "stableId": "node:Database:alterDatabaseProperties",
+      "canonicalSlug": "Database-alterDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.createDatabase": {
+      "stableId": "node:Database:createDatabase",
+      "canonicalSlug": "Database-createDatabase",
+      "category": "Database"
+    },
+    "Database.describeDatabase": {
+      "stableId": "node:Database:describeDatabase",
+      "canonicalSlug": "Database-describeDatabase",
+      "category": "Database"
+    },
+    "Database.dropDatabase": {
+      "stableId": "node:Database:dropDatabase",
+      "canonicalSlug": "Database-dropDatabase",
+      "category": "Database"
+    },
+    "Database.dropDatabaseProperties": {
+      "stableId": "node:Database:dropDatabaseProperties",
+      "canonicalSlug": "Database-dropDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.listDatabases": {
+      "stableId": "node:Database:listDatabases",
+      "canonicalSlug": "Database-listDatabases",
+      "category": "Database"
+    },
+    "Database.useDatabase": {
+      "stableId": "node:Database:useDatabase",
+      "canonicalSlug": "Database-useDatabase",
+      "category": "Database"
+    },
+    "Management.IndexType": {
+      "stableId": "node:Management:IndexType",
+      "canonicalSlug": "Management-IndexType",
+      "category": "Management"
+    },
+    "Management.MetricType": {
+      "stableId": "node:Management:MetricType",
+      "canonicalSlug": "Management-MetricType",
+      "category": "Management"
+    },
+    "Management.alterIndexProperties": {
+      "stableId": "node:Management:alterIndexProperties",
+      "canonicalSlug": "Management-alterIndexProperties",
+      "category": "Management"
+    },
+    "Management.compact": {
+      "stableId": "node:Management:compact",
+      "canonicalSlug": "Management-compact",
+      "category": "Management"
+    },
+    "Management.createIndex": {
+      "stableId": "node:Management:createIndex",
+      "canonicalSlug": "Management-createIndex",
+      "category": "Management"
+    },
+    "Management.describeIndex": {
+      "stableId": "node:Management:describeIndex",
+      "canonicalSlug": "Management-describeIndex",
+      "category": "Management"
+    },
+    "Management.dropIndex": {
+      "stableId": "node:Management:dropIndex",
+      "canonicalSlug": "Management-dropIndex",
+      "category": "Management"
+    },
+    "Management.dropIndexProperties": {
+      "stableId": "node:Management:dropIndexProperties",
+      "canonicalSlug": "Management-dropIndexProperties",
+      "category": "Management"
+    },
+    "Management.flush": {
+      "stableId": "node:Management:flush",
+      "canonicalSlug": "Management-flush",
+      "category": "Management"
+    },
+    "Management.flushSync": {
+      "stableId": "node:Management:flushSync",
+      "canonicalSlug": "Management-flushSync",
+      "category": "Management"
+    },
+    "Management.getCompactionState": {
+      "stableId": "node:Management:getCompactionState",
+      "canonicalSlug": "Management-getCompactionState",
+      "category": "Management"
+    },
+    "Management.getCompactionStateWithPlans": {
+      "stableId": "node:Management:getCompactionStateWithPlans",
+      "canonicalSlug": "Management-getCompactionStateWithPlans",
+      "category": "Management"
+    },
+    "Management.getFlushState": {
+      "stableId": "node:Management:getFlushState",
+      "canonicalSlug": "Management-getFlushState",
+      "category": "Management"
+    },
+    "Management.getIndexBuildProgress": {
+      "stableId": "node:Management:getIndexBuildProgress",
+      "canonicalSlug": "Management-getIndexBuildProgress",
+      "category": "Management"
+    },
+    "Management.getIndexState": {
+      "stableId": "node:Management:getIndexState",
+      "canonicalSlug": "Management-getIndexState",
+      "category": "Management"
+    },
+    "Management.getIndexStatistics": {
+      "stableId": "node:Management:getIndexStatistics",
+      "canonicalSlug": "Management-getIndexStatistics",
+      "category": "Management"
+    },
+    "Management.getLoadState": {
+      "stableId": "node:Management:getLoadState",
+      "canonicalSlug": "Management-getLoadState",
+      "category": "Management"
+    },
+    "Management.getLoadingProgress": {
+      "stableId": "node:Management:getLoadingProgress",
+      "canonicalSlug": "Management-getLoadingProgress",
+      "category": "Management"
+    },
+    "Management.getPersistentSegmentInfo": {
+      "stableId": "node:Management:getPersistentSegmentInfo",
+      "canonicalSlug": "Management-getPersistentSegmentInfo",
+      "category": "Management"
+    },
+    "Management.getQuerySegmentInfo": {
+      "stableId": "node:Management:getQuerySegmentInfo",
+      "canonicalSlug": "Management-getQuerySegmentInfo",
+      "category": "Management"
+    },
+    "Management.getReplicas": {
+      "stableId": "node:Management:getReplicas",
+      "canonicalSlug": "Management-getReplicas",
+      "category": "Management"
+    },
+    "Management.listIndexes": {
+      "stableId": "node:Management:listIndexes",
+      "canonicalSlug": "Management-listIndexes",
+      "category": "Management"
+    },
+    "Management.loadBalance": {
+      "stableId": "node:Management:loadBalance",
+      "canonicalSlug": "Management-loadBalance",
+      "category": "Management"
+    },
+    "Management.loadCollection": {
+      "stableId": "node:Management:loadCollection",
+      "canonicalSlug": "Management-loadCollection",
+      "category": "Management"
+    },
+    "Management.loadCollectionAsync": {
+      "stableId": "node:Management:loadCollectionAsync",
+      "canonicalSlug": "Management-loadCollectionAsync",
+      "category": "Management"
+    },
+    "Management.loadCollectionSync": {
+      "stableId": "node:Management:loadCollectionSync",
+      "canonicalSlug": "Management-loadCollectionSync",
+      "category": "Management"
+    },
+    "Management.refreshLoad": {
+      "stableId": "node:Management:refreshLoad",
+      "canonicalSlug": "Management-refreshLoad",
+      "category": "Management"
+    },
+    "Management.releaseCollection": {
+      "stableId": "node:Management:releaseCollection",
+      "canonicalSlug": "Management-releaseCollection",
+      "category": "Management"
+    },
+    "Partitions.createPartition": {
+      "stableId": "node:Partitions:createPartition",
+      "canonicalSlug": "Partitions-createPartition",
+      "category": "Partitions"
+    },
+    "Partitions.dropPartition": {
+      "stableId": "node:Partitions:dropPartition",
+      "canonicalSlug": "Partitions-dropPartition",
+      "category": "Partitions"
+    },
+    "Partitions.getPartitionStatistics": {
+      "stableId": "node:Partitions:getPartitionStatistics",
+      "canonicalSlug": "Partitions-getPartitionStatistics",
+      "category": "Partitions"
+    },
+    "Partitions.hasPartition": {
+      "stableId": "node:Partitions:hasPartition",
+      "canonicalSlug": "Partitions-hasPartition",
+      "category": "Partitions"
+    },
+    "Partitions.listPartitions": {
+      "stableId": "node:Partitions:listPartitions",
+      "canonicalSlug": "Partitions-listPartitions",
+      "category": "Partitions"
+    },
+    "Partitions.loadPartitions": {
+      "stableId": "node:Partitions:loadPartitions",
+      "canonicalSlug": "Partitions-loadPartitions",
+      "category": "Partitions"
+    },
+    "Partitions.loadPartitionsSync": {
+      "stableId": "node:Partitions:loadPartitionsSync",
+      "canonicalSlug": "Partitions-loadPartitionsSync",
+      "category": "Partitions"
+    },
+    "Partitions.releasePartitions": {
+      "stableId": "node:Partitions:releasePartitions",
+      "canonicalSlug": "Partitions-releasePartitions",
+      "category": "Partitions"
+    },
+    "ResourceGroup.ResourceGroupConfig": {
+      "stableId": "node:ResourceGroup:ResourceGroupConfig",
+      "canonicalSlug": "ResourceGroup-ResourceGroupConfig",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.createResourceGroup": {
+      "stableId": "node:ResourceGroup:createResourceGroup",
+      "canonicalSlug": "ResourceGroup-createResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.describeResourceGroup": {
+      "stableId": "node:ResourceGroup:describeResourceGroup",
+      "canonicalSlug": "ResourceGroup-describeResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.dropAllResourceGroups": {
+      "stableId": "node:ResourceGroup:dropAllResourceGroups",
+      "canonicalSlug": "ResourceGroup-dropAllResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.dropResourceGroup": {
+      "stableId": "node:ResourceGroup:dropResourceGroup",
+      "canonicalSlug": "ResourceGroup-dropResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.getReplicateConfiguration": {
+      "stableId": "node:ResourceGroup:getReplicateConfiguration",
+      "canonicalSlug": "ResourceGroup-getReplicateConfiguration",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.get_replicate_configuration": {
+      "stableId": "node:ResourceGroup:getReplicateConfiguration",
+      "canonicalSlug": "ResourceGroup-getReplicateConfiguration",
+      "category": "ResourceGroup",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "node:ResourceGroup:getReplicateConfiguration",
+            "canonicalSlug": "ResourceGroup-getReplicateConfiguration",
+            "category": "ResourceGroup"
+          }
+        ]
+      }
+    },
+    "ResourceGroup.listResourceGroups": {
+      "stableId": "node:ResourceGroup:listResourceGroups",
+      "canonicalSlug": "ResourceGroup-listResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.transferNode": {
+      "stableId": "node:ResourceGroup:transferNode",
+      "canonicalSlug": "ResourceGroup-transferNode",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.transferReplica": {
+      "stableId": "node:ResourceGroup:transferReplica",
+      "canonicalSlug": "ResourceGroup-transferReplica",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.updateReplicateConfiguration": {
+      "stableId": "node:ResourceGroup:updateReplicateConfiguration",
+      "canonicalSlug": "ResourceGroup-updateReplicateConfiguration",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.updateResourceGroups": {
+      "stableId": "node:ResourceGroup:updateResourceGroups",
+      "canonicalSlug": "ResourceGroup-updateResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.update_replicate_configuration": {
+      "stableId": "node:ResourceGroup:updateReplicateConfiguration",
+      "canonicalSlug": "ResourceGroup-updateReplicateConfiguration",
+      "category": "ResourceGroup",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "node:ResourceGroup:updateReplicateConfiguration",
+            "canonicalSlug": "ResourceGroup-updateReplicateConfiguration",
+            "category": "ResourceGroup"
+          }
+        ]
+      }
+    },
+    "Vector.bulkInsert": {
+      "stableId": "node:DataImport:bulkInsert",
+      "canonicalSlug": "DataImport-bulkInsert",
+      "category": "DataImport"
+    },
+    "Vector.count": {
+      "stableId": "node:Vector:count",
+      "canonicalSlug": "Vector-count",
+      "category": "Vector"
+    },
+    "Vector.delete": {
+      "stableId": "node:Vector:delete",
+      "canonicalSlug": "Vector-delete",
+      "category": "Vector"
+    },
+    "Vector.deleteEntities": {
+      "stableId": "node:Vector:delete",
+      "canonicalSlug": "Vector-delete",
+      "category": "Vector",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "node:Vector:delete",
+            "canonicalSlug": "Vector-delete",
+            "category": "Vector"
+          }
+        ]
+      }
+    },
+    "Vector.flushAll": {
+      "stableId": "node:Management:flushAll",
+      "canonicalSlug": "Management-flushAll",
+      "category": "Management"
+    },
+    "Vector.flushAllSync": {
+      "stableId": "node:Management:flushAllSync",
+      "canonicalSlug": "Management-flushAllSync",
+      "category": "Management"
+    },
+    "Vector.get": {
+      "stableId": "node:Vector:get",
+      "canonicalSlug": "Vector-get",
+      "category": "Vector"
+    },
+    "Vector.getFlushAllState": {
+      "stableId": "node:Management:getFlushAllState",
+      "canonicalSlug": "Management-getFlushAllState",
+      "category": "Management"
+    },
+    "Vector.getImportState": {
+      "stableId": "node:DataImport:getImportState",
+      "canonicalSlug": "DataImport-getImportState",
+      "category": "DataImport"
+    },
+    "Vector.getMetric": {
+      "stableId": "node:Vector:getMetric",
+      "canonicalSlug": "Vector-getMetric",
+      "category": "Vector"
+    },
+    "Vector.hybridSearch": {
+      "stableId": "node:Vector:hybridSearch",
+      "canonicalSlug": "Vector-hybridSearch",
+      "category": "Vector"
+    },
+    "Vector.insert": {
+      "stableId": "node:Vector:insert",
+      "canonicalSlug": "Vector-insert",
+      "category": "Vector"
+    },
+    "Vector.listImportTasks": {
+      "stableId": "node:DataImport:listImportTasks",
+      "canonicalSlug": "DataImport-listImportTasks",
+      "category": "DataImport"
+    },
+    "Vector.query": {
+      "stableId": "node:Vector:query",
+      "canonicalSlug": "Vector-query",
+      "category": "Vector"
+    },
+    "Vector.queryIterator": {
+      "stableId": "node:Vector:queryIterator",
+      "canonicalSlug": "Vector-queryIterator",
+      "category": "Vector"
+    },
+    "Vector.search": {
+      "stableId": "node:Vector:search",
+      "canonicalSlug": "Vector-search",
+      "category": "Vector"
+    },
+    "Vector.searchIterator": {
+      "stableId": "node:Vector:searchIterator",
+      "canonicalSlug": "Vector-searchIterator",
+      "category": "Vector"
+    },
+    "Vector.upsert": {
+      "stableId": "node:Vector:upsert",
+      "canonicalSlug": "Vector-upsert",
+      "category": "Vector"
+    }
+  }
+}

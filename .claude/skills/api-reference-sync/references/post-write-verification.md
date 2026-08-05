@@ -33,7 +33,7 @@ Failure patterns that must block completion:
 ## Record And Folder Checks
 
 1. Use `bitable-show` to verify `Docs.link`, `父记录`, type, version metadata, `Targets`, and `Progress`.
-2. For every edited record, verify `Targets` is blank and `Progress` is `WIP`.
+2. For every edited interface-document record, verify `Targets` is blank and `Progress` is `WIP`. For structural VirtualNode or Module records, verify the approved structural metadata instead: repoints preserve existing `Targets`, `Progress`, `Slug`, and type; creates match the explicit resource-plan values.
 3. Use `list-folder` to verify the target document exists under the intended canonical version folder.
 4. When moving a version-local document, verify it is absent from the old folder.
 5. When copying across versions, verify the older snapshot still exists and remains unchanged.

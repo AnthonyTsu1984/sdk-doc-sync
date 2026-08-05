@@ -47,6 +47,10 @@ test('routing eval corpus covers explicit, implicit, contextual, and negative ca
     assert.equal(typeof entry.prompt, 'string');
     assert.equal(CANONICAL_SKILLS.includes(entry.expectedSkill), true);
     assert.equal(Array.isArray(entry.mustNotSelect), true);
+    assert.equal(entry.mustNotSelect.includes(entry.expectedSkill), false);
+    for (const forbidden of entry.mustNotSelect) {
+      assert.equal(CANONICAL_SKILLS.includes(forbidden), true, `${entry.id} has unknown mustNotSelect skill ${forbidden}`);
+    }
   }
 
   for (const name of CANONICAL_SKILLS) {
@@ -56,6 +60,13 @@ test('routing eval corpus covers explicit, implicit, contextual, and negative ca
       ['contextual', 'explicit', 'implicit', 'negative'],
       `${name} must cover all routing classes`,
     );
+    for (const routingClass of ['explicit', 'implicit', 'contextual', 'negative']) {
+      assert.equal(
+        matching.filter(entry => entry.class === routingClass).length,
+        3,
+        `${name} must provide exactly three ${routingClass} cases`,
+      );
+    }
   }
 });
 

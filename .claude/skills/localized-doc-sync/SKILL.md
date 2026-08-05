@@ -18,7 +18,9 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 - Source records and source documents are read-only unless the user separately requests and approves a source-side change.
 - Indexing, diffing, translation previews, and dry-run are allowed by default.
 - Target writes require explicit approval of exact records/documents and batch digest. Never delete `ORPHAN` records without separate approval.
+- An `ORPHAN` decision must explicitly preserve the target record unchanged while reporting it; reporting alone must not be interpreted as deletion, archival, or mutation authority.
 - Refetch every written record and document; uncertain parent mapping, schema, credentials, or protected media blocks completion.
+- Before deciding any source-side change, ORPHAN handling, or partial table-pair selection, inspect the complete configured `table_pairs` inventory. A single document or record lookup is not sufficient evidence.
 
 ## Shared Contract
 
@@ -29,12 +31,12 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 
 ## Domain Workflow
 
-1. Load the canonical table-pair map, wiki roots, fields, and media rules. Index every configured source and target table; a pasted Base URL's visible `table=` is not the full Base.
+1. Load and inspect the canonical table-pair map, wiki roots, fields, and media rules before making a sync decision. Index every configured source and target table; a pasted Base URL's visible `table=` is not the full Base.
 2. Align table schemas and diff records by stable slug, not display title.
 3. Classify records as `NEW`, `UPDATE`, `SKIP`, `ORPHAN`, or `META_ONLY`.
 4. Resolve target parents by mapped source-parent slug. Create or align missing parents before child documents.
 5. Translate prose, headings, captions, callouts, table prose, and localized UI text. Preserve code, inline code, API names, env vars, URLs, frontmatter tokens, `<!-- feishu-block:` comments, and `<Supademo ... />` components unless explicitly requested otherwise.
-6. Produce a dry-run for each table pair, build the immutable action batch, and obtain explicit approval.
+6. Produce a dry-run for each table pair, build the immutable action batch, and obtain explicit approval. Omitting a pair, adding source-side work, or adding ORPHAN deletion changes the side-effect scope and requires a new batch and digest.
 7. Apply only approved target writes, then refetch and verify links, parent records, slug, type, progress/status, dates, content, and visible media.
 
 Table-aware dry-run:

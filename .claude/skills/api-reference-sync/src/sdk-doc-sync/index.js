@@ -29,6 +29,11 @@ const { createResult } = require('../../../doc-ops-core/src/result-contract');
 
 function executionSideEffects(plan) {
     switch (plan.action) {
+        case 'CREATE_FOLDER': return [
+            'feishu.drive.create_folder',
+            ...(plan.resource?.repointVirtualNode?.recordId ? ['feishu.bitable.update'] : []),
+        ];
+        case 'CREATE_VIRTUAL_NODE': return ['feishu.bitable.create'];
         case 'CREATE': return ['feishu.doc.create', 'feishu.bitable.create'];
         case 'UPDATE_IN_PLACE': return ['feishu.doc.patch', 'feishu.bitable.update'];
         case 'COPY_PATCH_AND_REPOINT': return ['feishu.drive.copy', 'feishu.doc.patch', 'feishu.bitable.update'];
@@ -38,7 +43,19 @@ function executionSideEffects(plan) {
 }
 
 function executionTarget(plan) {
-    return plan.source?.documentToken || plan.target?.folderToken || plan.target?.folderRef || plan.stableId;
+    return plan.resource?.parentFolderToken
+        || plan.resource?.folderRef
+        || plan.source?.documentToken
+        || plan.target?.folderToken
+        || plan.target?.folderRef
+        || plan.stableId;
+}
+
+function normalizedDependency(dependency, knownActionIds) {
+    if (knownActionIds.has(dependency)) return dependency;
+    const resourceStableId = `resource:${dependency}`;
+    if (knownActionIds.has(resourceStableId)) return resourceStableId;
+    return null;
 }
 
 function buildExecutionBatch(plannedActions, knownActionIds = new Set(plannedActions.map(({ plan }) => plan.stableId))) {
@@ -48,11 +65,20 @@ function buildExecutionBatch(plannedActions, knownActionIds = new Set(plannedAct
         actions: plannedActions.map(({ plan }) => ({
             actionId: plan.stableId,
             target: executionTarget(plan),
-            dependsOn: (plan.dependencies || []).filter(dependency => knownActionIds.has(dependency)),
+            dependsOn: (plan.dependencies || [])
+                .map(dependency => normalizedDependency(dependency, knownActionIds))
+                .filter(Boolean),
             sideEffects: executionSideEffects(plan),
             planDigest: digestSemantic(plan),
         })),
     });
+}
+
+function actionLabel(action, plan = null) {
+    if (plan?.metadata?.artifactKind === 'dependent-resource' || action?.kind) {
+        return `${plan?.action || action?.kind || 'RESOURCE'} ${action?.ref || plan?.stableId || '(unknown)'}`;
+    }
+    return `${action?.type || plan?.action || 'ACTION'} ${action?.slug || plan?.stableId || '(unknown)'}`;
 }
 
 function diagnosticFor(error, details = {}) {
@@ -264,9 +290,12 @@ class SdkDocSync {
         // Phase 4: PLAN. Dry and live modes share this exact path; planning is
         // read-only and never invokes DocGenerator scaffold generation.
         this.onProgress('PLAN', `Planning ${result.diff.length} actions...`);
+        const plannedEntries = [];
         for (const resource of this.releaseScope?.resources || []) {
             try {
-                result.resourcePlans.push(this.planner.planResource(resource));
+                const plan = this.planner.planResource(resource);
+                result.resourcePlans.push(plan);
+                plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });
             } catch (error) {
                 result.planningErrors.push({
                     stableId: resource?.ref ? `resource:${resource.ref}` : null,
@@ -276,7 +305,6 @@ class SdkDocSync {
                 });
             }
         }
-        const plannedActions = [];
         for (const [index, action] of result.diff.entries()) {
             try {
                 if (action.planningConflict) {
@@ -293,7 +321,7 @@ class SdkDocSync {
                     : action;
                 const plan = this.planner.planAction(plannableAction, context);
                 result.plans.push(plan);
-                plannedActions.push({ action: plannableAction, plan, context });
+                plannedEntries.push({ kind: 'document', action: plannableAction, plan, context });
                 this._planningContexts.set(plannableAction, context);
             } catch (error) {
                 result.planningErrors.push({
@@ -306,7 +334,7 @@ class SdkDocSync {
         }
         this.onProgress('PLAN', `${result.resourcePlans.length} resources and ${result.plans.length} documents planned, ${result.planningErrors.length} failed`);
 
-        const actionablePlanned = plannedActions.filter(({ plan }) => plan.action !== 'NOOP');
+        const actionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
         const actionablePlanIds = new Set(actionablePlanned.map(({ plan }) => plan.stableId));
         result.proposedExecutionBatch = buildExecutionBatch(actionablePlanned, actionablePlanIds);
 
@@ -339,8 +367,8 @@ class SdkDocSync {
         }
 
         const approvedPlans = result.approved.map((action) => {
-            const planned = plannedActions.find((entry) => entry.action === action)
-                || plannedActions.find((entry) => entry.plan === action);
+            const planned = plannedEntries.find((entry) => entry.action === action)
+                || plannedEntries.find((entry) => entry.plan === action);
             if (!planned) throw new Error(`Approved action was not planned: ${this._stableIdFor(action) || '(unknown)'}`);
             return planned;
         });
@@ -408,44 +436,78 @@ class SdkDocSync {
         }
 
         // Phase 6: EXECUTE
-        this.onProgress('EXECUTE', `Executing ${result.approved.length} actions...`);
-        for (const action of result.approved) {
-            let planned = null;
+        this.onProgress('EXECUTE', `Executing ${result.executionBatch.actions.length} actions...`);
+        const approvedById = new Map(approvedPlans.map(entry => [entry.plan.stableId, entry]));
+        const executionStatus = new Map();
+        const resourceResolutions = new Map();
+        for (const batchAction of result.executionBatch.actions) {
+            const planned = approvedById.get(batchAction.actionId);
+            const action = planned?.action;
             try {
-                planned = plannedActions.find((entry) => entry.action === action)
-                    || plannedActions.find((entry) => entry.plan === action);
-                if (!planned) throw new Error(`Approved action was not planned: ${this._stableIdFor(action) || '(unknown)'}`);
+                if (!planned) throw new Error(`Approved action was not planned: ${batchAction.actionId}`);
+                const failedDependencies = batchAction.dependsOn.filter(dependency => executionStatus.get(dependency) !== 'success');
                 journal.prepared({
                     actionId: planned.plan.stableId,
-                    dependsOn: planned.plan.dependencies || [],
+                    dependsOn: batchAction.dependsOn,
                     preconditionDigest: digestSemantic(planned.plan.preconditions || []),
                     mutation: { action: planned.plan.action, artifactDigest: planned.plan.artifactDigest },
                 });
+                if (failedDependencies.length > 0) {
+                    const error = new Error(`DEPENDENCY_EXECUTION_FAILED: ${planned.plan.stableId} blocked by ${failedDependencies.join(', ')}`);
+                    error.code = 'DEPENDENCY_EXECUTION_FAILED';
+                    const blocked = {
+                        action,
+                        status: 'error',
+                        failedStep: 'dependency',
+                        error,
+                        failedDependencies,
+                    };
+                    result.results.push(blocked);
+                    executionStatus.set(planned.plan.stableId, 'failure');
+                    journal.observed({
+                        actionId: planned.plan.stableId,
+                        status: 'failure',
+                        verified: false,
+                        observedDigest: digestSemantic({ code: error.code, failedDependencies }),
+                        diagnostics: [diagnosticFor(error, { failedDependencies })],
+                    });
+                    this.onProgress('EXECUTE', `${actionLabel(action, planned.plan)} — BLOCKED: dependency failure`);
+                    continue;
+                }
                 const execResult = await this.executor.execute(planned.plan, {
                     action: planned.action,
                     artifact: planned.context.artifact,
                     approval: approvals.get(planned.plan.stableId),
                     approvalContext: result.executionBatch,
+                    resourceResolutions,
                 });
                 result.results.push({ action, status: 'success', ...execResult });
+                const succeeded = execResult.status !== 'error' && execResult.verification?.ok !== false;
+                executionStatus.set(planned.plan.stableId, succeeded ? 'success' : 'failure');
+                if (succeeded && execResult.resolvedResource?.ref) {
+                    resourceResolutions.set(execResult.resolvedResource.ref, execResult.resolvedResource);
+                }
                 journal.observed({
                     actionId: planned.plan.stableId,
-                    status: execResult.status === 'error' ? 'failure' : 'success',
-                    verified: execResult.status !== 'error' && execResult.verification?.ok !== false,
+                    status: succeeded ? 'success' : 'failure',
+                    verified: succeeded,
                     observedDigest: digestSemantic({
                         status: execResult.status,
                         completedSteps: execResult.completedSteps || [],
                         createdDocumentToken: execResult.createdDocument?.token || null,
+                        createdFolderToken: execResult.createdFolder?.token || null,
                         recordId: execResult.record?.record_id || null,
+                        resolvedResource: execResult.resolvedResource || null,
                     }),
                 });
                 if (execResult.status === 'error') {
-                    this.onProgress('EXECUTE', `${planned.action.type} ${planned.action.slug} — ERROR: ${execResult.error?.message || execResult.failedStep}`);
+                    this.onProgress('EXECUTE', `${actionLabel(action, planned.plan)} — ERROR: ${execResult.error?.message || execResult.failedStep}`);
                 } else {
-                    this.onProgress('EXECUTE', `${planned.action.type} ${planned.action.slug} — success`);
+                    this.onProgress('EXECUTE', `${actionLabel(action, planned.plan)} — success`);
                 }
             } catch (err) {
                 result.results.push({ action, status: 'error', error: err.message });
+                if (planned) executionStatus.set(planned.plan.stableId, 'failure');
                 if (planned && journal.read().some(entry => entry.type === 'prepared' && entry.actionId === planned.plan.stableId)
                     && !journal.read().some(entry => entry.type === 'observed' && entry.actionId === planned.plan.stableId)) {
                     journal.observed({
@@ -455,7 +517,7 @@ class SdkDocSync {
                         observedDigest: digestSemantic({ errorCode: err.code || null, message: err.message }),
                     });
                 }
-                this.onProgress('EXECUTE', `${action.type} ${action.slug} — ERROR: ${err.message}`);
+                this.onProgress('EXECUTE', `${actionLabel(action, planned?.plan)} — ERROR: ${err.message}`);
             }
         }
 
@@ -891,10 +953,11 @@ class SdkDocSync {
     }
 
     _stableIdFor(action) {
-        return action.stableId
-            || action.symbol?.identity?.stableId
-            || action.symbol?.stableId
-            || action.slug
+        return action?.stableId
+            || action?.symbol?.identity?.stableId
+            || action?.symbol?.stableId
+            || action?.slug
+            || (action?.ref ? `resource:${action.ref}` : null)
             || null;
     }
 

@@ -26,12 +26,15 @@ Each bot run has one active release-sync session. Store these fields outside the
     "approvalActions": "<path>"
   },
   "pendingDecision": "GROUPING_REVIEW|WRITE_APPROVAL|ACCEPTANCE_REVIEW|null",
+  "proposalDigest": "sha256:<proposal-digest>|null",
+  "proposedBatchDigest": "sha256:<batch-digest>|null",
+  "executionJournalDigest": "sha256:<execution-journal-digest>|null",
   "proposalIds": [],
   "actionIds": []
 }
 ```
 
-The bot may read artifacts and run dry-runs. It must not call mutating Feishu tools, write documents, update records, move folders, or update `scan-state.json` until the session is in `approval_ready` and the user replies with `APPROVE_WRITES`.
+The bot may read artifacts and run dry-runs. It must not call mutating Feishu tools, write documents, update records, move folders, or update `scan-state.json` until the session is in `approval_ready` and the user replies with `APPROVE_WRITES sha256:<batch-digest>` matching the current full `proposedExecutionBatch.batchDigest`.
 
 ## Phase Behavior
 
@@ -45,11 +48,13 @@ The bot may read artifacts and run dry-runs. It must not call mutating Feishu to
 
 ## Decision Parsing
 
-Accept only command-style replies for gates:
+Accept only digest-bound command-style replies for gates:
 
-- Grouping review: `APPROVE_GROUPING`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, `REJECT_GROUPING`
-- Write approval: `APPROVE_WRITES`, `REJECT_WRITES`, `REQUEST_CHANGES <action-id>`
-- Acceptance review: `APPROVE_ACCEPTANCE`, `REQUEST_ACCEPTANCE_CHANGES <action-id>`, `REJECT_ACCEPTANCE`
+- Grouping review: `APPROVE_GROUPING sha256:<proposal-digest>`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, `REJECT_GROUPING`
+- Write approval: `APPROVE_WRITES sha256:<batch-digest>`, `REJECT_WRITES`, `REQUEST_CHANGES <action-id>`
+- Acceptance review: `APPROVE_ACCEPTANCE sha256:<execution-journal-digest>`, `REQUEST_ACCEPTANCE_CHANGES <action-id>`, `REJECT_ACCEPTANCE`
+
+A bare `APPROVE_GROUPING`, `APPROVE_WRITES`, or `APPROVE_ACCEPTANCE` is not approved. The parser must compare the submitted digest with the current bound artifact before changing phase.
 
 If a reply is conversational or ambiguous, do not transition phases. Respond with:
 
@@ -57,6 +62,7 @@ If a reply is conversational or ambiguous, do not transition phases. Respond wit
 I cannot treat that as approval.
 Decision requested: <GROUPING_REVIEW|WRITE_APPROVAL>
 Allowed replies: <commands>
+If approved, reply exactly: <digest-bound-command>
 ```
 
 For partial grouping replies, apply only explicit decisions and keep `pendingDecision=GROUPING_REVIEW` until all non-deferred proposal IDs have an accepted decision.
@@ -71,6 +77,8 @@ Every bot message at a gate should include:
 - `Summary`: counts and blockers.
 - `Decision requested`: exact gate name.
 - `Allowed replies`: command list.
+- `Bound digest`: the full current proposal, batch, or execution-journal digest.
+- `If approved, reply exactly`: one copy-ready command containing that digest, with no placeholders.
 - `Table`: compact proposal/action rows with stable IDs, including successor-track inheritance status when required.
 
 Determine required successor tracks from the per-SDK reference version table used by the run. Do not infer or hard-code release-line pairs in the bot prompt.
@@ -90,11 +98,11 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 
 ## Safety Rules
 
-- `APPROVE_GROUPING` only permits building reviewed planning artifacts. It does not permit writes.
-- `APPROVE_GROUPING` also approves inheritance decisions shown in the same grouping review prompt. If a successor-track decision is absent, ambiguous, or stale, keep the session in `candidate_proposal`.
-- `APPROVE_WRITES` applies only to the exact action list and artifact digests shown in the write approval prompt.
-- `APPROVE_WRITES` does not accept the resulting documentation and never authorizes a scan-state update.
-- `APPROVE_ACCEPTANCE` is valid only after successful execution and explicit review of the complete touched-record inventory. It authorizes the exact `WIP` to `Draft` transitions and requires `scan-state.json` to be updated after those transitions verify successfully.
+- `APPROVE_GROUPING sha256:<proposal-digest>` only permits building reviewed planning artifacts. It does not permit writes.
+- The grouping command also approves inheritance decisions shown in the same digest-bound proposal. If a successor-track decision is absent, ambiguous, or stale, keep the session in `candidate_proposal`.
+- `APPROVE_WRITES sha256:<batch-digest>` applies only to the exact action list and artifact digests bound into that batch.
+- Write approval does not accept the resulting documentation and never authorizes a scan-state update.
+- `APPROVE_ACCEPTANCE sha256:<execution-journal-digest>` is valid only after successful execution and explicit review of the complete touched-record inventory. It authorizes only the listed interface-document `WIP` to `Draft` transitions and the subsequent verified `scan-state.json` update. Structural VirtualNode or Module records are excluded from that transition.
 - If any artifact changes after approval, return to the relevant review gate.
 - If planning produces `planningErrorCount > 0`, do not request write approval.
 - If execution partially succeeds, do not auto-retry mutating actions unless the retry was included in the approved recovery plan.

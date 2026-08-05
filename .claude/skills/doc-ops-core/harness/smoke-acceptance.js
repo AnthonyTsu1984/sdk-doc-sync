@@ -2,12 +2,19 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { spawnSync } = require('node:child_process');
 
 const { canonicalStringify, canonicalize } = require('../src/canonical-json');
 const { digestSemantic } = require('../src/digest');
 const { createResult, validateResult } = require('../src/result-contract');
 const { extractMarkdownCodeSnippets, normalizeCodeLanguage } = require('../src/markdown-code-snippets');
 const { compareMarkdownInventory, inventoryMarkdown } = require('./smoke-content-inventory');
+
+const PROJECT_ROOT = path.resolve(__dirname, '../../../..');
+const DOC_CODE_VERIFIER = path.join(
+  PROJECT_ROOT,
+  '.claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js',
+);
 
 const CANONICAL_SKILLS = Object.freeze([
   'api-reference-sync',
@@ -487,11 +494,43 @@ function readJournal(filePath) {
   return fs.readFileSync(filePath, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
+function ensureDocCodeVerifierReport({ corpus, corpusRoot, runDir }) {
+  const reportPath = path.join(runDir, 'artifacts', 'doc-code-verify.json');
+  if (fs.existsSync(reportPath)) return reportPath;
+  const document = (corpus?.documents || []).find(item => item.id === 'verification-only');
+  if (!document?.file) {
+    const error = new Error('verification-only corpus source is required');
+    error.code = 'SMOKE_VERIFIER_SOURCE_MISSING';
+    throw error;
+  }
+  const sourcePath = path.join(corpusRoot, document.file);
+  fs.mkdirSync(path.dirname(reportPath), { recursive: true, mode: 0o700 });
+  const result = spawnSync(process.execPath, [
+    DOC_CODE_VERIFIER,
+    '--markdown', path.relative(PROJECT_ROOT, sourcePath),
+    '--languages', 'cpp',
+    '--report', path.relative(PROJECT_ROOT, reportPath),
+  ], {
+    cwd: PROJECT_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, DOTENV_CONFIG_QUIET: 'true' },
+  });
+  if (result.error || result.status !== 0 || !fs.existsSync(reportPath)) {
+    const detail = String(result.stderr || result.stdout || result.error?.message || '').trim().slice(0, 2000);
+    const error = new Error(`doc-code verifier report generation failed${detail ? `: ${detail}` : ''}`);
+    error.code = 'SMOKE_VERIFIER_REPORT_FAILED';
+    throw error;
+  }
+  fs.chmodSync(reportPath, 0o600);
+  return reportPath;
+}
+
 async function runSmokeAcceptance({ corpus, corpusRoot, plan, runDir, adapter }) {
   const state = JSON.parse(fs.readFileSync(path.join(runDir, 'state.json'), 'utf8'));
   const creationJournalEntries = readJournal(path.join(runDir, 'create.journal.jsonl'));
   const patchJournalEntries = readJournal(path.join(runDir, 'patch.journal.jsonl'));
-  const verifierReport = JSON.parse(fs.readFileSync(path.join(runDir, 'artifacts', 'doc-code-verify.json'), 'utf8'));
+  const verifierReportPath = ensureDocCodeVerifierReport({ corpus, corpusRoot, runDir });
+  const verifierReport = JSON.parse(fs.readFileSync(verifierReportPath, 'utf8'));
   const readback = await collectAcceptanceReadback({ adapter, corpus, plan, state });
   const artifacts = buildSkillAcceptanceArtifacts({
     corpus,
@@ -535,6 +574,7 @@ module.exports = {
   CANONICAL_SKILLS,
   buildSkillAcceptanceArtifacts,
   collectAcceptanceReadback,
+  ensureDocCodeVerifierReport,
   inspectSiblingRelation,
   runSmokeAcceptance,
 };

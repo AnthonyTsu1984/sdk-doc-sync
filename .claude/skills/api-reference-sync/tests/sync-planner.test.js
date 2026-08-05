@@ -583,6 +583,60 @@ test('execution batch construction cannot bypass an unselected document dependen
   );
 });
 
+test('execution batch includes resource plans and normalizes raw resource refs into DAG dependencies', () => {
+  const resourcePlan = new SyncPlanner().planResource({
+    kind: 'folder',
+    ref: 'folder:node:v30:Authentication',
+    name: 'Authentication',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'Authentication',
+    },
+  });
+  const documentPlan = Object.freeze({
+    schemaVersion: 1,
+    action: 'CREATE',
+    stableId: 'node:Authentication:connect',
+    dependencies: ['folder:node:v30:Authentication'],
+    target: { folderRef: 'folder:node:v30:Authentication' },
+  });
+  const entries = [{ plan: resourcePlan }, { plan: documentPlan }];
+  const batch = SdkDocSync.buildExecutionBatch(entries);
+
+  assert.equal(batch.actions.length, 2);
+  assert.deepEqual(batch.actions.map(action => action.actionId), [
+    'resource:folder:node:v30:Authentication',
+    'node:Authentication:connect',
+  ]);
+  assert.deepEqual(batch.actions[1].dependsOn, ['resource:folder:node:v30:Authentication']);
+  assert.ok(batch.sideEffects.includes('feishu.drive.create_folder'));
+});
+
+test('resource plan changes are bound into the execution batch digest', () => {
+  const resource = (name) => new SyncPlanner().planResource({
+    kind: 'folder',
+    ref: 'folder:node:v30:Authentication',
+    name,
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name,
+    },
+  });
+
+  const first = SdkDocSync.buildExecutionBatch([{ plan: resource('Authentication') }]);
+  const second = SdkDocSync.buildExecutionBatch([{ plan: resource('Auth') }]);
+
+  assert.notEqual(first.batchDigest, second.batchDigest);
+});
+
 test('SyncPlanner creates an approval-gated folder resource plan with optional VirtualNode repointing', () => {
   const plan = new SyncPlanner().planResource({
     kind: 'folder',
@@ -601,6 +655,13 @@ test('SyncPlanner creates an approval-gated folder resource plan with optional V
       tableId: 'table-v30',
       recordId: 'rec-auth',
       title: 'Authentication',
+      currentFolderToken: 'folder-auth-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'Authentication',
+      },
     },
   });
 
@@ -611,7 +672,17 @@ test('SyncPlanner creates an approval-gated folder resource plan with optional V
   assert.deepEqual(plan.postconditions, [
     { type: 'RESOURCE_RESOLVED', ref: 'folder:cpp:v30:Authentication', value: 'NEW_FOLDER_TOKEN' },
     { type: 'TARGET_ANCESTRY', folderRef: 'folder:cpp:v30:Authentication', versionRootToken: 'root-v30' },
-    { type: 'VIRTUAL_NODE_LINK', recordId: 'rec-auth', folderRef: 'folder:cpp:v30:Authentication' },
+    {
+      type: 'VIRTUAL_NODE_LINK',
+      recordId: 'rec-auth',
+      folderRef: 'folder:cpp:v30:Authentication',
+      preservedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'Authentication',
+      },
+    },
   ]);
   assert.equal(Object.isFrozen(plan), true);
 });
@@ -625,13 +696,15 @@ test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
     baseToken: 'base-v26',
     tableId: 'table-v26',
     version: 'v2.6.x',
+    targets: ['milvus-sdk-cpp'],
+    progress: 'Draft',
     dependsOn: ['folder:cpp:v26:CDC'],
     existingLookup: {
       checked: true,
       absent: true,
       baseToken: 'base-v26',
       tableId: 'table-v26',
-      criteria: { title: 'CDC', type: 'VirtualNode' },
+      criteria: { canonicalSlug: 'CDC', title: 'CDC', type: 'VirtualNode' },
     },
   });
 
@@ -640,6 +713,7 @@ test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
   assert.deepEqual(plan.postconditions, [
     { type: 'RESOURCE_RESOLVED', ref: 'parent:cpp:v26:CDC', value: 'NEW_RECORD_ID' },
     { type: 'VIRTUAL_NODE_LINK', recordId: 'NEW_RECORD_ID', folderRef: 'folder:cpp:v26:CDC' },
+    { type: 'VIRTUAL_NODE_METADATA', slug: 'CDC', targets: ['milvus-sdk-cpp'], progress: 'Draft' },
   ]);
 });
 
@@ -812,6 +886,12 @@ test('dry-run emits immutable dependent resource plans before document plans', a
   assert.equal(result.resourcePlans[0].stableId, 'resource:folder:node:v26:Collections');
   assert.equal(Object.isFrozen(result.resourcePlans[0]), true);
   assert.equal(result.plans.length, 1);
+  assert.equal(result.proposedExecutionBatch.actions.length, 2);
+  assert.ok(result.proposedExecutionBatch.actions.some(action => (
+    action.actionId === 'resource:folder:node:v26:Collections'
+  )));
+  assert.equal(calls.documentMutations, 0);
+  assert.equal(calls.recordMutations, 0);
 });
 
 test('dry and live modes produce identical plans before approval or execution', async () => {
@@ -1029,6 +1109,88 @@ test('live execution receives the plan-specific approval envelope', async () => 
   assert.equal(approvals[0].repairApproved, true);
   assert.equal(approvals[0].documentToken, 'doc-v26');
   assert.match(result.executionJournalDigest, /^sha256:/);
+});
+
+test('failed resource execution is journaled and blocks dependent documents', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, resourcePlanner: 0, documentMutations: 0, recordMutations: 0 };
+  const executed = [];
+  const sync = syncFixture({
+    dryRun: false,
+    calls,
+    approvalCallback: async (actions) => actions,
+  });
+  sync.releaseScope = {
+    baselineTag: 'v2.6.4',
+    targetTag: 'v2.6.5',
+    releaseRange: 'v2.6.4..v2.6.5',
+    approvalGrade: true,
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'node:Collections:createCollection',
+      canonicalSlug: 'Collections-createCollection',
+      symbol: 'Collections.createCollection',
+      source: {},
+      reason: 'description changed',
+      planningContext: {
+        target: {
+          version: 'v2.6.x',
+          parentRecordId: 'parent-v26',
+          folderToken: null,
+          folderRef: 'folder:node:v26:Collections',
+          versionRootToken: 'root-v26',
+          ancestryVerified: true,
+        },
+        dependencies: ['folder:node:v26:Collections'],
+      },
+    }],
+    resources: [{
+      kind: 'folder',
+      ref: 'folder:node:v26:Collections',
+      name: 'Collections',
+      parentFolderToken: 'root-v26',
+      versionRootToken: 'root-v26',
+      existingLookup: {
+        checked: true,
+        absent: true,
+        parentFolderToken: 'root-v26',
+        name: 'Collections',
+      },
+    }],
+  };
+  sync.executionApprovalProvider = (plan, action, batch) => createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  sync.executor = {
+    async execute(resourceOrDocumentPlan) {
+      executed.push(resourceOrDocumentPlan.stableId);
+      if (resourceOrDocumentPlan.action === 'CREATE_FOLDER') {
+        const error = new Error('folder creation failed');
+        error.code = 'RESOURCE_CREATE_FAILED';
+        return { status: 'error', error, failedStep: 'createFolder', verification: null };
+      }
+      return { status: 'success', verification: { ok: true } };
+    },
+  };
+
+  const result = await sync.run();
+  const entries = fs.readFileSync(result.executionJournalPath, 'utf8').trim().split('\n').map(JSON.parse);
+
+  assert.deepEqual(executed, ['resource:folder:node:v26:Collections']);
+  assert.equal(result.results.length, 2);
+  assert.equal(result.results[1].failedStep, 'dependency');
+  assert.deepEqual(result.results[1].failedDependencies, ['resource:folder:node:v26:Collections']);
+  assert.equal(result.executionResult.status, 'PARTIAL');
+  assert.deepEqual(entries.filter(entry => entry.type === 'observed').map(entry => entry.actionId), [
+    'resource:folder:node:v26:Collections',
+    'node:Collections:createCollection',
+  ]);
+  assert.equal(entries.at(-1).completionSentinel, true);
 });
 
 test('orchestrator returns typed planning errors and does not approve invalid write actions', async () => {

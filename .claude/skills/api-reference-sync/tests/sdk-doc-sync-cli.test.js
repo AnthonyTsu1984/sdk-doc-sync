@@ -23,14 +23,43 @@ test('bounded dry-run summary reports dependent resource plans separately from d
     scanned: [], indexed: [], diff: [],
     resourcePlans: [{ action: 'CREATE_FOLDER' }, { action: 'CREATE_VIRTUAL_NODE' }],
     plans: [{ action: 'CREATE' }],
-    proposedExecutionBatch: { batchDigest: 'sha256:proposed', actions: [{ actionId: 'a' }] },
+    proposedExecutionBatch: {
+      batchDigest: 'sha256:proposed',
+      actions: [{ actionId: 'folder' }, { actionId: 'virtual-node' }, { actionId: 'document' }],
+    },
     planningErrors: [], approved: [], results: [],
   });
 
   assert.equal(summary.resourcePlanCount, 2);
   assert.equal(summary.planCount, 1);
   assert.equal(summary.proposedBatchDigest, 'sha256:proposed');
-  assert.equal(summary.proposedActionCount, 1);
+  assert.equal(summary.proposedActionCount, 3);
+});
+
+test('non-JSON dry-run prints the exact digest-bound approval reply and live flag', async () => {
+  const stdout = [];
+  const result = await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+      indexReader: async () => [],
+      onStdout: (line) => stdout.push(line),
+    },
+  });
+
+  const digest = result.proposedExecutionBatch.batchDigest;
+  const output = stdout.join('\n');
+  assert.match(output, new RegExp(`If approved, reply exactly: APPROVE_WRITES ${digest}`));
+  assert.match(output, new RegExp(`--approve-batch-digest ${digest}`));
 });
 
 test('CLI accepts repeatable token-specific repair approvals', () => {
@@ -78,6 +107,17 @@ test('execution approval provider rejects an approved plan digest mismatch', () 
     () => provider({ ...plan, stableId: 'python:Category:other' }, {}, { batchDigest: 'sha256:batch' }),
     /PLAN_NOT_APPROVED/,
   );
+  assert.doesNotThrow(() => provider({
+    stableId: 'resource:folder:node:v30:Authentication',
+    artifactDigest: null,
+  }, {}, {
+    skill: 'api-reference-sync',
+    operation: 'execute',
+    batchDigest: 'sha256:batch',
+    actions: [{ actionId: 'resource:folder:node:v30:Authentication' }],
+    targets: ['root-v30'],
+    sideEffects: ['feishu.drive.create_folder'],
+  }));
 });
 
 test('JSON console isolation redirects writer progress away from stdout and restores console.log', async () => {

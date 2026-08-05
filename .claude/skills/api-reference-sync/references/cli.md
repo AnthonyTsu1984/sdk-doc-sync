@@ -142,6 +142,50 @@ node .claude/skills/api-reference-sync/bin/sdk-review-session.js record-finaliza
 
 Only the last command can mark the persistent session `finalized` and `scanStateUpdated: true`, and only when the journal proves successful digest-bound finalization.
 
+## Per-Document Rollback
+
+Rollback is available for one executed unit while it is awaiting `APPROVE_DOCUMENT`, or after its accepted receipt exists but before final acceptance is finalized. A finalized session cannot be reopened; use a corrective release.
+
+Planning is read-only and writes only the local rollback manifest:
+
+```bash
+ROLLBACK_MANIFEST=tmp/sdk-doc-sync-runs/<language>-<track>/rollback-<unit>.json
+node .claude/skills/api-reference-sync/bin/sdk-document-rollback.js plan \
+  --session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --manifest "$ROLLBACK_MANIFEST"
+```
+
+Review the exact inverse actions, Bitable fields, Docx/folder tokens, side effects, and shared-resource blockers. The command emits one copy-ready approval line:
+
+```text
+APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
+```
+
+After that exact reply, execute with a new journal path:
+
+```bash
+ROLLBACK_JOURNAL=tmp/sdk-doc-sync-runs/<language>-<track>/rollback-<unit>.jsonl
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/api-reference-sync/bin/sdk-document-rollback.js execute \
+  --session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --manifest "$ROLLBACK_MANIFEST" \
+  --journal "$ROLLBACK_JOURNAL" \
+  --approve-rollback-digest sha256:<rollback-manifest-digest>
+```
+
+The executor performs a live drift preflight, applies inverse actions in reverse dependency order, and writes prepared/observed entries before a completion sentinel. It updates the review session only after full verification. `scan-state.json` remains unchanged.
+
+Action-specific cleanup is mandatory:
+
+- `COPY_PATCH_AND_REPOINT`: restore the complete captured Bitable fields so `Docs` points back to the untouched COPY source, verify the restored pointer, then delete the copied Docx. Never history-revert the source.
+- `CREATE`: delete and verify the new Bitable record, then delete and verify the new Docx.
+- `UPDATE_IN_PLACE`: revert the captured history revision, verify the pre-write canonical block digest, then restore Bitable fields.
+- New VirtualNode records and folders: delete them after dependent records/documents have been reversed; restore a repointed pre-existing VirtualNode before folder deletion.
+
+If the journal already exists, `execute` does not repeat Feishu mutations. A completed journal is reconciled into the session. A partial journal keeps the session unchanged and requires manual live-state reconciliation before continuation.
+
 ## Zilliz CLI Release Impact
 
 Before scanning a new public `zilliz-cli` release, extract release-note command impacts:

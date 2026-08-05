@@ -49,3 +49,15 @@ Do not bypass resume failures with a hand-written accepted review-unit ID. Inspe
 - record missing, no longer `WIP`, or `Targets` nonblank: reconcile the live Bitable record before continuing;
 - document token mismatch: verify whether an approved repoint occurred; otherwise treat it as drift and rebuild the affected unit;
 - session already finalized: do not reopen it or move `scan-state.json` backward.
+
+## Partial Rollback Or Existing Rollback Journal
+
+Do not delete the rollback journal and rerun destructive actions. Inspect its prepared and observed entries against live Bitable and Drive state.
+
+- completed journal, session not updated: rerun `sdk-document-rollback.js execute` with the same manifest, journal, review-unit ID, and digest; it reconciles the receipt without repeating Feishu mutations;
+- prepared entry without a verified observation: determine whether that inverse mutation occurred, append or repair verified evidence through the approved recovery procedure, and keep the session unchanged until the completion sentinel exists;
+- failed observation: report unrecovered record IDs, Docx tokens, and folder tokens; the active execution or accepted receipt remains authoritative;
+- dependent resource blocker: roll back the named executed dependent units first, then regenerate the target rollback manifest;
+- finalized session: never roll back in place or rewind `scan-state.json`; create a corrective release.
+
+For `COPY_PATCH_AND_REPOINT`, recovery means restoring the Bitable `Docs` pointer and captured fields, then deleting the copy. The COPY source was not modified, so do not history-revert it.

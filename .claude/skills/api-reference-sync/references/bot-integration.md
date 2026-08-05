@@ -9,8 +9,8 @@ Each bot run has one active release-sync session. Store these fields outside the
 ```json
 {
   "sessionId": "sdk-doc-sync:<language>:<sdk-name>:<track>:sha256:<review-unit-manifest-digest>",
-  "phase": "release_scope|candidate_proposal|reviewed_planning|execution|acceptance_finalization",
-  "status": "release_scope_ready|grouping_review_required|review_unit_selection_required|approval_ready|document_review_required|acceptance_review_required|accepted|blocked",
+  "phase": "release_scope|candidate_proposal|reviewed_planning|execution|rollback|acceptance_finalization",
+  "status": "release_scope_ready|grouping_review_required|review_unit_selection_required|approval_ready|document_review_required|rollback_approval_required|rollback_reconciliation_required|acceptance_review_required|accepted|blocked",
   "language": "<sdk-language>",
   "sdkName": "<sdk-name>",
   "track": "<version-track>",
@@ -28,12 +28,15 @@ Each bot run has one active release-sync session. Store these fields outside the
     "reviewUnitManifest": "<path>",
     "activeUnitDryRun": "<path-or-null>",
     "activeUnitJournal": "<path-or-null>",
-    "acceptanceManifest": "<path-or-null>"
+    "acceptanceManifest": "<path-or-null>",
+    "rollbackManifest": "<path-or-null>",
+    "rollbackJournal": "<path-or-null>"
   },
-  "pendingDecision": "GROUPING_REVIEW|WRITE_APPROVAL|DOCUMENT_REVIEW|ACCEPTANCE_REVIEW|null",
+  "pendingDecision": "GROUPING_REVIEW|WRITE_APPROVAL|DOCUMENT_REVIEW|ROLLBACK_APPROVAL|ACCEPTANCE_REVIEW|null",
   "proposalDigest": "sha256:<proposal-digest>|null",
   "proposedBatchDigest": "sha256:<batch-digest>|null",
   "executionJournalDigest": "sha256:<execution-journal-digest>|null",
+  "rollbackManifestDigest": "sha256:<rollback-manifest-digest>|null",
   "acceptanceManifestDigest": "sha256:<acceptance-manifest-digest>|null",
   "reviewUnitManifestDigest": "sha256:<review-unit-manifest-digest>|null",
   "activeReviewUnitId": "review:<document-stable-id>|null",
@@ -69,6 +72,7 @@ The bot may read artifacts and run dry-runs. It must not call mutating Feishu to
 | `candidate_proposal` | Build proposed user-facing candidates, exclusions, grouping decisions, version-table detected inheritance decisions, doc identities, and target placements. | Send `Decision requested: GROUPING_REVIEW`. |
 | `reviewed_planning` | On the initial complete dry-run create the review-session file. On later runs resume it, validate accepted journals and live `WIP` records, select exactly one remaining document, then regenerate that unit against current live state with all required resource actions. | Send `WRITE_APPROVAL` only for the active unit; otherwise stop at `review_unit_selection_required`. |
 | `execution` | Execute only the active unit's approved actions, refetch and verify, leave touched records at `WIP`, and leave scan state unchanged. | Stop with `DOCUMENT_REVIEW`; never start the next unit automatically. |
+| `rollback` | Build the selected executed unit's inverse manifest read-only. After exact rollback approval, preflight live state, execute inverse actions in reverse dependency order, verify each result, and update the session only from a completed rollback journal. | Stop with `ROLLBACK_APPROVAL`, dependency blockers, or reconciliation instructions. |
 | `acceptance_finalization` | Record each accepted unit journal. After every planned unit is accepted, build the complete accepted-unit manifest; only final acceptance changes touched records to `Draft` and updates scan state. | Return to the same unit on comments, select the next unit after document acceptance, or stop as fully accepted after finalization. |
 
 ## Decision Parsing
@@ -77,7 +81,8 @@ Accept only digest-bound command-style replies for gates:
 
 - Grouping review: `APPROVE_GROUPING sha256:<proposal-digest>`, `REVISE_GROUPING <proposal-id> <decision>`, `REVISE_INHERITANCE <inheritance-id> <decision>`, `DEFER_GROUPING <proposal-id>`, `REJECT_GROUPING`
 - Write approval: `APPROVE_WRITES sha256:<batch-digest>`, `REJECT_WRITES`, `REQUEST_CHANGES <action-id>`
-- Document review: `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>`, `REQUEST_DOCUMENT_CHANGES <review-unit-id>`, `REJECT_DOCUMENT <review-unit-id>`
+- Document review: `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>`, `REQUEST_DOCUMENT_CHANGES <review-unit-id>`, `REQUEST_DOCUMENT_ROLLBACK <review-unit-id>`, `REJECT_DOCUMENT <review-unit-id>`
+- Rollback approval: `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>`, `REJECT_ROLLBACK <review-unit-id>`
 - Acceptance review: `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>`, `REQUEST_ACCEPTANCE_CHANGES <review-unit-id>`, `REJECT_ACCEPTANCE`
 
 A bare approval command is not approved. The parser must compare both the review-unit ID and submitted digest with the active bound artifacts before changing phase.
@@ -131,6 +136,10 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - `APPROVE_WRITES sha256:<batch-digest>` applies only to the exact action list and artifact digests bound into that batch.
 - Write approval does not accept the resulting documentation and never authorizes another document unit or a scan-state update.
 - `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` is valid only for the active, successfully verified unit. It records review completion but leaves interface records at `WIP` and leaves scan state unchanged.
+- `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` is a separate destructive approval. It is valid only for an executed active unit or an accepted unit before finalization. It never authorizes a different unit and never changes `scan-state.json`.
+- For `COPY_PATCH_AND_REPOINT`, rollback must restore the complete captured Bitable fields so `Docs` points back to the untouched COPY source, verify that pointer, and delete only the copied-and-patched Docx. Never history-revert the source because the source was not modified.
+- For `CREATE`, delete and verify the new Bitable record before deleting and verifying the new Docx. Delete newly created VirtualNode records and folders only in reverse dependency order; restore a repointed pre-existing VirtualNode before deleting its new folder.
+- If another executed or accepted unit uses a created resource, block rollback and name the dependent review-unit IDs. If the rollback journal is partial or has an unresolved prepared action, do not mutate the session or relaunch automatically.
 - Persist `APPROVE_DOCUMENT` with `sdk-review-session.js accept-document`. The command must re-read the matching completed execution journal, require resolved comments, bind every touched record to a verified journal action, and reject a journal for a different document unit.
 - Before a new process selects the next unit, rerun `sdk-doc-sync` with `--resume-session`. Manifest drift, journal drift, missing records, a non-`WIP` progress value, nonblank `Targets`, or a changed Docx token blocks the phase transition.
 - `REQUEST_DOCUMENT_CHANGES` freezes progression, requires reading the active document's comments, and returns only that unit to reviewed planning. Any changed artifact or resource plan invalidates the previous batch and execution-journal digest.

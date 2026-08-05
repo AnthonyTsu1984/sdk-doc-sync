@@ -152,6 +152,7 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
 
   for (const reference of [
+    'references/document-rollback.md',
     'references/schema-first-generation.md',
     'references/release-smoke-test.md',
     'references/post-write-verification.md',
@@ -175,6 +176,7 @@ test('interactive approval gates require exact digest-bound copy-ready replies',
     assert.match(source, /APPROVE_GROUPING sha256:<proposal-digest>/);
     assert.match(source, /APPROVE_WRITES sha256:<batch-digest>/);
     assert.match(source, /APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>/);
+    assert.match(source, /APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>/);
     assert.match(source, /APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>/);
   }
 
@@ -183,6 +185,21 @@ test('interactive approval gates require exact digest-bound copy-ready replies',
   assert.match(integration, /bare approval command.*not approved/is);
   assert.match(prompts, /If approved, reply exactly:/);
   assert.match(prompts, /Structural VirtualNode or Module records.*excluded.*WIP.*Draft/is);
+  assert.match(prompts, /COPY_PATCH_AND_REPOINT.*restore.*Bitable.*delete.*copy.*never.*history/is);
+});
+
+test('rollback CLI reference documents deterministic plan, approval, execute, and reconciliation', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const cli = fs.readFileSync(path.join(skillRoot, 'references', 'cli.md'), 'utf8');
+  const verification = fs.readFileSync(path.join(skillRoot, 'references', 'post-write-verification.md'), 'utf8');
+  const troubleshooting = fs.readFileSync(path.join(skillRoot, 'references', 'troubleshooting.md'), 'utf8');
+
+  assert.match(cli, /sdk-document-rollback\.js plan/);
+  assert.match(cli, /sdk-document-rollback\.js execute/);
+  assert.match(cli, /--approve-rollback-digest sha256:<rollback-manifest-digest>/);
+  assert.match(cli, /scan-state\.json.*unchanged/is);
+  assert.match(verification, /rollback journal.*completion sentinel/is);
+  assert.match(troubleshooting, /partial rollback.*session.*unchanged/is);
 });
 
 test('stable-core boundary keeps runtime code independent from ignored run artifacts', () => {

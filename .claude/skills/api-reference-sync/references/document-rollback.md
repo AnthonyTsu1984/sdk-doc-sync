@@ -88,7 +88,7 @@ Pre-existing resources are never deleted. A pre-existing VirtualNode that was re
 
 ## Rollback Manifest and Journal
 
-Rollback planning is read-only. It validates the session, original execution journal, current live identities, dependency graph, and before-state evidence, then emits:
+Rollback planning is read-only. It validates the session, original execution journal, dependency graph, and before-state evidence, then emits:
 
 - `rollbackManifest`;
 - `rollbackManifestDigest`;
@@ -98,6 +98,8 @@ Rollback planning is read-only. It validates the session, original execution jou
 - `scanStateUpdated: false`.
 
 Execution requires the exact digest-bound approval. Before each mutation, a rollback journal appends a durable prepared entry. After each mutation and live verification, it appends an observed entry. A successful completion sentinel is written only when every inverse action is verified. Partial rollback is never reported as complete and never changes the review session.
+
+Immediately before journaled mutation, execution preflights the current live Bitable and Drive identities against the manifest. Any drift blocks all inverse mutations and invalidates the approval.
 
 Rollback replay is prohibited when a journal already contains an unresolved prepared action. The operator must reconcile the live target and append a verified observed result before continuation.
 
@@ -129,3 +131,25 @@ Completion requires live proof that:
 - `scan-state.json` was not modified.
 
 All unrecovered resources, tokens, record IDs, failed steps, and reconciliation instructions must be included in a partial rollback result.
+
+## CLI Sequence
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-document-rollback.js plan \
+  --session <review-session.json> \
+  --review-unit-id review:<document-stable-id> \
+  --manifest <rollback-manifest.json>
+```
+
+After the exact `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` reply:
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-document-rollback.js execute \
+  --session <review-session.json> \
+  --review-unit-id review:<document-stable-id> \
+  --manifest <rollback-manifest.json> \
+  --journal <rollback-journal.jsonl> \
+  --approve-rollback-digest sha256:<rollback-manifest-digest>
+```
+
+Reusing a completed journal reconciles the session without replaying Feishu mutations. An incomplete journal requires live reconciliation and leaves the session unchanged.

@@ -96,6 +96,8 @@ Execution must use the narrowest document strategy:
 - Deprecate: set deprecation metadata and progress only.
 - Orphan/no-op: leave Feishu untouched.
 
+Before each mutation, persist an action-specific rollback capsule in the execution journal. Existing Bitable updates capture the complete writable before-state. `UPDATE_IN_PLACE` also captures a usable history revision and canonical pre-write block digest; if either is unavailable, block before patching. `COPY_PATCH_AND_REPOINT` captures the Bitable source pointer but does not capture or revert history for the untouched COPY source. Observed entries persist created record, Docx, VirtualNode, and folder identities for deterministic inverse planning.
+
 Do not update a Bitable `Docs` field until the document has passed rendered-block validation.
 
 SDK API-reference UPDATE execution applies only the immutable `apiPatchPlan`. Do not route SDK artifacts through generic `strategy: smart`. A reviewed full-body rebuild is executable only when the plan records matching repair approval, history evidence, and a complete preserved-block review.
@@ -127,6 +129,7 @@ Recovery depends on the last completed mutation:
 - Verification failure for target folder or parent: do not patch content again until folder ancestry and bitable parent are corrected.
 - Verification failure for artifact digest or formatting: preserve the failed document token for audit, prepare a corrected reviewed artifact, and execute a new approved plan.
 - Cross-version failure: never repair by patching the older-version source document in place. Keep the historical source token unchanged.
+- User-requested full rollback after a completed unit: use [document-rollback.md](document-rollback.md) and `sdk-document-rollback.js`; do not improvise deletions from chat context. Restore Bitable and remove created resources in reverse dependency order under a separate rollback approval and journal.
 
 Always include unrecovered resources and tokens in the completion report.
 

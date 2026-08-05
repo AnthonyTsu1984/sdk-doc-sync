@@ -11,6 +11,8 @@ Use these prompts when testing a Feishu bot channel for `sdk-doc-sync`. Replace 
 - [Write Approval Gate Message](#write-approval-gate-message)
 - [Document Review Gate Message](#document-review-gate-message)
 - [Document Review Parser Prompt](#document-review-parser-prompt)
+- [Rollback Approval Gate Message](#rollback-approval-gate-message)
+- [Rollback Approval Parser Prompt](#rollback-approval-parser-prompt)
 - [Write Approval Parser Prompt](#write-approval-parser-prompt)
 - [Acceptance Review Gate Message](#acceptance-review-gate-message)
 - [Acceptance Review Parser Prompt](#acceptance-review-parser-prompt)
@@ -51,11 +53,15 @@ Accept only these gate commands:
 - APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>
 - REQUEST_DOCUMENT_CHANGES <review-unit-id>
 - REJECT_DOCUMENT <review-unit-id>
+- APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
+- REJECT_ROLLBACK <review-unit-id>
 - APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>
 - REQUEST_ACCEPTANCE_CHANGES <review-unit-id>
 - REJECT_ACCEPTANCE
 
 Treat ambiguous, partial, or conversational replies as not approved. Ask for a valid command and do not transition phases.
+
+Rollback is a separate destructive gate available only for an executed unit before final acceptance. Plan it from the persistent session and original execution journal. Execute inverse actions in reverse dependency order and update the session only after a completed rollback journal. Keep scan-state.json unchanged. For COPY_PATCH_AND_REPOINT, restore the Bitable record to the untouched COPY source, verify the restored Docs pointer, delete the copy, and never history-revert the source.
 ```
 
 ## Release Request Prompt
@@ -207,6 +213,7 @@ Bound digest: sha256:<execution-journal-digest>
 Allowed replies:
 - APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>
 - REQUEST_DOCUMENT_CHANGES <review-unit-id>
+- REQUEST_DOCUMENT_ROLLBACK <review-unit-id>
 - REJECT_DOCUMENT <review-unit-id>
 
 If approved, reply exactly:
@@ -225,14 +232,60 @@ Parse the user's reply for the active DOCUMENT_REVIEW gate.
 Return JSON only:
 {
   "valid": true,
-  "command": "APPROVE_DOCUMENT|REQUEST_DOCUMENT_CHANGES|REJECT_DOCUMENT",
+  "command": "APPROVE_DOCUMENT|REQUEST_DOCUMENT_CHANGES|REQUEST_DOCUMENT_ROLLBACK|REJECT_DOCUMENT",
   "reviewUnitId": "review:<document-stable-id>",
   "submittedDigest": "sha256:<execution-journal-digest-or-null>",
-  "nextPhase": "reviewed_planning|acceptance_finalization|blocked",
-  "nextAction": "select_next_unit|rebuild_active_unit|stop"
+  "nextPhase": "reviewed_planning|rollback|acceptance_finalization|blocked",
+  "nextAction": "select_next_unit|rebuild_active_unit|plan_rollback|stop"
 }
 
-Require the exact active review-unit ID. `APPROVE_DOCUMENT` also requires the exact current journal digest. A change request must not select or write the next unit; first read every comment on the active Docx and rebuild that unit's artifacts and batch.
+Require the exact active review-unit ID. `APPROVE_DOCUMENT` also requires the exact current journal digest. A change request must not select or write the next unit; first read every comment on the active Docx and rebuild that unit's artifacts and batch. A rollback request only enters read-only rollback planning; it does not authorize inverse mutations.
+```
+
+## Rollback Approval Gate Message
+
+```text
+Session: <session-id>
+Phase: rollback
+Status: rollback_approval_required
+
+Active or accepted review unit: <review-unit-id>
+Original execution journal: <path>
+Rollback manifest: <path>
+Inverse actions: <n>
+Shared-resource blockers: 0
+Live preflight required before mutation: true
+scan-state updated: false
+
+Decision requested: ROLLBACK_APPROVAL
+Bound digest: sha256:<rollback-manifest-digest>
+
+Allowed replies:
+- APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
+- REJECT_ROLLBACK <review-unit-id>
+
+If approved, reply exactly:
+APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
+
+Execution restores Bitable, Docx, VirtualNode, and folder state according to the action-specific inverse journal. COPY_PATCH_AND_REPOINT restores Bitable to the untouched source Docx and deletes the copy; it never history-reverts the source. The review session changes only after every inverse action is live-verified and the rollback journal has a completion sentinel. scan-state.json remains unchanged.
+```
+
+## Rollback Approval Parser Prompt
+
+```text
+Parse the user's reply for the active ROLLBACK_APPROVAL gate.
+
+Return JSON only:
+{
+  "valid": true,
+  "command": "APPROVE_ROLLBACK|REJECT_ROLLBACK",
+  "reviewUnitId": "review:<document-stable-id>",
+  "submittedDigest": "sha256:<rollback-manifest-digest-or-null>",
+  "nextPhase": "reviewed_planning|rollback|blocked",
+  "nextAction": "execute_rollback|cancel_rollback|reconcile_partial_rollback"
+}
+
+Require the exact review-unit ID and current rollback manifest digest. Reject a stale digest, a write/document/acceptance approval, or a bare rollback word. If another executed unit depends on a resource created by this unit, return blocked with the dependent review-unit IDs and require reverse dependency order.
 ```
 
 ## Write Approval Parser Prompt
@@ -321,7 +374,7 @@ I cannot treat that as approval.
 
 Session: <session-id>
 Phase: <phase>
-Decision requested: <GROUPING_REVIEW|WRITE_APPROVAL|DOCUMENT_REVIEW|ACCEPTANCE_REVIEW>
+Decision requested: <GROUPING_REVIEW|WRITE_APPROVAL|DOCUMENT_REVIEW|ROLLBACK_APPROVAL|ACCEPTANCE_REVIEW>
 
 Allowed replies:
 <allowed-command-list>
@@ -348,3 +401,8 @@ Use these minimal conversations to test the channel:
 14. A new chat receives only the review-session path. It resumes, verifies earlier journals and live records, derives accepted unit IDs, and selects the next remaining unit without changing scan state.
 15. A caller supplies an accepted review-unit ID without a receipt. Bot ignores it and refuses progression.
 16. An accepted document token, journal digest, `Progress`, or `Targets` value drifts before resume. Bot blocks and does not select or write another unit.
+17. User requests full rollback for an unaccepted or accepted pre-finalization unit. Bot builds a read-only rollback manifest and stops at `ROLLBACK_APPROVAL`; it performs no inverse mutation from the request alone.
+18. User replies with the exact `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>`. Bot preflights live state, runs inverse actions in reverse dependency order, writes a separate rollback journal, and updates the session only after the completion sentinel.
+19. A `COPY_PATCH_AND_REPOINT` unit rolls back. Bot restores the Bitable `Docs` pointer and all captured fields, verifies the original source pointer, deletes only the copied Docx, and never history-reverts the untouched source.
+20. Another accepted unit uses a folder created by the target unit. Bot reports the dependent review-unit ID and requires that dependent unit to roll back first.
+21. Rollback stops partially. Bot preserves the active execution or accepted receipt, leaves scan state unchanged, and requests journal reconciliation without replaying destructive actions.

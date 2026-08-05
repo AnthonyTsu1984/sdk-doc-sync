@@ -20,6 +20,7 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 - Live writes may touch only approved documents, records, folders, and metadata. Never write the auto-populated `Slug` field.
 - Keep the older-version doc as a historical snapshot. Never patch or delete an inherited older-version document during a newer release sync.
 - Write approval does not authorize Acceptance Finalization. Keep touched interface-document records `WIP` until separate acceptance changes them to `Draft` and advances `scan-state.json`. Structural VirtualNode or Module records preserve existing publication metadata when repointed; new structural records use the explicit reviewed `Targets` and `Progress` values in their approved resource plans.
+- Write or document acceptance does not authorize rollback. A single executed unit may be rolled back only before final acceptance, through its own deterministic manifest and exact `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` command. Rollback never advances or rewinds `scan-state.json`.
 
 ## Shared Contract
 
@@ -33,6 +34,7 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 - If the user requests changes or leaves review comments, read all comments on the active document, rebuild only that unit's reviewed artifacts and resource plan, invalidate its old batch and journal digests, and return to scoped write approval. Never continue to the next unit while comments remain unresolved.
 - Journal every approved action before and after mutation and end with a durable completion sentinel. If a journal already exists, return `EXECUTION_RECONCILIATION_REQUIRED`; do not relaunch. Reconcile live state first.
 - Final acceptance must reference the exact accepted-unit manifest digest, which binds every accepted unit journal and the complete touched-record inventory, before changing `WIP` to `Draft` or updating `scan-state.json`.
+- Persist action-specific rollback capsules before every original mutation and structured observed identities afterward. An unaccepted active execution and an accepted pre-finalization receipt are both rollback-capable across chats. A finalized session is not; create a corrective release instead.
 
 ## Explicit Interactive Gates
 
@@ -45,6 +47,7 @@ At every gate, report the phase, status, complete artifact paths, reviewed scope
 | Grouping review | Complete candidate-proposal semantic digest | `APPROVE_GROUPING sha256:<proposal-digest>` |
 | Write approval | `proposedExecutionBatch.batchDigest` | `APPROVE_WRITES sha256:<batch-digest>` |
 | Document review | Active unit ID and its `executionJournalDigest` | `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` |
+| Rollback approval | Active or accepted unit ID and its deterministic rollback manifest | `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` |
 | Acceptance review | Complete accepted-unit manifest and touched-record inventory | `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` |
 
 Replace every placeholder with the current full ID and digest before asking. Bare approval words, a digest without its gate command, conversational approval, or a stale digest is not approval. If any bound artifact changes, regenerate the digest and request approval again.
@@ -73,7 +76,7 @@ npm run api-reference-sync -- \
 1. Release scope: read `scan-state.json`, then inspect both Git log and Git diff between the last accepted tag and target tag before deciding the release range. All three evidence sources are mandatory; a reference table, remote tag listing, or full scanner run does not replace the approval-grade Git log/diff scope.
 2. Candidate proposal: normalize raw symbols to user-facing documentation identities, resolve existing Bitable records and live Drive ancestry, and stop for grouping and successor-track review.
 3. Reviewed planning: build source-verified artifacts and immutable plans; require `planCount == diffCount`, zero planning errors, known placement, and exact create/update evidence before requesting approval.
-4. Collaborative execution: order the `reviewUnitManifest` deterministically, persist the session, select one document unit, approve and execute its complete Docx/Drive/Bitable action batch, verify it, then stop for digest-bound document review. Convert approval into a journal-derived receipt with `sdk-review-session.js`; accept the unit or apply comments and repeat that same unit. A later chat resumes from that session file and never from a hand-written accepted-ID list.
+4. Collaborative execution: order the `reviewUnitManifest` deterministically, persist the session, select one document unit, approve and execute its complete Docx/Drive/Bitable action batch, verify it, then stop for digest-bound document review. Convert approval into a journal-derived receipt with `sdk-review-session.js`; accept the unit, apply comments, or plan a separately approved full rollback for that same unit. A later chat resumes from that session file and never from a hand-written accepted-ID list.
 5. Acceptance Finalization: after every planned unit has its own accepted journal receipt, build and persist the complete accepted-unit manifest. After the user separately approves it, change every touched interface-document record from `WIP` to `Draft`, refetch and verify, then update `scan-state.json`. Record finalization in the session only from the successful acceptance journal. Structural VirtualNode or Module records stay outside this transition. Partial unit acceptance never advances the baseline.
 
 ## Domain Invariants
@@ -102,6 +105,7 @@ Read only the relevant domain references:
 - Bitable hierarchy and layout sampling: [references/bitable-document-organization.md](references/bitable-document-organization.md).
 - Execution and verification: [references/post-write-verification.md](references/post-write-verification.md), [references/release-smoke-test.md](references/release-smoke-test.md), and [references/stable-core-boundary.md](references/stable-core-boundary.md).
 - Commands and recovery: [references/cli.md](references/cli.md) and [references/troubleshooting.md](references/troubleshooting.md).
+- Per-document full rollback: [references/document-rollback.md](references/document-rollback.md).
 - Interactive chat and bot gates: [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md); these are mandatory whenever a user decision or approval is requested.
 
 ## Output

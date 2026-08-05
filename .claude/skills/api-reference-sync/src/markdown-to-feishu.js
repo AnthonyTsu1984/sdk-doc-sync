@@ -1348,10 +1348,11 @@ class MarkdownToFeishu {
         };
     }
 
-    async deleteDocument({ documentToken }) {
-        if (!documentToken) throw new Error('documentToken is required to delete a document');
+    async deleteFile({ fileToken, type }) {
+        if (!fileToken) throw new Error('fileToken is required to delete a Drive file');
+        if (!['docx', 'folder'].includes(type)) throw new Error(`Unsupported Drive file type: ${type || '(missing)'}`);
         const token = await this.tokenFetcher.token();
-        const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${documentToken}?type=docx`;
+        const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${fileToken}?type=${type}`;
         const response = await fetch(url, {
             method: 'DELETE',
             headers: {
@@ -1359,8 +1360,18 @@ class MarkdownToFeishu {
             }
         });
         const data = await response.json();
-        if (data.code !== 0) throw new Error(`Failed to delete document: ${data.msg}`);
+        if (data.code !== 0) throw new Error(`Failed to delete ${type}: ${data.msg}`);
         return data.data || {};
+    }
+
+    async deleteDocument({ documentToken }) {
+        if (!documentToken) throw new Error('documentToken is required to delete a document');
+        return this.deleteFile({ fileToken: documentToken, type: 'docx' });
+    }
+
+    async deleteFolder({ folderToken }) {
+        if (!folderToken) throw new Error('folderToken is required to delete a folder');
+        return this.deleteFile({ fileToken: folderToken, type: 'folder' });
     }
 
     async __create_drive_document({ title, folder_token = null }) {

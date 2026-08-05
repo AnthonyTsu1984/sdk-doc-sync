@@ -7,6 +7,7 @@ const { buildApiSectionModel } = require('./api-section-model');
 const sdkLayoutProfiles = require('../renderers/sdk-layout-profiles');
 const { languageId } = require('../document-ir/block-registry');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { matchesRecordState } = require('./record-state');
 
 function parseJsonOutput(result) {
   const text = String(result?.stdout || '').trim();
@@ -71,9 +72,17 @@ function validateCodeVariantDirectives(blocks) {
 }
 
 class FeishuOperationalVerifier extends SyncVerifier {
-  constructor({ ops = new LarkCliOps(), readDocument = null, readRecord = null } = {}) {
+  constructor({
+    ops = new LarkCliOps(),
+    readDocument = null,
+    readRecord = null,
+    documentWriter = null,
+    bitableWriter = null,
+  } = {}) {
     super({ readDocument, readRecord });
     this.ops = ops;
+    this.documentWriter = documentWriter;
+    this.bitableWriter = bitableWriter;
     this._authPromise = null;
   }
 
@@ -198,6 +207,121 @@ class FeishuOperationalVerifier extends SyncVerifier {
     await this.ensureAuth();
     await this.ops.historyRevert(rollback.documentToken, rollback.historyVersionId);
     return { ok: true, documentToken: rollback.documentToken, historyVersionId: rollback.historyVersionId };
+  }
+
+  async revertDocument(rollback) {
+    if (!rollback?.documentToken || !rollback?.historyVersionId) {
+      throw new TypeError('documentToken and historyVersionId are required to revert a document');
+    }
+    await this.ensureAuth();
+    await this.ops.historyRevert(rollback.documentToken, rollback.historyVersionId);
+    return { documentToken: rollback.documentToken, historyVersionId: rollback.historyVersionId };
+  }
+
+  async verifyBlockDigest(documentToken, expectedDigest) {
+    if (!documentToken || !expectedDigest) throw new TypeError('documentToken and expectedDigest are required');
+    await this.ensureAuth();
+    const payload = parseJsonOutput(await this.ops.fetchDocBlocks(documentToken));
+    const actualDigest = digestSemantic(blocksFromPayload(payload));
+    if (actualDigest !== expectedDigest) {
+      const error = new Error(`Restored block digest mismatch: expected ${expectedDigest}, got ${actualDigest}`);
+      error.code = 'ROLLBACK_BLOCK_DIGEST_MISMATCH';
+      throw error;
+    }
+    return { documentToken, blockDigest: actualDigest };
+  }
+
+  async preflightRollbackAction(action) {
+    const expectedRecord = action?.expectedPostRecord || action?.createdRecord?.expectedState || null;
+    if (expectedRecord) await this.verifyRecordState(expectedRecord.recordId, expectedRecord);
+    const document = action?.createdDocument || action?.copiedDocument || null;
+    if (document) await this._verifyDriveChild(document.folderToken, document.token, 'docx', true);
+    if (action?.createdFolder) {
+      await this._verifyDriveChild(
+        action.createdFolder.parentFolderToken,
+        action.createdFolder.token,
+        'folder',
+        true,
+      );
+    }
+    if (action?.documentRollback?.documentToken) {
+      await this.ensureAuth();
+      await this.ops.fetchDocBlocks(action.documentRollback.documentToken);
+    }
+    return { ok: true };
+  }
+
+  async verifyRecordState(recordId, snapshot) {
+    if (typeof this.bitableWriter?.getRecord !== 'function') {
+      const error = new Error(`Bitable reader is required to verify ${recordId}`);
+      error.code = 'ROLLBACK_RECORD_READER_REQUIRED';
+      throw error;
+    }
+    const record = await this.bitableWriter.getRecord(recordId);
+    if (!matchesRecordState(record, snapshot)) {
+      const error = new Error(`Bitable record state mismatch: ${recordId}`);
+      error.code = 'ROLLBACK_TARGET_DRIFT';
+      throw error;
+    }
+    return { recordId };
+  }
+
+  async verifyRecordAbsent(recordId) {
+    if (typeof this.bitableWriter?.listRecords !== 'function') {
+      const error = new Error(`Bitable list reader is required to verify absence of ${recordId}`);
+      error.code = 'ROLLBACK_RECORD_READER_REQUIRED';
+      throw error;
+    }
+    const records = await this.bitableWriter.listRecords();
+    if (records.some((record) => (record.record_id || record.recordId || record.id) === recordId)) {
+      const error = new Error(`Bitable record still exists: ${recordId}`);
+      error.code = 'ROLLBACK_RECORD_NOT_DELETED';
+      throw error;
+    }
+    return { recordId, absent: true };
+  }
+
+  async verifyDocumentAbsent(documentToken, parentFolderToken) {
+    return this._verifyDriveChild(parentFolderToken, documentToken, 'docx', false);
+  }
+
+  async verifyFolderEmpty(folderToken) {
+    if (typeof this.documentWriter?.listFolder !== 'function') {
+      const error = new Error(`Drive folder reader is required to inspect ${folderToken}`);
+      error.code = 'ROLLBACK_FOLDER_READER_REQUIRED';
+      throw error;
+    }
+    const files = await this.documentWriter.listFolder({ folderToken });
+    if (files.length > 0) {
+      const error = new Error(`Folder is not empty: ${folderToken}`);
+      error.code = 'ROLLBACK_FOLDER_NOT_EMPTY';
+      error.childTokens = files.map((file) => file.token || file.file_token).filter(Boolean).sort();
+      throw error;
+    }
+    return { folderToken, empty: true };
+  }
+
+  async verifyFolderAbsent(folderToken, parentFolderToken) {
+    return this._verifyDriveChild(parentFolderToken, folderToken, 'folder', false);
+  }
+
+  async _verifyDriveChild(parentFolderToken, childToken, type, shouldExist) {
+    if (!parentFolderToken || typeof this.documentWriter?.listFolder !== 'function') {
+      const error = new Error(`Parent folder evidence is required to verify ${type} ${childToken}`);
+      error.code = 'ROLLBACK_DRIVE_IDENTITY_REQUIRED';
+      throw error;
+    }
+    const files = await this.documentWriter.listFolder({ folderToken: parentFolderToken });
+    const found = files.find((file) => (file.token || file.file_token) === childToken);
+    const matchesType = found && (!found.type || found.type === type);
+    if ((shouldExist && !matchesType) || (!shouldExist && found)) {
+      const error = new Error(
+        shouldExist ? `${type} identity drifted: ${childToken}` : `${type} still exists: ${childToken}`,
+      );
+      error.code = shouldExist ? 'ROLLBACK_TARGET_DRIFT' : 'ROLLBACK_DRIVE_DELETE_VERIFY_FAILED';
+      throw error;
+    }
+    return { childToken, type, present: shouldExist };
   }
 }
 

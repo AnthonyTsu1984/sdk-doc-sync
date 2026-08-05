@@ -86,6 +86,103 @@ function normalizedCreatedDocument(created) {
   };
 }
 
+function deepFreeze(value, seen = new WeakSet()) {
+  if (!value || typeof value !== 'object' || seen.has(value)) return value;
+  seen.add(value);
+  for (const child of Object.values(value)) deepFreeze(child, seen);
+  return Object.freeze(value);
+}
+
+function resourceResolution(resolutions, ref) {
+  if (!nonEmptyString(ref)) return null;
+  if (resolutions instanceof Map) return resolutions.get(ref) || null;
+  return resolutions?.[ref] || null;
+}
+
+function resourceValue(resolutions, ref) {
+  const resolution = resourceResolution(resolutions, ref);
+  return resolution?.value || resolution?.token || resolution?.recordId || null;
+}
+
+function folderLink(token) {
+  const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+  return `${host}/drive/folder/${token}`;
+}
+
+function scalarText(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map(scalarText).filter(Boolean).join('');
+  return value.text || value.name || value.value || value.link || null;
+}
+
+function recordFields(record) {
+  return record?.fields || record?.data?.record?.fields || {};
+}
+
+function recordId(record) {
+  return record?.record_id || record?.recordId || record?.id || record?.data?.record?.record_id || null;
+}
+
+function docsField(record) {
+  const docs = recordFields(record).Docs;
+  if (Array.isArray(docs)) {
+    const first = docs[0] || {};
+    return { title: scalarText(first.text || first), link: first.link || first.url || null };
+  }
+  return {
+    title: scalarText(docs?.text || docs),
+    link: docs?.link || docs?.url || null,
+  };
+}
+
+function optionValues(value) {
+  const values = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+  return values.map(item => scalarText(item)).filter(Boolean).sort();
+}
+
+function virtualNodeFields(record) {
+  const fields = recordFields(record);
+  return {
+    type: scalarText(fields.Type),
+    targets: optionValues(fields.Targets),
+    progress: scalarText(fields.Progress),
+    slug: scalarText(fields.Slug),
+  };
+}
+
+function sameStringValues(left, right) {
+  return JSON.stringify(optionValues(left)) === JSON.stringify(optionValues(right));
+}
+
+function recordMatchesCriteria(record, criteria = {}) {
+  const fields = recordFields(record);
+  const docs = docsField(record);
+  return Object.entries(criteria).every(([key, expected]) => {
+    if (expected === undefined || expected === null) return true;
+    if (key === 'title') return docs.title === expected;
+    if (key === 'type') return scalarText(fields.Type) === expected;
+    if (key === 'canonicalSlug' || key === 'slug') return scalarText(fields.Slug) === expected;
+    return scalarText(fields[key]) === String(expected);
+  });
+}
+
+function normalizedFolder(created, { name, parentFolderToken }) {
+  const folder = created?.folder || created?.data?.folder || created || {};
+  return {
+    ...folder,
+    token: folder.token || folder.folder_token || folder.obj_token || null,
+    name: folder.name || name,
+    parentFolderToken: folder.parentFolderToken || folder.parent_token || folder.parentFolderToken || parentFolderToken,
+    url: folder.url || null,
+  };
+}
+
+function isFolderItem(item) {
+  return !item?.type || item.type === 'folder';
+}
+
 class SyncExecutionError extends Error {
   constructor(code, message, details = {}) {
     super(message);
@@ -104,16 +201,25 @@ class SyncExecutor {
     this.verifier = verifier;
   }
 
-  async execute(plan, { artifact = null, approval = null, approvalContext = null, action = null } = {}) {
+  async execute(plan, {
+    artifact = null,
+    approval = null,
+    approvalContext = null,
+    action = null,
+    resourceResolutions = new Map(),
+  } = {}) {
     this._assertApprovedPlan(plan, approval, approvalContext);
     const completedSteps = [];
     const result = {
       status: 'success',
       plan,
+      resolvedPlan: null,
       completedSteps,
       createdDocument: null,
+      createdFolder: null,
       patchedDocument: null,
       record: null,
+      resolvedResource: null,
       rollback: null,
       documentVerification: null,
       verification: null,
@@ -121,13 +227,22 @@ class SyncExecutor {
       patchAttempted: false,
     };
 
+    let effectivePlan = plan;
     try {
-      switch (plan.action) {
+      effectivePlan = this._resolvePlan(plan, resourceResolutions);
+      result.resolvedPlan = effectivePlan;
+      switch (effectivePlan.action) {
+        case 'CREATE_FOLDER':
+          await this._executeCreateFolder(effectivePlan, result);
+          break;
+        case 'CREATE_VIRTUAL_NODE':
+          await this._executeCreateVirtualNode(effectivePlan, resourceResolutions, result);
+          break;
         case 'CREATE':
-          await this._executeCreate(plan, artifact, action, result);
+          await this._executeCreate(effectivePlan, artifact, action, result);
           break;
         case 'UPDATE_IN_PLACE':
-          await this._executeUpdateInPlace(plan, artifact, action, result);
+          await this._executeUpdateInPlace(effectivePlan, artifact, action, result);
           break;
         case 'CREATE_AND_REPOINT':
           throw new SyncExecutionError(
@@ -135,21 +250,21 @@ class SyncExecutor {
             'CREATE_AND_REPOINT is no longer executable; regenerate the plan as COPY_PATCH_AND_REPOINT with copySource evidence',
           );
         case 'COPY_PATCH_AND_REPOINT':
-          await this._executeCopyPatchAndRepoint(plan, artifact, action, result);
+          await this._executeCopyPatchAndRepoint(effectivePlan, artifact, action, result);
           break;
         case 'DEPRECATE':
-          await this._executeDeprecate(plan, result);
+          await this._executeDeprecate(effectivePlan, result);
           break;
         case 'ORPHAN':
         case 'NOOP':
           completedSteps.push('noMutation');
           break;
         default:
-          throw new SyncExecutionError('UNKNOWN_PLAN_ACTION', `Unknown plan action: ${plan.action}`);
+          throw new SyncExecutionError('UNKNOWN_PLAN_ACTION', `Unknown plan action: ${effectivePlan.action}`);
       }
 
-      if (this.verifier) {
-        result.verification = await this.verifier.verify(plan, result);
+      if (this.verifier && !['CREATE_FOLDER', 'CREATE_VIRTUAL_NODE'].includes(effectivePlan.action)) {
+        result.verification = await this.verifier.verify(effectivePlan, result);
         completedSteps.push('verify');
         if (!result.verification.ok) {
           const error = new SyncExecutionError('VERIFICATION_FAILED', 'Plan verification failed', {
@@ -161,15 +276,47 @@ class SyncExecutor {
       }
       return result;
     } catch (error) {
-      await this._rollbackInPlaceMutation(plan, result, error);
+      await this._rollbackInPlaceMutation(effectivePlan, result, error);
       return {
         ...result,
         status: 'error',
-        failedStep: error.step || this._inferFailedStep(plan, completedSteps, result),
+        failedStep: error.step || this._inferFailedStep(effectivePlan, completedSteps, result),
         error,
-        suggestedRecovery: this._recovery(plan, result, error),
+        suggestedRecovery: this._recovery(effectivePlan, result, error),
       };
     }
+  }
+
+  _resolvePlan(plan, resolutions) {
+    const target = { ...(plan.target || {}) };
+    if (nonEmptyString(target.folderRef)) {
+      target.folderToken = resourceValue(resolutions, target.folderRef);
+      if (!nonEmptyString(target.folderToken)) {
+        throw new SyncExecutionError(
+          'RESOURCE_RESOLUTION_REQUIRED',
+          `Folder resource ${target.folderRef} is not resolved for ${plan.stableId}`,
+        );
+      }
+    }
+    if (nonEmptyString(target.parentRecordRef)) {
+      target.parentRecordId = resourceValue(resolutions, target.parentRecordRef);
+      if (!nonEmptyString(target.parentRecordId)) {
+        throw new SyncExecutionError(
+          'RESOURCE_RESOLUTION_REQUIRED',
+          `Parent resource ${target.parentRecordRef} is not resolved for ${plan.stableId}`,
+        );
+      }
+    }
+    const postconditions = (plan.postconditions || []).map((postcondition) => {
+      if (postcondition.type === 'TARGET_DOCUMENT' && nonEmptyString(postcondition.folderRef)) {
+        return { ...postcondition, folderToken: target.folderToken };
+      }
+      if (postcondition.type === 'TARGET_PARENT' && nonEmptyString(postcondition.parentRecordRef)) {
+        return { ...postcondition, parentRecordId: target.parentRecordId };
+      }
+      return { ...postcondition };
+    });
+    return deepFreeze({ ...plan, target, postconditions });
   }
 
   _assertApprovedPlan(plan, approval, approvalContext = null) {
@@ -207,6 +354,224 @@ class SyncExecutor {
         { documentToken: repair.documentToken, preservedBlockIds },
       );
     }
+  }
+
+  async _listFolder(folderToken, type = 'all') {
+    if (typeof this.documentWriter.listFolder === 'function') {
+      return await this.documentWriter.listFolder({ folderToken, type });
+    }
+    if (typeof this.documentWriter.list_folder === 'function') {
+      return await this.documentWriter.list_folder({ folder_token: folderToken, type });
+    }
+    throw new TypeError('documentWriter must expose listFolder() for resource execution');
+  }
+
+  async _createFolder(name, parentFolderToken) {
+    if (typeof this.documentWriter.createFolder === 'function') {
+      return await this.documentWriter.createFolder({ name, parentFolderToken });
+    }
+    if (typeof this.documentWriter.create_folder === 'function') {
+      return await this.documentWriter.create_folder({ name, parent_folder_token: parentFolderToken });
+    }
+    throw new TypeError('documentWriter must expose createFolder() for resource execution');
+  }
+
+  async _getRecord(recordIdValue) {
+    if (typeof this.bitableWriter.getRecord !== 'function') {
+      throw new TypeError('bitableWriter must expose getRecord() for resource verification');
+    }
+    return await this.bitableWriter.getRecord(recordIdValue);
+  }
+
+  _assertBitableTarget(resource) {
+    if (this.bitableWriter.baseToken && this.bitableWriter.baseToken !== resource.baseToken) {
+      throw new SyncExecutionError('RESOURCE_BITABLE_MISMATCH', `Resource ${resource.ref} targets a different Bitable base`);
+    }
+    if (this.bitableWriter.tableId && this.bitableWriter.tableId !== resource.tableId) {
+      throw new SyncExecutionError('RESOURCE_BITABLE_MISMATCH', `Resource ${resource.ref} targets a different Bitable table`);
+    }
+  }
+
+  async _executeCreateFolder(plan, result) {
+    const resource = plan.resource;
+    const before = await this._listFolder(resource.parentFolderToken, 'folder');
+    result.completedSteps.push('verifyResourceAbsent');
+    const existing = before.find(item => isFolderItem(item) && item.name === resource.name);
+    if (existing) {
+      const error = new SyncExecutionError(
+        'RESOURCE_PRECONDITION_FAILED',
+        `Folder ${resource.name} already exists below ${resource.parentFolderToken}`,
+        { token: existing.token || null },
+      );
+      error.step = 'verifyResourceAbsent';
+      throw error;
+    }
+
+    if (resource.repointVirtualNode?.recordId) {
+      const originalVirtualNode = await this._getRecord(resource.repointVirtualNode.recordId);
+      const docs = docsField(originalVirtualNode);
+      const actualFields = virtualNodeFields(originalVirtualNode);
+      const expectedFields = resource.repointVirtualNode.expectedFields;
+      const errors = [];
+      if (!docs.link?.endsWith(`/drive/folder/${resource.repointVirtualNode.currentFolderToken}`)) {
+        errors.push({ code: 'VIRTUAL_NODE_CURRENT_LINK_MISMATCH', actual: docs.link });
+      }
+      if (actualFields.type !== expectedFields.type) errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+      if (!sameStringValues(actualFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+      if (actualFields.progress !== expectedFields.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
+      if (actualFields.slug !== expectedFields.slug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
+      if (errors.length > 0) {
+        const error = new SyncExecutionError(
+          'RESOURCE_PRECONDITION_FAILED',
+          `VirtualNode ${resource.repointVirtualNode.recordId} no longer matches its approved structural metadata`,
+          { errors },
+        );
+        error.step = 'verifyVirtualNodePrecondition';
+        throw error;
+      }
+      result.completedSteps.push('verifyVirtualNodePrecondition');
+    }
+
+    const created = normalizedFolder(
+      await this._createFolder(resource.name, resource.parentFolderToken),
+      resource,
+    );
+    if (!nonEmptyString(created.token)) {
+      const error = new SyncExecutionError('RESOURCE_TOKEN_REQUIRED', `Folder creation returned no token for ${resource.ref}`);
+      error.step = 'createFolder';
+      throw error;
+    }
+    result.createdFolder = created;
+    result.completedSteps.push('createFolder');
+
+    const after = await this._listFolder(resource.parentFolderToken, 'folder');
+    const observed = after.find(item => (
+      isFolderItem(item)
+      && item.name === resource.name
+      && (item.token || item.folder_token || item.obj_token) === created.token
+    ));
+    if (!observed) {
+      const error = new SyncExecutionError(
+        'RESOURCE_VERIFICATION_FAILED',
+        `Created folder ${resource.name} was not found below its approved parent`,
+        { folderToken: created.token, parentFolderToken: resource.parentFolderToken },
+      );
+      error.step = 'verifyFolder';
+      throw error;
+    }
+    result.completedSteps.push('verifyFolder');
+
+    if (resource.repointVirtualNode?.recordId) {
+      const title = resource.repointVirtualNode.title || resource.name;
+      const link = folderLink(created.token);
+      result.record = await this.bitableWriter.updateRecord(resource.repointVirtualNode.recordId, {
+        title,
+        link,
+      });
+      result.completedSteps.push('repointVirtualNode');
+      const record = await this._getRecord(resource.repointVirtualNode.recordId);
+      const docs = docsField(record);
+      const actualFields = virtualNodeFields(record);
+      const expectedFields = resource.repointVirtualNode.expectedFields;
+      const errors = [];
+      if (docs.title !== title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
+      if (actualFields.type !== expectedFields.type) errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+      if (!sameStringValues(actualFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_CHANGED' });
+      if (actualFields.progress !== expectedFields.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_CHANGED' });
+      if (actualFields.slug !== expectedFields.slug) errors.push({ code: 'VIRTUAL_NODE_SLUG_CHANGED' });
+      if (errors.length > 0) {
+        const error = new SyncExecutionError(
+          'RESOURCE_VERIFICATION_FAILED',
+          `VirtualNode ${resource.repointVirtualNode.recordId} did not match the approved folder repoint`,
+          { errors },
+        );
+        error.step = 'verifyVirtualNodeRepoint';
+        throw error;
+      }
+      result.completedSteps.push('verifyVirtualNodeRepoint');
+    }
+
+    result.resolvedResource = {
+      ref: resource.ref,
+      kind: 'folder',
+      value: created.token,
+      token: created.token,
+    };
+    result.verification = { ok: true, errors: [] };
+  }
+
+  async _executeCreateVirtualNode(plan, resolutions, result) {
+    const resource = plan.resource;
+    this._assertBitableTarget(resource);
+    const folderToken = resourceValue(resolutions, resource.folderRef);
+    if (!nonEmptyString(folderToken)) {
+      const error = new SyncExecutionError(
+        'RESOURCE_RESOLUTION_REQUIRED',
+        `Folder resource ${resource.folderRef} is not resolved for ${resource.ref}`,
+      );
+      error.step = 'resolveFolder';
+      throw error;
+    }
+    if (typeof this.bitableWriter.listRecords !== 'function') {
+      throw new TypeError('bitableWriter must expose listRecords() for resource preconditions');
+    }
+    const records = await this.bitableWriter.listRecords();
+    result.completedSteps.push('verifyResourceAbsent');
+    const existing = records.find(record => recordMatchesCriteria(record, resource.existingLookup.criteria));
+    if (existing) {
+      const error = new SyncExecutionError(
+        'RESOURCE_PRECONDITION_FAILED',
+        `VirtualNode ${resource.title} already exists`,
+        { recordId: recordId(existing) },
+      );
+      error.step = 'verifyResourceAbsent';
+      throw error;
+    }
+
+    const link = folderLink(folderToken);
+    const created = await this.bitableWriter.createRecord({
+      title: resource.title,
+      link,
+      type: 'VirtualNode',
+      addedSince: resource.version,
+      targets: resource.targets,
+      progress: resource.progress,
+    });
+    const createdRecordId = recordId(created);
+    if (!nonEmptyString(createdRecordId)) {
+      const error = new SyncExecutionError('RESOURCE_RECORD_ID_REQUIRED', `VirtualNode creation returned no record ID for ${resource.ref}`);
+      error.step = 'createVirtualNode';
+      throw error;
+    }
+    result.record = created;
+    result.completedSteps.push('createVirtualNode');
+
+    const observed = await this._getRecord(createdRecordId);
+    const docs = docsField(observed);
+    const actualFields = virtualNodeFields(observed);
+    const errors = [];
+    if (docs.title !== resource.title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
+    if (actualFields.type !== 'VirtualNode') errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+    if (!sameStringValues(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+    if (actualFields.progress !== resource.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
+    if (actualFields.slug !== resource.existingLookup.criteria.canonicalSlug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
+    if (errors.length > 0) {
+      const error = new SyncExecutionError(
+        'RESOURCE_VERIFICATION_FAILED',
+        `Created VirtualNode ${resource.title} did not match its approved state`,
+        { errors, recordId: createdRecordId },
+      );
+      error.step = 'verifyVirtualNode';
+      throw error;
+    }
+    result.completedSteps.push('verifyVirtualNode');
+    result.resolvedResource = {
+      ref: resource.ref,
+      kind: 'virtual_node',
+      value: createdRecordId,
+      recordId: createdRecordId,
+    };
+    result.verification = { ok: true, errors: [] };
   }
 
   async _executeCreate(plan, artifact, action, result) {
@@ -522,6 +887,18 @@ class SyncExecutor {
   }
 
   _inferFailedStep(plan, completedSteps, result = {}) {
+    if (plan.action === 'CREATE_FOLDER') {
+      if (completedSteps.length === 0) return 'verifyResourceAbsent';
+      if (!completedSteps.includes('createFolder')) return 'createFolder';
+      if (!completedSteps.includes('verifyFolder')) return 'verifyFolder';
+      if (plan.resource?.repointVirtualNode?.recordId && !completedSteps.includes('repointVirtualNode')) return 'repointVirtualNode';
+      return 'verifyVirtualNodeRepoint';
+    }
+    if (plan.action === 'CREATE_VIRTUAL_NODE') {
+      if (completedSteps.length === 0) return 'resolveFolder';
+      if (!completedSteps.includes('createVirtualNode')) return 'createVirtualNode';
+      return 'verifyVirtualNode';
+    }
     if (plan.action === 'UPDATE_IN_PLACE'
       && result.patchAttempted
       && !completedSteps.includes('patchDocument')) {
@@ -556,6 +933,12 @@ class SyncExecutor {
 
   _recovery(plan, result, error) {
     const failedStep = result.failedStep || error.step;
+    if (plan.action === 'CREATE_FOLDER' && result.createdFolder) {
+      return `Inspect folder ${result.createdFolder.token} and reconcile its VirtualNode before retrying.`;
+    }
+    if (plan.action === 'CREATE_VIRTUAL_NODE' && result.record) {
+      return `Inspect Bitable record ${recordId(result.record)} and reconcile it before retrying.`;
+    }
     if (plan.action === 'COPY_PATCH_AND_REPOINT' && result.createdDocument && failedStep === 'updateRecord') {
       return `Repoint record ${plan.source.recordId} to ${linkFromCreated(result.createdDocument)} or remove created document ${tokenFromCreated(result.createdDocument)} after inspection.`;
     }

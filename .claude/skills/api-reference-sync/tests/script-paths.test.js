@@ -1,6 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -26,6 +27,30 @@ test('sdk-doc-sync planning helper scripts exist', () => {
   ]) {
     assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);
   }
+});
+
+test('review artifact digest CLI emits a deterministic semantic sha256 approval token', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const script = path.join(skillRoot, 'scripts', 'review-artifact-digest.js');
+  assert.equal(fs.existsSync(script), true, `Missing review digest script: ${script}`);
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'api-reference-review-digest-'));
+  const firstPath = path.join(temp, 'first.json');
+  const secondPath = path.join(temp, 'second.json');
+  fs.writeFileSync(firstPath, JSON.stringify({ proposals: [{ id: 'b', decision: 'keep' }], version: 1 }));
+  fs.writeFileSync(secondPath, JSON.stringify({ version: 1, proposals: [{ decision: 'keep', id: 'b' }] }));
+
+  const run = (file) => spawnSync(process.execPath, [script, file], {
+    cwd: path.resolve(skillRoot, '..', '..', '..'),
+    encoding: 'utf8',
+  });
+  const first = run(firstPath);
+  const second = run(secondPath);
+
+  assert.equal(first.status, 0, first.stderr);
+  assert.equal(second.status, 0, second.stderr);
+  assert.match(first.stdout.trim(), /^sha256:[a-f0-9]{64}$/);
+  assert.equal(first.stdout.trim(), second.stdout.trim());
 });
 
 test('sdk-doc-sync --list reports sorted tests without executing them', () => {
@@ -129,6 +154,25 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
     );
     assert.match(skill, new RegExp(reference.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   }
+});
+
+test('interactive approval gates require exact digest-bound copy-ready replies', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
+  const integration = fs.readFileSync(path.join(skillRoot, 'references', 'bot-integration.md'), 'utf8');
+  const prompts = fs.readFileSync(path.join(skillRoot, 'references', 'bot-prompts.md'), 'utf8');
+
+  for (const source of [skill, integration, prompts]) {
+    assert.match(source, /APPROVE_GROUPING sha256:<proposal-digest>/);
+    assert.match(source, /APPROVE_WRITES sha256:<batch-digest>/);
+    assert.match(source, /APPROVE_ACCEPTANCE sha256:<execution-journal-digest>/);
+  }
+
+  assert.match(skill, /If approved, reply exactly/i);
+  assert.match(skill, /interactive chat.*MUST read.*bot-integration.*bot-prompts/is);
+  assert.match(integration, /bare `APPROVE_GROUPING`, `APPROVE_WRITES`, or `APPROVE_ACCEPTANCE`.*not approved/is);
+  assert.match(prompts, /If approved, reply exactly:/);
+  assert.match(prompts, /Structural VirtualNode or Module records.*excluded.*WIP.*Draft/is);
 });
 
 test('stable-core boundary keeps runtime code independent from ignored run artifacts', () => {

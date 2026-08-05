@@ -13,6 +13,8 @@ const { buildApiSectionModel } = require('./sdk-doc-sync/api-section-model');
 
 require('dotenv').config();
 
+const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+
 class MarkdownToFeishu {
     constructor({ sourceType = 'drive', rootToken, baseToken, document_id = null }) {
         this.source_type = sourceType;
@@ -1251,6 +1253,52 @@ class MarkdownToFeishu {
     }
 
     // ==================== Feishu API Methods ====================
+
+    async listFolder({ folderToken, type = 'all' }) {
+        if (!folderToken) throw new TypeError('folderToken is required to list a folder');
+        const token = await this.tokenFetcher.token();
+        const files = [];
+        let pageToken = null;
+        do {
+            const query = new URLSearchParams({ folder_token: folderToken, page_size: '200' });
+            if (type !== 'all') query.set('type', type);
+            if (pageToken) query.set('page_token', pageToken);
+            const response = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files?${query.toString()}`, {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                }
+            });
+            const data = await response.json();
+            if (data.code !== 0) throw new Error(`Failed to list folder: ${data.msg}`);
+            files.push(...(data.data?.files || []));
+            pageToken = data.data?.has_more ? data.data?.next_page_token : null;
+        } while (pageToken);
+        return files;
+    }
+
+    async createFolder({ name, parentFolderToken }) {
+        if (!name || !parentFolderToken) throw new TypeError('name and parentFolderToken are required to create a folder');
+        const token = await this.tokenFetcher.token();
+        const response = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files/create_folder`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({ name, folder_token: parentFolderToken })
+        });
+        const data = await response.json();
+        if (data.code !== 0) throw new Error(`Failed to create folder: ${data.msg}`);
+        const folder = data.data?.folder || data.data || {};
+        return {
+            ...folder,
+            token: folder.token || folder.folder_token || null,
+            name: folder.name || name,
+            parentFolderToken: folder.parent_token || parentFolderToken,
+        };
+    }
 
     async create_document({ title, folder_token = null, parent_node_token = null }) {
         if (this.source_type === 'wiki') {

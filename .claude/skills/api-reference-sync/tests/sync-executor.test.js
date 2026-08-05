@@ -190,6 +190,219 @@ test('SyncExecutor canonical path rejects digest-free approval and accepts the e
   assert.equal(result.status, 'success');
 });
 
+test('SyncExecutor creates and verifies a folder resource before repointing its VirtualNode', async () => {
+  const calls = [];
+  let created = false;
+  let repointed = false;
+  const documentWriter = {
+    async listFolder({ folderToken, type }) {
+      calls.push(['listFolder', folderToken, type]);
+      return created ? [{ token: 'folder-auth', name: 'Authentication', type: 'folder' }] : [];
+    },
+    async createFolder(input) {
+      calls.push(['createFolder', input]);
+      created = true;
+      return { token: 'folder-auth', name: input.name, parent_token: input.parentFolderToken };
+    },
+  };
+  const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-auth`;
+  const bitableWriter = {
+    async updateRecord(recordIdValue, fields) {
+      calls.push(['updateRecord', recordIdValue, fields]);
+      repointed = true;
+      return { record_id: recordIdValue, fields };
+    },
+    async getRecord(recordIdValue) {
+      calls.push(['getRecord', recordIdValue]);
+      return {
+        record_id: recordIdValue,
+        fields: {
+          Docs: {
+            text: 'Authentication',
+            link: repointed
+              ? expectedLink
+              : 'https://zilliverse.feishu.cn/drive/folder/folder-auth-old',
+          },
+          Type: 'VirtualNode',
+          Progress: 'Draft',
+          Targets: ['Milvus', 'Zilliz'],
+          Slug: [{ text: 'Authentication', type: 'text' }],
+        },
+      };
+    },
+  };
+  const resourcePlan = new SyncPlanner().planResource({
+    kind: 'folder',
+    ref: 'folder:node:v30:Authentication',
+    name: 'Authentication',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'Authentication',
+    },
+    repointVirtualNode: {
+      recordId: 'rec-auth',
+      currentFolderToken: 'folder-auth-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'Authentication',
+      },
+    },
+  });
+  const result = await new SyncExecutor({ documentWriter, bitableWriter }).execute(resourcePlan, {
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.deepEqual(result.resolvedResource, {
+    ref: 'folder:node:v30:Authentication',
+    kind: 'folder',
+    value: 'folder-auth',
+    token: 'folder-auth',
+  });
+  assert.deepEqual(calls.map(call => call[0]), [
+    'listFolder',
+    'getRecord',
+    'createFolder',
+    'listFolder',
+    'updateRecord',
+    'getRecord',
+  ]);
+  assert.deepEqual(calls[4][2], {
+    title: 'Authentication',
+    link: expectedLink,
+  });
+});
+
+test('SyncExecutor creates a VirtualNode from its resolved folder without writing Slug', async () => {
+  const calls = [];
+  const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-files`;
+  const bitableWriter = {
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    async listRecords() {
+      calls.push(['listRecords']);
+      return [];
+    },
+    async createRecord(fields) {
+      calls.push(['createRecord', fields]);
+      return { record_id: 'rec-files', fields };
+    },
+    async getRecord(recordIdValue) {
+      calls.push(['getRecord', recordIdValue]);
+      return {
+        record_id: recordIdValue,
+        fields: {
+          Docs: { text: 'File Resources', link: expectedLink },
+          Type: 'VirtualNode',
+          Progress: 'Draft',
+          Targets: ['Milvus', 'Zilliz'],
+          Slug: [{ text: 'FileResources', type: 'text' }],
+        },
+      };
+    },
+  };
+  const resourcePlan = new SyncPlanner().planResource({
+    kind: 'virtual_node',
+    ref: 'virtual-node:node:v30:FileResources',
+    title: 'File Resources',
+    folderRef: 'folder:node:v30:FileResources',
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    version: 'v3.0.x',
+    targets: ['Milvus', 'Zilliz'],
+    progress: 'Draft',
+    dependsOn: ['folder:node:v30:FileResources'],
+    existingLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      criteria: { canonicalSlug: 'FileResources', title: 'File Resources', type: 'VirtualNode' },
+    },
+  });
+  const result = await new SyncExecutor({ documentWriter: {}, bitableWriter }).execute(resourcePlan, {
+    approval: { approved: true },
+    resourceResolutions: new Map([[
+      'folder:node:v30:FileResources',
+      { ref: 'folder:node:v30:FileResources', kind: 'folder', value: 'folder-files' },
+    ]]),
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.resolvedResource.recordId, 'rec-files');
+  assert.equal(calls[1][1].slug, undefined);
+  assert.deepEqual(calls[1][1], {
+    title: 'File Resources',
+    link: expectedLink,
+    type: 'VirtualNode',
+    addedSince: 'v3.0.x',
+    targets: ['Milvus', 'Zilliz'],
+    progress: 'Draft',
+  });
+});
+
+test('SyncExecutor resolves approved folder and parent refs only at document execution time', async () => {
+  const calls = [];
+  const context = planningContext({
+    current: null,
+    target: {
+      version: 'v3.0.x',
+      folderToken: null,
+      folderRef: 'folder:node:v30:FileResources',
+      parentRecordId: null,
+      parentRecordRef: 'virtual-node:node:v30:FileResources',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    dependencies: ['folder:node:v30:FileResources', 'virtual-node:node:v30:FileResources'],
+    existingRecordLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      parentRecordRef: 'virtual-node:node:v30:FileResources',
+      criteria: { title: 'createCollection()', type: 'Function' },
+    },
+  });
+  const createPlan = plan('CREATE', context);
+  const executor = new SyncExecutor({
+    documentWriter: {
+      async createDocument(input) {
+        calls.push(['createDocument', input]);
+        return { token: 'doc-new', url: 'https://docs.example/doc-new' };
+      },
+    },
+    bitableWriter: {
+      async createRecord(fields) {
+        calls.push(['createRecord', fields]);
+        return { record_id: 'rec-new', fields };
+      },
+    },
+  });
+  const result = await executor.execute(createPlan, {
+    artifact: artifact(),
+    approval: { approved: true },
+    resourceResolutions: new Map([
+      ['folder:node:v30:FileResources', { value: 'folder-files' }],
+      ['virtual-node:node:v30:FileResources', { value: 'rec-files' }],
+    ]),
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(createPlan.target.folderToken, null);
+  assert.equal(createPlan.target.parentRecordId, null);
+  assert.equal(calls[0][1].folderToken, 'folder-files');
+  assert.equal(calls[1][1].parentRecordId, 'rec-files');
+  assert.equal(result.resolvedPlan.target.folderToken, 'folder-files');
+  assert.equal(result.resolvedPlan.target.parentRecordId, 'rec-files');
+});
+
 test('SyncExecutor creates a target document before creating the Bitable record', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
   const executor = new SyncExecutor({ documentWriter, bitableWriter });

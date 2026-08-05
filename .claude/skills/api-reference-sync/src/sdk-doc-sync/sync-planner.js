@@ -219,10 +219,22 @@ class SyncPlanner {
         { type: 'TARGET_ANCESTRY', folderRef: ref, versionRootToken: resource.versionRootToken },
       ];
       if (resource.repointVirtualNode?.recordId) {
+        const expectedFields = resource.repointVirtualNode.expectedFields || {};
+        if (!nonEmptyString(resource.repointVirtualNode.currentFolderToken)
+          || expectedFields.type !== 'VirtualNode'
+          || !Array.isArray(expectedFields.targets)
+          || !nonEmptyString(expectedFields.progress)
+          || !nonEmptyString(expectedFields.slug)) {
+          throw new SyncPlanningError(
+            'VIRTUAL_NODE_REPOINT_EVIDENCE_REQUIRED',
+            `Folder resource ${ref} requires current link and preserved VirtualNode field evidence`,
+          );
+        }
         postconditions.push({
           type: 'VIRTUAL_NODE_LINK',
           recordId: resource.repointVirtualNode.recordId,
           folderRef: ref,
+          preservedFields: deepClone(expectedFields),
         });
       }
     } else if (resource.kind === 'virtual_node') {
@@ -231,16 +243,26 @@ class SyncPlanner {
         || !nonEmptyString(resource.baseToken)
         || !nonEmptyString(resource.tableId)
         || !nonEmptyString(resource.version)
+        || !Array.isArray(resource.targets)
+        || resource.targets.length === 0
+        || !resource.targets.every(nonEmptyString)
+        || !nonEmptyString(resource.progress)
         || !dependencies.includes(resource.folderRef)
         || !nonEmptyString(lookup.baseToken)
         || !nonEmptyString(lookup.tableId)
-        || !lookup.criteria) {
-        throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires its folder dependency and absent Bitable lookup evidence`);
+        || !nonEmptyString(lookup.criteria?.canonicalSlug)) {
+        throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires folder dependency, explicit structural metadata, and absent Bitable lookup evidence`);
       }
       action = 'CREATE_VIRTUAL_NODE';
       postconditions = [
         { type: 'RESOURCE_RESOLVED', ref, value: 'NEW_RECORD_ID' },
         { type: 'VIRTUAL_NODE_LINK', recordId: 'NEW_RECORD_ID', folderRef: resource.folderRef },
+        {
+          type: 'VIRTUAL_NODE_METADATA',
+          slug: lookup.criteria.canonicalSlug,
+          targets: [...resource.targets],
+          progress: resource.progress,
+        },
       ];
     } else {
       throw new SyncPlanningError('UNKNOWN_RESOURCE_KIND', `Unknown dependent resource kind: ${resource.kind || '(missing)'}`);

@@ -10,7 +10,7 @@ Each SDK version Drive folder is sparse: it lists only documents created or upda
 
 For unchanged entries in a new version, keep the bitable record and keep its `Docs` link pointing to the existing unchanged document unless an approved action creates or updates a version-local document. Still update `父记录` to the matching current-version category or parent record when that parent exists, so the bitable hierarchy reflects the current version even when the document lives in an older sparse folder.
 
-Every record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Verify exact field names from the target bitable when working outside the known SDK bases; sampled Python version bitables use `Targets` and `Progress`, and the progress option is `WIP`.
+Every interface-document record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Structural VirtualNode and Module resources are an exception: repointing their folder link must preserve existing `Targets`, `Progress`, `Slug`, type, and unrelated metadata; creating one requires explicit reviewed structural metadata in the resource plan. Never infer blank targets or `WIP` from the interface-document state machine. Verify exact field names and values from the target bitable.
 
 Keep edited records at `WIP` through post-write verification and user review. After the user explicitly accepts all touched documentation, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`. Partial acceptance never advances the baseline.
 
@@ -91,7 +91,7 @@ When preparing a new version bitable:
 
 - `Docs.link` points to the intended target-version document.
 - `父记录` points to the intended target-version category.
-- Edited records have blank `Targets` and `Progress` set to `WIP`.
+- Edited interface-document records have blank `Targets` and `Progress` set to `WIP`; structural VirtualNode or Module records match their approved preserved or explicit metadata.
 - Changed or added target documents exist in the canonical sparse version folder.
 - Unchanged carry-forward records keep their approved existing document links.
 - Older-version pages are unchanged.

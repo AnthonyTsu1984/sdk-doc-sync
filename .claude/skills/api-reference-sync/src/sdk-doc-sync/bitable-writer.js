@@ -38,8 +38,31 @@ class BitableWriter {
     async listRecords({ pageSize = 500 } = {}) {
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
-        const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records?page_size=${pageSize}`;
+        const records = [];
+        let pageToken = null;
+        do {
+            const query = new URLSearchParams({ page_size: String(pageSize) });
+            if (pageToken) query.set('page_token', pageToken);
+            const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records?${query.toString()}`;
+            const res = await fetch(url, {
+                method: 'get',
+                headers: {
+                    'Content-Type': 'application/json; charset=utf-8',
+                    'Authorization': `Bearer ${token}`,
+                },
+            });
+            const data = await res.json();
+            if (data.code !== 0) throw new Error(`Failed to list records: ${data.msg}`);
+            records.push(...(data.data?.items || []));
+            pageToken = data.data?.has_more ? data.data?.page_token : null;
+        } while (pageToken);
+        return records;
+    }
 
+    async getRecord(recordId) {
+        const token = await this.tokenFetcher.token();
+        const tableId = await this._resolveTableId();
+        const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records/${recordId}`;
         const res = await fetch(url, {
             method: 'get',
             headers: {
@@ -47,13 +70,9 @@ class BitableWriter {
                 'Authorization': `Bearer ${token}`,
             },
         });
-
         const data = await res.json();
-        if (data.code !== 0) {
-            throw new Error(`Failed to list records: ${data.msg}`);
-        }
-
-        return data.data.items || [];
+        if (data.code !== 0) throw new Error(`Failed to get record: ${data.msg}`);
+        return data.data?.record || data.data;
     }
 
     async createRecord(fields) {

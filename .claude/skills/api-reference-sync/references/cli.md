@@ -56,6 +56,15 @@ node .claude/skills/api-reference-sync/bin/compare-scan-artifacts.js \
   tmp/sdk-release-scout/python-v26-dryrun-summary.json
 ```
 
+Generate the semantic digest used by an interactive grouping or other JSON review gate:
+
+```bash
+node .claude/skills/api-reference-sync/scripts/review-artifact-digest.js \
+  tmp/sdk-release-scout/<language>-<track>-grouping-proposal.json
+```
+
+The prompt must show the returned full digest in one copy-ready reply, for example `APPROVE_GROUPING sha256:<proposal-digest>`. Recompute it whenever the artifact changes.
+
 If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
 ## Zilliz CLI Release Impact

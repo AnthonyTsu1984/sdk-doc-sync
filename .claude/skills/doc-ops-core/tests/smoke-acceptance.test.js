@@ -3,6 +3,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { createActionBatch } = require('../src/action-batch');
@@ -12,6 +14,7 @@ const { inventoryMarkdown } = require('../harness/smoke-content-inventory');
 const {
   buildSkillAcceptanceArtifacts,
   collectAcceptanceReadback,
+  ensureDocCodeVerifierReport,
   inspectSiblingRelation,
 } = require('../harness/smoke-acceptance');
 
@@ -526,4 +529,29 @@ test('nested-list acceptance distinguishes a sibling from a nested child', () =>
     siblingOccurrences: 1,
     siblingRelationVerified: false,
   });
+});
+
+test('acceptance generates the missing doc-code verifier report from the synthetic corpus', () => {
+  assert.equal(typeof ensureDocCodeVerifierReport, 'function');
+  const runDir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-smoke-verifier-'));
+  const corpusRoot = path.resolve(__dirname, '../smoke-corpus');
+  try {
+    const reportPath = ensureDocCodeVerifierReport({
+      corpus: {
+        documents: [{ id: 'verification-only', file: 'documents/verification-only.md' }],
+      },
+      corpusRoot,
+      runDir,
+    });
+    const report = JSON.parse(fs.readFileSync(reportPath, 'utf8'));
+
+    assert.equal(report.contract.status, 'VERIFIED');
+    assert.equal(report.liveVerification.enabledThisRun, false);
+    assert.equal(report.summary.filteredSnippets, 1);
+    assert.equal(report.summary.passed, 1);
+    assert.equal(report.summary.failed, 0);
+    assert.equal(report.results[0].source.path, path.join(corpusRoot, 'documents/verification-only.md'));
+  } finally {
+    fs.rmSync(runDir, { recursive: true, force: true });
+  }
 });

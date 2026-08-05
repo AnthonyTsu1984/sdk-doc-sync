@@ -31,7 +31,7 @@ Do not use for verification-only snippet checks, release-wide API-reference sync
 1. Collect all references and identify the target, audience, product surface, and requested document role.
 2. Extract concrete claims: APIs, endpoints, fields, defaults, enums, lifecycle states, constraints, examples, errors, prerequisites, and side effects.
 3. Mark claims `reference-only` until verified against implementation or an accepted canonical spec.
-4. Verify API shape with public clients, examples, tests, handlers, DTOs, and specs. For behavioral claims, trace into validators, services, converters, repositories, state transitions, permissions, defaults, and cleanup.
+4. Verify API shape with public clients, examples, tests, handlers, DTOs, and specs. For behavioral claims, trace into validators, services, converters, repositories, state transitions, permissions, defaults, and cleanup. A user's statement that the implementation does or does not prove a claim is not repository evidence: inspect the relevant source or accepted canonical spec before assigning `verified`, `contradicted`, or `needs-verification`.
 5. Record discrepancies and a visible “Needs further verification” list. Sparse checkout is not evidence of absence; expand it or report why that could not be done.
 6. Draft only verified behavior. Keep examples realistic, omit empty placeholder sections, and preserve the target documentation set's navigation and code conventions.
 7. Prepare an exact dry-run, obtain explicit approval, patch the target, then refetch and verify headings, prose, code, tables/lists, media, and unresolved-claim visibility.

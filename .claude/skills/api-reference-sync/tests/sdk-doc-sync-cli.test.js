@@ -76,15 +76,111 @@ test('CLI accepts repeatable token-specific repair approvals', () => {
     'sha256:batch',
     '--review-unit-id',
     'review:node:Collections:createCollection',
-    '--accepted-review-unit',
-    'review:node:Collections:parent',
+    '--session-state',
+    'tmp/session.json',
+    '--resume-session',
+    'tmp/previous-session.json',
   ]);
 
   assert.deepEqual(args.repairApprove, ['doc-1', 'doc-2']);
   assert.deepEqual(args.approvePlanDigest, ['python:Category:item=sha256:abc123']);
   assert.equal(args.approveBatchDigest, 'sha256:batch');
   assert.equal(args.reviewUnitId, 'review:node:Collections:createCollection');
-  assert.deepEqual(args.acceptedReviewUnitIds, ['review:node:Collections:parent']);
+  assert.equal(args.sessionState, 'tmp/session.json');
+  assert.equal(args.resumeSession, 'tmp/previous-session.json');
+});
+
+test('CLI creates a persistent review session only from a complete dry-run manifest', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-session-init-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const resultFixture = {
+    scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+    planningErrors: [], approved: [], results: [],
+    reviewUnitManifest: {
+      schemaVersion: 1,
+      manifestDigest: 'sha256:review-manifest',
+      units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' }],
+      unassignedResourceActionIds: [],
+    },
+    reviewUnitPreviews: [],
+    proposedExecutionBatch: null,
+  };
+
+  const result = await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+      '--json',
+      '--session-state', sessionPath,
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: () => ({ run: async () => structuredClone(resultFixture) }),
+      onStdout: () => {},
+    },
+  });
+
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(persisted.reviewUnitManifestDigest, 'sha256:review-manifest');
+  assert.equal(persisted.scanStateUpdated, false);
+  assert.equal(result.reviewSession.sessionPath, sessionPath);
+});
+
+test('CLI loads a persisted session for live-state resume instead of accepting manual unit IDs', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-session-resume-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v3.0.x:test',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    status: 'in_progress',
+    reviewUnitManifest: { schemaVersion: 1, manifestDigest: 'sha256:review-manifest', units: [] },
+    reviewUnitManifestDigest: 'sha256:review-manifest',
+    acceptedReviewUnits: [],
+    scanStateUpdated: false,
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+  let capturedOptions;
+
+  await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+      '--json',
+      '--resume-session', sessionPath,
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: (options) => {
+        capturedOptions = options;
+        return { run: async () => ({
+          scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+          planningErrors: [], approved: [], results: [],
+          reviewUnitManifest: session.reviewUnitManifest,
+          reviewUnitPreviews: [],
+          proposedExecutionBatch: null,
+        }) };
+      },
+      onStdout: () => {},
+    },
+  });
+
+  assert.deepEqual(capturedOptions.reviewSession, session);
+  assert.equal(Object.hasOwn(capturedOptions, 'acceptedReviewUnitIds'), false);
 });
 
 test('execution approval provider rejects an approved plan digest mismatch', () => {

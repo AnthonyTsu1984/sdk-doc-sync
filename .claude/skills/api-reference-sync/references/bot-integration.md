@@ -8,13 +8,14 @@ Each bot run has one active release-sync session. Store these fields outside the
 
 ```json
 {
-  "sessionId": "sdk-doc-sync:<language>:<track>:<timestamp-or-run-id>",
+  "sessionId": "sdk-doc-sync:<language>:<sdk-name>:<track>:sha256:<review-unit-manifest-digest>",
   "phase": "release_scope|candidate_proposal|reviewed_planning|execution|acceptance_finalization",
   "status": "release_scope_ready|grouping_review_required|review_unit_selection_required|approval_ready|document_review_required|acceptance_review_required|accepted|blocked",
   "language": "<sdk-language>",
   "sdkName": "<sdk-name>",
   "track": "<version-track>",
   "artifacts": {
+    "reviewSession": "<path>",
     "releaseScope": "<path>",
     "candidateProposal": "<path>",
     "inheritanceProposal": "<path>",
@@ -39,13 +40,24 @@ Each bot run has one active release-sync session. Store these fields outside the
   "acceptedReviewUnits": [
     {
       "reviewUnitId": "review:<document-stable-id>",
-      "executionJournalDigest": "sha256:<execution-journal-digest>"
+      "executionJournalPath": "<path>",
+      "executionJournalDigest": "sha256:<execution-journal-digest>",
+      "touchedRecords": [
+        {
+          "actionId": "<verified-journal-action-id>",
+          "recordId": "<bitable-record-id>",
+          "documentToken": "<docx-token-or-null>"
+        }
+      ],
+      "commentsResolved": true
     }
   ],
   "proposalIds": [],
   "actionIds": []
 }
 ```
+
+Store this state in the review-session JSON created by `sdk-doc-sync --session-state`; do not reconstruct it from the conversation. Every later bot process must load it with `--resume-session`. Accepted IDs are derived only from journal-verified receipts written by `sdk-review-session.js accept-document`; a model message, prompt field, or caller-supplied ID is not evidence.
 
 The bot may read artifacts and run dry-runs. It must not call mutating Feishu tools, write documents, update records, move folders, or update `scan-state.json` until the session is in `approval_ready` and the user replies with `APPROVE_WRITES sha256:<batch-digest>` matching the active document unit's `proposedExecutionBatch.batchDigest`. A release-level multi-document batch is never approvable.
 
@@ -55,7 +67,7 @@ The bot may read artifacts and run dry-runs. It must not call mutating Feishu to
 |-------|------------|------------------|
 | `release_scope` | Run release scout and validate no-write flags. | Stop only on no changes or blocked discovery. |
 | `candidate_proposal` | Build proposed user-facing candidates, exclusions, grouping decisions, version-table detected inheritance decisions, doc identities, and target placements. | Send `Decision requested: GROUPING_REVIEW`. |
-| `reviewed_planning` | Build the complete deterministic review-unit manifest, select exactly one document, then regenerate that unit against current live state with all required resource actions. | Send `WRITE_APPROVAL` only for the active unit; otherwise stop at `review_unit_selection_required`. |
+| `reviewed_planning` | On the initial complete dry-run create the review-session file. On later runs resume it, validate accepted journals and live `WIP` records, select exactly one remaining document, then regenerate that unit against current live state with all required resource actions. | Send `WRITE_APPROVAL` only for the active unit; otherwise stop at `review_unit_selection_required`. |
 | `execution` | Execute only the active unit's approved actions, refetch and verify, leave touched records at `WIP`, and leave scan state unchanged. | Stop with `DOCUMENT_REVIEW`; never start the next unit automatically. |
 | `acceptance_finalization` | Record each accepted unit journal. After every planned unit is accepted, build the complete accepted-unit manifest; only final acceptance changes touched records to `Draft` and updates scan state. | Return to the same unit on comments, select the next unit after document acceptance, or stop as fully accepted after finalization. |
 
@@ -119,8 +131,11 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - `APPROVE_WRITES sha256:<batch-digest>` applies only to the exact action list and artifact digests bound into that batch.
 - Write approval does not accept the resulting documentation and never authorizes another document unit or a scan-state update.
 - `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` is valid only for the active, successfully verified unit. It records review completion but leaves interface records at `WIP` and leaves scan state unchanged.
+- Persist `APPROVE_DOCUMENT` with `sdk-review-session.js accept-document`. The command must re-read the matching completed execution journal, require resolved comments, bind every touched record to a verified journal action, and reject a journal for a different document unit.
+- Before a new process selects the next unit, rerun `sdk-doc-sync` with `--resume-session`. Manifest drift, journal drift, missing records, a non-`WIP` progress value, nonblank `Targets`, or a changed Docx token blocks the phase transition.
 - `REQUEST_DOCUMENT_CHANGES` freezes progression, requires reading the active document's comments, and returns only that unit to reviewed planning. Any changed artifact or resource plan invalidates the previous batch and execution-journal digest.
 - `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` is valid only after every unit in the original review-unit manifest has one accepted journal in the complete acceptance manifest. It authorizes only the listed interface-document `WIP` to `Draft` transitions and the subsequent verified `scan-state.json` update. Structural VirtualNode or Module records are excluded from that transition.
+- Build that digest with `sdk-review-session.js build-acceptance`. After finalization, mark the session complete only with `record-finalization` and a successful finalization journal bound to the same digest.
 - If any artifact changes after approval, return to the relevant review gate.
 - If planning produces `planningErrorCount > 0`, do not request write approval.
 - If execution partially succeeds, do not auto-retry mutating actions unless the retry was included in the approved recovery plan.

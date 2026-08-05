@@ -12,20 +12,23 @@ function planIdForDependency(dependency, byPlanId) {
   return byPlanId.has(resourceId) ? resourceId : null;
 }
 
-function buildReviewUnitManifest(plannedEntries, buildExecutionBatch) {
+function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { documentStableIds = null } = {}) {
   if (!Array.isArray(plannedEntries)) throw new TypeError('plannedEntries must be an array');
   if (typeof buildExecutionBatch !== 'function') throw new TypeError('buildExecutionBatch is required');
 
-  const actionable = plannedEntries.filter((entry) => entry?.plan?.action !== 'NOOP');
-  const byPlanId = new Map(actionable.map((entry) => [entry.plan.stableId, entry]));
-  const documentEntries = actionable
-    .filter((entry) => entry.kind === 'document')
+  const planned = plannedEntries.filter((entry) => entry?.plan);
+  const actionable = planned.filter((entry) => entry.plan.action !== 'NOOP');
+  const byPlanId = new Map(planned.map((entry) => [entry.plan.stableId, entry]));
+  const allowedDocumentIds = documentStableIds ? new Set(documentStableIds) : null;
+  const documentEntries = planned
+    .filter((entry) => entry.kind === 'document'
+      && (!allowedDocumentIds || allowedDocumentIds.has(entry.plan.stableId)))
     .sort((left, right) => left.plan.stableId.localeCompare(right.plan.stableId));
   const assignedResourceIds = new Set();
   const entriesByUnitId = new Map();
 
   const units = documentEntries.map((documentEntry) => {
-    const selectedIds = new Set([documentEntry.plan.stableId]);
+    const selectedIds = new Set(documentEntry.plan.action === 'NOOP' ? [] : [documentEntry.plan.stableId]);
     const prerequisiteReviewUnitIds = new Set();
     const pending = [...(documentEntry.plan.dependencies || [])];
 
@@ -63,20 +66,23 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch) {
     .filter((entry) => entry.kind === 'resource' && !assignedResourceIds.has(entry.plan.stableId))
     .map((entry) => entry.plan.stableId)
     .sort();
-  const semantic = {
+  const manifestSemantic = {
     schemaVersion: 1,
     units: units.map((unit) => ({
       reviewUnitId: unit.reviewUnitId,
       documentStableId: unit.documentStableId,
       prerequisiteReviewUnitIds: unit.prerequisiteReviewUnitIds,
     })),
+  };
+  const semantic = {
+    ...manifestSemantic,
     unassignedResourceActionIds,
   };
 
   return Object.freeze({
     manifest: Object.freeze({
       ...semantic,
-      manifestDigest: digestSemantic(semantic),
+      manifestDigest: digestSemantic(manifestSemantic),
     }),
     units: Object.freeze(units),
     entriesByUnitId,

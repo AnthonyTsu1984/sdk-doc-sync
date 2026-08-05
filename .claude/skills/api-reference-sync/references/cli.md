@@ -67,18 +67,80 @@ The prompt must show the returned full digest in one copy-ready reply, for examp
 
 If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
-When a release contains more than one document, the first dry-run emits a `reviewUnitManifest` and does not emit an approvable multi-document batch. Select exactly one unit and rerun:
+When a release contains one or more documents, create a persistent review session from the complete initial dry-run. The session is the only source of accepted-unit state across processes or chat sessions:
+
+```bash
+SESSION=tmp/sdk-doc-sync-runs/<language>-<track>/review-session.json
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
+  <same-reviewed-inputs> \
+  --session-state "$SESSION" \
+  --dry-run \
+  --json
+```
+
+`--session-state` refuses live runs, blocked or incomplete planning, and an existing file. Use `--resume-session` for every later invocation. Do not copy accepted review-unit IDs into command lines or prompts.
+
+The first dry-run emits a `reviewUnitManifest` and does not emit an approvable multi-document batch. Select exactly one unit and rerun against current live state:
 
 ```bash
 BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
 node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
   <same-reviewed-inputs> \
+  --resume-session "$SESSION" \
   --review-unit-id review:<document-stable-id> \
   --dry-run \
   --json
 ```
 
-The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`. After execution, stop for document review; if comments change any artifact or plan, rerun the same unit and obtain a new digest. Accepted prerequisite units may be supplied with repeatable `--accepted-review-unit <id>`. Rerun planning against live state before each next unit so already-created shared resources are resolved rather than replayed.
+The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`, again with `--resume-session "$SESSION"`. After execution, stop for document review; if comments change any artifact or plan, rerun the same unit and obtain a new digest.
+
+After the exact `APPROVE_DOCUMENT` reply, write the verified touched-record inventory as JSON. Every entry must bind a live record to a successful action in the execution journal:
+
+```json
+[
+  {
+    "actionId": "<document-or-resource-stable-id>",
+    "recordId": "<bitable-record-id>",
+    "documentToken": "<docx-token-or-null>"
+  }
+]
+```
+
+Then persist the receipt:
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js accept-document \
+  --session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --execution-journal <execution-journal.jsonl> \
+  --execution-journal-digest sha256:<execution-journal-digest> \
+  --touched-records <touched-records.json> \
+  --document-link <docx-url> \
+  --record-link <bitable-record-url> \
+  --comments-resolved
+```
+
+This command rereads the journal, verifies its digest, completion sentinel, action results, and document identity, then derives the accepted unit from the receipt. A new process can inspect progress with `sdk-review-session.js status --session "$SESSION"` and continue with `--resume-session "$SESSION"`. Resume reruns the baseline scan and blocks on manifest drift, missing or changed journals, non-`WIP` records, nonblank `Targets`, or changed document tokens. `scan-state.json` remains unchanged.
+
+After every unit has a receipt, build the final acceptance artifact:
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js build-acceptance \
+  --session "$SESSION"
+```
+
+Use the emitted `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` gate. Pass that same digest to `AcceptanceFinalizer`. After finalization writes its successful JSON journal, bind it back to the session:
+
+```bash
+node .claude/skills/api-reference-sync/scripts/review-artifact-digest.js <acceptance-journal.json>
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js record-finalization \
+  --session "$SESSION" \
+  --acceptance-journal <acceptance-journal.json> \
+  --acceptance-journal-digest sha256:<acceptance-journal-digest>
+```
+
+Only the last command can mark the persistent session `finalized` and `scanStateUpdated: true`, and only when the journal proves successful digest-bound finalization.
 
 ## Zilliz CLI Release Impact
 

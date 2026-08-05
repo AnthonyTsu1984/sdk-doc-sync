@@ -27,6 +27,7 @@ const { ExecutionJournal } = require('../../../doc-ops-core/src/journal');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { createResult } = require('../../../doc-ops-core/src/result-contract');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
+const { validateResumeSession } = require('./review-session-store');
 
 function executionSideEffects(plan) {
     switch (plan.action) {
@@ -217,7 +218,7 @@ class SdkDocSync {
         executionJournalFactory = null,
         collaborativeReview = false,
         reviewUnitId = null,
-        acceptedReviewUnitIds = [],
+        reviewSession = null,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -269,7 +270,7 @@ class SdkDocSync {
         this.executionJournalFactory = executionJournalFactory;
         this.collaborativeReview = collaborativeReview === true;
         this.reviewUnitId = reviewUnitId;
-        this.acceptedReviewUnitIds = new Set(acceptedReviewUnitIds || []);
+        this.reviewSession = reviewSession;
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
         this.executor = executor || null;
@@ -409,9 +410,41 @@ class SdkDocSync {
         const fullActionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
         const fullActionablePlanIds = new Set(fullActionablePlanned.map(({ plan }) => plan.stableId));
         result.proposedReleaseBatch = buildExecutionBatch(fullActionablePlanned, fullActionablePlanIds);
-        const reviewUnits = buildReviewUnitManifest(fullActionablePlanned, buildExecutionBatch);
+        const reviewUnits = buildReviewUnitManifest(
+            this.reviewSession ? plannedEntries : fullActionablePlanned,
+            buildExecutionBatch,
+            {
+                documentStableIds: this.reviewSession
+                    ? this.reviewSession.reviewUnitManifest.units.map((unit) => unit.documentStableId)
+                    : null,
+            },
+        );
         result.reviewUnitManifest = reviewUnits.manifest;
         result.reviewUnitPreviews = reviewUnits.units;
+        const verifiedAcceptedReviewUnitIds = new Set();
+
+        if (this.reviewSession) {
+            try {
+                const resumed = validateResumeSession({
+                    session: this.reviewSession,
+                    reviewUnitManifest: reviewUnits.manifest,
+                    currentRecords: typeIndex,
+                });
+                for (const unitId of resumed.acceptedReviewUnitIds) verifiedAcceptedReviewUnitIds.add(unitId);
+                result.reviewSession = {
+                    sessionId: this.reviewSession.sessionId,
+                    acceptedReviewUnitIds: resumed.acceptedReviewUnitIds,
+                    reviewUnitManifestDigest: this.reviewSession.reviewUnitManifestDigest,
+                };
+            } catch (error) {
+                result.planningErrors.push({
+                    stableId: null,
+                    diffAction: 'REVIEW_SESSION',
+                    code: 'REVIEW_SESSION_INVALID',
+                    message: error.message,
+                });
+            }
+        }
 
         let actionablePlanned = fullActionablePlanned;
         let actionablePlanIds = fullActionablePlanIds;
@@ -424,11 +457,17 @@ class SdkDocSync {
                     message: `Every resource action must belong to one document review unit: ${reviewUnits.manifest.unassignedResourceActionIds.join(', ')}`,
                 });
             }
+            const selectableUnits = reviewUnits.units.filter((unit) => (
+                unit.actionIds.length > 0 && !verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId)
+            ));
+            result.remainingReviewUnitIds = selectableUnits.map((unit) => unit.reviewUnitId);
+            result.allReviewUnitsAccepted = reviewUnits.manifest.units.length > 0
+                && reviewUnits.manifest.units.every((unit) => verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId));
             let selectedUnit = this.reviewUnitId
-                ? reviewUnits.units.find((unit) => unit.reviewUnitId === this.reviewUnitId)
+                ? selectableUnits.find((unit) => unit.reviewUnitId === this.reviewUnitId)
                 : null;
-            if (!selectedUnit && !this.reviewUnitId && reviewUnits.units.length === 1) {
-                [selectedUnit] = reviewUnits.units;
+            if (!selectedUnit && !this.reviewUnitId && selectableUnits.length === 1) {
+                [selectedUnit] = selectableUnits;
             }
             if (this.reviewUnitId && !selectedUnit) {
                 result.planningErrors.push({
@@ -440,7 +479,7 @@ class SdkDocSync {
             }
             if (selectedUnit) {
                 const missingPrerequisites = selectedUnit.prerequisiteReviewUnitIds
-                    .filter((unitId) => !this.acceptedReviewUnitIds.has(unitId));
+                    .filter((unitId) => !verifiedAcceptedReviewUnitIds.has(unitId));
                 if (missingPrerequisites.length > 0) {
                     result.planningErrors.push({
                         stableId: selectedUnit.documentStableId,
@@ -452,7 +491,7 @@ class SdkDocSync {
                 result.activeReviewUnit = selectedUnit;
                 actionablePlanned = reviewUnits.entriesByUnitId.get(selectedUnit.reviewUnitId) || [];
                 actionablePlanIds = new Set(actionablePlanned.map(({ plan }) => plan.stableId));
-            } else if (reviewUnits.units.length > 1) {
+            } else if (selectableUnits.length > 1) {
                 result.reviewUnitSelectionRequired = true;
                 actionablePlanned = [];
                 actionablePlanIds = new Set();

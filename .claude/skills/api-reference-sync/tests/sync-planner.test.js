@@ -10,7 +10,9 @@ const path = require('node:path');
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('../src/sdk-doc-sync/review-units');
+const { createReviewSession, recordDocumentAcceptance } = require('../src/sdk-doc-sync/review-session-store');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 
 function artifact(content = '# Reviewed documentation\n') {
@@ -958,6 +960,57 @@ test('review-unit manifest records document prerequisites without batching two d
   assert.deepEqual(child.prerequisiteReviewUnitIds, ['review:node:Collections:parent']);
 });
 
+test('review-unit manifest remains stable when an accepted document replans as NOOP in a later session', () => {
+  const document = (stableId, action, dependencies = []) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action,
+      stableId,
+      dependencies,
+      source: { documentToken: `doc-${stableId.at(-1)}` },
+    }),
+  });
+  const initial = buildReviewUnitManifest([
+    document('node:Collections:a', 'UPDATE_IN_PLACE'),
+    document('node:Collections:b', 'UPDATE_IN_PLACE', ['node:Collections:a']),
+  ], SdkDocSync.buildExecutionBatch);
+  const resumed = buildReviewUnitManifest([
+    document('node:Collections:a', 'NOOP'),
+    document('node:Collections:b', 'UPDATE_IN_PLACE', ['node:Collections:a']),
+  ], SdkDocSync.buildExecutionBatch);
+
+  assert.equal(resumed.manifest.manifestDigest, initial.manifest.manifestDigest);
+  assert.deepEqual(resumed.manifest.units.map((unit) => unit.reviewUnitId), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.deepEqual(resumed.units.find((unit) => unit.documentStableId.endsWith(':a')).actionIds, []);
+});
+
+test('review-unit manifest digest binds stable inter-document prerequisites', () => {
+  const document = (stableId, dependencies = []) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId,
+      dependencies,
+      source: { documentToken: `doc-${stableId.at(-1)}` },
+    }),
+  });
+  const independent = buildReviewUnitManifest([
+    document('node:Collections:a'),
+    document('node:Collections:b'),
+  ], SdkDocSync.buildExecutionBatch);
+  const dependent = buildReviewUnitManifest([
+    document('node:Collections:a'),
+    document('node:Collections:b', ['node:Collections:a']),
+  ], SdkDocSync.buildExecutionBatch);
+
+  assert.notEqual(independent.manifest.manifestDigest, dependent.manifest.manifestDigest);
+});
+
 test('acceptance manifest binds every document-unit journal and touched-record inventory', () => {
   const reviewUnitManifest = {
     manifestDigest: 'sha256:review-units',
@@ -1276,6 +1329,11 @@ test('collaborative dry-run refuses a multi-document write batch until one revie
     parentClass: 'Collections',
     docstring: 'new drop description',
     identity: { stableId: 'node:Collections:dropCollection' },
+  }, {
+    name: 'hasCollection',
+    parentClass: 'Collections',
+    docstring: 'unchanged description',
+    identity: { stableId: 'node:Collections:hasCollection' },
   }];
   sync.indexReader.list_documents = async () => [{
     id: 'rec-create',
@@ -1297,15 +1355,140 @@ test('collaborative dry-run refuses a multi-document write batch until one revie
       folderToken: 'collections-v26',
       parentRecordId: 'parent-v26',
     },
+  }, {
+    id: 'rec-has',
+    metadata: {
+      slug: 'Collections-hasCollection',
+      description: 'unchanged description',
+      token: 'doc-has',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
   }];
+  sync.acceptedReviewUnitIds = new Set([
+    'review:node:Collections:createCollection',
+    'review:node:Collections:dropCollection',
+  ]);
 
   const result = await sync.run();
 
   assert.equal(result.reviewUnitSelectionRequired, true);
   assert.equal(result.reviewUnitManifest.units.length, 2);
+  assert.equal(result.reviewUnitManifest.units.some((unit) => unit.documentStableId.endsWith(':hasCollection')), false);
   assert.equal(result.proposedExecutionBatch, null);
   assert.equal(calls.documentMutations, 0);
   assert.equal(calls.recordMutations, 0);
+});
+
+test('collaborative resume validates persisted receipts and keeps accepted NOOP documents in the original manifest', async () => {
+  const configure = (sync, acceptedAlready) => {
+    sync.collaborativeReview = true;
+    sync.scanner.scan = async () => [{
+      name: 'createCollection',
+      parentClass: 'Collections',
+      docstring: 'new description',
+      identity: { stableId: 'node:Collections:createCollection' },
+    }, {
+      name: 'dropCollection',
+      parentClass: 'Collections',
+      docstring: 'new drop description',
+      identity: { stableId: 'node:Collections:dropCollection' },
+    }, {
+      name: 'hasCollection',
+      parentClass: 'Collections',
+      docstring: 'unchanged description',
+      identity: { stableId: 'node:Collections:hasCollection' },
+    }];
+    sync.indexReader.list_documents = async () => [{
+      id: 'rec-create',
+      metadata: {
+        slug: 'Collections-createCollection',
+        description: acceptedAlready ? 'new description' : 'old description',
+        token: 'doc-create',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'parent-v26',
+        progress: 'WIP',
+        targets: [],
+      },
+    }, {
+      id: 'rec-drop',
+      metadata: {
+        slug: 'Collections-dropCollection',
+        description: 'old drop description',
+        token: 'doc-drop',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'parent-v26',
+        progress: 'WIP',
+        targets: [],
+      },
+    }, {
+      id: 'rec-has',
+      metadata: {
+        slug: 'Collections-hasCollection',
+        description: 'unchanged description',
+        token: 'doc-has',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'parent-v26',
+        progress: 'WIP',
+        targets: [],
+      },
+    }];
+  };
+  const initial = syncFixture({
+    dryRun: true,
+    calls: { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 },
+  });
+  configure(initial, false);
+  const initialResult = await initial.run();
+  const journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-journal-'));
+  const journal = new ExecutionJournal({
+    filePath: path.join(journalDir, 'accepted.jsonl'),
+    batchDigest: 'sha256:accepted-batch',
+    approvedActionIds: ['node:Collections:createCollection'],
+  });
+  journal.prepared({ actionId: 'node:Collections:createCollection' });
+  journal.observed({
+    actionId: 'node:Collections:createCollection',
+    status: 'success',
+    verified: true,
+    observedDigest: 'sha256:observed',
+  });
+  journal.complete();
+  const session = recordDocumentAcceptance(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v2.6.x:test',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v2.6.x',
+    reviewUnitManifest: initialResult.reviewUnitManifest,
+  }), {
+    reviewUnitId: 'review:node:Collections:createCollection',
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: digestSemantic(journal.read()),
+    touchedRecords: [{ actionId: 'node:Collections:createCollection', recordId: 'rec-create', documentToken: 'doc-create' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-create'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-create'],
+    commentsResolved: true,
+  });
+
+  const resumed = syncFixture({
+    dryRun: true,
+    calls: { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 },
+  });
+  configure(resumed, true);
+  resumed.reviewSession = session;
+  resumed.reviewUnitId = 'review:node:Collections:dropCollection';
+  const result = await resumed.run();
+
+  assert.equal(result.reviewUnitManifest.manifestDigest, initialResult.reviewUnitManifest.manifestDigest);
+  assert.deepEqual(result.reviewSession.acceptedReviewUnitIds, [
+    'review:node:Collections:createCollection',
+  ]);
+  assert.equal(result.activeReviewUnit.reviewUnitId, 'review:node:Collections:dropCollection');
+  assert.deepEqual(result.planningErrors, []);
 });
 
 test('dry and live modes produce identical plans before approval or execution', async () => {

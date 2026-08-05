@@ -33,7 +33,9 @@ Use five phases:
 
 Full planning must emit a deterministic review-unit manifest with exactly one public document per unit. Each selected unit contains that document and all required Drive and Bitable resource operations. Plan and execute one unit, refetch and verify it, leave its interface-document records at Progress WIP, and stop at DOCUMENT_REVIEW. Do not start the next unit until the current unit is accepted.
 
-If the user requests changes or leaves comments, read all comments on the active document, regenerate only that unit, invalidate its old write and journal digests, and request a new write approval. After every unit is accepted, build one complete accepted-unit manifest. Only final `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` authorizes changing all touched WIP interface-document records to Draft and updating scan-state.json.
+Create a persistent review-session JSON from the complete initial dry-run. In every later process or chat, load it with --resume-session and let the runtime derive accepted unit IDs from journal-verified receipts. Never trust an accepted-unit list supplied in a prompt or command line. Resume must revalidate the original manifest, each accepted journal, live WIP progress, blank Targets, and unchanged Docx tokens before selecting another unit.
+
+If the user requests changes or leaves comments, read all comments on the active document, regenerate only that unit, invalidate its old write and journal digests, and request a new write approval. Persist document approval only after sdk-review-session verifies the execution journal, touched records, document identity, and resolved comments. After every unit is accepted, build one complete accepted-unit manifest from those receipts. Only final `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` authorizes changing all touched WIP interface-document records to Draft and updating scan-state.json. Mark the session finalized only from the successful acceptance journal.
 
 At each stop point, report Session, Phase, Status, Artifacts, Summary, Decision requested, and Allowed replies.
 
@@ -211,6 +213,8 @@ If approved, reply exactly:
 APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>
 
 Acceptance records this unit as reviewed, keeps its interface records at WIP, and keeps scan-state unchanged. The bot may plan the next unit only after this command succeeds.
+
+Persist the decision with sdk-review-session.js accept-document. Do not add the ID directly to session state. A later chat must use sdk-doc-sync --resume-session <session-file> before planning the next unit.
 ```
 
 ## Document Review Parser Prompt
@@ -341,3 +345,6 @@ Use these minimal conversations to test the channel:
 11. User replies `APPROVE_DOCUMENT <active-review-unit-id> sha256:<current-unit-journal-digest>`. Bot records that unit as accepted and selects the next unit.
 12. After all units are accepted, user replies `APPROVE_ACCEPTANCE sha256:<current-acceptance-manifest-digest>`. Bot changes every touched interface-document record to `Draft`, refetches and verifies them, then updates `scan-state.json`.
 13. One touched record is still `WIP`. Bot reports `acceptance_blocked` and does not update scan state.
+14. A new chat receives only the review-session path. It resumes, verifies earlier journals and live records, derives accepted unit IDs, and selects the next remaining unit without changing scan state.
+15. A caller supplies an accepted review-unit ID without a receipt. Bot ignores it and refuses progression.
+16. An accepted document token, journal digest, `Progress`, or `Targets` value drifts before resume. Bot blocks and does not select or write another unit.

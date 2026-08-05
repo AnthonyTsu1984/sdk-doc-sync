@@ -39,3 +39,13 @@ When post-write dry-runs find unrelated issues, scope repair utilities to the cu
 ## Zilliz CLI Release Notes Need Source Validation
 
 If release scout reports `SOURCE_VALIDATION_REQUIRED`, do not ask for write approval from release notes alone. Pin the matching `zilliz-cloud/vdc/zilliz-tui` implementation refs, rerun release scout with `--release-impact`, and validate hand-written Rust command metadata with `zilliz-cli-handwritten-audit.js` when raw CLI modules changed.
+
+## Review Session Cannot Resume
+
+Do not bypass resume failures with a hand-written accepted review-unit ID. Inspect the exact error and reconcile the persisted evidence:
+
+- manifest mismatch: rerun with the same release scope and reviewed inputs; if the intended document identity set changed, start a newly reviewed session;
+- journal missing or digest mismatch: restore the immutable execution journal or repeat the affected unit under a new write approval;
+- record missing, no longer `WIP`, or `Targets` nonblank: reconcile the live Bitable record before continuing;
+- document token mismatch: verify whether an approved repoint occurred; otherwise treat it as drift and rebuild the affected unit;
+- session already finalized: do not reopen it or move `scan-state.json` backward.

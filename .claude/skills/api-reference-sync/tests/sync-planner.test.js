@@ -10,7 +10,11 @@ const path = require('node:path');
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('../src/sdk-doc-sync/review-units');
-const { createReviewSession, recordDocumentAcceptance } = require('../src/sdk-doc-sync/review-session-store');
+const {
+  createReviewSession,
+  recordDocumentAcceptance,
+  recordDocumentExecution,
+} = require('../src/sdk-doc-sync/review-session-store');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
@@ -1458,12 +1462,17 @@ test('collaborative resume validates persisted receipts and keeps accepted NOOP 
     observedDigest: 'sha256:observed',
   });
   journal.complete();
-  const session = recordDocumentAcceptance(createReviewSession({
+  const reviewSession = createReviewSession({
     sessionId: 'sdk-doc-sync:node:v2.6.x:test',
     language: 'node',
     sdkName: 'node',
     track: 'v2.6.x',
     reviewUnitManifest: initialResult.reviewUnitManifest,
+  });
+  const session = recordDocumentAcceptance(recordDocumentExecution(reviewSession, {
+    reviewUnitId: 'review:node:Collections:createCollection',
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: digestSemantic(journal.read()),
   }), {
     reviewUnitId: 'review:node:Collections:createCollection',
     executionJournalPath: journal.filePath,

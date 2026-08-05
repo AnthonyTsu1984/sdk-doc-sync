@@ -7,7 +7,11 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
-const { createReviewSession, saveReviewSession } = require('../src/sdk-doc-sync/review-session-store');
+const {
+  createReviewSession,
+  recordDocumentExecution,
+  saveReviewSession,
+} = require('../src/sdk-doc-sync/review-session-store');
 const { parseArgs, runCli } = require('../bin/sdk-review-session');
 
 function manifest() {
@@ -51,12 +55,17 @@ test('review-session CLI persists a journal-derived receipt and builds final acc
   ];
   fs.writeFileSync(journalPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
   fs.writeFileSync(touchedPath, `${JSON.stringify([{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }])}\n`);
-  saveReviewSession(sessionPath, createReviewSession({
+  const initial = createReviewSession({
     sessionId: 'sdk-doc-sync:node:v3.0.x:test',
     language: 'node',
     sdkName: 'node',
     track: 'v3.0.x',
     reviewUnitManifest: manifest(),
+  });
+  saveReviewSession(sessionPath, recordDocumentExecution(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: journalPath,
+    executionJournalDigest: digestSemantic(entries),
   }));
   const stdout = [];
 

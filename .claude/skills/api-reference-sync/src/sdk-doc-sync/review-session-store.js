@@ -70,12 +70,65 @@ function createReviewSession({
     reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
+    activeExecution: null,
+    rollbackReceipts: [],
     activeReviewUnitId: null,
     acceptanceManifest: null,
     acceptanceManifestDigest: null,
     scanStateUpdated: false,
     createdAt,
     updatedAt: createdAt,
+  });
+}
+
+function validateExecutionForUnit(session, {
+  reviewUnitId,
+  executionJournalPath,
+  executionJournalDigest,
+}) {
+  const reviewUnit = session.reviewUnitManifest.units.find((unit) => unit.reviewUnitId === reviewUnitId);
+  if (!reviewUnit) throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  if (!nonEmptyString(executionJournalDigest)) throw new Error('executionJournalDigest is required');
+  const journalPath = path.resolve(executionJournalPath || '');
+  const { entries } = validateExecutionJournal(journalPath, executionJournalDigest);
+  const observedActionIds = new Set(entries
+    .filter((entry) => entry.type === 'observed' && entry.status === 'success' && entry.verified === true)
+    .map((entry) => entry.actionId));
+  if (!observedActionIds.has(reviewUnit.documentStableId)) {
+    throw new Error(`Execution journal does not execute document ${reviewUnit.documentStableId}`);
+  }
+  const otherDocuments = session.reviewUnitManifest.units
+    .filter((unit) => unit.reviewUnitId !== reviewUnitId && observedActionIds.has(unit.documentStableId))
+    .map((unit) => unit.documentStableId);
+  if (otherDocuments.length > 0) {
+    throw new Error(`Execution journal crosses document review units: ${otherDocuments.join(', ')}`);
+  }
+  return { entries, journalPath, observedActionIds, reviewUnit };
+}
+
+function recordDocumentExecution(session, execution) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.status !== 'in_progress' || session.acceptanceManifest || session.scanStateUpdated === true) {
+    throw new Error('Review session no longer accepts document executions');
+  }
+  if (session.activeExecution) {
+    throw new Error(`Review session already has active execution ${session.activeExecution.reviewUnitId}`);
+  }
+  if ((session.acceptedReviewUnits || []).some((unit) => unit.reviewUnitId === execution?.reviewUnitId)) {
+    throw new Error(`Review unit is already accepted: ${execution.reviewUnitId}`);
+  }
+  const { journalPath } = validateExecutionForUnit(session, execution || {});
+  const executedAt = execution.executedAt || new Date().toISOString();
+  return Object.freeze({
+    ...clone(session),
+    activeExecution: Object.freeze({
+      reviewUnitId: execution.reviewUnitId,
+      executionJournalPath: journalPath,
+      executionJournalDigest: execution.executionJournalDigest,
+      executedAt,
+    }),
+    activeReviewUnitId: execution.reviewUnitId,
+    updatedAt: executedAt,
   });
 }
 
@@ -87,19 +140,11 @@ function validateAcceptedReceipt(session, receipt) {
   }
   if (!nonEmptyString(receipt.executionJournalDigest)) throw new Error('executionJournalDigest is required');
   const journalPath = path.resolve(receipt.executionJournalPath || '');
-  const { entries } = validateExecutionJournal(journalPath, receipt.executionJournalDigest);
-  const observedActionIds = new Set(entries
-    .filter((entry) => entry.type === 'observed' && entry.status === 'success' && entry.verified === true)
-    .map((entry) => entry.actionId));
-  if (!observedActionIds.has(reviewUnit.documentStableId)) {
-    throw new Error(`Execution journal does not execute document ${reviewUnit.documentStableId}`);
-  }
-  const otherDocuments = session.reviewUnitManifest.units
-    .filter((unit) => unit.reviewUnitId !== receipt.reviewUnitId && observedActionIds.has(unit.documentStableId))
-    .map((unit) => unit.documentStableId);
-  if (otherDocuments.length > 0) {
-    throw new Error(`Execution journal crosses document review units: ${otherDocuments.join(', ')}`);
-  }
+  const { observedActionIds } = validateExecutionForUnit(session, {
+    reviewUnitId: receipt.reviewUnitId,
+    executionJournalPath: journalPath,
+    executionJournalDigest: receipt.executionJournalDigest,
+  });
   if (!Array.isArray(receipt.touchedRecords) || receipt.touchedRecords.length === 0) {
     throw new Error('Accepted document requires touchedRecords');
   }
@@ -131,6 +176,13 @@ function recordDocumentAcceptance(session, receipt) {
     throw new Error(`Review unit is already accepted: ${receipt.reviewUnitId}`);
   }
   const { documentLinks, journalPath, recordLinks, touchedRecords } = validateAcceptedReceipt(session, receipt);
+  const active = session.activeExecution;
+  if (!active
+      || active.reviewUnitId !== receipt.reviewUnitId
+      || path.resolve(active.executionJournalPath || '') !== journalPath
+      || active.executionJournalDigest !== receipt.executionJournalDigest) {
+    throw new Error(`Document acceptance must match the active execution for ${receipt.reviewUnitId}`);
+  }
   const acceptedAt = receipt.acceptedAt || new Date().toISOString();
   return Object.freeze({
     ...clone(session),
@@ -144,6 +196,7 @@ function recordDocumentAcceptance(session, receipt) {
       commentsResolved: true,
       acceptedAt,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
+    activeExecution: null,
     activeReviewUnitId: null,
     updatedAt: acceptedAt,
   });
@@ -256,6 +309,13 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
     throw new Error(`Review-unit manifest digest mismatch: expected ${session?.reviewUnitManifestDigest}, got ${reviewUnitManifest?.manifestDigest}`);
   }
   const records = new Map((currentRecords || []).map((record) => [recordId(record), record]));
+  if (session.activeExecution) {
+    validateExecutionForUnit(session, {
+      reviewUnitId: session.activeExecution.reviewUnitId,
+      executionJournalPath: session.activeExecution.executionJournalPath,
+      executionJournalDigest: session.activeExecution.executionJournalDigest,
+    });
+  }
   for (const receipt of session.acceptedReviewUnits || []) {
     const { touchedRecords } = validateAcceptedReceipt(session, receipt);
     for (const touched of touchedRecords) {
@@ -277,6 +337,7 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
     acceptedReviewUnitIds: (session.acceptedReviewUnits || [])
       .map((unit) => unit.reviewUnitId)
       .sort(),
+    activeReviewUnitId: session.activeExecution?.reviewUnitId || null,
   };
 }
 
@@ -286,6 +347,7 @@ module.exports = {
   loadReviewSession,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
+  recordDocumentExecution,
   saveReviewSession,
   validateExecutionJournal,
   validateResumeSession,

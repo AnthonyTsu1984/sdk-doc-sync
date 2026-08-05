@@ -15,6 +15,7 @@ const {
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { buildReviewedReleaseContext } = require('../scripts/build-reviewed-release-context');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -181,6 +182,75 @@ test('CLI loads a persisted session for live-state resume instead of accepting m
 
   assert.deepEqual(capturedOptions.reviewSession, session);
   assert.equal(Object.hasOwn(capturedOptions, 'acceptedReviewUnitIds'), false);
+});
+
+test('live CLI persists the completed active document execution before review', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-session-execution-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const journalPath = path.join(directory, 'execution.jsonl');
+  const entries = [
+    { type: 'prepared', actionId: 'node:Collections:a' },
+    { type: 'observed', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  fs.writeFileSync(journalPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:node:v3.0.x:sha256:review-manifest',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    status: 'in_progress',
+    reviewUnitManifest: {
+      schemaVersion: 1,
+      manifestDigest: 'sha256:review-manifest',
+      units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' }],
+      unassignedResourceActionIds: [],
+    },
+    reviewUnitManifestDigest: 'sha256:review-manifest',
+    acceptedReviewUnits: [],
+    activeExecution: null,
+    rollbackReceipts: [],
+    acceptanceManifest: null,
+    acceptanceManifestDigest: null,
+    scanStateUpdated: false,
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+  const resultFixture = {
+    scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+    planningErrors: [], approved: [{}], results: [{ status: 'success' }],
+    reviewUnitManifest: session.reviewUnitManifest,
+    reviewUnitPreviews: [],
+    activeReviewUnit: session.reviewUnitManifest.units[0],
+    proposedExecutionBatch: { batchDigest: 'sha256:batch', actions: [] },
+    executionJournalPath: journalPath,
+    executionJournalDigest: digestSemantic(entries),
+    executionResult: { status: 'EXECUTED' },
+  };
+
+  await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--review-unit-id', 'review:node:Collections:a',
+      '--resume-session', sessionPath,
+      '--json',
+    ],
+    env: { BASE_TOKEN: 'base-v30', ROOT_TOKEN: 'root-v30' },
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: () => ({ run: async () => structuredClone(resultFixture) }),
+      onStdout: () => {},
+    },
+  });
+
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(persisted.activeExecution.reviewUnitId, 'review:node:Collections:a');
+  assert.equal(persisted.activeExecution.executionJournalDigest, digestSemantic(entries));
 });
 
 test('execution approval provider rejects an approved plan digest mismatch', () => {

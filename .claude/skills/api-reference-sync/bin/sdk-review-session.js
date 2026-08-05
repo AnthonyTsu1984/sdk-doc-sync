@@ -49,6 +49,7 @@ function status(session, sessionPath) {
     acceptedReviewUnitIds: accepted,
     remainingReviewUnitIds: expected.filter((id) => !acceptedSet.has(id)),
     acceptanceManifestDigest: session.acceptanceManifestDigest || null,
+    activeReviewUnitId: session.activeExecution?.reviewUnitId || null,
     scanStateUpdated: session.scanStateUpdated === true,
   };
 }

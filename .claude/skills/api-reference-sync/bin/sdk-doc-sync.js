@@ -18,6 +18,7 @@ const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guar
 const {
     createReviewSession,
     loadReviewSession,
+    recordDocumentExecution,
     saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
 
@@ -599,6 +600,28 @@ async function runCli({
     const sync = dependencies.syncFactory ? dependencies.syncFactory(syncOptions) : new SdkDocSync(syncOptions);
 
     const result = await withJsonConsoleIsolation(args.json === true, err, () => sync.run());
+    if (args.resumeSession
+        && !args.dryRun
+        && result.executionResult?.status === 'EXECUTED'
+        && result.activeReviewUnit?.reviewUnitId
+        && result.executionJournalPath
+        && result.executionJournalDigest) {
+        const sessionPath = path.resolve(args.resumeSession);
+        reviewSession = recordDocumentExecution(reviewSession, {
+            reviewUnitId: result.activeReviewUnit.reviewUnitId,
+            executionJournalPath: result.executionJournalPath,
+            executionJournalDigest: result.executionJournalDigest,
+        });
+        saveReviewSession(sessionPath, reviewSession);
+        result.reviewSession = {
+            ...(result.reviewSession || {}),
+            sessionId: reviewSession.sessionId,
+            sessionPath,
+            activeReviewUnitId: reviewSession.activeExecution.reviewUnitId,
+            acceptedReviewUnitIds: (reviewSession.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort(),
+            reviewUnitManifestDigest: reviewSession.reviewUnitManifestDigest,
+        };
+    }
     if (args.sessionState) {
         const sessionPath = path.resolve(args.sessionState);
         if (fs.existsSync(sessionPath)) {

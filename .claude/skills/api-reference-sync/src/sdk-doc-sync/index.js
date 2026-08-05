@@ -422,6 +422,7 @@ class SdkDocSync {
         result.reviewUnitManifest = reviewUnits.manifest;
         result.reviewUnitPreviews = reviewUnits.units;
         const verifiedAcceptedReviewUnitIds = new Set();
+        let activeExecutionReviewUnitId = null;
 
         if (this.reviewSession) {
             try {
@@ -431,10 +432,12 @@ class SdkDocSync {
                     currentRecords: typeIndex,
                 });
                 for (const unitId of resumed.acceptedReviewUnitIds) verifiedAcceptedReviewUnitIds.add(unitId);
+                activeExecutionReviewUnitId = resumed.activeReviewUnitId;
                 result.reviewSession = {
                     sessionId: this.reviewSession.sessionId,
                     acceptedReviewUnitIds: resumed.acceptedReviewUnitIds,
                     reviewUnitManifestDigest: this.reviewSession.reviewUnitManifestDigest,
+                    activeReviewUnitId: activeExecutionReviewUnitId,
                 };
             } catch (error) {
                 result.planningErrors.push({
@@ -449,6 +452,14 @@ class SdkDocSync {
         let actionablePlanned = fullActionablePlanned;
         let actionablePlanIds = fullActionablePlanIds;
         if (this.collaborativeReview) {
+            if (activeExecutionReviewUnitId) {
+                result.planningErrors.push({
+                    stableId: activeExecutionReviewUnitId,
+                    diffAction: 'REVIEW_UNIT',
+                    code: 'ACTIVE_DOCUMENT_REVIEW_REQUIRED',
+                    message: `${activeExecutionReviewUnitId} must be accepted or rolled back before another write`,
+                });
+            }
             if (reviewUnits.manifest.unassignedResourceActionIds.length > 0) {
                 result.planningErrors.push({
                     stableId: null,
@@ -459,7 +470,7 @@ class SdkDocSync {
             }
             const selectableUnits = reviewUnits.units.filter((unit) => (
                 unit.actionIds.length > 0 && !verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId)
-            ));
+            ) && !activeExecutionReviewUnitId);
             result.remainingReviewUnitIds = selectableUnits.map((unit) => unit.reviewUnitId);
             result.allReviewUnitsAccepted = reviewUnits.manifest.units.length > 0
                 && reviewUnits.manifest.units.every((unit) => verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId));

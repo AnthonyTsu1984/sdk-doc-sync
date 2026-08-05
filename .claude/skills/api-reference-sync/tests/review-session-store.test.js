@@ -13,6 +13,7 @@ const {
   loadReviewSession,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
+  recordDocumentExecution,
   saveReviewSession,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -40,6 +41,36 @@ function executionJournal(directory, actionId = 'node:Collections:a') {
   return { filePath, digest: digestSemantic(entries) };
 }
 
+function withExecution(session, journal, reviewUnitId = 'review:node:Collections:a') {
+  return recordDocumentExecution(session, {
+    reviewUnitId,
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: journal.digest,
+    executedAt: '2026-08-06T09:00:00.000Z',
+  });
+}
+
+test('review session persists exactly one active execution across processes', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-active-'));
+  const journal = executionJournal(directory);
+  const sessionPath = path.join(directory, 'session.json');
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:active',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+
+  const active = withExecution(initial, journal);
+  saveReviewSession(sessionPath, active);
+  const restored = loadReviewSession(sessionPath);
+
+  assert.equal(restored.activeExecution.reviewUnitId, 'review:node:Collections:a');
+  assert.equal(restored.activeExecution.executionJournalDigest, journal.digest);
+  assert.throws(() => withExecution(restored, journal, 'review:node:Collections:b'), /active execution/i);
+});
+
 test('review session persists a digest-bound accepted-document receipt across processes', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-'));
   const sessionPath = path.join(directory, 'session.json');
@@ -53,7 +84,7 @@ test('review session persists a digest-bound accepted-document receipt across pr
     artifacts: { releaseScope: 'release-scope.json' },
   });
 
-  const accepted = recordDocumentAcceptance(initial, {
+  const accepted = recordDocumentAcceptance(withExecution(initial, journal), {
     reviewUnitId: 'review:node:Collections:a',
     executionJournalPath: journal.filePath,
     executionJournalDigest: journal.digest,
@@ -98,21 +129,22 @@ test('review session refuses acceptance without resolved comments or a complete 
     executionJournalDigest: journal.digest,
     touchedRecords: [{ recordId: 'rec-a', documentToken: 'doc-a' }],
   };
+  const active = withExecution(initial, journal);
 
-  assert.throws(() => recordDocumentAcceptance(initial, receipt), /comments must be resolved/i);
-  assert.throws(() => recordDocumentAcceptance(initial, {
+  assert.throws(() => recordDocumentAcceptance(active, receipt), /comments must be resolved/i);
+  assert.throws(() => recordDocumentAcceptance(active, {
     ...receipt,
     commentsResolved: true,
     executionJournalDigest: 'sha256:stale',
   }), /journal digest mismatch/i);
-  assert.throws(() => recordDocumentAcceptance(initial, {
+  assert.throws(() => recordDocumentAcceptance(active, {
     ...receipt,
     touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
     commentsResolved: true,
   }), /documentLinks and recordLinks/i);
 
   const wrongJournal = executionJournal(directory, 'node:Collections:b');
-  assert.throws(() => recordDocumentAcceptance(initial, {
+  assert.throws(() => recordDocumentAcceptance(active, {
     ...receipt,
     executionJournalPath: wrongJournal.filePath,
     executionJournalDigest: wrongJournal.digest,
@@ -130,7 +162,7 @@ test('resume validation derives accepted IDs from receipts and verifies journal 
     track: 'v3.0.x',
     reviewUnitManifest: manifest(),
   });
-  const accepted = recordDocumentAcceptance(initial, {
+  const accepted = recordDocumentAcceptance(withExecution(initial, journal), {
     reviewUnitId: 'review:node:Collections:a',
     executionJournalPath: journal.filePath,
     executionJournalDigest: journal.digest,
@@ -195,7 +227,7 @@ test('review session builds the final acceptance manifest only from complete rec
     track: 'v3.0.x',
     reviewUnitManifest: manifest(),
   });
-  session = recordDocumentAcceptance(session, {
+  session = recordDocumentAcceptance(withExecution(session, firstJournal), {
     reviewUnitId: 'review:node:Collections:a',
     executionJournalPath: firstJournal.filePath,
     executionJournalDigest: firstJournal.digest,
@@ -206,7 +238,11 @@ test('review session builds the final acceptance manifest only from complete rec
   });
   assert.throws(() => buildSessionAcceptance(session), /must exactly match/);
 
-  session = recordDocumentAcceptance(session, {
+  session = recordDocumentAcceptance(withExecution(
+    session,
+    secondJournal,
+    'review:node:Collections:b',
+  ), {
     reviewUnitId: 'review:node:Collections:b',
     executionJournalPath: secondJournal.filePath,
     executionJournalDigest: secondJournal.digest,

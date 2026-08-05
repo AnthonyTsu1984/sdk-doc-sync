@@ -15,6 +15,7 @@ test('sdk-release-scout CLI path exists', () => {
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-release-scout.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-release-impact.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-handwritten-audit.js')), true);
+  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-document-rollback.js')), true);
 });
 
 test('sdk-doc-sync planning helper scripts exist', () => {
@@ -71,6 +72,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/audit-sdk-type-ownership.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-record-index.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-repository.test.js',
+    '.claude/skills/api-reference-sync/tests/bitable-writer.test.js',
     '.claude/skills/api-reference-sync/tests/block-registry.test.js',
     '.claude/skills/api-reference-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/code-variants.test.js',
@@ -91,9 +93,12 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/release-scope.test.js',
     '.claude/skills/api-reference-sync/tests/release-scout-cli.test.js',
     '.claude/skills/api-reference-sync/tests/review-session-store.test.js',
+    '.claude/skills/api-reference-sync/tests/rollback-executor.test.js',
+    '.claude/skills/api-reference-sync/tests/rollback-planner.test.js',
     '.claude/skills/api-reference-sync/tests/scanner-adapters.test.js',
     '.claude/skills/api-reference-sync/tests/script-paths.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/sdk-document-rollback-cli.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-layout-validator.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-organization-contract.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-reference-ir.test.js',

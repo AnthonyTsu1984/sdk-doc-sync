@@ -202,6 +202,110 @@ function recordDocumentAcceptance(session, receipt) {
   });
 }
 
+function validateRollbackJournal(filePath, expectedDigest) {
+  if (!nonEmptyString(expectedDigest)) throw new Error('rollbackJournalDigest is required');
+  const journalPath = path.resolve(filePath || '');
+  const entries = readExecutionJournal(journalPath);
+  const actualDigest = digestSemantic(entries);
+  if (actualDigest !== expectedDigest) {
+    throw new Error(`Rollback journal digest mismatch: expected ${expectedDigest}, got ${actualDigest}`);
+  }
+  const completions = entries.filter((entry) => entry.type === 'completion');
+  if (completions.length !== 1
+      || completions[0].status !== 'rolled_back'
+      || completions[0].completionSentinel !== true
+      || completions[0].scanStateUpdated !== false) {
+    throw new Error('Rollback journal lacks a successful completion sentinel');
+  }
+  const failed = entries.filter((entry) => entry.type === 'observed'
+    && (entry.status !== 'success' || entry.verified !== true));
+  if (failed.length > 0) throw new Error('Rollback journal contains failed or unverified actions');
+  const preparedIds = entries.filter((entry) => entry.type === 'prepared').map((entry) => entry.actionId).sort();
+  const observedIds = entries.filter((entry) => entry.type === 'observed').map((entry) => entry.actionId).sort();
+  if (preparedIds.length === 0 || JSON.stringify(preparedIds) !== JSON.stringify(observedIds)) {
+    throw new Error('Rollback journal does not pair every prepared action with a verified observation');
+  }
+  const manifestDigests = new Set(entries.map((entry) => entry.rollbackManifestDigest).filter(nonEmptyString));
+  const originalDigests = new Set(entries.map((entry) => entry.originalExecutionJournalDigest).filter(nonEmptyString));
+  if (manifestDigests.size !== 1 || originalDigests.size !== 1
+      || entries.some((entry) => entry.operation !== 'rollback-document')) {
+    throw new Error('Rollback journal has inconsistent manifest or original execution bindings');
+  }
+  return {
+    entries,
+    journalPath,
+    rollbackManifestDigest: [...manifestDigests][0],
+    originalExecutionJournalDigest: [...originalDigests][0],
+    completion: completions[0],
+  };
+}
+
+function recordDocumentRollback(session, receipt) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.status === 'finalized' || session.scanStateUpdated === true) {
+    throw new Error('Review session is finalized and cannot be rolled back in place');
+  }
+  const reviewUnitId = receipt?.reviewUnitId;
+  if (!session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  }
+  const validated = validateRollbackJournal(
+    receipt.rollbackJournalPath,
+    receipt.rollbackJournalDigest,
+  );
+  if (validated.completion.reviewUnitId !== reviewUnitId) {
+    throw new Error('Rollback journal is bound to a different review unit');
+  }
+
+  const existingRollback = (session.rollbackReceipts || []).find((item) => item.reviewUnitId === reviewUnitId);
+  if (existingRollback) {
+    if (path.resolve(existingRollback.rollbackJournalPath || '') === validated.journalPath
+        && existingRollback.rollbackJournalDigest === receipt.rollbackJournalDigest
+        && existingRollback.rollbackManifestDigest === validated.rollbackManifestDigest
+        && existingRollback.originalExecutionJournalDigest === validated.originalExecutionJournalDigest) {
+      return session;
+    }
+    throw new Error(`Review unit already has a different rollback receipt: ${reviewUnitId}`);
+  }
+
+  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
+  const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
+  const originalExecution = activeMatches ? session.activeExecution : accepted;
+  if (!originalExecution) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
+  if (validated.originalExecutionJournalDigest !== originalExecution.executionJournalDigest) {
+    throw new Error('Rollback journal is bound to a different original execution');
+  }
+  validateExecutionJournal(
+    path.resolve(originalExecution.executionJournalPath || ''),
+    originalExecution.executionJournalDigest,
+  );
+
+  const rolledBackAt = receipt.rolledBackAt || new Date().toISOString();
+  const activeExecution = activeMatches ? null : clone(session.activeExecution);
+  return Object.freeze({
+    ...clone(session),
+    status: 'in_progress',
+    acceptedReviewUnits: Object.freeze((session.acceptedReviewUnits || [])
+      .filter((unit) => unit.reviewUnitId !== reviewUnitId)
+      .map(clone)),
+    activeExecution,
+    activeReviewUnitId: activeExecution?.reviewUnitId || null,
+    acceptanceManifest: null,
+    acceptanceManifestDigest: null,
+    scanStateUpdated: false,
+    rollbackReceipts: Object.freeze([...(session.rollbackReceipts || []).map(clone), {
+      reviewUnitId,
+      originalExecutionJournalPath: path.resolve(originalExecution.executionJournalPath),
+      originalExecutionJournalDigest: originalExecution.executionJournalDigest,
+      rollbackManifestDigest: validated.rollbackManifestDigest,
+      rollbackJournalPath: validated.journalPath,
+      rollbackJournalDigest: receipt.rollbackJournalDigest,
+      rolledBackAt,
+    }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
+    updatedAt: rolledBackAt,
+  });
+}
+
 function buildSessionAcceptance(session, builtAt = new Date().toISOString()) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
   if (session.scanStateUpdated === true || session.status === 'finalized') {
@@ -348,6 +452,7 @@ module.exports = {
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentExecution,
+  recordDocumentRollback,
   saveReviewSession,
   validateExecutionJournal,
   validateResumeSession,

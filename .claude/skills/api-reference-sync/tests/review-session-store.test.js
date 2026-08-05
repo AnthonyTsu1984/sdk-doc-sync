@@ -14,6 +14,7 @@ const {
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentExecution,
+  recordDocumentRollback,
   saveReviewSession,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -48,6 +49,39 @@ function withExecution(session, journal, reviewUnitId = 'review:node:Collections
     executionJournalDigest: journal.digest,
     executedAt: '2026-08-06T09:00:00.000Z',
   });
+}
+
+function rollbackJournal(directory, {
+  reviewUnitId = 'review:node:Collections:a',
+  originalExecutionJournalDigest,
+  rollbackManifestDigest = 'sha256:rollback-manifest',
+  status = 'success',
+  complete = true,
+  name = 'rollback.jsonl',
+} = {}) {
+  const binding = {
+    schemaVersion: 1,
+    operation: 'rollback-document',
+    rollbackManifestDigest,
+    originalExecutionJournalDigest,
+  };
+  const entries = [
+    { ...binding, type: 'prepared', actionId: 'node:Collections:a', inverse: 'DELETE_CREATED_RECORD_AND_DOCUMENT' },
+    { ...binding, type: 'observed', actionId: 'node:Collections:a', status, verified: status === 'success' },
+  ];
+  if (complete) {
+    entries.push({
+      ...binding,
+      type: 'completion',
+      status: 'rolled_back',
+      completionSentinel: true,
+      reviewUnitId,
+      scanStateUpdated: false,
+    });
+  }
+  const filePath = path.join(directory, name);
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  return { filePath, digest: digestSemantic(entries), rollbackManifestDigest };
 }
 
 test('review session persists exactly one active execution across processes', () => {
@@ -280,4 +314,135 @@ test('review session builds the final acceptance manifest only from complete rec
   assert.equal(finalized.status, 'finalized');
   assert.equal(finalized.scanStateUpdated, true);
   assert.equal(finalized.finalizationJournalDigest, digestSemantic(finalizationJournal));
+});
+
+test('completed rollback clears an unaccepted active execution and appends an immutable receipt', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-active-'));
+  const execution = executionJournal(directory);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest });
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-active',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+
+  const updated = recordDocumentRollback(withExecution(initial, execution), {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+    rolledBackAt: '2026-08-06T13:00:00.000Z',
+  });
+
+  assert.equal(updated.activeExecution, null);
+  assert.equal(updated.activeReviewUnitId, null);
+  assert.deepEqual(updated.acceptedReviewUnits, []);
+  assert.equal(updated.status, 'in_progress');
+  assert.equal(updated.acceptanceManifest, null);
+  assert.equal(updated.scanStateUpdated, false);
+  assert.equal(updated.rollbackReceipts.length, 1);
+  assert.equal(updated.rollbackReceipts[0].rollbackManifestDigest, rollback.rollbackManifestDigest);
+  assert.equal(updated.rollbackReceipts[0].originalExecutionJournalDigest, execution.digest);
+
+  const replay = recordDocumentRollback(updated, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.deepEqual(replay, updated);
+});
+
+test('completed rollback removes an accepted receipt and invalidates pending final acceptance', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-accepted-'));
+  const execution = executionJournal(directory);
+  const singleManifest = {
+    schemaVersion: 1,
+    manifestDigest: 'sha256:single-review-manifest',
+    units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' }],
+    unassignedResourceActionIds: [],
+  };
+  let session = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-accepted',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: singleManifest,
+  });
+  session = recordDocumentAcceptance(withExecution(session, execution), {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: execution.filePath,
+    executionJournalDigest: execution.digest,
+    touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+    commentsResolved: true,
+  });
+  session = buildSessionAcceptance(session, '2026-08-06T13:30:00.000Z');
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest });
+
+  const updated = recordDocumentRollback(session, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+
+  assert.deepEqual(updated.acceptedReviewUnits, []);
+  assert.equal(updated.status, 'in_progress');
+  assert.equal(updated.acceptanceManifest, null);
+  assert.equal(updated.acceptanceManifestDigest, null);
+  assert.equal(updated.scanStateUpdated, false);
+});
+
+test('rollback session transition rejects partial, mismatched, and finalized evidence', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-invalid-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-invalid',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  const partial = rollbackJournal(directory, {
+    originalExecutionJournalDigest: execution.digest,
+    complete: false,
+    name: 'partial.jsonl',
+  });
+  assert.throws(() => recordDocumentRollback(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: partial.filePath,
+    rollbackJournalDigest: partial.digest,
+  }), /completion sentinel/i);
+
+  const wrongExecution = rollbackJournal(directory, {
+    originalExecutionJournalDigest: 'sha256:other-execution',
+    name: 'wrong-execution.jsonl',
+  });
+  assert.throws(() => recordDocumentRollback(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: wrongExecution.filePath,
+    rollbackJournalDigest: wrongExecution.digest,
+  }), /different original execution/i);
+
+  const failed = rollbackJournal(directory, {
+    originalExecutionJournalDigest: execution.digest,
+    status: 'failure',
+    name: 'failed.jsonl',
+  });
+  assert.throws(() => recordDocumentRollback(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: failed.filePath,
+    rollbackJournalDigest: failed.digest,
+  }), /failed or unverified/i);
+
+  const complete = rollbackJournal(directory, {
+    originalExecutionJournalDigest: execution.digest,
+    name: 'complete.jsonl',
+  });
+  assert.throws(() => recordDocumentRollback({ ...initial, status: 'finalized', scanStateUpdated: true }, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: complete.filePath,
+    rollbackJournalDigest: complete.digest,
+  }), /finalized/i);
 });

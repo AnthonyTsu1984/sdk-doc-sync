@@ -55,6 +55,8 @@ auto request = RequestType()
     .WithParam2(value2);
 ```
 
+### RequestType
+
 **REQUEST METHODS:**
 
 - `WithParam1(Type value)`
@@ -83,12 +85,30 @@ if (!status.IsOk()) {
 ```
 ```
 
-**Embedded request and result sections:** Put request builders, responses, result payloads, tasks, iterators, descriptors, transport types, and wrappers in every owning method document. Use its Request Syntax and source-backed field/accessor descriptions; do not create sibling Type/Class records for those helpers.
+**Embedded request and result sections:** Put request builders, responses, result payloads, tasks, iterators, descriptors, transport types, and wrappers in every owning method document. Do not create sibling Type/Class records for those helpers.
+
+For C++ request-bearing methods, `Request Syntax` and `XxxRequest` have distinct responsibilities:
+
+- `Request Syntax` is only a minimal, copyable construction snippet. Do not put parameter descriptions, validation prose, or a second request contract in this section.
+- `XxxRequest` is the canonical embedded request contract and uses an H3 beneath `Request Syntax`. List the source-backed request methods/signatures, types, required/default/validation behavior, and concise descriptions there.
+- Generate both sections from the same Reference IR request variant and callable-member metadata so they cannot drift.
+- Omit `Request Syntax` when it would only show a trivial empty construction and the request has no builder methods. Keep the authoritative request contract or normal parameters as applicable.
+- Keep structured response/result fields embedded under `RETURNS` on the owning method page, using H3 for each embedded response/result/helper type. Methods that return only `Status` do not need a synthetic response shape.
+- Do not repeat construction examples under `XxxRequest`; the full usage example remains under `Example`.
+
+For DML methods that accept `FieldDataPtr` values, keep schema identities and payload containers distinct:
+
+- `DataType` remains the canonical standalone schema-type enum page. It explains logical field types and schema constraints, not insertion containers or pointer aliases.
+- `Insert()` and `Upsert()` embed one `Column payload types` H3 after their request methods and before `RETURNS`. Use a compact mapping table with `DataType`, concrete field-data type, C++ representation, and exceptional behavior.
+- Do not publish separate scalar, vector, array, or shared-pointer alias sections. Do not create standalone pages for every `XxxFieldData` or `XxxFieldDataPtr` alias.
+- Document the pointer convention once: `XxxFieldDataPtr` is `std::shared_ptr<XxxFieldData>`, and DML requests accept the common `FieldDataPtr` base pointer.
+- Call out non-one-to-one mappings: arrays carry an element type, geometry and timestamptz use string payloads, binary vectors use a dedicated class, structs use array-style JSON storage, and `UNKNOWN` has no insertion payload.
+- Link payload mappings to the canonical `DataType` document. A shared `DataType` document should name `Insert()` and `Upsert()` without linking to one version-specific method document.
 
 **Independent types only:** A type receives its own page only when the scanner and identity ownership harness classify it as an explicitly reviewed standalone concept, such as an independently used enum or domain model.
 
 **Notes:**
-- Request Syntax uses chained constructor format (`auto request = Class()\n    .With...;`), NOT two-step
+- Request Syntax uses chained constructor format (`auto request = Class()\n    .With...;`), NOT two-step, and contains no descriptive prose
 - Example always starts with the connection block above
 - Use `util::CheckStatus(status)` for result checking in examples
 - C++ `using` aliases (e.g., `using GrantPrivilegeV2Request = PrivilegeV2Request`) resolved via alias chain in `_buildRequestIndex`

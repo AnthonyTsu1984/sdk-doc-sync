@@ -20,6 +20,8 @@ auto request = CreateCollectionRequest()
     .WithMetadata(values, limit);
 ```
 
+### CreateCollectionRequest
+
 **REQUEST METHODS:**
 
 - `WithCollectionName(const std::string& collection_name)`

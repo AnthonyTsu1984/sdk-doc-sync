@@ -28,10 +28,15 @@
     "lastScannedCommit": "69a0b657dccde72e5ba409b1ea77f43977f97ac3",
     "lastScanDate": "2026-06-17"
   },
+  "cpp-v26": {
+    "lastScannedTag": "v2.6.4",
+    "lastScannedCommit": "426cbf50e832975b94b8de65b8b22d1c3252afc5",
+    "lastScanDate": "2026-07-29"
+  },
   "cpp-v30": {
     "lastScannedTag": "v3.0.1",
     "lastScannedCommit": "0bde4ab7d35cda6fd7a2a6d8fa148c3641cda12e",
-    "lastScanDate": "2026-07-28"
+    "lastScanDate": "2026-07-29"
   },
   "go": {
     "lastScannedTag": "client/v2.6.5",
@@ -52,5 +57,10 @@
     "lastScannedCommit": "41287924b71e27ed8781e7afec82311175c5085b",
     "lastScannedImplementationCommit": "14b5dc47a029a0c8908a47daa035b269e3247ce1",
     "lastScanDate": "2026-06-17"
+  },
+  "node-v26": {
+    "lastScannedTag": "v2.6.17",
+    "lastScannedCommit": "85c757f75e851a7475ab7bff1da2ab8ef5accd34",
+    "lastScanDate": "2026-07-28"
   }
 }

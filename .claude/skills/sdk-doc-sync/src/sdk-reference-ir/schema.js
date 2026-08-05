@@ -11,7 +11,7 @@ const DOCUMENT_KINDS = Object.freeze([
   'rest-operation',
 ]);
 const LANGUAGES = Object.freeze(['python', 'java', 'node', 'go', 'cpp', 'zilliz-cli', 'rest']);
-const MEMBER_KINDS = Object.freeze(['builder', 'option', 'request']);
+const MEMBER_KINDS = Object.freeze(['builder', 'option', 'request', 'implementation']);
 const EVIDENCE_KINDS = Object.freeze(['source', 'openapi', 'existing-doc', 'curated']);
 const CONFIDENCE_LEVELS = Object.freeze(['direct', 'derived', 'reviewed']);
 

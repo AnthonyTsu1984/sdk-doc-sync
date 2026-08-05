@@ -631,11 +631,15 @@ class SdkDocSync {
             try {
                 if (!planned) throw new Error(`Approved action was not planned: ${batchAction.actionId}`);
                 const failedDependencies = batchAction.dependsOn.filter(dependency => executionStatus.get(dependency) !== 'success');
+                const rollbackCapsule = failedDependencies.length === 0 && typeof this.executor.prepareRollback === 'function'
+                    ? await this.executor.prepareRollback(planned.plan, { resourceResolutions })
+                    : null;
                 journal.prepared({
                     actionId: planned.plan.stableId,
                     dependsOn: batchAction.dependsOn,
                     preconditionDigest: digestSemantic(planned.plan.preconditions || []),
                     mutation: { action: planned.plan.action, artifactDigest: planned.plan.artifactDigest },
+                    rollbackCapsule,
                 });
                 if (failedDependencies.length > 0) {
                     const error = new Error(`DEPENDENCY_EXECUTION_FAILED: ${planned.plan.stableId} blocked by ${failedDependencies.join(', ')}`);
@@ -665,6 +669,7 @@ class SdkDocSync {
                     approval: approvals.get(planned.plan.stableId),
                     approvalContext: result.executionBatch,
                     resourceResolutions,
+                    rollbackCapsule,
                 });
                 result.results.push({ action, status: 'success', ...execResult });
                 const succeeded = execResult.status !== 'error' && execResult.verification?.ok !== false;
@@ -672,18 +677,24 @@ class SdkDocSync {
                 if (succeeded && execResult.resolvedResource?.ref) {
                     resourceResolutions.set(execResult.resolvedResource.ref, execResult.resolvedResource);
                 }
+                const rollbackEvidence = typeof this.executor.observeRollback === 'function'
+                    ? await this.executor.observeRollback(planned.plan, execResult)
+                    : {
+                        schemaVersion: 1,
+                        action: planned.plan.action,
+                        actionId: planned.plan.stableId,
+                        completedSteps: execResult.completedSteps || [],
+                        createdDocument: execResult.createdDocument || null,
+                        createdFolder: execResult.createdFolder || null,
+                        recordId: execResult.record?.record_id || execResult.record?.recordId || null,
+                        resolvedResource: execResult.resolvedResource || null,
+                    };
                 journal.observed({
                     actionId: planned.plan.stableId,
                     status: succeeded ? 'success' : 'failure',
                     verified: succeeded,
-                    observedDigest: digestSemantic({
-                        status: execResult.status,
-                        completedSteps: execResult.completedSteps || [],
-                        createdDocumentToken: execResult.createdDocument?.token || null,
-                        createdFolderToken: execResult.createdFolder?.token || null,
-                        recordId: execResult.record?.record_id || null,
-                        resolvedResource: execResult.resolvedResource || null,
-                    }),
+                    observedDigest: digestSemantic(rollbackEvidence),
+                    rollbackEvidence,
                 });
                 if (execResult.status === 'error') {
                     this.onProgress('EXECUTE', `${actionLabel(action, planned.plan)} — ERROR: ${execResult.error?.message || execResult.failedStep}`);

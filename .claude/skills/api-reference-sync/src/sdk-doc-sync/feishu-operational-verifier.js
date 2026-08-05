@@ -6,6 +6,7 @@ const { validateRenderedApiBlocks } = require('./feishu-block-safety');
 const { buildApiSectionModel } = require('./api-section-model');
 const sdkLayoutProfiles = require('../renderers/sdk-layout-profiles');
 const { languageId } = require('../document-ir/block-registry');
+const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 
 function parseJsonOutput(result) {
   const text = String(result?.stdout || '').trim();
@@ -86,10 +87,13 @@ class FeishuOperationalVerifier extends SyncVerifier {
     const token = plan.source?.documentToken;
     if (!token) return null;
     const payload = parseJsonOutput(await this.ops.historyList(token));
+    const blockPayload = parseJsonOutput(await this.ops.fetchDocBlocks(token));
+    const blocks = blocksFromPayload(blockPayload);
     return {
       documentToken: token,
       historyVersionId: historyVersionId(payload),
       history: payload,
+      blockDigest: digestSemantic(blocks),
     };
   }
 

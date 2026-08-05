@@ -1708,6 +1708,70 @@ test('live execution receives the plan-specific approval envelope', async () => 
   assert.match(result.executionJournalDigest, /^sha256:/);
 });
 
+test('live execution durably journals rollback capsule before mutation and structured evidence after verification', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const sync = syncFixture({
+    dryRun: false,
+    calls,
+    approvalCallback: async (actions) => actions,
+  });
+  sync.executionApprovalProvider = (plan, action, batch) => createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  const rollbackCapsule = {
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    actionId: 'node:Collections:createCollection',
+    dependsOn: [],
+    beforeRecord: { recordId: 'rec-v26', rawFields: { Progress: 'Draft' }, writableFields: { Progress: 'Draft' } },
+    documentRollback: { documentToken: 'doc-v26', historyVersionId: 'history-1', blockDigest: 'sha256:before' },
+  };
+  const rollbackEvidence = {
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    actionId: 'node:Collections:createCollection',
+    completedSteps: ['patchDocument', 'updateRecord', 'verify'],
+    patchedDocumentToken: 'doc-v26',
+    postRecord: { recordId: 'rec-v26', rawFields: { Progress: 'WIP' }, writableFields: { Progress: 'WIP' } },
+  };
+  sync.executor = {
+    async prepareRollback(plan) {
+      assert.equal(plan.stableId, rollbackCapsule.actionId);
+      return rollbackCapsule;
+    },
+    async execute(plan, input) {
+      assert.deepEqual(input.rollbackCapsule, rollbackCapsule);
+      return {
+        status: 'success',
+        plan,
+        completedSteps: ['patchDocument', 'updateRecord', 'verify'],
+        verification: { ok: true, errors: [] },
+      };
+    },
+    async observeRollback() {
+      return rollbackEvidence;
+    },
+  };
+
+  const result = await sync.run();
+  const entries = fs.readFileSync(result.executionJournalPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  const prepared = entries.find((entry) => entry.type === 'prepared');
+  const observed = entries.find((entry) => entry.type === 'observed');
+
+  assert.deepEqual(prepared.rollbackCapsule, rollbackCapsule);
+  assert.deepEqual(observed.rollbackEvidence, rollbackEvidence);
+  assert.equal(observed.observedDigest, digestSemantic(rollbackEvidence));
+});
+
 test('failed resource execution is journaled and blocks dependent documents', async () => {
   const calls = { scanner: 0, index: 0, planner: 0, resourcePlanner: 0, documentMutations: 0, recordMutations: 0 };
   const executed = [];

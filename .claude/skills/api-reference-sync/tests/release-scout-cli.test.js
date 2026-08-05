@@ -7,7 +7,11 @@ const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const { runReleaseScout, defaultIdentityMapPath } = require('../src/sdk-doc-sync/release-scope/release-scout');
+const {
+  buildOrganizationInventories,
+  runReleaseScout,
+  defaultIdentityMapPath,
+} = require('../src/sdk-doc-sync/release-scope/release-scout');
 const { runCli } = require('../bin/sdk-release-scout');
 const NodeScanner = require('../src/sdk-doc-sync/scanners/node-scanner');
 const GoScanner = require('../src/sdk-doc-sync/scanners/go-scanner');
@@ -2181,6 +2185,18 @@ export class Data {
   async upsert(data: UpsertReq): Promise<MutationResult> {
     return this._insert(data, true);
   }
+
+  async search<T extends SearchReq | HybridSearchReq>(
+    params: T
+  ): Promise<SearchResults<T>> {
+    return this._search(params);
+  }
+
+  async alterCollectionSchema(
+    data: AlterCollectionSchemaReq
+  ): Promise<AlterCollectionSchemaResponse> {
+    return this._alterCollectionSchema(data);
+  }
 }
 `);
   writeText(path.join(repo, 'milvus', 'types', 'Insert.ts'), `
@@ -2203,8 +2219,11 @@ export enum FieldPartialUpdateOpType {
 `);
   writeText(path.join(repo, 'milvus', 'bulkwriter', 'BulkWriter.ts'), `
 export class BulkWriter {
+  constructor(options: BulkWriterOptions) {}
   async append(row: Record<string, any>): Promise<void> {}
+  async commit(): Promise<void> {}
   async close(): Promise<string[][]> { return []; }
+  async writeFrom(source: AsyncIterable<Record<string, any>>): Promise<string[][]> { return []; }
 }
 `);
   writeText(path.join(repo, 'milvus', 'bulkwriter', 'ParquetFormatter.ts'), `
@@ -2228,7 +2247,11 @@ export interface Storage {
 export interface BulkWriterSchema {
   fields: FieldType[];
   enable_dynamic_field?: boolean;
+  type_params?: Partial<Record<TypeParamKey, TypeParam>>;
 }
+export type FieldType = {
+  type_params?: Partial<Record<TypeParamKey, TypeParam>>;
+} & Partial<Record<TypeParamKey, TypeParam>>;
 export interface BulkWriterOptions {
   schema: BulkWriterSchema;
   storage?: Storage;
@@ -2237,12 +2260,66 @@ export interface BulkWriterOptions {
 
   const symbols = await new NodeScanner({ rootDir: repo, publicOnly: true }).scan();
   const upsert = symbols.find((symbol) => symbol.parentClass === 'Vector' && symbol.name === 'upsert');
+  const search = symbols.find((symbol) => symbol.parentClass === 'Vector' && symbol.name === 'search');
+  const alterCollectionSchema = symbols.find((symbol) => symbol.parentClass === 'Vector' && symbol.name === 'alterCollectionSchema');
   const formatter = symbols.find((symbol) => symbol.parentClass === 'DataImport' && symbol.name === 'Formatter');
   const options = symbols.find((symbol) => symbol.parentClass === 'DataImport' && symbol.name === 'BulkWriterOptions');
+  const bulkWriterSchema = symbols.find((symbol) => symbol.parentClass === 'DataImport' && symbol.name === 'BulkWriterSchema');
+  const bulkWriter = symbols.find((symbol) => symbol.parentClass === 'DataImport' && symbol.name === 'BulkWriter');
+  const bulkWriterMethods = symbols.filter((symbol) => symbol.parentClass === 'DataImport.BulkWriter');
 
   assert.ok(upsert, 'upsert symbol should be scanned');
+  assert.ok(search, 'generic search symbol should be scanned');
+  assert.ok(alterCollectionSchema, 'multiline method symbol should be scanned');
   assert.ok(formatter, 'Formatter symbol should be scanned from ParquetFormatter');
   assert.ok(options, 'BulkWriterOptions symbol should be scanned from Types.ts');
+  assert.ok(bulkWriter, 'BulkWriter class should be scanned');
+  assert.equal(Object.prototype.hasOwnProperty.call(bulkWriter, 'methods'), false,
+    'independently documented methods must not remain embedded in the class identity');
+  assert.match(bulkWriter.bodyHash, /^[a-f0-9]{16}$/,
+    'the class must retain a behavior fingerprint after methods become child records');
+  assert.deepEqual(bulkWriterMethods.map((symbol) => [symbol.name, symbol.kind, symbol.returnType]), [
+    ['append', 'Function', 'Promise<void>'],
+    ['commit', 'Function', 'Promise<void>'],
+    ['close', 'Function', 'Promise<string[][]>'],
+    ['writeFrom', 'Function', 'Promise<string[][]>'],
+  ]);
+  assert.deepEqual(
+    bulkWriterMethods.find((symbol) => symbol.name === 'append').params,
+    [{ name: 'row', type: 'Record<string, any>' }],
+  );
+  assert.deepEqual(
+    bulkWriterMethods.find((symbol) => symbol.name === 'writeFrom').params,
+    [{ name: 'source', type: 'AsyncIterable<Record<string, any>>' }],
+  );
+  assert.equal(
+    bulkWriterSchema.fields.find((field) => field.name === 'type_params').type,
+    'Partial<Record<TypeParamKey, TypeParam>>',
+  );
+  assert.equal(
+    bulkWriter.params[0].typeDetail.fields
+      .find((field) => field.name === 'schema').typeDetail.fields
+      .find((field) => field.name === 'fields').elementType.fields
+      .find((field) => field.name === 'type_params').type,
+    'Partial<Record<TypeParamKey, TypeParam>>',
+  );
+  const [organizationInventory] = buildOrganizationInventories({
+    symbols,
+    identityMap: loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'node-v30.json')),
+    source: {
+      sdk: 'milvus2-sdk-node',
+      track: 'v3.0.x',
+      revision: 'node-v304',
+      scanner: 'node-scanner',
+    },
+  });
+  assert.deepEqual(organizationInventory.publicMethodStableIds, [
+    'node:DataImport:BulkWriter:append',
+    'node:DataImport:BulkWriter:close',
+    'node:DataImport:BulkWriter:commit',
+    'node:DataImport:BulkWriter:writeFrom',
+  ]);
+  assert.match(organizationInventory.inventoryDigest, /^sha256:[a-f0-9]{64}$/);
   assert.deepEqual(upsert.params[0].typeDetail.fields.map((field) => [field.name, field.optional, field.type]), [
     ['partial_update', true, 'boolean'],
     ['field_ops', true, 'FieldPartialUpdateOp[]'],
@@ -2251,12 +2328,47 @@ export interface BulkWriterOptions {
     ['field_name', 'string'],
     ['op', 'FieldPartialUpdateOpValue'],
   ]);
+  assert.equal(upsert.returnType, 'Promise<MutationResult>');
+  assert.equal(search.returnType, 'Promise<SearchResults<T>>');
+  assert.equal(alterCollectionSchema.returnType, 'Promise<AlterCollectionSchemaResponse>');
   assert.equal(formatter.filePath, 'milvus/bulkwriter/ParquetFormatter.ts');
   assert.match(formatter.bodyHash, /^[a-f0-9]{16}$/);
   assert.deepEqual(options.fields.map((field) => [field.name, field.optional, field.type]), [
     ['schema', false, 'BulkWriterSchema'],
     ['storage', true, 'Storage'],
   ]);
+});
+
+test('NodeScanner retains a class-level BulkWriter behavior delta without re-embedding public methods', async () => {
+  const baselineRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'node-bulk-writer-baseline-'));
+  const targetRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'node-bulk-writer-target-'));
+  const source = (allowUnboundedText) => `
+export class BulkWriter {
+  constructor(options: BulkWriterOptions) {}
+  async append(row: Record<string, any>): Promise<void> { this._validate(row); }
+  async commit(): Promise<void> {}
+  async close(): Promise<string[][]> { return []; }
+  async writeFrom(source: AsyncIterable<Record<string, any>>): Promise<string[][]> { return []; }
+  private _validate(row: Record<string, any>): void {
+    const field = row.text;
+    if (typeof field === 'string' && ${allowUnboundedText ? 'true' : 'field.length <= 65535'}) return;
+    throw new Error('invalid text field');
+  }
+}
+`;
+  writeText(path.join(baselineRepo, 'milvus', 'bulkwriter', 'BulkWriter.ts'), source(false));
+  writeText(path.join(targetRepo, 'milvus', 'bulkwriter', 'BulkWriter.ts'), source(true));
+
+  const baseline = await new NodeScanner({ rootDir: baselineRepo, publicOnly: true }).scan();
+  const target = await new NodeScanner({ rootDir: targetRepo, publicOnly: true }).scan();
+  const deltas = classifySymbolDeltas({ baseline, target })
+    .filter((delta) => delta.symbolIdentity.startsWith('DataImport.BulkWriter'));
+
+  assert.deepEqual(deltas.map((delta) => [delta.type, delta.symbolIdentity, delta.reason]), [
+    ['UPDATE', 'DataImport.BulkWriter', 'public method behavior changed'],
+  ]);
+  assert.equal(Object.prototype.hasOwnProperty.call(deltas[0].symbol, 'methods'), false);
+  assert.match(deltas[0].symbol.bodyHash, /^[a-f0-9]{16}$/);
 });
 
 test('sdk-release-scout CLI writes JSON and does not print raw scanner dumps', async () => {

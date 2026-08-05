@@ -13,6 +13,8 @@
 | v2.6.x  | Yc7gbtmgSal2ewsdqlhcLWVanbh | `Pzejf3x4WlXq1HdtTndcfMjVnxh` |
 | v3.0.x  | KQT5bV62QaioKisKZT0crwZDnke | `Lx2efpuK9lt7m5dxNLVckP7enYe` |
 
+The v3.0.x Drive token above is a multi-version container. Resolve and write beneath its `v3.0.0` child folder; do not treat the sibling `v2.6.x` tree as part of the v3.0.x sparse release folder.
+
 ## Doc Format
 
 ```
@@ -129,6 +131,15 @@ After greenfield creation, run `scripts/audit-go-todos.js` to find docs with `//
 | **Input types** (passed as parameters) | Schema, Field, FieldType, Function, ConsistencyLevel, IndexType, MetricType, AnnParam, ResourceGroupConfig | Replace TODO with real usage example showing the type in context |
 
 Reference: `scripts/go-fix-entity-examples.js`
+
+## Bitable And Page Profiles
+
+- Go uses Class records both for public entities and for navigational API groups. A Class may parent Function, Class, Enum, and `struct` records; do not force every group through a VirtualNode.
+- Output-only entity pages such as `Collection` are field-reference pages: type declaration plus **FIELDS:**, normally without an Example.
+- Input/config/schema pages may include Request Syntax, METHODS, RETURN TYPE/RETURNS, Example, and Notes. Their public helper methods remain part of the type profile unless the established Bitable gives them child records.
+- Interface/factory groups such as `Index` use a Class landing page with METHODS and child constructor Functions such as `NewHNSWIndex()`.
+- Function/method pages use the Go operation layout, including PARAMETERS, BUILDER METHODS where applicable, RETURN TYPE, RETURNS, and error handling.
+- Enum-like types may expose methods and examples instead of a constants-only page. Sample the exact Go type before selecting an enum template.
 
 ## Entity-type slug mapping
 

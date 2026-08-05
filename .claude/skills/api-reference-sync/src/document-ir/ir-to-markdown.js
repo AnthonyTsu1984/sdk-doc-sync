@@ -25,6 +25,14 @@ function safeUrl(value) {
   return encodeURI(String(value || '')).replace(/\(/g, '%28').replace(/\)/g, '%29');
 }
 
+function escapeAttribute(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function renderInline(node) {
   if (node.type === 'citation' || node.type === 'documentReference') {
     return `[${escapeText(node.title)}](${safeUrl(node.url)})`;
@@ -108,7 +116,15 @@ function renderBlock(node, options) {
     }
     case 'callout': {
       const content = node.children.map((child) => renderBlock(child, options)).join('\n\n');
-      return content.split('\n').map((line) => line ? `> ${line}` : '>').join('\n');
+      const defaultEmoji = {
+        note: '📘',
+        info: '📘',
+        tip: '💡',
+        warning: '⚠️',
+        danger: '🚧',
+      }[node.kind] || '📘';
+      const title = node.title === undefined ? '' : ` title="${escapeAttribute(node.title)}"`;
+      return `<Admonition icon="${escapeAttribute(node.emoji || defaultEmoji)}"${title}>\n${content}\n</Admonition>`;
     }
     case 'audience': {
       const content = node.children.map((child) => renderBlock(child, options)).join('\n\n');

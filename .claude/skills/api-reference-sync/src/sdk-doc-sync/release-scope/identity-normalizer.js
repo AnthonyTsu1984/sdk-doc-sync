@@ -37,6 +37,7 @@ function normalizedItem(delta, identity, documentationOwnership) {
     source,
     reason: delta.reason,
     documentationOwnership,
+    ...(identity.organization !== undefined ? { organization: identity.organization } : {}),
     ...(relatedFiles.length > 0 ? { relatedFiles } : {}),
   };
   if (methodOwned) {

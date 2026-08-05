@@ -52,6 +52,12 @@ function createReleaseScope(input) {
     releaseRange: input.releaseRange || `${input.baselineTag}..${input.targetTag}`,
     approvalGrade: input.approvalGrade !== false,
     changedFiles: [...new Set(input.changedFiles || [])].sort(),
+    ...(Array.isArray(input.organizationInventories) ? {
+      organizationInventories: stableSortBy(
+        input.organizationInventories,
+        (inventory) => inventory.classStableId || '',
+      ).map(stableObject),
+    } : {}),
     actions,
     scannerDiagnostics: diagnostics,
     writesPerformed: false,
@@ -95,6 +101,9 @@ function validateReleaseScope(scope) {
   }
   if (!Array.isArray(scope.actions)) errors.push({ path: '$.actions', message: 'must be an array' });
   if (!Array.isArray(scope.scannerDiagnostics)) errors.push({ path: '$.scannerDiagnostics', message: 'must be an array' });
+  if (scope.organizationInventories !== undefined && !Array.isArray(scope.organizationInventories)) {
+    errors.push({ path: '$.organizationInventories', message: 'must be an array when provided' });
+  }
 
   for (const [index, action] of (scope.actions || []).entries()) {
     if (!isObject(action)) {

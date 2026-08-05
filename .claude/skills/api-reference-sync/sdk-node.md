@@ -5,7 +5,7 @@
 **Scanner:** `src/sdk-doc-sync/scanners/node-scanner.js`
 **Root dir:** `repos/milvus-sdk-node` (repo root)
 **Release scout sdk-name:** `milvus-sdk-node`
-**Latest release:** `v3.0.3` (as of 2026-06-17)
+**Latest release:** `v3.0.4` (as of 2026-08-05)
 **Category mapping:** Data.ts→Vector, Collection.ts→Collections, etc.
 
 | Version | Bitable Token              | Drive Root            |
@@ -140,9 +140,55 @@ This exception will be raised when any error occurs during this operation.
 **Notes:**
 - `## Request Syntax` has **NO anchor** (no `{#request-syntax}`)
 - Omit the Request Syntax section entirely for methods with no parameters
+- Under Request Syntax, omit the H3 variant title when there is only one request shape. Add H3 titles only when two or more request shapes need labels.
+- Under Example, omit the H3 example title when there is only one example. Add H3 titles only when two or more examples need labels.
+- Start with an enduring description of the interface semantics. Do not describe the current release, review batch, documentation change, or implementation plan in user-facing copy.
+- Preserve the existing Bitable `Description` when the interface semantics have not changed. A release reason or current patch summary is not a replacement for the enduring interface description.
+- Put a user-facing warning, deprecation notice, or note callout immediately after the opening description and before the signature block. In the native callout, render `Notes` as the first paragraph and the guidance as a separate following paragraph.
+- Do not repeat the same guidance in a separate Notes section. Put new or changed parameter fields, response keys, enum members, and field-specific constraints in their normal PARAMETERS, RETURNS, or Constants location rather than using a callout as a catch-all.
+- If the approved guidance already exists in a native Feishu callout, preserve that block and place it after the opening description instead of rendering a duplicate replacement.
+- When a callout refers to a successor or another documented Node.js interface, link the interface name to its exact current document when that link is known.
+- Generated prose must be a complete, grammatical sentence. Reject fragmentary templates such as `The is ...` before rendering or writing.
 - Database category has no VirtualNode — bitable slugs lack prefix (e.g., `useDatabase` not `Database-useDatabase`)
 - Example code blocks use `javascript` language (not `typescript`) — required by CI
 - Signature and Request Syntax blocks use `typescript` language
+
+**Return objects:**
+
+- Use the exact public return type resolved from the pinned SDK source. `unknown` is allowed only when the public source is genuinely untyped and the planning evidence records that fact; an unresolved exported SDK type blocks publication.
+- For an SDK-owned response object, place its TypeScript object shape immediately after `RETURNS`, then add a second **PARAMETERS:** list that explains every public field, matching the established `ResStatus`, `BackupRBACResponse`, and `StatisticsResponse` pattern.
+- Expand meaningful nested SDK-owned objects in the same field reference when they are part of the public response contract. If a nested type is owned by another established interface, keep the local description brief and refer to the exact owning document.
+- Do not reduce a typed response wrapper to a one-line type name or generic sentence. The reader must be able to understand the returned fields without opening the SDK source.
+
+**Enumerations:**
+
+- An enum page starts with its enduring description and a `## Constants` section.
+- List every public enum member with its exact source name, numeric or string value, and a user-facing explanation. A release note or `Notes` callout never substitutes for the constants list.
+- When a release adds enum members, update the Constants list in source order and keep unrelated descriptions stable.
+
+**Class hierarchy:**
+
+- A stateful public class with callable public methods has both a physical class directory and a Bitable class node beneath its module. Create or reuse a same-named Drive folder under the module folder, place the constructor/landing Docx and all public method Docx pages inside it, keep the Bitable record type as `Class`, and keep its `Docs` link pointing to the landing Docx rather than the folder.
+- The landing page is constructor-focused: document class semantics, constructor overloads and parameters, and a constructor example. Do not collapse the public method inventory into a `METHODS` list on that page.
+- Give each independently documented public instance method its own `Function` record and Docx inside the class Drive folder, with `父记录` pointing to the Class record. For `BulkWriter`, the physical path is `Data Import/BulkWriter/`, and the Bitable shape is `Data Import -> BulkWriter -> append()/commit()/close()/writeFrom()`.
+- The Node scanner emits `DataImport.BulkWriter` plus the four child identities `DataImport.BulkWriter.append`, `.commit`, `.close`, and `.writeFrom`; the v2.6.x and v3.0.x identity maps bind them to the `node-stateful-class@1` organization profile. An approval-ready candidate spec must provide the matching reviewed organization and release-placement contracts; embedded-only methods or category-folder targets are planning errors.
+- The current v2.6.x and v3.0.x Node Bitables are flat (`VirtualNode -> Class/Function/Enum`) and have no `Class -> Function` links. Treat that as current-state evidence to repair for reviewed stateful classes, not as the template for new grouping.
+- The tracked evidence snapshot is [references/evidence/node-v30-document-organization.json](references/evidence/node-v30-document-organization.json). It records the shared v2.6.x Docx lineage used by v3.0.x records, exact revisions and content hashes, and the observed absence of a `BulkWriter` Drive folder. The required `same_named_class_folder` contract is the repair target, not a claim about current state.
+- If a v3.0.x child method keeps an unchanged v2.6.x Docx, repair only its v3.0.x `父记录` and `Type` with `UPDATE_RECORD_METADATA`; do not copy the inherited document solely for reparenting.
+- Treat this hierarchy as one grouping decision: review the Class landing page, complete public-method inventory, every child identity, and every parent change before any write batch.
+
+**Observed page profiles (verified 2026-08-05):**
+
+- Standard function pages use an enduring opening, signature, optional Request Syntax, request PARAMETERS, RETURNS, an expanded returned-object PARAMETERS list when applicable, EXCEPTIONS when applicable, and Example.
+- A complex function may have multiple labeled H3 request variants, each with its own PARAMETERS list. A single request or example remains unlabeled.
+- Enum pages use `## Constants` and a complete member list.
+- `MilvusClient` is the constructor-focused Class reference. Existing `BulkWriter` and `Formatter` pages demonstrate legacy mixed class/helper layouts; do not copy their inline `METHODS` or implementation inventory without an ownership and grouping review.
+- Before a new Node interface kind is planned, sample at least one comparable live page and record its revision and block structure. Do not substitute a Python, Java, Go, or C++ body layout.
+
+**Signature integrity:**
+
+- Preserve complete TypeScript signatures and object shapes in code blocks. HTML entities, injected spacing markers, collapsed line breaks, truncated generics, or joined parameters are publication blockers.
+- A complex method or implementation signature must be followed by a structured field reference with its own **PARAMETERS:** list; do not leave it as an unreadable inline signature or summarize its fields in one prose sentence.
 
 **Complex type documentation:**
 

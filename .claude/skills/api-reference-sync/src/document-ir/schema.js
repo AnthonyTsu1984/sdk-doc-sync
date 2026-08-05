@@ -68,8 +68,13 @@ function tableCell(children = [], options = {}) {
 }
 
 function callout(children = [], options = {}) {
-  const { kind = 'note', emoji, sourceId, metadata } = options;
-  return withSource('callout', { kind, ...(emoji !== undefined && { emoji }), children }, {
+  const { kind = 'note', emoji, title, sourceId, metadata } = options;
+  return withSource('callout', {
+    kind,
+    ...(emoji !== undefined && { emoji }),
+    ...(title !== undefined && { title }),
+    children,
+  }, {
     sourceId,
     metadata,
   });

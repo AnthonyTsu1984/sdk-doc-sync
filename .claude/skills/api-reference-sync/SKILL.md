@@ -77,8 +77,13 @@ npm run api-reference-sync -- \
 - A public class is not standalone evidence. Ambiguous ownership blocks planning; standalone creation requires an explicit reviewed standalone exception.
 - Preserve one document per established public interface record. Parameter-only changes update every affected owner page; they do not justify a synthetic umbrella page.
 - Treat release folders as sparse version-local deltas and version Bitables as complete indexes. Unchanged entries may retain inherited links.
+- Treat Bitable navigation type, `Docs` resource type, and physical Drive placement as separate facts. A `Class` record may point to a Docx landing page and still parent method records; the record does not become a `VirtualNode`, even when the language profile requires the landing page and method pages to live in a same-named Drive folder.
+- For a canonical stateful-class identity, require the versioned organization profile from the identity map, a reviewed `organizations[]` contract with the complete public-method inventory, and an explicit `target.releasePlacement`. The reviewed-context builder and planner must reject a category-folder target, a class VirtualNode, a non-Docx class link, an incomplete child inventory, or child records not parented to the Class.
+- Bind every reviewed stateful-class contract to the scanner-derived `organizationInventory`, including its stable digest. The planner must validate that inventory again instead of trusting a caller-provided `complete: true` declaration.
 - For a changed inherited interface, use `COPY_PATCH_AND_REPOINT`: copy into the current release folder, patch the copy, and repoint the current record.
+- For an unchanged inherited interface whose `Docs` token is already correct but whose `父记录` or `Type` is stale, use `UPDATE_RECORD_METADATA`: preserve the document token and revision, perform no Docx copy or patch, and verify the record link, parent, record type, and `docx` resource type.
 - Resolve the canonical target folder and parent from current hierarchy evidence. Unknown current version, folder, or shared-token state blocks planning.
+- Keep a small tracked evidence manifest for every organization rule used by planning. It must record exact Base/table and Drive identities, representative record parent/type/link facts, Docx revisions and content hashes, collection identity and time, and copy-ready read-only replay commands. Do not substitute an untracked scan dump or a self-declared candidate contract.
 - SDK artifacts require reviewed evidence, a versioned language layout profile, block-safety validation, and an immutable semantic patch plan. Full-body repair requires exact token approval, history, and protected-block inventory.
 - Verify the canonical tenant host, target ancestry, record link/parent/metadata, older-source preservation, and human-visible access after writes.
 - Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists.
@@ -89,6 +94,7 @@ Read only the relevant domain references:
 
 - Language rules: [Python](sdk-python.md), [Java](sdk-java.md), [Node.js](sdk-node.md), [C++](sdk-cpp.md), [Go](sdk-go.md), [Zilliz CLI](sdk-zilliz-cli.md), [REST/OpenAPI](sdk-rest.md), and [cross-SDK alignment](sdk-alignment.md).
 - Release and planning: [references/versioning.md](references/versioning.md), [references/active-track-inheritance.md](references/active-track-inheritance.md), and [references/schema-first-generation.md](references/schema-first-generation.md).
+- Bitable hierarchy and layout sampling: [references/bitable-document-organization.md](references/bitable-document-organization.md).
 - Execution and verification: [references/post-write-verification.md](references/post-write-verification.md), [references/release-smoke-test.md](references/release-smoke-test.md), and [references/stable-core-boundary.md](references/stable-core-boundary.md).
 - Commands and recovery: [references/cli.md](references/cli.md) and [references/troubleshooting.md](references/troubleshooting.md).
 - Interactive chat and bot gates: [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md); these are mandatory whenever a user decision or approval is requested.

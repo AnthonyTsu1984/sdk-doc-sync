@@ -179,6 +179,9 @@ function validateDocumentIr(ir, { lossless = true } = {}) {
         if (node.type === 'callout' && !CALLOUT_KINDS.has(node.kind)) {
           report(errors, `${path}.kind`, 'callout kind must be note, info, tip, warning, or danger', 'INVALID_CALLOUT');
         }
+        if (node.type === 'callout' && node.title !== undefined && typeof node.title !== 'string') {
+          report(errors, `${path}.title`, 'callout title must be a string', 'INVALID_CALLOUT');
+        }
         if (node.type === 'audience') {
           if (!['include', 'exclude'].includes(node.mode)) report(errors, `${path}.mode`, 'audience mode must be include or exclude', 'INVALID_AUDIENCE');
           if (typeof node.target !== 'string' || !AUDIENCE_TARGET.test(node.target)) report(errors, `${path}.target`, 'audience target must use only letters, digits, dot, underscore, or hyphen', 'INVALID_AUDIENCE');

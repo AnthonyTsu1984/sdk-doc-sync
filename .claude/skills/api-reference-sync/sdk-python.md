@@ -53,6 +53,14 @@ When this exception is raised.
 ```
 ```
 
+## Bitable And Page Profiles
+
+- Python uses rich navigation hierarchies: `VirtualNode` and `Module` records represent real directory/module layers, while a `Class` record points to a constructor/landing Docx and commonly parents its public `Function` method records. Nested `Class -> Class` and `Class -> Enum` relationships are also established where the source ownership requires them.
+- A Class landing page may contain Constructor, Properties or Members, Methods, examples, return information, and exceptions while the full callable contracts remain on child method pages. Do not apply the Node.js constructor-only landing rule to Python.
+- A child method page owns its Request Syntax, PARAMETERS, RETURN TYPE, RETURNS, EXCEPTIONS, Examples, and optional Related methods/operations section.
+- Module-level functions use the function layout, while enums use `## Constants` with a complete member list.
+- Sample separately from `MilvusClient`, ORM, DataImport, embedding/reranker modules, and standalone model types when those areas are in scope; their landing-page sections are not interchangeable.
+
 ## Platform-aware parameter prose
 
 Treat sentence-start checks as lint signals, not as a writing template. A reviewed parameter description must be a complete, human-readable sentence that explains what the value represents, names the applicable platform when relevant, and includes important constraints or examples. Prefer an article-led sentence such as `The name of the target collection.` or a natural plural subject such as `Files containing the import data.` Never repair source text by mechanically prefixing `The`.

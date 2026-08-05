@@ -20,6 +20,7 @@ const javaRenderer = require('../src/renderers/languages/java');
 const nodeRenderer = require('../src/renderers/languages/node');
 const goRenderer = require('../src/renderers/languages/go');
 const cppRenderer = require('../src/renderers/languages/cpp');
+const MarkdownToFeishu = require('../src/markdown-to-feishu');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 const goldenDir = path.join(__dirname, 'fixtures', 'golden', 'sdk');
@@ -312,6 +313,175 @@ test('Node reviewed context overrides scanner request variants for release param
   assert.match(markdown, /field\_ops/);
   assert.match(markdown, /ARRAY_APPEND/);
   assert.doesNotMatch(markdown, /client\.upsert\(data\)/);
+});
+
+test('Node renders reviewed deprecation guidance as a native Feishu callout immediately after the summary', async () => {
+  const symbol = {
+    name: 'addCollectionFunction',
+    parentClass: 'Collections',
+    kind: 'Function',
+    docstring: 'Adds a function to a collection.',
+    filePath: 'milvus/grpc/Collection.ts',
+    lineNumber: 1977,
+    params: [{ name: 'data', type: 'AddCollectionFunctionReq' }],
+  };
+  const adapterContext = {
+    repository: 'milvus-io/milvus-sdk-node',
+    revision: 'v3.0.4',
+    category: 'Collections',
+    title: 'addCollectionFunction()',
+    summary: 'This operation adds a custom function to an existing collection.',
+    signature: 'await milvusClient.addCollectionFunction(data: AddCollectionFunctionReq)',
+    reviewedEvidence: sourceEvidence('node'),
+    summaryCallouts: [{
+      kind: 'note',
+      emoji: '📘',
+      title: 'Notes',
+      text: 'Deprecated. Use `addFunctionField()` for new code.',
+      links: [{
+        text: 'addFunctionField()',
+        url: 'https://zilliverse.feishu.cn/docx/add-function-field',
+      }],
+    }],
+    requestVariants: [{
+      id: 'default',
+      title: 'Add collection function request',
+      signature: 'await milvusClient.addCollectionFunction({ collection_name, function: schema })',
+      inputs: [],
+    }],
+    result: {
+      type: 'Promise<ResStatus>',
+      description: 'Returns the operation status.',
+      fields: [],
+    },
+    exceptions: [],
+    examples: [{
+      title: 'Add a function',
+      language: 'node',
+      code: 'await milvusClient.addCollectionFunction({ collection_name: "docs", function: schema });',
+    }],
+  };
+
+  const reference = nodeAdapter.toReferenceDocument(symbol, adapterContext);
+  assert.deepEqual(reference.summaryCallouts, adapterContext.summaryCallouts);
+  assert.equal(validateReferenceDocument(reference, { production: true }).valid, true);
+
+  const rendered = nodeRenderer.render(reference);
+  assert.equal(rendered.children[0].metadata.role, 'summary');
+  assert.equal(rendered.children[1].type, 'callout');
+  assert.equal(rendered.children[1].metadata.role, 'summary');
+  assert.equal(rendered.children[1].kind, 'note');
+  assert.equal(rendered.children[1].emoji, '📘');
+  assert.equal(rendered.children[1].title, 'Notes');
+  const markdown = renderMarkdown(rendered);
+  assert.match(markdown, /Deprecated\. Use \[addFunctionField\(\)\]\(https:\/\/zilliverse\.feishu\.cn\/docx\/add-function-field\) for new code\./);
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const { tokens } = await converter.parse_markdown(markdown);
+  const blocks = await converter.markdown_to_blocks(tokens);
+  assert.equal(blocks[0].block_type, 2);
+  assert.equal(blocks[1].block_type, 19);
+  assert.equal(blocks[1].callout.emoji_id, 'blue_book');
+  assert.equal(blocks[1].children[0].text.elements[0].text_run.content, 'Notes');
+  assert.equal(blocks[1].children[1].text.elements[0].text_run.content, 'Deprecated. Use ');
+  assert.equal(blocks[1].children[1].text.elements[2].text_run.content, ' for new code.');
+  assert.equal(
+    decodeURIComponent(blocks[1].children[1].text.elements[1].text_run.text_element_style.link.url),
+    'https://zilliverse.feishu.cn/docx/add-function-field',
+  );
+});
+
+test('Node omits redundant subheadings for a single request and a single example', () => {
+  const symbol = {
+    name: 'addCollectionField',
+    parentClass: 'Collections',
+    kind: 'Function',
+    docstring: 'Adds a field.',
+    filePath: 'milvus/grpc/Collection.ts',
+    lineNumber: 1830,
+    params: [{ name: 'data', type: 'AddCollectionFieldReq' }],
+  };
+  const adapterContext = {
+    repository: 'milvus-io/milvus-sdk-node',
+    revision: 'v3.0.4',
+    category: 'Collections',
+    title: 'addCollectionField()',
+    summary: 'This operation adds a field to an existing collection.',
+    signature: 'await milvusClient.addCollectionField(data: AddCollectionFieldReq)',
+    reviewedEvidence: sourceEvidence('node'),
+    requestVariants: [{
+      id: 'default',
+      title: 'addCollectionField request',
+      signature: 'await milvusClient.addCollectionField({ collection_name, field })',
+      inputs: [],
+    }],
+    result: {
+      type: 'Promise<ResStatus>',
+      description: 'Returns the operation status.',
+      fields: [],
+    },
+    exceptions: [],
+    examples: [{
+      title: 'addCollectionField example',
+      language: 'node',
+      code: 'await milvusClient.addCollectionField({ collection_name: "docs", field });',
+    }],
+  };
+
+  const markdown = renderMarkdown(nodeRenderer.render(nodeAdapter.toReferenceDocument(symbol, adapterContext)));
+  assert.doesNotMatch(markdown, /### addCollectionField request/);
+  assert.doesNotMatch(markdown, /### addCollectionField example/);
+});
+
+test('Node renders request and example subheadings only when multiple variants need labels', () => {
+  const symbol = {
+    name: 'dropCollectionField',
+    parentClass: 'Collections',
+    kind: 'Function',
+    docstring: 'Drops a field.',
+    filePath: 'milvus/grpc/Collection.ts',
+    lineNumber: 1897,
+    params: [{ name: 'data', type: 'DropCollectionFieldReq' }],
+  };
+  const adapterContext = {
+    repository: 'milvus-io/milvus-sdk-node',
+    revision: 'v3.0.4',
+    category: 'Collections',
+    title: 'dropCollectionField()',
+    summary: 'This operation drops a field from an existing collection.',
+    signature: 'await milvusClient.dropCollectionField(data: DropCollectionFieldReq)',
+    reviewedEvidence: sourceEvidence('node'),
+    requestVariants: [{
+      id: 'by-name',
+      title: 'Drop a field by name',
+      signature: 'await milvusClient.dropCollectionField({ collection_name, field_name })',
+      inputs: [],
+    }, {
+      id: 'by-id',
+      title: 'Drop a field by ID',
+      signature: 'await milvusClient.dropCollectionField({ collection_name, field_id })',
+      inputs: [],
+    }],
+    result: {
+      type: 'Promise<ResStatus>',
+      description: 'Returns the operation status.',
+      fields: [],
+    },
+    exceptions: [],
+    examples: [{
+      title: 'Drop by name',
+      language: 'node',
+      code: 'await milvusClient.dropCollectionField({ collection_name: "docs", field_name: "old" });',
+    }, {
+      title: 'Drop by ID',
+      language: 'node',
+      code: 'await milvusClient.dropCollectionField({ collection_name: "docs", field_id: 100 });',
+    }],
+  };
+
+  const markdown = renderMarkdown(nodeRenderer.render(nodeAdapter.toReferenceDocument(symbol, adapterContext)));
+  for (const heading of ['Drop a field by name', 'Drop a field by ID', 'Drop by name', 'Drop by ID']) {
+    assert.match(markdown, new RegExp(`### ${heading}`));
+  }
 });
 
 test('Node reviewed context renders concrete implementations inside an interface page', () => {

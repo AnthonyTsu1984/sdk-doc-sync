@@ -853,6 +853,38 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
   }
 
   if (typeof doc.summary !== 'string') error('$.summary', 'summary must be a string', 'INVALID_SUMMARY');
+  const summaryCallouts = requireArray(doc.summaryCallouts, '$.summaryCallouts', 'summary callouts');
+  summaryCallouts?.forEach((callout, index) => {
+    const calloutPath = `$.summaryCallouts[${index}]`;
+    if (!isObject(callout)) {
+      error(calloutPath, 'summary callout must be an object', 'INVALID_SUMMARY_CALLOUT');
+      return;
+    }
+    requireString(callout.text, `${calloutPath}.text`, 'summary callout text');
+    if (callout.kind !== undefined && !['note', 'info', 'tip', 'warning', 'danger'].includes(callout.kind)) {
+      error(`${calloutPath}.kind`, 'summary callout kind must be note, info, tip, warning, or danger', 'INVALID_SUMMARY_CALLOUT');
+    }
+    if (callout.emoji !== undefined && typeof callout.emoji !== 'string') {
+      error(`${calloutPath}.emoji`, 'summary callout emoji must be a string', 'INVALID_SUMMARY_CALLOUT');
+    }
+    if (callout.title !== undefined && typeof callout.title !== 'string') {
+      error(`${calloutPath}.title`, 'summary callout title must be a string', 'INVALID_SUMMARY_CALLOUT');
+    }
+    const links = callout.links === undefined
+      ? []
+      : requireArray(callout.links, `${calloutPath}.links`, 'summary callout links');
+    links?.forEach((link, linkIndex) => {
+      const linkPath = `${calloutPath}.links[${linkIndex}]`;
+      if (!isObject(link)) {
+        error(linkPath, 'summary callout link must be an object', 'INVALID_SUMMARY_CALLOUT');
+        return;
+      }
+      requireString(link.text, `${linkPath}.text`, 'summary callout link text');
+      if (!isSafeRelatedUrl(link.url)) {
+        error(`${linkPath}.url`, 'summary callout link URL must be safe and usable', 'INVALID_SUMMARY_CALLOUT');
+      }
+    });
+  });
   if (doc.exampleOptional !== undefined && typeof doc.exampleOptional !== 'boolean') {
     error('$.exampleOptional', 'exampleOptional must be a boolean', 'INVALID_DOCUMENT');
   }

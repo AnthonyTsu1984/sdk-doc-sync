@@ -491,11 +491,17 @@ test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and 
 });
 
 test('live SdkDocSync wires the default Feishu operational verifier', () => {
+  const documentWriter = {
+    async listFolder() { return []; },
+  };
+  const bitableWriter = {
+    async getRecord() { return null; },
+  };
   const sync = new SdkDocSync({
     scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
     indexReader: { async readIndex() { return []; } },
-    documentWriter: {},
-    bitableWriter: {},
+    documentWriter,
+    bitableWriter,
     rootToken: 'root-token',
     baseToken: 'base-token',
     sdkName: 'pymilvus',
@@ -506,6 +512,8 @@ test('live SdkDocSync wires the default Feishu operational verifier', () => {
   assert.equal(typeof sync.verifier.beforeMutation, 'function');
   assert.equal(typeof sync.verifier.verifyDocument, 'function');
   assert.equal(typeof sync.verifier.rollback, 'function');
+  assert.equal(typeof sync.verifier.readDocument, 'function');
+  assert.equal(typeof sync.verifier.readRecord, 'function');
   assert.equal(sync.executor.verifier, sync.verifier);
 });
 
@@ -570,6 +578,71 @@ test('SDK UPDATE planning reads live blocks and stores a validated semantic patc
   assert.deepEqual(calls, [['readBlocks', 'doc-search']]);
   assert.equal(context.apiPatchPlan.validation.valid, true);
   assert.deepEqual(context.apiPatchPlan.operations.map((operation) => operation.role), ['parameters']);
+});
+
+test('SDK UPDATE planning passes reviewed preserved block placements to the patch planner', async () => {
+  const captured = [];
+  const blocks = [
+    { block_id: 'page', block_type: 1, children: ['summary', 'callout'], page: { elements: [] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'callout', parent_id: 'page', block_type: 19, callout: {}, children: [] },
+  ];
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+    indexReader: async () => [],
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    dryRun: true,
+    artifactProvider: async () => ({ artifact: {
+      title: 'search()',
+      content: 'Searches vectors.\n',
+      documentIr: { type: 'document', children: [] },
+      layout: { profileId: 'python', profileVersion: 1 },
+      reviewed: true,
+      validated: true,
+      validation: { valid: true },
+    } }),
+    documentBlockReader: { async readBlocks() { return blocks; } },
+    artifactBlockRenderer: async () => blocks.slice(0, 2),
+    apiPatchPlanner(input) {
+      captured.push(input);
+      return {
+        schemaVersion: 1,
+        profile: { id: 'python', version: 1 },
+        strategy: 'targeted-semantic-patch',
+        currentModel: { pageBlockId: 'page', topLevelBlockIds: ['summary', 'callout'] },
+        desiredRoleSequence: ['summary'],
+        preservedBlockIds: ['callout'],
+        operations: [],
+        validation: { valid: true, errors: [] },
+      };
+    },
+  });
+  const reviewedPlacements = [{ blockId: 'callout', role: 'summary', offset: 1 }];
+  const action = {
+    type: 'UPDATE',
+    stableId: 'python:Vector:search',
+    slug: 'Vector-search',
+    symbol: { name: 'search' },
+    doc: { id: 'rec-search', metadata: { token: 'doc-search' } },
+    planningContext: {
+      preservedBlockPlacements: reviewedPlacements,
+      current: {
+        version: 'v2.6.x', recordId: 'rec-search', documentToken: 'doc-search',
+        folderToken: 'vector-v26', ancestryVerified: true, placementVerified: true,
+      },
+      target: {
+        version: 'v2.6.x', parentRecordId: 'parent-vector', folderToken: 'vector-v26',
+        versionRootToken: 'root-v26', ancestryVerified: true,
+      },
+    },
+  };
+
+  await sync._planningContextFor(action, 0, {});
+
+  assert.deepEqual(captured[0].preservedBlockPlacements, reviewedPlacements);
 });
 
 test('SDK UPDATE planning rejects desired Feishu blocks with visible Markdown escapes', async () => {

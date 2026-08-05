@@ -13,7 +13,57 @@
     "DataImport.BulkWriter": {
       "stableId": "node:DataImport:BulkWriter",
       "canonicalSlug": "v2-DataImport-BulkWriter",
-      "category": "Data Import"
+      "category": "Data Import",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "class",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.append": {
+      "stableId": "node:DataImport:BulkWriter:append",
+      "canonicalSlug": "v2-DataImport-BulkWriter-append",
+      "category": "Data Import",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.commit": {
+      "stableId": "node:DataImport:BulkWriter:commit",
+      "canonicalSlug": "v2-DataImport-BulkWriter-commit",
+      "category": "Data Import",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.close": {
+      "stableId": "node:DataImport:BulkWriter:close",
+      "canonicalSlug": "v2-DataImport-BulkWriter-close",
+      "category": "Data Import",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.writeFrom": {
+      "stableId": "node:DataImport:BulkWriter:writeFrom",
+      "canonicalSlug": "v2-DataImport-BulkWriter-writeFrom",
+      "category": "Data Import",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
     },
     "DataImport.BulkWriterOptions": {
       "stableId": "node:DataImport:BulkWriterOptions",

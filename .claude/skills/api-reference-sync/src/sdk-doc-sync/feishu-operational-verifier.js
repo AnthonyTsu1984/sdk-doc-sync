@@ -129,6 +129,23 @@ class FeishuOperationalVerifier extends SyncVerifier {
             semanticErrors.push({ code: 'PRESERVED_BLOCK_MISSING', blockId });
           }
         }
+        const preservedPlacements = execution.patchedDocument?.preservedPlacements
+          || plan.apiPatchPlan?.preservedPlacements
+          || [];
+        [...preservedPlacements]
+          .sort((left, right) => left.insertAt - right.insertAt)
+          .forEach((placement, placementIndex) => {
+            const actualIndex = model.topLevelBlockIds.indexOf(placement.blockId);
+            const expectedIndex = placement.insertAt + placementIndex;
+            if (actualIndex !== expectedIndex) {
+              semanticErrors.push({
+                code: 'PRESERVED_BLOCK_POSITION_MISMATCH',
+                blockId: placement.blockId,
+                expectedIndex,
+                actualIndex,
+              });
+            }
+          });
         const seenSignatures = new Set();
         for (const signature of model.signatures.filter((entry) => (
           ['canonical-signature', 'request-signature'].includes(entry.role)

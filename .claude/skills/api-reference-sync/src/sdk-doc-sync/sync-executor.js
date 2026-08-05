@@ -5,6 +5,7 @@ const {
   assertPublishableContent,
 } = require('./feishu-block-safety');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
+const { organizationRecordType } = require('./sdk-organization-contract');
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -243,6 +244,9 @@ class SyncExecutor {
           break;
         case 'UPDATE_IN_PLACE':
           await this._executeUpdateInPlace(effectivePlan, artifact, action, result);
+          break;
+        case 'UPDATE_RECORD_METADATA':
+          await this._executeRecordMetadataUpdate(effectivePlan, result);
           break;
         case 'CREATE_AND_REPOINT':
           throw new SyncExecutionError(
@@ -608,11 +612,29 @@ class SyncExecutor {
     await this._verifyDocumentBeforeBitableMutation(plan, result);
 
     const metadata = artifactMetadata(artifact);
+    const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
     try {
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
         description: metadata.description,
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
+        parentRecordId: plan.target.parentRecordId,
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
+      });
+    } catch (error) {
+      error.step = 'updateRecord';
+      throw error;
+    }
+    result.completedSteps.push('updateRecord');
+  }
+
+  async _executeRecordMetadataUpdate(plan, result) {
+    const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
+    try {
+      result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
+        parentRecordId: plan.target.parentRecordId,
+        ...editedRecordMetadata(),
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
     } catch (error) {
       error.step = 'updateRecord';
@@ -667,6 +689,7 @@ class SyncExecutor {
       await this._verifyDocumentBeforeBitableMutation(plan, result);
 
       const metadata = artifactMetadata(artifact);
+      const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
         title: artifactTitle(plan, artifact, action),
         link: linkFromCreated(copied),
@@ -674,6 +697,7 @@ class SyncExecutor {
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
         parentRecordId: plan.target.parentRecordId,
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
       result.completedSteps.push('updateRecord');
     } catch (error) {
@@ -787,13 +811,16 @@ class SyncExecutor {
 
   async _createRecord(plan, artifact, action, created) {
     const metadata = artifactMetadata(artifact);
+    const reviewedRecordType = plan.organization
+      ? organizationRecordType(plan.organization, plan.stableId)
+      : null;
     return await this.bitableWriter.createRecord({
       title: artifactTitle(plan, artifact, action),
       link: linkFromCreated(created),
       progress: editedRecordMetadata().progress,
       addedSince: plan.target.version,
       description: metadata.description,
-      type: metadata.type,
+      type: reviewedRecordType || metadata.type,
       targets: editedRecordMetadata().targets,
       parentRecordId: plan.target.parentRecordId,
     });

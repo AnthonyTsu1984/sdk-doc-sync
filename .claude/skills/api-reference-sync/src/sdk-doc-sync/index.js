@@ -36,6 +36,7 @@ function executionSideEffects(plan) {
         case 'CREATE_VIRTUAL_NODE': return ['feishu.bitable.create'];
         case 'CREATE': return ['feishu.doc.create', 'feishu.bitable.create'];
         case 'UPDATE_IN_PLACE': return ['feishu.doc.patch', 'feishu.bitable.update'];
+        case 'UPDATE_RECORD_METADATA': return ['feishu.bitable.update'];
         case 'COPY_PATCH_AND_REPOINT': return ['feishu.drive.copy', 'feishu.doc.patch', 'feishu.bitable.update'];
         case 'DEPRECATE': return ['feishu.bitable.update'];
         default: return [];
@@ -102,6 +103,67 @@ function blockedExecutionResult({ batch, proposedBatch, diagnostics }) {
             proposedBatchDigest: proposedBatch?.batchDigest || null,
         },
     });
+}
+
+function rawParentRecordId(fields = {}) {
+    const cell = fields['父记录'] || fields.Parent;
+    if (!Array.isArray(cell)) return null;
+    return cell[0]?.record_ids?.[0] || cell[0]?.record_id || null;
+}
+
+function docsResourceType(link) {
+    if (typeof link !== 'string') return null;
+    if (link.includes('/drive/folder/')) return 'folder';
+    if (link.includes('/docx/')) return 'docx';
+    return null;
+}
+
+function normalizeLiveRecord(raw) {
+    if (!raw) return null;
+    const fields = raw.fields || {};
+    const docs = fields.Docs || {};
+    const link = docs.link || null;
+    return {
+        recordId: raw.record_id || raw.id || null,
+        documentToken: link ? link.split('/').filter(Boolean).at(-1) : null,
+        link,
+        parentRecordId: rawParentRecordId(fields),
+        version: fields['Last Modified At'] || null,
+        state: fields.Progress || null,
+        progress: fields.Progress || null,
+        type: fields.Type || null,
+        docsResourceType: docsResourceType(link),
+        targets: fields.Targets || [],
+        metadata: {
+            type: fields.Type || null,
+            docsResourceType: docsResourceType(link),
+        },
+    };
+}
+
+function liveRecordReader(bitableWriter) {
+    if (typeof bitableWriter?.getRecord !== 'function') return null;
+    return async (recordId) => normalizeLiveRecord(await bitableWriter.getRecord(recordId));
+}
+
+function liveDocumentReader(documentWriter) {
+    if (typeof documentWriter?.listFolder !== 'function') return null;
+    return async (documentToken, { expectedFolderToken = null } = {}) => {
+        if (!expectedFolderToken) {
+            if (typeof documentWriter.get_document_blocks === 'function') {
+                await documentWriter.get_document_blocks(documentToken);
+            }
+            return { token: documentToken, folderToken: null };
+        }
+        const files = await documentWriter.listFolder({ folderToken: expectedFolderToken, type: 'all' });
+        const item = (files || []).find((file) => (
+            file.token === documentToken
+            || file.file_token === documentToken
+            || file.obj_token === documentToken
+        ));
+        if (!item) return null;
+        return { token: documentToken, folderToken: expectedFolderToken, resource: item };
+    };
 }
 
 /**
@@ -209,7 +271,10 @@ class SdkDocSync {
         if (!dryRun) {
             this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
             this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken });
-            this.verifier = this.verifier || new FeishuOperationalVerifier();
+            this.verifier = this.verifier || new FeishuOperationalVerifier({
+                readDocument: liveDocumentReader(this.m2f),
+                readRecord: liveRecordReader(this.bitableWriter),
+            });
             this.executor = this.executor || new SyncExecutor({
                 documentWriter: this.m2f,
                 bitableWriter: this.bitableWriter,
@@ -894,6 +959,10 @@ class SdkDocSync {
                 profile,
                 documentToken: current.documentToken,
                 repairApproval: actionContext.repairApproval || extraContext.repairApproval || suppliedContext.repairApproval || null,
+                preservedBlockPlacements: actionContext.preservedBlockPlacements
+                    || extraContext.preservedBlockPlacements
+                    || suppliedContext.preservedBlockPlacements
+                    || [],
                 copyOnWrite: current.version !== target.version
                     || current.folderToken !== target.folderToken
                     || actionContext.tokenReferencedByOlderVersions === true

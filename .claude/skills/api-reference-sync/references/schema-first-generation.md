@@ -24,6 +24,8 @@ Convert scanner output into SDK Reference IR through the language adapter:
 
 The reference context must supply reviewed evidence, category placement, related links, type URLs, and REST OpenAPI input when those cannot be inferred safely from the scanner result.
 
+When a language profile documents stateful class methods as child pages, the scanner must emit the class and each method as separate public identities. The identity map attaches the versioned organization profile and class ownership. Do not leave those methods only in an embedded `methods` array on the class symbol.
+
 ### 3. Validate
 
 Run production validation on the SDK Reference IR before rendering. Production validation rejects placeholder summaries, unresolved internal references, invalid defaults, malformed evidence, missing required fields, and other publish-blocking defects.
@@ -60,6 +62,8 @@ Each plan artifact has these fields:
 - `postconditions`: expected target document location, bitable link, parent, version metadata, deprecation metadata, no-mutation state, or older-source preservation.
 - `metadata`: diff action, reason, artifact kind, and non-destructive flags for orphan/no-op handling.
 - `layout`: SDK language profile ID and version for SDK API-reference writes.
+- `organization`: reviewed class/child-record and physical-folder contract for grouped stateful-class writes.
+- `releasePlacement`: reviewed distinction between the configured SDK root and the actual release folder.
 - `apiPatchPlan`: for SDK UPDATE actions, the validated current section model, desired role sequence, preserved block IDs, exact operations, and selected semantic strategy.
 
 Plan action selection:

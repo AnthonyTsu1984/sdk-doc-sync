@@ -428,6 +428,238 @@ test('identity normalizer gives unmapped symbols explicit diagnostics', () => {
   });
 });
 
+test('identity normalizer gives Node BulkWriter methods stable child Function identities', () => {
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'node-v30.json'));
+  const normalized = normalizeDelta({
+    type: 'CREATE',
+    symbolIdentity: 'DataImport.BulkWriter.append',
+    symbol: {
+      name: 'append',
+      kind: 'Function',
+      parentClass: 'DataImport.BulkWriter',
+      filePath: 'milvus/bulkwriter/BulkWriter.ts',
+      lineNumber: 84,
+      params: [{ name: 'row', type: 'Record<string, any>' }],
+      returnType: 'Promise<void>',
+    },
+    reason: 'new public Function',
+  }, map);
+
+  assert.deepEqual(normalized, {
+    type: 'CREATE',
+    stableId: 'node:DataImport:BulkWriter:append',
+    canonicalSlug: 'DataImport-BulkWriter-append',
+    symbol: 'DataImport.BulkWriter.append',
+    source: { file: 'milvus/bulkwriter/BulkWriter.ts', line: 84 },
+    reason: 'new public Function',
+    documentationOwnership: { classification: 'standalone' },
+    organization: {
+      profileId: 'node-stateful-class',
+      profileVersion: 1,
+      role: 'method',
+      classStableId: 'node:DataImport:BulkWriter',
+    },
+  });
+});
+
+test('reviewed context requires and carries the complete Node stateful-class organization contract', () => {
+  const classStableId = 'node:DataImport:BulkWriter';
+  const methodNames = ['append', 'commit', 'close', 'writeFrom'];
+  const methodStableIds = methodNames.map((name) => `${classStableId}:${name}`);
+  const organization = {
+    schemaVersion: 1,
+    profileId: 'node-stateful-class',
+    profileVersion: 1,
+    reviewed: true,
+    groupingChange: true,
+    classRecord: {
+      stableId: classStableId,
+      title: 'BulkWriter',
+      recordId: 'rec-bulk-writer',
+      recordType: 'Class',
+      docsResourceType: 'docx',
+      parentRecordId: 'rec-data-import',
+      parentRecordType: 'VirtualNode',
+      virtualNode: false,
+    },
+    drive: {
+      layout: 'same_named_class_folder',
+      folderName: 'BulkWriter',
+      folderToken: 'folder-bulk-writer',
+      landingDocumentInside: true,
+      methodDocumentsInside: true,
+    },
+    methodInventory: { complete: true, publicMethodStableIds: methodStableIds },
+    methods: methodNames.map((name) => ({
+      stableId: `${classStableId}:${name}`,
+      title: `${name}()`,
+      recordType: 'Function',
+      parentRecordId: 'rec-bulk-writer',
+    })),
+  };
+  const sourceInventory = {
+    schemaVersion: 1,
+    classStableId,
+    profileId: 'node-stateful-class',
+    profileVersion: 1,
+    classSourceIdentity: 'DataImport.BulkWriter',
+    publicMethodStableIds: methodStableIds,
+    publicMethodSourceIdentities: methodNames.map((name) => `DataImport.BulkWriter.${name}`),
+    source: {
+      sdk: 'milvus2-sdk-node',
+      track: 'v3.0.x',
+      revision: 'node-v304',
+      scanner: 'node-scanner',
+    },
+  };
+  const releaseScope = createReleaseScope({
+    language: 'node',
+    sdkName: 'milvus2-sdk-node',
+    track: 'v3.0.x',
+    baselineTag: 'v3.0.3',
+    targetTag: 'v3.0.4',
+    targetCommit: 'node-v304',
+    targetDate: '2026-08-05T00:00:00.000Z',
+    changedFiles: ['milvus/bulkwriter/BulkWriter.ts'],
+    organizationInventories: [sourceInventory],
+    actions: [
+      {
+        type: 'UPDATE',
+        stableId: classStableId,
+        canonicalSlug: 'DataImport-BulkWriter',
+        symbol: 'DataImport.BulkWriter',
+        source: { file: 'milvus/bulkwriter/BulkWriter.ts', line: 19 },
+        reason: 'constructor surface changed',
+        organization: {
+          profileId: 'node-stateful-class', profileVersion: 1, role: 'class', classStableId,
+        },
+      },
+      ...methodNames.map((name, index) => ({
+        type: 'CREATE',
+        stableId: `${classStableId}:${name}`,
+        canonicalSlug: `DataImport-BulkWriter-${name}`,
+        symbol: `DataImport.BulkWriter.${name}`,
+        source: { file: 'milvus/bulkwriter/BulkWriter.ts', line: 84 + index * 10 },
+        reason: 'new public Function',
+        organization: {
+          profileId: 'node-stateful-class', profileVersion: 1, role: 'method', classStableId,
+        },
+      })),
+    ],
+  });
+  const candidates = {
+    'DataImport-BulkWriter': {
+      category: 'DataImport',
+      kind: 'class',
+      folderToken: 'folder-bulk-writer',
+      existingRecord: {
+        recordId: 'rec-bulk-writer',
+        documentToken: 'doc-bulk-writer-v26',
+        parentRecordId: 'rec-data-import',
+        placement: {
+          verified: true,
+          version: 'v2.6.x',
+          folderToken: 'folder-data-import-v26',
+          referencedByOlderVersions: true,
+        },
+      },
+      copySource: {
+        documentToken: 'doc-bulk-writer-v26',
+        link: 'https://docs.example/docx/doc-bulk-writer-v26',
+      },
+      summary: 'Writes rows into import-ready files.',
+      example: { code: 'const writer = new BulkWriter(options);' },
+    },
+    ...Object.fromEntries(methodNames.map((name) => [`DataImport-BulkWriter-${name}`, {
+      category: 'DataImport',
+      kind: 'method',
+      folderToken: 'folder-bulk-writer',
+      existingRecordLookup: absentLookup({
+        canonicalSlug: `DataImport-BulkWriter-${name}`,
+        title: `${name}()`,
+        parentRecordId: 'rec-bulk-writer',
+      }),
+      summary: `${name} performs a BulkWriter operation.`,
+      signature: `writer.${name}()`,
+      params: [],
+      result: { type: 'Promise<void>', description: 'Completes when the operation finishes.' },
+      example: { code: `await writer.${name}();` },
+    }])),
+  };
+  const candidateSpec = {
+    language: 'node',
+    track: 'v3.0.x',
+    target: {
+      version: 'v3.0.x',
+      versionRootToken: 'root-v30',
+      folders: { DataImport: 'folder-data-import' },
+      releasePlacement: {
+        configuredRootToken: 'node-sdk-container',
+        configuredRootKind: 'container',
+        actualReleaseFolderToken: 'root-v30',
+        actualReleaseFolderName: 'v3.0.0',
+        targetVersion: 'v3.0.x',
+        verified: true,
+      },
+    },
+    candidates,
+  };
+
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    (error) => error.code === 'ORGANIZATION_REVIEW_REQUIRED',
+  );
+
+  candidateSpec.organizations = [organization];
+  const releasePlacement = candidateSpec.target.releasePlacement;
+  delete candidateSpec.target.releasePlacement;
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' }),
+    (error) => error.code === 'RELEASE_PLACEMENT_REQUIRED',
+  );
+  candidateSpec.target.releasePlacement = releasePlacement;
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference: '' });
+  assert.equal(result.selectedCount, 5);
+  for (const action of result.filteredScope.actions) {
+    assert.deepEqual(action.planningContext.organization, organization);
+    assert.deepEqual(action.planningContext.organizationInventory, sourceInventory);
+    assert.deepEqual(action.planningContext.releasePlacement, candidateSpec.target.releasePlacement);
+  }
+
+  const inheritedMethodScope = JSON.parse(JSON.stringify(releaseScope));
+  inheritedMethodScope.actions.find((action) => action.stableId === `${classStableId}:append`).type = 'UPDATE';
+  const inheritedMethodSpec = JSON.parse(JSON.stringify(candidateSpec));
+  inheritedMethodSpec.candidates['DataImport-BulkWriter-append'] = {
+    ...inheritedMethodSpec.candidates['DataImport-BulkWriter-append'],
+    existingRecord: {
+      recordId: 'rec-append-v30',
+      documentToken: 'doc-append-v26',
+      parentRecordId: 'rec-data-import',
+      placement: {
+        verified: true,
+        version: 'v2.6.x',
+        folderToken: 'folder-bulk-writer-v26',
+        referencedByOlderVersions: true,
+      },
+    },
+    copySource: {
+      documentToken: 'doc-append-v26',
+      link: 'https://docs.example/docx/doc-append-v26',
+    },
+  };
+  delete inheritedMethodSpec.candidates['DataImport-BulkWriter-append'].existingRecordLookup;
+  const inheritedResult = buildReviewedReleaseContext({
+    releaseScope: inheritedMethodScope,
+    candidateSpec: inheritedMethodSpec,
+    sdkReference: '',
+  });
+  assert.equal(
+    inheritedResult.filteredScope.actions.find((action) => action.stableId === `${classStableId}:append`)
+      .planningContext.target.parentRecordId,
+    'rec-bulk-writer',
+  );
+});
+
 test('identity normalizer fans one helper change out to each owning interface', () => {
   const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'java-v30.json'));
   const normalized = normalizeDeltas({

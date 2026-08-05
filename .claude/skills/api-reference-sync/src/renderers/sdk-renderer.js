@@ -13,16 +13,22 @@ function semantic(role, key = null, extra = {}) {
   return { metadata: { role, ...(key && { key }), ...extra } };
 }
 
-function proseInlines(value, baseMarks = []) {
+function proseInlines(value, baseMarks = [], links = []) {
   const source = String(value);
   const children = [];
+  const linksByText = new Map((Array.isArray(links) ? links : [])
+    .filter((link) => link && typeof link.text === 'string' && isSafeUrl(link.url))
+    .map((link) => [link.text, link.url]));
   const pattern = /`([^`\n]+)`|\*\*([^*\n]+)\*\*/g;
   let cursor = 0;
   let match;
   while ((match = pattern.exec(source)) !== null) {
     if (match.index > cursor) children.push(text(source.slice(cursor, match.index), baseMarks));
     if (match[1] !== undefined) {
-      children.push(text(match[1], [...new Set([...baseMarks, 'inlineCode'])]));
+      const url = linksByText.get(match[1]);
+      children.push(url
+        ? ir.citation(match[1], url)
+        : text(match[1], [...new Set([...baseMarks, 'inlineCode'])]));
     } else {
       children.push(text(match[2], [...new Set([...baseMarks, 'bold'])]));
     }
@@ -431,7 +437,10 @@ function renderExamples(document, policy) {
     const baseHeading = policy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();
     const distinctTitle = example.title
       && ![baseHeading, baseHeading.replace(/s$/, '')].includes(example.title.toLowerCase());
-    if (policy.showExampleTitles !== false && (document.examples.length > 1 || distinctTitle)) {
+    const showExampleTitle = typeof policy.showExampleTitles === 'function'
+      ? policy.showExampleTitles(document, example, index)
+      : policy.showExampleTitles !== false && (document.examples.length > 1 || distinctTitle);
+    if (showExampleTitle) {
       blocks.push(heading(3, example.title, semantic('example-heading', exampleKey)));
     }
     if (example.description) {
@@ -460,6 +469,19 @@ function renderNotes(document) {
   ];
 }
 
+function renderSummaryCallouts(document) {
+  if (!Array.isArray(document.summaryCallouts)) return [];
+  return document.summaryCallouts.map((callout, index) => ir.callout(
+    [ir.paragraph(proseInlines(callout.text, [], callout.links))],
+    {
+      kind: callout.kind || 'note',
+      ...(callout.emoji !== undefined ? { emoji: callout.emoji } : {}),
+      ...(callout.title !== undefined ? { title: callout.title } : {}),
+      ...semantic('summary', String(index)),
+    },
+  ));
+}
+
 function renderRelatedSection(document) {
   const related = renderRelated(document.related || []);
   return related ? [heading(2, 'Related', semantic('related-section')), related] : [];
@@ -470,7 +492,10 @@ function createSdkRenderer(policy) {
   const frozenPolicy = Object.freeze({ ...policy });
   function render(document, context = {}) {
     const sections = {
-      summary: [paragraph(document.summary, [], semantic('summary'))],
+      summary: [
+        paragraph(document.summary, [], semantic('summary')),
+        ...renderSummaryCallouts(document),
+      ],
       audience: renderAudience(document, frozenPolicy),
       'canonical-signature': renderCanonicalSignatures(document, frozenPolicy),
       request: renderRequest(document, frozenPolicy, context),

@@ -450,7 +450,7 @@ class MarkdownToFeishu {
 
         // Parse content
         if (content) {
-            const contentText = $.text();
+            const contentText = admonition.text().trim();
             children.push({
                 block_type: this.block_type_map.text,
                 text: {
@@ -463,7 +463,8 @@ class MarkdownToFeishu {
         return {
             block_type: this.block_type_map.callout,
             callout: {
-                emoji_id: emoji_map[icon] || 'blue_book'
+                emoji_id: emoji_map[icon] || 'blue_book',
+                ...(icon === '📘' && { background_color: 2, border_color: 2 })
             },
             children: children
         };
@@ -1927,6 +1928,9 @@ class MarkdownToFeishu {
             ...((effectivePatchPlan.preservedBlockIds || []).length > 0 && {
                 preservedBlockIds: [...effectivePatchPlan.preservedBlockIds],
             }),
+            ...((effectivePatchPlan.preservedPlacements || []).length > 0 && {
+                preservedPlacements: effectivePatchPlan.preservedPlacements.map((placement) => ({ ...placement })),
+            }),
         };
         const operationIndex = (operation) => {
             if (Number.isInteger(operation.insertAt)) return operation.insertAt;
@@ -1940,6 +1944,109 @@ class MarkdownToFeishu {
             const rightIndex = operationIndex(right);
             return rightIndex - leftIndex;
         });
+
+        if (effectivePatchPlan.strategy === 'ordered-section-replacement') {
+            const deletionIndex = (operation) => {
+                const indexes = (operation.deleteBlockIds || [])
+                    .map((id) => effectiveExpectedChildren.indexOf(id))
+                    .filter((index) => index >= 0);
+                return indexes.length > 0 ? Math.min(...indexes) : Number.NEGATIVE_INFINITY;
+            };
+            const deletions = effectivePatchPlan.operations
+                .filter((operation) => (operation.deleteBlockIds || []).length > 0)
+                .sort((left, right) => deletionIndex(right) - deletionIndex(left));
+            for (const operation of deletions) {
+                const deleted = await this.__delete_child_blocks_by_id({
+                    document_id,
+                    parentBlock: pageBlock,
+                    childBlockIds: operation.deleteBlockIds,
+                });
+                result.deleted += deleted;
+                result.unchanged -= deleted;
+                const refreshedBlocks = await this.get_document_blocks(document_id);
+                pageBlock = refreshedBlocks.find(block => block.block_type === 1);
+                if (!pageBlock) {
+                    const error = new Error('Page block disappeared while applying API patch');
+                    error.code = 'API_PATCH_PAGE_MISSING';
+                    throw error;
+                }
+            }
+            const insertions = effectivePatchPlan.operations
+                .filter((operation) => (operation.blocks || []).length > 0)
+                .sort((left, right) => left.insertAt - right.insertAt);
+            const placements = [...(effectivePatchPlan.preservedPlacements || [])]
+                .sort((left, right) => left.insertAt - right.insertAt);
+            if (placements.length > 0) {
+                const actualPreserved = pageBlock.children || [];
+                const expectedPreserved = placements.map((placement) => placement.blockId);
+                if (JSON.stringify(actualPreserved) !== JSON.stringify(expectedPreserved)) {
+                    const error = new Error('Reviewed preserved blocks did not collapse into the approved order');
+                    error.code = 'API_PATCH_PRESERVED_PLACEMENT_FAILED';
+                    error.details = { expectedPreserved, actualPreserved };
+                    throw error;
+                }
+                const desiredBlocks = [];
+                let desiredIndex = 0;
+                for (const operation of insertions) {
+                    if (operation.insertAt !== desiredIndex) {
+                        const error = new Error('Reviewed preserved placement requires a complete desired replacement');
+                        error.code = 'INVALID_API_PATCH_PLAN';
+                        error.details = { expectedInsertAt: desiredIndex, actualInsertAt: operation.insertAt };
+                        throw error;
+                    }
+                    desiredBlocks.push(...this.__sanitize_api_patch_block(operation.blocks || []));
+                    desiredIndex += operation.blocks.length;
+                }
+                let desiredCursor = 0;
+                let preservedBefore = 0;
+                for (const placement of placements) {
+                    const segment = desiredBlocks.slice(desiredCursor, placement.insertAt);
+                    if (segment.length > 0) {
+                        await this.create_blocks({
+                            document_id,
+                            blocks: segment,
+                            startIndex: desiredCursor + preservedBefore,
+                        });
+                        const refreshedBlocks = await this.get_document_blocks(document_id);
+                        pageBlock = refreshedBlocks.find(block => block.block_type === 1);
+                        if (!pageBlock) {
+                            const error = new Error('Page block disappeared while applying API patch');
+                            error.code = 'API_PATCH_PAGE_MISSING';
+                            throw error;
+                        }
+                    }
+                    desiredCursor = placement.insertAt;
+                    preservedBefore += 1;
+                }
+                const tail = desiredBlocks.slice(desiredCursor);
+                if (tail.length > 0) {
+                    await this.create_blocks({
+                        document_id,
+                        blocks: tail,
+                        startIndex: desiredCursor + preservedBefore,
+                    });
+                }
+                result.created += desiredBlocks.length;
+                return result;
+            }
+            for (const operation of insertions) {
+                const blocks = this.__sanitize_api_patch_block(operation.blocks || []);
+                await this.create_blocks({
+                    document_id,
+                    blocks,
+                    startIndex: Math.min(operation.insertAt, (pageBlock.children || []).length),
+                });
+                result.created += blocks.length;
+                const refreshedBlocks = await this.get_document_blocks(document_id);
+                pageBlock = refreshedBlocks.find(block => block.block_type === 1);
+                if (!pageBlock) {
+                    const error = new Error('Page block disappeared while applying API patch');
+                    error.code = 'API_PATCH_PAGE_MISSING';
+                    throw error;
+                }
+            }
+            return result;
+        }
 
         for (const operation of operations) {
             let mutated = false;

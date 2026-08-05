@@ -169,6 +169,21 @@ test('constructors preserve supplied boolean values for validation instead of co
   }
 });
 
+test('summary callout links require safe usable URLs', () => {
+  const doc = completeMethod({
+    summaryCallouts: [{
+      text: 'Use `replacement()` instead.',
+      links: [{ text: 'replacement()', url: 'javascript:alert(1)' }],
+    }],
+  });
+
+  const errors = validateReferenceDocument(doc).errors;
+  assert.ok(errors.some((error) => (
+    error.path === '$.summaryCallouts[0].links[0].url'
+    && error.code === 'INVALID_SUMMARY_CALLOUT'
+  )));
+});
+
 test('production Python examples require one argument per line in multi-argument keyword calls', () => {
   const compact = completeMethod({
     identity: {

@@ -297,8 +297,8 @@ test('orders delete-only sections by their approved live position before lower r
 
   assert.deepEqual(calls, [
     ['delete', ['examples', 'example-code']],
-    ['create', 3],
     ['delete', ['returns', 'returns-value']],
+    ['create', 1],
   ]);
 });
 
@@ -338,9 +338,105 @@ test('refetches the live parent children after insertion before deleting approve
   await m2f.apply_api_patch({ document_id: 'doc-1', patchPlan });
 
   assert.deepEqual(calls, [
-    ['create', 1],
     ['delete', ['parameters', 'param']],
+    ['create', 1],
   ]);
+});
+
+test('applies ordered structural patches without placing a new trailing section before an unchanged section', async () => {
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const page = {
+    block_id: 'page',
+    block_type: 1,
+    children: ['summary', 'old-request-1', 'old-request-2', 'examples'],
+  };
+  m2f.get_document_blocks = async () => [page];
+  m2f.__delete_child_blocks_by_id = async (input) => {
+    page.children = page.children.filter((id) => !input.childBlockIds.includes(id));
+    return input.childBlockIds.length;
+  };
+  m2f.create_blocks = async (input) => {
+    const createdIds = input.blocks.map((entry) => {
+      const container = entry.text || entry.heading2;
+      return container.elements[0].text_run.content;
+    });
+    page.children.splice(input.startIndex, 0, ...createdIds);
+    return { created: input.blocks.length };
+  };
+
+  await m2f.apply_api_patch({
+    document_id: 'doc-1',
+    patchPlan: {
+      strategy: 'ordered-section-replacement',
+      currentModel: { pageBlockId: 'page', topLevelBlockIds: [...page.children] },
+      operations: [
+        {
+          type: 'replace-section', role: 'request', insertAt: 1,
+          deleteBlockIds: ['old-request-1', 'old-request-2'],
+          blocks: [{ block_type: 2, text: { elements: [{ text_run: { content: 'new-request' } }] } }],
+        },
+        {
+          type: 'insert-section', role: 'notes', insertAt: 3,
+          deleteBlockIds: [],
+          blocks: [{ block_type: 4, heading2: { elements: [{ text_run: { content: 'notes' } }] } }],
+        },
+      ],
+      validation: { valid: true, errors: [] },
+    },
+  });
+
+  assert.deepEqual(page.children, ['summary', 'new-request', 'examples', 'notes']);
+});
+
+test('keeps an approved native callout after the opening summary during ordered replacement', async () => {
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const page = {
+    block_id: 'page',
+    block_type: 1,
+    children: ['old-summary', 'old-signature', 'old-notes', 'callout'],
+  };
+  m2f.get_document_blocks = async () => [page];
+  m2f.__delete_child_blocks_by_id = async (input) => {
+    page.children = page.children.filter((id) => !input.childBlockIds.includes(id));
+    return input.childBlockIds.length;
+  };
+  m2f.create_blocks = async (input) => {
+    const createdIds = input.blocks.map((entry) => {
+      const container = entry.text || entry.code;
+      return container.elements[0].text_run.content;
+    });
+    page.children.splice(input.startIndex, 0, ...createdIds);
+    return { created: input.blocks.length };
+  };
+
+  await m2f.apply_api_patch({
+    document_id: 'doc-1',
+    patchPlan: {
+      strategy: 'ordered-section-replacement',
+      currentModel: { pageBlockId: 'page', topLevelBlockIds: [...page.children] },
+      preservedBlockIds: ['callout'],
+      preservedPlacements: [{ blockId: 'callout', insertAt: 1 }],
+      operations: [
+        {
+          type: 'replace-section', role: 'summary', insertAt: 0,
+          deleteBlockIds: ['old-summary'],
+          blocks: [{ block_type: 2, text: { elements: [{ text_run: { content: 'summary' } }] } }],
+        },
+        {
+          type: 'replace-section', role: 'canonical-signature', insertAt: 1,
+          deleteBlockIds: ['old-signature'],
+          blocks: [{ block_type: 14, code: { elements: [{ text_run: { content: 'signature' } }] } }],
+        },
+        {
+          type: 'delete-section', role: 'notes',
+          deleteBlockIds: ['old-notes'], preserveBlockIds: ['callout'], blocks: [],
+        },
+      ],
+      validation: { valid: true, errors: [] },
+    },
+  });
+
+  assert.deepEqual(page.children, ['summary', 'callout', 'signature']);
 });
 
 test('full-body rebuild keeps approved rich blocks and inserts desired sections around them', async () => {

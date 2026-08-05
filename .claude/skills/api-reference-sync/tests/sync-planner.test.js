@@ -82,6 +82,74 @@ function planningContext(overrides = {}) {
   };
 }
 
+function bulkWriterOrganization() {
+  return {
+    schemaVersion: 1,
+    profileId: 'node-stateful-class',
+    profileVersion: 1,
+    reviewed: true,
+    groupingChange: true,
+    classRecord: {
+      stableId: 'node:DataImport:BulkWriter',
+      title: 'BulkWriter',
+      recordId: 'rec-bulk-writer',
+      recordType: 'Class',
+      docsResourceType: 'docx',
+      parentRecordId: 'rec-data-import',
+      parentRecordType: 'VirtualNode',
+      virtualNode: false,
+    },
+    drive: {
+      layout: 'same_named_class_folder',
+      folderName: 'BulkWriter',
+      folderToken: 'folder-bulk-writer',
+      landingDocumentInside: true,
+      methodDocumentsInside: true,
+    },
+    methodInventory: {
+      complete: true,
+      publicMethodStableIds: [
+        'node:DataImport:BulkWriter:append',
+        'node:DataImport:BulkWriter:commit',
+        'node:DataImport:BulkWriter:close',
+        'node:DataImport:BulkWriter:writeFrom',
+      ],
+    },
+    methods: ['append', 'commit', 'close', 'writeFrom'].map((name) => ({
+      stableId: `node:DataImport:BulkWriter:${name}`,
+      title: `${name}()`,
+      recordType: 'Function',
+      parentRecordId: 'rec-bulk-writer',
+    })),
+  };
+}
+
+function bulkWriterInventory(overrides = {}) {
+  const organization = bulkWriterOrganization();
+  return {
+    schemaVersion: 1,
+    classStableId: organization.classRecord.stableId,
+    profileId: organization.profileId,
+    profileVersion: organization.profileVersion,
+    classSourceIdentity: 'DataImport.BulkWriter',
+    publicMethodStableIds: [...organization.methodInventory.publicMethodStableIds],
+    publicMethodSourceIdentities: [
+      'DataImport.BulkWriter.append',
+      'DataImport.BulkWriter.close',
+      'DataImport.BulkWriter.commit',
+      'DataImport.BulkWriter.writeFrom',
+    ],
+    source: {
+      sdk: 'milvus2-sdk-node',
+      track: 'v3.0.x',
+      revision: 'v3.0.4',
+      scanner: 'node-scanner',
+    },
+    inventoryDigest: 'sha256:scanner-bound-inventory',
+    ...overrides,
+  };
+}
+
 function condition(plan, type) {
   return plan.preconditions.find((entry) => entry.type === type);
 }
@@ -103,13 +171,21 @@ test('SyncPlanner plans CREATE from reviewed validated content with an exact SHA
   assert.equal(plan.stableId, 'node:Collections:createCollection');
   assert.equal(plan.artifactDigest, `sha256:${expected}`);
   assert.deepEqual(plan.source, {
-    version: null, recordId: null, documentToken: null, folderToken: null,
+    version: null,
+    recordId: null,
+    documentToken: null,
+    folderToken: null,
+    parentRecordId: null,
+    recordType: null,
+    docsResourceType: 'docx',
   });
   assert.deepEqual(plan.target, {
     version: 'v2.6.x',
     parentRecordId: 'parent-v26',
     folderToken: 'collections-v26',
     versionRootToken: 'root-v26',
+    releaseVersion: 'v2.6.x',
+    documentHomeVersion: null,
   });
   assert.deepEqual(condition(plan, 'CURRENT_RECORD'), { type: 'CURRENT_RECORD', expected: 'ABSENT' });
   assert.deepEqual(condition(plan, 'CURRENT_DOCUMENT_TOKEN'), {
@@ -124,6 +200,133 @@ test('SyncPlanner plans CREATE from reviewed validated content with an exact SHA
   assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'TARGET_LINK'), {
     type: 'TARGET_LINK', recordId: 'NEW_RECORD_ID', documentToken: 'NEW_DOCUMENT_TOKEN',
   });
+});
+
+test('SyncPlanner rejects a reviewed Node stateful class that targets the category folder', () => {
+  const action = updateAction({
+    stableId: 'node:DataImport:BulkWriter',
+    slug: 'DataImport-BulkWriter',
+    symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
+  });
+  const context = planningContext({
+    organization: bulkWriterOrganization(),
+    organizationInventory: bulkWriterInventory(),
+    target: {
+      version: 'v3.0.x',
+      parentRecordId: 'rec-data-import',
+      folderToken: 'folder-data-import',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-bulk-writer',
+      documentToken: 'doc-bulk-writer',
+      folderToken: 'folder-data-import-v26',
+      parentRecordId: 'rec-data-import-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+  });
+
+  assert.throws(
+    () => new SyncPlanner().planAction(action, context),
+    (error) => error.code === 'CLASS_FOLDER_TARGET_MISMATCH',
+  );
+});
+
+test('SyncPlanner binds reviewed organization and release placement contracts into the immutable plan', () => {
+  const organization = bulkWriterOrganization();
+  const releasePlacement = {
+    configuredRootToken: 'node-sdk-container',
+    configuredRootKind: 'container',
+    actualReleaseFolderToken: 'root-v30',
+    actualReleaseFolderName: 'v3.0.0',
+    targetVersion: 'v3.0.x',
+    verified: true,
+  };
+  const action = updateAction({
+    stableId: 'node:DataImport:BulkWriter',
+    slug: 'DataImport-BulkWriter',
+    symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
+  });
+  const plan = new SyncPlanner().planAction(action, planningContext({
+    organization,
+    organizationInventory: bulkWriterInventory(),
+    releasePlacement,
+    target: {
+      version: 'v3.0.x',
+      parentRecordId: 'rec-data-import',
+      folderToken: 'folder-bulk-writer',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-bulk-writer',
+      documentToken: 'doc-bulk-writer',
+      folderToken: 'folder-data-import-v26',
+      parentRecordId: 'rec-data-import-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    copySource: {
+      documentToken: 'doc-bulk-writer',
+      link: 'https://docs.example/docx/doc-bulk-writer',
+      title: 'BulkWriter',
+    },
+  }));
+
+  assert.deepEqual(plan.organization, organization);
+  assert.deepEqual(plan.organizationInventory, bulkWriterInventory());
+  assert.deepEqual(plan.releasePlacement, releasePlacement);
+  assert.equal(plan.target.folderToken, 'folder-bulk-writer');
+  assert.equal(plan.target.versionRootToken, 'root-v30');
+  assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'TARGET_RECORD_TYPE'), {
+    type: 'TARGET_RECORD_TYPE', expected: 'Class', docsResourceType: 'docx',
+  });
+});
+
+test('SyncPlanner rejects organization plans that omit or contradict scanner-derived inventory', () => {
+  const organization = bulkWriterOrganization();
+  const action = updateAction({
+    stableId: 'node:DataImport:BulkWriter',
+    slug: 'DataImport-BulkWriter',
+    symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
+  });
+  const context = planningContext({
+    organization,
+    target: {
+      version: 'v3.0.x',
+      parentRecordId: 'rec-data-import',
+      folderToken: 'folder-bulk-writer',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-bulk-writer',
+      documentToken: 'doc-bulk-writer',
+      folderToken: 'folder-data-import-v26',
+      parentRecordId: 'rec-data-import-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+  });
+
+  assert.throws(
+    () => new SyncPlanner().planAction(action, context),
+    (error) => error.code === 'SOURCE_ORGANIZATION_INVENTORY_REQUIRED',
+  );
+  assert.throws(
+    () => new SyncPlanner().planAction(action, {
+      ...context,
+      organizationInventory: bulkWriterInventory({
+        publicMethodStableIds: ['node:DataImport:BulkWriter:append'],
+      }),
+    }),
+    (error) => error.code === 'METHOD_SOURCE_INVENTORY_MISMATCH',
+  );
 });
 
 test('SyncPlanner rejects writes without a target parent record', () => {
@@ -361,6 +564,75 @@ test('changed inherited Python docs plan as copy-patch-repoint with source prese
   }
 });
 
+test('unchanged inherited Node docs plan a Bitable-only reparent without copying or patching the Docx', () => {
+  const organization = bulkWriterOrganization();
+  organization.groupingChange = true;
+  organization.drive.folderToken = 'folder-bulk-writer-v26';
+  const action = {
+    type: 'SKIP',
+    stableId: 'node:DataImport:BulkWriter:append',
+    slug: 'DataImport-BulkWriter-append',
+    reason: 'No source content changes detected',
+    symbol: { name: 'append', identity: { stableId: 'node:DataImport:BulkWriter:append' } },
+    doc: {
+      id: 'rec-append-v30',
+      metadata: {
+        token: 'doc-append-v26',
+        version: 'v2.6.x',
+        folderToken: 'folder-bulk-writer-v26',
+        parentRecordId: 'rec-data-import-v30',
+        type: 'Function',
+        docsResourceType: 'docx',
+      },
+    },
+  };
+  const plan = new SyncPlanner().planAction(action, planningContext({
+    artifact: undefined,
+    organization,
+    organizationInventory: bulkWriterInventory(),
+    releasePlacement: {
+      configuredRootToken: 'node-sdk-container',
+      configuredRootKind: 'container',
+      actualReleaseFolderToken: 'root-v30',
+      actualReleaseFolderName: 'v3.0.0',
+      targetVersion: 'v3.0.x',
+      verified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-append-v30',
+      documentToken: 'doc-append-v26',
+      folderToken: 'folder-bulk-writer-v26',
+      parentRecordId: 'rec-data-import-v30',
+      recordType: 'Function',
+      docsResourceType: 'docx',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: {
+      version: 'v3.0.x',
+      releaseVersion: 'v3.0.x',
+      documentHomeVersion: 'v2.6.x',
+      parentRecordId: 'rec-bulk-writer',
+      folderToken: 'folder-bulk-writer-v26',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+  }));
+
+  assert.equal(plan.action, 'UPDATE_RECORD_METADATA');
+  assert.equal(plan.source.documentToken, 'doc-append-v26');
+  assert.equal(plan.target.releaseVersion, 'v3.0.x');
+  assert.equal(plan.target.documentHomeVersion, 'v2.6.x');
+  assert.equal(plan.copySource, undefined);
+  assert.equal(plan.artifactDigest, null);
+  assert.deepEqual(plan.postconditions, [
+    { type: 'TARGET_LINK', recordId: 'rec-append-v30', documentToken: 'doc-append-v26' },
+    { type: 'TARGET_PARENT', parentRecordId: 'rec-bulk-writer' },
+    { type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' },
+  ]);
+});
+
 test('cross-version plans preserve the older source document and link', () => {
   const plan = new SyncPlanner().planAction(updateAction(), planningContext({
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
@@ -372,6 +644,9 @@ test('cross-version plans preserve the older source document and link', () => {
     recordId: 'rec-v26',
     documentToken: 'doc-v26',
     folderToken: 'collections-v25',
+    parentRecordId: 'parent-v26',
+    recordType: null,
+    docsResourceType: 'docx',
   });
   assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'OLDER_SOURCE_UNCHANGED'), {
     type: 'OLDER_SOURCE_UNCHANGED',

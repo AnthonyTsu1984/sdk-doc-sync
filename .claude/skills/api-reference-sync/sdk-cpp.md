@@ -12,6 +12,8 @@
 
 **Note:** C++ bitable has 8 shared VirtualNodes (targets=Milvus,Zilliz) — reuse them, do NOT create new ones. Live folder/record tokens in `memory/cpp-doc-audit.md`.
 
+The v2.6.x Drive root is a multi-version container. Use the explicit `CSzVfDgfAlne87dDj3vcnR3nnsg` v2.6.x child folder for placement and inheritance checks, not the whole `PImWfhhIaleQUZd3qrWcsIgOncb` container.
+
 ## Release Scanning
 
 Use release scout first:
@@ -106,6 +108,14 @@ For DML methods that accept `FieldDataPtr` values, keep schema identities and pa
 - Link payload mappings to the canonical `DataType` document. A shared `DataType` document should name `Insert()` and `Upsert()` without linking to one version-specific method document.
 
 **Independent types only:** A type receives its own page only when the scanner and identity ownership harness classify it as an explicitly reviewed standalone concept, such as an independently used enum or domain model.
+
+## Bitable And Page Profiles
+
+- The current C++ v2.6.x and v3.0.x Bitables are flat beneath category VirtualNodes: Function, Class, Enum, and legacy lowercase `method`/`enum` records do not currently form `Class -> Function` navigation.
+- C++ method pages own their request-builder and structured result contracts. Complex methods such as `Search()` embed request/result/helper H3 sections and may use a compact mapping table; do not create child records for those helpers.
+- Schema/domain Class pages such as `CollectionSchema` keep their callable members inline under Methods-style sections. Config classes such as `ConnectParam` may instead use Request Syntax plus PARAMETERS and REQUEST METHODS.
+- Enum pages follow the established C++ VALUES/member profile, which may include type groupings, examples, and notes; do not substitute the Node/Python Constants list mechanically.
+- Do not introduce `Class -> Function` for C++ solely because Python, Java, or Go use it. Such a change requires C++-specific examples and an explicit grouping review.
 
 **Notes:**
 - Request Syntax uses chained constructor format (`auto request = Class()\n    .With...;`), NOT two-step, and contains no descriptive prose

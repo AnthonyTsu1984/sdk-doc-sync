@@ -426,6 +426,30 @@ test('SyncExecutor creates a target document before creating the Bitable record'
   assert.equal(result.completedSteps.at(-1), 'createRecord');
 });
 
+test('SyncExecutor uses the reviewed organization record type for child creation', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const createPlan = Object.freeze({
+    ...plan('CREATE', planningContext({ current: null })),
+    organization: {
+      classRecord: { stableId: 'node:Collections:Client', recordType: 'Class' },
+      methods: [{ stableId: 'node:Collections:createCollection', recordType: 'Function' }],
+    },
+  });
+  const reviewedArtifact = {
+    ...artifact(),
+    metadata: { ...artifact().metadata, type: 'Class' },
+  };
+
+  const result = await executor.execute(createPlan, {
+    artifact: reviewedArtifact,
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(calls.find((entry) => entry[0] === 'createRecord')[1].type, 'Function');
+});
+
 test('SyncExecutor builds a document URL fallback from document_id before writing Bitable', async () => {
   const { calls, bitableWriter } = spies();
   const documentWriter = {
@@ -1008,9 +1032,11 @@ test('copy-patch-repoint captures rollback data and verifies document before rec
       return { ok: true };
     },
   };
+  let updatedFields = null;
   const bitableWriter = {
-    async updateRecord() {
+    async updateRecord(_recordId, fields) {
       calls.push('updateRecord');
+      updatedFields = fields;
       return { recordId: 'record-1' };
     },
   };
@@ -1040,6 +1066,7 @@ test('copy-patch-repoint captures rollback data and verifies document before rec
       link: 'https://zilliverse.feishu.cn/docx/old-doc',
     },
     target: { version: 'v2.6.x', parentRecordId: 'parent-1', folderToken: 'folder-1' },
+    postconditions: [{ type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' }],
     artifactDigest: 'digest',
   }), {
     approval: { approved: true },
@@ -1051,6 +1078,7 @@ test('copy-patch-repoint captures rollback data and verifies document before rec
   assert.deepEqual(result.completedSteps, ['captureRollback', 'copyDocument', 'patchDocument', 'verifyDocument', 'updateRecord', 'verify']);
   assert.equal(result.rollback.historyVersionId, 'history-1');
   assert.deepEqual(result.documentVerification, { ok: true, errors: [] });
+  assert.equal(updatedFields.type, 'Function');
 });
 
 test('document verification failure prevents updateRecord after copy and patch', async () => {
@@ -1229,6 +1257,100 @@ test('SyncVerifier confirms target document, record link, metadata, and older so
   assert.deepEqual(verification.errors, []);
 });
 
+test('SyncExecutor applies reviewed Bitable-only parent and Type changes without touching the inherited Docx', async () => {
+  const calls = [];
+  const metadataPlan = Object.freeze({
+    schemaVersion: 1,
+    action: 'UPDATE_RECORD_METADATA',
+    stableId: 'node:DataImport:BulkWriter:append',
+    artifactDigest: null,
+    source: {
+      version: 'v2.6.x',
+      recordId: 'rec-append-v30',
+      documentToken: 'doc-append-v26',
+      folderToken: 'folder-bulk-writer-v26',
+    },
+    target: {
+      version: 'v3.0.x',
+      releaseVersion: 'v3.0.x',
+      documentHomeVersion: 'v2.6.x',
+      parentRecordId: 'rec-bulk-writer',
+      folderToken: 'folder-bulk-writer-v26',
+      versionRootToken: 'root-v30',
+    },
+    dependencies: [],
+    preconditions: [],
+    postconditions: [
+      { type: 'TARGET_LINK', recordId: 'rec-append-v30', documentToken: 'doc-append-v26' },
+      { type: 'TARGET_PARENT', parentRecordId: 'rec-bulk-writer' },
+      { type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' },
+    ],
+    metadata: { diffAction: 'SKIP', organizationOnly: true },
+  });
+  const executor = new SyncExecutor({
+    documentWriter: {
+      async createDocument() { throw new Error('must not create'); },
+      async copyDocument() { throw new Error('must not copy'); },
+      async patchDocument() { throw new Error('must not patch'); },
+    },
+    bitableWriter: {
+      async updateRecord(recordId, fields) {
+        calls.push([recordId, fields]);
+        return { record_id: recordId, fields };
+      },
+    },
+  });
+
+  const result = await executor.execute(metadataPlan, { approval: { approved: true } });
+
+  assert.equal(result.status, 'success');
+  assert.deepEqual(calls, [[
+    'rec-append-v30',
+    {
+      parentRecordId: 'rec-bulk-writer',
+      progress: 'WIP',
+      targets: [],
+      type: 'Function',
+    },
+  ]]);
+  assert.deepEqual(result.completedSteps, ['updateRecord']);
+});
+
+test('SyncExecutor applies reviewed parent and Type changes after an in-place content patch', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const basePlan = plan('UPDATE');
+  const typedPlan = Object.freeze({
+    ...basePlan,
+    target: { ...basePlan.target, parentRecordId: 'rec-bulk-writer' },
+    postconditions: [
+      ...basePlan.postconditions.filter((entry) => entry.type !== 'TARGET_PARENT'),
+      { type: 'TARGET_PARENT', parentRecordId: 'rec-bulk-writer' },
+      { type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' },
+    ],
+  });
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(typedPlan, {
+    artifact: artifact(),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'success');
+  const update = calls.find((entry) => entry[0] === 'updateRecord');
+  assert.equal(update[2].parentRecordId, 'rec-bulk-writer');
+  assert.equal(update[2].type, 'Function');
+});
+
+test('SyncVerifier fails closed when required live document or record readers are missing', async () => {
+  const verification = await new SyncVerifier().verify(plan('UPDATE'));
+
+  assert.equal(verification.ok, false);
+  assert.deepEqual(verification.errors.map((error) => error.code).sort(), [
+    'DOCUMENT_READER_REQUIRED',
+    'RECORD_READER_REQUIRED',
+  ]);
+});
+
 test('SyncVerifier reports postcondition drift with actionable errors', async () => {
   const verifier = new SyncVerifier({
     async readDocument() { return { token: 'doc-new', folderToken: 'wrong-folder' }; },
@@ -1244,6 +1366,39 @@ test('SyncVerifier reports postcondition drift with actionable errors', async ()
   assert.ok(verification.errors.some((error) => error.code === 'TARGET_LINK'));
   assert.ok(verification.errors.some((error) => error.code === 'TARGET_PARENT'));
   assert.ok(verification.errors.some((error) => error.code === 'TARGET_VERSION'));
+});
+
+test('SyncVerifier enforces reviewed Bitable record type and Docs resource type', async () => {
+  const basePlan = plan('UPDATE');
+  const typedPlan = {
+    ...basePlan,
+    postconditions: [
+      ...basePlan.postconditions,
+      { type: 'TARGET_RECORD_TYPE', expected: 'Class', docsResourceType: 'docx' },
+    ],
+  };
+  const verifier = new SyncVerifier({
+    async readDocument(token) {
+      return { token, folderToken: 'collections-v26', digest: typedPlan.artifactDigest };
+    },
+    async readRecord(recordId) {
+      return {
+        recordId,
+        documentToken: 'doc-v26',
+        parentRecordId: 'parent-v26',
+        version: 'v2.6.x',
+        type: 'VirtualNode',
+        resourceType: 'folder',
+      };
+    },
+  });
+
+  const verification = await verifier.verify(typedPlan, {
+    patchedDocument: { token: 'doc-v26' },
+  });
+  assert.equal(verification.ok, false);
+  assert.ok(verification.errors.some((error) => error.code === 'TARGET_RECORD_TYPE'));
+  assert.ok(verification.errors.some((error) => error.code === 'TARGET_DOCS_RESOURCE_TYPE'));
 });
 
 test('SyncVerifier verifies deprecation metadata postconditions', async () => {
@@ -1331,6 +1486,36 @@ test('FeishuOperationalVerifier rejects malformed semantic layout and missing pr
   assert.equal(verification.ok, false);
   assert.ok(verification.errors.some((error) => error.code === 'BODY_TITLE_PRESENT'));
   assert.ok(verification.errors.some((error) => error.code === 'PRESERVED_BLOCK_MISSING'));
+});
+
+test('FeishuOperationalVerifier rejects a preserved block outside its approved top-level position', async () => {
+  const blocks = [
+    { block_id: 'page', block_type: 1, children: ['summary', 'request', 'request-code', 'examples', 'example-code', 'callout'], page: { elements: [] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
+    { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
+    { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
+    { block_id: 'example-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search([[0.1]])', text_element_style: {} } }], style: { language: 49 } } },
+    { block_id: 'callout', parent_id: 'page', block_type: 19, callout: {}, children: [] },
+  ];
+  const verifier = new FeishuOperationalVerifier({
+    ops: {
+      async authStatus() { return { stdout: '{}' }; },
+      async fetchDocBlocks() { return { stdout: JSON.stringify({ items: blocks }) }; },
+    },
+  });
+  const verification = await verifier.verifyDocument(Object.freeze({
+    layout: { profileId: 'python', profileVersion: 1 },
+    apiPatchPlan: {
+      desiredRoleSequence: ['summary', 'request', 'examples'],
+      preservedBlockIds: ['callout'],
+      preservedPlacements: [{ blockId: 'callout', insertAt: 1 }],
+    },
+    source: { documentToken: 'doc-1' },
+  }));
+
+  assert.equal(verification.ok, false);
+  assert.ok(verification.errors.some((error) => error.code === 'PRESERVED_BLOCK_POSITION_MISMATCH'));
 });
 
 test('FeishuOperationalVerifier accepts a valid Python semantic layout and numeric code fences', async () => {

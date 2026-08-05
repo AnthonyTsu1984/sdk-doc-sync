@@ -1,4 +1,4 @@
-const TranslationDiff = require('../../skills/sdk-doc-sync/src/feishu-doc-translator/translation-diff');
+const TranslationDiff = require('../../skills/api-reference-sync/src/feishu-doc-translator/translation-diff');
 
 function normalizeSummary(actions) {
   return actions.reduce((summary, action) => {
@@ -25,7 +25,7 @@ function classifyMetaOnly(actions) {
 }
 
 async function readLocalizationRecords(config) {
-  const BitableReader = require('../../skills/sdk-doc-sync/src/feishu-doc-translator/bitable-reader');
+  const BitableReader = require('../../skills/api-reference-sync/src/feishu-doc-translator/bitable-reader');
   const localization = config.surfaces.localization;
   const pairs = localization.sourceTableIds.map((sourceTableId, index) => ({
     sourceTableId,

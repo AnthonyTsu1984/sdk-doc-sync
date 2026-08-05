@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doc-ops-core/approval-envelope.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "skill", "operation", "batchDigest", "actionCount", "targets", "sideEffects", "decision"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "skill": { "type": "string", "minLength": 1 },
+    "operation": { "type": "string", "minLength": 1 },
+    "batchDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "actionCount": { "type": "integer", "minimum": 0 },
+    "targets": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "sideEffects": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "decision": { "const": "approved" },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" }
+  },
+  "additionalProperties": false
+}

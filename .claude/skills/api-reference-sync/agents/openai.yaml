@@ -1,0 +1,4 @@
+interface:
+  display_name: "API Reference Sync"
+  short_description: "Synchronize SDK and API reference docs"
+  default_prompt: "Use $api-reference-sync to compare the requested SDK or API release with its documentation, show the exact dry-run actions, and wait for approval before writing."

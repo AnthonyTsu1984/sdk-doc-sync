@@ -1,0 +1,9 @@
+[
+  { "id": "python-led", "assertions": { "readWorkflowBeforePort": true } },
+  { "id": "language-order", "assertions": { "order": ["Python", "Java", "Go", "JavaScript", "Bash", "Shell", "C++"], "duplicates": false } },
+  { "id": "source-evidence", "assertions": { "inventedSdkMethods": false, "broadenSearchBeforeUnsupported": true } },
+  { "id": "scoped-patch", "assertions": { "unrelatedProseChanged": false } },
+  { "id": "exact-approval", "assertions": { "batchDigestRequired": true } },
+  { "id": "round-trip", "assertions": { "refetchBlocks": true, "protectedLossAllowed": false } },
+  { "id": "no-release-scan", "assertions": { "releaseWideInventory": false } }
+]

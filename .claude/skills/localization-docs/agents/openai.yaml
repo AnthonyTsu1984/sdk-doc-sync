@@ -1,4 +1,4 @@
 interface:
-  display_name: "Localization Docs"
-  short_description: "Manage localized Feishu docs and bitables"
-  default_prompt: "Use $localization-docs to align English and localized Feishu docs from the Zilliz bitables."
+  display_name: "Localization Docs (Compatibility)"
+  short_description: "Compatibility alias for Localized Doc Sync"
+  default_prompt: "Use $localization-docs as a compatibility alias and delegate the task to $localized-doc-sync."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verified Doc Authoring"
+  short_description: "Draft docs from verified references"
+  default_prompt: "Use $verified-doc-authoring to draft or substantially revise a technical document, verify claims against Milvus or Zilliz source, and prepare an approved target update."

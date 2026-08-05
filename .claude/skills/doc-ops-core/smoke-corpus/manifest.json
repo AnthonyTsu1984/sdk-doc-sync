@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "corpusId": "doc-ops-smoke-v1",
+  "fixtureMarker": "DOC_OPS_SYNTHETIC_FIXTURE_V1",
+  "canaryPrefix": "__DOC_OPS_SMOKE__",
+  "documents": [
+    {
+      "id": "api-reference-roundtrip",
+      "title": "API Reference Round Trip",
+      "file": "documents/api-reference-roundtrip.md",
+      "patchFile": "patches/api-reference-roundtrip.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "    std::vector<int> ids{1, 2, 3};\n    return static_cast<int>(ids.size());",
+          "after": "    std::vector<int> ids{1, 2, 3};\n    ids.push_back(4);\n    return static_cast<int>(ids.size());"
+        },
+        {
+          "type": "block_insert_after",
+          "before": "- parent item\n  - child item\n    1. grandchild item",
+          "after": "- parent item\n  - child item\n    1. grandchild item\n  - patched sibling item",
+          "anchor": { "tag": "li", "text": "child item" },
+          "contentFormat": "xml",
+          "content": "<ul><li>patched sibling item</li></ul>",
+          "expectedFragment": "patched sibling item"
+        },
+        {
+          "type": "str_replace",
+          "before": "See [Milvus API reference](https://milvus.io/docs) for the published reference surface.",
+          "after": "See [Milvus API reference](https://milvus.io/docs) for the published reference surface. This sentence was added by the reviewed smoke patch."
+        }
+      ],
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["createCollection()", "#include <vector>", "Milvus API reference"],
+        "forbiddenFragments": ["PRODUCTION_TOKEN"]
+      }
+    },
+    {
+      "id": "localized-source-en",
+      "title": "Localization Source EN",
+      "file": "documents/localized-source-en.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Create a collection", "client.createCollection"],
+        "forbiddenFragments": ["创建集合"]
+      }
+    },
+    {
+      "id": "localized-target-zh",
+      "title": "Localization Target ZH",
+      "file": "documents/localized-target-zh.md",
+      "patchFile": "patches/localized-target-zh.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "contentFormat": "xml",
+          "before": "使用固定维度和仅用于测试的名称创建集合。",
+          "after": "使用固定维度和仅用于测试的名称创建集合；该页面只属于隔离的 smoke tenant。"
+        }
+      ],
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["创建集合", "client.createCollection"],
+        "forbiddenFragments": ["TODO_TRANSLATE"]
+      }
+    },
+    {
+      "id": "procedure-language-sync",
+      "title": "Procedure Language Sync",
+      "file": "documents/procedure-language-sync.md",
+      "patchFile": "patches/procedure-language-sync.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "// Deliberately incomplete in the baseline; the smoke patch fills this block only.",
+          "after": "MilvusClientV2 client = new MilvusClientV2(ConnectConfig.builder()\n    .uri(\"http://localhost:19530\")\n    .build());\nclient.createCollection(CreateCollectionReq.builder()\n    .collectionName(\"doc_ops_smoke\")\n    .dimension(8)\n    .build());"
+        }
+      ],
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Python", "Java", "child item", "include-start milvus"],
+        "forbiddenFragments": ["unrelated prose rewrite"]
+      }
+    },
+    {
+      "id": "source-verified-authoring",
+      "title": "Source Verified Authoring",
+      "file": "documents/source-verified-authoring.md",
+      "patchFile": "patches/source-verified-authoring.md",
+      "patchOperations": [
+        {
+          "type": "str_replace",
+          "before": "The verified request shape includes a `dimension` field. The default metric remains explicitly unresolved.",
+          "after": "The verified request shape includes a `dimension` field. The default metric remains explicitly unresolved and is not promoted into factual prose."
+        }
+      ],
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Claim inventory", "Verified", "https://example.invalid/source"],
+        "forbiddenFragments": ["UNVERIFIED_AS_FACT"]
+      }
+    },
+    {
+      "id": "verification-only",
+      "title": "Verification Only",
+      "file": "documents/verification-only.md",
+      "synthetic": true,
+      "expected": {
+        "requiredFragments": ["Raw block", "Scenario", "syntax-only"],
+        "forbiddenFragments": ["WRITE_BACK_APPROVED"]
+      }
+    }
+  ],
+  "scenarios": [
+    {
+      "id": "api-release-copy-patch-repoint",
+      "skill": "api-reference-sync",
+      "documentIds": ["api-reference-roundtrip"]
+    },
+    {
+      "id": "verify-without-remediation",
+      "skill": "doc-code-verify",
+      "documentIds": ["verification-only"]
+    },
+    {
+      "id": "source-target-localization",
+      "skill": "localized-doc-sync",
+      "documentIds": ["localized-source-en", "localized-target-zh"]
+    },
+    {
+      "id": "fill-missing-language-examples",
+      "skill": "procedure-code-sync",
+      "documentIds": ["procedure-language-sync"]
+    },
+    {
+      "id": "draft-from-source-evidence",
+      "skill": "verified-doc-authoring",
+      "documentIds": ["source-verified-authoring"]
+    }
+  ]
+}

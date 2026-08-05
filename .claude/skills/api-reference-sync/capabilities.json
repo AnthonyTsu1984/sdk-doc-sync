@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "skill": "api-reference-sync",
+  "mustPreserve": [
+    { "id": "api.release-range", "description": "Use the last accepted scan state and target release range.", "fixtureIds": ["release-range"] },
+    { "id": "api.ownership", "description": "Keep method-owned helper types embedded in their public owner pages.", "fixtureIds": ["ann-search-request", "response-wrapper-ownership"] },
+    { "id": "api.sparse-versioning", "description": "Preserve sparse release folders and older historical documents.", "fixtureIds": ["sparse-version-copy"] },
+    { "id": "api.phase-gates", "description": "Keep grouping, write approval, execution, and acceptance as separate gates.", "fixtureIds": ["phase-gates"] },
+    { "id": "api.scan-state", "description": "Advance scan state only after verified acceptance.", "fixtureIds": ["scan-state-acceptance"] }
+  ],
+  "mustFix": [
+    { "id": "api.exact-approval", "description": "Bind writes to one exact batch digest.", "fixtureIds": ["exact-approval"] },
+    { "id": "api.recoverable-execution", "description": "Journal and reconcile every approved action.", "fixtureIds": ["recoverable-execution"] }
+  ],
+  "forbidden": [
+    { "id": "api.no-public-class-promotion", "description": "A public class alone never proves standalone documentation ownership.", "fixtureIds": ["ann-search-request", "response-wrapper-ownership"] },
+    { "id": "api.no-older-version-patch", "description": "Do not patch an inherited older-version document in place.", "fixtureIds": ["sparse-version-copy"] }
+  ],
+  "positiveTriggers": [
+    { "id": "explicit", "prompt": "Use api-reference-sync for this SDK release." },
+    { "id": "implicit", "prompt": "Compare a new SDK tag with the versioned API reference." }
+  ],
+  "negativeTriggers": [
+    { "id": "procedure", "prompt": "Fill missing language tabs in one procedure." },
+    { "id": "narrative", "prompt": "Draft a conceptual guide." }
+  ],
+  "inputContract": { "requires": ["releaseRange", "sourceEvidence", "documentationIdentity", "livePlacement"] },
+  "outputContract": { "schemaVersion": 1, "statuses": ["BLOCKED", "READY", "EXECUTED", "PARTIAL", "ACCEPTANCE_REQUIRED", "COMPLETE"] },
+  "sideEffectPolicy": { "default": "read-only", "writeRequires": ["batchDigest", "approval", "livePreconditions", "journal"] },
+  "allowedSemanticChanges": ["api.exact-approval", "api.recoverable-execution"]
+}

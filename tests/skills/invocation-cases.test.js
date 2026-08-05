@@ -6,13 +6,21 @@ const path = require('node:path');
 const { parseFrontmatter } = require('../../scripts/validate-skills');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
-const SKILLS = [
-  'draft-verified-docs',
-  'feishu-code-verify',
-  'localization-docs',
-  'patch-feishu-code',
-  'sdk-doc-sync',
+const CANONICAL_SKILLS = [
+  'api-reference-sync',
+  'doc-code-verify',
+  'localized-doc-sync',
+  'procedure-code-sync',
+  'verified-doc-authoring',
 ];
+const COMPATIBILITY_SKILLS = {
+  'draft-verified-docs': 'verified-doc-authoring',
+  'feishu-code-verify': 'doc-code-verify',
+  'localization-docs': 'localized-doc-sync',
+  'patch-feishu-code': 'procedure-code-sync',
+  'sdk-doc-sync': 'api-reference-sync',
+};
+const SKILLS = [...CANONICAL_SKILLS, ...Object.keys(COMPATIBILITY_SKILLS)];
 
 test('all repository skills use trigger-oriented descriptions and agent metadata', () => {
   for (const name of SKILLS) {
@@ -37,16 +45,26 @@ test('routing eval corpus covers explicit, implicit, contextual, and negative ca
   for (const entry of cases) {
     assert.equal(typeof entry.id, 'string');
     assert.equal(typeof entry.prompt, 'string');
-    assert.equal(SKILLS.includes(entry.expectedSkill), true);
+    assert.equal(CANONICAL_SKILLS.includes(entry.expectedSkill), true);
     assert.equal(Array.isArray(entry.mustNotSelect), true);
   }
 
-  for (const name of SKILLS) {
+  for (const name of CANONICAL_SKILLS) {
     const matching = cases.filter(entry => entry.expectedSkill === name);
     assert.deepEqual(
       [...new Set(matching.map(entry => entry.class))].sort(),
       ['contextual', 'explicit', 'implicit', 'negative'],
       `${name} must cover all routing classes`,
     );
+  }
+});
+
+test('deprecated skill names are thin compatibility entries for canonical skills', () => {
+  for (const [alias, canonical] of Object.entries(COMPATIBILITY_SKILLS)) {
+    const content = fs.readFileSync(path.join(REPO_ROOT, '.claude', 'skills', alias, 'SKILL.md'), 'utf8');
+    assert.match(content, new RegExp(`\\.\\./${canonical}/SKILL\\.md`));
+    assert.match(content, /deprecated name/i);
+    assert.match(content, /Do not define or execute an independent workflow here\./);
+    assert.ok(content.split(/\r?\n/).length < 20, `${alias} compatibility entry must stay thin`);
   }
 });

@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "skill": "doc-code-verify",
+  "mustPreserve": [
+    { "id": "verify.read-only", "description": "Remain read-only unless remediation is separately requested and approved.", "fixtureIds": ["read-only"] },
+    { "id": "verify.strongest-safe-check", "description": "Use the strongest safe reliable parse, compile, scenario, or runtime check.", "fixtureIds": ["check-strength"] },
+    { "id": "verify.live-gates", "description": "Require explicit run and live gates for networked execution.", "fixtureIds": ["live-gates"] },
+    { "id": "verify.scenario-separation", "description": "Report raw-block and scenario evidence separately.", "fixtureIds": ["scenario-separation"] }
+  ],
+  "mustFix": [
+    { "id": "verify.result-contract", "description": "Emit normalized status, exit code, digest, diagnostics, and artifacts.", "fixtureIds": ["result-contract"] },
+    { "id": "verify.deterministic-diagnostics", "description": "Order diagnostics by stable code and target identity.", "fixtureIds": ["deterministic-diagnostics"] }
+  ],
+  "forbidden": [
+    { "id": "verify.no-implicit-run", "description": "Never execute unannotated or unapproved snippets.", "fixtureIds": ["live-gates"] },
+    { "id": "verify.no-remediation-implication", "description": "Verification approval never authorizes write-back.", "fixtureIds": ["read-only"] }
+  ],
+  "positiveTriggers": [{ "id": "compile", "prompt": "Compile and scenario-check every snippet in this document." }],
+  "negativeTriggers": [{ "id": "draft", "prompt": "Draft the surrounding guide from product notes." }],
+  "inputContract": { "sources": ["markdown", "docx", "wiki", "bitable"], "liveDefault": false },
+  "outputContract": { "schemaVersion": 1, "skill": "doc-code-verify", "operation": "verify" },
+  "sideEffectPolicy": { "default": "read-only", "networkRequires": ["live", "allowRun"], "writeBack": "separate-approval" },
+  "allowedSemanticChanges": ["verify.result-contract-v1"]
+}

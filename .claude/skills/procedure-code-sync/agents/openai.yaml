@@ -1,0 +1,4 @@
+interface:
+  display_name: "Procedure Code Sync"
+  short_description: "Add verified SDK language examples"
+  default_prompt: "Use $procedure-code-sync to inspect this SDK procedure, verify equivalent public APIs, and plan the missing language blocks before requesting approval to patch them."

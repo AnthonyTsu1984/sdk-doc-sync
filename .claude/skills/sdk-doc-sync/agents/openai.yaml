@@ -1,4 +1,4 @@
 interface:
-  display_name: "SDK Doc Sync"
-  short_description: "Synchronize SDK and API reference docs"
-  default_prompt: "Use $sdk-doc-sync to compare the requested SDK or API release with its Feishu documentation, show the exact dry-run actions, and wait for approval before writing."
+  display_name: "SDK Doc Sync (Compatibility)"
+  short_description: "Compatibility alias for API Reference Sync"
+  default_prompt: "Use $sdk-doc-sync as a compatibility alias and delegate the task to $api-reference-sync."

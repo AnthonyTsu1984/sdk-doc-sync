@@ -1,0 +1,8 @@
+[
+  { "id": "read-only", "assertions": { "writesPerformed": false, "remediationApproved": false } },
+  { "id": "check-strength", "assertions": { "preferReliableStrongest": true } },
+  { "id": "live-gates", "assertions": { "allowRunRequired": true, "liveRequired": true, "scenarioRunRequiresBoth": true } },
+  { "id": "scenario-separation", "assertions": { "rawAndScenarioSeparate": true } },
+  { "id": "result-contract", "assertions": { "exitCodes": [0, 1, 2, 64], "semanticDigest": true } },
+  { "id": "deterministic-diagnostics", "assertions": { "sortKeys": ["code", "target"] } }
+]

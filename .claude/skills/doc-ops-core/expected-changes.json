@@ -1,0 +1,10 @@
+[
+  {
+    "id": "verify.result-contract-v1",
+    "capabilityId": "verify.result-contract",
+    "oldBehavior": { "topLevelContract": false, "manualExitCode": 0 },
+    "newBehavior": { "topLevelContract": true, "manualExitCode": 2 },
+    "rationale": "Expose deterministic status, digest, diagnostics, artifacts, and blocked outcomes without removing the detailed verifier report.",
+    "replacementAssertion": "report.contract is schema version 1 and process exit equals report.contract.exitCode"
+  }
+]

@@ -62,7 +62,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
     return { resolveDocumentId: async () => 'docx-mocked-1' };
   }
 
-  if (request.endsWith('/sdk-doc-sync/src/markdown-to-feishu')) {
+  if (request.endsWith('/api-reference-sync/src/markdown-to-feishu')) {
     return class MockMarkdownToFeishu {
       async get_document_blocks() {
         return fixture;
@@ -101,7 +101,7 @@ Module._load = function patchedLoad(request, parent, isMain) {
     return { resolveDocumentId: async () => 'docx-mocked-2' };
   }
 
-  if (request.endsWith('/sdk-doc-sync/src/markdown-to-feishu')) {
+  if (request.endsWith('/api-reference-sync/src/markdown-to-feishu')) {
     return class MockMarkdownToFeishu {
       async get_document_blocks() {
         throw new Error('mocked extraction failure');

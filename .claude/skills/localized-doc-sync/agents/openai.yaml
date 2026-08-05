@@ -1,0 +1,4 @@
+interface:
+  display_name: "Localized Doc Sync"
+  short_description: "Manage localized Feishu docs and bitables"
+  default_prompt: "Use $localized-doc-sync to align source and localized Feishu docs, records, hierarchy, metadata, and media."

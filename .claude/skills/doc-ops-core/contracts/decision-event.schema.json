@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doc-ops-core/decision-event.schema.json",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "decisionId",
+    "skill",
+    "gate",
+    "outcome",
+    "proposalDigest",
+    "decisionDigest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "decisionId": { "type": "string", "minLength": 1 },
+    "skill": { "type": "string", "minLength": 1 },
+    "gate": { "type": "string", "minLength": 1 },
+    "outcome": {
+      "enum": [
+        "approved",
+        "rejected",
+        "changes_requested",
+        "accepted",
+        "rollback_requested",
+        "rolled_back",
+        "finalized"
+      ]
+    },
+    "taskId": { "type": ["string", "null"] },
+    "sessionId": { "type": ["string", "null"] },
+    "reviewUnitId": { "type": ["string", "null"] },
+    "proposalDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "resultDigest": {
+      "anyOf": [
+        { "type": "null" },
+        { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+      ]
+    },
+    "instruction": { "type": ["string", "null"] },
+    "rationale": { "type": ["string", "null"] },
+    "durableRuleRequested": { "type": "boolean" },
+    "scopeHint": {
+      "anyOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["level"],
+          "properties": {
+            "level": { "type": "string", "minLength": 1 },
+            "language": { "type": "string", "minLength": 1 },
+            "taskType": { "type": "string", "minLength": 1 }
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "evidence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["type", "digest"],
+        "properties": {
+          "type": { "type": "string", "minLength": 1 },
+          "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "runtime": { "type": "object", "additionalProperties": true },
+    "decisionDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "durableRuleRequested": { "const": true } },
+        "required": ["durableRuleRequested"]
+      },
+      "then": {
+        "required": ["scopeHint"],
+        "properties": { "scopeHint": { "type": "object" } }
+      }
+    }
+  ],
+  "additionalProperties": false
+}

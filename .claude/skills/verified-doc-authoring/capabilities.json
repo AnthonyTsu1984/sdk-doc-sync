@@ -27,7 +27,7 @@
     "rollback": "pre-finalization"
   },
   "learningPolicy": {
-    "captureOutcomes": ["rejected", "changes_requested", "approved", "accepted"],
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
     "approvalStrength": "weak-positive",
     "highRiskAutomaticPromotion": false
   },
@@ -35,10 +35,9 @@
     "operations": [
       {
         "operation": "author",
-        "status": "planned",
-        "productionEntrypoint": null,
-        "focusedTest": null,
-        "migrationTask": "Task 11",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js",
+        "focusedTest": ".claude/skills/verified-doc-authoring/tests/patch-executor.test.js",
         "journalRequiredForWrites": true
       }
     ]

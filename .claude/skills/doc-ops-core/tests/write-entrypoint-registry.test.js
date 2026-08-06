@@ -26,7 +26,7 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
     now: '2026-08-06T00:00:00.000Z',
   });
 
-  assert.equal(discovered.length, 153);
+  assert.equal(discovered.length, 154);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');
@@ -36,6 +36,10 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   assert.equal(procedure.classification, 'canonical-governed');
   assert.equal(procedure.approval, 'exact-batch-digest');
   assert.equal(procedure.journal, 'required');
+  const authoring = registry.entries.find((entry) => entry.path.endsWith('/verified-doc-authoring.js'));
+  assert.equal(authoring.classification, 'canonical-governed');
+  assert.equal(authoring.approval, 'exact-batch-digest');
+  assert.equal(authoring.reconciliation, 'required');
   const legacy = registry.entries.find((entry) => entry.path.endsWith('/feishu-doc-translator.js'));
   assert.equal(legacy.classification, 'legacy-live');
   assert.equal(legacy.quarantineFlag, 'DOC_OPS_ALLOW_LEGACY_LIVE');

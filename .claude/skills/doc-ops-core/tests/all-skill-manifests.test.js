@@ -40,10 +40,9 @@ test('all canonical skills declare review, learning, and adapter policies withou
   assert.equal(manifests['api-reference-sync'].adapterPolicy.operations[0].status, 'adopted');
   assert.equal(manifests['localized-doc-sync'].adapterPolicy.operations[0].status, 'adopted');
   assert.equal(manifests['procedure-code-sync'].adapterPolicy.operations[0].status, 'adopted');
+  assert.equal(manifests['verified-doc-authoring'].adapterPolicy.operations[0].status, 'adopted');
   assert.equal(manifests['doc-code-verify'].adapterPolicy.operations.find((item) => item.operation === 'static-verify').status, 'adopted');
   assert.equal(manifests['doc-code-verify'].adapterPolicy.operations.find((item) => item.operation === 'live-verify').status, 'planned');
-  assert.equal(manifests['verified-doc-authoring'].adapterPolicy.operations[0].status, 'planned');
-  assert.equal(manifests['verified-doc-authoring'].adapterPolicy.operations[0].migrationTask, 'Task 11');
 });
 
 test('API reference golden fixtures preserve reviewed documentation granularity', () => {

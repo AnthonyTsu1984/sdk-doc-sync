@@ -1507,6 +1507,20 @@
       ]
     },
     {
+      "path": ".claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js",
+      "skill": "verified-doc-authoring",
+      "classification": "canonical-governed",
+      "operation": "author",
+      "basis": "claim-bound authoring planner with exact approval, journaled refetch verification, acceptance, and corrective rollback",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/verified-doc-authoring/tests/verified-doc-authoring-cli.test.js",
+        ".claude/skills/verified-doc-authoring/tests/patch-executor.test.js"
+      ]
+    },
+    {
       "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
       "skill": "patch-code-blocks",
       "classification": "read-only",

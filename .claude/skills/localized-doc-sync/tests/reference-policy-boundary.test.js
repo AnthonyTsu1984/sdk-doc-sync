@@ -53,3 +53,10 @@ test('durable mapping, identity, and locale policies carry provenance and revali
   assert.ok(locale.provenance);
   assert.ok(Array.isArray(locale.revalidateOn) && locale.revalidateOn.includes('every-full-scan'));
 });
+
+test('orphan decisions require complete table-pair evidence and preserve before reporting', () => {
+  const skill = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf8');
+  assert.match(skill, /orphan decision.*complete.*table-pair/is);
+  assert.match(skill, /`preserve_orphan`.*`report_orphan`/is);
+  assert.match(skill, /missing source slug.*insufficient/is);
+});

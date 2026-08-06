@@ -14,6 +14,7 @@ const {
   buildToolContinuationInput,
   buildCodexEnv,
   extractResponseText,
+  fetchModelResponse,
   groupCasesByReferences,
   isRetryableModelStatus,
   learningContextLoaded,
@@ -97,6 +98,15 @@ test('learning mode keeps RED isolated and loads only the case rule in GREEN', (
   assert.deepEqual(learningContextLoaded('green', cases), ['candidate:node-only']);
   assert.doesNotMatch(learningPrompt('red', cases), /Keep Node request helpers/);
   assert.match(learningPrompt('green', cases), /Keep Node request helpers/);
+  assert.match(learningPrompt('green', cases), /automaticPromotionAllowed must always be false/);
+  assert.match(learningPrompt('green', cases), /eligible.*reviewed promotion proposal.*never automatic activation/is);
+});
+
+test('learning prompt makes one-off exceptions inapplicable even when scope matches', () => {
+  assert.match(
+    learningPrompt('green', []),
+    /ruleClass=one-off-exception.*applies=false.*non-promotable/is,
+  );
 });
 
 test('learning corpus validation requires held-out scope and counterexample coverage', () => {
@@ -167,6 +177,25 @@ test('behavior protocol exposes only target-skill actions and canonical artifact
   ]);
   assert.equal(behaviorActionTokens('localized-doc-sync').includes('preserve_scan_state'), false);
   assert.deepEqual(behaviorArtifactTypes('localized-doc-sync'), ['actionBatch', 'syncPlan']);
+});
+
+test('behavior prompt does not turn missing draft-only inputs into an approval gate', () => {
+  const prompt = behaviorPrompt('verified-doc-authoring', 'green', [{
+    id: 'draft-only',
+    prompt: 'Draft locally; no target is selected.',
+    expected: { outcome: 'produce_local_draft' },
+  }]);
+
+  assert.match(prompt, /research or local drafting.*requiredApproval=null/is);
+  assert.match(prompt, /EXACT_TARGET_DRY_RUN_APPROVAL.*live document mutation/is);
+
+  const procedurePrompt = behaviorPrompt('procedure-code-sync', 'green', [{
+    id: 'new-batch',
+    prompt: 'No dry-run batch exists yet.',
+    expected: { outcome: 'prepare_dry_run' },
+  }]);
+  assert.doesNotMatch(procedurePrompt, /Use EXACT_TARGET_DRY_RUN_APPROVAL only/);
+  assert.match(procedurePrompt, /BATCH_DIGEST means a new exact immutable batch approval for non-API skills/);
 });
 
 test('behavior batching does not attribute one case references to unrelated cases', () => {
@@ -246,6 +275,26 @@ test('model transport retries only transient network statuses', () => {
   assert.equal(isRetryableModelStatus(503), true);
   assert.equal(isRetryableModelStatus(400), false);
   assert.equal(isRetryableModelStatus(401), false);
+});
+
+test('model transport survives more than three consecutive network errors by default', async () => {
+  const originalFetch = global.fetch;
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts += 1;
+    if (attempts < 5) throw new TypeError('transient network reset');
+    return { status: 200 };
+  };
+  try {
+    const response = await fetchModelResponse('https://example.test/v1/responses', {
+      authorization: 'Bearer test-only',
+      body: {},
+    });
+    assert.equal(response.status, 200);
+    assert.equal(attempts, 5);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('routing scorer enforces expected and forbidden skill selections', () => {

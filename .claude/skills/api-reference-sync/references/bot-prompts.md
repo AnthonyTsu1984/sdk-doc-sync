@@ -427,3 +427,5 @@ Use these minimal conversations to test the channel:
 19. A `COPY_PATCH_AND_REPOINT` unit rolls back. Bot restores the Bitable `Docs` pointer and all captured fields, verifies the original source pointer, deletes only the copied Docx, and never history-reverts the untouched source.
 20. Another accepted unit uses a folder created by the target unit. Bot reports the dependent review-unit ID and requires that dependent unit to roll back first.
 21. Rollback stops partially. Bot preserves the active execution or accepted receipt, leaves scan state unchanged, and requests journal reconciliation without replaying destructive actions.
+22. User selects a subset of an existing write batch. Bot rejects the stale digest, regenerates a reduced `proposedExecutionBatch` whose semantic actions are exactly `reject_stale_digest` and `regenerate_batch`, and stops for a new exact `APPROVE_WRITES`.
+23. User requests partial release acceptance. Bot blocks finalization, keeps all records and scan state unchanged, and reports `APPROVE_ACCEPTANCE` as the next missing gate until every unit is accepted and a complete acceptance-manifest digest can be approved.

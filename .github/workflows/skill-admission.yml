@@ -1,0 +1,56 @@
+name: Documentation Skill Admission
+
+on:
+  pull_request:
+    paths:
+      - '.claude/skills/**'
+      - '.claude/agent-team/**'
+      - 'evals/skills/**'
+      - 'scripts/run-skill-*.js'
+      - 'scripts/validate-skills.js'
+      - 'tests/skills/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/skill-admission.yml'
+  workflow_dispatch:
+    inputs:
+      rollout_phase:
+        description: Stable label for the admission evidence directory
+        required: true
+        default: manual
+
+jobs:
+  admission:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      LLM_API_KEY: ${{ secrets.SKILL_EVAL_API_KEY }}
+      LLM_BASE_URL: ${{ secrets.SKILL_EVAL_BASE_URL }}
+      LLM_MODEL: ${{ vars.SKILL_EVAL_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Require isolated model-eval credentials
+        run: test -n "$LLM_API_KEY"
+      - name: Run complete admission gate
+        env:
+          ROLLOUT_PHASE: ${{ github.event.inputs.rollout_phase || format('pr-{0}', github.event.pull_request.number) }}
+        run: npm run admit:skills -- --phase "$ROLLOUT_PHASE"
+      - name: Upload admission evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: skill-admission-${{ github.run_id }}
+          path: tmp/skill-feedback-rollout/**
+          if-no-files-found: error
+          retention-days: 30
+
+# Live smoke commands are intentionally absent. Disposable tenant creation,
+# patch, acceptance, and cleanup remain separate digest-approved operator gates.

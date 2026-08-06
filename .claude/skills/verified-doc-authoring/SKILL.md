@@ -16,7 +16,7 @@ Do not use for verification-only snippet checks, release-wide API-reference sync
 ## Permission Boundary
 
 - Research, claim inventory, source verification, and a local Markdown draft are allowed by default.
-- If no target page is specified, stop with the local draft and request the target before any Feishu write.
+- If the target is unspecified, do not create or regenerate a live action batch. Stop with the local draft, request the exact target and patch strategy, and state that the execution batch remains unchanged.
 - Live patching requires a dry-run, exact target and strategy, explicit approval, write, and refetch verification.
 - Never invent methods, fields, defaults, statuses, outputs, or behavioral guarantees. Keep unresolved claims visible.
 

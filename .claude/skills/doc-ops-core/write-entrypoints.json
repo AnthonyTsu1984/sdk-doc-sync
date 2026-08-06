@@ -1537,6 +1537,13 @@
       "basis": "manual baseline override after source inspection"
     },
     {
+      "path": "scripts/run-skill-admission.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-skill-admission",
+      "basis": "local and CI admission orchestrator; runs tests and model evaluations without live mutation commands"
+    },
+    {
       "path": "scripts/run-tests.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

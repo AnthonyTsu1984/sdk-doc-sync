@@ -26,6 +26,8 @@ The live full-Base scan is authoritative for every run. Enumerate every table, f
 
 Partial table scans are diagnostic only. They cannot authorize writes or finalize the overall run.
 
+Before classifying or acting on a target-only row, inspect the complete discovered table-pair inventory, including unmapped and cross-table relations. A missing source slug alone cannot establish an orphan because `link/ref` rows are slugless. Without a separately approved deletion batch, emit both `preserve_orphan` and `report_orphan` and leave the target unchanged.
+
 ## Field And Identity Policy
 
 Use the placement matrix in `locale-policy.json`:

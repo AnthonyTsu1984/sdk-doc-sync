@@ -52,6 +52,12 @@ test('api-reference-sync exposes deterministic batch approval, recovery, and acc
   assert.match(content, /executionJournalDigest/);
 });
 
+test('api-reference-sync keeps the complete acceptance gate pending after a partial request', () => {
+  const content = skill('api-reference-sync');
+  assert.match(content, /A partial-acceptance request is blocked/i);
+  assert.match(content, /the next missing gate remains `APPROVE_ACCEPTANCE`/i);
+});
+
 test('localized-doc-sync uses current table-aware translator options', () => {
   const content = skill('localized-doc-sync');
   assert.match(content, /--source-table\s+\S+/);
@@ -73,6 +79,12 @@ for (const name of ['verified-doc-authoring', 'localized-doc-sync', 'procedure-c
 test('verified-doc-authoring gates skill self-updates on an explicit request', () => {
   const content = skill('verified-doc-authoring');
   assert.match(content, /Update this skill or its workflow notes only when the user explicitly asks\./);
+});
+
+test('verified-doc-authoring does not create a live action batch before the target is exact', () => {
+  const content = skill('verified-doc-authoring');
+  assert.match(content, /If the target is unspecified, do not create or regenerate a live action batch/i);
+  assert.match(content, /the execution batch remains unchanged/i);
 });
 
 test('patch-code-blocks remains an internal dry-run-only tool package', () => {

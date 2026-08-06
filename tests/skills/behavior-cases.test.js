@@ -73,10 +73,16 @@ test('non-API behavior cases bind relevant required references instead of relyin
   for (const [id, reference] of expectedReferences) {
     assert.ok(byId.get(id)?.expected.mustRead?.includes(reference), `${id} must load ${reference}`);
   }
+
+  assert.deepEqual(
+    byId.get('verify-scenario-missing-allow-run').expected.actions,
+    ['refuse_scenario_execution'],
+  );
 });
 
 test('api-reference-sync behavior corpus covers the complete approval and state pressure matrix', () => {
-  const ids = new Set(loadCases().filter(entry => entry.skill === 'api-reference-sync').map(entry => entry.id));
+  const apiCases = loadCases().filter(entry => entry.skill === 'api-reference-sync');
+  const ids = new Set(apiCases.map(entry => entry.id));
   for (const required of [
     'api-remote-tag-authority',
     'api-helper-owner-page',
@@ -94,11 +100,20 @@ test('api-reference-sync behavior corpus covers the complete approval and state 
   ]) {
     assert.equal(ids.has(required), true, `missing api-reference-sync pressure case ${required}`);
   }
+
+  const byId = new Map(apiCases.map(entry => [entry.id, entry]));
+  const exactAcceptance = byId.get('api-exact-acceptance');
+  assert.match(exactAcceptance.prompt, /acceptanceManifestDigest/);
+  assert.doesNotMatch(exactAcceptance.prompt, /matches executionJournalDigest/);
+
+  const partialSelection = byId.get('api-partial-batch-selection');
+  assert.deepEqual(partialSelection.expected.actions, ['regenerate_batch', 'reject_stale_digest']);
 });
 
 test('learning corpus covers governed promotion, scope, contradiction, supersession, and expiry cases', () => {
   const cases = loadLearningCases();
   const ids = new Set(cases.map((entry) => entry.id));
+  const byId = new Map(cases.map(entry => [entry.id, entry]));
   for (const required of [
     'approval-does-not-globalize',
     'edit-then-accept-is-strong-evidence',
@@ -116,6 +131,8 @@ test('learning corpus covers governed promotion, scope, contradiction, supersess
   assert.ok(cases.some((entry) => entry.class === 'negative'));
   assert.ok(cases.some((entry) => entry.class === 'boundary'));
   assert.ok(cases.some((entry) => entry.class === 'safety'));
+  assert.equal(byId.get('approval-does-not-globalize').expected.disposition, 'out-of-scope');
+  assert.ok(cases.every(entry => entry.expected.automaticPromotionAllowed === false));
 });
 
 test('package exposes deterministic learning and safety evaluation commands', () => {

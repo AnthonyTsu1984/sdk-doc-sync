@@ -158,6 +158,7 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - `APPROVE_GROUPING sha256:<proposal-digest>` only permits building reviewed planning artifacts. It does not permit writes.
 - The grouping command also approves inheritance decisions shown in the same digest-bound proposal. If a successor-track decision is absent, ambiguous, or stale, keep the session in `candidate_proposal`.
 - `APPROVE_WRITES sha256:<batch-digest>` applies only to the exact action list and artifact digests bound into that batch.
+- If the user selects only part of a bound action list, the canonical response is to reject the stale digest and regenerate a reduced `proposedExecutionBatch`. Record both `reject_stale_digest` and `regenerate_batch` in that replacement artifact, then stop for a new exact `APPROVE_WRITES`; never execute the subset under the old digest.
 - Write approval does not accept the resulting documentation and never authorizes another document unit or a scan-state update.
 - `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` is valid only for the active, successfully verified unit. It records review completion but leaves interface records at `WIP` and leaves scan state unchanged.
 - `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` is a separate destructive approval. It is valid only for an executed active unit or an accepted unit before finalization. It never authorizes a different unit and never changes `scan-state.json`.
@@ -168,6 +169,7 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - Before a new process selects the next unit, rerun `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js` with `--resume-session`. Manifest drift, journal drift, missing records, a non-`WIP` progress value, nonblank `Targets`, or a changed Docx token blocks the phase transition.
 - `REQUEST_DOCUMENT_CHANGES` freezes progression, requires reading the active document's comments, and returns only that unit to reviewed planning. Any changed artifact or resource plan invalidates the previous batch and execution-journal digest.
 - `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` is valid only after every unit in the original review-unit manifest has one accepted journal in the complete acceptance manifest. It authorizes only the listed interface-document `WIP` to `Draft` transitions and the subsequent verified `scan-state.json` update. Structural VirtualNode or Module records are excluded from that transition.
+- A request to accept only part of the manifest is blocked and performs no writes. Report `APPROVE_ACCEPTANCE` as the next missing gate, not `null`, because finalization still requires a complete manifest and its exact digest after every unit is accepted.
 - Build that digest with `sdk-review-session.js build-acceptance`. After finalization, mark the session complete only with `record-finalization` and a successful finalization journal bound to the same digest.
 - If any artifact changes after approval, return to the relevant review gate.
 - If planning produces `planningErrorCount > 0`, do not request write approval.

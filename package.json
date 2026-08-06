@@ -23,6 +23,7 @@
     "eval:skills:learning": "node scripts/run-skill-model-evals.js --mode learning --phase both --repeats 3",
     "eval:skills:learning:safety": "node scripts/run-skill-model-evals.js --mode learning --phase both --case-class safety --repeats 10",
     "test:skills:model": "node scripts/run-skill-model-evals.js --mode all --phase both --repeats 3",
+    "admit:skills": "node scripts/run-skill-admission.js",
     "test:doc-ops-core": "node .claude/skills/doc-ops-core/tests/run-all.js",
     "smoke:corpus": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js validate-corpus",
     "smoke:doctor": "node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js doctor",

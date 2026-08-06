@@ -19,6 +19,8 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 - Indexing, diffing, translation previews, and dry-run are allowed by default.
 - Target writes require explicit approval of exact records/documents and batch digest. Never delete `TARGET_ONLY` records (legacy reports may call them `ORPHAN`) without separate approval.
 - A target-only decision preserves the target record unchanged unless a distinct deletion batch is approved; reporting alone is not deletion, archival, or mutation authority.
+- Before any orphan decision, inspect the complete discovered table-pair inventory. A missing source slug is insufficient evidence because link/ref rows are slugless and reviewed mappings may cross tables.
+- The canonical no-delete result records both observable actions: `preserve_orphan` first, then `report_orphan`. Do not collapse preservation into reporting.
 - Refetch every written record and document; uncertain parent mapping, schema, credentials, or protected media blocks completion.
 - Before any queue or write decision, re-enumerate both complete Bases. A configured map, pasted table/view URL, previous count, or first-table default is not completeness evidence.
 

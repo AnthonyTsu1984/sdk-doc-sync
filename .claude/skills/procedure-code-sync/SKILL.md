@@ -24,10 +24,13 @@ Do not use for release-wide API inventory, narrative drafting, localization, or 
 ## Shared Contract
 
 - Capability baseline: [capabilities.json](capabilities.json).
-- Build immutable operations with `node .claude/skills/doc-ops-core/bin/build-action-batch.js --skill procedure-code-sync --operation patch --input <actions.json> --output <batch.json>`.
+- Use `node .claude/skills/procedure-code-sync/bin/procedure-code-sync.js plan --snapshot <blocks.json> --operations <operations.json> --output <plan.json> --session <session.json> --session-id <id>` to build the immutable whole-document review unit and action batch.
+- The canonical planner owns the shared action-batch construction contract represented by `doc-ops-core/bin/build-action-batch.js`; do not invoke the shared builder as a substitute for the procedure snapshot and review-unit checks.
+- Execute only through the same CLI with `execute --plan <plan.json> --approval <approval.json> --adapter-module <adapter.js> --verifier-module <verifier.js> --journal <execution.jsonl> --output <result.json> --session <session.json>`.
 - Approval must match the exact `batchDigest`, targets, action count, and side effects. Verify the live precondition for document revision, parent, and target block identities immediately before mutation.
 - After mutation, refetch blocks and run the shared round-trip guard from `../doc-ops-core/`; protected-block loss or unrelated changes block completion.
 - `document_blocks` evidence is mandatory before deciding an exact insert/replace operation and again after mutation. A document record, execution journal, or successful API response does not substitute for block IDs, child indexes, and protected-block readback.
+- Document acceptance is a separate `accept` command bound to both the execution-journal digest and typed verifier digest. Before acceptance, `rollback-plan` may restore snapshotted replacement blocks and delete only insert-generated block identities that still match live state.
 
 ## Domain Workflow
 
@@ -37,7 +40,7 @@ Do not use for release-wide API inventory, narrative drafting, localization, or 
 4. Preserve procedure semantics, values, filters, data shapes, and output intent while using idiomatic language APIs.
 5. Produce a dry-run with exact insert/replace operations, positions, languages, and evidence; obtain explicit approval for its batch digest.
 6. Re-check the current document blocks and patch only digest-approved blocks, inserting from highest child index to lowest when positions could shift.
-7. Refetch the document blocks and verify canonical order, language labels, source fidelity, no duplicates, and protected surrounding content. Do not report completion from mutation success alone. Run `doc-code-verify` where feasible.
+7. Refetch after every structural patch, then verify canonical order, language labels, source fidelity, no duplicates, and protected surrounding content. Do not report completion from mutation success alone. Bind the typed `doc-code-verify` semantic digest before requesting document acceptance.
 
 Canonical order is: Python, Java, Go, JavaScript, Bash, Shell, C++.
 

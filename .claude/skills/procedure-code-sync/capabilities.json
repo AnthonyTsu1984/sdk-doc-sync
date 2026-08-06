@@ -27,7 +27,7 @@
     "rollback": "pre-finalization"
   },
   "learningPolicy": {
-    "captureOutcomes": ["rejected", "changes_requested", "approved", "accepted"],
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
     "approvalStrength": "weak-positive",
     "highRiskAutomaticPromotion": false
   },
@@ -35,10 +35,9 @@
     "operations": [
       {
         "operation": "patch",
-        "status": "planned",
-        "productionEntrypoint": null,
-        "focusedTest": null,
-        "migrationTask": "Task 10",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
+        "focusedTest": ".claude/skills/procedure-code-sync/tests/procedure-code-sync-cli.test.js",
         "journalRequiredForWrites": true
       }
     ]

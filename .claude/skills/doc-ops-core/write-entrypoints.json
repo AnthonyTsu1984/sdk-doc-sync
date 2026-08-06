@@ -1493,6 +1493,20 @@
       ]
     },
     {
+      "path": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
+      "skill": "procedure-code-sync",
+      "classification": "canonical-governed",
+      "operation": "patch",
+      "basis": "reviewed whole-document planner, journaled block executor, verifier handoff, acceptance, and rollback planner",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/procedure-code-sync/tests/procedure-code-sync-cli.test.js",
+        ".claude/skills/procedure-code-sync/tests/patch-executor.test.js"
+      ]
+    },
+    {
       "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
       "skill": "patch-code-blocks",
       "classification": "read-only",

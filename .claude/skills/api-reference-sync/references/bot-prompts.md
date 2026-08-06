@@ -16,6 +16,7 @@ Use these prompts when testing a Feishu bot channel for `sdk-doc-sync`. Replace 
 - [Write Approval Parser Prompt](#write-approval-parser-prompt)
 - [Acceptance Review Gate Message](#acceptance-review-gate-message)
 - [Acceptance Review Parser Prompt](#acceptance-review-parser-prompt)
+- [Governed Feedback Capture Prompt](#governed-feedback-capture-prompt)
 - [Ambiguous Reply Response](#ambiguous-reply-response)
 - [Test Scenarios](#test-scenarios)
 
@@ -60,6 +61,8 @@ Accept only these gate commands:
 - REJECT_ACCEPTANCE
 
 Treat ambiguous, partial, or conversational replies as not approved. Ask for a valid command and do not transition phases.
+
+After a valid gate decision has completed its existing state transition, append the outcome with `sdk-review-session.js record-decision` to the separate governed decision ledger. This append must not edit the review session. Do not infer a durable rule from an approval, and do not put any rule-promotion command in the gate response.
 
 Rollback is a separate destructive gate available only for an executed unit before final acceptance. Plan it from the persistent session and original execution journal. Execute inverse actions in reverse dependency order and update the session only after a completed rollback journal. Keep scan-state.json unchanged. For COPY_PATCH_AND_REPOINT, restore the Bitable record to the untouched COPY source, verify the restored Docs pointer, delete the copy, and never history-revert the source.
 ```
@@ -365,6 +368,24 @@ Return JSON only:
 }
 
 Do not treat a write-approval command, a bare acceptance command, a stale digest, or conversational approval as documentation acceptance.
+```
+
+## Governed Feedback Capture Prompt
+
+```text
+The active gate decision has already been validated and applied. Record its learning signal separately.
+
+Run sdk-review-session.js record-decision with:
+- the persistent review-session path;
+- the governed decision-ledger path;
+- a stable decision ID;
+- the exact gate and outcome;
+- the active review-unit ID when the gate is document-scoped;
+- the rejected or reviewed proposal digest;
+- the completed result digest for accepted, rolled_back, or finalized outcomes;
+- the reviewer's instruction, rationale, and narrow scope hint when supplied.
+
+Do not save or otherwise mutate the review-session JSON during decision capture. Do not infer a durable rule unless the reviewer explicitly requested one. Do not emit a promotion command here; candidate generation, held-out evaluation, and build-promotion run later as a separate governed workflow.
 ```
 
 ## Ambiguous Reply Response

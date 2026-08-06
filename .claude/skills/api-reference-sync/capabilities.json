@@ -34,8 +34,11 @@
     "rollback": "pre-finalization"
   },
   "learningPolicy": {
-    "captureOutcomes": ["rejected", "changes_requested", "approved", "accepted"],
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
     "approvalStrength": "weak-positive",
+    "feedbackEntrypoint": ".claude/skills/api-reference-sync/bin/sdk-review-session.js record-decision",
+    "promotionEntrypoint": ".claude/skills/doc-ops-core/bin/skill-feedback.js build-promotion",
+    "contrastiveEvidence": "rejected-or-change-requested proposal digest plus later accepted result digest",
     "highRiskAutomaticPromotion": false
   },
   "adapterPolicy": {

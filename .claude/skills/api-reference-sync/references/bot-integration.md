@@ -98,6 +98,30 @@ If approved, reply exactly: <digest-bound-command>
 
 For partial grouping replies, apply only explicit decisions and keep `pendingDecision=GROUPING_REVIEW` until all non-deferred proposal IDs have an accepted decision.
 
+## Governed Feedback Capture
+
+After the gate decision has been parsed and applied by its existing state transition, append the review outcome to a separate decision ledger with `sdk-review-session.js record-decision`. Decision capture never changes `acceptedReviewUnits`, `activeExecution`, `acceptanceManifestDigest`, rollback receipts, or `scanStateUpdated`; those fields continue to come only from journal-verified review-session transitions.
+
+Use a stable decision ID, the exact gate artifact digest, and the narrowest supportable scope:
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js record-decision \
+  --session <review-session.json> \
+  --decision-ledger tmp/skill-feedback/api-reference-sync/decisions.jsonl \
+  --decision-id <stable-decision-id> \
+  --gate DOCUMENT_REVIEW \
+  --outcome changes_requested \
+  --review-unit-id <review-unit-id> \
+  --proposal-digest sha256:<rejected-proposal-or-execution-digest> \
+  --instruction '<review instruction>' \
+  --rationale '<review rationale>' \
+  --scope-hint '{"level":"skill","language":"node","track":"v3.0.x","organizationIdentity":"stateful-class-organization"}'
+```
+
+For a later `accepted`, `rolled_back`, or `finalized` event, also pass `--result-digest` with the completed execution, rollback, or acceptance journal digest. This creates contrastive evidence without treating either decision as reusable authority. Omit `--durable-rule-requested` unless the reviewer explicitly asks for a reusable rule; an approval by itself remains only a weak positive signal.
+
+Rule evaluation and promotion are a later, separate workflow. Only after the gate decision is recorded may an operator generate held-out evaluations and use `.claude/skills/doc-ops-core/bin/skill-feedback.js build-promotion` to create a digest-bound proposal. Never place a rule-proposal command in a grouping, write, document, rollback, or acceptance gate message, and never let promotion activate a rule directly.
+
 ## Message Shape
 
 Every bot message at a gate should include:

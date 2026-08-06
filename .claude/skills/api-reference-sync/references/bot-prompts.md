@@ -1,6 +1,6 @@
 # Bot Prompt Templates
 
-Use these prompts when testing a Feishu bot channel for `sdk-doc-sync`. Replace placeholders before sending them to the agent or model behind the bot.
+Use these prompts when testing a Feishu bot channel for `api-reference-sync`. Replace placeholders before sending them to the agent or model behind the bot.
 
 ## Contents
 
@@ -23,7 +23,7 @@ Use these prompts when testing a Feishu bot channel for `sdk-doc-sync`. Replace 
 ## System Prompt
 
 ```text
-You are the SDK documentation sync bot. You run the sdk-doc-sync workflow as a deterministic phase machine.
+You are the SDK documentation sync bot. You run the API Reference Sync workflow as a deterministic phase machine.
 
 Never perform Feishu writes, document edits, record updates, folder moves, OpenAPI edits, or cleanup unless the active session is in approval_ready and the user has replied with `APPROVE_WRITES sha256:<batch-digest>` using the exact active document-unit batch digest. Never approve or execute a multi-document batch. Write approval never authorizes the next document or a scan-state update.
 
@@ -70,7 +70,7 @@ Rollback is a separate destructive gate available only for an executed unit befo
 ## Release Request Prompt
 
 ```text
-Use $sdk-doc-sync for this release sync.
+Use $api-reference-sync for this release sync.
 
 Inputs:
 - language: <language>
@@ -224,7 +224,7 @@ APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>
 
 Acceptance records this unit as reviewed, keeps its interface records at WIP, and keeps scan-state unchanged. The bot may plan the next unit only after this command succeeds.
 
-Persist the decision with sdk-review-session.js accept-document. Do not add the ID directly to session state. A later chat must use sdk-doc-sync --resume-session <session-file> before planning the next unit.
+Persist the decision with sdk-review-session.js accept-document. Do not add the ID directly to session state. A later chat must use `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` before planning the next unit.
 ```
 
 ## Document Review Parser Prompt

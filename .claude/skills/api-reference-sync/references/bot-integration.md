@@ -1,6 +1,6 @@
 # Bot Integration Reference
 
-Use this reference when connecting `sdk-doc-sync` to a Feishu bot or another chat-driven workflow. The bot should behave as a deterministic phase runner, not as a free-form approval interpreter.
+Use this reference when connecting `api-reference-sync` to a Feishu bot or another chat-driven workflow. The bot should behave as a deterministic phase runner, not as a free-form approval interpreter.
 
 ## Contract
 
@@ -8,7 +8,7 @@ Each bot run has one active release-sync session. Store these fields outside the
 
 ```json
 {
-  "sessionId": "sdk-doc-sync:<language>:<sdk-name>:<track>:sha256:<review-unit-manifest-digest>",
+  "sessionId": "api-reference-sync:<language>:<sdk-name>:<track>:sha256:<review-unit-manifest-digest>",
   "phase": "release_scope|candidate_proposal|reviewed_planning|execution|rollback|acceptance_finalization",
   "status": "release_scope_ready|grouping_review_required|review_unit_selection_required|approval_ready|document_review_required|rollback_approval_required|rollback_reconciliation_required|acceptance_review_required|accepted|blocked",
   "language": "<sdk-language>",
@@ -60,7 +60,7 @@ Each bot run has one active release-sync session. Store these fields outside the
 }
 ```
 
-Store this state in the review-session JSON created by `sdk-doc-sync --session-state`; do not reconstruct it from the conversation. Every later bot process must load it with `--resume-session`. Accepted IDs are derived only from journal-verified receipts written by `sdk-review-session.js accept-document`; a model message, prompt field, or caller-supplied ID is not evidence.
+Store this state in the review-session JSON created by `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --session-state`; do not reconstruct it from the conversation. Every later bot process must load it with `--resume-session`. Accepted IDs are derived only from journal-verified receipts written by `sdk-review-session.js accept-document`; a model message, prompt field, or caller-supplied ID is not evidence.
 
 The bot may read artifacts and run dry-runs. It must not call mutating Feishu tools, write documents, update records, move folders, or update `scan-state.json` until the session is in `approval_ready` and the user replies with `APPROVE_WRITES sha256:<batch-digest>` matching the active document unit's `proposedExecutionBatch.batchDigest`. A release-level multi-document batch is never approvable.
 
@@ -165,7 +165,7 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - For `CREATE`, delete and verify the new Bitable record before deleting and verifying the new Docx. Delete newly created VirtualNode records and folders only in reverse dependency order; restore a repointed pre-existing VirtualNode before deleting its new folder.
 - If another executed or accepted unit uses a created resource, block rollback and name the dependent review-unit IDs. If the rollback journal is partial or has an unresolved prepared action, do not mutate the session or relaunch automatically.
 - Persist `APPROVE_DOCUMENT` with `sdk-review-session.js accept-document`. The command must re-read the matching completed execution journal, require resolved comments, bind every touched record to a verified journal action, and reject a journal for a different document unit.
-- Before a new process selects the next unit, rerun `sdk-doc-sync` with `--resume-session`. Manifest drift, journal drift, missing records, a non-`WIP` progress value, nonblank `Targets`, or a changed Docx token blocks the phase transition.
+- Before a new process selects the next unit, rerun `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js` with `--resume-session`. Manifest drift, journal drift, missing records, a non-`WIP` progress value, nonblank `Targets`, or a changed Docx token blocks the phase transition.
 - `REQUEST_DOCUMENT_CHANGES` freezes progression, requires reading the active document's comments, and returns only that unit to reviewed planning. Any changed artifact or resource plan invalidates the previous batch and execution-journal digest.
 - `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` is valid only after every unit in the original review-unit manifest has one accepted journal in the complete acceptance manifest. It authorizes only the listed interface-document `WIP` to `Draft` transitions and the subsequent verified `scan-state.json` update. Structural VirtualNode or Module records are excluded from that transition.
 - Build that digest with `sdk-review-session.js build-acceptance`. After finalization, mark the session complete only with `record-finalization` and a successful finalization journal bound to the same digest.

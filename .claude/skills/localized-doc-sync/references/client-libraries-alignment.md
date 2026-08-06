@@ -2,8 +2,6 @@
 
 Use this maintained alignment file when syncing English source table `Client Libraries` (`tblgHPdSvZP8gUz6`) to Chinese target table `客户端参考` (`tbloC4PVprwYo0P0`).
 
-Last inspected: 2026-06-18.
-
 ## Sources
 
 - English base: `Ac7xbs2k1ad7bjsCXr0ccHe9nMh`
@@ -13,19 +11,16 @@ Last inspected: 2026-06-18.
 - English wiki root: `https://zilliverse.feishu.cn/wiki/OUWXw5c4gia34ZkQUcEcMFbWn6s`
 - Chinese wiki root: `https://zilliverse.feishu.cn/wiki/XyeFwdx6kiK9A6kq3yIcLNdEnDd`
 
-## Current State
+## Evidence Snapshot — 2026-08-02
+
+These observations and the dated dry-run counts below are non-authoritative. Re-enumerate both complete Bases on every run; the live full-Base scan supersedes all record counts, counterpart assumptions, empty-table statements, and proposed action totals.
 
 - Source table snapshot: `7` records.
 - Target table snapshot: `0` records.
 - Six source rows are `link` placement rows for API/SDK reference entries.
 - One source row is canonical: `install-sdks` / Install SDKs.
 - Existing Chinese counterpart for `install-sdks`: `安装 SDK`, `https://zilliverse.feishu.cn/wiki/Jo4bwNi6zi4zlHkN2bWcewFYnDc`.
-- Target `Chapter` options are not aligned for Client Libraries. They currently look like Deployment/BYOC options:
-  - `Deploy BYOC on AWS`
-  - `Deploy BYOC-I on AWS`
-  - `Deploy BYOC on GCP`
-  - `Deploy BYOC-I on Microsoft Azure`
-- Do not populate `Chapter` for Client Libraries records until the target field options are corrected or the user explicitly approves blank/unaligned Chapter handling.
+- `Chapter` is ignored by `locale-policy.json`; it is not a drift, approval, or write field.
 
 ## Record Mapping
 
@@ -42,20 +37,12 @@ Last inspected: 2026-06-18.
 ## Metadata Sync Rules
 
 - Do not write `Seq. ID` because it is an auto-number field.
-- For link rows, preserve source `Ref Target Doc`, `Slug`, `Labels`, `Placement Type`, and pseudo `Docs` link.
+- For link rows, preserve locale-source `Ref Target Doc`, `Labels`, `Placement Type`, and pseudo `Docs` link; link rows must not carry `Slug` or `Targets`.
 - For `install-sdks`, use Chinese target title `安装 SDK` for `Labels` and preserve the Chinese target doc URL.
-- Copy source-controlled metadata into target records where present:
-  - `Slug`
-  - `Labels`
-  - `Ref Target Doc`
-  - `Targets`
-  - `Placement Type`
-  - `Keywords`
-  - `Progress`
-  - `Notebook`
-  - `Beta`
+- For the canonical `install-sdks` row, require `Slug` and locale-reviewed `Targets`.
+- `Labels`, `Keywords`, `Progress`, `Notebook`, `Beta`, `Book`, `Alias1`, and `Alias2` follow each locale's own source metadata.
 - There are no parent links in the current source snapshot.
-- Leave `Chapter` blank until the target options are corrected.
+- Ignore `Chapter` according to `locale-policy.json`.
 
 ## 2026-06-18 Dry Run
 
@@ -68,4 +55,4 @@ Last inspected: 2026-06-18.
 | `ORPHAN` | 0 | Target table is empty. |
 | `MISSING_PARENT` | 0 | No source parent links are present. |
 
-Before live writes, ask for explicit approval to create the `7` target records in table `tbloC4PVprwYo0P0`.
+These dated counts cannot authorize a live write. Build a new issue queue from the current full-Base scan and request exact digest approval for the resulting unit.

@@ -2,8 +2,6 @@
 
 Use this maintained alignment file when syncing English source table `Management` (`tblZMzoITXNsyKmQ`) to Chinese target table `运维指南` (`tblMuHkoG4qMugeX`).
 
-Last inspected: 2026-06-18.
-
 ## Sources
 
 - English base: `Ac7xbs2k1ad7bjsCXr0ccHe9nMh`
@@ -13,18 +11,15 @@ Last inspected: 2026-06-18.
 - Chinese wiki pool: `https://zilliverse.feishu.cn/wiki/LoNhwUIsLip6GMk9fkjcDJdJnCh`
 - Chinese Cloud Docs root inside the pool: `https://zilliverse.feishu.cn/wiki/XyeFwdx6kiK9A6kq3yIcLNdEnDd`
 
-## Current State
+## Evidence Snapshot — 2026-08-02
+
+The observations and counts in this section and the dated dry run below are non-authoritative. Re-enumerate both complete Bases on every run; the live full-Base scan supersedes old record counts, empty-table claims, wiki-pool counts, and action totals.
 
 - Source table snapshot: `145` records.
 - Target table snapshot: `0` records.
 - Chinese wiki pool snapshot: `790` nodes.
 - The usable counterpart subtree is `Cloud Docs`, not `Lakebase Docs`, `商业版部署手册`, or `Deprecations`.
-- Target `Chapter` options are not aligned for Management. They currently look like Deployment/BYOC options:
-  - `Deploy BYOC on AWS`
-  - `Deploy BYOC-I on AWS`
-  - `Deploy BYOC on GCP`
-  - `Deploy BYOC-I on Microsoft Azure`
-- Do not populate `Chapter` for Management records until the target field options are corrected or the user explicitly approves using blank `Chapter` values.
+- `Chapter` is ignored by `locale-policy.json`; it is not a drift, approval, or write field.
 - Audit Logs slug convention:
   - Section row `Audit Logs` / `审计日志` uses slug `auditing` in both source and target tables.
   - Canonical row `VectorDB Audit Logs` / `VectorDB 审计日志` keeps slug `audit-logs`.
@@ -36,7 +31,8 @@ Last inspected: 2026-06-18.
   - `Docs`: pseudo link such as `[组织](http://组织)`
   - no real wiki document needs to be created for pure table sections.
 - Canonical/ref rows should link to the existing Chinese wiki doc when a counterpart exists.
-- Preserve source `Slug`, `Placement Type`, `Targets`, `Keywords`, `Progress`, `Notebook`, `Beta`, `Ref Target Doc`, and parent hierarchy unless an exception below says otherwise.
+- Enforce placement-aware fields: `canonical` requires `Slug` and locale-reviewed `Targets`; `section` requires `Slug` and omits `Targets`; `link/ref` omit both and derive identity from their locale-specific source meta.
+- Preserve `Placement Type` and locale-owned `Keywords`, `Progress`, `Notebook`, `Beta`, `Book`, `Alias1`, `Alias2`, `Ref Target Doc`, and hierarchy unless a reviewed exception below says otherwise. Do not require English and Chinese `Parent` to be identical.
 - Build parent links only after creating parent records in the target table, using target record IDs.
 - Do not write `Seq. ID` because it is an auto-number field.
 
@@ -180,7 +176,7 @@ Apply these exceptions before reporting missing records:
 
 ## Dry-Run Classification
 
-For the empty target table:
+For a scan that actually observes an empty target table:
 
 - `NEW_META_FROM_EXISTING_DOC`: create target records that point to existing Chinese docs.
 - `NEW_SECTION_META`: create target section records using pseudo links.
@@ -192,7 +188,7 @@ Before live writes, produce a dry-run count with the concrete slugs/titles in ea
 
 ### 2026-06-18 Conservative Dry Run
 
-Target table `tblMuHkoG4qMugeX` is empty, so all approved writes would be record creates.
+The 2026-06-18 inspection found target table `tblMuHkoG4qMugeX` empty, so that historical proposal contained record creates only. This statement is not current authorization.
 
 | Class | Count | Notes |
 |---|---:|---|

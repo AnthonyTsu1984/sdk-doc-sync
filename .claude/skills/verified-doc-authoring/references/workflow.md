@@ -1,6 +1,6 @@
 # Draft Verified Docs Workflow Reference
 
-Load this file when using `draft-verified-docs`. It records the source map, reusable commands, and evidence format for drafting source-verified Milvus/Zilliz docs. Verification must cover both public API shape and implementation/service logic when the references make behavioral claims.
+Load this file when using `verified-doc-authoring`. It records the source map, reusable commands, and evidence format for drafting source-verified Milvus/Zilliz docs. Verification must cover both public API shape and implementation/service logic when the references make behavioral claims.
 
 ## Source Map
 
@@ -19,7 +19,7 @@ Use these as starting points, then broaden with `rg` if the mapped path does not
 | Zilliz Cloud service logic | `repos/zilliz-cloud/vdc/global/cloud-control-api/src/main/java/com/zilliz/cloud/control/api/services`, `repository`, `commons/validators`, `commons/utils`, `config`, `kafka`, and any controller-injected service dependencies. If a referenced service dependency lives outside the sparse checkout, expand the checkout before marking behavior unresolved. |
 | Zilliz CLI | `repos/zilliz-cloud/vdc/zilliz-tui`, `repos/zilliz-cloud/vdc/zilliz-cli`, and public release repo `repos/zilliz-cli` |
 
-Related sdk-doc-sync reference files:
+Related API Reference Sync files:
 
 - Python: `.claude/skills/api-reference-sync/sdk-python.md`
 - Java: `.claude/skills/api-reference-sync/sdk-java.md`
@@ -32,12 +32,12 @@ Related sdk-doc-sync reference files:
 
 ## Reference Extraction
 
-Create scratch files under `tmp/draft-verified-docs/`.
+Create scratch files under `tmp/verified-doc-authoring/`.
 
 Export a Feishu doc:
 
 ```bash
-node .claude/skills/api-reference-sync/bin/export-doc.js <doc-token-or-url> tmp/draft-verified-docs/reference.md
+node .claude/skills/api-reference-sync/bin/export-doc.js <doc-token-or-url> tmp/verified-doc-authoring/reference.md
 ```
 
 Fetch Feishu blocks when precise patch anchors or language labels matter:
@@ -193,7 +193,7 @@ For SDK examples:
 
 - Prefer official examples/tests and public request builders.
 - If a language lacks a real public equivalent, report the gap. Do not add a normal example that silently omits the feature.
-- For cross-SDK docs, use `patch-feishu-code` conventions for language labels and ordering when code-tab groups are involved.
+- For cross-SDK docs, use `procedure-code-sync` conventions for language labels and ordering when code-tab groups are involved.
 
 ## Draft Structure
 
@@ -228,7 +228,7 @@ Keep Feishu Markdown converter constraints in mind:
 
 When the user edits a page after publication and asks for the rules:
 
-1. Export the current page and diff it against the draft or final export saved under `tmp/draft-verified-docs/`.
+1. Export the current page and diff it against the draft or final export saved under `tmp/verified-doc-authoring/`.
 2. Classify removed content as placement, style, factual, example, or tooling/rendering feedback.
 3. Record edits as structured `placement`, `style`, `factual`, `example`, or `rendering` decision candidates. Repetition may increase support, but candidates never become active rules automatically. Report them and update the skill only when the user explicitly asks or a separate promotion is approved.
 4. Do not re-add removed content unless the user explicitly asks; the edited page is the newest source of editorial intent.
@@ -278,7 +278,7 @@ The adapter may internally use `feishu-doc.js` or `lark-cli`, but direct live `p
 The canonical executor refetches automatically. A separate export remains useful for human document review:
 
 ```bash
-node .claude/skills/api-reference-sync/bin/export-doc.js <target-doc-id> tmp/draft-verified-docs/after.md
+node .claude/skills/api-reference-sync/bin/export-doc.js <target-doc-id> tmp/verified-doc-authoring/after.md
 ```
 
 Inspect the result for lost headings, malformed lists, incorrect code block languages, broken links, and missing "Needs further verification" items.
@@ -314,14 +314,14 @@ Patch rules:
 Run the Feishu code verifier when the draft contains non-trivial examples and the relevant checks are feasible:
 
 ```bash
-node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js --markdown tmp/draft-verified-docs/draft.md
+node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js --markdown tmp/verified-doc-authoring/draft.md
 ```
 
 For SDK-aware checks:
 
 ```bash
 node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
-  --markdown tmp/draft-verified-docs/draft.md \
+  --markdown tmp/verified-doc-authoring/draft.md \
   --scenario \
   --languages python,go,java,node,bash,cpp \
   --go-module-dir repos/milvus-sdk-go \

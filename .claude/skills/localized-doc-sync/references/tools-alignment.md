@@ -2,8 +2,6 @@
 
 Use this maintained alignment file when syncing English source table `Tools` (`tblm1SbEPZaZrGZQ`) to Chinese target table `工具` (`tblRaa3JnIhllHb9`).
 
-Last inspected: 2026-06-18.
-
 ## Sources
 
 - English base: `Ac7xbs2k1ad7bjsCXr0ccHe9nMh`
@@ -14,18 +12,15 @@ Last inspected: 2026-06-18.
 - Chinese wiki root: `Cloud Docs`, `https://zilliverse.feishu.cn/wiki/XyeFwdx6kiK9A6kq3yIcLNdEnDd`
 - Chinese wiki space ID: `7167193056431783939`
 
-## Current State
+## Evidence Snapshot — 2026-08-02
+
+These observations and the dated dry-run counts below are non-authoritative. Re-enumerate both complete Bases on every run; the live full-Base scan supersedes record counts, empty-table statements, counterpart assumptions, and proposed action totals.
 
 - Source table snapshot: `24` records.
 - Target table snapshot: `0` records.
 - Source records contain `23` canonical wiki docs and `1` link row (`Zilliz CLI`).
 - Chinese docs currently have no Tools equivalents.
-- Target `Chapter` options are not aligned for Tools. They currently look like Deployment/BYOC options:
-  - `Deploy BYOC on AWS`
-  - `Deploy BYOC-I on AWS`
-  - `Deploy BYOC on GCP`
-  - `Deploy BYOC-I on Microsoft Azure`
-- Do not populate `Chapter` for Tools records until the target field options are corrected or the user explicitly approves blank/unaligned Chapter handling.
+- `Chapter` is ignored by `locale-policy.json`; it is not a drift, approval, or write field.
 
 ## Target Wiki Structure
 
@@ -103,19 +98,11 @@ The `Zilliz CLI` source row is a `link` row only and should not create a wiki do
 
 - Do not write `Seq. ID` because it is an auto-number field.
 - Use Chinese titles for `Labels` and target `Docs` link titles.
-- Preserve source-controlled metadata:
-  - `Slug`
-  - `Targets`
-  - `Placement Type`
-  - `Keywords`
-  - `Progress`
-  - `Notebook`
-  - `Beta`
-  - `Ref Target Doc`
-  - `Parent`
+- Enforce placement-aware fields: canonical rows require `Slug` and locale-reviewed `Targets`; the `Zilliz CLI` link row must carry neither.
+- Preserve `Placement Type`, `Ref Target Doc`, locale-owned `Keywords`, `Progress`, `Notebook`, `Beta`, `Book`, `Alias1`, and `Alias2`, and the locale-specific parent hierarchy.
 - Preserve source `Docs` hierarchy by linking target rows to the newly created Chinese wiki docs.
 - For the `Zilliz CLI` link row, preserve `Ref Target Doc` `/reference/cli/overview`, `Placement Type` `link`, and pseudo `Docs` `[Zilliz CLI](http://Zilliz CLI)`.
-- Leave `Chapter` blank until the target options are corrected.
+- Ignore `Chapter` according to `locale-policy.json`.
 
 ## Translation Rules
 
@@ -137,4 +124,4 @@ The `Zilliz CLI` source row is a `link` row only and should not create a wiki do
 | `ORPHAN` | 0 | Target table is empty. |
 | `MISSING_PARENT` | 0 | Parent rows can be created before children. |
 
-Before live writes, ask for explicit approval to create the wiki container, 23 translated wiki docs, and 24 target table records.
+These dated counts cannot authorize a live write. Build a new issue queue from the current full-Base scan and request exact digest approval for the resulting unit.

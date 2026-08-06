@@ -1,4 +1,4 @@
-# Patch Feishu Code Feature Cases
+# Procedure Code Sync Feature Cases
 
 Read only the section matching the procedure being patched. Always re-verify current public APIs because these cases record reusable search paths and semantic cautions, not permanent API guarantees.
 
@@ -38,7 +38,7 @@ If Go or C++ lacks a public cluster/session equivalent, skip the block and repor
 ## Patching Mechanics
 
 1. Refetch the document and record anchor block IDs.
-2. Generate XML code blocks under `tmp/patch-feishu-code/`.
+2. Generate XML code blocks under `tmp/procedure-code-sync/`.
 3. Insert from the highest child index to the lowest.
 4. Refetch the live document after structural changes.
 5. Report inserted blocks, intentional omissions, revision evidence, and verifier caveats.

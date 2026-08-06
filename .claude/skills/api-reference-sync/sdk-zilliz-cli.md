@@ -120,7 +120,7 @@ Use this when public release tags are in `zilliztech/zilliz-cli` but implementat
    - **Docs Required (CREATE):** new command/resource/action appears.
    - **Docs Required (UPDATE):** existing command changed flags/constraints/examples/path/behavior.
    - **No SDK doc action:** installer UX/readme/roadmap/plugin-list-only changes.
-6. Only after matrix approval, run sdk-doc-sync creation/patching for changed commands.
+6. Only after matrix approval, run the API Reference Sync creation/patching workflow for changed commands.
 
 ### Example matrix: `zilliz-v1.3.4` → `zilliz-v1.4.2` (2026-05-14 audit)
 

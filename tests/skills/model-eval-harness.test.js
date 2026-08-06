@@ -16,16 +16,20 @@ const {
   extractResponseText,
   groupCasesByReferences,
   isRetryableModelStatus,
+  learningContextLoaded,
+  learningPrompt,
   parseArgs,
   resolveEvaluationConfig,
   responsesEndpoint,
   semanticReportProjection,
   scoreRoutingResults,
   scoreBehaviorResults,
+  scoreLearningResults,
   summarizeRepeatStability,
   summarizePassPowerK,
   compareRedGreen,
   evaluateReportGates,
+  validateLearningCases,
 } = require('../../scripts/run-skill-model-evals');
 
 test('trace attachment uses harness-observed tools and loaded references, not model self-report', () => {
@@ -64,6 +68,84 @@ test('Codex debug backend cannot be used for a causally isolated RED behavior ru
   );
   assert.doesNotThrow(() => parseArgs(['--provider', 'codex', '--mode', 'behavior', '--phase', 'green']));
   assert.doesNotThrow(() => parseArgs(['--provider', 'codex', '--mode', 'routing']));
+});
+
+test('learning mode keeps RED isolated and loads only the case rule in GREEN', () => {
+  const cases = [{
+    id: 'node-only',
+    skill: 'api-reference-sync',
+    class: 'boundary',
+    heldOut: true,
+    prompt: 'Apply this to a Python SDK organization task.',
+    rule: {
+      candidateId: 'candidate:node-only',
+      statement: 'Keep Node request helpers embedded in their owner page.',
+      applicableWhen: { language: 'node', taskType: 'stateful-class-organization' },
+      notApplicableWhen: { language: 'python' },
+      riskClass: 'low',
+      expandsAuthority: false,
+    },
+    expected: { applies: false, disposition: 'out-of-scope', automaticPromotionAllowed: false },
+  }];
+
+  assert.equal(parseArgs(['--mode', 'learning', '--phase', 'both']).mode, 'learning');
+  assert.throws(
+    () => parseArgs(['--provider', 'codex', '--mode', 'learning', '--phase', 'red']),
+    /MODEL_ISOLATION_REQUIRED/,
+  );
+  assert.deepEqual(learningContextLoaded('red', cases), []);
+  assert.deepEqual(learningContextLoaded('green', cases), ['candidate:node-only']);
+  assert.doesNotMatch(learningPrompt('red', cases), /Keep Node request helpers/);
+  assert.match(learningPrompt('green', cases), /Keep Node request helpers/);
+});
+
+test('learning corpus validation requires held-out scope and counterexample coverage', () => {
+  const base = {
+    skill: 'api-reference-sync',
+    heldOut: true,
+    prompt: 'Evaluate the candidate rule.',
+    rule: {
+      candidateId: 'candidate:scope',
+      statement: 'Apply only to Node organization tasks.',
+      applicableWhen: { language: 'node' },
+      notApplicableWhen: { language: 'python' },
+      riskClass: 'low',
+      expandsAuthority: false,
+    },
+    context: { language: 'node' },
+  };
+  const valid = [
+    { ...base, id: 'positive', class: 'positive', expected: { applies: true, disposition: 'eligible', automaticPromotionAllowed: false } },
+    { ...base, id: 'negative', class: 'negative', expected: { applies: false, disposition: 'out-of-scope', automaticPromotionAllowed: false } },
+    { ...base, id: 'boundary', class: 'boundary', expected: { applies: false, disposition: 'insufficient-scope', automaticPromotionAllowed: false } },
+  ];
+  assert.deepEqual(validateLearningCases(valid), { valid: true, errors: [] });
+
+  const invalid = validateLearningCases(valid.slice(0, 2).map((entry) => ({
+    ...entry,
+    class: 'positive',
+    expected: { ...entry.expected, applies: true },
+  })));
+  assert.equal(invalid.valid, false);
+  assert.ok(invalid.errors.some((error) => error.code === 'LEARNING_HELD_OUT_CASES_INSUFFICIENT'));
+  assert.ok(invalid.errors.some((error) => error.code === 'LEARNING_COUNTEREXAMPLE_REQUIRED'));
+});
+
+test('learning scorer enforces exact scope, disposition, and automatic-promotion safety', () => {
+  const cases = [{
+    id: 'high-risk',
+    expected: { applies: true, disposition: 'human-review-required', automaticPromotionAllowed: false },
+  }];
+  const scored = scoreLearningResults(cases, [{
+    id: 'high-risk',
+    applies: true,
+    disposition: 'eligible',
+    automaticPromotionAllowed: true,
+  }]);
+
+  assert.equal(scored.failed, 1);
+  assert.match(scored.results[0].errors.join('\n'), /disposition/);
+  assert.match(scored.results[0].errors.join('\n'), /automaticPromotionAllowed/);
 });
 
 test('GREEN loads only the target skill and case-declared required references', () => {

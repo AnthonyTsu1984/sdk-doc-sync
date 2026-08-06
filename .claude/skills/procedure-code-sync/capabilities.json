@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "skill": "procedure-code-sync",
   "mustPreserve": [
     { "id": "procedure.python-led", "description": "Interpret the existing Python procedure before porting examples.", "fixtureIds": ["python-led"] },
@@ -20,5 +20,27 @@
   "inputContract": { "requires": ["procedureDocument", "pythonWorkflow", "requestedLanguages", "sourceRepositories"] },
   "outputContract": { "schemaVersion": 1, "statuses": ["BLOCKED", "READY", "EXECUTED", "PARTIAL", "VERIFIED"] },
   "sideEffectPolicy": { "default": "dry-run", "writeRequires": ["exactBlocks", "batchDigest", "approval", "refetch"] },
-  "allowedSemanticChanges": ["procedure.exact-approval", "procedure.round-trip"]
+  "allowedSemanticChanges": ["procedure.exact-approval", "procedure.round-trip"],
+  "reviewPolicy": {
+    "unit": "document",
+    "gates": ["write", "document-acceptance"],
+    "rollback": "pre-finalization"
+  },
+  "learningPolicy": {
+    "captureOutcomes": ["rejected", "changes_requested", "approved", "accepted"],
+    "approvalStrength": "weak-positive",
+    "highRiskAutomaticPromotion": false
+  },
+  "adapterPolicy": {
+    "operations": [
+      {
+        "operation": "patch",
+        "status": "planned",
+        "productionEntrypoint": null,
+        "focusedTest": null,
+        "migrationTask": "Task 10",
+        "journalRequiredForWrites": true
+      }
+    ]
+  }
 }

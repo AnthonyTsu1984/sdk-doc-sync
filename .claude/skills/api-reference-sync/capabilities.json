@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "skill": "api-reference-sync",
   "mustPreserve": [
     { "id": "api.release-range", "description": "Use the last accepted scan state and target release range.", "fixtureIds": ["release-range"] },
@@ -27,5 +27,26 @@
   "inputContract": { "requires": ["releaseRange", "sourceEvidence", "documentationIdentity", "livePlacement"] },
   "outputContract": { "schemaVersion": 1, "statuses": ["BLOCKED", "READY", "EXECUTED", "PARTIAL", "ACCEPTANCE_REQUIRED", "COMPLETE"] },
   "sideEffectPolicy": { "default": "read-only", "writeRequires": ["batchDigest", "approval", "livePreconditions", "journal"] },
-  "allowedSemanticChanges": ["api.exact-approval", "api.recoverable-execution"]
+  "allowedSemanticChanges": ["api.exact-approval", "api.recoverable-execution"],
+  "reviewPolicy": {
+    "unit": "document",
+    "gates": ["write", "document-acceptance"],
+    "rollback": "pre-finalization"
+  },
+  "learningPolicy": {
+    "captureOutcomes": ["rejected", "changes_requested", "approved", "accepted"],
+    "approvalStrength": "weak-positive",
+    "highRiskAutomaticPromotion": false
+  },
+  "adapterPolicy": {
+    "operations": [
+      {
+        "operation": "sync",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+        "focusedTest": ".claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js",
+        "journalRequiredForWrites": true
+      }
+    ]
+  }
 }

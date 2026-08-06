@@ -15,14 +15,34 @@ function readJson(filePath) {
 }
 
 test('all canonical skills have schema-valid executable capability baselines', () => {
+  const schemaVersions = new Set();
   for (const skill of SKILLS) {
     const root = path.join(SKILLS_ROOT, skill);
     const manifest = readJson(path.join(root, 'capabilities.json'));
     const fixtures = readJson(path.join(root, 'tests', 'conformance-fixtures', 'cases.json'));
-    const validation = validateCapabilityManifest(manifest, { fixtureIds: fixtures.map(item => item.id) });
+    const validation = validateCapabilityManifest(manifest, {
+      fixtureIds: fixtures.map(item => item.id),
+      repoRoot: path.resolve(SKILLS_ROOT, '..', '..'),
+    });
     assert.deepEqual(validation, { valid: true, errors: [] }, `${skill}: ${JSON.stringify(validation.errors)}`);
     assert.equal(manifest.skill, skill);
+    schemaVersions.add(manifest.schemaVersion);
     for (const fixture of fixtures) assert.ok(Object.keys(fixture.assertions || {}).length > 0, `${skill}:${fixture.id} needs assertions`);
+  }
+  assert.deepEqual([...schemaVersions], [2]);
+});
+
+test('all canonical skills declare review, learning, and adapter policies without overstating production adoption', () => {
+  const manifests = Object.fromEntries(SKILLS.map((skill) => [
+    skill,
+    readJson(path.join(SKILLS_ROOT, skill, 'capabilities.json')),
+  ]));
+  assert.equal(manifests['api-reference-sync'].adapterPolicy.operations[0].status, 'adopted');
+  assert.equal(manifests['doc-code-verify'].adapterPolicy.operations.find((item) => item.operation === 'static-verify').status, 'adopted');
+  assert.equal(manifests['doc-code-verify'].adapterPolicy.operations.find((item) => item.operation === 'live-verify').status, 'planned');
+  for (const skill of ['localized-doc-sync', 'procedure-code-sync', 'verified-doc-authoring']) {
+    assert.equal(manifests[skill].adapterPolicy.operations[0].status, 'planned');
+    assert.match(manifests[skill].adapterPolicy.operations[0].migrationTask, /^Task (?:9|10|11)$/);
   }
 });
 

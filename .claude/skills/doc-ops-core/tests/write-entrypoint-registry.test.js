@@ -40,6 +40,9 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   assert.equal(authoring.classification, 'canonical-governed');
   assert.equal(authoring.approval, 'exact-batch-digest');
   assert.equal(authoring.reconciliation, 'required');
+  const verifier = registry.entries.find((entry) => entry.path.endsWith('/verify-feishu-doc-code.js'));
+  assert.equal(verifier.approval, 'exact-runtime-manifest-digest');
+  assert.equal(verifier.journal, 'required-for-mutating-live-runtime');
   const legacy = registry.entries.find((entry) => entry.path.endsWith('/feishu-doc-translator.js'));
   assert.equal(legacy.classification, 'legacy-live');
   assert.equal(legacy.quarantineFlag, 'DOC_OPS_ALLOW_LEGACY_LIVE');

@@ -1444,12 +1444,14 @@
       "skill": "doc-code-verify",
       "classification": "canonical-governed",
       "operation": "verify",
-      "basis": "reviewed canonical entrypoint",
-      "approval": "runtime-gates",
-      "journal": "approved-live-runtime",
+      "basis": "reviewed static verifier plus exact live runtime manifest, mutation approval, cleanup journal, and read-only remediation handoff",
+      "approval": "exact-runtime-manifest-digest",
+      "journal": "required-for-mutating-live-runtime",
       "reconciliation": "cleanup-required",
       "tests": [
-        "tests/skills/verifier-result-contract.test.js"
+        "tests/skills/verifier-result-contract.test.js",
+        ".claude/skills/doc-code-verify/tests/runtime-integration.test.js",
+        ".claude/skills/doc-code-verify/tests/runtime-session.test.js"
       ]
     },
     {

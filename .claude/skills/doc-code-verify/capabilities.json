@@ -27,7 +27,7 @@
     "rollback": "runtime-cleanup-only"
   },
   "learningPolicy": {
-    "captureOutcomes": ["rejected", "changes_requested", "approved", "accepted"],
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
     "approvalStrength": "weak-positive",
     "highRiskAutomaticPromotion": false
   },
@@ -42,10 +42,9 @@
       },
       {
         "operation": "live-verify",
-        "status": "planned",
-        "productionEntrypoint": null,
-        "focusedTest": null,
-        "migrationTask": "Task 12",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
+        "focusedTest": ".claude/skills/doc-code-verify/tests/runtime-integration.test.js",
         "journalRequiredForWrites": true
       }
     ]

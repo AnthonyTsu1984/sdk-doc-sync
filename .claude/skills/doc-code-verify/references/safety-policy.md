@@ -24,6 +24,18 @@ Runtime execution requires both:
 
 Live service checks require `--live`, `--allow-run`, an in-block runtime annotation, and the live profile's required env vars. Runtime checks should use a timeout and a temp working directory.
 
+For a runtime manifest with `create`, `update`, or `delete` side effects:
+
+1. Supply a unique `--resource-suffix` so every resource name is isolated.
+2. Run once with `--runtime-manifest <path>` to materialize the exact manifest. The verifier stops before runtime when approval is absent.
+3. Review snippets/scenarios, env groups, network targets, resource names, expected mutations, cleanup actions, timeouts, side-effect classes, and recovery commands.
+4. Rerun with `--approve-runtime-digest sha256:<manifest-digest>` and `--runtime-journal <path>`.
+5. Treat `--live --allow-run` without the exact digest as unauthorized for mutating scenarios.
+
+Every prepared resource mutation and cleanup must receive an observed journal result. Completion is `VERIFIED` only when mutations succeeded and cleanup is verified. Missing cleanup returns `BLOCKED` with residual resource names and recovery commands; failed mutations return `FAILED`.
+
+Runtime approval never authorizes documentation write-back. A `--remediation-handoff <path>` artifact is read-only and must be converted into a new exact action batch by `procedure-code-sync` or `verified-doc-authoring`.
+
 ## Output Handling
 
 Reports must redact likely secrets from stdout/stderr. Keep only short stderr/stdout excerpts in the JSON report.

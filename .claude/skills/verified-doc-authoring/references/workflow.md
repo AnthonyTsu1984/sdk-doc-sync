@@ -1,6 +1,6 @@
 # Draft Verified Docs Workflow Reference
 
-Load this file when using `draft-verified-docs`. It records the source map, reusable commands, and evidence format for drafting source-verified Milvus/Zilliz docs. Verification must cover both public API shape and implementation/service logic when the references make behavioral claims.
+Load this file when using `verified-doc-authoring`. It records the source map, reusable commands, and evidence format for drafting source-verified Milvus/Zilliz docs. Verification must cover both public API shape and implementation/service logic when the references make behavioral claims.
 
 ## Source Map
 
@@ -19,7 +19,7 @@ Use these as starting points, then broaden with `rg` if the mapped path does not
 | Zilliz Cloud service logic | `repos/zilliz-cloud/vdc/global/cloud-control-api/src/main/java/com/zilliz/cloud/control/api/services`, `repository`, `commons/validators`, `commons/utils`, `config`, `kafka`, and any controller-injected service dependencies. If a referenced service dependency lives outside the sparse checkout, expand the checkout before marking behavior unresolved. |
 | Zilliz CLI | `repos/zilliz-cloud/vdc/zilliz-tui`, `repos/zilliz-cloud/vdc/zilliz-cli`, and public release repo `repos/zilliz-cli` |
 
-Related sdk-doc-sync reference files:
+Related API Reference Sync files:
 
 - Python: `.claude/skills/api-reference-sync/sdk-python.md`
 - Java: `.claude/skills/api-reference-sync/sdk-java.md`
@@ -32,12 +32,12 @@ Related sdk-doc-sync reference files:
 
 ## Reference Extraction
 
-Create scratch files under `tmp/draft-verified-docs/`.
+Create scratch files under `tmp/verified-doc-authoring/`.
 
 Export a Feishu doc:
 
 ```bash
-node .claude/skills/api-reference-sync/bin/export-doc.js <doc-token-or-url> tmp/draft-verified-docs/reference.md
+node .claude/skills/api-reference-sync/bin/export-doc.js <doc-token-or-url> tmp/verified-doc-authoring/reference.md
 ```
 
 Fetch Feishu blocks when precise patch anchors or language labels matter:
@@ -193,7 +193,7 @@ For SDK examples:
 
 - Prefer official examples/tests and public request builders.
 - If a language lacks a real public equivalent, report the gap. Do not add a normal example that silently omits the feature.
-- For cross-SDK docs, use `patch-feishu-code` conventions for language labels and ordering when code-tab groups are involved.
+- For cross-SDK docs, use `procedure-code-sync` conventions for language labels and ordering when code-tab groups are involved.
 
 ## Draft Structure
 
@@ -228,43 +228,66 @@ Keep Feishu Markdown converter constraints in mind:
 
 When the user edits a page after publication and asks for the rules:
 
-1. Export the current page and diff it against the draft or final export saved under `tmp/draft-verified-docs/`.
+1. Export the current page and diff it against the draft or final export saved under `tmp/verified-doc-authoring/`.
 2. Classify removed content as placement, style, factual, example, or tooling/rendering feedback.
-3. Treat repeated edits across pages as candidate reusable rules. Report them and update the skill only when the user explicitly asks.
+3. Record edits as structured `placement`, `style`, `factual`, `example`, or `rendering` decision candidates. Repetition may increase support, but candidates never become active rules automatically. Report them and update the skill only when the user explicitly asks or a separate promotion is approved.
 4. Do not re-add removed content unless the user explicitly asks; the edited page is the newest source of editorial intent.
 5. Keep a short note in the final report naming the inferred rules and, when an update was requested, the skill files changed.
 
 ## Feishu Write-Back
 
-Patch an existing target page:
+Build claim and draft artifacts first:
 
 ```bash
-node .claude/skills/api-reference-sync/scripts/feishu-doc.js patch <target-doc-id> tmp/draft-verified-docs/draft.md --strategy smart --dry-run
-node .claude/skills/api-reference-sync/scripts/feishu-doc.js patch <target-doc-id> tmp/draft-verified-docs/draft.md --strategy smart
+node .claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js claims \
+  --input tmp/verified-doc-authoring/claims-input.json \
+  --markdown tmp/verified-doc-authoring/draft.md \
+  --inventory-output tmp/verified-doc-authoring/claim-inventory.json \
+  --draft-output tmp/verified-doc-authoring/draft-artifact.json
 ```
 
-Use `replace` only when the user wants the page rewritten. Use `append` only when the target page should keep existing content and receive a new section at the end.
-
-Push a new doc only if the user asks for creation and supplies a folder or wiki space:
+Plan an existing-page patch after fetching its current revision and protected block inventory:
 
 ```bash
-node .claude/skills/api-reference-sync/scripts/feishu-doc.js push tmp/draft-verified-docs/draft.md --folder <folder-token> --title "<title>" --dry-run
-node .claude/skills/api-reference-sync/scripts/feishu-doc.js push tmp/draft-verified-docs/draft.md --folder <folder-token> --title "<title>"
+node .claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js plan \
+  --target tmp/verified-doc-authoring/target.json \
+  --semantic-diff tmp/verified-doc-authoring/semantic-diff.json \
+  --claim-inventory tmp/verified-doc-authoring/claim-inventory.json \
+  --draft-artifact tmp/verified-doc-authoring/draft-artifact.json \
+  --output tmp/verified-doc-authoring/plan.json \
+  --session tmp/verified-doc-authoring/session.json \
+  --session-id <session-id>
 ```
 
-After any live write, export or fetch the target again:
+When unresolved or contradicted claims remain visible in a live draft, add `--claim-review-decision-digest sha256:<digest>`. This evidence reviews the uncertainty; it does not approve the write.
+
+After the exact action batch is approved, execute it through a reviewed adapter module:
 
 ```bash
-node .claude/skills/api-reference-sync/bin/export-doc.js <target-doc-id> tmp/draft-verified-docs/after.md
+node .claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js execute \
+  --plan tmp/verified-doc-authoring/plan.json \
+  --approval tmp/verified-doc-authoring/approval.json \
+  --adapter-module <reviewed-adapter.js> \
+  --journal tmp/verified-doc-authoring/execution.jsonl \
+  --output tmp/verified-doc-authoring/execution.json \
+  --session tmp/verified-doc-authoring/session.json
+```
+
+The adapter may internally use `feishu-doc.js` or `lark-cli`, but direct live `patch`, `push`, or `docs +update` commands are not an authorization path for this skill. Use `replace` only when the user requests a rebuild; use `append` only for an approved append-only semantic diff. Creation additionally requires an approved folder or wiki scope and exact title.
+
+The canonical executor refetches automatically. A separate export remains useful for human document review:
+
+```bash
+node .claude/skills/api-reference-sync/bin/export-doc.js <target-doc-id> tmp/verified-doc-authoring/after.md
 ```
 
 Inspect the result for lost headings, malformed lists, incorrect code block languages, broken links, and missing "Needs further verification" items.
 
-Do not use whole-page overwrite as a repair shortcut for existing docs with synced blocks, code-tab groups, includes, reference blocks, tables, or hand-maintained anchors unless the user explicitly requests a rebuild. Whole-page overwrite can flatten code tabs, change language metadata, delete synced/reference structures, and replace anchorable block IDs. If a smart patch creates duplicated leading blocks, malformed code fences, or block-order issues, stop and switch to precise `lark-cli` block operations after refetching current block IDs.
+Do not use whole-page overwrite as a repair shortcut for existing docs with synced blocks, code-tab groups, includes, reference blocks, tables, or hand-maintained anchors unless the user explicitly requests a rebuild. Whole-page overwrite can flatten code tabs, change language metadata, delete synced/reference structures, and replace anchorable block IDs. If a smart patch creates duplicated leading blocks, malformed code fences, or block-order issues, stop, refetch current block IDs, build a new exact plan, and use precise adapter-backed block operations.
 
 ## Feishu/Lark CLI Patching
 
-Use this path when a page is not editable through the Node helper, when the user explicitly asks for `lark-cli`, or when a precise block-level patch is safer than a whole-page smart patch.
+Use this adapter path when a page is not editable through the Node helper, when the user explicitly asks for `lark-cli`, or when a precise block-level patch is safer than a whole-page smart patch. `lark-cli` still runs behind the canonical action batch and journal.
 
 Fetch with user identity and v2 API:
 
@@ -276,7 +299,7 @@ lark-cli docs +fetch --api-version v2 --as user --doc "<wiki-or-doc-url>" --scop
 Patch rules:
 
 - Prefer `block_replace` for small edits to existing Feishu docs that contain synced blocks, includes, tables, or code tabs. Avoid overwriting the whole page unless the user explicitly wants a rebuild.
-- Use `--dry-run` before live `docs +update` calls. Refetch after every live write that changes block structure, because replacement creates new block IDs.
+- The canonical plan is the dry-run authority before any live `docs +update` call. Refetch after every live write that changes block structure, because replacement creates new block IDs.
 - Run dependent block updates sequentially. Parallel writes can return revisions out of order; always refetch before continuing if multiple updates touch the same section.
 - If Markdown `str_replace` dry-runs but live matching fails, switch to `block_replace` with XML and current block IDs.
 - Keep raw conditional publishing tags such as `&lt;include target="milvus"&gt;...&lt;/include&gt;` escaped in XML content. In fetched Markdown they may appear as literal `<include ...>` tags.
@@ -291,14 +314,14 @@ Patch rules:
 Run the Feishu code verifier when the draft contains non-trivial examples and the relevant checks are feasible:
 
 ```bash
-node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js --markdown tmp/draft-verified-docs/draft.md
+node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js --markdown tmp/verified-doc-authoring/draft.md
 ```
 
 For SDK-aware checks:
 
 ```bash
 node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
-  --markdown tmp/draft-verified-docs/draft.md \
+  --markdown tmp/verified-doc-authoring/draft.md \
   --scenario \
   --languages python,go,java,node,bash,cpp \
   --go-module-dir repos/milvus-sdk-go \

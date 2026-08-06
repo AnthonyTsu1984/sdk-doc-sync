@@ -2,8 +2,6 @@
 
 Use this maintained alignment file when syncing English source table `Get Started` (`tbl9BeCMjBmalJVb`) to Chinese target table `从这里开始` (`tblsw6S3J0ekcgNB`).
 
-Last inspected: 2026-06-18.
-
 ## Sources
 
 - English base: `Ac7xbs2k1ad7bjsCXr0ccHe9nMh`
@@ -14,18 +12,15 @@ Last inspected: 2026-06-18.
 - English wiki root: `https://zilliverse.feishu.cn/wiki/OUWXw5c4gia34ZkQUcEcMFbWn6s`
 - Chinese wiki root: `https://zilliverse.feishu.cn/wiki/XyeFwdx6kiK9A6kq3yIcLNdEnDd`
 
-## Current State
+## Evidence Snapshot — 2026-08-02
+
+This section retains dated observations from earlier inspections and dry runs. It is non-authoritative: every run must re-enumerate both complete Bases, and the resulting live full-Base scan supersedes these counts, completeness statements, and action totals.
 
 - Source Get Started snapshot: `11` records.
 - Target 从这里开始 snapshot: `12` records.
 - All target docs already exist. Current sync work is metadata-only.
 - The extra target row `BYOC 简介` is intentional because Chinese docs do not have a separate Deployment section.
-- Target `Chapter` options are not aligned for Get Started. They currently look like Deployment/BYOC options:
-  - `Deploy BYOC on AWS`
-  - `Deploy BYOC-I on AWS`
-  - `Deploy BYOC on GCP`
-  - `Deploy BYOC-I on Microsoft Azure`
-- Do not populate `Chapter` for Get Started records until the target field options are corrected or the user explicitly approves blank/unaligned Chapter handling.
+- `Chapter` is ignored by `locale-policy.json`; observed values or options do not participate in drift, approval, or writes.
 
 ## BYOC Placement Exception
 
@@ -66,23 +61,16 @@ Treat `BYOC 简介` as a valid localized Get Started row, not as an orphan.
 | 11 | 云服务提供商和地域 | Get Started | `cloud-providers-and-regions` / Cloud Providers & Regions |
 | 12 | 常见问题 | Get Started | `faqs` / FAQs |
 
-## Metadata Sync Rules
+## Durable Metadata Rules
 
 - Do not write `Seq. ID` because it is an auto-number field.
 - Preserve target `Docs` URLs and Chinese document titles.
 - Use Chinese target document titles for `Labels`.
-- Copy source-controlled metadata into target records:
-  - `Slug`
-  - `Targets`
-  - `Placement Type`
-  - `Keywords`
-  - `Progress`
-  - `Notebook`
-  - `Beta`
-  - `Parent`
-- For the `快速开始` section row, keep `Slug` blank because the English source section has no slug.
+- Enforce placement-aware fields: `canonical` requires `Slug` and `Targets`; `section` requires `Slug` and omits `Targets`; `link/ref` omit both.
+- `Labels`, `Keywords`, `Progress`, `Notebook`, `Beta`, `Book`, `Alias1`, and `Alias2` follow the locale-specific source. Cross-language differences are not drift by themselves.
+- For the `快速开始` section row, preserve its non-empty locale-source `Slug`. A missing section slug is a placement-contract issue, not a value to copy as blank.
 - For quickstart child rows, set `Parent` to the target `快速开始` section record.
-- Leave `Chapter` blank until the target options are corrected.
+- Ignore `Chapter` according to `locale-policy.json`.
 
 ## 2026-06-18 Dry Run
 
@@ -94,4 +82,4 @@ Treat `BYOC 简介` as a valid localized Get Started row, not as an orphan.
 | `ORPHAN` | 0 | `BYOC 简介` is covered by the BYOC placement exception. |
 | `MISSING_PARENT` | 0 | Quickstart child rows can link to the existing target `快速开始` section record. |
 
-Before live writes, ask for explicit approval to apply the `META_ONLY` updates to target table `tblsw6S3J0ekcgNB`.
+These dated counts cannot authorize a live write. Build a new issue queue from the current full-Base scan and request exact digest approval for the resulting unit.

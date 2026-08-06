@@ -14,18 +14,23 @@ const {
   buildToolContinuationInput,
   buildCodexEnv,
   extractResponseText,
+  fetchModelResponse,
   groupCasesByReferences,
   isRetryableModelStatus,
+  learningContextLoaded,
+  learningPrompt,
   parseArgs,
   resolveEvaluationConfig,
   responsesEndpoint,
   semanticReportProjection,
   scoreRoutingResults,
   scoreBehaviorResults,
+  scoreLearningResults,
   summarizeRepeatStability,
   summarizePassPowerK,
   compareRedGreen,
   evaluateReportGates,
+  validateLearningCases,
 } = require('../../scripts/run-skill-model-evals');
 
 test('trace attachment uses harness-observed tools and loaded references, not model self-report', () => {
@@ -66,6 +71,93 @@ test('Codex debug backend cannot be used for a causally isolated RED behavior ru
   assert.doesNotThrow(() => parseArgs(['--provider', 'codex', '--mode', 'routing']));
 });
 
+test('learning mode keeps RED isolated and loads only the case rule in GREEN', () => {
+  const cases = [{
+    id: 'node-only',
+    skill: 'api-reference-sync',
+    class: 'boundary',
+    heldOut: true,
+    prompt: 'Apply this to a Python SDK organization task.',
+    rule: {
+      candidateId: 'candidate:node-only',
+      statement: 'Keep Node request helpers embedded in their owner page.',
+      applicableWhen: { language: 'node', taskType: 'stateful-class-organization' },
+      notApplicableWhen: { language: 'python' },
+      riskClass: 'low',
+      expandsAuthority: false,
+    },
+    expected: { applies: false, disposition: 'out-of-scope', automaticPromotionAllowed: false },
+  }];
+
+  assert.equal(parseArgs(['--mode', 'learning', '--phase', 'both']).mode, 'learning');
+  assert.throws(
+    () => parseArgs(['--provider', 'codex', '--mode', 'learning', '--phase', 'red']),
+    /MODEL_ISOLATION_REQUIRED/,
+  );
+  assert.deepEqual(learningContextLoaded('red', cases), []);
+  assert.deepEqual(learningContextLoaded('green', cases), ['candidate:node-only']);
+  assert.doesNotMatch(learningPrompt('red', cases), /Keep Node request helpers/);
+  assert.match(learningPrompt('green', cases), /Keep Node request helpers/);
+  assert.match(learningPrompt('green', cases), /automaticPromotionAllowed must always be false/);
+  assert.match(learningPrompt('green', cases), /eligible.*reviewed promotion proposal.*never automatic activation/is);
+});
+
+test('learning prompt makes one-off exceptions inapplicable even when scope matches', () => {
+  assert.match(
+    learningPrompt('green', []),
+    /ruleClass=one-off-exception.*applies=false.*non-promotable/is,
+  );
+});
+
+test('learning corpus validation requires held-out scope and counterexample coverage', () => {
+  const base = {
+    skill: 'api-reference-sync',
+    heldOut: true,
+    prompt: 'Evaluate the candidate rule.',
+    rule: {
+      candidateId: 'candidate:scope',
+      statement: 'Apply only to Node organization tasks.',
+      applicableWhen: { language: 'node' },
+      notApplicableWhen: { language: 'python' },
+      riskClass: 'low',
+      expandsAuthority: false,
+    },
+    context: { language: 'node' },
+  };
+  const valid = [
+    { ...base, id: 'positive', class: 'positive', expected: { applies: true, disposition: 'eligible', automaticPromotionAllowed: false } },
+    { ...base, id: 'negative', class: 'negative', expected: { applies: false, disposition: 'out-of-scope', automaticPromotionAllowed: false } },
+    { ...base, id: 'boundary', class: 'boundary', expected: { applies: false, disposition: 'insufficient-scope', automaticPromotionAllowed: false } },
+  ];
+  assert.deepEqual(validateLearningCases(valid), { valid: true, errors: [] });
+
+  const invalid = validateLearningCases(valid.slice(0, 2).map((entry) => ({
+    ...entry,
+    class: 'positive',
+    expected: { ...entry.expected, applies: true },
+  })));
+  assert.equal(invalid.valid, false);
+  assert.ok(invalid.errors.some((error) => error.code === 'LEARNING_HELD_OUT_CASES_INSUFFICIENT'));
+  assert.ok(invalid.errors.some((error) => error.code === 'LEARNING_COUNTEREXAMPLE_REQUIRED'));
+});
+
+test('learning scorer enforces exact scope, disposition, and automatic-promotion safety', () => {
+  const cases = [{
+    id: 'high-risk',
+    expected: { applies: true, disposition: 'human-review-required', automaticPromotionAllowed: false },
+  }];
+  const scored = scoreLearningResults(cases, [{
+    id: 'high-risk',
+    applies: true,
+    disposition: 'eligible',
+    automaticPromotionAllowed: true,
+  }]);
+
+  assert.equal(scored.failed, 1);
+  assert.match(scored.results[0].errors.join('\n'), /disposition/);
+  assert.match(scored.results[0].errors.join('\n'), /automaticPromotionAllowed/);
+});
+
 test('GREEN loads only the target skill and case-declared required references', () => {
   const cases = [{ expected: { mustRead: ['references/live-env.md', 'references/safety-policy.md'] } }];
   const loaded = behaviorContextLoaded('doc-code-verify', 'green', cases);
@@ -85,6 +177,25 @@ test('behavior protocol exposes only target-skill actions and canonical artifact
   ]);
   assert.equal(behaviorActionTokens('localized-doc-sync').includes('preserve_scan_state'), false);
   assert.deepEqual(behaviorArtifactTypes('localized-doc-sync'), ['actionBatch', 'syncPlan']);
+});
+
+test('behavior prompt does not turn missing draft-only inputs into an approval gate', () => {
+  const prompt = behaviorPrompt('verified-doc-authoring', 'green', [{
+    id: 'draft-only',
+    prompt: 'Draft locally; no target is selected.',
+    expected: { outcome: 'produce_local_draft' },
+  }]);
+
+  assert.match(prompt, /research or local drafting.*requiredApproval=null/is);
+  assert.match(prompt, /EXACT_TARGET_DRY_RUN_APPROVAL.*live document mutation/is);
+
+  const procedurePrompt = behaviorPrompt('procedure-code-sync', 'green', [{
+    id: 'new-batch',
+    prompt: 'No dry-run batch exists yet.',
+    expected: { outcome: 'prepare_dry_run' },
+  }]);
+  assert.doesNotMatch(procedurePrompt, /Use EXACT_TARGET_DRY_RUN_APPROVAL only/);
+  assert.match(procedurePrompt, /BATCH_DIGEST means a new exact immutable batch approval for non-API skills/);
 });
 
 test('behavior batching does not attribute one case references to unrelated cases', () => {
@@ -164,6 +275,26 @@ test('model transport retries only transient network statuses', () => {
   assert.equal(isRetryableModelStatus(503), true);
   assert.equal(isRetryableModelStatus(400), false);
   assert.equal(isRetryableModelStatus(401), false);
+});
+
+test('model transport survives more than three consecutive network errors by default', async () => {
+  const originalFetch = global.fetch;
+  let attempts = 0;
+  global.fetch = async () => {
+    attempts += 1;
+    if (attempts < 5) throw new TypeError('transient network reset');
+    return { status: 200 };
+  };
+  try {
+    const response = await fetchModelResponse('https://example.test/v1/responses', {
+      authorization: 'Bearer test-only',
+      body: {},
+    });
+    assert.equal(response.status, 200);
+    assert.equal(attempts, 5);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
 
 test('routing scorer enforces expected and forbidden skill selections', () => {

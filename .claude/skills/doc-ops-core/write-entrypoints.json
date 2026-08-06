@@ -1,0 +1,1561 @@
+{
+  "schemaVersion": 1,
+  "baseline": {
+    "recordedAt": "2026-08-06T02:16:48.070Z",
+    "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
+    "entrypointCount": 151
+  },
+  "entries": [
+    {
+      "path": ".claude/agent-team/bin/doc-agent-approval-consumer.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-approval-consumer",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-dry-run.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-dry-run",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-live-write.js",
+      "skill": "localized-doc-sync",
+      "classification": "legacy-live",
+      "operation": "doc-agent-live-write",
+      "basis": "manual baseline override after source inspection",
+      "approval": "exact-batch-digest",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": "Task 9: .claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-scan.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-scan",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-verify.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-verify",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-webhook-consumer.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-webhook-consumer",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/compare-scan-artifacts.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "compare-scan-artifacts",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/export-doc.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "export-doc",
+      "basis": "manual baseline override after source inspection"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/feishu-doc-translator.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "feishu-doc-translator",
+      "basis": "manual baseline override after source inspection",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": "Task 9: .claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-alignment.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "sdk-alignment",
+      "basis": "manual baseline override after source inspection",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "sync",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-document-rollback.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "rollback",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/sdk-document-rollback-cli.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "sdk-release-scout",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "sdk-review-session",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/zilliz-cli-handwritten-audit.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "zilliz-cli-handwritten-audit",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/zilliz-cli-release-impact.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "zilliz-cli-release-impact",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/_node-v30-utils.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "-node-v30-utils",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/add-missing-cloud-v2.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "add-missing-cloud-v2",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "add-type-links",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-go-docs",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs2.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-go-docs2",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-go-todos.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-go-todos",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-sdk-type-ownership.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-sdk-type-ownership",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/batch-create-cli-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "batch-create-cli-docs",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-current-placement-audit",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-reviewed-release-context",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/check-sdk-updates.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "check-sdk-updates",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cleanup-go-iterators.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cleanup-go-iterators",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cli-fetch-and-diff.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cli-fetch-and-diff",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cli-remove-api-blockquote.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cli-remove-api-blockquote",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cli-v01-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cli-v01-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cli-v01-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cli-v01-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-add-include-all.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-add-include-all",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-add-ptr-type-links.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-add-ptr-type-links",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-audit-util.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-audit-util",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-check-comments.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-check-comments",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-connectparam-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-connectparam-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-data-import-add-include.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-data-import-add-include",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-data-import-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-data-import-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-enum-fix.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-enum-fix",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-examples-v2.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-examples-v2",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-fetch-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-fetch-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-fix-checkstatus.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-fix-checkstatus",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-fix-describe-resource-group.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-fix-describe-resource-group",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-fix-methods-heading.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-fix-methods-heading",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-missing-types-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-missing-types-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-request-syntax-fix.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-request-syntax-fix",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-response-types-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-response-types-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-retryparam-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-retryparam-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-show-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-show-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-v261-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-v261-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-v261-examples-update.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-v261-examples-update",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-v261-fix-code-lang.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-v261-fix-code-lang",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-v263-fix-returns-format.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-v263-fix-returns-format",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-v263-sync.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "cpp-v263-sync",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/create-v14-subfolders.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "create-v14-subfolders",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/create-v14-workspace.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "create-v14-workspace",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/delete-setter-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "delete-setter-docs",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-node-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-node-v26",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v24.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-pymilvus-v24",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-pymilvus-v26",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v30.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-pymilvus-v30",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/discover-java-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "discover-java-v26",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/discover-node-folders.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "discover-node-folders",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/edit-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "edit-openapi",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/feishu-doc.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "feishu-doc",
+      "basis": "manual baseline override after source inspection",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-go-iterator-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "fix-go-iterator-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "fix-leading-spaces",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-node-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "fix-node-v26",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-cloud.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "fix-openapi-cloud",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-spec.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "fix-openapi-spec",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/generate-cli-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "generate-cli-docs",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-add-clientconfig.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "go-add-clientconfig",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-add-imports.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-add-imports",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-fix-clientconfig.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-fix-clientconfig",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-fix-entity-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-fix-entity-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-fix-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-fix-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-fix-indent.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-fix-indent",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-fix-option-code.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-fix-option-code",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-fix-param-layout.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "go-fix-param-layout",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-v26-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "go-v26-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/go-v262-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "go-v262-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/insert-note.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "insert-note",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/inspect-go-blocks.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inspect-go-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/java-v26-examples-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "java-v26-examples-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/java-v26-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "java-v26-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/java-v2614-indexfix.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "java-v2614-indexfix",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/java-v2614-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "java-v2614-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/java-v2616-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "java-v2616-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/java-v30-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "java-v30-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/merge-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "merge-openapi",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-add-token.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "node-add-token",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-data-import-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-data-import-docs",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-doc-quality-fix.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-doc-quality-fix",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-fix-code-lang.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "node-fix-code-lang",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-inline-type-fix.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-inline-type-fix",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-reformat-constructor.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "node-reformat-constructor",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v26-gap-fill.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v26-gap-fill",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v26-request-syntax.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v26-request-syntax",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v26-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v26-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v2610-fix.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v2610-fix",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v2610-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v2610-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v2614-fix-placement.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v2614-fix-placement",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v2614-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v2614-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-create.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v30-create",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-gap-copy.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v30-gap-copy",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-move-snapshot.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v30-move-snapshot",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-response-details.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v30-response-details",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-response-templates.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "node-v30-response-templates",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-update.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "node-v30-update",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/patch-note.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "patch-note",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/patch-openapi-external.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "patch-openapi-external",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "post-fix-links",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/python-fix-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "python-fix-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/rebuild-alignment-bitable.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "rebuild-alignment-bitable",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/render-grouping-inheritance-table.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "render-grouping-inheritance-table",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/review-artifact-digest.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "review-artifact-digest",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/scan-changes.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "scan-changes",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/scan-notes.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "scan-notes",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/scan-pymilvus.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "scan-pymilvus",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/split-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "split-openapi",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/verify-openapi-cloud.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "verify-openapi-cloud",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/verify-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "verify-openapi",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/verify-operational-harness.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "verify-operational-harness",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/build-manifest.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-manifest",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/copy-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "copy-docs",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/create-folders.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "create-folders",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/create-new-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "create-new-docs",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/dump-v13x-bitable.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "dump-v13x-bitable",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/fix-stale-job-link.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "fix-stale-job-link",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/inspect-v13x.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inspect-v13x",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/inventory-v01x.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inventory-v01x",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/patch-behavior-changes.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "patch-behavior-changes",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/repoint-bitable.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "repoint-bitable",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/backfill-missing-scope.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "backfill-missing-scope",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/copy-update-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "copy-update-docs",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/create-folders.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "create-folders",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/create-new-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "create-new-docs",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/patch-updates.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "patch-updates",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/repoint-virtualnodes.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "repoint-virtualnodes",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/update-v144-v145.js",
+      "skill": "api-reference-sync",
+      "classification": "legacy-live",
+      "operation": "update-v144-v145",
+      "basis": "external mutation call or HTTP mutation verb found",
+      "approval": "none",
+      "journal": "none",
+      "reconciliation": "none",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": true,
+      "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/verify-v14x.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "verify-v14x",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/doc-code-verify/scripts/scenario-shims.js",
+      "skill": "doc-code-verify",
+      "classification": "read-only",
+      "operation": "scenario-shims",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
+      "skill": "doc-code-verify",
+      "classification": "canonical-governed",
+      "operation": "verify",
+      "basis": "reviewed static verifier plus exact live runtime manifest, mutation approval, cleanup journal, and read-only remediation handoff",
+      "approval": "exact-runtime-manifest-digest",
+      "journal": "required-for-mutating-live-runtime",
+      "reconciliation": "cleanup-required",
+      "tests": [
+        "tests/skills/verifier-result-contract.test.js",
+        ".claude/skills/doc-code-verify/tests/runtime-integration.test.js",
+        ".claude/skills/doc-code-verify/tests/runtime-session.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/doc-ops-core/bin/build-action-batch.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "build-action-batch",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/doc-ops-core/bin/doc-ops-smoke.js",
+      "skill": "doc-ops-core",
+      "classification": "test-only",
+      "operation": "doc-ops-smoke",
+      "basis": "disposable smoke harness, not a production adapter",
+      "sandboxOnly": true,
+      "tests": [
+        ".claude/skills/doc-ops-core/tests/smoke-cli.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/doc-ops-core/bin/skill-feedback.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "skill-feedback",
+      "basis": "governed local feedback CLI; no tenant mutation"
+    },
+    {
+      "path": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+      "skill": "localized-doc-sync",
+      "classification": "canonical-governed",
+      "operation": "sync",
+      "basis": "reviewed canonical full-scan planner and journaled executor",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/localized-doc-sync/tests/localized-doc-sync-cli.test.js",
+        ".claude/skills/localized-doc-sync/tests/executor.test.js",
+        ".claude/skills/localized-doc-sync/tests/review-session-store.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
+      "skill": "procedure-code-sync",
+      "classification": "canonical-governed",
+      "operation": "patch",
+      "basis": "reviewed whole-document planner, journaled block executor, verifier handoff, acceptance, and rollback planner",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/procedure-code-sync/tests/procedure-code-sync-cli.test.js",
+        ".claude/skills/procedure-code-sync/tests/patch-executor.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js",
+      "skill": "verified-doc-authoring",
+      "classification": "canonical-governed",
+      "operation": "author",
+      "basis": "claim-bound authoring planner with exact approval, journaled refetch verification, acceptance, and corrective rollback",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/verified-doc-authoring/tests/verified-doc-authoring-cli.test.js",
+        ".claude/skills/verified-doc-authoring/tests/patch-executor.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
+      "skill": "patch-code-blocks",
+      "classification": "read-only",
+      "operation": "patch-code-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/run-skill-model-evals.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-skill-model-evals",
+      "basis": "manual baseline override after source inspection"
+    },
+    {
+      "path": "scripts/run-skill-admission.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-skill-admission",
+      "basis": "local and CI admission orchestrator; runs tests and model evaluations without live mutation commands"
+    },
+    {
+      "path": "scripts/run-tests.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-tests",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/validate-skills.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "validate-skills",
+      "basis": "no external mutation signature found"
+    }
+  ]
+}

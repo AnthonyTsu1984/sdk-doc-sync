@@ -2,6 +2,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+  validateWriteEntrypointRegistry,
+} = require('../.claude/skills/doc-ops-core/src/write-entrypoint-registry');
 
 const ALLOWED_FRONTMATTER = new Set([
   'name',
@@ -130,10 +133,20 @@ function validateRepository(repoRoot = process.cwd()) {
     else internalTools.push(skillDir);
   }
 
+  const registryPath = path.join(repoRoot, '.claude', 'skills', 'doc-ops-core', 'write-entrypoints.json');
+  const entrypointAdmission = fs.existsSync(registryPath)
+    ? validateWriteEntrypointRegistry({ repoRoot })
+    : null;
   return {
     skills,
     internalTools,
-    errors: skills.flatMap(skill => skill.errors.map(error => `${path.basename(skill.skillDir)}: ${error}`)),
+    entrypointAdmission,
+    errors: [
+      ...skills.flatMap(skill => skill.errors.map(error => `${path.basename(skill.skillDir)}: ${error}`)),
+      ...(entrypointAdmission?.errors || []).map(error => (
+        `write-entrypoint: ${error.code} ${error.entrypointPath || error.path}`
+      )),
+    ],
     warnings: skills.flatMap(skill => skill.warnings.map(warning => `${path.basename(skill.skillDir)}: ${warning}`)),
   };
 }
@@ -144,6 +157,9 @@ function main() {
   for (const error of result.errors) console.error(`ERROR ${error}`);
   for (const toolDir of result.internalTools) {
     console.log(`INFO ${path.relative(process.cwd(), toolDir)} is an internal tool package (no SKILL.md)`);
+  }
+  if (result.entrypointAdmission) {
+    console.log(`INFO write entrypoint admission ${result.entrypointAdmission.valid ? 'passed' : 'failed'}`);
   }
   if (result.errors.length) process.exit(1);
   console.log(`Validated ${result.skills.length} skills.`);

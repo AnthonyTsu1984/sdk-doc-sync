@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "policyId": "zilliz-en-zh-identity-overrides",
+  "overrides": [
+    { "overrideId": "cross-table:byoc-intro", "kind": "cross-table", "sourceTableId": "tblLMqwkNDtAEK5p", "sourceIdentity": "canonical:byoc-intro", "targetTableId": "tblsw6S3J0ekcgNB", "targetIdentity": "canonical:byoc-intro", "provenance": "Get Started alignment", "revalidateOn": "every-full-scan" },
+    { "overrideId": "provider:embedding:siliconflow", "kind": "provider-substitution", "sourceIdentities": ["canonical:openai", "canonical:voyage-ai", "canonical:cohere"], "targetIdentity": "canonical:siliconflow", "provenance": "China locale applicability review", "revalidateOn": "provider-policy-change" },
+    { "overrideId": "provider:ranker:siliconflow", "kind": "provider-substitution", "sourceIdentities": ["canonical:cohere-ranker", "canonical:voyage-ai-ranker"], "targetIdentity": "canonical:siliconflow-ranker", "provenance": "China locale applicability review", "revalidateOn": "provider-policy-change" }
+  ]
+}

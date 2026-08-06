@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doc-ops-core/rule-promotion.schema.json",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "candidateId",
+    "candidateDigest",
+    "candidateState",
+    "skill",
+    "ruleClass",
+    "target",
+    "heldOutResults",
+    "thresholds",
+    "activationAuthorized",
+    "promotionDigest"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "candidateDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "candidateState": { "const": "proposed" },
+    "skill": { "type": "string", "minLength": 1 },
+    "ruleClass": {
+      "enum": [
+        "hard-policy",
+        "deterministic-procedure",
+        "domain-fact",
+        "soft-preference",
+        "one-off-exception"
+      ]
+    },
+    "target": { "enum": ["capability", "contract", "script", "evidence", "reference", "learned-rules"] },
+    "heldOutResults": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "required": ["caseId", "passed", "semanticDigest"],
+        "properties": {
+          "caseId": { "type": "string", "minLength": 1 },
+          "passed": { "const": true },
+          "semanticDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "thresholds": { "type": "object" },
+    "activationAuthorized": { "const": false },
+    "promotionDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "additionalProperties": true
+}

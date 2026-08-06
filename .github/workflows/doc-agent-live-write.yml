@@ -40,7 +40,7 @@ jobs:
           run-id: ${{ github.event.client_payload.sourceRunId }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Live write
-        run: npm run doc-agent:live-write -- "${{ github.event.client_payload.taskId }}"
+        run: npm run doc-agent:live-write -- "${{ github.event.client_payload.taskId }}" "${{ github.event.client_payload.batchDigest }}"
         env:
           FEISHU_HOST: https://open.feishu.cn
           APP_ID: ${{ secrets.FEISHU_APP_ID }}

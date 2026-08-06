@@ -55,7 +55,7 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --request-live
 ```
 
-6. Run each runtime scenario with a unique resource suffix:
+6. Materialize the exact runtime manifest with a unique resource suffix. The first pass must omit approval and stop before any mutating scenario runs:
 
 ```bash
 node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
@@ -63,11 +63,30 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --run-scenarios --live --allow-run \
   --languages <language> \
   --resource-suffix <unique-suffix> \
+  --runtime-manifest /tmp/doc-code-verify-<language>-runtime-manifest.json \
+  --runtime-journal /tmp/doc-code-verify-<language>-runtime.jsonl \
   --timeout 900000 \
-  --report /tmp/feishu-code-verify-<language>-runtime.json
+  --report /tmp/doc-code-verify-<language>-runtime.json
 ```
 
-7. Read runtime counters:
+7. Review the complete manifest, including env groups, network targets, isolated resource names, expected mutations, cleanup actions, timeouts, and side-effect classes. Copy the reported canonical digest only if that exact manifest is approved.
+
+8. Rerun the identical command with the reviewed digest. Changing any manifest-bound input requires another unapproved materialization pass:
+
+```bash
+node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
+  --doc <doc-url-or-token> \
+  --run-scenarios --live --allow-run \
+  --languages <language> \
+  --resource-suffix <unique-suffix> \
+  --runtime-manifest /tmp/doc-code-verify-<language>-runtime-manifest.json \
+  --runtime-journal /tmp/doc-code-verify-<language>-runtime.jsonl \
+  --approve-runtime-digest sha256:<reviewed-manifest-digest> \
+  --timeout 900000 \
+  --report /tmp/doc-code-verify-<language>-runtime.json
+```
+
+9. Read runtime counters and journal status:
 
 - `scenarioRuntimePassed`: generated scenarios that ran successfully.
 - `scenarioRuntimeFailed`: generated scenarios that ran and failed.
@@ -115,8 +134,11 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --python-command repos/pymilvus/.venv/bin/python \
   --python-path repos/pymilvus \
   --resource-suffix <unique-suffix> \
+  --runtime-manifest /tmp/doc-code-verify-python-runtime-manifest.json \
+  --runtime-journal /tmp/doc-code-verify-python-runtime.jsonl \
+  --approve-runtime-digest sha256:<reviewed-manifest-digest> \
   --timeout 900000 \
-  --report /tmp/feishu-code-verify-python-runtime.json
+  --report /tmp/doc-code-verify-python-runtime.json
 ```
 
 For bulk-import docs, provide S3 env so the verifier can generate a schema-matching Parquet fixture:
@@ -138,8 +160,11 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --languages go \
   --go-module-dir repos/milvus-sdk-go \
   --resource-suffix <unique-suffix> \
+  --runtime-manifest /tmp/doc-code-verify-go-runtime-manifest.json \
+  --runtime-journal /tmp/doc-code-verify-go-runtime.jsonl \
+  --approve-runtime-digest sha256:<reviewed-manifest-digest> \
   --timeout 900000 \
-  --report /tmp/feishu-code-verify-go-runtime.json
+  --report /tmp/doc-code-verify-go-runtime.json
 ```
 
 The verifier writes a temporary `go.mod`, adds a local `replace`, runs `go mod tidy`, runs `go test .`, then runs `go run .`. The first run can be slow if Go downloads a newer toolchain or modules.
@@ -168,8 +193,11 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --run-scenarios --live --allow-run \
   --languages node \
   --resource-suffix <unique-suffix> \
+  --runtime-manifest /tmp/doc-code-verify-node-runtime-manifest.json \
+  --runtime-journal /tmp/doc-code-verify-node-runtime.jsonl \
+  --approve-runtime-digest sha256:<reviewed-manifest-digest> \
   --timeout 900000 \
-  --report /tmp/feishu-code-verify-node-runtime.json
+  --report /tmp/doc-code-verify-node-runtime.json
 ```
 
 ### Bash
@@ -184,7 +212,7 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --report /tmp/feishu-code-verify-bash-scenario.json
 ```
 
-The verifier generates `docs_scenario.sh`, injects common env variables, and checks with `bash -n`. Runtime mode runs `bash docs_scenario.sh` behind `--run-scenarios --live --allow-run`.
+The verifier generates `docs_scenario.sh`, injects common env variables, and checks with `bash -n`. Runtime mode runs `bash docs_scenario.sh` behind `--run-scenarios --live --allow-run` and the same manifest, journal, and reviewed-digest two-pass gate shown above.
 
 ### Java
 
@@ -197,8 +225,11 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js \
   --languages java \
   --java-sdk-repo repos/milvus-sdk-java \
   --resource-suffix <unique-suffix> \
+  --runtime-manifest /tmp/doc-code-verify-java-runtime-manifest.json \
+  --runtime-journal /tmp/doc-code-verify-java-runtime.jsonl \
+  --approve-runtime-digest sha256:<reviewed-manifest-digest> \
   --timeout 180000 \
-  --report /tmp/feishu-code-verify-java-runtime.json
+  --report /tmp/doc-code-verify-java-runtime.json
 ```
 
 The verifier builds `sdk-core`, writes the full Maven dependency classpath to `sdk-core/target/doc-verify-full-classpath.txt`, and uses that plus SDK classes for `javac` and `java`. Set `DOC_VERIFY_JAVA_CLASSPATH` or `--java-classpath` only when you need to override this derived classpath.

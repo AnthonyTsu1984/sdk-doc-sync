@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const CASES_PATH = path.join(REPO_ROOT, 'evals', 'skills', 'behavior-cases.jsonl');
+const LEARNING_CASES_PATH = path.join(REPO_ROOT, 'evals', 'skills', 'learning-cases.jsonl');
 const CANONICAL_SKILLS = [
   'api-reference-sync',
   'procedure-code-sync',
@@ -17,6 +18,10 @@ const CANONICAL_SKILLS = [
 
 function loadCases() {
   return fs.readFileSync(CASES_PATH, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
+}
+
+function loadLearningCases() {
+  return fs.readFileSync(LEARNING_CASES_PATH, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(line => JSON.parse(line));
 }
 
 test('behavior eval corpus covers all canonical skills with observable expectations', () => {
@@ -68,10 +73,16 @@ test('non-API behavior cases bind relevant required references instead of relyin
   for (const [id, reference] of expectedReferences) {
     assert.ok(byId.get(id)?.expected.mustRead?.includes(reference), `${id} must load ${reference}`);
   }
+
+  assert.deepEqual(
+    byId.get('verify-scenario-missing-allow-run').expected.actions,
+    ['refuse_scenario_execution'],
+  );
 });
 
 test('api-reference-sync behavior corpus covers the complete approval and state pressure matrix', () => {
-  const ids = new Set(loadCases().filter(entry => entry.skill === 'api-reference-sync').map(entry => entry.id));
+  const apiCases = loadCases().filter(entry => entry.skill === 'api-reference-sync');
+  const ids = new Set(apiCases.map(entry => entry.id));
   for (const required of [
     'api-remote-tag-authority',
     'api-helper-owner-page',
@@ -89,4 +100,49 @@ test('api-reference-sync behavior corpus covers the complete approval and state 
   ]) {
     assert.equal(ids.has(required), true, `missing api-reference-sync pressure case ${required}`);
   }
+
+  const byId = new Map(apiCases.map(entry => [entry.id, entry]));
+  const exactAcceptance = byId.get('api-exact-acceptance');
+  assert.match(exactAcceptance.prompt, /acceptanceManifestDigest/);
+  assert.doesNotMatch(exactAcceptance.prompt, /matches executionJournalDigest/);
+
+  const partialSelection = byId.get('api-partial-batch-selection');
+  assert.deepEqual(partialSelection.expected.actions, ['regenerate_batch', 'reject_stale_digest']);
+});
+
+test('learning corpus covers governed promotion, scope, contradiction, supersession, and expiry cases', () => {
+  const cases = loadLearningCases();
+  const ids = new Set(cases.map((entry) => entry.id));
+  const byId = new Map(cases.map(entry => [entry.id, entry]));
+  for (const required of [
+    'approval-does-not-globalize',
+    'edit-then-accept-is-strong-evidence',
+    'node-only-rule-does-not-apply-to-python',
+    'newer-rule-supersedes-older-preference',
+    'contradiction-quarantines-candidate',
+    'high-risk-frequency-does-not-loosen-approval',
+    'one-off-exception-is-not-promoted',
+    'stale-rule-expiry-stops-application',
+  ]) {
+    assert.equal(ids.has(required), true, `missing learning case ${required}`);
+  }
+  assert.ok(cases.every((entry) => entry.heldOut === true));
+  assert.ok(cases.some((entry) => entry.class === 'positive'));
+  assert.ok(cases.some((entry) => entry.class === 'negative'));
+  assert.ok(cases.some((entry) => entry.class === 'boundary'));
+  assert.ok(cases.some((entry) => entry.class === 'safety'));
+  assert.equal(byId.get('approval-does-not-globalize').expected.disposition, 'out-of-scope');
+  assert.ok(cases.every(entry => entry.expected.automaticPromotionAllowed === false));
+});
+
+test('package exposes deterministic learning and safety evaluation commands', () => {
+  const packageJson = JSON.parse(fs.readFileSync(path.join(REPO_ROOT, 'package.json'), 'utf8'));
+  assert.equal(
+    packageJson.scripts['eval:skills:learning'],
+    'node scripts/run-skill-model-evals.js --mode learning --phase both --repeats 3',
+  );
+  assert.equal(
+    packageJson.scripts['eval:skills:learning:safety'],
+    'node scripts/run-skill-model-evals.js --mode learning --phase both --case-class safety --repeats 10',
+  );
 });

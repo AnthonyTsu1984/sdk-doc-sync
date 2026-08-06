@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "doc-ops-core/rule-candidate.schema.json",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "candidateId",
+    "skill",
+    "ruleClass",
+    "state",
+    "statement",
+    "applicableWhen",
+    "notApplicableWhen",
+    "supportingDecisionDigests",
+    "contradictingDecisionDigests",
+    "independentSupportCount",
+    "riskClass",
+    "automaticPromotion",
+    "promotable"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "candidateId": { "type": "string", "minLength": 1 },
+    "skill": { "type": "string", "minLength": 1 },
+    "ruleClass": {
+      "enum": [
+        "hard-policy",
+        "deterministic-procedure",
+        "domain-fact",
+        "soft-preference",
+        "one-off-exception"
+      ]
+    },
+    "state": { "enum": ["candidate", "shadow", "proposed", "active", "superseded", "deprecated"] },
+    "statement": { "type": "string", "minLength": 1 },
+    "applicableWhen": { "type": "object" },
+    "notApplicableWhen": { "type": "object" },
+    "supportingDecisionDigests": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+      "uniqueItems": true
+    },
+    "contradictingDecisionDigests": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+      "uniqueItems": true
+    },
+    "independentSupportCount": { "type": "integer", "minimum": 0 },
+    "explicitDurableInstruction": { "type": "boolean" },
+    "riskClass": { "enum": ["low", "medium", "high"] },
+    "expandsAuthority": { "type": "boolean" },
+    "automaticPromotion": { "type": "boolean" },
+    "promotable": { "type": "boolean" },
+    "promotionReady": { "type": "boolean" },
+    "supersedes": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+    "supersededBy": { "type": ["string", "null"] },
+    "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+    "reviewedPromotionDigest": { "type": ["string", "null"], "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "additionalProperties": true
+}

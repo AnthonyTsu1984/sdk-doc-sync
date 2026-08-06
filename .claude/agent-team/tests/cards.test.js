@@ -16,15 +16,22 @@ test('daily report card contains MVP reply commands', () => {
 });
 
 test('live write card has approve reject and changes commands', () => {
+  const digest = `sha256:${'a'.repeat(64)}`;
   const card = buildLiveWriteApprovalCard({
     task: { id: 'task-1', sourceRunId: '456' },
     summaryText: 'NEW: one doc',
+    actionBatch: {
+      skill: 'localized-doc-sync', operation: 'sync', batchDigest: digest,
+      actions: [{ actionId: 'a' }], targets: ['record:one'], sideEffects: ['document:create'],
+    },
   });
   const content = JSON.stringify(card);
-  assert.match(content, /approve task-1/);
-  assert.match(content, /approve task-1 456/);
-  assert.match(content, /reject task-1/);
-  assert.match(content, /changes task-1/);
+  assert.match(content, new RegExp(`APPROVE_WRITES task-1 ${digest}`));
+  assert.match(content, new RegExp(`REJECT_WRITES task-1 ${digest}`));
+  assert.match(content, new RegExp(`REQUEST_CHANGES task-1 ${digest}`));
+  assert.match(content, /localized-doc-sync/);
+  assert.match(content, /record:one/);
+  assert.match(content, /document:create/);
 });
 
 test('renderAffectedDocsMarkdown groups titles and caps long lists', () => {
@@ -72,6 +79,10 @@ test('live write card lists only write-capable docs and calls out orphans', () =
       { type: 'ORPHAN', slug: 'legacy', target: { metadata: { title: 'Legacy Doc' } } },
     ],
     orphanCount: 1,
+    actionBatch: {
+      skill: 'localized-doc-sync', operation: 'sync', batchDigest: `sha256:${'b'.repeat(64)}`,
+      actions: [{ actionId: 'a' }], targets: ['record:new-doc'], sideEffects: ['document:create'],
+    },
   });
   const content = JSON.stringify(card);
   assert.match(content, /Approve localization writes/);

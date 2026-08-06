@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "skill": "doc-code-verify",
   "mustPreserve": [
     { "id": "verify.read-only", "description": "Remain read-only unless remediation is separately requested and approved.", "fixtureIds": ["read-only"] },
@@ -20,5 +20,33 @@
   "inputContract": { "sources": ["markdown", "docx", "wiki", "bitable"], "liveDefault": false },
   "outputContract": { "schemaVersion": 1, "skill": "doc-code-verify", "operation": "verify" },
   "sideEffectPolicy": { "default": "read-only", "networkRequires": ["live", "allowRun"], "writeBack": "separate-approval" },
-  "allowedSemanticChanges": ["verify.result-contract-v1"]
+  "allowedSemanticChanges": ["verify.result-contract-v1"],
+  "reviewPolicy": {
+    "unit": "run",
+    "gates": ["none", "live-runtime"],
+    "rollback": "runtime-cleanup-only"
+  },
+  "learningPolicy": {
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
+    "approvalStrength": "weak-positive",
+    "highRiskAutomaticPromotion": false
+  },
+  "adapterPolicy": {
+    "operations": [
+      {
+        "operation": "static-verify",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
+        "focusedTest": "tests/skills/verifier-result-contract.test.js",
+        "journalRequiredForWrites": false
+      },
+      {
+        "operation": "live-verify",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
+        "focusedTest": ".claude/skills/doc-code-verify/tests/runtime-integration.test.js",
+        "journalRequiredForWrites": true
+      }
+    ]
+  }
 }

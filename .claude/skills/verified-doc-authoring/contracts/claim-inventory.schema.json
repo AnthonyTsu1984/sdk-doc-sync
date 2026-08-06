@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zilliz.com/schemas/verified-doc-authoring/claim-inventory.schema.json",
+  "title": "Verified Doc Authoring Claim Inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "artifactType", "inventoryId", "target", "claims", "claimSetDigest", "inventoryDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "artifactType": { "const": "verified-doc-claim-inventory" },
+    "inventoryId": { "type": "string", "minLength": 1 },
+    "target": { "type": "object" },
+    "claims": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["claimId", "text", "sourceLocator", "apiShapeEvidence", "behavioralEvidence", "status", "notes"],
+        "properties": {
+          "claimId": { "type": "string", "pattern": "^claim:[a-z0-9][a-z0-9._:-]*$" },
+          "text": { "type": "string", "minLength": 1 },
+          "sourceLocator": { "type": "object" },
+          "apiShapeEvidence": { "type": "array", "items": { "type": "object" } },
+          "behavioralEvidence": { "type": "array", "items": { "type": "object" } },
+          "status": { "enum": ["reference-only", "verified", "contradicted", "needs-verification"] },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "claimSetDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "inventoryDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  }
+}

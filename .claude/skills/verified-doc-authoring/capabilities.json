@@ -1,5 +1,5 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "skill": "verified-doc-authoring",
   "mustPreserve": [
     { "id": "authoring.claim-inventory", "description": "Turn references into concrete claims before drafting.", "fixtureIds": ["claim-inventory"] },
@@ -20,5 +20,26 @@
   "inputContract": { "sources": ["feishu", "url", "markdown", "issue", "source"], "claimInventoryRequired": true },
   "outputContract": { "schemaVersion": 1, "requires": ["evidence", "unresolved", "verification"] },
   "sideEffectPolicy": { "default": "local-draft", "writeRequires": ["dryRun", "approval", "refetch"] },
-  "allowedSemanticChanges": ["authoring.evidence-contract", "authoring.result-contract"]
+  "allowedSemanticChanges": ["authoring.evidence-contract", "authoring.result-contract"],
+  "reviewPolicy": {
+    "unit": "document",
+    "gates": ["write", "document-acceptance"],
+    "rollback": "pre-finalization"
+  },
+  "learningPolicy": {
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
+    "approvalStrength": "weak-positive",
+    "highRiskAutomaticPromotion": false
+  },
+  "adapterPolicy": {
+    "operations": [
+      {
+        "operation": "author",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js",
+        "focusedTest": ".claude/skills/verified-doc-authoring/tests/patch-executor.test.js",
+        "journalRequiredForWrites": true
+      }
+    ]
+  }
 }

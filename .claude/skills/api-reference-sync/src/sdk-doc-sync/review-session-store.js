@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { DecisionLedger } = require('../../../doc-ops-core/src/decision-ledger');
 const { buildAcceptanceManifest } = require('./review-units');
 
 function clone(value) {
@@ -78,6 +79,78 @@ function createReviewSession({
     scanStateUpdated: false,
     createdAt,
     updatedAt: createdAt,
+  });
+}
+
+const RESULT_BOUND_DECISION_OUTCOMES = new Set([
+  'accepted',
+  'rolled_back',
+  'finalized',
+]);
+
+function decisionResultEvidenceType(outcome) {
+  if (outcome === 'rolled_back') return 'rollback-journal';
+  if (outcome === 'finalized') return 'acceptance-journal';
+  return 'execution-journal';
+}
+
+function recordReviewDecision(session, {
+  decisionLedgerPath,
+  decisionId,
+  gate,
+  outcome,
+  taskId = null,
+  reviewUnitId = null,
+  proposalDigest,
+  resultDigest = null,
+  instruction = null,
+  rationale = null,
+  scopeHint = null,
+  durableRuleRequested = false,
+  runtime = {},
+}) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (reviewUnitId !== null
+      && !session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Unknown review unit: ${reviewUnitId}`);
+  }
+  if (RESULT_BOUND_DECISION_OUTCOMES.has(outcome) && !nonEmptyString(resultDigest)) {
+    throw new Error(`resultDigest is required for ${outcome}`);
+  }
+  const inheritedScope = {
+    language: session.language,
+    sdkName: session.sdkName,
+    track: session.track,
+  };
+  const mergedScope = Object.fromEntries(Object.entries({
+    ...inheritedScope,
+    ...(scopeHint || {}),
+  }).filter(([, value]) => value !== null && value !== undefined && value !== ''));
+  const evidence = [{ type: 'review-proposal', digest: proposalDigest }];
+  if (resultDigest) {
+    evidence.push({
+      type: decisionResultEvidenceType(outcome),
+      digest: resultDigest,
+    });
+  }
+  const ledger = new DecisionLedger({ filePath: decisionLedgerPath });
+  return ledger.append({
+    schemaVersion: 1,
+    decisionId,
+    skill: 'api-reference-sync',
+    gate,
+    outcome,
+    taskId,
+    sessionId: session.sessionId,
+    reviewUnitId,
+    proposalDigest,
+    resultDigest,
+    instruction,
+    rationale,
+    durableRuleRequested,
+    scopeHint: Object.keys(mergedScope).length > 0 ? mergedScope : null,
+    evidence,
+    runtime,
   });
 }
 
@@ -453,6 +526,7 @@ module.exports = {
   recordDocumentAcceptance,
   recordDocumentExecution,
   recordDocumentRollback,
+  recordReviewDecision,
   saveReviewSession,
   validateExecutionJournal,
   validateResumeSession,

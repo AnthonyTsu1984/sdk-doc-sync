@@ -16,7 +16,7 @@ Do not use for verification-only snippet checks, release-wide API-reference sync
 ## Permission Boundary
 
 - Research, claim inventory, source verification, and a local Markdown draft are allowed by default.
-- If no target page is specified, stop with the local draft and request the target before any Feishu write.
+- If the target is unspecified, do not create or regenerate a live action batch. Stop with the local draft, request the exact target and patch strategy, and state that the execution batch remains unchanged.
 - Live patching requires a dry-run, exact target and strategy, explicit approval, write, and refetch verification.
 - Never invent methods, fields, defaults, statuses, outputs, or behavioral guarantees. Keep unresolved claims visible.
 
@@ -25,6 +25,10 @@ Do not use for verification-only snippet checks, release-wide API-reference sync
 - Capability baseline: [capabilities.json](capabilities.json).
 - Shared evidence/result artifacts use `../doc-ops-core/contracts/run-artifact.schema.json` and `../doc-ops-core/src/result-contract.js`.
 - Claim interpretation, implementation evidence, and unresolved-status decisions remain domain-local; shared core controls identity, lineage, status, approval, and deterministic output.
+- Build the immutable claim inventory and draft artifact with `node .claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js claims ...`; the draft semantic identity must bind the exact claim-inventory digest.
+- Build and execute live changes only through the same canonical CLI. The `plan` command binds target token or creation scope, patch strategy, current revision, protected-block inventory, semantic diff, draft digest, and claim inventory; `execute` requires the exact batch approval and a journaled adapter with snapshot, patch, and refetch operations.
+- Do not call `api-reference-sync/scripts/feishu-doc.js patch` or `push` directly for a verified-doc-authoring live write. A production adapter may wrap those operations only behind the canonical plan, approval, journal, refetch, acceptance, and rollback contracts.
+- A live draft that keeps `needs-verification` or `contradicted` claims visible requires a separate claim-review decision digest. A verified local draft with no requested target remains read-only and needs no claim-review gate.
 
 ## Domain Workflow
 
@@ -34,7 +38,8 @@ Do not use for verification-only snippet checks, release-wide API-reference sync
 4. Verify API shape with public clients, examples, tests, handlers, DTOs, and specs. For behavioral claims, trace into validators, services, converters, repositories, state transitions, permissions, defaults, and cleanup. A user's statement that the implementation does or does not prove a claim is not repository evidence: inspect the relevant source or accepted canonical spec before assigning `verified`, `contradicted`, or `needs-verification`.
 5. Record discrepancies and a visible “Needs further verification” list. Sparse checkout is not evidence of absence; expand it or report why that could not be done.
 6. Draft only verified behavior. Keep examples realistic, omit empty placeholder sections, and preserve the target documentation set's navigation and code conventions.
-7. Prepare an exact dry-run, obtain explicit approval, patch the target, then refetch and verify headings, prose, code, tables/lists, media, and unresolved-claim visibility.
+7. Prepare an exact dry-run through the canonical CLI, obtain explicit approval for its batch digest, execute through the journaled adapter, then refetch and verify headings, prose, code, tables/lists, media, protected blocks, and unresolved-claim visibility.
+8. Request document acceptance bound to the execution-journal and live-result digests. Before acceptance, generate a corrective rollback plan; delete a newly created document only when its creation is journal-proven and no later review unit depends on it.
 
 Use `tmp/verified-doc-authoring/` for run-local exports and drafts. Reuse `api-reference-sync` Feishu converters/specs and `doc-code-verify` for examples; do not create a duplicate converter or authentication stack.
 
@@ -46,6 +51,6 @@ Use `tmp/verified-doc-authoring/` for run-local exports and drafts. Reuse `api-r
 
 ## Output
 
-Report target and patch strategy, references consumed, source/spec evidence, claim statuses, discrepancies corrected, unresolved items, dry-run/approval/write/refetch evidence, and checks that could not run.
+Report target and patch strategy, claim-inventory and draft digests, references consumed, source/spec evidence, claim statuses, discrepancies corrected, unresolved items, dry-run/approval/journal/write/refetch/acceptance evidence, rollback availability, and checks that could not run.
 
 Update this skill or its workflow notes only when the user explicitly asks.

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zilliz.local/contracts/localized-doc-sync/translation-receipt.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "translationPairId", "englishDocumentIdentity", "chineseDocumentIdentity", "englishSourceDigest", "chineseTargetDigest", "englishMetaDigest", "chineseMetaDigest", "acceptedExecutionJournalDigest", "acceptedDecisionDigest", "receiptDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "translationPairId": { "type": "string", "pattern": "^translation-pair:" },
+    "englishDocumentIdentity": { "type": "object" },
+    "chineseDocumentIdentity": { "type": "object" },
+    "englishSourceDigest": { "$ref": "#/$defs/digest" },
+    "chineseTargetDigest": { "$ref": "#/$defs/digest" },
+    "englishMetaDigest": { "$ref": "#/$defs/digest" },
+    "chineseMetaDigest": { "$ref": "#/$defs/digest" },
+    "acceptedExecutionJournalDigest": { "$ref": "#/$defs/digest" },
+    "acceptedDecisionDigest": { "$ref": "#/$defs/digest" },
+    "receiptDigest": { "$ref": "#/$defs/digest" }
+  },
+  "$defs": { "digest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" } },
+  "additionalProperties": false
+}

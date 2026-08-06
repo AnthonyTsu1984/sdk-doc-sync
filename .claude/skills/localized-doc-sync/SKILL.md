@@ -5,7 +5,7 @@ description: Use when aligning paired source and localized Zilliz documentation 
 
 # Localized Doc Sync
 
-Align a read-only source documentation set with a localized target while preserving identity, hierarchy, metadata, and rich media.
+Align a read-only source documentation set with a localized target through a complete dynamic Base scan, placement-aware identity, review units, durable translation receipts, and recoverable writes.
 
 ## Trigger Boundary
 
@@ -17,10 +17,12 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 
 - Source records and source documents are read-only unless the user separately requests and approves a source-side change.
 - Indexing, diffing, translation previews, and dry-run are allowed by default.
-- Target writes require explicit approval of exact records/documents and batch digest. Never delete `ORPHAN` records without separate approval.
-- An `ORPHAN` decision must explicitly preserve the target record unchanged while reporting it; reporting alone must not be interpreted as deletion, archival, or mutation authority.
+- Target writes require explicit approval of exact records/documents and batch digest. Never delete `TARGET_ONLY` records (legacy reports may call them `ORPHAN`) without separate approval.
+- A target-only decision preserves the target record unchanged unless a distinct deletion batch is approved; reporting alone is not deletion, archival, or mutation authority.
+- Before any orphan decision, inspect the complete discovered table-pair inventory. A missing source slug is insufficient evidence because link/ref rows are slugless and reviewed mappings may cross tables.
+- The canonical no-delete result records both observable actions: `preserve_orphan` first, then `report_orphan`. Do not collapse preservation into reporting.
 - Refetch every written record and document; uncertain parent mapping, schema, credentials, or protected media blocks completion.
-- Before deciding any source-side change, ORPHAN handling, or partial table-pair selection, inspect the complete configured `table_pairs` inventory. A single document or record lookup is not sufficient evidence.
+- Before any queue or write decision, re-enumerate both complete Bases. A configured map, pasted table/view URL, previous count, or first-table default is not completeness evidence.
 
 ## Shared Contract
 
@@ -31,15 +33,15 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 
 ## Domain Workflow
 
-1. Load and inspect the canonical table-pair map, wiki roots, fields, and media rules before making a sync decision. Index every configured source and target table; a pasted Base URL's visible `table=` is not the full Base.
-2. Align table schemas and diff records by stable slug, not display title.
-3. Classify records as `NEW`, `UPDATE`, `SKIP`, `ORPHAN`, or `META_ONLY`.
-4. Resolve target parents by mapped source-parent slug. Create or align missing parents before child documents.
+1. Run `localized-doc-sync.js scan` from complete source and target inventory snapshots. Discover every table, schema, view scope, and record set before loading the reviewed table map.
+2. Resolve active schema roles from live field names and types. Ignore unconfigured `Chapter`; treat canonical `Targets` as publication-critical.
+3. Resolve `canonical:<slug>`, `section:<slug>`, typed internal/external link identity, and locale-specific ref reference sources. Ref rows never form independent translation pairs or review units.
+4. Build a complete immutable issue queue. Validate Parent within each locale; do not require cross-language Parent equality or compare locale-owned metadata directly across languages.
 5. Translate prose, headings, captions, callouts, table prose, and localized UI text. Preserve code, inline code, API names, env vars, URLs, frontmatter tokens, `<!-- feishu-block:` comments, and `<Supademo ... />` components unless explicitly requested otherwise.
-6. Produce a dry-run for each table pair, build the immutable action batch, and obtain explicit approval. Omitting a pair, adding source-side work, or adding ORPHAN deletion changes the side-effect scope and requires a new batch and digest.
-7. Apply only approved target writes, then refetch and verify links, parent records, slug, type, progress/status, dates, content, and visible media.
+6. Use `localized-doc-sync.js plan` to form one canonical content unit per pair or a strictly homogeneous metadata unit. Every unit cites its scan digest and issue IDs.
+7. Use `localized-doc-sync.js execute` only with an exact action batch, approval envelope, adapter, and write-ahead journal. After each accepted unit, rescan the affected scope; before finalization, perform a fresh full-Base scan.
 
-Table-aware dry-run:
+Translator adapter diagnostic only; its interactive or auto-approve path is never executable authority:
 
 ```bash
 npm run translate -- \
@@ -57,7 +59,10 @@ npm run translate -- \
 
 ## Required References
 
-- Canonical tokens, table pairs, field rules, libraries, and media handling: [references/zilliz-localization.md](references/zilliz-localization.md).
+- Dynamic table policy: [references/table-map.json](references/table-map.json).
+- Placement, field ownership, publication, and reminder policy: [references/locale-policy.json](references/locale-policy.json).
+- Cross-table and provider identity decisions: [references/identity-overrides.json](references/identity-overrides.json).
+- Canonical tokens, historical alignment evidence, libraries, and media handling: [references/zilliz-localization.md](references/zilliz-localization.md).
 - Development/开发指南 alignment only: [references/development-alignment.md](references/development-alignment.md).
 - Reuse `../api-reference-sync/src/feishu-doc-translator/`, its Markdown converters, and `lark-cli`; do not create one-off Feishu API clients.
 

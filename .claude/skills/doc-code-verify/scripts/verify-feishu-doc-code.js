@@ -24,6 +24,15 @@ const {
     normalizeCodeLanguage,
 } = require(path.join(DOC_OPS_CORE, 'src/markdown-code-snippets'));
 const { createResult } = require(path.join(DOC_OPS_CORE, 'src/result-contract'));
+const { canonicalStringify } = require(path.join(DOC_OPS_CORE, 'src/canonical-json'));
+const { digestSemantic } = require(path.join(DOC_OPS_CORE, 'src/digest'));
+const {
+    assertRuntimeApproval,
+    buildRuntimeManifest,
+    runtimeItemFromSnippet,
+} = require('../src/runtime-policy');
+const { RuntimeSession } = require('../src/runtime-session');
+const { buildRemediationHandoff } = require('../src/remediation-handoff');
 
 const DEFAULT_REPORT = '/tmp/feishu-code-verify-report.json';
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
@@ -97,6 +106,10 @@ function parseArgs(argv) {
         mantaEndpoint: process.env.DOC_VERIFY_MANTA_ENDPOINT || '',
         mantaCreateMilvus: process.env.DOC_VERIFY_MANTA_CREATE_MILVUS || '',
         mantaTimeout: parseInt(process.env.DOC_VERIFY_MANTA_TIMEOUT || '1800', 10),
+        runtimeManifest: '',
+        runtimeJournal: '',
+        approveRuntimeDigest: '',
+        remediationHandoff: '',
     };
 
     const raw = argv.slice(2);
@@ -144,6 +157,10 @@ function parseArgs(argv) {
             opts.mantaCreateMilvus = raw[++i];
         }
         else if (a === '--manta-timeout' && raw[i + 1]) opts.mantaTimeout = parseInt(raw[++i], 10);
+        else if (a === '--runtime-manifest' && raw[i + 1]) opts.runtimeManifest = raw[++i];
+        else if (a === '--runtime-journal' && raw[i + 1]) opts.runtimeJournal = raw[++i];
+        else if (a === '--approve-runtime-digest' && raw[i + 1]) opts.approveRuntimeDigest = raw[++i];
+        else if (a === '--remediation-handoff' && raw[i + 1]) opts.remediationHandoff = raw[++i];
         else if (a === '--request-live') opts.requestLive = true;
         else if (a === '--scenario') opts.scenario = true;
         else if (a === '--run-scenarios') {
@@ -201,6 +218,12 @@ Controls:
   --manta-create-milvus <version-or-image>
                          Create a temporary Milvus resource through Manta first. Env: DOC_VERIFY_MANTA_CREATE_MILVUS.
   --manta-timeout <sec>   Manta job wait/follow timeout. Env: DOC_VERIFY_MANTA_TIMEOUT.
+  --runtime-manifest <p>  Write the exact live runtime manifest. Default: <report>.runtime-manifest.json.
+  --runtime-journal <p>   Journal live resource mutation and cleanup. Default: <report>.runtime.jsonl.
+  --approve-runtime-digest <sha256:digest>
+                         Required when the live runtime manifest has create/update/delete effects.
+  --remediation-handoff <p>
+                         Write a read-only typed handoff for a separate owning write skill.
   --no-harness            Disable Java/Go partial-snippet harness checks.
   --extract-only          Do not run checks.
   --report <path>         Default: ${DEFAULT_REPORT}
@@ -2642,6 +2665,74 @@ function printLivePlan(plan) {
     console.log(`Rerun with: ${plan.suggestedFlags.join(' ')}`);
 }
 
+function writeCanonicalArtifact(filePath, value) {
+    const resolved = path.resolve(filePath);
+    fs.mkdirSync(path.dirname(resolved), { recursive: true });
+    fs.writeFileSync(resolved, canonicalStringify(value));
+    return resolved;
+}
+
+function prepareRuntimeGovernance(filtered, opts) {
+    if (!opts.live) return { manifest: null, manifestPath: null, journalPath: null, session: null };
+    const candidates = filtered.filter(snippet =>
+        opts.runScenarios || ['run', 'live'].includes(String(snippet.annotations?.mode || '').toLowerCase())
+    );
+    const items = candidates.map(snippet => runtimeItemFromSnippet(snippet, opts));
+    const profile = LIVE_PROFILES[opts.liveProfile] || LIVE_PROFILES.zilliz;
+    const runId = `runtime:${digestSemantic({
+        profile: opts.liveProfile,
+        sourceItems: items.map(item => item.itemId).sort(),
+        resourceSuffix: opts.resourceSuffix || null,
+    }).slice(7, 23)}`;
+    const manifest = buildRuntimeManifest({
+        runId,
+        liveProfile: opts.liveProfile,
+        requiredEnvGroups: profile.requiredEnvGroups,
+        items,
+    });
+    const manifestPath = writeCanonicalArtifact(opts.runtimeManifest || `${opts.report}.runtime-manifest.json`, manifest);
+    assertRuntimeApproval({ manifest, approvedDigest: opts.approveRuntimeDigest || null });
+    const journalPath = path.resolve(opts.runtimeJournal || `${opts.report}.runtime.jsonl`);
+    const session = manifest.actions.length > 0 ? new RuntimeSession({ manifest, journalPath }) : null;
+    if (session) session.prepare();
+    return { manifest, manifestPath, journalPath, session };
+}
+
+function finalizeRuntimeGovernance(governance, results, scenarioResults) {
+    if (!governance.session) return null;
+    for (const action of governance.manifest.actions) {
+        if (action.declaredInRuntime !== true) continue;
+        const result = results.find(item => item.id === action.itemId);
+        const scenario = scenarioResults.find(item => item.language === result?.language);
+        const verified = result?.verification?.status === 'passed'
+            || scenario?.runtime?.status === 'passed';
+        governance.session.observe({
+            actionId: action.actionId,
+            status: verified ? 'success' : 'failure',
+            verified,
+            detail: verified ? 'Runtime item completed' : (result?.verification?.detail || scenario?.runtime?.detail || 'Runtime item did not verify'),
+        });
+    }
+    return governance.session.finalize();
+}
+
+function remediationItems(results) {
+    return results
+        .filter(item => ['failed', 'manual'].includes(item.verification?.status))
+        .map(item => ({
+            remediationId: `remediation:${digestSemantic({ id: item.id, code: item.verification?.status }).slice(7, 23)}`,
+            blockId: item.blockId || item.id,
+            diagnosticCode: item.verification.status === 'failed' ? 'SNIPPET_VERIFICATION_FAILED' : 'SNIPPET_VERIFICATION_INCOMPLETE',
+            detail: item.verification.detail || 'Verification did not complete.',
+            sourceEvidence: [{
+                type: 'verification-source',
+                locator: item.source?.path || item.source?.link || item.id,
+                digest: item.hash,
+            }],
+            recommendedSkill: 'procedure-code-sync',
+        }));
+}
+
 async function main() {
     const opts = parseArgs(process.argv);
     if (opts.help) {
@@ -2659,6 +2750,7 @@ async function main() {
     const filtered = opts.languages
         ? snippets.filter(s => opts.languages.has(s.language))
         : snippets;
+    const runtimeGovernance = prepareRuntimeGovernance(filtered, opts);
     const results = filtered.map(snippet => {
         const classification = classify(snippet, opts);
         const verification = verifySnippet(snippet, classification, opts);
@@ -2679,6 +2771,7 @@ async function main() {
     const scenarioResults = buildScenarioResults(filtered, opts).filter(Boolean);
     applyScenarioCoverage(results, scenarioResults);
     const mantaRuntime = runMantaRuntimeVerification(opts, sources, scenarioResults);
+    const runtimeSession = finalizeRuntimeGovernance(runtimeGovernance, results, scenarioResults);
 
     const manualCoveredByScenario = results.filter(r =>
         r.verification.status === 'manual' &&
@@ -2739,14 +2832,18 @@ async function main() {
     if (mantaRuntime?.status === 'failed') diagnostics.push({ code: 'MANTA_VERIFICATION_FAILED', target: 'manta', detail: mantaRuntime.detail || '' });
     else if (mantaRuntime?.status === 'manual') diagnostics.push({ code: 'MANTA_VERIFICATION_INCOMPLETE', target: 'manta', detail: mantaRuntime.detail || '' });
 
-    const hasFailures = summary.failed > 0 || summary.scenarioFailed > 0 || summary.mantaRuntimeFailed > 0;
-    const hasIncomplete = summary.manualUncovered > 0 || summary.scenarioManual > 0 || summary.mantaRuntimeManual > 0;
+    const hasFailures = summary.failed > 0 || summary.scenarioFailed > 0 || summary.mantaRuntimeFailed > 0 || runtimeSession?.status === 'FAILED';
+    const hasIncomplete = summary.manualUncovered > 0 || summary.scenarioManual > 0 || summary.mantaRuntimeManual > 0 || runtimeSession?.status === 'BLOCKED';
+    const artifactPaths = [opts.report];
+    if (runtimeGovernance.manifestPath) artifactPaths.push(runtimeGovernance.manifestPath);
+    if (runtimeSession) artifactPaths.push(runtimeGovernance.journalPath);
+    if (opts.remediationHandoff) artifactPaths.push(path.resolve(opts.remediationHandoff));
     const contract = createResult({
         skill: 'doc-code-verify',
         operation: 'verify',
         status: hasFailures ? 'FAILED' : hasIncomplete ? 'BLOCKED' : 'VERIFIED',
         diagnostics,
-        artifactPaths: [opts.report],
+        artifactPaths,
         evidence: {
             sources: summary.sources,
             snippets: summary.filteredSnippets,
@@ -2760,7 +2857,19 @@ async function main() {
         },
         runtime: { generatedAt: summary.generatedAt },
     });
+    let remediationHandoff = null;
+    if (opts.remediationHandoff) {
+        remediationHandoff = buildRemediationHandoff({
+            verificationResultDigest: contract.semanticDigest,
+            sourceDigest: digestSemantic(sources.map(summarizeSource)),
+            items: remediationItems(results),
+        });
+        writeCanonicalArtifact(opts.remediationHandoff, remediationHandoff);
+    }
     const report = { contract, summary, liveVerification, nodeSdkBuilds: opts.nodeSdkBuilds, mantaRuntime, scenarios: scenarioResults, results };
+    if (runtimeGovernance.manifest) report.runtimeManifest = runtimeGovernance.manifest;
+    if (runtimeSession) report.runtimeSession = runtimeSession;
+    if (remediationHandoff) report.remediationHandoff = { path: path.resolve(opts.remediationHandoff), handoffDigest: remediationHandoff.handoffDigest };
     fs.writeFileSync(opts.report, JSON.stringify(report, null, 2));
 
     console.log('Feishu code verification summary');

@@ -1,9 +1,9 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "skill": "localized-doc-sync",
   "mustPreserve": [
-    { "id": "localization.table-pairs", "description": "Index every configured source and target table pair.", "fixtureIds": ["table-pairs"] },
-    { "id": "localization.slug-identity", "description": "Use stable slug rather than display title as record identity.", "fixtureIds": ["slug-identity"] },
+    { "id": "localization.table-pairs", "description": "Re-enumerate both complete Base inventories before applying table policy.", "fixtureIds": ["table-pairs"] },
+    { "id": "localization.slug-identity", "description": "Use placement-typed identity and never a global slug map.", "fixtureIds": ["slug-identity"] },
     { "id": "localization.source-read-only", "description": "Keep source records and documents read-only by default.", "fixtureIds": ["source-read-only"] },
     { "id": "localization.parent-media", "description": "Preserve mapped hierarchy and protected rich media.", "fixtureIds": ["parent-media"] },
     { "id": "localization.orphan-report", "description": "Report target-only records without deleting them.", "fixtureIds": ["orphan-report"] }
@@ -18,8 +18,29 @@
   ],
   "positiveTriggers": [{ "id": "pair-align", "prompt": "Align source and localized Feishu records and preserve media." }],
   "negativeTriggers": [{ "id": "same-language-release", "prompt": "Scan one SDK release in the same language." }],
-  "inputContract": { "requires": ["sourceBase", "targetBase", "tablePairs", "sourceRoot", "targetRoot"] },
-  "outputContract": { "schemaVersion": 1, "actions": ["NEW", "UPDATE", "SKIP", "ORPHAN", "META_ONLY"] },
+  "inputContract": { "requires": ["sourceBase", "targetBase", "fullInventory", "tablePolicy", "localePolicy", "translationReceipts"] },
+  "outputContract": { "schemaVersion": 1, "artifacts": ["scan-manifest", "issue-queue", "review-units", "execution-journal", "translation-receipt"] },
   "sideEffectPolicy": { "source": "read-only", "targetWriteRequires": ["dryRun", "batchDigest", "approval", "refetch"] },
-  "allowedSemanticChanges": ["localization.exact-approval", "localization.round-trip"]
+  "allowedSemanticChanges": ["localization.exact-approval", "localization.round-trip"],
+  "reviewPolicy": {
+    "unit": "document-or-bounded-meta-batch",
+    "gates": ["write", "document-acceptance"],
+    "rollback": "pre-finalization"
+  },
+  "learningPolicy": {
+    "captureOutcomes": ["approved", "rejected", "changes_requested", "accepted", "rollback_requested", "rolled_back", "finalized"],
+    "approvalStrength": "weak-positive",
+    "highRiskAutomaticPromotion": false
+  },
+  "adapterPolicy": {
+    "operations": [
+      {
+        "operation": "sync",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+        "focusedTest": ".claude/skills/localized-doc-sync/tests/localized-doc-sync-cli.test.js",
+        "journalRequiredForWrites": true
+      }
+    ]
+  }
 }

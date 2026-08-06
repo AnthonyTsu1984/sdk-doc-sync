@@ -2,7 +2,9 @@
 
 Use this file when aligning the Global `Development` table to the Chinese `开发指南` table.
 
-For historical counts and documents created during the 2026-07-03 pass, see [development-snapshot-2026-07-03.md](development-snapshot-2026-07-03.md). Recompute current state before every new run.
+## Evidence Snapshot — 2026-08-02
+
+Historical counts and documents created during earlier passes are non-authoritative evidence. See [development-snapshot-2026-07-03.md](development-snapshot-2026-07-03.md), but re-enumerate both complete Bases on every run; the live full-Base scan supersedes every snapshot count, mapping-completeness claim, and empty-table statement.
 
 ## Table Pair
 
@@ -11,30 +13,21 @@ For historical counts and documents created during the 2026-07-03 pass, see [dev
 | Global source | `Ac7xbs2k1ad7bjsCXr0ccHe9nMh` | `tblWv7PjNDsexddH` | `OUWXw5c4gia34ZkQUcEcMFbWn6s` |
 | Chinese target | `I6YUb1M0JajHrqsJGcLcZNh7neP` | `tblYpqCgevikMomb` | `XyeFwdx6kiK9A6kq3yIcLNdEnDd` |
 
-## Required Metadata
+## Placement Metadata
 
-For every row:
+For `canonical` rows:
 
 - `Slug`
-- `Labels`
-- `Placement Type`
-
-For canonical rows:
-
 - `Targets`
-- `Keywords`
-- `Progress`
-- `Notebook`
-- `Beta`
 
-Section rows intentionally do not require canonical-only metadata.
+For `section` rows, require `Slug` and omit `Targets`. For `link` and `ref` rows, omit both `Slug` and `Targets`; resolve their identity from locale-specific source meta. `Labels`, `Keywords`, `Progress`, `Notebook`, `Beta`, `Book`, `Alias1`, and `Alias2` follow each locale's own source metadata. `Chapter` is ignored by `locale-policy.json`.
 
 ## Matching Strategy
 
-1. Match target rows by exact `Slug` if present.
+1. Resolve placement first, then match `canonical:<slug>` or `section:<slug>` exactly.
 2. Match by exact title when Global and Chinese titles are the same.
 3. For translated titles, use the override table below.
-4. If a row is still unmapped, match by parent section and order only after checking the parent section slug.
+4. Resolve `link/ref` from locale-specific source meta; never synthesize a slug for them. If a row is still ambiguous, stop with an identity issue rather than matching only by order.
 5. Preserve target `Docs` links and parent links unless the user explicitly asks to move or recreate docs.
 6. Fill only blank metadata fields unless the user explicitly asks for a re-sync/overwrite.
 
@@ -189,4 +182,4 @@ lark-cli base +record-list --base-token Ac7xbs2k1ad7bjsCXr0ccHe9nMh --table-id t
 lark-cli base +record-list --base-token I6YUb1M0JajHrqsJGcLcZNh7neP --table-id tblYpqCgevikMomb --limit 500 --as user --format json
 ```
 
-When checking completeness, count missing target metadata across the full target table, not the visible view.
+When checking completeness, use the live full-Base scan rather than a single visible view or this dated evidence snapshot.

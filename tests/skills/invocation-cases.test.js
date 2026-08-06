@@ -76,6 +76,9 @@ test('deprecated skill names are thin compatibility entries for canonical skills
     assert.match(content, new RegExp(`\\.\\./${canonical}/SKILL\\.md`));
     assert.match(content, /deprecated name/i);
     assert.match(content, /Do not define or execute an independent workflow here\./);
+    assert.match(content, /compatibilityTelemetry/);
+    assert.match(content, /"?invocationCount"?: 1/);
+    assert.match(content, /Do not create an independent telemetry store\./);
     assert.ok(content.split(/\r?\n/).length < 20, `${alias} compatibility entry must stay thin`);
   }
 });

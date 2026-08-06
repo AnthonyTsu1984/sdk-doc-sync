@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "policyId": "zilliz-en-zh-table-map",
+  "provenance": "read-only full-Base scan 2026-08-06 plus reviewed alignment references",
+  "revalidateOn": ["every-full-scan", "base-revision-change", "table-inventory-change"],
+  "mappings": [
+    { "relation": "source-only", "sourceTableId": "tblLMqwkNDtAEK5p", "provenance": "reviewed table-level policy; byoc-intro has a separate cross-table override", "revalidateAfter": "2026-12-01" },
+    { "relation": "mapped", "sourceTableId": "tbl9BeCMjBmalJVb", "targetTableId": "tblsw6S3J0ekcgNB", "provenance": "Get Started alignment" },
+    { "relation": "mapped", "sourceTableId": "tblWv7PjNDsexddH", "targetTableId": "tblYpqCgevikMomb", "provenance": "Development alignment" },
+    { "relation": "mapped", "sourceTableId": "tblZMzoITXNsyKmQ", "targetTableId": "tblMuHkoG4qMugeX", "provenance": "Management alignment" },
+    { "relation": "mapped", "sourceTableId": "tblgHPdSvZP8gUz6", "targetTableId": "tbloC4PVprwYo0P0", "provenance": "Client Libraries alignment" },
+    { "relation": "mapped", "sourceTableId": "tblm1SbEPZaZrGZQ", "targetTableId": "tblRaa3JnIhllHb9", "provenance": "Tools alignment" },
+    { "relation": "mapped", "sourceTableId": "tblb929onfgAPW90", "targetTableId": "tblr7Zec2ReTfRmw", "provenance": "read-only full-Base scan" },
+    { "relation": "mapped", "sourceTableId": "tblh7utKxg0dgdTo", "targetTableId": "tblzcM4ERJ00Wjjx", "provenance": "read-only full-Base scan" },
+    { "relation": "mapped", "sourceTableId": "tblbIuN0ns3QWcQR", "targetTableId": "tblkdIEI58OHEJn0", "provenance": "read-only full-Base scan" }
+  ]
+}

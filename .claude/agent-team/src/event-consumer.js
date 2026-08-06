@@ -1,41 +1,62 @@
-const fs = require('fs');
-const path = require('path');
 const { spawn } = require('child_process');
 const { parseApprovalCommand, normalizeFeishuMessageEvent } = require('./approval-commands');
 const { FeishuImClient } = require('./feishu-im');
 const { dispatchGithub } = require('./github-dispatch');
+const { TaskStore } = require('./task-store');
+const { DecisionLedger } = require('../../skills/doc-ops-core/src/decision-ledger');
+const { digestSemantic } = require('../../skills/doc-ops-core/src/digest');
 
-function ensureDir(dir) {
-  fs.mkdirSync(dir, { recursive: true });
+const LIVE_DECISION_ACTIONS = new Set(['approve_live_write', 'reject', 'changes_requested']);
+
+function decisionOutcome(action) {
+  if (action === 'reject' || action === 'ignore') return 'rejected';
+  if (action === 'changes_requested') return 'changes_requested';
+  return 'approved';
 }
 
-function appendDecision(filePath, decision) {
-  ensureDir(path.dirname(filePath));
-  fs.appendFileSync(filePath, `${JSON.stringify(decision)}\n`);
-}
-
-function hasDecision(filePath, decisionId) {
-  if (!fs.existsSync(filePath)) return false;
-  return fs.readFileSync(filePath, 'utf8').split('\n').filter(Boolean).some(line => {
-    try {
-      return JSON.parse(line).decisionId === decisionId;
-    } catch {
-      return false;
-    }
-  });
-}
-
-function createDecision({ parsed, event, sourceRunId = null }) {
-  const decisionId = `${parsed.taskId}:${parsed.action}:${event.senderId}`;
-  return {
-    decisionId,
+function createDecision({ parsed, event, sourceRunId = null, actionBatch = null }) {
+  const proposalDigest = parsed.batchDigest || digestSemantic({
+    schemaVersion: 1,
     taskId: parsed.taskId,
     action: parsed.action,
     sourceRunId,
-    customInstruction: parsed.customInstruction,
-    userId: event.senderId,
-    messageId: event.messageId,
-    decidedAt: new Date().toISOString(),
+    instruction: parsed.customInstruction || null,
+  });
+  const decisionId = `decision:agent-team:${parsed.taskId}:${parsed.action}:${proposalDigest}`;
+  return {
+    ledgerEvent: {
+      schemaVersion: 1,
+      decisionId,
+      skill: actionBatch?.skill || 'localized-doc-sync',
+      gate: LIVE_DECISION_ACTIONS.has(parsed.action) ? 'WRITE' : 'WORKFLOW_DISPATCH',
+      outcome: decisionOutcome(parsed.action),
+      taskId: parsed.taskId,
+      sessionId: sourceRunId ? `github-run:${sourceRunId}` : null,
+      reviewUnitId: `task:${parsed.taskId}`,
+      proposalDigest,
+      resultDigest: null,
+      instruction: parsed.customInstruction || null,
+      rationale: parsed.customInstruction || null,
+      durableRuleRequested: false,
+      scopeHint: { level: 'review-unit', skill: actionBatch?.skill || 'localized-doc-sync' },
+      evidence: [{
+        type: actionBatch ? 'action-batch' : 'workflow-dispatch',
+        digest: proposalDigest,
+      }],
+      runtime: {
+        reviewerId: event.senderId,
+        messageId: event.messageId,
+        decidedAt: new Date().toISOString(),
+      },
+    },
+    dispatchDecision: {
+      decisionId,
+      taskId: parsed.taskId,
+      action: parsed.action,
+      batchDigest: parsed.batchDigest || null,
+      sourceRunId,
+      customInstruction: parsed.customInstruction,
+    },
   };
 }
 
@@ -54,29 +75,57 @@ function formatIgnoredResult(result) {
   return `${result.reason} (${result.senderIds.join(', ')})`;
 }
 
-function localResponseText(parsed) {
+function localResponseText(parsed, { actionBatch = null } = {}) {
   if (parsed.action === 'help') {
     return [
       'ztrans understands:',
       '- @ztrans dry run <task-id>',
       '- @ztrans patch <task-id>',
-      '- @ztrans approve <task-id>',
-      '- @ztrans reject <task-id>',
-      '- @ztrans changes <task-id>: <instruction>',
+      '- APPROVE_WRITES <task-id> sha256:<batch-digest>',
+      '- REJECT_WRITES <task-id> sha256:<batch-digest>: <reason>',
+      '- REQUEST_CHANGES <task-id> sha256:<batch-digest>: <instruction>',
       '- @ztrans explain <task-id>',
     ].join('\n');
   }
   if (parsed.action === 'explain') {
     return `I can explain task ${parsed.taskId}, but task lookup is not wired into chat replies yet. Use the latest scan card or artifact summary for now.`;
   }
+  if (parsed.action === 'legacy_live_command') {
+    if (!actionBatch?.batchDigest) {
+      return `Task-only live commands are no longer executable. Use the exact digest command from the latest approval card for task ${parsed.taskId}.`;
+    }
+    const commands = {
+      approve: `APPROVE_WRITES ${parsed.taskId} ${actionBatch.batchDigest}`,
+      reject: `REJECT_WRITES ${parsed.taskId} ${actionBatch.batchDigest}: <reason>`,
+      changes: `REQUEST_CHANGES ${parsed.taskId} ${actionBatch.batchDigest}: <instruction>`,
+    };
+    return `Task-only live commands are no longer executable. Use:\n${commands[parsed.legacyAction]}`;
+  }
   return 'ztrans did not dispatch a workflow for this local instruction.';
+}
+
+function defaultSourceRunIdResolver(taskId) {
+  try {
+    return new TaskStore().readTask(taskId).sourceRunId || null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultActionBatchResolver(taskId) {
+  try {
+    return new TaskStore().readArtifact(taskId, 'action-batch.json');
+  } catch {
+    return null;
+  }
 }
 
 async function handleEvent({
   config,
   event,
   githubToken,
-  sourceRunIdResolver = () => null,
+  sourceRunIdResolver = defaultSourceRunIdResolver,
+  actionBatchResolver = defaultActionBatchResolver,
   dispatch = decision => dispatchGithub({ config, token: githubToken, decision }),
   respond = null,
 }) {
@@ -88,22 +137,37 @@ async function handleEvent({
   const parsed = parseApprovalCommand(normalized.text);
   if (!parsed) return { ignored: true, reason: 'not an approval command', text: normalized.text };
   if (parsed.local) {
-    const responseText = localResponseText(parsed);
+    const actionBatch = parsed.action === 'legacy_live_command' ? actionBatchResolver(parsed.taskId) : null;
+    const responseText = localResponseText(parsed, { actionBatch });
     if (respond) {
       await respond({ chatId: normalized.chatId, text: responseText });
     }
     return { local: true, parsed, responseText };
   }
-  const decision = createDecision({
+  const actionBatch = LIVE_DECISION_ACTIONS.has(parsed.action) ? actionBatchResolver(parsed.taskId) : null;
+  if (LIVE_DECISION_ACTIONS.has(parsed.action)) {
+    if (!actionBatch?.batchDigest) throw new Error(`ACTION_BATCH_NOT_FOUND: ${parsed.taskId}`);
+    if (actionBatch.batchDigest !== parsed.batchDigest) {
+      throw new Error(`ACTION_BATCH_DIGEST_MISMATCH: expected ${actionBatch.batchDigest}, received ${parsed.batchDigest}`);
+    }
+  }
+  const { ledgerEvent, dispatchDecision } = createDecision({
     parsed,
     event: normalized,
     sourceRunId: parsed.sourceRunId || sourceRunIdResolver(parsed.taskId),
+    actionBatch,
   });
   const logPath = config.approvalConsumer.decisionLogPath;
-  if (hasDecision(logPath, decision.decisionId)) return { duplicate: true, decision };
-  appendDecision(logPath, decision);
-  await dispatch(decision);
-  return { ok: true, decision };
+  let decision;
+  try {
+    decision = new DecisionLedger({ filePath: logPath }).append(ledgerEvent);
+  } catch (error) {
+    if (error.code === 'DUPLICATE_DECISION_ID') return { duplicate: true, decision: dispatchDecision };
+    throw error;
+  }
+  const dispatched = { ...dispatchDecision, decisionDigest: decision.decisionDigest };
+  await dispatch(dispatched);
+  return { ok: true, decision: dispatched, ledgerEntry: decision };
 }
 
 function waitForReady(child, eventKey) {
@@ -212,7 +276,6 @@ async function runSdkEventConsumer({
 }
 
 module.exports = {
-  appendDecision,
   createDecision,
   formatIgnoredResult,
   handleEvent,

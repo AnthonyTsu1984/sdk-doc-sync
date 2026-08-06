@@ -20,6 +20,7 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 - Live writes may touch only approved documents, records, folders, and metadata. Never write the auto-populated `Slug` field.
 - Keep the older-version doc as a historical snapshot. Never patch or delete an inherited older-version document during a newer release sync.
 - Write approval does not authorize Acceptance Finalization. Keep touched interface-document records `WIP` until separate acceptance changes them to `Draft` and advances `scan-state.json`. Structural VirtualNode or Module records preserve existing publication metadata when repointed; new structural records use the explicit reviewed `Targets` and `Progress` values in their approved resource plans.
+- A partial-acceptance request is blocked. Until every unit is accepted and the complete manifest digest is supplied, the next missing gate remains `APPROVE_ACCEPTANCE`; never report that no acceptance approval is required.
 - Write or document acceptance does not authorize rollback. A single executed unit may be rolled back only before final acceptance, through its own deterministic manifest and exact `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` command. Rollback never advances or rewinds `scan-state.json`.
 
 ## Shared Contract

@@ -13,6 +13,7 @@ const {
   loadReviewSession,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
+  recordReviewDecision,
   recordDocumentExecution,
   recordDocumentRollback,
   saveReviewSession,
@@ -103,6 +104,44 @@ test('review session persists exactly one active execution across processes', ()
   assert.equal(restored.activeExecution.reviewUnitId, 'review:node:Collections:a');
   assert.equal(restored.activeExecution.executionJournalDigest, journal.digest);
   assert.throws(() => withExecution(restored, journal, 'review:node:Collections:b'), /active execution/i);
+});
+
+test('decision capture appends feedback without mutating any review-session authority state', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-decision-'));
+  const ledgerPath = path.join(directory, 'decisions.jsonl');
+  const journal = executionJournal(directory);
+  const session = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:decision',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), journal);
+  const before = structuredClone(session);
+
+  const decision = recordReviewDecision(session, {
+    decisionLedgerPath: ledgerPath,
+    decisionId: 'decision:document-review:collections-a:1',
+    gate: 'DOCUMENT_REVIEW',
+    outcome: 'changes_requested',
+    reviewUnitId: 'review:node:Collections:a',
+    proposalDigest: 'sha256:' + 'a'.repeat(64),
+    instruction: 'Keep the request helper on the owning method page.',
+    rationale: 'The helper has no independent public lifecycle.',
+    scopeHint: { level: 'skill', taskType: 'helper-ownership' },
+    durableRuleRequested: true,
+  });
+
+  assert.deepEqual(session, before);
+  assert.deepEqual(session.acceptedReviewUnits, before.acceptedReviewUnits);
+  assert.deepEqual(session.activeExecution, before.activeExecution);
+  assert.equal(session.acceptanceManifestDigest, before.acceptanceManifestDigest);
+  assert.equal(session.scanStateUpdated, before.scanStateUpdated);
+  assert.deepEqual(session.rollbackReceipts, before.rollbackReceipts);
+  assert.equal(decision.sessionId, session.sessionId);
+  assert.equal(decision.scopeHint.language, 'node');
+  assert.equal(decision.scopeHint.track, 'v3.0.x');
+  assert.equal(fs.readFileSync(ledgerPath, 'utf8').trim().length > 0, true);
 });
 
 test('review session persists a digest-bound accepted-document receipt across processes', () => {

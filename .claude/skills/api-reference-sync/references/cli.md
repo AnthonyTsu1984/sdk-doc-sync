@@ -67,6 +67,125 @@ The prompt must show the returned full digest in one copy-ready reply, for examp
 
 If a dry-run summary has `planCount: 0` or nonzero `planningErrorCount`, report it as blocked generation and do not request Feishu write approval.
 
+When a release contains one or more documents, create a persistent review session from the complete initial dry-run. The session is the only source of accepted-unit state across processes or chat sessions:
+
+```bash
+SESSION=tmp/sdk-doc-sync-runs/<language>-<track>/review-session.json
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
+  <same-reviewed-inputs> \
+  --session-state "$SESSION" \
+  --dry-run \
+  --json
+```
+
+`--session-state` refuses live runs, blocked or incomplete planning, and an existing file. Use `--resume-session` for every later invocation. Do not copy accepted review-unit IDs into command lines or prompts.
+
+The first dry-run emits a `reviewUnitManifest` and does not emit an approvable multi-document batch. Select exactly one unit and rerun against current live state:
+
+```bash
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
+  <same-reviewed-inputs> \
+  --resume-session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --dry-run \
+  --json
+```
+
+The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`, again with `--resume-session "$SESSION"`. After execution, stop for document review; if comments change any artifact or plan, rerun the same unit and obtain a new digest.
+
+After the exact `APPROVE_DOCUMENT` reply, write the verified touched-record inventory as JSON. Every entry must bind a live record to a successful action in the execution journal:
+
+```json
+[
+  {
+    "actionId": "<document-or-resource-stable-id>",
+    "recordId": "<bitable-record-id>",
+    "documentToken": "<docx-token-or-null>"
+  }
+]
+```
+
+Then persist the receipt:
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js accept-document \
+  --session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --execution-journal <execution-journal.jsonl> \
+  --execution-journal-digest sha256:<execution-journal-digest> \
+  --touched-records <touched-records.json> \
+  --document-link <docx-url> \
+  --record-link <bitable-record-url> \
+  --comments-resolved
+```
+
+This command rereads the journal, verifies its digest, completion sentinel, action results, and document identity, then derives the accepted unit from the receipt. A new process can inspect progress with `sdk-review-session.js status --session "$SESSION"` and continue with `--resume-session "$SESSION"`. Resume reruns the baseline scan and blocks on manifest drift, missing or changed journals, non-`WIP` records, nonblank `Targets`, or changed document tokens. `scan-state.json` remains unchanged.
+
+After every unit has a receipt, build the final acceptance artifact:
+
+```bash
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js build-acceptance \
+  --session "$SESSION"
+```
+
+Use the emitted `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` gate. Pass that same digest to `AcceptanceFinalizer`. After finalization writes its successful JSON journal, bind it back to the session:
+
+```bash
+node .claude/skills/api-reference-sync/scripts/review-artifact-digest.js <acceptance-journal.json>
+node .claude/skills/api-reference-sync/bin/sdk-review-session.js record-finalization \
+  --session "$SESSION" \
+  --acceptance-journal <acceptance-journal.json> \
+  --acceptance-journal-digest sha256:<acceptance-journal-digest>
+```
+
+Only the last command can mark the persistent session `finalized` and `scanStateUpdated: true`, and only when the journal proves successful digest-bound finalization.
+
+## Per-Document Rollback
+
+Rollback is available for one executed unit while it is awaiting `APPROVE_DOCUMENT`, or after its accepted receipt exists but before final acceptance is finalized. A finalized session cannot be reopened; use a corrective release.
+
+Planning is read-only and writes only the local rollback manifest:
+
+```bash
+ROLLBACK_MANIFEST=tmp/sdk-doc-sync-runs/<language>-<track>/rollback-<unit>.json
+node .claude/skills/api-reference-sync/bin/sdk-document-rollback.js plan \
+  --session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --manifest "$ROLLBACK_MANIFEST"
+```
+
+Review the exact inverse actions, Bitable fields, Docx/folder tokens, side effects, and shared-resource blockers. The command emits one copy-ready approval line:
+
+```text
+APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
+```
+
+After that exact reply, execute with a new journal path:
+
+```bash
+ROLLBACK_JOURNAL=tmp/sdk-doc-sync-runs/<language>-<track>/rollback-<unit>.jsonl
+BASE_TOKEN=<base-token> ROOT_TOKEN=<folder-token> \
+node .claude/skills/api-reference-sync/bin/sdk-document-rollback.js execute \
+  --session "$SESSION" \
+  --review-unit-id review:<document-stable-id> \
+  --manifest "$ROLLBACK_MANIFEST" \
+  --journal "$ROLLBACK_JOURNAL" \
+  --approve-rollback-digest sha256:<rollback-manifest-digest>
+```
+
+The executor performs a live drift preflight, applies inverse actions in reverse dependency order, and writes prepared/observed entries before a completion sentinel. It updates the review session only after full verification. `scan-state.json` remains unchanged.
+
+Action-specific cleanup is mandatory:
+
+- `COPY_PATCH_AND_REPOINT`: restore the complete captured Bitable fields so `Docs` points back to the untouched COPY source, verify the restored pointer, then delete the copied Docx. Never history-revert the source.
+- `CREATE`: delete and verify the new Bitable record, then delete and verify the new Docx.
+- `UPDATE_IN_PLACE`: revert the captured history revision, verify the pre-write canonical block digest, then restore Bitable fields.
+- New VirtualNode records and folders: delete them after dependent records/documents have been reversed; restore a repointed pre-existing VirtualNode before folder deletion.
+
+If the journal already exists, `execute` does not repeat Feishu mutations. A completed journal is reconciled into the session. A partial journal keeps the session unchanged and requires manual live-state reconciliation before continuation.
+
 ## Zilliz CLI Release Impact
 
 Before scanning a new public `zilliz-cli` release, extract release-note command impacts:

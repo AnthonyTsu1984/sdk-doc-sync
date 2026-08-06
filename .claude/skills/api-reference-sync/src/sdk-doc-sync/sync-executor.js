@@ -5,6 +5,8 @@ const {
   assertPublishableContent,
 } = require('./feishu-block-safety');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
+const { organizationRecordType } = require('./sdk-organization-contract');
+const { captureRecordState } = require('./record-state');
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -207,6 +209,7 @@ class SyncExecutor {
     approvalContext = null,
     action = null,
     resourceResolutions = new Map(),
+    rollbackCapsule = null,
   } = {}) {
     this._assertApprovedPlan(plan, approval, approvalContext);
     const completedSteps = [];
@@ -221,6 +224,7 @@ class SyncExecutor {
       record: null,
       resolvedResource: null,
       rollback: null,
+      rollbackCapsule,
       documentVerification: null,
       verification: null,
       originalRecord: plan.source?.recordId ? { ...plan.source } : null,
@@ -242,7 +246,10 @@ class SyncExecutor {
           await this._executeCreate(effectivePlan, artifact, action, result);
           break;
         case 'UPDATE_IN_PLACE':
-          await this._executeUpdateInPlace(effectivePlan, artifact, action, result);
+          await this._executeUpdateInPlace(effectivePlan, artifact, action, result, rollbackCapsule);
+          break;
+        case 'UPDATE_RECORD_METADATA':
+          await this._executeRecordMetadataUpdate(effectivePlan, result);
           break;
         case 'CREATE_AND_REPOINT':
           throw new SyncExecutionError(
@@ -285,6 +292,84 @@ class SyncExecutor {
         suggestedRecovery: this._recovery(effectivePlan, result, error),
       };
     }
+  }
+
+  async prepareRollback(plan, { resourceResolutions = new Map() } = {}) {
+    const effectivePlan = this._resolvePlan(plan, resourceResolutions);
+    let recordIdValue = null;
+    if (['UPDATE_IN_PLACE', 'UPDATE_RECORD_METADATA', 'COPY_PATCH_AND_REPOINT', 'DEPRECATE'].includes(effectivePlan.action)) {
+      recordIdValue = effectivePlan.source?.recordId || null;
+    } else if (effectivePlan.action === 'CREATE_FOLDER') {
+      recordIdValue = effectivePlan.resource?.repointVirtualNode?.recordId || null;
+    }
+
+    const beforeRecord = recordIdValue
+      ? captureRecordState(await this._getRecord(recordIdValue))
+      : null;
+    let documentRollback = null;
+    if (effectivePlan.action === 'UPDATE_IN_PLACE') {
+      if (typeof this.verifier?.beforeMutation !== 'function') {
+        throw new SyncExecutionError(
+          'ROLLBACK_EVIDENCE_REQUIRED',
+          `History and block digest are required before updating ${effectivePlan.source?.documentToken || effectivePlan.stableId}`,
+        );
+      }
+      const captured = await this.verifier.beforeMutation(effectivePlan);
+      if (!nonEmptyString(captured?.historyVersionId)) {
+        throw new SyncExecutionError(
+          'ROLLBACK_EVIDENCE_REQUIRED',
+          `A history version is required before updating ${effectivePlan.source.documentToken}`,
+        );
+      }
+      if (!nonEmptyString(captured?.blockDigest)) {
+        throw new SyncExecutionError(
+          'ROLLBACK_EVIDENCE_REQUIRED',
+          `A pre-write block digest is required before updating ${effectivePlan.source.documentToken}`,
+        );
+      }
+      documentRollback = {
+        documentToken: effectivePlan.source.documentToken,
+        historyVersionId: captured.historyVersionId,
+        blockDigest: captured.blockDigest,
+      };
+    }
+
+    return deepFreeze({
+      schemaVersion: 1,
+      action: effectivePlan.action,
+      actionId: effectivePlan.stableId,
+      dependsOn: [...(effectivePlan.dependencies || [])],
+      beforeRecord,
+      documentRollback,
+      source: effectivePlan.source ? structuredClone(effectivePlan.source) : null,
+      target: effectivePlan.target ? structuredClone(effectivePlan.target) : null,
+      resource: effectivePlan.resource ? structuredClone(effectivePlan.resource) : null,
+    });
+  }
+
+  async observeRollback(plan, result) {
+    const effectivePlan = result.resolvedPlan || plan;
+    const observedRecordId = recordId(result.record) || effectivePlan.source?.recordId || null;
+    let postRecord = null;
+    if (observedRecordId && typeof this.bitableWriter.getRecord === 'function') {
+      postRecord = captureRecordState(await this._getRecord(observedRecordId));
+    } else if (result.record) {
+      postRecord = captureRecordState(result.record);
+    }
+    return deepFreeze({
+      schemaVersion: 1,
+      action: effectivePlan.action,
+      actionId: effectivePlan.stableId,
+      completedSteps: [...(result.completedSteps || [])],
+      createdDocument: result.createdDocument ? structuredClone(result.createdDocument) : null,
+      createdFolder: result.createdFolder ? structuredClone(result.createdFolder) : null,
+      patchedDocumentToken: result.patchedDocument?.token
+        || result.patchedDocument?.documentToken
+        || null,
+      recordId: observedRecordId,
+      postRecord,
+      resolvedResource: result.resolvedResource ? structuredClone(result.resolvedResource) : null,
+    });
   }
 
   _resolvePlan(plan, resolutions) {
@@ -596,9 +681,9 @@ class SyncExecutor {
     }
   }
 
-  async _executeUpdateInPlace(plan, artifact, action, result) {
+  async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {
     assertPublishableArtifact(plan, artifact);
-    await this._captureRollbackBeforeMutation(plan, result);
+    await this._captureRollbackBeforeMutation(plan, result, rollbackCapsule);
 
     result.patchAttempted = true;
     const patched = await this._patchDocument(plan, artifact);
@@ -608,11 +693,29 @@ class SyncExecutor {
     await this._verifyDocumentBeforeBitableMutation(plan, result);
 
     const metadata = artifactMetadata(artifact);
+    const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
     try {
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
         description: metadata.description,
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
+        parentRecordId: plan.target.parentRecordId,
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
+      });
+    } catch (error) {
+      error.step = 'updateRecord';
+      throw error;
+    }
+    result.completedSteps.push('updateRecord');
+  }
+
+  async _executeRecordMetadataUpdate(plan, result) {
+    const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
+    try {
+      result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
+        parentRecordId: plan.target.parentRecordId,
+        ...editedRecordMetadata(),
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
     } catch (error) {
       error.step = 'updateRecord';
@@ -649,7 +752,6 @@ class SyncExecutor {
 
   async _executeCopyPatchAndRepoint(plan, artifact, action, result) {
     assertPublishableArtifact(plan, artifact);
-    await this._captureRollbackBeforeMutation(plan, result);
 
     const copied = await this._copyDocument(plan, artifact, action);
     result.createdDocument = copied;
@@ -667,6 +769,7 @@ class SyncExecutor {
       await this._verifyDocumentBeforeBitableMutation(plan, result);
 
       const metadata = artifactMetadata(artifact);
+      const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
         title: artifactTitle(plan, artifact, action),
         link: linkFromCreated(copied),
@@ -674,6 +777,7 @@ class SyncExecutor {
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
         parentRecordId: plan.target.parentRecordId,
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
       result.completedSteps.push('updateRecord');
     } catch (error) {
@@ -787,13 +891,16 @@ class SyncExecutor {
 
   async _createRecord(plan, artifact, action, created) {
     const metadata = artifactMetadata(artifact);
+    const reviewedRecordType = plan.organization
+      ? organizationRecordType(plan.organization, plan.stableId)
+      : null;
     return await this.bitableWriter.createRecord({
       title: artifactTitle(plan, artifact, action),
       link: linkFromCreated(created),
       progress: editedRecordMetadata().progress,
       addedSince: plan.target.version,
       description: metadata.description,
-      type: metadata.type,
+      type: reviewedRecordType || metadata.type,
       targets: editedRecordMetadata().targets,
       parentRecordId: plan.target.parentRecordId,
     });
@@ -815,26 +922,34 @@ class SyncExecutor {
     }
   }
 
-  async _captureRollbackBeforeMutation(plan, result) {
+  async _captureRollbackBeforeMutation(plan, result, rollbackCapsule = null) {
     const repairRequiresHistory = plan.apiPatchPlan?.approval?.required === true;
-    if (typeof this.verifier?.beforeMutation !== 'function' || !plan.source?.documentToken) {
-      if (repairRequiresHistory) {
-        const error = new SyncExecutionError(
-          'REPAIR_HISTORY_REQUIRED',
-          `Rollback history is required before full-body rebuild of ${plan.source?.documentToken || plan.stableId}`,
-        );
-        error.step = 'captureRollback';
-        throw error;
-      }
+    if (rollbackCapsule?.documentRollback) {
+      result.rollback = structuredClone(rollbackCapsule.documentRollback);
+      result.completedSteps.push('captureRollback');
       return;
+    }
+    if (typeof this.verifier?.beforeMutation !== 'function' || !plan.source?.documentToken) {
+      const error = new SyncExecutionError(
+        repairRequiresHistory ? 'REPAIR_HISTORY_REQUIRED' : 'ROLLBACK_EVIDENCE_REQUIRED',
+        `Rollback history and block digest are required before updating ${plan.source?.documentToken || plan.stableId}`,
+      );
+      error.step = 'captureRollback';
+      throw error;
     }
     try {
       result.rollback = await this.verifier.beforeMutation(plan);
-      if (repairRequiresHistory && !nonEmptyString(result.rollback?.historyVersionId)) {
+      if (!nonEmptyString(result.rollback?.historyVersionId)) {
         throw new SyncExecutionError(
-          'REPAIR_HISTORY_REQUIRED',
-          `A usable history version is required before full-body rebuild of ${plan.source.documentToken}`,
+          repairRequiresHistory ? 'REPAIR_HISTORY_REQUIRED' : 'ROLLBACK_EVIDENCE_REQUIRED',
+          `A usable history version is required before updating ${plan.source.documentToken}`,
           { documentToken: plan.source.documentToken },
+        );
+      }
+      if (!nonEmptyString(result.rollback?.blockDigest)) {
+        throw new SyncExecutionError(
+          'ROLLBACK_EVIDENCE_REQUIRED',
+          `A pre-write block digest is required before updating ${plan.source.documentToken}`,
         );
       }
       result.completedSteps.push('captureRollback');

@@ -123,6 +123,27 @@ class BitableWriter {
         return data.data.record;
     }
 
+    async replaceRecordFields(recordId, writableFields) {
+        if (!recordId) throw new TypeError('recordId is required to replace record fields');
+        if (!writableFields || typeof writableFields !== 'object' || Array.isArray(writableFields)) {
+            throw new TypeError('writableFields must be an object');
+        }
+        const token = await this.tokenFetcher.token();
+        const tableId = await this._resolveTableId();
+        const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records/${recordId}`;
+        const res = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({ fields: structuredClone(writableFields) }),
+        });
+        const data = await res.json();
+        if (data.code !== 0) throw new Error(`Failed to replace record fields: ${data.msg}`);
+        return data.data.record;
+    }
+
     async deleteRecord(recordId) {
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();

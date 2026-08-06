@@ -453,7 +453,57 @@
     "DataImport.BulkWriter": {
       "stableId": "node:DataImport:BulkWriter",
       "canonicalSlug": "DataImport-BulkWriter",
-      "category": "DataImport"
+      "category": "DataImport",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "class",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.append": {
+      "stableId": "node:DataImport:BulkWriter:append",
+      "canonicalSlug": "DataImport-BulkWriter-append",
+      "category": "DataImport",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.commit": {
+      "stableId": "node:DataImport:BulkWriter:commit",
+      "canonicalSlug": "DataImport-BulkWriter-commit",
+      "category": "DataImport",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.close": {
+      "stableId": "node:DataImport:BulkWriter:close",
+      "canonicalSlug": "DataImport-BulkWriter-close",
+      "category": "DataImport",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
+    },
+    "DataImport.BulkWriter.writeFrom": {
+      "stableId": "node:DataImport:BulkWriter:writeFrom",
+      "canonicalSlug": "DataImport-BulkWriter-writeFrom",
+      "category": "DataImport",
+      "organization": {
+        "profileId": "node-stateful-class",
+        "profileVersion": 1,
+        "role": "method",
+        "classStableId": "node:DataImport:BulkWriter"
+      }
     },
     "DataImport.BulkWriterOptions": {
       "stableId": "node:DataImport:BulkWriterOptions",

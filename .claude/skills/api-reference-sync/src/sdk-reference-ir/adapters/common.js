@@ -263,6 +263,9 @@ function buildReferenceDocument({
     identity: buildIdentity(symbol, context, language, kind),
     source: buildSource(symbol, context),
     summary: String(context.summary ?? symbol.docstring ?? ''),
+    summaryCallouts: Array.isArray(context.summaryCallouts)
+      ? context.summaryCallouts.map((callout) => ({ ...callout }))
+      : [],
     signatures,
     requestVariants,
     callableMembers,

@@ -189,6 +189,75 @@ test('structural copy updates rebuild the new copy in complete desired role orde
   assert.deepEqual(preview.operations[0].blocks.map((entry) => entry.block_id), desired[0].children);
 });
 
+test('structural replacements use desired section positions when earlier sections change size', () => {
+  const current = pythonDoc();
+  current.splice(6, 0,
+    block('param-extra-1', 'limit - Result limit.', 12),
+    block('param-extra-2', 'offset - Result offset.', 12));
+  current[0].children.splice(5, 0, 'param-extra-1', 'param-extra-2');
+
+  const desired = pythonDoc();
+  desired[9].code.elements[0].text_run.content = 'client.search([[0.2]])';
+  desired.push(block('notes', 'Notes', 4), block('note', 'Aggregation details.'));
+  desired[0].children.push('notes', 'note');
+
+  const preview = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: desired,
+    profile: profiles.python,
+  });
+
+  assert.equal(preview.strategy, 'ordered-section-replacement');
+  const examples = preview.operations.find((operation) => operation.role === 'examples');
+  assert.equal(examples.insertAt, 7);
+});
+
+test('plans an explicitly reviewed preserved block placement in the desired document order', () => {
+  const current = pythonDoc({ rich: true });
+  current.push(block('notes', 'Notes', 4), block('note', 'Duplicate callout guidance.', 12));
+  current[0].children.push('notes', 'note');
+  current[0].children.push(current[0].children.splice(current[0].children.indexOf('callout'), 1)[0]);
+
+  const desired = pythonDoc({
+    parameter: 'data - Updated query vectors.',
+    request: 'client.search(data, filter=filter)',
+  });
+  desired[1].text.elements[0].text_run.content = 'Updated search summary.';
+  desired[7].text.elements[0].text_run.content = 'Returns updated matches.';
+  desired[9].code.elements[0].text_run.content = 'client.search([[0.2]])';
+
+  const preview = planApiReferencePatch({
+    currentBlocks: current,
+    desiredBlocks: desired,
+    profile: profiles.python,
+    preservedBlockPlacements: [{ blockId: 'callout', role: 'summary', offset: 1 }],
+  });
+
+  assert.equal(preview.strategy, 'ordered-section-replacement');
+  assert.deepEqual(preview.preservedPlacements, [{ blockId: 'callout', insertAt: 1 }]);
+  assert.equal(preview.operations.some((operation) => (
+    operation.blocks || []
+  ).some((entry) => entry.block_type === 19)), false);
+});
+
+test('plans creation of a reviewed native callout that is absent from the live summary', () => {
+  const desired = pythonDoc();
+  desired.splice(2, 0, {
+    block_id: 'desired-callout', parent_id: 'page', block_type: 19,
+    children: [], callout: { emoji_id: 'blue_book', background_color: 2, border_color: 2 },
+  });
+  desired[0].children.splice(1, 0, 'desired-callout');
+
+  const preview = planApiReferencePatch({
+    currentBlocks: pythonDoc(),
+    desiredBlocks: desired,
+    profile: profiles.python,
+  });
+
+  const summary = preview.operations.find((operation) => operation.role === 'summary');
+  assert.deepEqual(summary.blocks.map((entry) => entry.block_type), [2, 19]);
+});
+
 test('copy rebuild retains nested desired block hierarchy in the immutable patch plan', () => {
   const desired = pythonDoc();
   desired[5].children = [{

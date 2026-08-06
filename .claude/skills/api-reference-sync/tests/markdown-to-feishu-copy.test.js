@@ -81,3 +81,26 @@ test('copyDocument copies a drive docx file into the target folder', async () =>
     process.env.FEISHU_HOST = previousHost;
   }
 });
+
+test('deleteFile supports both docx files and folders through typed Drive deletion', async () => {
+  const calls = [];
+  const MarkdownToFeishu = loadWithFetch(async (url, options) => {
+    calls.push({ url, options });
+    return { async json() { return { code: 0, data: {} }; } };
+  });
+  const previousHost = process.env.FEISHU_HOST;
+  process.env.FEISHU_HOST = 'https://zilliverse.feishu.cn';
+  const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  writer.tokenFetcher = { token: async () => 'tenant-token' };
+
+  await writer.deleteDocument({ documentToken: 'doc-1' });
+  await writer.deleteFolder({ folderToken: 'folder-1' });
+
+  assert.deepEqual(calls.map((call) => ({ url: call.url, method: call.options.method })), [
+    { url: 'https://zilliverse.feishu.cn/open-apis/drive/v1/files/doc-1?type=docx', method: 'DELETE' },
+    { url: 'https://zilliverse.feishu.cn/open-apis/drive/v1/files/folder-1?type=folder', method: 'DELETE' },
+  ]);
+
+  if (previousHost === undefined) delete process.env.FEISHU_HOST;
+  else process.env.FEISHU_HOST = previousHost;
+});

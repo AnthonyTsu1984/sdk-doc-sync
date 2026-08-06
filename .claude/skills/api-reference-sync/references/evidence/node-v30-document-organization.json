@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "sdk": {
+    "name": "milvus2-sdk-node",
+    "track": "v3.0.x",
+    "repository": "repos/milvus-sdk-node",
+    "sourceRange": "v3.0.3..v3.0.4"
+  },
+  "collection": {
+    "collectedAt": "2026-08-05T16:16:54Z",
+    "identity": "bot",
+    "verified": true,
+    "tool": "lark-cli 1.0.65",
+    "authStatus": {
+      "bot": "ready",
+      "user": "verify_failed",
+      "userFailureCode": 20064
+    }
+  },
+  "bitable": {
+    "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e",
+    "tableId": "tblT65LG94H2vobA",
+    "inheritedBaseToken": "R9i8bww4faNsR6smwQwcAtHGnkb",
+    "inheritedTableId": "tblEjNXH8WGzO1BR"
+  },
+  "releaseFolders": {
+    "current": {
+      "track": "v3.0.x",
+      "rootToken": "LW67fVlTvlNCZRdxOVYcQZyJnFQ",
+      "dataImportFolderToken": "OE6ef37Ztlb6FgdouLvcTcrpnAp",
+      "dataImportParentRecordId": "recvis4qucFpFm",
+      "rootContainsDataImport": true
+    },
+    "inherited": {
+      "track": "v2.6.x",
+      "rootToken": "NFmOfwILlln3JgdePZUclweZnIe",
+      "dataImportFolderToken": "YJbpf38t6lDwaldXkCRcj2yxnHg",
+      "dataImportParentRecordId": "recvmMGXu6OzGy",
+      "rootContainsDataImport": true
+    }
+  },
+  "organization": {
+    "profileId": "node-stateful-class",
+    "profileVersion": 1,
+    "classStableId": "node:DataImport:BulkWriter",
+    "driveLayout": "same_named_class_folder",
+    "currentState": {
+      "bitableShape": "VirtualNode -> Class",
+      "classFolderPresent": false,
+      "classDocumentsHomeTrack": "v2.6.x",
+      "laterTrackSharesInheritedDocx": true
+    },
+    "requiredState": {
+      "bitableShape": "VirtualNode -> Class -> Function",
+      "classFolderName": "BulkWriter",
+      "classRecordType": "Class",
+      "childRecordType": "Function",
+      "classAndMethodDocsResourceType": "docx",
+      "publicMethodStableIds": [
+        "node:DataImport:BulkWriter:append",
+        "node:DataImport:BulkWriter:close",
+        "node:DataImport:BulkWriter:commit",
+        "node:DataImport:BulkWriter:writeFrom"
+      ]
+    }
+  },
+  "records": [
+    {
+      "track": "v3.0.x",
+      "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e",
+      "tableId": "tblT65LG94H2vobA",
+      "recordId": "recvmMH9oEEh6G",
+      "title": "BulkWriter",
+      "slug": "DataImport-BulkWriter",
+      "recordType": "Class",
+      "parentRecordId": "recvis4qucFpFm",
+      "docs": {
+        "resourceType": "docx",
+        "token": "RSrRdD4fLoy50Bx5s2xcQ6lMnVd",
+        "revision": 12,
+        "contentHash": "sha256:e941bd680f4b5c48144c14e8a9d0cba70ee0d38730942936f69719018c67732f"
+      }
+    },
+    {
+      "track": "v2.6.x",
+      "baseToken": "R9i8bww4faNsR6smwQwcAtHGnkb",
+      "tableId": "tblEjNXH8WGzO1BR",
+      "recordId": "recvmMH8M8K8E5",
+      "title": "BulkWriter",
+      "slug": "DataImport-BulkWriter",
+      "recordType": "Class",
+      "parentRecordId": "recvmMGXu6OzGy",
+      "docs": {
+        "resourceType": "docx",
+        "token": "RSrRdD4fLoy50Bx5s2xcQ6lMnVd",
+        "revision": 12,
+        "contentHash": "sha256:e941bd680f4b5c48144c14e8a9d0cba70ee0d38730942936f69719018c67732f"
+      }
+    },
+    {
+      "track": "v3.0.x",
+      "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e",
+      "tableId": "tblT65LG94H2vobA",
+      "recordId": "recvmMHi16SJR8",
+      "title": "Formatter",
+      "slug": "DataImport-Formatter",
+      "recordType": "Class",
+      "parentRecordId": "recvis4qucFpFm",
+      "docs": {
+        "resourceType": "docx",
+        "token": "CkuWdW6EXo8o9nxZsIrcBiSGn4d",
+        "revision": 18,
+        "contentHash": "sha256:ed891d9dbdf5f3b8a86cc987d14869802d487205736859bc97b887402f0c4457"
+      }
+    },
+    {
+      "track": "v2.6.x",
+      "baseToken": "R9i8bww4faNsR6smwQwcAtHGnkb",
+      "tableId": "tblEjNXH8WGzO1BR",
+      "recordId": "recvmMHhvsu24Q",
+      "title": "Formatter",
+      "slug": "DataImport-Formatter",
+      "recordType": "Class",
+      "parentRecordId": "recvmMGXu6OzGy",
+      "docs": {
+        "resourceType": "docx",
+        "token": "CkuWdW6EXo8o9nxZsIrcBiSGn4d",
+        "revision": 18,
+        "contentHash": "sha256:ed891d9dbdf5f3b8a86cc987d14869802d487205736859bc97b887402f0c4457"
+      }
+    },
+    {
+      "track": "v3.0.x",
+      "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e",
+      "tableId": "tblT65LG94H2vobA",
+      "recordId": "recvmMHkkYw77c",
+      "title": "Storage",
+      "slug": "DataImport-Storage",
+      "recordType": "Class",
+      "parentRecordId": "recvis4qucFpFm",
+      "docs": {
+        "resourceType": "docx",
+        "token": "DsLHde5AWomjFhxD3K7c4Yklnlh",
+        "revision": 3,
+        "contentHash": "sha256:8a1722fc8d53197219274cdfd7fa8add93143ca6109cdd2d311be7f9fe4f6737"
+      }
+    },
+    {
+      "track": "v2.6.x",
+      "baseToken": "R9i8bww4faNsR6smwQwcAtHGnkb",
+      "tableId": "tblEjNXH8WGzO1BR",
+      "recordId": "recvmMHjQeR8Nn",
+      "title": "Storage",
+      "slug": "DataImport-Storage",
+      "recordType": "Class",
+      "parentRecordId": "recvmMGXu6OzGy",
+      "docs": {
+        "resourceType": "docx",
+        "token": "DsLHde5AWomjFhxD3K7c4Yklnlh",
+        "revision": 3,
+        "contentHash": "sha256:8a1722fc8d53197219274cdfd7fa8add93143ca6109cdd2d311be7f9fe4f6737"
+      }
+    }
+  ],
+  "driveEvidence": {
+    "collector": "node .claude/skills/api-reference-sync/scripts/feishu-doc.js list-folder",
+    "currentDataImportDirectChildren": [
+      "getImportState()",
+      "listImportTasks()",
+      "bulkInsert()"
+    ],
+    "inheritedDataImportDirectChildren": [
+      "BulkWriter",
+      "BulkWriterOptions",
+      "BulkWriterSchema",
+      "FlushEvent",
+      "Formatter",
+      "Storage",
+      "listImportTasks()",
+      "bulkInsert()"
+    ],
+    "larkCliDriveReadBlocked": {
+      "identity": "bot",
+      "code": 99991672,
+      "missingScopes": [
+        "drive:drive",
+        "drive:drive:readonly",
+        "space:document:retrieve"
+      ]
+    }
+  },
+  "replay": {
+    "commands": [
+      "lark-cli base +table-list --base-token LlrPbysPZau2dGsSVuicHmvCn0e --as bot --json",
+      "lark-cli base +table-list --base-token R9i8bww4faNsR6smwQwcAtHGnkb --as bot --json",
+      "lark-cli base +record-search --base-token LlrPbysPZau2dGsSVuicHmvCn0e --table-id tblT65LG94H2vobA --keyword BulkWriter --search-field Docs --field-id Docs --field-id Type --field-id 父记录 --field-id Slug --as bot --format json",
+      "lark-cli base +record-search --base-token R9i8bww4faNsR6smwQwcAtHGnkb --table-id tblEjNXH8WGzO1BR --keyword BulkWriter --search-field Docs --field-id Docs --field-id Type --field-id 父记录 --field-id Slug --as bot --format json",
+      "lark-cli docs +fetch --doc RSrRdD4fLoy50Bx5s2xcQ6lMnVd --as bot --format json",
+      "lark-cli docs +fetch --doc CkuWdW6EXo8o9nxZsIrcBiSGn4d --as bot --format json",
+      "lark-cli docs +fetch --doc DsLHde5AWomjFhxD3K7c4Yklnlh --as bot --format json"
+    ],
+    "fallbackCommands": [
+      "node .claude/skills/api-reference-sync/scripts/feishu-doc.js list-folder LW67fVlTvlNCZRdxOVYcQZyJnFQ --type all",
+      "node .claude/skills/api-reference-sync/scripts/feishu-doc.js list-folder NFmOfwILlln3JgdePZUclweZnIe --type all",
+      "node .claude/skills/api-reference-sync/scripts/feishu-doc.js list-folder OE6ef37Ztlb6FgdouLvcTcrpnAp --type all",
+      "node .claude/skills/api-reference-sync/scripts/feishu-doc.js list-folder YJbpf38t6lDwaldXkCRcj2yxnHg --type all"
+    ]
+  }
+}

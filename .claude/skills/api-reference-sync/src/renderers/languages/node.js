@@ -10,7 +10,7 @@ module.exports = createSdkRenderer({
   requestFence: 'TypeScript',
   exampleFence: 'JavaScript',
   requestHeading: 'Request Syntax',
-  variantHeadings: true,
+  variantHeadings: (document) => (document.requestVariants || []).length > 1,
   variantFields: true,
   parametersLabel: 'PARAMETERS:',
   memberKind: 'implementation',
@@ -18,4 +18,5 @@ module.exports = createSdkRenderer({
   returnsLabel: 'RETURNS:',
   errorsLabel: 'EXCEPTIONS:',
   exampleHeading: 'Example{#example}',
+  showExampleTitles: (document) => (document.examples || []).length > 1,
 });

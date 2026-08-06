@@ -15,6 +15,12 @@ const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+const {
+    createReviewSession,
+    loadReviewSession,
+    recordDocumentExecution,
+    saveReviewSession,
+} = require('../src/sdk-doc-sync/review-session-store');
 
 const adapters = Object.freeze({
     python: require('../src/sdk-reference-ir/adapters/python'),
@@ -76,6 +82,12 @@ function parseArgs(argv) {
             args.approvePlanDigest = (args.approvePlanDigest || []).concat(argv[++i]);
         } else if (arg === '--approve-batch-digest' && argv[i + 1]) {
             args.approveBatchDigest = argv[++i];
+        } else if (arg === '--review-unit-id' && argv[i + 1]) {
+            args.reviewUnitId = argv[++i];
+        } else if (arg === '--session-state' && argv[i + 1]) {
+            args.sessionState = argv[++i];
+        } else if (arg === '--resume-session' && argv[i + 1]) {
+            args.resumeSession = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -107,6 +119,9 @@ Options:
   --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
+  --review-unit-id <id>            Select exactly one document and its required resource operations
+  --session-state <file>           Create a persistent session from a complete initial dry-run
+  --resume-session <file>          Resume from verified persisted document-acceptance receipts
   --help, -h                       Show this help
 
 Environment (.env):
@@ -438,6 +453,17 @@ async function runCli({
     const readFile = dependencies.readFile || ((file) => fs.readFileSync(file, 'utf8'));
     const writeFile = dependencies.writeFile || ((file, content) => fs.writeFileSync(file, content));
 
+    if (args.sessionState && args.resumeSession) {
+        err('Error: choose either --session-state or --resume-session, not both');
+        exit(1);
+        return null;
+    }
+    if (args.sessionState && !args.dryRun) {
+        err('Error: --session-state requires --dry-run');
+        exit(1);
+        return null;
+    }
+
     if (!args.sdkDir) {
         err('Error: --sdk-dir is required');
         printUsage();
@@ -458,6 +484,23 @@ async function runCli({
     }
 
     const language = args.language || 'python';
+    let reviewSession = null;
+    if (args.resumeSession) {
+        try {
+            reviewSession = loadReviewSession(path.resolve(args.resumeSession));
+        } catch (error) {
+            err(`Error: ${error.message}`);
+            exit(1);
+            return null;
+        }
+        if (reviewSession.language !== language
+            || reviewSession.sdkName !== args.sdkName
+            || reviewSession.track !== args.sdkVersion) {
+            err(`Error: review session metadata does not match requested ${language}/${args.sdkName}/${args.sdkVersion}`);
+            exit(1);
+            return null;
+        }
+    }
     let releaseScope = null;
     if (args.releaseScope) {
         const releaseScopePath = path.resolve(args.releaseScope);
@@ -520,7 +563,7 @@ async function runCli({
             : null
     );
 
-    const sync = new SdkDocSync({
+    const syncOptions = {
         scanner: dependencies.scanner || null,
         indexReader: dependencies.indexReader || null,
         typeIndexReader,
@@ -550,9 +593,71 @@ async function runCli({
         artifactBlockRenderer: dependencies.artifactBlockRenderer || null,
         apiPatchPlanner: dependencies.apiPatchPlanner,
         printPlans: args.json !== true,
-    });
+        collaborativeReview: true,
+        reviewUnitId: args.reviewUnitId || null,
+        reviewSession,
+    };
+    const sync = dependencies.syncFactory ? dependencies.syncFactory(syncOptions) : new SdkDocSync(syncOptions);
 
     const result = await withJsonConsoleIsolation(args.json === true, err, () => sync.run());
+    if (args.resumeSession
+        && !args.dryRun
+        && result.executionResult?.status === 'EXECUTED'
+        && result.activeReviewUnit?.reviewUnitId
+        && result.executionJournalPath
+        && result.executionJournalDigest) {
+        const sessionPath = path.resolve(args.resumeSession);
+        reviewSession = recordDocumentExecution(reviewSession, {
+            reviewUnitId: result.activeReviewUnit.reviewUnitId,
+            executionJournalPath: result.executionJournalPath,
+            executionJournalDigest: result.executionJournalDigest,
+        });
+        saveReviewSession(sessionPath, reviewSession);
+        result.reviewSession = {
+            ...(result.reviewSession || {}),
+            sessionId: reviewSession.sessionId,
+            sessionPath,
+            activeReviewUnitId: reviewSession.activeExecution.reviewUnitId,
+            acceptedReviewUnitIds: (reviewSession.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort(),
+            reviewUnitManifestDigest: reviewSession.reviewUnitManifestDigest,
+        };
+    }
+    if (args.sessionState) {
+        const sessionPath = path.resolve(args.sessionState);
+        if (fs.existsSync(sessionPath)) {
+            err(`Error: review session already exists; use --resume-session ${sessionPath}`);
+            exit(1);
+            return null;
+        }
+        if (result.planningErrors.length > 0
+            || !result.reviewUnitManifest?.manifestDigest
+            || !Array.isArray(result.reviewUnitManifest.units)
+            || result.reviewUnitManifest.units.length === 0
+            || (result.reviewUnitManifest.unassignedResourceActionIds || []).length > 0) {
+            err('Error: cannot create a review session from an incomplete or blocked dry-run');
+            exit(1);
+            return null;
+        }
+        const session = createReviewSession({
+            sessionId: `sdk-doc-sync:${language}:${args.sdkName}:${args.sdkVersion}:${result.reviewUnitManifest.manifestDigest}`,
+            language,
+            sdkName: args.sdkName,
+            track: args.sdkVersion,
+            reviewUnitManifest: result.reviewUnitManifest,
+            artifacts: {
+                releaseScope: args.releaseScope ? path.resolve(args.releaseScope) : null,
+                referenceContext: args.referenceContext ? path.resolve(args.referenceContext) : null,
+                summaryJson: args.summaryJson ? path.resolve(args.summaryJson) : null,
+            },
+        });
+        saveReviewSession(sessionPath, session);
+        result.reviewSession = {
+            sessionId: session.sessionId,
+            sessionPath,
+            acceptedReviewUnitIds: [],
+            reviewUnitManifestDigest: session.reviewUnitManifestDigest,
+        };
+    }
     if (args.summaryJson) {
         writeFile(path.resolve(args.summaryJson), `${JSON.stringify(createBoundedSummary(result), null, 2)}\n`);
     }
@@ -563,11 +668,31 @@ async function runCli({
     }
 
     if (args.dryRun) {
-        const batchDigest = result.proposedExecutionBatch.batchDigest;
         out(`\nDry run complete. ${result.scanned.length} symbols scanned, ${result.diff.length} diff actions.`);
+        if (result.planningErrors.length > 0) {
+            out(`Blocked: ${result.planningErrors.length} planning errors. No write approval is valid.`);
+            return result;
+        }
+        if (result.reviewUnitSelectionRequired) {
+            out(`Review-unit manifest: ${result.reviewUnitManifest.manifestDigest} (${result.reviewUnitManifest.units.length} documents).`);
+            for (const unit of result.reviewUnitPreviews) {
+                out(`- ${unit.reviewUnitId}: ${unit.batchDigest} (${unit.actionIds.length} actions)`);
+            }
+            out('Select one document with --review-unit-id <id>, rerun the dry-run, and approve only that unit digest.');
+            return result;
+        }
+        const batchDigest = result.proposedExecutionBatch.batchDigest;
+        if (result.activeReviewUnit) {
+            out(`Active review unit: ${result.activeReviewUnit.reviewUnitId} (${result.activeReviewUnit.documentStableId}).`);
+        }
         out(`Proposed execution batch: ${batchDigest} (${result.proposedExecutionBatch.actions.length} actions).`);
         out(`If approved, reply exactly: APPROVE_WRITES ${batchDigest}`);
         out(`Live CLI approval flag: --approve-batch-digest ${batchDigest}`);
+    } else if (result.executionResult?.status === 'BLOCKED') {
+        out(`\nSync blocked. ${result.executionResult.diagnostics.length} blocking diagnostics.`);
+        for (const diagnostic of result.executionResult.diagnostics) {
+            out(`- ${diagnostic.code}: ${diagnostic.message}`);
+        }
     } else {
         const succeeded = result.results.filter(r => r.status === 'success').length;
         const failed = result.results.filter(r => r.status === 'error').length;
@@ -585,6 +710,11 @@ function createBoundedSummary(result) {
         planCount: result.plans.length,
         proposedBatchDigest: result.proposedExecutionBatch?.batchDigest || null,
         proposedActionCount: result.proposedExecutionBatch?.actions?.length || 0,
+        proposedReleaseBatchDigest: result.proposedReleaseBatch?.batchDigest || null,
+        reviewUnitManifestDigest: result.reviewUnitManifest?.manifestDigest || null,
+        reviewUnitCount: result.reviewUnitManifest?.units?.length || 0,
+        reviewUnitSelectionRequired: result.reviewUnitSelectionRequired === true,
+        activeReviewUnitId: result.activeReviewUnit?.reviewUnitId || null,
         planningErrorCount: result.planningErrors.length,
         approvedCount: result.approved.length,
         resultCount: result.results.length,

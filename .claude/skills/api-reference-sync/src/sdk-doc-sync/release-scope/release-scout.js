@@ -14,6 +14,46 @@ const { createReleaseScope, validateReleaseScope } = require('./schema');
 const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
 const { loadIdentityMap, normalizeDeltas } = require('./identity-normalizer');
+const { digestSemantic } = require('../../../../doc-ops-core/src/digest');
+
+function buildOrganizationInventories({ symbols = [], identityMap, source = {} } = {}) {
+  const inventories = [];
+  for (const [classSourceIdentity, classIdentity] of Object.entries(identityMap?.symbols || {})) {
+    const organization = classIdentity.organization;
+    if (!organization || organization.role !== 'class') continue;
+    const classSymbol = symbols.find((symbol) => publicIdentity(symbol) === classSourceIdentity);
+    if (!classSymbol) continue;
+    const methodSymbols = symbols
+      .filter((symbol) => publicIdentity(symbol).startsWith(`${classSourceIdentity}.`))
+      .sort((left, right) => publicIdentity(left).localeCompare(publicIdentity(right)));
+    const publicMethodSourceIdentities = methodSymbols.map(publicIdentity);
+    const publicMethodStableIds = methodSymbols.map((symbol) => {
+      const sourceIdentity = publicIdentity(symbol);
+      return identityMap.symbols[sourceIdentity]?.stableId
+        || `${organization.classStableId}:${symbol.name}`;
+    }).sort();
+    const semantic = {
+      schemaVersion: 1,
+      classStableId: organization.classStableId,
+      profileId: organization.profileId,
+      profileVersion: organization.profileVersion,
+      classSourceIdentity,
+      publicMethodStableIds,
+      publicMethodSourceIdentities,
+      source: {
+        sdk: source.sdk || null,
+        track: source.track || identityMap.track || null,
+        revision: source.revision || null,
+        scanner: source.scanner || `${identityMap.language}-scanner`,
+      },
+    };
+    inventories.push({
+      ...semantic,
+      inventoryDigest: digestSemantic(semantic),
+    });
+  }
+  return inventories.sort((left, right) => left.classStableId.localeCompare(right.classStableId));
+}
 
 function scannerFor(language, sdkDir) {
   if (language === 'python') return new PythonScanner({ rootDir: sdkDir, publicOnly: true });
@@ -271,6 +311,16 @@ async function runReleaseScout({
     language,
     changedFiles,
     actions,
+    organizationInventories: buildOrganizationInventories({
+      symbols: target,
+      identityMap: map,
+      source: {
+        sdk: sdkName,
+        track,
+        revision: range.targetCommit,
+        scanner: `${language}-scanner`,
+      },
+    }),
     scannerDiagnostics,
     approvalGrade: !hasAmbiguousDocumentationOwnership(actions),
   });
@@ -515,6 +565,7 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
 }
 
 module.exports = {
+  buildOrganizationInventories,
   runReleaseScout,
   defaultIdentityMapPath,
   materializeSnapshot,

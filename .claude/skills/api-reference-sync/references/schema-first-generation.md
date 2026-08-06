@@ -24,6 +24,8 @@ Convert scanner output into SDK Reference IR through the language adapter:
 
 The reference context must supply reviewed evidence, category placement, related links, type URLs, and REST OpenAPI input when those cannot be inferred safely from the scanner result.
 
+When a language profile documents stateful class methods as child pages, the scanner must emit the class and each method as separate public identities. The identity map attaches the versioned organization profile and class ownership. Do not leave those methods only in an embedded `methods` array on the class symbol.
+
 ### 3. Validate
 
 Run production validation on the SDK Reference IR before rendering. Production validation rejects placeholder summaries, unresolved internal references, invalid defaults, malformed evidence, missing required fields, and other publish-blocking defects.
@@ -60,6 +62,8 @@ Each plan artifact has these fields:
 - `postconditions`: expected target document location, bitable link, parent, version metadata, deprecation metadata, no-mutation state, or older-source preservation.
 - `metadata`: diff action, reason, artifact kind, and non-destructive flags for orphan/no-op handling.
 - `layout`: SDK language profile ID and version for SDK API-reference writes.
+- `organization`: reviewed class/child-record and physical-folder contract for grouped stateful-class writes.
+- `releasePlacement`: reviewed distinction between the configured SDK root and the actual release folder.
 - `apiPatchPlan`: for SDK UPDATE actions, the validated current section model, desired role sequence, preserved block IDs, exact operations, and selected semantic strategy.
 
 Plan action selection:
@@ -92,6 +96,8 @@ Execution must use the narrowest document strategy:
 - Deprecate: set deprecation metadata and progress only.
 - Orphan/no-op: leave Feishu untouched.
 
+Before each mutation, persist an action-specific rollback capsule in the execution journal. Existing Bitable updates capture the complete writable before-state. `UPDATE_IN_PLACE` also captures a usable history revision and canonical pre-write block digest; if either is unavailable, block before patching. `COPY_PATCH_AND_REPOINT` captures the Bitable source pointer but does not capture or revert history for the untouched COPY source. Observed entries persist created record, Docx, VirtualNode, and folder identities for deterministic inverse planning.
+
 Do not update a Bitable `Docs` field until the document has passed rendered-block validation.
 
 SDK API-reference UPDATE execution applies only the immutable `apiPatchPlan`. Do not route SDK artifacts through generic `strategy: smart`. A reviewed full-body rebuild is executable only when the plan records matching repair approval, history evidence, and a complete preserved-block review.
@@ -123,6 +129,7 @@ Recovery depends on the last completed mutation:
 - Verification failure for target folder or parent: do not patch content again until folder ancestry and bitable parent are corrected.
 - Verification failure for artifact digest or formatting: preserve the failed document token for audit, prepare a corrected reviewed artifact, and execute a new approved plan.
 - Cross-version failure: never repair by patching the older-version source document in place. Keep the historical source token unchanged.
+- User-requested full rollback after a completed unit: use [document-rollback.md](document-rollback.md) and `sdk-document-rollback.js`; do not improvise deletions from chat context. Restore Bitable and remove created resources in reverse dependency order under a separate rollback approval and journal.
 
 Always include unrecovered resources and tokens in the completion report.
 

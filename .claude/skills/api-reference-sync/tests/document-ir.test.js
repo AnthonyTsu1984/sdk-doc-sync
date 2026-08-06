@@ -146,7 +146,7 @@ test('converts ordered lists and quote blocks into valid IR', () => {
   assert.equal(ir.children[0].items.length, 2);
   assert.equal(ir.children[1].kind, 'note');
   assert.deepEqual(validateDocumentIr(ir), { valid: true, errors: [], warnings: [] });
-  assert.match(renderMarkdown(ir), /^1\. Connect\n2\. Search\n\n> Use bounded consistency\./);
+  assert.match(renderMarkdown(ir), /^1\. Connect\n2\. Search\n\n<Admonition icon="📘">\nUse bounded consistency\.\n<\/Admonition>/);
 });
 
 test('renders SDK method Markdown with tight nested lists and separate blocks', () => {
@@ -171,7 +171,9 @@ test('renders SDK method Markdown with tight nested lists and separate blocks', 
     '',
     'Returns a Status and the matched rows.',
     '',
-    '> See [Search guide](https://example.test/search) for details.',
+    '<Admonition icon="bulb">',
+    'See [Search guide](https://example.test/search) for details.',
+    '</Admonition>',
     '',
   ].join('\n'));
 });

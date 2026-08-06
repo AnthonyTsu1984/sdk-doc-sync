@@ -26,6 +26,8 @@ const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../../doc-ops-core/src/journal');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { createResult } = require('../../../doc-ops-core/src/result-contract');
+const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
+const { validateResumeSession } = require('./review-session-store');
 
 function executionSideEffects(plan) {
     switch (plan.action) {
@@ -36,6 +38,7 @@ function executionSideEffects(plan) {
         case 'CREATE_VIRTUAL_NODE': return ['feishu.bitable.create'];
         case 'CREATE': return ['feishu.doc.create', 'feishu.bitable.create'];
         case 'UPDATE_IN_PLACE': return ['feishu.doc.patch', 'feishu.bitable.update'];
+        case 'UPDATE_RECORD_METADATA': return ['feishu.bitable.update'];
         case 'COPY_PATCH_AND_REPOINT': return ['feishu.drive.copy', 'feishu.doc.patch', 'feishu.bitable.update'];
         case 'DEPRECATE': return ['feishu.bitable.update'];
         default: return [];
@@ -104,6 +107,67 @@ function blockedExecutionResult({ batch, proposedBatch, diagnostics }) {
     });
 }
 
+function rawParentRecordId(fields = {}) {
+    const cell = fields['父记录'] || fields.Parent;
+    if (!Array.isArray(cell)) return null;
+    return cell[0]?.record_ids?.[0] || cell[0]?.record_id || null;
+}
+
+function docsResourceType(link) {
+    if (typeof link !== 'string') return null;
+    if (link.includes('/drive/folder/')) return 'folder';
+    if (link.includes('/docx/')) return 'docx';
+    return null;
+}
+
+function normalizeLiveRecord(raw) {
+    if (!raw) return null;
+    const fields = raw.fields || {};
+    const docs = fields.Docs || {};
+    const link = docs.link || null;
+    return {
+        recordId: raw.record_id || raw.id || null,
+        documentToken: link ? link.split('/').filter(Boolean).at(-1) : null,
+        link,
+        parentRecordId: rawParentRecordId(fields),
+        version: fields['Last Modified At'] || null,
+        state: fields.Progress || null,
+        progress: fields.Progress || null,
+        type: fields.Type || null,
+        docsResourceType: docsResourceType(link),
+        targets: fields.Targets || [],
+        metadata: {
+            type: fields.Type || null,
+            docsResourceType: docsResourceType(link),
+        },
+    };
+}
+
+function liveRecordReader(bitableWriter) {
+    if (typeof bitableWriter?.getRecord !== 'function') return null;
+    return async (recordId) => normalizeLiveRecord(await bitableWriter.getRecord(recordId));
+}
+
+function liveDocumentReader(documentWriter) {
+    if (typeof documentWriter?.listFolder !== 'function') return null;
+    return async (documentToken, { expectedFolderToken = null } = {}) => {
+        if (!expectedFolderToken) {
+            if (typeof documentWriter.get_document_blocks === 'function') {
+                await documentWriter.get_document_blocks(documentToken);
+            }
+            return { token: documentToken, folderToken: null };
+        }
+        const files = await documentWriter.listFolder({ folderToken: expectedFolderToken, type: 'all' });
+        const item = (files || []).find((file) => (
+            file.token === documentToken
+            || file.file_token === documentToken
+            || file.obj_token === documentToken
+        ));
+        if (!item) return null;
+        return { token: documentToken, folderToken: expectedFolderToken, resource: item };
+    };
+}
+
 /**
  * SdkDocSync — orchestrates the 5-phase pipeline: SCAN → INDEX → DIFF → APPROVE → EXECUTE
  *
@@ -152,6 +216,9 @@ class SdkDocSync {
         artifactBlockRenderer = null,
         apiPatchPlanner = planApiReferencePatch,
         executionJournalFactory = null,
+        collaborativeReview = false,
+        reviewUnitId = null,
+        reviewSession = null,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -201,6 +268,9 @@ class SdkDocSync {
         this.artifactBlockRenderer = artifactBlockRenderer;
         this.apiPatchPlanner = apiPatchPlanner;
         this.executionJournalFactory = executionJournalFactory;
+        this.collaborativeReview = collaborativeReview === true;
+        this.reviewUnitId = reviewUnitId;
+        this.reviewSession = reviewSession;
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
         this.executor = executor || null;
@@ -209,7 +279,10 @@ class SdkDocSync {
         if (!dryRun) {
             this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
             this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken });
-            this.verifier = this.verifier || new FeishuOperationalVerifier();
+            this.verifier = this.verifier || new FeishuOperationalVerifier({
+                readDocument: liveDocumentReader(this.m2f),
+                readRecord: liveRecordReader(this.bitableWriter),
+            });
             this.executor = this.executor || new SyncExecutor({
                 documentWriter: this.m2f,
                 bitableWriter: this.bitableWriter,
@@ -334,14 +407,137 @@ class SdkDocSync {
         }
         this.onProgress('PLAN', `${result.resourcePlans.length} resources and ${result.plans.length} documents planned, ${result.planningErrors.length} failed`);
 
-        const actionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
-        const actionablePlanIds = new Set(actionablePlanned.map(({ plan }) => plan.stableId));
-        result.proposedExecutionBatch = buildExecutionBatch(actionablePlanned, actionablePlanIds);
+        const fullActionablePlanned = plannedEntries.filter(({ plan }) => plan.action !== 'NOOP');
+        const fullActionablePlanIds = new Set(fullActionablePlanned.map(({ plan }) => plan.stableId));
+        result.proposedReleaseBatch = buildExecutionBatch(fullActionablePlanned, fullActionablePlanIds);
+        const reviewUnits = buildReviewUnitManifest(
+            this.reviewSession ? plannedEntries : fullActionablePlanned,
+            buildExecutionBatch,
+            {
+                documentStableIds: this.reviewSession
+                    ? this.reviewSession.reviewUnitManifest.units.map((unit) => unit.documentStableId)
+                    : null,
+            },
+        );
+        result.reviewUnitManifest = reviewUnits.manifest;
+        result.reviewUnitPreviews = reviewUnits.units;
+        const verifiedAcceptedReviewUnitIds = new Set();
+        let activeExecutionReviewUnitId = null;
+
+        if (this.reviewSession) {
+            try {
+                const resumed = validateResumeSession({
+                    session: this.reviewSession,
+                    reviewUnitManifest: reviewUnits.manifest,
+                    currentRecords: typeIndex,
+                });
+                for (const unitId of resumed.acceptedReviewUnitIds) verifiedAcceptedReviewUnitIds.add(unitId);
+                activeExecutionReviewUnitId = resumed.activeReviewUnitId;
+                result.reviewSession = {
+                    sessionId: this.reviewSession.sessionId,
+                    acceptedReviewUnitIds: resumed.acceptedReviewUnitIds,
+                    reviewUnitManifestDigest: this.reviewSession.reviewUnitManifestDigest,
+                    activeReviewUnitId: activeExecutionReviewUnitId,
+                };
+            } catch (error) {
+                result.planningErrors.push({
+                    stableId: null,
+                    diffAction: 'REVIEW_SESSION',
+                    code: 'REVIEW_SESSION_INVALID',
+                    message: error.message,
+                });
+            }
+        }
+
+        let actionablePlanned = fullActionablePlanned;
+        let actionablePlanIds = fullActionablePlanIds;
+        if (this.collaborativeReview) {
+            if (activeExecutionReviewUnitId) {
+                result.planningErrors.push({
+                    stableId: activeExecutionReviewUnitId,
+                    diffAction: 'REVIEW_UNIT',
+                    code: 'ACTIVE_DOCUMENT_REVIEW_REQUIRED',
+                    message: `${activeExecutionReviewUnitId} must be accepted or rolled back before another write`,
+                });
+            }
+            if (reviewUnits.manifest.unassignedResourceActionIds.length > 0) {
+                result.planningErrors.push({
+                    stableId: null,
+                    diffAction: 'RESOURCE',
+                    code: 'UNASSIGNED_REVIEW_UNIT_RESOURCE',
+                    message: `Every resource action must belong to one document review unit: ${reviewUnits.manifest.unassignedResourceActionIds.join(', ')}`,
+                });
+            }
+            const selectableUnits = reviewUnits.units.filter((unit) => (
+                unit.actionIds.length > 0 && !verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId)
+            ) && !activeExecutionReviewUnitId);
+            result.remainingReviewUnitIds = selectableUnits.map((unit) => unit.reviewUnitId);
+            result.allReviewUnitsAccepted = reviewUnits.manifest.units.length > 0
+                && reviewUnits.manifest.units.every((unit) => verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId));
+            let selectedUnit = this.reviewUnitId
+                ? selectableUnits.find((unit) => unit.reviewUnitId === this.reviewUnitId)
+                : null;
+            if (!selectedUnit && !this.reviewUnitId && selectableUnits.length === 1) {
+                [selectedUnit] = selectableUnits;
+            }
+            if (this.reviewUnitId && !selectedUnit) {
+                result.planningErrors.push({
+                    stableId: this.reviewUnitId,
+                    diffAction: 'REVIEW_UNIT',
+                    code: 'REVIEW_UNIT_NOT_FOUND',
+                    message: `Unknown review unit: ${this.reviewUnitId}`,
+                });
+            }
+            if (selectedUnit) {
+                const missingPrerequisites = selectedUnit.prerequisiteReviewUnitIds
+                    .filter((unitId) => !verifiedAcceptedReviewUnitIds.has(unitId));
+                if (missingPrerequisites.length > 0) {
+                    result.planningErrors.push({
+                        stableId: selectedUnit.documentStableId,
+                        diffAction: 'REVIEW_UNIT',
+                        code: 'REVIEW_UNIT_PREREQUISITE_NOT_ACCEPTED',
+                        message: `${selectedUnit.reviewUnitId} requires accepted units: ${missingPrerequisites.join(', ')}`,
+                    });
+                }
+                result.activeReviewUnit = selectedUnit;
+                actionablePlanned = reviewUnits.entriesByUnitId.get(selectedUnit.reviewUnitId) || [];
+                actionablePlanIds = new Set(actionablePlanned.map(({ plan }) => plan.stableId));
+            } else if (selectableUnits.length > 1) {
+                result.reviewUnitSelectionRequired = true;
+                actionablePlanned = [];
+                actionablePlanIds = new Set();
+            }
+        }
+        result.proposedExecutionBatch = actionablePlanned.length > 0
+            ? buildExecutionBatch(actionablePlanned, actionablePlanIds)
+            : fullActionablePlanned.length === 0
+                ? result.proposedReleaseBatch
+                : null;
 
         if (this.dryRun) {
             this.onProgress('APPROVE', 'Dry run — showing plans without executing');
             if (this.printPlans) this._printPlans(result.plans);
             result.approved = [];
+            return result;
+        }
+
+        if (this.collaborativeReview && result.reviewUnitSelectionRequired) {
+            result.executionResult = blockedExecutionResult({
+                batch: null,
+                proposedBatch: result.proposedReleaseBatch,
+                diagnostics: [{
+                    code: 'REVIEW_UNIT_REQUIRED',
+                    message: 'Select exactly one document review unit before live execution.',
+                }],
+            });
+            return result;
+        }
+        if (this.collaborativeReview && result.planningErrors.length > 0) {
+            result.executionResult = blockedExecutionResult({
+                batch: result.proposedExecutionBatch,
+                proposedBatch: result.proposedReleaseBatch,
+                diagnostics: result.planningErrors.map((error) => diagnosticFor(new Error(error.message), error)),
+            });
             return result;
         }
 
@@ -446,11 +642,15 @@ class SdkDocSync {
             try {
                 if (!planned) throw new Error(`Approved action was not planned: ${batchAction.actionId}`);
                 const failedDependencies = batchAction.dependsOn.filter(dependency => executionStatus.get(dependency) !== 'success');
+                const rollbackCapsule = failedDependencies.length === 0 && typeof this.executor.prepareRollback === 'function'
+                    ? await this.executor.prepareRollback(planned.plan, { resourceResolutions })
+                    : null;
                 journal.prepared({
                     actionId: planned.plan.stableId,
                     dependsOn: batchAction.dependsOn,
                     preconditionDigest: digestSemantic(planned.plan.preconditions || []),
                     mutation: { action: planned.plan.action, artifactDigest: planned.plan.artifactDigest },
+                    rollbackCapsule,
                 });
                 if (failedDependencies.length > 0) {
                     const error = new Error(`DEPENDENCY_EXECUTION_FAILED: ${planned.plan.stableId} blocked by ${failedDependencies.join(', ')}`);
@@ -480,6 +680,7 @@ class SdkDocSync {
                     approval: approvals.get(planned.plan.stableId),
                     approvalContext: result.executionBatch,
                     resourceResolutions,
+                    rollbackCapsule,
                 });
                 result.results.push({ action, status: 'success', ...execResult });
                 const succeeded = execResult.status !== 'error' && execResult.verification?.ok !== false;
@@ -487,18 +688,24 @@ class SdkDocSync {
                 if (succeeded && execResult.resolvedResource?.ref) {
                     resourceResolutions.set(execResult.resolvedResource.ref, execResult.resolvedResource);
                 }
+                const rollbackEvidence = typeof this.executor.observeRollback === 'function'
+                    ? await this.executor.observeRollback(planned.plan, execResult)
+                    : {
+                        schemaVersion: 1,
+                        action: planned.plan.action,
+                        actionId: planned.plan.stableId,
+                        completedSteps: execResult.completedSteps || [],
+                        createdDocument: execResult.createdDocument || null,
+                        createdFolder: execResult.createdFolder || null,
+                        recordId: execResult.record?.record_id || execResult.record?.recordId || null,
+                        resolvedResource: execResult.resolvedResource || null,
+                    };
                 journal.observed({
                     actionId: planned.plan.stableId,
                     status: succeeded ? 'success' : 'failure',
                     verified: succeeded,
-                    observedDigest: digestSemantic({
-                        status: execResult.status,
-                        completedSteps: execResult.completedSteps || [],
-                        createdDocumentToken: execResult.createdDocument?.token || null,
-                        createdFolderToken: execResult.createdFolder?.token || null,
-                        recordId: execResult.record?.record_id || null,
-                        resolvedResource: execResult.resolvedResource || null,
-                    }),
+                    observedDigest: digestSemantic(rollbackEvidence),
+                    rollbackEvidence,
                 });
                 if (execResult.status === 'error') {
                     this.onProgress('EXECUTE', `${actionLabel(action, planned.plan)} — ERROR: ${execResult.error?.message || execResult.failedStep}`);
@@ -894,6 +1101,10 @@ class SdkDocSync {
                 profile,
                 documentToken: current.documentToken,
                 repairApproval: actionContext.repairApproval || extraContext.repairApproval || suppliedContext.repairApproval || null,
+                preservedBlockPlacements: actionContext.preservedBlockPlacements
+                    || extraContext.preservedBlockPlacements
+                    || suppliedContext.preservedBlockPlacements
+                    || [],
                 copyOnWrite: current.version !== target.version
                     || current.folderToken !== target.folderToken
                     || actionContext.tokenReferencedByOlderVersions === true
@@ -1067,5 +1278,7 @@ class SdkDocSync {
 }
 
 SdkDocSync.buildExecutionBatch = buildExecutionBatch;
+SdkDocSync.buildAcceptanceManifest = buildAcceptanceManifest;
+SdkDocSync.buildReviewUnitManifest = (plannedEntries) => buildReviewUnitManifest(plannedEntries, buildExecutionBatch);
 
 module.exports = SdkDocSync;

@@ -41,13 +41,33 @@ Failure patterns that must block completion:
 
 ## Acceptance Finalization
 
-Post-write verification ends with touched records at `WIP` and `scanStateUpdated: false`. After the user explicitly accepts all touched documentation:
+Post-write verification for one document unit ends with its touched records at `WIP` and `scanStateUpdated: false`. Stop and expose the live document, record links, unit journal digest, and unresolved comments. Do not start the next unit until the user replies with the exact active-unit acceptance command. A comment-driven revision returns the same unit to reviewed planning and invalidates its previous write and journal digests.
+
+After `APPROVE_DOCUMENT`, persist a receipt with `sdk-review-session.js accept-document`. The receipt must bind the unit to the completed execution-journal path and digest, the live Docx and Bitable links, resolved comments, and every touched record's verified journal action, record ID, and document token. Do not hand-edit `acceptedReviewUnits`. Before another process or chat continues, run `sdk-doc-sync --resume-session <session-file>` so the runtime rechecks the journal and live record invariants. A changed token, non-`WIP` progress, nonblank `Targets`, missing record, or manifest drift blocks continuation.
+
+After every document unit is accepted and the user explicitly accepts the complete accepted-unit manifest:
 
 1. Update every touched record from `Progress: WIP` to `Progress: Draft` without changing unrelated fields.
 2. Refetch every record and verify the exact `Draft` value.
 3. Record `userConfirmed: true` and one verified `WIP` to `Draft` transition per touched record in the operational manifest.
 4. Update `scan-state.json` only after all transitions pass. If acceptance is partial or any record is not verified as `Draft`, leave scan state unchanged.
 5. Run the operational harness again. `ACCEPTANCE_NOT_CONFIRMED`, `MISSING_DRAFT_ACCEPTANCE_EVIDENCE`, or `ACCEPTED_SCAN_STATE_NOT_UPDATED` blocks final completion.
+6. Persist the successful finalization journal with `sdk-review-session.js record-finalization`. The journal digest and its `acceptanceManifestDigest` must match the session; only then may the session record `scanStateUpdated: true`.
+
+## Per-Document Rollback Verification
+
+Rollback has its own manifest, approval, and journal. Before any inverse mutation, verify the live Bitable record, copied/created Docx, VirtualNode, and folder identities still match the original execution evidence. Drift blocks the whole rollback preflight.
+
+After each inverse action, verify the exact postcondition:
+
+1. Restored Bitable writable fields match the captured before-state, including `Docs`, `父记录`, Type, Progress, Targets, version metadata, and explicit empty clears.
+2. `COPY_PATCH_AND_REPOINT` points back to the original COPY source before the copy is deleted. The source was not modified and must never receive a history revert.
+3. Created Bitable records and VirtualNodes selected for deletion are absent.
+4. Created or copied Docx tokens are absent from their recorded parent folders.
+5. An `UPDATE_IN_PLACE` history revert reproduces the captured pre-write canonical block digest before Bitable restoration is considered complete.
+6. A created folder is empty immediately before deletion and absent from its parent afterward; a repointed pre-existing VirtualNode is restored first.
+7. The rollback journal pairs every prepared entry with a successful verified observation and ends with exactly one completion sentinel bound to the rollback manifest and original execution journal.
+8. The review session changes only after that completion sentinel. A partial rollback leaves the active execution or accepted receipt intact, leaves any acceptance manifest invalidation unapplied, and keeps `scanStateUpdated: false`.
 
 ## Repair Utilities
 

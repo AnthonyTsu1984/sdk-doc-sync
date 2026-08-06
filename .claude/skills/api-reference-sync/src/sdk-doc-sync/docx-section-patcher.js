@@ -32,9 +32,9 @@ function comparable(value) {
     .map(([key, child]) => [key, comparable(child)]));
 }
 
-function sectionFingerprint(blocks, section) {
+function sectionFingerprint(blocks, section, { ignorePreserved = false } = {}) {
   return JSON.stringify(blocksForSection(blocks, section)
-    .filter((block) => !PRESERVED_BLOCK_TYPES.has(block.block_type))
+    .filter((block) => !ignorePreserved || !PRESERVED_BLOCK_TYPES.has(block.block_type))
     .map(comparable));
 }
 
@@ -84,6 +84,57 @@ function desiredInsertionForPreserved(currentModel, desiredModel, preserved) {
   return desiredModel.topLevelBlockIds.length;
 }
 
+function resolveReviewedPreservedPlacements(currentModel, desiredModel, requested = []) {
+  if (!Array.isArray(requested) || requested.length === 0) return { placements: [], errors: [] };
+  const preservedById = new Map(currentModel.preserved.map((item) => [item.blockId, item]));
+  const desiredByRole = new Map(desiredModel.sections.map((section) => [section.role, section]));
+  const seen = new Set();
+  const placements = [];
+  const errors = [];
+
+  for (const requestedPlacement of requested) {
+    const blockId = requestedPlacement?.blockId;
+    const role = requestedPlacement?.role;
+    const offset = requestedPlacement?.offset;
+    const section = desiredByRole.get(role);
+    if (!preservedById.has(blockId)) {
+      errors.push({ code: 'PRESERVED_PLACEMENT_BLOCK_UNKNOWN', blockId });
+      continue;
+    }
+    if (seen.has(blockId)) {
+      errors.push({ code: 'PRESERVED_PLACEMENT_DUPLICATE', blockId });
+      continue;
+    }
+    if (!section) {
+      errors.push({ code: 'PRESERVED_PLACEMENT_ROLE_UNKNOWN', blockId, role });
+      continue;
+    }
+    const sectionLength = section.endIndex - section.startIndex;
+    if (!Number.isInteger(offset) || offset < 0 || offset > sectionLength) {
+      errors.push({ code: 'PRESERVED_PLACEMENT_OFFSET_INVALID', blockId, role, offset });
+      continue;
+    }
+    seen.add(blockId);
+    placements.push({ blockId, insertAt: section.startIndex + offset });
+  }
+
+  if (seen.size !== currentModel.preserved.length) {
+    errors.push({
+      code: 'PRESERVED_PLACEMENT_INCOMPLETE',
+      expectedBlockIds: currentModel.preserved.map((item) => item.blockId),
+      reviewedBlockIds: [...seen],
+    });
+  }
+  const currentOrder = currentModel.preserved.map((item) => item.blockId);
+  const desiredOrder = [...placements]
+    .sort((left, right) => left.insertAt - right.insertAt)
+    .map((item) => item.blockId);
+  if (JSON.stringify(currentOrder) !== JSON.stringify(desiredOrder)) {
+    errors.push({ code: 'PRESERVED_PLACEMENT_REORDER_UNSUPPORTED', currentOrder, desiredOrder });
+  }
+  return { placements, errors };
+}
+
 function planApiReferencePatch({
   currentBlocks,
   desiredBlocks,
@@ -91,6 +142,7 @@ function planApiReferencePatch({
   documentToken = null,
   repairApproval = null,
   copyOnWrite = false,
+  preservedBlockPlacements = [],
 } = {}) {
   if (!profile?.id) throw new TypeError('planApiReferencePatch requires a layout profile');
   desiredBlocks = normalizeDesiredDocument(desiredBlocks);
@@ -112,6 +164,14 @@ function planApiReferencePatch({
   }
 
   const preservedBlockIds = currentModel.preserved.map((item) => item.blockId);
+  const reviewedPlacements = resolveReviewedPreservedPlacements(
+    currentModel,
+    desiredModel,
+    preservedBlockPlacements,
+  );
+  if (reviewedPlacements.errors.length > 0) {
+    return blockedPlan(profile, currentModel, desiredModel, reviewedPlacements.errors);
+  }
   if (currentModel.requiresReviewedRebuild) {
     const desiredById = blocksById(desiredBlocks);
     const desiredTopLevel = desiredModel.topLevelBlockIds.map((id) => desiredById.get(id)).filter(Boolean);
@@ -131,10 +191,12 @@ function planApiReferencePatch({
         validation: { valid: true, errors: [] },
       });
     }
-    const preservedPlacements = currentModel.preserved.map((item) => ({
-      blockId: item.blockId,
-      insertAt: desiredInsertionForPreserved(currentModel, desiredModel, item),
-    }));
+    const preservedPlacements = reviewedPlacements.placements.length > 0
+      ? reviewedPlacements.placements
+      : currentModel.preserved.map((item) => ({
+        blockId: item.blockId,
+        insertAt: desiredInsertionForPreserved(currentModel, desiredModel, item),
+      }));
     return deepFreeze({
       schemaVersion: 1,
       profile: { id: profile.id, version: profile.version },
@@ -176,7 +238,8 @@ function planApiReferencePatch({
       });
       continue;
     }
-    if (sectionFingerprint(currentBlocks, currentSection) === sectionFingerprint(desiredBlocks, desiredSection)) continue;
+    if (sectionFingerprint(currentBlocks, currentSection, { ignorePreserved: true })
+        === sectionFingerprint(desiredBlocks, desiredSection)) continue;
     const preserveBlockIds = currentSection.attachments || [];
     operations.push({
       type: 'replace-section',
@@ -198,6 +261,26 @@ function planApiReferencePatch({
       deleteBlockIds: currentSection.blockIds.filter((id) => !preserveBlockIds.includes(id)),
       preserveBlockIds: [...preserveBlockIds],
     });
+  }
+
+  if (structuralChange) {
+    for (const operation of operations) {
+      if (operation.type !== 'replace-section') continue;
+      operation.insertAt = desiredByRole.get(operation.role).startIndex;
+    }
+  }
+
+  if (reviewedPlacements.placements.length > 0) {
+    const deletedIds = new Set(operations.flatMap((operation) => operation.deleteBlockIds || []));
+    const undeletedManagedIds = currentModel.topLevelBlockIds.filter((blockId) => (
+      !preservedBlockIds.includes(blockId) && !deletedIds.has(blockId)
+    ));
+    if (undeletedManagedIds.length > 0) {
+      return blockedPlan(profile, currentModel, desiredModel, [{
+        code: 'PRESERVED_PLACEMENT_REQUIRES_COMPLETE_REPLACEMENT',
+        blockIds: undeletedManagedIds,
+      }]);
+    }
   }
 
   if (structuralChange && copyOnWrite) {
@@ -226,6 +309,9 @@ function planApiReferencePatch({
     currentModel,
     desiredRoleSequence: desiredModel.sections.map((section) => section.role),
     preservedBlockIds,
+    ...(reviewedPlacements.placements.length > 0 && {
+      preservedPlacements: reviewedPlacements.placements,
+    }),
     operations,
     validation: { valid: true, errors: [] },
   });

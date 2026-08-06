@@ -1,6 +1,12 @@
 'use strict';
 
 const { assertPublishableContent } = require('./feishu-block-safety');
+const {
+  organizationRecordType,
+  validateOrganizationContract,
+  validateOrganizationTarget,
+  validateReleasePlacement,
+} = require('./sdk-organization-contract');
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
@@ -84,6 +90,13 @@ function sourceFrom(action, context) {
     recordId: currentValue('recordId', doc.id ?? null),
     documentToken: currentValue('documentToken', metadata.documentToken ?? metadata.token ?? null),
     folderToken: currentValue('folderToken', metadata.folderToken ?? null),
+    parentRecordId: currentValue('parentRecordId', metadata.parentRecordId ?? action.doc?.parent ?? null),
+    recordType: currentValue('recordType', metadata.type ?? null),
+    docsResourceType: currentValue(
+      'docsResourceType',
+      metadata.docsResourceType
+        ?? (String(metadata.link || '').includes('/drive/folder/') ? 'folder' : 'docx'),
+    ),
   };
 }
 
@@ -94,6 +107,8 @@ function targetFrom(context) {
     parentRecordId: target.parentRecordId ?? null,
     folderToken: target.folderToken ?? null,
     versionRootToken: target.versionRootToken ?? null,
+    releaseVersion: target.releaseVersion ?? target.version ?? context.targetVersion ?? null,
+    documentHomeVersion: target.documentHomeVersion ?? null,
   };
   if (target.parentRecordRef !== undefined) result.parentRecordRef = target.parentRecordRef ?? null;
   if (target.folderRef !== undefined) result.folderRef = target.folderRef ?? null;
@@ -298,6 +313,56 @@ class SyncPlanner {
     const target = targetFrom(context);
     const dependencies = dependenciesFrom(context);
     const targetProof = context.target || {};
+    if (context.releasePlacement !== undefined) {
+      const validation = validateReleasePlacement(context.releasePlacement);
+      if (!validation.valid) {
+        const first = validation.errors[0];
+        throw new SyncPlanningError(
+          first.code,
+          `Invalid release placement for ${stableId}`,
+          { errors: validation.errors },
+        );
+      }
+      if (context.releasePlacement.targetVersion !== target.version
+        || context.releasePlacement.actualReleaseFolderToken !== target.versionRootToken) {
+        throw new SyncPlanningError(
+          'RELEASE_TARGET_MISMATCH',
+          `Target version root does not match the reviewed release folder for ${stableId}`,
+        );
+      }
+    }
+    if (context.organization !== undefined) {
+      if (!context.organizationInventory || typeof context.organizationInventory !== 'object') {
+        throw new SyncPlanningError(
+          'SOURCE_ORGANIZATION_INVENTORY_REQUIRED',
+          `SDK organization planning requires scanner-derived source inventory for ${stableId}`,
+        );
+      }
+      const contractValidation = validateOrganizationContract(context.organization, {
+        sourceInventory: context.organizationInventory,
+      });
+      if (!contractValidation.valid) {
+        const first = contractValidation.errors[0];
+        throw new SyncPlanningError(
+          first.code,
+          `Invalid scanner-bound SDK organization for ${stableId}`,
+          { errors: contractValidation.errors },
+        );
+      }
+      const validation = validateOrganizationTarget({
+        contract: context.organization,
+        stableId,
+        target,
+      });
+      if (!validation.valid) {
+        const first = validation.errors[0];
+        throw new SyncPlanningError(
+          first.code,
+          `Invalid SDK organization target for ${stableId}`,
+          { errors: validation.errors },
+        );
+      }
+    }
     const hasFolderTarget = nonEmptyString(target.folderToken)
       || (nonEmptyString(target.folderRef) && dependencies.includes(target.folderRef));
     const hasParentTarget = nonEmptyString(target.parentRecordId)
@@ -473,11 +538,38 @@ class SyncPlanner {
         postconditions = [{ type: 'NO_MUTATION' }];
         break;
       case 'SKIP':
-        plannedAction = 'NOOP';
-        postconditions = [{ type: 'NO_MUTATION' }];
+        if (context.organization && (
+          source.parentRecordId !== target.parentRecordId
+          || source.recordType !== organizationRecordType(context.organization, stableId)
+          || source.docsResourceType !== 'docx'
+        )) {
+          if (!nonEmptyString(source.recordId) || !nonEmptyString(source.documentToken)) {
+            throw new SyncPlanningError(
+              'METADATA_SOURCE_REQUIRED',
+              `Record-only organization repair requires an existing record and document token for ${stableId}`,
+            );
+          }
+          plannedAction = 'UPDATE_RECORD_METADATA';
+          postconditions = [
+            { type: 'TARGET_LINK', recordId: source.recordId, documentToken: source.documentToken },
+            { type: 'TARGET_PARENT', parentRecordId: target.parentRecordId },
+          ];
+          metadata.organizationOnly = true;
+          metadata.preserveDocumentToken = true;
+        } else {
+          plannedAction = 'NOOP';
+          postconditions = [{ type: 'NO_MUTATION' }];
+        }
         break;
       default:
         throw new SyncPlanningError('UNKNOWN_ACTION', `Unknown SDK sync action: ${diffAction}`);
+    }
+    if (context.organization && (WRITE_ACTIONS.has(diffAction) || plannedAction === 'UPDATE_RECORD_METADATA')) {
+      postconditions.push({
+        type: 'TARGET_RECORD_TYPE',
+        expected: organizationRecordType(context.organization, stableId),
+        docsResourceType: 'docx',
+      });
     }
 
     return deepFreeze(deepClone({
@@ -486,6 +578,9 @@ class SyncPlanner {
       stableId,
       artifactDigest,
       layout: context.artifact?.layout,
+      organization: context.organization,
+      organizationInventory: context.organizationInventory,
+      releasePlacement: context.releasePlacement,
       apiPatchPlan: context.artifact?.layout && diffAction === 'UPDATE'
         ? context.apiPatchPlan
         : undefined,

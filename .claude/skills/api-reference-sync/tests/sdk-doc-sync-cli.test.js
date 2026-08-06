@@ -15,6 +15,7 @@ const {
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { buildReviewedReleaseContext } = require('../scripts/build-reviewed-release-context');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -74,11 +75,182 @@ test('CLI accepts repeatable token-specific repair approvals', () => {
     'python:Category:item=sha256:abc123',
     '--approve-batch-digest',
     'sha256:batch',
+    '--review-unit-id',
+    'review:node:Collections:createCollection',
+    '--session-state',
+    'tmp/session.json',
+    '--resume-session',
+    'tmp/previous-session.json',
   ]);
 
   assert.deepEqual(args.repairApprove, ['doc-1', 'doc-2']);
   assert.deepEqual(args.approvePlanDigest, ['python:Category:item=sha256:abc123']);
   assert.equal(args.approveBatchDigest, 'sha256:batch');
+  assert.equal(args.reviewUnitId, 'review:node:Collections:createCollection');
+  assert.equal(args.sessionState, 'tmp/session.json');
+  assert.equal(args.resumeSession, 'tmp/previous-session.json');
+});
+
+test('CLI creates a persistent review session only from a complete dry-run manifest', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-session-init-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const resultFixture = {
+    scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+    planningErrors: [], approved: [], results: [],
+    reviewUnitManifest: {
+      schemaVersion: 1,
+      manifestDigest: 'sha256:review-manifest',
+      units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' }],
+      unassignedResourceActionIds: [],
+    },
+    reviewUnitPreviews: [],
+    proposedExecutionBatch: null,
+  };
+
+  const result = await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+      '--json',
+      '--session-state', sessionPath,
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: () => ({ run: async () => structuredClone(resultFixture) }),
+      onStdout: () => {},
+    },
+  });
+
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(persisted.reviewUnitManifestDigest, 'sha256:review-manifest');
+  assert.equal(persisted.scanStateUpdated, false);
+  assert.equal(result.reviewSession.sessionPath, sessionPath);
+});
+
+test('CLI loads a persisted session for live-state resume instead of accepting manual unit IDs', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-session-resume-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v3.0.x:test',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    status: 'in_progress',
+    reviewUnitManifest: { schemaVersion: 1, manifestDigest: 'sha256:review-manifest', units: [] },
+    reviewUnitManifestDigest: 'sha256:review-manifest',
+    acceptedReviewUnits: [],
+    scanStateUpdated: false,
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+  let capturedOptions;
+
+  await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+      '--json',
+      '--resume-session', sessionPath,
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: (options) => {
+        capturedOptions = options;
+        return { run: async () => ({
+          scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+          planningErrors: [], approved: [], results: [],
+          reviewUnitManifest: session.reviewUnitManifest,
+          reviewUnitPreviews: [],
+          proposedExecutionBatch: null,
+        }) };
+      },
+      onStdout: () => {},
+    },
+  });
+
+  assert.deepEqual(capturedOptions.reviewSession, session);
+  assert.equal(Object.hasOwn(capturedOptions, 'acceptedReviewUnitIds'), false);
+});
+
+test('live CLI persists the completed active document execution before review', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-session-execution-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const journalPath = path.join(directory, 'execution.jsonl');
+  const entries = [
+    { type: 'prepared', actionId: 'node:Collections:a' },
+    { type: 'observed', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  fs.writeFileSync(journalPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:node:v3.0.x:sha256:review-manifest',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    status: 'in_progress',
+    reviewUnitManifest: {
+      schemaVersion: 1,
+      manifestDigest: 'sha256:review-manifest',
+      units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' }],
+      unassignedResourceActionIds: [],
+    },
+    reviewUnitManifestDigest: 'sha256:review-manifest',
+    acceptedReviewUnits: [],
+    activeExecution: null,
+    rollbackReceipts: [],
+    acceptanceManifest: null,
+    acceptanceManifestDigest: null,
+    scanStateUpdated: false,
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+  const resultFixture = {
+    scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+    planningErrors: [], approved: [{}], results: [{ status: 'success' }],
+    reviewUnitManifest: session.reviewUnitManifest,
+    reviewUnitPreviews: [],
+    activeReviewUnit: session.reviewUnitManifest.units[0],
+    proposedExecutionBatch: { batchDigest: 'sha256:batch', actions: [] },
+    executionJournalPath: journalPath,
+    executionJournalDigest: digestSemantic(entries),
+    executionResult: { status: 'EXECUTED' },
+  };
+
+  await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--review-unit-id', 'review:node:Collections:a',
+      '--resume-session', sessionPath,
+      '--json',
+    ],
+    env: { BASE_TOKEN: 'base-v30', ROOT_TOKEN: 'root-v30' },
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: () => ({ run: async () => structuredClone(resultFixture) }),
+      onStdout: () => {},
+    },
+  });
+
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(persisted.activeExecution.reviewUnitId, 'review:node:Collections:a');
+  assert.equal(persisted.activeExecution.executionJournalDigest, digestSemantic(entries));
 });
 
 test('execution approval provider rejects an approved plan digest mismatch', () => {
@@ -491,11 +663,17 @@ test('schema-first CLI dry-run plans reviewed artifacts for every SDK, CLI, and 
 });
 
 test('live SdkDocSync wires the default Feishu operational verifier', () => {
+  const documentWriter = {
+    async listFolder() { return []; },
+  };
+  const bitableWriter = {
+    async getRecord() { return null; },
+  };
   const sync = new SdkDocSync({
     scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
     indexReader: { async readIndex() { return []; } },
-    documentWriter: {},
-    bitableWriter: {},
+    documentWriter,
+    bitableWriter,
     rootToken: 'root-token',
     baseToken: 'base-token',
     sdkName: 'pymilvus',
@@ -506,6 +684,8 @@ test('live SdkDocSync wires the default Feishu operational verifier', () => {
   assert.equal(typeof sync.verifier.beforeMutation, 'function');
   assert.equal(typeof sync.verifier.verifyDocument, 'function');
   assert.equal(typeof sync.verifier.rollback, 'function');
+  assert.equal(typeof sync.verifier.readDocument, 'function');
+  assert.equal(typeof sync.verifier.readRecord, 'function');
   assert.equal(sync.executor.verifier, sync.verifier);
 });
 
@@ -570,6 +750,71 @@ test('SDK UPDATE planning reads live blocks and stores a validated semantic patc
   assert.deepEqual(calls, [['readBlocks', 'doc-search']]);
   assert.equal(context.apiPatchPlan.validation.valid, true);
   assert.deepEqual(context.apiPatchPlan.operations.map((operation) => operation.role), ['parameters']);
+});
+
+test('SDK UPDATE planning passes reviewed preserved block placements to the patch planner', async () => {
+  const captured = [];
+  const blocks = [
+    { block_id: 'page', block_type: 1, children: ['summary', 'callout'], page: { elements: [] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'callout', parent_id: 'page', block_type: 19, callout: {}, children: [] },
+  ];
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', async scan() { return []; } },
+    indexReader: async () => [],
+    rootToken: 'root-v26',
+    baseToken: 'base-v26',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v2.6.x',
+    dryRun: true,
+    artifactProvider: async () => ({ artifact: {
+      title: 'search()',
+      content: 'Searches vectors.\n',
+      documentIr: { type: 'document', children: [] },
+      layout: { profileId: 'python', profileVersion: 1 },
+      reviewed: true,
+      validated: true,
+      validation: { valid: true },
+    } }),
+    documentBlockReader: { async readBlocks() { return blocks; } },
+    artifactBlockRenderer: async () => blocks.slice(0, 2),
+    apiPatchPlanner(input) {
+      captured.push(input);
+      return {
+        schemaVersion: 1,
+        profile: { id: 'python', version: 1 },
+        strategy: 'targeted-semantic-patch',
+        currentModel: { pageBlockId: 'page', topLevelBlockIds: ['summary', 'callout'] },
+        desiredRoleSequence: ['summary'],
+        preservedBlockIds: ['callout'],
+        operations: [],
+        validation: { valid: true, errors: [] },
+      };
+    },
+  });
+  const reviewedPlacements = [{ blockId: 'callout', role: 'summary', offset: 1 }];
+  const action = {
+    type: 'UPDATE',
+    stableId: 'python:Vector:search',
+    slug: 'Vector-search',
+    symbol: { name: 'search' },
+    doc: { id: 'rec-search', metadata: { token: 'doc-search' } },
+    planningContext: {
+      preservedBlockPlacements: reviewedPlacements,
+      current: {
+        version: 'v2.6.x', recordId: 'rec-search', documentToken: 'doc-search',
+        folderToken: 'vector-v26', ancestryVerified: true, placementVerified: true,
+      },
+      target: {
+        version: 'v2.6.x', parentRecordId: 'parent-vector', folderToken: 'vector-v26',
+        versionRootToken: 'root-v26', ancestryVerified: true,
+      },
+    },
+  };
+
+  await sync._planningContextFor(action, 0, {});
+
+  assert.deepEqual(captured[0].preservedBlockPlacements, reviewedPlacements);
 });
 
 test('SDK UPDATE planning rejects desired Feishu blocks with visible Markdown escapes', async () => {

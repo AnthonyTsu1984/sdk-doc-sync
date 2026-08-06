@@ -12,21 +12,24 @@ For unchanged entries in a new version, keep the bitable record and keep its `Do
 
 Every interface-document record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Structural VirtualNode and Module resources are an exception: repointing their folder link must preserve existing `Targets`, `Progress`, `Slug`, type, and unrelated metadata; creating one requires explicit reviewed structural metadata in the resource plan. Never infer blank targets or `WIP` from the interface-document state machine. Verify exact field names and values from the target bitable.
 
-Keep edited records at `WIP` through post-write verification and user review. After the user explicitly accepts all touched documentation, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`. Partial acceptance never advances the baseline.
+Keep edited records at `WIP` through post-write verification and per-document review. Execute one document review unit at a time, including all of that document's required Drive and Bitable operations, and do not start the next unit until the active document is accepted. A unit acceptance does not change `Progress` or advance the baseline. After every unit is accepted, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`.
 
 ## Required Preflight
 
 Before any update:
 
 1. Resolve the canonical target-version root from the per-SDK reference.
-2. Verify the intended module/category folder is below that root.
-3. Resolve the current document token from `Docs.link`.
-4. Inspect its actual folder ancestry.
-5. Check whether older-version bitables reference the same token.
-6. Determine whether the entry is changed for this version or unchanged carry-forward.
-7. For unchanged carry-forward rows, resolve the current-version parent record to use in `父记录` while preserving the existing `Docs` link.
-8. Confirm the target bitable has writable `Targets` and `Progress` fields and a `WIP` progress option before planning live edits.
-9. Choose same-version, cross-version, or backfill behavior explicitly.
+2. List the root and verify whether it is the actual release folder or an SDK container with version-named child folders. Resolve the actual release folder before comparing paths.
+3. Verify the intended module/category folder is below the actual release folder.
+4. Resolve the current document token from `Docs.link`.
+5. Inspect its actual folder ancestry.
+6. Fully paginate the adjacent-version Bitables and compare the canonical slug or reviewed stable identity, `Docs` token, and `父记录`; do not infer inheritance from titles or folders alone.
+7. Determine whether the entry is changed for this version or unchanged carry-forward.
+8. For unchanged carry-forward rows, resolve the current-version parent record to use in `父记录` while preserving the existing `Docs` link.
+9. Confirm the target bitable has writable `Targets` and `Progress` fields and a `WIP` progress option before planning live edits.
+10. Choose same-version, cross-version, or backfill behavior explicitly.
+
+For reviewed stateful-class organization work, encode this result as `target.releasePlacement`: `configuredRootToken`, `configuredRootKind` (`container` or `release_folder`), `actualReleaseFolderToken`, `actualReleaseFolderName`, `targetVersion`, and `verified: true`. When the configured root is a container, its token must differ from the actual release child token. The reviewed-context builder and planner reject a container token used as `versionRootToken`.
 
 ## Same-Version Update
 
@@ -60,6 +63,17 @@ Fallback for pages that cannot round-trip safely through Markdown:
 3. Repoint the target-version record with both `title` and `link`.
 4. Verify the old document was not modified.
 
+## Unchanged Inherited Document, Metadata-Only Repair
+
+When the current release record already points to the correct inherited Docx and the source scan has no content change, do not copy or patch that document merely to repair navigation.
+
+1. Preserve the existing `Docs` token and its older `documentHomeVersion`.
+2. Set `target.releaseVersion` to the current Bitable release independently of the document home.
+3. Update only reviewed Bitable fields such as `父记录`, `Type`, `Targets`, and `Progress` through `UPDATE_RECORD_METADATA`.
+4. Do not create a document artifact, calculate a patch digest, or require a copy source for this action.
+5. Refetch the record and verify the unchanged token, intended parent, intended record type, and `docx` resource type.
+6. If the body changed, this exception no longer applies; use the normal cross-version copy-patch-repoint flow.
+
 ## Backfill And Reparent
 
 Use this flow when symbols already exist but documentation, categories, or parent records are missing or incorrect.
@@ -86,6 +100,7 @@ When preparing a new version bitable:
 5. For every row touched while preparing the new version bitable, clear `Targets` and set `Progress` to `WIP`.
 6. Do not create duplicate current-version documents solely to make the Drive folder complete.
 7. Verify that the Drive folder contains only changed or added docs, while the bitable contains the full API surface for that version.
+8. When the configured Drive token is a multi-version container, perform this check against the named release child folder, not the whole container.
 
 ## Post-Update Checks
 
@@ -94,6 +109,7 @@ When preparing a new version bitable:
 - Edited interface-document records have blank `Targets` and `Progress` set to `WIP`; structural VirtualNode or Module records match their approved preserved or explicit metadata.
 - Changed or added target documents exist in the canonical sparse version folder.
 - Unchanged carry-forward records keep their approved existing document links.
+- Metadata-only repairs preserve the inherited Docx token and revision while correcting the current release record hierarchy.
 - Older-version pages are unchanged.
 - No visible release-note section was introduced into the API reference.
 - Full rewrites preserve formatting-sensitive Docx block structure.

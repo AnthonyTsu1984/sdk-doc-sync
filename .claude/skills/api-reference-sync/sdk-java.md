@@ -55,6 +55,14 @@ This exception will be raised when any error occurs during this operation.
 ```
 ```
 
+## Bitable And Page Profiles
+
+- Java uses `Class -> Function` for public class methods, and also uses `Function -> Class/Enum` for nested request/model concepts when that ownership is established. A Class record remains linked to its Docx landing page rather than to a folder; physical class folders are resolved independently from the established Java Drive layout.
+- Class landing pages such as `CollectionSchema` use Constructor plus builder-method references, Example, and a Methods summary, while each public method retains its own child Function page.
+- Service Function pages use the request-builder layout with Request Syntax, BUILDER METHODS, RETURNS, EXCEPTIONS, and Example.
+- Data-import writer classes follow their own constructor/parameter profile and must be sampled separately from nested builder classes.
+- Enum pages use Constants; preserve the Java-specific H3 member form described below rather than copying another SDK's list layout.
+
 **Method wrappers (do not create separate docs):**
 
 | Wrapper method | Delegates to | Bitable slug (already documented) |

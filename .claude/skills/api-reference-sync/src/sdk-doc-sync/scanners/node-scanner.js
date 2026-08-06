@@ -206,6 +206,7 @@ class NodeScanner extends BaseScanner {
 
             // Extract parameters
             const params = this._extractParams(lines, i);
+            const returnType = this._extractReturnType(lines, i);
 
             const symbol = {
                 name,
@@ -215,6 +216,7 @@ class NodeScanner extends BaseScanner {
                 filePath: relPath,
                 lineNumber: i + 1,
                 params,
+                ...(returnType && { returnType }),
             };
 
             // For alias assignments, store the target method name for param resolution
@@ -310,13 +312,16 @@ class NodeScanner extends BaseScanner {
             genericMap[typeVar] = constraint;
         }
 
-        // Extract content between first ( and matching )
-        const match = paramStr.match(/\(([^)]*)\)/);
-        if (match) {
-            const inner = match[1].trim();
+        // Extract content between the first opening parenthesis and its matching
+        // close. TypeScript parameter types may contain nested function types.
+        const openParen = paramStr.indexOf('(');
+        const closeParen = openParen >= 0 ? this._matchingDelimiter(paramStr, openParen, '(', ')') : -1;
+        if (openParen >= 0 && closeParen > openParen) {
+            const inner = paramStr.slice(openParen + 1, closeParen).trim();
             if (inner) {
-                // Split by comma, extract name: type
-                const parts = inner.split(',').map(p => p.trim()).filter(Boolean);
+                // Split only top-level parameters. Commas inside Record<K, V>,
+                // tuples, object types, defaults, and nested calls stay intact.
+                const parts = this._splitTopLevel(inner).map(p => p.trim()).filter(Boolean);
                 for (const part of parts) {
                     const pm = part.match(/(\w+)\s*[?:]?\s*:?\s*(.*)/);
                     if (pm) {
@@ -333,6 +338,92 @@ class NodeScanner extends BaseScanner {
         }
 
         return params;
+    }
+
+    _matchingDelimiter(content, openIndex, openChar, closeChar) {
+        let depth = 0;
+        let quote = null;
+        let escaped = false;
+        for (let i = openIndex; i < content.length; i++) {
+            const ch = content[i];
+            if (quote) {
+                if (escaped) escaped = false;
+                else if (ch === '\\') escaped = true;
+                else if (ch === quote) quote = null;
+                continue;
+            }
+            if (ch === '"' || ch === "'" || ch === '`') {
+                quote = ch;
+                continue;
+            }
+            if (ch === openChar) depth++;
+            else if (ch === closeChar) {
+                depth--;
+                if (depth === 0) return i;
+            }
+        }
+        return -1;
+    }
+
+    _splitTopLevel(content, separators = [',']) {
+        const parts = [];
+        let start = 0;
+        const separatorSet = new Set(separators);
+        const depths = { '<': 0, '(': 0, '[': 0, '{': 0 };
+        const closing = { '>': '<', ')': '(', ']': '[', '}': '{' };
+        let quote = null;
+        let escaped = false;
+        for (let i = 0; i < content.length; i++) {
+            const ch = content[i];
+            if (quote) {
+                if (escaped) escaped = false;
+                else if (ch === '\\') escaped = true;
+                else if (ch === quote) quote = null;
+                continue;
+            }
+            if (ch === '"' || ch === "'" || ch === '`') {
+                quote = ch;
+                continue;
+            }
+            if (Object.prototype.hasOwnProperty.call(depths, ch)) depths[ch]++;
+            else if (closing[ch]) depths[closing[ch]] = Math.max(0, depths[closing[ch]] - 1);
+            else if (separatorSet.has(ch) && Object.values(depths).every((depth) => depth === 0)) {
+                parts.push(content.slice(start, i));
+                start = i + 1;
+            }
+        }
+        parts.push(content.slice(start));
+        return parts;
+    }
+
+    _extractReturnType(lines, methodLine) {
+        let signature = '';
+        let parenDepth = 0;
+        let sawOpenParen = false;
+        let closeParenIndex = -1;
+
+        for (let i = methodLine; i < Math.min(lines.length, methodLine + 20); i++) {
+            const start = signature.length;
+            signature += `${lines[i]}\n`;
+            for (let offset = 0; offset < lines[i].length; offset++) {
+                const ch = lines[i][offset];
+                if (ch === '(') {
+                    parenDepth += 1;
+                    sawOpenParen = true;
+                } else if (ch === ')' && sawOpenParen) {
+                    parenDepth -= 1;
+                    if (parenDepth === 0) closeParenIndex = start + offset;
+                }
+            }
+            if (closeParenIndex >= 0 && lines[i].includes('{')) break;
+        }
+
+        if (closeParenIndex < 0) return null;
+        const tail = signature.slice(closeParenIndex + 1);
+        const bodyStart = tail.indexOf('{');
+        const declarationTail = bodyStart >= 0 ? tail.slice(0, bodyStart) : tail;
+        const match = declarationTail.match(/:\s*([\s\S]+?)\s*$/);
+        return match ? match[1].replace(/\s+/g, ' ').trim() : null;
     }
 
     _describeType(type, seen = new Set()) {
@@ -501,9 +592,23 @@ class NodeScanner extends BaseScanner {
 
     _parseObjectFields(body) {
         const fields = [];
-        const fieldRegex = /^\s*([A-Za-z_$][\w$]*)\s*(\?)?\s*:\s*([^;,\n]+)[;,]?/gm;
-        let match;
-        while ((match = fieldRegex.exec(body))) {
+        let fieldBody = String(body || '').trim();
+        const objectOpen = fieldBody.indexOf('{');
+        const objectClose = objectOpen >= 0 ? this._matchingBrace(fieldBody, objectOpen) : -1;
+        const objectPrefix = objectOpen >= 0 ? fieldBody.slice(0, objectOpen).trim() : '';
+        if (objectClose > objectOpen && (
+            objectOpen === 0
+            || (!objectPrefix.includes(':') && /[&|]$/.test(objectPrefix))
+        )) {
+            fieldBody = fieldBody.slice(objectOpen + 1, objectClose);
+        }
+        const declarations = this._splitTopLevel(fieldBody, [',', ';'])
+            .flatMap((part) => part.split(/\n(?=\s*(?:readonly\s+)?[A-Za-z_$][\w$]*\s*\??\s*:)/));
+        for (const declaration of declarations) {
+            const match = declaration.match(
+                /(?:^|\n)\s*(?:readonly\s+)?([A-Za-z_$][\w$]*)\s*(\?)?\s*:\s*([\s\S]+?)\s*$/,
+            );
+            if (!match) continue;
             fields.push({
                 name: match[1],
                 optional: match[2] === '?',
@@ -563,6 +668,9 @@ class NodeScanner extends BaseScanner {
             const open = content.indexOf('{', content.indexOf(`class ${sourceName}`));
             const close = open >= 0 ? this._matchingBrace(content, open) : -1;
             const body = close > open ? content.slice(open + 1, close) : '';
+            const constructorLine = lines.findIndex((line, index) => (
+                index > classLine && /^\s*constructor\s*\(/.test(line)
+            ));
             symbols.push({
                 name,
                 parentClass: 'DataImport',
@@ -570,11 +678,25 @@ class NodeScanner extends BaseScanner {
                 docstring,
                 filePath: path.join('milvus', 'bulkwriter', file),
                 lineNumber: classLine + 1,
-                params: [],
-                methods: this._extractClassMethods(body),
-                bodyHash: this._bodyFingerprint(content),
+                params: constructorLine >= 0 ? this._extractParams(lines, constructorLine) : [],
+                ...(name === 'BulkWriter' ? {
+                    bodyHash: this._bodyFingerprint(content),
+                } : {
+                    methods: this._extractClassMethods(body),
+                    bodyHash: this._bodyFingerprint(content),
+                }),
                 relatedFiles: ['docs/content/operations/bulk-writer.mdx'],
             });
+            if (name === 'BulkWriter') {
+                symbols.push(...this._extractMethods(
+                    fullPath,
+                    'DataImport.BulkWriter',
+                    new Set(),
+                ).map((method) => ({
+                    ...method,
+                    relatedFiles: ['docs/content/operations/bulk-writer.mdx'],
+                })));
+            }
         };
 
         pushClass({

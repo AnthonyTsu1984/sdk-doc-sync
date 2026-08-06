@@ -60,6 +60,7 @@ test('AcceptanceFinalizer verifies every Draft transition before advancing scan 
   assert.equal(journals.length, 1);
   assert.equal(journals[0].completionSentinel, true);
   assert.equal(journals[0].executionJournalDigest, 'sha256:execution-journal');
+  assert.equal(journals[0].acceptanceManifestDigest, 'sha256:execution-journal');
   assert.deepEqual(journals[0].results.map((item) => [item.recordId, item.beforeProgress, item.afterProgress, item.verified]), [
     ['rec-a', 'WIP', 'Draft', true],
     ['rec-b', 'WIP', 'Draft', true],
@@ -116,7 +117,7 @@ test('AcceptanceFinalizer rolls back partial Draft transitions and preserves sca
   assert.equal(journalWritten, false);
 });
 
-test('AcceptanceFinalizer refuses acceptance without execution journal lineage', async () => {
+test('AcceptanceFinalizer refuses acceptance without a bound acceptance lineage digest', async () => {
   const AcceptanceFinalizer = loadAcceptanceFinalizer();
   const finalizer = new AcceptanceFinalizer({
     bitableWriter: { async listRecords() { return []; }, async updateRecord() {} },
@@ -129,5 +130,35 @@ test('AcceptanceFinalizer refuses acceptance without execution journal lineage',
     touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }],
     scanStateKey: 'python-v26',
     scanStateEntry: { lastScannedTag: 'v2.6.1' },
-  }), /executionJournalDigest is required/);
+  }), /acceptanceManifestDigest is required/);
+});
+
+test('AcceptanceFinalizer accepts the aggregate accepted-unit manifest digest', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  let records = [record('rec-a')];
+  let journal = null;
+  const finalizer = new AcceptanceFinalizer({
+    bitableWriter: {
+      async listRecords() { return structuredClone(records); },
+      async updateRecord(recordId, fields) {
+        records = records.map((item) => item.record_id === recordId
+          ? { ...item, fields: { ...item.fields, Progress: fields.progress } }
+          : item);
+      },
+    },
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async (value) => { journal = structuredClone(value); },
+  });
+
+  await finalizer.finalize({
+    userConfirmed: true,
+    acceptanceManifestDigest: 'sha256:accepted-units',
+    touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }],
+    scanStateKey: 'node-v30',
+    scanStateEntry: { lastScannedTag: 'v3.0.4' },
+  });
+
+  assert.equal(journal.acceptanceManifestDigest, 'sha256:accepted-units');
+  assert.equal(journal.executionJournalDigest, null);
 });

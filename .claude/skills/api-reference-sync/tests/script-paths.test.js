@@ -15,6 +15,7 @@ test('sdk-release-scout CLI path exists', () => {
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-release-scout.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-release-impact.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-handwritten-audit.js')), true);
+  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-document-rollback.js')), true);
 });
 
 test('sdk-doc-sync planning helper scripts exist', () => {
@@ -71,12 +72,14 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/audit-sdk-type-ownership.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-record-index.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-repository.test.js',
+    '.claude/skills/api-reference-sync/tests/bitable-writer.test.js',
     '.claude/skills/api-reference-sync/tests/block-registry.test.js',
     '.claude/skills/api-reference-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/code-variants.test.js',
     '.claude/skills/api-reference-sync/tests/document-ir.test.js',
     '.claude/skills/api-reference-sync/tests/docx-reader.test.js',
     '.claude/skills/api-reference-sync/tests/docx-section-patcher.test.js',
+    '.claude/skills/api-reference-sync/tests/evidence-manifest.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',
     '.claude/skills/api-reference-sync/tests/lark-cli-ops.test.js',
@@ -89,12 +92,18 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/read-consumers.test.js',
     '.claude/skills/api-reference-sync/tests/release-scope.test.js',
     '.claude/skills/api-reference-sync/tests/release-scout-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/review-session-store.test.js',
+    '.claude/skills/api-reference-sync/tests/rollback-executor.test.js',
+    '.claude/skills/api-reference-sync/tests/rollback-planner.test.js',
     '.claude/skills/api-reference-sync/tests/scanner-adapters.test.js',
     '.claude/skills/api-reference-sync/tests/script-paths.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/sdk-document-rollback-cli.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-layout-validator.test.js',
+    '.claude/skills/api-reference-sync/tests/sdk-organization-contract.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-reference-ir.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-renderers.test.js',
+    '.claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js',
     '.claude/skills/api-reference-sync/tests/sync-executor.test.js',
     '.claude/skills/api-reference-sync/tests/sync-planner.test.js',
     '.claude/skills/api-reference-sync/tests/type-url-index.test.js',
@@ -143,6 +152,7 @@ test('sdk-doc-sync operational references exist and are linked from the skill', 
   const skill = fs.readFileSync(path.join(skillRoot, 'SKILL.md'), 'utf8');
 
   for (const reference of [
+    'references/document-rollback.md',
     'references/schema-first-generation.md',
     'references/release-smoke-test.md',
     'references/post-write-verification.md',
@@ -165,14 +175,31 @@ test('interactive approval gates require exact digest-bound copy-ready replies',
   for (const source of [skill, integration, prompts]) {
     assert.match(source, /APPROVE_GROUPING sha256:<proposal-digest>/);
     assert.match(source, /APPROVE_WRITES sha256:<batch-digest>/);
-    assert.match(source, /APPROVE_ACCEPTANCE sha256:<execution-journal-digest>/);
+    assert.match(source, /APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>/);
+    assert.match(source, /APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>/);
+    assert.match(source, /APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>/);
   }
 
   assert.match(skill, /If approved, reply exactly/i);
   assert.match(skill, /interactive chat.*MUST read.*bot-integration.*bot-prompts/is);
-  assert.match(integration, /bare `APPROVE_GROUPING`, `APPROVE_WRITES`, or `APPROVE_ACCEPTANCE`.*not approved/is);
+  assert.match(integration, /bare approval command.*not approved/is);
   assert.match(prompts, /If approved, reply exactly:/);
   assert.match(prompts, /Structural VirtualNode or Module records.*excluded.*WIP.*Draft/is);
+  assert.match(prompts, /COPY_PATCH_AND_REPOINT.*restore.*Bitable.*delete.*copy.*never.*history/is);
+});
+
+test('rollback CLI reference documents deterministic plan, approval, execute, and reconciliation', () => {
+  const skillRoot = path.resolve(__dirname, '..');
+  const cli = fs.readFileSync(path.join(skillRoot, 'references', 'cli.md'), 'utf8');
+  const verification = fs.readFileSync(path.join(skillRoot, 'references', 'post-write-verification.md'), 'utf8');
+  const troubleshooting = fs.readFileSync(path.join(skillRoot, 'references', 'troubleshooting.md'), 'utf8');
+
+  assert.match(cli, /sdk-document-rollback\.js plan/);
+  assert.match(cli, /sdk-document-rollback\.js execute/);
+  assert.match(cli, /--approve-rollback-digest sha256:<rollback-manifest-digest>/);
+  assert.match(cli, /scan-state\.json.*unchanged/is);
+  assert.match(verification, /rollback journal.*completion sentinel/is);
+  assert.match(troubleshooting, /partial rollback.*session.*unchanged/is);
 });
 
 test('stable-core boundary keeps runtime code independent from ignored run artifacts', () => {

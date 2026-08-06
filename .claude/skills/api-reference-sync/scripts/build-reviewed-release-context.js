@@ -6,6 +6,11 @@ const path = require('node:path');
 const { isDeepStrictEqual } = require('node:util');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 const { resolvePlanningContexts } = require('../src/sdk-doc-sync/release-scope/planning-context');
+const {
+  validateOrganizationBatch,
+  validateOrganizationContract,
+  validateReleasePlacement,
+} = require('../src/sdk-doc-sync/sdk-organization-contract');
 
 const SDK_REFERENCE_BY_LANGUAGE = {
   cpp: 'sdk-cpp.md',
@@ -559,12 +564,57 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
   const folders = required(target.folders, 'Candidate spec target is missing folders');
+  const releasePlacement = clone(target.releasePlacement);
+  if ((candidateSpec.organizations || []).length > 0 && releasePlacement === undefined) {
+    throw reviewedContextError(
+      'RELEASE_PLACEMENT_REQUIRED',
+      'Reviewed SDK organization contracts require an explicit actual release-folder placement review',
+    );
+  }
+  if (releasePlacement !== undefined) {
+    const validation = validateReleasePlacement(releasePlacement);
+    if (!validation.valid) {
+      const first = validation.errors[0];
+      throw reviewedContextError(first.code, `Invalid reviewed release placement: ${JSON.stringify(validation.errors)}`);
+    }
+    if (releasePlacement.targetVersion !== version
+      || releasePlacement.actualReleaseFolderToken !== versionRootToken) {
+      throw reviewedContextError(
+        'RELEASE_TARGET_MISMATCH',
+        'Candidate target versionRootToken must be the reviewed actual release folder',
+      );
+    }
+  }
   const resources = clone(target.resources || []);
   const resourceRefs = new Set();
   for (const resource of resources) {
     const ref = required(resource.ref, 'Target resource is missing ref');
     if (resourceRefs.has(ref)) throw new Error(`Duplicate target resource ref ${ref}`);
     resourceRefs.add(ref);
+  }
+  const organizationContracts = clone(candidateSpec.organizations || []);
+  const organizationsByClass = new Map();
+  const organizationInventoriesByClass = new Map(
+    (releaseScope.organizationInventories || []).map((inventory) => [inventory.classStableId, inventory]),
+  );
+  for (const contract of organizationContracts) {
+    const sourceInventory = organizationInventoriesByClass.get(contract.classRecord?.stableId);
+    if (!sourceInventory) {
+      throw reviewedContextError(
+        'SOURCE_ORGANIZATION_INVENTORY_REQUIRED',
+        `Reviewed SDK organization ${contract.classRecord?.stableId || '(unknown)'} requires scanner-derived source inventory`,
+      );
+    }
+    const validation = validateOrganizationContract(contract, { sourceInventory });
+    if (!validation.valid) {
+      const first = validation.errors[0];
+      throw reviewedContextError(first.code, `Invalid reviewed SDK organization: ${JSON.stringify(validation.errors)}`);
+    }
+    const classStableId = contract.classRecord.stableId;
+    if (organizationsByClass.has(classStableId)) {
+      throw reviewedContextError('DUPLICATE_ORGANIZATION_REVIEW', `Duplicate organization review for ${classStableId}`);
+    }
+    organizationsByClass.set(classStableId, contract);
   }
 
   for (const action of releaseScope.actions || []) {
@@ -577,6 +627,28 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       stableId: spec.docIdentity?.stableId || spec.stableId || action.stableId,
     });
     const planningAction = actionForPlanning(reviewedAction, spec);
+    const organizationIdentity = planningAction.organization;
+    const organization = organizationIdentity
+      ? organizationsByClass.get(organizationIdentity.classStableId)
+      : undefined;
+    const organizationInventory = organizationIdentity
+      ? organizationInventoriesByClass.get(organizationIdentity.classStableId)
+      : undefined;
+    if (organizationIdentity && !organization) {
+      throw reviewedContextError(
+        'ORGANIZATION_REVIEW_REQUIRED',
+        `Candidate ${action.canonicalSlug} requires a reviewed ${organizationIdentity.profileId} organization contract`,
+      );
+    }
+    if (organizationIdentity && (
+      organization.profileId !== organizationIdentity.profileId
+      || organization.profileVersion !== organizationIdentity.profileVersion
+    )) {
+      throw reviewedContextError(
+        'INVALID_ORGANIZATION_PROFILE',
+        `Candidate ${action.canonicalSlug} organization profile does not match its canonical identity`,
+      );
+    }
     selectedSlugs.add(action.canonicalSlug);
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
@@ -608,8 +680,19 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     for (const dependency of dependencies) {
       if (!resourceRefs.has(dependency)) throw new Error(`Candidate ${action.canonicalSlug} references unknown resource ${dependency}`);
     }
-    const parentRecordId = existingRecord?.parentRecordId || existingRecordLookup?.parentRecordId || null;
-    const parentRecordRef = spec.parentRecordRef || existingRecordLookup?.parentRecordRef || null;
+    const organizationRecord = organization
+      ? (identity.stableId === organization.classRecord.stableId
+        ? organization.classRecord
+        : organization.methods.find((method) => method.stableId === identity.stableId))
+      : null;
+    const parentRecordId = organizationRecord?.parentRecordId
+      || existingRecord?.parentRecordId
+      || existingRecordLookup?.parentRecordId
+      || null;
+    const parentRecordRef = organizationRecord?.parentRecordRef
+      || spec.parentRecordRef
+      || existingRecordLookup?.parentRecordRef
+      || null;
     if (!parentRecordId && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
       throw new Error(`Candidate ${action.canonicalSlug} has no parent record or approved parent resource`);
     }
@@ -661,6 +744,9 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         target: planningTarget,
         dependencies,
         tokenReferencedByOlderVersions: existingRecord?.referencedByOlderVersions ?? false,
+        organization,
+        organizationInventory,
+        releasePlacement,
       },
     };
     selected.push(selectedAction);
@@ -684,12 +770,29 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       sourceVariants,
       reasons,
       documentationOwnership: clone(planningAction.documentationOwnership),
+      organization: clone(organization),
+      organizationInventory: clone(organizationInventory),
       notes: spec.notes || candidateSpec.notes || [],
     };
   }
 
   if (selected.length === 0) {
     throw new Error('Candidate spec did not match any release-scope actions');
+  }
+
+  const selectedOrganizationClassIds = new Set(
+    selected.map((action) => action.organization?.classStableId).filter(Boolean),
+  );
+  for (const classStableId of selectedOrganizationClassIds) {
+    const contract = organizationsByClass.get(classStableId);
+    const validation = validateOrganizationBatch({ contract, actions: selected, resources });
+    if (!validation.valid) {
+      const first = validation.errors[0];
+      throw reviewedContextError(
+        first.code,
+        `Reviewed SDK organization is incomplete for ${classStableId}: ${JSON.stringify(validation.errors)}`,
+      );
+    }
   }
 
   const filteredScope = {

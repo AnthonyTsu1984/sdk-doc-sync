@@ -9,7 +9,14 @@ const path = require('node:path');
 
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { buildAcceptanceManifest, buildReviewUnitManifest } = require('../src/sdk-doc-sync/review-units');
+const {
+  createReviewSession,
+  recordDocumentAcceptance,
+  recordDocumentExecution,
+} = require('../src/sdk-doc-sync/review-session-store');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 
 function artifact(content = '# Reviewed documentation\n') {
@@ -82,6 +89,74 @@ function planningContext(overrides = {}) {
   };
 }
 
+function bulkWriterOrganization() {
+  return {
+    schemaVersion: 1,
+    profileId: 'node-stateful-class',
+    profileVersion: 1,
+    reviewed: true,
+    groupingChange: true,
+    classRecord: {
+      stableId: 'node:DataImport:BulkWriter',
+      title: 'BulkWriter',
+      recordId: 'rec-bulk-writer',
+      recordType: 'Class',
+      docsResourceType: 'docx',
+      parentRecordId: 'rec-data-import',
+      parentRecordType: 'VirtualNode',
+      virtualNode: false,
+    },
+    drive: {
+      layout: 'same_named_class_folder',
+      folderName: 'BulkWriter',
+      folderToken: 'folder-bulk-writer',
+      landingDocumentInside: true,
+      methodDocumentsInside: true,
+    },
+    methodInventory: {
+      complete: true,
+      publicMethodStableIds: [
+        'node:DataImport:BulkWriter:append',
+        'node:DataImport:BulkWriter:commit',
+        'node:DataImport:BulkWriter:close',
+        'node:DataImport:BulkWriter:writeFrom',
+      ],
+    },
+    methods: ['append', 'commit', 'close', 'writeFrom'].map((name) => ({
+      stableId: `node:DataImport:BulkWriter:${name}`,
+      title: `${name}()`,
+      recordType: 'Function',
+      parentRecordId: 'rec-bulk-writer',
+    })),
+  };
+}
+
+function bulkWriterInventory(overrides = {}) {
+  const organization = bulkWriterOrganization();
+  return {
+    schemaVersion: 1,
+    classStableId: organization.classRecord.stableId,
+    profileId: organization.profileId,
+    profileVersion: organization.profileVersion,
+    classSourceIdentity: 'DataImport.BulkWriter',
+    publicMethodStableIds: [...organization.methodInventory.publicMethodStableIds],
+    publicMethodSourceIdentities: [
+      'DataImport.BulkWriter.append',
+      'DataImport.BulkWriter.close',
+      'DataImport.BulkWriter.commit',
+      'DataImport.BulkWriter.writeFrom',
+    ],
+    source: {
+      sdk: 'milvus2-sdk-node',
+      track: 'v3.0.x',
+      revision: 'v3.0.4',
+      scanner: 'node-scanner',
+    },
+    inventoryDigest: 'sha256:scanner-bound-inventory',
+    ...overrides,
+  };
+}
+
 function condition(plan, type) {
   return plan.preconditions.find((entry) => entry.type === type);
 }
@@ -103,13 +178,21 @@ test('SyncPlanner plans CREATE from reviewed validated content with an exact SHA
   assert.equal(plan.stableId, 'node:Collections:createCollection');
   assert.equal(plan.artifactDigest, `sha256:${expected}`);
   assert.deepEqual(plan.source, {
-    version: null, recordId: null, documentToken: null, folderToken: null,
+    version: null,
+    recordId: null,
+    documentToken: null,
+    folderToken: null,
+    parentRecordId: null,
+    recordType: null,
+    docsResourceType: 'docx',
   });
   assert.deepEqual(plan.target, {
     version: 'v2.6.x',
     parentRecordId: 'parent-v26',
     folderToken: 'collections-v26',
     versionRootToken: 'root-v26',
+    releaseVersion: 'v2.6.x',
+    documentHomeVersion: null,
   });
   assert.deepEqual(condition(plan, 'CURRENT_RECORD'), { type: 'CURRENT_RECORD', expected: 'ABSENT' });
   assert.deepEqual(condition(plan, 'CURRENT_DOCUMENT_TOKEN'), {
@@ -124,6 +207,133 @@ test('SyncPlanner plans CREATE from reviewed validated content with an exact SHA
   assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'TARGET_LINK'), {
     type: 'TARGET_LINK', recordId: 'NEW_RECORD_ID', documentToken: 'NEW_DOCUMENT_TOKEN',
   });
+});
+
+test('SyncPlanner rejects a reviewed Node stateful class that targets the category folder', () => {
+  const action = updateAction({
+    stableId: 'node:DataImport:BulkWriter',
+    slug: 'DataImport-BulkWriter',
+    symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
+  });
+  const context = planningContext({
+    organization: bulkWriterOrganization(),
+    organizationInventory: bulkWriterInventory(),
+    target: {
+      version: 'v3.0.x',
+      parentRecordId: 'rec-data-import',
+      folderToken: 'folder-data-import',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-bulk-writer',
+      documentToken: 'doc-bulk-writer',
+      folderToken: 'folder-data-import-v26',
+      parentRecordId: 'rec-data-import-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+  });
+
+  assert.throws(
+    () => new SyncPlanner().planAction(action, context),
+    (error) => error.code === 'CLASS_FOLDER_TARGET_MISMATCH',
+  );
+});
+
+test('SyncPlanner binds reviewed organization and release placement contracts into the immutable plan', () => {
+  const organization = bulkWriterOrganization();
+  const releasePlacement = {
+    configuredRootToken: 'node-sdk-container',
+    configuredRootKind: 'container',
+    actualReleaseFolderToken: 'root-v30',
+    actualReleaseFolderName: 'v3.0.0',
+    targetVersion: 'v3.0.x',
+    verified: true,
+  };
+  const action = updateAction({
+    stableId: 'node:DataImport:BulkWriter',
+    slug: 'DataImport-BulkWriter',
+    symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
+  });
+  const plan = new SyncPlanner().planAction(action, planningContext({
+    organization,
+    organizationInventory: bulkWriterInventory(),
+    releasePlacement,
+    target: {
+      version: 'v3.0.x',
+      parentRecordId: 'rec-data-import',
+      folderToken: 'folder-bulk-writer',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-bulk-writer',
+      documentToken: 'doc-bulk-writer',
+      folderToken: 'folder-data-import-v26',
+      parentRecordId: 'rec-data-import-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    copySource: {
+      documentToken: 'doc-bulk-writer',
+      link: 'https://docs.example/docx/doc-bulk-writer',
+      title: 'BulkWriter',
+    },
+  }));
+
+  assert.deepEqual(plan.organization, organization);
+  assert.deepEqual(plan.organizationInventory, bulkWriterInventory());
+  assert.deepEqual(plan.releasePlacement, releasePlacement);
+  assert.equal(plan.target.folderToken, 'folder-bulk-writer');
+  assert.equal(plan.target.versionRootToken, 'root-v30');
+  assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'TARGET_RECORD_TYPE'), {
+    type: 'TARGET_RECORD_TYPE', expected: 'Class', docsResourceType: 'docx',
+  });
+});
+
+test('SyncPlanner rejects organization plans that omit or contradict scanner-derived inventory', () => {
+  const organization = bulkWriterOrganization();
+  const action = updateAction({
+    stableId: 'node:DataImport:BulkWriter',
+    slug: 'DataImport-BulkWriter',
+    symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
+  });
+  const context = planningContext({
+    organization,
+    target: {
+      version: 'v3.0.x',
+      parentRecordId: 'rec-data-import',
+      folderToken: 'folder-bulk-writer',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-bulk-writer',
+      documentToken: 'doc-bulk-writer',
+      folderToken: 'folder-data-import-v26',
+      parentRecordId: 'rec-data-import-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+  });
+
+  assert.throws(
+    () => new SyncPlanner().planAction(action, context),
+    (error) => error.code === 'SOURCE_ORGANIZATION_INVENTORY_REQUIRED',
+  );
+  assert.throws(
+    () => new SyncPlanner().planAction(action, {
+      ...context,
+      organizationInventory: bulkWriterInventory({
+        publicMethodStableIds: ['node:DataImport:BulkWriter:append'],
+      }),
+    }),
+    (error) => error.code === 'METHOD_SOURCE_INVENTORY_MISMATCH',
+  );
 });
 
 test('SyncPlanner rejects writes without a target parent record', () => {
@@ -361,6 +571,75 @@ test('changed inherited Python docs plan as copy-patch-repoint with source prese
   }
 });
 
+test('unchanged inherited Node docs plan a Bitable-only reparent without copying or patching the Docx', () => {
+  const organization = bulkWriterOrganization();
+  organization.groupingChange = true;
+  organization.drive.folderToken = 'folder-bulk-writer-v26';
+  const action = {
+    type: 'SKIP',
+    stableId: 'node:DataImport:BulkWriter:append',
+    slug: 'DataImport-BulkWriter-append',
+    reason: 'No source content changes detected',
+    symbol: { name: 'append', identity: { stableId: 'node:DataImport:BulkWriter:append' } },
+    doc: {
+      id: 'rec-append-v30',
+      metadata: {
+        token: 'doc-append-v26',
+        version: 'v2.6.x',
+        folderToken: 'folder-bulk-writer-v26',
+        parentRecordId: 'rec-data-import-v30',
+        type: 'Function',
+        docsResourceType: 'docx',
+      },
+    },
+  };
+  const plan = new SyncPlanner().planAction(action, planningContext({
+    artifact: undefined,
+    organization,
+    organizationInventory: bulkWriterInventory(),
+    releasePlacement: {
+      configuredRootToken: 'node-sdk-container',
+      configuredRootKind: 'container',
+      actualReleaseFolderToken: 'root-v30',
+      actualReleaseFolderName: 'v3.0.0',
+      targetVersion: 'v3.0.x',
+      verified: true,
+    },
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-append-v30',
+      documentToken: 'doc-append-v26',
+      folderToken: 'folder-bulk-writer-v26',
+      parentRecordId: 'rec-data-import-v30',
+      recordType: 'Function',
+      docsResourceType: 'docx',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: {
+      version: 'v3.0.x',
+      releaseVersion: 'v3.0.x',
+      documentHomeVersion: 'v2.6.x',
+      parentRecordId: 'rec-bulk-writer',
+      folderToken: 'folder-bulk-writer-v26',
+      versionRootToken: 'root-v30',
+      ancestryVerified: true,
+    },
+  }));
+
+  assert.equal(plan.action, 'UPDATE_RECORD_METADATA');
+  assert.equal(plan.source.documentToken, 'doc-append-v26');
+  assert.equal(plan.target.releaseVersion, 'v3.0.x');
+  assert.equal(plan.target.documentHomeVersion, 'v2.6.x');
+  assert.equal(plan.copySource, undefined);
+  assert.equal(plan.artifactDigest, null);
+  assert.deepEqual(plan.postconditions, [
+    { type: 'TARGET_LINK', recordId: 'rec-append-v30', documentToken: 'doc-append-v26' },
+    { type: 'TARGET_PARENT', parentRecordId: 'rec-bulk-writer' },
+    { type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' },
+  ]);
+});
+
 test('cross-version plans preserve the older source document and link', () => {
   const plan = new SyncPlanner().planAction(updateAction(), planningContext({
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
@@ -372,6 +651,9 @@ test('cross-version plans preserve the older source document and link', () => {
     recordId: 'rec-v26',
     documentToken: 'doc-v26',
     folderToken: 'collections-v25',
+    parentRecordId: 'parent-v26',
+    recordType: null,
+    docsResourceType: 'docx',
   });
   assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'OLDER_SOURCE_UNCHANGED'), {
     type: 'OLDER_SOURCE_UNCHANGED',
@@ -614,6 +896,149 @@ test('execution batch includes resource plans and normalizes raw resource refs i
   ]);
   assert.deepEqual(batch.actions[1].dependsOn, ['resource:folder:node:v30:Authentication']);
   assert.ok(batch.sideEffects.includes('feishu.drive.create_folder'));
+});
+
+test('review-unit manifest creates one deterministic document batch with its required resources', () => {
+  const resource = {
+    kind: 'resource',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'CREATE_FOLDER',
+      stableId: 'resource:folder:node:v30:Authentication',
+      dependencies: [],
+      resource: { parentFolderToken: 'root-v30' },
+    }),
+  };
+  const document = (stableId) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'CREATE',
+      stableId,
+      dependencies: ['folder:node:v30:Authentication'],
+      target: { folderRef: 'folder:node:v30:Authentication' },
+    }),
+  });
+  const entries = [document('node:Authentication:disconnect'), resource, document('node:Authentication:connect')];
+
+  const first = buildReviewUnitManifest(entries, SdkDocSync.buildExecutionBatch);
+  const second = buildReviewUnitManifest([...entries].reverse(), SdkDocSync.buildExecutionBatch);
+
+  assert.equal(first.manifest.manifestDigest, second.manifest.manifestDigest);
+  assert.deepEqual(first.manifest.units.map((unit) => unit.reviewUnitId), [
+    'review:node:Authentication:connect',
+    'review:node:Authentication:disconnect',
+  ]);
+  assert.deepEqual(first.units[0].actionIds, [
+    'resource:folder:node:v30:Authentication',
+    'node:Authentication:connect',
+  ]);
+  assert.deepEqual(first.manifest.unassignedResourceActionIds, []);
+});
+
+test('review-unit manifest records document prerequisites without batching two documents together', () => {
+  const entries = [{
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId: 'node:Collections:parent',
+      dependencies: [],
+      source: { documentToken: 'parent-doc' },
+    }),
+  }, {
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId: 'node:Collections:child',
+      dependencies: ['node:Collections:parent'],
+      source: { documentToken: 'child-doc' },
+    }),
+  }];
+
+  const { units } = buildReviewUnitManifest(entries, SdkDocSync.buildExecutionBatch);
+  const child = units.find((unit) => unit.documentStableId === 'node:Collections:child');
+
+  assert.deepEqual(child.actionIds, ['node:Collections:child']);
+  assert.deepEqual(child.prerequisiteReviewUnitIds, ['review:node:Collections:parent']);
+});
+
+test('review-unit manifest remains stable when an accepted document replans as NOOP in a later session', () => {
+  const document = (stableId, action, dependencies = []) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action,
+      stableId,
+      dependencies,
+      source: { documentToken: `doc-${stableId.at(-1)}` },
+    }),
+  });
+  const initial = buildReviewUnitManifest([
+    document('node:Collections:a', 'UPDATE_IN_PLACE'),
+    document('node:Collections:b', 'UPDATE_IN_PLACE', ['node:Collections:a']),
+  ], SdkDocSync.buildExecutionBatch);
+  const resumed = buildReviewUnitManifest([
+    document('node:Collections:a', 'NOOP'),
+    document('node:Collections:b', 'UPDATE_IN_PLACE', ['node:Collections:a']),
+  ], SdkDocSync.buildExecutionBatch);
+
+  assert.equal(resumed.manifest.manifestDigest, initial.manifest.manifestDigest);
+  assert.deepEqual(resumed.manifest.units.map((unit) => unit.reviewUnitId), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.deepEqual(resumed.units.find((unit) => unit.documentStableId.endsWith(':a')).actionIds, []);
+});
+
+test('review-unit manifest digest binds stable inter-document prerequisites', () => {
+  const document = (stableId, dependencies = []) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action: 'UPDATE_IN_PLACE',
+      stableId,
+      dependencies,
+      source: { documentToken: `doc-${stableId.at(-1)}` },
+    }),
+  });
+  const independent = buildReviewUnitManifest([
+    document('node:Collections:a'),
+    document('node:Collections:b'),
+  ], SdkDocSync.buildExecutionBatch);
+  const dependent = buildReviewUnitManifest([
+    document('node:Collections:a'),
+    document('node:Collections:b', ['node:Collections:a']),
+  ], SdkDocSync.buildExecutionBatch);
+
+  assert.notEqual(independent.manifest.manifestDigest, dependent.manifest.manifestDigest);
+});
+
+test('acceptance manifest binds every document-unit journal and touched-record inventory', () => {
+  const reviewUnitManifest = {
+    manifestDigest: 'sha256:review-units',
+    units: [
+      { reviewUnitId: 'review:node:Collections:a' },
+      { reviewUnitId: 'review:node:Collections:b' },
+    ],
+  };
+  const accepted = buildAcceptanceManifest(reviewUnitManifest, [{
+    reviewUnitId: 'review:node:Collections:b',
+    executionJournalDigest: 'sha256:journal-b',
+    touchedRecords: [{ recordId: 'rec-b', actionId: 'node:Collections:b' }],
+  }, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalDigest: 'sha256:journal-a',
+    touchedRecords: [{ recordId: 'rec-a', actionId: 'node:Collections:a' }],
+  }]);
+
+  assert.match(accepted.acceptanceManifestDigest, /^sha256:/);
+  assert.deepEqual(accepted.acceptedUnits.map((unit) => unit.reviewUnitId), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.throws(() => buildAcceptanceManifest(reviewUnitManifest, [accepted.acceptedUnits[0]]), /must exactly match/);
 });
 
 test('resource plan changes are bound into the execution batch digest', () => {
@@ -894,6 +1319,187 @@ test('dry-run emits immutable dependent resource plans before document plans', a
   assert.equal(calls.recordMutations, 0);
 });
 
+test('collaborative dry-run refuses a multi-document write batch until one review unit is selected', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const sync = syncFixture({ dryRun: true, calls });
+  sync.collaborativeReview = true;
+  sync.scanner.scan = async () => [{
+    name: 'createCollection',
+    parentClass: 'Collections',
+    docstring: 'new description',
+    identity: { stableId: 'node:Collections:createCollection' },
+  }, {
+    name: 'dropCollection',
+    parentClass: 'Collections',
+    docstring: 'new drop description',
+    identity: { stableId: 'node:Collections:dropCollection' },
+  }, {
+    name: 'hasCollection',
+    parentClass: 'Collections',
+    docstring: 'unchanged description',
+    identity: { stableId: 'node:Collections:hasCollection' },
+  }];
+  sync.indexReader.list_documents = async () => [{
+    id: 'rec-create',
+    metadata: {
+      slug: 'Collections-createCollection',
+      description: 'old description',
+      token: 'doc-create',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }, {
+    id: 'rec-drop',
+    metadata: {
+      slug: 'Collections-dropCollection',
+      description: 'old drop description',
+      token: 'doc-drop',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }, {
+    id: 'rec-has',
+    metadata: {
+      slug: 'Collections-hasCollection',
+      description: 'unchanged description',
+      token: 'doc-has',
+      version: 'v2.6.x',
+      folderToken: 'collections-v26',
+      parentRecordId: 'parent-v26',
+    },
+  }];
+  sync.acceptedReviewUnitIds = new Set([
+    'review:node:Collections:createCollection',
+    'review:node:Collections:dropCollection',
+  ]);
+
+  const result = await sync.run();
+
+  assert.equal(result.reviewUnitSelectionRequired, true);
+  assert.equal(result.reviewUnitManifest.units.length, 2);
+  assert.equal(result.reviewUnitManifest.units.some((unit) => unit.documentStableId.endsWith(':hasCollection')), false);
+  assert.equal(result.proposedExecutionBatch, null);
+  assert.equal(calls.documentMutations, 0);
+  assert.equal(calls.recordMutations, 0);
+});
+
+test('collaborative resume validates persisted receipts and keeps accepted NOOP documents in the original manifest', async () => {
+  const configure = (sync, acceptedAlready) => {
+    sync.collaborativeReview = true;
+    sync.scanner.scan = async () => [{
+      name: 'createCollection',
+      parentClass: 'Collections',
+      docstring: 'new description',
+      identity: { stableId: 'node:Collections:createCollection' },
+    }, {
+      name: 'dropCollection',
+      parentClass: 'Collections',
+      docstring: 'new drop description',
+      identity: { stableId: 'node:Collections:dropCollection' },
+    }, {
+      name: 'hasCollection',
+      parentClass: 'Collections',
+      docstring: 'unchanged description',
+      identity: { stableId: 'node:Collections:hasCollection' },
+    }];
+    sync.indexReader.list_documents = async () => [{
+      id: 'rec-create',
+      metadata: {
+        slug: 'Collections-createCollection',
+        description: acceptedAlready ? 'new description' : 'old description',
+        token: 'doc-create',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'parent-v26',
+        progress: 'WIP',
+        targets: [],
+      },
+    }, {
+      id: 'rec-drop',
+      metadata: {
+        slug: 'Collections-dropCollection',
+        description: 'old drop description',
+        token: 'doc-drop',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'parent-v26',
+        progress: 'WIP',
+        targets: [],
+      },
+    }, {
+      id: 'rec-has',
+      metadata: {
+        slug: 'Collections-hasCollection',
+        description: 'unchanged description',
+        token: 'doc-has',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'parent-v26',
+        progress: 'WIP',
+        targets: [],
+      },
+    }];
+  };
+  const initial = syncFixture({
+    dryRun: true,
+    calls: { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 },
+  });
+  configure(initial, false);
+  const initialResult = await initial.run();
+  const journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-journal-'));
+  const journal = new ExecutionJournal({
+    filePath: path.join(journalDir, 'accepted.jsonl'),
+    batchDigest: 'sha256:accepted-batch',
+    approvedActionIds: ['node:Collections:createCollection'],
+  });
+  journal.prepared({ actionId: 'node:Collections:createCollection' });
+  journal.observed({
+    actionId: 'node:Collections:createCollection',
+    status: 'success',
+    verified: true,
+    observedDigest: 'sha256:observed',
+  });
+  journal.complete();
+  const reviewSession = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v2.6.x:test',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v2.6.x',
+    reviewUnitManifest: initialResult.reviewUnitManifest,
+  });
+  const session = recordDocumentAcceptance(recordDocumentExecution(reviewSession, {
+    reviewUnitId: 'review:node:Collections:createCollection',
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: digestSemantic(journal.read()),
+  }), {
+    reviewUnitId: 'review:node:Collections:createCollection',
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: digestSemantic(journal.read()),
+    touchedRecords: [{ actionId: 'node:Collections:createCollection', recordId: 'rec-create', documentToken: 'doc-create' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-create'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-create'],
+    commentsResolved: true,
+  });
+
+  const resumed = syncFixture({
+    dryRun: true,
+    calls: { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 },
+  });
+  configure(resumed, true);
+  resumed.reviewSession = session;
+  resumed.reviewUnitId = 'review:node:Collections:dropCollection';
+  const result = await resumed.run();
+
+  assert.equal(result.reviewUnitManifest.manifestDigest, initialResult.reviewUnitManifest.manifestDigest);
+  assert.deepEqual(result.reviewSession.acceptedReviewUnitIds, [
+    'review:node:Collections:createCollection',
+  ]);
+  assert.equal(result.activeReviewUnit.reviewUnitId, 'review:node:Collections:dropCollection');
+  assert.deepEqual(result.planningErrors, []);
+});
+
 test('dry and live modes produce identical plans before approval or execution', async () => {
   const dryCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
   const liveCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
@@ -1109,6 +1715,70 @@ test('live execution receives the plan-specific approval envelope', async () => 
   assert.equal(approvals[0].repairApproved, true);
   assert.equal(approvals[0].documentToken, 'doc-v26');
   assert.match(result.executionJournalDigest, /^sha256:/);
+});
+
+test('live execution durably journals rollback capsule before mutation and structured evidence after verification', async () => {
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const sync = syncFixture({
+    dryRun: false,
+    calls,
+    approvalCallback: async (actions) => actions,
+  });
+  sync.executionApprovalProvider = (plan, action, batch) => createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  const rollbackCapsule = {
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    actionId: 'node:Collections:createCollection',
+    dependsOn: [],
+    beforeRecord: { recordId: 'rec-v26', rawFields: { Progress: 'Draft' }, writableFields: { Progress: 'Draft' } },
+    documentRollback: { documentToken: 'doc-v26', historyVersionId: 'history-1', blockDigest: 'sha256:before' },
+  };
+  const rollbackEvidence = {
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    actionId: 'node:Collections:createCollection',
+    completedSteps: ['patchDocument', 'updateRecord', 'verify'],
+    patchedDocumentToken: 'doc-v26',
+    postRecord: { recordId: 'rec-v26', rawFields: { Progress: 'WIP' }, writableFields: { Progress: 'WIP' } },
+  };
+  sync.executor = {
+    async prepareRollback(plan) {
+      assert.equal(plan.stableId, rollbackCapsule.actionId);
+      return rollbackCapsule;
+    },
+    async execute(plan, input) {
+      assert.deepEqual(input.rollbackCapsule, rollbackCapsule);
+      return {
+        status: 'success',
+        plan,
+        completedSteps: ['patchDocument', 'updateRecord', 'verify'],
+        verification: { ok: true, errors: [] },
+      };
+    },
+    async observeRollback() {
+      return rollbackEvidence;
+    },
+  };
+
+  const result = await sync.run();
+  const entries = fs.readFileSync(result.executionJournalPath, 'utf8')
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  const prepared = entries.find((entry) => entry.type === 'prepared');
+  const observed = entries.find((entry) => entry.type === 'observed');
+
+  assert.deepEqual(prepared.rollbackCapsule, rollbackCapsule);
+  assert.deepEqual(observed.rollbackEvidence, rollbackEvidence);
+  assert.equal(observed.observedDigest, digestSemantic(rollbackEvidence));
 });
 
 test('failed resource execution is journaled and blocks dependent documents', async () => {

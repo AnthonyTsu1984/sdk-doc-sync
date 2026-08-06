@@ -39,12 +39,19 @@ class SyncVerifier {
     const targetParent = postcondition(plan, 'TARGET_PARENT');
     const targetVersion = postcondition(plan, 'TARGET_VERSION');
     const targetMetadata = postcondition(plan, 'TARGET_METADATA');
+    const targetRecordType = postcondition(plan, 'TARGET_RECORD_TYPE');
     const olderSource = postcondition(plan, 'OLDER_SOURCE_UNCHANGED');
 
     const token = documentTokenFor(plan, execution);
     let document = null;
-    if (targetDocument && this.readDocument) {
-      document = await this.readDocument(token);
+    if (targetDocument && !this.readDocument) {
+      errors.push({ code: 'DOCUMENT_READER_REQUIRED' });
+    } else if (targetDocument) {
+      document = await this.readDocument(token, {
+        plan,
+        expectedFolderToken: targetDocument.folderToken,
+        purpose: 'target',
+      });
       if (!document || document.folderToken !== targetDocument.folderToken) {
         errors.push({
           code: 'TARGET_DOCUMENT_LOCATION',
@@ -62,8 +69,11 @@ class SyncVerifier {
     }
 
     let record = null;
-    if ((targetLink || targetParent || targetVersion || targetMetadata) && this.readRecord) {
-      record = await this.readRecord(targetLink?.recordId || plan.source.recordId);
+    const needsRecord = targetLink || targetParent || targetVersion || targetMetadata || targetRecordType;
+    if (needsRecord && !this.readRecord) {
+      errors.push({ code: 'RECORD_READER_REQUIRED' });
+    } else if (needsRecord) {
+      record = await this.readRecord(targetLink?.recordId || plan.source.recordId, { plan });
       if (targetLink && record?.documentToken !== token) {
         errors.push({ code: 'TARGET_LINK', expected: token, actual: record?.documentToken ?? null });
       }
@@ -81,10 +91,35 @@ class SyncVerifier {
           errors.push({ code: 'TARGET_METADATA_STATE', expected: targetMetadata.state, actual: normalizedState(record) });
         }
       }
+      if (targetRecordType) {
+        const actualType = record?.type ?? record?.metadata?.type ?? null;
+        const actualResourceType = record?.docsResourceType
+          ?? record?.resourceType
+          ?? record?.metadata?.docsResourceType
+          ?? record?.metadata?.resourceType
+          ?? null;
+        if (actualType !== targetRecordType.expected) {
+          errors.push({ code: 'TARGET_RECORD_TYPE', expected: targetRecordType.expected, actual: actualType });
+        }
+        if (actualResourceType !== targetRecordType.docsResourceType) {
+          errors.push({
+            code: 'TARGET_DOCS_RESOURCE_TYPE',
+            expected: targetRecordType.docsResourceType,
+            actual: actualResourceType,
+          });
+        }
+      }
     }
 
-    if (olderSource && this.readDocument) {
-      const source = await this.readDocument(olderSource.documentToken);
+    if (olderSource && !this.readDocument) {
+      if (!errors.some((error) => error.code === 'DOCUMENT_READER_REQUIRED')) {
+        errors.push({ code: 'DOCUMENT_READER_REQUIRED' });
+      }
+    } else if (olderSource) {
+      const source = await this.readDocument(olderSource.documentToken, {
+        plan,
+        purpose: 'older-source',
+      });
       if (!source || source.token !== olderSource.documentToken) {
         errors.push({ code: 'OLDER_SOURCE_UNCHANGED', expected: olderSource.documentToken, actual: source?.token ?? null });
       }

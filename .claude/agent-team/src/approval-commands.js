@@ -4,9 +4,12 @@ const ACTION_ALIASES = Object.freeze({
   dryrun: 'dry_run_only',
   patch: 'patch_after_approval',
   custom: 'custom',
-  approve: 'approve_live_write',
-  reject: 'reject',
-  changes: 'changes_requested',
+});
+
+const EXACT_LIVE_ACTIONS = Object.freeze({
+  APPROVE_WRITES: 'approve_live_write',
+  REJECT_WRITES: 'reject',
+  REQUEST_CHANGES: 'changes_requested',
 });
 
 function stripBotMention(text) {
@@ -26,7 +29,7 @@ function normalizeFriendlyCommand(text) {
     .replace(/^show\s+/i, 'explain ');
 }
 
-function localIntent(action, taskId, raw) {
+function localIntent(action, taskId, raw, extra = {}) {
   return {
     action,
     local: true,
@@ -34,6 +37,7 @@ function localIntent(action, taskId, raw) {
     sourceRunId: null,
     customInstruction: '',
     raw,
+    ...extra,
   };
 }
 
@@ -44,6 +48,30 @@ function parseApprovalCommand(text) {
   if (/^help$/i.test(normalized)) return localIntent('help', null, raw);
   const explainMatch = normalized.match(/^explain\s+([a-zA-Z0-9_.:-]+)$/i);
   if (explainMatch) return localIntent('explain', explainMatch[1], raw);
+
+  const exactLiveMatch = normalized.match(/^(APPROVE_WRITES|REJECT_WRITES|REQUEST_CHANGES)\s+([a-zA-Z0-9_.:-]+)\s+(sha256:[a-f0-9]{64})(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/i);
+  if (exactLiveMatch) {
+    const command = exactLiveMatch[1].toUpperCase();
+    const customInstruction = exactLiveMatch[5] ? exactLiveMatch[5].trim() : '';
+    if (command !== 'APPROVE_WRITES' && !customInstruction) return null;
+    if (command === 'APPROVE_WRITES' && customInstruction) return null;
+    return {
+      action: EXACT_LIVE_ACTIONS[command],
+      taskId: exactLiveMatch[2],
+      batchDigest: exactLiveMatch[3],
+      sourceRunId: exactLiveMatch[4] || null,
+      customInstruction,
+      raw,
+    };
+  }
+
+  const legacyLiveMatch = normalized.match(/^(approve|reject|changes)\s+([a-zA-Z0-9_.:-]+)(?:\s+[0-9]+)?(?::\s*([\s\S]+))?$/i);
+  if (legacyLiveMatch) {
+    return localIntent('legacy_live_command', legacyLiveMatch[2], raw, {
+      legacyAction: legacyLiveMatch[1].toLowerCase(),
+      customInstruction: legacyLiveMatch[3] ? legacyLiveMatch[3].trim() : '',
+    });
+  }
 
   const match = normalized.match(/^([a-zA-Z-]+)\s+([a-zA-Z0-9_.:-]+)(?:\s+([0-9]+))?(?::\s*([\s\S]+))?$/);
   if (!match) return null;

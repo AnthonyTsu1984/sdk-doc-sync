@@ -1,12 +1,43 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const path = require('path');
 const FeishuDocTranslator = require('../../skills/api-reference-sync/src/feishu-doc-translator');
 const BitableWriter = require('../../skills/api-reference-sync/src/sdk-doc-sync/bitable-writer');
 const { loadConfig } = require('../src/config');
 const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');
+const { createActionBatch } = require('../../skills/doc-ops-core/src/action-batch');
+const { createApprovalEnvelope, assertApproval } = require('../../skills/doc-ops-core/src/approval-guard');
+
+function loadApprovedActionBatch({ store, taskId, approvedBatchDigest }) {
+  if (!approvedBatchDigest) throw new Error('APPROVED_BATCH_DIGEST_REQUIRED');
+  const stored = store.readArtifact(taskId, 'action-batch.json');
+  const recomputed = createActionBatch({
+    skill: stored.skill,
+    operation: stored.operation,
+    actions: stored.actions,
+  });
+  if (stored.batchDigest !== recomputed.batchDigest) {
+    throw new Error(`ACTION_BATCH_DIGEST_MISMATCH: stored ${stored.batchDigest}, recomputed ${recomputed.batchDigest}`);
+  }
+  const approval = createApprovalEnvelope({
+    skill: recomputed.skill,
+    operation: recomputed.operation,
+    batchDigest: approvedBatchDigest,
+    actionCount: recomputed.actions.length,
+    targets: recomputed.targets,
+    sideEffects: recomputed.sideEffects,
+    decision: 'approved',
+  });
+  assertApproval(approval, {
+    skill: recomputed.skill,
+    operation: recomputed.operation,
+    batchDigest: recomputed.batchDigest,
+    actionCount: recomputed.actions.length,
+    targets: recomputed.targets,
+    sideEffects: recomputed.sideEffects,
+  });
+  return recomputed;
+}
 
 function groupByTablePair(actions) {
   return actions.reduce((groups, action) => {
@@ -79,11 +110,13 @@ async function runTranslationActions(config, approved) {
 
 async function main() {
   const taskId = process.env.DOC_AGENT_TASK_ID || process.argv[2];
-  if (!taskId) throw new Error('Usage: doc-agent-live-write <task-id>');
+  const approvedBatchDigest = process.env.DOC_AGENT_APPROVED_BATCH_DIGEST || process.argv[3];
+  if (!taskId || !approvedBatchDigest) throw new Error('Usage: doc-agent-live-write <task-id> <approved-batch-digest>');
   const config = loadConfig();
   const store = new TaskStore();
   const task = store.readTask(taskId);
-  const approved = JSON.parse(fs.readFileSync(path.join(store.taskDir(taskId), 'live-actions.json'), 'utf8'));
+  const actionBatch = loadApprovedActionBatch({ store, taskId, approvedBatchDigest });
+  const approved = actionBatch.actions.map(action => action.payload);
   const localization = config.surfaces.localization;
   const allowed = localization.allowedLiveActions;
   const unsafe = approved.filter(action => !isLiveActionAllowed(action.type, allowed));
@@ -103,7 +136,16 @@ async function main() {
   console.log(JSON.stringify({ taskId, translationTableCount: result.length, metaOnlyCount: metaOnlyResults.length }, null, 2));
 }
 
-main().catch(error => {
-  console.error(error.stack || error.message);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch(error => {
+    console.error(error.stack || error.message);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  applyMetaOnlyActions,
+  loadApprovedActionBatch,
+  main,
+  runTranslationActions,
+};

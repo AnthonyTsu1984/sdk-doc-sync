@@ -11,7 +11,22 @@ test('parseApprovalCommand parses MVP policy commands', () => {
     raw: 'dry-run loc-scan-1',
   });
   assert.equal(parseApprovalCommand('patch loc-scan-1').action, 'patch_after_approval');
-  assert.equal(parseApprovalCommand('approve loc-scan-1').action, 'approve_live_write');
+  assert.equal(parseApprovalCommand('approve loc-scan-1').local, true);
+});
+
+test('parseApprovalCommand requires exact batch digests for live decisions', () => {
+  const digest = `sha256:${'a'.repeat(64)}`;
+  assert.deepEqual(parseApprovalCommand(`APPROVE_WRITES loc-scan-1 ${digest}`), {
+    action: 'approve_live_write',
+    taskId: 'loc-scan-1',
+    batchDigest: digest,
+    sourceRunId: null,
+    customInstruction: '',
+    raw: `APPROVE_WRITES loc-scan-1 ${digest}`,
+  });
+  assert.equal(parseApprovalCommand(`REJECT_WRITES loc-scan-1 ${digest}: wrong scope`).action, 'reject');
+  assert.equal(parseApprovalCommand(`REQUEST_CHANGES loc-scan-1 ${digest}: exclude Deployment`).action, 'changes_requested');
+  assert.equal(parseApprovalCommand('APPROVE_WRITES loc-scan-1 sha256:short'), null);
 });
 
 test('parseApprovalCommand captures custom instruction', () => {
@@ -21,8 +36,8 @@ test('parseApprovalCommand captures custom instruction', () => {
 });
 
 test('parseApprovalCommand captures optional source run id', () => {
-  const parsed = parseApprovalCommand('approve loc-scan-1 123456');
-  assert.equal(parsed.action, 'approve_live_write');
+  const parsed = parseApprovalCommand('dry-run loc-scan-1 123456');
+  assert.equal(parsed.action, 'dry_run_only');
   assert.equal(parsed.taskId, 'loc-scan-1');
   assert.equal(parsed.sourceRunId, '123456');
 });
@@ -95,7 +110,8 @@ test('parseApprovalCommand strips Feishu SDK mention placeholders', () => {
 
 test('parseApprovalCommand supports friendly approve live write alias', () => {
   const parsed = parseApprovalCommand('@ztrans approve live write loc-scan-1');
-  assert.equal(parsed.action, 'approve_live_write');
+  assert.equal(parsed.action, 'legacy_live_command');
+  assert.equal(parsed.local, true);
   assert.equal(parsed.taskId, 'loc-scan-1');
 });
 

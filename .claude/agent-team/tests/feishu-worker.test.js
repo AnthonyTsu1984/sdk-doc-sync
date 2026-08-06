@@ -111,7 +111,7 @@ test('Worker dedupes approval dispatches with KV', async () => {
       message: {
         chat_id: 'oc_chat',
         message_id: 'om_1',
-        content: JSON.stringify({ text: '<at user_id="ou_bot">ztrans</at> approve loc-scan-1 123456' }),
+        content: JSON.stringify({ text: `<at user_id="ou_bot">ztrans</at> APPROVE_WRITES loc-scan-1 sha256:${'a'.repeat(64)} 123456` }),
       },
     },
   };
@@ -121,6 +121,7 @@ test('Worker dedupes approval dispatches with KV', async () => {
     assert.equal(first.result.ok, true);
     assert.equal(second.result.duplicate, true);
     assert.equal(calls.filter(call => call.url.includes('api.github.com')).length, 1);
+    assert.match(calls.find(call => call.url.includes('api.github.com')).init.body, /"batchDigest":"sha256:a{64}"/);
   });
 });
 

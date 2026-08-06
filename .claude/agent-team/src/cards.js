@@ -33,12 +33,13 @@ function buildDailyReportCard({ task, summaryText, actions = [] }) {
   };
 }
 
-function buildLiveWriteApprovalCard({ task, summaryText, actions = [], orphanCount = 0 }) {
-  const suffix = task.sourceRunId ? ` ${task.sourceRunId}` : '';
+function buildLiveWriteApprovalCard({ task, summaryText, actions = [], orphanCount = 0, actionBatch }) {
+  if (!actionBatch?.batchDigest) throw new Error('actionBatch with batchDigest is required');
+  const sourceRunSuffix = task.sourceRunId ? ` ${task.sourceRunId}` : '';
   const commands = [
-    `approve ${task.id}${suffix}`,
-    `reject ${task.id}${suffix}`,
-    `changes ${task.id}${suffix}: <what to change>`,
+    `APPROVE_WRITES ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}`,
+    `REJECT_WRITES ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}: <reason>`,
+    `REQUEST_CHANGES ${task.id} ${actionBatch.batchDigest}${sourceRunSuffix}: <what to change>`,
   ];
   const writeActions = actions.filter(action => ['NEW', 'UPDATE', 'META_ONLY'].includes(action.type));
   const orphanLine = orphanCount > 0
@@ -52,6 +53,18 @@ function buildLiveWriteApprovalCard({ task, summaryText, actions = [], orphanCou
     },
     elements: [
       { tag: 'markdown', content: `**Summary**\n${summaryText}` },
+      {
+        tag: 'markdown',
+        content: [
+          '**Immutable action batch**',
+          `skill: \`${actionBatch.skill}\``,
+          `operation: \`${actionBatch.operation}\``,
+          `action count: \`${actionBatch.actions.length}\``,
+          `targets: ${(actionBatch.targets || []).map(target => `\`${target}\``).join(', ') || '(none)'}`,
+          `side-effect classes: ${(actionBatch.sideEffects || []).map(effect => `\`${effect}\``).join(', ') || '(none)'}`,
+          `digest: \`${actionBatch.batchDigest}\``,
+        ].join('\n'),
+      },
       { tag: 'markdown', content: renderAffectedDocsMarkdown({ actions: writeActions, includeTypes: ['NEW', 'UPDATE', 'META_ONLY'] }) },
       { tag: 'markdown', content: `**Approval effect**\nApproving allows ztrans to create/update only the listed localization docs and metadata.${orphanLine}` },
       { tag: 'markdown', content: `**Fallback reply commands**\n${commandBlock(task, commands)}` },

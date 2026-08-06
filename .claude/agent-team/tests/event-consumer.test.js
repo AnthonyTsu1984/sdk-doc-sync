@@ -5,6 +5,20 @@ const os = require('os');
 const path = require('path');
 const { formatIgnoredResult, handleEvent, runSdkEventConsumer } = require('../src/event-consumer');
 
+const BATCH_DIGEST = `sha256:${'a'.repeat(64)}`;
+
+function currentBatch() {
+  return {
+    schemaVersion: 1,
+    skill: 'localized-doc-sync',
+    operation: 'sync',
+    batchDigest: BATCH_DIGEST,
+    actions: [{ actionId: 'localization:a' }],
+    targets: ['record:a'],
+    sideEffects: ['document:update'],
+  };
+}
+
 function config(logPath) {
   return {
     feishu: { chatId: 'oc_chat', approverIds: ['ou_allowed'] },
@@ -40,9 +54,10 @@ test('handleEvent allows any normalized sender id candidate', async () => {
       message: {
         chat_id: localConfig.feishu.chatId,
         message_id: 'om_1',
-        content: 'approve loc-scan-1',
+        content: `APPROVE_WRITES loc-scan-1 ${BATCH_DIGEST}`,
       },
     },
+    actionBatchResolver: () => currentBatch(),
     dispatch: async decision => dispatched.push(decision),
   });
   assert.equal(result.ok, true);
@@ -67,24 +82,48 @@ test('handleEvent appends decision and dispatches once', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
   const logPath = path.join(dir, 'decisions.jsonl');
   const dispatched = [];
-  const event = { chat_id: 'oc_chat', sender_id: 'ou_allowed', message_id: 'om_1', content: 'approve loc-scan-1' };
+  const event = { chat_id: 'oc_chat', sender_id: 'ou_allowed', message_id: 'om_1', content: `APPROVE_WRITES loc-scan-1 ${BATCH_DIGEST}` };
   const first = await handleEvent({
     config: config(logPath),
     githubToken: 'token',
     event,
     sourceRunIdResolver: () => '123',
+    actionBatchResolver: () => currentBatch(),
     dispatch: async decision => dispatched.push(decision),
   });
   const second = await handleEvent({
     config: config(logPath),
     githubToken: 'token',
     event,
+    actionBatchResolver: () => currentBatch(),
     dispatch: async decision => dispatched.push(decision),
   });
   assert.equal(first.ok, true);
   assert.equal(second.duplicate, true);
   assert.equal(dispatched.length, 1);
-  assert.match(fs.readFileSync(logPath, 'utf8'), /approve_live_write/);
+  const ledgerEntry = JSON.parse(fs.readFileSync(logPath, 'utf8').trim());
+  assert.equal(ledgerEntry.outcome, 'approved');
+  assert.equal(ledgerEntry.proposalDigest, BATCH_DIGEST);
+  assert.equal(ledgerEntry.runtime.messageId, 'om_1');
+  assert.equal(ledgerEntry.runtime.reviewerId, 'ou_allowed');
+  assert.match(ledgerEntry.decisionDigest, /^sha256:[a-f0-9]{64}$/);
+});
+
+test('legacy task-only approval returns the exact current command without dispatching', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-consumer-'));
+  const dispatched = [];
+  const sent = [];
+  const result = await handleEvent({
+    config: config(path.join(dir, 'decisions.jsonl')),
+    githubToken: 'token',
+    event: { chat_id: 'oc_chat', sender_id: 'ou_allowed', message_id: 'om-old', content: 'approve loc-scan-1' },
+    actionBatchResolver: () => currentBatch(),
+    dispatch: async decision => dispatched.push(decision),
+    respond: async message => sent.push(message),
+  });
+  assert.equal(result.local, true);
+  assert.equal(dispatched.length, 0);
+  assert.match(sent[0].text, new RegExp(`APPROVE_WRITES loc-scan-1 ${BATCH_DIGEST}`));
 });
 
 test('handleEvent returns local response for help without dispatching', async () => {

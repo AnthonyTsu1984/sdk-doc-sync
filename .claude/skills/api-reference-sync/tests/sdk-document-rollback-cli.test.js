@@ -98,6 +98,28 @@ function writeCompletedRollbackJournal(filePath, manifest) {
   return digestSemantic(entries);
 }
 
+function writePartialRollbackJournal(filePath, manifest) {
+  const binding = {
+    schemaVersion: 1,
+    operation: 'rollback-document',
+    rollbackManifestDigest: manifest.rollbackManifestDigest,
+    originalExecutionJournalDigest: manifest.executionJournalDigest,
+  };
+  const entries = [
+    { ...binding, type: 'prepared', actionId: 'node:Vector:search', inverse: 'DELETE_CREATED_RECORD_AND_DOCUMENT' },
+    {
+      ...binding,
+      type: 'observed',
+      actionId: 'node:Vector:search',
+      status: 'failure',
+      verified: false,
+      result: { code: 'ROLLBACK_ACTION_FAILED', message: 'delete failed' },
+    },
+  ];
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  return { digest: digestSemantic(entries), entries };
+}
+
 test('rollback CLI parses plan and execute approval arguments', () => {
   const args = parseArgs([
     'node', 'sdk-document-rollback', 'execute',
@@ -202,4 +224,44 @@ test('successful rollback updates the session once and completed-journal replay 
   assert.equal(persisted.activeExecution, null);
   assert.equal(persisted.rollbackReceipts.length, 1);
   assert.equal(persisted.scanStateUpdated, false);
+});
+
+test('partial rollback journal returns structured reconciliation without changing the session or replaying mutations', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-cli-partial-'));
+  const { session, sessionPath, execution } = sessionFile(directory);
+  const manifest = rollbackManifest(session, execution);
+  const manifestPath = path.join(directory, 'rollback.json');
+  const journalPath = path.join(directory, 'rollback.jsonl');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  const partial = writePartialRollbackJournal(journalPath, manifest);
+  let constructed = 0;
+
+  const result = await runCli({
+    argv: [
+      'node', 'sdk-document-rollback', 'execute',
+      '--session', sessionPath,
+      '--review-unit-id', reviewUnitId,
+      '--manifest', manifestPath,
+      '--journal', journalPath,
+      '--approve-rollback-digest', manifest.rollbackManifestDigest,
+      '--json',
+    ],
+    dependencies: {
+      executorFactory: () => { constructed += 1; },
+      onStdout: () => {},
+    },
+  });
+
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(result.status, 'ROLLBACK_RECONCILIATION_REQUIRED');
+  assert.equal(result.code, 'ROLLBACK_JOURNAL_INCOMPLETE');
+  assert.equal(result.rollbackJournalDigest, partial.digest);
+  assert.deepEqual(result.failedActionIds, ['node:Vector:search']);
+  assert.deepEqual(result.unrecoveredSideEffects, manifest.sideEffects);
+  assert.equal(result.reconciliationInstructions.length > 0, true);
+  assert.equal(result.sessionUpdated, false);
+  assert.equal(result.scanStateUpdated, false);
+  assert.equal(constructed, 0);
+  assert.deepEqual(persisted.activeExecution, session.activeExecution);
+  assert.deepEqual(persisted.rollbackReceipts, []);
 });

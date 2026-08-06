@@ -69,6 +69,62 @@ function readJsonLines(filePath) {
   });
 }
 
+function sideEffectsForActions(actions) {
+  const sideEffects = {
+    restoreRecordIds: [],
+    deleteRecordIds: [],
+    deleteDocumentTokens: [],
+    revertDocumentTokens: [],
+    deleteFolderTokens: [],
+  };
+  for (const action of actions) {
+    if (action.beforeRecord?.recordId) sideEffects.restoreRecordIds.push(action.beforeRecord.recordId);
+    if (action.createdRecord?.recordId) sideEffects.deleteRecordIds.push(action.createdRecord.recordId);
+    if (action.createdDocument?.token) sideEffects.deleteDocumentTokens.push(action.createdDocument.token);
+    if (action.copiedDocument?.token) sideEffects.deleteDocumentTokens.push(action.copiedDocument.token);
+    if (action.documentRollback?.documentToken) sideEffects.revertDocumentTokens.push(action.documentRollback.documentToken);
+    if (action.createdFolder?.token) sideEffects.deleteFolderTokens.push(action.createdFolder.token);
+  }
+  for (const key of Object.keys(sideEffects)) sideEffects[key] = [...new Set(sideEffects[key])].sort();
+  return sideEffects;
+}
+
+function incompleteJournalResult({ entries, journalPath, manifest, reviewUnitId }) {
+  for (const entry of entries) {
+    if (entry.operation !== 'rollback-document'
+        || entry.rollbackManifestDigest !== manifest.rollbackManifestDigest
+        || entry.originalExecutionJournalDigest !== manifest.executionJournalDigest) {
+      throw new Error('Rollback journal is bound to a different manifest or original execution');
+    }
+  }
+  const successfulActionIds = new Set(entries
+    .filter((entry) => entry.type === 'observed' && entry.status === 'success' && entry.verified === true)
+    .map((entry) => entry.actionId));
+  const failedActionIds = [...new Set(entries
+    .filter((entry) => entry.type === 'observed' && (entry.status !== 'success' || entry.verified !== true))
+    .map((entry) => entry.actionId))].sort();
+  const unrecoveredActions = manifest.actions
+    .filter((action) => !successfulActionIds.has(action.originalActionId));
+  return {
+    status: 'ROLLBACK_RECONCILIATION_REQUIRED',
+    code: 'ROLLBACK_JOURNAL_INCOMPLETE',
+    reviewUnitId,
+    rollbackJournalPath: journalPath,
+    rollbackJournalDigest: digestSemantic(entries),
+    completedActionIds: [...successfulActionIds].sort(),
+    failedActionIds,
+    unrecoveredActionIds: unrecoveredActions.map((action) => action.originalActionId).sort(),
+    unrecoveredSideEffects: sideEffectsForActions(unrecoveredActions),
+    reconciliationInstructions: [
+      'Inspect the live Feishu record, document, and folder identities listed in unrecoveredSideEffects.',
+      'Append verified observed evidence for the interrupted rollback action before any continuation.',
+      'Do not replay rollback mutations while this journal remains incomplete.',
+    ],
+    sessionUpdated: false,
+    scanStateUpdated: false,
+  };
+}
+
 function defaultExecutorFactory({ session, env = process.env }) {
   const baseToken = env.BASE_TOKEN || session.artifacts?.baseToken;
   if (!baseToken) throw new Error('BASE_TOKEN is required for live rollback');
@@ -156,6 +212,20 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
 
   if (fs.existsSync(journalPath) && fs.statSync(journalPath).size > 0) {
     const entries = readJsonLines(journalPath);
+    const completed = entries.some((entry) => entry.type === 'completion'
+      && entry.status === 'rolled_back'
+      && entry.completionSentinel === true
+      && entry.scanStateUpdated === false);
+    if (!completed) {
+      const result = incompleteJournalResult({
+        entries,
+        journalPath,
+        manifest,
+        reviewUnitId: args.reviewUnitId,
+      });
+      out(args.json ? JSON.stringify(result, null, 2) : `Rollback reconciliation required: ${journalPath}`);
+      return result;
+    }
     session = recordDocumentRollback(session, {
       reviewUnitId: args.reviewUnitId,
       rollbackJournalPath: journalPath,
@@ -207,7 +277,9 @@ if (require.main === module) {
 
 module.exports = {
   defaultExecutorFactory,
+  incompleteJournalResult,
   parseArgs,
   runCli,
+  sideEffectsForActions,
   writeJsonAtomic,
 };

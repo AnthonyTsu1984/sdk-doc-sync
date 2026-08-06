@@ -38,11 +38,12 @@ test('all canonical skills declare review, learning, and adapter policies withou
     readJson(path.join(SKILLS_ROOT, skill, 'capabilities.json')),
   ]));
   assert.equal(manifests['api-reference-sync'].adapterPolicy.operations[0].status, 'adopted');
+  assert.equal(manifests['localized-doc-sync'].adapterPolicy.operations[0].status, 'adopted');
   assert.equal(manifests['doc-code-verify'].adapterPolicy.operations.find((item) => item.operation === 'static-verify').status, 'adopted');
   assert.equal(manifests['doc-code-verify'].adapterPolicy.operations.find((item) => item.operation === 'live-verify').status, 'planned');
-  for (const skill of ['localized-doc-sync', 'procedure-code-sync', 'verified-doc-authoring']) {
+  for (const skill of ['procedure-code-sync', 'verified-doc-authoring']) {
     assert.equal(manifests[skill].adapterPolicy.operations[0].status, 'planned');
-    assert.match(manifests[skill].adapterPolicy.operations[0].migrationTask, /^Task (?:9|10|11)$/);
+    assert.match(manifests[skill].adapterPolicy.operations[0].migrationTask, /^Task (?:10|11)$/);
   }
 });
 

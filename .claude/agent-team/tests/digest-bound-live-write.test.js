@@ -8,7 +8,7 @@ const path = require('node:path');
 
 const { TaskStore } = require('../src/task-store');
 const { buildLocalizationActionBatch } = require('../bin/doc-agent-dry-run');
-const { loadApprovedActionBatch } = require('../bin/doc-agent-live-write');
+const { executeApprovedActionBatch, loadApprovedActionBatch } = require('../bin/doc-agent-live-write');
 
 function actions() {
   return [{
@@ -66,4 +66,27 @@ test('live-write workflow passes the accepted batch digest to the executable', (
   const workflow = fs.readFileSync(path.resolve(__dirname, '..', '..', '..', '.github', 'workflows', 'doc-agent-live-write.yml'), 'utf8');
   assert.match(workflow, /client_payload\.batchDigest/);
   assert.match(workflow, /doc-agent:live-write/);
+});
+
+test('agent-team delegates an approved immutable batch to the canonical write-ahead executor', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-canonical-execution-'));
+  const journalPath = path.join(root, 'execution.jsonl');
+  const batch = buildLocalizationActionBatch(actions().slice(0, 1));
+  const seen = [];
+  const result = await executeApprovedActionBatch({
+    actionBatch: batch,
+    approvedBatchDigest: batch.batchDigest,
+    journalPath,
+    adapter: {
+      async execute(action) { seen.push(action.payload.slug); return { status: 'success' }; },
+      async verify() { return { verified: true }; },
+    },
+  });
+
+  assert.deepEqual(seen, ['one']);
+  assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
+  const journal = fs.readFileSync(journalPath, 'utf8');
+  assert.match(journal, /"type":"prepared"/);
+  assert.match(journal, /"type":"observed"/);
+  assert.match(journal, /"completionSentinel":true/);
 });

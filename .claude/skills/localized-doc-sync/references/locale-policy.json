@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "policyId": "zilliz-en-zh-locale-policy",
+  "ignoredFields": ["Chapter"],
+  "learningReminderThreshold": 5,
+  "rolePolicy": {
+    "placement": { "names": ["Placement Type"], "types": ["select"], "required": true },
+    "slug": { "names": ["Slug"], "types": ["text", "formula"], "required": true },
+    "docs": { "names": ["Docs"], "types": ["text", "url"], "required": true },
+    "parent": { "names": ["Parent"], "types": ["relation"] },
+    "refTarget": { "names": ["Ref Target Doc"], "types": ["text", "url"] },
+    "targets": { "names": ["Targets"], "types": ["multi_select"], "publicationCritical": true },
+    "labels": { "names": ["Labels"], "types": ["text", "multi_select"] },
+    "progress": { "names": ["Progress"], "types": ["select"] },
+    "book": { "names": ["Book"], "types": ["text", "select"] }
+  },
+  "placementMatrix": {
+    "canonical": { "required": ["Slug", "Targets"], "forbidden": [] },
+    "section": { "required": ["Slug"], "forbidden": ["Targets"] },
+    "link": { "required": ["Ref Target Doc"], "forbidden": ["Slug", "Targets"] },
+    "ref": { "required": ["Ref Target Doc"], "forbidden": ["Slug", "Targets"] }
+  },
+  "localeOwnedMetadata": ["Labels", "Keywords", "Progress", "Notebook", "Beta", "Book", "Alias1", "Alias2"],
+  "parentPolicy": "validate each locale hierarchy independently",
+  "targetsPolicy": "canonical Chinese publication scope requires Chinese-source evidence and exact approval",
+  "highRiskAutomaticPromotion": false,
+  "provenance": "reviewed full-scan design 2026-08-06",
+  "revalidateOn": ["schema-change", "publication-policy-change", "every-full-scan"]
+}

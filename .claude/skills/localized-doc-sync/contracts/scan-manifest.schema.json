@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zilliz.local/contracts/localized-doc-sync/scan-manifest.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "scanEpochId", "sourceBase", "targetBase", "tableMappings", "placementIdentities", "translationPairs", "issues", "completeInventory", "partialScanAuthoritative", "semanticDigest"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "scanEpochId": { "type": "string", "pattern": "^scan:localized-doc-sync:" },
+    "sourceBase": { "type": "object" },
+    "targetBase": { "type": "object" },
+    "tableMappings": { "type": "array" },
+    "placementIdentities": { "type": "array" },
+    "translationPairs": { "type": "array" },
+    "translationReceiptDigests": { "type": "array", "items": { "type": "string" } },
+    "issues": { "type": "array", "items": { "$ref": "scan-issue.schema.json" } },
+    "completeInventory": { "const": true },
+    "partialScanAuthoritative": { "const": false },
+    "semanticDigest": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" }
+  },
+  "additionalProperties": true
+}

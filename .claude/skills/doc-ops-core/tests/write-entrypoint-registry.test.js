@@ -26,7 +26,7 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
     now: '2026-08-06T00:00:00.000Z',
   });
 
-  assert.equal(discovered.length, 151);
+  assert.equal(discovered.length, 152);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

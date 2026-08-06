@@ -1478,6 +1478,21 @@
       "basis": "governed local feedback CLI; no tenant mutation"
     },
     {
+      "path": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+      "skill": "localized-doc-sync",
+      "classification": "canonical-governed",
+      "operation": "sync",
+      "basis": "reviewed canonical full-scan planner and journaled executor",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/localized-doc-sync/tests/localized-doc-sync-cli.test.js",
+        ".claude/skills/localized-doc-sync/tests/executor.test.js",
+        ".claude/skills/localized-doc-sync/tests/review-session-store.test.js"
+      ]
+    },
+    {
       "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
       "skill": "patch-code-blocks",
       "classification": "read-only",

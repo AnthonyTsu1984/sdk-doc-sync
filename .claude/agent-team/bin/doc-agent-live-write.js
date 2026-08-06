@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+const path = require('node:path');
 const FeishuDocTranslator = require('../../skills/api-reference-sync/src/feishu-doc-translator');
 const BitableWriter = require('../../skills/api-reference-sync/src/sdk-doc-sync/bitable-writer');
 const { loadConfig } = require('../src/config');
@@ -7,6 +8,7 @@ const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');
 const { createActionBatch } = require('../../skills/doc-ops-core/src/action-batch');
 const { createApprovalEnvelope, assertApproval } = require('../../skills/doc-ops-core/src/approval-guard');
+const { executeReviewUnit } = require('../../skills/localized-doc-sync/src/executor');
 
 function loadApprovedActionBatch({ store, taskId, approvedBatchDigest }) {
   if (!approvedBatchDigest) throw new Error('APPROVED_BATCH_DIGEST_REQUIRED');
@@ -108,6 +110,65 @@ async function runTranslationActions(config, approved) {
   return results;
 }
 
+async function executeApprovedActionBatch({
+  actionBatch,
+  approvedBatchDigest,
+  journalPath,
+  adapter,
+}) {
+  const approval = createApprovalEnvelope({
+    skill: actionBatch.skill,
+    operation: actionBatch.operation,
+    batchDigest: approvedBatchDigest,
+    actionCount: actionBatch.actions.length,
+    targets: actionBatch.targets,
+    sideEffects: actionBatch.sideEffects,
+    decision: 'approved',
+  });
+  const requiresDocumentAcceptance = actionBatch.actions.some((action) => (
+    ['NEW', 'UPDATE'].includes(action.payload?.type)
+  ));
+  return executeReviewUnit({
+    unit: {
+      reviewUnitId: `agent-team:${actionBatch.batchDigest}`,
+      requiresDocumentAcceptance,
+    },
+    batch: actionBatch,
+    approval,
+    journalPath,
+    adapter,
+  });
+}
+
+function createLiveAdapter(config, captures) {
+  return {
+    async execute(action) {
+      const payload = action.payload;
+      if (payload.type === 'META_ONLY') {
+        const results = await applyMetaOnlyActions(config, [payload]);
+        captures.metaOnlyResults.push(...results);
+        return results[0];
+      }
+      const results = await runTranslationActions(config, [payload]);
+      captures.translationResults.push(...results);
+      return results[0];
+    },
+    async verify(action, result) {
+      if (!result || result.status === 'failure' || result.status === 'skipped') return { verified: false };
+      const payload = action.payload;
+      if (payload.target?.id) {
+        const writer = new BitableWriter({
+          baseToken: config.surfaces.localization.targetBaseToken,
+          tableId: payload.targetTableId,
+        });
+        const record = await writer.getRecord(payload.target.id);
+        return { verified: Boolean(record) };
+      }
+      return { verified: true };
+    },
+  };
+}
+
 async function main() {
   const taskId = process.env.DOC_AGENT_TASK_ID || process.argv[2];
   const approvedBatchDigest = process.env.DOC_AGENT_APPROVED_BATCH_DIGEST || process.argv[3];
@@ -126,14 +187,24 @@ async function main() {
 
   store.writeTask({ ...task, status: TASK_STATUS.LIVE_WRITE_STARTED, liveWriteStartedAt: new Date().toISOString() });
 
-  const translationActions = approved.filter(action => ['NEW', 'UPDATE'].includes(action.type));
-  const metaOnlyActions = approved.filter(action => action.type === 'META_ONLY');
-  const result = translationActions.length > 0 ? await runTranslationActions(config, translationActions) : [];
-  const metaOnlyResults = await applyMetaOnlyActions(config, metaOnlyActions);
-  store.writeArtifact(taskId, 'meta-only-result.json', metaOnlyResults);
-  store.writeArtifact(taskId, 'live-write-result.json', result);
+  const captures = { translationResults: [], metaOnlyResults: [] };
+  const execution = await executeApprovedActionBatch({
+    actionBatch,
+    approvedBatchDigest,
+    journalPath: path.join(store.taskDir(taskId), 'execution-journal.jsonl'),
+    adapter: createLiveAdapter(config, captures),
+  });
+  store.writeArtifact(taskId, 'meta-only-result.json', captures.metaOnlyResults);
+  store.writeArtifact(taskId, 'live-write-result.json', captures.translationResults);
+  store.writeArtifact(taskId, 'canonical-execution-result.json', execution);
   store.writeTask({ ...task, status: TASK_STATUS.VERIFICATION_STARTED, liveWriteCompletedAt: new Date().toISOString() });
-  console.log(JSON.stringify({ taskId, translationTableCount: result.length, metaOnlyCount: metaOnlyResults.length }, null, 2));
+  console.log(JSON.stringify({
+    taskId,
+    status: execution.status,
+    executionJournalDigest: execution.journalDigest,
+    translationTableCount: captures.translationResults.length,
+    metaOnlyCount: captures.metaOnlyResults.length,
+  }, null, 2));
 }
 
 if (require.main === module) {
@@ -145,6 +216,8 @@ if (require.main === module) {
 
 module.exports = {
   applyMetaOnlyActions,
+  createLiveAdapter,
+  executeApprovedActionBatch,
   loadApprovedActionBatch,
   main,
   runTranslationActions,

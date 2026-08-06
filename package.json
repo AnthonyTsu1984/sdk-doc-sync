@@ -14,6 +14,7 @@
     "test:all": "node .claude/skills/api-reference-sync/tests/run-all.js --all",
     "test:list": "node .claude/skills/api-reference-sync/tests/run-all.js --list",
     "test:agent-team": "node --test .claude/agent-team/tests/*.test.js",
+    "test:localized-doc-sync": "node --test .claude/skills/localized-doc-sync/tests/*.test.js",
     "test:skills": "node --test tests/skills/*.test.js",
     "eval:skills": "node scripts/run-skill-model-evals.js",
     "eval:skills:routing": "node scripts/run-skill-model-evals.js --mode routing --repeats 3",

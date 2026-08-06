@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://zilliz.local/contracts/localized-doc-sync/scan-issue.schema.json",
+  "type": "object",
+  "required": ["issueId", "code"],
+  "properties": {
+    "issueId": { "type": "string", "pattern": "^issue:" },
+    "code": {
+      "enum": ["UNMAPPED_TABLE", "TABLE_MISSING", "SCHEMA_DRIFT", "PLACEMENT_METADATA_INVALID", "LINK_TARGET_INVALID", "IDENTITY_AMBIGUOUS", "NEW", "UPDATE_CONTENT", "TARGET_LOCAL_EDIT", "TRANSLATION_DIVERGED", "TRANSLATION_BASELINE_REQUIRED", "LOCAL_META_DRIFT", "META_ONLY", "PUBLICATION_SCOPE_MISMATCH", "TARGET_ONLY", "POLICY_EXCLUDED", "LOCALE_EQUIVALENT", "HIERARCHY_UNRESOLVED", "NOOP"]
+    },
+    "placement": { "enum": ["canonical", "section", "link", "ref"] },
+    "blocking": { "type": "boolean" }
+  },
+  "additionalProperties": true
+}

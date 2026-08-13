@@ -8,6 +8,7 @@ const OllamaTranslator = require('./translators/ollama-translator');
 const MarkdownToFeishu = require('../markdown-to-feishu');
 const BitableWriter = require('../sdk-doc-sync/bitable-writer');
 const { createDocumentReader } = require('../../bin/export-doc');
+const { buildLocalizationDryRun, createLocalizationBatch } = require('../../../localized-doc-sync/src/translator-adapter');
 
 /**
  * FeishuDocTranslator - Main orchestrator for documentation translation
@@ -26,11 +27,24 @@ class FeishuDocTranslator {
         this.translatorType = options.translatorType || 'claude';
         this.dryRun = options.dryRun || false;
         this.approvalCallback = options.approvalCallback || null;
+        this.localizationMode = options.localizationMode === true;
+        this.localizationSkillRoot = options.localizationSkillRoot;
+        this.audienceProfile = options.audienceProfile;
+        this.productProfile = options.productProfile;
+        this.translatorAdapterVersion = options.translatorAdapterVersion;
+        this.translationReceiptStore = options.translationReceiptStore || null;
         this.sourceDocumentReaderReceivesRecord = Boolean(options.sourceDocumentReader);
         this.sourceDocumentReader = options.sourceDocumentReader
             || (options.createSourceDocumentReader
                 ? options.createSourceDocumentReader({ sourceType: this.driveType })
                 : createDocumentReader({ sourceType: this.driveType }));
+        this.targetDocumentReaderReceivesRecord = Boolean(options.targetDocumentReader);
+        this.targetDocumentReader = options.targetDocumentReader
+            || (this.localizationMode
+                ? (options.createTargetDocumentReader
+                    ? options.createTargetDocumentReader({ sourceType: this.driveType })
+                    : createDocumentReader({ sourceType: this.driveType }))
+                : null);
 
         // Initialize components
         this.sourceReader = new BitableReader({ baseToken: this.sourceBitable, tableId: this.sourceTableId });
@@ -126,7 +140,27 @@ class FeishuDocTranslator {
         console.log(`  ORPHAN: ${summary.orphan}`);
 
         if (this.dryRun) {
-            return { actions, summary };
+            if (!this.localizationMode) return { actions, summary };
+            const localizationActions = await buildLocalizationDryRun({
+                legacyActions: actions,
+                sourceBitable: this.sourceBitable,
+                targetBitable: this.targetBitable,
+                sourceTableId: this.sourceTableId,
+                targetTableId: this.targetTableId,
+                sourceRoot: this.sourceRoot,
+                targetRoot: this.targetRoot,
+                locale: this.targetLang,
+                audienceProfile: this.audienceProfile,
+                productProfile: this.productProfile,
+                translatorAdapterVersion: this.translatorAdapterVersion,
+                localizationSkillRoot: this.localizationSkillRoot,
+                translator: this.translator,
+                translationReceiptStore: this.translationReceiptStore,
+                readSourceMarkdown: this._fetchSourceMarkdown.bind(this),
+                readTargetMarkdown: this._fetchTargetMarkdown.bind(this),
+            });
+            const localizationBatch = createLocalizationBatch(localizationActions);
+            return { actions, summary, localizationMode: true, localizationActions, localizationBatch };
         }
 
         // Filter to actionable items
@@ -386,6 +420,20 @@ class FeishuDocTranslator {
             || sourceRecord.id
             || sourceRecord.metadata?.slug;
         return await this.sourceDocumentReader.readMarkdown(token);
+    }
+
+    async _fetchTargetMarkdown(targetRecord) {
+        if (!this.targetDocumentReader || typeof this.targetDocumentReader.readMarkdown !== 'function') {
+            throw new TypeError('targetDocumentReader must expose readMarkdown()');
+        }
+        if (this.targetDocumentReaderReceivesRecord) {
+            return await this.targetDocumentReader.readMarkdown(targetRecord);
+        }
+        const token = targetRecord.metadata?.token
+            || targetRecord.metadata?.link
+            || targetRecord.id
+            || targetRecord.metadata?.slug;
+        return await this.targetDocumentReader.readMarkdown(token);
     }
 
     /**

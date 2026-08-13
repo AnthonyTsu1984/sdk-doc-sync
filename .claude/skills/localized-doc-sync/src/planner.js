@@ -3,7 +3,7 @@
 const { canonicalize } = require('../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
-const CONTENT_CODES = new Set(['NEW', 'UPDATE_CONTENT', 'TARGET_LOCAL_EDIT', 'TRANSLATION_DIVERGED', 'TRANSLATION_BASELINE_REQUIRED']);
+const CONTENT_CODES = new Set(['NEW', 'UPDATE_CONTENT', 'TARGET_LOCAL_EDIT', 'TRANSLATION_DIVERGED', 'TRANSLATION_BASELINE_REQUIRED', 'TRANSLATION_CONTRACT_STALE']);
 const SKIP_CODES = new Set(['NOOP', 'POLICY_EXCLUDED', 'LOCALE_EQUIVALENT']);
 
 function unitId(kind, issueIds) {

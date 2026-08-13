@@ -60,3 +60,20 @@ test('orphan decisions require complete table-pair evidence and preserve before 
   assert.match(skill, /`preserve_orphan`.*`report_orphan`/is);
   assert.match(skill, /missing source slug.*insufficient/is);
 });
+
+test('content localization requires semantic-unit protection, evidence-backed correction, and contract-bound receipts', () => {
+  const skill = fs.readFileSync(path.join(ROOT, 'SKILL.md'), 'utf8');
+  assert.match(skill, /semantic unit/i);
+  assert.match(skill, /protected marker/i);
+  assert.match(skill, /reviewer.*allegation.*not.*authority/is);
+  assert.match(skill, /translationContractDigest/);
+  assert.match(skill, /references\/zh-CN-localization-contract\.json/);
+  assert.match(skill, /prompts\/translation-agent\.zh-CN\.md/);
+  assert.match(skill, /prompts\/review-agent\.zh-CN\.md/);
+  assert.match(skill, /prompts\/correction-agent\.zh-CN\.md/);
+  assert.match(skill, /--localization-contract/);
+  assert.match(skill, /--audience-profile <audience-profile>/);
+  assert.match(skill, /--product-profile <product-profile>/);
+  assert.match(skill, /--translator-adapter-version <adapter-version>/);
+  assert.match(skill, /--translation-receipts <receipts\.jsonl>/);
+});

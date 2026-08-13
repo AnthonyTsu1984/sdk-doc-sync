@@ -6,6 +6,7 @@ const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 
 const FeishuDocTranslator = require('../src/feishu-doc-translator');
+const { TranslationReceiptStore } = require('../../localized-doc-sync/src/translation-state');
 
 function parseArgs(argv) {
     const args = {};
@@ -37,6 +38,16 @@ function parseArgs(argv) {
             args.dryRun = true;
         } else if (arg === '--auto-approve') {
             args.autoApprove = true;
+        } else if (arg === '--localization-contract') {
+            args.localizationMode = true;
+        } else if (arg === '--audience-profile' && argv[i + 1]) {
+            args.audienceProfile = argv[++i];
+        } else if (arg === '--product-profile' && argv[i + 1]) {
+            args.productProfile = argv[++i];
+        } else if (arg === '--translator-adapter-version' && argv[i + 1]) {
+            args.translatorAdapterVersion = argv[++i];
+        } else if (arg === '--translation-receipts' && argv[i + 1]) {
+            args.translationReceipts = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -67,6 +78,13 @@ Options:
   --action <type>              Filter actions: new, update, all (default: all)
   --dry-run                    Show diff without executing changes
   --auto-approve               Skip interactive approval
+  --localization-contract      Enable contract-bound zh-CN semantic-unit preview (dry-run only)
+  --audience-profile <name>    Localization audience profile
+  --product-profile <name>     Localization product profile
+  --translator-adapter-version <version>
+                               Translator adapter identity bound into the batch
+  --translation-receipts <file>
+                               Schema-v2 translation receipt JSONL
   --help, -h                   Show this help
 
 Environment (.env):
@@ -108,6 +126,46 @@ Examples:
     --target-root KSvxw0h8LiXtIdkpAnCcrl7cnio \\
     --auto-approve
 `);
+}
+
+function buildTranslatorOptions(args, dependencies = {}) {
+    const localizationSkillRoot = dependencies.localizationSkillRoot
+        || path.resolve(__dirname, '../../localized-doc-sync');
+    let translationReceiptStore = null;
+    if (args.localizationMode) {
+        if (args.dryRun !== true) throw new Error('Localization contract mode is dry-run only');
+        for (const [field, flag] of [
+            ['audienceProfile', '--audience-profile'],
+            ['productProfile', '--product-profile'],
+            ['translatorAdapterVersion', '--translator-adapter-version'],
+            ['translationReceipts', '--translation-receipts'],
+        ]) {
+            if (!args[field]) throw new Error(`${flag} is required with --localization-contract`);
+        }
+        translationReceiptStore = dependencies.createTranslationReceiptStore
+            ? dependencies.createTranslationReceiptStore(args.translationReceipts)
+            : new TranslationReceiptStore({ filePath: args.translationReceipts });
+    }
+    return {
+        sourceBitable: args.sourceBitable,
+        targetBitable: args.targetBitable,
+        sourceTableId: args.sourceTableId,
+        targetTableId: args.targetTableId,
+        sourceRoot: args.sourceRoot,
+        targetRoot: args.targetRoot,
+        sourceLang: args.sourceLang || 'en',
+        targetLang: args.targetLang || 'ja',
+        driveType: args.driveType || 'wiki',
+        translatorType: args.translatorType || 'claude',
+        dryRun: args.dryRun || false,
+        approvalCallback: createApprovalCallback(args.autoApprove, args.action),
+        localizationMode: args.localizationMode === true,
+        localizationSkillRoot,
+        audienceProfile: args.audienceProfile,
+        productProfile: args.productProfile,
+        translatorAdapterVersion: args.translatorAdapterVersion,
+        translationReceiptStore,
+    };
 }
 
 function createApprovalCallback(autoApprove, actionFilter) {
@@ -212,20 +270,7 @@ async function main() {
         process.exit(1);
     }
 
-    const translator = new FeishuDocTranslator({
-        sourceBitable: args.sourceBitable,
-        targetBitable: args.targetBitable,
-        sourceTableId: args.sourceTableId,
-        targetTableId: args.targetTableId,
-        sourceRoot: args.sourceRoot,
-        targetRoot: args.targetRoot,
-        sourceLang: args.sourceLang || 'en',
-        targetLang: args.targetLang || 'ja',
-        driveType: args.driveType || 'wiki',
-        translatorType: args.translatorType || 'claude',
-        dryRun: args.dryRun || false,
-        approvalCallback: createApprovalCallback(args.autoApprove, args.action),
-    });
+    const translator = new FeishuDocTranslator(buildTranslatorOptions(args));
 
     try {
         const result = await translator.run();
@@ -237,6 +282,10 @@ async function main() {
             console.log(`  UPDATE: ${result.summary.update}`);
             console.log(`  SKIP: ${result.summary.skip}`);
             console.log(`  ORPHAN: ${result.summary.orphan}`);
+            if (result.localizationMode) {
+                console.log(`Localization actions: ${result.localizationActions.length}`);
+                console.log(`Localization batch: ${result.localizationBatch.batchDigest}`);
+            }
         } else {
             console.log('\n=== Execution Summary ===');
             const succeeded = result.results.filter(r => r.status === 'success').length;
@@ -262,6 +311,7 @@ if (require.main === module) {
 
 module.exports = {
     parseArgs,
+    buildTranslatorOptions,
     createApprovalCallback,
     main,
 };

@@ -32,6 +32,19 @@ test('planner never assigns Targets to section link or ref work', () => {
   }), /Targets.*canonical/i);
 });
 
+test('stale translation contracts create a content review unit', () => {
+  const units = buildReviewUnits({
+    scanManifestDigest: SCAN,
+    issues: [{
+      issueId: 'contract-stale', code: 'TRANSLATION_CONTRACT_STALE', placement: 'canonical',
+      identity: 'canonical:database', translationPairId: 'pair:database',
+    }],
+  });
+  assert.equal(units.length, 1);
+  assert.equal(units[0].kind, 'content');
+  assert.equal(units[0].requiresDocumentAcceptance, true);
+});
+
 test('translator remains a domain adapter and cannot authorize or widen the canonical action set', () => {
   const reviewUnit = { actions: [{ actionId: 'allowed' }] };
   assert.throws(() => adaptTranslatorPlan({ reviewUnit, translatorPlan: { autoApprove: true, actions: [] } }), /cannot become executable authority/i);

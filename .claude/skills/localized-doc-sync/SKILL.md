@@ -38,8 +38,11 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 3. Resolve `canonical:<slug>`, `section:<slug>`, typed internal/external link identity, and locale-specific ref reference sources. Ref rows never form independent translation pairs or review units.
 4. Build a complete immutable issue queue. Validate Parent within each locale; do not require cross-language Parent equality or compare locale-owned metadata directly across languages.
 5. Translate prose, headings, captions, callouts, table prose, and localized UI text. Preserve code, inline code, API names, env vars, URLs, frontmatter tokens, `<!-- feishu-block:` comments, and `<Supademo ... />` components unless explicitly requested otherwise.
-6. Use `localized-doc-sync.js plan` to form one canonical content unit per pair or a strictly homogeneous metadata unit. Every unit cites its scan digest and issue IDs.
-7. Use `localized-doc-sync.js execute` only with an exact action batch, approval envelope, adapter, and write-ahead journal. After each accepted unit, rescan the affected scope; before finalization, perform a fresh full-Base scan.
+6. For content units, load the versioned locale/audience/product contract, expose only stable semantic units, and replace protected bytes with protected markers. Never execute a whole-document model response directly.
+7. Validate reviewer evidence against contiguous source/draft quotes from the same semantic unit. A reviewer allegation is not correction authority; Correction may edit only runner-authorized unit IDs and must preserve every protected marker.
+8. Use `localized-doc-sync.js plan` to form one canonical content unit per pair or a strictly homogeneous metadata unit. Every unit cites its scan digest and issue IDs.
+9. Use `localized-doc-sync.js execute` only with an exact action batch, approval envelope, adapter, and write-ahead journal. After each accepted unit, rescan the affected scope; before finalization, perform a fresh full-Base scan.
+10. Write a schema-v2 receipt containing `translationContractDigest`, prompt and semantic-unit digests, source/target revisions, model, adapter version, and accepted journal lineage. Any identity change invalidates recovery and prior approval. Preserve or explicitly merge `TARGET_LOCAL_EDIT`/`TRANSLATION_DIVERGED`; never overwrite target-local prose implicitly.
 
 Translator adapter diagnostic only; its interactive or auto-approve path is never executable authority:
 
@@ -52,8 +55,13 @@ npm run translate -- \
   --source-root <source-wiki-root> \
   --target-root <target-wiki-root> \
   --source-lang en \
-  --target-lang zh \
+  --target-lang zh-CN \
   --drive-type wiki \
+  --localization-contract \
+  --audience-profile <audience-profile> \
+  --product-profile <product-profile> \
+  --translator-adapter-version <adapter-version> \
+  --translation-receipts <receipts.jsonl> \
   --dry-run
 ```
 
@@ -64,6 +72,9 @@ npm run translate -- \
 - Cross-table and provider identity decisions: [references/identity-overrides.json](references/identity-overrides.json).
 - Canonical tokens, historical alignment evidence, libraries, and media handling: [references/zilliz-localization.md](references/zilliz-localization.md).
 - Development/开发指南 alignment only: [references/development-alignment.md](references/development-alignment.md).
+- Content edit boundary and receipt identity: [references/content-translation-contract.md](references/content-translation-contract.md).
+- Simplified Chinese terminology, audience, and product profiles: [references/zh-CN-localization-contract.json](references/zh-CN-localization-contract.json).
+- Runtime prompts: [prompts/translation-agent.zh-CN.md](prompts/translation-agent.zh-CN.md), [prompts/review-agent.zh-CN.md](prompts/review-agent.zh-CN.md), and [prompts/correction-agent.zh-CN.md](prompts/correction-agent.zh-CN.md).
 - Reuse `../api-reference-sync/src/feishu-doc-translator/`, its Markdown converters, and `lark-cli`; do not create one-off Feishu API clients.
 
 ## Output

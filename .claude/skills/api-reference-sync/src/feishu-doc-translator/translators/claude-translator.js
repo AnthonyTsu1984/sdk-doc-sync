@@ -108,6 +108,129 @@ Text to translate:
 ${text}`;
     }
 
+    async translateSemanticUnits({
+        sourceContent,
+        units,
+        localeContract,
+        audienceProfile,
+        productProfile,
+        translationContractDigest,
+        promptContractDigest,
+        prompts,
+    }) {
+        const prompt = `${prompts?.translation || ''}
+
+<translation_contract>
+${JSON.stringify({
+    translationContractDigest,
+    promptContractDigest,
+    audienceProfile,
+    productProfile,
+    localeContract,
+})}
+</translation_contract>
+
+<document_context>
+${sourceContent}
+</document_context>
+
+<semantic_units>
+${JSON.stringify(units)}
+</semantic_units>`;
+        const message = await this.client.messages.create({
+            model: this.model,
+            max_tokens: 8192,
+            messages: [{ role: 'user', content: prompt }],
+        });
+        const text = message.content?.find((entry) => entry.type === 'text' || typeof entry.text === 'string')?.text;
+        if (typeof text !== 'string') throw new Error('Claude semantic-unit translation returned no text response');
+        try {
+            return JSON.parse(text.trim());
+        } catch (error) {
+            throw new Error(`Claude semantic-unit translation must return exact JSON: ${error.message}`);
+        }
+    }
+
+    async reviewSemanticUnits({
+        sourceUnits,
+        draftUnits,
+        localeContract,
+        audienceProfile,
+        productProfile,
+        translationContractDigest,
+        promptContractDigest,
+        prompt,
+    }) {
+        const content = `${prompt || ''}
+
+<translation_contract>
+${JSON.stringify({ translationContractDigest, promptContractDigest, audienceProfile, productProfile, localeContract })}
+</translation_contract>
+
+<source_units>
+${JSON.stringify(sourceUnits)}
+</source_units>
+
+<draft_units>
+${JSON.stringify(draftUnits)}
+</draft_units>`;
+        const message = await this.client.messages.create({
+            model: this.model,
+            max_tokens: 8192,
+            messages: [{ role: 'user', content }],
+        });
+        const text = message.content?.find((entry) => entry.type === 'text' || typeof entry.text === 'string')?.text;
+        if (typeof text !== 'string') throw new Error('Claude semantic-unit review returned no text response');
+        return text.trim();
+    }
+
+    async correctSemanticUnits({
+        sourceUnits,
+        units,
+        authorizedUnitIds,
+        authorizedIssues,
+        localeContract,
+        audienceProfile,
+        productProfile,
+        translationContractDigest,
+        promptContractDigest,
+        prompt,
+    }) {
+        const content = `${prompt || ''}
+
+<translation_contract>
+${JSON.stringify({ translationContractDigest, promptContractDigest, audienceProfile, productProfile, localeContract })}
+</translation_contract>
+
+<source_units>
+${JSON.stringify(sourceUnits)}
+</source_units>
+
+<authorized_units>
+${JSON.stringify(units)}
+</authorized_units>
+
+<authorized_unit_ids>
+${JSON.stringify(authorizedUnitIds)}
+</authorized_unit_ids>
+
+<authorized_issues>
+${JSON.stringify(authorizedIssues)}
+</authorized_issues>`;
+        const message = await this.client.messages.create({
+            model: this.model,
+            max_tokens: 8192,
+            messages: [{ role: 'user', content }],
+        });
+        const text = message.content?.find((entry) => entry.type === 'text' || typeof entry.text === 'string')?.text;
+        if (typeof text !== 'string') throw new Error('Claude semantic-unit correction returned no text response');
+        try {
+            return JSON.parse(text.trim());
+        } catch (error) {
+            throw new Error(`Claude semantic-unit correction must return exact JSON: ${error.message}`);
+        }
+    }
+
     /**
      * Translate markdown document with better preservation
      * @param {string} markdown - Markdown content

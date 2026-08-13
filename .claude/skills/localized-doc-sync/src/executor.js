@@ -3,8 +3,20 @@
 const { assertApproval } = require('../../doc-ops-core/src/approval-guard');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { assertTranslationRecoveryCompatible } = require('./translation-state');
 
-async function executeReviewUnit({ unit, batch, approval, journalPath, adapter }) {
+async function executeReviewUnit({
+  unit,
+  batch,
+  approval,
+  journalPath,
+  adapter,
+  recoveryReceipt = null,
+  recoveryIdentity = null,
+}) {
+  if (recoveryReceipt || recoveryIdentity) {
+    assertTranslationRecoveryCompatible({ receipt: recoveryReceipt, expected: recoveryIdentity });
+  }
   assertApproval(approval, {
     skill: batch.skill,
     operation: batch.operation,

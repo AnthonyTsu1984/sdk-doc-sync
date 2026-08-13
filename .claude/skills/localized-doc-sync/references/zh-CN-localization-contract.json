@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "contractId": "localized-doc-sync-zh-CN-2026-08-07-p0",
+  "locale": "zh-CN",
+  "audienceProfiles": {
+    "formal-guide": {
+      "readerPronoun": "您",
+      "rule": "Use 您 only when a reader pronoun is necessary; otherwise omit the pronoun."
+    },
+    "developer-tool": {
+      "readerPronoun": "你",
+      "rule": "Use concise second-person developer prose; preserve the source tone when it directly addresses tool users."
+    },
+    "prompt-example": {
+      "readerPronoun": "你",
+      "rule": "Treat the prompt body as user-facing localized prose while preserving code, identifiers, and placeholders."
+    }
+  },
+  "productProfiles": {
+    "global": { "rule": "Preserve the source product scope without adding China-only substitutions." },
+    "china-saas": { "rule": "Do not import Global-only providers, regions, billing, availability, limits, or product claims; use only reviewed identity overrides." },
+    "byoc": { "rule": "Preserve BYOC deployment scope and do not infer SaaS-only behavior." }
+  },
+  "styleRules": [
+    "Use natural, concise Simplified Chinese developer-documentation prose.",
+    "Use Chinese punctuation and readable spaces around English product terms and inline code.",
+    "Use verb-object operation headings and stable noun phrases for concept headings.",
+    "Preserve source meaning, conditions, intensity, and product scope without additions or omissions.",
+    "Use actual localized UI labels when verified; otherwise preserve the source UI label."
+  ],
+  "mandatoryTerms": [
+    { "source": "Compaction", "target": "Compaction", "caseSensitive": true },
+    { "source": "Collection", "target": "Collection", "caseSensitive": true },
+    { "source": "Entity", "target": "Entity", "caseSensitive": true },
+    { "source": "Schema", "target": "Schema", "caseSensitive": true },
+    { "source": "Database", "target": "Database", "caseSensitive": true },
+    { "source": "Partition", "target": "Partition", "caseSensitive": true },
+    { "source": "Analyzer", "target": "Analyzer", "caseSensitive": true }
+  ],
+  "forbiddenTranslations": [
+    { "source": "Compaction", "targets": ["压实", "压缩"] }
+  ],
+  "doNotTranslate": [
+    "Zilliz Cloud",
+    "Milvus",
+    "BYOC",
+    "Serverless",
+    "Dedicated",
+    "AUTOINDEX"
+  ],
+  "contextualTerms": [
+    { "source": "token", "contexts": { "text-analysis": "词元", "authentication": "令牌", "identifier": "preserve" } },
+    { "source": "filter", "contexts": { "analyzer-component": "过滤器", "query-expression": "过滤条件" } },
+    { "source": "compression", "contexts": { "general": "压缩" } }
+  ],
+  "examples": [
+    { "source": "Compaction plans", "bad": "压实计划", "good": "Compaction 计划" },
+    { "source": "// Create a collection", "bad": "// 创建 Collection", "good": "// Create a collection", "note": "Fenced code comments are protected bytes." }
+  ]
+}

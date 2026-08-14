@@ -6,7 +6,12 @@
     { "id": "api.ownership", "description": "Keep method-owned helper types embedded in their public owner pages.", "fixtureIds": ["ann-search-request", "response-wrapper-ownership"] },
     { "id": "api.sparse-versioning", "description": "Preserve sparse release folders and older historical documents.", "fixtureIds": ["sparse-version-copy"] },
     { "id": "api.phase-gates", "description": "Keep grouping, write approval, execution, and acceptance as separate gates.", "fixtureIds": ["phase-gates"] },
-    { "id": "api.scan-state", "description": "Advance scan state only after verified acceptance.", "fixtureIds": ["scan-state-acceptance"] }
+    { "id": "api.scan-state", "description": "Advance scan state only after verified acceptance.", "fixtureIds": ["scan-state-acceptance"] },
+    { "id": "rest.track-scan", "description": "Scan Milvus REST minor tracks independently.", "fixtureIds": ["rest-track-26", "rest-track-30"] },
+    { "id": "rest.lifecycle", "description": "Track operation and contract-element lifecycle metadata at minor granularity.", "fixtureIds": ["rest-lifecycle-fields"] },
+    { "id": "rest.review-unit", "description": "Emit one review unit per version track, endpoint, and method.", "fixtureIds": ["rest-review-manifest"] },
+    { "id": "rest.fragment-collection", "description": "Produce deterministic plane-aware canonical fragment collections bound to full source revisions and review approval.", "fixtureIds": ["rest-fragment-collection"] },
+    { "id": "rest.control-plane-review", "description": "Review control-plane changes from a full base revision to a full head revision without release tracks.", "fixtureIds": ["rest-control-plane-review"] }
   ],
   "mustFix": [
     { "id": "api.exact-approval", "description": "Bind writes to one exact batch digest.", "fixtureIds": ["exact-approval"] },

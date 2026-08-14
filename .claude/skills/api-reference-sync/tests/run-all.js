@@ -13,6 +13,7 @@ const INTEGRATION_TESTS = new Set([
   'operational-harness.test.js',
   'read-consumers.test.js',
   'release-scout-cli.test.js',
+  'rest-track-review-cli.test.js',
   'sdk-doc-sync-cli.test.js',
 ]);
 

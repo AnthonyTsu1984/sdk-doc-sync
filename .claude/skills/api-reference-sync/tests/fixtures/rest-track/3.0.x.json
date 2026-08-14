@@ -1,0 +1,227 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Milvus REST 3.0 fixture",
+    "version": "3.0.x"
+  },
+  "paths": {
+    "/v2/vectordb/entities/search": {
+      "post": {
+        "operationId": "searchEntities",
+        "summary": "Search entities",
+        "x-i18n": {
+          "zh-CN": {
+            "summary": "搜索实体"
+          }
+        },
+        "x-added-at": "2.6.x",
+        "x-last-modified": "3.0.x",
+        "x-deprecated-since": null,
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SearchRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/SearchResponse"
+          }
+        }
+      }
+    },
+    "/v2/vectordb/file_resources/list": {
+      "post": {
+        "operationId": "listFileResources",
+        "summary": "List file resources",
+        "x-added-at": "3.0.x",
+        "x-last-modified": "3.0.x",
+        "x-deprecated-since": null,
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AuthorizationHeader"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FileResourceListRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "$ref": "#/components/responses/FileResourceListResponse"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "AuthorizationHeader": {
+        "name": "Authorization",
+        "in": "header",
+        "required": true,
+        "description": "Authorization token",
+        "schema": {
+          "type": "string"
+        },
+        "x-added-at": "2.6.x",
+        "x-last-modified": "2.6.x",
+        "x-deprecated-since": null
+      }
+    },
+    "schemas": {
+      "SearchRequest": {
+        "type": "object",
+        "required": [
+          "collectionName"
+        ],
+        "x-added-at": "2.6.x",
+        "x-last-modified": "3.0.x",
+        "x-deprecated-since": null,
+        "properties": {
+          "collectionName": {
+            "type": "string",
+            "description": "Collection name",
+            "x-i18n": {
+              "zh-CN": {
+                "description": "集合名称"
+              }
+            },
+            "example": "docs",
+            "x-added-at": "2.6.x",
+            "x-last-modified": "2.6.x",
+            "x-deprecated-since": null
+          },
+          "query": {
+            "type": "object",
+            "x-added-at": "2.6.x",
+            "x-last-modified": "2.6.x",
+            "x-deprecated-since": null,
+            "properties": {
+              "vector": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                },
+                "x-added-at": "2.6.x",
+                "x-last-modified": "2.6.x",
+                "x-deprecated-since": null
+              }
+            }
+          },
+          "functionChains": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "x-added-at": "3.0.x",
+              "x-last-modified": "3.0.x",
+              "x-deprecated-since": null
+            },
+            "x-added-at": "3.0.x",
+            "x-last-modified": "3.0.x",
+            "x-deprecated-since": null
+          }
+        }
+      },
+      "SearchResult": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "x-added-at": "2.6.x",
+        "x-last-modified": "2.6.x",
+        "x-deprecated-since": null,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "int64",
+            "x-added-at": "2.6.x",
+            "x-last-modified": "3.0.x",
+            "x-deprecated-since": null
+          },
+          "score": {
+            "type": "number",
+            "x-added-at": "2.6.x",
+            "x-last-modified": "2.6.x",
+            "x-deprecated-since": null
+          }
+        }
+      },
+      "FileResourceListRequest": {
+        "type": "object",
+        "required": [
+          "databaseName"
+        ],
+        "x-added-at": "3.0.x",
+        "x-last-modified": "3.0.x",
+        "x-deprecated-since": null,
+        "properties": {
+          "databaseName": {
+            "type": "string",
+            "x-added-at": "3.0.x",
+            "x-last-modified": "3.0.x",
+            "x-deprecated-since": null
+          }
+        }
+      },
+      "FileResourceListResult": {
+        "type": "object",
+        "x-added-at": "3.0.x",
+        "x-last-modified": "3.0.x",
+        "x-deprecated-since": null,
+        "properties": {
+          "resources": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "x-added-at": "3.0.x",
+            "x-last-modified": "3.0.x",
+            "x-deprecated-since": null
+          }
+        }
+      }
+    },
+    "responses": {
+      "SearchResponse": {
+        "description": "Search response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/SearchResult"
+            }
+          }
+        },
+        "x-added-at": "2.6.x",
+        "x-last-modified": "2.6.x",
+        "x-deprecated-since": null
+      },
+      "FileResourceListResponse": {
+        "description": "File resource list response",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/FileResourceListResult"
+            }
+          }
+        },
+        "x-added-at": "3.0.x",
+        "x-last-modified": "3.0.x",
+        "x-deprecated-since": null
+      }
+    }
+  }
+}

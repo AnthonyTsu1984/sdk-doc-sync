@@ -10,6 +10,7 @@ const nodeAdapter = require('../src/sdk-reference-ir/adapters/node');
 const goAdapter = require('../src/sdk-reference-ir/adapters/go');
 const cppAdapter = require('../src/sdk-reference-ir/adapters/cpp');
 const cliAdapter = require('../src/sdk-reference-ir/adapters/zilliz-cli');
+const OpenApiScanner = require('../src/sdk-doc-sync/scanners/openapi-scanner');
 
 const fixtureDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -89,6 +90,23 @@ const cases = [
   ['cpp-create-collection.json', cppAdapter, 'cpp', 'Collections'],
   ['cli-project-create.json', cliAdapter, 'zilliz-cli', 'Project'],
 ];
+
+test('OpenAPI scanner enriches operations without removing existing fields', async () => {
+  const scanner = new OpenApiScanner({
+    rootDir: path.join(fixtureDir, 'openapi-create-collection.json'),
+  });
+  const operations = await scanner.scan();
+
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].operationId, 'createCollection');
+  assert.equal(
+    operations[0].operationPointer,
+    '#/paths/~1v2~1vectordb~1collections/post',
+  );
+  assert.equal(operations[0].sourceFile, 'openapi-create-collection.json');
+  assert.equal(operations[0].filePath, 'openapi-create-collection.json');
+  assert.equal(operations[0].kind, 'rest-operation');
+});
 
 test('all scanner adapters produce immutable deterministic production-valid documents', () => {
   for (const [name, adapter, language, category] of cases) {

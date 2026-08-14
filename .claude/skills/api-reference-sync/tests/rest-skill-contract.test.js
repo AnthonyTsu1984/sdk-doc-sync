@@ -53,3 +53,25 @@ test('REST guidance requires manual confirmation instead of guessed public mappi
   assert.match(rest, /OWNERSHIP_AMBIGUOUS/);
   assert.match(rest, /keep that service out of generated publication collections/i);
 });
+
+test('REST guidance requires stable operation identity and complete production validation', () => {
+  assert.match(rest, /unique `operationId`/);
+  assert.match(rest, /normalized `METHOD \+ path`/);
+  assert.match(rest, /never emit an empty identity/i);
+  assert.match(rest, /Alias routes retain independent operation identities/i);
+  assert.match(rest, /`summary` equality alone/i);
+  assert.match(rest, /both `zilliz` and `milvus`/);
+  assert.match(rest, /REST_PAGE_ROUTE_CONFLICT/);
+  assert.match(rest, /clean worktree from the latest target zdoc branch/i);
+  assert.match(rest, /English and Chinese pages into temporary directories/i);
+});
+
+test('REST guidance requires tracked element evidence and defines the managed floor', () => {
+  assert.match(rest, /present at the earliest managed baseline/);
+  assert.match(rest, /does not claim.*first introduced in Milvus 2\.6/i);
+  assert.match(rest, /version-controlled zdoc evidence manifest/i);
+  assert.match(rest, /exact source file/i);
+  assert.match(rest, /directory-only source locator is insufficient/i);
+  assert.match(rest, /zdoc pull request alone is not source evidence/i);
+  assert.match(rest, /Bridge `tmp` artifacts.*not the final evidence location/i);
+});

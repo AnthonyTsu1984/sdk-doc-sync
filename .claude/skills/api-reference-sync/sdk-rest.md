@@ -18,6 +18,13 @@ Milvus data-plane REST is scanned independently from Zilliz Cloud control-plane 
 
 Zilliz Cloud control-plane REST is latest-only. Review it as `baseRevision -> headRevision`, with both refs resolved to full 40-character Git SHAs. Discover only services declared in `config/rest-control-plane-services.json`; never recursively publish every controller or OpenAPI file. Control-plane output may target Zilliz only and must not contain a release track or publication API version.
 
+## Production Operation Identity
+
+- Every public operation must have a unique `operationId` in the canonical zdoc fragment.
+- When a source OpenAPI document omits `operationId`, adapters must use normalized `METHOD + path` as the operation `name` and `stableId` fallback. They must never emit an empty identity such as `rest:<category>:`.
+- Alias routes retain independent operation identities even when they share a handler. Never merge operations or documentation identities from `summary` equality alone.
+- Preserve the established `/restful/<slug>` URL structure. Do not introduce plane or service path levels to avoid an identity collision.
+
 When an auditable collection is useful, `bin/rest-fragments.js` can produce OpenAPI JSON fragments plus `collection-manifest.json`, binding plane, services, source and generator revisions, config digest, review digest, approval digest, and file digests. This output is evidence for review; it does not replace direct edits to zdoc's canonical fragments. zdoc owns integrated assembly, page generation, and S3 publication.
 
 Pinned source inventories and source-backed control-plane reviews are produced with `bin/rest-source-scan.js`. Supplying `--base-revision` scans both full SHAs through the allowlisted adapter and emits review manifests directly; callers must not hand-construct intermediary OpenAPI files:
@@ -91,6 +98,10 @@ Assign lifecycle only from tracked source evidence. For a new data-plane element
 
 Never infer a release track from the fragment number, current date, newest available release, or lifecycle metadata already present in zdoc. Record the source tag/branch, base and head SHAs, relevant Git log/diff, and element-level evidence. If automation cannot map an element, the agent inspects source, tags, history, issues, PRs, and existing task artifacts itself. This is agent confirmation, not a request for the user to make field-by-field judgments. Leave the element unresolved rather than guessing when evidence remains insufficient.
 
+`2.6.x` may be used only as an explicitly approved managed floor. Its meaning is "present at the earliest managed baseline"; it does not claim that an operation or field was first introduced in Milvus 2.6.
+
+Every lifecycle-managed node must have evidence in a version-controlled zdoc evidence manifest. Each entry records the fragment, JSON Pointer, base/head tags and full SHAs, source commit, exact source file, symbol or handler, change classification, rationale, and confidence. A directory-only source locator is insufficient for incremental evidence. Alias and deprecation evidence must cite an actual handler, route constant, source annotation, or source comment; a zdoc pull request alone is not source evidence. Bridge `tmp` artifacts may support investigation but are not the final evidence location.
+
 Control-plane fragments are latest-only and must not receive Milvus lifecycle attributes mechanically.
 
 ## Direct zdoc Editing Contract
@@ -99,8 +110,10 @@ Control-plane fragments are latest-only and must not receive Milvus lifecycle at
 - For a new fragment or a changed category or operation title, synchronize all applicable metadata: `meta/descriptions.json`, `meta/plane-config.json`, and `meta/titles.json`.
 - Derive `titles.json` values with zdoc's current `RefGen` slug behavior. Every Chinese operation summary must map to the same public slug generated from its English summary; do not guess or create a new URL structure.
 - Keep established public routes such as `/restful/<operation-slug>-v2`. Do not introduce `/restful/control-plane/<service>/<slug>` paths or require redirects as part of REST sync.
+- After fragment edits, run page-route uniqueness checks across every fragment independently for both `zilliz` and `milvus`. Resolve every `REST_PAGE_ROUTE_CONFLICT` before submission.
 - Separate large control-plane fragment edits from data-plane lifecycle work so each can be reviewed and reverted independently.
-- Parse every touched JSON file, compare intended fragment changes against the source worktree, run zdoc's REST publication contract tests, and generate English and Chinese pages into a temporary directory. Validation must not upload to S3.
+- Create a clean worktree from the latest target zdoc branch for submission. A dirty master may be retained as an evidence source, but lifecycle-only changes must be migrated to the clean worktree rather than committed from dirty master.
+- Parse every touched JSON file, compare intended fragment changes against the source worktree, run `pnpm test:rest-publication-contract`, lifecycle and `integratedSpecBuilder` tests, RefGen route-uniqueness tests for both targets, and generate English and Chinese pages into temporary directories. Validation must not upload to S3.
 - Do not update `scan-state.json` after discovery or fragment writes. Advance it only after final acceptance of the complete reviewed REST change.
 
 ## Review Unit

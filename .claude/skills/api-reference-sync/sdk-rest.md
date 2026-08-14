@@ -10,13 +10,15 @@ The canonical public REST fragments live in zdoc:
 packages/docs-tooling/src/reference/rest/meta/openapi/
 ```
 
-`api-reference-sync` owns Milvus source discovery, minor-track comparison, lifecycle proposal generation, and deterministic REST review manifests. It must not write zdoc fragments, track snapshots, Feishu records, S3 objects, or `scan-state.json`; those writes are executed by the separately approved zdoc bootstrap migration.
+`api-reference-sync` owns source discovery, comparison, lifecycle proposals, and the approved edits to these zdoc fragments. The operating flow is `api-reference-sync -> agent edits zdoc fragments -> zdoc assembles, validates, and publishes locally`; bridge does not produce a collection that zdoc must fetch. Fragment collections and review manifests are optional audit artifacts, not a cross-repository handoff contract.
+
+Always edit in a current zdoc worktree based on the latest target branch. Never apply a production scan directly to a stale or dirty `master`. Treat dirty worktrees as evidence sources: preserve their unrelated user changes, and migrate only reviewed changes into the current worktree.
 
 Milvus data-plane REST is scanned independently from Zilliz Cloud control-plane REST. `2.6.x` and `3.0.x` are initially supported Milvus tracks.
 
 Zilliz Cloud control-plane REST is latest-only. Review it as `baseRevision -> headRevision`, with both refs resolved to full 40-character Git SHAs. Discover only services declared in `config/rest-control-plane-services.json`; never recursively publish every controller or OpenAPI file. Control-plane output may target Zilliz only and must not contain a release track or publication API version.
 
-Canonical fragment collections are produced with `bin/rest-fragments.js`. They contain OpenAPI JSON fragments plus `collection-manifest.json`, binding plane, services, source and generator revisions, config digest, review digest, approval digest, and file digests. Fragment production writes only the explicit local output path; zdoc owns integrated publication, pages, and S3 writes.
+When an auditable collection is useful, `bin/rest-fragments.js` can produce OpenAPI JSON fragments plus `collection-manifest.json`, binding plane, services, source and generator revisions, config digest, review digest, approval digest, and file digests. This output is evidence for review; it does not replace direct edits to zdoc's canonical fragments. zdoc owns integrated assembly, page generation, and S3 publication.
 
 Pinned source inventories and source-backed control-plane reviews are produced with `bin/rest-source-scan.js`. Supplying `--base-revision` scans both full SHAs through the allowlisted adapter and emits review manifests directly; callers must not hand-construct intermediary OpenAPI files:
 
@@ -85,6 +87,22 @@ Managed scopes:
 
 Do not attach lifecycle metadata to structural containers such as `paths`, `content`, `application/json`, `schema`, or `properties`. Scalar enum members do not receive lifecycle attributes.
 
+Assign lifecycle only from tracked source evidence. For a new data-plane element, set `x-added-at` and `x-last-modified` to the confirmed track and `x-deprecated-since` to `null`. For a changed element, preserve `x-added-at`, advance `x-last-modified` only when the public contract changed, and preserve deprecation history. For a newly deprecated element, also set standard OpenAPI `deprecated: true` and the confirmed `x-deprecated-since`.
+
+Never infer a release track from the fragment number, current date, newest available release, or lifecycle metadata already present in zdoc. Record the source tag/branch, base and head SHAs, relevant Git log/diff, and element-level evidence. If automation cannot map an element, the agent inspects source, tags, history, issues, PRs, and existing task artifacts itself. This is agent confirmation, not a request for the user to make field-by-field judgments. Leave the element unresolved rather than guessing when evidence remains insufficient.
+
+Control-plane fragments are latest-only and must not receive Milvus lifecycle attributes mechanically.
+
+## Direct zdoc Editing Contract
+
+- Preserve all public-doc custom attributes, parameters, schemas, examples, localization, and unrelated user changes unless source-backed review explicitly changes them.
+- For a new fragment or a changed category or operation title, synchronize all applicable metadata: `meta/descriptions.json`, `meta/plane-config.json`, and `meta/titles.json`.
+- Derive `titles.json` values with zdoc's current `RefGen` slug behavior. Every Chinese operation summary must map to the same public slug generated from its English summary; do not guess or create a new URL structure.
+- Keep established public routes such as `/restful/<operation-slug>-v2`. Do not introduce `/restful/control-plane/<service>/<slug>` paths or require redirects as part of REST sync.
+- Separate large control-plane fragment edits from data-plane lifecycle work so each can be reviewed and reverted independently.
+- Parse every touched JSON file, compare intended fragment changes against the source worktree, run zdoc's REST publication contract tests, and generate English and Chinese pages into a temporary directory. Validation must not upload to S3.
+- Do not update `scan-state.json` after discovery or fragment writes. Advance it only after final acceptance of the complete reviewed REST change.
+
 ## Review Unit
 
 The review unit is exactly:
@@ -117,11 +135,11 @@ The manifest is sorted by numeric track, endpoint, and method, and its `manifest
 3. **Compare** adjacent track inventories and assign shared-component changes to operation owners.
 4. **Validate** lifecycle formats, ordering, deprecation metadata, component ownership, and duplicate review units.
 5. **Approve** the exact grouping digest only after reviewing the complete dry-run.
-6. **Hand off** the fixture or real-source manifest to the zdoc session without writing production data.
+6. **Edit and verify** the approved canonical fragments and related zdoc metadata in the current zdoc worktree. Retain any manifest as evidence rather than treating it as a required bridge-to-zdoc transfer.
 
 For control-plane scans, run the agent mapping investigation after source inventory and before review or fragment production. Unresolved mappings are blockers, not warnings that publication may ignore and not confirmation work to hand back to the user.
 
-Do not perform Milvus lifecycle backfill, write production track snapshots, or interact with Feishu/S3 during scanning.
+Do not perform an evidence-free Milvus lifecycle backfill, write production track snapshots, advance `scan-state.json`, or interact with Feishu/S3 during scanning.
 
 ## Deterministic Contracts
 

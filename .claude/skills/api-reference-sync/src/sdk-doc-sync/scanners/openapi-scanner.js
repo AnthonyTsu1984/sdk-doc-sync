@@ -4,6 +4,10 @@ const BaseScanner = require('./base-scanner');
 
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'patch', 'options', 'head', 'trace']);
 
+function escapePointer(segment) {
+  return String(segment).replace(/~/g, '~0').replace(/\//g, '~1');
+}
+
 class OpenApiScanner extends BaseScanner {
     _defaultExcludes() {
         return ['node_modules/**', '.git/**'];
@@ -21,6 +25,7 @@ class OpenApiScanner extends BaseScanner {
                 for (const [method, operation] of Object.entries(pathItem)) {
                     const normalizedMethod = method.toLowerCase();
                     if (!HTTP_METHODS.has(normalizedMethod) || !operation || typeof operation !== 'object') continue;
+                    const sourceFile = path.relative(this.rootDir, filePath) || path.basename(filePath);
                     operations.push({
                         spec,
                         path: operationPath,
@@ -28,6 +33,9 @@ class OpenApiScanner extends BaseScanner {
                         name: operation.operationId || `${normalizedMethod.toUpperCase()} ${operationPath}`,
                         kind: 'rest-operation',
                         filePath: path.relative(this.rootDir, filePath) || path.basename(filePath),
+                        operationPointer: `#/paths/${escapePointer(operationPath)}/${normalizedMethod}`,
+                        operationId: operation.operationId || `${normalizedMethod}:${operationPath}`,
+                        sourceFile,
                         lineNumber: 1,
                     });
                 }

@@ -87,6 +87,28 @@ function restContext() {
   };
 }
 
+test('OpenAPI adapter gives operations without operationId distinct method-path identities', () => {
+  const spec = jsonFixture('openapi-create-collection.json');
+  delete spec.paths['/v2/vectordb/collections'].post.operationId;
+  spec.paths['/v2/vectordb/collections/{collectionName}'] = {
+    post: structuredClone(spec.paths['/v2/vectordb/collections'].post),
+  };
+
+  const first = openapiAdapter.toReferenceDocument(restInput(spec), restContext());
+  const second = openapiAdapter.toReferenceDocument({
+    spec,
+    path: '/v2/vectordb/collections/{collectionName}',
+    method: 'post',
+  }, restContext());
+
+  assert.equal(first.identity.name, 'POST /v2/vectordb/collections');
+  assert.equal(first.identity.stableId, 'rest:Collections:POST /v2/vectordb/collections');
+  assert.equal(second.identity.name, 'POST /v2/vectordb/collections/{collectionName}');
+  assert.equal(second.identity.stableId, 'rest:Collections:POST /v2/vectordb/collections/{collectionName}');
+  assert.notEqual(first.identity.stableId, second.identity.stableId);
+  assert.doesNotMatch(first.identity.stableId, /rest:[^:]*:$/);
+});
+
 test('OpenAPI pipeline normalizes production-valid HTTP metadata and renders the REST golden', () => {
   const input = restInput();
   const before = JSON.stringify(input);

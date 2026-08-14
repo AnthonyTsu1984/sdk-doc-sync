@@ -697,13 +697,14 @@ function toReferenceDocument(input, context = {}) {
     responseDetails,
     context,
   );
+  const operationIdentity = String(operation.operationId || `${normalizedMethod}:${path}`);
   return schema.createReferenceDocument({
     identity: {
       kind: 'rest-operation',
       language: 'rest',
-      name: String(operation.operationId || ''),
+      name: operationIdentity,
       title: String(context.title || operation.summary || operation.operationId || ''),
-      stableId: `rest:${context.category || ''}:${operation.operationId || ''}`,
+      stableId: `rest:${context.category || ''}:${operationIdentity}`,
     },
     source: {
       repository: String(context.repository || ''),

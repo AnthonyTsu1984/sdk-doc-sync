@@ -87,6 +87,15 @@ function restContext() {
   };
 }
 
+test('OpenAPI identity falls back to method and path when operationId is absent', () => {
+  const spec = jsonFixture('openapi-create-collection.json');
+  delete spec.paths['/v2/vectordb/collections'].post.operationId;
+  const reference = openapiAdapter.toReferenceDocument(restInput(spec), restContext());
+
+  assert.equal(reference.identity.name, 'post:/v2/vectordb/collections');
+  assert.equal(reference.identity.stableId, 'rest:Collections:post:/v2/vectordb/collections');
+});
+
 test('OpenAPI pipeline normalizes production-valid HTTP metadata and renders the REST golden', () => {
   const input = restInput();
   const before = JSON.stringify(input);

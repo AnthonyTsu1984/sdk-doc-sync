@@ -102,6 +102,9 @@ Control-plane fragments are latest-only and must not receive Milvus lifecycle at
 - Separate large control-plane fragment edits from data-plane lifecycle work so each can be reviewed and reverted independently.
 - Parse every touched JSON file, compare intended fragment changes against the source worktree, run zdoc's REST publication contract tests, and generate English and Chinese pages into a temporary directory. Validation must not upload to S3.
 - Do not update `scan-state.json` after discovery or fragment writes. Advance it only after final acceptance of the complete reviewed REST change.
+- Give every operation a unique `operationId`. When an upstream spec lacks one, identity adapters must fall back to normalized `method:path`; an empty fallback is forbidden because it collapses unrelated operations in the same category.
+- Keep server compatibility aliases in OpenAPI while the route remains supported. Mark an alias `deprecated: true` only with source evidence, name its replacement in the description, and give same-target aliases distinct page identities. Do not delete a supported deprecated route merely to resolve a documentation collision.
+- Shared handlers and request types are evidence of behavioral relationship, not permission to copy one complete inline schema over another. Preserve documented target, required-field, description, and example differences until source-backed review proves the public contracts equivalent; then prefer a shared `$ref`.
 
 ## Review Unit
 

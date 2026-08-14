@@ -304,38 +304,21 @@ section('Phase 4b: aliases/drop — remove extra collectionName');
     }
 }
 
-section('Phase 4c: databases/alter vs databases/alter_properties alignment');
+section('Phase 4c: databases/alter vs databases/alter_properties drift audit');
 {
-    // Both map to same handler — check if both exist and align them
+    // Both map to the same handler, but public-doc requirements and examples may differ.
+    // Report drift instead of copying one inline contract over the other.
     const alter = spec.paths['/v2/vectordb/databases/alter'];
     const alterProps = spec.paths['/v2/vectordb/databases/alter_properties'];
     if (alter && alterProps) {
-        note('Both databases/alter and databases/alter_properties exist — verifying alignment');
-        // They should reference the same schema or have equivalent schemas
+        note('Both databases/alter and databases/alter_properties exist — auditing schema drift');
         const s1 = alter.post.requestBody?.content?.['application/json']?.schema;
         const s2 = alterProps.post.requestBody?.content?.['application/json']?.schema;
         if (s1 && s2) {
             if (JSON.stringify(s1) === JSON.stringify(s2)) {
                 note('Schemas already match');
             } else {
-                note('Schemas differ — making alter reference alter_properties schema');
-                // Copy the more complete schema
-                if (s2.$ref) {
-                    alter.post.requestBody.content['application/json'].schema = { ...s2 };
-                } else if (s1.$ref) {
-                    alterProps.post.requestBody.content['application/json'].schema = { ...s1 };
-                } else {
-                    // Both inline — use the one with more properties
-                    const p1 = Object.keys(s1.properties || {}).length;
-                    const p2 = Object.keys(s2.properties || {}).length;
-                    if (p2 > p1) {
-                        alter.post.requestBody.content['application/json'].schema = JSON.parse(JSON.stringify(s2));
-                        note(`Copied alter_properties schema (${p2} props) → alter`);
-                    } else if (p1 > p2) {
-                        alterProps.post.requestBody.content['application/json'].schema = JSON.parse(JSON.stringify(s1));
-                        note(`Copied alter schema (${p1} props) → alter_properties`);
-                    }
-                }
+                note('Schemas differ — review source-backed required fields and use a shared $ref only when the complete public contracts are equivalent');
             }
         }
     } else {

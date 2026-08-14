@@ -27,6 +27,7 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 
 - Capability baseline: [capabilities.json](capabilities.json).
 - Canonical artifacts, lineage, approval envelopes, journals, state transitions, and result semantics come from `../doc-ops-core/contracts/` and `../doc-ops-core/src/`.
+- REST/OpenAPI review uses one unit per `(versionTrack, endpoint, method)`, not one unit per rendered document. Read `sdk-rest.md` and use the REST track manifest CLI; the generic Feishu document execution state machine does not apply to zdoc spec-file writes.
 - Full-scope planning emits a deterministic `reviewUnitManifest` with exactly one unit per public document. Do not approve or execute a multi-document release batch.
 - The manifest digest binds the stable document sequence and inter-document prerequisites, not stale future write plans. Replan the selected unit against current live state immediately before approval; its separate batch digest binds the actual resource and document operations.
 - Select one unit with `--review-unit-id <id>`, rerun its scoped dry-run, and approve only that unit's `proposedExecutionBatch.batchDigest` through `--approve-batch-digest <hash>`. A changed artifact, resource plan, comment-driven correction, or unit selection creates a new batch and requires new approval.

@@ -131,6 +131,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/rest-track-review.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-track-review",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

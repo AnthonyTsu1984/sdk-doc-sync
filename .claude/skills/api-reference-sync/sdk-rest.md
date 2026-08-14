@@ -14,6 +14,41 @@ packages/docs-tooling/src/reference/rest/meta/openapi/
 
 Milvus data-plane REST is scanned independently from Zilliz Cloud control-plane REST. `2.6.x` and `3.0.x` are initially supported Milvus tracks.
 
+Zilliz Cloud control-plane REST is latest-only. Review it as `baseRevision -> headRevision`, with both refs resolved to full 40-character Git SHAs. Discover only services declared in `config/rest-control-plane-services.json`; never recursively publish every controller or OpenAPI file. Control-plane output may target Zilliz only and must not contain a release track or publication API version.
+
+Canonical fragment collections are produced with `bin/rest-fragments.js`. They contain OpenAPI JSON fragments plus `collection-manifest.json`, binding plane, services, source and generator revisions, config digest, review digest, approval digest, and file digests. Fragment production writes only the explicit local output path; zdoc owns integrated publication, pages, and S3 writes.
+
+Pinned source inventories and source-backed control-plane reviews are produced with `bin/rest-source-scan.js`. Supplying `--base-revision` scans both full SHAs through the allowlisted adapter and emits review manifests directly; callers must not hand-construct intermediary OpenAPI files:
+
+```bash
+node .claude/skills/api-reference-sync/bin/rest-source-scan.js \
+  --plane control \
+  --repo repos/zilliz-cloud \
+  --base-revision aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  --revision bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
+  --config .claude/skills/api-reference-sync/config/rest-control-plane-services.json \
+  --output tmp/rest-control-plane/source-review.json
+```
+
+## Agent Control-Plane Mapping Investigation
+
+Source adapters extract facts; they do not decide that an internal route is a public API merely because names or paths look similar. Automatic reconciliation is allowed only when the adapter can prove the same HTTP method and public path after applying an already reviewed explicit mapping.
+
+The agent must perform a non-automatic source investigation when any of these conditions occurs. "Manual" here means agent-led inspection beyond the adapter, not user confirmation:
+
+- a Spring mapping uses a constant that the adapter cannot resolve, including constants imported from another Java file;
+- the source exposes an internal route such as `/cloud/v1/...` while zdoc documents `/v2/...`;
+- one public operation combines multiple internal handlers, or one internal handler represents multiple public operations;
+- the public contract changes method, path parameters, request fields, scope selection, or response shape relative to the controller method;
+- the allowlisted controller is missing, ownership is split across controllers or services, or only a similarly named private/SCIM/controller route exists;
+- more than one plausible source route could map to the same zdoc operation.
+
+For each unresolved operation, the agent must inspect the pinned source revision, referenced route constants, controller request/response types, call paths, the existing zdoc fragment, and any repository-local gateway or public API translation layer. The agent records the candidate source route, public route, HTTP method, ownership, transformation notes, source files and lines, and full source SHA. Add an explicit allowlist or route mapping only after that evidence establishes the relationship. Do not delegate routine route confirmation to the user.
+
+Do not infer a mapping from path similarity, controller names, summaries, or Feishu content; path similarity is not approval. Feishu is not control-plane source truth. If repository evidence remains insufficient after the agent completes the investigation, emit `MAPPING_REQUIRED`, `CONTROLLER_MISSING`, or `OWNERSHIP_AMBIGUOUS`, keep that service out of generated publication collections, and report the exact unresolved evidence. This blocker does not turn route-by-route verification into a user task.
+
+Once the agent confirms the mapping from repository evidence, store it in the reviewed control-plane config rather than hard-coding a service-specific exception in the generic adapter. Extend adapter code only when the source uses a reusable language or framework pattern, such as cross-file Java string constants, that should be parsed consistently for multiple controllers.
+
 ## Track Model
 
 - Each track keeps only the latest patch contract. For example, `2.6.x` means the latest available Milvus 2.6 shape.
@@ -66,8 +101,8 @@ The CLI scans each track and emits the deterministic grouping manifest:
 node .claude/skills/api-reference-sync/bin/rest-track-review.js \
   --track-spec 2.6.x=.claude/skills/api-reference-sync/tests/fixtures/rest-track/2.6.x.json \
   --track-spec 3.0.x=.claude/skills/api-reference-sync/tests/fixtures/rest-track/3.0.x.json \
-  --source-revision 2.6.x=milvus-io/milvus@v2.6.22 \
-  --source-revision 3.0.x=milvus-io/milvus@v3.0.0 \
+  --source-revision 2.6.x=milvus-io/milvus@aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  --source-revision 3.0.x=milvus-io/milvus@bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   --managed-floor 2.6.x \
   --output tmp/rest-track-review/manifest.json \
   --json
@@ -83,6 +118,8 @@ The manifest is sorted by numeric track, endpoint, and method, and its `manifest
 4. **Validate** lifecycle formats, ordering, deprecation metadata, component ownership, and duplicate review units.
 5. **Approve** the exact grouping digest only after reviewing the complete dry-run.
 6. **Hand off** the fixture or real-source manifest to the zdoc session without writing production data.
+
+For control-plane scans, run the agent mapping investigation after source inventory and before review or fragment production. Unresolved mappings are blockers, not warnings that publication may ignore and not confirmation work to hand back to the user.
 
 Do not perform Milvus lifecycle backfill, write production track snapshots, or interact with Feishu/S3 during scanning.
 

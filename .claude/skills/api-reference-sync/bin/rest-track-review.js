@@ -6,6 +6,7 @@ const path = require('node:path');
 const {inventoryOpenApi} = require('../src/rest-track/openapi-inventory');
 const {buildRestReviewManifest} = require('../src/rest-track/review-manifest');
 const {normalizeReleaseTrack} = require('../src/rest-track/release-track');
+const FULL_SHA = /^[a-f0-9]{40}$/;
 
 class UsageError extends Error {
   constructor(message) {
@@ -41,10 +42,12 @@ function parseSourceRevision(value) {
   if (at <= 0 || at === source.length - 1) {
     throw new UsageError(`Invalid --source-revision source: ${value}`);
   }
+  const revision = source.slice(at + 1);
+  if (!FULL_SHA.test(revision)) throw new UsageError(`Source revision must be a full Git SHA: ${value}`);
   return {
     track,
     repository: source.slice(0, at),
-    revision: source.slice(at + 1),
+    revision,
   };
 }
 

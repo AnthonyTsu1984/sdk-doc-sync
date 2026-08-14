@@ -138,6 +138,20 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-fragments",
+      "basis": "writes deterministic local artifacts only; no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/rest-source-scan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-source-scan",
+      "basis": "reads pinned Git objects and writes deterministic local evidence only"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

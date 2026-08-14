@@ -28,7 +28,28 @@ test('capabilities expose REST track scanning, lifecycle, and review units', () 
     ...capabilities.mustFix,
     ...capabilities.forbidden,
   ];
-  for (const id of ['rest.track-scan', 'rest.lifecycle', 'rest.review-unit']) {
+  for (const id of ['rest.track-scan', 'rest.lifecycle', 'rest.review-unit', 'rest.fragment-collection', 'rest.control-plane-review']) {
     assert.ok(records.some((record) => record.id === id), id);
   }
+});
+
+test('REST guidance binds control plane to zilliz-cloud and full revisions', () => {
+  assert.match(rest, /Zilliz Cloud/);
+  assert.match(rest, /full 40-character Git SHAs/);
+  assert.match(rest, /latest-only/);
+  assert.match(rest, /collection-manifest\.json/);
+  assert.doesNotMatch(rest, /control-plane.*Feishu.*source of truth/i);
+});
+
+test('REST guidance requires manual confirmation instead of guessed public mappings', () => {
+  assert.match(skill, /must never guess an internal-to-public control-plane mapping/i);
+  assert.match(rest, /Agent Control-Plane Mapping Investigation/);
+  assert.match(rest, /not user confirmation/i);
+  assert.match(rest, /Do not delegate routine route confirmation to the user/i);
+  assert.match(rest, /does not turn route-by-route verification into a user task/i);
+  assert.match(rest, /path similarity.*not approval/is);
+  assert.match(rest, /MAPPING_REQUIRED/);
+  assert.match(rest, /CONTROLLER_MISSING/);
+  assert.match(rest, /OWNERSHIP_AMBIGUOUS/);
+  assert.match(rest, /keep that service out of generated publication collections/i);
 });

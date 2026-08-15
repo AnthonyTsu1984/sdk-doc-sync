@@ -49,8 +49,9 @@
     "lastScanDate": "2026-07-27"
   },
   "rest": {
-    "lastScannedTag": "v2.6.14",
-    "lastScanDate": "2026-04-14"
+    "lastScannedTag": "v3.0.0",
+    "lastScannedCommit": "f46a0328558be155d11266a1a2b90602ccc9b366",
+    "lastScanDate": "2026-08-15"
   },
   "zilliz-cli": {
     "lastScannedTag": "zilliz-v1.4.4",

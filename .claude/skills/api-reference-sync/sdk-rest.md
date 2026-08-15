@@ -114,6 +114,17 @@ Control-plane fragments are latest-only and must not receive Milvus lifecycle at
 - Separate large control-plane fragment edits from data-plane lifecycle work so each can be reviewed and reverted independently.
 - Create a clean worktree from the latest target zdoc branch for submission. A dirty master may be retained as an evidence source, but lifecycle-only changes must be migrated to the clean worktree rather than committed from dirty master.
 - Parse every touched JSON file, compare intended fragment changes against the source worktree, run `pnpm test:rest-publication-contract`, lifecycle and `integratedSpecBuilder` tests, RefGen route-uniqueness tests for both targets, and generate English and Chinese pages into temporary directories. Validation must not upload to S3.
+- Run the real legacy REST producer path as well. The standalone tests and publication-contract checks do not exercise the legacy producer's `loadSpecifications` merge over all fragments:
+
+```bash
+pnpm docs-tooling publish-group --site en --group rest --stage fetch
+pnpm docs-tooling publish-group --site en --group rest --stage validate
+```
+
+Record both commands in the final acceptance journal beside `pnpm test:rest-publication-contract`.
+- New data-plane fragments must copy shared components from an existing canonical data-plane fragment instead of regenerating approximate copies. In particular, copy `components["x-base-urls"]`, `components.securitySchemes`, and any reused response schemas from an established fragment such as `05-collection-operations-v2.json`. Do not create a reduced `x-base-urls` block with only the cluster endpoint.
+- Treat `x-zdoc-fragment` as integrated-spec source identity, not as a merged OpenAPI field. The canonical fragment may carry it, but `specLoader.js` legacy merge must skip that field. Ensure `specLoader.test.js` has a regression test for canonical-fragment identity during legacy merge.
+- `fragmentInventorySha256` is byte-bound to the canonical fragment set. If any later correction changes shared components or merge compatibility, recompute the evidence summary and fragment-inventory hash in the same atomic write unit; never leave evidence pointing at old fragment bytes.
 - Do not update `scan-state.json` after discovery or fragment writes. Advance it only after final acceptance of the complete reviewed REST change.
 
 ## Review Unit

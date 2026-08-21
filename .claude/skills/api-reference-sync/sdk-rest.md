@@ -16,7 +16,25 @@ Always edit in a current zdoc worktree based on the latest target branch. Never 
 
 Milvus data-plane REST is scanned independently from Zilliz Cloud control-plane REST. `2.6.x` and `3.0.x` are initially supported Milvus tracks.
 
-Zilliz Cloud control-plane REST is latest-only. Review it as `baseRevision -> headRevision`, with both refs resolved to full 40-character Git SHAs. Discover only services declared in `config/rest-control-plane-services.json`; never recursively publish every controller or OpenAPI file. Control-plane output may target Zilliz only and must not contain a release track or publication API version.
+Zilliz Cloud control-plane REST is latest-only. Review it as `baseRevision -> headRevision`, with both refs resolved to full 40-character Git SHAs. The canonical base revision is stored in `scan-state.json` under the `"control-plane"` key. When no explicit `--base-revision` is supplied, `rest-source-scan.js` falls back to `scan-state.json`'s `lastScannedHeadRevision` as the base, and resolves the repository's current `origin/master` (or user-supplied `--revision`) as the head. Discover only services declared in `config/rest-control-plane-services.json`; never recursively publish every controller or OpenAPI file. Control-plane output may target Zilliz only and must not contain a release track or publication API version.
+
+Control-plane `scan-state.json` entry format:
+
+```json
+{
+  "control-plane": {
+    "repository": "zilliz-cloud",
+    "lastScannedBaseRevision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "lastScannedHeadRevision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "lastScanDate": "2026-07-31"
+  }
+}
+```
+
+- `repository`: the source repo key under `repos/` (e.g. `zilliz-cloud`).
+- `lastScannedBaseRevision`: the previous scan's base SHA; used as the default base for the next incremental scan.
+- `lastScannedHeadRevision`: the previous scan's head SHA; becomes the default base for the next scan.
+- `lastScanDate`: ISO 8601 date of the last accepted scan.
 
 ## Production Operation Identity
 

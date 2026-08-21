@@ -19,6 +19,15 @@ function writeJson(file, value) {
   fs.writeFileSync(file, `${JSON.stringify(value, null, 2)}\n`);
 }
 
+function loadControlPlaneBaseRevision(scanStatePath) {
+  try {
+    const scanState = JSON.parse(fs.readFileSync(scanStatePath, 'utf8'));
+    return scanState['control-plane']?.lastScannedHeadRevision || null;
+  } catch {
+    return null;
+  }
+}
+
 function main(argv = process.argv) {
   const options = args(argv);
   if (options.plane === 'data') {
@@ -29,8 +38,16 @@ function main(argv = process.argv) {
   if (options.plane === 'control') {
     const config = JSON.parse(fs.readFileSync(options.config, 'utf8'));
     const inventory = scanZillizCloudRoutes({repo: options.repo, revision: options.revision, config});
-    if (options['base-revision']) {
-      const baseInventory = scanZillizCloudRoutes({repo: options.repo, revision: options['base-revision'], config});
+    let baseRevision = options['base-revision'];
+    if (!baseRevision) {
+      const scanStatePath = path.resolve(__dirname, '..', 'scan-state.json');
+      baseRevision = loadControlPlaneBaseRevision(scanStatePath);
+      if (baseRevision) {
+        process.stderr.write(`Using control-plane base revision from scan-state.json: ${baseRevision}\n`);
+      }
+    }
+    if (baseRevision) {
+      const baseInventory = scanZillizCloudRoutes({repo: options.repo, revision: baseRevision, config});
       writeJson(options.output, buildSourceControlPlaneReview({baseInventory, headInventory: inventory}));
       return 0;
     }

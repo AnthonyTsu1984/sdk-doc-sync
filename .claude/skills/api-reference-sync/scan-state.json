@@ -53,6 +53,12 @@
     "lastScannedCommit": "f46a0328558be155d11266a1a2b90602ccc9b366",
     "lastScanDate": "2026-08-15"
   },
+  "control-plane": {
+    "repository": "zilliz-cloud",
+    "lastScannedBaseRevision": "55a46d27b654bb5e6b3c40cfbb3d4093173d363f",
+    "lastScannedHeadRevision": "52d63b347563838db7167fcb04ed42b61e294f3b",
+    "lastScanDate": "2026-08-21"
+  },
   "zilliz-cli": {
     "lastScannedTag": "zilliz-v1.4.4",
     "lastScannedCommit": "41287924b71e27ed8781e7afec82311175c5085b",

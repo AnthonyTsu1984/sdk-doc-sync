@@ -20,6 +20,12 @@ const SDKS = [
   { key: 'rest',   repo: 'repos/milvus',            tagFilter: /^v\d+\.\d+\.\d+$/ },
 ];
 
+const CONTROL_PLANE = {
+  key: 'control-plane',
+  repo: 'repos/zilliz-cloud',
+  branch: 'origin/master',
+};
+
 const DRY_RUN = process.argv.includes('--dry-run');
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
@@ -43,6 +49,11 @@ function getLatestTag(repoPath, tagFilter) {
 
 // ── Main ────────────────────────────────────────────────────────────────────
 
+function getRemoteHead(repoPath, branch) {
+  const result = run(`git -C "${repoPath}" rev-parse ${branch}`);
+  return result || null;
+}
+
 function main() {
   const scanState = JSON.parse(fs.readFileSync(SCAN_STATE_PATH, 'utf-8'));
   const updates = [];
@@ -50,13 +61,11 @@ function main() {
   for (const sdk of SDKS) {
     const repoPath = path.join(PROJECT_ROOT, sdk.repo);
 
-    // Verify repo exists
     if (!fs.existsSync(repoPath)) {
       console.log(`[WARN] ${sdk.key}: repo not found at ${sdk.repo}`);
       continue;
     }
 
-    // Fetch latest tags
     if (!DRY_RUN) {
       run(`git -C "${repoPath}" fetch --tags --quiet`);
     }
@@ -83,14 +92,40 @@ function main() {
     }
   }
 
+  {
+    const cp = CONTROL_PLANE;
+    const repoPath = path.join(PROJECT_ROOT, cp.repo);
+    if (fs.existsSync(repoPath)) {
+      if (!DRY_RUN) {
+        run(`git -C "${repoPath}" fetch origin --quiet`);
+      }
+      const latestHead = getRemoteHead(repoPath, cp.branch);
+      const lastScanned = scanState[cp.key]?.lastScannedHeadRevision;
+
+      if (!latestHead) {
+        console.log(`[WARN] ${cp.key}: unable to resolve ${cp.branch}`);
+      } else if (!lastScanned) {
+        console.log(`[INFO] ${cp.key}: no previous scan — latest is ${latestHead.slice(0, 12)}`);
+        updates.push({ key: cp.key, from: '(none)', to: latestHead.slice(0, 12) });
+      } else if (latestHead !== lastScanned) {
+        console.log(`[NEW]  ${cp.key}: ${lastScanned.slice(0, 12)} → ${latestHead.slice(0, 12)}`);
+        updates.push({ key: cp.key, from: lastScanned.slice(0, 12), to: latestHead.slice(0, 12) });
+      } else {
+        console.log(`[OK]   ${cp.key}: ${lastScanned.slice(0, 12)} (up to date)`);
+      }
+    } else {
+      console.log(`[WARN] ${cp.key}: repo not found at ${cp.repo}`);
+    }
+  }
+
   // Summary
   console.log('');
   if (updates.length === 0) {
-    console.log('All SDKs up to date. No notification sent.');
+    console.log('All SDKs and control-plane up to date. No notification sent.');
     process.exit(0);
   }
 
-  console.log(`${updates.length} SDK update(s) detected:`);
+  console.log(`${updates.length} update(s) detected:`);
   for (const u of updates) {
     console.log(`  - ${u.key}: ${u.from} → ${u.to}`);
   }
@@ -98,7 +133,7 @@ function main() {
   // Build Feishu message
   const today = new Date().toISOString().slice(0, 10);
   const lines = updates.map(u => `- **${u.key}**: ${u.from} → **${u.to}**`).join('\n');
-  const markdown = `**SDK Version Update${updates.length > 1 ? 's' : ''}** (${today})\n\n${lines}\n\nRun \`/scan\` in Claude to sync docs.`;
+  const markdown = `**Version Update${updates.length > 1 ? 's' : ''}** (${today})\n\n${lines}\n\nRun \`/scan\` in Claude to sync docs.`;
 
   if (DRY_RUN) {
     console.log('\n[DRY RUN] Would send Feishu message:');

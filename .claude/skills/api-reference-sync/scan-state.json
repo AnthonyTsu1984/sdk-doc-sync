@@ -60,10 +60,10 @@
     "lastScanDate": "2026-08-21"
   },
   "zilliz-cli": {
-    "lastScannedTag": "zilliz-v1.4.4",
-    "lastScannedCommit": "41287924b71e27ed8781e7afec82311175c5085b",
-    "lastScannedImplementationCommit": "14b5dc47a029a0c8908a47daa035b269e3247ce1",
-    "lastScanDate": "2026-06-17"
+    "lastScannedTag": "zilliz-v1.4.5",
+    "lastScannedCommit": "db4d79ae2f95fe7026af501a2d724e3cb54d57fd",
+    "lastScannedImplementationCommit": "42674a00951f258a029a0fb0a6ed9a033c520a90",
+    "lastScanDate": "2026-08-24"
   },
   "node-v26": {
     "lastScannedTag": "v2.6.17",

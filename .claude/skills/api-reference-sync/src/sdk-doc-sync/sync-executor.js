@@ -883,7 +883,9 @@ class SyncExecutor {
       return await this.documentWriter.patch_document({
         document_id: input.documentToken,
         blocks,
-        strategy: 'smart',
+        // Verbatim artifacts (merged-PR pages) replace the whole body in order;
+        // smart matching would merge the new content into the old layout.
+        strategy: artifact.patchStrategy === 'replace' ? 'replace' : 'smart',
       });
     }
     throw new TypeError('documentWriter must expose patchDocument() or patch_document()');

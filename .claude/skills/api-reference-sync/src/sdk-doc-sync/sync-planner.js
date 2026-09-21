@@ -115,6 +115,7 @@ function targetFrom(context) {
   };
   if (target.parentRecordRef !== undefined) result.parentRecordRef = target.parentRecordRef ?? null;
   if (target.folderRef !== undefined) result.folderRef = target.folderRef ?? null;
+  if (target.recordType !== undefined) result.recordType = target.recordType ?? null;
   return result;
 }
 

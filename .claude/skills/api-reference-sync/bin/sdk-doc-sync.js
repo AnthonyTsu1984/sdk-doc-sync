@@ -333,10 +333,24 @@ function createSchemaFirstArtifactProvider({
 
     return async (action, scope = {}) => {
         if (!['CREATE', 'UPDATE', 'BACKFILL'].includes(action?.type)) return undefined;
+        const context = referenceContextProvider
+            ? await referenceContextProvider(action, scope)
+            : defaultReferenceContext(action);
+        // Merged-PR pages are solidified verbatim: when the reviewed context
+        // carries the upstream markdown, it replaces the schema-first
+        // regenerated document entirely (block-replace patch strategy).
+        if (action?.pr && typeof context?.verbatimContent === 'string' && context.verbatimContent.trim()) {
+            return {
+                reviewed: true,
+                validated: true,
+                content: context.verbatimContent,
+                patchStrategy: 'replace',
+                title: context.title,
+                metadata: { description: context.summary },
+                pr: context.pr || null,
+            };
+        }
         try {
-            const context = referenceContextProvider
-                ? await referenceContextProvider(action, scope)
-                : defaultReferenceContext(action);
             const source = language === 'rest' && context?.input ? context.input : action.symbol;
             const reference = adapter.toReferenceDocument(source, context || {});
             const referenceValidation = validateReferenceDocument(reference, { production: true });

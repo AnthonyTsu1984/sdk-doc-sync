@@ -905,6 +905,9 @@ class SdkDocSync {
                     ],
                     sourceVariants,
                     planningContext: scoped.planningContext || action.planningContext,
+                    // PR provenance rides the remapped action so the artifact
+                    // provider can select verbatim merged-PR content.
+                    pr: scoped.pr || action.pr || null,
                     target: scoped.target || action.target,
                     documentationOwnership: scoped.documentationOwnership || action.documentationOwnership,
                     releaseScopeAction: scoped,

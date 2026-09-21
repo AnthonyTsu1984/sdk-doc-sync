@@ -1903,7 +1903,7 @@ test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs'
   assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.canonicalSlug, action.source.file]), [
     ['CREATE', 'cpp:CDC:GetReplicateInfo', 'CDC-GetReplicateInfo', 'src/include/milvus/MilvusClientV2.h'],
     ['CREATE', 'cpp:Management:FlushAll', 'v2-Management-FlushAll', 'src/include/milvus/MilvusClientV2.h'],
-    ['UPDATE', 'cpp:Management:GetLoadState', 'v2-Management-GetLoadState', 'src/include/milvus/MilvusClientV2.h'],
+    ['UPDATE', 'cpp:Management:GetLoadState', 'Management-GetLoadState', 'src/include/milvus/MilvusClientV2.h'],
   ]);
 });
 

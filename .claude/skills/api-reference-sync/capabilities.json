@@ -11,7 +11,8 @@
     { "id": "rest.lifecycle", "description": "Track operation and contract-element lifecycle metadata at minor granularity.", "fixtureIds": ["rest-lifecycle-fields"] },
     { "id": "rest.review-unit", "description": "Emit one review unit per version track, endpoint, and method.", "fixtureIds": ["rest-review-manifest"] },
     { "id": "rest.fragment-collection", "description": "Produce deterministic plane-aware canonical fragment collections bound to full source revisions and review approval.", "fixtureIds": ["rest-fragment-collection"] },
-    { "id": "rest.control-plane-review", "description": "Review control-plane changes from a full base revision to a full head revision without release tracks.", "fixtureIds": ["rest-control-plane-review"] }
+    { "id": "rest.control-plane-review", "description": "Review control-plane changes from a full base revision to a full head revision without release tracks.", "fixtureIds": ["rest-control-plane-review"] },
+    { "id": "api.pr-intake", "description": "Turn a merged web-content API-reference PR into a schema-valid release-scope artifact whose page changes are verified against SDK source at a pinned revision, with record-level Feishu conflict flags.", "fixtureIds": ["pr-intake"] }
   ],
   "mustFix": [
     { "id": "api.exact-approval", "description": "Bind writes to one exact batch digest.", "fixtureIds": ["exact-approval"] },

@@ -569,4 +569,6 @@ module.exports = {
   runReleaseScout,
   defaultIdentityMapPath,
   materializeSnapshot,
+  scanRefSymbols,
+  scanStateKeyFor,
 };

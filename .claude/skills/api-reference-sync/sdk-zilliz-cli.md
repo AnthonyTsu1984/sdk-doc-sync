@@ -8,8 +8,8 @@
 - **Public release repo:** `repos/zilliz-cli/` (`github.com/zilliztech/zilliz-cli`)
 - **Language:** Rust (Cargo.toml + clap derive macros)
 - **Binary names:** `zilliz` and `zz`
-- **Latest scanned public release:** `zilliz-v1.4.4` (scanned 2026-06-17)
-- **Latest scanned implementation commit:** `14b5dc47a029a0c8908a47daa035b269e3247ce1` in `repos/zilliz-cloud/vdc/zilliz-tui`
+- **Latest scanned public release:** `zilliz-v1.4.5` (scanned 2026-08-24)
+- **Latest scanned implementation commit:** `42674a00951f258a029a0fb0a6ed9a033c520a90` in `repos/zilliz-cloud/vdc/zilliz-tui`
 - **Source:** `repos/zilliz-cloud/vdc/zilliz-tui/src/`
 - **CLI dispatch:** `src/cli/args.rs` (clap definitions) + `src/lib.rs` (op dispatch table)
 - **Resource models:** `src/model/builtin_models/control-plane.json` and `data-plane.json`
@@ -21,7 +21,7 @@
 | Field | v1.3.x | v1.4.x |
 |-------|--------|--------|
 | Bitable | `Rr4lbWr8baQj5psICV9cEFa2nYe` | `Lx1bbCdpMaSmJXs8wz5cjsDengf` |
-| Table | `tblpQmRZvCES9KCF` | `tblpQmRZvCES9KCF` |
+| Table | `tblpQmRZvCES9KCF` | `tblpP0OITBDkNAsN` |
 | Drive folder | `QBLKf6CCPloK0cddw6gcXUZqnob` | `LF1Kf54jFllUBydVk7hcha30nUh` |
 | Shared drive root | `EsDFfU9OQlcdBldL1jVcCwpfnPd` | `EsDFfU9OQlcdBldL1jVcCwpfnPd` |
 
@@ -98,6 +98,7 @@ node .claude/skills/api-reference-sync/bin/sdk-release-scout.js \
 - If the latest public release still equals `scan-state.json.lastScannedTag`, report `NO_RELEASE_CHANGES`; implementation-only changes are `UNRELEASED_IMPLEMENTATION_CHANGES` and are not approval-ready.
 - For a new public release, pass `--implementation-baseline-ref` and `--implementation-target-ref` pinned to the matching `zilliz-tui` implementation commits. Do not use `origin/master` as an approval-grade release target.
 - Only ask for sync approval after a public release exists and the release-scout artifact has no unmapped identity diagnostics.
+- **"Docs applied but scan-state not advanced" state:** the live bitable may already contain a release's content (docs created, records deprecated/patched) even though `scan-state.json` still points at an older tag. This happens when a sync script (e.g. `update-v144-v145.js`) was executed but the final `scan-state.json` advancement was skipped. Detect it by running the update script with `--dry-run` — if it reports `skipped: N (already exists)` / `marker already present` for everything, the docs are already applied; the remaining work is only advancing `scan-state.json` (public tag + matching implementation commit). Do not re-run the script non-dry-run or re-create docs in this state.
 
 ### Cross-repo mapping workflow (zilliz-cli ↔ zilliz-cloud/vdc/zilliz-tui)
 
@@ -109,6 +110,7 @@ Use this when public release tags are in `zilliztech/zilliz-cli` but implementat
 2. Diff public repo tags to detect packaging/docs-only churn:
    - `git -C repos/zilliz-cli diff --name-status <old-tag>..<new-tag>`
    - If changes are only `README.md`, `install.*`, `docs/*`, treat as **packaging/docs delta**.
+   - **Stale local checkout warning:** the local `repos/zilliz-cloud` worktree can lag `origin/master` (e.g. it may lack recently added resources or show old flag choices). Always verify implementation truth with `git show origin/master:<path>` / `git log origin/master` instead of the working tree, and diff implementation commits with `git diff <baseline>..origin/master`. Never trust the working tree's model JSON or Rust sources for approval-grade validation.
 3. Extract release-note command deltas:
    - Run `zilliz-cli-release-impact.js` and inspect `candidateDocImpacts`, `packagingChanges`, `nonPackagingChanges`, and diagnostics.
    - Use manual release-note reading only to explain low-confidence or ambiguous artifact entries.
@@ -136,12 +138,11 @@ Storage-integration docs are handled by `.claude/skills/api-reference-sync/scrip
 
 Important: the public `zilliz-cli` repo can be release-oriented and may not contain full Rust source at each tag. Do not infer “no command changes” from file diffs alone; always parse release notes and then validate against `zilliz-cloud/vdc/zilliz-tui` source/model files.
 
-### Current unreleased candidates after `zilliz-v1.4.4`
+### Current unreleased candidates after `zilliz-v1.4.5`
 
-Do not sync these until a public release after `zilliz-v1.4.4` exists:
+Do not sync these until a public release after `zilliz-v1.4.5` exists:
 
-- `cluster create`: dedicated clusters support `--replica`, `--autoscaling-cu-min`, and `--autoscaling-cu-max`. Dynamic CU min/max must be supplied together and cannot be combined with `--cu-size`.
-- `stage`: resource is deprecated in favor of `volume`; hidden from grouped help, shell completion, and available-resource hints, but `stage list/create/delete/apply` remain executable for compatibility.
+- `cluster create`: dedicated clusters support `--replica`, `--autoscaling-cu-min`, and `--autoscaling-cu-max`. Dynamic CU min/max must be supplied together and cannot be combined with `--cu-size`. (Implementation commit `08b03ca084`, 2026-06-30 — merged after the v1.4.5 changelog cut; absent from v1.4.5 release notes. If a later release's notes mention it, validate against `src/cli/cluster.rs` before syncing.)
 
 ---
 

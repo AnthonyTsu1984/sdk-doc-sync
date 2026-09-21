@@ -73,7 +73,21 @@ class SyncVerifier {
     if (needsRecord && !this.readRecord) {
       errors.push({ code: 'RECORD_READER_REQUIRED' });
     } else if (needsRecord) {
-      record = await this.readRecord(targetLink?.recordId || plan.source.recordId, { plan });
+      // A CREATE produced a brand-new record; the plan's source has none and
+      // TARGET_LINK.recordId is the 'NEW_RECORD_ID' placeholder. Use the
+      // execution's actual created record when present.
+      const executionRecord = execution?.record || execution?.createdRecord || null;
+      const executionRecordId = executionRecord?.record_id
+        || executionRecord?.recordId
+        || executionRecord?.id
+        || null;
+      const plannedRecordId = targetLink?.recordId && targetLink.recordId !== 'NEW_RECORD_ID'
+        ? targetLink.recordId
+        : plan.source?.recordId;
+      const readId = executionRecordId || plannedRecordId || null;
+      if (readId) {
+        record = await this.readRecord(readId, { plan });
+      }
       if (targetLink && record?.documentToken !== token) {
         errors.push({ code: 'TARGET_LINK', expected: token, actual: record?.documentToken ?? null });
       }

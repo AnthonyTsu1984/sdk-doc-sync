@@ -189,14 +189,21 @@ function toReferenceDocument(symbol, context = {}) {
     : [];
   const requestFields = [];
   const seenRequestFields = new Set();
+  // Reviewed context descriptions win over scanner defaults: the grouping
+  // review (and any doc review polish) is the authoritative copy.
+  const contextParamDescriptions = new Map((context?.params || []).map((param) => [param.name, param.description]));
   for (const param of symbol.params || []) {
     const name = param.argName || param.name;
     if (!name || seenRequestFields.has(name)) continue;
     seenRequestFields.add(name);
+    // Reviewed-context descriptions are keyed by the builder method name
+    // (e.g. WithRoleName), not the argument name.
+    const reviewedDescription = contextParamDescriptions.get(param.name);
     requestFields.push({
       ...param,
       name,
       type: param.type || param.fullArgStr || 'value',
+      ...(reviewedDescription ? { description: reviewedDescription } : {}),
     });
   }
   let requestVariants = symbol.requestClass ? [common.makeRequestVariant({
@@ -217,6 +224,11 @@ function toReferenceDocument(symbol, context = {}) {
   }
   const callableMembers = symbol.requestClass ? (symbol.params || []).map((member) => {
     const contextualInputs = context.memberInputs?.[member.name];
+    // Reviewed-context descriptions are keyed by the builder method name.
+    const reviewedMemberDescription = contextParamDescriptions.get(member.name);
+    const effectiveMember = reviewedMemberDescription
+      ? { ...member, description: reviewedMemberDescription }
+      : member;
     const signatureInputs = Array.isArray(contextualInputs)
       ? contextualInputs
       : Array.isArray(member.inputs)
@@ -226,7 +238,7 @@ function toReferenceDocument(symbol, context = {}) {
           : member.argName ? [{ ...member, name: member.argName }] : [];
     return common.makeCallableMember(
       'request',
-      member,
+      effectiveMember,
       evidence,
       member.fullSignature || `${member.name || ''}(${member.fullArgStr || ''})`,
       signatureInputs,

@@ -344,7 +344,7 @@ function createSchemaFirstArtifactProvider({
                 reviewed: true,
                 validated: true,
                 content: context.verbatimContent,
-                patchStrategy: 'replace',
+                patchStrategy: 'rebuild',
                 title: context.title,
                 metadata: { description: context.summary },
                 pr: context.pr || null,

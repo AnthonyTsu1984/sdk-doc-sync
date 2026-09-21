@@ -2182,6 +2182,28 @@ class MarkdownToFeishu {
             return result;
         }
 
+        if (strategy === 'rebuild') {
+            // Full-body replace. Feishu block types are immutable, so updating
+            // an old block's text cannot change its structure (an H3 stays an
+            // H3, a text block cannot become code) — in-place updates over a
+            // differently-shaped body produce garbled documents. Rebuild
+            // deletes every existing child block and creates the new block
+            // list from scratch. Used for verbatim merged-PR pages.
+            if (existingChildren.length > 0) {
+                result.deleted += await this.__delete_child_blocks_by_id({
+                    document_id,
+                    parentBlock: pageBlock,
+                    childBlockIds: existingChildren.map(block => block.block_id),
+                    token,
+                });
+            }
+            if (blocks.length > 0) {
+                await this.create_blocks({ document_id, blocks });
+                result.created = blocks.length;
+            }
+            return result;
+        }
+
         if (strategy === 'replace') {
             // Replace strategy: update first N blocks, delete extras, create remaining
             const updateRequests = [];

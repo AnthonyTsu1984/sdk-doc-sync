@@ -883,9 +883,12 @@ class SyncExecutor {
       return await this.documentWriter.patch_document({
         document_id: input.documentToken,
         blocks,
-        // Verbatim artifacts (merged-PR pages) replace the whole body in order;
-        // smart matching would merge the new content into the old layout.
-        strategy: artifact.patchStrategy === 'replace' ? 'replace' : 'smart',
+        // Verbatim artifacts (merged-PR pages) rebuild the whole body:
+        // block types are immutable, so in-place merges or ordered updates
+        // over the old layout garble the formatting.
+        strategy: artifact.patchStrategy === 'rebuild'
+          ? 'rebuild'
+          : (artifact.patchStrategy === 'replace' ? 'replace' : 'smart'),
       });
     }
     throw new TypeError('documentWriter must expose patchDocument() or patch_document()');

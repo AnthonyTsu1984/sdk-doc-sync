@@ -661,7 +661,7 @@ class SyncExecutor {
     result.record = created;
     result.completedSteps.push('createVirtualNode');
 
-    const observed = await this._getRecord(createdRecordId);
+    const observed = await this._getRecordWithRetry(createdRecordId);
     const docs = docsField(observed);
     const actualFields = virtualNodeFields(observed);
     const errors = [];

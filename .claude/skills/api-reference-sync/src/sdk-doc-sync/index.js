@@ -145,7 +145,23 @@ function normalizeLiveRecord(raw) {
 
 function liveRecordReader(bitableWriter) {
     if (typeof bitableWriter?.getRecord !== 'function') return null;
-    return async (recordId) => normalizeLiveRecord(await bitableWriter.getRecord(recordId));
+    return async (recordId) => {
+        // A just-created record can be momentarily unreadable (eventual
+        // consistency); the post-execution verifier must not fail the batch on
+        // that race.
+        let lastError = null;
+        for (let attempt = 1; attempt <= 6; attempt += 1) {
+            try {
+                return normalizeLiveRecord(await bitableWriter.getRecord(recordId));
+            } catch (error) {
+                lastError = error;
+                if (attempt < 6) {
+                    await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+                }
+            }
+        }
+        throw lastError;
+    };
 }
 
 function liveDocumentReader(documentWriter) {

@@ -86,6 +86,7 @@ npm run api-reference-sync -- \
 
 ## Domain Invariants
 
+- Layout rules (global, all languages): a method with a single request type never gets its own H3 subsection — the builders/parameters sit directly under the page-level request section as BUILDER METHODS/PARAMETERS; H3 variant headings exist only to separate multiple request types. The Example section is a bare code block with no per-example H3; example descriptions stay as plain text.
 - Classify ownership as `standalone`, `method_owned`, or `ambiguous`. Embed method-owned request, response, result, task, info, iterator, descriptor, transport, and wrapper types in their public owner pages.
 - A public class is not standalone evidence. Ambiguous ownership blocks planning; standalone creation requires an explicit reviewed standalone exception.
 - Preserve one document per established public interface record. Parameter-only changes update every affected owner page; they do not justify a synthetic umbrella page.

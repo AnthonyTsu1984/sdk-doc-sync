@@ -607,12 +607,18 @@ class SyncPlanner {
     if (nonEmptyString(target.folderRef)) targetDocument.folderRef = target.folderRef;
     const targetParent = { type: 'TARGET_PARENT', parentRecordId: target.parentRecordId };
     if (nonEmptyString(target.parentRecordRef)) targetParent.parentRecordRef = target.parentRecordRef;
-    return [
+    const postconditions = [
       targetDocument,
       { type: 'TARGET_LINK', recordId: source.recordId || 'NEW_RECORD_ID', documentToken },
       targetParent,
       { type: 'TARGET_VERSION', version: target.version },
     ];
+    // Record-type normalization (e.g. legacy lowercase "method" -> "Function")
+    // rides the same write so the verifier can assert it post-execution.
+    if (nonEmptyString(target.recordType)) {
+      postconditions.push({ type: 'TARGET_RECORD_TYPE', expected: target.recordType });
+    }
+    return postconditions;
   }
 }
 

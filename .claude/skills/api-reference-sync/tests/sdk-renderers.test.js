@@ -246,6 +246,10 @@ function codeValues(documentIr, role) {
 test('scanner fixtures render through production Reference IR and lossless Document IR to language goldens', () => {
   for (const item of cases) {
     const { ir, markdown } = renderCase(item);
+    if (process.env.UPDATE_GOLDENS === '1') {
+      fs.writeFileSync(path.join(goldenDir, item.golden), markdown);
+      continue;
+    }
     const golden = fs.readFileSync(path.join(goldenDir, item.golden), 'utf8');
     assert.equal(markdown, golden, item.language);
     assert.ok(ir.children.some((node) => node.type === 'audience'), `${item.language} audience missing`);
@@ -479,9 +483,15 @@ test('Node renders request and example subheadings only when multiple variants n
   };
 
   const markdown = renderMarkdown(nodeRenderer.render(nodeAdapter.toReferenceDocument(symbol, adapterContext)));
-  for (const heading of ['Drop a field by name', 'Drop a field by ID', 'Drop by name', 'Drop by ID']) {
+  // Global layout rules: request-variant H3s label multiple request types;
+  // examples are bare code blocks with no per-example H3.
+  for (const heading of ['Drop a field by name', 'Drop a field by ID']) {
     assert.match(markdown, new RegExp(`### ${heading}`));
   }
+  for (const heading of ['Drop by name', 'Drop by ID']) {
+    assert.doesNotMatch(markdown, new RegExp(`### ${heading}`));
+  }
+  assert.match(markdown, /dropCollectionField\(\{ collection_name: "docs", field_name: "old" \}\);/);
 });
 
 test('Node reviewed context renders concrete implementations inside an interface page', () => {
@@ -571,8 +581,8 @@ test('language policies control exact sections, fences, and conditional request 
   assert.match(rendered.go, /SimpleCreateCollectionOptions\("docs", 128\)[\s\S]*client\.CreateCollection\(ctx, option\)/);
 
   assert.match(rendered.node, /```typescript\nclient\.createCollection/);
-  assert.match(rendered.node, /### JavaScript example[\s\S]*```javascript\nawait client\.createCollection/);
-  assert.match(rendered.node, /### TypeScript example[\s\S]*```typescript\nconst request: SimpleCreateCollectionReq/);
+  assert.match(rendered.node, /```javascript\nawait client\.createCollection/);
+  assert.match(rendered.node, /```typescript\nconst request: SimpleCreateCollectionReq/);
   assert.match(rendered.node, /### Simple collection[\s\S]*### Custom schema/);
   assert.doesNotMatch(rendered.node, /```python|def createCollection|BUILDER METHODS/);
 

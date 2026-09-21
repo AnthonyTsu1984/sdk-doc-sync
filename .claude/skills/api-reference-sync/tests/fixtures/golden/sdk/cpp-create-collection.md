@@ -54,8 +54,6 @@ Returns the operation status and fills the response object.
 
 ## Example{#example}
 
-### Create a collection
-
 Builds a request and checks the returned status.
 
 ```c++

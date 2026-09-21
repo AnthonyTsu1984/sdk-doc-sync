@@ -48,8 +48,6 @@ Returns nil on success or an error on failure.
 
 ## Example{#example}
 
-### Create a collection
-
 Creates a collection and checks the returned error.
 
 ```go

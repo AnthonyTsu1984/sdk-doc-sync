@@ -935,7 +935,9 @@ class SyncExecutor {
       progress: editedRecordMetadata().progress,
       addedSince: plan.target.version,
       description: metadata.description,
-      type: reviewedRecordType || metadata.type,
+      // Record type rides the plan's target (injected by the placement
+      // resolver); the artifact metadata rarely carries it for CREATE.
+      type: reviewedRecordType || plan.target?.recordType || metadata.type,
       targets: editedRecordMetadata().targets,
       parentRecordId: plan.target.parentRecordId,
     });

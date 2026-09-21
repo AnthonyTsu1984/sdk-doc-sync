@@ -130,7 +130,7 @@ function normalizeLiveRecord(raw) {
         documentToken: link ? link.split('/').filter(Boolean).at(-1) : null,
         link,
         parentRecordId: rawParentRecordId(fields),
-        version: fields['Last Modified At'] || null,
+        version: fields['Added Since'] || fields['Last Modified At'] || null,
         state: fields.Progress || null,
         progress: fields.Progress || null,
         type: fields.Type || null,

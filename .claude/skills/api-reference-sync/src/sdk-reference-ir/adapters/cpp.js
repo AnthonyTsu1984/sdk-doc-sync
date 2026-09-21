@@ -246,11 +246,25 @@ function toReferenceDocument(symbol, context = {}) {
     );
   }) : [];
   const inferredStatus = parseReturnType(symbol);
-  const resultInput = callable
-    ? Object.hasOwn(context, 'result')
-      ? context.result
-      : symbol.result || inferredResponseResult(symbol, inferredStatus)
-    : null;
+  // A reviewed context.result carries the polished RETURNS description but
+  // historically shadowed the inferred response structure, dropping the
+  // response type's accessor methods from the page. Merge the inferred
+  // structure back in whenever the reviewed result carries no fields.
+  let resultInput = null;
+  if (callable) {
+    if (Object.hasOwn(context, 'result')) {
+      resultInput = context.result;
+      if (resultInput && !(Array.isArray(resultInput.fields) && resultInput.fields.length > 0)
+        && symbol.responseClass) {
+        const inferred = inferredResponseResult(symbol, inferredStatus);
+        if (inferred && Array.isArray(inferred.fields) && inferred.fields.length > 0) {
+          resultInput = { ...resultInput, fields: inferred.fields };
+        }
+      }
+    } else {
+      resultInput = symbol.result || inferredResponseResult(symbol, inferredStatus);
+    }
+  }
   const result = common.makeResult(resultInput, evidence, { symbol, context });
   const errors = common.makeErrors(context.exceptions || symbol.exceptions, evidence);
   return common.buildReferenceDocument({

@@ -587,7 +587,8 @@ test('language policies control exact sections, fences, and conditional request 
   assert.doesNotMatch(rendered.node, /```python|def createCollection|BUILDER METHODS/);
 
   assert.match(rendered.cpp, /```c\+\+\n/);
-  assert.match(rendered.cpp, /## Request Syntax\{#request-syntax\}[\s\S]*### CreateCollectionRequest/);
+  assert.match(rendered.cpp, /## Request Syntax\{#request-syntax\}[\s\S]*\*\*REQUEST METHODS:\*\*/);
+  assert.doesNotMatch(rendered.cpp, /### CreateCollectionRequest/);
   assert.match(rendered.cpp, /\*\*REQUEST METHODS:\*\*/);
   assert.match(rendered.cpp, /\.EnableDynamicField\(\)/);
   assert.match(rendered.cpp, /\.AddExtraParam\(key, value\)/);
@@ -631,7 +632,9 @@ test('C++ excludes request-contract prose from Request Syntax', () => {
   const markdown = renderMarkdown(cppRenderer.render(reference));
 
   assert.doesNotMatch(markdown, /Duplicated request contract prose/);
-  assert.match(markdown, /### CreateCollectionRequest\n\n\*\*REQUEST METHODS:\*\*/);
+  // Global layout rule: single request type -> no H3; REQUEST METHODS directly.
+  assert.match(markdown, /\*\*REQUEST METHODS:\*\*/);
+  assert.doesNotMatch(markdown, /### CreateCollectionRequest/);
 });
 
 test('Java renders multiple reviewed request variants with scoped fields', () => {

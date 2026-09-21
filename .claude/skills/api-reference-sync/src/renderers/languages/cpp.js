@@ -24,7 +24,10 @@ function requestEntries(document) {
 
 function requestContractHeading(document) {
   const variants = document.requestVariants || [];
-  return variants.length === 1 ? variants[0].title || variants[0].id : null;
+  // Global layout rule: a single request type never gets its own H3 — its
+  // builders sit directly under the page-level request section as REQUEST
+  // METHODS. The heading exists only to separate multiple request types.
+  return variants.length > 1 ? variants[0].title || variants[0].id : null;
 }
 
 module.exports = createSdkRenderer({

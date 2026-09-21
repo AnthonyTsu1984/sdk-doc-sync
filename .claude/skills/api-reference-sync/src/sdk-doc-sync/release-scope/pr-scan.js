@@ -202,8 +202,11 @@ function verifyPageAgainstScan({ page, symbol, pageName, lexical, pageNameFound 
 }
 
 function prEvidenceFor(entry, webContentRevision) {
+  // sdk-reference-ir only admits source/openapi/existing-doc/curated evidence;
+  // the PR page is an upstream published document, so it is 'existing-doc'.
+  // PR provenance itself rides in the top-level pr block and action.pr.
   return {
-    kind: 'pr',
+    kind: 'existing-doc',
     locator: entry.path,
     revision: webContentRevision,
     confidence: 'direct',
@@ -472,7 +475,9 @@ async function runPrScan({
         ? { type: 'UPDATE', reason: 'pr-doc-update' }
         : changeType === 'ADDED'
           ? (symbol && baselineIdentities.has(entry.symbol)
-            ? { type: 'BACKFILL', reason: 'pr-backfill-page' }
+            // The sync planner only knows CREATE/UPDATE/DEPRECATE; a backfill
+            // page is a CREATE whose reason records the doc-gap semantics.
+            ? { type: 'CREATE', reason: 'pr-backfill-page' }
             : { type: 'CREATE', reason: 'pr-new-page' })
           : { type: 'UPDATE', reason: 'pr-doc-update' };
       const action = {

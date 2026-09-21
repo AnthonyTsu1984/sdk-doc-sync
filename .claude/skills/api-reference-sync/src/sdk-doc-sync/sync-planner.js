@@ -420,7 +420,7 @@ class SyncPlanner {
 
     const shared = context.tokenReferencedByOlderVersions === true;
     const currentProof = context.current || {};
-    if (CREATE_LIKE_ACTIONS.has(diffAction) && (
+    if (CREATE_LIKE_ACTIONS.has(diffAction) && context.reviewSessionExecuted !== true && (
       nonEmptyString(currentProof.recordId)
       || nonEmptyString(currentProof.documentToken)
       || nonEmptyString(source.recordId)

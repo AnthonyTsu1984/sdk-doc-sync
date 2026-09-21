@@ -379,6 +379,10 @@ class SdkDocSync {
         // Phase 4: PLAN. Dry and live modes share this exact path; planning is
         // read-only and never invokes DocGenerator scaffold generation.
         this.onProgress('PLAN', `Planning ${result.diff.length} actions...`);
+        // Units this review session has already executed keep a live record the
+        // execution itself created; re-planning them must not treat that record
+        // as a foreign CREATE-conflict.
+        const sessionExecutedDocumentIds = this._sessionExecutedDocumentIds();
         const plannedEntries = [];
         for (const resource of this.releaseScope?.resources || []) {
             try {
@@ -408,6 +412,9 @@ class SdkDocSync {
                 const plannableAction = schemaStableId && !action.stableId
                     ? { ...action, stableId: schemaStableId }
                     : action;
+                if (sessionExecutedDocumentIds?.has(plannableAction.stableId)) {
+                    context.reviewSessionExecuted = true;
+                }
                 const plan = this.planner.planAction(plannableAction, context);
                 result.plans.push(plan);
                 plannedEntries.push({ kind: 'document', action: plannableAction, plan, context });
@@ -1042,6 +1049,25 @@ class SdkDocSync {
                 evidence: action.evidence,
             } : action.releaseScopeAction,
         }));
+    }
+
+    _sessionExecutedDocumentIds() {
+        const session = this.reviewSession;
+        if (!session) return null;
+        const executedUnitIds = new Set(
+            (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId),
+        );
+        if (session.activeExecution?.reviewUnitId) {
+            executedUnitIds.add(session.activeExecution.reviewUnitId);
+        }
+        if (executedUnitIds.size === 0) return null;
+        const documentIds = new Set();
+        for (const unit of session.reviewUnitManifest?.units || []) {
+            if (executedUnitIds.has(unit.reviewUnitId)) {
+                documentIds.add(unit.documentStableId);
+            }
+        }
+        return documentIds;
     }
 
     async _planningContextFor(action, index, result) {

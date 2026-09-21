@@ -427,7 +427,7 @@ class CppScanner extends BaseScanner {
             }
         }
 
-        return briefs.join(' ').trim() || null;
+        return CppTypeGraph.sanitizeDocText(briefs.join(' ').trim()) || null;
     }
 
     _attachImplementationHashes(methods) {

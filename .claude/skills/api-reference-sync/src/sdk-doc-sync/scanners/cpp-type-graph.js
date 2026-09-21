@@ -76,11 +76,21 @@ function stripLineComment(value) {
 function parseDoxygen(lines) {
   const text = lines
     .map((line) => line.replace(/\*\/\s*$/, '').replace(/^\s*\/\*\*?\s?/, '').replace(/^\s*\*\s?/, '').trim())
-    .filter((line) => line && !line.startsWith('@param') && !line.startsWith('@return'))
+    // Strip the @brief marker first (it carries the description text), then
+    // drop every remaining @-directive line (@param/@return/@deprecated…).
     .map((line) => line.replace(/^@brief\s+/, ''))
+    .filter((line) => line && !line.startsWith('@'))
     .join(' ')
     .trim();
-  return text;
+  return sanitizeDocText(text);
+}
+
+// Rendered descriptions must not carry Doxygen directives (e.g. @deprecated
+// sentences) or bare $...$ spans — Feishu renders paired $ as inline formula.
+function sanitizeDocText(text) {
+  return String(text || '')
+    .replace(/\$([A-Za-z_]\w*)/g, '`$1`')
+    .trim();
 }
 
 function parseParameters(value) {
@@ -573,4 +583,5 @@ class CppTypeGraph {
   }
 }
 
+CppTypeGraph.sanitizeDocText = sanitizeDocText;
 module.exports = CppTypeGraph;

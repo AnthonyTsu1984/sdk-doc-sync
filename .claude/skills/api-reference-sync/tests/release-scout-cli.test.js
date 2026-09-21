@@ -295,7 +295,7 @@ test('runReleaseScout preserves changed related source evidence and blocks ambig
     kind: 'source',
     locator: 'src/changed-helper.ts',
     revision: 'target-commit',
-    confidence: 'related',
+    confidence: 'derived',
   }]);
   assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP'));
 });
@@ -1563,7 +1563,7 @@ struct MILVUS_SDK_API ResultNode {
   assert.ok(scope.actions.every((action) => action.reason === 'embedded type surface changed'));
   assert.ok(scope.actions.every((action) => action.evidence.some((item) => (
     item.locator === 'src/include/milvus/types/ResultNode.h'
-    && item.confidence === 'related'
+    && item.confidence === 'derived'
   ))));
 });
 

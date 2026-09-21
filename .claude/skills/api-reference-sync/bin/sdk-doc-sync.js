@@ -332,7 +332,7 @@ function createSchemaFirstArtifactProvider({
     }
 
     return async (action, scope = {}) => {
-        if (!['CREATE', 'UPDATE'].includes(action?.type)) return undefined;
+        if (!['CREATE', 'UPDATE', 'BACKFILL'].includes(action?.type)) return undefined;
         try {
             const context = referenceContextProvider
                 ? await referenceContextProvider(action, scope)

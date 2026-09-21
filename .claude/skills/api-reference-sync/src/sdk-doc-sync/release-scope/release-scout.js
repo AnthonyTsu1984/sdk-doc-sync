@@ -173,7 +173,7 @@ function directSourceEvidence(item, revision, changedFiles) {
         kind: 'source',
         locator: file,
         revision,
-        confidence: 'related',
+        confidence: 'derived',
       });
 }
 

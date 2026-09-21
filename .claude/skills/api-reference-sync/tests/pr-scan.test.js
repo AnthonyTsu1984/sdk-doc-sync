@@ -264,9 +264,9 @@ test('runPrScan produces a schema-valid merged-PR artifact with PR provenance', 
   assert.equal(scope.pr.webContentRevision, 'b'.repeat(40));
   const action = scope.actions.find((item) => item.stableId === 'cpp:Authentication:AlterRole');
   assert.ok(action, 'AlterRole action present');
-  assert.equal(action.type, 'CREATE');
+  assert.equal(action.type, 'BACKFILL');
   assert.equal(action.reason, 'pr-backfill-page');
-  assert.ok(action.evidence.some((item) => item.kind === 'existing-doc' && item.revision === 'b'.repeat(40)));
+  assert.ok(action.evidence.some((item) => item.kind === 'pr' && item.revision === 'b'.repeat(40)));
   assert.equal(action.source.repository, 'milvus-io/milvus-sdk-cpp');
 });
 
@@ -389,7 +389,7 @@ test('runPrScan flags CREATE/BACKFILL symbols that already existed in the lower 
     lowerBaselineSymbols: scanSymbols,
   });
   const action = scope.actions.find((item) => item.stableId === 'cpp:Authentication:AlterRole');
-  assert.equal(action.type, 'CREATE');
+  assert.equal(action.type, 'BACKFILL');
   assert.equal(action.reason, 'pr-backfill-page');
   assert.equal(action.pr.lowerTrackGap, 'v2.6.x');
   const diagnostic = scope.scannerDiagnostics.find((item) => item.code === 'PR_CROSS_TRACK_BACKFILL');

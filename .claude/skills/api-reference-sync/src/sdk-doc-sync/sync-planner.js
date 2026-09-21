@@ -10,8 +10,11 @@ const {
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
-const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE']);
-const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP']);
+const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE', 'BACKFILL']);
+const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP', 'BACKFILL']);
+// BACKFILL is a documentation-gap create: the interface predates the scan
+// baseline, but the record and document still need the full CREATE path.
+const CREATE_LIKE_ACTIONS = new Set(['CREATE', 'BACKFILL']);
 
 class SyncPlanningError extends TypeError {
   constructor(code, message, details = {}) {
@@ -416,7 +419,7 @@ class SyncPlanner {
 
     const shared = context.tokenReferencedByOlderVersions === true;
     const currentProof = context.current || {};
-    if (diffAction === 'CREATE' && (
+    if (CREATE_LIKE_ACTIONS.has(diffAction) && (
       nonEmptyString(currentProof.recordId)
       || nonEmptyString(currentProof.documentToken)
       || nonEmptyString(source.recordId)
@@ -424,14 +427,14 @@ class SyncPlanner {
     )) {
       throw new SyncPlanningError(
         'CREATE_RECORD_ALREADY_EXISTS',
-        `CREATE ${stableId} requires the release Bitable interface record to be absent`,
+        `${diffAction} ${stableId} requires the release Bitable interface record to be absent`,
         {
           recordId: currentProof.recordId || source.recordId || null,
           documentToken: currentProof.documentToken || source.documentToken || null,
         },
       );
     }
-    if (diffAction === 'CREATE') {
+    if (CREATE_LIKE_ACTIONS.has(diffAction)) {
       const lookup = existingRecordLookupFrom(context);
       if (lookup.checked !== true
         || lookup.absent !== true
@@ -442,7 +445,7 @@ class SyncPlanner {
         || !lookup.criteria) {
         throw new SyncPlanningError(
           'CREATE_LOOKUP_REQUIRED',
-          `CREATE ${stableId} requires explicit absent existingRecordLookup evidence`,
+          `${diffAction} ${stableId} requires explicit absent existingRecordLookup evidence`,
         );
       }
     }
@@ -472,7 +475,7 @@ class SyncPlanner {
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });
     preconditions.push({
       type: 'CURRENT_RECORD',
-      expected: diffAction === 'CREATE' ? 'ABSENT' : source.recordId,
+      expected: CREATE_LIKE_ACTIONS.has(diffAction) ? 'ABSENT' : source.recordId,
     });
     preconditions.push({ type: 'CURRENT_DOCUMENT_TOKEN', expected: source.documentToken });
     const targetAncestry = {
@@ -495,6 +498,7 @@ class SyncPlanner {
 
     switch (diffAction) {
       case 'CREATE':
+      case 'BACKFILL':
         plannedAction = 'CREATE';
         postconditions = this._writePostconditions(target, source, plannedAction);
         break;

@@ -202,11 +202,10 @@ function verifyPageAgainstScan({ page, symbol, pageName, lexical, pageNameFound 
 }
 
 function prEvidenceFor(entry, webContentRevision) {
-  // sdk-reference-ir only admits source/openapi/existing-doc/curated evidence;
-  // the PR page is an upstream published document, so it is 'existing-doc'.
-  // PR provenance itself rides in the top-level pr block and action.pr.
+  // kind 'pr' is a first-class evidence kind in sdk-reference-ir: it denotes a
+  // verified upstream web-content PR page and counts as direct evidence.
   return {
-    kind: 'existing-doc',
+    kind: 'pr',
     locator: entry.path,
     revision: webContentRevision,
     confidence: 'direct',
@@ -475,9 +474,7 @@ async function runPrScan({
         ? { type: 'UPDATE', reason: 'pr-doc-update' }
         : changeType === 'ADDED'
           ? (symbol && baselineIdentities.has(entry.symbol)
-            // The sync planner only knows CREATE/UPDATE/DEPRECATE; a backfill
-            // page is a CREATE whose reason records the doc-gap semantics.
-            ? { type: 'CREATE', reason: 'pr-backfill-page' }
+            ? { type: 'BACKFILL', reason: 'pr-backfill-page' }
             : { type: 'CREATE', reason: 'pr-new-page' })
           : { type: 'UPDATE', reason: 'pr-doc-update' };
       const action = {
@@ -551,8 +548,13 @@ async function runPrScan({
         merged.set(stableId, prAction);
         continue;
       }
+      // PR classification consulted live Feishu state; the tag scan's type did
+      // not. On a stableId overlap the PR type/reason win so planning never
+      // sees e.g. UPDATE for a page whose live record is absent.
       merged.set(stableId, {
         ...scanAction,
+        type: prAction.type,
+        reason: prAction.reason,
         evidence: [...(scanAction.evidence || []), ...prAction.evidence],
         pr: prAction.pr,
       });

@@ -615,9 +615,15 @@ class SyncPlanner {
       { type: 'TARGET_VERSION', version: target.version },
     ];
     // Record-type normalization (e.g. legacy lowercase "method" -> "Function")
-    // rides the same write so the verifier can assert it post-execution.
+    // rides the same write so the verifier can assert it post-execution. The
+    // verifier pairs TARGET_RECORD_TYPE with a docsResourceType assertion, so
+    // both fields must be present together.
     if (nonEmptyString(target.recordType)) {
-      postconditions.push({ type: 'TARGET_RECORD_TYPE', expected: target.recordType });
+      postconditions.push({
+        type: 'TARGET_RECORD_TYPE',
+        expected: target.recordType,
+        docsResourceType: target.docsResourceType ?? 'docx',
+      });
     }
     return postconditions;
   }

@@ -5,7 +5,7 @@ const path = require('node:path');
 
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
-const { matchesRecordState } = require('./record-state');
+const { matchesRecordState, WRITABLE_FIELD_NAMES } = require('./record-state');
 const { validateRollbackManifest } = require('./rollback-planner');
 
 class RollbackExecutionError extends Error {
@@ -212,7 +212,7 @@ class RollbackExecutor {
   async _executeAction(action) {
     switch (action.inverse) {
       case 'RESTORE_RECORD_AND_DELETE_COPY':
-        await this._restoreRecord(action.beforeRecord);
+        await this._restoreRecord(action);
         await this._deleteDocument(action.copiedDocument.token, action.copiedDocument.folderToken);
         return { restoredRecordId: action.beforeRecord.recordId, deletedDocumentToken: action.copiedDocument.token };
       case 'DELETE_CREATED_RECORD_AND_DOCUMENT':
@@ -221,16 +221,16 @@ class RollbackExecutor {
         return { deletedRecordId: action.createdRecord.recordId, deletedDocumentToken: action.createdDocument.token };
       case 'REVERT_DOCUMENT_AND_RESTORE_RECORD':
         await this._revertDocument(action.documentRollback);
-        await this._restoreRecord(action.beforeRecord);
+        await this._restoreRecord(action);
         return { restoredRecordId: action.beforeRecord.recordId, revertedDocumentToken: action.documentRollback.documentToken };
       case 'RESTORE_RECORD':
-        await this._restoreRecord(action.beforeRecord);
+        await this._restoreRecord(action);
         return { restoredRecordId: action.beforeRecord.recordId };
       case 'DELETE_CREATED_RECORD':
         await this._deleteRecord(action.createdRecord.recordId);
         return { deletedRecordId: action.createdRecord.recordId };
       case 'RESTORE_VIRTUAL_NODE_AND_DELETE_FOLDER':
-        await this._restoreRecord(action.beforeRecord);
+        await this._restoreRecord(action);
         await this._deleteFolder(action.createdFolder.token, action.createdFolder.parentFolderToken);
         return { restoredRecordId: action.beforeRecord.recordId, deletedFolderToken: action.createdFolder.token };
       case 'DELETE_CREATED_FOLDER':
@@ -241,11 +241,24 @@ class RollbackExecutor {
     }
   }
 
-  async _restoreRecord(snapshot) {
+  async _restoreRecord(action) {
+    const snapshot = action.beforeRecord;
     if (typeof this.bitableWriter.replaceRecordFields !== 'function') {
       throw new RollbackExecutionError('ROLLBACK_RECORD_WRITER_REQUIRED', 'replaceRecordFields is required');
     }
-    await this.bitableWriter.replaceRecordFields(snapshot.recordId, snapshot.writableFields);
+    // A forward update can add writable fields the before-state never had
+    // (Description, Last Modified At). Restore must clear those too, or the
+    // post-restore state comparison drifts against the snapshot.
+    const fields = structuredClone(snapshot.writableFields || {});
+    const postRecord = action.expectedPostRecord || action.createdRecord?.expectedState || null;
+    if (postRecord?.writableFields) {
+      for (const name of WRITABLE_FIELD_NAMES) {
+        if (Object.hasOwn(postRecord.writableFields, name) && !Object.hasOwn(fields, name)) {
+          fields[name] = null;
+        }
+      }
+    }
+    await this.bitableWriter.replaceRecordFields(snapshot.recordId, fields);
     await this._verifyRecordState(snapshot.recordId, snapshot);
   }
 

@@ -509,22 +509,45 @@ class CppTypeGraph {
   requestParamsFor(typeName) {
     const params = new Map();
     const visited = new Set();
-    const collect = (name) => {
+    // Inherited builders come from CRTP base templates (e.g. AliasRequestBase<T>);
+    // substitute the template parameters with the derived class's base arguments
+    // so signatures read `CreateAliasRequest& WithDatabaseName(...)` not `T& ...`.
+    const substitute = (text, bindings) => {
+      if (!text || !bindings || bindings.size === 0) return text;
+      let out = String(text);
+      for (const [param, arg] of bindings) {
+        out = out.replace(new RegExp(`\\b${param}\\b`, 'g'), arg);
+      }
+      return out;
+    };
+    const collect = (name, bindings) => {
       if (visited.has(name)) return;
       visited.add(name);
       const node = this.nodes.get(name);
       if (!node) return;
-      for (const baseName of node.baseClasses) collect(baseName);
+      for (const baseName of node.baseClasses) {
+        const baseNode = this.nodes.get(baseName);
+        let baseBindings = null;
+        if (baseNode && baseNode.templateParameters.length > 0) {
+          const expression = (node.baseExpressions || []).find((candidate) => candidate.includes(baseName)) || '';
+          const argumentsList = templateArgumentsAt(expression, expression.indexOf(baseName) + baseName.length);
+          baseBindings = new Map();
+          for (let index = 0; index < Math.min(baseNode.templateParameters.length, argumentsList.length); index += 1) {
+            baseBindings.set(baseNode.templateParameters[index], argumentsList[index].trim());
+          }
+        }
+        collect(baseName, baseBindings);
+      }
       for (const builder of node.builders) {
         const key = builderSignatureKey(builder);
         if (builder.deleted) params.delete(key);
         else if (builder.public) params.set(key, {
           name: builder.name,
           kind: 'keyword',
-          type: builder.inputs[0]?.type || '',
+          type: substitute(builder.inputs[0]?.type || '', bindings),
           argName: builder.inputs[0]?.name || '',
-          fullArgStr: builder.fullArgStr,
-          fullSignature: builder.signature,
+          fullArgStr: substitute(builder.fullArgStr, bindings),
+          fullSignature: substitute(builder.signature, bindings),
           description: builder.description || '',
           deleted: false,
           filePath: builder.filePath,
@@ -532,7 +555,7 @@ class CppTypeGraph {
         });
       }
     };
-    for (const resolved of this.resolveTypeNames(typeName)) collect(resolved);
+    for (const resolved of this.resolveTypeNames(typeName)) collect(resolved, null);
     return [...params.values()];
   }
 

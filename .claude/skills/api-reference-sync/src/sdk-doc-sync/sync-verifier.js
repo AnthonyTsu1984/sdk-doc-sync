@@ -94,12 +94,17 @@ class SyncVerifier {
       if (targetParent && record?.parentRecordId !== targetParent.parentRecordId) {
         errors.push({ code: 'TARGET_PARENT', expected: targetParent.parentRecordId, actual: record?.parentRecordId ?? null });
       }
-      if (targetVersion && record?.version !== targetVersion.version) {
-        errors.push({ code: 'TARGET_VERSION', expected: targetVersion.version, actual: record?.version ?? null });
+      // The write side stamps the target release into 'Last Modified At'
+      // (updateRecord) and keeps 'Added Since' as creation lineage — a v2.6-era
+      // record updated by the v3.0 track keeps Added Since v2.6.x. Assert the
+      // field the write actually stamped, falling back for CREATE records.
+      const stampedVersion = record?.lastModified || record?.version || null;
+      if (targetVersion && stampedVersion !== targetVersion.version) {
+        errors.push({ code: 'TARGET_VERSION', expected: targetVersion.version, actual: stampedVersion });
       }
       if (targetMetadata) {
-        if (targetMetadata.version && record?.version !== targetMetadata.version) {
-          errors.push({ code: 'TARGET_METADATA_VERSION', expected: targetMetadata.version, actual: record?.version ?? null });
+        if (targetMetadata.version && stampedVersion !== targetMetadata.version) {
+          errors.push({ code: 'TARGET_METADATA_VERSION', expected: targetMetadata.version, actual: stampedVersion });
         }
         if (targetMetadata.state && normalizedState(record) !== targetMetadata.state) {
           errors.push({ code: 'TARGET_METADATA_STATE', expected: targetMetadata.state, actual: normalizedState(record) });

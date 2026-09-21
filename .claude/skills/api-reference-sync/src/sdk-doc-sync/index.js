@@ -131,6 +131,7 @@ function normalizeLiveRecord(raw) {
         link,
         parentRecordId: rawParentRecordId(fields),
         version: fields['Added Since'] || fields['Last Modified At'] || null,
+        lastModified: fields['Last Modified At'] || null,
         state: fields.Progress || null,
         progress: fields.Progress || null,
         type: fields.Type || null,

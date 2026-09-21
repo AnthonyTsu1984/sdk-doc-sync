@@ -352,7 +352,7 @@ class SyncExecutor {
     const observedRecordId = recordId(result.record) || effectivePlan.source?.recordId || null;
     let postRecord = null;
     if (observedRecordId && typeof this.bitableWriter.getRecord === 'function') {
-      postRecord = captureRecordState(await this._getRecord(observedRecordId));
+      postRecord = captureRecordState(await this._getRecordWithRetry(observedRecordId));
     } else if (result.record) {
       postRecord = captureRecordState(result.record);
     }
@@ -466,6 +466,24 @@ class SyncExecutor {
       throw new TypeError('bitableWriter must expose getRecord() for resource verification');
     }
     return await this.bitableWriter.getRecord(recordIdValue);
+  }
+
+  // Bitable creation is eventually consistent: a freshly created record can be
+  // momentarily unreadable right after createRecord returns. Retry briefly so
+  // the post-action observation (and its verification) is not a false negative.
+  async _getRecordWithRetry(recordIdValue, attempts = 3) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await this._getRecord(recordIdValue);
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, 400 * attempt));
+        }
+      }
+    }
+    throw lastError;
   }
 
   _assertBitableTarget(resource) {

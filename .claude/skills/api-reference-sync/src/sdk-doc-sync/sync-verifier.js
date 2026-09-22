@@ -73,19 +73,38 @@ class SyncVerifier {
     if (needsRecord && !this.readRecord) {
       errors.push({ code: 'RECORD_READER_REQUIRED' });
     } else if (needsRecord) {
-      record = await this.readRecord(targetLink?.recordId || plan.source.recordId, { plan });
+      // A CREATE produced a brand-new record; the plan's source has none and
+      // TARGET_LINK.recordId is the 'NEW_RECORD_ID' placeholder. Use the
+      // execution's actual created record when present.
+      const executionRecord = execution?.record || execution?.createdRecord || null;
+      const executionRecordId = executionRecord?.record_id
+        || executionRecord?.recordId
+        || executionRecord?.id
+        || null;
+      const plannedRecordId = targetLink?.recordId && targetLink.recordId !== 'NEW_RECORD_ID'
+        ? targetLink.recordId
+        : plan.source?.recordId;
+      const readId = executionRecordId || plannedRecordId || null;
+      if (readId) {
+        record = await this.readRecord(readId, { plan });
+      }
       if (targetLink && record?.documentToken !== token) {
         errors.push({ code: 'TARGET_LINK', expected: token, actual: record?.documentToken ?? null });
       }
       if (targetParent && record?.parentRecordId !== targetParent.parentRecordId) {
         errors.push({ code: 'TARGET_PARENT', expected: targetParent.parentRecordId, actual: record?.parentRecordId ?? null });
       }
-      if (targetVersion && record?.version !== targetVersion.version) {
-        errors.push({ code: 'TARGET_VERSION', expected: targetVersion.version, actual: record?.version ?? null });
+      // The write side stamps the target release into 'Last Modified At'
+      // (updateRecord) and keeps 'Added Since' as creation lineage — a v2.6-era
+      // record updated by the v3.0 track keeps Added Since v2.6.x. Assert the
+      // field the write actually stamped, falling back for CREATE records.
+      const stampedVersion = record?.lastModified || record?.version || null;
+      if (targetVersion && stampedVersion !== targetVersion.version) {
+        errors.push({ code: 'TARGET_VERSION', expected: targetVersion.version, actual: stampedVersion });
       }
       if (targetMetadata) {
-        if (targetMetadata.version && record?.version !== targetMetadata.version) {
-          errors.push({ code: 'TARGET_METADATA_VERSION', expected: targetMetadata.version, actual: record?.version ?? null });
+        if (targetMetadata.version && stampedVersion !== targetMetadata.version) {
+          errors.push({ code: 'TARGET_METADATA_VERSION', expected: targetMetadata.version, actual: stampedVersion });
         }
         if (targetMetadata.state && normalizedState(record) !== targetMetadata.state) {
           errors.push({ code: 'TARGET_METADATA_STATE', expected: targetMetadata.state, actual: normalizedState(record) });

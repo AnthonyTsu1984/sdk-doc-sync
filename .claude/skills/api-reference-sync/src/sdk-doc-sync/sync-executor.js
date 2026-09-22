@@ -352,7 +352,19 @@ class SyncExecutor {
     const observedRecordId = recordId(result.record) || effectivePlan.source?.recordId || null;
     let postRecord = null;
     if (observedRecordId && typeof this.bitableWriter.getRecord === 'function') {
-      postRecord = captureRecordState(await this._getRecord(observedRecordId));
+      try {
+        postRecord = captureRecordState(await this._getRecordWithRetry(observedRecordId));
+      } catch (error) {
+        // A just-created record can be unreadable for a moment (eventual
+        // consistency) even though it exists; the createRecord return value is
+        // the authoritative post state for a CREATE action, so fall back to it
+        // rather than failing the whole batch on the observation read.
+        if (effectivePlan.action === 'CREATE' && result.record) {
+          postRecord = captureRecordState(result.record);
+        } else {
+          throw error;
+        }
+      }
     } else if (result.record) {
       postRecord = captureRecordState(result.record);
     }
@@ -466,6 +478,24 @@ class SyncExecutor {
       throw new TypeError('bitableWriter must expose getRecord() for resource verification');
     }
     return await this.bitableWriter.getRecord(recordIdValue);
+  }
+
+  // Bitable creation is eventually consistent: a freshly created record can be
+  // momentarily unreadable right after createRecord returns. Retry with
+  // generous backoff so the post-action observation is not a false negative.
+  async _getRecordWithRetry(recordIdValue, attempts = 6) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= attempts; attempt += 1) {
+      try {
+        return await this._getRecord(recordIdValue);
+      } catch (error) {
+        lastError = error;
+        if (attempt < attempts) {
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        }
+      }
+    }
+    throw lastError;
   }
 
   _assertBitableTarget(resource) {
@@ -631,7 +661,7 @@ class SyncExecutor {
     result.record = created;
     result.completedSteps.push('createVirtualNode');
 
-    const observed = await this._getRecord(createdRecordId);
+    const observed = await this._getRecordWithRetry(createdRecordId);
     const docs = docsField(observed);
     const actualFields = virtualNodeFields(observed);
     const errors = [];
@@ -883,7 +913,12 @@ class SyncExecutor {
       return await this.documentWriter.patch_document({
         document_id: input.documentToken,
         blocks,
-        strategy: 'smart',
+        // Verbatim artifacts (merged-PR pages) rebuild the whole body:
+        // block types are immutable, so in-place merges or ordered updates
+        // over the old layout garble the formatting.
+        strategy: artifact.patchStrategy === 'rebuild'
+          ? 'rebuild'
+          : (artifact.patchStrategy === 'replace' ? 'replace' : 'smart'),
       });
     }
     throw new TypeError('documentWriter must expose patchDocument() or patch_document()');
@@ -900,7 +935,9 @@ class SyncExecutor {
       progress: editedRecordMetadata().progress,
       addedSince: plan.target.version,
       description: metadata.description,
-      type: reviewedRecordType || metadata.type,
+      // Record type rides the plan's target (injected by the placement
+      // resolver); the artifact metadata rarely carries it for CREATE.
+      type: reviewedRecordType || plan.target?.recordType || metadata.type,
       targets: editedRecordMetadata().targets,
       parentRecordId: plan.target.parentRecordId,
     });

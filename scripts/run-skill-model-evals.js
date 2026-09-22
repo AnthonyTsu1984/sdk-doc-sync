@@ -645,7 +645,7 @@ function learningContextLoaded(phase, cases = []) {
 function routingPrompt(cases) {
   return [
     'You are evaluating skill routing. Select exactly one canonical skill for each case.',
-    'Use only the catalog below. Return the schema-required JSON and do not call tools.',
+    'Use only the catalog below. Respond with a single json object (no prose before or after it) that matches the schema-required JSON shape, and do not call tools.',
     `CATALOG:\n${JSON.stringify(routingCatalog(), null, 2)}`,
     `CASES:\n${JSON.stringify(cases.map(({ id, prompt }) => ({ id, prompt })), null, 2)}`,
   ].join('\n\n');
@@ -670,7 +670,7 @@ function behaviorPrompt(skill, phase, cases) {
     'Use requiredApproval only as one canonical token or null. It means the next approval or runtime gate that is still missing; if the prompt already supplies an exact valid approval for the current artifact, return null. BATCH_DIGEST means a new exact immutable batch approval for non-API skills; api-reference-sync must use APPROVE_GROUPING, APPROVE_WRITES, or APPROVE_ACCEPTANCE for its three gates. Use LIVE_AND_ALLOW_RUN when runtime is blocked because --live or --allow-run is missing, including when one of them is already present. Use SCENARIO_RUNTIME_GATES only when the scenario request has not established the complete --run-scenarios --live --allow-run gate context.',
     exactTargetApprovalInstruction,
     'batchChanged and scanStateMayChange are always booleans. Use batchChanged=true when an execution/write-approval batch is created, regenerated, replaced, invalidated as stale, or required for newly requested side-effect scope, including an initial dry-run batch, partial selection, separate remediation, source-change, or orphan-deletion work. Claim inventories, local drafts, read-only plans, and review artifacts do not make batchChanged true. Use false when the bound execution batch remains unchanged or no execution batch is involved. Use scanStateMayChange=false when scan state must remain unchanged or the skill has no scan state.',
-    'The final answer must match the tool trajectory. Return the schema-required JSON after tool use.',
+    'The final answer must match the tool trajectory. After tool use, respond with a single json object (no prose before or after it) that matches the schema-required JSON shape.',
     `ALLOWED OUTCOME TOKENS:\n${JSON.stringify([...new Set(cases.map(entry => entry.expected.outcome))])}`,
     `ALLOWED APPROVAL TOKENS:\n${JSON.stringify(APPROVAL_TOKENS)}`,
     `ALLOWED ACTION TOKENS FOR ${skill}:\n${JSON.stringify(actionTokens)}`,
@@ -972,6 +972,41 @@ function extractResponseText(response) {
   throw new Error('MODEL_OUTPUT_MISSING: Responses API returned no output_text content');
 }
 
+// Smaller instruction-following models (e.g. deepseek-v4-flash) sometimes wrap
+// the final JSON in prose or code fences despite the json_schema constraint.
+// Pull the outermost JSON object out of the response text before parsing.
+function parseJsonAnswer(text) {
+  const raw = String(text || '').trim();
+  try { return JSON.parse(raw); } catch (error) { /* fall through to extraction */ }
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()); } catch (error) { /* keep looking */ }
+  }
+  const start = raw.indexOf('{');
+  if (start !== -1) {
+    let depth = 0, inString = false, escaped = false;
+    for (let i = start; i < raw.length; i += 1) {
+      const ch = raw[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = raw.slice(start, i + 1);
+          try { return JSON.parse(candidate); } catch (error) { break; }
+        }
+      }
+    }
+  }
+  throw new Error(`MODEL_OUTPUT_NOT_JSON: expected a JSON object, got: ${raw.slice(0, 120)}`);
+}
+
 async function runOpenAI({ mode, model, prompt, contextLoaded = [], skill = null }) {
   const config = loadEvaluationConfig();
   const apiKey = config.apiKey;
@@ -1011,8 +1046,20 @@ async function runOpenAI({ mode, model, prompt, contextLoaded = [], skill = null
     const calls = (payload.output || []).filter(item => item.type === 'function_call').map(observedToolCall);
     trace.toolCalls.push(...calls);
     if (calls.length === 0) {
-      const answer = JSON.parse(extractResponseText(payload));
-      return { results: attachTrace(answer.results, { contextLoaded, toolCalls: trace.toolCalls }), trace };
+      const answerText = extractResponseText(payload);
+      let answer = null;
+      try { answer = parseJsonAnswer(answerText); } catch (error) { answer = null; }
+      if (answer && Array.isArray(answer.results)) {
+        return { results: attachTrace(answer.results, { contextLoaded, toolCalls: trace.toolCalls }), trace };
+      }
+      // Smaller models sometimes answer in prose or omit the top-level results
+      // array. Feed the offending reply back for one repair turn instead of
+      // failing the whole eval; the turn cap below still bounds the loop.
+      input = input.concat([
+        { role: 'assistant', content: [{ type: 'output_text', text: answerText }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'That reply was not a single json object with a top-level "results" array (one entry per case). Reply again with ONLY that json object — no prose before or after it.' }] },
+      ]);
+      continue;
     }
     input = buildToolContinuationInput(input, payload.output, calls);
   }

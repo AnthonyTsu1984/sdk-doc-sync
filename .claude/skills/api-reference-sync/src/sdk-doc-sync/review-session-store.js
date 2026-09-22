@@ -275,6 +275,38 @@ function recordDocumentAcceptance(session, receipt) {
   });
 }
 
+function recordDocumentChangesRequested(session, { reviewUnitId, reason = null } = {}) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.status === 'finalized' || session.scanStateUpdated === true) {
+    throw new Error('A finalized review session no longer accepts change requests');
+  }
+  const unit = session.reviewUnitManifest.units.find((item) => item.reviewUnitId === reviewUnitId);
+  if (!unit) throw new Error(`Unknown review unit: ${reviewUnitId}`);
+  if ((session.acceptedReviewUnits || []).some((entry) => entry.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Review unit is already accepted: ${reviewUnitId}`);
+  }
+  const active = session.activeExecution;
+  if (!active || active.reviewUnitId !== reviewUnitId) {
+    throw new Error(`Change request must match the active execution for ${reviewUnitId}`);
+  }
+  const requestedAt = new Date().toISOString();
+  return Object.freeze({
+    ...clone(session),
+    // The executed unit returns to reviewed planning: its journal stays on
+    // disk for audit and potential rollback, but no acceptance is recorded.
+    activeExecution: null,
+    activeReviewUnitId: null,
+    changeRequests: Object.freeze([...(session.changeRequests || []), {
+      reviewUnitId,
+      executionJournalPath: active.executionJournalPath,
+      executionJournalDigest: active.executionJournalDigest,
+      reason: nonEmptyString(reason) ? reason : null,
+      requestedAt,
+    }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
+    updatedAt: requestedAt,
+  });
+}
+
 function validateRollbackJournal(filePath, expectedDigest) {
   if (!nonEmptyString(expectedDigest)) throw new Error('rollbackJournalDigest is required');
   const journalPath = path.resolve(filePath || '');
@@ -525,6 +557,7 @@ module.exports = {
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentExecution,
+  recordDocumentChangesRequested,
   recordDocumentRollback,
   recordReviewDecision,
   saveReviewSession,

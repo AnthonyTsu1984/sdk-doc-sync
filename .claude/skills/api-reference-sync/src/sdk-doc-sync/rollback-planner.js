@@ -104,7 +104,13 @@ function pairedJournalActions(entries, unit) {
     }
   }
 
-  const expected = new Set(unit.actionIds || []);
+  // Digest-stable review-unit manifests are deliberately slim (no actionIds):
+  // for those, the unit's action set derives from the execution journal, which
+  // activeExecution already binds to the unit by path and digest.
+  const unitActionIds = Array.isArray(unit.actionIds) && unit.actionIds.length > 0
+    ? unit.actionIds
+    : [...observedById.keys()].sort();
+  const expected = new Set(unitActionIds);
   const actual = new Set([...observedById.keys()]);
   const missing = [...expected].filter((actionId) => !actual.has(actionId)).sort();
   const extra = [...actual].filter((actionId) => !expected.has(actionId)).sort();
@@ -116,7 +122,7 @@ function pairedJournalActions(entries, unit) {
     );
   }
 
-  return new Map((unit.actionIds || []).map((actionId) => {
+  return new Map(unitActionIds.map((actionId) => {
     const prepared = preparedById.get(actionId);
     const observed = observedById.get(actionId);
     if (!prepared || !observed) {
@@ -378,6 +384,9 @@ function buildRollbackManifest({ session, reviewUnitId }) {
   }
   const execution = loadExecution({ reviewUnitId, ...executionRef });
   const pairs = pairedJournalActions(execution.entries, unit);
+  const manifestActionIds = Array.isArray(unit.actionIds) && unit.actionIds.length > 0
+    ? unit.actionIds
+    : [...pairs.keys()].sort();
   const createdResourceIds = new Set([...pairs.values()]
     .filter(({ capsule }) => CREATED_RESOURCE_ACTIONS.has(capsule.action))
     .map(({ capsule }) => capsule.actionId));
@@ -391,7 +400,7 @@ function buildRollbackManifest({ session, reviewUnitId }) {
     });
   }
 
-  const actions = [...(unit.actionIds || [])]
+  const actions = [...manifestActionIds]
     .reverse()
     .map((actionId) => inverseFor(pairs.get(actionId)))
     .filter(Boolean);

@@ -131,6 +131,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-pr-scan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "sdk-pr-scan",
+      "basis": "reads merged web-content PR data and writes deterministic local artifacts only"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/rest-track-review.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

@@ -29,14 +29,14 @@
     "lastScanDate": "2026-06-17"
   },
   "cpp-v26": {
-    "lastScannedTag": "v2.6.4",
-    "lastScannedCommit": "426cbf50e832975b94b8de65b8b22d1c3252afc5",
-    "lastScanDate": "2026-07-29"
+    "lastScannedTag": "v2.6.7",
+    "lastScannedCommit": "092320c6e87f2ec90af4437261be7f5bfbeb9cc4",
+    "lastScanDate": "2026-09-22"
   },
   "cpp-v30": {
-    "lastScannedTag": "v3.0.1",
-    "lastScannedCommit": "0bde4ab7d35cda6fd7a2a6d8fa148c3641cda12e",
-    "lastScanDate": "2026-07-29"
+    "lastScannedTag": "v3.0.3",
+    "lastScannedCommit": "d1a484f9be6e974e9ce902f123102c82c26aed4f",
+    "lastScanDate": "2026-09-22"
   },
   "go": {
     "lastScannedTag": "client/v2.6.5",

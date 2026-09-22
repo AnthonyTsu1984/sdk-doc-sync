@@ -125,10 +125,10 @@ function admissionSourceFingerprint({ repoRoot = REPO_ROOT } = {}) {
   return `sha256:${hash.digest('hex')}`;
 }
 
-function admissionEntries(rolloutRoot) {
+function admissionEntries(rolloutRoot, deterministicOnly = false) {
   return [
     ...DETERMINISTIC_COMMANDS.map(definition => ({ stage: 'deterministic', definition })),
-    ...MODEL_EVAL_COMMANDS.map(definition => ({ stage: 'model-eval', definition })),
+    ...(deterministicOnly ? [] : MODEL_EVAL_COMMANDS.map(definition => ({ stage: 'model-eval', definition }))),
   ].map(({ stage, definition }) => {
     const entry = { ...definition, args: [...definition.args] };
     if (definition.outputName) {
@@ -149,6 +149,7 @@ function runAdmission({
   phase,
   outputPath = null,
   resume = false,
+  deterministicOnly = false,
   env = process.env,
   now = () => new Date().toISOString(),
   runCommand = defaultRunCommand,
@@ -163,6 +164,7 @@ function runAdmission({
     generatedAt: now(),
     sourceFingerprint,
     status: 'BLOCKED',
+    deterministicOnly,
     liveExecutionPerformed: false,
     adapterInventory: [],
     results: [],
@@ -170,7 +172,7 @@ function runAdmission({
     outputPath: resultPath,
   };
 
-  const plannedEntries = admissionEntries(rolloutRoot);
+  const plannedEntries = admissionEntries(rolloutRoot, deterministicOnly);
   let startIndex = 0;
   if (resume) {
     if (!fs.existsSync(resultPath)) {
@@ -239,12 +241,13 @@ function runAdmission({
 }
 
 function parseArgs(argv) {
-  const options = { phase: null, outputPath: null, resume: false };
+  const options = { phase: null, outputPath: null, resume: false, deterministicOnly: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--phase') options.phase = argv[++index];
     else if (arg === '--output') options.outputPath = path.resolve(argv[++index]);
     else if (arg === '--resume') options.resume = true;
+    else if (arg === '--deterministic-only') options.deterministicOnly = true;
     else if (arg === '--help') options.help = true;
     else throw new Error(`ADMISSION_ARGUMENT_UNKNOWN: ${arg}`);
   }
@@ -253,13 +256,13 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  process.stdout.write('Usage: npm run admit:skills -- --phase <phase> [--output <results.json>] [--resume]\n');
+  process.stdout.write('Usage: npm run admit:skills -- --phase <phase> [--output <results.json>] [--resume] [--deterministic-only]\n');
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) return printHelp();
-  const result = runAdmission({ phase: options.phase, outputPath: options.outputPath, resume: options.resume });
+  const result = runAdmission({ phase: options.phase, outputPath: options.outputPath, resume: options.resume, deterministicOnly: options.deterministicOnly });
   process.stdout.write(`${JSON.stringify({
     status: result.status,
     phase: result.phase,

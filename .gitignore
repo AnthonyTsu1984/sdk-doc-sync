@@ -18,6 +18,12 @@ tmp/
 # SDK update worktrees
 .worktrees/
 
+# Local agent/runtime state
+.omo/
+.zcode/
+.zcodeignore
+.secrets.local.json
+
 # SDK source repos (cloned externally)
 repos/*
 !repos/.gitkeep

@@ -173,7 +173,7 @@ function directSourceEvidence(item, revision, changedFiles) {
         kind: 'source',
         locator: file,
         revision,
-        confidence: 'related',
+        confidence: 'derived',
       });
 }
 
@@ -569,4 +569,6 @@ module.exports = {
   runReleaseScout,
   defaultIdentityMapPath,
   materializeSnapshot,
+  scanRefSymbols,
+  scanStateKeyFor,
 };

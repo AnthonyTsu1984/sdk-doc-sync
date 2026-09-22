@@ -133,7 +133,7 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     const documentReviewed = documentEvidence.some((item) => item.confidence === 'reviewed');
     const derived = candidates.some((item) => item.confidence === 'derived');
     const direct = candidates.some((item) => item.confidence === 'direct'
-      && ['source', 'openapi'].includes(item.kind));
+      && ['source', 'openapi', 'pr'].includes(item.kind));
     if (reviewed) return { valid: true, derived };
     if (direct) return { valid: true, derived };
     if (hasOwnEvidence && own.length > 0 && documentReviewed) return { valid: true, derived };

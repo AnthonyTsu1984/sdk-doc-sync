@@ -10,6 +10,7 @@ const {
   loadReviewSession,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
+  recordDocumentChangesRequested,
   recordReviewDecision,
   saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -20,6 +21,7 @@ function parseArgs(argv) {
     const argument = argv[index];
     if (argument === '--session' && argv[index + 1]) args.session = argv[++index];
     else if (argument === '--review-unit-id' && argv[index + 1]) args.reviewUnitId = argv[++index];
+    else if (argument === '--reason' && argv[index + 1]) args.reason = argv[++index];
     else if (argument === '--execution-journal' && argv[index + 1]) args.executionJournal = argv[++index];
     else if (argument === '--execution-journal-digest' && argv[index + 1]) args.executionJournalDigest = argv[++index];
     else if (argument === '--touched-records' && argv[index + 1]) args.touchedRecords = argv[++index];
@@ -83,6 +85,22 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   const sessionPath = path.resolve(args.session);
   let session = loadReviewSession(sessionPath);
 
+  if (args.command === 'request-document-changes') {
+    for (const required of ['reviewUnitId']) {
+      requireValue(args, required);
+    }
+    session = recordDocumentChangesRequested(session, {
+      reviewUnitId: args.reviewUnitId,
+      reason: args.reason || null,
+    });
+    saveReviewSession(sessionPath, session);
+    const summary0 = status(session, sessionPath);
+    out(`Change request recorded: ${args.reviewUnitId}`);
+    out(`Unit returned to reviewed planning; rebuild it and request a new write approval.`);
+    if (args.json) out(JSON.stringify(summary0, null, 2));
+    return { session, summary: summary0 };
+  }
+
   if (args.command === 'accept-document') {
     for (const required of ['reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords']) {
       requireValue(args, required);
@@ -130,7 +148,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     out(`Recorded governed decision: ${decision.decisionDigest}`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

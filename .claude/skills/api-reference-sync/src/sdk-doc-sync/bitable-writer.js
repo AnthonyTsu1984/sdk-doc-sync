@@ -130,6 +130,17 @@ class BitableWriter {
         }
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
+        // Rollback snapshots capture fields in the GET-response shape; the
+        // DuplexLink parent field must be rewritten as plain record ids or the
+        // write API rejects it with LinkFieldConvFail.
+        const fields = structuredClone(writableFields);
+        if (Array.isArray(fields['父记录'])) {
+            fields['父记录'] = fields['父记录'].flatMap((entry) => {
+                if (typeof entry === 'string') return [entry];
+                if (Array.isArray(entry?.record_ids)) return entry.record_ids;
+                return [];
+            });
+        }
         const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records/${recordId}`;
         const res = await fetch(url, {
             method: 'PUT',
@@ -137,7 +148,7 @@ class BitableWriter {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Authorization': `Bearer ${token}`,
             },
-            body: JSON.stringify({ fields: structuredClone(writableFields) }),
+            body: JSON.stringify({ fields }),
         });
         const data = await res.json();
         if (data.code !== 0) throw new Error(`Failed to replace record fields: ${data.msg}`);

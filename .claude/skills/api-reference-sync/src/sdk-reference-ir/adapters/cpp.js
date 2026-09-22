@@ -189,14 +189,21 @@ function toReferenceDocument(symbol, context = {}) {
     : [];
   const requestFields = [];
   const seenRequestFields = new Set();
+  // Reviewed context descriptions win over scanner defaults: the grouping
+  // review (and any doc review polish) is the authoritative copy.
+  const contextParamDescriptions = new Map((context?.params || []).map((param) => [param.name, param.description]));
   for (const param of symbol.params || []) {
     const name = param.argName || param.name;
     if (!name || seenRequestFields.has(name)) continue;
     seenRequestFields.add(name);
+    // Reviewed-context descriptions are keyed by the builder method name
+    // (e.g. WithRoleName), not the argument name.
+    const reviewedDescription = contextParamDescriptions.get(param.name);
     requestFields.push({
       ...param,
       name,
       type: param.type || param.fullArgStr || 'value',
+      ...(reviewedDescription ? { description: reviewedDescription } : {}),
     });
   }
   let requestVariants = symbol.requestClass ? [common.makeRequestVariant({
@@ -217,6 +224,11 @@ function toReferenceDocument(symbol, context = {}) {
   }
   const callableMembers = symbol.requestClass ? (symbol.params || []).map((member) => {
     const contextualInputs = context.memberInputs?.[member.name];
+    // Reviewed-context descriptions are keyed by the builder method name.
+    const reviewedMemberDescription = contextParamDescriptions.get(member.name);
+    const effectiveMember = reviewedMemberDescription
+      ? { ...member, description: reviewedMemberDescription }
+      : member;
     const signatureInputs = Array.isArray(contextualInputs)
       ? contextualInputs
       : Array.isArray(member.inputs)
@@ -226,19 +238,36 @@ function toReferenceDocument(symbol, context = {}) {
           : member.argName ? [{ ...member, name: member.argName }] : [];
     return common.makeCallableMember(
       'request',
-      member,
+      effectiveMember,
       evidence,
-      member.fullSignature || `${member.name || ''}(${member.fullArgStr || ''})`,
+      // House rule (user directive 2026-09-22): REQUEST METHODS render bare
+      // callable signatures — the fluent `XxxRequest&` return type is noise
+      // and must not appear on the page.
+      `${member.name || ''}(${member.fullArgStr || ''})`,
       signatureInputs,
       { symbol, context },
     );
   }) : [];
   const inferredStatus = parseReturnType(symbol);
-  const resultInput = callable
-    ? Object.hasOwn(context, 'result')
-      ? context.result
-      : symbol.result || inferredResponseResult(symbol, inferredStatus)
-    : null;
+  // A reviewed context.result carries the polished RETURNS description but
+  // historically shadowed the inferred response structure, dropping the
+  // response type's accessor methods from the page. Merge the inferred
+  // structure back in whenever the reviewed result carries no fields.
+  let resultInput = null;
+  if (callable) {
+    if (Object.hasOwn(context, 'result')) {
+      resultInput = context.result;
+      if (resultInput && !(Array.isArray(resultInput.fields) && resultInput.fields.length > 0)
+        && symbol.responseClass) {
+        const inferred = inferredResponseResult(symbol, inferredStatus);
+        if (inferred && Array.isArray(inferred.fields) && inferred.fields.length > 0) {
+          resultInput = { ...resultInput, fields: inferred.fields };
+        }
+      }
+    } else {
+      resultInput = symbol.result || inferredResponseResult(symbol, inferredStatus);
+    }
+  }
   const result = common.makeResult(resultInput, evidence, { symbol, context });
   const errors = common.makeErrors(context.exceptions || symbol.exceptions, evidence);
   return common.buildReferenceDocument({

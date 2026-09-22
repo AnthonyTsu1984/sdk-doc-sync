@@ -130,7 +130,8 @@ function normalizeLiveRecord(raw) {
         documentToken: link ? link.split('/').filter(Boolean).at(-1) : null,
         link,
         parentRecordId: rawParentRecordId(fields),
-        version: fields['Last Modified At'] || null,
+        version: fields['Added Since'] || fields['Last Modified At'] || null,
+        lastModified: fields['Last Modified At'] || null,
         state: fields.Progress || null,
         progress: fields.Progress || null,
         type: fields.Type || null,
@@ -145,7 +146,23 @@ function normalizeLiveRecord(raw) {
 
 function liveRecordReader(bitableWriter) {
     if (typeof bitableWriter?.getRecord !== 'function') return null;
-    return async (recordId) => normalizeLiveRecord(await bitableWriter.getRecord(recordId));
+    return async (recordId) => {
+        // A just-created record can be momentarily unreadable (eventual
+        // consistency); the post-execution verifier must not fail the batch on
+        // that race.
+        let lastError = null;
+        for (let attempt = 1; attempt <= 6; attempt += 1) {
+            try {
+                return normalizeLiveRecord(await bitableWriter.getRecord(recordId));
+            } catch (error) {
+                lastError = error;
+                if (attempt < 6) {
+                    await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+                }
+            }
+        }
+        throw lastError;
+    };
 }
 
 function liveDocumentReader(documentWriter) {
@@ -363,6 +380,10 @@ class SdkDocSync {
         // Phase 4: PLAN. Dry and live modes share this exact path; planning is
         // read-only and never invokes DocGenerator scaffold generation.
         this.onProgress('PLAN', `Planning ${result.diff.length} actions...`);
+        // Units this review session has already executed keep a live record the
+        // execution itself created; re-planning them must not treat that record
+        // as a foreign CREATE-conflict.
+        const sessionExecutedDocumentIds = this._sessionExecutedDocumentIds();
         const plannedEntries = [];
         for (const resource of this.releaseScope?.resources || []) {
             try {
@@ -392,6 +413,9 @@ class SdkDocSync {
                 const plannableAction = schemaStableId && !action.stableId
                     ? { ...action, stableId: schemaStableId }
                     : action;
+                if (sessionExecutedDocumentIds?.has(plannableAction.stableId)) {
+                    context.reviewSessionExecuted = true;
+                }
                 const plan = this.planner.planAction(plannableAction, context);
                 result.plans.push(plan);
                 plannedEntries.push({ kind: 'document', action: plannableAction, plan, context });
@@ -905,6 +929,9 @@ class SdkDocSync {
                     ],
                     sourceVariants,
                     planningContext: scoped.planningContext || action.planningContext,
+                    // PR provenance rides the remapped action so the artifact
+                    // provider can select verbatim merged-PR content.
+                    pr: scoped.pr || action.pr || null,
                     target: scoped.target || action.target,
                     documentationOwnership: scoped.documentationOwnership || action.documentationOwnership,
                     releaseScopeAction: scoped,
@@ -1023,6 +1050,25 @@ class SdkDocSync {
                 evidence: action.evidence,
             } : action.releaseScopeAction,
         }));
+    }
+
+    _sessionExecutedDocumentIds() {
+        const session = this.reviewSession;
+        if (!session) return null;
+        const executedUnitIds = new Set(
+            (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId),
+        );
+        if (session.activeExecution?.reviewUnitId) {
+            executedUnitIds.add(session.activeExecution.reviewUnitId);
+        }
+        if (executedUnitIds.size === 0) return null;
+        const documentIds = new Set();
+        for (const unit of session.reviewUnitManifest?.units || []) {
+            if (executedUnitIds.has(unit.reviewUnitId)) {
+                documentIds.add(unit.documentStableId);
+            }
+        }
+        return documentIds;
     }
 
     async _planningContextFor(action, index, result) {

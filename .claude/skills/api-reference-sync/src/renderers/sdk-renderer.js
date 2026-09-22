@@ -243,9 +243,13 @@ function renderRequest(document, policy, context) {
   const blocks = [heading(2, policy.requestHeading, semantic('request-heading'))];
   for (const entry of entries) {
     const entryKey = entry.id || entry.title || null;
-    const showVariantHeading = typeof policy.variantHeadings === 'function'
-      ? policy.variantHeadings(document, entry)
-      : policy.variantHeadings;
+    // Global layout rule: a single request type never gets its own H3 — the
+    // builders/parameters sit directly under the page-level request section.
+    // Variant H3s exist only to separate multiple request types.
+    const showVariantHeading = entries.length > 1
+      && (typeof policy.variantHeadings === 'function'
+        ? policy.variantHeadings(document, entry)
+        : policy.variantHeadings);
     if (showVariantHeading && entry.composedAudienceVariants !== true) {
       blocks.push(heading(3, entry.title || entry.id, semantic('request-variant-heading', entryKey)));
     }
@@ -434,15 +438,8 @@ function renderExamples(document, policy) {
   }
   for (const [index, example] of document.examples.entries()) {
     const exampleKey = example.id || example.title || String(index);
-    const baseHeading = policy.exampleHeading.replace(/\{#[^}]+\}$/, '').toLowerCase();
-    const distinctTitle = example.title
-      && ![baseHeading, baseHeading.replace(/s$/, '')].includes(example.title.toLowerCase());
-    const showExampleTitle = typeof policy.showExampleTitles === 'function'
-      ? policy.showExampleTitles(document, example, index)
-      : policy.showExampleTitles !== false && (document.examples.length > 1 || distinctTitle);
-    if (showExampleTitle) {
-      blocks.push(heading(3, example.title, semantic('example-heading', exampleKey)));
-    }
+    // Global layout rule: the Example section is a bare code block — no
+    // per-example H3 subsections.
     if (example.description) {
       blocks.push(paragraph(example.description, [], semantic('example-description', exampleKey)));
     }

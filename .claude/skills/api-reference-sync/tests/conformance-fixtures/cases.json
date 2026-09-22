@@ -1,10 +1,118 @@
 [
-  { "id": "release-range", "assertions": { "fullScanIsApprovalGrade": false, "rangeRequired": true } },
-  { "id": "ann-search-request", "assertions": { "symbol": "AnnSearchRequest", "classification": "method_owned", "owner": "hybrid_search()", "standalone": false } },
-  { "id": "response-wrapper-ownership", "assertions": { "symbols": ["RoleItem", "UserItem"], "owners": ["describe_role()", "describe_user()"], "standalone": false } },
-  { "id": "sparse-version-copy", "assertions": { "changedInheritedAction": "COPY_PATCH_AND_REPOINT", "patchOlderVersionInPlace": false } },
-  { "id": "phase-gates", "assertions": { "writeApprovalImpliesAcceptance": false, "groupingApprovalImpliesWrite": false } },
-  { "id": "scan-state-acceptance", "assertions": { "advanceBeforeAcceptance": false, "requiredProgress": "Draft" } },
-  { "id": "exact-approval", "assertions": { "batchDigestRequired": true } },
-  { "id": "recoverable-execution", "assertions": { "preparedBeforeMutation": true, "blindReplay": false } }
+ {
+  "id": "release-range",
+  "assertions": {
+   "fullScanIsApprovalGrade": false,
+   "rangeRequired": true
+  }
+ },
+ {
+  "id": "ann-search-request",
+  "assertions": {
+   "symbol": "AnnSearchRequest",
+   "classification": "method_owned",
+   "owner": "hybrid_search()",
+   "standalone": false
+  }
+ },
+ {
+  "id": "response-wrapper-ownership",
+  "assertions": {
+   "symbols": [
+    "RoleItem",
+    "UserItem"
+   ],
+   "owners": [
+    "describe_role()",
+    "describe_user()"
+   ],
+   "standalone": false
+  }
+ },
+ {
+  "id": "sparse-version-copy",
+  "assertions": {
+   "changedInheritedAction": "COPY_PATCH_AND_REPOINT",
+   "patchOlderVersionInPlace": false
+  }
+ },
+ {
+  "id": "phase-gates",
+  "assertions": {
+   "writeApprovalImpliesAcceptance": false,
+   "groupingApprovalImpliesWrite": false
+  }
+ },
+ {
+  "id": "scan-state-acceptance",
+  "assertions": {
+   "advanceBeforeAcceptance": false,
+   "requiredProgress": "Draft"
+  }
+ },
+ {
+  "id": "exact-approval",
+  "assertions": {
+   "batchDigestRequired": true
+  }
+ },
+ {
+  "id": "recoverable-execution",
+  "assertions": {
+   "preparedBeforeMutation": true,
+   "blindReplay": false
+  }
+ },
+ {
+  "id": "pr-intake",
+  "assertions": {
+   "pinnedSourceRevision": true,
+   "schemaValidScopeArtifact": true,
+   "liveRecordStateClassification": true
+  }
+ },
+ {
+  "id": "rest-track-26",
+  "assertions": {
+   "minorTrack": "v2.6.x",
+   "scannedIndependently": true
+  }
+ },
+ {
+  "id": "rest-track-30",
+  "assertions": {
+   "minorTrack": "v3.0.x",
+   "scannedIndependently": true
+  }
+ },
+ {
+  "id": "rest-lifecycle-fields",
+  "assertions": {
+   "operationLifecycle": true,
+   "contractElementLifecycle": true,
+   "minorGranularity": true
+  }
+ },
+ {
+  "id": "rest-review-manifest",
+  "assertions": {
+   "unitPerVersionTrackEndpointMethod": true
+  }
+ },
+ {
+  "id": "rest-fragment-collection",
+  "assertions": {
+   "deterministic": true,
+   "planeAware": true,
+   "boundToFullSourceRevision": true,
+   "reviewApprovalRequired": true
+  }
+ },
+ {
+  "id": "rest-control-plane-review",
+  "assertions": {
+   "fullBaseToFullHead": true,
+   "releaseTracks": false
+  }
+ }
 ]

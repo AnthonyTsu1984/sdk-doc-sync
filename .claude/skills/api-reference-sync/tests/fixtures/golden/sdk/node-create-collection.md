@@ -68,15 +68,11 @@ Resolves after the collection is created.
 
 ## Example{#example}
 
-### JavaScript example
-
 Creates a simple collection with JavaScript.
 
 ```javascript
 await client.createCollection({ collection_name: "docs", dimension: 128 });
 ```
-
-### TypeScript example
 
 Creates a typed collection request.
 

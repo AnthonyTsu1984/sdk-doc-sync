@@ -295,7 +295,7 @@ test('runReleaseScout preserves changed related source evidence and blocks ambig
     kind: 'source',
     locator: 'src/changed-helper.ts',
     revision: 'target-commit',
-    confidence: 'related',
+    confidence: 'derived',
   }]);
   assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'AMBIGUOUS_DOCUMENTATION_OWNERSHIP'));
 });
@@ -1336,7 +1336,10 @@ class SearchRequestVectorAssigner {
     });
     assert.deepEqual(
       doc.callableMembers.map((member) => member.signature.display),
-      symbol.params.map((param) => param.fullSignature),
+      // REQUEST METHODS render bare signatures (no `XxxRequest& ` return-type
+      // prefix) per the global layout rule — the scanner's fullSignature keeps
+      // the declaration form, so strip the prefix before comparing.
+      symbol.params.map((param) => param.fullSignature.replace(new RegExp('^' + symbol.name + 'Request& '), '')),
     );
   }
 });
@@ -1563,7 +1566,7 @@ struct MILVUS_SDK_API ResultNode {
   assert.ok(scope.actions.every((action) => action.reason === 'embedded type surface changed'));
   assert.ok(scope.actions.every((action) => action.evidence.some((item) => (
     item.locator === 'src/include/milvus/types/ResultNode.h'
-    && item.confidence === 'related'
+    && item.confidence === 'derived'
   ))));
 });
 
@@ -1903,7 +1906,7 @@ test('runReleaseScout maps C++ v2.6 flush-all and CDC symbols to canonical docs'
   assert.deepEqual(scope.actions.map((action) => [action.type, action.stableId, action.canonicalSlug, action.source.file]), [
     ['CREATE', 'cpp:CDC:GetReplicateInfo', 'CDC-GetReplicateInfo', 'src/include/milvus/MilvusClientV2.h'],
     ['CREATE', 'cpp:Management:FlushAll', 'v2-Management-FlushAll', 'src/include/milvus/MilvusClientV2.h'],
-    ['UPDATE', 'cpp:Management:GetLoadState', 'v2-Management-GetLoadState', 'src/include/milvus/MilvusClientV2.h'],
+    ['UPDATE', 'cpp:Management:GetLoadState', 'Management-GetLoadState', 'src/include/milvus/MilvusClientV2.h'],
   ]);
 });
 

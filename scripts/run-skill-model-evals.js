@@ -1046,8 +1046,20 @@ async function runOpenAI({ mode, model, prompt, contextLoaded = [], skill = null
     const calls = (payload.output || []).filter(item => item.type === 'function_call').map(observedToolCall);
     trace.toolCalls.push(...calls);
     if (calls.length === 0) {
-      const answer = parseJsonAnswer(extractResponseText(payload));
-      return { results: attachTrace(answer.results, { contextLoaded, toolCalls: trace.toolCalls }), trace };
+      const answerText = extractResponseText(payload);
+      let answer = null;
+      try { answer = parseJsonAnswer(answerText); } catch (error) { answer = null; }
+      if (answer && Array.isArray(answer.results)) {
+        return { results: attachTrace(answer.results, { contextLoaded, toolCalls: trace.toolCalls }), trace };
+      }
+      // Smaller models sometimes answer in prose or omit the top-level results
+      // array. Feed the offending reply back for one repair turn instead of
+      // failing the whole eval; the turn cap below still bounds the loop.
+      input = input.concat([
+        { role: 'assistant', content: [{ type: 'output_text', text: answerText }] },
+        { role: 'user', content: [{ type: 'input_text', text: 'That reply was not a single json object with a top-level "results" array (one entry per case). Reply again with ONLY that json object — no prose before or after it.' }] },
+      ]);
+      continue;
     }
     input = buildToolContinuationInput(input, payload.output, calls);
   }

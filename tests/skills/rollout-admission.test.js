@@ -80,6 +80,27 @@ test('model evaluations never run after a deterministic admission failure', () =
   assert.equal(fs.existsSync(result.outputPath), true);
 });
 
+test('deterministic-only admission skips the model-eval stage and records the mode', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-admission-det-'));
+  writeManifests(root);
+  const calls = [];
+  const result = runAdmission({
+    repoRoot: root,
+    phase: 'test-deterministic-only',
+    deterministicOnly: true,
+    now: () => '2026-08-06T00:00:00.000Z',
+    runCommand: (entry) => {
+      calls.push(entry.label);
+      return { status: 0, signal: null };
+    },
+  });
+
+  assert.equal(result.status, 'ADMITTED');
+  assert.equal(result.deterministicOnly, true);
+  assert.deepEqual(calls, DETERMINISTIC_COMMANDS.map(item => item.label));
+  assert.equal(result.results.some(item => item.stage === 'model-eval'), false);
+});
+
 test('successful admission records every gate in stage order', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-admission-pass-'));
   writeManifests(root);
@@ -154,7 +175,9 @@ test('CLI accepts an explicit resume flag only with a phase', () => {
     phase: 'hardening',
     outputPath: null,
     resume: true,
+    deterministicOnly: false,
   });
+  assert.equal(parseArgs(['--phase', 'hardening', '--deterministic-only']).deterministicOnly, true);
   assert.throws(() => parseArgs(['--resume']), /ADMISSION_PHASE_REQUIRED/);
 });
 

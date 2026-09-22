@@ -37,12 +37,17 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci
+      # Model evals need the isolated credentials and cost real tokens/time, so
+      # they run only on manual dispatch; pull_request runs the deterministic
+      # stage alone via --deterministic-only.
       - name: Require isolated model-eval credentials
+        if: github.event_name == 'workflow_dispatch'
         run: test -n "$LLM_API_KEY"
       - name: Run complete admission gate
         env:
           ROLLOUT_PHASE: ${{ github.event.inputs.rollout_phase || format('pr-{0}', github.event.pull_request.number) }}
-        run: npm run admit:skills -- --phase "$ROLLOUT_PHASE"
+          ADMISSION_ARGS: ${{ github.event_name == 'pull_request' && '--deterministic-only' || '' }}
+        run: npm run admit:skills -- --phase "$ROLLOUT_PHASE" $ADMISSION_ARGS
       - name: Upload admission evidence
         if: always()
         uses: actions/upload-artifact@v4

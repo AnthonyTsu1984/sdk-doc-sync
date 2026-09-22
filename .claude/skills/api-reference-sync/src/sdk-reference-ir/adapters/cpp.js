@@ -240,7 +240,10 @@ function toReferenceDocument(symbol, context = {}) {
       'request',
       effectiveMember,
       evidence,
-      member.fullSignature || `${member.name || ''}(${member.fullArgStr || ''})`,
+      // House rule (user directive 2026-09-22): REQUEST METHODS render bare
+      // callable signatures — the fluent `XxxRequest&` return type is noise
+      // and must not appear on the page.
+      `${member.name || ''}(${member.fullArgStr || ''})`,
       signatureInputs,
       { symbol, context },
     );

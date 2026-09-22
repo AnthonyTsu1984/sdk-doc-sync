@@ -645,7 +645,7 @@ function learningContextLoaded(phase, cases = []) {
 function routingPrompt(cases) {
   return [
     'You are evaluating skill routing. Select exactly one canonical skill for each case.',
-    'Use only the catalog below. Return the schema-required JSON and do not call tools.',
+    'Use only the catalog below. Respond with a single json object (no prose before or after it) that matches the schema-required JSON shape, and do not call tools.',
     `CATALOG:\n${JSON.stringify(routingCatalog(), null, 2)}`,
     `CASES:\n${JSON.stringify(cases.map(({ id, prompt }) => ({ id, prompt })), null, 2)}`,
   ].join('\n\n');
@@ -670,7 +670,7 @@ function behaviorPrompt(skill, phase, cases) {
     'Use requiredApproval only as one canonical token or null. It means the next approval or runtime gate that is still missing; if the prompt already supplies an exact valid approval for the current artifact, return null. BATCH_DIGEST means a new exact immutable batch approval for non-API skills; api-reference-sync must use APPROVE_GROUPING, APPROVE_WRITES, or APPROVE_ACCEPTANCE for its three gates. Use LIVE_AND_ALLOW_RUN when runtime is blocked because --live or --allow-run is missing, including when one of them is already present. Use SCENARIO_RUNTIME_GATES only when the scenario request has not established the complete --run-scenarios --live --allow-run gate context.',
     exactTargetApprovalInstruction,
     'batchChanged and scanStateMayChange are always booleans. Use batchChanged=true when an execution/write-approval batch is created, regenerated, replaced, invalidated as stale, or required for newly requested side-effect scope, including an initial dry-run batch, partial selection, separate remediation, source-change, or orphan-deletion work. Claim inventories, local drafts, read-only plans, and review artifacts do not make batchChanged true. Use false when the bound execution batch remains unchanged or no execution batch is involved. Use scanStateMayChange=false when scan state must remain unchanged or the skill has no scan state.',
-    'The final answer must match the tool trajectory. Return the schema-required JSON after tool use.',
+    'The final answer must match the tool trajectory. After tool use, respond with a single json object (no prose before or after it) that matches the schema-required JSON shape.',
     `ALLOWED OUTCOME TOKENS:\n${JSON.stringify([...new Set(cases.map(entry => entry.expected.outcome))])}`,
     `ALLOWED APPROVAL TOKENS:\n${JSON.stringify(APPROVAL_TOKENS)}`,
     `ALLOWED ACTION TOKENS FOR ${skill}:\n${JSON.stringify(actionTokens)}`,

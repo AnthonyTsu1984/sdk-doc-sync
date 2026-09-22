@@ -1336,7 +1336,10 @@ class SearchRequestVectorAssigner {
     });
     assert.deepEqual(
       doc.callableMembers.map((member) => member.signature.display),
-      symbol.params.map((param) => param.fullSignature),
+      // REQUEST METHODS render bare signatures (no `XxxRequest& ` return-type
+      // prefix) per the global layout rule — the scanner's fullSignature keeps
+      // the declaration form, so strip the prefix before comparing.
+      symbol.params.map((param) => param.fullSignature.replace(new RegExp('^' + symbol.name + 'Request& '), '')),
     );
   }
 });

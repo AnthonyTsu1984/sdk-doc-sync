@@ -32,7 +32,7 @@ auto request = CreateCollectionRequest()
   Enables the dynamic field.
 - `AddExtraParam(const std::string& key, const std::string& value)`
   Adds an extra request parameter.
-- `WithMetadata(const std::map<std::string, std::string>& values, int limit = 10)`
+- `WithMetadata(const std::map<std::string, std::string>& values, int limit = compute_limit("a,b", std::array<int, 2>{1, 2}))`
   Adds metadata with a result limit.
 
 **RETURNS:**

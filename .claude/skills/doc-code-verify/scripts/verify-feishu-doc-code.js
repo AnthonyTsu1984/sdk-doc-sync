@@ -2874,6 +2874,15 @@ async function main() {
 
     console.log('Feishu code verification summary');
     console.log(JSON.stringify(summary, null, 2));
+    if (summary.failed > 0) {
+        for (const item of results.filter((r) => r.verification?.status === 'failed')) {
+            const v = item.verification || {};
+            console.log(`FAILED snippet [${item.language || '?'}] ${v.detail || ''}`);
+            if (v.harness) console.log(`  harness: ${JSON.stringify(v.harness)}`);
+            const stderr = v.result?.stderr || '';
+            console.log(`  tool stderr: ${stderr.split('\n').filter(Boolean).slice(0, 4).join(' | ') || '(none)'}`);
+        }
+    }
     if (opts.scenario && scenarioResults.length > 0) {
         console.log('Scenario summary');
         for (const scenario of scenarioResults) {

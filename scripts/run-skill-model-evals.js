@@ -972,6 +972,41 @@ function extractResponseText(response) {
   throw new Error('MODEL_OUTPUT_MISSING: Responses API returned no output_text content');
 }
 
+// Smaller instruction-following models (e.g. deepseek-v4-flash) sometimes wrap
+// the final JSON in prose or code fences despite the json_schema constraint.
+// Pull the outermost JSON object out of the response text before parsing.
+function parseJsonAnswer(text) {
+  const raw = String(text || '').trim();
+  try { return JSON.parse(raw); } catch (error) { /* fall through to extraction */ }
+  const fenced = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) {
+    try { return JSON.parse(fenced[1].trim()); } catch (error) { /* keep looking */ }
+  }
+  const start = raw.indexOf('{');
+  if (start !== -1) {
+    let depth = 0, inString = false, escaped = false;
+    for (let i = start; i < raw.length; i += 1) {
+      const ch = raw[i];
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+        continue;
+      }
+      if (ch === '"') inString = true;
+      else if (ch === '{') depth += 1;
+      else if (ch === '}') {
+        depth -= 1;
+        if (depth === 0) {
+          const candidate = raw.slice(start, i + 1);
+          try { return JSON.parse(candidate); } catch (error) { break; }
+        }
+      }
+    }
+  }
+  throw new Error(`MODEL_OUTPUT_NOT_JSON: expected a JSON object, got: ${raw.slice(0, 120)}`);
+}
+
 async function runOpenAI({ mode, model, prompt, contextLoaded = [], skill = null }) {
   const config = loadEvaluationConfig();
   const apiKey = config.apiKey;
@@ -1011,7 +1046,7 @@ async function runOpenAI({ mode, model, prompt, contextLoaded = [], skill = null
     const calls = (payload.output || []).filter(item => item.type === 'function_call').map(observedToolCall);
     trace.toolCalls.push(...calls);
     if (calls.length === 0) {
-      const answer = JSON.parse(extractResponseText(payload));
+      const answer = parseJsonAnswer(extractResponseText(payload));
       return { results: attachTrace(answer.results, { contextLoaded, toolCalls: trace.toolCalls }), trace };
     }
     input = buildToolContinuationInput(input, payload.output, calls);

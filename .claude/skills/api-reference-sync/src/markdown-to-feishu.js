@@ -1685,6 +1685,10 @@ class MarkdownToFeishu {
                             document_id,
                             blocks: children,
                             parentBlockId: blockId,
+                            // The reused auto-created child occupies index 0 inside
+                            // the callout; remaining children must be created after
+                            // it or the index-0 insert reverses their order.
+                            startIndex: automaticPopulation.handled ? 1 : 0,
                         });
                         break;
                     } catch (err) {

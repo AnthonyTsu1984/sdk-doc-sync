@@ -17,6 +17,7 @@ const CANONICAL_SKILLS = Object.freeze([
 
 const DETERMINISTIC_COMMANDS = Object.freeze([
   { label: 'validate:skills', command: 'npm', args: ['run', 'validate:skills'] },
+  { label: 'check:invariants', command: 'npm', args: ['run', 'check:invariants'] },
   { label: 'test:skills', command: 'npm', args: ['run', 'test:skills'] },
   { label: 'test:doc-ops-core', command: 'npm', args: ['run', 'test:doc-ops-core'] },
   { label: 'test:agent-team', command: 'npm', args: ['run', 'test:agent-team'] },

@@ -8,6 +8,7 @@ on:
       - 'evals/skills/**'
       - 'scripts/run-skill-*.js'
       - 'scripts/validate-skills.js'
+      - 'scripts/check-invariant-coverage.js'
       - 'tests/skills/**'
       - 'package.json'
       - 'package-lock.json'

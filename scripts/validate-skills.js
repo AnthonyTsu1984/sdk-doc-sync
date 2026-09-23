@@ -5,6 +5,9 @@ const path = require('node:path');
 const {
   validateWriteEntrypointRegistry,
 } = require('../.claude/skills/doc-ops-core/src/write-entrypoint-registry');
+const {
+  checkSkillInvariantCoverage,
+} = require('../.claude/skills/doc-ops-core/src/invariant-registry');
 
 const ALLOWED_FRONTMATTER = new Set([
   'name',
@@ -115,6 +118,31 @@ function validateSkill(skillDir) {
   return { skillDir, skillPath, attributes, errors, warnings };
 }
 
+function fixtureIdsForSkill(skillDir) {
+  const casesPath = path.join(skillDir, 'tests', 'conformance-fixtures', 'cases.json');
+  if (!fs.existsSync(casesPath)) return [];
+  try {
+    const fixtures = JSON.parse(fs.readFileSync(casesPath, 'utf8'));
+    return (Array.isArray(fixtures) ? fixtures : fixtures.cases || []).map((item) => item.id);
+  } catch {
+    return [];
+  }
+}
+
+function validateInvariants(skillDir, repoRoot) {
+  // Only enforce for skills that have opted in by shipping a registry or by
+  // marking a Domain Invariants bullet; other skills are promoted in a later
+  // phase. checkSkillInvariantCoverage is a no-op for unmarked skills.
+  const coverage = checkSkillInvariantCoverage({
+    skillDir,
+    repoRoot,
+    fixtureIds: fixtureIdsForSkill(skillDir),
+  });
+  return coverage.errors.map((error) => (
+    `invariant ${error.code}${error.id ? ` ${error.id}` : ''}${error.path ? ` (${error.path})` : ''}`
+  ));
+}
+
 function validateRepository(repoRoot = process.cwd()) {
   const skillsRoot = path.join(repoRoot, '.claude', 'skills');
   const skills = [];
@@ -129,8 +157,13 @@ function validateRepository(repoRoot = process.cwd()) {
 
   for (const entry of entries) {
     const skillDir = path.join(skillsRoot, entry.name);
-    if (fs.existsSync(path.join(skillDir, 'SKILL.md'))) skills.push(validateSkill(skillDir));
-    else internalTools.push(skillDir);
+    if (fs.existsSync(path.join(skillDir, 'SKILL.md'))) {
+      const skill = validateSkill(skillDir);
+      skill.errors.push(...validateInvariants(skillDir, repoRoot));
+      skills.push(skill);
+    } else {
+      internalTools.push(skillDir);
+    }
   }
 
   const registryPath = path.join(repoRoot, '.claude', 'skills', 'doc-ops-core', 'write-entrypoints.json');
@@ -168,8 +201,10 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  fixtureIdsForSkill,
   markdownLinks,
   parseFrontmatter,
+  validateInvariants,
   validateRepository,
   validateSkill,
 };

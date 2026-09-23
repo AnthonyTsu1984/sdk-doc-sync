@@ -798,11 +798,13 @@ function createBoundedSummary(result) {
 }
 
 // Production acceptance-finalization entrypoint (--finalize-acceptance). The
-// receipt binds the touched records to an execution-journal digest; the
-// finalizer resolves that exact journal artifact, verifies its digest and
-// completion sentinel, and derives the per-action invariant evidence from its
-// tree-delta outcomes — caller-supplied evidence is never accepted. `io`
-// overrides are for tests only; production uses the real Bitable writer,
+// receipt embeds the ACCEPTANCE-PENDING review session — the complete
+// review-unit manifest, its accepted units (each bound to an execution-journal
+// digest), and the acceptanceManifestDigest. The finalizer recomputes the
+// acceptance manifest to enforce coverage of every accepted unit, resolves and
+// verifies each unit journal, and derives the per-action invariant evidence
+// from its tree-delta outcomes — caller-supplied evidence is never accepted.
+// `io` overrides are for tests only; production uses the real Bitable writer,
 // scan-state file, journal path binding, and receipt writer.
 async function finalizeAcceptance({
     receiptPath,
@@ -820,13 +822,23 @@ async function finalizeAcceptance({
         exit(1);
         return null;
     }
+    if (!receipt?.reviewSession || typeof receipt.reviewSession !== 'object') {
+        err('Error: acceptance receipt requires the acceptance-pending reviewSession (a single execution journal is not sufficient)');
+        exit(1);
+        return null;
+    }
     if (!receipt?.bitable?.baseToken) {
         err('Error: acceptance receipt requires bitable.baseToken for the target track');
         exit(1);
         return null;
     }
-    if (!Array.isArray(receipt.touchedRecords) || receipt.touchedRecords.length === 0) {
-        err('Error: acceptance receipt requires a non-empty touchedRecords list');
+    if (!nonEmptyReceiptString(receipt.scanStateKey)) {
+        err('Error: acceptance receipt requires scanStateKey');
+        exit(1);
+        return null;
+    }
+    if (!receipt.scanStateEntry || typeof receipt.scanStateEntry !== 'object' || Array.isArray(receipt.scanStateEntry)) {
+        err('Error: acceptance receipt requires scanStateEntry');
         exit(1);
         return null;
     }
@@ -854,7 +866,7 @@ async function finalizeAcceptance({
         }),
         writeJournal: io.writeJournal || (async (journal) => {
             fs.mkdirSync(tmpDir, { recursive: true });
-            const receiptOut = path.join(tmpDir, `acceptance-${receipt.executionJournalDigest.replace(':', '-')}.json`);
+            const receiptOut = path.join(tmpDir, `acceptance-${journal.acceptanceManifestDigest.replace(':', '-')}.json`);
             fs.writeFileSync(receiptOut, `${JSON.stringify(journal, null, 2)}\n`);
             out(`Acceptance receipt written to ${receiptOut}`);
         }),
@@ -866,13 +878,11 @@ async function finalizeAcceptance({
     try {
         const result = await finalizer.finalize({
             userConfirmed: receipt.userConfirmed === true,
-            acceptanceManifestDigest: receipt.acceptanceManifestDigest || null,
-            executionJournalDigest: receipt.executionJournalDigest,
-            touchedRecords: receipt.touchedRecords,
+            reviewSession: receipt.reviewSession,
             scanStateKey: receipt.scanStateKey,
             scanStateEntry: receipt.scanStateEntry,
         });
-        out('Acceptance finalized (invariant evidence derived from the execution journal):');
+        out('Acceptance finalized (invariant evidence derived from the accepted-unit manifest and execution journals):');
         out(JSON.stringify(result, null, 2));
         return result;
     } catch (error) {
@@ -880,6 +890,10 @@ async function finalizeAcceptance({
         exit(1);
         return null;
     }
+}
+
+function nonEmptyReceiptString(value) {
+    return typeof value === 'string' && value.trim() !== '';
 }
 
 if (require.main === module) {

@@ -95,17 +95,23 @@ After execution:
 - every outcome is appended to the execution journal as a `tree-delta` entry;
   a failed verification yields `TREE_DELTA_VERIFICATION_FAILED` diagnostics
   and status `PARTIAL`;
-- acceptance finalization **derives** — never accepts — the per-action
-  invariant evidence from the execution journal bound by digest: the journal
-  artifact is resolved via `SdkDocSync.journalPathForDigest()`, its canonical
-  digest and completion sentinel are verified, and every touched record must
-  trace to a successful `api.versioned-tree-delta` tree-delta outcome on a
-  successful observed action (`INVARIANT_EVIDENCE_REQUIRED` otherwise);
+- acceptance finalization **derives** — never accepts — everything writable
+  from the acceptance-pending review session: the session must carry
+  `status: acceptance_pending`, the complete `reviewUnitManifest`, the
+  `acceptedReviewUnits`, and the `acceptanceManifestDigest`; the finalizer
+  recomputes the acceptance manifest via `buildAcceptanceManifest` to enforce
+  coverage of EVERY accepted unit (digest mismatch or partial coverage is
+  `INVARIANT_EVIDENCE_REQUIRED`), resolves each unit's execution journal
+  through `SdkDocSync.journalPathForDigest()`, verifies its canonical digest
+  and completion sentinel, and requires a successful
+  `api.versioned-tree-delta` tree-delta outcome on a successful observed
+  action for every touched record. A single execution journal is not
+  sufficient for finalization;
 - the production entrypoint is
   `bin/sdk-doc-sync.js --finalize-acceptance <receipt>`, where the receipt
-  binds `userConfirmed`, `executionJournalDigest`, `touchedRecords`,
-  `scanStateKey`/`scanStateEntry`, and the target track's `bitable` identity;
-  the derived evidence is persisted in the acceptance receipt.
+  embeds the acceptance-pending session plus `userConfirmed`, the target
+  track's `bitable` identity, and the scan-state payload to record; the
+  derived evidence is persisted in the acceptance receipt.
 
 ## Reconciliation (read-only)
 

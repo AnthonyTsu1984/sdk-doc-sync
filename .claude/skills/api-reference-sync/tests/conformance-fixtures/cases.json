@@ -267,5 +267,28 @@
    "violationWrites": 0,
    "virtualNodeWrites": 1
   }
+ },
+ {
+  "id": "content-verbatim-roundtrip",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentVerbatimRoundtrip"
+  },
+  "assertions": {
+   "normalizedOk": true,
+   "driftOk": false,
+   "invariantId": "api.pr-verbatim-content"
+  }
+ },
+ {
+  "id": "content-shape-mismatch-requires-rebuild",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentShapeMismatchRequiresRebuild"
+  },
+  "assertions": {
+   "code": "REBUILD_REQUIRED_SHAPE_MISMATCH",
+   "writeCalls": 0
+  }
  }
 ]

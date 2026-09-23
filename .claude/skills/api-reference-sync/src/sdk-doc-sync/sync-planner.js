@@ -1,6 +1,7 @@
 'use strict';
 
 const { assertPublishableContent } = require('./feishu-block-safety');
+const { verbatimContentDigest } = require('./verbatim-content');
 const {
   organizationRecordType,
   validateOrganizationContract,
@@ -440,6 +441,7 @@ class SyncPlanner {
 
     let artifactDigest = null;
     let artifactKind = null;
+    let verbatimAttestation = null;
     if (WRITE_ACTIONS.has(diffAction)) {
       const reviewedArtifact = context.artifact;
       const serialized = reviewedArtifact && artifactBytes(reviewedArtifact);
@@ -470,6 +472,19 @@ class SyncPlanner {
         throw new SyncPlanningError('INVALID_DIGEST', `Digest function returned an invalid digest for ${stableId}`);
       }
       artifactKind = serialized.kind;
+      // Verbatim merged-PR pages attest the exact solidified content: the
+      // inputDigest binds the normalized upstream markdown so an approved
+      // batch covers the bytes that must land line-for-line
+      // (api.pr-verbatim-content).
+      if (reviewedArtifact.patchStrategy === 'rebuild' && reviewedArtifact.pr) {
+        verbatimAttestation = {
+          id: 'api.pr-verbatim-content',
+          version: 1,
+          inputDigest: verbatimContentDigest(reviewedArtifact.content),
+          decision: 'PR_VERBATIM_REBUILD',
+          evidenceDigest: artifactDigest,
+        };
+      }
     }
 
     const currentProof = context.current || {};
@@ -601,6 +616,9 @@ class SyncPlanner {
         );
       }
       invariantAttestations = [treeDelta.attestation];
+    }
+    if (verbatimAttestation) {
+      invariantAttestations = [verbatimAttestation, ...(invariantAttestations || [])];
     }
     const preconditions = [];
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });

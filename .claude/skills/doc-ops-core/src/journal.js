@@ -87,6 +87,20 @@ class ExecutionJournal {
     return this._append({ type: 'tree-delta', ...entry });
   }
 
+  // Post-write content-fidelity invariant outcome (one per attested action).
+  // Same contract as treeDelta: persisted before the completion sentinel so
+  // acceptance consumers can reject a batch whose verbatim content drifted.
+  contentFidelity(entry) {
+    this._assertApproved(entry?.actionId);
+    if (entry.ok !== true && entry.ok !== false) {
+      throw new JournalError('CONTENT_FIDELITY_OUTCOME_REQUIRED', `action ${entry.actionId} needs a boolean ok outcome`);
+    }
+    if (this.entries.some(item => item.type === 'content-fidelity' && item.actionId === entry.actionId)) {
+      throw new JournalError('DUPLICATE_CONTENT_FIDELITY_RESULT', `action ${entry.actionId} already has a content-fidelity result`);
+    }
+    return this._append({ type: 'content-fidelity', ...entry });
+  }
+
   complete() {
     if (this.entries.some(entry => entry.type === 'completion')) {
       throw new JournalError('DUPLICATE_COMPLETION_SENTINEL', 'journal is already complete');

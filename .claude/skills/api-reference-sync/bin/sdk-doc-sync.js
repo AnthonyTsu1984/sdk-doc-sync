@@ -13,6 +13,11 @@ const { validateDocumentIr } = require('../src/document-ir/validate');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
+const {
+    normalizeVerbatimContent,
+    verbatimCarriesIncludeMarker,
+    verbatimContentDigest,
+} = require('../src/sdk-doc-sync/verbatim-content');
 const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
 const {
     getTrack,
@@ -348,12 +353,16 @@ function createSchemaFirstArtifactProvider({
             : defaultReferenceContext(action);
         // Merged-PR pages are solidified verbatim: when the reviewed context
         // carries the upstream markdown, it replaces the schema-first
-        // regenerated document entirely (block-replace patch strategy).
+        // regenerated document entirely (block-replace patch strategy). The
+        // content is normalized here (web-content footer + leading H1
+        // stripped) and bound into the artifact digest so the approved batch
+        // digest covers the exact solidified bytes (api.pr-verbatim-content).
         if (action?.pr && typeof context?.verbatimContent === 'string' && context.verbatimContent.trim()) {
+            const verbatimContent = normalizeVerbatimContent(context.verbatimContent);
             // Pages carrying user-authored <include> conditional markers are
             // never rebuilt: the markers must survive verbatim, and the body
             // is edited surgically instead (api.literal-include-preserved).
-            if (/<include\s+target=/i.test(context.verbatimContent)) {
+            if (verbatimCarriesIncludeMarker(verbatimContent)) {
                 throw validationError(
                     'INCLUDE_REBUILD_FORBIDDEN',
                     'verbatim content carries literal <include> conditional markers; a rebuild artifact would re-derive the body — edit such pages with surgical child-block insertion',
@@ -363,7 +372,8 @@ function createSchemaFirstArtifactProvider({
             return {
                 reviewed: true,
                 validated: true,
-                content: context.verbatimContent,
+                content: verbatimContent,
+                contentDigest: verbatimContentDigest(verbatimContent),
                 patchStrategy: 'rebuild',
                 title: context.title,
                 metadata: { description: context.summary },

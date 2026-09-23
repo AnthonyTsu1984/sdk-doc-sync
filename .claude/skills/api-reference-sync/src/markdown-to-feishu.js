@@ -1572,6 +1572,25 @@ class MarkdownToFeishu {
         });
     }
 
+    async getRawContent(documentId) {
+        // Read-only raw_content refetch — the authoritative channel for
+        // verbatim text postconditions (api.pr-verbatim-content).
+        const token = await this.tokenFetcher.token();
+        const url = `${FEISHU_HOST}/open-apis/docx/v1/documents/${documentId}/raw_content`;
+        const res = await fetch(url, {
+            method: 'get',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await res.json();
+        if (data.code !== 0) {
+            throw new Error(`Failed to read raw content: ${data.msg}`);
+        }
+        return data.data.content;
+    }
+
     __collect_text_link_urls(value, found = []) {
         if (Array.isArray(value)) {
             value.forEach((item) => this.__collect_text_link_urls(item, found));
@@ -2294,6 +2313,29 @@ class MarkdownToFeishu {
             deleted: 0,
             unchanged: 0
         };
+
+        if (strategy === 'replace' || strategy === 'smart') {
+            // Feishu block types are immutable: an in-place text update can
+            // never change a block's structure, so an in-place update that
+            // pairs blocks of different types garbles the layout. Replace
+            // pairs positionally; smart pairs by type and content. Refuse any
+            // cross-type in-place pairing and require a rebuild
+            // (api.pr-verbatim-content).
+            const pairings = strategy === 'replace'
+                ? existingChildren
+                    .slice(0, Math.min(existingChildren.length, blocks.length))
+                    .map((existing, index) => ({ existing, new: blocks[index] }))
+                : this.__match_blocks_smart(existingChildren, blocks).matches;
+            const crossType = pairings.find((pair) => pair?.existing && pair?.new
+                && !pair.preserveType
+                && pair.existing.block_type !== pair.new.block_type);
+            if (crossType) {
+                throw Object.assign(
+                    new Error(`patch_document strategy "${strategy}" pairs an existing block_type ${crossType.existing.block_type} with a new block_type ${crossType.new.block_type}; block types are immutable so this in-place update would garble the layout — use strategy "rebuild" (api.pr-verbatim-content)`),
+                    { code: 'REBUILD_REQUIRED_SHAPE_MISMATCH', strategy },
+                );
+            }
+        }
 
         if (strategy === 'append') {
             // Simple append strategy: keep all existing, add new ones at the end

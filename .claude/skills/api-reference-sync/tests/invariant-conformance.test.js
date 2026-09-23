@@ -88,5 +88,6 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
     'api.absolute-link-urls',
     'api.literal-include-preserved',
     'api.record-description-scope',
+    'api.pr-verbatim-content',
   ]);
 });

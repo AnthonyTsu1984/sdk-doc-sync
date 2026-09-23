@@ -38,6 +38,9 @@ const {
 } = require('./versioned-tree-policy');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
 const { validateResumeSession } = require('./review-session-store');
+const { compareVerbatimContent } = require('./verbatim-content');
+
+const VERBATIM_INVARIANT_ID = 'api.pr-verbatim-content';
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
@@ -950,6 +953,66 @@ class SdkDocSync {
         }
         const treeDeltaFailures = result.treeDeltaVerifications.filter(outcome => !outcome.ok);
 
+        // Post-write verbatim content verification: for every action whose
+        // plan attests api.pr-verbatim-content, refetch the document's
+        // raw_content and compare it against the attested upstream markdown
+        // through the declared canonicalization. Evidence persists in the
+        // journal (type content-fidelity) before the completion sentinel so
+        // acceptance consumers can reject a batch whose verbatim pages
+        // drifted (api.pr-verbatim-content).
+        result.contentFidelityVerifications = result.contentFidelityVerifications || [];
+        for (const planned of approvedPlans) {
+            const verbatimAttestation = (planned.plan.invariantAttestations || [])
+                .find((item) => item?.id === VERBATIM_INVARIANT_ID);
+            if (!verbatimAttestation) continue;
+            const execResult = result.results.find((entry) => entry.action === planned.action
+                && entry.status === 'success') || {};
+            const documentToken = execResult.patchedDocument?.token
+                || execResult.createdDocument?.token
+                || planned.plan.source?.documentToken
+                || null;
+            let outcome;
+            if (!documentToken || typeof this.m2f.getRawContent !== 'function') {
+                outcome = {
+                    actionId: planned.plan.stableId,
+                    invariantId: VERBATIM_INVARIANT_ID,
+                    decision: verbatimAttestation.decision,
+                    ok: false,
+                    errors: [{ code: 'VERBATIM_REFETCH_UNAVAILABLE', documentToken }],
+                };
+            } else {
+                try {
+                    const rawContent = await this.m2f.getRawContent(documentToken);
+                    const comparison = compareVerbatimContent({
+                        expectedContent: planned.context?.artifact?.content ?? '',
+                        rawContent,
+                        pageTitle: planned.context?.artifact?.title || null,
+                    });
+                    outcome = {
+                        actionId: planned.plan.stableId,
+                        invariantId: VERBATIM_INVARIANT_ID,
+                        decision: verbatimAttestation.decision,
+                        documentToken,
+                        ok: comparison.ok,
+                        errors: comparison.ok ? [] : comparison.diffs,
+                    };
+                } catch (error) {
+                    outcome = {
+                        actionId: planned.plan.stableId,
+                        invariantId: VERBATIM_INVARIANT_ID,
+                        decision: verbatimAttestation.decision,
+                        documentToken,
+                        ok: false,
+                        errors: [{ code: error.code || 'VERBATIM_REFETCH_FAILED', message: error.message }],
+                    };
+                }
+            }
+            result.contentFidelityVerifications.push(outcome);
+            journal.contentFidelity(outcome);
+        }
+        const contentFidelityFailures = (result.contentFidelityVerifications || [])
+            .filter(outcome => !outcome.ok);
+
         const journalEntries = journal.read();
         const observedActionIds = new Set(journalEntries.filter(entry => entry.type === 'observed').map(entry => entry.actionId));
         const missingObserved = result.executionBatch.actions
@@ -975,7 +1038,7 @@ class SdkDocSync {
         result.executionResult = createResult({
             skill: 'api-reference-sync',
             operation: 'execute',
-            status: failedResults.length === 0 && treeDeltaFailures.length === 0 ? 'EXECUTED' : 'PARTIAL',
+            status: failedResults.length === 0 && treeDeltaFailures.length === 0 && contentFidelityFailures.length === 0 ? 'EXECUTED' : 'PARTIAL',
             diagnostics: [
                 ...failedResults.map(entry => diagnosticFor(entry.error, {
                     actionId: this._stableIdFor(entry.action),
@@ -986,6 +1049,12 @@ class SdkDocSync {
                     message: `Post-write tree-delta verification failed for ${outcome.actionId}`,
                     errors: outcome.errors,
                 })),
+                ...contentFidelityFailures.map(outcome => ({
+                    code: 'VERBATIM_CONTENT_VERIFICATION_FAILED',
+                    actionId: outcome.actionId,
+                    message: `Post-write verbatim content verification failed for ${outcome.actionId}`,
+                    errors: outcome.errors,
+                })),
             ],
             artifactPaths: [journal.filePath],
             evidence: {
@@ -993,6 +1062,8 @@ class SdkDocSync {
                 executionJournalDigest: result.executionJournalDigest,
                 treeDeltaVerifications: result.treeDeltaVerifications.length,
                 treeDeltaFailures: treeDeltaFailures.length,
+                contentFidelityVerifications: result.contentFidelityVerifications.length,
+                contentFidelityFailures: contentFidelityFailures.length,
             },
         });
 

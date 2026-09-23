@@ -131,5 +131,6 @@ test('the provider still emits verbatim rebuild artifacts without include marker
   });
   const artifact = await provider({ type: 'UPDATE', stableId: 'cpp:Vector:X', pr: { number: 1, path: 'X.md' } });
   assert.equal(artifact.patchStrategy, 'rebuild');
-  assert.equal(artifact.content, 'plain verbatim body without markers');
+  assert.equal(artifact.content, 'plain verbatim body without markers\n');
+  assert.match(artifact.contentDigest, /^sha256:[0-9a-f]{64}$/);
 });

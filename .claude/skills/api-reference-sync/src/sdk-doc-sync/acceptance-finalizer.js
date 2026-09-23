@@ -3,6 +3,7 @@
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { createApprovalEnvelope } = require('../../../doc-ops-core/src/writer-governance');
 const { INVARIANT_ID } = require('./versioned-tree-policy');
+const { INVARIANT_ID: VERBATIM_INVARIANT_ID } = require('./verbatim-content');
 const { buildAcceptanceManifest } = require('./review-units');
 
 function clone(value) {
@@ -110,9 +111,17 @@ class AcceptanceFinalizer {
     }
     const evidenceByActionId = new Map();
     for (const entry of entries) {
-      if (entry?.type !== 'tree-delta' || entry.ok !== true) continue;
-      if (entry.invariantId !== INVARIANT_ID) continue;
+      // Verified post-write invariant outcomes: tree-delta outcomes remain
+      // the primary evidence; content-fidelity outcomes carry equal weight
+      // for verbatim pages. Foreign invariant ids are not evidence.
+      if (entry?.type !== 'tree-delta' && entry?.type !== 'content-fidelity') continue;
+      if (entry.ok !== true) continue;
+      const expectedInvariantId = entry.type === 'tree-delta' ? INVARIANT_ID : VERBATIM_INVARIANT_ID;
+      if (entry.invariantId !== expectedInvariantId) continue;
       if (!nonEmptyString(entry.decision)) continue;
+      // A tree-delta outcome outranks a content-fidelity outcome for the
+      // same action (it covers the record/tree postconditions).
+      if (entry.type === 'content-fidelity' && evidenceByActionId.has(entry.actionId)) continue;
       evidenceByActionId.set(entry.actionId, {
         actionId: entry.actionId,
         invariantId: entry.invariantId,
@@ -124,7 +133,7 @@ class AcceptanceFinalizer {
     for (const record of unit.touchedRecords || []) {
       const item = evidenceByActionId.get(record?.actionId);
       if (!item) {
-        throw invariantEvidenceError(`Acceptance requires a verified ${INVARIANT_ID} journal outcome for action ${record?.actionId || '(missing)'} in unit ${unit.reviewUnitId}`);
+        throw invariantEvidenceError(`Acceptance requires a verified post-write invariant journal outcome for action ${record?.actionId || '(missing)'} in unit ${unit.reviewUnitId}`);
       }
       const observed = entries.find((entry) => entry.type === 'observed'
         && entry.actionId === record.actionId

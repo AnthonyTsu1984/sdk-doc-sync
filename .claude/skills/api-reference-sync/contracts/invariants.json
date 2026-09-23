@@ -245,6 +245,56 @@
         }
       ],
       "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): the Bitable Description field is reserved for VirtualNode (Drive folder) records. BitableWriter createRecord/updateRecord/replaceRecordFields refuse a non-empty description on any record that is not a VirtualNode (live type re-read when the payload does not carry it; clearing stays allowed), and sync-executor no longer passes a description for interface records."
+    },
+    {
+      "id": "api.pr-verbatim-content",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "plan",
+        "pre-write",
+        "post-write"
+      ],
+      "statementDigest": "sha256:315d47eb9d891dce1f4d2994aca4bfd4b7b0716d8ee270747e5a9eb18702c5dc",
+      "fixtureIds": [
+        "content-verbatim-roundtrip",
+        "content-shape-mismatch-requires-rebuild"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/verbatim-content.js",
+          "codes": [
+            "PR_VERBATIM_REBUILD"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "VERBATIM_ATTESTATION_REQUIRED",
+            "VERBATIM_ATTESTATION_DIGEST_MISMATCH"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "REBUILD_REQUIRED_SHAPE_MISMATCH"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/index.js",
+          "codes": [
+            "VERBATIM_CONTENT_VERIFICATION_FAILED",
+            "VERBATIM_REFETCH_UNAVAILABLE"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 3: merged-PR pages land line-for-line identical to the pinned upstream markdown. The provider normalizes verbatim content (web-content footer + leading H1 stripped) and the planner attests the normalized content digest into the plan (decision PR_VERBATIM_REBUILD); the executor refuses a verbatim rebuild whose plan carries no attestation or whose bytes no longer match it; patch_document refuses cross-type in-place pairings (replace positional, smart matched) requiring rebuild; after execution the runner refetches raw_content, compares through the declared canonicalization (refetchChannel raw_content, canonicalVersion 1), journals a content-fidelity outcome before the completion sentinel, and the acceptance finalizer accepts content-fidelity outcomes as verified evidence."
     }
   ]
 }

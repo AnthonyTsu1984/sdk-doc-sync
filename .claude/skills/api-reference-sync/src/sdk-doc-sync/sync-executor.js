@@ -8,6 +8,7 @@ const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { organizationRecordType } = require('./sdk-organization-contract');
 const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { captureRecordState } = require('./record-state');
+const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -1062,10 +1063,30 @@ class SyncExecutor {
       const patchStrategy = artifact.patchStrategy === 'rebuild'
         ? 'rebuild'
         : (artifact.patchStrategy === 'replace' ? 'replace' : 'smart');
-      if (patchStrategy === 'rebuild' && /<include\s+target=/i.test(String(artifact.content || ''))) {
-        const error = new Error('a rebuild patch over content carrying literal <include> conditional markers is forbidden — edit such pages with surgical child-block insertion (api.literal-include-preserved)');
-        error.code = 'INCLUDE_REBUILD_FORBIDDEN';
-        throw error;
+      if (patchStrategy === 'rebuild') {
+        if (verbatimCarriesIncludeMarker(artifact.content)) {
+          const error = new Error('a rebuild patch over content carrying literal <include> conditional markers is forbidden — edit such pages with surgical child-block insertion (api.literal-include-preserved)');
+          error.code = 'INCLUDE_REBUILD_FORBIDDEN';
+          throw error;
+        }
+        // The approved plan must attest the exact solidified content bytes;
+        // otherwise the batch digest does not cover what would land
+        // (api.pr-verbatim-content).
+        if (artifact.pr) {
+          const attestation = (plan.invariantAttestations || [])
+            .find((item) => item?.id === 'api.pr-verbatim-content');
+          if (!attestation) {
+            const error = new Error(`a verbatim rebuild artifact requires an api.pr-verbatim-content attestation in the approved plan for ${plan.stableId}`);
+            error.code = 'VERBATIM_ATTESTATION_REQUIRED';
+            throw error;
+          }
+          const contentDigest = verbatimContentDigest(artifact.content);
+          if (attestation.inputDigest !== contentDigest) {
+            const error = new Error(`the api.pr-verbatim-content attestation digest does not match the artifact content for ${plan.stableId}; replan so the approved batch covers the exact bytes`);
+            error.code = 'VERBATIM_ATTESTATION_DIGEST_MISMATCH';
+            throw error;
+          }
+        }
       }
       let blocks = artifact.blocks;
       if (!blocks && typeof this.documentWriter.parse_markdown === 'function' && typeof this.documentWriter.markdown_to_blocks === 'function') {

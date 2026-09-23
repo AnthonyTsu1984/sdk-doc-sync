@@ -34,8 +34,8 @@ function nonEmptyString(value) {
 }
 
 function parseArgs(argv = process.argv) {
-  const args = { sourceVersionRoots: [], adjacentBitables: [] };
-  const repeatable = new Set(['--source-version-root', '--adjacent-bitable']);
+  const args = { sourceVersionRoots: [], adjacentBitables: [], requiredTracks: [] };
+  const repeatable = new Set(['--source-version-root', '--adjacent-bitable', '--required-track']);
   const options = new Set([
     '--proposal', '--version', '--version-root', '--output',
     '--language', '--registry', '--target-bitable',
@@ -50,6 +50,8 @@ function parseArgs(argv = process.argv) {
       args.sourceVersionRoots.push(value);
     } else if (key === '--adjacent-bitable') {
       args.adjacentBitables.push(value);
+    } else if (key === '--required-track') {
+      args.requiredTracks.push(value);
     } else {
       args[key.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase())] = value;
     }
@@ -208,6 +210,7 @@ async function buildPlacementAudit({
   trackBitables = [],
   recordLister = null,
   collectedAt = null,
+  requiredTrackVersions = null,
 }) {
   const runCollectedAt = collectedAt || new Date().toISOString();
   const roots = [
@@ -223,15 +226,41 @@ async function buildPlacementAudit({
   }
   const targetIndex = indexes[0].index;
 
+  // Completeness is "every applicable track was enumerated", never "at least
+  // one was supplied". The required set is derived independently of what the
+  // caller chose to enumerate: the target version, every declared source
+  // root, and any registry/explicit manifest versions. An omitted adjacent
+  // Bitable could hold references to the same document tokens, so a partial
+  // enumeration must yield unknown sharing, not digest-valid unshared
+  // evidence.
+  const requiredVersions = [...new Set([
+    version,
+    ...sourceVersionRoots.map((item) => item.version),
+    ...(requiredTrackVersions || []),
+  ].filter(nonEmptyString))];
+
   const enumeration = {
-    complete: trackBitables.length > 0,
+    complete: true,
     supplied: trackBitables.length,
+    requiredVersions,
     failures: [],
     tracks: [],
   };
   const referencesByToken = new Map();
   const trackInventoryDigests = {};
+  const enumeratedVersions = new Set();
+  const seenVersions = new Set();
   for (const track of trackBitables) {
+    if (seenVersions.has(track.version)) {
+      enumeration.complete = false;
+      enumeration.failures.push({
+        version: track.version,
+        baseToken: track.baseToken || null,
+        code: 'TRACK_COVERAGE_DUPLICATE',
+      });
+      continue;
+    }
+    seenVersions.add(track.version);
     if (!nonEmptyString(track.baseToken)) {
       enumeration.complete = false;
       enumeration.failures.push({
@@ -253,6 +282,7 @@ async function buildPlacementAudit({
       const tokens = bitableRecordTokens(records);
       const inventoryDigest = trackInventoryDigest(tokens);
       trackInventoryDigests[track.version] = inventoryDigest;
+      enumeratedVersions.add(track.version);
       enumeration.tracks.push({
         version: track.version,
         baseToken: track.baseToken,
@@ -273,6 +303,16 @@ async function buildPlacementAudit({
         baseToken: track.baseToken,
         code: 'TRACK_ENUMERATION_FAILED',
         message: error.message,
+      });
+    }
+  }
+  for (const required of requiredVersions) {
+    if (!enumeratedVersions.has(required)) {
+      enumeration.complete = false;
+      enumeration.failures.push({
+        version: required,
+        baseToken: null,
+        code: 'TRACK_COVERAGE_MISSING',
       });
     }
   }
@@ -362,6 +402,7 @@ async function buildPlacementAudit({
     recordEnumeration: {
       complete: enumeration.complete,
       supplied: enumeration.supplied,
+      requiredVersions: enumeration.requiredVersions,
       failures: enumeration.failures,
       tracks: enumeration.tracks,
     },
@@ -408,7 +449,12 @@ function resolveRegistryContext({ args, version, registryPath }) {
       tableId: trackTableId(candidate),
     });
   }
-  return { targetBitable, targetRoot, sourceVersionRoots, adjacentBitables };
+  // The registry is the independent source of the required enumeration set:
+  // every registered track of the language can hold record pointers at this
+  // track's documents, so all of them must be enumerated for sharing to be
+  // known.
+  const requiredTrackVersions = tracks.map((candidate) => candidate.version);
+  return { targetBitable, targetRoot, sourceVersionRoots, adjacentBitables, requiredTrackVersions };
 }
 
 async function main(argv = process.argv) {
@@ -419,6 +465,7 @@ async function main(argv = process.argv) {
   let versionRootToken = args.versionRoot || null;
   const sourceVersionRoots = args.sourceVersionRoots.map(parseSourceVersionRoot);
   const trackBitables = [];
+  const requiredTrackVersions = [...args.requiredTracks];
   if (args.targetBitable) {
     trackBitables.push({ version: args.version, ...parseBitableTarget(args.targetBitable) });
   }
@@ -446,6 +493,7 @@ async function main(argv = process.argv) {
         sourceVersionRoots.push(source);
       }
     }
+    requiredTrackVersions.push(...resolved.requiredTrackVersions);
   }
 
   if (!versionRootToken) {
@@ -460,6 +508,7 @@ async function main(argv = process.argv) {
     indexer: (rootToken) => indexVersionRoot(tokenFetcher, rootToken),
     trackBitables,
     recordLister: ({ baseToken, tableId }) => listBitableRecords(tokenFetcher, baseToken, tableId),
+    requiredTrackVersions,
   });
   artifact.sourceProposal = args.proposal;
   fs.mkdirSync(path.dirname(args.output), { recursive: true });

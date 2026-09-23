@@ -10,7 +10,7 @@ Use this reference for any governed UPDATE run on a versioned SDK track. It desc
 
 ## Evidence chain
 
-1. **Collection** — `scripts/build-current-placement-audit.js` is the canonical read-only evidence collector. It combines recursive Drive ancestry with fully paginated Bitable enumeration of the target track and every adjacent track, then emits a digest-bound `inheritanceEvidence` object per entry:
+1. **Collection** — `scripts/build-current-placement-audit.js` is the canonical read-only evidence collector. It combines recursive Drive ancestry with fully paginated Bitable enumeration of the target track and every adjacent track, then emits a digest-bound `inheritanceEvidence` object per entry. Enumeration completeness is checked against a **required track set derived independently of what the caller supplied** — the target version, every declared source root, every registered track of the language in registry mode, and any explicit `--required-track <version>` manifest entries. Missing coverage (`TRACK_COVERAGE_MISSING`), duplicate track entries (`TRACK_COVERAGE_DUPLICATE`), unresolved bases, or listing failures mark the run incomplete, and an incomplete run classifies every entry as `unknown` and emits no evidence — a partial enumeration can never produce digest-valid `unshared` evidence. Each evidence object carries:
    - `current` / `target` placement bindings (record, document token, version, folder, version root, verification flags);
    - `sharedToken.status` (`shared` | `unshared` | `unknown`) plus the complete `referencedRecordIds` set (current record included);
    - `trackInventoryDigests` for every enumerated track (both the track holding the document and the track being planned must be present);
@@ -41,9 +41,9 @@ node .claude/skills/api-reference-sync/scripts/build-current-placement-audit.js 
   --output tmp/.../placement-audit.json
 ```
 
-- `--language` + `--version` resolve the release root, the target Bitable, every adjacent Bitable, and older-track source roots from the registry (`--registry <path>` overrides the registry file).
-- Explicit flags override or supplement the registry: `--version-root`, `--target-bitable <baseToken>[:<tableId>]`, `--adjacent-bitable <version>:<baseToken>[:<tableId>]` (repeatable), `--source-version-root <version>:<rootToken>` (repeatable).
-- Without any Bitable inputs the audit still produces Drive placement, but every entry stays `unknown` for sharing and emits no evidence — planning with such entries blocks fail-closed.
+- `--language` + `--version` resolve the release root, the target Bitable, every adjacent Bitable, the required track coverage set, and older-track source roots from the registry (`--registry <path>` overrides the registry file).
+- Explicit flags override or supplement the registry: `--version-root`, `--target-bitable <baseToken>[:<tableId>]`, `--adjacent-bitable <version>:<baseToken>[:<tableId>]` (repeatable), `--source-version-root <version>:<rootToken>` (repeatable), and `--required-track <version>` (repeatable) to declare additional participating versions whose Bitables must be enumerated.
+- Without complete coverage of the required track set the audit still produces Drive placement, but every entry stays `unknown` for sharing and emits no evidence — planning with such entries blocks fail-closed.
 - The script is GET-only and stays classified `read-only` in `doc-ops-core/write-entrypoints.json`.
 
 ## Live executor wiring

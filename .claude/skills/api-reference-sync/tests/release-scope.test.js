@@ -238,6 +238,141 @@ test('placement audit blocks with unknown sharing when adjacent enumeration fail
   assert.ok(artifact.entries[0].inheritanceEvidenceBlockers.includes('TRACK_ENUMERATION_INCOMPLETE'));
 });
 
+test('placement audit blocks evidence when a declared source-root track has no enumerated Bitable', async () => {
+  // PR #20 review reproduction: a v2.5 source root is declared, but only the
+  // v2.6 target Bitable is enumerated. The omitted v2.5 records could
+  // reference the same document token, so the required-track coverage check
+  // must keep sharing unknown and emit no evidence — a digest-valid unshared
+  // baseline from a partial enumeration is the fail-open this guards against.
+  const proposal = {
+    proposals: [{
+      id: 'proposal:python:Volume:upload_file_to_volume',
+      docIdentity: {
+        stableId: 'python:Volume:upload_file_to_volume',
+        canonicalSlug: 'Volume-upload_file_to_volume',
+        title: 'upload_file_to_volume',
+        targetFolderToken: 'volume-folder-v26',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'rec-upload',
+        currentDocumentToken: 'doc-upload-v26',
+        parentRecordIds: ['rec-volume'],
+      },
+    }],
+  };
+  const indexes = {
+    'root-v26': new Map([
+      ['volume-folder-v26', {
+        token: 'volume-folder-v26', type: 'folder', parentFolderToken: 'root-v26',
+        ancestors: ['root-v26'], name: 'Volume',
+      }],
+      ['doc-upload-v26', {
+        token: 'doc-upload-v26', type: 'docx', parentFolderToken: 'volume-folder-v26',
+        ancestors: ['root-v26', 'volume-folder-v26'], name: 'upload_file_to_volume',
+      }],
+    ]),
+    'root-v25': new Map(),
+  };
+
+  const artifact = await buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    sourceVersionRoots: [{ version: 'v2.5.x', rootToken: 'root-v25' }],
+    indexer: async (rootToken) => indexes[rootToken],
+    trackBitables: [{ version: 'v2.6.x', baseToken: 'base-v26' }],
+    recordLister: async () => [
+      { record_id: 'rec-upload', fields: { Docs: { text: 'upload_file_to_volume', link: 'https://zilliverse.feishu.cn/docx/doc-upload-v26' } } },
+    ],
+  });
+
+  assert.equal(artifact.recordEnumeration.complete, false);
+  assert.deepEqual(artifact.recordEnumeration.requiredVersions, ['v2.6.x', 'v2.5.x']);
+  assert.deepEqual(artifact.recordEnumeration.failures, [{
+    version: 'v2.5.x',
+    baseToken: null,
+    code: 'TRACK_COVERAGE_MISSING',
+  }]);
+  assert.equal(artifact.inheritanceEvidenceStatus, 'evidence_blocked');
+  assert.equal(artifact.entries[0].sharedToken.status, 'unknown');
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, null);
+  assert.equal(artifact.entries[0].inheritanceEvidence, null);
+  assert.ok(artifact.entries[0].inheritanceEvidenceBlockers.includes('TRACK_ENUMERATION_INCOMPLETE'));
+});
+
+test('placement audit rejects duplicate track enumeration and honors explicit required manifests', async () => {
+  const proposal = {
+    proposals: [{
+      id: 'proposal:python:Volume:upload_file_to_volume',
+      docIdentity: {
+        stableId: 'python:Volume:upload_file_to_volume',
+        canonicalSlug: 'Volume-upload_file_to_volume',
+        title: 'upload_file_to_volume',
+        targetFolderToken: 'volume-folder-v26',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'rec-upload',
+        currentDocumentToken: 'doc-upload-v26',
+        parentRecordIds: ['rec-volume'],
+      },
+    }],
+  };
+  const indexes = {
+    'root-v26': new Map([
+      ['volume-folder-v26', {
+        token: 'volume-folder-v26', type: 'folder', parentFolderToken: 'root-v26',
+        ancestors: ['root-v26'], name: 'Volume',
+      }],
+      ['doc-upload-v26', {
+        token: 'doc-upload-v26', type: 'docx', parentFolderToken: 'volume-folder-v26',
+        ancestors: ['root-v26', 'volume-folder-v26'], name: 'upload_file_to_volume',
+      }],
+    ]),
+  };
+  const records = [
+    { record_id: 'rec-upload', fields: { Docs: { text: 'upload_file_to_volume', link: 'https://zilliverse.feishu.cn/docx/doc-upload-v26' } } },
+  ];
+
+  const duplicated = await buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    indexer: async (rootToken) => indexes[rootToken],
+    trackBitables: [
+      { version: 'v2.6.x', baseToken: 'base-v26' },
+      { version: 'v2.6.x', baseToken: 'base-v26-alias' },
+    ],
+    recordLister: async () => records,
+  });
+  assert.equal(duplicated.recordEnumeration.complete, false);
+  assert.ok(duplicated.recordEnumeration.failures.some(
+    (failure) => failure.code === 'TRACK_COVERAGE_DUPLICATE' && failure.version === 'v2.6.x',
+  ));
+  assert.equal(duplicated.entries[0].sharedToken.status, 'unknown');
+  assert.equal(duplicated.entries[0].inheritanceEvidence, null);
+
+  // An explicit complete manifest (no registry, no source roots) still forces
+  // coverage of every declared participating version.
+  const explicitRequired = await buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    indexer: async (rootToken) => indexes[rootToken],
+    trackBitables: [{ version: 'v2.6.x', baseToken: 'base-v26' }],
+    recordLister: async () => records,
+    requiredTrackVersions: ['v2.6.x', 'v3.0.x'],
+  });
+  assert.equal(explicitRequired.recordEnumeration.complete, false);
+  assert.deepEqual(explicitRequired.recordEnumeration.failures, [{
+    version: 'v3.0.x',
+    baseToken: null,
+    code: 'TRACK_COVERAGE_MISSING',
+  }]);
+  assert.equal(explicitRequired.entries[0].sharedToken.status, 'unknown');
+});
+
 test('placement audit classifies a target-local doc referenced only by its own record as unshared', async () => {
   const proposal = {
     proposals: [{

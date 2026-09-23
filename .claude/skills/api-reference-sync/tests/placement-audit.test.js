@@ -36,11 +36,14 @@ test('placement audit CLI accepts registry arguments and repeatable track flags'
     '--registry', '/tmp/registry.json',
     '--adjacent-bitable', 'v2.6.x:base-v26',
     '--adjacent-bitable', 'v2.5.x:base-v25:table-2',
+    '--required-track', 'v2.6.x',
+    '--required-track', 'v2.5.x',
   ]);
   assert.equal(args.language, 'cpp');
   assert.equal(args.registry, '/tmp/registry.json');
   assert.equal(args.versionRoot, undefined);
   assert.deepEqual(args.adjacentBitables, ['v2.6.x:base-v26', 'v2.5.x:base-v25:table-2']);
+  assert.deepEqual(args.requiredTracks, ['v2.6.x', 'v2.5.x']);
 
   assert.throws(
     () => parseArgs(['node', 'script', '--proposal', 'p.json', '--version', 'v3.0.x']),
@@ -71,6 +74,8 @@ test('registry context resolves cpp release roots and full cross-track enumerati
     baseToken: 'XmndbkxkQaigA8soRiCcTT41nMd',
     tableId: null,
   }]);
+  // The registry is the independent source of the required coverage set.
+  assert.deepEqual(resolved.requiredTrackVersions, ['v2.6.x', 'v3.0.x']);
 });
 
 test('registry context resolves the older cpp track without newer-tree roots', () => {
@@ -85,6 +90,9 @@ test('registry context resolves the older cpp track without newer-tree roots', (
     resolved.adjacentBitables.map((track) => track.version),
     ['v3.0.x'],
   );
+  // The newer track can hold records pointing at unchanged v2.6 documents, so
+  // it is required coverage even though it holds no inherited source roots.
+  assert.deepEqual(resolved.requiredTrackVersions, ['v2.6.x', 'v3.0.x']);
 });
 
 test('registry context fails closed for unregistered tracks', () => {

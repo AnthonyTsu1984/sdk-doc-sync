@@ -86,3 +86,11 @@ test('compareVerbatimContent reports drifted text with line-accurate diffs', () 
     assert.equal(comparison.diffs[0].expected, 'second');
     assert.equal(comparison.diffs[0].observed, 'CHANGED');
 });
+
+test('the raw_content title line is dropped even when the caller cannot name it', () => {
+    const comparison = compareVerbatimContent({
+        expectedContent: 'first\nsecond',
+        rawContent: 'the-page-title\nfirst\nsecond',
+    });
+    assert.equal(comparison.ok, true);
+});

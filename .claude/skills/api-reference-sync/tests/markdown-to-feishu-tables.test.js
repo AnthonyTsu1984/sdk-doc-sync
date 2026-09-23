@@ -60,16 +60,17 @@ test('pipe-table rows may exceed the header and keep every body row', async () =
 
 test('unrepresentable markdown tokens are refused, not dropped', async () => {
   await assert.rejects(
-    writer().markdown_to_blocks([{ type: 'def' }]),
-    (error) => error.code === 'MD_TOKEN_UNREPRESENTABLE' && error.tokenType === 'def',
+    writer().markdown_to_blocks([{ type: 'definitely_not_a_real_token' }]),
+    (error) => error.code === 'MD_TOKEN_UNREPRESENTABLE' && error.tokenType === 'definitely_not_a_real_token',
   );
 });
 
-test('a link-reference definition in document markdown blocks conversion', async () => {
-  await assert.rejects(
-    blocksFor('# Title\n\n[ref]: https://example.com\n'),
-    (error) => error.code === 'MD_TOKEN_UNREPRESENTABLE',
-  );
+test('link-reference definitions are structural no-ops, not errors', async () => {
+  const blocks = await blocksFor('# Title\n\n[ref]: https://example.com\n\nBody paragraph.\n');
+  const texts = blocks.filter((block) => block.block_type === 2);
+  assert.equal(texts.length, 1, 'the definition must not emit a block');
+  const text = texts[0].text.elements.map((element) => element?.text_run?.content || '').join('');
+  assert.equal(text, 'Body paragraph.');
 });
 
 test('tight blockquote text renders instead of being silently dropped', async () => {

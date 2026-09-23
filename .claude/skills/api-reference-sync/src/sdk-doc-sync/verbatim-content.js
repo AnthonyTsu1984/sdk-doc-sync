@@ -88,10 +88,13 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
     return out;
 }
 
-function compareVerbatimContent({ expectedContent, rawContent, pageTitle = null } = {}) {
-    const dropLeadingTitle = typeof pageTitle === 'string' && pageTitle.length > 0;
+function compareVerbatimContent({ expectedContent, rawContent } = {}) {
+    // raw_content always leads with the document's page title — drop the
+    // first observed line unconditionally, not only when the caller happens
+    // to know the title string (a null/absent pageTitle previously caused an
+    // off-by-one false divergence).
     const expected = canonicalVerbatimLines({ markdown: normalizeVerbatimContent(expectedContent) });
-    const observed = canonicalVerbatimLines({ markdown: rawContent, dropLeadingTitle });
+    const observed = canonicalVerbatimLines({ markdown: rawContent, dropLeadingTitle: true });
     // The write body carries no leading blank line (trimStart in the
     // normalizer) while raw_content keeps the blank after the title line —
     // align both sides by dropping leading and trailing blank lines.

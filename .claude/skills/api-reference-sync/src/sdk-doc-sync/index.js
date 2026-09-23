@@ -1620,7 +1620,6 @@ class SdkDocSync {
             link: docUrl,
             progress: meta.progress,
             addedSince: meta.addedSince,
-            description: meta.description,
             type: meta.type,
             targets: meta.targets,
             parentRecordId: meta.parentRecordId,
@@ -1646,7 +1645,6 @@ class SdkDocSync {
         });
 
         const record = await this.bitableWriter.updateRecord(action.doc.id, {
-            description: meta.description,
             lastModified: this.sdkVersion,
         });
 

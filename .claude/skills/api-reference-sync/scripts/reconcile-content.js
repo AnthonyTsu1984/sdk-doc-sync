@@ -136,9 +136,14 @@ async function main(argv = process.argv) {
             : { invariantId: 'api.pr-verbatim-content', findings: [], skipped: true };
 
         // Page layout conformance against the language's declared rules: from
-        // the injected blocks dump when provided.
+        // the injected blocks dump when provided. The dump may be a flat
+        // block array (one page) or an array of {pageId, blocks} pages —
+        // normalize so the reconciler always sees the page shape.
+        const layoutPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
+            ? blocksInput
+            : [{ pageId: `injected:${track.version}`, blocks: blocksInput }];
         const layout = blocksInput
-            ? reconcilePageLayout({ pages: blocksInput, profile: sdkLayoutProfiles[options.language] })
+            ? reconcilePageLayout({ pages: layoutPages, profile: sdkLayoutProfiles[options.language] })
             : { invariantId: 'api.sdk-page-layout', findings: [], skipped: true };
         layout.track = track.version;
 

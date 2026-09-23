@@ -1185,6 +1185,13 @@ class MarkdownToFeishu {
             case 'space':
                 // Skip empty space
                 break;
+            case 'def':
+                // Link-reference definition ([ref]: url) — a structural
+                // no-op, not content: it renders no block, and the inline
+                // parser never consumes reference-style links, so skipping
+                // loses nothing (explicitly whitelisted, unlike the
+                // fail-closed default below).
+                break;
             default:
                 throw Object.assign(
                     new Error(`markdown token type "${token.type}" has no Feishu block representation; refusing to drop content (api.markdown-block-fidelity)`),
@@ -2318,16 +2325,19 @@ class MarkdownToFeishu {
             // Feishu block types are immutable: an in-place text update can
             // never change a block's structure, so an in-place update that
             // pairs blocks of different types garbles the layout. Replace
-            // pairs positionally; smart pairs by type and content. Refuse any
-            // cross-type in-place pairing and require a rebuild
+            // pairs positionally. Smart pairs by equivalent type — but
+            // equivalent (image↔board↔iframe, table↔sheet) is not identical,
+            // and every equivalent-but-different pairing is updated in place
+            // unless the existing block is preserve-only (kept as-is). Refuse
+            // any cross-type in-place pairing and require a rebuild
             // (api.pr-verbatim-content).
-            const pairings = strategy === 'replace'
+            const inPlacePairings = strategy === 'replace'
                 ? existingChildren
                     .slice(0, Math.min(existingChildren.length, blocks.length))
                     .map((existing, index) => ({ existing, new: blocks[index] }))
-                : this.__match_blocks_smart(existingChildren, blocks).matches;
-            const crossType = pairings.find((pair) => pair?.existing && pair?.new
-                && !pair.preserveType
+                : this.__match_blocks_smart(existingChildren, blocks).matches
+                    .filter((match) => !this.__should_preserve_block(match.existing));
+            const crossType = inPlacePairings.find((pair) => pair?.existing && pair?.new
                 && pair.existing.block_type !== pair.new.block_type);
             if (crossType) {
                 throw Object.assign(

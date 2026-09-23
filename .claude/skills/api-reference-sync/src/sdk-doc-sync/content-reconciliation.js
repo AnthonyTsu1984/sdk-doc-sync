@@ -48,7 +48,7 @@ function collectDocumentTokens(value, found = new Set()) {
         value.forEach((item) => collectDocumentTokens(item, found));
         return found;
     }
-    if (!value || typeof value !== 'object') {
+        if (!value || typeof value !== 'object') {
         if (typeof value === 'string') {
             let candidate = value;
             try {
@@ -56,7 +56,8 @@ function collectDocumentTokens(value, found = new Set()) {
             } catch (_) {
                 // Keep the raw form for matching.
             }
-            const match = /\/(?:docx|wiki)\/([A-Za-z0-9]{20,})/.exec(candidate);
+            // Feishu tokens may contain '-' and '_' alongside alphanumerics.
+            const match = /\/(?:docx|wiki)\/([A-Za-z0-9_-]{20,})/.exec(candidate);
             if (match) found.add(match[1]);
         }
         return found;

@@ -497,7 +497,7 @@ const scenarios = {
     const MarkdownToFeishu = require('../../src/markdown-to-feishu');
     const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance' });
     try {
-      await writer.markdown_to_blocks([{ type: 'def' }]);
+      await writer.markdown_to_blocks([{ type: 'synthetic_unrepresentable_token' }]);
       return { blocked: false, code: null };
     } catch (error) {
       return { blocked: true, code: error.code || null };

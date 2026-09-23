@@ -25,6 +25,13 @@ test('collectDocumentTokens extracts docx tokens from percent-encoded link paylo
     assert.deepEqual([...tokens], ['AbCdEf123456AbCdEf1234']);
 });
 
+test('collectDocumentTokens keeps tokens containing hyphens and underscores', () => {
+    const tokens = collectDocumentTokens(
+        'https://zilliverse.feishu.cn/wiki/AbCdEf-12345_AbCdEf123456',
+    );
+    assert.deepEqual([...tokens], ['AbCdEf-12345_AbCdEf123456']);
+});
+
 test('reconcileContentInventory reports only unreferenced documents as orphan candidates', () => {
     const { findings } = reconcileContentInventory({
         records: [{ recordId: 'rec-1', documentToken: 'DOCA' }, { recordId: 'rec-2', documentToken: 'DOCB' }],

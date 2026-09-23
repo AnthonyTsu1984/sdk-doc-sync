@@ -337,6 +337,58 @@
         }
       ],
       "notes": "Phase 4 step 4 (campaign lesson: the orphan sweep required percent-decoded block-link extraction and live-VirtualNode folder derivation). Reconciliation reports any document under a tracked release folder that no record Docs link and no percent-decoded page block link references as a detect-only orphan candidate (CONTENT_ORPHAN_DOCUMENT); findings never authorize disposal — copy-on-write rollback sources are legitimate until final-acceptance cleanup."
+    },
+    {
+      "id": "api.sdk-page-layout",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "post-write",
+        "reconcile"
+      ],
+      "statementDigest": "sha256:878ace6ed3a9dc5e4546be145cc39080730489d18255699126dba9cc00bd8aea",
+      "fixtureIds": [
+        "content-layout-cpp-prefix-violation",
+        "content-layout-single-request-h3"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/layout-conformance.js",
+          "codes": [
+            "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+            "LAYOUT_SINGLE_REQUEST_H3",
+            "LAYOUT_EXAMPLE_HEADING",
+            "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
+            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/feishu-operational-verifier.js",
+          "codes": [
+            "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+            "LAYOUT_SINGLE_REQUEST_H3",
+            "LAYOUT_EXAMPLE_HEADING",
+            "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
+            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+            "LAYOUT_SINGLE_REQUEST_H3",
+            "LAYOUT_EXAMPLE_HEADING",
+            "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
+            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). Deterministic structural rules only; wording quality stays with the polish prompt and model evals."
     }
   ]
 }

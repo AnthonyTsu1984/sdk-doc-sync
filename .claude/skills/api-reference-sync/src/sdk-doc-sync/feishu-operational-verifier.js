@@ -8,6 +8,7 @@ const sdkLayoutProfiles = require('../renderers/sdk-layout-profiles');
 const { languageId } = require('../document-ir/block-registry');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { matchesRecordState } = require('./record-state');
+const { checkLayoutConformance, pageFactsFromBlocks } = require('./layout-conformance');
 
 function parseJsonOutput(result) {
   const text = String(result?.stdout || '').trim();
@@ -125,6 +126,12 @@ class FeishuOperationalVerifier extends SyncVerifier {
       } else {
         const model = buildApiSectionModel(blocks, profile);
         semanticErrors.push(...model.errors);
+        // Declared structural layout rules (builder prefixes, single-request
+        // H3, example H3, deprecation callout shape) — language differences
+        // live in profile.layoutRules, this check is language-neutral
+        // (api.sdk-page-layout).
+        semanticErrors.push(...checkLayoutConformance(profile, pageFactsFromBlocks(blocks))
+            .violations.map((violation) => ({ code: violation.code, detail: violation.detail })));
         const expectedRoles = plan.apiPatchPlan?.desiredRoleSequence;
         const actualRoles = model.sections.map((section) => section.role);
         if (Array.isArray(expectedRoles) && JSON.stringify(actualRoles) !== JSON.stringify(expectedRoles)) {

@@ -33,8 +33,8 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
     now: new Date().toISOString(),
   });
 
-  // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2); +1 read-only content reconciliation scripts/reconcile-content.js (content-fidelity phase 4).
-  assert.equal(discovered.length, 162);
+  // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2); +1 read-only content reconciliation scripts/reconcile-content.js (content-fidelity phase 4); +1 read-only local polish applier scripts/apply-polish-context.js (content-fidelity phase 4 step 5).
+  assert.equal(discovered.length, 163);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

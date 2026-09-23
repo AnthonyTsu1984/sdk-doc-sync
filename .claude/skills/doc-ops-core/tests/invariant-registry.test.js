@@ -198,6 +198,7 @@ test('the committed api-reference-sync registry passes its own coverage check', 
     'api.record-description-scope',
     'api.pr-verbatim-content',
     'api.governed-document-inventory',
+    'api.sdk-page-layout',
   ]);
 });
 

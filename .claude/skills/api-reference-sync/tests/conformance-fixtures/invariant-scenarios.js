@@ -838,6 +838,52 @@ const scenarios = {
       cleanCalloutFindings: findings.filter((finding) => finding.identity !== 'empty-auto').length,
     };
   },
+
+  // --- api.sdk-page-layout scenarios (language-neutral checker, profile data) ---
+
+  async contentLayoutCppPrefixViolation() {
+    const { checkLayoutConformance } = require('../../src/sdk-doc-sync/layout-conformance');
+    const sdkLayoutProfiles = require('../../src/renderers/sdk-layout-profiles');
+    const facts = {
+      headings: [],
+      lines: ['CreateAliasRequest& WithDatabaseName(const std::string& db_name)'],
+      callouts: [],
+    };
+    const cpp = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
+    // The same page under a profile without the builder rule is clean: the
+    // language difference lives in profile data, not in the checker.
+    const java = checkLayoutConformance(sdkLayoutProfiles.java, facts);
+    return {
+      cppViolationCode: cpp.violations.find((violation) => violation.code === 'LAYOUT_BUILDER_PREFIX_FORBIDDEN')?.code || null,
+      javaClean: java.violations.length === 0,
+    };
+  },
+
+  async contentLayoutSingleRequestH3() {
+    const { checkLayoutConformance } = require('../../src/sdk-doc-sync/layout-conformance');
+    const sdkLayoutProfiles = require('../../src/renderers/sdk-layout-profiles');
+    const single = checkLayoutConformance(sdkLayoutProfiles.cpp, {
+      headings: [
+        { level: 3, text: 'AlterRoleRequest' },
+        { level: 3, text: 'Example' },
+      ],
+      lines: [],
+      callouts: [],
+    });
+    const multi = checkLayoutConformance(sdkLayoutProfiles.cpp, {
+      headings: [
+        { level: 3, text: 'AlterRoleRequest' },
+        { level: 3, text: 'DescribeRoleRequest' },
+      ],
+      lines: [],
+      callouts: [],
+    });
+    return {
+      singleH3Code: single.violations.find((violation) => violation.code === 'LAYOUT_SINGLE_REQUEST_H3')?.code || null,
+      multiRequestClean: multi.violations.length === 0,
+      exampleHeadingCode: single.violations.find((violation) => violation.code === 'LAYOUT_EXAMPLE_HEADING')?.code || null,
+    };
+  },
 };
 
 module.exports = { scenarios };

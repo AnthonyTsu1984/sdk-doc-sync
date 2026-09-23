@@ -13,6 +13,11 @@ const {
     verbatimContentDigest,
     compareVerbatimContent,
 } = require('./verbatim-content');
+const {
+    LAYOUT_INVARIANT_ID,
+    checkLayoutConformance,
+    pageFactsFromBlocks,
+} = require('./layout-conformance');
 
 const BLOCK_FIDELITY_INVARIANT_ID = 'api.markdown-block-fidelity';
 const INVENTORY_INVARIANT_ID = 'api.governed-document-inventory';
@@ -153,6 +158,23 @@ function reconcileContextVerbatim({ contexts = [] } = {}) {
     return { invariantId: VERBATIM_INVARIANT_ID, findings };
 }
 
+// 4. Page layout agreement: live page blocks conform to the language's
+// DECLARED layout rules (profile.layoutRules) — builder prefixes,
+// single-request H3, example H3, deprecation callout shape. One
+// language-neutral checker; the profile carries the language differences.
+function reconcilePageLayout({ pages = [], profile } = {}) {
+    const { findings, report } = makeReporter();
+    if (!profile?.layoutRules) return { invariantId: LAYOUT_INVARIANT_ID, findings, skipped: true };
+    for (const page of pages || []) {
+        const identity = page?.pageId || '(unknown page)';
+        const facts = page?.blocks ? pageFactsFromBlocks(page.blocks) : (page?.facts || {});
+        for (const violation of checkLayoutConformance(profile, facts).violations) {
+            report('error', violation.code, identity, violation.detail);
+        }
+    }
+    return { invariantId: LAYOUT_INVARIANT_ID, findings };
+}
+
 module.exports = {
     BLOCK_FIDELITY_INVARIANT_ID,
     INVENTORY_INVARIANT_ID,
@@ -160,4 +182,5 @@ module.exports = {
     reconcileContentInventory,
     reconcileCalloutBlocks,
     reconcileContextVerbatim,
+    reconcilePageLayout,
 };

@@ -312,5 +312,28 @@
    "emptyChildCode": "CALLOUT_EMPTY_CHILD",
    "cleanCalloutFindings": 0
   }
+ },
+ {
+  "id": "content-layout-cpp-prefix-violation",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentLayoutCppPrefixViolation"
+  },
+  "assertions": {
+   "cppViolationCode": "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+   "javaClean": true
+  }
+ },
+ {
+  "id": "content-layout-single-request-h3",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentLayoutSingleRequestH3"
+  },
+  "assertions": {
+   "singleH3Code": "LAYOUT_SINGLE_REQUEST_H3",
+   "multiRequestClean": true,
+   "exampleHeadingCode": "LAYOUT_EXAMPLE_HEADING"
+  }
  }
 ]

@@ -26,7 +26,9 @@ const {
     reconcileContentInventory,
     reconcileCalloutBlocks,
     reconcileContextVerbatim,
+    reconcilePageLayout,
 } = require('../src/sdk-doc-sync/content-reconciliation');
+const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 const {
     listLanguageTracks,
     loadReleaseTrackRegistry,
@@ -133,12 +135,20 @@ async function main(argv = process.argv) {
             ? reconcileContextVerbatim({ contexts: contextsInput })
             : { invariantId: 'api.pr-verbatim-content', findings: [], skipped: true };
 
+        // Page layout conformance against the language's declared rules: from
+        // the injected blocks dump when provided.
+        const layout = blocksInput
+            ? reconcilePageLayout({ pages: blocksInput, profile: sdkLayoutProfiles[options.language] })
+            : { invariantId: 'api.sdk-page-layout', findings: [], skipped: true };
+        layout.track = track.version;
+
         reports.push({
             track: track.version,
             versionRootToken,
             inventory,
             callouts,
             contexts,
+            layout,
         });
     }
 
@@ -146,6 +156,7 @@ async function main(argv = process.argv) {
         ...report.inventory.findings,
         ...report.callouts.findings,
         ...report.contexts.findings,
+        ...report.layout.findings,
     ]);
 
     if (options.json) {

@@ -61,3 +61,19 @@ Do not delete the rollback journal and rerun destructive actions. Inspect its pr
 - finalized session: never roll back in place or rewind `scan-state.json`; create a corrective release.
 
 For `COPY_PATCH_AND_REPOINT`, recovery means restoring the Bitable `Docs` pointer and captured fields, then deleting the copy. The COPY source was not modified, so do not history-revert it.
+
+## Content Reported Missing Or Wrong
+
+On a "content is gone/wrong" report, dump the CURRENT live state from three angles — the blocks API (`GET /documents/<id>/blocks`), raw_content, and the record's `Docs` pointer — and confirm which document token the record actually points at before re-executing anything. A stale browser tab (viewed between disclosed prepare windows) once looked like a vanished deprecation callout. Always link the record, not a bare docx URL: copy-on-write keeps superseded intermediates in the folder until final-acceptance cleanup, and a user-pasted URL may be an orphaned copy.
+
+## Block API Schema Mismatch Diagnosis
+
+Reproduce Feishu block-API constraints in a throwaway scratch docx (`__create_drive_document` without a folder), probe the suspect markdown shape at full scale, and bisect by block subset. Error messages name a NEWLY created block id, not the pre-existing block that caused the rejection. A scratch docx bisect pinpointed the relative-link `1770006` rejection that full-page executions only reported as a generic partial failure.
+
+## Resume Validation Failures After Manual Edits
+
+The user edits the Bitable directly. If a resume, replan, or rollback preflight fails a `WIP`/`Targets`/`Type` check, suspect a manual record edit before debugging the pipeline — live reads are the authority, snapshots can be stale. Ask the user to restore the expected state or declare a rule change; do not "fix" the live record to satisfy the check.
+
+## Percent-Encoded Block Links
+
+Block link URLs in payloads and exports are percent-encoded. Decode with `decodeURIComponent` before extracting referenced document tokens — the first orphan sweep missed 15 referenced tokens (and nearly trashed live documents) before decoding. The governed reconcilers in `content-reconciliation.js` now do this automatically.

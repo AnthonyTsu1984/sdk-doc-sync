@@ -10,7 +10,52 @@ const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
 const { FeishuOperationalVerifier } = require('../src/sdk-doc-sync/feishu-operational-verifier');
 const { createActionBatch } = require('../../doc-ops-core/src/action-batch');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
-const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { digestSemantic, sha256Digest } = require('../../doc-ops-core/src/digest');
+const { createInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
+
+function inventoryDigest(seed) {
+  return sha256Digest(Buffer.from(seed, 'utf8'));
+}
+
+// Reader whose live reference set matches the plan's approved evidence; tests
+// pass explicit recordIds to exercise drift blocking.
+function tokenReferenceReaderFor(plan, recordIds = null) {
+  const ids = recordIds || plan?.inheritanceEvidence?.sharedToken?.referencedRecordIds || [];
+  return {
+    async listTokenReferences() {
+      return ids.map((recordId) => ({ recordId }));
+    },
+  };
+}
+
+// Shared-token evidence for the hand-built COPY_PATCH_AND_REPOINT plans below.
+function copyPatchEvidence(overrides = {}) {
+  return createInheritanceEvidence({
+    stableId: 'python:Authentication:create_user',
+    current: {
+      recordId: 'record-1',
+      documentToken: 'old-doc',
+      version: 'v2.5.x',
+      folderToken: 'auth-folder-v25',
+      versionRootToken: 'root-v25',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: {
+      version: 'v2.6.x',
+      folderToken: 'folder-1',
+      versionRootToken: 'root-v26',
+      ancestryVerified: true,
+    },
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: ['record-1', 'record-0'],
+    trackInventoryDigests: {
+      'v2.5.x': inventoryDigest('v2.5.x:inventory'),
+      'v2.6.x': inventoryDigest('v2.6.x:inventory'),
+    },
+    ...overrides,
+  });
+}
 
 function artifact(content = '# Reviewed documentation\n') {
   return {
@@ -36,7 +81,7 @@ function sdkArtifact() {
 }
 
 function planningContext(overrides = {}) {
-  return {
+  const context = {
     artifact: artifact(),
     target: {
       version: 'v2.6.x',
@@ -50,6 +95,7 @@ function planningContext(overrides = {}) {
       recordId: 'rec-v26',
       documentToken: 'doc-v26',
       folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
       parentRecordId: 'parent-v26',
       ancestryVerified: true,
       placementVerified: true,
@@ -73,6 +119,23 @@ function planningContext(overrides = {}) {
     tokenReferencedByOlderVersions: false,
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, 'inheritanceEvidence') && context.current) {
+    const shared = context.tokenReferencedByOlderVersions === true;
+    const digests = {};
+    digests[context.current.version] = inventoryDigest(`${context.current.version}:inventory`);
+    digests[context.target.version] = inventoryDigest(`${context.target.version}:inventory`);
+    context.inheritanceEvidence = createInheritanceEvidence({
+      stableId: 'node:Collections:createCollection',
+      current: context.current,
+      target: context.target,
+      sharedTokenStatus: shared ? 'shared' : 'unshared',
+      referencedRecordIds: shared
+        ? [context.current.recordId, 'rec-shared-older']
+        : [context.current.recordId],
+      trackInventoryDigests: digests,
+    });
+  }
+  return context;
 }
 
 function plan(type, context = planningContext()) {
@@ -526,9 +589,14 @@ test('SyncExecutor rejects legacy DocGenerator scaffold artifacts', async () => 
 
 test('SyncExecutor rejects legacy scaffold artifacts before in-place updates', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const updatePlan = plan('UPDATE');
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE'), {
+  const result = await executor.execute(updatePlan, {
     artifact: artifact('# createCollection\n\n<!-- TODO: Add update details. -->\n'),
     approval: { approved: true },
   });
@@ -541,9 +609,14 @@ test('SyncExecutor rejects legacy scaffold artifacts before in-place updates', a
 
 test('SyncExecutor patches in-place only against the planned target-local token', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const updatePlan = plan('UPDATE');
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE'), {
+  const result = await executor.execute(updatePlan, {
     artifact: artifact('updated markdown'),
     approval: { approved: true },
     rollbackCapsule: {
@@ -560,6 +633,101 @@ test('SyncExecutor patches in-place only against the planned target-local token'
   assert.equal(calls[1][2].lastModified, 'v2.6.x');
   assert.equal(calls[1][2].progress, 'WIP');
   assert.deepEqual(calls[1][2].targets, []);
+});
+
+test('SyncExecutor blocks in-place patches when the approved evidence marks the token shared', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const basePlan = plan('UPDATE');
+  assert.equal(basePlan.action, 'UPDATE_IN_PLACE');
+  const forgedPlan = Object.freeze({
+    ...basePlan,
+    inheritanceEvidence: createInheritanceEvidence({
+      stableId: basePlan.stableId,
+      current: basePlan.inheritanceEvidence.current,
+      target: basePlan.inheritanceEvidence.target,
+      sharedTokenStatus: 'shared',
+      referencedRecordIds: ['rec-v26', 'rec-v30'],
+      trackInventoryDigests: basePlan.inheritanceEvidence.trackInventoryDigests,
+    }),
+  });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(forgedPlan),
+  });
+
+  const result = await executor.execute(forgedPlan, {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'SHARED_TOKEN_INPLACE_PATCH_BLOCKED');
+  assert.equal(result.failedStep, 'verifySharedTokenEvidence');
+  assert.deepEqual(calls, []);
+});
+
+test('SyncExecutor blocks mutations when live references drifted from the approved evidence', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const updatePlan = plan('UPDATE');
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan, ['rec-v26', 'rec-v30-late']),
+  });
+
+  const result = await executor.execute(updatePlan, {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'SHARED_TOKEN_REFERENCES_DRIFTED');
+  assert.equal(result.failedStep, 'verifySharedTokenEvidence');
+  assert.deepEqual(result.error.details.liveRecordIds, ['rec-v26', 'rec-v30-late']);
+  assert.deepEqual(result.error.details.approvedRecordIds, ['rec-v26']);
+  assert.deepEqual(calls, []);
+});
+
+test('SyncExecutor fails closed when no live token reference reader is wired', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+
+  const result = await new SyncExecutor({ documentWriter, bitableWriter }).execute(plan('UPDATE'), {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'SHARED_TOKEN_REVALIDATION_REQUIRED');
+  assert.equal(result.failedStep, 'verifySharedTokenEvidence');
+  assert.deepEqual(calls, []);
+});
+
+test('SyncExecutor rejects tampered inheritance evidence before any writer call', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const basePlan = plan('UPDATE');
+  const tamperedPlan = Object.freeze({
+    ...basePlan,
+    inheritanceEvidence: {
+      ...basePlan.inheritanceEvidence,
+      sharedToken: { status: 'unshared', referencedRecordIds: [] },
+    },
+  });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(tamperedPlan),
+  });
+
+  const result = await executor.execute(tamperedPlan, {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'INHERITANCE_EVIDENCE_DIGEST_INVALID');
+  assert.equal(result.failedStep, 'verifySharedTokenEvidence');
+  assert.deepEqual(calls, []);
 });
 
 test('SyncExecutor routes SDK API updates through the reviewed semantic patch plan', async () => {
@@ -588,7 +756,11 @@ test('SyncExecutor routes SDK API updates through the reviewed semantic patch pl
     validation: { valid: true, errors: [] },
   };
   const updatePlan = plan('UPDATE', planningContext({ artifact: sdkArtifact(), apiPatchPlan }));
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
+  });
 
   const result = await executor.execute(updatePlan, {
     artifact: sdkArtifact(),
@@ -635,7 +807,11 @@ test('SyncExecutor identifies the approved source document when patching a copie
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   });
   const copyPlan = plan('UPDATE', context);
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
 
   const result = await executor.execute(copyPlan, {
     artifact: sdkArtifact(),
@@ -687,7 +863,12 @@ test('SyncExecutor rebuilds only the copied document and removes it when verific
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   });
   const copyPlan = plan('UPDATE', context);
-  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
 
   const result = await executor.execute(copyPlan, {
     artifact: sdkArtifact(),
@@ -740,7 +921,12 @@ test('SyncExecutor requires repair-specific approval for a reviewed full-body re
     validation: { valid: true, errors: [] },
   };
   const updatePlan = plan('UPDATE', planningContext({ artifact: sdkArtifact(), apiPatchPlan }));
-  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
+  });
 
   await assert.rejects(
     () => executor.execute(updatePlan, {
@@ -775,6 +961,22 @@ test('SyncExecutor requires repair-specific approval for a reviewed full-body re
 
 test('SyncExecutor refuses a reviewed full-body rebuild when rollback history is unavailable', async () => {
   const calls = [];
+  const updatePlan = plan('UPDATE', planningContext({
+    artifact: sdkArtifact(),
+    apiPatchPlan: {
+      schemaVersion: 1,
+      profile: { id: 'node', version: 1 },
+      strategy: 'reviewed-full-body-rebuild',
+      approval: {
+        required: true,
+        kind: 'REPAIR_WRITE_APPROVAL',
+        documentToken: 'doc-v26',
+        preservedBlockIds: [],
+      },
+      operations: [{ type: 'rebuild-body', deleteBlockIds: [], blocks: [] }],
+      validation: { valid: true, errors: [] },
+    },
+  }));
   const executor = new SyncExecutor({
     documentWriter: {
       async applyApiPatch() {
@@ -794,23 +996,8 @@ test('SyncExecutor refuses a reviewed full-body rebuild when rollback history is
         return { documentToken: 'doc-v26', historyVersionId: null, blockDigest: 'sha256:before' };
       },
     },
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
   });
-  const updatePlan = plan('UPDATE', planningContext({
-    artifact: sdkArtifact(),
-    apiPatchPlan: {
-      schemaVersion: 1,
-      profile: { id: 'node', version: 1 },
-      strategy: 'reviewed-full-body-rebuild',
-      approval: {
-        required: true,
-        kind: 'REPAIR_WRITE_APPROVAL',
-        documentToken: 'doc-v26',
-        preservedBlockIds: [],
-      },
-      operations: [{ type: 'rebuild-body', deleteBlockIds: [], blocks: [] }],
-      validation: { valid: true, errors: [] },
-    },
-  }));
 
   const result = await executor.execute(updatePlan, {
     artifact: sdkArtifact(),
@@ -843,9 +1030,15 @@ test('SyncExecutor rolls back an in-place patch when document verification fails
       return { ok: true, errors: [] };
     },
   };
-  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+  const updatePlan = plan('UPDATE');
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE'), {
+  const result = await executor.execute(updatePlan, {
     artifact: artifact('updated markdown'),
     approval: { approved: true },
   });
@@ -854,12 +1047,22 @@ test('SyncExecutor rolls back an in-place patch when document verification fails
   assert.equal(result.failedStep, 'verifyDocument');
   assert.equal(result.error.code, 'DOCUMENT_VERIFICATION_FAILED');
   assert.deepEqual(calls.map((entry) => entry[0]), ['beforeMutation', 'patchDocument', 'verifyDocument', 'rollback']);
-  assert.deepEqual(result.completedSteps, ['captureRollback', 'patchDocument', 'verifyDocument', 'rollbackRevert']);
+  assert.deepEqual(result.completedSteps, ['verifySharedTokenEvidence', 'captureRollback', 'patchDocument', 'verifyDocument', 'rollbackRevert']);
   assert.deepEqual(result.rollbackResult, { ok: true });
 });
 
 test('SyncExecutor rolls back when an in-place patch fails after mutation starts', async () => {
   const calls = [];
+  const updatePlan = plan('UPDATE', planningContext({
+    artifact: sdkArtifact(),
+    apiPatchPlan: {
+      schemaVersion: 1,
+      profile: { id: 'node', version: 1 },
+      strategy: 'targeted-semantic-patch',
+      operations: [],
+      validation: { valid: true, errors: [] },
+    },
+  }));
   const executor = new SyncExecutor({
     documentWriter: {
       async applyApiPatch() {
@@ -883,18 +1086,8 @@ test('SyncExecutor rolls back when an in-place patch fails after mutation starts
         return { ok: true };
       },
     },
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
   });
-
-  const updatePlan = plan('UPDATE', planningContext({
-    artifact: sdkArtifact(),
-    apiPatchPlan: {
-      schemaVersion: 1,
-      profile: { id: 'node', version: 1 },
-      strategy: 'targeted-semantic-patch',
-      operations: [],
-      validation: { valid: true, errors: [] },
-    },
-  }));
 
   const result = await executor.execute(updatePlan, {
     artifact: sdkArtifact(),
@@ -938,9 +1131,14 @@ test('SyncExecutor rejects unsafe artifacts before copying inherited docs', asyn
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   });
   const { calls, documentWriter, bitableWriter } = spies();
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE', context), {
+  const result = await executor.execute(copyPlan, {
     artifact: artifact('# createCollection\n\nReviewed grouping approved for pymilvus v2.6.12..v2.6.17.\n'),
     approval: { approved: true },
   });
@@ -1041,9 +1239,14 @@ test('SyncExecutor reports patchDocument when patching a copied inherited doc fa
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   });
   const { calls, documentWriter, bitableWriter } = spies({ failPatch: true });
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE', context), {
+  const result = await executor.execute(copyPlan, {
     artifact: artifact('updated copied markdown'),
     approval: { approved: true },
   });
@@ -1059,9 +1262,14 @@ test('SyncExecutor copies an inherited doc, patches the copy, and repoints the e
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   });
   const { calls, documentWriter, bitableWriter } = spies();
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE', context), {
+  const result = await executor.execute(copyPlan, {
     artifact: artifact('updated copied markdown'),
     approval: { approved: true },
   });
@@ -1087,9 +1295,14 @@ test('SyncExecutor copies and repoints before preserving recovery details on rec
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
   });
   const { calls, documentWriter, bitableWriter } = spies({ failRecordUpdate: true });
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
 
-  const result = await executor.execute(plan('UPDATE', context), {
+  const result = await executor.execute(copyPlan, {
     artifact: artifact(),
     approval: { approved: true },
   });
@@ -1142,12 +1355,18 @@ test('copy-patch-repoint verifies the copy before record update without touching
       return { ok: true, errors: [] };
     },
   };
-  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: tokenReferenceReaderFor({ inheritanceEvidence: copyPatchEvidence() }),
+  });
 
   const result = await executor.execute(Object.freeze({
     schemaVersion: 1,
     action: 'COPY_PATCH_AND_REPOINT',
     stableId: 'python:Authentication:create_user',
+    inheritanceEvidence: copyPatchEvidence(),
     source: { recordId: 'record-1', documentToken: 'old-doc' },
     copySource: {
       documentToken: 'old-doc',
@@ -1163,7 +1382,7 @@ test('copy-patch-repoint verifies the copy before record update without touching
 
   assert.equal(result.status, 'success');
   assert.deepEqual(calls, ['copyDocument', 'patchDocument', 'verifyDocument', 'updateRecord', 'verify']);
-  assert.deepEqual(result.completedSteps, ['copyDocument', 'patchDocument', 'verifyDocument', 'updateRecord', 'verify']);
+  assert.deepEqual(result.completedSteps, ['verifySharedTokenEvidence', 'copyDocument', 'patchDocument', 'verifyDocument', 'updateRecord', 'verify']);
   assert.equal(result.rollback, null);
   assert.deepEqual(result.documentVerification, { ok: true, errors: [] });
   assert.equal(updatedFields.type, 'Function');
@@ -1209,12 +1428,18 @@ test('document verification failure prevents updateRecord after copy and patch',
       return { ok: true, errors: [] };
     },
   };
-  const executor = new SyncExecutor({ documentWriter, bitableWriter, verifier });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: tokenReferenceReaderFor({ inheritanceEvidence: copyPatchEvidence() }),
+  });
 
   const result = await executor.execute(Object.freeze({
     schemaVersion: 1,
     action: 'COPY_PATCH_AND_REPOINT',
     stableId: 'python:Authentication:create_user',
+    inheritanceEvidence: copyPatchEvidence(),
     source: { recordId: 'record-1', documentToken: 'old-doc' },
     copySource: {
       documentToken: 'old-doc',
@@ -1236,7 +1461,7 @@ test('document verification failure prevents updateRecord after copy and patch',
     'verifyDocument',
     ['deleteDocument', { documentToken: 'new-doc' }],
   ]);
-  assert.deepEqual(result.completedSteps, ['copyDocument', 'patchDocument', 'verifyDocument', 'deleteDocument']);
+  assert.deepEqual(result.completedSteps, ['verifySharedTokenEvidence', 'copyDocument', 'patchDocument', 'verifyDocument', 'deleteDocument']);
   assert.deepEqual(result.documentVerification.errors, [{ code: 'ESCAPED_IDENTIFIER', blockId: 'block-1' }]);
 });
 
@@ -1411,7 +1636,11 @@ test('SyncExecutor applies reviewed parent and Type changes after an in-place co
       { type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' },
     ],
   });
-  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(typedPlan),
+  });
 
   const result = await executor.execute(typedPlan, {
     artifact: artifact(),

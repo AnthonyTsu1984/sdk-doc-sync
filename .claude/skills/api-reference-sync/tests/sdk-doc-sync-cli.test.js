@@ -14,6 +14,10 @@ const {
 } = require('../bin/sdk-doc-sync');
 const SdkDocSync = require('../src/sdk-doc-sync');
 const { buildReviewedReleaseContext } = require('../scripts/build-reviewed-release-context');
+const {
+  createInheritanceEvidence,
+  trackInventoryDigest,
+} = require('../src/sdk-doc-sync/inheritance-evidence');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
@@ -1851,9 +1855,33 @@ test('reviewed helper ownership preserves every source variant through filtered-
             verified: true,
             version: 'v2.6.x',
             folderToken: 'folder-vector',
+            versionRootToken: 'root-v26',
             referencedByOlderVersions: false,
           },
         },
+        inheritanceEvidence: createInheritanceEvidence({
+          stableId: 'python:Vector:search',
+          current: {
+            recordId: 'rec-search',
+            documentToken: 'doc-search',
+            version: 'v2.6.x',
+            folderToken: 'folder-vector',
+            versionRootToken: 'root-v26',
+            ancestryVerified: true,
+            placementVerified: true,
+          },
+          target: {
+            version: 'v2.6.x',
+            folderToken: 'folder-vector',
+            versionRootToken: 'root-v26',
+            ancestryVerified: true,
+          },
+          sharedTokenStatus: 'unshared',
+          referencedRecordIds: ['rec-search'],
+          trackInventoryDigests: {
+            'v2.6.x': trackInventoryDigest([{ recordId: 'rec-search', documentToken: 'doc-search' }]),
+          },
+        }),
         summary: 'Searches vectors in a collection.',
         example: { code: 'client.search(collection_name="docs", data=[[0.1, 0.2]])' },
       },

@@ -14,6 +14,13 @@ const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
+const {
+    getTrack,
+    listLanguageTracks,
+    loadReleaseTrackRegistry,
+    trackBaseToken,
+    trackTableId,
+} = require('../src/sdk-doc-sync/release-track-registry');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 const {
     createReviewSession,
@@ -577,6 +584,30 @@ async function runCli({
             : null
     );
 
+    // Cross-track token reference tracks for the executor's pre-write
+    // shared-token revalidation. Registry resolution activates only when the
+    // live BASE_TOKEN matches the registered base for the requested track, so
+    // dry-runs and foreign-token runs never enumerate unrelated live bases.
+    let tokenReferenceTracks = [];
+    if (!args.dryRun && baseToken) {
+        try {
+            const registry = loadReleaseTrackRegistry();
+            const track = getTrack(registry, language, args.sdkVersion);
+            if (track && trackBaseToken(track) === baseToken) {
+                tokenReferenceTracks = listLanguageTracks(registry, language)
+                    .filter((candidate) => candidate.version !== args.sdkVersion)
+                    .map((candidate) => ({
+                        version: candidate.version,
+                        baseToken: trackBaseToken(candidate),
+                        tableId: trackTableId(candidate),
+                    }))
+                    .filter((candidate) => candidate.baseToken);
+            }
+        } catch (error) {
+            err(`Warning: release track registry unavailable (${error.message}); cross-track revalidation covers the current base only`);
+        }
+    }
+
     const syncOptions = {
         scanner: dependencies.scanner || null,
         indexReader: dependencies.indexReader || null,
@@ -610,6 +641,8 @@ async function runCli({
         collaborativeReview: true,
         reviewUnitId: args.reviewUnitId || null,
         reviewSession,
+        tokenReferenceReader: dependencies.tokenReferenceReader || null,
+        tokenReferenceTracks,
     };
     const sync = dependencies.syncFactory ? dependencies.syncFactory(syncOptions) : new SdkDocSync(syncOptions);
 

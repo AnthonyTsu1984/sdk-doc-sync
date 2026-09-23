@@ -31,11 +31,17 @@ function absentLookup({ canonicalSlug, title, parentRecordId }) {
   };
 }
 
-function verifiedPlacement({ version = 'v2.6.x', folderToken, referencedByOlderVersions = false }) {
+function verifiedPlacement({
+  version = 'v2.6.x',
+  folderToken,
+  referencedByOlderVersions = false,
+  versionRootToken = version === 'v2.6.x' ? 'root-v26' : `root-${version.replace(/[^a-z0-9]/gi, '')}`,
+}) {
   return {
     verified: true,
     version,
     folderToken,
+    versionRootToken,
     referencedByOlderVersions,
   };
 }
@@ -99,7 +105,13 @@ test('placement audit resolves inherited docs from supplied older version roots'
     }],
   };
   const indexes = {
-    'root-v26': new Map(),
+    'root-v26': new Map([['volume-folder-v26', {
+      token: 'volume-folder-v26',
+      type: 'folder',
+      parentFolderToken: 'root-v26',
+      ancestors: ['root-v26'],
+      name: 'Volume',
+    }]]),
     'root-v25': new Map([['doc-upload-v25', {
       token: 'doc-upload-v25',
       type: 'docx',
@@ -108,6 +120,15 @@ test('placement audit resolves inherited docs from supplied older version roots'
       name: 'upload_file_to_volume',
     }]]),
   };
+  const trackRecords = {
+    'base-v26': [
+      { record_id: 'rec-upload', fields: { Docs: { text: 'upload_file_to_volume', link: 'https://zilliverse.feishu.cn/docx/doc-upload-v25' } } },
+      { record_id: 'rec-volume-vnode', fields: { Docs: { text: 'Volume', link: 'https://zilliverse.feishu.cn/drive/folder/volume-folder-v26' } } },
+    ],
+    'base-v25': [
+      { record_id: 'rec-upload-v25', fields: { Docs: { text: 'upload_file_to_volume', link: 'https://zilliverse.feishu.cn/docx/doc-upload-v25' } } },
+    ],
+  };
 
   const artifact = await buildPlacementAudit({
     proposal,
@@ -115,9 +136,16 @@ test('placement audit resolves inherited docs from supplied older version roots'
     versionRootToken: 'root-v26',
     sourceVersionRoots: [{ version: 'v2.5.x', rootToken: 'root-v25' }],
     indexer: async (rootToken) => indexes[rootToken],
+    trackBitables: [
+      { version: 'v2.6.x', baseToken: 'base-v26' },
+      { version: 'v2.5.x', baseToken: 'base-v25' },
+    ],
+    recordLister: async ({ baseToken }) => trackRecords[baseToken],
+    collectedAt: '2026-09-23T00:00:00.000Z',
   });
 
   assert.equal(artifact.status, 'placement_audit_ready');
+  assert.equal(artifact.inheritanceEvidenceStatus, 'evidence_complete');
   assert.deepEqual(artifact.blocked, []);
   assert.deepEqual(artifact.entries[0].placement, {
     verified: true,
@@ -128,6 +156,138 @@ test('placement audit resolves inherited docs from supplied older version roots'
     referencedByOlderVersions: true,
     ancestry: ['root-v25', 'volume-folder-v25'],
   });
+  // Sharing comes from paginated Bitable record pointers, not physical
+  // placement: both the v2.6 record and the older v2.5 record reference the
+  // same document token, and the VirtualNode folder link is not a reference.
+  assert.equal(artifact.entries[0].sharedToken.status, 'shared');
+  assert.deepEqual(artifact.entries[0].sharedToken.referencedRecordIds, ['rec-upload', 'rec-upload-v25']);
+  assert.equal(artifact.recordEnumeration.complete, true);
+  assert.deepEqual(Object.keys(artifact.trackInventoryDigests).sort(), ['v2.5.x', 'v2.6.x']);
+
+  const evidence = artifact.entries[0].inheritanceEvidence;
+  assert.ok(evidence);
+  assert.deepEqual(validateInheritanceEvidence(evidence, {
+    stableId: 'python:Volume:upload_file_to_volume',
+    current: {
+      recordId: 'rec-upload',
+      documentToken: 'doc-upload-v25',
+      version: 'v2.5.x',
+      folderToken: 'volume-folder-v25',
+    },
+    target: { version: 'v2.6.x', folderToken: 'volume-folder-v26', versionRootToken: 'root-v26' },
+  }), { valid: true, errors: [] });
+  assert.equal(evidence.collectedAt, '2026-09-23T00:00:00.000Z');
+});
+
+test('placement audit blocks with unknown sharing when adjacent enumeration fails', async () => {
+  const proposal = {
+    proposals: [{
+      id: 'proposal:python:Volume:upload_file_to_volume',
+      docIdentity: {
+        stableId: 'python:Volume:upload_file_to_volume',
+        canonicalSlug: 'Volume-upload_file_to_volume',
+        title: 'upload_file_to_volume',
+        targetFolderToken: 'volume-folder-v26',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'rec-upload',
+        currentDocumentToken: 'doc-upload-v26',
+        parentRecordIds: ['rec-volume'],
+      },
+    }],
+  };
+  const indexes = {
+    'root-v26': new Map([
+      ['volume-folder-v26', {
+        token: 'volume-folder-v26', type: 'folder', parentFolderToken: 'root-v26',
+        ancestors: ['root-v26'], name: 'Volume',
+      }],
+      ['doc-upload-v26', {
+        token: 'doc-upload-v26', type: 'docx', parentFolderToken: 'volume-folder-v26',
+        ancestors: ['root-v26', 'volume-folder-v26'], name: 'upload_file_to_volume',
+      }],
+    ]),
+  };
+
+  const artifact = await buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    indexer: async (rootToken) => indexes[rootToken],
+    trackBitables: [
+      { version: 'v2.6.x', baseToken: 'base-v26' },
+      { version: 'v2.5.x', baseToken: null },
+    ],
+    recordLister: async ({ baseToken }) => [
+      { record_id: 'rec-upload', fields: { Docs: { text: 'upload_file_to_volume', link: `https://zilliverse.feishu.cn/docx/${baseToken === 'base-v26' ? 'doc-upload-v26' : 'doc-upload-v25'}` } } },
+    ],
+  });
+
+  assert.equal(artifact.status, 'placement_audit_ready');
+  assert.equal(artifact.inheritanceEvidenceStatus, 'evidence_blocked');
+  assert.equal(artifact.recordEnumeration.complete, false);
+  assert.deepEqual(artifact.recordEnumeration.failures, [{
+    version: 'v2.5.x',
+    baseToken: null,
+    code: 'TRACK_BASE_TOKEN_UNRESOLVED',
+  }]);
+  assert.equal(artifact.entries[0].sharedToken.status, 'unknown');
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, null);
+  assert.equal(artifact.entries[0].inheritanceEvidence, null);
+  assert.ok(artifact.entries[0].inheritanceEvidenceBlockers.includes('TRACK_ENUMERATION_INCOMPLETE'));
+});
+
+test('placement audit classifies a target-local doc referenced only by its own record as unshared', async () => {
+  const proposal = {
+    proposals: [{
+      id: 'proposal:python:Volume:upload_file_to_volume',
+      docIdentity: {
+        stableId: 'python:Volume:upload_file_to_volume',
+        canonicalSlug: 'Volume-upload_file_to_volume',
+        title: 'upload_file_to_volume',
+        targetFolderToken: 'volume-folder-v26',
+      },
+      existingBitable: {
+        status: 'matched',
+        recordId: 'rec-upload',
+        currentDocumentToken: 'doc-upload-v26',
+        parentRecordIds: ['rec-volume'],
+      },
+    }],
+  };
+  const indexes = {
+    'root-v26': new Map([
+      ['volume-folder-v26', {
+        token: 'volume-folder-v26', type: 'folder', parentFolderToken: 'root-v26',
+        ancestors: ['root-v26'], name: 'Volume',
+      }],
+      ['doc-upload-v26', {
+        token: 'doc-upload-v26', type: 'docx', parentFolderToken: 'volume-folder-v26',
+        ancestors: ['root-v26', 'volume-folder-v26'], name: 'upload_file_to_volume',
+      }],
+    ]),
+  };
+
+  const artifact = await buildPlacementAudit({
+    proposal,
+    version: 'v2.6.x',
+    versionRootToken: 'root-v26',
+    indexer: async (rootToken) => indexes[rootToken],
+    trackBitables: [{ version: 'v2.6.x', baseToken: 'base-v26' }],
+    recordLister: async () => [
+      { record_id: 'rec-upload', fields: { Docs: { text: 'upload_file_to_volume', link: 'https://zilliverse.feishu.cn/docx/doc-upload-v26' } } },
+    ],
+  });
+
+  assert.equal(artifact.inheritanceEvidenceStatus, 'evidence_complete');
+  assert.equal(artifact.entries[0].sharedToken.status, 'unshared');
+  assert.deepEqual(artifact.entries[0].sharedToken.referencedRecordIds, ['rec-upload']);
+  assert.equal(artifact.entries[0].placement.referencedByOlderVersions, false);
+  assert.deepEqual(
+    validateInheritanceEvidence(artifact.entries[0].inheritanceEvidence).errors,
+    [],
+  );
 });
 
 test('release-scope schema rejects missing approval and mutation flags', () => {
@@ -334,6 +494,42 @@ const {
   buildPlacementAudit,
   parseSourceVersionRoot,
 } = require('../scripts/build-current-placement-audit');
+const {
+  createInheritanceEvidence,
+  trackInventoryDigest,
+  validateInheritanceEvidence,
+} = require('../src/sdk-doc-sync/inheritance-evidence');
+
+// Compact fixture builder for candidate-level inheritance evidence; keeps the
+// referencedRecordIds/inventory-digest consistency rules in one place.
+function inheritanceEvidenceFixture({
+  stableId,
+  current,
+  target,
+  sharedTokenStatus = 'unshared',
+  referencedRecordIds = null,
+}) {
+  const digests = {};
+  digests[current.version] = trackInventoryDigest([
+    { recordId: current.recordId, documentToken: current.documentToken },
+  ]);
+  if (!digests[target.version]) {
+    digests[target.version] = trackInventoryDigest([
+      { recordId: `${target.version}:rec`, documentToken: `${target.version}:doc` },
+    ]);
+  }
+  return createInheritanceEvidence({
+    stableId,
+    current: { ancestryVerified: true, placementVerified: true, ...current },
+    target: { ancestryVerified: true, ...target },
+    sharedTokenStatus,
+    referencedRecordIds: referencedRecordIds
+      || (sharedTokenStatus === 'shared'
+        ? [current.recordId, `${current.recordId}-older`]
+        : [current.recordId]),
+    trackInventoryDigests: digests,
+  });
+}
 
 test('publicIdentity is stable across line-number changes', () => {
   assert.equal(publicIdentity({
@@ -560,9 +756,26 @@ test('reviewed context requires and carries the complete Node stateful-class org
           verified: true,
           version: 'v2.6.x',
           folderToken: 'folder-data-import-v26',
+          versionRootToken: 'root-v26',
           referencedByOlderVersions: true,
         },
       },
+      inheritanceEvidence: inheritanceEvidenceFixture({
+        stableId: 'node:DataImport:BulkWriter',
+        current: {
+          recordId: 'rec-bulk-writer',
+          documentToken: 'doc-bulk-writer-v26',
+          version: 'v2.6.x',
+          folderToken: 'folder-data-import-v26',
+          versionRootToken: 'root-v26',
+        },
+        target: {
+          version: 'v3.0.x',
+          folderToken: 'folder-bulk-writer',
+          versionRootToken: 'root-v30',
+        },
+        sharedTokenStatus: 'shared',
+      }),
       copySource: {
         documentToken: 'doc-bulk-writer-v26',
         link: 'https://docs.example/docx/doc-bulk-writer-v26',
@@ -639,9 +852,26 @@ test('reviewed context requires and carries the complete Node stateful-class org
         verified: true,
         version: 'v2.6.x',
         folderToken: 'folder-bulk-writer-v26',
+        versionRootToken: 'root-v26',
         referencedByOlderVersions: true,
       },
     },
+    inheritanceEvidence: inheritanceEvidenceFixture({
+      stableId: 'node:DataImport:BulkWriter:append',
+      current: {
+        recordId: 'rec-append-v30',
+        documentToken: 'doc-append-v26',
+        version: 'v2.6.x',
+        folderToken: 'folder-bulk-writer-v26',
+        versionRootToken: 'root-v26',
+      },
+      target: {
+        version: 'v3.0.x',
+        folderToken: 'folder-bulk-writer',
+        versionRootToken: 'root-v30',
+      },
+      sharedTokenStatus: 'shared',
+    }),
     copySource: {
       documentToken: 'doc-append-v26',
       link: 'https://docs.example/docx/doc-append-v26',
@@ -2378,9 +2608,26 @@ test('reviewed release context builder carries existing record and copy source e
           placement: verifiedPlacement({
             version: 'v2.5.x',
             folderToken: 'bulk-import-folder-v25',
+            versionRootToken: 'root-v25',
             referencedByOlderVersions: true,
           }),
         },
+        inheritanceEvidence: inheritanceEvidenceFixture({
+          stableId: 'python:BulkImport:bulk_import',
+          current: {
+            recordId: 'rec-bulk',
+            documentToken: 'doc-bulk',
+            version: 'v2.5.x',
+            folderToken: 'bulk-import-folder-v25',
+            versionRootToken: 'root-v25',
+          },
+          target: {
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          sharedTokenStatus: 'shared',
+        }),
         copySource: {
           documentToken: 'doc-bulk',
           title: 'bulk_import()',
@@ -2399,6 +2646,7 @@ test('reviewed release context builder carries existing record and copy source e
     parentRecordId: 'rec-bulk-parent',
     version: 'v2.5.x',
     folderToken: 'bulk-import-folder-v25',
+    versionRootToken: 'root-v25',
     ancestryVerified: true,
     placementVerified: true,
     referencedByOlderVersions: true,
@@ -2451,6 +2699,22 @@ test('reviewed release context builder allows safe target-local UPDATE without c
           parentRecordId: 'rec-bulk-parent',
           placement: verifiedPlacement({ folderToken: 'bulk-import-folder' }),
         },
+        inheritanceEvidence: inheritanceEvidenceFixture({
+          stableId: 'python:BulkImport:bulk_import',
+          current: {
+            recordId: 'rec-bulk',
+            documentToken: 'doc-bulk',
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          target: {
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          sharedTokenStatus: 'unshared',
+        }),
         summary: 'Starts a bulk import job.',
         example: { code: 'from pymilvus.bulk_writer import bulk_import' },
       },
@@ -2504,9 +2768,26 @@ test('reviewed release context builder rejects changed inherited docs without co
           placement: verifiedPlacement({
             version: 'v2.5.x',
             folderToken: 'bulk-import-folder-v25',
+            versionRootToken: 'root-v25',
             referencedByOlderVersions: true,
           }),
         },
+        inheritanceEvidence: inheritanceEvidenceFixture({
+          stableId: 'python:BulkImport:bulk_import',
+          current: {
+            recordId: 'rec-bulk',
+            documentToken: 'doc-bulk',
+            version: 'v2.5.x',
+            folderToken: 'bulk-import-folder-v25',
+            versionRootToken: 'root-v25',
+          },
+          target: {
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          sharedTokenStatus: 'shared',
+        }),
         summary: 'Starts a bulk import job.',
         example: { code: 'from pymilvus.bulk_writer import bulk_import' },
       },

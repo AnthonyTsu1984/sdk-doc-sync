@@ -108,7 +108,7 @@ npm run api-reference-sync -- \
 Read only the relevant domain references:
 
 - Language rules: [Python](sdk-python.md), [Java](sdk-java.md), [Node.js](sdk-node.md), [C++](sdk-cpp.md), [Go](sdk-go.md), [Zilliz CLI](sdk-zilliz-cli.md), [REST/OpenAPI](sdk-rest.md), [PR intake](sdk-pr-sync.md), and [cross-SDK alignment](sdk-alignment.md).
-- Release and planning: [references/versioning.md](references/versioning.md), [references/active-track-inheritance.md](references/active-track-inheritance.md), and [references/schema-first-generation.md](references/schema-first-generation.md).
+- Release and planning: [references/versioning.md](references/versioning.md), [references/active-track-inheritance.md](references/active-track-inheritance.md), [references/inheritance-evidence.md](references/inheritance-evidence.md), and [references/schema-first-generation.md](references/schema-first-generation.md).
 - Bitable hierarchy and layout sampling: [references/bitable-document-organization.md](references/bitable-document-organization.md).
 - Execution and verification: [references/post-write-verification.md](references/post-write-verification.md), [references/release-smoke-test.md](references/release-smoke-test.md), and [references/stable-core-boundary.md](references/stable-core-boundary.md).
 - Commands and recovery: [references/cli.md](references/cli.md) and [references/troubleshooting.md](references/troubleshooting.md).

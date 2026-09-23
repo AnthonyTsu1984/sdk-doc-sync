@@ -10,6 +10,7 @@ const { FeishuOperationalVerifier } = require('./feishu-operational-verifier');
 const { validateRenderedApiBlocks } = require('./feishu-block-safety');
 const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
+const { bitableRecordTokens, createTokenReferenceReader } = require('./token-reference-reader');
 const { planApiReferencePatch } = require('./docx-section-patcher');
 const sdkLayoutProfiles = require('../renderers/sdk-layout-profiles');
 const PythonScanner = require('./scanners/python-scanner');
@@ -236,6 +237,8 @@ class SdkDocSync {
         collaborativeReview = false,
         reviewUnitId = null,
         reviewSession = null,
+        tokenReferenceReader = null,
+        tokenReferenceTracks = [],
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -295,15 +298,48 @@ class SdkDocSync {
 
         if (!dryRun) {
             this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
+            const usingInjectedBitableWriter = Boolean(this.bitableWriter);
             this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken });
             this.verifier = this.verifier || new FeishuOperationalVerifier({
                 readDocument: liveDocumentReader(this.m2f),
                 readRecord: liveRecordReader(this.bitableWriter),
             });
+            // Cross-track token reference reader for the executor's pre-write
+            // shared-token revalidation. The current base is enumerated through
+            // the (possibly injected) bitableWriter; adjacent bases are added
+            // only for production runs so injected test spies never trigger
+            // network reads against registry tokens.
+            const referenceTracks = [];
+            if (typeof this.bitableWriter?.listRecords === 'function') {
+                referenceTracks.push({
+                    version: sdkVersion,
+                    baseToken: baseToken || null,
+                    listDocumentTokens: async () => bitableRecordTokens(await this.bitableWriter.listRecords()),
+                });
+            }
+            if (!usingInjectedBitableWriter) {
+                const adjacent = [...(tokenReferenceTracks || [])];
+                if (previousBaseToken && previousBaseToken !== baseToken
+                    && !adjacent.some((track) => track?.baseToken === previousBaseToken)) {
+                    adjacent.push({ version: null, baseToken: previousBaseToken, tableId: null });
+                }
+                for (const track of adjacent) {
+                    if (!track?.baseToken || track.baseToken === baseToken) continue;
+                    referenceTracks.push({
+                        version: track.version || null,
+                        baseToken: track.baseToken,
+                        listDocumentTokens: async () => bitableRecordTokens(
+                            await new BitableWriter({ baseToken: track.baseToken, tableId: track.tableId || null }).listRecords(),
+                        ),
+                    });
+                }
+            }
             this.executor = this.executor || new SyncExecutor({
                 documentWriter: this.m2f,
                 bitableWriter: this.bitableWriter,
                 verifier: this.verifier,
+                tokenReferenceReader: tokenReferenceReader
+                    || (referenceTracks.length > 0 ? createTokenReferenceReader({ tracks: referenceTracks }) : null),
             });
         }
     }

@@ -7,6 +7,10 @@ const {
   validateOrganizationTarget,
   validateReleasePlacement,
 } = require('./sdk-organization-contract');
+const {
+  evidenceShared,
+  validateInheritanceEvidence,
+} = require('./inheritance-evidence');
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
@@ -418,7 +422,6 @@ class SyncPlanner {
       artifactKind = serialized.kind;
     }
 
-    const shared = context.tokenReferencedByOlderVersions === true;
     const currentProof = context.current || {};
     if (CREATE_LIKE_ACTIONS.has(diffAction) && context.reviewSessionExecuted !== true && (
       nonEmptyString(currentProof.recordId)
@@ -472,6 +475,29 @@ class SyncPlanner {
         },
       );
     }
+    let inheritanceEvidence = null;
+    if (diffAction === 'UPDATE') {
+      const validation = validateInheritanceEvidence(context.inheritanceEvidence, {
+        stableId,
+        current: {
+          recordId: source.recordId,
+          documentToken: source.documentToken,
+          version: source.version,
+          folderToken: source.folderToken,
+        },
+        target,
+      });
+      if (!validation.valid) {
+        const first = validation.errors[0];
+        throw new SyncPlanningError(
+          first.code === 'SHARED_TOKEN_EVIDENCE_UNKNOWN' ? 'SHARED_TOKEN_EVIDENCE_REQUIRED' : first.code,
+          `UPDATE ${stableId} requires verified inheritance evidence before planning`,
+          { errors: validation.errors },
+        );
+      }
+      inheritanceEvidence = context.inheritanceEvidence;
+    }
+    const shared = inheritanceEvidence ? evidenceShared(inheritanceEvidence) : false;
     const preconditions = [];
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });
     preconditions.push({
@@ -487,7 +513,11 @@ class SyncPlanner {
     };
     if (nonEmptyString(target.folderRef)) targetAncestry.expectedFolderRef = target.folderRef;
     preconditions.push(targetAncestry);
-    preconditions.push({ type: 'SHARED_TOKEN', referencedByOlderVersions: shared });
+    preconditions.push({
+      type: 'SHARED_TOKEN',
+      referencedByOlderVersions: shared,
+      evidenceDigest: inheritanceEvidence?.evidenceDigest || null,
+    });
 
     let plannedAction;
     let postconditions;
@@ -586,6 +616,7 @@ class SyncPlanner {
       organization: context.organization,
       organizationInventory: context.organizationInventory,
       releasePlacement: context.releasePlacement,
+      inheritanceEvidence: inheritanceEvidence ? deepClone(inheritanceEvidence) : undefined,
       apiPatchPlan: context.artifact?.layout && diffAction === 'UPDATE'
         ? context.apiPatchPlan
         : undefined,

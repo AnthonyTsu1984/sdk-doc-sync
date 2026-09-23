@@ -11,6 +11,7 @@ const {
   validateOrganizationContract,
   validateReleasePlacement,
 } = require('../src/sdk-doc-sync/sdk-organization-contract');
+const { validateInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
 
 const SDK_REFERENCE_BY_LANGUAGE = {
   cpp: 'sdk-cpp.md',
@@ -344,8 +345,7 @@ function assertExistingRecordEvidence({ action, spec, identity }) {
   if (!existing.placement
     || existing.placement.verified !== true
     || !existing.placement.version
-    || !existing.placement.folderToken
-    || typeof existing.placement.referencedByOlderVersions !== 'boolean') {
+    || !existing.placement.folderToken) {
     throw new Error(`verified current placement is required for UPDATE ${identity.stableId}`);
   }
   return {
@@ -356,8 +356,26 @@ function assertExistingRecordEvidence({ action, spec, identity }) {
     folderToken: existing.placement.folderToken,
     ancestryVerified: true,
     placementVerified: true,
-    referencedByOlderVersions: existing.placement.referencedByOlderVersions,
+    versionRootToken: existing.placement.versionRootToken || null,
   };
+}
+
+function assertInheritanceEvidence({ action, spec, identity, current, target }) {
+  if (action.type !== 'UPDATE') return null;
+  const evidence = spec.inheritanceEvidence || spec.existingRecord?.inheritanceEvidence || null;
+  const validation = validateInheritanceEvidence(evidence, {
+    stableId: identity.stableId,
+    current,
+    target,
+  });
+  if (!validation.valid) {
+    const first = validation.errors[0];
+    throw reviewedContextError(
+      first.code === 'SHARED_TOKEN_EVIDENCE_UNKNOWN' ? 'SHARED_TOKEN_EVIDENCE_REQUIRED' : first.code,
+      `Candidate ${identity.stableId} requires verified inheritance evidence: ${JSON.stringify(validation.errors)}`,
+    );
+  }
+  return clone(evidence);
 }
 
 function assertCreateMissingEvidence({ action, spec, identity }) {
@@ -696,6 +714,25 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     if (!parentRecordId && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
       throw new Error(`Candidate ${action.canonicalSlug} has no parent record or approved parent resource`);
     }
+    const planningTarget = {
+      version,
+      folderToken,
+      parentRecordId,
+      versionRootToken,
+      ancestryVerified: true,
+    };
+    if (folderRef) planningTarget.folderRef = folderRef;
+    if (parentRecordRef) planningTarget.parentRecordRef = parentRecordRef;
+    const inheritanceEvidence = assertInheritanceEvidence({
+      action: planningAction,
+      spec,
+      identity,
+      current: existingRecord,
+      target: planningTarget,
+    });
+    if (existingRecord && inheritanceEvidence) {
+      existingRecord.referencedByOlderVersions = inheritanceEvidence.sharedToken.status === 'shared';
+    }
     const copySource = assertCopySourceEvidence({
       action: planningAction,
       spec,
@@ -718,15 +755,6 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       ...sourceActions.flatMap((item) => item.reasons || [item.reason]),
       ...sourceVariants.map((variant) => variant.reason),
     ]);
-    const planningTarget = {
-      version,
-      folderToken,
-      parentRecordId,
-      versionRootToken,
-      ancestryVerified: true,
-    };
-    if (folderRef) planningTarget.folderRef = folderRef;
-    if (parentRecordRef) planningTarget.parentRecordRef = parentRecordRef;
     const selectedAction = {
       ...planningAction,
       stableId: identity.stableId,
@@ -743,7 +771,8 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         copySource,
         target: planningTarget,
         dependencies,
-        tokenReferencedByOlderVersions: existingRecord?.referencedByOlderVersions ?? false,
+        inheritanceEvidence,
+        tokenReferencedByOlderVersions: inheritanceEvidence?.sharedToken.status === 'shared',
         organization,
         organizationInventory,
         releasePlacement,

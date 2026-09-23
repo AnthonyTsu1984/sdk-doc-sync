@@ -6,6 +6,7 @@ const {
 } = require('./feishu-block-safety');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { organizationRecordType } = require('./sdk-organization-contract');
+const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { captureRecordState } = require('./record-state');
 
 function nonEmptyString(value) {
@@ -195,12 +196,13 @@ class SyncExecutionError extends Error {
 }
 
 class SyncExecutor {
-  constructor({ documentWriter, bitableWriter, verifier = null } = {}) {
+  constructor({ documentWriter, bitableWriter, verifier = null, tokenReferenceReader = null } = {}) {
     if (!documentWriter) throw new TypeError('documentWriter is required');
     if (!bitableWriter) throw new TypeError('bitableWriter is required');
     this.documentWriter = documentWriter;
     this.bitableWriter = bitableWriter;
     this.verifier = verifier;
+    this.tokenReferenceReader = tokenReferenceReader;
   }
 
   async execute(plan, {
@@ -711,7 +713,79 @@ class SyncExecutor {
     }
   }
 
+  // Pre-write interception for the shared-token invariant: revalidate the
+  // approved inheritance evidence and requery live cross-track references
+  // immediately before the first document mutation. Every failure path throws
+  // before any writer call, so a blocked action performs zero writes.
+  async _assertSharedTokenEvidence(plan, result) {
+    const evidence = plan.inheritanceEvidence;
+    const validation = validateInheritanceEvidence(evidence, {
+      stableId: plan.stableId,
+      current: plan.source ? {
+        recordId: plan.source.recordId,
+        documentToken: plan.source.documentToken,
+        version: plan.source.version,
+        folderToken: plan.source.folderToken,
+      } : null,
+      target: plan.target,
+    });
+    if (!validation.valid) {
+      const first = validation.errors[0];
+      const error = new SyncExecutionError(
+        first.code === 'SHARED_TOKEN_EVIDENCE_UNKNOWN' ? 'SHARED_TOKEN_EVIDENCE_REQUIRED' : first.code,
+        `Verified inheritance evidence is required before mutating ${plan.source?.documentToken || plan.stableId}`,
+        { errors: validation.errors },
+      );
+      error.step = 'verifySharedTokenEvidence';
+      throw error;
+    }
+    if (plan.action === 'UPDATE_IN_PLACE' && evidence.sharedToken.status !== 'unshared') {
+      const error = new SyncExecutionError(
+        'SHARED_TOKEN_INPLACE_PATCH_BLOCKED',
+        `Document ${plan.source.documentToken} is referenced by records outside its own track record; in-place patch is blocked for ${plan.stableId}`,
+        {
+          status: evidence.sharedToken.status,
+          referencedRecordIds: evidence.sharedToken.referencedRecordIds,
+        },
+      );
+      error.step = 'verifySharedTokenEvidence';
+      throw error;
+    }
+    if (typeof this.tokenReferenceReader?.listTokenReferences !== 'function') {
+      const error = new SyncExecutionError(
+        'SHARED_TOKEN_REVALIDATION_REQUIRED',
+        `A live token reference reader is required to revalidate ${plan.source.documentToken} before mutation`,
+      );
+      error.step = 'verifySharedTokenEvidence';
+      throw error;
+    }
+    const liveReferences = await this.tokenReferenceReader.listTokenReferences({
+      documentToken: plan.source.documentToken,
+    });
+    const liveRecordIds = [...new Set((liveReferences || [])
+      .map((entry) => entry?.recordId)
+      .filter(nonEmptyString))].sort();
+    const approvedRecordIds = [...evidence.sharedToken.referencedRecordIds].sort();
+    if (JSON.stringify(liveRecordIds) !== JSON.stringify(approvedRecordIds)) {
+      const error = new SyncExecutionError(
+        'SHARED_TOKEN_REFERENCES_DRIFTED',
+        `Live references to ${plan.source.documentToken} no longer match the approved evidence for ${plan.stableId}`,
+        { liveRecordIds, approvedRecordIds },
+      );
+      error.step = 'verifySharedTokenEvidence';
+      throw error;
+    }
+    result.sharedTokenRevalidation = {
+      documentToken: plan.source.documentToken,
+      liveRecordIds,
+      evidenceDigest: evidence.evidenceDigest,
+      revalidatedAt: new Date().toISOString(),
+    };
+    result.completedSteps.push('verifySharedTokenEvidence');
+  }
+
   async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {
+    await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
     await this._captureRollbackBeforeMutation(plan, result, rollbackCapsule);
 
@@ -781,6 +855,7 @@ class SyncExecutor {
   }
 
   async _executeCopyPatchAndRepoint(plan, artifact, action, result) {
+    await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
 
     const copied = await this._copyDocument(plan, artifact, action);
@@ -1039,6 +1114,9 @@ class SyncExecutor {
   }
 
   _inferFailedStep(plan, completedSteps, result = {}) {
+    // verifySharedTokenEvidence is a read-only pre-write guard; failures that
+    // need step inference read as if the guard had not been recorded yet.
+    completedSteps = completedSteps.filter((step) => step !== 'verifySharedTokenEvidence');
     if (plan.action === 'CREATE_FOLDER') {
       if (completedSteps.length === 0) return 'verifyResourceAbsent';
       if (!completedSteps.includes('createFolder')) return 'createFolder';

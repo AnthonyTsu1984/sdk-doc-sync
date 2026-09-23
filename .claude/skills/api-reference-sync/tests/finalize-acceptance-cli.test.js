@@ -270,7 +270,7 @@ test('finalizeAcceptance resumes idempotently from a durable receipt without re-
                 if (!entries) throw new Error(`unknown journal ${requested}`);
                 return structuredClone(entries);
             },
-            loadDurableReceipt: async () => { console.error('DBG loadDurableReceipt ->', JSON.stringify(durableReceipt)); return durableReceipt; },
+            loadDurableReceipt: async () => durableReceipt,
         },
     });
 

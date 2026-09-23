@@ -16,6 +16,18 @@ require('dotenv').config();
 
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
 
+// Refetch fixed point for native table cells: Feishu stores single-line cell
+// text with a trailing line break, which markdown rendering surfaces as
+// `<br>` before the cell separator. Verification normalization strips
+// end-of-cell breaks only; in-cell line breaks stay
+// (api.markdown-block-fidelity canonicalization).
+function normalizeRefetchedMarkdown(markdown) {
+    return String(markdown || '')
+        .split('\n')
+        .map((line) => (line.startsWith('|') ? line.replace(/<br>\s*\|/g, ' |') : line))
+        .join('\n');
+}
+
 class MarkdownToFeishu {
     constructor({ sourceType = 'drive', rootToken, baseToken, document_id = null, governance = null }) {
         this.source_type = sourceType;
@@ -840,6 +852,44 @@ class MarkdownToFeishu {
         };
     }
 
+    __create_table_block_from_token(token) {
+        // marked pipe-table token → native Feishu table block. Pipe tables
+        // have no spans, so merge_info stays empty; cell content goes through
+        // the same inline parser as the HTML-table path (escapes such as
+        // `\_` are consumed here — the write side of the refetch fixed point).
+        const header = token.header || [];
+        const rows = token.rows || [];
+        const columnSize = header.length;
+        const cells = [];
+        const mergeInfo = [];
+
+        const pushCell = (cell) => {
+            cells.push({
+                block_type: this.block_type_map.text,
+                text: {
+                    elements: this.__parse_inline_markdown(cell ? String(cell.text ?? '') : ''),
+                    style: {}
+                }
+            });
+            mergeInfo.push(null);
+        };
+
+        header.forEach(pushCell);
+        rows.forEach((row) => row.forEach(pushCell));
+
+        return {
+            block_type: this.block_type_map.table,
+            table: {
+                property: {
+                    row_size: rows.length + (columnSize > 0 ? 1 : 0),
+                    column_size: columnSize,
+                    merge_info: mergeInfo
+                },
+                cells: cells
+            }
+        };
+    }
+
     __create_blockquote_block(token) {
         const children = [];
 
@@ -1121,11 +1171,25 @@ class MarkdownToFeishu {
                 // Standalone image (shouldn't normally happen, but handle it)
                 blocks.push(this.__create_image_block(token));
                 break;
+            case 'table':
+                // Pipe tables arrive as marked `table` tokens and render as
+                // native Feishu table blocks; silently dropping them used to
+                // lose whole sections (api.markdown-block-fidelity).
+                blocks.push(this.__create_table_block_from_token(token));
+                break;
+            case 'text':
+                // Tight-context text token (e.g. inside a blockquote) — render
+                // it like a paragraph instead of dropping it.
+                blocks.push(this.__create_text_block(token));
+                break;
             case 'space':
                 // Skip empty space
                 break;
             default:
-                console.log(`Unsupported token type: ${token.type}`);
+                throw Object.assign(
+                    new Error(`markdown token type "${token.type}" has no Feishu block representation; refusing to drop content (api.markdown-block-fidelity)`),
+                    { code: 'MD_TOKEN_UNREPRESENTABLE', tokenType: token.type }
+                );
         }
 
         return blocks;
@@ -1508,8 +1572,51 @@ class MarkdownToFeishu {
         });
     }
 
+    __collect_text_link_urls(value, found = []) {
+        if (Array.isArray(value)) {
+            value.forEach((item) => this.__collect_text_link_urls(item, found));
+            return found;
+        }
+        if (!value || typeof value !== 'object') return found;
+        for (const [key, child] of Object.entries(value)) {
+            if (key === 'link' && child && typeof child === 'object' && typeof child.url === 'string') {
+                found.push(child.url);
+            } else if (key !== 'link') {
+                this.__collect_text_link_urls(child, found);
+            }
+        }
+        return found;
+    }
+
+    __assert_absolute_block_links(payload, method) {
+        // The Feishu block API rejects non-absolute URLs in
+        // text_element_style.link (schema mismatch 1770006), which used to
+        // surface only as a partial execution after real writes landed. The
+        // inline parser percent-encodes URLs, so compare decoded values and
+        // refuse anything that is not an absolute http(s) URL before the
+        // first writer call (api.absolute-link-urls).
+        const offenders = [];
+        for (const raw of this.__collect_text_link_urls(payload)) {
+            let decoded = raw;
+            try {
+                decoded = decodeURIComponent(raw);
+            } catch (_) {
+                // Keep the raw form for the absolute check.
+            }
+            if (!/^https?:\/\//i.test(decoded)) offenders.push(decoded);
+        }
+        if (offenders.length > 0) {
+            const unique = [...new Set(offenders)];
+            throw Object.assign(
+                new Error(`${method} refuses non-absolute text link URL(s): ${unique.join(', ')} — resolve repository-relative links to in-KB docx URLs before writing (api.absolute-link-urls)`),
+                { code: 'RELATIVE_LINK_URL_REJECTED', urls: unique }
+            );
+        }
+    }
+
     async create_blocks({ document_id, blocks, startIndex = 0, parentBlockId = null }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.create_blocks', document_id);
+        this.__assert_absolute_block_links(blocks, 'MarkdownToFeishu.create_blocks');
         const token = await this.tokenFetcher.token();
 
         // Determine parent block ID
@@ -1905,6 +2012,7 @@ class MarkdownToFeishu {
 
     async apply_api_patch({ document_id, source_document_id, patchPlan }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.apply_api_patch', document_id);
+        this.__assert_absolute_block_links(patchPlan, 'MarkdownToFeishu.apply_api_patch');
         if (!patchPlan || patchPlan.validation?.valid !== true) {
             const error = new Error('A validated API patch plan is required');
             error.code = 'INVALID_API_PATCH_PLAN';
@@ -2153,6 +2261,7 @@ class MarkdownToFeishu {
 
     async patch_document({ document_id, blocks, strategy = 'smart' }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.patch_document', document_id);
+        this.__assert_absolute_block_links(blocks, 'MarkdownToFeishu.patch_document');
         /**
          * Sophisticated document update using PATCH API for non-destructive updates.
          *
@@ -2798,3 +2907,4 @@ class MarkdownToFeishu {
 }
 
 module.exports = MarkdownToFeishu;
+module.exports.normalizeRefetchedMarkdown = normalizeRefetchedMarkdown;

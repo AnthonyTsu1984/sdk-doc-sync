@@ -195,5 +195,55 @@
    "runner": "invariant-conformance",
    "scenario": "delta-postwrite-verified"
   }
+ },
+ {
+  "id": "content-table-native-roundtrip",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentTableNativeRoundtrip"
+  },
+  "assertions": {
+   "blockType": 31,
+   "rowSize": 2,
+   "columnSize": 2,
+   "underscoreCell": "membership_match",
+   "inlineCodeCellKept": true,
+   "normalizedRefetchLine": "| membership\\_match | `x` |"
+  }
+ },
+ {
+  "id": "content-unrepresentable-token-blocked",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentUnrepresentableTokenBlocked"
+  },
+  "assertions": {
+   "blocked": true,
+   "code": "MD_TOKEN_UNREPRESENTABLE"
+  }
+ },
+ {
+  "id": "content-relative-link-resolved",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentRelativeLinkResolved"
+  },
+  "assertions": {
+   "crossTrackResolved": "https://zilliverse.feishu.cn/docx/AAA",
+   "sameDirResolved": "https://zilliverse.feishu.cn/docx/BBB",
+   "unresolvedErrorCode": "RELATIVE_LINK_UNRESOLVED",
+   "deLinkedFragment": "Ghost plain"
+  }
+ },
+ {
+  "id": "content-relative-link-blocked",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentRelativeLinkBlocked"
+  },
+  "assertions": {
+   "code": "RELATIVE_LINK_URL_REJECTED",
+   "writerCalls": 0
+  }
  }
 ]

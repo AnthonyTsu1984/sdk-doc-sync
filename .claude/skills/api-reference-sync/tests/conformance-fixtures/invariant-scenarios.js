@@ -464,6 +464,122 @@ const scenarios = {
       writerCalls: writerCalls.length,
     };
   },
+
+  // --- api.markdown-block-fidelity scenarios (production converter) ---
+
+  async contentTableNativeRoundtrip() {
+    const MarkdownToFeishu = require('../../src/markdown-to-feishu');
+    const { normalizeRefetchedMarkdown } = MarkdownToFeishu;
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance' });
+    const markdown = [
+      '| Name | Value |',
+      '| --- | --- |',
+      '| membership\\_match | `x` |',
+    ].join('\n');
+    const { tokens } = await writer.parse_markdown(markdown);
+    const blocks = await writer.markdown_to_blocks(tokens);
+    const table = blocks.find((block) => block.table);
+    const cellText = (index) => table.table.cells[index].text.elements
+      .map((element) => (element.text_run ? element.text_run.content : ''))
+      .join('');
+    const refetched = '| membership\\_match<br> | `x`<br> |';
+    return {
+      blockType: table.block_type,
+      rowSize: table.table.property.row_size,
+      columnSize: table.table.property.column_size,
+      underscoreCell: cellText(2),
+      inlineCodeCellKept: cellText(3) === 'x',
+      normalizedRefetchLine: normalizeRefetchedMarkdown(refetched),
+    };
+  },
+
+  async contentUnrepresentableTokenBlocked() {
+    const MarkdownToFeishu = require('../../src/markdown-to-feishu');
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance' });
+    try {
+      await writer.markdown_to_blocks([{ type: 'def' }]);
+      return { blocked: false, code: null };
+    } catch (error) {
+      return { blocked: true, code: error.code || null };
+    }
+  },
+
+  // --- api.absolute-link-urls scenarios (resolver + writer envelope) ---
+
+  async contentRelativeLinkResolved() {
+    const { resolveRelativeLinks } = require('../../src/sdk-doc-sync/markdown-link-resolution');
+    const slugs = {
+      'Vector-Search': 'https://zilliverse.feishu.cn/docx/AAA',
+      'Collections-DataType': 'https://zilliverse.feishu.cn/docx/BBB',
+    };
+    const resolveSlug = (slug) => slugs[slug] || null;
+    const crossTrack = resolveRelativeLinks('[Search](../Vector/Search.md)', { resolveSlug, currentCategory: 'Vector' });
+    const sameDir = resolveRelativeLinks('[DataType](DataType.md)', { resolveSlug, currentCategory: 'Collections' });
+    let unresolvedErrorCode = null;
+    try {
+      resolveRelativeLinks('[Ghost](Ghost.md)', { resolveSlug, currentCategory: 'Collections' });
+    } catch (error) {
+      unresolvedErrorCode = error.code || null;
+    }
+    const deLinked = resolveRelativeLinks('[Ghost](Ghost.md) plain', {
+      resolveSlug,
+      currentCategory: 'Collections',
+      onUnresolved: 'de-link',
+    });
+    return {
+      crossTrackResolved: crossTrack.includes('/docx/AAA') ? 'https://zilliverse.feishu.cn/docx/AAA' : null,
+      sameDirResolved: sameDir.includes('/docx/BBB') ? 'https://zilliverse.feishu.cn/docx/BBB' : null,
+      unresolvedErrorCode,
+      deLinkedFragment: deLinked,
+    };
+  },
+
+  async contentRelativeLinkBlocked() {
+    const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+    const { WriterGovernance } = require('../../../doc-ops-core/src/writer-governance');
+    const MarkdownToFeishu = require('../../src/markdown-to-feishu');
+    const batchDigest = 'sha256:' + 'c'.repeat(64);
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+    governance.bindApproval({
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-1'],
+      sideEffects: ['docx.patch'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'execute',
+        batchDigest,
+        actionCount: 1,
+        targets: ['doc-1'],
+        sideEffects: ['docx.patch'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+    });
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance', governance });
+    let writerCalls = 0;
+    writer.tokenFetcher = { token: async () => { writerCalls += 1; return 'tenant-token'; } };
+    try {
+      await writer.create_blocks({
+        document_id: 'doc-1',
+        blocks: [{
+          block_type: 2,
+          text: {
+            elements: [{
+              text_run: {
+                content: 'Search',
+                text_element_style: { link: { url: encodeURIComponent('../Vector/Search.md') } },
+              },
+            }],
+            style: {},
+          },
+        }],
+      });
+      return { code: null, writerCalls };
+    } catch (error) {
+      return { code: error.code || null, writerCalls };
+    }
+  },
 };
 
 module.exports = { scenarios };

@@ -102,6 +102,8 @@ npm run api-reference-sync -- \
 - SDK artifacts require reviewed evidence, a versioned language layout profile, block-safety validation, and an immutable semantic patch plan. Full-body repair requires exact token approval, history, and protected-block inventory.
 - Verify the canonical tenant host, target ancestry, record link/parent/metadata, older-source preservation, and human-visible access after writes.
 - Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists.
+- Convert governed markdown into Feishu blocks without silent loss: the converter refuses any markdown token it cannot represent instead of dropping it, renders pipe tables as native table blocks with plain-text cells, and declares the cell refetch fixed points (authored `\_` escapes consumed at write; end-of-cell `<br>` stripped only by verification normalization). [api.markdown-block-fidelity]
+- Keep repository-relative URLs out of written documents: reviewed-context builders resolve repo-relative `.md` links to in-KB docx URLs from reviewed snapshot evidence (or explicitly de-link unresolved ones), and the writer envelope refuses any text link that does not decode to an absolute http(s) URL before the first writer call. [api.absolute-link-urls]
 
 ## Required References
 

@@ -9,7 +9,13 @@
       "risk": "write-safety",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
-      "enforcement": ["evidence", "plan", "pre-write", "post-write", "reconcile"],
+      "enforcement": [
+        "evidence",
+        "plan",
+        "pre-write",
+        "post-write",
+        "reconcile"
+      ],
       "statementDigest": "sha256:ff1da141882e49f89935542924b0f5291acd8fe3d30140ec52f5c33bce4cbbf1",
       "fixtureIds": [
         "delta-unchanged-inherited",
@@ -33,7 +39,11 @@
         {
           "stage": "evidence",
           "module": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
-          "codes": ["TRACK_ENUMERATION_INCOMPLETE", "TARGET_FOLDER_UNVERIFIED", "CURRENT_RECORD_NOT_REFERENCING"]
+          "codes": [
+            "TRACK_ENUMERATION_INCOMPLETE",
+            "TARGET_FOLDER_UNVERIFIED",
+            "CURRENT_RECORD_NOT_REFERENCING"
+          ]
         },
         {
           "stage": "plan",
@@ -61,7 +71,10 @@
         {
           "stage": "plan",
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/index.js",
-          "codes": ["INVARIANT_ATTESTATION_REQUIRED", "TREE_DELTA_DAG_VIOLATION"]
+          "codes": [
+            "INVARIANT_ATTESTATION_REQUIRED",
+            "TREE_DELTA_DAG_VIOLATION"
+          ]
         },
         {
           "stage": "pre-write",
@@ -91,7 +104,9 @@
         {
           "stage": "post-write",
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/acceptance-finalizer.js",
-          "codes": ["INVARIANT_EVIDENCE_REQUIRED"]
+          "codes": [
+            "INVARIANT_EVIDENCE_REQUIRED"
+          ]
         },
         {
           "stage": "reconcile",
@@ -109,11 +124,71 @@
         {
           "stage": "reconcile",
           "module": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
-          "codes": ["TREE_DELTA_RECONCILIATION_FAILED"]
+          "codes": [
+            "TREE_DELTA_RECONCILIATION_FAILED"
+          ]
         }
       ],
       "reference": "references/tree-delta-policy.md",
       "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing."
+    },
+    {
+      "id": "api.markdown-block-fidelity",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-governed-markdown-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write"
+      ],
+      "statementDigest": "sha256:dffd1f9b7254093190755226bd22dad5d60d486953beeb1739cef7ec86e332a8",
+      "fixtureIds": [
+        "content-table-native-roundtrip",
+        "content-unrepresentable-token-blocked"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "MD_TOKEN_UNREPRESENTABLE"
+          ]
+        }
+      ],
+      "notes": "Phase 4 (campaign content fidelity): marked `table` tokens render as native Feishu table blocks through the same cell path as HTML tables, unhandled token types throw MD_TOKEN_UNREPRESENTABLE instead of being logged and dropped, and normalizeRefetchedMarkdown is the declared verification canonicalization (end-of-cell <br> strip only; authored \\_ escapes are consumed at write)."
+    },
+    {
+      "id": "api.absolute-link-urls",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-governed-markdown-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "evidence",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:af716100e3170d117b5c73021c0a31dc63d84a79958fb01db9fddc04a95da9c5",
+      "fixtureIds": [
+        "content-relative-link-resolved",
+        "content-relative-link-blocked"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/markdown-link-resolution.js",
+          "codes": [
+            "RELATIVE_LINK_UNRESOLVED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "RELATIVE_LINK_URL_REJECTED"
+          ]
+        }
+      ],
+      "notes": "Phase 4 (campaign content fidelity): resolveRelativeLinks (productized from the campaign builder, including the same-directory form) rewrites repo-relative .md links to in-KB docx URLs from reviewed snapshot evidence before planning, and MarkdownToFeishu block-carrying mutations decode every text_element_style link URL and refuse non-absolute values before the first writer call (Feishu block API schema mismatch 1770006)."
     }
   ]
 }

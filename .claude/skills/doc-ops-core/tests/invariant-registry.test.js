@@ -190,7 +190,11 @@ test('the committed api-reference-sync registry passes its own coverage check', 
     fixtureIds: fixtures.map((fixture) => fixture.id),
   });
   assert.deepEqual(coverage.errors, []);
-  assert.deepEqual(coverage.markedIds, ['api.versioned-tree-delta']);
+  assert.deepEqual(coverage.markedIds, [
+    'api.versioned-tree-delta',
+    'api.markdown-block-fidelity',
+    'api.absolute-link-urls',
+  ]);
 });
 
 function runtimeInvariant(overrides = {}) {

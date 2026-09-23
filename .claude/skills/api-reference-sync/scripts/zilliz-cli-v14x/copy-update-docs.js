@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Copy UPDATE-scope Zilliz CLI docs into v1.4.x folders and repoint bitable records.
 //
 // Reads:

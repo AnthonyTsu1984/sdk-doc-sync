@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * One-shot fix: the v0.1.x → v1.3.x copy left one stale cross-reference inside
  * the Backup/export doc that points at the old `zilliz job describe` doc token.

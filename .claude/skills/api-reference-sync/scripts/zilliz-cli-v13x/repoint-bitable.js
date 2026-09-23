@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Repoint v1.3.x bitable Docs links so each record points at the new v1.3.x
 // drive content instead of the legacy v0.1.x docs.
 //

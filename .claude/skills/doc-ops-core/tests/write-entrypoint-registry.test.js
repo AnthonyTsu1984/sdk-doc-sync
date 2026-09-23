@@ -65,7 +65,10 @@ test('new legacy-live registry entries require a reviewed unexpired exception', 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'entrypoint-registry-'));
   const filePath = path.join(root, 'scripts', 'new-live.js');
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, 'await writer.updateRecord(recordId, fields);\n');
+  fs.writeFileSync(
+    filePath,
+    "require('../doc-ops-core/src/legacy-quarantine').enforceLegacyQuarantine({ entrypointPath: __filename });\nawait writer.updateRecord(recordId, fields);\n",
+  );
   const entry = {
     path: 'scripts/new-live.js',
     skill: 'localized-doc-sync',

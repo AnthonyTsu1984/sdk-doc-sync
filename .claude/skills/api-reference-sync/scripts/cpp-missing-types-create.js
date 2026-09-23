@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Create docs for missing C++ SDK reference types:
  *   - CollectionSchema (+ CollectionSchemaPtr typedef) → Collections category

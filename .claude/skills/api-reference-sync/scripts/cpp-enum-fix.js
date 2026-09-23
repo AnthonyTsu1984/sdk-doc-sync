@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Replace scanner-stub enum docs with curated versions.
  * Also deletes the duplicate ConsistencyLevel record/doc.

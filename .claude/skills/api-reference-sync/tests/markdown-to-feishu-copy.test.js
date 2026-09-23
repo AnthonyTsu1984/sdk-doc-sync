@@ -3,6 +3,34 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+
+// Phase 3: writer mutations are gated on a bound approval envelope. These
+// suites exercise the writer transport itself, so they bind a real envelope
+// derived from a fixed batch.
+function boundGovernance() {
+  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  const batchDigest = 'sha256:'.concat('a'.repeat(64));
+  governance.bindApproval({
+    batchDigest,
+    actionCount: 1,
+    targets: ['doc-under-test'],
+    sideEffects: ['docx.patch'],
+    approval: createApprovalEnvelope({
+      skill: 'api-reference-sync',
+      operation: 'execute',
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-under-test'],
+      sideEffects: ['docx.patch'],
+      decision: 'approved',
+    }),
+    invariantAttestations: [],
+  });
+  return governance;
+}
+
 function loadWithFetch(mockFetch) {
   const modulePath = require.resolve('../src/markdown-to-feishu');
   const fetchPath = require.resolve('node-fetch');
@@ -48,7 +76,7 @@ test('copyDocument copies a drive docx file into the target folder', async () =>
   const previousHost = process.env.FEISHU_HOST;
   process.env.FEISHU_HOST = 'https://zilliverse.feishu.cn';
 
-  const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   writer.tokenFetcher = { token: async () => 'tenant-token' };
 
   const result = await writer.copyDocument({
@@ -90,7 +118,7 @@ test('deleteFile supports both docx files and folders through typed Drive deleti
   });
   const previousHost = process.env.FEISHU_HOST;
   process.env.FEISHU_HOST = 'https://zilliverse.feishu.cn';
-  const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   writer.tokenFetcher = { token: async () => 'tenant-token' };
 
   await writer.deleteDocument({ documentToken: 'doc-1' });

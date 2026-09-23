@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Create v2.6.x docs for 4 gap methods:
  *   batchDescribeCollections, flushAll, flushAllSync, getFlushAllState

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Patch UPDATE-scope Zilliz CLI v1.4.x docs in place (deterministic append-only).
 //
 // Reads:

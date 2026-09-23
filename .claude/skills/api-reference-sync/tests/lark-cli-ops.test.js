@@ -73,9 +73,36 @@ test('historyList builds lark-cli docs history-list argv', async () => {
   }]);
 });
 
+
+// historyRevert/deleteDocx are gated mutations: argv tests bind a real
+// approved envelope so the transport shape stays testable.
+function mutationGovernance() {
+  const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+  const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  const batchDigest = 'sha256:'.concat('a'.repeat(64));
+  governance.bindApproval({
+    batchDigest,
+    actionCount: 1,
+    targets: ['doc-token'],
+    sideEffects: ['lark-cli.mutation'],
+    approval: createApprovalEnvelope({
+      skill: 'api-reference-sync',
+      operation: 'execute',
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-token'],
+      sideEffects: ['lark-cli.mutation'],
+      decision: 'approved',
+    }),
+    invariantAttestations: [],
+  });
+  return governance;
+}
+
 test('historyRevert builds lark-cli docs history-revert argv', async () => {
   const { calls, run } = recorder();
-  const ops = new LarkCliOps({ run });
+  const ops = new LarkCliOps({ run, governance: mutationGovernance() });
 
   await ops.historyRevert('doc-token', 'history-version-id');
 
@@ -98,7 +125,7 @@ test('historyRevert builds lark-cli docs history-revert argv', async () => {
 
 test('deleteDocx builds lark-cli drive delete argv with user default', async () => {
   const { calls, run } = recorder();
-  const ops = new LarkCliOps({ run });
+  const ops = new LarkCliOps({ run, governance: mutationGovernance() });
 
   await ops.deleteDocx('doc-token');
 

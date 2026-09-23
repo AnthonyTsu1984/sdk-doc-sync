@@ -73,14 +73,15 @@ function validateCodeVariantDirectives(blocks) {
 
 class FeishuOperationalVerifier extends SyncVerifier {
   constructor({
-    ops = new LarkCliOps(),
+    ops = null,
     readDocument = null,
     readRecord = null,
     documentWriter = null,
     bitableWriter = null,
+    governance = null,
   } = {}) {
     super({ readDocument, readRecord });
-    this.ops = ops;
+    this.ops = ops || new LarkCliOps({ governance });
     this.documentWriter = documentWriter;
     this.bitableWriter = bitableWriter;
     this._authPromise = null;

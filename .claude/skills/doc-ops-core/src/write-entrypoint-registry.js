@@ -134,6 +134,12 @@ function validateRegistryEntries({
       if (typeof entry.canonicalReplacement !== 'string' || !entry.canonicalReplacement) {
         errors.push({ code: 'LEGACY_LIVE_REPLACEMENT_REQUIRED', path: `${entryPath}.canonicalReplacement`, entrypointPath: normalized });
       }
+      // Runtime quarantine: the entrypoint must call the shared launcher as
+      // its first statement, so the registry flag is enforced by code and not
+      // just recorded as metadata.
+      if (absolute && !/enforceLegacyQuarantine\s*\(/.test(fs.readFileSync(absolute, 'utf8'))) {
+        errors.push({ code: 'LEGACY_LIVE_RUNTIME_GUARD_REQUIRED', path: `${entryPath}.classification`, entrypointPath: normalized });
+      }
       if (entry.admittedAtBaseline !== true && !validLegacyException(expectedChanges, normalized, now)) {
         errors.push({ code: 'LEGACY_LIVE_EXCEPTION_REQUIRED', path: entryPath, entrypointPath: normalized });
       }
@@ -159,7 +165,33 @@ function validateWriteEntrypointRegistry({ repoRoot = process.cwd(), now = new D
   const expectedChanges = fs.existsSync(expectedChangesPath)
     ? JSON.parse(fs.readFileSync(expectedChangesPath, 'utf8'))
     : [];
-  return validateRegistryEntries({ repoRoot, registry, expectedChanges, now });
+  const result = validateRegistryEntries({ repoRoot, registry, expectedChanges, now });
+  // Widening gate: the legacy-live population may only shrink against the
+  // recorded baseline unless a newly admitted entrypoint carries its own
+  // unexpired reviewed exception.
+  const baselineLegacy = registry?.baseline?.legacyLiveCount;
+  if (!Number.isInteger(baselineLegacy) || baselineLegacy < 0) {
+    result.valid = false;
+    result.errors.push({ code: 'LEGACY_LIVE_BASELINE_REQUIRED', path: '$.baseline.legacyLiveCount' });
+  } else {
+    const legacyEntries = registry.entries.filter((entry) => entry?.classification === 'legacy-live');
+    const widenedByException = legacyEntries.some((entry) => (
+      entry.admittedAtBaseline !== true && validLegacyException(expectedChanges, normalizePath(entry.path), now)
+    ));
+    if (legacyEntries.length > baselineLegacy && !widenedByException) {
+      result.valid = false;
+      result.errors.push({
+        code: 'LEGACY_LIVE_COUNT_WIDENED',
+        path: '$.entries',
+        baseline: baselineLegacy,
+        current: legacyEntries.length,
+      });
+    }
+  }
+  result.errors.sort((left, right) => left.code.localeCompare(right.code)
+    || String(left.entrypointPath || '').localeCompare(String(right.entrypointPath || ''))
+    || left.path.localeCompare(right.path));
+  return result;
 }
 
 module.exports = {

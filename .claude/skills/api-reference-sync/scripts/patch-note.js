@@ -1,3 +1,5 @@
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 const fs = require('fs');
 const path = require('path');
 

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Create the v1.3.x folder skeleton in Feishu drive.
 //
 // Top folder: under drive root EsDFfU9OQlcdBldL1jVcCwpfnPd, create "v1.3.x"

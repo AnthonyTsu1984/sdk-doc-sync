@@ -883,6 +883,7 @@ async function finalizeAcceptance({
 
     const AcceptanceFinalizer = require('../src/sdk-doc-sync/acceptance-finalizer');
     const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+    const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
     const repoRoot = path.resolve(__dirname, '../../../..');
     const tmpDir = path.join(repoRoot, 'tmp', 'api-reference-sync');
     const scanStatePath = path.resolve(__dirname, '..', 'scan-state.json');
@@ -892,6 +893,9 @@ async function finalizeAcceptance({
             || new BitableWriter({
                 baseToken: receipt.bitable.baseToken,
                 tableId: receipt.bitable.tableId || undefined,
+                // Unbound here: finalize() binds this governance only after the
+                // receipt/session/manifest/evidence chain has been re-verified.
+                governance: new WriterGovernance({ skill: 'api-reference-sync', operation: 'acceptance' }),
             }),
         readScanState: io.readScanState || (async () => {
             try {

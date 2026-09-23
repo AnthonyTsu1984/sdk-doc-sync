@@ -5,17 +5,18 @@
   "invariants": [
     {
       "id": "api.versioned-tree-delta",
-      "version": 1,
+      "version": 2,
       "risk": "write-safety",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
-      "enforcement": ["evidence", "plan", "pre-write"],
-      "statementDigest": "sha256:499bb702d5dd2bf7b306dd0aa1ef005c547c50c919d95b290bdc2e0acd3591ed",
+      "enforcement": ["evidence", "plan", "pre-write", "post-write", "reconcile"],
+      "statementDigest": "sha256:ff1da141882e49f89935542924b0f5291acd8fe3d30140ec52f5c33bce4cbbf1",
       "fixtureIds": [
         "delta-unchanged-inherited",
         "delta-changed-existing-category",
         "delta-changed-missing-category",
-        "delta-shared-inplace-forbidden"
+        "delta-shared-inplace-forbidden",
+        "delta-postwrite-verified"
       ],
       "enforcers": [
         {
@@ -36,13 +37,31 @@
         },
         {
           "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/versioned-tree-policy.js",
+          "codes": [
+            "DELTA_MODEL_MIRROR_BLOCKED",
+            "TREE_DELTA_DIFF_UNKNOWN",
+            "TREE_DELTA_INVENTORY_INCOMPLETE",
+            "TREE_DELTA_PLACEMENT_UNKNOWN"
+          ]
+        },
+        {
+          "stage": "plan",
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-planner.js",
           "codes": [
             "SHARED_TOKEN_EVIDENCE_REQUIRED",
             "COPY_SOURCE_REQUIRED",
             "CREATE_RECORD_ALREADY_EXISTS",
-            "TARGET_ANCESTRY_REQUIRED"
+            "TARGET_ANCESTRY_REQUIRED",
+            "TREE_DELTA_CATEGORY_MISMATCH",
+            "VIRTUAL_NODE_REPOINT_REQUIRED",
+            "VIRTUAL_NODE_REPOINT_RESOURCE_INVALID"
           ]
+        },
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/index.js",
+          "codes": ["INVARIANT_ATTESTATION_REQUIRED", "TREE_DELTA_DAG_VIOLATION"]
         },
         {
           "stage": "pre-write",
@@ -52,10 +71,49 @@
             "SHARED_TOKEN_REFERENCES_DRIFTED",
             "SHARED_TOKEN_REVALIDATION_REQUIRED"
           ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "TREE_DELTA_REFERENCES_DRIFTED",
+            "TREE_DELTA_VERIFICATION_REQUIRED"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/index.js",
+          "codes": [
+            "TREE_DELTA_VERIFICATION_FAILED",
+            "TREE_DELTA_OBSERVATION_FAILED"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/acceptance-finalizer.js",
+          "codes": ["INVARIANT_EVIDENCE_REQUIRED"]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/tree-delta-reconciliation.js",
+          "codes": [
+            "TREE_DELTA_TARGET_RECORD_MISSING",
+            "TREE_DELTA_CHANGED_NOT_REPOINTED",
+            "TREE_DELTA_UNCHANGED_DIVERGENT",
+            "TREE_DELTA_SHARED_LINK_BROKEN",
+            "TREE_DELTA_NODE_LINK_INVALID",
+            "TREE_DELTA_NODE_NOT_UNDER_ROOT",
+            "TREE_DELTA_NODE_TYPE_INVALID"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
+          "codes": ["TREE_DELTA_RECONCILIATION_FAILED"]
         }
       ],
-      "reference": "references/inheritance-evidence.md",
-      "notes": "Post-write tree-delta verification, missing-category detection in the policy kernel, and the CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE action DAG are Phase 2 of .claude/plans/2026-09-23-skill-harness-rule-enforcement.md; this entry's enforcement list must gain 'post-write' when they land."
+      "reference": "references/tree-delta-policy.md",
+      "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing."
     }
   ]
 }

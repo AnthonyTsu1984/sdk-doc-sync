@@ -27,16 +27,21 @@ const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../../doc-ops-core/src/journal');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { createResult } = require('../../../doc-ops-core/src/result-contract');
+const {
+    INVARIANT_ID,
+    verifyTreeDeltaPostconditions,
+    WRITE_PLAN_ACTIONS,
+} = require('./versioned-tree-policy');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
 const { validateResumeSession } = require('./review-session-store');
 
+const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
+
 function executionSideEffects(plan) {
     switch (plan.action) {
-        case 'CREATE_FOLDER': return [
-            'feishu.drive.create_folder',
-            ...(plan.resource?.repointVirtualNode?.recordId ? ['feishu.bitable.update'] : []),
-        ];
+        case 'CREATE_FOLDER': return ['feishu.drive.create_folder'];
         case 'CREATE_VIRTUAL_NODE': return ['feishu.bitable.create'];
+        case 'REPOINT_CATEGORY_VIRTUAL_NODE': return ['feishu.bitable.update'];
         case 'CREATE': return ['feishu.doc.create', 'feishu.bitable.create'];
         case 'UPDATE_IN_PLACE': return ['feishu.doc.patch', 'feishu.bitable.update'];
         case 'UPDATE_RECORD_METADATA': return ['feishu.bitable.update'];
@@ -62,7 +67,74 @@ function normalizedDependency(dependency, knownActionIds) {
     return null;
 }
 
+// Batch-construction enforcement for the api.versioned-tree-delta invariant:
+// every document write plan must carry a well-formed attestation (bound into
+// planDigest, so an approval covers the exact decision and DAG), and a
+// category-create attestation's required resource DAG must be present and
+// wired in the same batch — folder without an embedded repoint, repoint as a
+// distinct downstream action depending on folder and document.
+function assertBatchInvariantCoverage(plannedActions, planIds) {
+    const byPlanId = new Map(plannedActions.map(({ plan }) => [plan.stableId, plan]));
+    for (const { plan } of plannedActions) {
+        if (!WRITE_PLAN_ACTIONS.has(plan.action)) continue;
+        const attestation = (plan.invariantAttestations || [])
+            .find(entry => entry?.id === INVARIANT_ID) || null;
+        if (!attestation
+            || typeof attestation.decision !== 'string'
+            || !DIGEST_PATTERN.test(attestation.inputDigest || '')) {
+            const error = new Error(`INVARIANT_ATTESTATION_REQUIRED: write plan ${plan.stableId} carries no valid ${INVARIANT_ID} attestation`);
+            error.code = 'INVARIANT_ATTESTATION_REQUIRED';
+            error.details = { actionId: plan.stableId };
+            throw error;
+        }
+        const dag = attestation.requiredResourceDag;
+        if (!dag) continue;
+        for (const node of dag) {
+            if (node.action === 'COPY_PATCH_AND_REPOINT') {
+                if (!planIds.has(node.stableId)) {
+                    const error = new Error(`TREE_DELTA_DAG_VIOLATION: attested document action ${node.stableId} is not part of this batch`);
+                    error.code = 'TREE_DELTA_DAG_VIOLATION';
+                    error.details = { actionId: plan.stableId, node: node.stableId };
+                    throw error;
+                }
+                continue;
+            }
+            if (node.action === 'VERIFY_TREE_DELTA') continue;
+            const resourcePlan = byPlanId.get(node.stableId);
+            if (!resourcePlan || resourcePlan.action !== node.action) {
+                const error = new Error(`TREE_DELTA_DAG_VIOLATION: required resource ${node.stableId} (${node.action}) is missing from the batch for ${plan.stableId}`);
+                error.code = 'TREE_DELTA_DAG_VIOLATION';
+                error.details = { actionId: plan.stableId, node: node.stableId, action: node.action };
+                throw error;
+            }
+            if (node.action === 'CREATE_FOLDER' && resourcePlan.resource?.repointVirtualNode !== undefined) {
+                const error = new Error(`TREE_DELTA_DAG_VIOLATION: folder resource ${node.stableId} must not embed the VirtualNode repoint for ${plan.stableId}`);
+                error.code = 'TREE_DELTA_DAG_VIOLATION';
+                error.details = { actionId: plan.stableId, node: node.stableId };
+                throw error;
+            }
+            if (node.action === 'REPOINT_CATEGORY_VIRTUAL_NODE') {
+                const dependsOn = new Set((resourcePlan.dependencies || []));
+                const folderNode = dag.find(entry => entry.action === 'CREATE_FOLDER');
+                // Plan dependencies store raw resource refs; the attestation
+                // DAG addresses the same resources as resource:<ref> stables.
+                const folderDependencies = [folderNode.stableId, folderNode.stableId.replace(/^resource:/, '')];
+                const folderWired = folderDependencies.some(dependency => dependsOn.has(dependency));
+                const documentWired = dependsOn.has(plan.stableId);
+                if (!folderWired || !documentWired) {
+                    const missing = !folderWired ? folderDependencies[0] : plan.stableId;
+                    const error = new Error(`TREE_DELTA_DAG_VIOLATION: repoint resource ${node.stableId} must depend on ${missing}`);
+                    error.code = 'TREE_DELTA_DAG_VIOLATION';
+                    error.details = { actionId: plan.stableId, node: node.stableId, missingDependency: missing };
+                    throw error;
+                }
+            }
+        }
+    }
+}
+
 function buildExecutionBatch(plannedActions, knownActionIds = new Set(plannedActions.map(({ plan }) => plan.stableId))) {
+    assertBatchInvariantCoverage(plannedActions, knownActionIds);
     return createActionBatch({
         skill: 'api-reference-sync',
         operation: 'execute',
@@ -295,6 +367,7 @@ class SdkDocSync {
         this.bitableWriter = bitableWriter || null;
         this.executor = executor || null;
         this.verifier = verifier || null;
+        this.tokenReferenceReader = tokenReferenceReader || null;
 
         if (!dryRun) {
             this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
@@ -341,6 +414,7 @@ class SdkDocSync {
                 tokenReferenceReader: tokenReferenceReader
                     || (referenceTracks.length > 0 ? createTokenReferenceReader({ tracks: referenceTracks }) : null),
             });
+            this.tokenReferenceReader = this.executor.tokenReferenceReader || tokenReferenceReader || null;
         }
     }
 
@@ -788,6 +862,52 @@ class SdkDocSync {
             }
         }
 
+        // Phase 6b: VERIFY_TREE_DELTA — batch-level post-write verification of
+        // every attested document action against freshly refetched state. The
+        // outcomes persist in the execution journal; a failed verification
+        // keeps the writes but blocks acceptance via the diagnostics below.
+        result.treeDeltaVerifications = [];
+        const repointRecordIds = new Map();
+        for (const entry of result.results) {
+            if (entry.status === 'success' && entry.resolvedResource?.kind === 'virtual_node_repoint') {
+                repointRecordIds.set(`resource:${entry.resolvedResource.ref}`, entry.resolvedResource.recordId);
+            }
+        }
+        for (const entry of result.results) {
+            const plan = entry.plan;
+            if (entry.status !== 'success' || !plan || !WRITE_PLAN_ACTIONS.has(plan.action)) continue;
+            const attestation = (plan.invariantAttestations || [])
+                .find(candidate => candidate?.id === INVARIANT_ID);
+            if (!attestation) continue;
+            const { observed, observationErrors } = await this._observeTreeDelta(plan, entry, attestation, {
+                repointRecordIds,
+                resourceResolutions,
+            });
+            let outcome;
+            if (observationErrors.length > 0) {
+                outcome = {
+                    actionId: plan.stableId,
+                    invariantId: INVARIANT_ID,
+                    decision: attestation.decision,
+                    ok: false,
+                    errors: observationErrors,
+                };
+            } else {
+                const verified = verifyTreeDeltaPostconditions({ plan, observed });
+                outcome = {
+                    actionId: plan.stableId,
+                    invariantId: verified.invariantId,
+                    decision: verified.decision,
+                    ok: verified.ok,
+                    errors: verified.errors,
+                };
+            }
+            outcome.observedDigest = digestSemantic(observed);
+            result.treeDeltaVerifications.push(outcome);
+            journal.treeDelta(outcome);
+        }
+        const treeDeltaFailures = result.treeDeltaVerifications.filter(outcome => !outcome.ok);
+
         const journalEntries = journal.read();
         const observedActionIds = new Set(journalEntries.filter(entry => entry.type === 'observed').map(entry => entry.actionId));
         const missingObserved = result.executionBatch.actions
@@ -813,19 +933,117 @@ class SdkDocSync {
         result.executionResult = createResult({
             skill: 'api-reference-sync',
             operation: 'execute',
-            status: failedResults.length === 0 ? 'EXECUTED' : 'PARTIAL',
-            diagnostics: failedResults.map(entry => diagnosticFor(entry.error, {
-                actionId: this._stableIdFor(entry.action),
-            })),
+            status: failedResults.length === 0 && treeDeltaFailures.length === 0 ? 'EXECUTED' : 'PARTIAL',
+            diagnostics: [
+                ...failedResults.map(entry => diagnosticFor(entry.error, {
+                    actionId: this._stableIdFor(entry.action),
+                })),
+                ...treeDeltaFailures.map(outcome => ({
+                    code: 'TREE_DELTA_VERIFICATION_FAILED',
+                    actionId: outcome.actionId,
+                    message: `Post-write tree-delta verification failed for ${outcome.actionId}`,
+                    errors: outcome.errors,
+                })),
+            ],
             artifactPaths: [journal.filePath],
             evidence: {
                 batchDigest: result.executionBatch.batchDigest,
                 executionJournalDigest: result.executionJournalDigest,
+                treeDeltaVerifications: result.treeDeltaVerifications.length,
+                treeDeltaFailures: treeDeltaFailures.length,
             },
         });
 
         this.onProgress('EXECUTE', `Done. ${result.results.filter(r => r.status === 'success').length}/${result.approved.length} succeeded`);
         return result;
+    }
+
+    driveFolderLink(token) {
+        const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+        return `${host}/drive/folder/${token}`;
+    }
+
+    _resolvedResourceToken(resourceResolutions, ref) {
+        if (!ref) return null;
+        const resolution = resourceResolutions instanceof Map ? resourceResolutions.get(ref) : resourceResolutions?.[ref];
+        return resolution?.value || resolution?.token || null;
+    }
+
+    // Refetches the drift-prone state VERIFY_TREE_DELTA asserts on. Read-only:
+    // observation failures become verification errors, never retries-writes.
+    async _observeTreeDelta(plan, entry, attestation, { repointRecordIds, resourceResolutions }) {
+        const observed = {};
+        const observationErrors = [];
+        const decision = attestation.decision;
+        const readRecord = this.bitableWriter
+            && typeof this.bitableWriter.getRecord === 'function'
+            ? liveRecordReader(this.bitableWriter)
+            : null;
+
+        if (decision === 'COPY_PATCH_AND_REPOINT'
+            || decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE'
+            || decision === 'UPDATE_IN_PLACE_VERIFIED_UNSHARED') {
+            if (this.tokenReferenceReader) {
+                try {
+                    const references = await this.tokenReferenceReader.listTokenReferences({
+                        documentToken: plan.source.documentToken,
+                    });
+                    observed.olderDocumentReferences = [...new Set((references || [])
+                        .map(reference => reference?.recordId)
+                        .filter(Boolean))];
+                } catch (error) {
+                    observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'tokenReferences', message: error.message });
+                }
+            }
+        }
+
+        if (decision === 'COPY_PATCH_AND_REPOINT'
+            || decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
+            observed.createdDocumentToken = entry.createdDocument?.token
+                || entry.createdDocument?.documentToken
+                || entry.patchedDocument?.token
+                || null;
+            if (readRecord) {
+                try {
+                    const targetRecord = await readRecord(plan.source.recordId);
+                    observed.targetRecordDocumentToken = targetRecord?.documentToken ?? null;
+                } catch (error) {
+                    observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'targetRecord', message: error.message });
+                }
+            }
+        }
+
+        if (decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
+            const folderToken = this._resolvedResourceToken(resourceResolutions, plan.target.folderRef);
+            observed.categoryFolderToken = folderToken;
+            observed.categoryFolderLink = folderToken ? this.driveFolderLink(folderToken) : null;
+            const repointNode = (attestation.requiredResourceDag || [])
+                .find(node => node.action === 'REPOINT_CATEGORY_VIRTUAL_NODE');
+            const repointRecordId = repointNode ? repointRecordIds.get(repointNode.stableId) : null;
+            if (readRecord && repointRecordId) {
+                try {
+                    const nodeRecord = await readRecord(repointRecordId);
+                    observed.categoryNodeLink = nodeRecord?.link ?? null;
+                } catch (error) {
+                    observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'categoryNode', message: error.message });
+                }
+            }
+            if (typeof this.m2f?.listFolder === 'function' && folderToken && observed.createdDocumentToken) {
+                try {
+                    const files = await this.m2f.listFolder({ folderToken, type: 'all' });
+                    const created = (files || []).find(file => (
+                        file.token === observed.createdDocumentToken
+                        || file.file_token === observed.createdDocumentToken
+                        || file.obj_token === observed.createdDocumentToken
+                    ));
+                    observed.createdDocumentFolderToken = created ? folderToken : null;
+                } catch (error) {
+                    observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'createdDocumentLocation', message: error.message });
+                }
+            }
+        }
+
+        return { observed, observationErrors };
     }
 
     async _readIndex() {

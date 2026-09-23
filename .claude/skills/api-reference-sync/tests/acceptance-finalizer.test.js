@@ -16,6 +16,15 @@ function record(recordId, progress = 'WIP') {
   return { record_id: recordId, fields: { Progress: progress, Targets: [], 'Deprecate Since': 'v3.0.x' } };
 }
 
+function invariantEvidenceFor(touchedRecords) {
+  return touchedRecords.map((item) => ({
+    actionId: item.actionId,
+    invariantId: 'api.versioned-tree-delta',
+    decision: 'COPY_PATCH_AND_REPOINT',
+    verified: true,
+  }));
+}
+
 test('AcceptanceFinalizer verifies every Draft transition before advancing scan state and writing a sentinel', async () => {
   const AcceptanceFinalizer = loadAcceptanceFinalizer();
   let records = [record('rec-a'), record('rec-b')];
@@ -45,6 +54,10 @@ test('AcceptanceFinalizer verifies every Draft transition before advancing scan 
       { actionId: 'action-a', recordId: 'rec-a' },
       { actionId: 'action-b', recordId: 'rec-b' },
     ],
+    invariantEvidence: invariantEvidenceFor([
+      { actionId: 'action-a', recordId: 'rec-a' },
+      { actionId: 'action-b', recordId: 'rec-b' },
+    ]),
     scanStateKey: 'cpp-v30',
     scanStateEntry: { lastScannedTag: 'v3.0.1', lastScannedCommit: 'abc123', lastScanDate: '2026-07-28' },
   });
@@ -101,6 +114,10 @@ test('AcceptanceFinalizer rolls back partial Draft transitions and preserves sca
         { actionId: 'action-a', recordId: 'rec-a' },
         { actionId: 'action-b', recordId: 'rec-b' },
       ],
+      invariantEvidence: invariantEvidenceFor([
+        { actionId: 'action-a', recordId: 'rec-a' },
+        { actionId: 'action-b', recordId: 'rec-b' },
+      ]),
       scanStateKey: 'cpp-v30',
       scanStateEntry: { lastScannedTag: 'v3.0.1' },
     }),
@@ -133,6 +150,38 @@ test('AcceptanceFinalizer refuses acceptance without a bound acceptance lineage 
   }), /acceptanceManifestDigest is required/);
 });
 
+test('AcceptanceFinalizer refuses acceptance without verified invariant evidence', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  const finalizer = new AcceptanceFinalizer({
+    bitableWriter: { async listRecords() { return []; }, async updateRecord() {} },
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async () => {},
+  });
+  // No invariantEvidence at all.
+  await assert.rejects(() => finalizer.finalize({
+    userConfirmed: true,
+    executionJournalDigest: 'sha256:execution-journal',
+    touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }],
+    scanStateKey: 'node-v30',
+    scanStateEntry: { lastScannedTag: 'v3.0.4' },
+  }), /Acceptance requires verified invariant evidence/);
+  // Unverified evidence is rejected as well.
+  await assert.rejects(() => finalizer.finalize({
+    userConfirmed: true,
+    executionJournalDigest: 'sha256:execution-journal',
+    touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }],
+    invariantEvidence: [{
+      actionId: 'a',
+      invariantId: 'api.versioned-tree-delta',
+      decision: 'COPY_PATCH_AND_REPOINT',
+      verified: false,
+    }],
+    scanStateKey: 'node-v30',
+    scanStateEntry: { lastScannedTag: 'v3.0.4' },
+  }), /is not verified/);
+});
+
 test('AcceptanceFinalizer accepts the aggregate accepted-unit manifest digest', async () => {
   const AcceptanceFinalizer = loadAcceptanceFinalizer();
   let records = [record('rec-a')];
@@ -155,6 +204,12 @@ test('AcceptanceFinalizer accepts the aggregate accepted-unit manifest digest', 
     userConfirmed: true,
     acceptanceManifestDigest: 'sha256:accepted-units',
     touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }],
+    invariantEvidence: [{
+      actionId: 'a',
+      invariantId: 'api.versioned-tree-delta',
+      decision: 'CREATE_ADDED_IDENTITY',
+      verified: true,
+    }],
     scanStateKey: 'node-v30',
     scanStateEntry: { lastScannedTag: 'v3.0.4' },
   });

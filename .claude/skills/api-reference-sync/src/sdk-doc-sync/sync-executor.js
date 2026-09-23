@@ -229,6 +229,7 @@ class SyncExecutor {
       rollbackCapsule,
       documentVerification: null,
       verification: null,
+      treeDeltaVerification: null,
       originalRecord: plan.source?.recordId ? { ...plan.source } : null,
       patchAttempted: false,
     };
@@ -243,6 +244,9 @@ class SyncExecutor {
           break;
         case 'CREATE_VIRTUAL_NODE':
           await this._executeCreateVirtualNode(effectivePlan, resourceResolutions, result);
+          break;
+        case 'REPOINT_CATEGORY_VIRTUAL_NODE':
+          await this._executeRepointVirtualNode(effectivePlan, resourceResolutions, result);
           break;
         case 'CREATE':
           await this._executeCreate(effectivePlan, artifact, action, result);
@@ -272,7 +276,7 @@ class SyncExecutor {
           throw new SyncExecutionError('UNKNOWN_PLAN_ACTION', `Unknown plan action: ${effectivePlan.action}`);
       }
 
-      if (this.verifier && !['CREATE_FOLDER', 'CREATE_VIRTUAL_NODE'].includes(effectivePlan.action)) {
+      if (this.verifier && !['CREATE_FOLDER', 'CREATE_VIRTUAL_NODE', 'REPOINT_CATEGORY_VIRTUAL_NODE'].includes(effectivePlan.action)) {
         result.verification = await this.verifier.verify(effectivePlan, result);
         completedSteps.push('verify');
         if (!result.verification.ok) {
@@ -282,6 +286,13 @@ class SyncExecutor {
           error.step = 'verify';
           throw error;
         }
+      }
+      // Post-write tree-delta verification (api.versioned-tree-delta, phase 2):
+      // refetch the live cross-track reference set and prove the approved
+      // transition's postconditions. Failures surface after the writes as
+      // status error with the finding attached — acceptance cannot finalize.
+      if (Array.isArray(effectivePlan.invariantAttestations) && effectivePlan.invariantAttestations.length > 0) {
+        await this._verifyTreeDeltaReferences(effectivePlan, result);
       }
       return result;
     } catch (error) {
@@ -301,8 +312,8 @@ class SyncExecutor {
     let recordIdValue = null;
     if (['UPDATE_IN_PLACE', 'UPDATE_RECORD_METADATA', 'COPY_PATCH_AND_REPOINT', 'DEPRECATE'].includes(effectivePlan.action)) {
       recordIdValue = effectivePlan.source?.recordId || null;
-    } else if (effectivePlan.action === 'CREATE_FOLDER') {
-      recordIdValue = effectivePlan.resource?.repointVirtualNode?.recordId || null;
+    } else if (effectivePlan.action === 'REPOINT_CATEGORY_VIRTUAL_NODE') {
+      recordIdValue = effectivePlan.resource?.recordId || null;
     }
 
     const beforeRecord = recordIdValue
@@ -524,31 +535,6 @@ class SyncExecutor {
       throw error;
     }
 
-    if (resource.repointVirtualNode?.recordId) {
-      const originalVirtualNode = await this._getRecord(resource.repointVirtualNode.recordId);
-      const docs = docsField(originalVirtualNode);
-      const actualFields = virtualNodeFields(originalVirtualNode);
-      const expectedFields = resource.repointVirtualNode.expectedFields;
-      const errors = [];
-      if (!docs.link?.endsWith(`/drive/folder/${resource.repointVirtualNode.currentFolderToken}`)) {
-        errors.push({ code: 'VIRTUAL_NODE_CURRENT_LINK_MISMATCH', actual: docs.link });
-      }
-      if (actualFields.type !== expectedFields.type) errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-      if (!sameStringValues(actualFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
-      if (actualFields.progress !== expectedFields.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
-      if (actualFields.slug !== expectedFields.slug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
-      if (errors.length > 0) {
-        const error = new SyncExecutionError(
-          'RESOURCE_PRECONDITION_FAILED',
-          `VirtualNode ${resource.repointVirtualNode.recordId} no longer matches its approved structural metadata`,
-          { errors },
-        );
-        error.step = 'verifyVirtualNodePrecondition';
-        throw error;
-      }
-      result.completedSteps.push('verifyVirtualNodePrecondition');
-    }
-
     const created = normalizedFolder(
       await this._createFolder(resource.name, resource.parentFolderToken),
       resource,
@@ -578,41 +564,86 @@ class SyncExecutor {
     }
     result.completedSteps.push('verifyFolder');
 
-    if (resource.repointVirtualNode?.recordId) {
-      const title = resource.repointVirtualNode.title || resource.name;
-      const link = folderLink(created.token);
-      result.record = await this.bitableWriter.updateRecord(resource.repointVirtualNode.recordId, {
-        title,
-        link,
-      });
-      result.completedSteps.push('repointVirtualNode');
-      const record = await this._getRecord(resource.repointVirtualNode.recordId);
-      const docs = docsField(record);
-      const actualFields = virtualNodeFields(record);
-      const expectedFields = resource.repointVirtualNode.expectedFields;
-      const errors = [];
-      if (docs.title !== title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
-      if (actualFields.type !== expectedFields.type) errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-      if (!sameStringValues(actualFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_CHANGED' });
-      if (actualFields.progress !== expectedFields.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_CHANGED' });
-      if (actualFields.slug !== expectedFields.slug) errors.push({ code: 'VIRTUAL_NODE_SLUG_CHANGED' });
-      if (errors.length > 0) {
-        const error = new SyncExecutionError(
-          'RESOURCE_VERIFICATION_FAILED',
-          `VirtualNode ${resource.repointVirtualNode.recordId} did not match the approved folder repoint`,
-          { errors },
-        );
-        error.step = 'verifyVirtualNodeRepoint';
-        throw error;
-      }
-      result.completedSteps.push('verifyVirtualNodeRepoint');
-    }
-
     result.resolvedResource = {
       ref: resource.ref,
       kind: 'folder',
       value: created.token,
       token: created.token,
+    };
+    result.verification = { ok: true, errors: [] };
+  }
+
+  // Phase 2 DAG split: the category VirtualNode repoint is its own journaled
+  // action. It runs only after the document action it depends on completed
+  // with verified postconditions (enforced by the batch dependency), and it
+  // re-verifies the approved CURRENT link and preserved structural fields
+  // immediately before mutating.
+  async _executeRepointVirtualNode(plan, resolutions, result) {
+    const resource = plan.resource;
+    this._assertBitableTarget(resource);
+    const folderToken = resourceValue(resolutions, resource.folderRef);
+    if (!nonEmptyString(folderToken)) {
+      const error = new SyncExecutionError(
+        'RESOURCE_RESOLUTION_REQUIRED',
+        `Folder resource ${resource.folderRef} is not resolved for ${resource.ref}`,
+      );
+      error.step = 'resolveFolder';
+      throw error;
+    }
+    const expectedFields = resource.expectedFields;
+    const title = resource.title || expectedFields.slug;
+
+    const before = await this._getRecord(resource.recordId);
+    const beforeDocs = docsField(before);
+    const beforeNodeFields = virtualNodeFields(before);
+    const errors = [];
+    if (!beforeDocs.link?.endsWith(`/drive/folder/${resource.currentFolderToken}`)) {
+      errors.push({ code: 'VIRTUAL_NODE_CURRENT_LINK_MISMATCH', actual: beforeDocs.link });
+    }
+    if (beforeNodeFields.type !== expectedFields.type) errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+    if (!sameStringValues(beforeNodeFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+    if (beforeNodeFields.progress !== expectedFields.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
+    if (beforeNodeFields.slug !== expectedFields.slug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
+    if (errors.length > 0) {
+      const error = new SyncExecutionError(
+        'RESOURCE_PRECONDITION_FAILED',
+        `VirtualNode ${resource.recordId} no longer matches its approved current link and structural metadata`,
+        { errors },
+      );
+      error.step = 'verifyVirtualNodePrecondition';
+      throw error;
+    }
+    result.completedSteps.push('verifyVirtualNodePrecondition');
+
+    const link = folderLink(folderToken);
+    result.record = await this.bitableWriter.updateRecord(resource.recordId, { title, link });
+    result.completedSteps.push('repointVirtualNode');
+
+    const after = await this._getRecord(resource.recordId);
+    const afterDocs = docsField(after);
+    const afterNodeFields = virtualNodeFields(after);
+    const verifyErrors = [];
+    if (afterDocs.title !== title || afterDocs.link !== link) verifyErrors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
+    if (afterNodeFields.type !== expectedFields.type) verifyErrors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+    if (!sameStringValues(afterNodeFields.targets, expectedFields.targets)) verifyErrors.push({ code: 'VIRTUAL_NODE_TARGETS_CHANGED' });
+    if (afterNodeFields.progress !== expectedFields.progress) verifyErrors.push({ code: 'VIRTUAL_NODE_PROGRESS_CHANGED' });
+    if (afterNodeFields.slug !== expectedFields.slug) verifyErrors.push({ code: 'VIRTUAL_NODE_SLUG_CHANGED' });
+    if (verifyErrors.length > 0) {
+      const error = new SyncExecutionError(
+        'RESOURCE_VERIFICATION_FAILED',
+        `VirtualNode ${resource.recordId} did not match the approved folder repoint`,
+        { errors: verifyErrors },
+      );
+      error.step = 'verifyVirtualNodeRepoint';
+      throw error;
+    }
+    result.completedSteps.push('verifyVirtualNodeRepoint');
+
+    result.resolvedResource = {
+      ref: resource.ref,
+      kind: 'virtual_node_repoint',
+      value: resource.recordId,
+      recordId: resource.recordId,
     };
     result.verification = { ok: true, errors: [] };
   }
@@ -782,6 +813,60 @@ class SyncExecutor {
       revalidatedAt: new Date().toISOString(),
     };
     result.completedSteps.push('verifySharedTokenEvidence');
+  }
+
+  // Post-write reference-set check for attested document actions: the live
+  // cross-track references to the source document token must equal the
+  // approved evidence set, minus the repointed target record for copy-patch
+  // transitions (that record now points at the new document). The full tree
+  // postconditions are verified batch-level; this is the immediate fast-fail.
+  async _verifyTreeDeltaReferences(plan, result) {
+    const attestation = (plan.invariantAttestations || [])
+      .find((entry) => entry?.id === 'api.versioned-tree-delta');
+    if (!attestation || !nonEmptyString(plan.source?.documentToken)) return;
+    const approved = [...(plan.inheritanceEvidence?.sharedToken?.referencedRecordIds || [])]
+      .filter(nonEmptyString);
+    if (approved.length === 0) return;
+    const expected = attestation.decision === 'COPY_PATCH_AND_REPOINT'
+      || attestation.decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE'
+      ? approved.filter((recordId) => recordId !== plan.source.recordId)
+      : approved;
+    if (typeof this.tokenReferenceReader?.listTokenReferences !== 'function') {
+      const error = new SyncExecutionError(
+        'TREE_DELTA_VERIFICATION_REQUIRED',
+        `A live token reference reader is required to verify the tree delta after writing ${plan.source.documentToken}`,
+      );
+      error.step = 'verifyTreeDelta';
+      throw error;
+    }
+    const liveReferences = await this.tokenReferenceReader.listTokenReferences({
+      documentToken: plan.source.documentToken,
+    });
+    const liveRecordIds = [...new Set((liveReferences || [])
+      .map((entry) => entry?.recordId)
+      .filter(nonEmptyString))].sort();
+    const expectedRecordIds = [...new Set(expected)].sort();
+    const ok = JSON.stringify(liveRecordIds) === JSON.stringify(expectedRecordIds);
+    result.treeDeltaVerification = {
+      invariantId: attestation.id,
+      decision: attestation.decision,
+      ok,
+      errors: ok ? [] : [{
+        code: 'TREE_DELTA_REFERENCES_DRIFTED',
+        expected: expectedRecordIds,
+        actual: liveRecordIds,
+      }],
+    };
+    result.completedSteps.push('verifyTreeDelta');
+    if (!ok) {
+      const error = new SyncExecutionError(
+        'TREE_DELTA_REFERENCES_DRIFTED',
+        `Post-write references to ${plan.source.documentToken} do not match the approved tree delta for ${plan.stableId}`,
+        { expected: expectedRecordIds, actual: liveRecordIds },
+      );
+      error.step = 'verifyTreeDelta';
+      throw error;
+    }
   }
 
   async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {
@@ -1120,8 +1205,11 @@ class SyncExecutor {
     if (plan.action === 'CREATE_FOLDER') {
       if (completedSteps.length === 0) return 'verifyResourceAbsent';
       if (!completedSteps.includes('createFolder')) return 'createFolder';
-      if (!completedSteps.includes('verifyFolder')) return 'verifyFolder';
-      if (plan.resource?.repointVirtualNode?.recordId && !completedSteps.includes('repointVirtualNode')) return 'repointVirtualNode';
+      return 'verifyFolder';
+    }
+    if (plan.action === 'REPOINT_CATEGORY_VIRTUAL_NODE') {
+      if (!completedSteps.includes('verifyVirtualNodePrecondition')) return 'verifyVirtualNodePrecondition';
+      if (!completedSteps.includes('repointVirtualNode')) return 'repointVirtualNode';
       return 'verifyVirtualNodeRepoint';
     }
     if (plan.action === 'CREATE_VIRTUAL_NODE') {
@@ -1164,7 +1252,10 @@ class SyncExecutor {
   _recovery(plan, result, error) {
     const failedStep = result.failedStep || error.step;
     if (plan.action === 'CREATE_FOLDER' && result.createdFolder) {
-      return `Inspect folder ${result.createdFolder.token} and reconcile its VirtualNode before retrying.`;
+      return `Inspect folder ${result.createdFolder.token} and reconcile it before retrying; the category VirtualNode repoint runs as its own action after the document completes.`;
+    }
+    if (plan.action === 'REPOINT_CATEGORY_VIRTUAL_NODE' && result.record) {
+      return `Inspect VirtualNode record ${recordId(result.record)} and reconcile its folder link before retrying.`;
     }
     if (plan.action === 'CREATE_VIRTUAL_NODE' && result.record) {
       return `Inspect Bitable record ${recordId(result.record)} and reconcile it before retrying.`;

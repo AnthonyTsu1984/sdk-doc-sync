@@ -8,6 +8,12 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== '';
 }
 
+function invariantEvidenceError(message) {
+  const error = new Error(message);
+  error.code = 'INVARIANT_EVIDENCE_REQUIRED';
+  return error;
+}
+
 function targetsBlank(record) {
   const value = record?.fields?.Targets;
   return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
@@ -45,6 +51,7 @@ class AcceptanceFinalizer {
     acceptanceManifestDigest = null,
     executionJournalDigest = null,
     touchedRecords,
+    invariantEvidence,
     scanStateKey,
     scanStateEntry,
   }) {
@@ -59,6 +66,31 @@ class AcceptanceFinalizer {
     const recordIds = touchedRecords.map((item) => item?.recordId);
     if (recordIds.some((recordId) => !nonEmptyString(recordId)) || new Set(recordIds).size !== recordIds.length) {
       throw new Error('Touched record IDs must be non-empty and unique');
+    }
+    // Invariant receipts: every touched record must trace to a verified
+    // post-write invariant outcome (journal tree-delta evidence). A unit whose
+    // tree-delta verification failed or never ran cannot be accepted.
+    const evidenceByActionId = new Map();
+    for (const item of invariantEvidence || []) {
+      if (!nonEmptyString(item?.actionId) || !nonEmptyString(item?.invariantId) || !nonEmptyString(item?.decision)) {
+        throw invariantEvidenceError('Invariant evidence entries require actionId, invariantId, and decision');
+      }
+      if (item.verified !== true) throw invariantEvidenceError(`Invariant evidence for ${item.actionId} is not verified`);
+      if (evidenceByActionId.has(item.actionId)) throw invariantEvidenceError(`Duplicate invariant evidence for ${item.actionId}`);
+      evidenceByActionId.set(item.actionId, {
+        actionId: item.actionId,
+        invariantId: item.invariantId,
+        decision: item.decision,
+        verified: true,
+      });
+    }
+    for (const item of touchedRecords) {
+      if (!nonEmptyString(item?.actionId)) {
+        throw invariantEvidenceError(`Touched record ${item.recordId} has no actionId; acceptance requires per-action invariant evidence`);
+      }
+      if (!evidenceByActionId.has(item.actionId)) {
+        throw invariantEvidenceError(`Acceptance requires verified invariant evidence for action ${item.actionId}`);
+      }
     }
 
     const beforeRecords = await this._recordMap();
@@ -95,6 +127,7 @@ class AcceptanceFinalizer {
         acceptanceManifestDigest: boundAcceptanceDigest,
         executionJournalDigest: executionJournalDigest || null,
         results,
+        invariantEvidence: [...evidenceByActionId.values()].sort((left, right) => left.actionId.localeCompare(right.actionId)),
         scanStateKey,
         scanStateEntry: clone(scanStateEntry),
         scanStateUpdated: true,

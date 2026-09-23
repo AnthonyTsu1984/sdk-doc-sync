@@ -24,7 +24,7 @@ A `runtime-enforced` invariant may not be weakened by editing the registry alone
 
 - `removal` — the entry disappears;
 - `downgrade` — status leaves `runtime-enforced`;
-- `weakened-coverage` — status stays but fixture IDs, enforcement stages, or enforcer bindings are lost.
+- `weakened-coverage` — status stays but fixture IDs, enforcement stages, or enforcer codes are lost. Enforcers are compared per stage+module with codes merged, so adding codes to an existing enforcer (or adding a new enforcer) is strengthening and never reported.
 
 Each weakening transition requires a matching waiver in `contracts/invariant-waivers.json` that **already exists at the merge-base** — the waiver must have landed through its own separately reviewed change before the weakening diff:
 
@@ -48,3 +48,14 @@ Each weakening transition requires a matching waiver in `contracts/invariant-wai
 - Strengthening transitions (declared → runtime-enforced, added fixtures/enforcers/stages) never require a waiver.
 
 Waivers are expiring exceptions, not permanent exits: when one expires, restore enforcement or land a new separately reviewed waiver. Binding waivers to externally verified approval/receipt digests (instead of pre-existence alone) is tracked as Phase 5 governance work in `.claude/plans/2026-09-23-skill-harness-rule-enforcement.md`.
+
+## Reference enforcement (api-reference-sync, version 2)
+
+The first runtime-enforced invariant, `api.versioned-tree-delta`, now spans
+the full stage ladder: evidence → plan (policy kernel + attestation-bearing
+plans) → pre-write → post-write (executor reference check, batch-level
+`VERIFY_TREE_DELTA` journaled per attested action, acceptance finalization
+requiring verified invariant evidence) → reconcile (read-only
+`scripts/reconcile-tree-delta.js`). See the skill's
+`references/tree-delta-policy.md` for the enforcement contract and decision
+table. Later phases generalize this shape to the other canonical skills.

@@ -144,10 +144,21 @@
   "id": "delta-changed-missing-category",
   "assertions": {
    "resourceAction": "CREATE_FOLDER",
+   "folderEmbedsRepoint": false,
+   "repointAction": "REPOINT_CATEGORY_VIRTUAL_NODE",
+   "repointDependsOnFolder": true,
+   "repointDependsOnDocument": true,
    "documentAction": "COPY_PATCH_AND_REPOINT",
    "documentDependsOnFolderResource": true,
-   "targetFolderRef": "folder:cpp:v30:Partitions",
-   "virtualNodeRepointBound": true
+   "attestationDecision": "COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE",
+   "requiredDag": [
+    "CREATE_FOLDER",
+    "COPY_PATCH_AND_REPOINT",
+    "REPOINT_CATEGORY_VIRTUAL_NODE",
+    "VERIFY_TREE_DELTA"
+   ],
+   "requiredDagEndsWithVerify": true,
+   "repointAfterDocumentInBatch": true
   },
   "executable": {
    "runner": "invariant-conformance",
@@ -165,6 +176,24 @@
   "executable": {
    "runner": "invariant-conformance",
    "scenario": "delta-shared-inplace-forbidden"
+  }
+ },
+ {
+  "id": "delta-postwrite-verified",
+  "assertions": {
+   "attestationDecision": "COPY_PATCH_AND_REPOINT",
+   "postWriteVerificationOk": true,
+   "successStatus": "success",
+   "writerCallsAfterVerification": 3,
+   "driftedStatus": "error",
+   "driftedErrorCode": "TREE_DELTA_REFERENCES_DRIFTED",
+   "driftedVerificationOk": false,
+   "comparatorOk": true,
+   "categoryNodeDriftCode": "TREE_DELTA_CATEGORY_NODE_NOT_REPOINTED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "delta-postwrite-verified"
   }
  }
 ]

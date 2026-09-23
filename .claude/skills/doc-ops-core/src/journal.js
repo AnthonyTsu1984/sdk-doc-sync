@@ -73,6 +73,20 @@ class ExecutionJournal {
     return this._append({ type: 'observed', ...entry });
   }
 
+  // Post-write invariant verification outcome (one per attested action).
+  // Persisted before the completion sentinel so acceptance consumers can
+  // reject a batch whose tree-delta checks did not pass.
+  treeDelta(entry) {
+    this._assertApproved(entry?.actionId);
+    if (entry.ok !== true && entry.ok !== false) {
+      throw new JournalError('TREE_DELTA_OUTCOME_REQUIRED', `action ${entry.actionId} needs a boolean ok outcome`);
+    }
+    if (this.entries.some(item => item.type === 'tree-delta' && item.actionId === entry.actionId)) {
+      throw new JournalError('DUPLICATE_TREE_DELTA_RESULT', `action ${entry.actionId} already has a tree-delta result`);
+    }
+    return this._append({ type: 'tree-delta', ...entry });
+  }
+
   complete() {
     if (this.entries.some(entry => entry.type === 'completion')) {
       throw new JournalError('DUPLICATE_COMPLETION_SENTINEL', 'journal is already complete');

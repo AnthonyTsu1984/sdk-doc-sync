@@ -136,14 +136,17 @@ const scenarios = {
     };
   },
 
-  // Changed interface whose target category folder is absent: a CREATE_FOLDER
-  // resource (with the category VirtualNode repoint bound to it) must exist,
-  // and the document plan must copy-patch into the folder ref and depend on
-  // the resource resolution.
+  // Changed interface whose target category folder is absent: the exact PR #19
+  // action order must hold — CREATE_FOLDER (without an embedded repoint) ->
+  // COPY_PATCH_AND_REPOINT (depends on the folder) -> REPOINT_CATEGORY_
+  // VIRTUAL_NODE (a distinct downstream resource depending on folder AND
+  // document) -> VERIFY_TREE_DELTA, all bound by the plan's attestation DAG.
   'delta-changed-missing-category': () => {
     const planner = new SyncPlanner();
+    const stableId = 'cpp:Partitions:LoadPartitions';
     const folderRef = 'folder:cpp:v30:Partitions';
-    const resourcePlan = planner.planResource({
+    const repointRef = 'repoint:cpp:v30:Partitions';
+    const folderPlan = planner.planResource({
       kind: 'folder',
       ref: folderRef,
       name: 'Partitions',
@@ -155,19 +158,7 @@ const scenarios = {
         parentFolderToken: 'root-v30',
         name: 'Partitions',
       },
-      repointVirtualNode: {
-        recordId: 'rec-partitions-vnode-v30',
-        currentFolderToken: 'folder-partitions-shared-v26',
-        title: 'Partitions',
-        expectedFields: {
-          type: 'VirtualNode',
-          targets: ['Milvus', 'Zilliz'],
-          progress: 'Draft',
-          slug: 'Partitions',
-        },
-      },
     });
-
     const base = sharedInheritedContext();
     const current = base.current;
     const target = {
@@ -178,12 +169,33 @@ const scenarios = {
       versionRootToken: 'root-v30',
       ancestryVerified: true,
     };
+    const category = {
+      folder: {
+        ref: folderRef,
+        name: 'Partitions',
+        parentFolderToken: 'root-v30',
+        versionRootToken: 'root-v30',
+        existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v30', name: 'Partitions' },
+      },
+      repoint: {
+        ref: repointRef,
+        recordId: 'rec-partitions-vnode-v30',
+        currentFolderToken: 'folder-partitions-shared-v26',
+        expectedFields: {
+          type: 'VirtualNode',
+          targets: ['Milvus', 'Zilliz'],
+          progress: 'Draft',
+          slug: 'Partitions',
+        },
+      },
+    };
     const context = {
       ...base,
       target,
       dependencies: [folderRef],
+      treeDelta: { category },
       inheritanceEvidence: createInheritanceEvidence({
-        stableId: 'cpp:Partitions:LoadPartitions',
+        stableId,
         current,
         target,
         sharedTokenStatus: 'shared',
@@ -191,17 +203,176 @@ const scenarios = {
         trackInventoryDigests: digestsFor('v2.6.x', 'v3.0.x'),
       }),
     };
-    const plan = planner.planAction(updateAction(), context);
+    const plan = planner.planAction(updateAction(stableId), context);
+    const repointPlan = planner.planResource({
+      kind: 'virtual_node_repoint',
+      ref: repointRef,
+      recordId: category.repoint.recordId,
+      title: 'Partitions',
+      folderRef,
+      currentFolderToken: category.repoint.currentFolderToken,
+      expectedFields: category.repoint.expectedFields,
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: [folderRef, stableId],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: category.repoint.recordId,
+        currentFolderToken: category.repoint.currentFolderToken,
+      },
+    });
+    const { buildExecutionBatch } = require('../../src/sdk-doc-sync/index');
+    const plannedEntries = [
+      { kind: 'resource', action: null, plan: folderPlan },
+      { kind: 'document', action: null, plan },
+      { kind: 'resource', action: null, plan: repointPlan },
+    ];
+    const batch = buildExecutionBatch(plannedEntries, new Set(plannedEntries.map(({ plan: entry }) => entry.stableId)));
+    const dagActions = batch.actions.map((entry) => entry.actionId);
+    const attestation = plan.invariantAttestations.find((entry) => entry.id === 'api.versioned-tree-delta');
+    const requiredDag = (attestation.requiredResourceDag || []).map((node) => node.action);
     return {
-      resourceAction: resourcePlan.action,
+      resourceAction: folderPlan.action,
+      folderEmbedsRepoint: folderPlan.resource.repointVirtualNode !== undefined,
+      repointAction: repointPlan.action,
+      repointDependsOnFolder: (repointPlan.dependencies || []).includes(folderRef),
+      repointDependsOnDocument: (repointPlan.dependencies || []).includes(stableId),
       documentAction: plan.action,
       documentDependsOnFolderResource: (plan.dependencies || []).includes(folderRef),
-      targetFolderRef: plan.target.folderRef,
-      virtualNodeRepointBound: resourcePlan.postconditions.some(
-        (entry) => entry.type === 'VIRTUAL_NODE_LINK'
-          && entry.recordId === 'rec-partitions-vnode-v30'
-          && entry.folderRef === folderRef,
-      ),
+      attestationDecision: attestation.decision,
+      requiredDag,
+      batchOrder: dagActions,
+      requiredDagEndsWithVerify: requiredDag[requiredDag.length - 1] === 'VERIFY_TREE_DELTA',
+      repointAfterDocumentInBatch: dagActions.indexOf(`resource:${repointRef}`) > dagActions.indexOf(stableId),
+    };
+  },
+
+  // Post-write verification (VERIFY_TREE_DELTA, phase 2): after the executed
+  // transition the live cross-track references to the older document must
+  // equal the approved set minus the repointed target record, and the full
+  // tree postconditions comparator must catch a category node that was never
+  // repointed.
+  'delta-postwrite-verified': async () => {
+    const planner = new SyncPlanner();
+    const stableId = 'cpp:Partitions:LoadPartitions';
+    const context = sharedInheritedContext({ stableId });
+    const plan = planner.planAction(updateAction(stableId), context);
+    const attestation = plan.invariantAttestations.find((entry) => entry.id === 'api.versioned-tree-delta');
+
+    const approvedReferences = ['rec-load-partitions-v30', 'rec-load-partitions-v26'];
+    const liveReferences = [...approvedReferences];
+    const writerCalls = [];
+    const documentWriter = {
+      async copyDocument(input) {
+        writerCalls.push(['copyDocument', input.sourceDocumentToken]);
+        return { token: 'doc-copy-new', url: `https://zilliverse.feishu.cn/docx/doc-copy-new` };
+      },
+      async patchDocument(input) {
+        writerCalls.push(['patchDocument', input.documentToken]);
+        return { token: input.documentToken };
+      },
+    };
+    const bitableWriter = {
+      async updateRecord(recordId, fields) {
+        writerCalls.push(['updateRecord', recordId]);
+        // The repoint takes the target record off the older document's
+        // reference set — the post-write guard must see exactly that.
+        const index = liveReferences.indexOf(recordId);
+        if (index >= 0) liveReferences.splice(index, 1);
+        return { record_id: recordId, fields };
+      },
+    };
+    const tokenReferenceReader = {
+      async listTokenReferences() {
+        return liveReferences.map((recordId) => ({ recordId }));
+      },
+    };
+    const executor = new SyncExecutor({ documentWriter, bitableWriter, tokenReferenceReader });
+    const result = await executor.execute(plan, {
+      artifact: reviewedArtifact(),
+      approval: { approved: true },
+    });
+
+    // Drift variant: an unexpected extra cross-track referencer that appears
+    // DURING execution (after the pre-write revalidation, before the
+    // post-write check) must fail the action with the typed finding.
+    const driftedReferences = [...approvedReferences, 'rec-sneaky-v29'];
+    let referenceReads = 0;
+    const driftedExecutor = new SyncExecutor({
+      documentWriter: {
+        async copyDocument(input) {
+          return { token: 'doc-copy-drift', url: `https://zilliverse.feishu.cn/docx/doc-copy-drift` };
+        },
+        async patchDocument(input) {
+          return { token: input.documentToken };
+        },
+      },
+      bitableWriter: { async updateRecord(recordId, fields) { return { record_id: recordId, fields }; } },
+      tokenReferenceReader: {
+        async listTokenReferences() {
+          referenceReads += 1;
+          return (referenceReads === 1 ? approvedReferences : driftedReferences)
+            .map((recordId) => ({ recordId }));
+        },
+      },
+    });
+    const drifted = await driftedExecutor.execute(plan, {
+      artifact: reviewedArtifact(),
+      approval: { approved: true },
+    });
+
+    // Kernel comparator, category-create variant: a VirtualNode that still
+    // points at the old shared folder is one typed finding.
+    const { DECISIONS, verifyTreeDeltaPostconditions } = require('../../src/sdk-doc-sync/versioned-tree-policy');
+    const createPlan = {
+      stableId,
+      source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+      inheritanceEvidence: context.inheritanceEvidence,
+      invariantAttestations: [{
+        id: 'api.versioned-tree-delta',
+        version: 2,
+        inputDigest: attestation.inputDigest,
+        decision: DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE,
+        evidenceDigest: attestation.evidenceDigest,
+        requiredResourceDag: [],
+      }],
+    };
+    const clean = verifyTreeDeltaPostconditions({
+      plan: createPlan,
+      observed: {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+        categoryFolderToken: 'folder-partitions-v30',
+        categoryFolderLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        categoryNodeLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        createdDocumentFolderToken: 'folder-partitions-v30',
+      },
+    });
+    const driftedNode = verifyTreeDeltaPostconditions({
+      plan: createPlan,
+      observed: {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+        categoryFolderToken: 'folder-partitions-v30',
+        categoryFolderLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        categoryNodeLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-shared-v26',
+        createdDocumentFolderToken: 'folder-partitions-v30',
+      },
+    });
+
+    return {
+      attestationDecision: attestation.decision,
+      postWriteVerificationOk: result.treeDeltaVerification?.ok ?? null,
+      successStatus: result.status,
+      writerCallsAfterVerification: writerCalls.length,
+      driftedStatus: drifted.status,
+      driftedErrorCode: drifted.error?.code || null,
+      driftedVerificationOk: drifted.treeDeltaVerification?.ok ?? null,
+      comparatorOk: clean.ok,
+      categoryNodeDriftCode: driftedNode.errors[0]?.code || null,
     };
   },
 

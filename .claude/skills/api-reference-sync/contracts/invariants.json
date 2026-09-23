@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "skill": "api-reference-sync",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED).",
+  "invariants": [
+    {
+      "id": "api.versioned-tree-delta",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": ["evidence", "plan", "pre-write"],
+      "statementDigest": "sha256:499bb702d5dd2bf7b306dd0aa1ef005c547c50c919d95b290bdc2e0acd3591ed",
+      "fixtureIds": [
+        "delta-unchanged-inherited",
+        "delta-changed-existing-category",
+        "delta-changed-missing-category",
+        "delta-shared-inplace-forbidden"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/inheritance-evidence.js",
+          "codes": [
+            "SHARED_TOKEN_EVIDENCE_REQUIRED",
+            "SHARED_TOKEN_EVIDENCE_UNKNOWN",
+            "SHARED_TOKEN_EVIDENCE_REFERENCES_INCONSISTENT",
+            "INHERITANCE_EVIDENCE_DIGEST_INVALID",
+            "INHERITANCE_EVIDENCE_INVENTORY_REQUIRED"
+          ]
+        },
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
+          "codes": ["TRACK_ENUMERATION_INCOMPLETE", "TARGET_FOLDER_UNVERIFIED", "CURRENT_RECORD_NOT_REFERENCING"]
+        },
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-planner.js",
+          "codes": [
+            "SHARED_TOKEN_EVIDENCE_REQUIRED",
+            "COPY_SOURCE_REQUIRED",
+            "CREATE_RECORD_ALREADY_EXISTS",
+            "TARGET_ANCESTRY_REQUIRED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
+            "SHARED_TOKEN_REFERENCES_DRIFTED",
+            "SHARED_TOKEN_REVALIDATION_REQUIRED"
+          ]
+        }
+      ],
+      "reference": "references/inheritance-evidence.md",
+      "notes": "Post-write tree-delta verification, missing-category detection in the policy kernel, and the CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE action DAG are Phase 2 of .claude/plans/2026-09-23-skill-harness-rule-enforcement.md; this entry's enforcement list must gain 'post-write' when they land."
+    }
+  ]
+}

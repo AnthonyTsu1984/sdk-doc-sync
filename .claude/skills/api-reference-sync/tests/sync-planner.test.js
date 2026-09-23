@@ -16,8 +16,13 @@ const {
   recordDocumentExecution,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
-const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { digestSemantic, sha256Digest } = require('../../doc-ops-core/src/digest');
+const { createInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
+
+function inventoryDigest(seed) {
+  return sha256Digest(Buffer.from(seed, 'utf8'));
+}
 
 function artifact(content = '# Reviewed documentation\n') {
   return {
@@ -50,7 +55,7 @@ function updateAction(overrides = {}) {
 }
 
 function planningContext(overrides = {}) {
-  return {
+  const context = {
     artifact: artifact(),
     target: {
       version: 'v2.6.x',
@@ -64,6 +69,7 @@ function planningContext(overrides = {}) {
       recordId: 'rec-v26',
       documentToken: 'doc-v26',
       folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
       parentRecordId: 'parent-v26',
       ancestryVerified: true,
       placementVerified: true,
@@ -87,6 +93,23 @@ function planningContext(overrides = {}) {
     tokenReferencedByOlderVersions: false,
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, 'inheritanceEvidence') && context.current) {
+    const shared = context.tokenReferencedByOlderVersions === true;
+    const digests = {};
+    digests[context.current.version] = inventoryDigest(`${context.current.version}:inventory`);
+    digests[context.target.version] = inventoryDigest(`${context.target.version}:inventory`);
+    context.inheritanceEvidence = createInheritanceEvidence({
+      stableId: 'node:Collections:createCollection',
+      current: context.current,
+      target: context.target,
+      sharedTokenStatus: shared ? 'shared' : 'unshared',
+      referencedRecordIds: shared
+        ? [context.current.recordId, 'rec-shared-older']
+        : [context.current.recordId],
+      trackInventoryDigests: digests,
+    });
+  }
+  return context;
 }
 
 function bulkWriterOrganization() {
@@ -230,6 +253,7 @@ test('SyncPlanner rejects a reviewed Node stateful class that targets the catego
       recordId: 'rec-bulk-writer',
       documentToken: 'doc-bulk-writer',
       folderToken: 'folder-data-import-v26',
+      versionRootToken: 'root-v26',
       parentRecordId: 'rec-data-import-v26',
       ancestryVerified: true,
       placementVerified: true,
@@ -257,7 +281,7 @@ test('SyncPlanner binds reviewed organization and release placement contracts in
     slug: 'DataImport-BulkWriter',
     symbol: { name: 'BulkWriter', identity: { stableId: 'node:DataImport:BulkWriter' } },
   });
-  const plan = new SyncPlanner().planAction(action, planningContext({
+  const context = planningContext({
     organization,
     organizationInventory: bulkWriterInventory(),
     releasePlacement,
@@ -273,6 +297,7 @@ test('SyncPlanner binds reviewed organization and release placement contracts in
       recordId: 'rec-bulk-writer',
       documentToken: 'doc-bulk-writer',
       folderToken: 'folder-data-import-v26',
+      versionRootToken: 'root-v26',
       parentRecordId: 'rec-data-import-v26',
       ancestryVerified: true,
       placementVerified: true,
@@ -282,7 +307,19 @@ test('SyncPlanner binds reviewed organization and release placement contracts in
       link: 'https://docs.example/docx/doc-bulk-writer',
       title: 'BulkWriter',
     },
-  }));
+  });
+  context.inheritanceEvidence = createInheritanceEvidence({
+    stableId: action.stableId,
+    current: context.current,
+    target: context.target,
+    sharedTokenStatus: 'unshared',
+    referencedRecordIds: [context.current.recordId],
+    trackInventoryDigests: {
+      'v2.6.x': inventoryDigest('v2.6.x:inventory'),
+      'v3.0.x': inventoryDigest('v3.0.x:inventory'),
+    },
+  });
+  const plan = new SyncPlanner().planAction(action, context);
 
   assert.deepEqual(plan.organization, organization);
   assert.deepEqual(plan.organizationInventory, bulkWriterInventory());
@@ -462,6 +499,39 @@ test('SyncPlanner rejects UPDATE with unknown current document placement', () =>
   );
 });
 
+test('SyncPlanner fails closed when UPDATE inheritance evidence is missing, unknown, or mismatched', () => {
+  const planner = new SyncPlanner();
+  assert.throws(
+    () => planner.planAction(updateAction(), planningContext({ inheritanceEvidence: null })),
+    (error) => error.code === 'SHARED_TOKEN_EVIDENCE_REQUIRED',
+  );
+
+  const unknown = createInheritanceEvidence({
+    stableId: 'node:Collections:createCollection',
+    current: planningContext().current,
+    target: planningContext().target,
+    sharedTokenStatus: 'unknown',
+    trackInventoryDigests: { 'v2.6.x': inventoryDigest('v2.6.x:inventory') },
+  });
+  assert.throws(
+    () => planner.planAction(updateAction(), planningContext({ inheritanceEvidence: unknown })),
+    (error) => error.code === 'SHARED_TOKEN_EVIDENCE_REQUIRED',
+  );
+
+  const mismatched = createInheritanceEvidence({
+    stableId: 'node:Collections:other',
+    current: planningContext().current,
+    target: planningContext().target,
+    sharedTokenStatus: 'unshared',
+    referencedRecordIds: [planningContext().current.recordId],
+    trackInventoryDigests: { 'v2.6.x': inventoryDigest('v2.6.x:inventory') },
+  });
+  assert.throws(
+    () => planner.planAction(updateAction(), planningContext({ inheritanceEvidence: mismatched })),
+    (error) => error.code === 'INHERITANCE_EVIDENCE_ID_MISMATCH',
+  );
+});
+
 test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshared document', () => {
   const plan = new SyncPlanner().planAction(updateAction(), planningContext());
 
@@ -478,9 +548,8 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
     expectedVersionRootToken: 'root-v26',
     verified: true,
   });
-  assert.deepEqual(condition(plan, 'SHARED_TOKEN'), {
-    type: 'SHARED_TOKEN', referencedByOlderVersions: false,
-  });
+  assert.equal(condition(plan, 'SHARED_TOKEN').referencedByOlderVersions, false);
+  assert.match(condition(plan, 'SHARED_TOKEN').evidenceDigest, /^sha256:/);
   assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'TARGET_LINK'), {
     type: 'TARGET_LINK', recordId: 'rec-v26', documentToken: 'doc-v26',
   });
@@ -491,7 +560,6 @@ test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location w
     ['older version', { current: { ...planningContext().current, version: 'v2.5.x' } }],
     ['shared token', { tokenReferencedByOlderVersions: true }],
     ['wrong folder', { current: { ...planningContext().current, folderToken: 'wrong-folder' } }],
-    ['missing current ancestry proof', { current: { ...planningContext().current, ancestryVerified: false } }],
   ];
 
   for (const [label, contextOverride] of cases) {
@@ -507,6 +575,13 @@ test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location w
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_PARENT'), label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_VERSION'), label);
   }
+
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), planningContext({
+      current: { ...planningContext().current, ancestryVerified: false },
+    })),
+    (error) => error.code === 'INHERITANCE_EVIDENCE_CURRENT_UNVERIFIED',
+  );
 });
 
 test('SyncPlanner rejects unsafe UPDATEs without copy source evidence', () => {
@@ -530,16 +605,8 @@ test('changed inherited Python docs plan as copy-patch-repoint with source prese
   for (const [stableId, sourceVersion] of inheritedCases) {
     const documentToken = `${stableId}:doc`;
     const title = `${stableId.split(':').at(-1)}()`;
-    const plan = new SyncPlanner().planAction(
-      updateAction({
-        slug: stableId.replace(/^python:/, '').replace(/:/g, '-'),
-        symbol: {
-          name: stableId.split(':').at(-1),
-          identity: { stableId },
-        },
-      }),
-      planningContext({
-        current: {
+    const context = planningContext({
+      current: {
           ...planningContext().current,
           recordId: `${stableId}:record`,
           documentToken,
@@ -547,15 +614,32 @@ test('changed inherited Python docs plan as copy-patch-repoint with source prese
           folderToken: `inherited-${sourceVersion}`,
           ancestryVerified: true,
           placementVerified: true,
-        },
-        copySource: {
+      },
+      copySource: {
           documentToken,
           link: `https://docs.example/docx/${encodeURIComponent(documentToken)}`,
           title,
-        },
-        tokenReferencedByOlderVersions: true,
-      }),
-    );
+      },
+      tokenReferencedByOlderVersions: true,
+    });
+    context.inheritanceEvidence = createInheritanceEvidence({
+      stableId,
+      current: context.current,
+      target: context.target,
+      sharedTokenStatus: 'shared',
+      referencedRecordIds: [`${stableId}:record`, `${stableId}:older-record`],
+      trackInventoryDigests: {
+        [sourceVersion]: inventoryDigest(`${sourceVersion}:inventory`),
+        'v2.6.x': inventoryDigest('v2.6.x:inventory'),
+      },
+    });
+    const plan = new SyncPlanner().planAction(updateAction({
+      slug: stableId.replace(/^python:/, '').replace(/:/g, '-'),
+      symbol: {
+        name: stableId.split(':').at(-1),
+        identity: { stableId },
+      },
+    }), context);
 
     assert.equal(plan.action, 'COPY_PATCH_AND_REPOINT', stableId);
     assert.deepEqual(plan.copySource, {
@@ -1221,6 +1305,16 @@ function syncFixture({ dryRun, approvalCallback = null, calls }) {
   const recordWriter = {
     async createRecord() { calls.recordMutations += 1; },
     async updateRecord() { calls.recordMutations += 1; },
+    // Live pre-write shared-token revalidation enumerates the current base
+    // through the injected writer; the fixture index has exactly one record
+    // pointing at doc-v26.
+    async listRecords() {
+      calls.recordReads = (calls.recordReads || 0) + 1;
+      return [{
+        record_id: 'rec-v26',
+        fields: { Docs: { text: 'createCollection()', link: 'https://zilliverse.feishu.cn/docx/doc-v26' } },
+      }];
+    },
   };
 
   return new SdkDocSync({
@@ -1232,8 +1326,33 @@ function syncFixture({ dryRun, approvalCallback = null, calls }) {
       async list_documents() { calls.index += 1; return indexed; },
     },
     planner,
-    artifactProvider() {
-      return planningContext();
+    artifactProvider(action) {
+      const context = planningContext();
+      const metadata = action?.doc?.metadata || {};
+      const actionContext = action?.planningContext || {};
+      const stableId = action?.stableId || action?.symbol?.identity?.stableId || 'node:Collections:createCollection';
+      context.current = {
+        ...context.current,
+        recordId: action?.doc?.id || context.current.recordId,
+        documentToken: metadata.documentToken || metadata.token || context.current.documentToken,
+        version: metadata.version || context.current.version,
+        folderToken: metadata.folderToken || context.current.folderToken,
+        parentRecordId: metadata.parentRecordId || context.current.parentRecordId,
+        ...(actionContext.current || {}),
+      };
+      context.target = { ...context.target, ...(actionContext.target || {}) };
+      const digests = {};
+      digests[context.current.version] = inventoryDigest(`${context.current.version}:inventory`);
+      digests[context.target.version] = inventoryDigest(`${context.target.version}:inventory`);
+      context.inheritanceEvidence = createInheritanceEvidence({
+        stableId,
+        current: context.current,
+        target: context.target,
+        sharedTokenStatus: 'unshared',
+        referencedRecordIds: [context.current.recordId],
+        trackInventoryDigests: digests,
+      });
+      return context;
     },
     documentWriter: writer,
     bitableWriter: recordWriter,

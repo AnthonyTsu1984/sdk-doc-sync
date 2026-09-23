@@ -114,5 +114,57 @@
    "fullBaseToFullHead": true,
    "releaseTracks": false
   }
+ },
+ {
+  "id": "delta-unchanged-inherited",
+  "assertions": {
+   "mirrorCreateBlocker": "CREATE_RECORD_ALREADY_EXISTS",
+   "sharedUpdateAction": "COPY_PATCH_AND_REPOINT",
+   "olderSourceUnchangedPostcondition": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "delta-unchanged-inherited"
+  }
+ },
+ {
+  "id": "delta-changed-existing-category",
+  "assertions": {
+   "action": "COPY_PATCH_AND_REPOINT",
+   "copySourceDocumentToken": "doc-load-partitions-v26",
+   "repointedRecordId": "rec-load-partitions-v30",
+   "olderSourceUnchanged": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "delta-changed-existing-category"
+  }
+ },
+ {
+  "id": "delta-changed-missing-category",
+  "assertions": {
+   "resourceAction": "CREATE_FOLDER",
+   "documentAction": "COPY_PATCH_AND_REPOINT",
+   "documentDependsOnFolderResource": true,
+   "targetFolderRef": "folder:cpp:v30:Partitions",
+   "virtualNodeRepointBound": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "delta-changed-missing-category"
+  }
+ },
+ {
+  "id": "delta-shared-inplace-forbidden",
+  "assertions": {
+   "plannerAction": "COPY_PATCH_AND_REPOINT",
+   "executorBlocker": "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
+   "executorFailedStep": "verifySharedTokenEvidence",
+   "writerCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "delta-shared-inplace-forbidden"
+  }
  }
 ]

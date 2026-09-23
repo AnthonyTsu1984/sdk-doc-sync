@@ -1558,6 +1558,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": "scripts/check-invariant-coverage.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "check-invariant-coverage",
+      "basis": "git read-only admission diff gate; no external mutation signature found"
+    },
+    {
       "path": "scripts/run-skill-model-evals.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

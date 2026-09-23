@@ -130,8 +130,11 @@ function checkInvariantCoverage({
 
   // Registry transition gate: a registry-only edit (no SKILL.md change) must
   // not silently remove, downgrade, or weaken a runtime-enforced invariant.
-  // Any weakening transition requires a valid, unexpired waiver in the
-  // skill's contracts/invariant-waivers.json.
+  // Any weakening transition requires a valid, unexpired waiver that ALREADY
+  // EXISTS AT THE MERGE-BASE: the waiver must have landed through its own
+  // separately reviewed change before the weakening diff. A waiver introduced
+  // in the same diff as the downgrade it authorizes is self-approval and is
+  // rejected (INVARIANT_WAIVER_SAME_DIFF).
   for (const skill of [...registrySkills].sort()) {
     const registryRel = `.claude/skills/${skill}/contracts/invariants.json`;
     const waiversRel = `.claude/skills/${skill}/contracts/invariant-waivers.json`;
@@ -142,41 +145,57 @@ function checkInvariantCoverage({
     const transitions = detectEnforcementTransitions({ baseRegistry, headRegistry });
     if (transitions.length === 0) continue;
 
-    const waiversRaw = git(['show', `${head}:${waiversRel}`], { cwd: repoRoot, allowFailure: true });
-    let waivers = [];
-    if (waiversRaw !== null) {
+    const readWaivers = (revision) => {
+      const raw = git(['show', `${revision}:${waiversRel}`], { cwd: repoRoot, allowFailure: true });
+      if (raw === null) return [];
       let waiverDoc = null;
       try {
-        waiverDoc = JSON.parse(waiversRaw);
+        waiverDoc = JSON.parse(raw);
       } catch {
         errors.push({
           code: 'INVARIANT_WAIVER_UNREADABLE',
           skill,
-          detail: `${waiversRel} is not valid JSON`,
+          detail: `${waiversRel} is not valid JSON at ${revision}`,
         });
+        return [];
       }
-      if (waiverDoc !== null) {
-        const waiverValidation = validateInvariantWaivers(waiverDoc, { now });
-        for (const error of waiverValidation.errors) {
-          errors.push({ code: error.code, skill, detail: `invalid waiver artifact at ${error.path}` });
-        }
-        waivers = waiverDoc.waivers || [];
+      // Schema-only here: expiry is decided by waiverCoversTransition so an
+      // expired waiver surfaces as one uncovered-transition error instead of
+      // duplicated artifact errors.
+      const waiverValidation = validateInvariantWaivers(waiverDoc, { now, enforceExpiry: false });
+      for (const error of waiverValidation.errors) {
+        errors.push({ code: error.code, skill, detail: `invalid waiver artifact at ${error.path}` });
       }
-    }
+      return waiverDoc.waivers || [];
+    };
+
+    const baseWaivers = readWaivers(baseSha);
+    const headWaivers = readWaivers(head);
 
     for (const transition of transitions) {
-      const waiver = waiverCoversTransition(waivers, transition, { now });
+      const waiver = waiverCoversTransition(baseWaivers, transition, { now });
       findings.push({
         skill,
         invariantId: transition.invariantId,
         transition: transition.transition,
         waived: Boolean(waiver),
+        waiverPreexisting: Boolean(waiver),
       });
-      if (!waiver) {
+      if (waiver) continue;
+      const sameDiffWaiver = waiverCoversTransition(headWaivers, transition, { now });
+      if (sameDiffWaiver) {
+        errors.push({
+          code: 'INVARIANT_WAIVER_SAME_DIFF',
+          skill,
+          detail: `waiver for ${transition.invariantId} ${transition.transition} was introduced in the same diff it authorizes; land the waiver through a separate reviewed change first`,
+          invariantId: transition.invariantId,
+          transition: transition.transition,
+        });
+      } else {
         errors.push({
           code: 'INVARIANT_DOWNGRADE_UNWAIVED',
           skill,
-          detail: `runtime-enforced invariant ${transition.invariantId} was ${transition.transition} without a valid unexpired waiver in contracts/invariant-waivers.json`,
+          detail: `runtime-enforced invariant ${transition.invariantId} was ${transition.transition} without a pre-existing valid unexpired waiver in contracts/invariant-waivers.json`,
           invariantId: transition.invariantId,
           transition: transition.transition,
           change: transition.detail,

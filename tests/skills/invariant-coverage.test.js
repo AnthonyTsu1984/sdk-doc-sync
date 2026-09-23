@@ -181,7 +181,7 @@ test('registry-only downgrade of a runtime-enforced invariant fails without a wa
   assert.equal(unwaived.transition, 'downgrade');
 });
 
-test('registry removal and coverage weakening fail; a valid waiver passes; expiry re-blocks', () => {
+test('registry removal and coverage weakening fail; a pre-existing waiver passes; same-diff and expired waivers do not', () => {
   const now = new Date('2026-09-23T00:00:00.000Z');
 
   // Removal of the runtime-enforced entry.
@@ -203,9 +203,10 @@ test('registry removal and coverage weakening fail; a valid waiver passes; expir
   assert.equal(weakened.valid, false);
   assert.ok(weakened.errors.some((error) => error.code === 'INVARIANT_DOWNGRADE_UNWAIVED' && error.transition === 'weakened-coverage'));
 
-  // A valid, unexpired, separately reviewed waiver authorizes the downgrade.
+  // The waiver must land BEFORE the weakening change, through its own
+  // separately reviewed diff: waiver commit first, then the downgrade.
   const waivedRepo = initRegistryRepo();
-  waivedRepo.writeRegistry({
+  const downgradedRegistry = {
     schemaVersion: 1,
     skill: 'test-skill',
     invariants: [{
@@ -217,7 +218,7 @@ test('registry removal and coverage weakening fail; a valid waiver passes; expir
       enforcement: ['plan'],
       statementDigest: waivedRepo.runtimeRegistry.invariants[0].statementDigest,
     }],
-  });
+  };
   waivedRepo.writeWaivers({
     schemaVersion: 1,
     waivers: [{
@@ -228,8 +229,11 @@ test('registry removal and coverage weakening fail; a valid waiver passes; expir
       expiresAt: '2026-12-31T00:00:00.000Z',
     }],
   });
-  const waivedHead = waivedRepo.commit('downgrade with reviewed waiver');
-  const waived = checkInvariantCoverage({ repoRoot: waivedRepo.dir, base: waivedRepo.baseSha, head: waivedHead, now });
+  const waiverSha = waivedRepo.commit('waiver: separately reviewed exception for test.rule downgrade');
+  waivedRepo.writeRegistry(downgradedRegistry);
+  const downgradeSha = waivedRepo.commit('registry downgrade under pre-existing waiver');
+
+  const waived = checkInvariantCoverage({ repoRoot: waivedRepo.dir, base: waiverSha, head: downgradeSha, now });
   assert.deepEqual(waived.errors, []);
   assert.equal(waived.valid, true);
   assert.deepEqual(
@@ -237,11 +241,21 @@ test('registry removal and coverage weakening fail; a valid waiver passes; expir
     [['test.rule', 'downgrade', true]],
   );
 
-  // The same waiver after its expiry no longer covers the transition.
+  // The reviewed escape: downgrade and its authorizing waiver inside the SAME
+  // diff. The waiver does not exist at the merge-base, so it cannot prove a
+  // separately reviewed authorization — self-approval must fail.
+  const sameDiff = checkInvariantCoverage({ repoRoot: waivedRepo.dir, base: waivedRepo.baseSha, head: downgradeSha, now });
+  assert.equal(sameDiff.valid, false);
+  const sameDiffError = sameDiff.errors.find((error) => error.code === 'INVARIANT_WAIVER_SAME_DIFF');
+  assert.ok(sameDiffError, JSON.stringify(sameDiff.errors));
+  assert.equal(sameDiffError.invariantId, 'test.rule');
+  assert.equal(sameDiffError.transition, 'downgrade');
+
+  // The same pre-existing waiver after its expiry no longer covers.
   const expiredRun = checkInvariantCoverage({
     repoRoot: waivedRepo.dir,
-    base: waivedRepo.baseSha,
-    head: waivedHead,
+    base: waiverSha,
+    head: downgradeSha,
     now: new Date('2027-06-01T00:00:00.000Z'),
   });
   assert.equal(expiredRun.valid, false);

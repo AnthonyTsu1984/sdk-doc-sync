@@ -117,7 +117,11 @@ After execution:
   (re-validating the receipt artifact from disk) and `saveReviewSession`, so
   the canonical session provably leaves `acceptance_pending` — a hand-authored
   receipt cannot finalize a session that was never built and persisted by the
-  review flow.
+  review flow. Finalization is idempotent under the crash fork between the
+  durable receipt and the session save: because the receipt is written last,
+  a rerun detects the existing receipt for the canonical manifest, skips the
+  Draft/scan-state mutations entirely, and only completes session
+  finalization.
 
 ## Reconciliation (read-only)
 

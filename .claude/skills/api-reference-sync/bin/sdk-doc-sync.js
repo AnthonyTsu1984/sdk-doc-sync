@@ -924,12 +924,34 @@ async function finalizeAcceptance({
         }),
     });
     try {
-        await finalizer.finalize({
-            userConfirmed: receipt.userConfirmed === true,
-            reviewSession: session,
-            scanStateKey: receipt.scanStateKey,
-            scanStateEntry: receipt.scanStateEntry,
+        // Idempotent resume: the acceptance receipt is written LAST by the
+        // finalizer, so a receipt matching the canonical manifest proves the
+        // Draft/scan-state mutations are already durable. A rerun after a
+        // record/save failure skips them and only completes session
+        // finalization instead of failing on records that are already Draft.
+        const loadDurableReceipt = io.loadDurableReceipt || ((manifestDigest) => {
+            const receiptPath = path.join(tmpDir, `acceptance-${manifestDigest.replace(':', '-')}.json`);
+            if (!fs.existsSync(receiptPath)) return null;
+            try {
+                const journal = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+                return { path: receiptPath, digest: digestSemanticReceipt(journal) };
+            } catch {
+                return null;
+            }
         });
+        const durable = await loadDurableReceipt(session.acceptanceManifestDigest);
+        if (durable?.path && durable?.digest) {
+            receiptArtifact.path = durable.path;
+            receiptArtifact.digest = durable.digest;
+            out(`Durable acceptance receipt found for the canonical manifest (${durable.path}); skipping Draft/scan-state mutations and completing session finalization.`);
+        } else {
+            await finalizer.finalize({
+                userConfirmed: receipt.userConfirmed === true,
+                reviewSession: session,
+                scanStateKey: receipt.scanStateKey,
+                scanStateEntry: receipt.scanStateEntry,
+            });
+        }
         // The acceptance receipt is durable at this point; record finalization
         // on the canonical session (re-validates the journal artifact from
         // disk) and persist it so the session leaves acceptance_pending.
@@ -948,7 +970,7 @@ async function finalizeAcceptance({
         return finalized;
     } catch (error) {
         err(`Error: acceptance finalization failed: ${error.code || 'ACCEPTANCE_FAILED'}: ${error.message}`);
-        err('The bitable transitions and scan-state write may already be durable; inspect the acceptance receipt and the canonical session before retrying.');
+        err(`If the acceptance receipt at ${tmpDir}/acceptance-${session.acceptanceManifestDigest.replace(':', '-')}.json is already durable, rerunning this command is safe: it detects the receipt, skips the Draft/scan-state mutations, and only completes session finalization.`);
         exit(1);
         return null;
     }

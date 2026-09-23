@@ -213,6 +213,92 @@ test('finalizeAcceptance finalizes from the canonical session, records finalizat
     assert.match(stdout[0], /canonical session/);
 });
 
+test('finalizeAcceptance resumes idempotently from a durable receipt without re-mutating records', async () => {
+    const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'finalize-cli-'));
+    const fixture = writeCanonicalSession(directory);
+    const { sessionPath, session, journals } = fixture;
+    const pendingSessionJson = fs.readFileSync(sessionPath, 'utf8');
+    const stdout = [];
+    const stderr = [];
+    let updateRecordCalls = 0;
+    let readJournalCalls = 0;
+    let durableReceipt = null;
+    let allowWrites = true;
+
+    const runFinalize = () => finalizeAcceptance({
+        receiptPath: path.join(directory, 'receipt.json'),
+        sessionPath,
+        readFile: () => receiptJson({ session }),
+        out: (line) => stdout.push(line),
+        err: (line) => stderr.push(line),
+        exit: () => { throw new Error(`must not exit; stderr: ${stderr.join(' | ')}`); },
+        io: {
+            // Run 1 mutates WIP -> Draft like the real writer; on the resume
+            // run any write attempt is a bug and fails loudly.
+            bitableWriter: (() => {
+                let records = [{ record_id: 'rec-a', fields: { Progress: 'WIP', Targets: [] } }];
+                return {
+                    async listRecords() { return structuredClone(records); },
+                    async updateRecord(recordId, fields) {
+                        updateRecordCalls += 1;
+                        if (!allowWrites) {
+                            throw new Error(`resume must not re-mutate records; stderr: ${stderr.join(' | ')}`);
+                        }
+                        records = records.map((item) => item.record_id === recordId
+                            ? { ...item, fields: { ...item.fields, Progress: fields.progress } }
+                            : item);
+                        return { record_id: recordId, fields };
+                    },
+                };
+            })(),
+            readScanState: async () => ({}),
+            writeScanState: async () => {
+                if (!allowWrites) {
+                    throw new Error('resume must not rewrite scan state');
+                }
+            },
+            writeJournal: async (journal) => {
+                const receiptOut = path.join(directory, 'acceptance-receipt.json');
+                fs.writeFileSync(receiptOut, `${JSON.stringify(journal, null, 2)}\n`);
+                durableReceipt = { path: receiptOut, digest: digestSemantic(journal) };
+                return { path: receiptOut, digest: digestSemantic(journal) };
+            },
+            readJournalEntries: async (requested) => {
+                readJournalCalls += 1;
+                const entries = journals.get(requested);
+                if (!entries) throw new Error(`unknown journal ${requested}`);
+                return structuredClone(entries);
+            },
+            loadDurableReceipt: async () => { console.error('DBG loadDurableReceipt ->', JSON.stringify(durableReceipt)); return durableReceipt; },
+        },
+    });
+
+    // Run 1: full finalization through the finalizer.
+    await runFinalize();
+    assert.equal(updateRecordCalls, 1);
+    assert.equal(readJournalCalls, 1);
+    assert.ok(durableReceipt, 'run 1 must write the acceptance receipt');
+
+    // Simulate the crash fork: the receipt is durable but the canonical
+    // session was never saved as finalized (records stay Draft on the live
+    // Bitable). Restore the pending session file and rerun; writes are now
+    // forbidden.
+    allowWrites = false;
+    fs.writeFileSync(sessionPath, pendingSessionJson);
+    const resumed = await runFinalize();
+
+    assert.equal(updateRecordCalls, 1, 'resume must not re-mutate records');
+    assert.equal(readJournalCalls, 1, 'resume must not re-derive unit journals');
+    assert.equal(resumed.status, 'finalized');
+    assert.equal(resumed.finalizationJournalDigest, durableReceipt.digest);
+    assert.match(stdout.at(-1), /finalized/);
+    const persisted = loadReviewSession(sessionPath);
+    assert.equal(persisted.status, 'finalized');
+    assert.equal(persisted.finalizationJournalDigest, durableReceipt.digest);
+    assert.deepEqual(stderr, []);
+});
+
 test('finalizeAcceptance fails loudly when the acceptance receipt is not durable', async () => {
     const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'finalize-cli-'));

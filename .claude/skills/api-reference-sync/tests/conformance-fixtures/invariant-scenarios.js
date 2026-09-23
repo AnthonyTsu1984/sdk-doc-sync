@@ -580,6 +580,99 @@ const scenarios = {
       return { code: error.code || null, writerCalls };
     }
   },
+
+  // --- api.literal-include-preserved scenario (production artifact provider) ---
+
+  async contentIncludeRebuildBlocked() {
+    const { createSchemaFirstArtifactProvider } = require('../../bin/sdk-doc-sync');
+    const provider = createSchemaFirstArtifactProvider({
+      language: 'cpp',
+      referenceContextProvider: async () => ({
+        verbatimContent: 'body <include target="zilliz">TEXT [z-url]</include>',
+        title: 'X()',
+        summary: 'summary',
+      }),
+    });
+    try {
+      await provider({ type: 'UPDATE', stableId: 'cpp:Vector:X', pr: { number: 1, path: 'X.md' } });
+      return { providerCode: null };
+    } catch (error) {
+      return { providerCode: error.code || null };
+    }
+  },
+
+  // --- api.record-description-scope scenario (production BitableWriter guard) ---
+
+  async contentDescriptionScopeViolation() {
+    const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+    const { WriterGovernance } = require('../../../doc-ops-core/src/writer-governance');
+    const fetchPath = require.resolve('node-fetch');
+    const originalFetch = require.cache[fetchPath];
+    let writeCalls = 0;
+    require.cache[fetchPath] = {
+      id: fetchPath,
+      filename: fetchPath,
+      loaded: true,
+      exports: async (url, options) => {
+        const method = (options && options.method) || 'get';
+        if (method === 'get' && /\/records\/rec-1$/.test(String(url))) {
+          const type = globalThis.__conformanceRecordType || 'Function';
+          return {
+            async json() { return { code: 0, data: { record: { fields: { Type: type } } } }; },
+          };
+        }
+        writeCalls += 1;
+        return { async json() { return { code: 0, data: { record: {} } }; } };
+      },
+    };
+    const bitableWriterPath = require.resolve('../../src/sdk-doc-sync/bitable-writer');
+    // The executor scenario above loads bitable-writer transitively; drop the
+    // cached copy so this module binds the mocked fetch instead.
+    delete require.cache[bitableWriterPath];
+    const BitableWriter = require(bitableWriterPath);
+    if (originalFetch) require.cache[fetchPath] = originalFetch;
+    else delete require.cache[fetchPath];
+    delete require.cache[bitableWriterPath];
+
+    const batchDigest = 'sha256:' + 'e'.repeat(64);
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+    governance.bindApproval({
+      batchDigest,
+      actionCount: 1,
+      targets: ['rec-1'],
+      sideEffects: ['bitable.update'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'execute',
+        batchDigest,
+        actionCount: 1,
+        targets: ['rec-1'],
+        sideEffects: ['bitable.update'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+    });
+    const writer = new BitableWriter({ baseToken: 'conformance', tableId: 'tbl-conformance', governance });
+    writer.tokenFetcher = { token: async () => 'tenant-token' };
+
+    let violationCode = null;
+    try {
+      await writer.updateRecord('rec-1', { description: 'page record description' });
+    } catch (error) {
+      violationCode = error.code || null;
+    }
+    const violationWrites = writeCalls;
+
+    globalThis.__conformanceRecordType = 'VirtualNode';
+    try {
+      await writer.updateRecord('rec-1', { description: 'folder record description' });
+    } catch (error) {
+      // The positive arm must pass; any failure surfaces in virtualNodeWrites.
+    }
+    const virtualNodeWrites = writeCalls - violationWrites;
+    delete globalThis.__conformanceRecordType;
+    return { violationCode, violationWrites, virtualNodeWrites };
+  },
 };
 
 module.exports = { scenarios };

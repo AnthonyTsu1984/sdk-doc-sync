@@ -350,6 +350,16 @@ function createSchemaFirstArtifactProvider({
         // carries the upstream markdown, it replaces the schema-first
         // regenerated document entirely (block-replace patch strategy).
         if (action?.pr && typeof context?.verbatimContent === 'string' && context.verbatimContent.trim()) {
+            // Pages carrying user-authored <include> conditional markers are
+            // never rebuilt: the markers must survive verbatim, and the body
+            // is edited surgically instead (api.literal-include-preserved).
+            if (/<include\s+target=/i.test(context.verbatimContent)) {
+                throw validationError(
+                    'INCLUDE_REBUILD_FORBIDDEN',
+                    'verbatim content carries literal <include> conditional markers; a rebuild artifact would re-derive the body — edit such pages with surgical child-block insertion',
+                    { actionId: action?.stableId || null },
+                );
+            }
             return {
                 reviewed: true,
                 validated: true,

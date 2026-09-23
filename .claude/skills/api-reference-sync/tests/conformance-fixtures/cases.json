@@ -245,5 +245,27 @@
    "code": "RELATIVE_LINK_URL_REJECTED",
    "writerCalls": 0
   }
+ },
+ {
+  "id": "content-include-rebuild-blocked",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentIncludeRebuildBlocked"
+  },
+  "assertions": {
+   "providerCode": "INCLUDE_REBUILD_FORBIDDEN"
+  }
+ },
+ {
+  "id": "content-description-scope-violation",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentDescriptionScopeViolation"
+  },
+  "assertions": {
+   "violationCode": "DESCRIPTION_SCOPE_VIOLATION",
+   "violationWrites": 0,
+   "virtualNodeWrites": 1
+  }
  }
 ]

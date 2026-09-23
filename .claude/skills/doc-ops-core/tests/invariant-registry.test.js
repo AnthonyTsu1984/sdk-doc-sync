@@ -194,6 +194,8 @@ test('the committed api-reference-sync registry passes its own coverage check', 
     'api.versioned-tree-delta',
     'api.markdown-block-fidelity',
     'api.absolute-link-urls',
+    'api.literal-include-preserved',
+    'api.record-description-scope',
   ]);
 });
 

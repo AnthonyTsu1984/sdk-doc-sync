@@ -189,6 +189,62 @@
         }
       ],
       "notes": "Phase 4 (campaign content fidelity): resolveRelativeLinks (productized from the campaign builder, including the same-directory form) rewrites repo-relative .md links to in-KB docx URLs from reviewed snapshot evidence before planning, and MarkdownToFeishu block-carrying mutations decode every text_element_style link URL and refuse non-absolute values before the first writer call (Feishu block API schema mismatch 1770006)."
+    },
+    {
+      "id": "api.literal-include-preserved",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-sdk-document-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "plan",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:552a5f2b547e20259e7e454a352ee3d4e12a4476765447b19c5aadef844ec2fe",
+      "fixtureIds": [
+        "content-include-rebuild-blocked"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+          "codes": [
+            "INCLUDE_REBUILD_FORBIDDEN"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "INCLUDE_REBUILD_FORBIDDEN"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): pages carrying user-authored <include target=...> conditional markers are never rebuilt — the schema-first artifact provider refuses a verbatim rebuild artifact whose content contains include markers, and the executor refuses a rebuild patch over such content before conversion. Surgical child-block insertion is the only sanctioned edit path."
+    },
+    {
+      "id": "api.record-description-scope",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write"
+      ],
+      "statementDigest": "sha256:e5dae68ec8481bd8658c81a4fbe38e555798fb7b4f2b4d768df4621ceb6cb0f2",
+      "fixtureIds": [
+        "content-description-scope-violation"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/bitable-writer.js",
+          "codes": [
+            "DESCRIPTION_SCOPE_VIOLATION"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): the Bitable Description field is reserved for VirtualNode (Drive folder) records. BitableWriter createRecord/updateRecord/replaceRecordFields refuse a non-empty description on any record that is not a VirtualNode (live type re-read when the payload does not carry it; clearing stays allowed), and sync-executor no longer passes a description for interface records."
     }
   ]
 }

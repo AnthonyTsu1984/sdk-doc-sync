@@ -104,6 +104,8 @@ npm run api-reference-sync -- \
 - Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists.
 - Convert governed markdown into Feishu blocks without silent loss: the converter refuses any markdown token it cannot represent instead of dropping it, renders pipe tables as native table blocks with plain-text cells, and declares the cell refetch fixed points (authored `\_` escapes consumed at write; end-of-cell `<br>` stripped only by verification normalization). [api.markdown-block-fidelity]
 - Keep repository-relative URLs out of written documents: reviewed-context builders resolve repo-relative `.md` links to in-KB docx URLs from reviewed snapshot evidence (or explicitly de-link unresolved ones), and the writer envelope refuses any text link that does not decode to an absolute http(s) URL before the first writer call. [api.absolute-link-urls]
+- Never route a page carrying user-authored `<include target="...">` conditional markers through a body rebuild: the artifact provider refuses a verbatim rebuild artifact whose content contains include markers and the executor refuses a rebuild patch over such content (INCLUDE_REBUILD_FORBIDDEN); surgical child-block insertion is the only sanctioned edit path for these pages. [api.literal-include-preserved]
+- Reserve the Bitable Description field for VirtualNode (Drive folder) records: governed record writes refuse a non-empty description on any record that is not a VirtualNode (DESCRIPTION_SCOPE_VIOLATION), re-reading the record's live type when the payload does not carry it, and executor update paths never pass a description for interface records. [api.record-description-scope]
 
 ## Required References
 

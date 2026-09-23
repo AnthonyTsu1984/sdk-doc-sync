@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Re-push docs that had ## Methods h2 headings so they now use **METHODS:** bold text.
  * Strategy per doc:

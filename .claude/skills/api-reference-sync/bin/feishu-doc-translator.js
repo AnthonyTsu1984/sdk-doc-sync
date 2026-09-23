@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 
 const readline = require('readline');
 const path = require('path');

@@ -4,8 +4,36 @@ const assert = require('node:assert/strict');
 const MarkdownToFeishu = require('../src/markdown-to-feishu');
 const layoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
+const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+
+// Phase 3: writer mutations are gated on a bound approval envelope. These
+// suites exercise the writer transport itself, so they bind a real envelope
+// derived from a fixed batch.
+function boundGovernance() {
+  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  const batchDigest = 'sha256:'.concat('a'.repeat(64));
+  governance.bindApproval({
+    batchDigest,
+    actionCount: 1,
+    targets: ['doc-under-test'],
+    sideEffects: ['docx.patch'],
+    approval: createApprovalEnvelope({
+      skill: 'api-reference-sync',
+      operation: 'execute',
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-under-test'],
+      sideEffects: ['docx.patch'],
+      decision: 'approved',
+    }),
+    invariantAttestations: [],
+  });
+  return governance;
+}
+
 test('create_blocks can populate the automatic Feishu callout child instead of adding a duplicate', () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const elements = [{ text_run: { content: 'Deprecated. Use the replacement.', text_element_style: {} } }];
   assert.equal(typeof m2f.__build_automatic_child_population, 'function');
   assert.deepEqual(m2f.__build_automatic_child_population({
@@ -27,7 +55,7 @@ test('create_blocks can populate the automatic Feishu callout child instead of a
 });
 
 test('builds bottom-up contiguous child delete ranges', () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const parent = {
     block_id: 'page',
     children: ['a', 'b', 'c', 'd', 'e', 'f'],
@@ -43,7 +71,7 @@ test('builds bottom-up contiguous child delete ranges', () => {
 });
 
 test('deduplicates child delete ids before building ranges', () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const parent = {
     block_id: 'page',
     children: ['a', 'b', 'c'],
@@ -56,7 +84,7 @@ test('deduplicates child delete ids before building ranges', () => {
 });
 
 test('rejects deleting a block that is not a direct child', () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const parent = {
     block_id: 'page',
     children: ['a', 'b', 'c'],
@@ -69,7 +97,7 @@ test('rejects deleting a block that is not a direct child', () => {
 });
 
 test('applies reviewed API section replacements without smart matching', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];
   const page = { block_id: 'page', block_type: 1, children: ['summary', 'parameters', 'param', 'returns'] };
   m2f.get_document_blocks = async () => [page];
@@ -108,7 +136,7 @@ test('applies reviewed API section replacements without smart matching', async (
 });
 
 test('rejects an API patch when live top-level block preconditions drift', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   m2f.get_document_blocks = async () => [{ block_id: 'page', block_type: 1, children: ['changed'] }];
   await assert.rejects(
     () => m2f.apply_api_patch({
@@ -124,7 +152,7 @@ test('rejects an API patch when live top-level block preconditions drift', async
 });
 
 test('rebinds approved source block IDs to an equivalent freshly copied document', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];
   const sourcePage = { block_id: 'source-page', block_type: 1, children: ['source-summary', 'source-parameters', 'source-param'] };
   const copiedPage = { block_id: 'copy-page', block_type: 1, children: ['copy-summary', 'copy-parameters', 'copy-param'] };
@@ -171,7 +199,7 @@ test('rebinds approved source block IDs to an equivalent freshly copied document
 });
 
 test('rebinds rewritten approved and copied block IDs by equivalent semantic position', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];
   const sourceBlocks = [
     { block_id: 'live-page', block_type: 1, children: ['live-summary', 'live-signature', 'live-example-heading', 'live-example'] },
@@ -232,7 +260,7 @@ test('rebinds rewritten approved and copied block IDs by equivalent semantic pos
 });
 
 test('rejects a copied document when nested block content differs from the live source', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const sourceBlocks = [
     { block_id: 'source-page', block_type: 1, children: ['source-list'] },
     { block_id: 'source-list', parent_id: 'source-page', block_type: 12, children: ['source-detail'], bullet: { elements: [{ text_run: { content: 'method' } }] } },
@@ -261,7 +289,7 @@ test('rejects a copied document when nested block content differs from the live 
 });
 
 test('orders delete-only sections by their approved live position before lower replacements', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];
   const page = { block_id: 'page', block_type: 1, children: ['summary', 'returns', 'returns-value', 'examples', 'example-code'] };
   m2f.get_document_blocks = async () => [page];
@@ -303,7 +331,7 @@ test('orders delete-only sections by their approved live position before lower r
 });
 
 test('refetches the live parent children after insertion before deleting approved source blocks', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   let liveChildren = ['summary', 'parameters', 'param', 'examples'];
   const calls = [];
   m2f.get_document_blocks = async () => [{ block_id: 'page', block_type: 1, children: [...liveChildren] }];
@@ -344,7 +372,7 @@ test('refetches the live parent children after insertion before deleting approve
 });
 
 test('applies ordered structural patches without placing a new trailing section before an unchanged section', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const page = {
     block_id: 'page',
     block_type: 1,
@@ -389,7 +417,7 @@ test('applies ordered structural patches without placing a new trailing section 
 });
 
 test('keeps an approved native callout after the opening summary during ordered replacement', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const page = {
     block_id: 'page',
     block_type: 1,
@@ -440,7 +468,7 @@ test('keeps an approved native callout after the opening summary during ordered 
 });
 
 test('full-body rebuild keeps approved rich blocks and inserts desired sections around them', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];
   const page = { block_id: 'page', block_type: 1, children: ['old-summary', 'callout', 'old-example'] };
   m2f.get_document_blocks = async () => [page];
@@ -478,7 +506,7 @@ test('full-body rebuild keeps approved rich blocks and inserts desired sections 
 });
 
 test('copy full-body rebuild recreates the complete desired hierarchy on the copied document', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const page = { block_id: 'copy-page', block_type: 1, children: ['old-summary', 'old-examples'] };
   const calls = [];
   m2f.get_document_blocks = async () => [page];
@@ -523,7 +551,7 @@ test('copy full-body rebuild recreates the complete desired hierarchy on the cop
 });
 
 test('copy patch preconditions accept Feishu-rewritten internal document links', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const textBlock = (id, parent, link) => ({
     block_id: id,
     parent_id: parent,
@@ -563,7 +591,7 @@ test('copy patch preconditions accept Feishu-rewritten internal document links',
 });
 
 test('copy patch preconditions preserve document tokens mentioned as ordinary prose', async () => {
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const textBlock = (id, parent, content) => ({
     block_id: id,
     parent_id: parent,

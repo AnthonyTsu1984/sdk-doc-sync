@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Fix Java v2.6.14 IndexType and IndexParam docs.
  *

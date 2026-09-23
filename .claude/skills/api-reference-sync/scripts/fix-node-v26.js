@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Fix two issues in Node v2.6.x bitable:
  *   1. Delete the next() doc and bitable record (not a standalone API method)

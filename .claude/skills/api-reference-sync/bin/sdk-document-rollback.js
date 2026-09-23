@@ -21,6 +21,49 @@ const {
   saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const {
+    WriterGovernance,
+    createApprovalEnvelope,
+} = require('../../doc-ops-core/src/writer-governance');
+
+// Flat, deterministic string tokens derived from the digest-covered manifest:
+// they bind the approval envelope to the exact rollback content the user
+// approved via --approve-rollback-digest.
+function rollbackEnvelopeTargets(manifest) {
+    return [...new Set(manifest.actions.map((action) => action.originalActionId))].sort();
+}
+
+function rollbackEnvelopeSideEffects(manifest) {
+    const effects = manifest.sideEffects || {};
+    return [...new Set(Object.values(effects).flat().filter((value) => typeof value === 'string'))].sort();
+}
+
+function createRollbackWriterGovernance(manifest, approvedDigest) {
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'rollback' });
+    const targets = rollbackEnvelopeTargets(manifest);
+    const sideEffects = rollbackEnvelopeSideEffects(manifest);
+    governance.bindApproval({
+        // expected = the digest-covered manifest; the envelope carries the
+        // operator-supplied --approve-rollback-digest. bindApproval enforces
+        // their equality, so the gate survives even if the CLI-side check
+        // were ever removed.
+        batchDigest: manifest.rollbackManifestDigest,
+        actionCount: manifest.actions.length,
+        targets,
+        sideEffects,
+        approval: createApprovalEnvelope({
+            skill: 'api-reference-sync',
+            operation: 'rollback',
+            batchDigest: approvedDigest,
+            actionCount: manifest.actions.length,
+            targets,
+            sideEffects,
+            decision: 'approved',
+        }),
+        invariantAttestations: [],
+    });
+    return governance;
+}
 
 function parseArgs(argv) {
   const args = { command: argv[2] || null };
@@ -125,21 +168,28 @@ function incompleteJournalResult({ entries, journalPath, manifest, reviewUnitId 
   };
 }
 
-function defaultExecutorFactory({ session, env = process.env }) {
+function defaultExecutorFactory({ session, manifest, approvedDigest, env = process.env }) {
   const baseToken = env.BASE_TOKEN || session.artifacts?.baseToken;
   if (!baseToken) throw new Error('BASE_TOKEN is required for live rollback');
+  // defaultExecutorFactory only runs after --approve-rollback-digest has been
+  // verified against the manifest, so binding here is post-approval; the
+  // operator-supplied digest is what the bound envelope carries.
+  const governance = createRollbackWriterGovernance(manifest, approvedDigest);
   const documentWriter = new MarkdownToFeishu({
     sourceType: 'drive',
     rootToken: env.ROOT_TOKEN || null,
     baseToken,
+    governance,
   });
   const bitableWriter = new BitableWriter({
     baseToken,
     tableId: env.TABLE_ID || session.artifacts?.tableId || null,
+    governance,
   });
   const verifier = new FeishuOperationalVerifier({
     documentWriter,
     bitableWriter,
+    governance,
   });
   return new RollbackExecutor({ documentWriter, bitableWriter, verifier });
 }
@@ -243,7 +293,7 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
     return result;
   }
 
-  const executor = executorFactory({ session, manifest, env });
+  const executor = executorFactory({ session, manifest, env, approvedDigest: args.approveRollbackDigest });
   const execution = await executor.execute(manifest, {
     approvalDigest: args.approveRollbackDigest,
     journalPath,

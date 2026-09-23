@@ -1,6 +1,7 @@
 'use strict';
 
 const { spawn } = require('node:child_process');
+const { assertWriterMutation } = require('../../../doc-ops-core/src/writer-governance');
 
 function spawnRun(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -85,8 +86,9 @@ function spawnRun(command, args, options = {}) {
 }
 
 class LarkCliOps {
-  constructor({ run = spawnRun } = {}) {
+  constructor({ run = spawnRun, governance = null } = {}) {
     this.run = run;
+    this.governance = governance;
   }
 
   authStatus() {
@@ -124,6 +126,7 @@ class LarkCliOps {
   }
 
   historyRevert(documentToken, historyVersionId, as = 'bot') {
+    assertWriterMutation(this.governance, 'LarkCliOps.historyRevert');
     return this.run('lark-cli', [
       'docs',
       '+history-revert',
@@ -139,6 +142,7 @@ class LarkCliOps {
   }
 
   deleteDocx(documentToken, as = 'user') {
+    assertWriterMutation(this.governance, 'LarkCliOps.deleteDocx');
     return this.run('lark-cli', [
       'drive',
       '+delete',

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Copy all 106 v0.1.x docs into the v1.3.x folder skeleton.
 //
 // Reads:

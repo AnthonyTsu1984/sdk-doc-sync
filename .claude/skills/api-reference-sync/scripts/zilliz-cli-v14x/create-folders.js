@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Create the v1.4.x folder skeleton in Feishu drive.
 //
 // Idempotent: lists what already exists at each level and only creates missing folders.

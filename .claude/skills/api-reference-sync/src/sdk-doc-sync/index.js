@@ -26,6 +26,10 @@ const { createActionBatch } = require('../../../doc-ops-core/src/action-batch');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../../doc-ops-core/src/journal');
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
+const {
+    WriterGovernance,
+    bindWriterGovernance,
+} = require('../../../doc-ops-core/src/writer-governance');
 const { createResult } = require('../../../doc-ops-core/src/result-contract');
 const {
     INVARIANT_ID,
@@ -378,12 +382,17 @@ class SdkDocSync {
         this.tokenReferenceReader = tokenReferenceReader || null;
 
         if (!dryRun) {
-            this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken });
+            // Writers refuse every mutation until this governance is bound to
+            // the approved execution batch (see run()), so no code path —
+            // canonical or incidental — can write without the verified approval.
+            this.writerGovernance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+            this.m2f = this.m2f || new MarkdownToFeishu({ sourceType, rootToken, baseToken, governance: this.writerGovernance });
             const usingInjectedBitableWriter = Boolean(this.bitableWriter);
-            this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken });
+            this.bitableWriter = this.bitableWriter || new BitableWriter({ baseToken, governance: this.writerGovernance });
             this.verifier = this.verifier || new FeishuOperationalVerifier({
                 readDocument: liveDocumentReader(this.m2f),
                 readRecord: liveRecordReader(this.bitableWriter),
+                governance: this.writerGovernance,
             });
             // Cross-track token reference reader for the executor's pre-write
             // shared-token revalidation. The current base is enumerated through
@@ -772,6 +781,31 @@ class SdkDocSync {
             });
             return result;
         }
+
+        // Every writer mutation below this line is gated on the governance
+        // bound to this verified batch: envelope first, then execution. The
+        // envelope is the one the execution approval provider issued and the
+        // per-plan loop already verified against the batch — binding never
+        // manufactures its own approval, so weakening or removing that loop
+        // also removes the writer's license to mutate.
+        const governance = this.writerGovernance
+            || new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+        const issuedApproval = approvals.get(approvedPlans[0].plan.stableId);
+        governance.bindApproval({
+            batchDigest: result.executionBatch.batchDigest,
+            actionCount: result.executionBatch.actions.length,
+            targets: result.executionBatch.targets,
+            sideEffects: result.executionBatch.sideEffects,
+            approval: issuedApproval,
+            invariantAttestations: approvedPlans.flatMap(({ plan }) => plan.invariantAttestations || []),
+            // Batch targets are folder/document-level refs while the executor
+            // resolves per-record ids live during execution, so per-call target
+            // enforcement stays off here; the acceptance finalizer binds the
+            // exact recordId list with enforceTargets enabled.
+            enforceTargets: false,
+        });
+        bindWriterGovernance(this.m2f, governance);
+        bindWriterGovernance(this.bitableWriter, governance);
 
         // Phase 6: EXECUTE
         this.onProgress('EXECUTE', `Executing ${result.executionBatch.actions.length} actions...`);

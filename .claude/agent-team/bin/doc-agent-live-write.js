@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../skills/doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 
 const path = require('node:path');
 const FeishuDocTranslator = require('../../skills/api-reference-sync/src/feishu-doc-translator');

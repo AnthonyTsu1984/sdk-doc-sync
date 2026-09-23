@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Patch v1.3.x docs for behavior/flag changes since v0.1.x.
  *

@@ -2,9 +2,150 @@
   {
     "id": "verify.result-contract-v1",
     "capabilityId": "verify.result-contract",
-    "oldBehavior": { "topLevelContract": false, "manualExitCode": 0 },
-    "newBehavior": { "topLevelContract": true, "manualExitCode": 2 },
+    "oldBehavior": {
+      "topLevelContract": false,
+      "manualExitCode": 0
+    },
+    "newBehavior": {
+      "topLevelContract": true,
+      "manualExitCode": 2
+    },
     "rationale": "Expose deterministic status, digest, diagnostics, artifacts, and blocked outcomes without removing the detailed verifier report.",
     "replacementAssertion": "report.contract is schema version 1 and process exit equals report.contract.exitCode"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/_node-v30-utils.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "Golden Rule 4 mandatory post-action script (CLAUDE.md); pending canonicalization into the governed executor"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cleanup-go-iterators.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-add-include-all.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-add-ptr-type-links.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-examples-v2.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-fix-checkstatus.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-fix-describe-resource-group.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-request-syntax-fix.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-v261-examples-update.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-v261-fix-code-lang.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/cpp-v263-fix-returns-format.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/fix-go-iterator-examples.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "Golden Rule 4 mandatory post-action script (CLAUDE.md); pending canonicalization into the governed executor"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-add-imports.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-fix-clientconfig.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-fix-entity-examples.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-fix-examples.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-fix-indent.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-fix-option-code.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/go-fix-param-layout.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/node-add-token.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/node-fix-code-lang.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/node-reformat-constructor.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "Golden Rule 4 mandatory post-action script (CLAUDE.md); pending canonicalization into the governed executor"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/python-fix-examples.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
+  },
+  {
+    "entrypointPath": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/patch-behavior-changes.js",
+    "expiresAt": "2026-10-31T23:59:59Z",
+    "rationale": "dormant one-off campaign script with raw-fetch mutations; quarantined pending canonical replacement"
   }
 ]

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });
 const fetch = require('node-fetch');

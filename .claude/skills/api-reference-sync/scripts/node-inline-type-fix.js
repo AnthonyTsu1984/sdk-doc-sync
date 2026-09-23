@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Rewrite 4 Node.js SDK docs to extract complex inline type descriptions
  * into separate named sections within the same doc.

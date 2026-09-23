@@ -1,6 +1,7 @@
 'use strict';
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { createApprovalEnvelope } = require('../../../doc-ops-core/src/writer-governance');
 const { INVARIANT_ID } = require('./versioned-tree-policy');
 const { buildAcceptanceManifest } = require('./review-units');
 
@@ -178,6 +179,38 @@ class AcceptanceFinalizer {
     const previousScanState = clone(await this.readScanState());
     const updated = [];
     let scanStateWritten = false;
+
+    // All checks above verified the receipt/session/manifest/evidence chain;
+    // only now is the writer's governance allowed to bind, so the Draft
+    // transitions below carry a governed envelope. The envelope carries the
+    // session-claimed acceptance digest while binding validates it against the
+    // recomputed manifest digest, so the equality the session check enforces
+    // is re-imposed here even if that check were ever removed. Document-only
+    // acceptance sessions legitimately touch zero bitable records — nothing
+    // mutates, so no envelope is bound.
+    if (touchedRecords.length > 0 && this.bitableWriter?.governance?.bindApproval) {
+      const governance = this.bitableWriter.governance;
+      const targets = touchedRecords.map((item) => item.recordId);
+      governance.bindApproval({
+        batchDigest: recomputed.acceptanceManifestDigest,
+        actionCount: touchedRecords.length,
+        targets,
+        sideEffects: ['bitable.update'],
+        approval: createApprovalEnvelope({
+          skill: 'api-reference-sync',
+          operation: 'acceptance',
+          batchDigest: reviewSession.acceptanceManifestDigest,
+          actionCount: touchedRecords.length,
+          targets,
+          sideEffects: ['bitable.update'],
+          decision: 'approved',
+        }),
+        invariantAttestations: [],
+        // targets is the exact recordId list the update loop below feeds to
+        // updateRecord, so every mutation is cross-checked against it.
+        enforceTargets: true,
+      });
+    }
 
     try {
       for (const item of touchedRecords) {

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 // Repoint v1.4.x VirtualNode Docs links to v1.4.x drive folder URLs.
 //
 // Inputs:

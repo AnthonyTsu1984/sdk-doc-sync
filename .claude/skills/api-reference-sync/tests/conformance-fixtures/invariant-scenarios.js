@@ -790,6 +790,54 @@ const scenarios = {
       return { code: error.code || null, writeCalls };
     }
   },
+
+  // --- api.governed-document-inventory / reconcile scenarios (production reconciler) ---
+
+  async contentReconcileOrphanDetected() {
+    const { reconcileContentInventory } = require('../../src/sdk-doc-sync/content-reconciliation');
+    const records = [
+      { recordId: 'rec-1', documentToken: 'DOCKEEPER01DOCKEEPER01' },
+      { recordId: 'rec-2', documentToken: 'DOCSECOND02DOCSECOND02' },
+    ];
+    const folderDocuments = [
+      'DOCKEEPER01DOCKEEPER01',
+      'DOCSECOND02DOCSECOND02',
+      'ORPHANDOC03ORPHANDOC03',
+    ];
+    // Percent-decoded page block links count as references too.
+    const pageLinkTokens = ['DOCSECOND02DOCSECOND02'];
+    const { findings } = reconcileContentInventory({ records, folderDocuments, pageLinkTokens });
+    return {
+      orphanCode: findings.find((finding) => finding.identity === 'ORPHANDOC03ORPHANDOC03')?.code || null,
+      referencedClean: !findings.some((finding) => finding.identity !== 'ORPHANDOC03ORPHANDOC03'),
+    };
+  },
+
+  async contentReconcileCalloutEmptyChild() {
+    const { reconcileCalloutBlocks } = require('../../src/sdk-doc-sync/content-reconciliation');
+    const blocks = [
+      {
+        block_id: 'callout-1',
+        block_type: 19,
+        children: [
+          { block_id: 'notes-1', block_type: 2, text: { elements: [{ text_run: { content: 'Notes' } }] } },
+          { block_id: 'empty-auto', block_type: 2, text: { elements: [] } },
+        ],
+      },
+      {
+        block_id: 'callout-2',
+        block_type: 19,
+        children: [
+          { block_id: 'body-1', block_type: 2, text: { elements: [{ text_run: { content: 'Deprecated in v3.0.x. Use AddFunctionField().' } }] } },
+        ],
+      },
+    ];
+    const { findings } = reconcileCalloutBlocks(blocks);
+    return {
+      emptyChildCode: findings.find((finding) => finding.identity === 'empty-auto')?.code || null,
+      cleanCalloutFindings: findings.filter((finding) => finding.identity !== 'empty-auto').length,
+    };
+  },
 };
 
 module.exports = { scenarios };

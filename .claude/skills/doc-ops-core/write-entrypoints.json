@@ -3,7 +3,7 @@
   "baseline": {
     "recordedAt": "2026-09-23T00:00:00.000Z",
     "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
-    "entrypointCount": 161,
+    "entrypointCount": 162,
     "legacyLiveCount": 60
   },
   "entries": [
@@ -1679,6 +1679,13 @@
       "skill": "doc-ops-core",
       "classification": "read-only",
       "operation": "validate-skills",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/reconcile-content.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "reconcile-content",
       "basis": "no external mutation signature found"
     }
   ]

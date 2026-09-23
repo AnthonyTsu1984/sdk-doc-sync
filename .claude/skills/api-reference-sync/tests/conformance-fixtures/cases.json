@@ -290,5 +290,27 @@
    "code": "REBUILD_REQUIRED_SHAPE_MISMATCH",
    "writeCalls": 0
   }
+ },
+ {
+  "id": "content-reconcile-orphan-detected",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentReconcileOrphanDetected"
+  },
+  "assertions": {
+   "orphanCode": "CONTENT_ORPHAN_DOCUMENT",
+   "referencedClean": true
+  }
+ },
+ {
+  "id": "content-reconcile-callout-empty-child",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentReconcileCalloutEmptyChild"
+  },
+  "assertions": {
+   "emptyChildCode": "CALLOUT_EMPTY_CHILD",
+   "cleanCalloutFindings": 0
+  }
  }
 ]

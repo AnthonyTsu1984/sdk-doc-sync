@@ -139,12 +139,14 @@
       "scope": "all-governed-markdown-writes",
       "status": "runtime-enforced",
       "enforcement": [
-        "pre-write"
+        "pre-write",
+        "reconcile"
       ],
       "statementDigest": "sha256:dffd1f9b7254093190755226bd22dad5d60d486953beeb1739cef7ec86e332a8",
       "fixtureIds": [
         "content-table-native-roundtrip",
-        "content-unrepresentable-token-blocked"
+        "content-unrepresentable-token-blocked",
+        "content-reconcile-callout-empty-child"
       ],
       "enforcers": [
         {
@@ -153,9 +155,16 @@
           "codes": [
             "MD_TOKEN_UNREPRESENTABLE"
           ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CALLOUT_EMPTY_CHILD"
+          ]
         }
       ],
-      "notes": "Phase 4 (campaign content fidelity): marked `table` tokens render as native Feishu table blocks through the same cell path as HTML tables, unhandled token types throw MD_TOKEN_UNREPRESENTABLE instead of being logged and dropped, and normalizeRefetchedMarkdown is the declared verification canonicalization (end-of-cell <br> strip only; authored \\_ escapes are consumed at write)."
+      "notes": "Phase 4 (campaign content fidelity): marked `table` tokens render as native Feishu table blocks through the same cell path as HTML tables, unhandled token types throw MD_TOKEN_UNREPRESENTABLE instead of being logged and dropped, and normalizeRefetchedMarkdown is the declared verification canonicalization (end-of-cell <br> strip only; authored \\_ escapes are consumed at write). Reconciliation (phase 4 step 4) reports callout blocks carrying empty text children (CALLOUT_EMPTY_CHILD)."
     },
     {
       "id": "api.absolute-link-urls",
@@ -255,7 +264,8 @@
       "enforcement": [
         "plan",
         "pre-write",
-        "post-write"
+        "post-write",
+        "reconcile"
       ],
       "statementDigest": "sha256:315d47eb9d891dce1f4d2994aca4bfd4b7b0716d8ee270747e5a9eb18702c5dc",
       "fixtureIds": [
@@ -292,9 +302,41 @@
             "VERBATIM_CONTENT_VERIFICATION_FAILED",
             "VERBATIM_REFETCH_UNAVAILABLE"
           ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CONTENT_CONTEXT_DIGEST_MISMATCH",
+            "CONTENT_CONTEXT_LIVE_DIVERGENT"
+          ]
         }
       ],
-      "notes": "Phase 4 step 3: merged-PR pages land line-for-line identical to the pinned upstream markdown. The provider normalizes verbatim content (web-content footer + leading H1 stripped) and the planner attests the normalized content digest into the plan (decision PR_VERBATIM_REBUILD); the executor refuses a verbatim rebuild whose plan carries no attestation or whose bytes no longer match it; patch_document refuses cross-type in-place pairings (replace positional, smart matched) requiring rebuild; after execution the runner refetches raw_content, compares through the declared canonicalization (refetchChannel raw_content, canonicalVersion 1), journals a content-fidelity outcome before the completion sentinel, and the acceptance finalizer accepts content-fidelity outcomes as verified evidence."
+      "notes": "Phase 4 step 3: merged-PR pages land line-for-line identical to the pinned upstream markdown. The provider normalizes verbatim content (web-content footer + leading H1 stripped) and the planner attests the normalized content digest into the plan (decision PR_VERBATIM_REBUILD); the executor refuses a verbatim rebuild whose plan carries no attestation or whose bytes no longer match it; patch_document refuses cross-type in-place pairings (replace positional, smart matched) requiring rebuild; after execution the runner refetches raw_content, compares through the declared canonicalization (refetchChannel raw_content, canonicalVersion 1), journals a content-fidelity outcome before the completion sentinel, and the acceptance finalizer accepts content-fidelity outcomes as verified evidence. Reconciliation (phase 4 step 4) reports reviewed contexts whose frozen digest or live raw_content disagrees with their content (CONTENT_CONTEXT_DIGEST_MISMATCH / CONTENT_CONTEXT_LIVE_DIVERGENT)."
+    },
+    {
+      "id": "api.governed-document-inventory",
+      "version": 1,
+      "risk": "inventory-hygiene",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "reconcile"
+      ],
+      "statementDigest": "sha256:4bb426cde32ca2b34421a12dbd11d3257832e10dfb365112f49bf67001ad8c87",
+      "fixtureIds": [
+        "content-reconcile-orphan-detected"
+      ],
+      "enforcers": [
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CONTENT_ORPHAN_DOCUMENT"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 4 (campaign lesson: the orphan sweep required percent-decoded block-link extraction and live-VirtualNode folder derivation). Reconciliation reports any document under a tracked release folder that no record Docs link and no percent-decoded page block link references as a detect-only orphan candidate (CONTENT_ORPHAN_DOCUMENT); findings never authorize disposal — copy-on-write rollback sources are legitimate until final-acceptance cleanup."
     }
   ]
 }

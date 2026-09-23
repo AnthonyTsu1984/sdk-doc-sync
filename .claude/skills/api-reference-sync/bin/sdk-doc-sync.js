@@ -95,6 +95,8 @@ function parseArgs(argv) {
             args.sessionState = argv[++i];
         } else if (arg === '--resume-session' && argv[i + 1]) {
             args.resumeSession = argv[++i];
+        } else if (arg === '--finalize-acceptance' && argv[i + 1]) {
+            args.finalizeAcceptance = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -129,6 +131,7 @@ Options:
   --review-unit-id <id>            Select exactly one document and its required resource operations
   --session-state <file>           Create a persistent session from a complete initial dry-run
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
+  --finalize-acceptance <file>     Finalize acceptance from a receipt bound to an execution-journal digest
   --help, -h                       Show this help
 
 Environment (.env):
@@ -474,6 +477,17 @@ async function runCli({
     const readFile = dependencies.readFile || ((file) => fs.readFileSync(file, 'utf8'));
     const writeFile = dependencies.writeFile || ((file, content) => fs.writeFileSync(file, content));
 
+    if (args.finalizeAcceptance) {
+        return await finalizeAcceptance({
+            receiptPath: args.finalizeAcceptance,
+            readFile,
+            out,
+            err,
+            exit,
+            io: dependencies.finalizeAcceptanceIo || {},
+        });
+    }
+
     if (args.sessionState && args.resumeSession) {
         err('Error: choose either --session-state or --resume-session, not both');
         exit(1);
@@ -783,6 +797,91 @@ function createBoundedSummary(result) {
     };
 }
 
+// Production acceptance-finalization entrypoint (--finalize-acceptance). The
+// receipt binds the touched records to an execution-journal digest; the
+// finalizer resolves that exact journal artifact, verifies its digest and
+// completion sentinel, and derives the per-action invariant evidence from its
+// tree-delta outcomes — caller-supplied evidence is never accepted. `io`
+// overrides are for tests only; production uses the real Bitable writer,
+// scan-state file, journal path binding, and receipt writer.
+async function finalizeAcceptance({
+    receiptPath,
+    readFile,
+    out,
+    err,
+    exit,
+    io = {},
+}) {
+    let receipt;
+    try {
+        receipt = JSON.parse(readFile(path.resolve(receiptPath)));
+    } catch (error) {
+        err(`Error: --finalize-acceptance receipt is unreadable: ${error.message}`);
+        exit(1);
+        return null;
+    }
+    if (!receipt?.bitable?.baseToken) {
+        err('Error: acceptance receipt requires bitable.baseToken for the target track');
+        exit(1);
+        return null;
+    }
+    if (!Array.isArray(receipt.touchedRecords) || receipt.touchedRecords.length === 0) {
+        err('Error: acceptance receipt requires a non-empty touchedRecords list');
+        exit(1);
+        return null;
+    }
+    const AcceptanceFinalizer = require('../src/sdk-doc-sync/acceptance-finalizer');
+    const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+    const repoRoot = path.resolve(__dirname, '../../../..');
+    const tmpDir = path.join(repoRoot, 'tmp', 'api-reference-sync');
+    const scanStatePath = path.resolve(__dirname, '..', 'scan-state.json');
+    const finalizer = new AcceptanceFinalizer({
+        bitableWriter: io.bitableWriter
+            || new BitableWriter({
+                baseToken: receipt.bitable.baseToken,
+                tableId: receipt.bitable.tableId || undefined,
+            }),
+        readScanState: io.readScanState || (async () => {
+            try {
+                return JSON.parse(fs.readFileSync(scanStatePath, 'utf8'));
+            } catch {
+                return {};
+            }
+        }),
+        writeScanState: io.writeScanState || (async (next) => {
+            fs.mkdirSync(path.dirname(scanStatePath), { recursive: true });
+            fs.writeFileSync(scanStatePath, `${JSON.stringify(next, null, 2)}\n`);
+        }),
+        writeJournal: io.writeJournal || (async (journal) => {
+            fs.mkdirSync(tmpDir, { recursive: true });
+            const receiptOut = path.join(tmpDir, `acceptance-${receipt.executionJournalDigest.replace(':', '-')}.json`);
+            fs.writeFileSync(receiptOut, `${JSON.stringify(journal, null, 2)}\n`);
+            out(`Acceptance receipt written to ${receiptOut}`);
+        }),
+        readJournalEntries: io.readJournalEntries || (async (digest) => {
+            const content = fs.readFileSync(SdkDocSync.journalPathForDigest(digest, repoRoot), 'utf8');
+            return content.trim() ? content.trim().split('\n').map(line => JSON.parse(line)) : [];
+        }),
+    });
+    try {
+        const result = await finalizer.finalize({
+            userConfirmed: receipt.userConfirmed === true,
+            acceptanceManifestDigest: receipt.acceptanceManifestDigest || null,
+            executionJournalDigest: receipt.executionJournalDigest,
+            touchedRecords: receipt.touchedRecords,
+            scanStateKey: receipt.scanStateKey,
+            scanStateEntry: receipt.scanStateEntry,
+        });
+        out('Acceptance finalized (invariant evidence derived from the execution journal):');
+        out(JSON.stringify(result, null, 2));
+        return result;
+    } catch (error) {
+        err(`Error: acceptance finalization failed: ${error.code || 'ACCEPTANCE_FAILED'}: ${error.message}`);
+        exit(1);
+        return null;
+    }
+}
+
 if (require.main === module) {
     runCli().catch(err => {
         console.error('Fatal error:', err.message);
@@ -793,6 +892,7 @@ if (require.main === module) {
 module.exports = {
     parseArgs,
     runCli,
+    finalizeAcceptance,
     createSchemaFirstArtifactProvider,
     createExecutionApprovalProvider,
     createBoundedSummary,

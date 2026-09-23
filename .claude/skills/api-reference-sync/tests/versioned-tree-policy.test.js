@@ -8,6 +8,8 @@ const path = require('node:path');
 
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { createInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
+const { sha256Digest } = require('../../doc-ops-core/src/digest');
 const {
     BLOCKERS,
     DECISIONS,
@@ -22,22 +24,38 @@ const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 
 const sha = (seed) => `sha256:${Buffer.from(seed, 'utf8').toString('hex').padEnd(64, '0').slice(0, 64)}`;
 
-function inheritanceEvidence({ shared = 'shared', currentVersion = 'v2.6.x', targetVersion = 'v3.0.x' } = {}) {
+// Builds a real (digest-valid) inheritance evidence object for the shared
+// v2.6 -> v3.0 fixture identity. The target shape must match the planning
+// context (folderToken OR folderRef) or validation reports a mismatch.
+function inheritanceEvidence({ shared = 'shared', currentVersion = 'v2.6.x', targetVersion = 'v3.0.x', target: targetOverride = null } = {}) {
     const digests = {};
-    digests[currentVersion] = sha(currentVersion);
-    if (!digests[targetVersion]) digests[targetVersion] = sha(targetVersion);
-    return {
-        schemaVersion: 1,
-        stableId: 'cpp:Partitions:LoadPartitions',
-        sharedToken: {
-            status: shared,
-            referencedRecordIds: shared === 'unshared'
-                ? ['rec-load-partitions-v30']
-                : ['rec-load-partitions-v30', 'rec-load-partitions-v26'],
-        },
-        trackInventoryDigests: digests,
-        evidenceDigest: sha(`evidence:${shared}`),
+    digests[currentVersion] = sha256Digest(Buffer.from(currentVersion, 'utf8'));
+    if (!digests[targetVersion]) digests[targetVersion] = sha256Digest(Buffer.from(targetVersion, 'utf8'));
+    const current = {
+        version: currentVersion,
+        recordId: 'rec-load-partitions-v30',
+        documentToken: 'doc-load-partitions-v26',
+        folderToken: 'folder-partitions-v26',
+        versionRootToken: 'root-v26',
+        ancestryVerified: true,
+        placementVerified: true,
     };
+    const target = targetOverride || {
+        version: targetVersion,
+        versionRootToken: 'root-v30',
+        folderToken: 'folder-partitions-v30',
+        ancestryVerified: true,
+    };
+    return createInheritanceEvidence({
+        stableId: 'cpp:Partitions:LoadPartitions',
+        current,
+        target,
+        sharedTokenStatus: shared,
+        referencedRecordIds: shared === 'unshared'
+            ? ['rec-load-partitions-v30']
+            : ['rec-load-partitions-v30', 'rec-load-partitions-v26'],
+        trackInventoryDigests: digests,
+    });
 }
 
 function updateFacts(overrides = {}) {
@@ -78,6 +96,14 @@ function categorySpec() {
             recordId: 'rec-partitions-vnode-v30',
             currentFolderToken: 'folder-partitions-shared-v26',
             expectedFields: { type: 'VirtualNode', targets: ['Milvus', 'Zilliz'], progress: 'Draft', slug: 'Partitions' },
+            baseToken: 'base-v30',
+            tableId: 'table-v30',
+            existingLookup: {
+                checked: true,
+                matched: true,
+                recordId: 'rec-partitions-vnode-v30',
+                currentFolderToken: 'folder-partitions-shared-v26',
+            },
         },
     };
 }
@@ -200,6 +226,90 @@ test('categoryResourceDefinitions produces the folder and downstream repoint res
     assert.equal(repoint.folderRef, 'folder:cpp:v30:Partitions');
     assert.deepEqual(repoint.dependsOn, ['folder:cpp:v30:Partitions', 'cpp:Partitions:LoadPartitions']);
     assert.throws(() => categoryResourceDefinitions({ stableId: 'x', category: { folder: null, repoint: null } }), TypeError);
+});
+
+// Full assembly chain: an attested missing-category decision must feed
+// categoryResourceDefinitions -> planResource for BOTH resources without
+// error, so an attested DAG is always executable.
+test('attested missing-category spec assembles into plannable resources and an executable batch', () => {
+    const stableId = 'cpp:Partitions:LoadPartitions';
+    const target = {
+        version: 'v3.0.x',
+        parentRecordId: 'rec-partitions-vnode-v30',
+        folderToken: null,
+        folderRef: 'folder:cpp:v30:Partitions',
+        versionRootToken: 'root-v30',
+        ancestryVerified: true,
+    };
+    const decision = evaluateVersionedTreeDelta(updateFacts({
+        target,
+        category: categorySpec(),
+    }));
+    assert.equal(decision.status, 'allowed');
+    assert.equal(decision.decision, DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE);
+
+    const planner = new SyncPlanner();
+    const [folderDef, repointDef] = categoryResourceDefinitions({
+        stableId,
+        category: categorySpec(),
+    });
+    const folderPlan = planner.planResource(folderDef);
+    const repointPlan = planner.planResource(repointDef);
+    assert.equal(folderPlan.action, 'CREATE_FOLDER');
+    assert.equal(repointPlan.action, 'REPOINT_CATEGORY_VIRTUAL_NODE');
+    assert.deepEqual(repointPlan.dependencies, ['folder:cpp:v30:Partitions', stableId]);
+
+    // The same context the attestation was derived from must plan the
+    // document, and the assembled batch must satisfy the attested DAG.
+    const evidence = inheritanceEvidence({
+        target: {
+            version: 'v3.0.x',
+            versionRootToken: 'root-v30',
+            folderToken: null,
+            folderRef: 'folder:cpp:v30:Partitions',
+            ancestryVerified: true,
+        },
+    });
+    const context = {
+        artifact: { title: 'LoadPartitions()', content: '# Reviewed\n', reviewed: true, validated: true },
+        current: { ...updateFacts().current, placementVerified: true },
+        target,
+        dependencies: ['folder:cpp:v30:Partitions'],
+        copySource: {
+            documentToken: updateFacts().current.documentToken,
+            link: 'https://zilliverse.feishu.cn/docx/doc-load-partitions-v26',
+            title: 'LoadPartitions()',
+        },
+        treeDelta: { category: categorySpec() },
+        inheritanceEvidence: evidence,
+    };
+    const documentPlan = planner.planAction({
+        type: 'UPDATE',
+        stableId,
+        slug: 'Partitions-LoadPartitions',
+        symbol: { name: 'LoadPartitions', identity: { stableId } },
+    }, context);
+    const batch = SdkDocSync.buildExecutionBatch(
+        [
+            { plan: folderPlan },
+            { plan: documentPlan },
+            { plan: repointPlan },
+        ],
+        new Set([folderPlan.stableId, documentPlan.stableId, repointPlan.stableId]),
+    );
+    assert.deepEqual(batch.actions.map((action) => action.actionId), [
+        'resource:folder:cpp:v30:Partitions',
+        stableId,
+        'resource:repoint:cpp:v30:Partitions',
+    ]);
+
+    // A spec that cannot be assembled (no matched-lookup evidence) never gets
+    // an attestation: the kernel blocks it instead.
+    const unassemblable = categorySpec();
+    delete unassemblable.repoint.existingLookup;
+    const blocked = evaluateVersionedTreeDelta(updateFacts({ target, category: unassemblable }));
+    assert.equal(blocked.status, 'blocked');
+    assert.equal(blocked.blocker, 'TREE_DELTA_PLACEMENT_UNKNOWN');
 });
 
 test('verifyTreeDeltaPostconditions proves the executed transition and catches drift', () => {

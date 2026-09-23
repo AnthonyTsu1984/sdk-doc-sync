@@ -187,6 +187,14 @@ const scenarios = {
           progress: 'Draft',
           slug: 'Partitions',
         },
+        baseToken: 'base-v30',
+        tableId: 'table-v30',
+        existingLookup: {
+          checked: true,
+          matched: true,
+          recordId: 'rec-partitions-vnode-v30',
+          currentFolderToken: 'folder-partitions-shared-v26',
+        },
       },
     };
     const context = {

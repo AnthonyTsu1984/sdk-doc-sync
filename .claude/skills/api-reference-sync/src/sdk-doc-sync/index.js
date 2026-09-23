@@ -37,6 +37,14 @@ const { validateResumeSession } = require('./review-session-store');
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
+const REPO_ROOT = path.resolve(__dirname, '../../../..');
+
+// Canonical execution-journal location for a batch digest. Acceptance
+// finalization resolves the journal receipt through this binding.
+function journalPathForDigest(batchDigest, repoRoot = REPO_ROOT) {
+    return path.resolve(repoRoot, 'tmp', 'api-reference-sync', `${batchDigest.replace(':', '-')}.jsonl`);
+}
+
 function executionSideEffects(plan) {
     switch (plan.action) {
         case 'CREATE_FOLDER': return ['feishu.drive.create_folder'];
@@ -715,7 +723,7 @@ class SdkDocSync {
         const journal = this.executionJournalFactory
             ? this.executionJournalFactory(result.executionBatch)
             : new ExecutionJournal({
-                filePath: path.resolve(__dirname, '../../../../..', 'tmp', 'api-reference-sync', `${result.executionBatch.batchDigest.replace(':', '-')}.jsonl`),
+                filePath: journalPathForDigest(result.executionBatch.batchDigest),
                 batchDigest: result.executionBatch.batchDigest,
                 approvedActionIds: result.executionBatch.actions.map(action => action.actionId),
             });
@@ -1580,5 +1588,6 @@ class SdkDocSync {
 SdkDocSync.buildExecutionBatch = buildExecutionBatch;
 SdkDocSync.buildAcceptanceManifest = buildAcceptanceManifest;
 SdkDocSync.buildReviewUnitManifest = (plannedEntries) => buildReviewUnitManifest(plannedEntries, buildExecutionBatch);
+SdkDocSync.journalPathForDigest = journalPathForDigest;
 
 module.exports = SdkDocSync;

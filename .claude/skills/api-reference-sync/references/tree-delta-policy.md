@@ -65,6 +65,13 @@ CREATE_FOLDER
   depends on the folder resource (token resolution) and on the document
   action (verified completion). Embedding a repoint in the folder action is
   rejected at planning time.
+- A missing-category spec is only valid when the repoint resource is
+  assemblable: it must carry checked-and-matched record evidence
+  (`existingLookup` with `checked`/`matched`/`recordId`/`currentFolderToken`
+  agreeing with the spec) plus the explicit Bitable target
+  (`baseToken`/`tableId`). The kernel blocks specs that cannot be assembled,
+  and `categoryResourceDefinitions()` output feeds `planResource()` directly —
+  an attested DAG is always executable.
 - The review-unit builder assigns downstream repoint resources to the
   document's unit, so the exact approval digest covers the entire transition
   and no orphan resource action remains.
@@ -88,9 +95,17 @@ After execution:
 - every outcome is appended to the execution journal as a `tree-delta` entry;
   a failed verification yields `TREE_DELTA_VERIFICATION_FAILED` diagnostics
   and status `PARTIAL`;
-- acceptance finalization requires verified per-action invariant evidence — a
-  unit whose tree-delta verification failed or never ran cannot advance scan
-  state (`INVARIANT_EVIDENCE_REQUIRED`).
+- acceptance finalization **derives** — never accepts — the per-action
+  invariant evidence from the execution journal bound by digest: the journal
+  artifact is resolved via `SdkDocSync.journalPathForDigest()`, its canonical
+  digest and completion sentinel are verified, and every touched record must
+  trace to a successful `api.versioned-tree-delta` tree-delta outcome on a
+  successful observed action (`INVARIANT_EVIDENCE_REQUIRED` otherwise);
+- the production entrypoint is
+  `bin/sdk-doc-sync.js --finalize-acceptance <receipt>`, where the receipt
+  binds `userConfirmed`, `executionJournalDigest`, `touchedRecords`,
+  `scanStateKey`/`scanStateEntry`, and the target track's `bitable` identity;
+  the derived evidence is persisted in the acceptance receipt.
 
 ## Reconciliation (read-only)
 

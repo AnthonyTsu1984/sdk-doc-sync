@@ -1,5 +1,8 @@
 'use strict';
 
+const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { INVARIANT_ID } = require('./versioned-tree-policy');
+
 function clone(value) {
   return structuredClone(value);
 }
@@ -20,17 +23,18 @@ function targetsBlank(record) {
 }
 
 class AcceptanceFinalizer {
-  constructor({ bitableWriter, readScanState, writeScanState, writeJournal }) {
+  constructor({ bitableWriter, readScanState, writeScanState, writeJournal, readJournalEntries }) {
     if (!bitableWriter?.listRecords || !bitableWriter?.updateRecord) {
       throw new TypeError('bitableWriter with listRecords() and updateRecord() is required');
     }
-    for (const [name, value] of Object.entries({ readScanState, writeScanState, writeJournal })) {
+    for (const [name, value] of Object.entries({ readScanState, writeScanState, writeJournal, readJournalEntries })) {
       if (typeof value !== 'function') throw new TypeError(`${name} is required`);
     }
     this.bitableWriter = bitableWriter;
     this.readScanState = readScanState;
     this.writeScanState = writeScanState;
     this.writeJournal = writeJournal;
+    this.readJournalEntries = readJournalEntries;
   }
 
   async _recordMap() {
@@ -46,18 +50,68 @@ class AcceptanceFinalizer {
     if (!targetsBlank(record)) throw new Error(`Acceptance record ${recordId} must keep Targets blank`);
   }
 
+  // Invariant receipts are DERIVED from the digest-verified execution journal,
+  // never accepted from the caller: the journal artifact is resolved by its
+  // bound digest, must carry the completion sentinel, and every touched record
+  // must trace to a successful api.versioned-tree-delta tree-delta outcome on
+  // a successful observed action.
+  async _deriveInvariantEvidence(executionJournalDigest, touchedRecords) {
+    if (!nonEmptyString(executionJournalDigest)) {
+      throw invariantEvidenceError('The bound execution journal digest is required to derive invariant evidence');
+    }
+    let entries;
+    try {
+      entries = await this.readJournalEntries(executionJournalDigest);
+    } catch (error) {
+      throw invariantEvidenceError(`Execution journal for ${executionJournalDigest} is unreadable: ${error.message}`);
+    }
+    if (!Array.isArray(entries) || entries.length === 0) {
+      throw invariantEvidenceError(`Execution journal for ${executionJournalDigest} is empty or missing`);
+    }
+    if (digestSemantic(entries) !== executionJournalDigest) {
+      throw invariantEvidenceError(`Execution journal artifact does not match the bound digest ${executionJournalDigest}`);
+    }
+    if (!entries.some((entry) => entry.type === 'completion' && entry.completionSentinel === true)) {
+      throw invariantEvidenceError(`Execution journal ${executionJournalDigest} has no completion sentinel; the batch did not complete`);
+    }
+    const evidenceByActionId = new Map();
+    for (const entry of entries) {
+      if (entry?.type !== 'tree-delta' || entry.ok !== true) continue;
+      if (entry.invariantId !== INVARIANT_ID) continue;
+      if (!nonEmptyString(entry.decision)) continue;
+      evidenceByActionId.set(entry.actionId, {
+        actionId: entry.actionId,
+        invariantId: entry.invariantId,
+        decision: entry.decision,
+        verified: true,
+      });
+    }
+    for (const item of touchedRecords) {
+      const evidence = evidenceByActionId.get(item?.actionId);
+      if (!evidence) {
+        throw invariantEvidenceError(`Acceptance requires a verified ${INVARIANT_ID} journal outcome for action ${item?.actionId || '(missing)'}`);
+      }
+      const observed = entries.find((entry) => entry.type === 'observed'
+        && entry.actionId === item.actionId
+        && entry.status === 'success');
+      if (!observed) {
+        throw invariantEvidenceError(`Journal action ${item.actionId} has no successful observed result`);
+      }
+    }
+    return [...evidenceByActionId.values()].sort((left, right) => left.actionId.localeCompare(right.actionId));
+  }
+
   async finalize({
     userConfirmed,
     acceptanceManifestDigest = null,
     executionJournalDigest = null,
     touchedRecords,
-    invariantEvidence,
     scanStateKey,
     scanStateEntry,
   }) {
     if (userConfirmed !== true) throw new Error('Explicit user acceptance is required');
+    if (!nonEmptyString(executionJournalDigest)) throw new Error('executionJournalDigest is required');
     const boundAcceptanceDigest = acceptanceManifestDigest || executionJournalDigest;
-    if (!nonEmptyString(boundAcceptanceDigest)) throw new Error('acceptanceManifestDigest is required');
     if (!Array.isArray(touchedRecords) || touchedRecords.length === 0) throw new Error('Touched records are required');
     if (!nonEmptyString(scanStateKey)) throw new Error('scanStateKey is required');
     if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
@@ -67,31 +121,14 @@ class AcceptanceFinalizer {
     if (recordIds.some((recordId) => !nonEmptyString(recordId)) || new Set(recordIds).size !== recordIds.length) {
       throw new Error('Touched record IDs must be non-empty and unique');
     }
-    // Invariant receipts: every touched record must trace to a verified
-    // post-write invariant outcome (journal tree-delta evidence). A unit whose
-    // tree-delta verification failed or never ran cannot be accepted.
-    const evidenceByActionId = new Map();
-    for (const item of invariantEvidence || []) {
-      if (!nonEmptyString(item?.actionId) || !nonEmptyString(item?.invariantId) || !nonEmptyString(item?.decision)) {
-        throw invariantEvidenceError('Invariant evidence entries require actionId, invariantId, and decision');
-      }
-      if (item.verified !== true) throw invariantEvidenceError(`Invariant evidence for ${item.actionId} is not verified`);
-      if (evidenceByActionId.has(item.actionId)) throw invariantEvidenceError(`Duplicate invariant evidence for ${item.actionId}`);
-      evidenceByActionId.set(item.actionId, {
-        actionId: item.actionId,
-        invariantId: item.invariantId,
-        decision: item.decision,
-        verified: true,
-      });
-    }
     for (const item of touchedRecords) {
       if (!nonEmptyString(item?.actionId)) {
         throw invariantEvidenceError(`Touched record ${item.recordId} has no actionId; acceptance requires per-action invariant evidence`);
       }
-      if (!evidenceByActionId.has(item.actionId)) {
-        throw invariantEvidenceError(`Acceptance requires verified invariant evidence for action ${item.actionId}`);
-      }
     }
+    // Derive (never accept) the invariant evidence from the digest-verified
+    // journal receipt before any state mutation.
+    const derivedEvidence = await this._deriveInvariantEvidence(executionJournalDigest, touchedRecords);
 
     const beforeRecords = await this._recordMap();
     for (const item of touchedRecords) this._validateRecord(item.recordId, beforeRecords.get(item.recordId), 'WIP');
@@ -127,7 +164,7 @@ class AcceptanceFinalizer {
         acceptanceManifestDigest: boundAcceptanceDigest,
         executionJournalDigest: executionJournalDigest || null,
         results,
-        invariantEvidence: [...evidenceByActionId.values()].sort((left, right) => left.actionId.localeCompare(right.actionId)),
+        invariantEvidence: derivedEvidence,
         scanStateKey,
         scanStateEntry: clone(scanStateEntry),
         scanStateUpdated: true,

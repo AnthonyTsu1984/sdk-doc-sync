@@ -73,20 +73,35 @@ function validExpectedFields(fields) {
 function validCategorySpec(category) {
   const folder = category?.folder;
   const repoint = category?.repoint;
+  if (!folder
+    || !nonEmptyString(folder.ref)
+    || !nonEmptyString(folder.name)
+    || !nonEmptyString(folder.parentFolderToken)
+    || !nonEmptyString(folder.versionRootToken)
+    || folder.existingLookup?.checked !== true
+    || folder.existingLookup?.absent !== true) {
+    return false;
+  }
+  if (!repoint
+    || !nonEmptyString(repoint.ref)
+    || repoint.ref === folder.ref
+    || !nonEmptyString(repoint.recordId)
+    || !nonEmptyString(repoint.currentFolderToken)
+    || !validExpectedFields(repoint.expectedFields)) {
+    return false;
+  }
+  // The repoint resource must be assemblable: planResource rejects a
+  // virtual_node_repoint without checked-and-matched record evidence and an
+  // explicit Bitable target, so the spec is invalid without them.
+  const lookup = repoint.existingLookup;
   return Boolean(
-    folder
-    && nonEmptyString(folder.ref)
-    && nonEmptyString(folder.name)
-    && nonEmptyString(folder.parentFolderToken)
-    && nonEmptyString(folder.versionRootToken)
-    && folder.existingLookup?.checked === true
-    && folder.existingLookup?.absent === true
-    && repoint
-    && nonEmptyString(repoint.ref)
-    && repoint.ref !== folder.ref
-    && nonEmptyString(repoint.recordId)
-    && nonEmptyString(repoint.currentFolderToken)
-    && validExpectedFields(repoint.expectedFields),
+    lookup
+    && lookup.checked === true
+    && lookup.matched === true
+    && lookup.recordId === repoint.recordId
+    && lookup.currentFolderToken === repoint.currentFolderToken
+    && nonEmptyString(repoint.baseToken)
+    && nonEmptyString(repoint.tableId),
   );
 }
 
@@ -275,9 +290,10 @@ function categoryResourceDefinitions({ stableId, category }) {
       folderRef: folder.ref,
       currentFolderToken: repoint.currentFolderToken,
       expectedFields: Object.freeze({ ...repoint.expectedFields }),
-      baseToken: repoint.baseToken ?? null,
-      tableId: repoint.tableId ?? null,
+      baseToken: repoint.baseToken,
+      tableId: repoint.tableId,
       dependsOn: Object.freeze([folder.ref, stableId]),
+      existingLookup: Object.freeze({ ...repoint.existingLookup }),
     }),
   ]);
 }

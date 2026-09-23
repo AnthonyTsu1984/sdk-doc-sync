@@ -2,11 +2,14 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { buildAcceptanceManifest } = require('../src/sdk-doc-sync/review-units');
-const { parseArgs, runCli } = require('../bin/sdk-doc-sync');
+const { loadReviewSession } = require('../src/sdk-doc-sync/review-session-store');
+const { parseArgs } = require('../bin/sdk-doc-sync');
 
 const INVARIANT_ID = 'api.versioned-tree-delta';
 
@@ -20,11 +23,12 @@ function unitJournal(actionId) {
     return { entries, digest: digestSemantic(entries) };
 }
 
-// Builds the acceptance-pending session the receipt embeds, plus its
-// digest-addressable journals.
-function acceptancePendingSession() {
+// Writes the canonical acceptance-pending session fixture to a real file and
+// returns its path plus the digest-addressable unit journals.
+function writeCanonicalSession(directory, { tamperDigest = null } = {}) {
     const actionId = 'action-a';
     const { entries, digest } = unitJournal(actionId);
+    const boundDigest = tamperDigest || digest;
     const reviewUnitManifest = {
         schemaVersion: 1,
         units: [{
@@ -44,169 +48,118 @@ function acceptancePendingSession() {
     };
     const acceptedReviewUnits = [{
         reviewUnitId: 'review:node:Collections:createCollection',
-        executionJournalDigest: digest,
+        executionJournalDigest: boundDigest,
         touchedRecords: [{ actionId, recordId: 'rec-a' }],
     }];
     const acceptanceManifest = buildAcceptanceManifest(reviewUnitManifest, acceptedReviewUnits);
     const session = {
         schemaVersion: 1,
         sessionId: 'session-fixture',
+        language: 'cpp',
+        sdkName: 'Milvus C++ SDK',
+        track: 'v3.0.x',
         status: 'acceptance_pending',
         reviewUnitManifest,
+        reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
         acceptedReviewUnits,
         acceptanceManifest: structuredClone(acceptanceManifest),
         acceptanceManifestDigest: acceptanceManifest.acceptanceManifestDigest,
         scanStateUpdated: false,
     };
-    const journals = new Map([[digest, entries]]);
-    return { session, journals };
+    const sessionPath = path.join(directory, 'review-session.json');
+    fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+    return { sessionPath, session, journals: new Map([[boundDigest, entries]]) };
 }
 
-function receiptJson({ withSession = true } = {}) {
-    const { session, journals } = acceptancePendingSession();
-    if (withSession) {
-        return {
-            json: JSON.stringify({
-                userConfirmed: true,
-                reviewSession: session,
-                scanStateKey: 'cpp-v30',
-                scanStateEntry: { lastScannedTag: 'v3.0.5' },
-                bitable: { baseToken: 'base-v30', tableId: 'table-v30' },
-            }),
-            session,
-            journals,
-        };
-    }
-    // The bypass shape the reviewer called out: a bare execution-journal
-    // digest with caller-asserted touched records and no acceptance manifest.
-    const [[digest]] = journals;
-    return {
-        json: JSON.stringify({
-            userConfirmed: true,
-            executionJournalDigest: digest,
-            touchedRecords: [{ actionId: 'action-a', recordId: 'rec-a' }],
-            scanStateKey: 'cpp-v30',
-            scanStateEntry: { lastScannedTag: 'v3.0.5' },
-            bitable: { baseToken: 'base-v30', tableId: 'table-v30' },
-        }),
-        session: null,
-        journals,
-    };
+function receiptJson({ session, embedSession = false, manifestDigestOverride = null }) {
+    return JSON.stringify({
+        userConfirmed: true,
+        acceptanceManifestDigest: manifestDigestOverride || session.acceptanceManifestDigest,
+        ...(embedSession ? { reviewSession: session } : {}),
+        scanStateKey: 'cpp-v30',
+        scanStateEntry: { lastScannedTag: 'v3.0.5' },
+        bitable: { baseToken: 'base-v30', tableId: 'table-v30' },
+    });
 }
 
-test('parseArgs recognizes --finalize-acceptance', () => {
-    const args = parseArgs(['node', 'sdk-doc-sync.js', '--finalize-acceptance', 'receipt.json']);
-    assert.equal(args.finalizeAcceptance, 'receipt.json');
-});
-
-test('finalizeAcceptance rejects malformed receipts before touching any writer', async () => {
-    const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
-    const stderr = [];
-    const exits = [];
-    const exit = (code = 0) => {
-        exits.push(code);
+function failingExit(codes) {
+    return (code = 0) => {
+        codes.push(code);
         const error = new Error(`exit ${code}`);
         error.exitCode = code;
         throw error;
     };
-    const io = {};
+}
 
+test('parseArgs recognizes --finalize-acceptance together with --session-state', () => {
+    const args = parseArgs(['node', 'sdk-doc-sync.js', '--finalize-acceptance', 'receipt.json', '--session-state', 'session.json']);
+    assert.equal(args.finalizeAcceptance, 'receipt.json');
+    assert.equal(args.sessionState, 'session.json');
+});
+
+test('finalizeAcceptance requires the canonical session and rejects receipt-embedded sessions', async () => {
+    const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
+    const stderr = [];
+    const exits = [];
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'finalize-cli-'));
+    const { sessionPath, session } = writeCanonicalSession(directory);
+    const io = {
+        bitableWriter: {
+            async listRecords() { throw new Error('no writer call may happen'); },
+            async updateRecord() { throw new Error('no writer call may happen'); },
+        },
+        readScanState: async () => ({}),
+        writeScanState: async () => {},
+        writeJournal: async () => { throw new Error('no receipt may be written'); },
+        readJournalEntries: async () => { throw new Error('no journal may be read'); },
+    };
+    const call = (overrides = {}) => finalizeAcceptance({
+        receiptPath: 'receipt.json',
+        sessionPath,
+        readFile: () => receiptJson({ session }),
+        out: () => {},
+        err: (line) => stderr.push(line),
+        exit: failingExit(exits),
+        io,
+        ...overrides,
+    });
+
+    // Missing --session-state.
+    await assert.rejects(() => call({ sessionPath: undefined }), /exit 1/);
+    assert.match(stderr.at(-1), /requires --session-state/);
+
+    // Receipt embedding a session is refused outright.
     await assert.rejects(
-        () => finalizeAcceptance({
-            receiptPath: 'missing.json',
-            readFile: () => { throw new Error('ENOENT'); },
-            out: () => {},
-            err: (line) => stderr.push(line),
-            exit,
-            io,
-        }),
+        () => call({ readFile: () => receiptJson({ session, embedSession: true }) }),
         /exit 1/,
     );
-    assert.match(stderr[0], /receipt is unreadable/);
+    assert.match(stderr.at(-1), /must not embed a reviewSession/);
 
+    // Receipt digest does not match the canonical session's approval.
     await assert.rejects(
-        () => finalizeAcceptance({
-            receiptPath: 'receipt.json',
-            readFile: () => JSON.stringify({ touchedRecords: [{ actionId: 'a', recordId: 'rec-a' }] }),
-            out: () => {},
-            err: (line) => stderr.push(line),
-            exit,
-            io,
-        }),
+        () => call({ readFile: () => receiptJson({ session, manifestDigestOverride: `sha256:${'0'.repeat(64)}` }) }),
         /exit 1/,
     );
-    assert.match(stderr.at(-1), /acceptance-pending reviewSession/);
+    assert.match(stderr.at(-1), /but the canonical session is bound to/);
 
-    await assert.rejects(
-        () => finalizeAcceptance({
-            receiptPath: 'receipt.json',
-            readFile: () => JSON.stringify({ reviewSession: { status: 'acceptance_pending' } }),
-            out: () => {},
-            err: (line) => stderr.push(line),
-            exit,
-            io,
-        }),
-        /exit 1/,
-    );
-    assert.match(stderr.at(-1), /bitable\.baseToken/);
     assert.deepEqual(exits, [1, 1, 1]);
 });
 
-test('finalizeAcceptance refuses a receipt that carries only a single execution journal', async () => {
+test('finalizeAcceptance finalizes from the canonical session, records finalization, and saves the session', async () => {
     const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
-    const receipt = receiptJson({ withSession: false });
-    const stderr = [];
-    const exits = [];
-    let writerTouched = false;
-
-    await assert.rejects(
-        () => finalizeAcceptance({
-            receiptPath: 'receipt.json',
-            readFile: () => receipt.json,
-            out: () => {},
-            err: (line) => stderr.push(line),
-            exit: (code = 0) => {
-                exits.push(code);
-                const error = new Error(`exit ${code}`);
-                error.exitCode = code;
-                throw error;
-            },
-            io: {
-                bitableWriter: {
-                    async listRecords() {
-                        writerTouched = true;
-                        return [];
-                    },
-                    async updateRecord() {},
-                },
-                readScanState: async () => ({}),
-                writeScanState: async () => {},
-                writeJournal: async () => {},
-                readJournalEntries: async () => {
-                    throw new Error('no journal may be read for a receipt without a session');
-                },
-            },
-        }),
-        /exit 1/,
-    );
-    assert.match(stderr[0], /acceptance-pending reviewSession/);
-    assert.deepEqual(exits, [1]);
-    assert.equal(writerTouched, false);
-});
-
-test('finalizeAcceptance derives invariant evidence from the accepted-unit manifest and runs the finalizer', async () => {
-    const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
-    const receipt = receiptJson();
-    const written = [];
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'finalize-cli-'));
+    const { sessionPath, session, journals } = writeCanonicalSession(directory);
     const stdout = [];
-    let readDigests = [];
     let bitableWrites = 0;
+    let readDigests = [];
+    const acceptedReceipts = [];
 
-    const result = await finalizeAcceptance({
-        receiptPath: 'receipt.json',
+    const finalized = await finalizeAcceptance({
+        receiptPath: path.join(directory, 'receipt.json'),
+        sessionPath,
         readFile: (file) => {
-            assert.equal(path.resolve(file), path.resolve('receipt.json'));
-            return receipt.json;
+            assert.equal(path.resolve(file), path.resolve(path.join(directory, 'receipt.json')));
+            return receiptJson({ session });
         },
         out: (line) => stdout.push(line),
         err: () => {},
@@ -227,68 +180,83 @@ test('finalizeAcceptance derives invariant evidence from the accepted-unit manif
             })(),
             readScanState: async () => ({}),
             writeScanState: async () => {},
-            writeJournal: async (journal) => written.push(journal),
+            writeJournal: async (journal) => {
+                const receiptOut = path.join(directory, 'acceptance-receipt.json');
+                fs.writeFileSync(receiptOut, `${JSON.stringify(journal, null, 2)}\n`);
+                acceptedReceipts.push(journal);
+                return { path: receiptOut, digest: digestSemantic(journal) };
+            },
             readJournalEntries: async (requested) => {
                 readDigests.push(requested);
-                const entries = receipt.journals.get(requested);
+                const entries = journals.get(requested);
                 if (!entries) throw new Error(`unknown journal ${requested}`);
                 return structuredClone(entries);
             },
         },
     });
 
-    assert.equal(result.status, 'accepted');
+    assert.equal(finalized.status, 'finalized');
     assert.equal(bitableWrites, 1);
     assert.equal(readDigests.length, 1);
-    const [[journal]] = written.length ? [written] : [[]];
-    assert.ok(journal, 'acceptance journal must be written');
-    assert.equal(journal.acceptanceManifestDigest, receipt.session.acceptanceManifestDigest);
-    assert.deepEqual(journal.invariantEvidence, [
+    assert.equal(acceptedReceipts.length, 1);
+    assert.equal(acceptedReceipts[0].acceptanceManifestDigest, session.acceptanceManifestDigest);
+    assert.deepEqual(acceptedReceipts[0].invariantEvidence, [
         { actionId: 'action-a', invariantId: INVARIANT_ID, decision: 'COPY_PATCH_AND_REPOINT', verified: true },
     ]);
-    assert.match(stdout[0], /derived from the accepted-unit manifest/);
+
+    // The canonical session left acceptance_pending: the persisted file is
+    // finalized and bound to the durable acceptance receipt.
+    const persisted = loadReviewSession(sessionPath);
+    assert.equal(persisted.status, 'finalized');
+    assert.equal(persisted.scanStateUpdated, true);
+    assert.equal(persisted.finalizationJournalDigest, digestSemantic(acceptedReceipts[0]));
+    assert.match(stdout[0], /canonical session/);
 });
 
-test('finalizeAcceptance surfaces manifest/journal failures as INVARIANT_EVIDENCE_REQUIRED', async () => {
+test('finalizeAcceptance fails loudly when the acceptance receipt is not durable', async () => {
     const { finalizeAcceptance } = require('../bin/sdk-doc-sync');
-    const receipt = receiptJson();
-    const tamperedSession = receipt.session;
-    tamperedSession.acceptanceManifestDigest = `sha256:${'0'.repeat(64)}`;
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'finalize-cli-'));
+    const { sessionPath, session, journals } = writeCanonicalSession(directory);
     const stderr = [];
     const exits = [];
 
+    // The writeJournal override claims success but never writes the file, so
+    // recordAcceptanceFinalization cannot prove the receipt — finalization
+    // must fail and the session must stay acceptance_pending.
     await assert.rejects(
         () => finalizeAcceptance({
-            receiptPath: 'receipt.json',
-            readFile: () => JSON.stringify({
-                userConfirmed: true,
-                reviewSession: tamperedSession,
-                scanStateKey: 'cpp-v30',
-                scanStateEntry: { lastScannedTag: 'v3.0.5' },
-                bitable: { baseToken: 'base-v30' },
-            }),
+            receiptPath: path.join(directory, 'receipt.json'),
+            sessionPath,
+            readFile: () => receiptJson({ session }),
             out: () => {},
             err: (line) => stderr.push(line),
-            exit: (code = 0) => {
-                exits.push(code);
-                const error = new Error(`exit ${code}`);
-                error.exitCode = code;
-                throw error;
-            },
+            exit: failingExit(exits),
             io: {
-                bitableWriter: {
-                    async listRecords() { return []; },
-                    async updateRecord() {},
-                },
+                bitableWriter: (() => {
+                    let records = [{ record_id: 'rec-a', fields: { Progress: 'WIP', Targets: [] } }];
+                    return {
+                        async listRecords() { return structuredClone(records); },
+                        async updateRecord(recordId, fields) {
+                            records = records.map((item) => item.record_id === recordId
+                                ? { ...item, fields: { ...item.fields, Progress: fields.progress } }
+                                : item);
+                        },
+                    };
+                })(),
                 readScanState: async () => ({}),
                 writeScanState: async () => {},
-                writeJournal: async () => {},
-                readJournalEntries: async () => [],
+                writeJournal: async () => ({ path: path.join(directory, 'missing-receipt.json'), digest: `sha256:${'1'.repeat(64)}` }),
+                readJournalEntries: async (requested) => {
+                    const entries = journals.get(requested);
+                    if (!entries) throw new Error(`unknown journal ${requested}`);
+                    return structuredClone(entries);
+                },
             },
         }),
         /exit 1/,
     );
-    assert.match(stderr[0], /INVARIANT_EVIDENCE_REQUIRED/);
-    assert.match(stderr[0], /does not match the recomputed manifest/);
+    assert.match(stderr[0], /ACCEPTANCE_FAILED/);
     assert.deepEqual(exits, [1]);
+    const persisted = loadReviewSession(sessionPath);
+    assert.equal(persisted.status, 'acceptance_pending');
 });

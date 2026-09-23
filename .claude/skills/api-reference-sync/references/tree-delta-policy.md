@@ -108,10 +108,16 @@ After execution:
   action for every touched record. A single execution journal is not
   sufficient for finalization;
 - the production entrypoint is
-  `bin/sdk-doc-sync.js --finalize-acceptance <receipt>`, where the receipt
-  embeds the acceptance-pending session plus `userConfirmed`, the target
-  track's `bitable` identity, and the scan-state payload to record; the
-  derived evidence is persisted in the acceptance receipt.
+  `bin/sdk-doc-sync.js --finalize-acceptance <receipt> --session-state <file>`.
+  The CANONICAL persisted session on disk is the only accepted authority: the
+  receipt may not embed a session, must carry the `acceptanceManifestDigest`
+  it confirms (which must equal the canonical session's), the target track's
+  `bitable` identity, and the scan-state payload. After the finalizer's
+  acceptance receipt is durable, the CLI calls `recordAcceptanceFinalization`
+  (re-validating the receipt artifact from disk) and `saveReviewSession`, so
+  the canonical session provably leaves `acceptance_pending` — a hand-authored
+  receipt cannot finalize a session that was never built and persisted by the
+  review flow.
 
 ## Reconciliation (read-only)
 

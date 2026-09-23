@@ -276,6 +276,42 @@ test('transition detection ignores strengthening and declared-only changes', () 
 
   // Identical registries report no transition.
   assert.deepEqual(detectEnforcementTransitions({ baseRegistry: base, headRegistry: base }), []);
+
+  // Adding codes to an existing enforcer (same stage+module) is strengthening:
+  // the per-stage+module comparison must not report a weakened-coverage.
+  const additionalCodes = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: {
+      schemaVersion: 1,
+      skill: 'test-skill',
+      invariants: [runtimeInvariant({
+        enforcers: [
+          { stage: 'plan', module: 'skills/test-skill/src/policy.js', codes: ['BLOCK_A', 'BLOCK_A2', 'BLOCK_A3'] },
+          { stage: 'pre-write', module: 'skills/test-skill/src/exec.js', codes: ['BLOCK_B'] },
+        ],
+      })],
+    },
+  });
+  assert.deepEqual(additionalCodes, []);
+
+  // Losing individual codes from an enforcer is still weakened coverage.
+  const lostCodes = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: {
+      schemaVersion: 1,
+      skill: 'test-skill',
+      invariants: [runtimeInvariant({
+        enforcers: [
+          { stage: 'plan', module: 'skills/test-skill/src/policy.js', codes: ['BLOCK_A2'] },
+          { stage: 'pre-write', module: 'skills/test-skill/src/exec.js', codes: ['BLOCK_B'] },
+        ],
+      })],
+    },
+  });
+  assert.equal(lostCodes[0].transition, 'weakened-coverage');
+  assert.deepEqual(lostCodes[0].detail.lostEnforcers, [
+    { key: 'plan|skills/test-skill/src/policy.js', lostCodes: ['BLOCK_A'] },
+  ]);
 });
 
 test('waiver validation enforces schema, approval, and expiry', () => {

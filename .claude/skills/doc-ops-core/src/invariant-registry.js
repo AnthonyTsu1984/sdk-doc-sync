@@ -257,22 +257,24 @@ function checkSkillInvariantCoverage({
   };
 }
 
-function enforcerKey(enforcer) {
-  return [
-    enforcer?.stage || '',
-    enforcer?.module || '',
-    [...(enforcer?.codes || [])].sort().join(','),
-  ].join('|');
-}
-
 // Compares the base and head registries and reports every transition that
 // weakens enforcement of a previously runtime-enforced invariant: outright
 // removal, status downgrade, or loss of fixtures / enforcement stages /
-// enforcer bindings. Strengthening transitions (declared -> runtime-enforced,
-// added coverage) are never reported.
+// enforcer codes. Enforcers are compared per stage+module with codes merged,
+// so adding codes (or a new module) is strengthening and never reported.
 function detectEnforcementTransitions({ baseRegistry, headRegistry }) {
   const transitions = [];
   const headById = new Map((headRegistry?.invariants || []).map((entry) => [entry?.id, entry]));
+  const enforcerMap = (registry) => {
+    const map = new Map();
+    for (const enforcer of registry?.enforcers || []) {
+      const key = `${enforcer?.stage || ''}|${enforcer?.module || ''}`;
+      const codes = map.get(key) || new Set();
+      for (const code of enforcer?.codes || []) codes.add(code);
+      map.set(key, codes);
+    }
+    return map;
+  };
   for (const base of baseRegistry?.invariants || []) {
     if (base?.status !== 'runtime-enforced') continue;
     const head = headById.get(base.id);
@@ -296,10 +298,18 @@ function detectEnforcementTransitions({ baseRegistry, headRegistry }) {
     const lostFixtures = (base.fixtureIds || []).filter((fixtureId) => !headFixtures.has(fixtureId));
     const headStages = new Set(head.enforcement || []);
     const lostStages = (base.enforcement || []).filter((stage) => !headStages.has(stage));
-    const headEnforcers = new Set((head.enforcers || []).map(enforcerKey));
-    const lostEnforcers = (base.enforcers || [])
-      .map(enforcerKey)
-      .filter((key) => !headEnforcers.has(key));
+    const baseEnforcers = enforcerMap(base);
+    const headEnforcers = enforcerMap(head);
+    const lostEnforcers = [];
+    for (const [key, codes] of baseEnforcers) {
+      const headCodes = headEnforcers.get(key);
+      if (!headCodes) {
+        lostEnforcers.push({ key, lostCodes: [...codes].sort() });
+        continue;
+      }
+      const missingCodes = [...codes].filter((code) => !headCodes.has(code)).sort();
+      if (missingCodes.length > 0) lostEnforcers.push({ key, lostCodes: missingCodes });
+    }
     if (lostFixtures.length > 0 || lostStages.length > 0 || lostEnforcers.length > 0) {
       transitions.push({
         invariantId: base.id,

@@ -83,6 +83,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/evidence-manifest.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',
+    '.claude/skills/api-reference-sync/tests/finalize-acceptance-cli.test.js',
     '.claude/skills/api-reference-sync/tests/inheritance-evidence.test.js',
     '.claude/skills/api-reference-sync/tests/invariant-conformance.test.js',
     '.claude/skills/api-reference-sync/tests/lark-cli-ops.test.js',
@@ -127,6 +128,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/sync-planner.test.js',
     '.claude/skills/api-reference-sync/tests/token-reference-reader.test.js',
     '.claude/skills/api-reference-sync/tests/type-url-index.test.js',
+    '.claude/skills/api-reference-sync/tests/versioned-tree-policy.test.js',
     '.claude/skills/api-reference-sync/tests/zilliz-cli-release-impact.test.js',
   ]);
 });

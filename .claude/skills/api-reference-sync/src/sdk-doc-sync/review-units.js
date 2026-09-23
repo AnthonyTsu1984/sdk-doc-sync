@@ -27,6 +27,24 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { document
   const assignedResourceIds = new Set();
   const entriesByUnitId = new Map();
 
+  // Downstream structural resources (e.g. a category VirtualNode repoint) are
+  // planned as separate resource actions that DEPEND ON the document action.
+  // They must ride the document's review unit so the exact approval digest
+  // covers the entire transition and no orphan resource action remains.
+  const downstreamResourceIdsByDocumentId = new Map();
+  for (const entry of actionable) {
+    if (entry.kind !== 'resource') continue;
+    for (const dependency of entry.plan.dependencies || []) {
+      const dependencyId = planIdForDependency(dependency, byPlanId);
+      const dependencyEntry = dependencyId ? byPlanId.get(dependencyId) : null;
+      if (dependencyEntry?.kind !== 'document') continue;
+      const documentId = dependencyEntry.plan.stableId;
+      const ids = downstreamResourceIdsByDocumentId.get(documentId) || new Set();
+      ids.add(entry.plan.stableId);
+      downstreamResourceIdsByDocumentId.set(documentId, ids);
+    }
+  }
+
   const units = documentEntries.map((documentEntry) => {
     const selectedIds = new Set(documentEntry.plan.action === 'NOOP' ? [] : [documentEntry.plan.stableId]);
     const prerequisiteReviewUnitIds = new Set();
@@ -45,6 +63,12 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { document
       selectedIds.add(dependencyId);
       assignedResourceIds.add(dependencyId);
       pending.push(...(dependencyEntry.plan.dependencies || []));
+    }
+
+    for (const downstreamId of downstreamResourceIdsByDocumentId.get(documentEntry.plan.stableId) || []) {
+      if (selectedIds.has(downstreamId)) continue;
+      selectedIds.add(downstreamId);
+      assignedResourceIds.add(downstreamId);
     }
 
     const entries = actionable.filter((entry) => selectedIds.has(entry.plan.stableId));

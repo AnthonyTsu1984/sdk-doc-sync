@@ -11,6 +11,10 @@ const {
   evidenceShared,
   validateInheritanceEvidence,
 } = require('./inheritance-evidence');
+const {
+  DECISIONS,
+  evaluateVersionedTreeDelta,
+} = require('./versioned-tree-policy');
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
@@ -222,12 +226,19 @@ class SyncPlanner {
       throw new SyncPlanningError('RESOURCE_REF_REQUIRED', 'A stable resource ref is required');
     }
     const lookup = resource.existingLookup || {};
-    if (lookup.checked !== true || lookup.absent !== true) {
+    if (resource.kind === 'virtual_node_repoint') {
+      // A repoint targets an EXISTING VirtualNode: the evidence must attest a
+      // matched record, not an absent one.
+      if (lookup.checked !== true || lookup.matched !== true || lookup.recordId !== resource.recordId) {
+        throw new SyncPlanningError('RESOURCE_LOOKUP_REQUIRED', `Resource ${ref} requires checked-and-matched lookup evidence for the repointed record`);
+      }
+    } else if (lookup.checked !== true || lookup.absent !== true) {
       throw new SyncPlanningError('RESOURCE_LOOKUP_REQUIRED', `Resource ${ref} requires checked-and-absent lookup evidence`);
     }
     const dependencies = [...new Set((resource.dependsOn || []).filter(nonEmptyString))];
     let action;
     let postconditions;
+    let preconditions = [{ type: 'RESOURCE_ABSENT', ref, lookup: deepClone(lookup) }];
     if (resource.kind === 'folder') {
       if (!nonEmptyString(resource.name)
         || !nonEmptyString(resource.parentFolderToken)
@@ -236,30 +247,69 @@ class SyncPlanner {
         || lookup.name !== resource.name) {
         throw new SyncPlanningError('FOLDER_RESOURCE_INVALID', `Folder resource ${ref} requires canonical parent, root, name, and absent lookup evidence`);
       }
+      if (resource.repointVirtualNode !== undefined) {
+        // Phase 2 DAG split: repointing the category VirtualNode inside the
+        // folder action produces CREATE_FOLDER -> REPOINT before the document
+        // action. The invariant requires the repoint to run only after the
+        // copied document is verified, so it must be planned as its own
+        // virtual_node_repoint resource instead.
+        throw new SyncPlanningError(
+          'VIRTUAL_NODE_REPOINT_REQUIRED',
+          `Folder resource ${ref} must not embed repointVirtualNode; plan a separate virtual_node_repoint resource that depends on the folder and the document action`,
+        );
+      }
       action = 'CREATE_FOLDER';
       postconditions = [
         { type: 'RESOURCE_RESOLVED', ref, value: 'NEW_FOLDER_TOKEN' },
         { type: 'TARGET_ANCESTRY', folderRef: ref, versionRootToken: resource.versionRootToken },
       ];
-      if (resource.repointVirtualNode?.recordId) {
-        const expectedFields = resource.repointVirtualNode.expectedFields || {};
-        if (!nonEmptyString(resource.repointVirtualNode.currentFolderToken)
-          || expectedFields.type !== 'VirtualNode'
-          || !Array.isArray(expectedFields.targets)
-          || !nonEmptyString(expectedFields.progress)
-          || !nonEmptyString(expectedFields.slug)) {
-          throw new SyncPlanningError(
-            'VIRTUAL_NODE_REPOINT_EVIDENCE_REQUIRED',
-            `Folder resource ${ref} requires current link and preserved VirtualNode field evidence`,
-          );
-        }
-        postconditions.push({
-          type: 'VIRTUAL_NODE_LINK',
-          recordId: resource.repointVirtualNode.recordId,
-          folderRef: ref,
-          preservedFields: deepClone(expectedFields),
-        });
+    } else if (resource.kind === 'virtual_node_repoint') {
+      const expectedFields = resource.expectedFields || {};
+      const documentDependencies = dependencies.filter((dependency) => dependency !== resource.folderRef);
+      if (!nonEmptyString(resource.recordId)
+        || !nonEmptyString(resource.folderRef)
+        || !nonEmptyString(resource.baseToken)
+        || !nonEmptyString(resource.tableId)
+        || !dependencies.includes(resource.folderRef)
+        || documentDependencies.length === 0
+        || !nonEmptyString(resource.currentFolderToken)
+        || expectedFields.type !== 'VirtualNode'
+        || !Array.isArray(expectedFields.targets)
+        || expectedFields.targets.length === 0
+        || !expectedFields.targets.every(nonEmptyString)
+        || !nonEmptyString(expectedFields.progress)
+        || !nonEmptyString(expectedFields.slug)) {
+        throw new SyncPlanningError(
+          'VIRTUAL_NODE_REPOINT_RESOURCE_INVALID',
+          `VirtualNode repoint resource ${ref} requires the folder and document dependencies, the current folder link, and preserved VirtualNode field evidence`,
+        );
       }
+      action = 'REPOINT_CATEGORY_VIRTUAL_NODE';
+      postconditions = [
+        { type: 'RESOURCE_RESOLVED', ref, value: 'REPOINTED' },
+        {
+          type: 'VIRTUAL_NODE_LINK',
+          recordId: resource.recordId,
+          folderRef: resource.folderRef,
+          preservedFields: deepClone(expectedFields),
+        },
+      ];
+      // A repoint updates an existing VirtualNode: its precondition is the
+      // approved CURRENT link plus intact structural fields (re-verified live
+      // pre-write), and it must run only after the document action it
+      // depends on completed with verified postconditions.
+      preconditions = [
+        {
+          type: 'VIRTUAL_NODE_CURRENT_LINK',
+          recordId: resource.recordId,
+          currentFolderToken: resource.currentFolderToken,
+          preservedFields: deepClone(expectedFields),
+        },
+        ...documentDependencies.map((dependency) => ({
+          type: 'DOCUMENT_ACTION_VERIFIED',
+          stableId: dependency,
+        })),
+      ];
     } else if (resource.kind === 'virtual_node') {
       if (!nonEmptyString(resource.title)
         || !nonEmptyString(resource.folderRef)
@@ -297,7 +347,7 @@ class SyncPlanner {
       artifactDigest: null,
       resource,
       dependencies,
-      preconditions: [{ type: 'RESOURCE_ABSENT', ref, lookup: deepClone(lookup) }],
+      preconditions,
       postconditions,
       metadata: { diffAction: action, artifactKind: 'dependent-resource' },
     }));
@@ -498,6 +548,60 @@ class SyncPlanner {
       inheritanceEvidence = context.inheritanceEvidence;
     }
     const shared = inheritanceEvidence ? evidenceShared(inheritanceEvidence) : false;
+    // Phase 2: the versioned-tree policy kernel is the single decision
+    // authority for delta transitions. Every document write plan carries its
+    // attestation (bound into the plan digest); a blocked decision never
+    // produces a plan.
+    let invariantAttestations = null;
+    let treeDecision = null;
+    if (diffAction === 'UPDATE') {
+      const treeDelta = evaluateVersionedTreeDelta({
+        operation: 'UPDATE',
+        stableId,
+        sourceDiff: 'changed',
+        inheritanceEvidence,
+        current: {
+          version: source.version,
+          recordId: source.recordId,
+          documentToken: source.documentToken,
+          folderToken: source.folderToken,
+          ancestryVerified: currentProof.ancestryVerified === true,
+        },
+        target,
+        category: context.treeDelta?.category ?? null,
+      });
+      if (treeDelta.status === 'blocked') {
+        throw new SyncPlanningError(
+          treeDelta.blocker,
+          `Versioned-tree delta policy blocked ${stableId}: ${treeDelta.detail}`,
+          { detail: treeDelta.detail },
+        );
+      }
+      if (treeDelta.decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE
+        && context.treeDelta.category.folder.ref !== target.folderRef) {
+        throw new SyncPlanningError(
+          'TREE_DELTA_CATEGORY_MISMATCH',
+          `Category resource spec targets ${context.treeDelta.category.folder.ref} but the document plan depends on ${target.folderRef} for ${stableId}`,
+        );
+      }
+      invariantAttestations = [treeDelta.attestation];
+      treeDecision = treeDelta.decision;
+    } else if (CREATE_LIKE_ACTIONS.has(diffAction)) {
+      const treeDelta = evaluateVersionedTreeDelta({
+        operation: diffAction,
+        stableId,
+        existingRecordLookup: context.existingRecordLookup,
+        target,
+      });
+      if (treeDelta.status === 'blocked') {
+        throw new SyncPlanningError(
+          treeDelta.blocker,
+          `Versioned-tree delta policy blocked ${stableId}: ${treeDelta.detail}`,
+          { detail: treeDelta.detail },
+        );
+      }
+      invariantAttestations = [treeDelta.attestation];
+    }
     const preconditions = [];
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });
     preconditions.push({
@@ -534,12 +638,7 @@ class SyncPlanner {
         postconditions = this._writePostconditions(target, source, plannedAction);
         break;
       case 'UPDATE': {
-        const safeInPlace = source.version === target.version
-          && nonEmptyString(source.documentToken)
-          && source.folderToken === target.folderToken
-          && currentProof.ancestryVerified === true
-          && currentProof.placementVerified === true
-          && !shared;
+        const safeInPlace = treeDecision === DECISIONS.UPDATE_IN_PLACE_VERIFIED_UNSHARED;
         let copySource = null;
         if (!safeInPlace) {
           copySource = copySourceFrom(context);
@@ -606,6 +705,13 @@ class SyncPlanner {
         docsResourceType: 'docx',
       });
     }
+    if (invariantAttestations) {
+      metadata.invariantDecision = invariantAttestations[0].decision;
+      if (invariantAttestations[0].decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
+        metadata.categoryCreate = true;
+        metadata.requiredResourceDag = deepClone(invariantAttestations[0].requiredResourceDag);
+      }
+    }
 
     return deepFreeze(deepClone({
       schemaVersion: 1,
@@ -617,6 +723,7 @@ class SyncPlanner {
       organizationInventory: context.organizationInventory,
       releasePlacement: context.releasePlacement,
       inheritanceEvidence: inheritanceEvidence ? deepClone(inheritanceEvidence) : undefined,
+      invariantAttestations: invariantAttestations ? deepClone(invariantAttestations) : undefined,
       apiPatchPlan: context.artifact?.layout && diffAction === 'UPDATE'
         ? context.apiPatchPlan
         : undefined,

@@ -937,6 +937,7 @@ test('execution batch construction cannot bypass an unselected document dependen
       dependencies: ['node:Collections:prerequisite'],
       source: { documentToken: 'doc-dependent' },
       target: {},
+      invariantAttestations: [minimalAttestation()],
     },
   }];
 
@@ -969,6 +970,7 @@ test('execution batch includes resource plans and normalizes raw resource refs i
     stableId: 'node:Authentication:connect',
     dependencies: ['folder:node:v30:Authentication'],
     target: { folderRef: 'folder:node:v30:Authentication' },
+    invariantAttestations: [minimalAttestation('CREATE_ADDED_IDENTITY')],
   });
   const entries = [{ plan: resourcePlan }, { plan: documentPlan }];
   const batch = SdkDocSync.buildExecutionBatch(entries);
@@ -1001,6 +1003,7 @@ test('review-unit manifest creates one deterministic document batch with its req
       stableId,
       dependencies: ['folder:node:v30:Authentication'],
       target: { folderRef: 'folder:node:v30:Authentication' },
+      invariantAttestations: [minimalAttestation('CREATE_ADDED_IDENTITY')],
     }),
   });
   const entries = [document('node:Authentication:disconnect'), resource, document('node:Authentication:connect')];
@@ -1029,6 +1032,7 @@ test('review-unit manifest records document prerequisites without batching two d
       stableId: 'node:Collections:parent',
       dependencies: [],
       source: { documentToken: 'parent-doc' },
+      invariantAttestations: [minimalAttestation()],
     }),
   }, {
     kind: 'document',
@@ -1038,6 +1042,7 @@ test('review-unit manifest records document prerequisites without batching two d
       stableId: 'node:Collections:child',
       dependencies: ['node:Collections:parent'],
       source: { documentToken: 'child-doc' },
+      invariantAttestations: [minimalAttestation()],
     }),
   }];
 
@@ -1057,6 +1062,7 @@ test('review-unit manifest remains stable when an accepted document replans as N
       stableId,
       dependencies,
       source: { documentToken: `doc-${stableId.at(-1)}` },
+      invariantAttestations: [minimalAttestation()],
     }),
   });
   const initial = buildReviewUnitManifest([
@@ -1085,6 +1091,7 @@ test('review-unit manifest digest binds stable inter-document prerequisites', ()
       stableId,
       dependencies,
       source: { documentToken: `doc-${stableId.at(-1)}` },
+      invariantAttestations: [minimalAttestation()],
     }),
   });
   const independent = buildReviewUnitManifest([
@@ -1125,6 +1132,16 @@ test('acceptance manifest binds every document-unit journal and touched-record i
   assert.throws(() => buildAcceptanceManifest(reviewUnitManifest, [accepted.acceptedUnits[0]]), /must exactly match/);
 });
 
+function minimalAttestation(decision = 'UPDATE_IN_PLACE_VERIFIED_UNSHARED') {
+  return {
+    id: 'api.versioned-tree-delta',
+    version: 2,
+    inputDigest: 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    decision,
+    evidenceDigest: null,
+  };
+}
+
 test('resource plan changes are bound into the execution batch digest', () => {
   const resource = (name) => new SyncPlanner().planResource({
     kind: 'folder',
@@ -1146,7 +1163,7 @@ test('resource plan changes are bound into the execution batch digest', () => {
   assert.notEqual(first.batchDigest, second.batchDigest);
 });
 
-test('SyncPlanner creates an approval-gated folder resource plan with optional VirtualNode repointing', () => {
+test('SyncPlanner creates an approval-gated folder resource plan and rejects embedded repointing', () => {
   const plan = new SyncPlanner().planResource({
     kind: 'folder',
     ref: 'folder:cpp:v30:Authentication',
@@ -1159,19 +1176,6 @@ test('SyncPlanner creates an approval-gated folder resource plan with optional V
       parentFolderToken: 'root-v30',
       name: 'Authentication',
     },
-    repointVirtualNode: {
-      baseToken: 'base-v30',
-      tableId: 'table-v30',
-      recordId: 'rec-auth',
-      title: 'Authentication',
-      currentFolderToken: 'folder-auth-old',
-      expectedFields: {
-        type: 'VirtualNode',
-        targets: ['Milvus', 'Zilliz'],
-        progress: 'Draft',
-        slug: 'Authentication',
-      },
-    },
   });
 
   assert.equal(plan.action, 'CREATE_FOLDER');
@@ -1181,6 +1185,81 @@ test('SyncPlanner creates an approval-gated folder resource plan with optional V
   assert.deepEqual(plan.postconditions, [
     { type: 'RESOURCE_RESOLVED', ref: 'folder:cpp:v30:Authentication', value: 'NEW_FOLDER_TOKEN' },
     { type: 'TARGET_ANCESTRY', folderRef: 'folder:cpp:v30:Authentication', versionRootToken: 'root-v30' },
+  ]);
+  assert.equal(Object.isFrozen(plan), true);
+
+  // Phase 2 DAG split: embedding the VirtualNode repoint in the folder action
+  // would repoint before the document is copied and verified, so planning it
+  // is rejected in favor of the dedicated virtual_node_repoint resource.
+  assert.throws(() => new SyncPlanner().planResource({
+    kind: 'folder',
+    ref: 'folder:cpp:v30:Authentication',
+    name: 'Authentication',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'Authentication',
+    },
+    repointVirtualNode: {
+      recordId: 'rec-auth',
+      currentFolderToken: 'folder-auth-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'Authentication',
+      },
+    },
+  }), /must not embed repointVirtualNode/);
+});
+
+test('SyncPlanner creates a dependent VirtualNode repoint resource that follows the document action', () => {
+  const plan = new SyncPlanner().planResource({
+    kind: 'virtual_node_repoint',
+    ref: 'repoint:cpp:v30:Authentication',
+    recordId: 'rec-auth',
+    title: 'Authentication',
+    folderRef: 'folder:cpp:v30:Authentication',
+    currentFolderToken: 'folder-auth-old',
+    expectedFields: {
+      type: 'VirtualNode',
+      targets: ['Milvus', 'Zilliz'],
+      progress: 'Draft',
+      slug: 'Authentication',
+    },
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    dependsOn: ['folder:cpp:v30:Authentication', 'cpp:Authentication:SomeInterface'],
+    existingLookup: {
+      checked: true,
+      matched: true,
+      recordId: 'rec-auth',
+      currentFolderToken: 'folder-auth-old',
+    },
+  });
+
+  assert.equal(plan.action, 'REPOINT_CATEGORY_VIRTUAL_NODE');
+  assert.equal(plan.stableId, 'resource:repoint:cpp:v30:Authentication');
+  assert.deepEqual(plan.dependencies, ['folder:cpp:v30:Authentication', 'cpp:Authentication:SomeInterface']);
+  assert.deepEqual(plan.preconditions, [
+    {
+      type: 'VIRTUAL_NODE_CURRENT_LINK',
+      recordId: 'rec-auth',
+      currentFolderToken: 'folder-auth-old',
+      preservedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'Authentication',
+      },
+    },
+    { type: 'DOCUMENT_ACTION_VERIFIED', stableId: 'cpp:Authentication:SomeInterface' },
+  ]);
+  assert.deepEqual(plan.postconditions, [
+    { type: 'RESOURCE_RESOLVED', ref: 'repoint:cpp:v30:Authentication', value: 'REPOINTED' },
     {
       type: 'VIRTUAL_NODE_LINK',
       recordId: 'rec-auth',
@@ -1194,6 +1273,31 @@ test('SyncPlanner creates an approval-gated folder resource plan with optional V
     },
   ]);
   assert.equal(Object.isFrozen(plan), true);
+
+  // A repoint without a document dependency is invalid: the invariant requires
+  // it to run only after the document action completed with verification.
+  assert.throws(() => new SyncPlanner().planResource({
+    kind: 'virtual_node_repoint',
+    ref: 'repoint:cpp:v30:Authentication',
+    recordId: 'rec-auth',
+    folderRef: 'folder:cpp:v30:Authentication',
+    currentFolderToken: 'folder-auth-old',
+    expectedFields: {
+      type: 'VirtualNode',
+      targets: ['Milvus', 'Zilliz'],
+      progress: 'Draft',
+      slug: 'Authentication',
+    },
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    dependsOn: ['folder:cpp:v30:Authentication'],
+    existingLookup: {
+      checked: true,
+      matched: true,
+      recordId: 'rec-auth',
+      currentFolderToken: 'folder-auth-old',
+    },
+  }), /requires the folder and document dependencies/);
 });
 
 test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
@@ -1930,6 +2034,41 @@ test('failed resource execution is journaled and blocks dependent documents', as
           ancestryVerified: true,
         },
         dependencies: ['folder:node:v26:Collections'],
+        treeDelta: {
+          category: {
+            folder: {
+              ref: 'folder:node:v26:Collections',
+              name: 'Collections',
+              parentFolderToken: 'root-v26',
+              versionRootToken: 'root-v26',
+              existingLookup: {
+                checked: true,
+                absent: true,
+                parentFolderToken: 'root-v26',
+                name: 'Collections',
+              },
+            },
+            repoint: {
+              ref: 'repoint:node:v26:Collections',
+              recordId: 'rec-collections-vnode-v26',
+              currentFolderToken: 'collections-vnode-old',
+              expectedFields: {
+                type: 'VirtualNode',
+                targets: ['Milvus', 'Zilliz'],
+                progress: 'Draft',
+                slug: 'Collections',
+              },
+              baseToken: 'base-v26',
+              tableId: 'table-v26',
+              existingLookup: {
+                checked: true,
+                matched: true,
+                recordId: 'rec-collections-vnode-v26',
+                currentFolderToken: 'collections-vnode-old',
+              },
+            },
+          },
+        },
       },
     }],
     resources: [{
@@ -1943,6 +2082,28 @@ test('failed resource execution is journaled and blocks dependent documents', as
         absent: true,
         parentFolderToken: 'root-v26',
         name: 'Collections',
+      },
+    }, {
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:node:v26:Collections',
+      recordId: 'rec-collections-vnode-v26',
+      title: 'Collections',
+      folderRef: 'folder:node:v26:Collections',
+      currentFolderToken: 'collections-vnode-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'Collections',
+      },
+      baseToken: 'base-v26',
+      tableId: 'table-v26',
+      dependsOn: ['folder:node:v26:Collections', 'node:Collections:createCollection'],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-collections-vnode-v26',
+        currentFolderToken: 'collections-vnode-old',
       },
     }],
   };
@@ -1971,13 +2132,16 @@ test('failed resource execution is journaled and blocks dependent documents', as
   const entries = fs.readFileSync(result.executionJournalPath, 'utf8').trim().split('\n').map(JSON.parse);
 
   assert.deepEqual(executed, ['resource:folder:node:v26:Collections']);
-  assert.equal(result.results.length, 2);
+  assert.equal(result.results.length, 3);
   assert.equal(result.results[1].failedStep, 'dependency');
   assert.deepEqual(result.results[1].failedDependencies, ['resource:folder:node:v26:Collections']);
+  assert.equal(result.results[2].failedStep, 'dependency');
+  assert.deepEqual(result.results[2].failedDependencies, ['node:Collections:createCollection', 'resource:folder:node:v26:Collections']);
   assert.equal(result.executionResult.status, 'PARTIAL');
   assert.deepEqual(entries.filter(entry => entry.type === 'observed').map(entry => entry.actionId), [
     'resource:folder:node:v26:Collections',
     'node:Collections:createCollection',
+    'resource:repoint:node:v26:Collections',
   ]);
   assert.equal(entries.at(-1).completionSentinel, true);
 });

@@ -95,6 +95,8 @@ function parseArgs(argv) {
             args.sessionState = argv[++i];
         } else if (arg === '--resume-session' && argv[i + 1]) {
             args.resumeSession = argv[++i];
+        } else if (arg === '--finalize-acceptance' && argv[i + 1]) {
+            args.finalizeAcceptance = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
             printUsage();
             process.exit(0);
@@ -127,8 +129,9 @@ Options:
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
   --review-unit-id <id>            Select exactly one document and its required resource operations
-  --session-state <file>           Create a persistent session from a complete initial dry-run
+  --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
+  --finalize-acceptance <file>     Finalize acceptance from a receipt bound (by acceptanceManifestDigest) to the canonical --session-state session
   --help, -h                       Show this help
 
 Environment (.env):
@@ -474,6 +477,18 @@ async function runCli({
     const readFile = dependencies.readFile || ((file) => fs.readFileSync(file, 'utf8'));
     const writeFile = dependencies.writeFile || ((file, content) => fs.writeFileSync(file, content));
 
+    if (args.finalizeAcceptance) {
+        return await finalizeAcceptance({
+            receiptPath: args.finalizeAcceptance,
+            sessionPath: args.sessionState,
+            readFile,
+            out,
+            err,
+            exit,
+            io: dependencies.finalizeAcceptanceIo || {},
+        });
+    }
+
     if (args.sessionState && args.resumeSession) {
         err('Error: choose either --session-state or --resume-session, not both');
         exit(1);
@@ -783,6 +798,193 @@ function createBoundedSummary(result) {
     };
 }
 
+// Production acceptance-finalization entrypoint (--finalize-acceptance
+// --session-state <file>). The CANONICAL persisted review session — the file
+// created by --session-state and advanced through the review flow — is the
+// only accepted authority: the receipt may not embed a session. The receipt
+// carries the user-confirmed acceptanceManifestDigest anchor (which must
+// equal the canonical session's), the scan-state payload, and the target
+// track's bitable identity. The finalizer derives everything writable from
+// that session (complete accepted-unit manifest coverage + digest-verified
+// per-unit journals), and only after the acceptance receipt is durable are
+// recordAcceptanceFinalization + saveReviewSession invoked so the canonical
+// session leaves acceptance_pending. `io` overrides are for tests only.
+async function finalizeAcceptance({
+    receiptPath,
+    sessionPath,
+    readFile,
+    out,
+    err,
+    exit,
+    io = {},
+}) {
+    const {
+        loadReviewSession,
+        recordAcceptanceFinalization,
+        saveReviewSession,
+    } = require('../src/sdk-doc-sync/review-session-store');
+    if (!sessionPath) {
+        err('Error: --finalize-acceptance requires --session-state <file> pointing at the canonical acceptance-pending session');
+        exit(1);
+        return null;
+    }
+    let receipt;
+    try {
+        receipt = JSON.parse(readFile(path.resolve(receiptPath)));
+    } catch (error) {
+        err(`Error: --finalize-acceptance receipt is unreadable: ${error.message}`);
+        exit(1);
+        return null;
+    }
+    if (receipt?.reviewSession !== undefined) {
+        err('Error: the receipt must not embed a reviewSession; pass --session-state pointing at the canonical persisted session');
+        exit(1);
+        return null;
+    }
+    if (!receipt?.bitable?.baseToken) {
+        err('Error: acceptance receipt requires bitable.baseToken for the target track');
+        exit(1);
+        return null;
+    }
+    if (!nonEmptyReceiptString(receipt.scanStateKey)) {
+        err('Error: acceptance receipt requires scanStateKey');
+        exit(1);
+        return null;
+    }
+    if (!receipt.scanStateEntry || typeof receipt.scanStateEntry !== 'object' || Array.isArray(receipt.scanStateEntry)) {
+        err('Error: acceptance receipt requires scanStateEntry');
+        exit(1);
+        return null;
+    }
+    if (!nonEmptyReceiptString(receipt.acceptanceManifestDigest)) {
+        err('Error: acceptance receipt requires acceptanceManifestDigest (the approved acceptance manifest it confirms)');
+        exit(1);
+        return null;
+    }
+
+    let session;
+    try {
+        session = loadReviewSession(sessionPath);
+    } catch (error) {
+        err(`Error: canonical review session is unavailable: ${error.message}`);
+        exit(1);
+        return null;
+    }
+    if (session.status !== 'acceptance_pending' || !nonEmptyReceiptString(session.acceptanceManifestDigest)) {
+        err(`Error: canonical session ${sessionPath} is ${session.status || '(unknown)'} without an acceptance manifest; build the complete acceptance manifest before finalization`);
+        exit(1);
+        return null;
+    }
+    if (receipt.acceptanceManifestDigest !== session.acceptanceManifestDigest) {
+        err(`Error: receipt confirms acceptanceManifestDigest ${receipt.acceptanceManifestDigest}, but the canonical session is bound to ${session.acceptanceManifestDigest}`);
+        exit(1);
+        return null;
+    }
+
+    const AcceptanceFinalizer = require('../src/sdk-doc-sync/acceptance-finalizer');
+    const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+    const repoRoot = path.resolve(__dirname, '../../../..');
+    const tmpDir = path.join(repoRoot, 'tmp', 'api-reference-sync');
+    const scanStatePath = path.resolve(__dirname, '..', 'scan-state.json');
+    const receiptArtifact = { path: null, digest: null };
+    const finalizer = new AcceptanceFinalizer({
+        bitableWriter: io.bitableWriter
+            || new BitableWriter({
+                baseToken: receipt.bitable.baseToken,
+                tableId: receipt.bitable.tableId || undefined,
+            }),
+        readScanState: io.readScanState || (async () => {
+            try {
+                return JSON.parse(fs.readFileSync(scanStatePath, 'utf8'));
+            } catch {
+                return {};
+            }
+        }),
+        writeScanState: io.writeScanState || (async (next) => {
+            fs.mkdirSync(path.dirname(scanStatePath), { recursive: true });
+            fs.writeFileSync(scanStatePath, `${JSON.stringify(next, null, 2)}\n`);
+        }),
+        writeJournal: async (journal) => {
+            const writeProductionReceipt = async (value) => {
+                fs.mkdirSync(tmpDir, { recursive: true });
+                const receiptOut = path.join(tmpDir, `acceptance-${value.acceptanceManifestDigest.replace(':', '-')}.json`);
+                fs.writeFileSync(receiptOut, `${JSON.stringify(value, null, 2)}\n`);
+                out(`Acceptance receipt written to ${receiptOut}`);
+                return { path: receiptOut, digest: digestSemanticReceipt(value) };
+            };
+            const written = await (io.writeJournal || writeProductionReceipt)(journal);
+            if (written && typeof written === 'object') {
+                receiptArtifact.path = written.path ?? null;
+                receiptArtifact.digest = written.digest ?? null;
+            }
+        },
+        readJournalEntries: io.readJournalEntries || (async (digest) => {
+            const content = fs.readFileSync(SdkDocSync.journalPathForDigest(digest, repoRoot), 'utf8');
+            return content.trim() ? content.trim().split('\n').map(line => JSON.parse(line)) : [];
+        }),
+    });
+    try {
+        // Idempotent resume: the acceptance receipt is written LAST by the
+        // finalizer, so a receipt matching the canonical manifest proves the
+        // Draft/scan-state mutations are already durable. A rerun after a
+        // record/save failure skips them and only completes session
+        // finalization instead of failing on records that are already Draft.
+        const loadDurableReceipt = io.loadDurableReceipt || ((manifestDigest) => {
+            const receiptPath = path.join(tmpDir, `acceptance-${manifestDigest.replace(':', '-')}.json`);
+            if (!fs.existsSync(receiptPath)) return null;
+            try {
+                const journal = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+                return { path: receiptPath, digest: digestSemanticReceipt(journal) };
+            } catch {
+                return null;
+            }
+        });
+        const durable = await loadDurableReceipt(session.acceptanceManifestDigest);
+        if (durable?.path && durable?.digest) {
+            receiptArtifact.path = durable.path;
+            receiptArtifact.digest = durable.digest;
+            out(`Durable acceptance receipt found for the canonical manifest (${durable.path}); skipping Draft/scan-state mutations and completing session finalization.`);
+        } else {
+            await finalizer.finalize({
+                userConfirmed: receipt.userConfirmed === true,
+                reviewSession: session,
+                scanStateKey: receipt.scanStateKey,
+                scanStateEntry: receipt.scanStateEntry,
+            });
+        }
+        // The acceptance receipt is durable at this point; record finalization
+        // on the canonical session (re-validates the journal artifact from
+        // disk) and persist it so the session leaves acceptance_pending.
+        const finalized = recordAcceptanceFinalization(session, {
+            acceptanceJournalPath: receiptArtifact.path,
+            acceptanceJournalDigest: receiptArtifact.digest,
+        });
+        saveReviewSession(sessionPath, finalized);
+        out('Acceptance finalized from the canonical session (invariant evidence derived from the accepted-unit manifest and execution journals):');
+        out(JSON.stringify({
+            acceptanceManifestDigest: session.acceptanceManifestDigest,
+            finalizedSessionPath: sessionPath,
+            finalizationJournalDigest: finalized.finalizationJournalDigest,
+            status: finalized.status,
+        }, null, 2));
+        return finalized;
+    } catch (error) {
+        err(`Error: acceptance finalization failed: ${error.code || 'ACCEPTANCE_FAILED'}: ${error.message}`);
+        err(`If the acceptance receipt at ${tmpDir}/acceptance-${session.acceptanceManifestDigest.replace(':', '-')}.json is already durable, rerunning this command is safe: it detects the receipt, skips the Draft/scan-state mutations, and only completes session finalization.`);
+        exit(1);
+        return null;
+    }
+}
+
+function digestSemanticReceipt(value) {
+    const { digestSemantic } = require('../../doc-ops-core/src/digest');
+    return digestSemantic(value);
+}
+
+function nonEmptyReceiptString(value) {
+    return typeof value === 'string' && value.trim() !== '';
+}
+
 if (require.main === module) {
     runCli().catch(err => {
         console.error('Fatal error:', err.message);
@@ -793,6 +995,7 @@ if (require.main === module) {
 module.exports = {
     parseArgs,
     runCli,
+    finalizeAcceptance,
     createSchemaFirstArtifactProvider,
     createExecutionApprovalProvider,
     createBoundedSummary,

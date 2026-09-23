@@ -18,12 +18,20 @@ function inventoryDigest(seed) {
 }
 
 // Reader whose live reference set matches the plan's approved evidence; tests
-// pass explicit recordIds to exercise drift blocking.
+// pass explicit recordIds to exercise drift blocking. The first read models
+// the executor's pre-write revalidation (full approved set); subsequent reads
+// model the post-write state where a COPY_PATCH_AND_REPOINT has taken the
+// repointed target record off the older document's reference set.
 function tokenReferenceReaderFor(plan, recordIds = null) {
-  const ids = recordIds || plan?.inheritanceEvidence?.sharedToken?.referencedRecordIds || [];
+  const approved = [...(recordIds || plan?.inheritanceEvidence?.sharedToken?.referencedRecordIds || [])];
+  const postCopy = plan?.action === 'COPY_PATCH_AND_REPOINT' && plan.source?.recordId
+    ? approved.filter((recordId) => recordId !== plan.source.recordId)
+    : approved;
+  let reads = 0;
   return {
     async listTokenReferences() {
-      return ids.map((recordId) => ({ recordId }));
+      reads += 1;
+      return (reads === 1 ? approved : postCopy).map((recordId) => ({ recordId }));
     },
   };
 }
@@ -254,10 +262,9 @@ test('SyncExecutor canonical path rejects digest-free approval and accepts the e
   assert.equal(result.status, 'success');
 });
 
-test('SyncExecutor creates and verifies a folder resource before repointing its VirtualNode', async () => {
+test('SyncExecutor creates and verifies a folder resource without touching any VirtualNode', async () => {
   const calls = [];
   let created = false;
-  let repointed = false;
   const documentWriter = {
     async listFolder({ folderToken, type }) {
       calls.push(['listFolder', folderToken, type]);
@@ -269,8 +276,53 @@ test('SyncExecutor creates and verifies a folder resource before repointing its 
       return { token: 'folder-auth', name: input.name, parent_token: input.parentFolderToken };
     },
   };
-  const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-auth`;
   const bitableWriter = {
+    async updateRecord() {
+      calls.push(['updateRecord']);
+      throw new Error('folder execution must not mutate the Bitable');
+    },
+  };
+  // Phase 2 DAG split: the folder action creates the folder only; the
+  // category VirtualNode repoint is a separate downstream resource action.
+  const resourcePlan = new SyncPlanner().planResource({
+    kind: 'folder',
+    ref: 'folder:node:v30:Authentication',
+    name: 'Authentication',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'Authentication',
+    },
+  });
+  const result = await new SyncExecutor({ documentWriter, bitableWriter }).execute(resourcePlan, {
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.deepEqual(result.resolvedResource, {
+    ref: 'folder:node:v30:Authentication',
+    kind: 'folder',
+    value: 'folder-auth',
+    token: 'folder-auth',
+  });
+  assert.deepEqual(calls.map(call => call[0]), [
+    'listFolder',
+    'createFolder',
+    'listFolder',
+  ]);
+});
+
+test('SyncExecutor repoints a category VirtualNode as its own verified downstream action', async () => {
+  const calls = [];
+  let repointed = false;
+  const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-auth`;
+  const documentWriter = {};
+  const bitableWriter = {
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
     async updateRecord(recordIdValue, fields) {
       calls.push(['updateRecord', recordIdValue, fields]);
       repointed = true;
@@ -296,51 +348,112 @@ test('SyncExecutor creates and verifies a folder resource before repointing its 
     },
   };
   const resourcePlan = new SyncPlanner().planResource({
-    kind: 'folder',
-    ref: 'folder:node:v30:Authentication',
-    name: 'Authentication',
-    parentFolderToken: 'root-v30',
-    versionRootToken: 'root-v30',
+    kind: 'virtual_node_repoint',
+    ref: 'repoint:node:v30:Authentication',
+    recordId: 'rec-auth',
+    title: 'Authentication',
+    folderRef: 'folder:node:v30:Authentication',
+    currentFolderToken: 'folder-auth-old',
+    expectedFields: {
+      type: 'VirtualNode',
+      targets: ['Milvus', 'Zilliz'],
+      progress: 'Draft',
+      slug: 'Authentication',
+    },
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    dependsOn: ['folder:node:v30:Authentication', 'node:Collections:createCollection'],
     existingLookup: {
       checked: true,
-      absent: true,
-      parentFolderToken: 'root-v30',
-      name: 'Authentication',
-    },
-    repointVirtualNode: {
+      matched: true,
       recordId: 'rec-auth',
       currentFolderToken: 'folder-auth-old',
-      expectedFields: {
-        type: 'VirtualNode',
-        targets: ['Milvus', 'Zilliz'],
-        progress: 'Draft',
-        slug: 'Authentication',
-      },
     },
   });
   const result = await new SyncExecutor({ documentWriter, bitableWriter }).execute(resourcePlan, {
     approval: { approved: true },
+    resourceResolutions: new Map([[
+      'folder:node:v30:Authentication',
+      { ref: 'folder:node:v30:Authentication', kind: 'folder', value: 'folder-auth' },
+    ]]),
   });
 
   assert.equal(result.status, 'success');
   assert.deepEqual(result.resolvedResource, {
-    ref: 'folder:node:v30:Authentication',
-    kind: 'folder',
-    value: 'folder-auth',
-    token: 'folder-auth',
+    ref: 'repoint:node:v30:Authentication',
+    kind: 'virtual_node_repoint',
+    value: 'rec-auth',
+    recordId: 'rec-auth',
   });
   assert.deepEqual(calls.map(call => call[0]), [
-    'listFolder',
     'getRecord',
-    'createFolder',
-    'listFolder',
     'updateRecord',
     'getRecord',
   ]);
-  assert.deepEqual(calls[4][2], {
+  assert.deepEqual(calls[1][2], {
     title: 'Authentication',
     link: expectedLink,
   });
+  assert.deepEqual(result.completedSteps, [
+    'verifyVirtualNodePrecondition',
+    'repointVirtualNode',
+    'verifyVirtualNodeRepoint',
+  ]);
+});
+
+test('SyncExecutor rejects a repoint whose VirtualNode drifted from the approved current link', async () => {
+  const documentWriter = {};
+  const bitableWriter = {
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    async getRecord() {
+      return {
+        record_id: 'rec-auth',
+        fields: {
+          Docs: { text: 'Authentication', link: 'https://zilliverse.feishu.cn/drive/folder/folder-elsewhere' },
+          Type: 'VirtualNode',
+          Progress: 'Draft',
+          Targets: ['Milvus', 'Zilliz'],
+          Slug: [{ text: 'Authentication', type: 'text' }],
+        },
+      };
+    },
+    async updateRecord() {
+      throw new Error('must not write when the precondition fails');
+    },
+  };
+  const resourcePlan = new SyncPlanner().planResource({
+    kind: 'virtual_node_repoint',
+    ref: 'repoint:node:v30:Authentication',
+    recordId: 'rec-auth',
+    folderRef: 'folder:node:v30:Authentication',
+    currentFolderToken: 'folder-auth-old',
+    expectedFields: {
+      type: 'VirtualNode',
+      targets: ['Milvus', 'Zilliz'],
+      progress: 'Draft',
+      slug: 'Authentication',
+    },
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    dependsOn: ['folder:node:v30:Authentication', 'node:Collections:createCollection'],
+    existingLookup: {
+      checked: true,
+      matched: true,
+      recordId: 'rec-auth',
+      currentFolderToken: 'folder-auth-old',
+    },
+  });
+  const result = await new SyncExecutor({ documentWriter, bitableWriter }).execute(resourcePlan, {
+    approval: { approved: true },
+    resourceResolutions: new Map([[
+      'folder:node:v30:Authentication',
+      { ref: 'folder:node:v30:Authentication', kind: 'folder', value: 'folder-auth' },
+    ]]),
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'RESOURCE_PRECONDITION_FAILED');
+  assert.equal(result.failedStep, 'verifyVirtualNodePrecondition');
 });
 
 test('SyncExecutor creates a VirtualNode from its resolved folder without writing Slug', async () => {

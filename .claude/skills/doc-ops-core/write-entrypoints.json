@@ -3,7 +3,7 @@
   "baseline": {
     "recordedAt": "2026-08-06T02:16:48.070Z",
     "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
-    "entrypointCount": 151
+    "entrypointCount": 161
   },
   "entries": [
     {
@@ -84,6 +84,27 @@
       "tests": []
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-fragments",
+      "basis": "writes deterministic local artifacts only; no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/rest-source-scan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-source-scan",
+      "basis": "reads pinned Git objects and writes deterministic local evidence only"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/rest-track-review.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-track-review",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-alignment.js",
       "skill": "api-reference-sync",
       "classification": "legacy-live",
@@ -124,13 +145,6 @@
       ]
     },
     {
-      "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "sdk-release-scout",
-      "basis": "no external mutation signature found"
-    },
-    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-pr-scan.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -138,25 +152,11 @@
       "basis": "reads merged web-content PR data and writes deterministic local artifacts only"
     },
     {
-      "path": ".claude/skills/api-reference-sync/bin/rest-track-review.js",
+      "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
-      "operation": "rest-track-review",
+      "operation": "sdk-release-scout",
       "basis": "no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "rest-fragments",
-      "basis": "writes deterministic local artifacts only; no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/bin/rest-source-scan.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "rest-source-scan",
-      "basis": "reads pinned Git objects and writes deterministic local evidence only"
     },
     {
       "path": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
@@ -1181,6 +1181,13 @@
       "tests": []
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "reconcile-tree-delta",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/render-grouping-inheritance-table.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -1523,6 +1530,13 @@
       ]
     },
     {
+      "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
+      "skill": "patch-code-blocks",
+      "classification": "read-only",
+      "operation": "patch-code-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
       "skill": "procedure-code-sync",
       "classification": "canonical-governed",
@@ -1551,13 +1565,6 @@
       ]
     },
     {
-      "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
-      "skill": "patch-code-blocks",
-      "classification": "read-only",
-      "operation": "patch-code-blocks",
-      "basis": "no external mutation signature found"
-    },
-    {
       "path": "scripts/check-invariant-coverage.js",
       "skill": "doc-ops-core",
       "classification": "read-only",
@@ -1565,18 +1572,18 @@
       "basis": "git read-only admission diff gate; no external mutation signature found"
     },
     {
-      "path": "scripts/run-skill-model-evals.js",
-      "skill": "doc-ops-core",
-      "classification": "read-only",
-      "operation": "run-skill-model-evals",
-      "basis": "manual baseline override after source inspection"
-    },
-    {
       "path": "scripts/run-skill-admission.js",
       "skill": "doc-ops-core",
       "classification": "read-only",
       "operation": "run-skill-admission",
       "basis": "local and CI admission orchestrator; runs tests and model evaluations without live mutation commands"
+    },
+    {
+      "path": "scripts/run-skill-model-evals.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-skill-model-evals",
+      "basis": "manual baseline override after source inspection"
     },
     {
       "path": "scripts/run-tests.js",

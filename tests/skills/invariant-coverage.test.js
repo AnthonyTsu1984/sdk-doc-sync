@@ -2,6 +2,8 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
 
@@ -10,6 +12,9 @@ const {
   compareInvariantBullets,
   resolveBase,
 } = require('../../scripts/check-invariant-coverage');
+const {
+  invariantStatementDigest,
+} = require('../../.claude/skills/doc-ops-core/src/invariant-registry');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
@@ -85,6 +90,173 @@ test('a Domain Invariants change paired with a registry update passes the gate',
   // without the registry file the marker-only edit must not be flagged, and
   // with it the gate passes on the current HEAD.
   const result = checkInvariantCoverage({ repoRoot: REPO_ROOT, base: 'cc42546', head: 'HEAD' });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.valid, true);
+});
+
+// End-to-end reproduction of the PR #21 review P1: a registry-only diff that
+// downgrades a runtime-enforced invariant (removing fixtureIds and enforcers,
+// SKILL.md untouched) must not pass admission silently.
+function initRegistryRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'invariant-gate-'));
+  const git = (...args) => execFileSync('git', args, { cwd: dir, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  git('init', '-q');
+  git('config', 'user.email', 'gate@test.local');
+  git('config', 'user.name', 'invariant-gate-test');
+  const skillDir = path.join(dir, '.claude', 'skills', 'test-skill');
+  fs.mkdirSync(path.join(skillDir, 'contracts'), { recursive: true });
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), [
+    '# Test Skill',
+    '',
+    '## Domain Invariants',
+    '',
+    '- Marked rule stays exactly as registered. [test.rule]',
+    '',
+  ].join('\n'));
+  const runtimeRegistry = {
+    schemaVersion: 1,
+    skill: 'test-skill',
+    invariants: [{
+      id: 'test.rule',
+      version: 1,
+      risk: 'write-safety',
+      scope: 'test',
+      status: 'runtime-enforced',
+      enforcement: ['plan', 'pre-write'],
+      statementDigest: invariantStatementDigest('Marked rule stays exactly as registered.'),
+      fixtureIds: ['fixture-a', 'fixture-b'],
+      enforcers: [
+        { stage: 'plan', module: '.claude/skills/test-skill/src/policy.js', codes: ['BLOCK_A'] },
+        { stage: 'pre-write', module: '.claude/skills/test-skill/src/exec.js', codes: ['BLOCK_B'] },
+      ],
+    }],
+  };
+  const writeRegistry = (value) => fs.writeFileSync(
+    path.join(skillDir, 'contracts', 'invariants.json'),
+    `${JSON.stringify(value, null, 2)}\n`,
+  );
+  const writeWaivers = (value) => fs.writeFileSync(
+    path.join(skillDir, 'contracts', 'invariant-waivers.json'),
+    value === null ? '' : `${JSON.stringify(value, null, 2)}\n`,
+  );
+  const commit = (message) => {
+    git('add', '-A');
+    git('commit', '-q', '-m', message);
+    return git('rev-parse', 'HEAD').trim();
+  };
+  writeRegistry(runtimeRegistry);
+  const baseSha = commit('baseline: runtime-enforced invariant');
+  return { dir, git, skillDir, runtimeRegistry, writeRegistry, writeWaivers, commit, baseSha };
+}
+
+test('registry-only downgrade of a runtime-enforced invariant fails without a waiver', () => {
+  const repo = initRegistryRepo();
+  // The reviewer's reproduction: flip status to declared and delete
+  // fixtureIds/enforcers — SKILL.md is not touched at all.
+  repo.writeRegistry({
+    schemaVersion: 1,
+    skill: 'test-skill',
+    invariants: [{
+      id: 'test.rule',
+      version: 1,
+      risk: 'write-safety',
+      scope: 'test',
+      status: 'declared',
+      enforcement: ['plan'],
+      statementDigest: repo.runtimeRegistry.invariants[0].statementDigest,
+    }],
+  });
+  const headSha = repo.commit('registry-only downgrade');
+
+  const result = checkInvariantCoverage({
+    repoRoot: repo.dir,
+    base: repo.baseSha,
+    head: headSha,
+    now: new Date('2026-09-23T00:00:00.000Z'),
+  });
+  assert.equal(result.valid, false);
+  const unwaived = result.errors.find((error) => error.code === 'INVARIANT_DOWNGRADE_UNWAIVED');
+  assert.ok(unwaived, JSON.stringify(result.errors));
+  assert.equal(unwaived.invariantId, 'test.rule');
+  assert.equal(unwaived.transition, 'downgrade');
+});
+
+test('registry removal and coverage weakening fail; a valid waiver passes; expiry re-blocks', () => {
+  const now = new Date('2026-09-23T00:00:00.000Z');
+
+  // Removal of the runtime-enforced entry.
+  const removalRepo = initRegistryRepo();
+  removalRepo.writeRegistry({ schemaVersion: 1, skill: 'test-skill', invariants: [] });
+  const removalHead = removalRepo.commit('registry-only removal');
+  const removal = checkInvariantCoverage({ repoRoot: removalRepo.dir, base: removalRepo.baseSha, head: removalHead, now });
+  assert.equal(removal.valid, false);
+  assert.ok(removal.errors.some((error) => error.code === 'INVARIANT_DOWNGRADE_UNWAIVED' && error.transition === 'removal'));
+
+  // Weakened coverage: still runtime-enforced, but a fixture is dropped.
+  const weakenRepo = initRegistryRepo();
+  weakenRepo.writeRegistry({
+    ...weakenRepo.runtimeRegistry,
+    invariants: [{ ...weakenRepo.runtimeRegistry.invariants[0], fixtureIds: ['fixture-a'] }],
+  });
+  const weakenHead = weakenRepo.commit('registry-only fixture drop');
+  const weakened = checkInvariantCoverage({ repoRoot: weakenRepo.dir, base: weakenRepo.baseSha, head: weakenHead, now });
+  assert.equal(weakened.valid, false);
+  assert.ok(weakened.errors.some((error) => error.code === 'INVARIANT_DOWNGRADE_UNWAIVED' && error.transition === 'weakened-coverage'));
+
+  // A valid, unexpired, separately reviewed waiver authorizes the downgrade.
+  const waivedRepo = initRegistryRepo();
+  waivedRepo.writeRegistry({
+    schemaVersion: 1,
+    skill: 'test-skill',
+    invariants: [{
+      id: 'test.rule',
+      version: 1,
+      risk: 'write-safety',
+      scope: 'test',
+      status: 'declared',
+      enforcement: ['plan'],
+      statementDigest: waivedRepo.runtimeRegistry.invariants[0].statementDigest,
+    }],
+  });
+  waivedRepo.writeWaivers({
+    schemaVersion: 1,
+    waivers: [{
+      invariantId: 'test.rule',
+      transition: 'downgrade',
+      reason: 'Superseded by the Phase 2 post-write verifier; migration tracked in the plan.',
+      approvedBy: 'PR #99 review by @maintainer',
+      expiresAt: '2026-12-31T00:00:00.000Z',
+    }],
+  });
+  const waivedHead = waivedRepo.commit('downgrade with reviewed waiver');
+  const waived = checkInvariantCoverage({ repoRoot: waivedRepo.dir, base: waivedRepo.baseSha, head: waivedHead, now });
+  assert.deepEqual(waived.errors, []);
+  assert.equal(waived.valid, true);
+  assert.deepEqual(
+    waived.findings.map((finding) => [finding.invariantId, finding.transition, finding.waived]),
+    [['test.rule', 'downgrade', true]],
+  );
+
+  // The same waiver after its expiry no longer covers the transition.
+  const expiredRun = checkInvariantCoverage({
+    repoRoot: waivedRepo.dir,
+    base: waivedRepo.baseSha,
+    head: waivedHead,
+    now: new Date('2027-06-01T00:00:00.000Z'),
+  });
+  assert.equal(expiredRun.valid, false);
+  assert.ok(expiredRun.errors.some((error) => error.code === 'INVARIANT_DOWNGRADE_UNWAIVED'));
+});
+
+test('adding a new registry without runtime-enforced predecessors passes the transition gate', () => {
+  const repo = initRegistryRepo();
+  // Strengthening edit: keep runtime-enforced and add a fixture.
+  repo.writeRegistry({
+    ...repo.runtimeRegistry,
+    invariants: [{ ...repo.runtimeRegistry.invariants[0], fixtureIds: ['fixture-a', 'fixture-b', 'fixture-c'] }],
+  });
+  const headSha = repo.commit('registry strengthening');
+  const result = checkInvariantCoverage({ repoRoot: repo.dir, base: repo.baseSha, head: headSha, now: new Date('2026-09-23T00:00:00.000Z') });
   assert.deepEqual(result.errors, []);
   assert.equal(result.valid, true);
 });

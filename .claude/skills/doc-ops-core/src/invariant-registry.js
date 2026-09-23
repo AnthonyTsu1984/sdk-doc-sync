@@ -13,6 +13,7 @@ const { sha256Digest } = require('./digest');
 
 const INVARIANT_STATUSES = new Set(['runtime-enforced', 'declared']);
 const ENFORCEMENT_STAGES = new Set(['evidence', 'plan', 'pre-write', 'post-write', 'reconcile', 'admission']);
+const TRANSITION_KINDS = new Set(['removal', 'downgrade', 'weakened-coverage']);
 const INVARIANT_ID_PATTERN = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/;
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const MARKER_PATTERN = /\[([a-z0-9]+(?:[.-][a-z0-9]+)*)\]\s*$/;
@@ -195,6 +196,19 @@ function checkSkillInvariantCoverage({
   const validation = validateInvariantRegistry(registry, { fixtureIds, repoRoot });
   errors.push(...validation.errors);
 
+  const waiversPath = path.join(skillDir, 'contracts', 'invariant-waivers.json');
+  if (fs.existsSync(waiversPath)) {
+    let waiverDoc = null;
+    try {
+      waiverDoc = JSON.parse(fs.readFileSync(waiversPath, 'utf8'));
+    } catch (error) {
+      errors.push({ code: 'INVARIANT_WAIVER_UNREADABLE', path: '$', message: error.message });
+    }
+    if (waiverDoc !== null) {
+      errors.push(...validateInvariantWaivers(waiverDoc, { enforceExpiry: false }).errors);
+    }
+  }
+
   const byId = new Map((registry.invariants || []).map((invariant) => [invariant.id, invariant]));
   const bulletsByMarker = new Map();
   for (const bullet of markedBullets) {
@@ -243,13 +257,118 @@ function checkSkillInvariantCoverage({
   };
 }
 
+function enforcerKey(enforcer) {
+  return [
+    enforcer?.stage || '',
+    enforcer?.module || '',
+    [...(enforcer?.codes || [])].sort().join(','),
+  ].join('|');
+}
+
+// Compares the base and head registries and reports every transition that
+// weakens enforcement of a previously runtime-enforced invariant: outright
+// removal, status downgrade, or loss of fixtures / enforcement stages /
+// enforcer bindings. Strengthening transitions (declared -> runtime-enforced,
+// added coverage) are never reported.
+function detectEnforcementTransitions({ baseRegistry, headRegistry }) {
+  const transitions = [];
+  const headById = new Map((headRegistry?.invariants || []).map((entry) => [entry?.id, entry]));
+  for (const base of baseRegistry?.invariants || []) {
+    if (base?.status !== 'runtime-enforced') continue;
+    const head = headById.get(base.id);
+    if (!head) {
+      transitions.push({
+        invariantId: base.id,
+        transition: 'removal',
+        detail: { from: base.status, to: null },
+      });
+      continue;
+    }
+    if (head.status !== 'runtime-enforced') {
+      transitions.push({
+        invariantId: base.id,
+        transition: 'downgrade',
+        detail: { from: base.status, to: head.status || null },
+      });
+      continue;
+    }
+    const headFixtures = new Set(head.fixtureIds || []);
+    const lostFixtures = (base.fixtureIds || []).filter((fixtureId) => !headFixtures.has(fixtureId));
+    const headStages = new Set(head.enforcement || []);
+    const lostStages = (base.enforcement || []).filter((stage) => !headStages.has(stage));
+    const headEnforcers = new Set((head.enforcers || []).map(enforcerKey));
+    const lostEnforcers = (base.enforcers || [])
+      .map(enforcerKey)
+      .filter((key) => !headEnforcers.has(key));
+    if (lostFixtures.length > 0 || lostStages.length > 0 || lostEnforcers.length > 0) {
+      transitions.push({
+        invariantId: base.id,
+        transition: 'weakened-coverage',
+        detail: { lostFixtures, lostStages, lostEnforcers },
+      });
+    }
+  }
+  return transitions;
+}
+
+// Waiver artifact schema: contracts/invariant-waivers.json. A waiver is an
+// explicit, separately reviewed exception that authorizes one weakening
+// transition of one invariant until an expiry date. Expiry is enforced when a
+// waiver is consumed by the diff gate (enforceExpiry: true); static validation
+// only checks the schema so an expired-but-unreferenced waiver does not fail
+// unrelated builds — it is ignored at consumption time instead.
+function validateInvariantWaivers(waiverDoc, { now = new Date(), enforceExpiry = true } = {}) {
+  const errors = [];
+  if (!isObject(waiverDoc) || waiverDoc.schemaVersion !== 1) {
+    return { valid: false, errors: [{ code: 'INVARIANT_WAIVER_SCHEMA_INVALID', path: '$.schemaVersion' }], waivers: [] };
+  }
+  if (!Array.isArray(waiverDoc.waivers)) {
+    return { valid: false, errors: [{ code: 'INVARIANT_WAIVER_LIST_REQUIRED', path: '$.waivers' }], waivers: [] };
+  }
+  waiverDoc.waivers.forEach((waiver, index) => {
+    const waiverPath = `$.waivers[${index}]`;
+    if (typeof waiver?.invariantId !== 'string' || !waiver.invariantId) {
+      errors.push({ code: 'INVARIANT_WAIVER_ID_REQUIRED', path: `${waiverPath}.invariantId` });
+    }
+    if (!TRANSITION_KINDS.has(waiver?.transition)) {
+      errors.push({ code: 'INVARIANT_WAIVER_TRANSITION_INVALID', path: `${waiverPath}.transition` });
+    }
+    if (typeof waiver?.reason !== 'string' || !waiver.reason.trim()) {
+      errors.push({ code: 'INVARIANT_WAIVER_REASON_REQUIRED', path: `${waiverPath}.reason` });
+    }
+    if (typeof waiver?.approvedBy !== 'string' || !waiver.approvedBy.trim()) {
+      errors.push({ code: 'INVARIANT_WAIVER_APPROVAL_REQUIRED', path: `${waiverPath}.approvedBy` });
+    }
+    const expiresAt = Date.parse(waiver?.expiresAt || '');
+    if (Number.isNaN(expiresAt)) {
+      errors.push({ code: 'INVARIANT_WAIVER_EXPIRY_INVALID', path: `${waiverPath}.expiresAt` });
+    } else if (enforceExpiry && expiresAt < now.getTime()) {
+      errors.push({ code: 'INVARIANT_WAIVER_EXPIRED', path: `${waiverPath}.expiresAt` });
+    }
+  });
+  return { valid: errors.length === 0, errors, waivers: waiverDoc.waivers };
+}
+
+function waiverCoversTransition(waivers, transition, { now = new Date() } = {}) {
+  return (waivers || []).find((waiver) => (
+    waiver?.invariantId === transition.invariantId
+    && waiver?.transition === transition.transition
+    && !Number.isNaN(Date.parse(waiver?.expiresAt || ''))
+    && Date.parse(waiver.expiresAt) >= now.getTime()
+  )) || null;
+}
+
 module.exports = {
   DIGEST_PATTERN,
   ENFORCEMENT_STAGES,
   INVARIANT_STATUSES,
+  TRANSITION_KINDS,
   checkSkillInvariantCoverage,
+  detectEnforcementTransitions,
   extractDomainInvariantBullets,
   invariantStatementDigest,
   normalizeInvariantStatement,
   validateInvariantRegistry,
+  validateInvariantWaivers,
+  waiverCoversTransition,
 };

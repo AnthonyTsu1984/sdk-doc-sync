@@ -8,10 +8,13 @@ const path = require('node:path');
 
 const {
   checkSkillInvariantCoverage,
+  detectEnforcementTransitions,
   extractDomainInvariantBullets,
   invariantStatementDigest,
   normalizeInvariantStatement,
   validateInvariantRegistry,
+  validateInvariantWaivers,
+  waiverCoversTransition,
 } = require('../src/invariant-registry');
 
 const SKILL_MD = [
@@ -188,4 +191,153 @@ test('the committed api-reference-sync registry passes its own coverage check', 
   });
   assert.deepEqual(coverage.errors, []);
   assert.deepEqual(coverage.markedIds, ['api.versioned-tree-delta']);
+});
+
+function runtimeInvariant(overrides = {}) {
+  return {
+    id: 'test.rule',
+    version: 1,
+    risk: 'write-safety',
+    scope: 'test',
+    status: 'runtime-enforced',
+    enforcement: ['plan', 'pre-write'],
+    statementDigest: invariantStatementDigest('Marked rule.'),
+    fixtureIds: ['fixture-a', 'fixture-b'],
+    enforcers: [
+      { stage: 'plan', module: 'skills/test-skill/src/policy.js', codes: ['BLOCK_A'] },
+      { stage: 'pre-write', module: 'skills/test-skill/src/exec.js', codes: ['BLOCK_B'] },
+    ],
+    ...overrides,
+  };
+}
+
+test('transition detection reports removal, downgrade, and weakened coverage', () => {
+  const base = { schemaVersion: 1, skill: 'test-skill', invariants: [runtimeInvariant()] };
+
+  // Removal: the runtime-enforced entry disappears entirely.
+  const removed = detectEnforcementTransitions({ baseRegistry: base, headRegistry: { schemaVersion: 1, skill: 'test-skill', invariants: [] } });
+  assert.deepEqual(removed.map((t) => [t.invariantId, t.transition]), [['test.rule', 'removal']]);
+
+  // Downgrade: status flips to declared (fixtures/enforcers dropped with it).
+  const downgraded = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: { schemaVersion: 1, skill: 'test-skill', invariants: [runtimeInvariant({ status: 'declared', fixtureIds: undefined, enforcers: undefined, enforcement: ['plan'] })] },
+  });
+  assert.deepEqual(downgraded.map((t) => t.transition), ['downgrade']);
+
+  // Weakened coverage: still runtime-enforced but a fixture is dropped.
+  const lostFixture = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: { schemaVersion: 1, skill: 'test-skill', invariants: [runtimeInvariant({ fixtureIds: ['fixture-a'] })] },
+  });
+  assert.deepEqual(lostFixture.map((t) => t.transition), ['weakened-coverage']);
+  assert.deepEqual(lostFixture[0].detail.lostFixtures, ['fixture-b']);
+
+  // Weakened coverage: an enforcement stage is dropped.
+  const lostStage = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: { schemaVersion: 1, skill: 'test-skill', invariants: [runtimeInvariant({ enforcement: ['plan'] })] },
+  });
+  assert.deepEqual(lostStage[0].detail.lostStages, ['pre-write']);
+
+  // Weakened coverage: an enforcer binding is dropped.
+  const lostEnforcer = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: { schemaVersion: 1, skill: 'test-skill', invariants: [runtimeInvariant({ enforcers: [runtimeInvariant().enforcers[0]] })] },
+  });
+  assert.equal(lostEnforcer[0].transition, 'weakened-coverage');
+  assert.equal(lostEnforcer[0].detail.lostEnforcers.length, 1);
+});
+
+test('transition detection ignores strengthening and declared-only changes', () => {
+  const declaredBase = {
+    schemaVersion: 1,
+    skill: 'test-skill',
+    invariants: [runtimeInvariant({ id: 'test.declared', status: 'declared', fixtureIds: undefined, enforcers: undefined, enforcement: ['plan'] })],
+  };
+  // A declared invariant being removed or left alone is not a weakening of
+  // runtime enforcement.
+  assert.deepEqual(
+    detectEnforcementTransitions({ baseRegistry: declaredBase, headRegistry: { schemaVersion: 1, skill: 'test-skill', invariants: [] } }),
+    [],
+  );
+
+  const base = { schemaVersion: 1, skill: 'test-skill', invariants: [runtimeInvariant()] };
+  // Strengthening: more fixtures, more enforcers, unchanged status.
+  const strengthened = detectEnforcementTransitions({
+    baseRegistry: base,
+    headRegistry: {
+      schemaVersion: 1,
+      skill: 'test-skill',
+      invariants: [runtimeInvariant({ fixtureIds: ['fixture-a', 'fixture-b', 'fixture-c'] })],
+    },
+  });
+  assert.deepEqual(strengthened, []);
+
+  // Identical registries report no transition.
+  assert.deepEqual(detectEnforcementTransitions({ baseRegistry: base, headRegistry: base }), []);
+});
+
+test('waiver validation enforces schema, approval, and expiry', () => {
+  const now = new Date('2026-09-23T00:00:00.000Z');
+  const valid = validateInvariantWaivers({
+    schemaVersion: 1,
+    waivers: [{
+      invariantId: 'test.rule',
+      transition: 'downgrade',
+      reason: 'Superseded by a stronger post-write verifier in Phase 2.',
+      approvedBy: 'PR #42 review by @reviewer',
+      expiresAt: '2026-12-31T00:00:00.000Z',
+    }],
+  }, { now });
+  assert.deepEqual(valid.errors, []);
+  assert.equal(valid.valid, true);
+
+  const expired = validateInvariantWaivers({
+    schemaVersion: 1,
+    waivers: [{
+      invariantId: 'test.rule', transition: 'removal', reason: 'x', approvedBy: 'y', expiresAt: '2026-01-01T00:00:00.000Z',
+    }],
+  }, { now });
+  assert.ok(expired.errors.some((error) => error.code === 'INVARIANT_WAIVER_EXPIRED'));
+
+  // Static validation (enforceExpiry false) tolerates an expired waiver so an
+  // unrelated build does not fail on a stale-but-unreferenced artifact.
+  const staticOk = validateInvariantWaivers({
+    schemaVersion: 1,
+    waivers: [{
+      invariantId: 'test.rule', transition: 'removal', reason: 'x', approvedBy: 'y', expiresAt: '2026-01-01T00:00:00.000Z',
+    }],
+  }, { now, enforceExpiry: false });
+  assert.deepEqual(staticOk.errors, []);
+
+  const malformed = validateInvariantWaivers({
+    schemaVersion: 1,
+    waivers: [{ invariantId: '', transition: 'nope', reason: ' ', approvedBy: '', expiresAt: 'not-a-date' }],
+  }, { now });
+  const codes = malformed.errors.map((error) => error.code);
+  for (const expected of [
+    'INVARIANT_WAIVER_ID_REQUIRED',
+    'INVARIANT_WAIVER_TRANSITION_INVALID',
+    'INVARIANT_WAIVER_REASON_REQUIRED',
+    'INVARIANT_WAIVER_APPROVAL_REQUIRED',
+    'INVARIANT_WAIVER_EXPIRY_INVALID',
+  ]) assert.ok(codes.includes(expected), expected);
+
+  assert.equal(validateInvariantWaivers({ schemaVersion: 2 }, { now }).valid, false);
+});
+
+test('waiverCoversTransition matches only the exact unexpired waiver', () => {
+  const now = new Date('2026-09-23T00:00:00.000Z');
+  const waivers = [
+    { invariantId: 'test.rule', transition: 'downgrade', reason: 'r', approvedBy: 'a', expiresAt: '2026-12-31T00:00:00.000Z' },
+    { invariantId: 'test.rule', transition: 'removal', reason: 'r', approvedBy: 'a', expiresAt: '2026-01-01T00:00:00.000Z' },
+  ];
+  assert.ok(waiverCoversTransition(waivers, { invariantId: 'test.rule', transition: 'downgrade' }, { now }));
+  // Expired removal waiver does not cover.
+  assert.equal(waiverCoversTransition(waivers, { invariantId: 'test.rule', transition: 'removal' }, { now }), null);
+  // Wrong transition kind does not cover.
+  assert.equal(waiverCoversTransition(waivers, { invariantId: 'test.rule', transition: 'weakened-coverage' }, { now }), null);
+  // Wrong invariant does not cover.
+  assert.equal(waiverCoversTransition(waivers, { invariantId: 'other.rule', transition: 'downgrade' }, { now }), null);
 });

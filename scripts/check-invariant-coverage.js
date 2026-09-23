@@ -9,11 +9,13 @@
 // INVARIANT_COVERAGE_REQUIRED until the registry and executable coverage are
 // part of the change.
 
-const fs = require('node:fs');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const {
+  detectEnforcementTransitions,
   extractDomainInvariantBullets,
+  validateInvariantWaivers,
+  waiverCoversTransition,
 } = require('../.claude/skills/doc-ops-core/src/invariant-registry');
 
 function git(args, { cwd, allowFailure = false } = {}) {
@@ -50,6 +52,7 @@ function checkInvariantCoverage({
   base = null,
   head = 'HEAD',
   env = process.env,
+  now = new Date(),
 } = {}) {
   const errors = [];
   const findings = [];
@@ -72,9 +75,13 @@ function checkInvariantCoverage({
   );
 
   const touchedSkills = new Set();
+  const registrySkills = new Set();
   for (const file of changed) {
-    const match = file.match(/^\.claude\/skills\/([^/]+)\/SKILL\.md$/);
-    if (match) touchedSkills.add(match[1]);
+    const skillMatch = file.match(/^\.claude\/skills\/([^/]+)\/(.+)$/);
+    if (!skillMatch) continue;
+    const [, skill, skillRelative] = skillMatch;
+    if (skillRelative === 'SKILL.md') touchedSkills.add(skill);
+    if (skillRelative === 'contracts/invariants.json') registrySkills.add(skill);
   }
 
   for (const skill of [...touchedSkills].sort()) {
@@ -121,7 +128,78 @@ function checkInvariantCoverage({
     }
   }
 
+  // Registry transition gate: a registry-only edit (no SKILL.md change) must
+  // not silently remove, downgrade, or weaken a runtime-enforced invariant.
+  // Any weakening transition requires a valid, unexpired waiver in the
+  // skill's contracts/invariant-waivers.json.
+  for (const skill of [...registrySkills].sort()) {
+    const registryRel = `.claude/skills/${skill}/contracts/invariants.json`;
+    const waiversRel = `.claude/skills/${skill}/contracts/invariant-waivers.json`;
+    const baseRaw = git(['show', `${baseSha}:${registryRel}`], { cwd: repoRoot, allowFailure: true });
+    const headRaw = git(['show', `${head}:${registryRel}`], { cwd: repoRoot, allowFailure: true });
+    const baseRegistry = parseRegistryArtifact(baseRaw, { skill, errors });
+    const headRegistry = parseRegistryArtifact(headRaw, { skill, errors }) || { invariants: [] };
+    const transitions = detectEnforcementTransitions({ baseRegistry, headRegistry });
+    if (transitions.length === 0) continue;
+
+    const waiversRaw = git(['show', `${head}:${waiversRel}`], { cwd: repoRoot, allowFailure: true });
+    let waivers = [];
+    if (waiversRaw !== null) {
+      let waiverDoc = null;
+      try {
+        waiverDoc = JSON.parse(waiversRaw);
+      } catch {
+        errors.push({
+          code: 'INVARIANT_WAIVER_UNREADABLE',
+          skill,
+          detail: `${waiversRel} is not valid JSON`,
+        });
+      }
+      if (waiverDoc !== null) {
+        const waiverValidation = validateInvariantWaivers(waiverDoc, { now });
+        for (const error of waiverValidation.errors) {
+          errors.push({ code: error.code, skill, detail: `invalid waiver artifact at ${error.path}` });
+        }
+        waivers = waiverDoc.waivers || [];
+      }
+    }
+
+    for (const transition of transitions) {
+      const waiver = waiverCoversTransition(waivers, transition, { now });
+      findings.push({
+        skill,
+        invariantId: transition.invariantId,
+        transition: transition.transition,
+        waived: Boolean(waiver),
+      });
+      if (!waiver) {
+        errors.push({
+          code: 'INVARIANT_DOWNGRADE_UNWAIVED',
+          skill,
+          detail: `runtime-enforced invariant ${transition.invariantId} was ${transition.transition} without a valid unexpired waiver in contracts/invariant-waivers.json`,
+          invariantId: transition.invariantId,
+          transition: transition.transition,
+          change: transition.detail,
+        });
+      }
+    }
+  }
+
   return { valid: errors.length === 0, base: resolvedBase, mergeBase: baseSha, errors, findings };
+}
+
+function parseRegistryArtifact(raw, { skill, errors }) {
+  if (raw === null) return null;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    errors.push({
+      code: 'INVARIANT_REGISTRY_UNREADABLE',
+      skill,
+      detail: 'contracts/invariants.json is not valid JSON at this revision',
+    });
+    return null;
+  }
 }
 
 function parseArgs(argv) {
@@ -143,7 +221,11 @@ function main(argv = process.argv) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   } else {
     for (const finding of result.findings) {
-      console.log(`INFO ${finding.skill}: Domain Invariants changed (added ${finding.added.length}, removed ${finding.removed.length}, registryUpdated ${finding.registryUpdated})`);
+      if (finding.transition) {
+        console.log(`INFO ${finding.skill}: invariant ${finding.invariantId} ${finding.transition} (waived ${finding.waived})`);
+      } else {
+        console.log(`INFO ${finding.skill}: Domain Invariants changed (added ${finding.added.length}, removed ${finding.removed.length}, registryUpdated ${finding.registryUpdated})`);
+      }
     }
     for (const error of result.errors) {
       console.error(`ERROR ${error.code} ${error.skill || ''} ${error.detail || ''}`.trim());

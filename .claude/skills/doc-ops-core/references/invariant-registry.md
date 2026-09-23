@@ -1,0 +1,46 @@
+# Invariant Registry Governance
+
+A domain rule is only as strong as the code that executes it on every relevant run. The invariant registry makes each machine-enforced rule traceable: stable ID, exact SKILL.md statement, enforcement stages, enforcer modules and blocker codes, and executable fixtures that invoke production policy code.
+
+## Artifacts
+
+- `<skill>/contracts/invariants.json` — the registry. One entry per invariant: `id`, `version`, `risk`, `scope`, `status` (`runtime-enforced` | `declared`), `enforcement` stages (`evidence`, `plan`, `pre-write`, `post-write`, `reconcile`, `admission`), `statementDigest`, and for runtime-enforced entries non-empty `fixtureIds` and `enforcers` (`{stage, module, codes[]}`; modules must exist in the repository).
+- `<skill>/SKILL.md` Domain Invariants bullet — carries the trailing `[invariant.id]` marker. The registry `statementDigest` binds the whitespace-normalized bullet text (marker excluded), so a prose edit of a marked rule breaks `validate:skills` with `INVARIANT_STATEMENT_DIGEST_MISMATCH` until the registry is consciously updated.
+- `<skill>/tests/conformance-fixtures/cases.json` — fixtures. A fixture referenced by a runtime-enforced invariant must declare `executable: { runner: "invariant-conformance", scenario: <name> }`; the skill's conformance test executes the scenario against production policy modules and fails when a listed fixture never runs (`INVARIANT_FIXTURE_NOT_EXECUTED`).
+- `<skill>/contracts/invariant-waivers.json` — the only sanctioned exception artifact (see Transition policy).
+
+## Gates
+
+1. `validate:skills` — static: registry schema, marker ↔ entry bijection, statement digest binding, fixture existence, enforcer module existence, waiver schema (expiry not enforced statically; a stale waiver is ignored at consumption instead of failing unrelated builds).
+2. `check:invariants` (`scripts/check-invariant-coverage.js`, admission stage) — diff-based:
+   - Domain Invariants statement changes (added/removed/reworded bullets) require a `contracts/invariants.json` update in the same diff, else `INVARIANT_COVERAGE_REQUIRED`. A replay of PR #19's one-line-only diff is a committed regression test.
+   - New bullets of a registry-adopted skill must carry a registered marker (`INVARIANT_MARKER_REQUIRED`); legacy unmarked bullets are grandfathered until a later phase promotes them.
+   - Registry-only diffs are scanned for enforcement transitions (below), so a one-file registry edit cannot bypass the gate.
+3. Skill conformance test — runtime: every runtime-enforced fixture executes production code and its typed decision equals the fixture assertions.
+
+## Transition policy
+
+A `runtime-enforced` invariant may not be weakened by editing the registry alone. The admission check compares base and head registries and reports:
+
+- `removal` — the entry disappears;
+- `downgrade` — status leaves `runtime-enforced`;
+- `weakened-coverage` — status stays but fixture IDs, enforcement stages, or enforcer bindings are lost.
+
+Each weakening transition requires a matching waiver in `contracts/invariant-waivers.json`:
+
+```json
+{
+  "schemaVersion": 1,
+  "waivers": [
+    {
+      "invariantId": "api.versioned-tree-delta",
+      "transition": "downgrade",
+      "reason": "Superseded by the Phase 2 post-write verifier; migration tracked in the enforcement plan.",
+      "approvedBy": "<PR/review artifact that separately approved this exception>",
+      "expiresAt": "2026-12-31T00:00:00.000Z"
+    }
+  ]
+}
+```
+
+An unmatched or expired waiver fails admission with `INVARIANT_DOWNGRADE_UNWAIVED`. Strengthening transitions (declared → runtime-enforced, added fixtures/enforcers/stages) never require a waiver. Waivers are expiring exceptions, not permanent exits: when one expires, restore enforcement or land a reviewed registry change with a new waiver.

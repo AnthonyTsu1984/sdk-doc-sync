@@ -1,0 +1,172 @@
+#!/usr/bin/env node
+'use strict';
+
+// Deterministic admission gate: a Domain Invariants prose change must land
+// together with an invariant-coverage update (the skill's
+// contracts/invariants.json in the same diff), and every newly added bullet of
+// a registry-adopted skill must carry a registered [invariant.id] marker.
+// Replaying PR #19's one-line-only SKILL.md edit fails here with
+// INVARIANT_COVERAGE_REQUIRED until the registry and executable coverage are
+// part of the change.
+
+const fs = require('node:fs');
+const path = require('node:path');
+const { execFileSync } = require('node:child_process');
+const {
+  extractDomainInvariantBullets,
+} = require('../.claude/skills/doc-ops-core/src/invariant-registry');
+
+function git(args, { cwd, allowFailure = false } = {}) {
+  try {
+    return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  } catch (error) {
+    if (allowFailure) return null;
+    throw error;
+  }
+}
+
+function resolveBase({ base = null, env = process.env } = {}) {
+  if (base) return base;
+  if (env.GITHUB_BASE_REF) return `origin/${env.GITHUB_BASE_REF}`;
+  return 'origin/master';
+}
+
+// Pure comparison so tests can exercise the semantics without git.
+function compareInvariantBullets(oldMarkdown, newMarkdown) {
+  const oldBullets = extractDomainInvariantBullets(oldMarkdown);
+  const newBullets = extractDomainInvariantBullets(newMarkdown);
+  const oldStatements = new Set(oldBullets.map((bullet) => bullet.statement));
+  const newStatements = new Set(newBullets.map((bullet) => bullet.statement));
+  return {
+    added: newBullets.filter((bullet) => !oldStatements.has(bullet.statement)),
+    removed: oldBullets.filter((bullet) => !newStatements.has(bullet.statement)),
+    newBullets,
+    oldBullets,
+  };
+}
+
+function checkInvariantCoverage({
+  repoRoot = process.cwd(),
+  base = null,
+  head = 'HEAD',
+  env = process.env,
+} = {}) {
+  const errors = [];
+  const findings = [];
+  const resolvedBase = resolveBase({ base, env });
+  const mergeBase = git(['merge-base', resolvedBase, head], { cwd: repoRoot, allowFailure: true });
+  if (mergeBase === null) {
+    return {
+      valid: false,
+      base: resolvedBase,
+      mergeBase: null,
+      errors: [{ code: 'INVARIANT_BASE_UNRESOLVED', base: resolvedBase }],
+      findings,
+    };
+  }
+  const baseSha = mergeBase.trim();
+  const changed = new Set(
+    git(['diff', '--name-only', `${baseSha}..${head}`], { cwd: repoRoot })
+      .split(/\r?\n/)
+      .filter(Boolean),
+  );
+
+  const touchedSkills = new Set();
+  for (const file of changed) {
+    const match = file.match(/^\.claude\/skills\/([^/]+)\/SKILL\.md$/);
+    if (match) touchedSkills.add(match[1]);
+  }
+
+  for (const skill of [...touchedSkills].sort()) {
+    const skillMdRel = `.claude/skills/${skill}/SKILL.md`;
+    const registryRel = `.claude/skills/${skill}/contracts/invariants.json`;
+    const oldMarkdown = git(['show', `${baseSha}:${skillMdRel}`], { cwd: repoRoot, allowFailure: true }) || '';
+    const newMarkdown = git(['show', `${head}:${skillMdRel}`], { cwd: repoRoot, allowFailure: true }) || '';
+    const comparison = compareInvariantBullets(oldMarkdown, newMarkdown);
+    const statementChanged = comparison.added.length > 0 || comparison.removed.length > 0;
+    if (!statementChanged) continue;
+
+    findings.push({
+      skill,
+      added: comparison.added.map((bullet) => bullet.statement),
+      removed: comparison.removed.map((bullet) => bullet.statement),
+      registryUpdated: changed.has(registryRel),
+    });
+
+    if (!changed.has(registryRel)) {
+      errors.push({
+        code: 'INVARIANT_COVERAGE_REQUIRED',
+        skill,
+        detail: 'Domain Invariants statements changed without a contracts/invariants.json update in the same diff',
+        added: comparison.added.map((bullet) => bullet.statement),
+        removed: comparison.removed.map((bullet) => bullet.statement),
+      });
+    }
+
+    // New bullets of a registry-adopted skill must be registered and marked;
+    // legacy unmarked bullets stay grandfathered until a later phase promotes
+    // them.
+    const registryAtHead = git(['show', `${head}:${registryRel}`], { cwd: repoRoot, allowFailure: true });
+    if (registryAtHead !== null) {
+      for (const bullet of comparison.added) {
+        if (!bullet.marker) {
+          errors.push({
+            code: 'INVARIANT_MARKER_REQUIRED',
+            skill,
+            detail: 'New Domain Invariants bullets must carry a registered [invariant.id] marker',
+            statement: bullet.statement,
+          });
+        }
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, base: resolvedBase, mergeBase: baseSha, errors, findings };
+}
+
+function parseArgs(argv) {
+  const options = { base: null, repoRoot: process.cwd(), json: false };
+  for (let index = 2; index < argv.length; index += 1) {
+    const arg = argv[index];
+    if (arg === '--base') options.base = argv[++index];
+    else if (arg === '--repo') options.repoRoot = path.resolve(argv[++index]);
+    else if (arg === '--json') options.json = true;
+    else throw new Error(`Unknown argument: ${arg}`);
+  }
+  return options;
+}
+
+function main(argv = process.argv) {
+  const options = parseArgs(argv);
+  const result = checkInvariantCoverage(options);
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+  } else {
+    for (const finding of result.findings) {
+      console.log(`INFO ${finding.skill}: Domain Invariants changed (added ${finding.added.length}, removed ${finding.removed.length}, registryUpdated ${finding.registryUpdated})`);
+    }
+    for (const error of result.errors) {
+      console.error(`ERROR ${error.code} ${error.skill || ''} ${error.detail || ''}`.trim());
+    }
+    if (result.valid) {
+      console.log(`Invariant coverage check passed (base ${result.base}).`);
+    }
+  }
+  if (!result.valid) process.exit(1);
+}
+
+if (require.main === module) {
+  try {
+    main();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+}
+
+module.exports = {
+  checkInvariantCoverage,
+  compareInvariantBullets,
+  parseArgs,
+  resolveBase,
+};

@@ -149,3 +149,38 @@ test('governance binds exactly once and an empty attestation list is allowed for
 test('governance identity requires skill and operation', () => {
   assert.throws(() => new WriterGovernance({ skill: '', operation: 'execute' }), (error) => error.code === 'WRITER_GOVERNANCE_IDENTITY_REQUIRED');
 });
+
+test('enforceTargets binds the per-call mutation target to the envelope target list', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'acceptance' });
+  governance.bindApproval({
+    ...BATCH,
+    targets: ['rec-1'],
+    approval: approvalFor({ ...BATCH, targets: ['rec-1'] }, { operation: 'acceptance' }),
+    invariantAttestations: [],
+    enforceTargets: true,
+  });
+  assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-1' }), true);
+  assert.throws(
+    () => governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-unapproved' }),
+    (error) => {
+      assert.equal(error.code, 'WRITER_TARGET_NOT_IN_ENVELOPE');
+      assert.equal(error.details.target, 'rec-unapproved');
+      return true;
+    },
+  );
+  // Calls without a concrete id (creates) are not target-checked.
+  assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.createRecord' }), true);
+});
+
+test('target enforcement stays off unless the bind opted in', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  governance.bindApproval({
+    ...BATCH,
+    targets: ['folder-1'],
+    approval: approvalFor({ ...BATCH, targets: ['folder-1'] }),
+    invariantAttestations: [attestation()],
+  });
+  // Sync-style binds carry folder-level targets while per-record ids resolve
+  // live during execution, so only the envelope presence is enforced.
+  assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-any' }), true);
+});

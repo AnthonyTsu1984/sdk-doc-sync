@@ -1,3 +1,5 @@
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Shared helpers for v3.0.x Node SDK doc patching.
  *

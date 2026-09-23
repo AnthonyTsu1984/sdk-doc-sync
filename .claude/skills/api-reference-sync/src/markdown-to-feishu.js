@@ -953,7 +953,7 @@ class MarkdownToFeishu {
     }
 
     async __upload_image_to_feishu(imageUrl, document_id) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.__upload_image_to_feishu');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.__upload_image_to_feishu', document_id);
         /**
          * Upload image to Feishu and get file_key
          *
@@ -1315,7 +1315,7 @@ class MarkdownToFeishu {
     }
 
     async copyDocument({ sourceDocumentToken, title, folderToken }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.copyDocument');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.copyDocument', sourceDocumentToken);
         if (this.source_type === 'wiki') {
             throw new Error('copyDocument currently supports drive docx files only');
         }
@@ -1355,7 +1355,7 @@ class MarkdownToFeishu {
     }
 
     async deleteFile({ fileToken, type }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteFile');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteFile', fileToken);
         if (!fileToken) throw new Error('fileToken is required to delete a Drive file');
         if (!['docx', 'folder'].includes(type)) throw new Error(`Unsupported Drive file type: ${type || '(missing)'}`);
         const token = await this.tokenFetcher.token();
@@ -1372,13 +1372,13 @@ class MarkdownToFeishu {
     }
 
     async deleteDocument({ documentToken }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteDocument');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteDocument', documentToken);
         if (!documentToken) throw new Error('documentToken is required to delete a document');
         return this.deleteFile({ fileToken: documentToken, type: 'docx' });
     }
 
     async deleteFolder({ folderToken }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteFolder');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteFolder', folderToken);
         if (!folderToken) throw new Error('folderToken is required to delete a folder');
         return this.deleteFile({ fileToken: folderToken, type: 'folder' });
     }
@@ -1509,7 +1509,7 @@ class MarkdownToFeishu {
     }
 
     async create_blocks({ document_id, blocks, startIndex = 0, parentBlockId = null }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.create_blocks');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.create_blocks', document_id);
         const token = await this.tokenFetcher.token();
 
         // Determine parent block ID
@@ -1741,7 +1741,7 @@ class MarkdownToFeishu {
     }
 
     async __populateTableCell(document_id, cellBlockId, cellContent, token) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.__populateTableCell');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.__populateTableCell', document_id);
         const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks/${cellBlockId}/children`;
         for (let attempt = 1; attempt <= 5; attempt++) {
             try {
@@ -1777,7 +1777,7 @@ class MarkdownToFeishu {
     }
 
     async update_document({ document_id, blocks }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.update_document');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.update_document', document_id);
         // For updates, we need to delete existing blocks and recreate
         // This is a simplified approach - a more sophisticated one would do differential updates
         // Get existing blocks
@@ -1904,7 +1904,7 @@ class MarkdownToFeishu {
     }
 
     async apply_api_patch({ document_id, source_document_id, patchPlan }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.apply_api_patch');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.apply_api_patch', document_id);
         if (!patchPlan || patchPlan.validation?.valid !== true) {
             const error = new Error('A validated API patch plan is required');
             error.code = 'INVALID_API_PATCH_PLAN';
@@ -2152,7 +2152,7 @@ class MarkdownToFeishu {
     }
 
     async patch_document({ document_id, blocks, strategy = 'smart' }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.patch_document');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.patch_document', document_id);
         /**
          * Sophisticated document update using PATCH API for non-destructive updates.
          *
@@ -2645,7 +2645,7 @@ class MarkdownToFeishu {
     }
 
     async __execute_batch_update(document_id, updateRequests) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.__execute_batch_update');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.__execute_batch_update', document_id);
         /**
          * Execute PATCH batch_update API call.
          * Handles batching (max 200 requests per call).
@@ -2724,7 +2724,7 @@ class MarkdownToFeishu {
     }
 
     async __delete_child_blocks_by_id({ document_id, parentBlock, childBlockIds, token = null }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.__delete_child_blocks_by_id');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.__delete_child_blocks_by_id', document_id);
         if (!childBlockIds || childBlockIds.length === 0) {
             return 0;
         }
@@ -2761,7 +2761,7 @@ class MarkdownToFeishu {
         parent_node_token = null,
         skip_image_upload = false
     }) {
-        assertWriterMutation(this.governance, 'MarkdownToFeishu.push_markdown');
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.push_markdown', document_id);
         // Parse markdown
         const { frontmatter, tokens } = await this.parse_markdown(markdown_content);
 

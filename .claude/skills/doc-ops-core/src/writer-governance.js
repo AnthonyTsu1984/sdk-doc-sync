@@ -56,10 +56,12 @@ class WriterGovernance {
         return this.bound !== null;
     }
 
-    // Bind the governance to one verified execution batch. The approval envelope
-    // must be created from facts the caller has already verified against the
+    // Bind the governance to one verified execution batch. The approval
+    // envelope must be created from facts the caller has already verified against the
     // user's explicit approval (exact digest match upstream); bindApproval never
-    // approves anything by itself.
+    // approves anything by itself. When `targets` exactly enumerates the ids
+    // each mutating call will receive, pass `enforceTargets: true` so every
+    // mutation is also cross-checked against that list.
     bindApproval({
         batchDigest,
         actionCount,
@@ -67,6 +69,7 @@ class WriterGovernance {
         sideEffects = [],
         approval,
         invariantAttestations = [],
+        enforceTargets = false,
         now = null,
     }) {
         if (this.bound) {
@@ -102,11 +105,12 @@ class WriterGovernance {
             sideEffects: Object.freeze([...sideEffects]),
             approval: Object.freeze({ ...approval }),
             invariantAttestations: attestations,
+            enforceTargets: enforceTargets === true,
         });
         return this.bound;
     }
 
-    assertMutationAllowed({ method } = {}) {
+    assertMutationAllowed({ method, target = null } = {}) {
         if (!this.bound) {
             throw new WriterGovernanceError(
                 'WRITER_ENVELOPE_REQUIRED',
@@ -114,6 +118,15 @@ class WriterGovernance {
                     + (method ? ` (blocked method: ${method})` : ''),
                 { method: method || null, skill: this.skill, operation: this.operation },
             );
+        }
+        if (this.bound.enforceTargets && target !== null && target !== undefined) {
+            if (!this.bound.targets.includes(target)) {
+                throw new WriterGovernanceError(
+                    'WRITER_TARGET_NOT_IN_ENVELOPE',
+                    `mutation ${method || '(unknown)'} targets ${target}, which the bound envelope does not cover`,
+                    { method: method || null, target, batchDigest: this.bound.batchDigest },
+                );
+            }
         }
         return true;
     }
@@ -123,7 +136,7 @@ class WriterGovernance {
 // without governance is refused outright, so any code path — entrypoint script
 // or indirect module import — that reaches a mutation without the canonical
 // approval flow is blocked before the first network call.
-function assertWriterMutation(governance, method) {
+function assertWriterMutation(governance, method, target = null) {
     if (!governance || typeof governance.assertMutationAllowed !== 'function') {
         throw new WriterGovernanceError(
             'WRITER_ENVELOPE_REQUIRED',
@@ -131,7 +144,7 @@ function assertWriterMutation(governance, method) {
             { method: method || null },
         );
     }
-    return governance.assertMutationAllowed({ method });
+    return governance.assertMutationAllowed({ method, target });
 }
 
 function createWriterGovernance({ skill, operation }) {

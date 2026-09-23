@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Post-action: scan all docs in a bitable for plain-text mentions of Class/Enum
  * type names and inject clickable Feishu docx links for the first time.

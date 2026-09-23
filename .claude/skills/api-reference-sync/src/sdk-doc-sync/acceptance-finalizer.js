@@ -182,8 +182,13 @@ class AcceptanceFinalizer {
 
     // All checks above verified the receipt/session/manifest/evidence chain;
     // only now is the writer's governance allowed to bind, so the Draft
-    // transitions below carry a governed envelope.
-    if (this.bitableWriter?.governance?.bindApproval) {
+    // transitions below carry a governed envelope. The envelope carries the
+    // session-claimed acceptance digest while binding validates it against the
+    // recomputed manifest digest, so the equality the session check enforces
+    // is re-imposed here even if that check were ever removed. Document-only
+    // acceptance sessions legitimately touch zero bitable records — nothing
+    // mutates, so no envelope is bound.
+    if (touchedRecords.length > 0 && this.bitableWriter?.governance?.bindApproval) {
       const governance = this.bitableWriter.governance;
       const targets = touchedRecords.map((item) => item.recordId);
       governance.bindApproval({
@@ -194,13 +199,16 @@ class AcceptanceFinalizer {
         approval: createApprovalEnvelope({
           skill: 'api-reference-sync',
           operation: 'acceptance',
-          batchDigest: recomputed.acceptanceManifestDigest,
+          batchDigest: reviewSession.acceptanceManifestDigest,
           actionCount: touchedRecords.length,
           targets,
           sideEffects: ['bitable.update'],
           decision: 'approved',
         }),
         invariantAttestations: [],
+        // targets is the exact recordId list the update loop below feeds to
+        // updateRecord, so every mutation is cross-checked against it.
+        enforceTargets: true,
       });
     }
 

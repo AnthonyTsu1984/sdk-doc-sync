@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Change all code block languages from TypeScript (64) to JavaScript (30)
  * across all Node.js SDK docs.

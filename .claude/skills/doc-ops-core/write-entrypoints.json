@@ -183,9 +183,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/_node-v30-utils.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "-node-v30-utils",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/add-missing-cloud-v2.js",
@@ -197,9 +200,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "add-type-links",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs.js",
@@ -260,9 +266,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/cleanup-go-iterators.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cleanup-go-iterators",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cli-fetch-and-diff.js",
@@ -316,16 +325,22 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-add-include-all.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-add-include-all",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-add-ptr-type-links.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-add-ptr-type-links",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-audit-util.js",
@@ -400,9 +415,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-examples-v2.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-examples-v2",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-fetch-examples.js",
@@ -414,16 +432,22 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-fix-checkstatus.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-fix-checkstatus",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-fix-describe-resource-group.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-fix-describe-resource-group",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-fix-methods-heading.js",
@@ -456,9 +480,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-request-syntax-fix.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-request-syntax-fix",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-response-types-create.js",
@@ -512,23 +539,32 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-v261-examples-update.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-v261-examples-update",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-v261-fix-code-lang.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-v261-fix-code-lang",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-v263-fix-returns-format.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "cpp-v263-fix-returns-format",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/cpp-v263-sync.js",
@@ -645,16 +681,22 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/fix-go-iterator-examples.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "fix-go-iterator-examples",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "fix-leading-spaces",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/fix-node-v26.js",
@@ -708,51 +750,72 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-add-imports.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-add-imports",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-fix-clientconfig.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-fix-clientconfig",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-fix-entity-examples.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-fix-entity-examples",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-fix-examples.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-fix-examples",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-fix-indent.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-fix-indent",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-fix-option-code.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-fix-option-code",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-fix-param-layout.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "go-fix-param-layout",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/go-v26-create.js",
@@ -897,9 +960,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/node-add-token.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "node-add-token",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/node-data-import-docs.js",
@@ -932,9 +998,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/node-fix-code-lang.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "node-fix-code-lang",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/node-inline-type-fix.js",
@@ -953,9 +1022,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/node-reformat-constructor.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "node-reformat-constructor",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/node-v26-gap-fill.js",
@@ -1156,16 +1228,22 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "post-fix-links",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/python-fix-examples.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "python-fix-examples",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/rebuild-alignment-bitable.js",
@@ -1345,9 +1423,12 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/patch-behavior-changes.js",
       "skill": "api-reference-sync",
-      "classification": "read-only",
+      "classification": "legacy-live",
       "operation": "patch-behavior-changes",
-      "basis": "no external mutation signature found"
+      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
+      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "admittedAtBaseline": false
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/repoint-bitable.js",

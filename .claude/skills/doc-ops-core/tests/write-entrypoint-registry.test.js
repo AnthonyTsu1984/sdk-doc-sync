@@ -18,12 +18,19 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 test('tracked entrypoint registry covers the complete frozen inventory with honest governance metadata', () => {
   const registry = loadWriteEntrypointRegistry({ repoRoot: REPO_ROOT });
   const discovered = discoverEntrypoints(REPO_ROOT);
+  // The 27 raw-fetch mutators reclassified during the phase-3 review are
+  // exception-admitted, so the inventory validation runs against the real
+  // reviewed exceptions at the current time.
+  const expectedChanges = JSON.parse(fs.readFileSync(
+    path.join(REPO_ROOT, '.claude', 'skills', 'doc-ops-core', 'expected-changes.json'),
+    'utf8',
+  ));
   const result = validateRegistryEntries({
     repoRoot: REPO_ROOT,
     registry,
     discoveredPaths: discovered,
-    expectedChanges: [],
-    now: '2026-08-06T00:00:00.000Z',
+    expectedChanges,
+    now: new Date().toISOString(),
   });
 
   // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2).

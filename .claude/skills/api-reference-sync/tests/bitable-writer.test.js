@@ -113,3 +113,39 @@ test('read methods stay available without governance so the canonical reader pat
     'only read endpoints may be reached without governance',
   );
 });
+
+test('an enforceTargets governance rejects record ids outside the bound envelope with zero network calls', async () => {
+  const calls = [];
+  const BitableWriter = loadWithFetch(async (url, options) => {
+    calls.push({ url, options });
+    return { async json() { return { code: 0, data: { record: { record_id: 'rec-1' } } }; } };
+  });
+  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'acceptance' });
+  const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
+  governance.bindApproval({
+    batchDigest: BATCH.batchDigest,
+    actionCount: 1,
+    targets: ['rec-1'],
+    sideEffects: ['bitable.update'],
+    approval: createApprovalEnvelope({
+      skill: 'api-reference-sync',
+      operation: 'acceptance',
+      batchDigest: BATCH.batchDigest,
+      actionCount: 1,
+      targets: ['rec-1'],
+      sideEffects: ['bitable.update'],
+      decision: 'approved',
+    }),
+    invariantAttestations: [],
+    enforceTargets: true,
+  });
+  const writer = new BitableWriter({ baseToken: 'base-1', tableId: 'table-1', governance });
+  writer.tokenFetcher = { token: async () => 'tenant-token' };
+
+  await assert.rejects(
+    () => writer.updateRecord('rec-unapproved', { progress: 'Draft' }),
+    (error) => error.code === 'WRITER_TARGET_NOT_IN_ENVELOPE',
+  );
+  await writer.updateRecord('rec-1', { progress: 'Draft' });
+  assert.equal(calls.length, 1, 'only the in-envelope mutation may reach the network');
+});

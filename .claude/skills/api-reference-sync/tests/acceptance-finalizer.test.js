@@ -440,3 +440,41 @@ test('AcceptanceFinalizer accepts the aggregate accepted-unit manifest digest', 
     { actionId: 'action-c', invariantId: INVARIANT_ID, decision: 'COPY_PATCH_AND_REPOINT', verified: true },
   ]);
 });
+
+test('document-only acceptance sessions with zero touched records finalize without binding an envelope', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+  const session = acceptancePendingSession([
+    { documentStableId: 'node:Collections:a', actionId: 'action-a', recordId: 'rec-a' },
+  ]);
+  session.acceptedReviewUnits[0].touchedRecords = [];
+  session.acceptanceManifest = null;
+  const rebuild = buildAcceptanceManifest(session.reviewUnitManifest, session.acceptedReviewUnits);
+  session.acceptanceManifest = rebuild;
+  session.acceptanceManifestDigest = rebuild.acceptanceManifestDigest;
+  const { writes, writer } = statefulWriter([record('rec-a')]);
+  writer.governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'acceptance' });
+  const finalizer = new AcceptanceFinalizer({
+    bitableWriter: writer,
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async () => {},
+    readJournalEntries: async (digest) => {
+      const entries = session.journals.get(digest);
+      if (!entries) throw new Error(`unknown journal ${digest}`);
+      return structuredClone(entries);
+    },
+  });
+
+  const result = await finalizer.finalize({
+    userConfirmed: true,
+    reviewSession: session,
+    scanStateKey: 'cpp',
+    scanStateEntry: { status: 'finalized' },
+  });
+
+  assert.equal(result.status, 'accepted');
+  assert.equal(result.completionSentinel, true);
+  assert.deepEqual(writes, [], 'zero touched records must produce zero mutations');
+  assert.equal(writer.governance.isBound, false, 'no envelope is bound when there is nothing to mutate');
+});

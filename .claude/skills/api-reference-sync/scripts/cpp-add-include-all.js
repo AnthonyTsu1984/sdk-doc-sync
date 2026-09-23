@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Prepend `#include "milvus/MilvusClientV2.h"` to the example code block
  * in every C++ v2.6.x doc. Skips docs that already have it.

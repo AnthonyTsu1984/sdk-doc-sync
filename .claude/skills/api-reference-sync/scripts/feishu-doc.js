@@ -1,5 +1,14 @@
 #!/usr/bin/env node
-require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+const { enforceLegacyQuarantine, createExceptionGovernance } = require('../../doc-ops-core/src/legacy-quarantine.js');
+// Reaching this line means an unexpired reviewed exception AND the
+// DOC_OPS_ALLOW_LEGACY_LIVE=1 gate sanctioned the run; the governance minted
+// from that exception is what lets the mutating subcommands pass the shared
+// writer gates. Such a run is NOT harness-guaranteed.
+const legacyGovernance = createExceptionGovernance({
+    skill: 'api-reference-sync',
+    operation: 'feishu-doc',
+    decision: enforceLegacyQuarantine({ entrypointPath: __filename }),
+});
 
 /**
  * Feishu Doc CLI
@@ -212,6 +221,7 @@ async function cmdPush(opts) {
         sourceType: opts.sourceType,
         rootToken:  opts.folder || opts.spaceId || null,
         baseToken:  null,
+        governance: legacyGovernance,
     });
 
     const result = await m2f.push_markdown({
@@ -238,7 +248,7 @@ async function cmdPatch(opts) {
         return;
     }
 
-    const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+    const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: legacyGovernance });
     const { tokens } = await m2f.parse_markdown(content);
     const blocks     = await m2f.markdown_to_blocks(tokens);
     await m2f.patch_document({ document_id: docId, blocks, strategy: opts.strategy });
@@ -249,7 +259,7 @@ async function cmdGetBlocks(opts) {
     const docId = opts.positional[0];
     if (!docId) { console.error('get-blocks requires <doc-id>'); process.exit(1); }
 
-    const m2f    = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+    const m2f    = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: legacyGovernance });
     const blocks = await m2f.get_document_blocks(docId);
     console.log(JSON.stringify(blocks, null, 2));
 }
@@ -341,7 +351,7 @@ async function cmdBitableList(opts) {
     const baseToken = opts.positional[0];
     if (!baseToken) { console.error('bitable-list requires <base-token>'); process.exit(1); }
 
-    const bw      = new BitableWriter({ baseToken, tableId: opts.table || null });
+    const bw      = new BitableWriter({ baseToken, tableId: opts.table || null, governance: legacyGovernance });
     const records = await bw.listRecords({ pageSize: opts.limit });
 
     console.log(`${records.length} record(s):`);
@@ -357,7 +367,7 @@ async function cmdBitableShow(opts) {
     if (!baseToken) { console.error('bitable-show requires <base-token>'); process.exit(1); }
     if (!recordId)  { console.error('bitable-show requires <record-id>');  process.exit(1); }
 
-    const bw      = new BitableWriter({ baseToken, tableId: opts.table || null });
+    const bw      = new BitableWriter({ baseToken, tableId: opts.table || null, governance: legacyGovernance });
     const records = await bw.listRecords({ pageSize: 500 });
     const record  = records.find(r => r.record_id === recordId);
 
@@ -378,7 +388,7 @@ async function cmdBitableCreate(opts) {
         return;
     }
 
-    const bw     = new BitableWriter({ baseToken, tableId: opts.table || null });
+    const bw     = new BitableWriter({ baseToken, tableId: opts.table || null, governance: legacyGovernance });
     const record = await bw.createRecord(fields);
     console.log(`Created: ${record.record_id}`);
 }
@@ -398,7 +408,7 @@ async function cmdBitableUpdate(opts) {
         return;
     }
 
-    const bw     = new BitableWriter({ baseToken, tableId: opts.table || null });
+    const bw     = new BitableWriter({ baseToken, tableId: opts.table || null, governance: legacyGovernance });
     const record = await bw.updateRecord(recordId, fields);
     console.log(`Updated: ${record.record_id}`);
 }
@@ -419,7 +429,7 @@ async function cmdBitableDelete(opts) {
         if (!ok) { console.log('Aborted.'); return; }
     }
 
-    const bw = new BitableWriter({ baseToken, tableId: opts.table || null });
+    const bw = new BitableWriter({ baseToken, tableId: opts.table || null, governance: legacyGovernance });
     await bw.deleteRecord(recordId);
     console.log(`Deleted: ${recordId}`);
 }

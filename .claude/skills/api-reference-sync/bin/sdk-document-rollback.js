@@ -38,20 +38,26 @@ function rollbackEnvelopeSideEffects(manifest) {
     return [...new Set(Object.values(effects).flat().filter((value) => typeof value === 'string'))].sort();
 }
 
-function createRollbackWriterGovernance(manifest) {
+function createRollbackWriterGovernance(manifest, approvedDigest) {
     const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'rollback' });
+    const targets = rollbackEnvelopeTargets(manifest);
+    const sideEffects = rollbackEnvelopeSideEffects(manifest);
     governance.bindApproval({
+        // expected = the digest-covered manifest; the envelope carries the
+        // operator-supplied --approve-rollback-digest. bindApproval enforces
+        // their equality, so the gate survives even if the CLI-side check
+        // were ever removed.
         batchDigest: manifest.rollbackManifestDigest,
         actionCount: manifest.actions.length,
-        targets: rollbackEnvelopeTargets(manifest),
-        sideEffects: rollbackEnvelopeSideEffects(manifest),
+        targets,
+        sideEffects,
         approval: createApprovalEnvelope({
             skill: 'api-reference-sync',
             operation: 'rollback',
-            batchDigest: manifest.rollbackManifestDigest,
+            batchDigest: approvedDigest,
             actionCount: manifest.actions.length,
-            targets: rollbackEnvelopeTargets(manifest),
-            sideEffects: rollbackEnvelopeSideEffects(manifest),
+            targets,
+            sideEffects,
             decision: 'approved',
         }),
         invariantAttestations: [],
@@ -162,12 +168,13 @@ function incompleteJournalResult({ entries, journalPath, manifest, reviewUnitId 
   };
 }
 
-function defaultExecutorFactory({ session, manifest, env = process.env }) {
+function defaultExecutorFactory({ session, manifest, approvedDigest, env = process.env }) {
   const baseToken = env.BASE_TOKEN || session.artifacts?.baseToken;
   if (!baseToken) throw new Error('BASE_TOKEN is required for live rollback');
   // defaultExecutorFactory only runs after --approve-rollback-digest has been
-  // verified against the manifest, so binding here is post-approval.
-  const governance = createRollbackWriterGovernance(manifest);
+  // verified against the manifest, so binding here is post-approval; the
+  // operator-supplied digest is what the bound envelope carries.
+  const governance = createRollbackWriterGovernance(manifest, approvedDigest);
   const documentWriter = new MarkdownToFeishu({
     sourceType: 'drive',
     rootToken: env.ROOT_TOKEN || null,
@@ -286,7 +293,7 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
     return result;
   }
 
-  const executor = executorFactory({ session, manifest, env });
+  const executor = executorFactory({ session, manifest, env, approvedDigest: args.approveRollbackDigest });
   const execution = await executor.execute(manifest, {
     approvalDigest: args.approveRollbackDigest,
     journalPath,

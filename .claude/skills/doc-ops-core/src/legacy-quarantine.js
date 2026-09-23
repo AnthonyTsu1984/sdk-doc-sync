@@ -3,6 +3,18 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
+const { WriterGovernance, createApprovalEnvelope } = require('./writer-governance');
+const { digestSemantic } = require('./digest');
+
+class LegacyQuarantineError extends Error {
+    constructor(code, message, details = {}) {
+        super(`${code}: ${message}`);
+        this.name = 'LegacyQuarantineError';
+        this.code = code;
+        this.details = Object.freeze({ ...details });
+    }
+}
+
 // Runtime enforcement of the write-entrypoint registry. Entry points classified
 // `legacy-live` are quarantined: running them directly requires BOTH an
 // unexpired reviewed exception (expected-changes.json) and the explicit
@@ -25,12 +37,17 @@ function findRegistryEntry(registry, entrypointPath) {
 }
 
 function exceptionValid(expectedChanges, entrypointPath, now) {
+    return findException(expectedChanges, entrypointPath, now) !== null;
+}
+
+function findException(expectedChanges, entrypointPath, now) {
     const current = Date.parse(now);
-    return (Array.isArray(expectedChanges) ? expectedChanges : []).some((change) => (
-        change?.entrypointPath === normalizePath(entrypointPath)
+    const wanted = normalizePath(entrypointPath);
+    return (Array.isArray(expectedChanges) ? expectedChanges : []).find((change) => (
+        change?.entrypointPath === wanted
         && Number.isFinite(Date.parse(change?.expiresAt))
         && Date.parse(change.expiresAt) > current
-    ));
+    )) || null;
 }
 
 function evaluateLegacyQuarantine({
@@ -49,14 +66,28 @@ function evaluateLegacyQuarantine({
     if (env[QUARANTINE_ENV_FLAG] !== '1') {
         return { quarantined: true, reason: 'environment-gate-closed', entry };
     }
-    if (!exceptionValid(expectedChanges, entrypointPath, now)) {
+    const exception = findException(expectedChanges, entrypointPath, now);
+    if (!exception) {
         return { quarantined: true, reason: 'no-unexpired-exception', entry };
     }
-    return { quarantined: false, reason: 'exception-and-gate-present', entry };
+    return {
+        quarantined: false,
+        reason: 'exception-and-gate-present',
+        entry,
+        exceptionExpiresAt: exception.expiresAt,
+    };
 }
 
 function resolveRepoRoot() {
     return path.resolve(__dirname, '..', '..', '..', '..');
+}
+
+function sameFile(left, right) {
+    try {
+        return fs.realpathSync(left) === fs.realpathSync(right);
+    } catch {
+        return path.resolve(left) === path.resolve(right);
+    }
 }
 
 // Inserted as the first statement of every legacy-live entrypoint. Injected
@@ -78,8 +109,9 @@ function enforceLegacyQuarantine({
     // When this file is being imported (test suites, tooling) rather than run
     // as the process entrypoint, enforcement does not apply — imports cannot
     // mutate either, because every writer module independently demands a bound
-    // approval envelope.
-    if (entrypointPath && argv[1] && path.resolve(argv[1]) !== target) {
+    // approval envelope. Compare real paths so a symlinked invocation still
+    // resolves to the same file and stays quarantined.
+    if (entrypointPath && argv[1] && !sameFile(argv[1], target)) {
         return { quarantined: false, reason: 'not-main-module' };
     }
     const loadedRegistry = registry
@@ -111,11 +143,60 @@ function enforceLegacyQuarantine({
     return decision;
 }
 
+// Mint a writer governance for a run the quarantine explicitly sanctioned
+// (unexpired exception + environment gate). This is what keeps the documented
+// legacy-live override functional after writers started demanding envelopes:
+// scripts that receive it can write; the envelope records exactly which
+// exception and entrypoint authorized the run. Such runs are NOT
+// harness-guaranteed and must never advance accepted scan state.
+function createExceptionGovernance({ skill, operation, decision }) {
+    if (!decision || decision.quarantined !== false || decision.reason !== 'exception-and-gate-present') {
+        throw new LegacyQuarantineError(
+            'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
+            'exception governance requires a sanctioned legacy-live quarantine decision',
+            { reason: decision?.reason || null },
+        );
+    }
+    const entrypointPath = decision.entry?.path || null;
+    const expiresAt = decision.exceptionExpiresAt || null;
+    if (!entrypointPath || !expiresAt) {
+        throw new LegacyQuarantineError(
+            'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
+            'sanctioned decision carries no entrypoint path or exception expiry',
+        );
+    }
+    const envelopeFacts = { entrypointPath, expiresAt, operation };
+    const batchDigest = digestSemantic(envelopeFacts);
+    const targets = [entrypointPath];
+    const sideEffects = ['legacy-live-exception-run'];
+    const governance = new WriterGovernance({ skill, operation });
+    governance.bindApproval({
+        batchDigest,
+        actionCount: 1,
+        targets,
+        sideEffects,
+        approval: createApprovalEnvelope({
+            skill,
+            operation,
+            batchDigest,
+            actionCount: 1,
+            targets,
+            sideEffects,
+            decision: 'approved',
+        }),
+        invariantAttestations: [],
+    });
+    return governance;
+}
+
 module.exports = {
     EXIT_QUARANTINED,
     QUARANTINE_ENV_FLAG,
+    LegacyQuarantineError,
+    createExceptionGovernance,
     enforceLegacyQuarantine,
     evaluateLegacyQuarantine,
     exceptionValid,
     findRegistryEntry,
+    sameFile,
 };

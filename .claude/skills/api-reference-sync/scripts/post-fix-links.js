@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 /**
  * Post-action: scan all docs in a bitable for stale Feishu docx links and
  * replace them with the current URL from the bitable index.

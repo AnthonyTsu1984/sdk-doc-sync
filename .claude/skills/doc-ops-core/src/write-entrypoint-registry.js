@@ -26,7 +26,34 @@ const WRITE_SIGNATURES = [
   { pattern: /\b(?:driveWriter|wikiWriter)\.(?:create|update|move|delete)(?:Folder|Node|Document)\s*\(/, evidence: 'drive-writer mutation' },
   { pattern: /\.(?:appTableRecord|document|wikiNode)\.(?:create|update|patch|delete)\s*\(/, evidence: 'Feishu SDK mutation' },
   { pattern: /\blark-cli\b[^\n]{0,160}\b(?:create|update|patch|delete|move|copy)\b/, evidence: 'lark-cli mutation' },
+  // Raw HTTP mutations that bypass the shared writer classes entirely.
+  { pattern: /\bmethod\s*:\s*['"](?:PATCH|PUT|DELETE)['"]/, evidence: 'raw HTTP mutation (method option)' },
+  { pattern: /\(\s*['"](PATCH|PUT|DELETE)['"]\s*,/, evidence: 'raw HTTP mutation (helper first argument)' },
 ];
+
+// The runtime quarantine only counts when the guard call is the first
+// executable statement of the entrypoint — after the shebang, comments, and an
+// optional 'use strict' directive. A mention buried in a comment, dead branch,
+// or behind other statements does not quarantine anything. The guard may be
+// invoked directly, or the module may be destructured first and the call
+// wrapped in createExceptionGovernance (the sanctioned legacy-live override).
+function stripLeadingComments(text) {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/^[ \t]*\/\/[^\n]*/gm, '');
+}
+
+function hasFirstStatementLegacyGuard(source) {
+  const body = stripLeadingComments(String(source).replace(/^#![^\n]*\n?/, ''))
+    .trim()
+    .replace(/^['"]use strict['"];?[ \t]*\n?/, '')
+    .trim();
+  const direct = /^(?:const\s+\w+\s*=\s*)?require\((['"])[^'"]*legacy-quarantine(\.js)?\1\)\.enforceLegacyQuarantine\(\s*\{\s*entrypointPath:\s*__filename\s*,?\s*\}\s*\)\s*;?/;
+  // No other statement may intervene: the gap between the require and the
+  // guard call must not contain a statement-terminating semicolon.
+  const twoStep = /^(?:const|let|var)\s+\{[^}]*\}\s*=\s*require\((['"])[^'"]*legacy-quarantine(\.js)?\1\)\s*;[^;]{0,400}?enforceLegacyQuarantine\(\s*\{\s*entrypointPath:\s*__filename/;
+  return direct.test(body) || twoStep.test(body);
+}
 
 function normalizePath(value) {
   return String(value).split(path.sep).join('/').replace(/^\.\//, '');
@@ -135,9 +162,9 @@ function validateRegistryEntries({
         errors.push({ code: 'LEGACY_LIVE_REPLACEMENT_REQUIRED', path: `${entryPath}.canonicalReplacement`, entrypointPath: normalized });
       }
       // Runtime quarantine: the entrypoint must call the shared launcher as
-      // its first statement, so the registry flag is enforced by code and not
-      // just recorded as metadata.
-      if (absolute && !/enforceLegacyQuarantine\s*\(/.test(fs.readFileSync(absolute, 'utf8'))) {
+      // its first executable statement, so the registry flag is enforced by
+      // code and not just recorded as metadata.
+      if (absolute && !hasFirstStatementLegacyGuard(fs.readFileSync(absolute, 'utf8'))) {
         errors.push({ code: 'LEGACY_LIVE_RUNTIME_GUARD_REQUIRED', path: `${entryPath}.classification`, entrypointPath: normalized });
       }
       if (entry.admittedAtBaseline !== true && !validLegacyException(expectedChanges, normalized, now)) {
@@ -198,6 +225,7 @@ module.exports = {
   CLASSIFICATIONS,
   detectWriteCapability,
   discoverEntrypoints,
+  hasFirstStatementLegacyGuard,
   loadWriteEntrypointRegistry,
   validateRegistryEntries,
   validateWriteEntrypointRegistry,

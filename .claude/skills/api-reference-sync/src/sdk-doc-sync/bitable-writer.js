@@ -103,7 +103,7 @@ class BitableWriter {
     }
 
     async updateRecord(recordId, fields) {
-        assertWriterMutation(this.governance, 'BitableWriter.updateRecord');
+        assertWriterMutation(this.governance, 'BitableWriter.updateRecord', recordId);
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
         const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records/${recordId}`;
@@ -128,7 +128,7 @@ class BitableWriter {
     }
 
     async replaceRecordFields(recordId, writableFields) {
-        assertWriterMutation(this.governance, 'BitableWriter.replaceRecordFields');
+        assertWriterMutation(this.governance, 'BitableWriter.replaceRecordFields', recordId);
         if (!recordId) throw new TypeError('recordId is required to replace record fields');
         if (!writableFields || typeof writableFields !== 'object' || Array.isArray(writableFields)) {
             throw new TypeError('writableFields must be an object');
@@ -161,7 +161,7 @@ class BitableWriter {
     }
 
     async deleteRecord(recordId) {
-        assertWriterMutation(this.governance, 'BitableWriter.deleteRecord');
+        assertWriterMutation(this.governance, 'BitableWriter.deleteRecord', recordId);
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
         const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records/${recordId}`;

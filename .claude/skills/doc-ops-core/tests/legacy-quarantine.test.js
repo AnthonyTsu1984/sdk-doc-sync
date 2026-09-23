@@ -10,10 +10,14 @@ const { spawnSync } = require('node:child_process');
 const {
   EXIT_QUARANTINED,
   QUARANTINE_ENV_FLAG,
+  createExceptionGovernance,
   enforceLegacyQuarantine,
   evaluateLegacyQuarantine,
 } = require('../../doc-ops-core/src/legacy-quarantine');
-const { loadWriteEntrypointRegistry } = require('../../doc-ops-core/src/write-entrypoint-registry');
+const {
+  hasFirstStatementLegacyGuard,
+  loadWriteEntrypointRegistry,
+} = require('../../doc-ops-core/src/write-entrypoint-registry');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
@@ -69,7 +73,9 @@ test('evaluation requires an unexpired reviewed exception even with the gate ope
     expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-10-01T00:00:00.000Z' }],
     now: '2026-09-23T00:00:00.000Z',
   });
-  assert.deepEqual(allowed, { quarantined: false, reason: 'exception-and-gate-present', entry: LEGACY_ENTRY });
+  assert.equal(allowed.quarantined, false);
+  assert.equal(allowed.reason, 'exception-and-gate-present');
+  assert.equal(allowed.exceptionExpiresAt, '2026-10-01T00:00:00.000Z');
 });
 
 test('evaluation admits non-legacy classifications without any gate', () => {
@@ -118,15 +124,16 @@ test('enforceLegacyQuarantine terminates a quarantined run with the canonical re
 test('every registered legacy-live entrypoint carries the runtime guard as its first statement', () => {
   const registry = loadWriteEntrypointRegistry({ repoRoot: REPO_ROOT });
   const legacy = registry.entries.filter((entry) => entry.classification === 'legacy-live');
-  assert.equal(legacy.length, 60);
+  assert.equal(legacy.length, 87); // 60 baseline + 27 raw-fetch mutators under exception
   for (const entry of legacy) {
     const source = fs.readFileSync(path.join(REPO_ROOT, entry.path), 'utf8');
-    const lines = source.split('\n');
-    const guardLineIndex = lines.findIndex((line) => line.includes('enforceLegacyQuarantine'));
-    assert.ok(guardLineIndex >= 0, `${entry.path} is missing the quarantine guard`);
-    assert.ok(
-      guardLineIndex <= 1,
-      `${entry.path} must call the guard before any other statement (found at line ${guardLineIndex + 1})`,
+    const guardIndex = source.split('\n').findIndex((line) => line.includes('enforceLegacyQuarantine'));
+    assert.ok(guardIndex >= 0, `${entry.path} is missing the quarantine guard`);
+    assert.ok(guardIndex <= 2, `${entry.path} must call the guard at the top of the file (found at line ${guardIndex + 1})`);
+    assert.equal(
+      hasFirstStatementLegacyGuard(source),
+      true,
+      `${entry.path} guard must be the first executable statement`,
     );
   }
 });
@@ -174,4 +181,73 @@ test('guard coverage admission fails for a legacy-live entrypoint without the gu
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test('a symlinked invocation of a legacy-live entrypoint stays quarantined', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'legacy-symlink-'));
+  const scripts = path.join(root, 'scripts');
+  fs.mkdirSync(scripts, { recursive: true });
+  const realScript = path.join(scripts, 'real-legacy.js');
+  fs.writeFileSync(realScript, 'writer.deleteRecord(r);\n');
+  const link = path.join(root, 'legacy-alias.js');
+  fs.symlinkSync(realScript, link);
+
+  let exitCode = null;
+  const messages = [];
+  enforceLegacyQuarantine({
+    entrypointPath: realScript,
+    env: {},
+    repoRoot: root,
+    registry: registryWith([{ ...LEGACY_ENTRY, path: 'scripts/real-legacy.js' }]),
+    argv: [process.execPath, link],
+    write: (message) => messages.push(message),
+    exit: (code) => { exitCode = code; },
+  });
+  assert.equal(exitCode, EXIT_QUARANTINED, 'symlinked entrypoints must not slip past the guard');
+  assert.match(messages.join(''), /LEGACY_LIVE_QUARANTINED/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('guard anchoring rejects mentions that are not the first executable statement', () => {
+  const guarded = [
+    "require('../doc-ops-core/src/legacy-quarantine').enforceLegacyQuarantine({ entrypointPath: __filename });\nwriter.deleteRecord(r);\n",
+    "#!/usr/bin/env node\nrequire('./legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });\nmain();\n",
+    "/* header\n   comment */\nconst decision = require('./legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });\nmain();\n",
+    "const { enforceLegacyQuarantine, createExceptionGovernance } = require('../../doc-ops-core/src/legacy-quarantine.js');\n// comment\nconst g = createExceptionGovernance({ decision: enforceLegacyQuarantine({ entrypointPath: __filename }) });\n",
+    "'use strict';\nrequire('./legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });\n",
+  ];
+  for (const source of guarded) {
+    assert.equal(hasFirstStatementLegacyGuard(source), true, source.slice(0, 60));
+  }
+  const unguarded = [
+    "writer.deleteRecord(r);\nrequire('./legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });\n",
+    "// require('./legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });\nwriter.deleteRecord(r);\n",
+    "if (false) { require('./legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename }); }\nwriter.deleteRecord(r);\n",
+    "const { enforceLegacyQuarantine } = require('./legacy-quarantine.js');\nsetup();\nenforceLegacyQuarantine({ entrypointPath: __filename });\nwriter.deleteRecord(r);\n",
+  ];
+  for (const source of unguarded) {
+    assert.equal(hasFirstStatementLegacyGuard(source), false, source.slice(0, 60));
+  }
+});
+
+test('exception governance is minted only from a sanctioned decision and records the exception', () => {
+  const sanctioned = evaluateLegacyQuarantine({
+    entrypointPath: 'scripts/legacy-one-off.js',
+    env: { [QUARANTINE_ENV_FLAG]: '1' },
+    registry: registryWith([LEGACY_ENTRY]),
+    expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-10-01T00:00:00.000Z' }],
+    now: '2026-09-23T00:00:00.000Z',
+  });
+  const governance = createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: sanctioned });
+  assert.equal(governance.isBound, true);
+  assert.equal(governance.assertMutationAllowed({ method: 'push_markdown', target: 'doc-1' }), true);
+
+  assert.throws(
+    () => createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: { quarantined: false, reason: 'not-legacy-live' } }),
+    (error) => error.code === 'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
+  );
+  assert.throws(
+    () => createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: { quarantined: true, reason: 'environment-gate-closed', entry: LEGACY_ENTRY } }),
+    (error) => error.code === 'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
+  );
 });

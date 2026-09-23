@@ -1,3 +1,5 @@
+require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+
 'use strict';
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') });

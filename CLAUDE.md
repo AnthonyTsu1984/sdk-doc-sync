@@ -49,5 +49,5 @@ node .claude/skills/api-reference-sync/scripts/edit-openapi.js <subcommand> [opt
 1. **Always read `scan-state.json` first** — never full-scan an existing SDK. Diff tags, scan only changed symbols.
 2. **Never set the Slug field** on bitable records — it is auto-populated.
 3. **Version-targeted updates:** copy docs to the target version folder first, then patch, then repoint bitable. Never patch older-version docs in place.
-4. **Post-actions after bulk create/update:** run `add-type-links.js`, `fix-leading-spaces.js`, and `post-fix-links.js` in that order.
+4. **Post-actions after bulk create/update:** run `add-type-links.js`, `fix-leading-spaces.js`, and `post-fix-links.js` in that order. These mutate docx blocks via raw fetch, so they are runtime-quarantined as legacy-live: a run requires an unexpired exception in `.claude/skills/doc-ops-core/expected-changes.json` **and** `DOC_OPS_ALLOW_LEGACY_LIVE=1`; a run opened that way is **not harness-guaranteed** and must never advance accepted scan state.
 5. **Run from project root** so `.env` and relative paths resolve correctly.

@@ -75,8 +75,18 @@ version history, byte-exact). Defenses now in the adapter:
    rendered placeholders (`[Board](#feishu-board-...)`) so the whole-page
    digest comparison covers pipeline-owned content only, while the surgical
    path's structural assertion covers the foreign blocks themselves.
-3. `patch_document(strategy: smart)` is NOT safe for pages with foreign blocks:
-   smart matching sends unmatched preserve-only blocks to `toDelete`.
+3. `patch_document(strategy: smart)` is anchor-based (rewritten 2026-09): blocks
+   pair only on exact or uniquely-contained same-type anchor text via an
+   order-preserving LCS walk — never similarity scores; insertions land at
+   explicit positions derived from the matched skeleton (no more top-of-page
+   appends); edited tables/callouts/quote containers rebuild at their own
+   position instead of silently dropping the edit; and preserve-only blocks
+   (boards, sheets, bitables, grids, add-ons) are NEVER matched or deleted,
+   with a post-write survival assertion. Reads are paginated (the blocks
+   endpoint caps at 500/response) and rate-limit (99991400) responses back
+   off and retry. It still overwrites pipeline-region text from the draft and
+   cannot recreate foreign content — prefer the surgical mode for pages with
+   hand-polished regions.
 
 ## Native table contract
 

@@ -1534,25 +1534,56 @@ class MarkdownToFeishu {
         };
     }
 
+    async __fetch_feishu_json(url, options, { retryNetworkErrors = false, attempts = 5 } = {}) {
+        // 99991400 is Feishu's rate-limit rejection: the request is refused
+        // before executing, so retrying it is side-effect free. Network-level
+        // failures are only retried for idempotent GETs — a lost response on a
+        // write may have landed, and retrying could double-apply it.
+        for (let attempt = 1; attempt <= attempts; attempt++) {
+            let data;
+            try {
+                const response = await fetch(url, options);
+                data = await response.json();
+            } catch (err) {
+                if (retryNetworkErrors && attempt < attempts) {
+                    await new Promise(r => setTimeout(r, 500 * attempt));
+                    continue;
+                }
+                throw err;
+            }
+            if (data.code === 99991400 && attempt < attempts) {
+                await new Promise(r => setTimeout(r, 500 * attempt));
+                continue;
+            }
+            return data;
+        }
+        throw new Error('unreachable: retry loop must return or throw');
+    }
+
     async get_document_blocks(document_id) {
         const token = await this.tokenFetcher.token();
 
-        const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks`;
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+        // The endpoint pages at 500 blocks per response (page_size default
+        // AND max). Documents with native tables routinely exceed that, so a
+        // single request silently truncated the block list for every consumer
+        // — patch matching, delete ranges, and full-page digests alike.
+        const headers = {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+        };
+        const items = [];
+        let pageToken = null;
+        do {
+            const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks`
+                + `?page_size=500${pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''}`;
+            const data = await this.__fetch_feishu_json(url, { method: 'GET', headers }, { retryNetworkErrors: true });
+            if (data.code !== 0) {
+                throw new Error(`Failed to get document blocks: ${data.msg}`);
             }
-        });
-
-        const data = await response.json();
-
-        if (data.code !== 0) {
-            throw new Error(`Failed to get document blocks: ${data.msg}`);
-        }
-
-        return data.data.items;
+            items.push(...(data.data?.items || []));
+            pageToken = data.data?.has_more ? data.data.page_token : null;
+        } while (pageToken);
+        return items;
     }
 
     __remove_children_recursively(blocks) {
@@ -1723,7 +1754,7 @@ class MarkdownToFeishu {
             for (let i = 0; i < segBlocks.length; i += segBatchSize) {
                 const batch = segBlocks.slice(i, i + segBatchSize);
 
-                const response = await fetch(url, {
+                const data = await this.__fetch_feishu_json(url, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -1734,8 +1765,6 @@ class MarkdownToFeishu {
                         index: startIndex + segment.startIdx + i
                     })
                 });
-
-                const data = await response.json();
 
                 if (data.code !== 0) {
                     console.error(`Block creation failed. API response:`, JSON.stringify(data).slice(0, 300));
@@ -2288,7 +2317,11 @@ class MarkdownToFeishu {
          * Sophisticated document update using PATCH API for non-destructive updates.
          *
          * Strategies:
-         * - 'smart': Intelligently match blocks by type and content, update/delete/create as needed
+         * - 'smart': Anchor-based matching — same-type blocks pair on exact
+         *   or uniquely-contained anchor text only; edits update in place
+         *   (containers rebuild at position), insertions land at explicit
+         *   positions derived from the matched skeleton, preserve-only
+         *   blocks (boards, sheets, bitables, grids, …) are never touched
          * - 'replace': Replace existing blocks in order (update first N, delete extras, create new)
          * - 'append': Keep existing blocks, only append new ones
          *
@@ -2317,22 +2350,29 @@ class MarkdownToFeishu {
             unchanged: 0
         };
 
+        // Anchor matching runs once up front so the type guard below and the
+        // smart execution share the same plan. The matcher resolves nested
+        // blocks (table cells, callout bodies) from the FULL flat block list,
+        // not the direct-children subset.
+        const anchorPlan = strategy === 'smart'
+            ? this.__match_blocks_anchor(
+                existingChildren,
+                blocks,
+                new Map(existingBlocks.map((b) => [b.block_id, b])),
+            )
+            : null;
+
         if (strategy === 'replace' || strategy === 'smart') {
             // Feishu block types are immutable: an in-place text update can
             // never change a block's structure, so an in-place update that
             // pairs blocks of different types garbles the layout. Replace
-            // pairs positionally. Smart pairs by equivalent type — but
-            // equivalent (image↔board↔iframe, table↔sheet) is not identical,
-            // and every equivalent-but-different pairing is updated in place
-            // unless the existing block is preserve-only (kept as-is). Refuse
-            // any cross-type in-place pairing and require a rebuild
-            // (api.pr-verbatim-content).
+            // pairs positionally. Anchor matching pairs equal types by
+            // construction — the guard stays as a hard stop.
             const inPlacePairings = strategy === 'replace'
                 ? existingChildren
                     .slice(0, Math.min(existingChildren.length, blocks.length))
                     .map((existing, index) => ({ existing, new: blocks[index] }))
-                : this.__match_blocks_smart(existingChildren, blocks).matches
-                    .filter((match) => !this.__should_preserve_block(match.existing));
+                : anchorPlan.matches.concat(anchorPlan.editedMatches, anchorPlan.rebuildPairs);
             const crossType = inPlacePairings.find((pair) => pair?.existing && pair?.new
                 && pair.existing.block_type !== pair.new.block_type);
             if (crossType) {
@@ -2418,32 +2458,30 @@ class MarkdownToFeishu {
                 });
             }
 
-            // Create new blocks if we have more than existing
+            // Create new blocks if we have more than existing. The surplus is
+            // the draft's tail, so it belongs after every surviving block —
+            // the default startIndex 0 would insert it at the top of the page.
             if (blocks.length > existingChildren.length) {
                 const newBlocks = blocks.slice(existingChildren.length);
-                await this.create_blocks({ document_id, blocks: newBlocks });
+                await this.create_blocks({ document_id, blocks: newBlocks, startIndex: existingChildren.length });
                 result.created = newBlocks.length;
             }
 
             return result;
         }
 
-        // Smart strategy: match blocks intelligently (with type preservation)
-        const { matches, toCreate, toDelete } = this.__match_blocks_smart(existingChildren, blocks);
+        // Smart strategy: anchor-based matching — blocks pair only on exact
+        // or uniquely-contained same-type text, never on similarity scores,
+        // and every insertion carries an explicit position.
+        const matches = anchorPlan.matches;
+        result.preserved = anchorPlan.preserved;
+        result.rebuilt = anchorPlan.rebuildPairs.length;
 
-        // Step 1: Update matched blocks
+        // Step 1: in-place text updates for equal blocks that drifted at the
+        // element level and for Tier-2 text edits.
         const updateRequests = [];
-        for (const { existing, new: newBlock, preserveType } of matches) {
-            // If preserveType is set, the existing block type should be preserved
-            // (e.g., board/iframe/sheet cannot be recreated from markdown)
-            if (preserveType && this.__should_preserve_block(existing)) {
-                // Don't update these blocks - they're preserved as-is
-                console.log(`Preserving ${this.__get_block_type_name(existing.block_type)} block: ${existing.block_id}`);
-                result.unchanged++;
-                continue;
-            }
-
-            const updateRequest = this.__build_update_request(existing, newBlock, preserveType);
+        for (const pair of matches.concat(anchorPlan.editedMatches)) {
+            const updateRequest = this.__build_update_request(pair.existing, pair.new);
             if (updateRequest) {
                 updateRequests.push(updateRequest);
                 result.updated++;
@@ -2451,13 +2489,14 @@ class MarkdownToFeishu {
                 result.unchanged++;
             }
         }
-
-        // Execute batch updates (max 200 per batch)
         if (updateRequests.length > 0) {
             await this.__execute_batch_update(document_id, updateRequests);
         }
 
-        // Step 2: Delete unmatched blocks
+        // Step 2: delete unmatched blocks plus rebuild pairs (edited
+        // containers). Preserve-only blocks are never in this list — the
+        // matcher excludes them from matching and from deletion.
+        const toDelete = anchorPlan.toDelete;
         result.deleted += await this.__delete_child_blocks_by_id({
             document_id,
             parentBlock: pageBlock,
@@ -2465,109 +2504,313 @@ class MarkdownToFeishu {
             token,
         });
 
-        // Step 3: Create new blocks
-        if (toCreate.length > 0) {
-            await this.create_blocks({ document_id, blocks: toCreate });
-            result.created = toCreate.length;
+        // Step 3: create new/replacement blocks at explicit positions.
+        // Positions are survivor counts before the reference block, computed
+        // AFTER the deletion set is known; groups at the same position keep
+        // draft order, and groups execute back-to-front so earlier insertions
+        // never shift later positions.
+        const deletedIds = new Set(toDelete.map(block => block.block_id));
+        const survivingBefore = (refIndex) => {
+            let count = 0;
+            for (let k = 0; k < refIndex; k++) {
+                if (!deletedIds.has(existingChildren[k].block_id)) count += 1;
+            }
+            return count;
+        };
+        const endPosition = existingChildren.length - deletedIds.size;
+        const createGroups = [];
+        for (const entry of anchorPlan.toCreate) {
+            const pos = entry.refIndex < 0
+                ? endPosition
+                : survivingBefore(entry.refIndex) + (entry.afterRef ? 1 : 0);
+            const last = createGroups[createGroups.length - 1];
+            if (last && last.pos === pos) {
+                last.blocks.push(entry.block);
+            } else {
+                createGroups.push({ pos, blocks: [entry.block] });
+            }
+        }
+        for (const group of createGroups.slice().sort((a, b) => b.pos - a.pos)) {
+            await this.create_blocks({ document_id, blocks: group.blocks, startIndex: group.pos });
+            result.created += group.blocks.length;
         }
 
-        console.log(`Patch complete: ${result.updated} updated, ${result.created} created, ${result.deleted} deleted, ${result.unchanged} unchanged`);
+        // Structural postcondition: preserve-only blocks are never matched,
+        // so any disappearance is a bug — assert survival after the writes.
+        if (anchorPlan.preserved > 0) {
+            const afterBlocks = await this.get_document_blocks(document_id);
+            const afterIds = new Set(afterBlocks.map((b) => b.block_id));
+            const missing = existingChildren
+                .filter((b) => this.__should_preserve_block(b))
+                .map((b) => b.block_id)
+                .filter((id) => !afterIds.has(id));
+            if (missing.length > 0) {
+                throw new Error(`smart patch lost preserve-only block(s): ${missing.join(', ')} — refetch and inspect before writing again`);
+            }
+        }
+
+        console.log(`Patch complete: ${result.updated} updated, ${result.created} created, ${result.deleted} deleted, ${result.unchanged} unchanged, ${result.rebuilt} rebuilt, ${result.preserved} preserved`);
         return result;
     }
 
-    __match_blocks_smart(existingBlocks, newBlocks) {
+    __extract_live_anchor_text(block, byId, seen = new Set()) {
         /**
-         * Smart block matching algorithm with HYBRID TYPE PRESERVATION:
-         * - Match blocks by type and content similarity
-         * - IMPORTANT: Match equivalent types that become the same markdown:
-         *   - image (27) ↔ board (43) ↔ iframe (26) → all become ![caption](url)
-         *   - table (31) ↔ sheet (30) → both become <table> HTML
-         * - Preserve original block types when updating existing documents
-         * - Return: { matches: [{existing, new, preserveType}], toCreate: [], toDelete: [] }
+         * Anchor text of a live block (API shape): its own text plus the text
+         * of nested children (callout bodies, table cell text, quote bodies),
+         * each part trimmed and joined with newlines. Container content must
+         * be covered or an edited table cell would look unchanged.
          */
+        const parts = [];
+        const own = this.__extract_block_text(block);
+        if (own.trim()) parts.push(own.trim());
+        const childIds = [];
+        if (block.block_type === this.block_type_map.table && Array.isArray(block.table?.cells)) {
+            childIds.push(...block.table.cells);
+        }
+        if (Array.isArray(block.children)) {
+            childIds.push(...block.children);
+        }
+        for (const childId of childIds) {
+            if (seen.has(childId)) continue;
+            seen.add(childId);
+            const child = byId.get(childId);
+            if (child) parts.push(this.__extract_live_anchor_text(child, byId, seen));
+        }
+        return parts.join('\n');
+    }
+
+    __extract_structure_anchor_text(block) {
+        /**
+         * Anchor text of a draft block (markdown_to_blocks shape): same
+         * contract as __extract_live_anchor_text. Draft tables carry cells
+         * inline (row-major text blocks), callouts/quotes carry children.
+         */
+        const parts = [];
+        const own = this.__extract_block_text_from_structure(block);
+        if (own.trim()) parts.push(own.trim());
+        if (block.block_type === this.block_type_map.table && Array.isArray(block.table?.cells)) {
+            for (const cell of block.table.cells) {
+                parts.push(this.__extract_structure_anchor_text(cell));
+            }
+        }
+        if (Array.isArray(block.children)) {
+            for (const child of block.children) {
+                parts.push(this.__extract_structure_anchor_text(child));
+            }
+        }
+        return parts.join('\n');
+    }
+
+    __match_blocks_anchor(existingBlocks, newBlocks, nestedById = null) {
+        /**
+         * Anchor-based block matching for the smart strategy
+         * (replaces the similarity-score pairing, which matched any
+         * common-prefix boilerplate above 0.5, permuted content across
+         * positions, and gave created blocks no position):
+         * - Tier 1 pairs blocks of the same type with equal anchor text via
+         *   a longest-common-subsequence walk — order-preserving, because
+         *   in-place updates cannot reorder blocks, so a cross-order pairing
+         *   would land content in the wrong sequence.
+         * - Tier 2 pairs a draft block with the SINGLE same-type live block
+         *   whose anchor text contains it or is contained by it, so an
+         *   edited block keeps its identity for in-place update. Zero or
+         *   multiple candidates never match, and the pair is only taken when
+         *   it preserves the monotonic order of the existing skeleton.
+         * - Text-block edits update in place; container blocks (table,
+         *   callout, quote_container) and blocks with nested children cannot
+         *   take in-place text updates, so their edited pairs rebuild
+         *   (delete + insert at their own position) instead of silently
+         *   dropping the change.
+         * - Preserve-only blocks (boards, sheets, bitables, grids, …) sit
+         *   outside matching AND deletion entirely.
+         * Every unpaired draft block goes to toCreate with an explicit
+         * position: refIndex is the index into existingBlocks to insert
+         * before (afterRef=false) or after (afterRef=true); refIndex -1
+         * means the end of the page. Positions derive from the matched
+         * skeleton, so insertions land where the draft has them.
+         * Returns { matches, editedMatches, rebuildPairs, toCreate, toDelete, preserved }
+         */
+        const ANCHOR_MIN_LENGTH = 10;
+
+        const byType = new Map();
+        for (let j = 0; j < existingBlocks.length; j++) {
+            if (this.__should_preserve_block(existingBlocks[j])) continue;
+            const type = existingBlocks[j].block_type;
+            if (!byType.has(type)) byType.set(type, []);
+            byType.get(type).push(j);
+        }
+        // nestedById carries the full flat block list so anchor text can
+        // resolve nested children (table cells, callout bodies) that are not
+        // direct page children; callers without it fall back to the subset.
+        const liveById = nestedById || new Map(existingBlocks.map((b) => [b.block_id, b]));
+        const liveTexts = existingBlocks.map((b) => this.__extract_live_anchor_text(b, liveById));
+        const draftTexts = newBlocks.map((b) => this.__extract_structure_anchor_text(b));
+        const candidatesOfType = (type) => byType.get(type) || [];
+
         const matches = [];
+        const editedMatches = [];
+        const rebuildPairs = [];
+        const toCreate = [];
         const usedExisting = new Set();
         const usedNew = new Set();
+        let preserved = 0;
+        for (const block of existingBlocks) {
+            if (this.__should_preserve_block(block)) preserved += 1;
+        }
 
-        // Define equivalent type groups (types that become identical in markdown)
-        const IMAGE_TYPES = [27, 43, 26];  // image, board, iframe
-        const TABLE_TYPES = [31, 30];       // table, sheet
+        // Tier 1: order-preserving exact equality via LCS on (type, anchor
+        // text). Identical blocks are interchangeable, so pairing along the
+        // common subsequence is canonical — and it never pairs blocks that
+        // would require a reorder the in-place API cannot express.
+        const n = newBlocks.length;
+        const m = existingBlocks.length;
+        const sameIdentity = (i, j) => newBlocks[i].block_type === existingBlocks[j].block_type
+            && draftTexts[i] === liveTexts[j];
+        const lcs = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+        for (let i = n - 1; i >= 0; i--) {
+            for (let j = m - 1; j >= 0; j--) {
+                lcs[i][j] = sameIdentity(i, j)
+                    ? lcs[i + 1][j + 1] + 1
+                    : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+            }
+        }
+        for (let i = 0, j = 0; i < n && j < m;) {
+            if (sameIdentity(i, j)) {
+                matches.push({ existing: existingBlocks[j], new: newBlocks[i], liveIndex: j, draftIndex: i });
+                usedExisting.add(j);
+                usedNew.add(i);
+                i += 1;
+                j += 1;
+            } else if (lcs[i + 1][j] >= lcs[i][j + 1]) {
+                i += 1;
+            } else {
+                j += 1;
+            }
+        }
+        const skeletonLive = new Map(matches.map((pair) => [pair.draftIndex, pair.liveIndex]));
 
-        const areEquivalentTypes = (type1, type2) => {
-            if (type1 === type2) return true;
-            if (IMAGE_TYPES.includes(type1) && IMAGE_TYPES.includes(type2)) return true;
-            if (TABLE_TYPES.includes(type1) && TABLE_TYPES.includes(type2)) return true;
-            return false;
+        // Tier 2: unique containment within the same type. Both sides must
+        // carry at least ANCHOR_MIN_LENGTH characters so short boilerplate
+        // ("Notes", a bare signature line) cannot anchor, and the pair must
+        // slot monotonically into the skeleton above.
+        for (let i = 0; i < n; i++) {
+            if (usedNew.has(i)) continue;
+            if (draftTexts[i].length < ANCHOR_MIN_LENGTH) continue;
+            const hits = candidatesOfType(newBlocks[i].block_type).filter((j) => {
+                if (usedExisting.has(j)) return false;
+                const liveText = liveTexts[j];
+                if (liveText.length < ANCHOR_MIN_LENGTH) return false;
+                return liveText.includes(draftTexts[i]) || draftTexts[i].includes(liveText);
+            });
+            if (hits.length !== 1) continue;
+            const j = hits[0];
+            let prevLive = -1;
+            let nextLive = m;
+            for (const [draftIdx, liveIdx] of skeletonLive) {
+                if (draftIdx < i) prevLive = Math.max(prevLive, liveIdx);
+                if (draftIdx > i) nextLive = Math.min(nextLive, liveIdx);
+            }
+            if (j <= prevLive || j >= nextLive) continue;
+            editedMatches.push({ existing: existingBlocks[j], new: newBlocks[i], liveIndex: j, draftIndex: i });
+            usedExisting.add(j);
+            usedNew.add(i);
+            skeletonLive.set(i, j);
+        }
+
+        // Split edited pairs: nested/container content cannot be updated by
+        // update_text_elements — those rebuild at position; plain text blocks
+        // update in place.
+        const TEXT_UPDATABLE_TYPES = new Set([
+            this.block_type_map.text, this.block_type_map.heading1, this.block_type_map.heading2,
+            this.block_type_map.heading3, this.block_type_map.heading4, this.block_type_map.heading5,
+            this.block_type_map.heading6, this.block_type_map.heading7, this.block_type_map.heading8,
+            this.block_type_map.heading9, this.block_type_map.bullet, this.block_type_map.ordered,
+            this.block_type_map.code, this.block_type_map.quote, this.block_type_map.todo,
+        ]);
+        const CONTAINER_TYPES = new Set([
+            this.block_type_map.callout, this.block_type_map.table, this.block_type_map.quote_container,
+        ]);
+        for (const pair of editedMatches) {
+            const hasNestedChildren = (Array.isArray(pair.new.children) && pair.new.children.length > 0)
+                || (Array.isArray(pair.existing.children) && pair.existing.children.length > 0);
+            const updatable = TEXT_UPDATABLE_TYPES.has(pair.existing.block_type)
+                && !CONTAINER_TYPES.has(pair.existing.block_type)
+                && !hasNestedChildren;
+            if (!updatable) rebuildPairs.push(pair);
+        }
+        const inPlaceEdits = editedMatches.filter((pair) => !rebuildPairs.includes(pair));
+
+        // Position skeleton: draft blocks paired with a SURVIVING live block
+        // (matches + inPlaceEdits — rebuild pairs delete their live block, so
+        // they cannot anchor others; each rebuild draft self-anchors at its
+        // own live position instead). Runs of unpaired draft blocks insert
+        // before the next surviving ref, else after the previous one, else at
+        // the end of the page.
+        const rebuildSelfRef = new Map(rebuildPairs.map((pair) => [pair.draftIndex, pair.liveIndex]));
+        const sortedMatched = [...skeletonLive.keys()].sort((a, b) => a - b);
+
+        const emitRun = (start, end) => {
+            const nextRef = sortedMatched.find((i) => i >= end);
+            const prevRef = [...sortedMatched].reverse().find((i) => i < start);
+            let refIndex = -1;
+            let afterRef = false;
+            if (nextRef !== undefined) {
+                refIndex = skeletonLive.get(nextRef);
+            } else if (prevRef !== undefined) {
+                refIndex = skeletonLive.get(prevRef);
+                afterRef = true;
+            }
+            for (let i = start; i < end; i++) {
+                toCreate.push({ block: newBlocks[i], refIndex, afterRef });
+            }
         };
-
-        // First pass: exact matches (same/equivalent type and similar content)
-        for (let i = 0; i < newBlocks.length; i++) {
-            if (usedNew.has(i)) continue;
-
-            for (let j = 0; j < existingBlocks.length; j++) {
-                if (usedExisting.has(j)) continue;
-
-                const existing = existingBlocks[j];
-                const newBlock = newBlocks[i];
-
-                // Check if types are equivalent (can be matched)
-                if (!areEquivalentTypes(existing.block_type, newBlock.block_type)) continue;
-
-                // Check content similarity
-                const similarity = this.__calculate_block_similarity(existing, newBlock);
-                if (similarity > 0.5) { // 50% similarity threshold
-                    // Mark if we need to preserve the original type
-                    const preserveType = existing.block_type !== newBlock.block_type;
-                    matches.push({ existing, new: newBlock, preserveType });
-                    usedExisting.add(j);
-                    usedNew.add(i);
-                    break;
+        let runStart = null;
+        for (let i = 0; i <= newBlocks.length; i++) {
+            if (i < newBlocks.length && rebuildSelfRef.has(i)) {
+                if (runStart !== null) {
+                    emitRun(runStart, i);
+                    runStart = null;
                 }
+                toCreate.push({ block: newBlocks[i], refIndex: rebuildSelfRef.get(i), afterRef: false });
+            } else if (i < newBlocks.length && skeletonLive.has(i)) {
+                if (runStart !== null) {
+                    emitRun(runStart, i);
+                    runStart = null;
+                }
+            } else if (runStart === null) {
+                runStart = i;
             }
         }
+        if (runStart !== null) emitRun(runStart, newBlocks.length);
 
-        // Second pass: match remaining blocks by position and equivalent type
-        let newIdx = 0;
-        for (let i = 0; i < newBlocks.length; i++) {
-            if (usedNew.has(i)) continue;
+        // Unmatched live blocks are deleted — except preserve-only ones,
+        // which the patch has no authority over. Rebuild pairs re-add their
+        // live block here: they were matched, but their replacement inserts
+        // as a new block at the same position.
+        const toDelete = existingBlocks
+            .filter((_, idx) => !usedExisting.has(idx))
+            .filter((block) => !this.__should_preserve_block(block))
+            .concat(rebuildPairs.map((pair) => pair.existing));
 
-            // Find next unused existing block of same/equivalent type
-            for (let j = newIdx; j < existingBlocks.length; j++) {
-                if (usedExisting.has(j)) continue;
-
-                const existing = existingBlocks[j];
-                const newBlock = newBlocks[i];
-
-                if (areEquivalentTypes(existing.block_type, newBlock.block_type)) {
-                    const preserveType = existing.block_type !== newBlock.block_type;
-                    matches.push({ existing, new: newBlock, preserveType });
-                    usedExisting.add(j);
-                    usedNew.add(i);
-                    newIdx = j + 1;
-                    break;
-                }
-            }
-        }
-
-        // Collect unmatched blocks
-        const toDelete = existingBlocks.filter((_, idx) => !usedExisting.has(idx));
-        const toCreate = newBlocks.filter((_, idx) => !usedNew.has(idx));
-
-        return { matches, toCreate, toDelete };
+        return { matches, editedMatches: inPlaceEdits, rebuildPairs, toCreate, toDelete, preserved };
     }
 
     __should_preserve_block(existingBlock) {
         /**
          * Determine if an existing block should be preserved as-is
-         * (not updated, just kept in place).
+         * (never matched for update, never deleted).
          *
-         * These block types cannot be recreated from markdown:
+         * These block types cannot be recreated from markdown, so a patch
+         * must keep them regardless of what the draft contains:
          * - board (43): Whiteboard drawings
          * - iframe (26): Figma embeds
          * - sheet (30): Embedded spreadsheets
          * - source_synced (49): Synced content blocks
+         * - bitable (18): Live database embeds
+         * - grid (24): User column layouts
+         * - add_ons (40): Third-party widgets
          */
-        const PRESERVE_ONLY_TYPES = [43, 26, 30, 49]; // board, iframe, sheet, source_synced
+        const PRESERVE_ONLY_TYPES = [43, 26, 30, 49, 18, 24, 40];
         return PRESERVE_ONLY_TYPES.includes(existingBlock.block_type);
     }
 
@@ -2586,66 +2829,6 @@ class MarkdownToFeishu {
             43: 'board', 49: 'source_synced'
         };
         return names[blockType] || `unknown(${blockType})`;
-    }
-
-    __calculate_block_similarity(existingBlock, newBlock) {
-        /**
-         * Calculate similarity score between two blocks (0-1)
-         * Higher score = more similar
-         */
-
-        // Define equivalent type groups
-        const IMAGE_TYPES = [27, 43, 26]; // image, board, iframe
-        const TABLE_TYPES = [31, 30];      // table, sheet
-
-        // Check if types are equivalent before rejecting
-        const areEquivalent =
-            (IMAGE_TYPES.includes(existingBlock.block_type) && IMAGE_TYPES.includes(newBlock.block_type)) ||
-            (TABLE_TYPES.includes(existingBlock.block_type) && TABLE_TYPES.includes(newBlock.block_type));
-
-        if (existingBlock.block_type !== newBlock.block_type && !areEquivalent) return 0;
-
-        // Extract text content from both blocks
-        const existingText = this.__extract_block_text(existingBlock);
-        const newText = this.__extract_block_text_from_structure(newBlock);
-
-        // Special handling for image-like blocks (image, board, iframe)
-        if (IMAGE_TYPES.includes(existingBlock.block_type) &&
-            IMAGE_TYPES.includes(newBlock.block_type)) {
-            // If both have text, compare them
-            if (existingText && newText) {
-                const maxLen = Math.max(existingText.length, newText.length);
-                let matches = 0;
-                for (let i = 0; i < Math.min(existingText.length, newText.length); i++) {
-                    if (existingText[i].toLowerCase() === newText[i].toLowerCase()) matches++;
-                }
-                return matches / maxLen;
-            }
-            // If no text to compare, return moderate similarity (match by position later)
-            return 0.6;
-        }
-
-        // Special handling for table/sheet blocks
-        if (TABLE_TYPES.includes(existingBlock.block_type) &&
-            TABLE_TYPES.includes(newBlock.block_type)) {
-            // Tables are hard to compare - return moderate similarity
-            // Will match by position in second pass
-            return 0.6;
-        }
-
-        if (!existingText || !newText) return 0;
-
-        // Simple similarity: ratio of common characters
-        const maxLen = Math.max(existingText.length, newText.length);
-        if (maxLen === 0) return 1;
-
-        // Count matching prefix characters
-        let matches = 0;
-        for (let i = 0; i < Math.min(existingText.length, newText.length); i++) {
-            if (existingText[i] === newText[i]) matches++;
-        }
-
-        return matches / maxLen;
     }
 
     __extract_block_text(block) {
@@ -2816,7 +2999,7 @@ class MarkdownToFeishu {
         for (let i = 0; i < updateRequests.length; i += batchSize) {
             const batch = updateRequests.slice(i, i + batchSize);
 
-            const response = await fetch(url, {
+            const data = await this.__fetch_feishu_json(url, {
                 method: 'PATCH',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2826,8 +3009,6 @@ class MarkdownToFeishu {
                     requests: batch
                 })
             });
-
-            const data = await response.json();
 
             if (data.code !== 0) {
                 throw new Error(`Failed to batch update blocks: ${data.msg}`);
@@ -2892,7 +3073,7 @@ class MarkdownToFeishu {
 
         let deleted = 0;
         for (const range of ranges) {
-            const response = await fetch(url, {
+            const data = await this.__fetch_feishu_json(url, {
                 method: 'DELETE',
                 headers: {
                     'Content-Type': 'application/json',
@@ -2900,7 +3081,6 @@ class MarkdownToFeishu {
                 },
                 body: JSON.stringify(range),
             });
-            const data = await response.json();
             if (data.code !== 0) {
                 throw new Error(`batch_delete failed for children [${range.start_index}, ${range.end_index}): ${data.msg} (code ${data.code})`);
             }

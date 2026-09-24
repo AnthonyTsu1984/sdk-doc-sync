@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const { scenarios } = require('./conformance-fixtures/invariant-scenarios');
 const { checkSkillInvariantCoverage } = require('../../doc-ops-core/src/invariant-registry');
+const { runSkillInvariantConformance } = require('../../doc-ops-core/src/invariant-conformance-runner');
 
 const skillRoot = path.join(__dirname, '..');
 const repoRoot = path.join(skillRoot, '..', '..', '..');
@@ -22,43 +23,16 @@ function registryFixtures() {
   return { registry, fixtures, fixturesById };
 }
 
-// The core Phase 1 guarantee: fixtures referenced by a runtime-enforced
-// invariant are not inert data — each one invokes production policy code and
-// its typed decision must equal the fixture assertions.
+// The core Phase 1 guarantee, via the shared doc-ops-core runner (generalized
+// in phase 5): fixtures referenced by a runtime-enforced invariant are not
+// inert data — each one invokes production policy code and its typed decision
+// must equal the fixture assertions, and a listed fixture that never executes
+// fails coverage.
 test('every runtime-enforced invariant fixture executes against production policy code', async () => {
-  const { registry, fixturesById } = registryFixtures();
-  const executed = [];
-
-  for (const invariant of registry.invariants) {
-    if (invariant.status !== 'runtime-enforced') continue;
-    for (const fixtureId of invariant.fixtureIds) {
-      const fixture = fixturesById.get(fixtureId);
-      assert.ok(fixture, `fixture ${fixtureId} must exist in cases.json`);
-      assert.equal(
-        fixture.executable?.runner,
-        'invariant-conformance',
-        `fixture ${fixtureId} must declare the executable conformance runner`,
-      );
-      const scenario = scenarios[fixture.executable.scenario];
-      assert.equal(typeof scenario, 'function', `fixture ${fixtureId} must map to a scenario`);
-      const decision = await scenario();
-      for (const [key, expected] of Object.entries(fixture.assertions)) {
-        assert.deepEqual(decision[key], expected, `${fixtureId}: ${key}`);
-      }
-      executed.push(fixtureId);
-    }
-  }
-
-  assert.ok(executed.length > 0, 'at least one runtime-enforced fixture must run');
-  // Fail when a listed fixture was never executed.
-  const coverage = checkSkillInvariantCoverage({
-    skillDir: skillRoot,
-    repoRoot,
-    fixtureIds: [...fixturesById.keys()],
-    executedFixtureIds: executed,
-  });
-  assert.deepEqual(coverage.errors, []);
-  assert.equal(coverage.valid, true);
+  const result = await runSkillInvariantConformance({ skillDir: skillRoot, repoRoot, scenarios });
+  assert.deepEqual(result.errors, []);
+  assert.equal(result.ok, true);
+  assert.ok(result.executed.length > 0, 'at least one runtime-enforced fixture must run');
 });
 
 test('delta model scenarios keep the older shared document untouched by construction', async () => {

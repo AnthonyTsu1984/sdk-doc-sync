@@ -111,14 +111,19 @@ function lexicalApiInventory({ repoDir, ref, publicRoots, spawn }) {
   return names;
 }
 
-function classifyPrFiles(prFiles) {
+function classifyPrFiles(prFiles, scanTrack = null) {
   const targets = new Map();
   const skipped = [];
+  const filteredTracks = new Map();
   for (const file of prFiles || []) {
     const page = API_PAGE_PATH.exec(file.path);
     if (page) {
       const [, sdkDirName, track, category, pageName] = page;
       const key = `${sdkDirName}/${track}`;
+      if (scanTrack && key !== scanTrack) {
+        filteredTracks.set(key, (filteredTracks.get(key) || 0) + 1);
+        continue;
+      }
       if (!targets.has(key)) targets.set(key, []);
       targets.get(key).push({ ...file, category, pageName, symbol: `${category}.${pageName}` });
       continue;
@@ -126,13 +131,17 @@ function classifyPrFiles(prFiles) {
     if (API_ABOUT_PATH.test(file.path)) {
       const [, sdkDirName, track] = API_ABOUT_PATH.exec(file.path);
       const key = `${sdkDirName}/${track}`;
+      if (scanTrack && key !== scanTrack) {
+        filteredTracks.set(key, (filteredTracks.get(key) || 0) + 1);
+        continue;
+      }
       if (!targets.has(key)) targets.set(key, []);
       targets.get(key).push({ ...file, about: true });
       continue;
     }
     skipped.push(file.path);
   }
-  return { targets, skipped };
+  return { targets, skipped, filteredTracks };
 }
 
 function targetTagFromAbout(aboutContent, track) {
@@ -297,13 +306,17 @@ async function runPrScan({
   lowerLatestSymbols = null,
   runGit = defaultRunGit,
   runGh = defaultRunGh,
+  scanTrack = null,
 } = {}) {
   const resolvedRunGit = runGit;
   const prState = prMeta.state;
   const webContentRevision = prMeta.mergeCommit?.oid || prMeta.headRefOid;
   assertFullSha(webContentRevision, 'PR web-content revision');
 
-  const { targets, skipped } = classifyPrFiles(prMeta.files);
+  const { targets, skipped, filteredTracks } = classifyPrFiles(prMeta.files, scanTrack);
+  if (scanTrack && !targets.has(scanTrack)) {
+    throw new Error(`--scan-track ${scanTrack}: the PR touches no API_Reference pages under that sdk/track`);
+  }
   const targetKeys = [...targets.keys()];
   if (targetKeys.length === 0) {
     throw new Error('PR touches no API_Reference/<sdk>/<track> pages; nothing to scan');
@@ -328,6 +341,13 @@ async function runPrScan({
       level: 'info',
       code: 'PR_PATH_SKIPPED',
       message: `${skipped.length} changed file(s) outside API_Reference page scope were skipped.`,
+    });
+  }
+  if (filteredTracks.size > 0) {
+    diagnostics.push({
+      level: 'info',
+      code: 'PR_TRACK_FILTERED',
+      message: `--scan-track ${scanTrack}: excluded ${[...filteredTracks].map(([key, count]) => `${key} (${count} file(s))`).join(', ')}; scan one track per PR.`,
     });
   }
 

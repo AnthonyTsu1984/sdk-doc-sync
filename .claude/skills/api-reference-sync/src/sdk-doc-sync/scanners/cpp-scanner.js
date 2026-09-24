@@ -80,6 +80,22 @@ const METHOD_CATEGORIES = {
     GetCompactionState: 'Management',
     GetCompactionPlans: 'Management',
 
+    // External collections (3)
+    RefreshExternalCollection: 'Management',
+    GetRefreshExternalCollectionProgress: 'Management',
+    ListRefreshExternalCollectionJobs: 'Management',
+
+    // Snapshots (9)
+    CreateSnapshot: 'Snapshots',
+    DescribeSnapshot: 'Snapshots',
+    DropSnapshot: 'Snapshots',
+    GetRestoreSnapshotState: 'Snapshots',
+    ListRestoreSnapshotJobs: 'Snapshots',
+    ListSnapshots: 'Snapshots',
+    PinSnapshotData: 'Snapshots',
+    RestoreSnapshot: 'Snapshots',
+    UnpinSnapshotData: 'Snapshots',
+
     // CDC (3)
     GetReplicateConfiguration: 'CDC',
     UpdateReplicateConfiguration: 'CDC',

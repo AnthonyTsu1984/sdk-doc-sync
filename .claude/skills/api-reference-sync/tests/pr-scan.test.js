@@ -113,6 +113,23 @@ test('classifyPrFiles rejects multi-track PRs by reporting every target key', ()
   assert.equal(targets.size, 2);
 });
 
+test('classifyPrFiles honors --scan-track by excluding other sdk/track files', () => {
+  const { targets, skipped, filteredTracks } = classifyPrFiles([
+    { path: '.skills/update-milvus-sdk-docs/SKILL.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-cpp/v3.0.x/About.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-cpp/v3.0.x/Snapshots/UnpinSnapshotData.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-go/v3.0.x/About.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-rust/v3.0.x/About.md', changeType: 'MODIFIED' },
+  ], 'milvus-sdk-cpp/v3.0.x');
+  assert.deepEqual([...targets.keys()], ['milvus-sdk-cpp/v3.0.x']);
+  assert.deepEqual([...filteredTracks.keys()].sort(), ['milvus-sdk-go/v3.0.x', 'milvus-sdk-rust/v3.0.x']);
+  assert.equal(filteredTracks.get('milvus-sdk-go/v3.0.x'), 1);
+  assert.deepEqual(skipped, ['.skills/update-milvus-sdk-docs/SKILL.md']);
+  const entries = targets.get('milvus-sdk-cpp/v3.0.x');
+  assert.equal(entries.filter((entry) => entry.about).length, 1);
+  assert.equal(entries.find((entry) => !entry.about).symbol, 'Snapshots.UnpinSnapshotData');
+});
+
 test('targetTagFromAbout resolves the pin row for the track major', () => {
   const about = [
     '| Milvus version | Recommended SDK version |',

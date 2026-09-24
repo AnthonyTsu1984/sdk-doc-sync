@@ -4,9 +4,9 @@
 // Read-only identity-coverage reconciliation for one track.
 //
 //   node bin/identity-reconcile.js \
-//     --snapshot tmp/sdk-release-scout/bitable-snapshot-cpp-v30.json \
+//     --snapshot <bitable-snapshot.json> \
 //     --identity-map references/identity/cpp-v30.json \
-//     [--emit-draft tmp/sdk-release-scout/identity-draft.json] [--strict]
+//     [--emit-draft <draft.json>] [--strict]
 //
 // Reports every governed record slug in the snapshot that resolves to no
 // canonical identity in the map (IDENTITY_MAP_INCOMPLETE), plus map keys that

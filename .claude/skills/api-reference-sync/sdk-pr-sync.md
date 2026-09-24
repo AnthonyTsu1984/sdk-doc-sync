@@ -74,7 +74,9 @@ node .claude/skills/api-reference-sync/bin/sdk-pr-scan.js --pr-json <file> ...
 
 The artifact passes `validateReleaseScope` and is consumed by `bin/sdk-doc-sync.js --release-scope --changed-only` like any scout artifact. PR provenance rides in the top-level `pr` block (repository, number, state, `webContentRevision`, per-file `changeType`/`symbol`) and per-action `evidence[]` entries with `kind: 'pr'`.
 
-Diagnostics: `PR_MERGED` / `PR_OPEN_READ_ONLY` (info), `PR_PATH_SKIPPED` (info), `PR_PAGE_REMOVED` (warn — removal needs a separate deprecation plan), `UNMAPPED_CANONICAL_IDENTITY` (warn), `PR_SYMBOL_NOT_SCANNED` (warn — type pages verified lexically only), `FEISHU_RECORD_ABSENT_FOR_UPDATE` / `FEISHU_RECORD_WIP` (warn), `PR_CONTENT_UNVERIFIED` / `NO_FEISHU_TRACK` (error).
+Diagnostics: `PR_MERGED` / `PR_OPEN_READ_ONLY` (info), `PR_PATH_SKIPPED` (info), `PR_PAGE_REMOVED` (warn — removal needs a separate deprecation plan), `UNMAPPED_CANONICAL_IDENTITY` (warn), `PR_SYMBOL_NOT_SCANNED` (warn — type pages verified lexically only), `FEISHU_RECORD_ABSENT_FOR_UPDATE` / `FEISHU_RECORD_WIP` (warn), `PR_CONTENT_UNVERIFIED` / `NO_FEISHU_TRACK` (error), `IDENTITY_MAP_INCOMPLETE` (warn — with a Feishu snapshot, governed record slugs that resolve to no canonical identity and can therefore never surface in delta scans or intakes; detect-only), `COVERAGE_UNTRACKED_METHODS` (warn — public client methods missing from the scanner's category map, surfaced through the scanner's `lastScanDiagnostics`).
+
+Standing reconciliation: run `node bin/identity-reconcile.js --snapshot <bitable-snapshot.json> --identity-map references/identity/<lang>-<track>.json [--emit-draft <file>] [--strict]` at task start. It reports every governed record slug the map does not resolve plus map keys no record represents; `--emit-draft` writes evidence-backed entry drafts derived from the same records (merging stays a manual, master-compared map edit); `--strict` exits non-zero on drift.
 
 ## Notes
 

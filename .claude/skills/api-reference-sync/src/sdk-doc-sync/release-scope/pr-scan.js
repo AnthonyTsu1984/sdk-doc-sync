@@ -10,6 +10,7 @@ const {
   scanStateKeyFor,
 } = require('./release-scout');
 const { loadIdentityMap } = require('./identity-normalizer');
+const { reconcileIdentityCoverage } = require('../identity-reconciliation');
 const { publicIdentity } = require('./symbol-inventory');
 
 const SDK_LANGUAGES = new Map([
@@ -555,6 +556,12 @@ async function runPrScan({
   });
 
   diagnostics.push(...feishuRecordChecks({ actions, feishuRows }));
+  // Standing inventory reconciliation: with a Feishu snapshot in hand, every
+  // governed record slug must resolve to a canonical identity — a record
+  // without one can never surface in delta scans or intakes (warn; detect-only).
+  if (feishuRows) {
+    diagnostics.push(...reconcileIdentityCoverage({ records: feishuRows, identityMap: map }).diagnostics);
+  }
 
   let finalActions = actions;
   if (mergeScope) {

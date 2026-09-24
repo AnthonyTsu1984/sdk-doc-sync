@@ -88,6 +88,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',
     '.claude/skills/api-reference-sync/tests/finalize-acceptance-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',
     '.claude/skills/api-reference-sync/tests/inheritance-evidence.test.js',
     '.claude/skills/api-reference-sync/tests/invariant-conformance.test.js',
     '.claude/skills/api-reference-sync/tests/lark-cli-ops-governance.test.js',

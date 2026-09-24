@@ -38,6 +38,14 @@ node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js --doc <doc
 node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js --bitable <base-token> --table <table-id> --max-docs 20
 ```
 
+## Domain Invariants
+
+- Verification is read-only by default: the pass never patches documents or Bitables, and the only write-shaped artifact it can emit is a remediation handoff that structurally cannot carry write authorization (`writeAuthorized` is forced false; an attempt to set it is refused). [verify.read-only-default]
+- Runtime execution is gated: annotated `run` blocks execute only with `--allow-run` (plus `--live` when safety-flagged), scenarios only with `--run-scenarios --live --allow-run` and the required env, and everything else degrades to `manual` instead of executing. [verify.execution-gates]
+- A mutating live run is bound to its exact runtime manifest: the manifest is materialized before execution and mutation is refused without `--approve-runtime-digest` matching that manifest's digest. [verify.runtime-manifest-digest]
+- Completion is derived from journal observations: every mutation needs verified cleanup on the isolated resource, residual resources yield `BLOCKED` with exact recovery commands instead of a clean report, and unverified mutations yield `FAILED`. [verify.residual-cleanup]
+- A remediation handoff names exact blocks, diagnostics, source evidence, and one owning skill, and never authorizes the write itself — `procedure-code-sync` or `verified-doc-authoring` must build a new action batch. [verify.handoff-no-write]
+
 ## Domain Workflow
 
 1. Resolve the source and extract every code block with document, section, language, and block identity.

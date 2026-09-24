@@ -33,6 +33,7 @@ const {
 } = require('../src/runtime-policy');
 const { RuntimeSession } = require('../src/runtime-session');
 const { buildRemediationHandoff } = require('../src/remediation-handoff');
+const { annotatedRunGate, evaluateScenarioRuntimeGate } = require('../src/execution-gates');
 
 const DEFAULT_REPORT = '/tmp/feishu-code-verify-report.json';
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
@@ -419,9 +420,8 @@ function classify(snippet, opts) {
     }
 
     if (ann.mode === 'run') {
-        if (!opts.allowRun) return { action: 'manual', reason: 'runtime execution requires --allow-run', safetyFlags };
-        if (safetyFlags.length && !opts.live) return { action: 'manual', reason: `runtime blocked by safety policy: ${safetyFlags.join(', ')}`, safetyFlags };
-        return { action: 'run', reason: 'annotated run', safetyFlags };
+        const gate = annotatedRunGate({ allowRun: opts.allowRun, live: opts.live, safetyFlags });
+        return { action: gate.action, reason: gate.reason, safetyFlags };
     }
 
     if (ann.mode === 'live' && !opts.live && !['json', 'yaml', 'toml', 'python', 'bash', 'javascript', 'typescript', 'go', 'java', 'cpp', 'c'].includes(lang)) {
@@ -1109,14 +1109,12 @@ function runSnippet(lang, code, tmp, timeout, opts) {
 }
 
 function scenarioRuntimeGate(opts, language) {
-    if (!opts.runScenarios) return null;
-    if (!opts.allowRun) return { status: 'manual', detail: `${language} scenario runtime requires --allow-run` };
-    if (!opts.live) return { status: 'manual', detail: `${language} scenario runtime requires --live` };
-    const missingEnv = liveEnvMissing(opts);
-    if (missingEnv.length > 0) {
-        return { status: 'manual', detail: `${language} scenario runtime requires env: ${missingEnv.map(x => x.anyOf.join('|')).join(', ')}` };
-    }
-    return null;
+    return evaluateScenarioRuntimeGate({
+        runScenarios: opts.runScenarios,
+        allowRun: opts.allowRun,
+        live: opts.live,
+        missingEnv: liveEnvMissing(opts),
+    }, language);
 }
 
 async function fetchFeishuBlocks(docToken) {

@@ -66,9 +66,11 @@ class RuntimeSession {
       .map((action) => action.recoveryCommand)
       .filter(Boolean))].sort();
     const status = failedMutations.length > 0 ? 'FAILED' : residualResources.length > 0 ? 'BLOCKED' : 'VERIFIED';
+    const blockerCode = failedMutations.length > 0 ? 'RUNTIME_MUTATIONS_FAILED' : residualResources.length > 0 ? 'RESIDUAL_RESOURCES_BLOCKED' : null;
     return Object.freeze({
       schemaVersion: 1,
       status,
+      blockerCode,
       runtimeManifestDigest: this.manifest.runtimeManifestDigest,
       runtimeJournalDigest: digestSemantic(this.journal.entries),
       residualResources,

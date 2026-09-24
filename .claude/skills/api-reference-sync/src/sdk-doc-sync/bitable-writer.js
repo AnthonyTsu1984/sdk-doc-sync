@@ -81,10 +81,13 @@ class BitableWriter {
         // The Bitable Description field belongs to VirtualNode (Drive folder)
         // records; interface records (Function/Class/Enum) stay empty. A
         // non-empty description on any other (or unknown) record type is
-        // refused before the write; clearing (null/empty) stays allowed.
-        // (api.record-description-scope)
+        // refused before the write; clearing (null/undefined/empty string)
+        // stays allowed. Structured values (e.g. Feishu text-run arrays from
+        // rollback restores) are enforced, not skipped — only a true clear
+        // bypasses the check. (api.record-description-scope)
         const description = fieldsView.Description;
-        if (typeof description !== 'string' || description.trim() === '') return;
+        if (description === undefined || description === null) return;
+        if (typeof description === 'string' && description.trim() === '') return;
         let recordType = fieldsView.Type ?? null;
         if (!recordType && recordId) {
             const live = await this.getRecord(recordId);

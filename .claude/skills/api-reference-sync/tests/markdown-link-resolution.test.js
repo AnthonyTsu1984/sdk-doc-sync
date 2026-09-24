@@ -8,6 +8,7 @@ const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance')
 const {
   collectRelativeMarkdownLinks,
   resolveRelativeLinks,
+  slugResolverFromRecords,
 } = require('../src/sdk-doc-sync/markdown-link-resolution');
 
 function loadMarkdownToFeishuWithFetch(mockFetch) {
@@ -167,4 +168,17 @@ test('absolute http(s) link URLs pass the pre-write guard through to the transpo
     parentBlockId: 'parent-1',
   });
   assert.equal(calls.length > 0, true, 'absolute links must not be blocked');
+});
+
+test('slugResolverFromRecords resolves slugs from raw Bitable index records', () => {
+  const resolveSlug = slugResolverFromRecords([
+    { fields: { Slug: 'Vector-Search', Docs: { text: 'Search', link: 'https://zilliverse.feishu.cn/docx/AAA' } } },
+    { fields: { Slug: 'Collections-DataType', Docs: { text: 'DataType', link: 'https://zilliverse.feishu.cn/docx/BBB' } } },
+  ]);
+  const out = resolveRelativeLinks('[Search](../Vector/Search.md) and [DataType](DataType.md)', {
+    resolveSlug,
+    currentCategory: 'Collections',
+  });
+  assert.ok(out.includes('[Search](https://zilliverse.feishu.cn/docx/AAA)'));
+  assert.equal(out.match(/docx\/BBB/g).length, 1);
 });

@@ -134,3 +134,15 @@ test('the provider still emits verbatim rebuild artifacts without include marker
   assert.equal(artifact.content, 'plain verbatim body without markers\n');
   assert.match(artifact.contentDigest, /^sha256:[0-9a-f]{64}$/);
 });
+
+test('structured description values (text-run arrays) are enforced, not skipped', async () => {
+  const writeCalls = [];
+  const writer = recordWriter('Function', writeCalls);
+  await assert.rejects(
+    writer.updateRecord('rec-1', {
+      description: [{ text_run: { content: 'restored from a rollback snapshot' } }],
+    }),
+    (error) => error.code === 'DESCRIPTION_SCOPE_VIOLATION',
+  );
+  assert.deepEqual(writeCalls, []);
+});

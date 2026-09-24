@@ -1051,6 +1051,37 @@ class SyncExecutor {
       }
       throw new TypeError('documentWriter must expose applyApiPatch() for SDK API artifacts');
     }
+    // Content-fidelity guards apply to BOTH writer interfaces (camelCase
+    // patchDocument and snake_case patch_document) — hoisted above the
+    // branching so writer shape cannot bypass them (api.pr-verbatim-content).
+    const patchStrategy = artifact.patchStrategy === 'rebuild'
+      ? 'rebuild'
+      : (artifact.patchStrategy === 'replace' ? 'replace' : 'smart');
+    if (patchStrategy === 'rebuild') {
+      if (verbatimCarriesIncludeMarker(artifact.content)) {
+        const error = new Error('a rebuild patch over content carrying literal <include> conditional markers is forbidden — edit such pages with surgical child-block insertion (api.literal-include-preserved)');
+        error.code = 'INCLUDE_REBUILD_FORBIDDEN';
+        throw error;
+      }
+      // The approved plan must attest the exact solidified content bytes;
+      // otherwise the batch digest does not cover what would land
+      // (api.pr-verbatim-content).
+      if (artifact.pr) {
+        const attestation = (plan.invariantAttestations || [])
+          .find((item) => item?.id === 'api.pr-verbatim-content');
+        if (!attestation) {
+          const error = new Error(`a verbatim rebuild artifact requires an api.pr-verbatim-content attestation in the approved plan for ${plan.stableId}`);
+          error.code = 'VERBATIM_ATTESTATION_REQUIRED';
+          throw error;
+        }
+        const contentDigest = verbatimContentDigest(artifact.content);
+        if (attestation.inputDigest !== contentDigest) {
+          const error = new Error(`the api.pr-verbatim-content attestation digest does not match the artifact content for ${plan.stableId}; replan so the approved batch covers the exact bytes`);
+          error.code = 'VERBATIM_ATTESTATION_DIGEST_MISMATCH';
+          throw error;
+        }
+      }
+    }
     const input = {
       documentToken,
       content: artifact.content,
@@ -1060,34 +1091,6 @@ class SyncExecutor {
       return await this.documentWriter.patchDocument(input);
     }
       if (typeof this.documentWriter.patch_document === 'function') {
-      const patchStrategy = artifact.patchStrategy === 'rebuild'
-        ? 'rebuild'
-        : (artifact.patchStrategy === 'replace' ? 'replace' : 'smart');
-      if (patchStrategy === 'rebuild') {
-        if (verbatimCarriesIncludeMarker(artifact.content)) {
-          const error = new Error('a rebuild patch over content carrying literal <include> conditional markers is forbidden — edit such pages with surgical child-block insertion (api.literal-include-preserved)');
-          error.code = 'INCLUDE_REBUILD_FORBIDDEN';
-          throw error;
-        }
-        // The approved plan must attest the exact solidified content bytes;
-        // otherwise the batch digest does not cover what would land
-        // (api.pr-verbatim-content).
-        if (artifact.pr) {
-          const attestation = (plan.invariantAttestations || [])
-            .find((item) => item?.id === 'api.pr-verbatim-content');
-          if (!attestation) {
-            const error = new Error(`a verbatim rebuild artifact requires an api.pr-verbatim-content attestation in the approved plan for ${plan.stableId}`);
-            error.code = 'VERBATIM_ATTESTATION_REQUIRED';
-            throw error;
-          }
-          const contentDigest = verbatimContentDigest(artifact.content);
-          if (attestation.inputDigest !== contentDigest) {
-            const error = new Error(`the api.pr-verbatim-content attestation digest does not match the artifact content for ${plan.stableId}; replan so the approved batch covers the exact bytes`);
-            error.code = 'VERBATIM_ATTESTATION_DIGEST_MISMATCH';
-            throw error;
-          }
-        }
-      }
       let blocks = artifact.blocks;
       if (!blocks && typeof this.documentWriter.parse_markdown === 'function' && typeof this.documentWriter.markdown_to_blocks === 'function') {
         const { tokens } = await this.documentWriter.parse_markdown(artifact.content);

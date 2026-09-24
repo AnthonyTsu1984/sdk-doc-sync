@@ -11,6 +11,23 @@
 
 const RELATIVE_MD_LINK_PATTERN = /\[([^\]]+)\]\(([^)]+?\.md)(#[^)\s]*)?\)/g;
 
+const { normalizeRecord } = require('./bitable-record-index');
+
+// Builds a resolveSlug callback from live Bitable index records (raw
+// `{fields: {Slug, Docs}}` shape): slug (canonical `Category-Symbol`) →
+// record Docs link. This is the production resolver for the reviewed-context
+// builders, wired from the same KB index the runner already reads.
+function slugResolverFromRecords(records) {
+    const bySlug = new Map();
+    for (const record of records || []) {
+        const normalized = normalizeRecord(record);
+        if (normalized.slug && normalized.link && !bySlug.has(normalized.slug)) {
+            bySlug.set(normalized.slug, normalized.link);
+        }
+    }
+    return (slug) => bySlug.get(slug) || null;
+}
+
 function isRelativeLinkTarget(target) {
     return !/^(https?:)?\/\//i.test(target) && !target.startsWith('/');
 }
@@ -104,4 +121,5 @@ function resolveRelativeLinks(markdown, { resolveSlug, currentCategory = null, o
 module.exports = {
     collectRelativeMarkdownLinks,
     resolveRelativeLinks,
+    slugResolverFromRecords,
 };

@@ -1598,6 +1598,14 @@ class MarkdownToFeishu {
         return data.data.content;
     }
 
+    assertAbsoluteBlockLinks(blocks) {
+        // Public pre-write validation for destructive flows: scripts that
+        // delete-then-recreate a region must validate the replacement blocks
+        // BEFORE the delete, or a rejected payload leaves the document
+        // truncated (api.absolute-link-urls).
+        this.__assert_absolute_block_links(blocks, 'MarkdownToFeishu.assertAbsoluteBlockLinks');
+    }
+
     __collect_text_link_urls(value, found = []) {
         if (Array.isArray(value)) {
             value.forEach((item) => this.__collect_text_link_urls(item, found));

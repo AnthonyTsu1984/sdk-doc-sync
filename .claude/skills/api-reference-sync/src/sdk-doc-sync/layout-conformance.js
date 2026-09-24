@@ -37,8 +37,13 @@ function pageFactsFromBlocks(blocks = []) {
                 const text = (block[`heading${block.block_type - HEADING_LEVEL_BASE}`]?.elements || [])
                     .map((element) => element?.text_run?.content || '')
                     .join('');
-                headings.push({ level: block.block_type - HEADING_LEVEL_BASE, text });
-                if (!insideCallout) lines.push(text);
+                // Headings inside callouts are callout content (e.g. a label
+                // line), not page section structure — they count for neither
+                // the heading checks nor the body-line scan.
+                if (!insideCallout) {
+                    headings.push({ level: block.block_type - HEADING_LEVEL_BASE, text });
+                    lines.push(text);
+                }
                 continue;
             }
             if (block.block_type === TEXT_BLOCK_TYPE) {

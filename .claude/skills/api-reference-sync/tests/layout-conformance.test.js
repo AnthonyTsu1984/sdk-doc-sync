@@ -90,3 +90,21 @@ test('a profile without layoutRules is not governed by the layout invariant', ()
     });
     assert.deepEqual(result.violations, []);
 });
+
+test('headings inside callouts count for neither heading checks nor body lines', () => {
+  const facts = pageFactsFromBlocks([
+    {
+      block_id: 'callout',
+      block_type: 19,
+      children: [
+        { block_id: 'ch', block_type: 5, heading3: { elements: [{ text_run: { content: 'RoleRequest' } }] } },
+        { block_id: 'cb', block_type: 2, text: { elements: [{ text_run: { content: 'body' } }] } },
+      ],
+    },
+  ]);
+  assert.deepEqual(facts.headings, [], 'callout headings are callout content');
+  assert.deepEqual(facts.lines, [], 'callout body stays out of the line scan');
+  assert.deepEqual(facts.callouts, [{ lines: ['body'] }]);
+  const result = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
+  assert.equal(result.violations.length, 0);
+});

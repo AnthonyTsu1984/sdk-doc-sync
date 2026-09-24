@@ -147,6 +147,11 @@ async function patchMethod(slug, recordId, docId) {
     }
 
     const newBlocks = await markdownToBlocks(markdown);
+    // Validate the replacement blocks BEFORE the destructive delete —
+    // create_blocks below rejects non-absolute link URLs, and throwing after
+    // the delete would leave the return region truncated
+    // (api.absolute-link-urls).
+    m2f.assertAbsoluteBlockLinks(newBlocks);
     console.log(`  · delete ${region.oldChildIds.length} block(s) [${region.startIndex}, ${region.endIndex}), insert ${newBlocks.length} top-level block(s)`);
 
     if (DRY_RUN) {

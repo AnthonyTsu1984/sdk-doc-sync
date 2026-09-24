@@ -109,31 +109,36 @@ class AcceptanceFinalizer {
     if (!entries.some((entry) => entry.type === 'completion' && entry.completionSentinel === true)) {
       throw invariantEvidenceError(`Execution journal ${digest} has no completion sentinel; the batch did not complete`);
     }
-    const evidenceByActionId = new Map();
+    // Evidence precedence: the tree-delta outcome is the AUTHORITATIVE
+    // structural verdict (record links, folder placement, tree shape). A
+    // failing tree-delta outcome is never compensated by a passing
+    // content-fidelity outcome, and a failing content-fidelity outcome is
+    // itself disqualifying. Foreign invariant ids are not evidence.
+    const treeDeltaByActionId = new Map();
+    const contentFidelityByActionId = new Map();
     for (const entry of entries) {
-      // Verified post-write invariant outcomes: tree-delta outcomes remain
-      // the primary evidence; content-fidelity outcomes carry equal weight
-      // for verbatim pages. Foreign invariant ids are not evidence.
       if (entry?.type !== 'tree-delta' && entry?.type !== 'content-fidelity') continue;
-      if (entry.ok !== true) continue;
       const expectedInvariantId = entry.type === 'tree-delta' ? INVARIANT_ID : VERBATIM_INVARIANT_ID;
       if (entry.invariantId !== expectedInvariantId) continue;
       if (!nonEmptyString(entry.decision)) continue;
-      // A tree-delta outcome outranks a content-fidelity outcome for the
-      // same action (it covers the record/tree postconditions).
-      if (entry.type === 'content-fidelity' && evidenceByActionId.has(entry.actionId)) continue;
-      evidenceByActionId.set(entry.actionId, {
+      const outcome = {
         actionId: entry.actionId,
         invariantId: entry.invariantId,
         decision: entry.decision,
-        verified: true,
-      });
+        ok: entry.ok === true,
+      };
+      if (entry.type === 'tree-delta') treeDeltaByActionId.set(entry.actionId, outcome);
+      else contentFidelityByActionId.set(entry.actionId, outcome);
     }
     const evidence = [];
     for (const record of unit.touchedRecords || []) {
-      const item = evidenceByActionId.get(record?.actionId);
-      if (!item) {
-        throw invariantEvidenceError(`Acceptance requires a verified post-write invariant journal outcome for action ${record?.actionId || '(missing)'} in unit ${unit.reviewUnitId}`);
+      const treeDelta = treeDeltaByActionId.get(record?.actionId);
+      if (!treeDelta || treeDelta.ok !== true) {
+        throw invariantEvidenceError(`Acceptance requires a verified ${INVARIANT_ID} journal outcome for action ${record?.actionId || '(missing)'} in unit ${unit.reviewUnitId}`);
+      }
+      const contentFidelity = contentFidelityByActionId.get(record.actionId);
+      if (contentFidelity && contentFidelity.ok !== true) {
+        throw invariantEvidenceError(`Acceptance requires a passing content-fidelity journal outcome for action ${record.actionId} in unit ${unit.reviewUnitId}`);
       }
       const observed = entries.find((entry) => entry.type === 'observed'
         && entry.actionId === record.actionId
@@ -141,7 +146,20 @@ class AcceptanceFinalizer {
       if (!observed) {
         throw invariantEvidenceError(`Journal action ${record.actionId} has no successful observed result`);
       }
-      evidence.push(item);
+      evidence.push({
+        actionId: treeDelta.actionId,
+        invariantId: treeDelta.invariantId,
+        decision: treeDelta.decision,
+        verified: true,
+      });
+      if (contentFidelity) {
+        evidence.push({
+          actionId: contentFidelity.actionId,
+          invariantId: contentFidelity.invariantId,
+          decision: contentFidelity.decision,
+          verified: true,
+        });
+      }
     }
     return evidence;
   }

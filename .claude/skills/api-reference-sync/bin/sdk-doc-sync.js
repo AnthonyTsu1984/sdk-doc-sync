@@ -18,6 +18,10 @@ const {
     verbatimCarriesIncludeMarker,
     verbatimContentDigest,
 } = require('../src/sdk-doc-sync/verbatim-content');
+const {
+    resolveRelativeLinks,
+    slugResolverFromRecords,
+} = require('../src/sdk-doc-sync/markdown-link-resolution');
 const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
 const {
     getTrack,
@@ -358,7 +362,19 @@ function createSchemaFirstArtifactProvider({
         // stripped) and bound into the artifact digest so the approved batch
         // digest covers the exact solidified bytes (api.pr-verbatim-content).
         if (action?.pr && typeof context?.verbatimContent === 'string' && context.verbatimContent.trim()) {
-            const verbatimContent = normalizeVerbatimContent(context.verbatimContent);
+            let verbatimContent = normalizeVerbatimContent(context.verbatimContent);
+            // Resolve repository-relative links against the live KB index
+            // BEFORE the pre-write absolute-link guard would reject them —
+            // this is the sanctioned fix path (api.absolute-link-urls).
+            const indexRecords = Array.isArray(scope.index) ? scope.index : [];
+            if (indexRecords.length > 0) {
+                verbatimContent = resolveRelativeLinks(verbatimContent, {
+                    resolveSlug: slugResolverFromRecords(indexRecords),
+                    currentCategory: typeof action?.stableId === 'string'
+                        ? action.stableId.split(':')[1] || null
+                        : null,
+                });
+            }
             // Pages carrying user-authored <include> conditional markers are
             // never rebuilt: the markers must survive verbatim, and the body
             // is edited surgically instead (api.literal-include-preserved).

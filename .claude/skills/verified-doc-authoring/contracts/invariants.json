@@ -1,0 +1,162 @@
+{
+  "schemaVersion": 1,
+  "skill": "verified-doc-authoring",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED).",
+  "invariants": [
+    {
+      "id": "authoring.claim-inventory-binding",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "authoring-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:83eb9f96570cb44f734eac77c48dac79441b2071c6e25bc8b4699e1728a0be39",
+      "fixtureIds": [
+        "authoring-binding-digest-mismatch"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-planner.js",
+          "codes": [
+            "DRAFT_CLAIM_DIGEST_MISMATCH"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "authoring.unspecified-target-read-only",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "authoring-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:abd087c56bd24986075ca4b25ddc93273b07448d1d49d2fbc4e1f2e8bb04bcc1",
+      "fixtureIds": [
+        "authoring-unspecified-target-blocked"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-planner.js",
+          "codes": [
+            "TARGET_REQUIRED_NO_BATCH"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "authoring.canonical-write-path",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "authoring-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["pre-write"],
+      "statementDigest": "sha256:1017e9b403685f13aaae5096afe3221162410c6b275550977378980d4599f908",
+      "fixtureIds": [
+        "authoring-writepath-digest-mismatch-zero-writes",
+        "authoring-writepath-target-drift-zero-writes"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-planner.js",
+          "codes": [
+            "APPROVAL_REQUIRED",
+            "APPROVAL_OPERATION_MISMATCH",
+            "APPROVAL_BATCH_MISMATCH",
+            "APPROVAL_ACTION_COUNT_MISMATCH",
+            "APPROVAL_TARGET_MISMATCH",
+            "APPROVAL_SIDE_EFFECT_MISMATCH",
+            "APPROVAL_EXPIRED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-executor.js",
+          "codes": [
+            "WRITER_ENVELOPE_REQUIRED",
+            "WRITER_TARGET_NOT_IN_ENVELOPE",
+            "TARGET_DRIFT_BEFORE_MUTATION",
+            "AUTHORING_SESSION_NOT_APPROVAL_READY"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "authoring.unresolved-claim-visibility",
+      "version": 1,
+      "risk": "content-integrity",
+      "scope": "authoring-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan", "post-write"],
+      "statementDigest": "sha256:388981c1849d084aeeed9c6c06ed584a7d7d9bbc4590823c2cd60167ed9f3afa",
+      "fixtureIds": [
+        "authoring-visibility-draft-hidden-blocked",
+        "authoring-visibility-review-required",
+        "authoring-visibility-refetch-blocked",
+        "authoring-visibility-verified-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/verified-doc-authoring/src/claim-inventory.js",
+          "codes": [
+            "UNRESOLVED_CLAIMS_HIDDEN",
+            "UNRESOLVED_CLAIM_UNKNOWN"
+          ]
+        },
+        {
+          "stage": "plan",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-planner.js",
+          "codes": [
+            "UNRESOLVED_CLAIM_REVIEW_REQUIRED"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-executor.js",
+          "codes": [
+            "AUTHORING_REFETCH_VERIFICATION_FAILED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "authoring.rollback-before-acceptance",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "authoring-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["post-write"],
+      "statementDigest": "sha256:29af6ac93f9f1d6d80c5691b7624e97f3469da44591faa9259827770501b8eef",
+      "fixtureIds": [
+        "authoring-rollback-plan-required",
+        "authoring-rollback-creation-unproven",
+        "authoring-rollback-bound-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/verified-doc-authoring/src/patch-executor.js",
+          "codes": [
+            "ROLLBACK_STRUCTURE_DRIFT",
+            "ROLLBACK_CREATION_UNPROVEN",
+            "ROLLBACK_DEPENDENT_UNITS"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/verified-doc-authoring/src/review-session-store.js",
+          "codes": [
+            "ROLLBACK_PLAN_REQUIRED",
+            "ACCEPTANCE_NOT_PENDING",
+            "ACCEPTANCE_EVIDENCE_MISMATCH",
+            "EXECUTION_SESSION_MISMATCH",
+            "EXECUTION_EVIDENCE_REQUIRED"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -17,7 +17,10 @@ function validateTarget(target) {
     }
     return;
   }
-  throw new TypeError('target.kind must be existing or new');
+  throw Object.assign(
+    new TypeError('target.kind must be existing or new; without a specified target no action batch may be built'),
+    { code: 'TARGET_REQUIRED_NO_BATCH' },
+  );
 }
 
 function buildAuthoringPatchPlan({
@@ -30,10 +33,16 @@ function buildAuthoringPatchPlan({
   validateTarget(target);
   if (!semanticDiff || typeof semanticDiff !== 'object' || Array.isArray(semanticDiff)) throw new TypeError('semanticDiff is required');
   if (!claimInventory?.inventoryDigest || draftArtifact?.claimInventoryDigest !== claimInventory.inventoryDigest) {
-    throw new Error('Draft artifact must bind the exact claim inventory');
+    throw Object.assign(
+      new Error('Draft artifact must bind the exact claim inventory'),
+      { code: 'DRAFT_CLAIM_DIGEST_MISMATCH' },
+    );
   }
   if ((draftArtifact.visibleUnresolvedClaimIds || []).length > 0 && !claimReviewDecisionDigest) {
-    throw new Error('Explicit claim review is required for a live patch with unresolved or contradicted claims');
+    throw Object.assign(
+      new Error('Explicit claim review is required for a live patch with unresolved or contradicted claims'),
+      { code: 'UNRESOLVED_CLAIM_REVIEW_REQUIRED' },
+    );
   }
   const targetIdentity = target.kind === 'existing'
     ? `document:${target.documentId}`

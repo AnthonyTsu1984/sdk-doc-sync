@@ -30,6 +30,14 @@ Do not use for verification-only snippet checks, release-wide API-reference sync
 - Do not call `api-reference-sync/scripts/feishu-doc.js patch` or `push` directly for a verified-doc-authoring live write. A production adapter may wrap those operations only behind the canonical plan, approval, journal, refetch, acceptance, and rollback contracts.
 - A live draft that keeps `needs-verification` or `contradicted` claims visible requires a separate claim-review decision digest. A verified local draft with no requested target remains read-only and needs no claim-review gate.
 
+## Domain Invariants
+
+- A draft's semantic identity binds the exact claim-inventory digest: the plan refuses a draft artifact built from any other inventory. [authoring.claim-inventory-binding]
+- An unspecified target produces no action batch: the run stops with the local draft and requests the exact target and patch strategy. [authoring.unspecified-target-read-only]
+- Live writes enter only through the canonical plan/approval/journal pipeline: the executor binds writer governance to the plan's batch facts and refuses a drifted target or an envelope mismatch before the first adapter mutation. [authoring.canonical-write-path]
+- Unresolved and contradicted claims stay visible end to end: the draft must show every `needs-verification`/`contradicted` claim, a live patch with visible unresolved claims requires a claim-review decision digest, and the post-write refetch must find those claims still visible. [authoring.unresolved-claim-visibility]
+- Before acceptance a corrective rollback plan is generated and its manifest digest is bound into the acceptance receipt; deleting a newly created document requires journal proof that this execution created it and that no later review unit depends on it. [authoring.rollback-before-acceptance]
+
 ## Domain Workflow
 
 1. Collect all references and identify the target, audience, product surface, and requested document role.

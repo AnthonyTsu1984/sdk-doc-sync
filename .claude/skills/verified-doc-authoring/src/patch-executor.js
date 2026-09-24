@@ -3,6 +3,7 @@
 const { assertApproval } = require('../../doc-ops-core/src/approval-guard');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
+const { assertWriterMutation, createWriterGovernance } = require('../../doc-ops-core/src/writer-governance');
 
 function sameSorted(left, right) {
   return JSON.stringify([...(left || [])].sort()) === JSON.stringify([...(right || [])].sort());
@@ -24,13 +25,38 @@ function assertPreflight(plan, live) {
     if (live?.documentId !== plan.target.documentId
         || live.revision !== plan.target.revision
         || live.protectedBlocksDigest !== plan.target.protectedBlocksDigest) {
-      throw new Error('Existing target revision or protected block inventory drifted before mutation');
+      throw Object.assign(
+        new Error('Existing target revision or protected block inventory drifted before mutation'),
+        { code: 'TARGET_DRIFT_BEFORE_MUTATION' },
+      );
     }
   }
 }
 
+// Fail-closed writer envelope at the executor→adapter boundary
+// (authoring.canonical-write-path): the executor owns a WriterGovernance bound
+// to this exact plan's batch facts, and the patch call is cross-checked
+// against the bound target, so no injected adapter can mutate outside the
+// approved batch. Reads (snapshot/refetch) stay ungated.
+function bindPlanGovernance({ plan, approval }) {
+  const governance = createWriterGovernance({
+    skill: plan.actionBatch.skill,
+    operation: plan.actionBatch.operation,
+  });
+  governance.bindApproval({
+    batchDigest: plan.actionBatch.batchDigest,
+    actionCount: plan.actionBatch.actions.length,
+    targets: plan.actionBatch.targets,
+    sideEffects: plan.actionBatch.sideEffects,
+    approval,
+    enforceTargets: true,
+  });
+  return governance;
+}
+
 async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
   assertExactApproval(plan, approval);
+  const governance = bindPlanGovernance({ plan, approval });
   const liveBefore = await adapter.snapshot(plan.target);
   assertPreflight(plan, liveBefore);
   const action = plan.actionBatch.actions[0];
@@ -47,6 +73,7 @@ async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
     draftSemanticDigest: plan.draftArtifact.semanticDigest,
     beforeState: action.beforeState,
   });
+  assertWriterMutation(governance, 'patch', action.target);
   const mutation = await adapter.patch(action.payload);
   const live = await adapter.refetch(mutation.documentId);
   const verified = live?.documentId === mutation.documentId
@@ -69,7 +96,12 @@ async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
     created: mutation.created === true,
     liveResultDigest: digestSemantic(liveResult),
   });
-  if (!verified) throw new Error('Authoring refetch verification failed');
+  if (!verified) {
+    throw Object.assign(
+      new Error('Authoring refetch verification failed: live state must match the draft digest, visible unresolved claims, and protected blocks'),
+      { code: 'AUTHORING_REFETCH_VERIFICATION_FAILED' },
+    );
+  }
   journal.complete();
   return Object.freeze({
     schemaVersion: 1,
@@ -90,7 +122,10 @@ function planAuthoringRollback({ plan, execution, liveState }) {
   if (plan.target.kind === 'existing') {
     if (liveState?.documentId !== plan.target.documentId
         || liveState.protectedBlocksDigest !== plan.target.protectedBlocksDigest) {
-      throw new Error('Rollback blocked by live structure drift');
+      throw Object.assign(
+        new Error('Rollback blocked by live structure drift'),
+        { code: 'ROLLBACK_STRUCTURE_DRIFT' },
+      );
     }
     actions = [{
       operation: 'restore-before-state',
@@ -99,12 +134,23 @@ function planAuthoringRollback({ plan, execution, liveState }) {
     }];
   } else {
     if (execution?.created !== true || !execution.documentId || liveState?.documentId !== execution.documentId) {
-      throw new Error('Rollback cannot prove the document was created by this execution');
+      throw Object.assign(
+        new Error('Rollback cannot prove the document was created by this execution'),
+        { code: 'ROLLBACK_CREATION_UNPROVEN' },
+      );
     }
     if (!/^sha256:[a-f0-9]{64}$/.test(execution.executionJournalDigest || '')) {
-      throw new Error('Rollback requires the creation execution journal digest');
+      throw Object.assign(
+        new Error('Rollback requires the creation execution journal digest'),
+        { code: 'ROLLBACK_CREATION_UNPROVEN' },
+      );
     }
-    if ((liveState.dependentReviewUnitIds || []).length > 0) throw new Error('Rollback blocked by dependent review units');
+    if ((liveState.dependentReviewUnitIds || []).length > 0) {
+      throw Object.assign(
+        new Error('Rollback blocked by dependent review units'),
+        { code: 'ROLLBACK_DEPENDENT_UNITS' },
+      );
+    }
     actions = [{ operation: 'delete-created-document', documentId: execution.documentId }];
   }
   const semantic = { schemaVersion: 1, reviewUnitId: plan.reviewUnitId, originalExecutionJournalDigest: execution.executionJournalDigest || null, actions };

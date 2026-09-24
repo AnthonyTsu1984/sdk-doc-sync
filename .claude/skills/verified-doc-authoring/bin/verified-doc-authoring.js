@@ -85,7 +85,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     for (const name of ['plan', 'approval', 'journal', 'output', 'session']) required(args, name);
     const plan = readJson(args.plan);
     const session = loadAuthoringSession(args.session);
-    if (session.status !== 'approval_ready' || session.planDigest !== plan.planDigest) throw new Error('Authoring session is not approval-ready for this exact plan');
+    if (session.status !== 'approval_ready' || session.planDigest !== plan.planDigest) {
+      throw Object.assign(
+        new Error('Authoring session is not approval-ready for this exact plan'),
+        { code: 'AUTHORING_SESSION_NOT_APPROVAL_READY' },
+      );
+    }
     const result = await executeAuthoringPatch({ plan, approval: readJson(args.approval), journalPath: path.resolve(args.journal), adapter: loadAdapter(args, dependencies) });
     writeJson(args.output, result);
     saveAuthoringSession(args.session, recordAuthoringExecution(session, result));
@@ -93,12 +98,13 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     return result;
   }
   if (args.command === 'accept') {
-    for (const name of ['session', 'decisionDigest']) required(args, name);
+    for (const name of ['session', 'decisionDigest', 'rollbackManifest']) required(args, name);
     const session = loadAuthoringSession(args.session);
     const accepted = recordAuthoringAcceptance(session, {
       executionJournalDigest: session.execution?.executionJournalDigest,
       liveResultDigest: session.execution?.liveResultDigest,
       decisionDigest: args.decisionDigest,
+      rollbackManifestDigest: readJson(args.rollbackManifest).rollbackManifestDigest,
     });
     saveAuthoringSession(args.session, accepted);
     if (args.output) writeJson(args.output, accepted.acceptanceReceipt);

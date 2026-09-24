@@ -8,6 +8,10 @@ const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
 const EDITORIAL_CATEGORIES = Object.freeze(['placement', 'style', 'factual', 'example', 'rendering']);
 
+function typedError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
 function createAuthoringSession({ sessionId, plan }) {
   if (!sessionId || !plan?.planDigest) throw new TypeError('sessionId and plan are required');
   return Object.freeze({
@@ -26,18 +30,21 @@ function createAuthoringSession({ sessionId, plan }) {
 
 function recordAuthoringExecution(session, execution) {
   if (session.status !== 'approval_ready' || execution?.reviewUnitId !== session.reviewUnitId || execution.planDigest !== session.planDigest) {
-    throw new Error('Authoring execution does not match the approval-ready session');
+    throw typedError('EXECUTION_SESSION_MISMATCH', 'Authoring execution does not match the approval-ready session');
   }
   if (execution.status !== 'ACCEPTANCE_REQUIRED' || !execution.executionJournalDigest || !execution.liveResultDigest) {
-    throw new Error('Verified execution evidence is required');
+    throw typedError('EXECUTION_EVIDENCE_REQUIRED', 'Verified execution evidence is required');
   }
   return Object.freeze({ ...structuredClone(session), status: 'acceptance_pending', execution: structuredClone(execution) });
 }
 
-function recordAuthoringAcceptance(session, { executionJournalDigest, liveResultDigest, decisionDigest }) {
-  if (session.status !== 'acceptance_pending') throw new Error('Authoring acceptance is not pending');
+function recordAuthoringAcceptance(session, { executionJournalDigest, liveResultDigest, decisionDigest, rollbackManifestDigest }) {
+  if (session.status !== 'acceptance_pending') throw typedError('ACCEPTANCE_NOT_PENDING', 'Authoring acceptance is not pending');
+  if (typeof rollbackManifestDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(rollbackManifestDigest)) {
+    throw typedError('ROLLBACK_PLAN_REQUIRED', 'Acceptance requires the corrective rollback plan manifest digest generated before finalization');
+  }
   if (executionJournalDigest !== session.execution.executionJournalDigest || liveResultDigest !== session.execution.liveResultDigest) {
-    throw new Error('Acceptance is bound to different execution evidence');
+    throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance is bound to different execution evidence');
   }
   return Object.freeze({
     ...structuredClone(session),
@@ -46,6 +53,7 @@ function recordAuthoringAcceptance(session, { executionJournalDigest, liveResult
       executionJournalDigest,
       liveResultDigest,
       decisionDigest,
+      rollbackManifestDigest,
       claimInventoryDigest: session.claimInventoryDigest,
       draftSemanticDigest: session.draftSemanticDigest,
     }),

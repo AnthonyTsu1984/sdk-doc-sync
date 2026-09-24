@@ -591,6 +591,371 @@
       "stableId": "cpp:Collections:TruncateCollection",
       "canonicalSlug": "Collections-TruncateCollection",
       "category": "Collections"
+    },
+    "Authentication.AddPrivilegesToGroup": {
+      "stableId": "cpp:Authentication:AddPrivilegesToGroup",
+      "canonicalSlug": "Authentication-AddPrivilegesToGroup",
+      "category": "Authentication"
+    },
+    "Authentication.CreatePrivilegeGroup": {
+      "stableId": "cpp:Authentication:CreatePrivilegeGroup",
+      "canonicalSlug": "Authentication-CreatePrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.DropPrivilegeGroup": {
+      "stableId": "cpp:Authentication:DropPrivilegeGroup",
+      "canonicalSlug": "Authentication-DropPrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.DropRole": {
+      "stableId": "cpp:Authentication:DropRole",
+      "canonicalSlug": "Authentication-DropRole",
+      "category": "Authentication"
+    },
+    "Authentication.DropUser": {
+      "stableId": "cpp:Authentication:DropUser",
+      "canonicalSlug": "Authentication-DropUser",
+      "category": "Authentication"
+    },
+    "Authentication.GrantPrivilegeV2": {
+      "stableId": "cpp:Authentication:GrantPrivilegeV2",
+      "canonicalSlug": "Authentication-GrantPrivilegeV2",
+      "category": "Authentication"
+    },
+    "Authentication.GrantRole": {
+      "stableId": "cpp:Authentication:GrantRole",
+      "canonicalSlug": "Authentication-GrantRole",
+      "category": "Authentication"
+    },
+    "Authentication.ListPrivilegeGroups": {
+      "stableId": "cpp:Authentication:ListPrivilegeGroups",
+      "canonicalSlug": "Authentication-ListPrivilegeGroups",
+      "category": "Authentication"
+    },
+    "Authentication.ListRoles": {
+      "stableId": "cpp:Authentication:ListRoles",
+      "canonicalSlug": "Authentication-ListRoles",
+      "category": "Authentication"
+    },
+    "Authentication.ListUsers": {
+      "stableId": "cpp:Authentication:ListUsers",
+      "canonicalSlug": "Authentication-ListUsers",
+      "category": "Authentication"
+    },
+    "Authentication.PrivilegeGroupInfo": {
+      "stableId": "cpp:Authentication:PrivilegeGroupInfo",
+      "canonicalSlug": "Authentication-PrivilegeGroupInfo",
+      "category": "Authentication"
+    },
+    "Authentication.RemovePrivilegesFromGroup": {
+      "stableId": "cpp:Authentication:RemovePrivilegesFromGroup",
+      "canonicalSlug": "Authentication-RemovePrivilegesFromGroup",
+      "category": "Authentication"
+    },
+    "Authentication.RevokePrivilegeV2": {
+      "stableId": "cpp:Authentication:RevokePrivilegeV2",
+      "canonicalSlug": "Authentication-RevokePrivilegeV2",
+      "category": "Authentication"
+    },
+    "Authentication.RevokeRole": {
+      "stableId": "cpp:Authentication:RevokeRole",
+      "canonicalSlug": "Authentication-RevokeRole",
+      "category": "Authentication"
+    },
+    "Authentication.RoleDesc": {
+      "stableId": "cpp:Authentication:RoleDesc",
+      "canonicalSlug": "Authentication-RoleDesc",
+      "category": "Authentication"
+    },
+    "Authentication.UserDesc": {
+      "stableId": "cpp:Authentication:UserDesc",
+      "canonicalSlug": "Authentication-UserDesc",
+      "category": "Authentication"
+    },
+    "Client.ConnectParam": {
+      "stableId": "cpp:Client:ConnectParam",
+      "canonicalSlug": "Client-ConnectParam",
+      "category": "Client"
+    },
+    "Client.CurrentUsedDatabase": {
+      "stableId": "cpp:Client:CurrentUsedDatabase",
+      "canonicalSlug": "Client-CurrentUsedDatabase",
+      "category": "Client"
+    },
+    "Client.Disconnect": {
+      "stableId": "cpp:Client:Disconnect",
+      "canonicalSlug": "Client-Disconnect",
+      "category": "Client"
+    },
+    "Client.GetSDKVersion": {
+      "stableId": "cpp:Client:GetSDKVersion",
+      "canonicalSlug": "Client-GetSDKVersion",
+      "category": "Client"
+    },
+    "Client.GetServerVersion": {
+      "stableId": "cpp:Client:GetServerVersion",
+      "canonicalSlug": "Client-GetServerVersion",
+      "category": "Client"
+    },
+    "Client.RetryParam": {
+      "stableId": "cpp:Client:RetryParam",
+      "canonicalSlug": "Client-RetryParam",
+      "category": "Client"
+    },
+    "Client.SetRetryParam": {
+      "stableId": "cpp:Client:SetRetryParam",
+      "canonicalSlug": "Client-SetRetryParam",
+      "category": "Client"
+    },
+    "Client.SetRpcDeadlineMs": {
+      "stableId": "cpp:Client:SetRpcDeadlineMs",
+      "canonicalSlug": "Client-SetRpcDeadlineMs",
+      "category": "Client"
+    },
+    "Collections.AliasDesc": {
+      "stableId": "cpp:Collections:AliasDesc",
+      "canonicalSlug": "Collections-AliasDesc",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionProperties": {
+      "stableId": "cpp:Collections:AlterCollectionProperties",
+      "canonicalSlug": "Collections-AlterCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.CollectionDesc": {
+      "stableId": "cpp:Collections:CollectionDesc",
+      "canonicalSlug": "Collections-CollectionDesc",
+      "category": "Collections"
+    },
+    "Collections.CollectionInfo": {
+      "stableId": "cpp:Collections:CollectionInfo",
+      "canonicalSlug": "Collections-CollectionInfo",
+      "category": "Collections"
+    },
+    "Collections.CollectionSchema": {
+      "stableId": "cpp:Collections:CollectionSchema",
+      "canonicalSlug": "Collections-CollectionSchema",
+      "category": "Collections"
+    },
+    "Collections.ConsistencyLevel": {
+      "stableId": "cpp:Collections:ConsistencyLevel",
+      "canonicalSlug": "Collections-ConsistencyLevel",
+      "category": "Collections"
+    },
+    "Collections.CreateSimpleCollection": {
+      "stableId": "cpp:Collections:CreateSimpleCollection",
+      "canonicalSlug": "Collections-CreateSimpleCollection",
+      "category": "Collections"
+    },
+    "Collections.DataType": {
+      "stableId": "cpp:Collections:DataType",
+      "canonicalSlug": "Collections-DataType",
+      "category": "Collections"
+    },
+    "Collections.DescribeAlias": {
+      "stableId": "cpp:Collections:DescribeAlias",
+      "canonicalSlug": "Collections-DescribeAlias",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionProperties": {
+      "stableId": "cpp:Collections:DropCollectionProperties",
+      "canonicalSlug": "Collections-DropCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.FieldSchema": {
+      "stableId": "cpp:Collections:FieldSchema",
+      "canonicalSlug": "Collections-FieldSchema",
+      "category": "Collections"
+    },
+    "Collections.Function": {
+      "stableId": "cpp:Collections:Function",
+      "canonicalSlug": "Collections-Function",
+      "category": "Collections"
+    },
+    "Collections.GetCollectionStats": {
+      "stableId": "cpp:Collections:GetCollectionStats",
+      "canonicalSlug": "Collections-GetCollectionStats",
+      "category": "Collections"
+    },
+    "Collections.HasCollection": {
+      "stableId": "cpp:Collections:HasCollection",
+      "canonicalSlug": "Collections-HasCollection",
+      "category": "Collections"
+    },
+    "Collections.ListAliases": {
+      "stableId": "cpp:Collections:ListAliases",
+      "canonicalSlug": "Collections-ListAliases",
+      "category": "Collections"
+    },
+    "Collections.ListCollections": {
+      "stableId": "cpp:Collections:ListCollections",
+      "canonicalSlug": "Collections-ListCollections",
+      "category": "Collections"
+    },
+    "Collections.LoadState": {
+      "stableId": "cpp:Collections:LoadState",
+      "canonicalSlug": "Collections-LoadState",
+      "category": "Collections"
+    },
+    "Collections.StructFieldSchema": {
+      "stableId": "cpp:Collections:StructFieldSchema",
+      "canonicalSlug": "Collections-StructFieldSchema",
+      "category": "Collections"
+    },
+    "DataImport.CreateImportJobs": {
+      "stableId": "cpp:DataImport:CreateImportJobs",
+      "canonicalSlug": "DataImport-CreateImportJobs",
+      "category": "DataImport"
+    },
+    "DataImport.GetImportJobProgress": {
+      "stableId": "cpp:DataImport:GetImportJobProgress",
+      "canonicalSlug": "DataImport-GetImportJobProgress",
+      "category": "DataImport"
+    },
+    "DataImport.ListImportJobs": {
+      "stableId": "cpp:DataImport:ListImportJobs",
+      "canonicalSlug": "DataImport-ListImportJobs",
+      "category": "DataImport"
+    },
+    "Database.AlterDatabaseProperties": {
+      "stableId": "cpp:Database:AlterDatabaseProperties",
+      "canonicalSlug": "Database-AlterDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.CreateDatabase": {
+      "stableId": "cpp:Database:CreateDatabase",
+      "canonicalSlug": "Database-CreateDatabase",
+      "category": "Database"
+    },
+    "Database.DropDatabaseProperties": {
+      "stableId": "cpp:Database:DropDatabaseProperties",
+      "canonicalSlug": "Database-DropDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.ListDatabases": {
+      "stableId": "cpp:Database:ListDatabases",
+      "canonicalSlug": "Database-ListDatabases",
+      "category": "Database"
+    },
+    "Management.DropIndex": {
+      "stableId": "cpp:Management:DropIndex",
+      "canonicalSlug": "Management-DropIndex",
+      "category": "Management"
+    },
+    "Management.Flush": {
+      "stableId": "cpp:Management:Flush",
+      "canonicalSlug": "Management-Flush",
+      "category": "Management"
+    },
+    "Management.GetCompactionPlans": {
+      "stableId": "cpp:Management:GetCompactionPlans",
+      "canonicalSlug": "Management-GetCompactionPlans",
+      "category": "Management"
+    },
+    "Management.GetCompactionState": {
+      "stableId": "cpp:Management:GetCompactionState",
+      "canonicalSlug": "Management-GetCompactionState",
+      "category": "Management"
+    },
+    "Management.IndexDesc": {
+      "stableId": "cpp:Management:IndexDesc",
+      "canonicalSlug": "Management-IndexDesc",
+      "category": "Management"
+    },
+    "Management.IndexType": {
+      "stableId": "cpp:Management:IndexType",
+      "canonicalSlug": "Management-IndexType",
+      "category": "Management"
+    },
+    "Management.MetricType": {
+      "stableId": "cpp:Management:MetricType",
+      "canonicalSlug": "Management-MetricType",
+      "category": "Management"
+    },
+    "Management.ReleaseCollection": {
+      "stableId": "cpp:Management:ReleaseCollection",
+      "canonicalSlug": "Management-ReleaseCollection",
+      "category": "Management"
+    },
+    "Partitions.CreatePartition": {
+      "stableId": "cpp:Partitions:CreatePartition",
+      "canonicalSlug": "Partitions-CreatePartition",
+      "category": "Partitions"
+    },
+    "Partitions.DropPartition": {
+      "stableId": "cpp:Partitions:DropPartition",
+      "canonicalSlug": "Partitions-DropPartition",
+      "category": "Partitions"
+    },
+    "Partitions.GetPartitionStatistics": {
+      "stableId": "cpp:Partitions:GetPartitionStatistics",
+      "canonicalSlug": "Partitions-GetPartitionStatistics",
+      "category": "Partitions"
+    },
+    "Partitions.HasPartition": {
+      "stableId": "cpp:Partitions:HasPartition",
+      "canonicalSlug": "Partitions-HasPartition",
+      "category": "Partitions"
+    },
+    "Partitions.ListPartitions": {
+      "stableId": "cpp:Partitions:ListPartitions",
+      "canonicalSlug": "Partitions-ListPartitions",
+      "category": "Partitions"
+    },
+    "Partitions.ReleasePartitions": {
+      "stableId": "cpp:Partitions:ReleasePartitions",
+      "canonicalSlug": "Partitions-ReleasePartitions",
+      "category": "Partitions"
+    },
+    "ResourceGroup.CreateResourceGroup": {
+      "stableId": "cpp:ResourceGroup:CreateResourceGroup",
+      "canonicalSlug": "ResourceGroup-CreateResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DescribeReplicas": {
+      "stableId": "cpp:ResourceGroup:DescribeReplicas",
+      "canonicalSlug": "ResourceGroup-DescribeReplicas",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DescribeResourceGroup": {
+      "stableId": "cpp:ResourceGroup:DescribeResourceGroup",
+      "canonicalSlug": "ResourceGroup-DescribeResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DropResourceGroup": {
+      "stableId": "cpp:ResourceGroup:DropResourceGroup",
+      "canonicalSlug": "ResourceGroup-DropResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ListResourceGroups": {
+      "stableId": "cpp:ResourceGroup:ListResourceGroups",
+      "canonicalSlug": "ResourceGroup-ListResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ResourceGroupConfig": {
+      "stableId": "cpp:ResourceGroup:ResourceGroupConfig",
+      "canonicalSlug": "ResourceGroup-ResourceGroupConfig",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ResourceGroupDesc": {
+      "stableId": "cpp:ResourceGroup:ResourceGroupDesc",
+      "canonicalSlug": "ResourceGroup-ResourceGroupDesc",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.TransferNode": {
+      "stableId": "cpp:ResourceGroup:TransferNode",
+      "canonicalSlug": "ResourceGroup-TransferNode",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.TransferReplica": {
+      "stableId": "cpp:ResourceGroup:TransferReplica",
+      "canonicalSlug": "ResourceGroup-TransferReplica",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.UpdateResourceGroups": {
+      "stableId": "cpp:ResourceGroup:UpdateResourceGroups",
+      "canonicalSlug": "ResourceGroup-UpdateResourceGroups",
+      "category": "ResourceGroup"
     }
   }
 }

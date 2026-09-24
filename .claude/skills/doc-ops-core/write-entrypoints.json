@@ -3,7 +3,7 @@
   "baseline": {
     "recordedAt": "2026-09-23T00:00:00.000Z",
     "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
-    "entrypointCount": 163,
+    "entrypointCount": 164,
     "legacyLiveCount": 60
   },
   "entries": [
@@ -69,6 +69,13 @@
       "classification": "read-only",
       "operation": "export-doc",
       "basis": "manual baseline override after source inspection"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/identity-reconcile.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "identity-reconcile",
+      "basis": "reads a Bitable snapshot and the identity map; writes deterministic local draft artifacts only when --emit-draft is passed"
     },
     {
       "path": ".claude/skills/api-reference-sync/bin/feishu-doc-translator.js",

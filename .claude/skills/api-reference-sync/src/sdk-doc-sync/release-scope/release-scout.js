@@ -83,7 +83,14 @@ function scanStateKeyFor({ language, track, scanState }) {
 
 async function scanSymbols({ scanner, sdkDir, language }) {
   const resolvedScanner = scanner || scannerFor(language, sdkDir);
-  return await resolvedScanner.scan();
+  const symbols = await resolvedScanner.scan();
+  // Coverage diagnostics ride the returned array so every scan caller
+  // (full scout, ref scans, PR verification) can surface them without
+  // changing the symbols contract.
+  if (Array.isArray(resolvedScanner.lastScanDiagnostics)) {
+    symbols.scanDiagnostics = resolvedScanner.lastScanDiagnostics;
+  }
+  return symbols;
 }
 
 function toPosixPath(value) {
@@ -304,6 +311,7 @@ async function runReleaseScout({
   const actions = normalized.map(({ diagnostic, ...action }) => action);
   const scannerDiagnostics = [
     { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
+    ...(Array.isArray(target.scanDiagnostics) ? target.scanDiagnostics : []),
     ...normalized.map((item) => item.diagnostic).filter(Boolean),
   ];
   const scope = createReleaseScope({
@@ -494,6 +502,7 @@ async function runZillizCliReleaseScout({
   const actions = normalized.map(({ diagnostic, ...action }) => action);
   const scannerDiagnostics = [
     { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
+    ...(Array.isArray(target.scanDiagnostics) ? target.scanDiagnostics : []),
     ...releaseImpactDiagnostics,
     ...normalized.map((item) => item.diagnostic).filter(Boolean),
   ];

@@ -742,7 +742,10 @@ test('SyncExecutor patches in-place only against the planned target-local token'
   assert.equal(calls[0][1].documentToken, 'doc-v26');
   assert.equal(calls[0][1].content, 'updated markdown');
   assert.equal(calls[1][1], 'rec-v26');
-  assert.equal(calls[1][2].link, undefined);
+  // The UPDATE record write refreshes Docs title/link from the reviewed
+  // artifact (title repair), targeting the same token the patch landed on.
+  assert.equal(calls[1][2].link, 'https://zilliverse.feishu.cn/docx/doc-v26');
+  assert.equal(calls[1][2].title, 'createCollection()');
   assert.equal(calls[1][2].lastModified, 'v2.6.x');
   assert.equal(calls[1][2].progress, 'WIP');
   assert.deepEqual(calls[1][2].targets, []);
@@ -2093,4 +2096,108 @@ test('content-fidelity guards bind the camelCase patchDocument writer interface 
     }),
     (error) => error.code === 'INCLUDE_REBUILD_FORBIDDEN',
   );
+});
+
+test('SyncExecutor UPDATE_IN_PLACE repairs a drifted docx title and writes Docs title/link', async () => {
+  const calls = [];
+  const documentWriter = {
+    async patchDocument(input) {
+      calls.push(['patchDocument', input]);
+      return { token: input.documentToken, patched: true };
+    },
+    async renameDocument(input) {
+      calls.push(['renameDocument', input]);
+      return { renamed: true, from: 'Wrong()title', to: input.name };
+    },
+  };
+  const bitableWriter = {
+    async updateRecord(recordId, fields) {
+      calls.push(['updateRecord', recordId, fields]);
+      return { record_id: recordId, fields };
+    },
+  };
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  // Stub the heavy collaborators: this test targets the title-repair step.
+  executor._patchDocument = async (plan, artifact) => {
+    calls.push(['patchDocument', { documentToken: plan.source.documentToken }]);
+    return { token: plan.source.documentToken, patched: true };
+  };
+  executor._verifyDocumentBeforeBitableMutation = async () => {};
+  executor._captureRollbackBeforeMutation = async () => {};
+  executor._assertSharedTokenEvidence = async () => {};
+
+  const plan = {
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    stableId: 'cpp:Snapshots:UnpinSnapshotData',
+    artifactDigest: 'sha256:artifact',
+    source: { recordId: 'rec-1', documentToken: 'doc-1', version: 'v3.0.x' },
+    target: { version: 'v3.0.x', parentRecordId: 'rec-parent', folderToken: 'folder-1', versionRootToken: 'root-1' },
+    postconditions: [],
+    preconditions: [],
+    metadata: {},
+  };
+  const artifact = {
+    title: 'UnpinSnapshotData()',
+    content: '# UnpinSnapshotData()\n\nBody paragraph.\n',
+    patchStrategy: 'rebuild',
+  };
+  const action = { type: 'UPDATE', slug: 'Snapshots-UnpinSnapshotData' };
+  const result = { completedSteps: [], results: [] };
+
+  await executor._executeUpdateInPlace(plan, artifact, action, result);
+
+  const rename = calls.find(([step]) => step === 'renameDocument');
+  assert.deepEqual(rename, ['renameDocument', { token: 'doc-1', name: 'UnpinSnapshotData()' }]);
+  const update = calls.find(([step]) => step === 'updateRecord');
+  assert.equal(update[1], 'rec-1');
+  assert.equal(update[2].title, 'UnpinSnapshotData()');
+  assert.match(update[2].link, /\/docx\/doc-1$/);
+  assert.ok(result.completedSteps.includes('renameDocument'));
+});
+
+test('SyncExecutor UPDATE_IN_PLACE journals a skipped title repair without failing the unit', async () => {
+  const calls = [];
+  const documentWriter = {
+    async patchDocument(input) {
+      calls.push(['patchDocument', input]);
+      return { token: input.documentToken, patched: true };
+    },
+    async renameDocument(input) {
+      calls.push(['renameDocument', input]);
+      throw new Error('99991672 scope missing');
+    },
+  };
+  const bitableWriter = {
+    async updateRecord(recordId, fields) {
+      calls.push(['updateRecord', recordId, fields]);
+      return { record_id: recordId, fields };
+    },
+  };
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  executor._patchDocument = async (plan) => ({ token: plan.source.documentToken, patched: true });
+  executor._verifyDocumentBeforeBitableMutation = async () => {};
+  executor._captureRollbackBeforeMutation = async () => {};
+  executor._assertSharedTokenEvidence = async () => {};
+
+  const plan = {
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    stableId: 'cpp:Snapshots:UnpinSnapshotData',
+    artifactDigest: 'sha256:artifact',
+    source: { recordId: 'rec-1', documentToken: 'doc-1', version: 'v3.0.x' },
+    target: { version: 'v3.0.x', parentRecordId: 'rec-parent', folderToken: 'folder-1', versionRootToken: 'root-1' },
+    postconditions: [],
+    preconditions: [],
+    metadata: {},
+  };
+  const artifact = { title: 'UnpinSnapshotData()', content: 'Body paragraph.\n', patchStrategy: 'rebuild' };
+  const result = { completedSteps: [], results: [] };
+
+  await executor._executeUpdateInPlace(plan, artifact, { type: 'UPDATE' }, result);
+
+  assert.deepEqual(result.titleRepair, { skipped: true, error: '99991672 scope missing' });
+  assert.equal(result.completedSteps.includes('renameDocument'), false);
+  const update = calls.find(([step]) => step === 'updateRecord');
+  assert.ok(update, 'record update must still land');
 });

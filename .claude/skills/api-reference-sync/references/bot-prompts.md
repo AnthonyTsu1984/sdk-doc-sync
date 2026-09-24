@@ -193,6 +193,13 @@ Action table:
 | Action ID | Action | Stable ID | Target | Source | Digest |
 |-----------|--------|-----------|--------|--------|--------|
 | <action:id> | <create/update/etc> | <stable-id> | <folder-or-record> | <source> | <digest> |
+
+Write approval presentation (from the dry-run's writeApprovalPresentation; one
+row per action — surface the FULL markdown, via a linked file when it exceeds
+what the channel renders well):
+| Stable ID | Document link | Record link | Markdown preview |
+|-----------|---------------|-------------|------------------|
+| <stable-id> | <docx-url> | <record-url> | <full markdown of the reviewed artifact, or file path> |
 ```
 
 ## Document Review Gate Message
@@ -226,6 +233,8 @@ Acceptance records this unit as reviewed, keeps its interface records at WIP, an
 
 Persist the decision with sdk-review-session.js accept-document. Do not add the ID directly to session state. A later chat must use `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` before planning the next unit.
 ```
+
+The live document and live record links are mandatory and must be direct (docx URL and Bitable record URL, taken from the execution's `documentReviewPresentation`) — a reviewer must reach the page and the table row in one click. Never replace them with session paths or digests.
 
 ## Document Review Parser Prompt
 
@@ -347,6 +356,12 @@ APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>
 
 After the digest-bound acceptance command, update every listed interface-document record from WIP to Draft, refetch and verify every record, then update scan-state.json. Structural VirtualNode or Module records retain their approved metadata. Any missing Draft transition blocks finalization.
 ```
+
+The acceptance message must carry the COMPLETE touched-inventory presentation —
+one row per accepted unit with its direct document link(s) and record link(s)
+(from the accepted receipts), plus totals for touched pages and records — so
+the approver sees every page and table row this acceptance will transition
+before approving. Never abbreviate to counts alone.
 
 ## Acceptance Review Parser Prompt
 

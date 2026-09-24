@@ -711,10 +711,13 @@ async function runCli({
     const result = await withJsonConsoleIsolation(args.json === true, err, () => sync.run());
     if (args.resumeSession
         && !args.dryRun
-        && result.executionResult?.status === 'EXECUTED'
+        && ['EXECUTED', 'PARTIAL'].includes(result.executionResult?.status)
         && result.activeReviewUnit?.reviewUnitId
         && result.executionJournalPath
         && result.executionJournalDigest) {
+        // PARTIAL runs mutate Feishu exactly like EXECUTED runs, so the session
+        // must record them too — otherwise the executed unit is invisible to
+        // rollback planning and to the accepted/active transition checks.
         const sessionPath = path.resolve(args.resumeSession);
         reviewSession = recordDocumentExecution(reviewSession, {
             reviewUnitId: result.activeReviewUnit.reviewUnitId,

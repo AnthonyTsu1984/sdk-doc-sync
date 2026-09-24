@@ -85,6 +85,11 @@ const METHOD_CATEGORIES = {
     GetRefreshExternalCollectionProgress: 'Management',
     ListRefreshExternalCollectionJobs: 'Management',
 
+    // File resources (3)
+    AddFileResource: 'FileResources',
+    ListFileResources: 'FileResources',
+    RemoveFileResource: 'FileResources',
+
     // Snapshots (9)
     CreateSnapshot: 'Snapshots',
     DescribeSnapshot: 'Snapshots',
@@ -182,6 +187,7 @@ class CppScanner extends BaseScanner {
         const clientHeader = path.join(this._includeDir, 'MilvusClientV2.h');
         const content = fs.readFileSync(clientHeader, 'utf-8');
         const relPath = path.relative(this.rootDir, clientHeader);
+        this._untrackedClientMethods = [];
         const methods = this._extractMethods(content, relPath);
 
         const bulkImportHeader = path.join(this._includeDir, 'BulkImport.h');
@@ -220,6 +226,19 @@ class CppScanner extends BaseScanner {
 
         // Phase 3: Extract enums
         const enums = this._extractEnums();
+
+        // Coverage gate: a public client method absent from METHOD_CATEGORIES
+        // is invisible to every downstream scan — surface it instead of
+        // skipping silently (the September 2026 campaign lost the whole
+        // Snapshots/external-collection surface to exactly this).
+        this.lastScanDiagnostics = (this._untrackedClientMethods || []).length > 0
+            ? [{
+                level: 'warn',
+                code: 'COVERAGE_UNTRACKED_METHODS',
+                message: `${this._untrackedClientMethods.length} public MilvusClientV2 method(s) are not in METHOD_CATEGORIES and will be silently invisible to scans: ${this._untrackedClientMethods.join(', ')}.`,
+                methods: [...this._untrackedClientMethods],
+            }]
+            : [];
 
         return [...methods, ...enums];
     }
@@ -304,7 +323,11 @@ class CppScanner extends BaseScanner {
             }
 
             const category = METHOD_CATEGORIES[name];
-            if (!category) continue;
+            if (!category) {
+                this._untrackedClientMethods = this._untrackedClientMethods || [];
+                if (!this._untrackedClientMethods.includes(name)) this._untrackedClientMethods.push(name);
+                continue;
+            }
 
             symbols.push({
                 name,

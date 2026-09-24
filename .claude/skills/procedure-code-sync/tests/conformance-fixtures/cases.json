@@ -197,5 +197,15 @@
    "runner": "invariant-conformance",
    "scenario": "procedureAcceptanceBoundPositive"
   }
+ },
+ {
+  "id": "procedure-exact-batch-language-duplicate",
+  "assertions": {
+   "code": "INSERT_LANGUAGE_DUPLICATE"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureExactBatchLanguageDuplicate"
+  }
  }
 ]

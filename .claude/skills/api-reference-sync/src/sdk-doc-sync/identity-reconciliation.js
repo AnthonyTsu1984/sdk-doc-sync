@@ -22,7 +22,7 @@ function recordSlug(record) {
     if (!record || typeof record !== 'object') return '';
     const raw = record.slug != null ? record.slug : record.fields?.Slug;
     if (nonEmptyString(raw)) return raw;
-    if (Array.isArray(raw)) return raw.map((part) => part?.text || '').join('|').trim();
+    if (Array.isArray(raw)) return raw.map((part) => part?.text || '').join('').trim();
     if (raw && typeof raw === 'object') return String(raw.text || '').trim();
     return '';
 }
@@ -31,7 +31,7 @@ function recordType(record) {
     if (!record || typeof record !== 'object') return '';
     const raw = record.type != null ? record.type : record.fields?.Type;
     if (nonEmptyString(raw)) return raw;
-    if (Array.isArray(raw)) return raw.map((part) => part?.text || '').join('|').trim();
+    if (Array.isArray(raw)) return raw.map((part) => part?.text || '').join('').trim();
     if (raw && typeof raw === 'object') return String(raw.text || '').trim();
     return '';
 }

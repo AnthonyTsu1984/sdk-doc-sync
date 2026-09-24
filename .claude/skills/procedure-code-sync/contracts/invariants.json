@@ -51,6 +51,7 @@
       "enforcement": ["plan"],
       "statementDigest": "sha256:2d0546d94b40f1e7780e4831cfebf13cbfb8f81c14cb30df5b93f21060e061dd",
       "fixtureIds": [
+        "procedure-exact-batch-language-duplicate",
         "procedure-exact-language-duplicate",
         "procedure-exact-evidence-required",
         "procedure-exact-operation-type-invalid"

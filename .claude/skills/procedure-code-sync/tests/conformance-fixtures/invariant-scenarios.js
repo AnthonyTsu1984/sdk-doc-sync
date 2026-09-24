@@ -135,6 +135,16 @@ const scenarios = {
     }));
   },
 
+  procedureExactBatchLanguageDuplicate() {
+    return planningError(() => buildProcedurePatchPlan({
+      snapshot: snapshotFixture(),
+      operations: [
+        { operationId: 'go-a', type: 'insert', childIndex: 3, languageLabel: 'Go', code: 'go1();', evidence: ['repo:go1'] },
+        { operationId: 'go-b', type: 'insert', childIndex: 4, languageLabel: 'Go', code: 'go2();', evidence: ['repo:go2'] },
+      ],
+    }));
+  },
+
   procedureExactOperationTypeInvalid() {
     return planningError(() => buildProcedurePatchPlan({
       snapshot: snapshotFixture(),

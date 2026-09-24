@@ -632,6 +632,21 @@
       "canonicalSlug": "Management-ListRefreshExternalCollectionJobs",
       "category": "Management"
     },
+    "FileResources.AddFileResource": {
+      "stableId": "cpp:FileResources:AddFileResource",
+      "canonicalSlug": "FileResources-AddFileResource",
+      "category": "FileResources"
+    },
+    "FileResources.ListFileResources": {
+      "stableId": "cpp:FileResources:ListFileResources",
+      "canonicalSlug": "FileResources-ListFileResources",
+      "category": "FileResources"
+    },
+    "FileResources.RemoveFileResource": {
+      "stableId": "cpp:FileResources:RemoveFileResource",
+      "canonicalSlug": "FileResources-RemoveFileResource",
+      "category": "FileResources"
+    },
     "Partitions.LoadPartitions": {
       "stableId": "cpp:Partitions:LoadPartitions",
       "canonicalSlug": "Partitions-LoadPartitions",

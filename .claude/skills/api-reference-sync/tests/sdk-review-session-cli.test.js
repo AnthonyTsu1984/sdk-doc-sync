@@ -158,4 +158,13 @@ test('review-session CLI persists a journal-derived receipt and builds final acc
   assert.equal(persisted.status, 'acceptance_pending');
   assert.match(persisted.acceptanceManifestDigest, /^sha256:/);
   assert.match(stdout.join('\n'), /APPROVE_ACCEPTANCE sha256:/);
+  // Gate presentation: the complete touched-inventory with direct links.
+  const presentationBlock = stdout.join('\n').match(/\{[\s\S]*"acceptancePresentation"[\s\S]*\}/);
+  assert.ok(presentationBlock, 'build-acceptance must emit the acceptance presentation');
+  const presentation = JSON.parse(presentationBlock[0]).acceptancePresentation;
+  assert.equal(presentation.acceptedUnits, 1);
+  assert.deepEqual(presentation.units[0].reviewUnitId, 'review:node:Collections:a');
+  assert.deepEqual(presentation.units[0].documentLinks, ['https://example.feishu.cn/docx/doc-a']);
+  assert.deepEqual(presentation.units[0].recordLinks, ['https://example.feishu.cn/base/base?record=rec-a']);
+  assert.deepEqual(presentation.units[0].touchedRecords, [{ recordId: 'rec-a', documentToken: 'doc-a' }]);
 });

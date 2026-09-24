@@ -44,7 +44,10 @@ const VERBATIM_INVARIANT_ID = 'api.pr-verbatim-content';
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-const REPO_ROOT = path.resolve(__dirname, '../../../..');
+// Five levels up: src/sdk-doc-sync/ → src/ → api-reference-sync/ → skills/ →
+// .claude/ → repository root. Must match bin/sdk-doc-sync.js's own resolution
+// so execution journals and the acceptance finalizer agree on one location.
+const REPO_ROOT = path.resolve(__dirname, '../../../../..');
 
 // Canonical execution-journal location for a batch digest. Acceptance
 // finalization resolves the journal receipt through this binding.
@@ -668,6 +671,12 @@ class SdkDocSync {
                 ? result.proposedReleaseBatch
                 : null;
 
+        // Gate presentation (NOT part of the signed batch): markdown preview
+        // and direct links for the exact plans the write approval would cover.
+        if (this.dryRun && actionablePlanned.length > 0) {
+            result.writeApprovalPresentation = await this._buildWriteApprovalPresentation(actionablePlanned);
+        }
+
         if (this.dryRun) {
             this.onProgress('APPROVE', 'Dry run — showing plans without executing');
             if (this.printPlans) this._printPlans(result.plans);
@@ -1041,6 +1050,7 @@ class SdkDocSync {
         journal.complete();
         result.executionJournalPath = journal.filePath;
         result.executionJournalDigest = digestSemantic(journal.read());
+        result.documentReviewPresentation = await this._buildDocumentReviewPresentation(result);
         const failedResults = result.results.filter(entry => entry.status === 'error');
         result.executionResult = createResult({
             skill: 'api-reference-sync',
@@ -1081,6 +1091,74 @@ class SdkDocSync {
     driveFolderLink(token) {
         const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
         return `${host}/drive/folder/${token}`;
+    }
+
+    docxLink(token) {
+        if (!token) return null;
+        const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+        return `${host}/docx/${token}`;
+    }
+
+    async recordLink(recordId) {
+        if (!recordId || !this.baseToken) return null;
+        const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+        let tableId = this._cachedTableId || null;
+        if (!tableId) {
+            try {
+                tableId = await this.bitableWriter?._resolveTableId?.() || null;
+                this._cachedTableId = tableId;
+            } catch {
+                tableId = null;
+            }
+        }
+        return `${host}/base/${this.baseToken}${tableId ? `?table=${tableId}&record=${recordId}` : `?record=${recordId}`}`;
+    }
+
+    // Standardized WRITE_APPROVAL gate payload: what will land (markdown) and
+    // where it will land (direct doc/record links) for the exact batch the
+    // digest covers. Presentation only — never part of the signed batch.
+    async _buildWriteApprovalPresentation(plannedEntries) {
+        if (!Array.isArray(plannedEntries)) return [];
+        const entries = [];
+        for (const planned of plannedEntries) {
+            const { action, plan, context } = planned;
+            if (!plan || plan.action === 'NOOP') continue;
+            entries.push({
+                stableId: plan.stableId,
+                action: plan.action,
+                title: context?.artifact?.title || action?.slug || plan.stableId,
+                documentLink: this.docxLink(plan?.source?.documentToken),
+                recordLink: await this.recordLink(plan?.source?.recordId),
+                markdownPreview: typeof context?.artifact?.content === 'string' ? context.artifact.content : null,
+            });
+        }
+        return entries;
+    }
+
+    // Standardized DOCUMENT_REVIEW gate payload: direct links to the live
+    // page and record for every action this execution touched.
+    async _buildDocumentReviewPresentation(result) {
+        const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+        const units = [];
+        const seen = new Set();
+        for (const entry of result.results || []) {
+            const verification = entry.verification || {};
+            const documentToken = verification.document?.token || entry.patchedDocument?.token || entry.createdDocument?.token || null;
+            const recordId = verification.record?.recordId || entry.record?.record_id || null;
+            const key = `${documentToken}|${recordId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            units.push({
+                stableId: entry.action?.stableId || this._stableIdFor(entry.action) || entry.slug || null,
+                documentLink: this.docxLink(documentToken),
+                recordLink: await this.recordLink(recordId),
+                progress: verification.record?.progress || null,
+            });
+        }
+        return {
+            journalDigest: result.executionJournalDigest || null,
+            units,
+        };
     }
 
     _resolvedResourceToken(resourceResolutions, ref) {

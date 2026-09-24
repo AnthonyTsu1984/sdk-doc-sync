@@ -1373,6 +1373,37 @@ class MarkdownToFeishu {
         }
     }
 
+    // Rename a drive docx to the reviewed artifact title. Idempotent: a
+    // no-op when the live title already matches. Restores the tool path for
+    // title repair on UPDATE flows (the body patch never carries the title).
+    async renameDocument({ token, name }) {
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.renameDocument', token);
+        if (!token || !name) throw new TypeError('renameDocument requires token and name');
+        const authToken = await this.tokenFetcher.token();
+        const metaRes = await fetch(`${FEISHU_HOST}/open-apis/docx/v1/documents/${encodeURIComponent(token)}`, {
+            method: 'get',
+            headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const meta = await metaRes.json();
+        if (meta.code !== 0) throw new Error(`renameDocument could not read document meta: ${meta.msg}`);
+        const current = meta.data?.document?.title;
+        if (current === name) return { renamed: false, title: current };
+
+        const res = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files/${encodeURIComponent(token)}?type=docx`, {
+            method: 'PATCH',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                Authorization: `Bearer ${authToken}`,
+            },
+            body: JSON.stringify({ name }),
+        });
+        const data = await res.json();
+        if (data.code !== 0) {
+            throw new Error(`Failed to rename document: ${data.msg}`);
+        }
+        return { renamed: true, from: current, to: name };
+    }
+
     async copyDocument({ sourceDocumentToken, title, folderToken }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.copyDocument', sourceDocumentToken);
         if (this.source_type === 'wiki') {

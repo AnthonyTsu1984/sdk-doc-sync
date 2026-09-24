@@ -113,6 +113,11 @@ function folderLink(token) {
   return `${host}/drive/folder/${token}`;
 }
 
+function docxLink(token) {
+  const host = (process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '');
+  return `${host}/docx/${token}`;
+}
+
 function scalarText(value) {
   if (value === null || value === undefined) return null;
   if (typeof value === 'string') return value;
@@ -882,9 +887,28 @@ class SyncExecutor {
 
     await this._verifyDocumentBeforeBitableMutation(plan, result);
 
+    // Title repair: the body patch never carries the page title, so an
+    // artifact title that drifted from the live docx (bad input data, manual
+    // edits) would otherwise persist indefinitely. Idempotent rename; a
+    // failure is journaled but does not roll back the verified content.
+    const repairedTitle = artifactTitle(plan, artifact, action);
+    try {
+      if (typeof this.documentWriter?.renameDocument === 'function') {
+        result.titleRepair = await this.documentWriter.renameDocument({
+          token: plan.source.documentToken,
+          name: repairedTitle,
+        });
+        if (result.titleRepair.renamed) result.completedSteps.push('renameDocument');
+      }
+    } catch (error) {
+      result.titleRepair = { skipped: true, error: error.message };
+    }
+
     const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
     try {
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
+        title: repairedTitle,
+        link: docxLink(plan.source.documentToken),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
         parentRecordId: plan.target.parentRecordId,

@@ -408,6 +408,9 @@ async function runPrScan({
   ]);
   const targetByIdentity = new Map(resolvedTargetSymbols.map((symbol) => [publicIdentity(symbol), symbol]));
   const baselineIdentities = new Set(resolvedBaselineSymbols.map(publicIdentity));
+  if (Array.isArray(resolvedTargetSymbols.scanDiagnostics)) {
+    diagnostics.push(...resolvedTargetSymbols.scanDiagnostics);
+  }
 
   const changedFiles = [...new Set(pageEntries.flatMap((entry) => {
     const symbol = targetByIdentity.get(entry.symbol);

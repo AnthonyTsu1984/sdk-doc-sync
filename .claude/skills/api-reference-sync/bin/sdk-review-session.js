@@ -158,6 +158,25 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     out(`Remaining review units: ${summary.remainingReviewUnitIds.length}`);
   } else if (args.command === 'build-acceptance') {
     out(`Acceptance manifest: ${summary.acceptanceManifestDigest}`);
+    // Gate presentation: every page and record this acceptance would touch,
+    // with direct links. Derived from the accepted receipts only.
+    const units = (session.acceptedReviewUnits || []).map((unit) => ({
+      reviewUnitId: unit.reviewUnitId,
+      documentLinks: unit.documentLinks || [],
+      recordLinks: unit.recordLinks || [],
+      touchedRecords: (unit.touchedRecords || []).map((touched) => ({
+        recordId: touched.recordId,
+        documentToken: touched.documentToken || null,
+      })),
+    }));
+    out(JSON.stringify({
+      acceptancePresentation: {
+        acceptedUnits: units.length,
+        touchedPages: [...new Set(units.flatMap((unit) => unit.documentLinks))].length,
+        touchedRecords: [...new Set(units.flatMap((unit) => unit.touchedRecords.map((t) => t.recordId)))].length,
+        units,
+      },
+    }, null, 2));
     out(`If approved, reply exactly: APPROVE_ACCEPTANCE ${summary.acceptanceManifestDigest}`);
   } else if (args.command === 'record-finalization') {
     out(`Review session finalized: ${summary.acceptanceManifestDigest}`);

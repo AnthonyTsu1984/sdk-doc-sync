@@ -5,6 +5,10 @@ const path = require('node:path');
 
 const { canonicalStringify } = require('../../doc-ops-core/src/canonical-json');
 
+function typedError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
 function createProcedureSession({ sessionId, plan }) {
   if (!sessionId || !plan?.planDigest) throw new TypeError('sessionId and plan are required');
   return Object.freeze({
@@ -20,16 +24,22 @@ function createProcedureSession({ sessionId, plan }) {
 }
 
 function recordPatchExecution(session, result) {
-  if (session.status !== 'approval_ready' || result.reviewUnitId !== session.reviewUnitId) throw new Error('Patch execution does not match the active review unit');
-  if (result.status !== 'ACCEPTANCE_REQUIRED' || !result.executionJournalDigest || !result.verifierResultDigest) throw new Error('Complete execution and verifier evidence are required');
+  if (session.status !== 'approval_ready' || result.reviewUnitId !== session.reviewUnitId) {
+    throw typedError('EXECUTION_SESSION_MISMATCH', 'Patch execution does not match the active review unit');
+  }
+  if (result.status !== 'ACCEPTANCE_REQUIRED' || !result.executionJournalDigest || !result.verifierResultDigest) {
+    throw typedError('EXECUTION_EVIDENCE_REQUIRED', 'Complete execution and verifier evidence are required');
+  }
   return Object.freeze({ ...structuredClone(session), status: 'acceptance_pending', execution: structuredClone(result) });
 }
 
 function recordPatchAcceptance(session, { executionJournalDigest, verifierResultDigest, decisionDigest }) {
-  if (session.status !== 'acceptance_pending') throw new Error('Patch acceptance is not pending');
+  if (session.status !== 'acceptance_pending') {
+    throw typedError('ACCEPTANCE_NOT_PENDING', 'Patch acceptance is not pending');
+  }
   if (executionJournalDigest !== session.execution.executionJournalDigest
       || verifierResultDigest !== session.execution.verifierResultDigest) {
-    throw new Error('Acceptance receipt is bound to different execution or verifier evidence');
+    throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance receipt is bound to different execution or verifier evidence');
   }
   return Object.freeze({
     ...structuredClone(session),

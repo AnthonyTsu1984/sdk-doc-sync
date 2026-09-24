@@ -38,8 +38,8 @@ test('approval must bind the complete document batch and cannot approve one lang
   const plan = buildProcedurePatchPlan({
     snapshot: snapshot(),
     operations: [
-      { operationId: 'java', type: 'insert', childIndex: 4, languageLabel: 'Java', code: 'java();' },
-      { operationId: 'node', type: 'replace', blockId: 'node', childIndex: 5, languageLabel: 'JavaScript', code: 'newNode();' },
+      { operationId: 'java', type: 'insert', childIndex: 4, languageLabel: 'Java', code: 'java();', evidence: ['repo:java'] },
+      { operationId: 'node', type: 'replace', blockId: 'node', childIndex: 5, languageLabel: 'JavaScript', code: 'newNode();', evidence: ['repo:node'] },
     ],
   });
   const partial = createApprovalEnvelope({

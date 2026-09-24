@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "skill": "procedure-code-sync",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED).",
+  "invariants": [
+    {
+      "id": "procedure.document-blocks-evidence",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "procedure-patch-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan", "pre-write", "post-write"],
+      "statementDigest": "sha256:4947c129b4063d81e8cc4c14171db03e5edd55219038ad26123cc7f8f0d74946",
+      "fixtureIds": [
+        "procedure-evidence-block-not-in-snapshot",
+        "procedure-evidence-snapshot-drift-zero-writes",
+        "procedure-evidence-child-index-invalid"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/procedure-code-sync/src/patch-planner.js",
+          "codes": [
+            "OPERATION_BLOCK_NOT_IN_SNAPSHOT",
+            "OPERATION_CHILD_INDEX_MISMATCH",
+            "OPERATION_CHILD_INDEX_INVALID"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/procedure-code-sync/src/patch-executor.js",
+          "codes": [
+            "SNAPSHOT_DRIFT_BEFORE_MUTATION"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/procedure-code-sync/src/patch-executor.js",
+          "codes": [
+            "POST_PATCH_EVIDENCE_REQUIRED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "procedure.exact-block-patch",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "procedure-patch-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:2d0546d94b40f1e7780e4831cfebf13cbfb8f81c14cb30df5b93f21060e061dd",
+      "fixtureIds": [
+        "procedure-exact-language-duplicate",
+        "procedure-exact-evidence-required",
+        "procedure-exact-operation-type-invalid"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/procedure-code-sync/src/patch-planner.js",
+          "codes": [
+            "OPERATION_TYPE_INVALID",
+            "OPERATION_ID_DUPLICATE",
+            "OPERATION_ID_REQUIRED",
+            "OPERATION_EVIDENCE_REQUIRED",
+            "INSERT_LANGUAGE_DUPLICATE"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "procedure.digest-approval-gate",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "procedure-patch-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["pre-write"],
+      "statementDigest": "sha256:aa445a16977381cf692f064c448a5e8269fbdeb8555a8e7d048aff62b2ce3fe1",
+      "fixtureIds": [
+        "procedure-approval-digest-mismatch-zero-writes",
+        "procedure-approval-session-not-ready"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/procedure-code-sync/src/patch-planner.js",
+          "codes": [
+            "APPROVAL_REQUIRED",
+            "APPROVAL_OPERATION_MISMATCH",
+            "APPROVAL_BATCH_MISMATCH",
+            "APPROVAL_ACTION_COUNT_MISMATCH",
+            "APPROVAL_TARGET_MISMATCH",
+            "APPROVAL_SIDE_EFFECT_MISMATCH",
+            "APPROVAL_EXPIRED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/procedure-code-sync/src/patch-executor.js",
+          "codes": [
+            "WRITER_ENVELOPE_REQUIRED",
+            "WRITER_TARGET_NOT_IN_ENVELOPE",
+            "WRITER_GOVERNANCE_ALREADY_BOUND"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
+          "codes": [
+            "REVIEW_SESSION_NOT_APPROVAL_READY"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "procedure.round-trip-refetch",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "procedure-patch-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["post-write"],
+      "statementDigest": "sha256:d783e661c272eb607ad003106a014b654eb3b542782293650227c36e2c1a49e0",
+      "fixtureIds": [
+        "procedure-roundtrip-protected-loss-blocked",
+        "procedure-roundtrip-refetch-evidence-required",
+        "procedure-roundtrip-verified-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/procedure-code-sync/src/patch-executor.js",
+          "codes": [
+            "PROTECTED_SURROUNDING_DRIFT",
+            "VERIFIER_EVIDENCE_REQUIRED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "procedure.acceptance-digest-binding",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "procedure-patch-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["post-write"],
+      "statementDigest": "sha256:b0558b502d6e2ab88dacac45f9b70f7b79f896fbcff42367e4f50a03b727323b",
+      "fixtureIds": [
+        "procedure-acceptance-digest-mismatch",
+        "procedure-acceptance-bound-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/procedure-code-sync/src/review-session-store.js",
+          "codes": [
+            "ACCEPTANCE_NOT_PENDING",
+            "ACCEPTANCE_EVIDENCE_MISMATCH",
+            "EXECUTION_SESSION_MISMATCH",
+            "EXECUTION_EVIDENCE_REQUIRED"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,9 +1,201 @@
 [
-  { "id": "python-led", "assertions": { "readWorkflowBeforePort": true } },
-  { "id": "language-order", "assertions": { "order": ["Python", "Java", "Go", "JavaScript", "Bash", "Shell", "C++"], "duplicates": false } },
-  { "id": "source-evidence", "assertions": { "inventedSdkMethods": false, "broadenSearchBeforeUnsupported": true } },
-  { "id": "scoped-patch", "assertions": { "unrelatedProseChanged": false } },
-  { "id": "exact-approval", "assertions": { "batchDigestRequired": true } },
-  { "id": "round-trip", "assertions": { "refetchBlocks": true, "protectedLossAllowed": false } },
-  { "id": "no-release-scan", "assertions": { "releaseWideInventory": false } }
+ {
+  "id": "python-led",
+  "assertions": {
+   "readWorkflowBeforePort": true
+  }
+ },
+ {
+  "id": "language-order",
+  "assertions": {
+   "order": [
+    "Python",
+    "Java",
+    "Go",
+    "JavaScript",
+    "Bash",
+    "Shell",
+    "C++"
+   ],
+   "duplicates": false
+  }
+ },
+ {
+  "id": "source-evidence",
+  "assertions": {
+   "inventedSdkMethods": false,
+   "broadenSearchBeforeUnsupported": true
+  }
+ },
+ {
+  "id": "scoped-patch",
+  "assertions": {
+   "unrelatedProseChanged": false
+  }
+ },
+ {
+  "id": "exact-approval",
+  "assertions": {
+   "batchDigestRequired": true
+  }
+ },
+ {
+  "id": "round-trip",
+  "assertions": {
+   "refetchBlocks": true,
+   "protectedLossAllowed": false
+  }
+ },
+ {
+  "id": "no-release-scan",
+  "assertions": {
+   "releaseWideInventory": false
+  }
+ },
+ {
+  "id": "procedure-evidence-block-not-in-snapshot",
+  "assertions": {
+   "code": "OPERATION_BLOCK_NOT_IN_SNAPSHOT"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureEvidenceBlockNotInSnapshot"
+  }
+ },
+ {
+  "id": "procedure-evidence-child-index-invalid",
+  "assertions": {
+   "code": "OPERATION_CHILD_INDEX_MISMATCH"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureEvidenceChildIndexInvalid"
+  }
+ },
+ {
+  "id": "procedure-evidence-snapshot-drift-zero-writes",
+  "assertions": {
+   "code": "SNAPSHOT_DRIFT_BEFORE_MUTATION",
+   "patchCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureEvidenceSnapshotDriftZeroWrites"
+  }
+ },
+ {
+  "id": "procedure-exact-language-duplicate",
+  "assertions": {
+   "code": "INSERT_LANGUAGE_DUPLICATE"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureExactLanguageDuplicate"
+  }
+ },
+ {
+  "id": "procedure-exact-evidence-required",
+  "assertions": {
+   "code": "OPERATION_EVIDENCE_REQUIRED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureExactEvidenceRequired"
+  }
+ },
+ {
+  "id": "procedure-exact-operation-type-invalid",
+  "assertions": {
+   "code": "OPERATION_TYPE_INVALID"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureExactOperationTypeInvalid"
+  }
+ },
+ {
+  "id": "procedure-approval-digest-mismatch-zero-writes",
+  "assertions": {
+   "code": "APPROVAL_BATCH_MISMATCH",
+   "patchCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureApprovalDigestMismatchZeroWrites"
+  }
+ },
+ {
+  "id": "procedure-approval-session-not-ready",
+  "assertions": {
+   "code": "REVIEW_SESSION_NOT_APPROVAL_READY",
+   "patchCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureApprovalSessionNotReady"
+  }
+ },
+ {
+  "id": "procedure-roundtrip-protected-loss-blocked",
+  "assertions": {
+   "code": "PROTECTED_SURROUNDING_DRIFT",
+   "patchCalls": 1,
+   "failureJournaled": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureRoundtripProtectedLossBlocked"
+  }
+ },
+ {
+  "id": "procedure-roundtrip-refetch-evidence-required",
+  "assertions": {
+   "code": "POST_PATCH_EVIDENCE_REQUIRED",
+   "patchCalls": 1
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureRoundtripRefetchEvidenceRequired"
+  }
+ },
+ {
+  "id": "procedure-roundtrip-verified-positive",
+  "assertions": {
+   "insertOrder": [
+    "node",
+    "java"
+   ],
+   "status": "ACCEPTANCE_REQUIRED",
+   "verifierDigestBound": true,
+   "completionJournaled": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureRoundtripVerifiedPositive"
+  }
+ },
+ {
+  "id": "procedure-acceptance-digest-mismatch",
+  "assertions": {
+   "code": "ACCEPTANCE_EVIDENCE_MISMATCH",
+   "sessionStatusAfterRefusal": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureAcceptanceDigestMismatch"
+  }
+ },
+ {
+  "id": "procedure-acceptance-bound-positive",
+  "assertions": {
+   "status": "accepted",
+   "journalDigestBound": true,
+   "verifierDigestBound": true,
+   "decisionDigestBound": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "procedureAcceptanceBoundPositive"
+  }
+ }
 ]

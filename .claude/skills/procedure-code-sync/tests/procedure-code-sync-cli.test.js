@@ -30,8 +30,8 @@ function fixture(directory) {
   });
   writeJson(operationsPath, {
     operations: [
-      { operationId: 'java', type: 'insert', childIndex: 3, languageLabel: 'Java', code: 'java();' },
-      { operationId: 'node', type: 'replace', blockId: 'node', childIndex: 5, languageLabel: 'JavaScript', code: 'newNode();' },
+      { operationId: 'java', type: 'insert', childIndex: 3, languageLabel: 'Java', code: 'java();', evidence: ['repo:java'] },
+      { operationId: 'node', type: 'replace', blockId: 'node', childIndex: 5, languageLabel: 'JavaScript', code: 'newNode();', evidence: ['repo:node'] },
     ],
     unsupportedGaps: [{ language: 'C++', reason: 'no public routing API' }],
   });

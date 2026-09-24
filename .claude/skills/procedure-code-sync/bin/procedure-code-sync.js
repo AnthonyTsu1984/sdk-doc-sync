@@ -84,7 +84,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const plan = readJson(args.plan);
     const session = loadProcedureSession(args.session);
     if (session.planDigest !== plan.planDigest || session.status !== 'approval_ready') {
-      throw new Error('Review session is not approval-ready for this exact plan');
+      throw Object.assign(
+        new Error('Review session is not approval-ready for this exact plan'),
+        { code: 'REVIEW_SESSION_NOT_APPROVAL_READY' },
+      );
     }
     const result = await executeProcedurePatch({
       plan,

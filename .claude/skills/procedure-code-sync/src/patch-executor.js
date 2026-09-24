@@ -2,14 +2,43 @@
 
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { assertWriterMutation, createWriterGovernance } = require('../../doc-ops-core/src/writer-governance');
 const { assertWholeDocumentApproval } = require('./patch-planner');
 
+function typedError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
 function assertSnapshot(expected, observed) {
-  if (observed?.snapshotDigest !== expected.snapshotDigest) throw new Error('Document block snapshot drifted before mutation');
+  if (observed?.snapshotDigest !== expected.snapshotDigest) {
+    throw typedError('SNAPSHOT_DRIFT_BEFORE_MUTATION', 'Document block snapshot drifted before mutation');
+  }
+}
+
+// Fail-closed writer envelope at the executor→adapter boundary (procedure.
+// digest-approval-gate): the executor owns a WriterGovernance bound to this
+// exact plan's batch facts, and every patch call is cross-checked against the
+// bound target list, so no injected adapter can mutate outside the approved
+// batch. Read adapter methods (inventory/refetch) stay ungated.
+function bindPlanGovernance({ plan, approval }) {
+  const governance = createWriterGovernance({
+    skill: plan.actionBatch.skill,
+    operation: plan.actionBatch.operation,
+  });
+  governance.bindApproval({
+    batchDigest: plan.actionBatch.batchDigest,
+    actionCount: plan.actionBatch.actions.length,
+    targets: plan.actionBatch.targets,
+    sideEffects: plan.actionBatch.sideEffects,
+    approval,
+    enforceTargets: true,
+  });
+  return governance;
 }
 
 async function executeProcedurePatch({ plan, approval, journalPath, adapter, verifier }) {
   assertWholeDocumentApproval({ plan, approval });
+  const governance = bindPlanGovernance({ plan, approval });
   const liveBefore = await adapter.inventory(plan.snapshot.documentId);
   assertSnapshot(plan.snapshot, liveBefore);
   const ordered = [...plan.actionBatch.actions].sort((left, right) => (
@@ -29,10 +58,21 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
       snapshotDigest: plan.snapshot.snapshotDigest,
       beforeState: action.beforeState || null,
     });
+    assertWriterMutation(governance, 'patch', action.target);
     const result = await adapter.patch(action.payload);
     if (result?.generatedBlockId) generatedBlockIds[action.payload.operationId] = result.generatedBlockId;
     const refetched = await adapter.refetch(plan.snapshot.documentId);
-    const verified = refetched?.protectedSurroundingDigest === plan.snapshot.protectedSurroundingDigest;
+    if (!refetched || typeof refetched.protectedSurroundingDigest !== 'string') {
+      journal.observed({
+        actionId: action.actionId,
+        reviewUnitId: plan.reviewUnit.reviewUnitId,
+        status: 'failure',
+        verified: false,
+        generatedBlockId: result?.generatedBlockId || null,
+      });
+      throw typedError('POST_PATCH_EVIDENCE_REQUIRED', 'adapter.refetch must return the refetched block inventory with its protectedSurroundingDigest');
+    }
+    const verified = refetched.protectedSurroundingDigest === plan.snapshot.protectedSurroundingDigest;
     journal.observed({
       actionId: action.actionId,
       reviewUnitId: plan.reviewUnit.reviewUnitId,
@@ -40,11 +80,15 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
       verified,
       generatedBlockId: result?.generatedBlockId || null,
     });
-    if (!verified) throw new Error('Protected surrounding blocks drifted after patch');
+    if (!verified) {
+      throw typedError('PROTECTED_SURROUNDING_DRIFT', 'Protected surrounding blocks drifted after patch');
+    }
   }
   journal.complete();
   const verifierResult = await verifier({ documentId: plan.snapshot.documentId });
-  if (!verifierResult?.semanticDigest) throw new Error('Typed verifier result semanticDigest is required');
+  if (!verifierResult?.semanticDigest) {
+    throw typedError('VERIFIER_EVIDENCE_REQUIRED', 'Typed verifier result semanticDigest is required');
+  }
   return Object.freeze({
     schemaVersion: 1,
     status: 'ACCEPTANCE_REQUIRED',
@@ -61,11 +105,13 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
 
 function planProcedureRollback({ plan, execution, liveSnapshot, liveGeneratedBlockIds = null }) {
   if (liveSnapshot?.protectedSurroundingDigest !== plan.snapshot.protectedSurroundingDigest) {
-    throw new Error('Rollback blocked by surrounding structure drift');
+    throw typedError('ROLLBACK_STRUCTURE_DRIFT', 'Rollback blocked by surrounding structure drift');
   }
   if (liveGeneratedBlockIds) {
     for (const [operationId, blockId] of Object.entries(execution.generatedBlockIds || {})) {
-      if (liveGeneratedBlockIds[operationId] !== blockId) throw new Error('Rollback blocked by generated block identity drift');
+      if (liveGeneratedBlockIds[operationId] !== blockId) {
+        throw typedError('ROLLBACK_IDENTITY_DRIFT', 'Rollback blocked by generated block identity drift');
+      }
     }
   }
   const byOperation = new Map(plan.actionBatch.actions.map((action) => [action.payload.operationId, action]));

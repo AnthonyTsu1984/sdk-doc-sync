@@ -95,13 +95,13 @@ differences → data profiles, not code branches.
 Acceptance: api suite green on the shared runner; report script emits a complete
 api-reference-sync section.
 
-### Step 1 — procedure-code-sync pilot (PR B)
+### Step 1 — procedure-code-sync pilot (PR B) — DELIVERED 2026-09-24, branch `feat/phase5-procedure-code-sync` (stacked on PR #31)
 
 Smallest deterministic write surface; establishes the per-skill pattern everything else reuses.
 
-- [ ] 1.1 SKILL.md: add `## Domain Invariants` with marked bullets for the rules below (statements
+- [x] 1.1 SKILL.md: add `## Domain Invariants` with marked bullets for the rules below (statements
       lifted from Permission Boundary / Shared Contract; original bullets keep their prose).
-- [ ] 1.2 `contracts/invariants.json` (first wave, all `runtime-enforced`):
+- [x] 1.2 `contracts/invariants.json` (first wave, all `runtime-enforced`):
 
   | id | stages | enforcer module today | proposed blocker codes |
   | --- | --- | --- | --- |
@@ -111,22 +111,32 @@ Smallest deterministic write surface; establishes the per-skill pattern everythi
   | `procedure.round-trip-refetch` | post-write | `src/patch-executor.js` verifier + `doc-ops-core` round-trip guard | `PROTECTED_BLOCK_LOST`, `POST_PATCH_REFETCH_MISSING` |
   | `procedure.acceptance-digest-binding` | post-write | `src/review-session-store.js` | `ACCEPTANCE_DIGEST_MISMATCH` |
 
-- [ ] 1.3 Wire the writer envelope at the executor→adapter boundary: `patch-executor.js` requires
+- [x] 1.3 Wire the writer envelope at the executor→adapter boundary: `patch-executor.js` requires
       adapters to present a validated approval envelope (shared wrapper around `adapter.patch` /
       `adapter.inventory` / `adapter.refetch` using `assertWriterMutation` semantics), so a raw
       adapter cannot mutate outside the governed path.
-- [ ] 1.4 Add missing guards: insert-order enforcement (highest child index first) and
+- [x] 1.4 Add missing guards: insert-order enforcement (highest child index first) and
       operation-vs-approved-batch set equality in the planner; typed codes as above.
-- [ ] 1.5 Upgrade `tests/conformance-fixtures/cases.json`: replace assertion blobs with scenario
+- [x] 1.5 Upgrade `tests/conformance-fixtures/cases.json`: replace assertion blobs with scenario
       fixtures invoking `block-inventory` / `patch-planner` / `patch-executor`; add the scenarios
       module and a conformance test on the shared runner. Variants: negative (patch a block outside
       the batch → zero adapter calls), drift (live block IDs changed since snapshot), positive
       (highest→lowest insert round-trip).
-- [ ] 1.6 Behavior pressure cases (manual admission): urgency pressure to skip digest approval;
+- [x] 1.6 Behavior pressure cases (manual admission): urgency pressure to skip digest approval;
       "the batch is reviewed, that's approval" conflation.
 
 Acceptance: a prose-only Domain Invariants edit replay fails with `INVARIANT_COVERAGE_REQUIRED`;
 every negative fixture proves zero adapter calls; legacy-live count unchanged.
+
+Delivery notes: the executor owns a `WriterGovernance` instance (identity taken from
+`plan.actionBatch.skill/operation`), binds it with `enforceTargets: true` before the action loop,
+and gates every `adapter.patch` with `assertWriterMutation`; reads (`inventory`/`refetch`) stay
+ungated. Operations must now carry non-empty `evidence` (`OPERATION_EVIDENCE_REQUIRED`) and cite
+snapshot blocks (`OPERATION_BLOCK_NOT_IN_SNAPSHOT`); executor errors are typed
+(`SNAPSHOT_DRIFT_BEFORE_MUTATION`, `PROTECTED_SURROUNDING_DRIFT`, `POST_PATCH_EVIDENCE_REQUIRED`,
+`VERIFIER_EVIDENCE_REQUIRED`, rollback codes) and session-store gates are typed
+(`ACCEPTANCE_EVIDENCE_MISMATCH` etc.). 13 executable fixtures replace the assertion-only pattern;
+procedure suite 11/11.
 
 ### Step 2 — doc-code-verify (PR C)
 

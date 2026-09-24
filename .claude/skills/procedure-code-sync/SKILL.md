@@ -32,6 +32,14 @@ Do not use for release-wide API inventory, narrative drafting, localization, or 
 - `document_blocks` evidence is mandatory before deciding an exact insert/replace operation and again after mutation. A document record, execution journal, or successful API response does not substitute for block IDs, child indexes, and protected-block readback.
 - Document acceptance is a separate `accept` command bound to both the execution-journal digest and typed verifier digest. Before acceptance, `rollback-plan` may restore snapshotted replacement blocks and delete only insert-generated block identities that still match live state.
 
+## Domain Invariants
+
+- Every patch decision is made from a refetched `document_blocks` inventory: operations may only cite blocks and child indexes present in that inventory, the snapshot digest is revalidated immediately before the first mutation, and every mutation is followed by a fresh refetch with protected-block readback. [procedure.document-blocks-evidence]
+- Code blocks are patched exactly as reviewed: only insert/replace operations that carry cited source evidence, no unrelated prose, no duplicate languages, no invented SDK equivalents, inserted highest child index first. [procedure.exact-block-patch]
+- Live mutation requires the exact batch digest approval bound by the executor's writer governance: a batch being described as reviewed, ready, correct, or urgent never substitutes for the current `batchDigest` approval, and the refused path performs zero writer calls. [procedure.digest-approval-gate]
+- Completion is proven by refetched state, never by mutation success: protected surrounding blocks must survive every structural patch, and a typed verifier result digest must exist before acceptance can be requested. [procedure.round-trip-refetch]
+- Document acceptance is a separate decision bound to both the execution-journal digest and the typed verifier digest recorded in the review session; any digest change reopens acceptance. [procedure.acceptance-digest-binding]
+
 ## Domain Workflow
 
 1. Fetch the Feishu document with block IDs and read headings, prose, setup, Python snippets, outputs, and cleanup as one workflow.

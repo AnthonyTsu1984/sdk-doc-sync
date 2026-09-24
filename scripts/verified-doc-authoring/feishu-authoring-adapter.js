@@ -27,10 +27,33 @@ const { docxToIr } = require(path.join(API_SYNC, 'src/document-ir/docx-to-ir'));
 const { renderMarkdown } = require(path.join(API_SYNC, 'src/document-ir/ir-to-markdown'));
 const { canonicalBytes } = require(path.join(DOC_OPS, 'src/canonical-json'));
 const { sha256Digest } = require(path.join(DOC_OPS, 'src/digest'));
+const { WriterGovernance } = require(path.join(DOC_OPS, 'src/writer-governance'));
 
 const DRAFT_PATH = process.env.VERIFIED_DOC_DRAFT
   ? path.resolve(process.env.VERIFIED_DOC_DRAFT)
   : path.join(__dirname, 'draft.md');
+
+// The canonical executor verifies the approval against the plan before calling
+// patch(); the writer boundary independently re-checks the same envelope, so a
+// mutation cannot run under facts the executor never verified.
+function bindGovernanceFromEnv() {
+  const planPath = process.env.VERIFIED_DOC_PLAN;
+  const approvalPath = process.env.VERIFIED_DOC_APPROVAL;
+  if (!planPath || !approvalPath) {
+    throw new Error('live writes require $VERIFIED_DOC_PLAN and $VERIFIED_DOC_APPROVAL (Phase 4 writer governance)');
+  }
+  const plan = JSON.parse(fs.readFileSync(path.resolve(planPath), 'utf8'));
+  const approval = JSON.parse(fs.readFileSync(path.resolve(approvalPath), 'utf8'));
+  const governance = new WriterGovernance({ skill: plan.actionBatch.skill, operation: plan.actionBatch.operation });
+  governance.bindApproval({
+    batchDigest: plan.actionBatch.batchDigest,
+    actionCount: plan.actionBatch.actions.length,
+    targets: plan.actionBatch.targets,
+    sideEffects: plan.actionBatch.sideEffects,
+    approval,
+  });
+  return governance;
+}
 
 function pageTitleText(page) {
   if (typeof page.title === 'string') return page.title;
@@ -119,21 +142,104 @@ function markdownPipeTablesToHtml(markdown) {
 // line break, which renderMarkdown surfaces as "<br>" before the cell
 // separator. The canonical draft form has single-line cells, so refetch
 // normalization strips end-of-cell breaks only; in-cell line breaks stay.
+// Foreign rich blocks that the write path cannot recreate (boards, sheets,
+// iframes, synced blocks) render as placeholder links; the draft excludes
+// them and the adapter structurally asserts their survival, so their
+// rendered placeholders are stripped from the comparison markdown too.
+const FOREIGN_PLACEHOLDER = /^\[[^\]]*\]\(#feishu-(?:board|sheet|iframe|source_synced|synced)-[^)]+\)$/;
+
 function normalizeRefetchMarkdown(markdown) {
-  return markdown
+  const lines = markdown
     .replace(/import .* from .*/g, '')
     .split('\n')
-    .map((line) => (line.startsWith('|') ? line.replace(/<br>\s*\|/g, ' |') : line))
-    .join('\n');
+    .filter((line) => !FOREIGN_PLACEHOLDER.test(line.trim()))
+    .map((line) => (line.startsWith('|') ? line.replace(/<br>\s*\|/g, ' |') : line));
+  const collapsed = [];
+  for (const line of lines) {
+    if (line === '' && collapsed[collapsed.length - 1] === '') continue;
+    collapsed.push(line);
+  }
+  return collapsed.join('\n');
+}
+
+function blockText(block) {
+  const sections = [block.code, block.text, block.heading1, block.heading2, block.heading3];
+  for (const section of sections) {
+    if (section && Array.isArray(section.elements)) {
+      return section.elements.map((e) => (e.text_run && e.text_run.content) || '').join('');
+    }
+  }
+  return '';
+}
+
+// Surgical mode: replace only the live blocks whose text contains an anchor
+// substring with the draft blocks containing the same anchor. Everything
+// else — including foreign rich blocks such as boards — is untouched, which
+// whole-page strategies cannot guarantee (smart matching deletes unmatched
+// preserve-only blocks). Foreign blocks are snapshot before and asserted
+// present after the mutation.
+const PRESERVE_ONLY_TYPES = [43, 26, 30, 49]; // board, iframe, sheet, source_synced
+
+async function patchSurgical(m2f, documentId, anchors) {
+  const existing = await m2f.get_document_blocks(documentId);
+  const page = existing.find((b) => b.block_type === 1);
+  if (!page) throw new Error('Page block not found');
+  const children = existing.filter((b) => b.parent_id === page.block_id && b.block_id !== page.block_id);
+  const foreignBefore = children.filter((b) => PRESERVE_ONLY_TYPES.includes(b.block_type)).map((b) => b.block_id);
+
+  const markdown = markdownPipeTablesToHtml(fs.readFileSync(DRAFT_PATH, 'utf8'));
+  const { tokens } = await m2f.parse_markdown(markdown);
+  const draftBlocks = await m2f.markdown_to_blocks(tokens);
+
+  const liveTargets = [];
+  const newTargets = [];
+  for (const anchor of anchors) {
+    const liveMatches = children.filter((b) => blockText(b).includes(anchor));
+    const newMatches = draftBlocks.filter((b) => blockText(b).includes(anchor));
+    if (liveMatches.length !== 1 || newMatches.length !== 1) {
+      throw new Error(`surgical anchor "${anchor}" must match exactly one live and one draft block (live=${liveMatches.length}, draft=${newMatches.length})`);
+    }
+    liveTargets.push(liveMatches[0]);
+    newTargets.push(newMatches[0]);
+  }
+  for (const [live, next] of liveTargets.map((b, i) => [b, newTargets[i]])) {
+    if (live.block_type !== next.block_type) {
+      throw new Error(`surgical anchor pairs block_type ${live.block_type} with ${next.block_type}; delete+insert cannot change structure context`);
+    }
+  }
+  const childIds = children.map((b) => b.block_id);
+  const firstIndex = Math.min(...liveTargets.map((b) => childIds.indexOf(b.block_id)));
+  if (firstIndex < 0) throw new Error('surgical targets are not direct page children');
+
+  // r8 incident guard: every refusal must happen BEFORE any deletion.
+  // update_document deletes all children first and creates after, so a
+  // create-side refusal (e.g. the absolute-link invariant on foreign-block
+  // placeholder links) wipes the page. Validate the new blocks with the same
+  // checks create_blocks applies, up front.
+  m2f.__assert_absolute_block_links(newTargets, 'adapter.surgical.precheck');
+
+  await m2f.__delete_child_blocks_by_id({ document_id: documentId, parentBlock: page, childBlockIds: liveTargets.map((b) => b.block_id) });
+  await m2f.create_blocks({ document_id: documentId, blocks: newTargets, startIndex: firstIndex });
+
+  const after = await m2f.get_document_blocks(documentId);
+  const afterIds = new Set(after.map((b) => b.block_id));
+  const missing = foreignBefore.filter((id) => !afterIds.has(id));
+  if (missing.length > 0) throw new Error(`foreign blocks lost during surgical patch: ${missing.join(', ')}`);
+  return { documentId, revision: null, created: false };
 }
 
 async function patch(payload) {
-  const markdown = markdownPipeTablesToHtml(fs.readFileSync(DRAFT_PATH, 'utf8'));
-  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
-  const { tokens } = await m2f.parse_markdown(markdown);
-  const blocks = await m2f.markdown_to_blocks(tokens);
   const documentId = (payload && payload.target && payload.target.documentId) || (payload && payload.documentId);
   if (!documentId) throw new Error('patch payload missing documentId');
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: bindGovernanceFromEnv() });
+  const anchors = (process.env.VERIFIED_DOC_SURGICAL || '').split('|').map((a) => a.trim()).filter(Boolean);
+  if (anchors.length > 0) return patchSurgical(m2f, documentId, anchors);
+
+  const markdown = markdownPipeTablesToHtml(fs.readFileSync(DRAFT_PATH, 'utf8'));
+  const { tokens } = await m2f.parse_markdown(markdown);
+  const blocks = await m2f.markdown_to_blocks(tokens);
+  // r8 incident guard: refuse before update_document deletes anything.
+  m2f.__assert_absolute_block_links(blocks, 'adapter.full.precheck');
   await m2f.update_document({ document_id: documentId, blocks });
   return { documentId, revision: null, created: false };
 }

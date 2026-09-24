@@ -20,6 +20,7 @@ function parseArgs(argv) {
     else if (arg === '--language') args.language = argv[++i];
     else if (arg === '--sdk-name') args.sdkName = argv[++i];
     else if (arg === '--track') args.track = argv[++i];
+    else if (arg === '--scan-track') args.scanTrack = argv[++i];
     else if (arg === '--sdk-dir') args.sdkDir = argv[++i];
     else if (arg === '--repo-dir') args.repoDir = argv[++i];
     else if (arg === '--public-roots') args.publicRoots.push(argv[++i]);
@@ -39,7 +40,7 @@ function parseArgs(argv) {
 function printUsage(out = console.log) {
   out('Usage: sdk-pr-scan --repo <owner/repo> --pr <number> [--web-content-dir <dir>]');
   out('                   [--language <lang>] [--track <vX.Y.x>] [--target-tag <tag>] [--baseline-tag <tag>]');
-  out('                   [--feishu-snapshot <file>] [--merge-release-scope <file>] [--output <file>] [--json]');
+  out('                   [--scan-track <sdkDirName>/<track>] [--feishu-snapshot <file>] [--merge-release-scope <file>] [--output <file>] [--json]');
   out('       sdk-pr-scan --pr-json <file> ...   (offline: injected PR metadata, no gh call)');
 }
 
@@ -98,6 +99,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     language: args.language || null,
     sdkName: args.sdkName || null,
     track: args.track || null,
+    scanTrack: args.scanTrack || null,
     sdkDir: defaults.sdkDir,
     repoDir: defaults.repoDir,
     publicRoots: defaults.publicRoots,

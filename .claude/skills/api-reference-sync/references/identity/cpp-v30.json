@@ -617,10 +617,70 @@
       "canonicalSlug": "Management-LoadCollection",
       "category": "Management"
     },
+    "Management.RefreshExternalCollection": {
+      "stableId": "cpp:Management:RefreshExternalCollection",
+      "canonicalSlug": "Management-RefreshExternalCollection",
+      "category": "Management"
+    },
+    "Management.GetRefreshExternalCollectionProgress": {
+      "stableId": "cpp:Management:GetRefreshExternalCollectionProgress",
+      "canonicalSlug": "Management-GetRefreshExternalCollectionProgress",
+      "category": "Management"
+    },
+    "Management.ListRefreshExternalCollectionJobs": {
+      "stableId": "cpp:Management:ListRefreshExternalCollectionJobs",
+      "canonicalSlug": "Management-ListRefreshExternalCollectionJobs",
+      "category": "Management"
+    },
     "Partitions.LoadPartitions": {
       "stableId": "cpp:Partitions:LoadPartitions",
       "canonicalSlug": "Partitions-LoadPartitions",
       "category": "Partitions"
+    },
+    "Snapshots.CreateSnapshot": {
+      "stableId": "cpp:Snapshots:CreateSnapshot",
+      "canonicalSlug": "Snapshots-CreateSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.DescribeSnapshot": {
+      "stableId": "cpp:Snapshots:DescribeSnapshot",
+      "canonicalSlug": "Snapshots-DescribeSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.DropSnapshot": {
+      "stableId": "cpp:Snapshots:DropSnapshot",
+      "canonicalSlug": "Snapshots-DropSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.GetRestoreSnapshotState": {
+      "stableId": "cpp:Snapshots:GetRestoreSnapshotState",
+      "canonicalSlug": "Snapshots-GetRestoreSnapshotState",
+      "category": "Snapshots"
+    },
+    "Snapshots.ListRestoreSnapshotJobs": {
+      "stableId": "cpp:Snapshots:ListRestoreSnapshotJobs",
+      "canonicalSlug": "Snapshots-ListRestoreSnapshotJobs",
+      "category": "Snapshots"
+    },
+    "Snapshots.ListSnapshots": {
+      "stableId": "cpp:Snapshots:ListSnapshots",
+      "canonicalSlug": "Snapshots-ListSnapshots",
+      "category": "Snapshots"
+    },
+    "Snapshots.PinSnapshotData": {
+      "stableId": "cpp:Snapshots:PinSnapshotData",
+      "canonicalSlug": "Snapshots-PinSnapshotData",
+      "category": "Snapshots"
+    },
+    "Snapshots.RestoreSnapshot": {
+      "stableId": "cpp:Snapshots:RestoreSnapshot",
+      "canonicalSlug": "Snapshots-RestoreSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.UnpinSnapshotData": {
+      "stableId": "cpp:Snapshots:UnpinSnapshotData",
+      "canonicalSlug": "Snapshots-UnpinSnapshotData",
+      "category": "Snapshots"
     },
     "Authentication.GrantPrivilege": {
       "stableId": "cpp:Authentication:GrantPrivilege",

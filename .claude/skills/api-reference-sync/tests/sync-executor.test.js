@@ -2036,3 +2036,61 @@ test('FeishuOperationalVerifier rejects malformed code directives and HTML audie
   assert.ok(verification.errors.some((error) => error.code === 'INVALID_CODE_VARIANT_DIRECTIVE'));
   assert.ok(verification.errors.some((error) => error.code === 'HTML_AUDIENCE_TAG_IN_CODE'));
 });
+
+test('content-fidelity guards bind the camelCase patchDocument writer interface too', async () => {
+  const calls = [];
+  const executor = new SyncExecutor({
+    documentWriter: {
+      async patchDocument(input) {
+        calls.push(['patchDocument', input]);
+        return { token: input.documentToken, patched: true };
+      },
+    },
+    bitableWriter: { async updateRecord() { return {}; } },
+  });
+  const artifact = {
+    content: 'verbatim body',
+    patchStrategy: 'rebuild',
+    pr: { number: 1140 },
+    reviewed: true,
+    validated: true,
+  };
+  const plan = {
+    stableId: 'cpp:Auth:DescribeRole',
+    source: { documentToken: 'doc-1' },
+    invariantAttestations: [],
+  };
+
+  // Missing attestation is refused before the writer is touched.
+  await assert.rejects(
+    () => executor._patchDocument(plan, artifact),
+    (error) => error.code === 'VERBATIM_ATTESTATION_REQUIRED',
+  );
+
+  // A digest mismatch is refused too.
+  plan.invariantAttestations = [{
+    id: 'api.pr-verbatim-content',
+    version: 1,
+    inputDigest: `sha256:${'0'.repeat(64)}`,
+    decision: 'PR_VERBATIM_REBUILD',
+  }];
+  await assert.rejects(
+    () => executor._patchDocument(plan, artifact),
+    (error) => error.code === 'VERBATIM_ATTESTATION_DIGEST_MISMATCH',
+  );
+
+  // The matching attestation admits the patch through the camelCase writer.
+  plan.invariantAttestations[0].inputDigest = sha256Digest(Buffer.from('verbatim body', 'utf8'));
+  const result = await executor._patchDocument(plan, artifact);
+  assert.equal(result.patched, true);
+  assert.equal(calls.length, 1);
+
+  // Include markers are refused on this interface as well.
+  await assert.rejects(
+    () => executor._patchDocument(plan, {
+      ...artifact,
+      content: 'body <include target="zilliz">T [u]</include>',
+    }),
+    (error) => error.code === 'INCLUDE_REBUILD_FORBIDDEN',
+  );
+});

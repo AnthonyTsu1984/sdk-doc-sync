@@ -77,13 +77,40 @@ class BitableWriter {
         return data.data?.record || data.data;
     }
 
+    async _assertDescriptionScope(fieldsView, recordId) {
+        // The Bitable Description field belongs to VirtualNode (Drive folder)
+        // records; interface records (Function/Class/Enum) stay empty. A
+        // non-empty description on any other (or unknown) record type is
+        // refused before the write; clearing (null/undefined/empty string)
+        // stays allowed. Structured values (e.g. Feishu text-run arrays from
+        // rollback restores) are enforced, not skipped — only a true clear
+        // bypasses the check. createRecord has no recordId to re-read, so a
+        // description without an explicit Type fails closed by design
+        // (api.record-description-scope).
+        const description = fieldsView.Description;
+        if (description === undefined || description === null) return;
+        if (typeof description === 'string' && description.trim() === '') return;
+        let recordType = fieldsView.Type ?? null;
+        if (!recordType && recordId) {
+            const live = await this.getRecord(recordId);
+            recordType = live?.fields?.Type ?? live?.Type ?? null;
+        }
+        if (recordType !== 'VirtualNode') {
+            const label = recordType ? `a ${recordType} record` : 'a record of unknown type';
+            throw Object.assign(
+                new Error(`the Bitable Description field is reserved for VirtualNode (Drive folder) records; refusing a non-empty description on ${label}${recordId ? ` (${recordId})` : ''} (api.record-description-scope)`),
+                { code: 'DESCRIPTION_SCOPE_VIOLATION', recordType: recordType || null },
+            );
+        }
+    }
+
     async createRecord(fields) {
         assertWriterMutation(this.governance, 'BitableWriter.createRecord');
+        const formatted = this._formatFields(fields);
+        await this._assertDescriptionScope(formatted, null);
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
         const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records`;
-
-        const formatted = this._formatFields(fields);
 
         const res = await fetch(url, {
             method: 'POST',
@@ -104,11 +131,11 @@ class BitableWriter {
 
     async updateRecord(recordId, fields) {
         assertWriterMutation(this.governance, 'BitableWriter.updateRecord', recordId);
+        const formatted = this._formatFields(fields);
+        await this._assertDescriptionScope(formatted, recordId);
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
         const url = `${FEISHU_HOST}/open-apis/bitable/v1/apps/${this.baseToken}/tables/${tableId}/records/${recordId}`;
-
-        const formatted = this._formatFields(fields);
 
         const res = await fetch(url, {
             method: 'PUT',
@@ -133,6 +160,12 @@ class BitableWriter {
         if (!writableFields || typeof writableFields !== 'object' || Array.isArray(writableFields)) {
             throw new TypeError('writableFields must be an object');
         }
+        // Rollback snapshots carry raw Bitable field names, so the scope
+        // guard reads the same names here instead of the camelCase formatter.
+        await this._assertDescriptionScope(
+            { Description: writableFields['Description'], Type: writableFields['Type'] },
+            recordId,
+        );
         const token = await this.tokenFetcher.token();
         const tableId = await this._resolveTableId();
         // Rollback snapshots capture fields in the GET-response shape; the

@@ -9,7 +9,13 @@
       "risk": "write-safety",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
-      "enforcement": ["evidence", "plan", "pre-write", "post-write", "reconcile"],
+      "enforcement": [
+        "evidence",
+        "plan",
+        "pre-write",
+        "post-write",
+        "reconcile"
+      ],
       "statementDigest": "sha256:ff1da141882e49f89935542924b0f5291acd8fe3d30140ec52f5c33bce4cbbf1",
       "fixtureIds": [
         "delta-unchanged-inherited",
@@ -33,7 +39,11 @@
         {
           "stage": "evidence",
           "module": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
-          "codes": ["TRACK_ENUMERATION_INCOMPLETE", "TARGET_FOLDER_UNVERIFIED", "CURRENT_RECORD_NOT_REFERENCING"]
+          "codes": [
+            "TRACK_ENUMERATION_INCOMPLETE",
+            "TARGET_FOLDER_UNVERIFIED",
+            "CURRENT_RECORD_NOT_REFERENCING"
+          ]
         },
         {
           "stage": "plan",
@@ -61,7 +71,10 @@
         {
           "stage": "plan",
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/index.js",
-          "codes": ["INVARIANT_ATTESTATION_REQUIRED", "TREE_DELTA_DAG_VIOLATION"]
+          "codes": [
+            "INVARIANT_ATTESTATION_REQUIRED",
+            "TREE_DELTA_DAG_VIOLATION"
+          ]
         },
         {
           "stage": "pre-write",
@@ -91,7 +104,9 @@
         {
           "stage": "post-write",
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/acceptance-finalizer.js",
-          "codes": ["INVARIANT_EVIDENCE_REQUIRED"]
+          "codes": [
+            "INVARIANT_EVIDENCE_REQUIRED"
+          ]
         },
         {
           "stage": "reconcile",
@@ -109,11 +124,271 @@
         {
           "stage": "reconcile",
           "module": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
-          "codes": ["TREE_DELTA_RECONCILIATION_FAILED"]
+          "codes": [
+            "TREE_DELTA_RECONCILIATION_FAILED"
+          ]
         }
       ],
       "reference": "references/tree-delta-policy.md",
       "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing."
+    },
+    {
+      "id": "api.markdown-block-fidelity",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-governed-markdown-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write",
+        "reconcile"
+      ],
+      "statementDigest": "sha256:dffd1f9b7254093190755226bd22dad5d60d486953beeb1739cef7ec86e332a8",
+      "fixtureIds": [
+        "content-table-native-roundtrip",
+        "content-unrepresentable-token-blocked",
+        "content-reconcile-callout-empty-child"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "MD_TOKEN_UNREPRESENTABLE"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CALLOUT_EMPTY_CHILD"
+          ]
+        }
+      ],
+      "notes": "Phase 4 (campaign content fidelity): marked `table` tokens render as native Feishu table blocks through the same cell path as HTML tables, unhandled token types throw MD_TOKEN_UNREPRESENTABLE instead of being logged and dropped, and normalizeRefetchedMarkdown is the declared verification canonicalization (end-of-cell <br> strip only; authored \\_ escapes are consumed at write). Reconciliation (phase 4 step 4) reports callout blocks carrying empty text children (CALLOUT_EMPTY_CHILD)."
+    },
+    {
+      "id": "api.absolute-link-urls",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-governed-markdown-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "evidence",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:af716100e3170d117b5c73021c0a31dc63d84a79958fb01db9fddc04a95da9c5",
+      "fixtureIds": [
+        "content-relative-link-resolved",
+        "content-relative-link-blocked"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/markdown-link-resolution.js",
+          "codes": [
+            "RELATIVE_LINK_UNRESOLVED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "RELATIVE_LINK_URL_REJECTED"
+          ]
+        }
+      ],
+      "notes": "Phase 4 (campaign content fidelity): resolveRelativeLinks (productized from the campaign builder, including the same-directory form) rewrites repo-relative .md links to in-KB docx URLs from reviewed snapshot evidence before planning, and MarkdownToFeishu block-carrying mutations decode every text_element_style link URL and refuse non-absolute values before the first writer call (Feishu block API schema mismatch 1770006)."
+    },
+    {
+      "id": "api.literal-include-preserved",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-sdk-document-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "plan",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:552a5f2b547e20259e7e454a352ee3d4e12a4476765447b19c5aadef844ec2fe",
+      "fixtureIds": [
+        "content-include-rebuild-blocked"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+          "codes": [
+            "INCLUDE_REBUILD_FORBIDDEN"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "INCLUDE_REBUILD_FORBIDDEN"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): pages carrying user-authored <include target=...> conditional markers are never rebuilt — the schema-first artifact provider refuses a verbatim rebuild artifact whose content contains include markers, and the executor refuses a rebuild patch over such content before conversion. Surgical child-block insertion is the only sanctioned edit path."
+    },
+    {
+      "id": "api.record-description-scope",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write"
+      ],
+      "statementDigest": "sha256:e5dae68ec8481bd8658c81a4fbe38e555798fb7b4f2b4d768df4621ceb6cb0f2",
+      "fixtureIds": [
+        "content-description-scope-violation"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/bitable-writer.js",
+          "codes": [
+            "DESCRIPTION_SCOPE_VIOLATION"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): the Bitable Description field is reserved for VirtualNode (Drive folder) records. BitableWriter createRecord/updateRecord/replaceRecordFields refuse a non-empty description on any record that is not a VirtualNode (live type re-read when the payload does not carry it; clearing stays allowed), and sync-executor no longer passes a description for interface records."
+    },
+    {
+      "id": "api.pr-verbatim-content",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "plan",
+        "pre-write",
+        "post-write",
+        "reconcile"
+      ],
+      "statementDigest": "sha256:315d47eb9d891dce1f4d2994aca4bfd4b7b0716d8ee270747e5a9eb18702c5dc",
+      "fixtureIds": [
+        "content-verbatim-roundtrip",
+        "content-shape-mismatch-requires-rebuild"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/verbatim-content.js",
+          "codes": [
+            "PR_VERBATIM_REBUILD"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "VERBATIM_ATTESTATION_REQUIRED",
+            "VERBATIM_ATTESTATION_DIGEST_MISMATCH"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "REBUILD_REQUIRED_SHAPE_MISMATCH"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/index.js",
+          "codes": [
+            "VERBATIM_CONTENT_VERIFICATION_FAILED",
+            "VERBATIM_REFETCH_UNAVAILABLE"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CONTENT_CONTEXT_DIGEST_MISMATCH",
+            "CONTENT_CONTEXT_LIVE_DIVERGENT"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 3: merged-PR pages land line-for-line identical to the pinned upstream markdown. The provider normalizes verbatim content (web-content footer + leading H1 stripped) and the planner attests the normalized content digest into the plan (decision PR_VERBATIM_REBUILD); the executor refuses a verbatim rebuild whose plan carries no attestation or whose bytes no longer match it; patch_document refuses cross-type in-place pairings (replace positional, smart matched) requiring rebuild; after execution the runner refetches raw_content, compares through the declared canonicalization (refetchChannel raw_content, canonicalVersion 1), journals a content-fidelity outcome before the completion sentinel, and the acceptance finalizer accepts content-fidelity outcomes as verified evidence. Reconciliation (phase 4 step 4) reports reviewed contexts whose frozen digest or live raw_content disagrees with their content (CONTENT_CONTEXT_DIGEST_MISMATCH / CONTENT_CONTEXT_LIVE_DIVERGENT)."
+    },
+    {
+      "id": "api.governed-document-inventory",
+      "version": 1,
+      "risk": "inventory-hygiene",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "reconcile"
+      ],
+      "statementDigest": "sha256:4bb426cde32ca2b34421a12dbd11d3257832e10dfb365112f49bf67001ad8c87",
+      "fixtureIds": [
+        "content-reconcile-orphan-detected"
+      ],
+      "enforcers": [
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CONTENT_ORPHAN_DOCUMENT"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 4 (campaign lesson: the orphan sweep required percent-decoded block-link extraction and live-VirtualNode folder derivation). Reconciliation reports any document under a tracked release folder that no record Docs link and no percent-decoded page block link references as a detect-only orphan candidate (CONTENT_ORPHAN_DOCUMENT); findings never authorize disposal — copy-on-write rollback sources are legitimate until final-acceptance cleanup."
+    },
+    {
+      "id": "api.sdk-page-layout",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "post-write",
+        "reconcile"
+      ],
+      "statementDigest": "sha256:878ace6ed3a9dc5e4546be145cc39080730489d18255699126dba9cc00bd8aea",
+      "fixtureIds": [
+        "content-layout-cpp-prefix-violation",
+        "content-layout-single-request-h3"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/layout-conformance.js",
+          "codes": [
+            "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+            "LAYOUT_SINGLE_REQUEST_H3",
+            "LAYOUT_EXAMPLE_HEADING",
+            "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
+            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/feishu-operational-verifier.js",
+          "codes": [
+            "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+            "LAYOUT_SINGLE_REQUEST_H3",
+            "LAYOUT_EXAMPLE_HEADING",
+            "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
+            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+            "LAYOUT_SINGLE_REQUEST_H3",
+            "LAYOUT_EXAMPLE_HEADING",
+            "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
+            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+          ]
+        }
+      ],
+      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). Deterministic structural rules only; wording quality stays with the polish prompt and model evals."
     }
   ]
 }

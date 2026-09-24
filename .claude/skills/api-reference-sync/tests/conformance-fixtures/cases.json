@@ -195,5 +195,145 @@
    "runner": "invariant-conformance",
    "scenario": "delta-postwrite-verified"
   }
+ },
+ {
+  "id": "content-table-native-roundtrip",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentTableNativeRoundtrip"
+  },
+  "assertions": {
+   "blockType": 31,
+   "rowSize": 2,
+   "columnSize": 2,
+   "underscoreCell": "membership_match",
+   "inlineCodeCellKept": true,
+   "normalizedRefetchLine": "| membership\\_match | `x` |"
+  }
+ },
+ {
+  "id": "content-unrepresentable-token-blocked",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentUnrepresentableTokenBlocked"
+  },
+  "assertions": {
+   "blocked": true,
+   "code": "MD_TOKEN_UNREPRESENTABLE"
+  }
+ },
+ {
+  "id": "content-relative-link-resolved",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentRelativeLinkResolved"
+  },
+  "assertions": {
+   "crossTrackResolved": "https://zilliverse.feishu.cn/docx/AAA",
+   "sameDirResolved": "https://zilliverse.feishu.cn/docx/BBB",
+   "unresolvedErrorCode": "RELATIVE_LINK_UNRESOLVED",
+   "deLinkedFragment": "Ghost plain"
+  }
+ },
+ {
+  "id": "content-relative-link-blocked",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentRelativeLinkBlocked"
+  },
+  "assertions": {
+   "code": "RELATIVE_LINK_URL_REJECTED",
+   "writerCalls": 0
+  }
+ },
+ {
+  "id": "content-include-rebuild-blocked",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentIncludeRebuildBlocked"
+  },
+  "assertions": {
+   "providerCode": "INCLUDE_REBUILD_FORBIDDEN"
+  }
+ },
+ {
+  "id": "content-description-scope-violation",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentDescriptionScopeViolation"
+  },
+  "assertions": {
+   "violationCode": "DESCRIPTION_SCOPE_VIOLATION",
+   "violationWrites": 0,
+   "virtualNodeWrites": 1
+  }
+ },
+ {
+  "id": "content-verbatim-roundtrip",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentVerbatimRoundtrip"
+  },
+  "assertions": {
+   "normalizedOk": true,
+   "driftOk": false,
+   "invariantId": "api.pr-verbatim-content"
+  }
+ },
+ {
+  "id": "content-shape-mismatch-requires-rebuild",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentShapeMismatchRequiresRebuild"
+  },
+  "assertions": {
+   "code": "REBUILD_REQUIRED_SHAPE_MISMATCH",
+   "writeCalls": 0
+  }
+ },
+ {
+  "id": "content-reconcile-orphan-detected",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentReconcileOrphanDetected"
+  },
+  "assertions": {
+   "orphanCode": "CONTENT_ORPHAN_DOCUMENT",
+   "referencedClean": true
+  }
+ },
+ {
+  "id": "content-reconcile-callout-empty-child",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentReconcileCalloutEmptyChild"
+  },
+  "assertions": {
+   "emptyChildCode": "CALLOUT_EMPTY_CHILD",
+   "cleanCalloutFindings": 0
+  }
+ },
+ {
+  "id": "content-layout-cpp-prefix-violation",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentLayoutCppPrefixViolation"
+  },
+  "assertions": {
+   "cppViolationCode": "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+   "javaClean": true
+  }
+ },
+ {
+  "id": "content-layout-single-request-h3",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentLayoutSingleRequestH3"
+  },
+  "assertions": {
+   "singleH3Code": "LAYOUT_SINGLE_REQUEST_H3",
+   "multiRequestClean": true,
+   "exampleHeadingCode": "LAYOUT_EXAMPLE_HEADING"
+  }
  }
 ]

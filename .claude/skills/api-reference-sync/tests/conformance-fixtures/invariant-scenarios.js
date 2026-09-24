@@ -464,6 +464,426 @@ const scenarios = {
       writerCalls: writerCalls.length,
     };
   },
+
+  // --- api.markdown-block-fidelity scenarios (production converter) ---
+
+  async contentTableNativeRoundtrip() {
+    const MarkdownToFeishu = require('../../src/markdown-to-feishu');
+    const { normalizeRefetchedMarkdown } = MarkdownToFeishu;
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance' });
+    const markdown = [
+      '| Name | Value |',
+      '| --- | --- |',
+      '| membership\\_match | `x` |',
+    ].join('\n');
+    const { tokens } = await writer.parse_markdown(markdown);
+    const blocks = await writer.markdown_to_blocks(tokens);
+    const table = blocks.find((block) => block.table);
+    const cellText = (index) => table.table.cells[index].text.elements
+      .map((element) => (element.text_run ? element.text_run.content : ''))
+      .join('');
+    const refetched = '| membership\\_match<br> | `x`<br> |';
+    return {
+      blockType: table.block_type,
+      rowSize: table.table.property.row_size,
+      columnSize: table.table.property.column_size,
+      underscoreCell: cellText(2),
+      inlineCodeCellKept: cellText(3) === 'x',
+      normalizedRefetchLine: normalizeRefetchedMarkdown(refetched),
+    };
+  },
+
+  async contentUnrepresentableTokenBlocked() {
+    const MarkdownToFeishu = require('../../src/markdown-to-feishu');
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance' });
+    try {
+      await writer.markdown_to_blocks([{ type: 'synthetic_unrepresentable_token' }]);
+      return { blocked: false, code: null };
+    } catch (error) {
+      return { blocked: true, code: error.code || null };
+    }
+  },
+
+  // --- api.absolute-link-urls scenarios (resolver + writer envelope) ---
+
+  async contentRelativeLinkResolved() {
+    const { resolveRelativeLinks } = require('../../src/sdk-doc-sync/markdown-link-resolution');
+    const slugs = {
+      'Vector-Search': 'https://zilliverse.feishu.cn/docx/AAA',
+      'Collections-DataType': 'https://zilliverse.feishu.cn/docx/BBB',
+    };
+    const resolveSlug = (slug) => slugs[slug] || null;
+    const crossTrack = resolveRelativeLinks('[Search](../Vector/Search.md)', { resolveSlug, currentCategory: 'Vector' });
+    const sameDir = resolveRelativeLinks('[DataType](DataType.md)', { resolveSlug, currentCategory: 'Collections' });
+    let unresolvedErrorCode = null;
+    try {
+      resolveRelativeLinks('[Ghost](Ghost.md)', { resolveSlug, currentCategory: 'Collections' });
+    } catch (error) {
+      unresolvedErrorCode = error.code || null;
+    }
+    const deLinked = resolveRelativeLinks('[Ghost](Ghost.md) plain', {
+      resolveSlug,
+      currentCategory: 'Collections',
+      onUnresolved: 'de-link',
+    });
+    return {
+      crossTrackResolved: crossTrack.includes('/docx/AAA') ? 'https://zilliverse.feishu.cn/docx/AAA' : null,
+      sameDirResolved: sameDir.includes('/docx/BBB') ? 'https://zilliverse.feishu.cn/docx/BBB' : null,
+      unresolvedErrorCode,
+      deLinkedFragment: deLinked,
+    };
+  },
+
+  async contentRelativeLinkBlocked() {
+    const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+    const { WriterGovernance } = require('../../../doc-ops-core/src/writer-governance');
+    const MarkdownToFeishu = require('../../src/markdown-to-feishu');
+    const batchDigest = 'sha256:' + 'c'.repeat(64);
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+    governance.bindApproval({
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-1'],
+      sideEffects: ['docx.patch'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'execute',
+        batchDigest,
+        actionCount: 1,
+        targets: ['doc-1'],
+        sideEffects: ['docx.patch'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+    });
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance', governance });
+    let writerCalls = 0;
+    writer.tokenFetcher = { token: async () => { writerCalls += 1; return 'tenant-token'; } };
+    try {
+      await writer.create_blocks({
+        document_id: 'doc-1',
+        blocks: [{
+          block_type: 2,
+          text: {
+            elements: [{
+              text_run: {
+                content: 'Search',
+                text_element_style: { link: { url: encodeURIComponent('../Vector/Search.md') } },
+              },
+            }],
+            style: {},
+          },
+        }],
+      });
+      return { code: null, writerCalls };
+    } catch (error) {
+      return { code: error.code || null, writerCalls };
+    }
+  },
+
+  // --- api.literal-include-preserved scenario (production artifact provider) ---
+
+  async contentIncludeRebuildBlocked() {
+    const { createSchemaFirstArtifactProvider } = require('../../bin/sdk-doc-sync');
+    const provider = createSchemaFirstArtifactProvider({
+      language: 'cpp',
+      referenceContextProvider: async () => ({
+        verbatimContent: 'body <include target="zilliz">TEXT [z-url]</include>',
+        title: 'X()',
+        summary: 'summary',
+      }),
+    });
+    try {
+      await provider({ type: 'UPDATE', stableId: 'cpp:Vector:X', pr: { number: 1, path: 'X.md' } });
+      return { providerCode: null };
+    } catch (error) {
+      return { providerCode: error.code || null };
+    }
+  },
+
+  // --- api.record-description-scope scenario (production BitableWriter guard) ---
+
+  async contentDescriptionScopeViolation() {
+    const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+    const { WriterGovernance } = require('../../../doc-ops-core/src/writer-governance');
+    const fetchPath = require.resolve('node-fetch');
+    const originalFetch = require.cache[fetchPath];
+    let writeCalls = 0;
+    require.cache[fetchPath] = {
+      id: fetchPath,
+      filename: fetchPath,
+      loaded: true,
+      exports: async (url, options) => {
+        const method = (options && options.method) || 'get';
+        if (method === 'get' && /\/records\/rec-1$/.test(String(url))) {
+          const type = globalThis.__conformanceRecordType || 'Function';
+          return {
+            async json() { return { code: 0, data: { record: { fields: { Type: type } } } }; },
+          };
+        }
+        writeCalls += 1;
+        return { async json() { return { code: 0, data: { record: {} } }; } };
+      },
+    };
+    const bitableWriterPath = require.resolve('../../src/sdk-doc-sync/bitable-writer');
+    // The executor scenario above loads bitable-writer transitively; drop the
+    // cached copy so this module binds the mocked fetch instead.
+    delete require.cache[bitableWriterPath];
+    const BitableWriter = require(bitableWriterPath);
+    if (originalFetch) require.cache[fetchPath] = originalFetch;
+    else delete require.cache[fetchPath];
+    delete require.cache[bitableWriterPath];
+
+    const batchDigest = 'sha256:' + 'e'.repeat(64);
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+    governance.bindApproval({
+      batchDigest,
+      actionCount: 1,
+      targets: ['rec-1'],
+      sideEffects: ['bitable.update'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'execute',
+        batchDigest,
+        actionCount: 1,
+        targets: ['rec-1'],
+        sideEffects: ['bitable.update'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+    });
+    const writer = new BitableWriter({ baseToken: 'conformance', tableId: 'tbl-conformance', governance });
+    writer.tokenFetcher = { token: async () => 'tenant-token' };
+
+    let violationCode = null;
+    try {
+      await writer.updateRecord('rec-1', { description: 'page record description' });
+    } catch (error) {
+      violationCode = error.code || null;
+    }
+    const violationWrites = writeCalls;
+
+    globalThis.__conformanceRecordType = 'VirtualNode';
+    try {
+      await writer.updateRecord('rec-1', { description: 'folder record description' });
+    } catch (error) {
+      // The positive arm must pass; any failure surfaces in virtualNodeWrites.
+    }
+    const virtualNodeWrites = writeCalls - violationWrites;
+    delete globalThis.__conformanceRecordType;
+    return { violationCode, violationWrites, virtualNodeWrites };
+  },
+
+  // --- api.pr-verbatim-content scenarios (comparator + writer shape guard) ---
+
+  async contentVerbatimRoundtrip() {
+    const {
+      normalizeVerbatimContent,
+      verbatimContentDigest,
+      compareVerbatimContent,
+    } = require('../../src/sdk-doc-sync/verbatim-content');
+    const upstream = [
+      '# AlterRole()',
+      '',
+      '## Request Syntax',
+      '',
+      '- See the [docs](https://zilliverse.feishu.cn/docx/AAA).',
+      '| a | b |',
+      '| --- | --- |',
+      '| membership\\_match | x |',
+      '',
+      '<!-- category: milvus-sdk-cpp; action: update; addedSince: v3.0.x -->',
+    ].join('\n');
+    const normalized = normalizeVerbatimContent(upstream);
+    // The page landed: raw_content repeats the page title, renders headings
+    // without hashes, bullets as •, link markup stripped, and table cells
+    // with trailing <br> — the canonicalization must reconcile both sides.
+    const rawLanded = [
+      'AlterRole()',
+      '',
+      'Request Syntax',
+      '',
+      '• See the docs.',
+      '| a<br> | b<br> |',
+      '| --- | --- |',
+      '| membership\\_match<br> | x<br> |',
+      '',
+    ].join('\n');
+    const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded, pageTitle: 'AlterRole()' });
+    // A drifted page: one paragraph replaced by different text.
+    const rawDrifted = rawLanded.replace('Request Syntax', 'Request Format');
+    const drifted = compareVerbatimContent({ expectedContent: upstream, rawContent: rawDrifted, pageTitle: 'AlterRole()' });
+    return {
+      normalizedOk: landed.ok && normalized.length > 0 && !normalized.startsWith('# '),
+      driftOk: drifted.ok,
+      invariantId: landed.invariantId,
+      digestStable: verbatimContentDigest(normalized) === verbatimContentDigest(normalizeVerbatimContent(normalized)),
+    };
+  },
+
+  async contentShapeMismatchRequiresRebuild() {
+    const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+    const { WriterGovernance } = require('../../../doc-ops-core/src/writer-governance');
+    const fetchPath = require.resolve('node-fetch');
+    const originalFetch = require.cache[fetchPath];
+    let writeCalls = 0;
+    require.cache[fetchPath] = {
+      id: fetchPath,
+      filename: fetchPath,
+      loaded: true,
+      exports: async (url, options) => {
+        const method = String((options && options.method) || 'get').toLowerCase();
+        if (method !== 'get') writeCalls += 1;
+        return {
+          async json() {
+            return {
+              code: 0,
+              data: {
+                items: [
+                  { block_id: 'page-1', block_type: 1, children: ['child-1'] },
+                  { block_id: 'child-1', parent_id: 'page-1', block_type: 3, heading1: { elements: [] } },
+                ],
+              },
+            };
+          },
+        };
+      },
+    };
+    const markdownToFeishuPath = require.resolve('../../src/markdown-to-feishu');
+    // Other scenarios load the converter transitively; drop the cached copy
+    // so this module binds the mocked fetch instead.
+    delete require.cache[markdownToFeishuPath];
+    const MarkdownToFeishu = require(markdownToFeishuPath);
+    if (originalFetch) require.cache[fetchPath] = originalFetch;
+    else delete require.cache[fetchPath];
+    delete require.cache[markdownToFeishuPath];
+
+    const batchDigest = 'sha256:' + '0'.repeat(64);
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+    governance.bindApproval({
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-1'],
+      sideEffects: ['docx.patch'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'execute',
+        batchDigest,
+        actionCount: 1,
+        targets: ['doc-1'],
+        sideEffects: ['docx.patch'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+    });
+    const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance', governance });
+    writer.tokenFetcher = { token: async () => 'tenant-token' };
+
+    try {
+      await writer.patch_document({
+        document_id: 'doc-1',
+        blocks: [{ block_type: 2, text: { elements: [], style: {} } }],
+        strategy: 'replace',
+      });
+      return { code: null, writeCalls };
+    } catch (error) {
+      return { code: error.code || null, writeCalls };
+    }
+  },
+
+  // --- api.governed-document-inventory / reconcile scenarios (production reconciler) ---
+
+  async contentReconcileOrphanDetected() {
+    const { reconcileContentInventory } = require('../../src/sdk-doc-sync/content-reconciliation');
+    const records = [
+      { recordId: 'rec-1', documentToken: 'DOCKEEPER01DOCKEEPER01' },
+      { recordId: 'rec-2', documentToken: 'DOCSECOND02DOCSECOND02' },
+    ];
+    const folderDocuments = [
+      'DOCKEEPER01DOCKEEPER01',
+      'DOCSECOND02DOCSECOND02',
+      'ORPHANDOC03ORPHANDOC03',
+    ];
+    // Percent-decoded page block links count as references too.
+    const pageLinkTokens = ['DOCSECOND02DOCSECOND02'];
+    const { findings } = reconcileContentInventory({ records, folderDocuments, pageLinkTokens });
+    return {
+      orphanCode: findings.find((finding) => finding.identity === 'ORPHANDOC03ORPHANDOC03')?.code || null,
+      referencedClean: !findings.some((finding) => finding.identity !== 'ORPHANDOC03ORPHANDOC03'),
+    };
+  },
+
+  async contentReconcileCalloutEmptyChild() {
+    const { reconcileCalloutBlocks } = require('../../src/sdk-doc-sync/content-reconciliation');
+    const blocks = [
+      {
+        block_id: 'callout-1',
+        block_type: 19,
+        children: [
+          { block_id: 'notes-1', block_type: 2, text: { elements: [{ text_run: { content: 'Notes' } }] } },
+          { block_id: 'empty-auto', block_type: 2, text: { elements: [] } },
+        ],
+      },
+      {
+        block_id: 'callout-2',
+        block_type: 19,
+        children: [
+          { block_id: 'body-1', block_type: 2, text: { elements: [{ text_run: { content: 'Deprecated in v3.0.x. Use AddFunctionField().' } }] } },
+        ],
+      },
+    ];
+    const { findings } = reconcileCalloutBlocks(blocks);
+    return {
+      emptyChildCode: findings.find((finding) => finding.identity === 'empty-auto')?.code || null,
+      cleanCalloutFindings: findings.filter((finding) => finding.identity !== 'empty-auto').length,
+    };
+  },
+
+  // --- api.sdk-page-layout scenarios (language-neutral checker, profile data) ---
+
+  async contentLayoutCppPrefixViolation() {
+    const { checkLayoutConformance } = require('../../src/sdk-doc-sync/layout-conformance');
+    const sdkLayoutProfiles = require('../../src/renderers/sdk-layout-profiles');
+    const facts = {
+      headings: [],
+      lines: ['CreateAliasRequest& WithDatabaseName(const std::string& db_name)'],
+      callouts: [],
+    };
+    const cpp = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
+    // The same page under a profile without the builder rule is clean: the
+    // language difference lives in profile data, not in the checker.
+    const java = checkLayoutConformance(sdkLayoutProfiles.java, facts);
+    return {
+      cppViolationCode: cpp.violations.find((violation) => violation.code === 'LAYOUT_BUILDER_PREFIX_FORBIDDEN')?.code || null,
+      javaClean: java.violations.length === 0,
+    };
+  },
+
+  async contentLayoutSingleRequestH3() {
+    const { checkLayoutConformance } = require('../../src/sdk-doc-sync/layout-conformance');
+    const sdkLayoutProfiles = require('../../src/renderers/sdk-layout-profiles');
+    const single = checkLayoutConformance(sdkLayoutProfiles.cpp, {
+      headings: [
+        { level: 3, text: 'AlterRoleRequest' },
+        { level: 3, text: 'Example' },
+      ],
+      lines: [],
+      callouts: [],
+    });
+    const multi = checkLayoutConformance(sdkLayoutProfiles.cpp, {
+      headings: [
+        { level: 3, text: 'AlterRoleRequest' },
+        { level: 3, text: 'DescribeRoleRequest' },
+      ],
+      lines: [],
+      callouts: [],
+    });
+    return {
+      singleH3Code: single.violations.find((violation) => violation.code === 'LAYOUT_SINGLE_REQUEST_H3')?.code || null,
+      multiRequestClean: multi.violations.length === 0,
+      exampleHeadingCode: single.violations.find((violation) => violation.code === 'LAYOUT_EXAMPLE_HEADING')?.code || null,
+    };
+  },
 };
 
 module.exports = { scenarios };

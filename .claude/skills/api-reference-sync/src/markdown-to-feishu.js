@@ -840,6 +840,44 @@ class MarkdownToFeishu {
         };
     }
 
+    __create_table_block_from_token(token) {
+        // marked pipe-table token → native Feishu table block. Pipe tables
+        // have no spans, so merge_info stays empty; cell content goes through
+        // the same inline parser as the HTML-table path (escapes such as
+        // `\_` are consumed here — the write side of the refetch fixed point).
+        const header = token.header || [];
+        const rows = token.rows || [];
+        const columnSize = header.length;
+        const cells = [];
+        const mergeInfo = [];
+
+        const pushCell = (cell) => {
+            cells.push({
+                block_type: this.block_type_map.text,
+                text: {
+                    elements: this.__parse_inline_markdown(cell ? String(cell.text ?? '') : ''),
+                    style: {}
+                }
+            });
+            mergeInfo.push(null);
+        };
+
+        header.forEach(pushCell);
+        rows.forEach((row) => row.forEach(pushCell));
+
+        return {
+            block_type: this.block_type_map.table,
+            table: {
+                property: {
+                    row_size: rows.length + (columnSize > 0 ? 1 : 0),
+                    column_size: columnSize,
+                    merge_info: mergeInfo
+                },
+                cells: cells
+            }
+        };
+    }
+
     __create_blockquote_block(token) {
         const children = [];
 
@@ -1121,11 +1159,32 @@ class MarkdownToFeishu {
                 // Standalone image (shouldn't normally happen, but handle it)
                 blocks.push(this.__create_image_block(token));
                 break;
+            case 'table':
+                // Pipe tables arrive as marked `table` tokens and render as
+                // native Feishu table blocks; silently dropping them used to
+                // lose whole sections (api.markdown-block-fidelity).
+                blocks.push(this.__create_table_block_from_token(token));
+                break;
+            case 'text':
+                // Tight-context text token (e.g. inside a blockquote) — render
+                // it like a paragraph instead of dropping it.
+                blocks.push(this.__create_text_block(token));
+                break;
             case 'space':
                 // Skip empty space
                 break;
+            case 'def':
+                // Link-reference definition ([ref]: url) — a structural
+                // no-op, not content: it renders no block, and the inline
+                // parser never consumes reference-style links, so skipping
+                // loses nothing (explicitly whitelisted, unlike the
+                // fail-closed default below).
+                break;
             default:
-                console.log(`Unsupported token type: ${token.type}`);
+                throw Object.assign(
+                    new Error(`markdown token type "${token.type}" has no Feishu block representation; refusing to drop content (api.markdown-block-fidelity)`),
+                    { code: 'MD_TOKEN_UNREPRESENTABLE', tokenType: token.type }
+                );
         }
 
         return blocks;
@@ -1508,8 +1567,78 @@ class MarkdownToFeishu {
         });
     }
 
+    async getRawContent(documentId) {
+        // Read-only raw_content refetch — the authoritative channel for
+        // verbatim text postconditions (api.pr-verbatim-content).
+        const token = await this.tokenFetcher.token();
+        const url = `${FEISHU_HOST}/open-apis/docx/v1/documents/${documentId}/raw_content`;
+        const res = await fetch(url, {
+            method: 'get',
+            headers: {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Authorization': `Bearer ${token}`,
+            },
+        });
+        const data = await res.json();
+        if (data.code !== 0) {
+            throw new Error(`Failed to read raw content: ${data.msg}`);
+        }
+        return data.data.content;
+    }
+
+    assertAbsoluteBlockLinks(blocks) {
+        // Public pre-write validation for destructive flows: scripts that
+        // delete-then-recreate a region must validate the replacement blocks
+        // BEFORE the delete, or a rejected payload leaves the document
+        // truncated (api.absolute-link-urls).
+        this.__assert_absolute_block_links(blocks, 'MarkdownToFeishu.assertAbsoluteBlockLinks');
+    }
+
+    __collect_text_link_urls(value, found = []) {
+        if (Array.isArray(value)) {
+            value.forEach((item) => this.__collect_text_link_urls(item, found));
+            return found;
+        }
+        if (!value || typeof value !== 'object') return found;
+        for (const [key, child] of Object.entries(value)) {
+            if (key === 'link' && child && typeof child === 'object' && typeof child.url === 'string') {
+                found.push(child.url);
+            } else if (key !== 'link') {
+                this.__collect_text_link_urls(child, found);
+            }
+        }
+        return found;
+    }
+
+    __assert_absolute_block_links(payload, method) {
+        // The Feishu block API rejects non-absolute URLs in
+        // text_element_style.link (schema mismatch 1770006), which used to
+        // surface only as a partial execution after real writes landed. The
+        // inline parser percent-encodes URLs, so compare decoded values and
+        // refuse anything that is not an absolute http(s) URL before the
+        // first writer call (api.absolute-link-urls).
+        const offenders = [];
+        for (const raw of this.__collect_text_link_urls(payload)) {
+            let decoded = raw;
+            try {
+                decoded = decodeURIComponent(raw);
+            } catch (_) {
+                // Keep the raw form for the absolute check.
+            }
+            if (!/^https?:\/\//i.test(decoded)) offenders.push(decoded);
+        }
+        if (offenders.length > 0) {
+            const unique = [...new Set(offenders)];
+            throw Object.assign(
+                new Error(`${method} refuses non-absolute text link URL(s): ${unique.join(', ')} — resolve repository-relative links to in-KB docx URLs before writing (api.absolute-link-urls)`),
+                { code: 'RELATIVE_LINK_URL_REJECTED', urls: unique }
+            );
+        }
+    }
+
     async create_blocks({ document_id, blocks, startIndex = 0, parentBlockId = null }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.create_blocks', document_id);
+        this.__assert_absolute_block_links(blocks, 'MarkdownToFeishu.create_blocks');
         const token = await this.tokenFetcher.token();
 
         // Determine parent block ID
@@ -1905,6 +2034,7 @@ class MarkdownToFeishu {
 
     async apply_api_patch({ document_id, source_document_id, patchPlan }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.apply_api_patch', document_id);
+        this.__assert_absolute_block_links(patchPlan, 'MarkdownToFeishu.apply_api_patch');
         if (!patchPlan || patchPlan.validation?.valid !== true) {
             const error = new Error('A validated API patch plan is required');
             error.code = 'INVALID_API_PATCH_PLAN';
@@ -2153,6 +2283,7 @@ class MarkdownToFeishu {
 
     async patch_document({ document_id, blocks, strategy = 'smart' }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.patch_document', document_id);
+        this.__assert_absolute_block_links(blocks, 'MarkdownToFeishu.patch_document');
         /**
          * Sophisticated document update using PATCH API for non-destructive updates.
          *
@@ -2185,6 +2316,32 @@ class MarkdownToFeishu {
             deleted: 0,
             unchanged: 0
         };
+
+        if (strategy === 'replace' || strategy === 'smart') {
+            // Feishu block types are immutable: an in-place text update can
+            // never change a block's structure, so an in-place update that
+            // pairs blocks of different types garbles the layout. Replace
+            // pairs positionally. Smart pairs by equivalent type — but
+            // equivalent (image↔board↔iframe, table↔sheet) is not identical,
+            // and every equivalent-but-different pairing is updated in place
+            // unless the existing block is preserve-only (kept as-is). Refuse
+            // any cross-type in-place pairing and require a rebuild
+            // (api.pr-verbatim-content).
+            const inPlacePairings = strategy === 'replace'
+                ? existingChildren
+                    .slice(0, Math.min(existingChildren.length, blocks.length))
+                    .map((existing, index) => ({ existing, new: blocks[index] }))
+                : this.__match_blocks_smart(existingChildren, blocks).matches
+                    .filter((match) => !this.__should_preserve_block(match.existing));
+            const crossType = inPlacePairings.find((pair) => pair?.existing && pair?.new
+                && pair.existing.block_type !== pair.new.block_type);
+            if (crossType) {
+                throw Object.assign(
+                    new Error(`patch_document strategy "${strategy}" pairs an existing block_type ${crossType.existing.block_type} with a new block_type ${crossType.new.block_type}; block types are immutable so this in-place update would garble the layout — use strategy "rebuild" (api.pr-verbatim-content)`),
+                    { code: 'REBUILD_REQUIRED_SHAPE_MISMATCH', strategy },
+                );
+            }
+        }
 
         if (strategy === 'append') {
             // Simple append strategy: keep all existing, add new ones at the end
@@ -2797,4 +2954,7 @@ class MarkdownToFeishu {
     }
 }
 
+// The canonical end-of-cell `<br>` fixed point lives in verbatim-content.js
+// (api.pr-verbatim-content canonicalization); re-exported for compatibility.
 module.exports = MarkdownToFeishu;
+module.exports.normalizeRefetchedMarkdown = require('./sdk-doc-sync/verbatim-content').normalizeRefetchedMarkdown;

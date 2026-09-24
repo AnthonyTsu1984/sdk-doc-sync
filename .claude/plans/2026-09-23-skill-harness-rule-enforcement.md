@@ -4,6 +4,12 @@ Date: 2026-09-23
 
 Status: proposed; planning only
 
+Revision 2 (2026-09-23, later): adds Phase 4 — content-fidelity invariants derived from the
+completed C++ dual-track campaign (2026-09-21/22, 108 pages across the v3.0/v2.6 tracks). The three
+policies previously deferred pending a separate audit (verbatim-page, Description scope,
+audience-include) are now audited and scheduled there. Former Phase 4 (generalize) and Phase 5
+(operational evidence) are renumbered Phase 5 and Phase 6.
+
 Scope: repository-local canonical skills under `.claude/skills/`, with PR #19's `api-reference-sync` versioned-tree delta rule as the first end-to-end enforcement case.
 
 ## Conclusion
@@ -60,6 +66,8 @@ Defer from the PR #19 critical path:
 - unrelated Description, audience-include, and verbatim-page policies until each rule's authority and current runtime path are separately audited.
 
 These may be valuable follow-up harness work, but combining them with the first safety fix would expand scope and delay closure of the demonstrated fail-open path.
+
+Revision 2 update: that separate audit is now complete, grounded in evidence from the completed C++ dual-track campaign. Findings: the verbatim policy exists only as a builder convention plus gitignored run-local verifiers; `sync-executor.js` writes `description` on record updates (four call sites); the markdown converter logs `Unsupported token type` and silently drops the block; relative-link resolution lives only in an untracked campaign builder, and its same-directory form is an unhandled blind spot. All are scheduled as Phase 4.
 
 ## Definition of “Guaranteed Every Time”
 
@@ -237,6 +245,17 @@ Add periodic and on-demand reconciliation that reports findings without mutating
 
 Emit one findings schema keyed by invariant ID and evidence digest. Reconciliation detects manual edits and historical drift; it does not replace the pre-write guard or authorize cleanup.
 
+### 6b. Content invariants: authoritative refetch channels and canonicalization
+
+Feishu offers two refetch channels with complementary blind spots. `raw_content` is authoritative for verbatim text but strips link URLs, flattens callouts, prepends the page-title line, and can interleave stdout noise lines. The blocks API is authoritative for child order, callout structure, and link URLs, but is not a text-digest source. A content invariant therefore declares its `refetchChannel` in the registry, and its post-write enforcer is the hardened verifier bound to that channel:
+
+- raw_content channel: normalized comparison with the declared canonicalization — drop the leading page-title line, filter stdout noise lines, strip rendered markdown-link targets, html-unescape table cells, code-fence-aware marker stripping, and table-aware line convergence for HTML-to-native table rewrites.
+- blocks channel: structural assertions from the blocks API — callout child order, accounting for the auto-populated empty child, link URL extraction after `decodeURIComponent`.
+
+Canonicalization fixed points are part of the invariant definition, not per-script conveniences: digest comparison is only evidence if every verifier applies the declared normalization. Cell underscores are authored as `\_` and re-escaped on refetch; single-line cells carry a trailing `<br>` that normalization strips only at end-of-cell; block-link URLs are percent-encoded. The registry entry carries these fixed points so refetched digests remain stable across verifiers.
+
+Deterministically checkable qualities of model-generated content are enforced, not evaluated: the rendered example's call arity is compared against the scanned signature arity at plan time, and known cleaning rules (Doxygen directive-line filtering, `$identifier` → inline code) are scanner-source invariants. Model evals judge wording quality only.
+
 ### 7. Close mutation bypasses
 
 Guarantees are impossible while alternate live paths can mutate the same resources without the canonical policy kernel.
@@ -256,7 +275,7 @@ The initial rollout may keep an audited emergency exception, but an exception ru
 ### Required on every pull request
 
 1. `validate:skills`: structure, links, stable invariant IDs, statement digests, and enforcement-map completeness.
-2. Executable conformance: every listed fixture invokes its production policy function.
+2. Executable conformance: every listed fixture invokes its production policy function; content-fidelity fixtures drive the production converter and context builder, not simulators.
 3. Focused policy and executor tests, including negative and drift cases.
 4. Mutation-bypass admission: no new or widened live path; legacy count may only decrease unless an expiring reviewed exception is added.
 5. Determinism: equivalent inventory inputs yield identical decisions, action DAGs, and digests.
@@ -325,7 +344,30 @@ Acceptance: all scenario fixtures pass; every unsafe or unknown case blocks befo
 
 Acceptance: repository tests cannot perform a simulated Feishu mutation through any path without a governed envelope; legacy-live inventory is zero or limited to explicit unexpired emergency exceptions.
 
-### Phase 4 — Generalize across canonical skills
+### Phase 4 — Content-fidelity invariants from the 2026-09 C++ campaign
+
+The completed dual-track campaign (108 pages, v3.0 + v2.6) already demonstrated the failure modes this harness must make unreachable: in-place patch strategies garbling shape-mismatched documents, silently dropped pipe tables, block-API rejection of relative links discovered only as a partial execution, include-bearing pages destroyed by rebuild, executor-written descriptions on page records, and layout regressions caught by hand-written sweeps. Every one of these was fixed during the campaign in shared code or in gitignored run-local scripts. Phase 4 promotes each lesson into the invariant loop so the next language track inherits the enforcement, not the scars. Every registry entry, statement-bound SKILL.md bullet, and fixture below lands in the same PR (the Phase 1 admission rule applies).
+
+| Invariant id | Stages | Enforcer and blocker | Fixtures |
+| --- | --- | --- | --- |
+| `api.markdown-block-fidelity` | pre-write | converter fails closed on unrepresentable tokens (`MD_TOKEN_UNREPRESENTABLE`) instead of logging and dropping; productize the pipe-table adapter from `scripts/verified-doc-authoring/` into the shared converter path | positive: table roundtrip through the `\_` and trailing-`<br>` fixed points; negative: table token without the adapter blocks with zero writes |
+| `api.absolute-link-urls` | evidence, pre-write | productize `resolveRelativeLinks` (including the same-directory form) into the shared context/converter layer; envelope rejects non-absolute link URLs before the first writer call (`RELATIVE_LINK_URL_REJECTED`) | negative: relative link blocks; positive: snapshot-resolved in-KB link |
+| `api.literal-include-preserved` | plan | a page carrying user `<include>` lines never routes to a rebuild strategy (`INCLUDE_REBUILD_FORBIDDEN`); surgical child-block insertion remains the only sanctioned path | negative: include + rebuild plan blocked |
+| `api.record-description-scope` | pre-write | BitableWriter envelope rejects `description` on non-VirtualNode records (`DESCRIPTION_SCOPE_VIOLATION`); executor update paths route through the envelope | negative: governed description write on a page record blocked |
+| `api.pr-verbatim-content` | plan, post-write | policy-kernel row: `pr` provenance plus verbatim context selects `patchStrategy: 'rebuild'`, applies the H1/footer-stripping normalizer, and forbids polish; `invariantAttestations` binds the content digest into the batch digest; replace/smart on a shape-mismatched document blocks pre-write; the hardened raw_content verifier proves postconditions into the journal and acceptance receipt | negative: in-place strategy on a differently-shaped document blocks; positive: title + PR-body-minus-H1 compares line-for-line |
+| `api.sdk-page-layout` | plan, post-write | renderer goldens (no single-request H3, bare builder signatures, no per-example H3); post-write sweep for `Request& (With|Add)` prefixes and the include-target audit replace the campaign sweep scripts | renderer goldens; sweep fixture |
+
+Delivery order within the phase (each step rides the previous boundary):
+
+1. Envelope level: `api.markdown-block-fidelity` and `api.absolute-link-urls` — the smallest change, blocking the most expensive failure class (partial executions discovered after the write).
+2. Registry pair with prose: `api.literal-include-preserved` and `api.record-description-scope`, adding the two missing Domain Invariants bullets in the same PR.
+3. `api.pr-verbatim-content` full chain: kernel row, attestation binding, hardened verifier, acceptance-receipt evidence.
+4. Reconciliation: a content reconciliation beside `tree-delta-reconciliation.js` — orphan-document sweep (percent-decoded block-link extraction, live-VirtualNode folder derivation), callout empty-child detection, reviewed-context versus live terminal-state agreement; findings keyed by invariant ID.
+5. Runbook and eval residue: move diagnostic methodology (scratch-docx bisection, three-way live dump, suspect manual Bitable edits first) into `references/troubleshooting.md`; add behavior-eval pressure cases; archive or productize the campaign scripts — no enforcement logic remains in gitignored tmp paths.
+
+Acceptance: a converter fed an unrepresentable token or a relative link, a rebuild plan over an include-bearing page, and a description-bearing page-record write all block with zero writer calls; a verbatim page's post-write evidence appears in the journal and the acceptance receipt; removing any Phase 4 fixture or registry entry fails admission. Diagnostic runbooks are not invariants; they live in references.
+
+### Phase 5 — Generalize across canonical skills
 
 - Apply the invariant registry and executable conformance runner to `localized-doc-sync`, `procedure-code-sync`, `verified-doc-authoring`, and `doc-code-verify`.
 - Promote existing high-risk prose rules first: source read-only, exact-block patching, unresolved-claim visibility, live verification gates, and post-write refetch.
@@ -333,7 +375,7 @@ Acceptance: repository tests cannot perform a simulated Feishu mutation through 
 
 Acceptance: all canonical skills produce complete invariant coverage reports; no `runtime-enforced` rule relies only on a prose assertion or model eval.
 
-### Phase 5 — Operational evidence and governance
+### Phase 6 — Operational evidence and governance
 
 - Publish admission artifacts containing rule coverage, deterministic results, model-eval trends, live-smoke receipts, and bypass inventory.
 - Add expiry and ownership to exceptions.
@@ -347,8 +389,9 @@ Acceptance: reviewers can answer “which code enforces this rule, on which path
 2. Phase 1 rule registry and admission failure for prose-only changes.
 3. Phase 2 PR #19 deterministic policy, corrected DAG, and reconciliation.
 4. Lowest-level writer envelope enforcement and legacy path migration.
-5. Generalization to the other canonical skills.
-6. Manual live smoke and then merge readiness review.
+5. Phase 4 campaign content-fidelity invariants — envelope level first, then the registry pair, the verbatim chain, and reconciliation.
+6. Generalization to the other canonical skills.
+7. Manual live smoke and then merge readiness review.
 
 This order first closes the demonstrated unsafe runtime path, then prevents the next prose-only rule from entering without executable coverage.
 
@@ -358,4 +401,5 @@ This order first closes the demonstrated unsafe runtime path, then prevents the 
 - Do not treat model-eval pass rates as proof of runtime safety.
 - Do not duplicate each language's delta logic in its `sdk-*.md`; keep one policy kernel and language-neutral fixtures, with track-specific exemptions only when explicitly reviewed.
 - Do not block read-only scouting, drafting, or comparison work on write-harness admission.
+- Do not encode diagnostic runbooks or wording guidance as runtime invariants; runbooks live in references, phrasing quality lives in evals.
 - Do not change production data as part of this planning phase.

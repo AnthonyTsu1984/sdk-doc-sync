@@ -13,6 +13,16 @@ const { validateDocumentIr } = require('../src/document-ir/validate');
 const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
 const { validateSdkLayout } = require('../src/renderers/sdk-layout-validator');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
+const {
+    normalizeVerbatimContent,
+    verbatimCarriesIncludeMarker,
+    verbatimContentDigest,
+} = require('../src/sdk-doc-sync/verbatim-content');
+const {
+    collectRelativeMarkdownLinks,
+    resolveRelativeLinks,
+    slugResolverFromRecords,
+} = require('../src/sdk-doc-sync/markdown-link-resolution');
 const { withoutSelfTypeUrls } = require('../src/sdk-doc-sync/type-url-index');
 const {
     getTrack,
@@ -348,12 +358,49 @@ function createSchemaFirstArtifactProvider({
             : defaultReferenceContext(action);
         // Merged-PR pages are solidified verbatim: when the reviewed context
         // carries the upstream markdown, it replaces the schema-first
-        // regenerated document entirely (block-replace patch strategy).
+        // regenerated document entirely (block-replace patch strategy). The
+        // content is normalized here (web-content footer + leading H1
+        // stripped) and bound into the artifact digest so the approved batch
+        // digest covers the exact solidified bytes (api.pr-verbatim-content).
         if (action?.pr && typeof context?.verbatimContent === 'string' && context.verbatimContent.trim()) {
+            let verbatimContent = normalizeVerbatimContent(context.verbatimContent);
+            // Resolve repository-relative links against the live KB index
+            // BEFORE the pre-write absolute-link guard would reject them —
+            // this is the sanctioned fix path (api.absolute-link-urls). An
+            // empty/absent KB index is NOT a reason to skip: content that
+            // carries relative links would then slip past approval and only
+            // fail at write time, after the plan digest was approved.
+            const indexRecords = Array.isArray(scope.index) ? scope.index : [];
+            if (collectRelativeMarkdownLinks(verbatimContent).length > 0) {
+                if (indexRecords.length === 0) {
+                    throw validationError(
+                        'RELATIVE_LINK_RESOLUTION_UNAVAILABLE',
+                        'verbatim content carries repo-relative .md links but no KB index was provided to resolve them; supply the reviewed index snapshot',
+                        { actionId: action?.stableId || null },
+                    );
+                }
+                verbatimContent = resolveRelativeLinks(verbatimContent, {
+                    resolveSlug: slugResolverFromRecords(indexRecords),
+                    currentCategory: typeof action?.stableId === 'string'
+                        ? action.stableId.split(':')[1] || null
+                        : null,
+                });
+            }
+            // Pages carrying user-authored <include> conditional markers are
+            // never rebuilt: the markers must survive verbatim, and the body
+            // is edited surgically instead (api.literal-include-preserved).
+            if (verbatimCarriesIncludeMarker(verbatimContent)) {
+                throw validationError(
+                    'INCLUDE_REBUILD_FORBIDDEN',
+                    'verbatim content carries literal <include> conditional markers; a rebuild artifact would re-derive the body — edit such pages with surgical child-block insertion',
+                    { actionId: action?.stableId || null },
+                );
+            }
             return {
                 reviewed: true,
                 validated: true,
-                content: context.verbatimContent,
+                content: verbatimContent,
+                contentDigest: verbatimContentDigest(verbatimContent),
                 patchStrategy: 'rebuild',
                 title: context.title,
                 metadata: { description: context.summary },

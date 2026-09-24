@@ -478,3 +478,78 @@ test('document-only acceptance sessions with zero touched records finalize witho
   assert.deepEqual(writes, [], 'zero touched records must produce zero mutations');
   assert.equal(writer.governance.isBound, false, 'no envelope is bound when there is nothing to mutate');
 });
+
+test('a passing content-fidelity outcome cannot mask a failed tree-delta outcome', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  const documents = [{ documentStableId: 'node:Collections:a', actionId: 'action-a', recordId: 'rec-a' }];
+  const corrupt = (entries) => {
+    for (const entry of entries) if (entry.type === 'tree-delta') entry.ok = false;
+    entries.push({
+      schemaVersion: 1, batchDigest: 'sha256:batch', type: 'content-fidelity',
+      actionId: entries[0].actionId, invariantId: 'api.pr-verbatim-content',
+      decision: 'PR_VERBATIM_REBUILD', ok: true, errors: [],
+    });
+    return entries;
+  };
+  const session = acceptancePendingSession(documents, {
+    journalOverrides: { 'action-a': (actionId) => unitJournal(actionId, corrupt) },
+  });
+  const finalizer = new AcceptanceFinalizer({
+    bitableWriter: {
+      async listRecords() { return [record('rec-a')]; },
+      async updateRecord() {},
+    },
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async () => {},
+    readJournalEntries: async (digest) => {
+      const entries = session.journals.get(digest);
+      if (!entries) throw new Error(`unknown journal ${digest}`);
+      return structuredClone(entries);
+    },
+  });
+  await assert.rejects(
+    () => finalizer.finalize({
+      userConfirmed: true,
+      reviewSession: session,
+      scanStateKey: 'cpp-v30',
+      scanStateEntry: { lastScannedTag: 'v3.0.1' },
+    }),
+    /requires a verified .* journal outcome for action action-a/,
+  );
+});
+
+test('a verbatim-attested unit without a journaled content-fidelity outcome is rejected', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  const documents = [{ documentStableId: 'node:Collections:a', actionId: 'action-a', recordId: 'rec-a' }];
+  const attestWithoutOutcome = (entries) => {
+    for (const entry of entries) if (entry.type === 'prepared') entry.invariantAttestationIds = ['api.pr-verbatim-content'];
+    return entries;
+  };
+  const session = acceptancePendingSession(documents, {
+    journalOverrides: { 'action-a': (actionId) => unitJournal(actionId, attestWithoutOutcome) },
+  });
+  const finalizer = new AcceptanceFinalizer({
+    bitableWriter: {
+      async listRecords() { return [record('rec-a')]; },
+      async updateRecord() {},
+    },
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async () => {},
+    readJournalEntries: async (digest) => {
+      const entries = session.journals.get(digest);
+      if (!entries) throw new Error(`unknown journal ${digest}`);
+      return structuredClone(entries);
+    },
+  });
+  await assert.rejects(
+    () => finalizer.finalize({
+      userConfirmed: true,
+      reviewSession: session,
+      scanStateKey: 'cpp-v30',
+      scanStateEntry: { lastScannedTag: 'v3.0.1' },
+    }),
+    /requires a passing content-fidelity journal outcome for action action-a/,
+  );
+});

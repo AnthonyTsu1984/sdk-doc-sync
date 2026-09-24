@@ -116,7 +116,12 @@ class AcceptanceFinalizer {
     // itself disqualifying. Foreign invariant ids are not evidence.
     const treeDeltaByActionId = new Map();
     const contentFidelityByActionId = new Map();
+    const attestedInvariantsByActionId = new Map();
     for (const entry of entries) {
+      if (entry?.type === 'prepared' && Array.isArray(entry.invariantAttestationIds)) {
+        attestedInvariantsByActionId.set(entry.actionId, entry.invariantAttestationIds);
+        continue;
+      }
       if (entry?.type !== 'tree-delta' && entry?.type !== 'content-fidelity') continue;
       const expectedInvariantId = entry.type === 'tree-delta' ? INVARIANT_ID : VERBATIM_INVARIANT_ID;
       if (entry.invariantId !== expectedInvariantId) continue;
@@ -136,9 +141,15 @@ class AcceptanceFinalizer {
       if (!treeDelta || treeDelta.ok !== true) {
         throw invariantEvidenceError(`Acceptance requires a verified ${INVARIANT_ID} journal outcome for action ${record?.actionId || '(missing)'} in unit ${unit.reviewUnitId}`);
       }
-      const contentFidelity = contentFidelityByActionId.get(record.actionId);
-      if (contentFidelity && contentFidelity.ok !== true) {
-        throw invariantEvidenceError(`Acceptance requires a passing content-fidelity journal outcome for action ${record.actionId} in unit ${unit.reviewUnitId}`);
+      // A verbatim-attested action (declared on the journaled prepared entry)
+      // must carry a PASSING content-fidelity outcome — a missing one is
+      // fail-open acceptance of unverified verbatim content.
+      const attestedInvariants = attestedInvariantsByActionId.get(record.actionId) || [];
+      if (attestedInvariants.includes(VERBATIM_INVARIANT_ID)) {
+        const contentFidelity = contentFidelityByActionId.get(record.actionId);
+        if (!contentFidelity || contentFidelity.ok !== true) {
+          throw invariantEvidenceError(`Acceptance requires a passing content-fidelity journal outcome for action ${record.actionId} in unit ${unit.reviewUnitId}`);
+        }
       }
       const observed = entries.find((entry) => entry.type === 'observed'
         && entry.actionId === record.actionId
@@ -152,7 +163,8 @@ class AcceptanceFinalizer {
         decision: treeDelta.decision,
         verified: true,
       });
-      if (contentFidelity) {
+      const contentFidelity = contentFidelityByActionId.get(record.actionId);
+      if (contentFidelity && contentFidelity.ok === true) {
         evidence.push({
           actionId: contentFidelity.actionId,
           invariantId: contentFidelity.invariantId,

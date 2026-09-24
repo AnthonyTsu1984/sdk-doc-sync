@@ -16,18 +16,6 @@ require('dotenv').config();
 
 const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
 
-// Refetch fixed point for native table cells: Feishu stores single-line cell
-// text with a trailing line break, which markdown rendering surfaces as
-// `<br>` before the cell separator. Verification normalization strips
-// end-of-cell breaks only; in-cell line breaks stay
-// (api.markdown-block-fidelity canonicalization).
-function normalizeRefetchedMarkdown(markdown) {
-    return String(markdown || '')
-        .split('\n')
-        .map((line) => (line.startsWith('|') ? line.replace(/<br>\s*\|/g, ' |') : line))
-        .join('\n');
-}
-
 class MarkdownToFeishu {
     constructor({ sourceType = 'drive', rootToken, baseToken, document_id = null, governance = null }) {
         this.source_type = sourceType;
@@ -2966,5 +2954,7 @@ class MarkdownToFeishu {
     }
 }
 
+// The canonical end-of-cell `<br>` fixed point lives in verbatim-content.js
+// (api.pr-verbatim-content canonicalization); re-exported for compatibility.
 module.exports = MarkdownToFeishu;
-module.exports.normalizeRefetchedMarkdown = normalizeRefetchedMarkdown;
+module.exports.normalizeRefetchedMarkdown = require('./sdk-doc-sync/verbatim-content').normalizeRefetchedMarkdown;

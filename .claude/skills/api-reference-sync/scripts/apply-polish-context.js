@@ -41,7 +41,11 @@ function applyPolish(contextsDoc, polishUnits) {
             continue;
         }
         const plan = { unitId, ctx, params: new Map() };
-        if (unit.summary !== undefined && unit.summary !== null) plan.summary = strip(unit.summary);
+        // Presence-based: a polish unit may CLEAR a field to '' — the
+        // mutation must run and store the empty string, not silently skip
+        // while still reporting the unit as applied.
+        plan.hasSummary = unit.summary !== undefined && unit.summary !== null;
+        if (plan.hasSummary) plan.summary = strip(unit.summary);
         const ctxParams = new Map((ctx.params || []).map((param) => [param.name, param]));
         for (const [name, description] of Object.entries(unit.params || {})) {
             if (!ctxParams.has(name)) {
@@ -86,7 +90,7 @@ function applyPolish(contextsDoc, polishUnits) {
 
     // Mutation pass — only after every unit validated.
     for (const plan of plans) {
-        if (plan.summary) plan.ctx.summary = plan.summary;
+        if (plan.hasSummary) plan.ctx.summary = plan.summary;
         if (plan.resultDescription !== undefined) plan.ctx.result.description = plan.resultDescription;
         for (const { param, description } of plan.params.values()) {
             param.description = description;

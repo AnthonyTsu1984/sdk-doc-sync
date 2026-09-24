@@ -68,3 +68,11 @@ test('applyPolish rejects count mismatches and resultDescription without a resul
     ]);
     assert.equal(noResult.errors[0].includes('ctx.result is undefined'), true);
 });
+
+test('clearing a field to an empty string is applied and reported', () => {
+  const doc = contextsDoc();
+  const { applied, errors } = applyPolish(doc, [{ unit: 'cpp:Auth:DescribeRole', summary: '' }]);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(applied, ['cpp:Auth:DescribeRole']);
+  assert.equal(doc.contexts['cpp:Auth:DescribeRole'].summary, '');
+});

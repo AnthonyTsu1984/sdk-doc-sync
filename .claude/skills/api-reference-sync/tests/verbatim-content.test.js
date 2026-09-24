@@ -94,3 +94,14 @@ test('the raw_content title line is dropped even when the caller cannot name it'
     });
     assert.equal(comparison.ok, true);
 });
+
+test('blank-line differences beyond the title separator remain visible diffs', () => {
+    // Two blank lines after the title on the live page (a manual edit) must
+    // not be masked by canonicalization — empty lines are significant.
+    const comparison = compareVerbatimContent({
+        expectedContent: 'first\nsecond',
+        rawContent: 'title\n\n\nfirst\nsecond',
+    });
+    assert.equal(comparison.ok, false);
+    assert.ok(comparison.diffs.length > 0);
+});

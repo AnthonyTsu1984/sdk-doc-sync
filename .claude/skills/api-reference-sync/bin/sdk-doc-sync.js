@@ -19,6 +19,7 @@ const {
     verbatimContentDigest,
 } = require('../src/sdk-doc-sync/verbatim-content');
 const {
+    collectRelativeMarkdownLinks,
     resolveRelativeLinks,
     slugResolverFromRecords,
 } = require('../src/sdk-doc-sync/markdown-link-resolution');
@@ -365,9 +366,19 @@ function createSchemaFirstArtifactProvider({
             let verbatimContent = normalizeVerbatimContent(context.verbatimContent);
             // Resolve repository-relative links against the live KB index
             // BEFORE the pre-write absolute-link guard would reject them —
-            // this is the sanctioned fix path (api.absolute-link-urls).
+            // this is the sanctioned fix path (api.absolute-link-urls). An
+            // empty/absent KB index is NOT a reason to skip: content that
+            // carries relative links would then slip past approval and only
+            // fail at write time, after the plan digest was approved.
             const indexRecords = Array.isArray(scope.index) ? scope.index : [];
-            if (indexRecords.length > 0) {
+            if (collectRelativeMarkdownLinks(verbatimContent).length > 0) {
+                if (indexRecords.length === 0) {
+                    throw validationError(
+                        'RELATIVE_LINK_RESOLUTION_UNAVAILABLE',
+                        'verbatim content carries repo-relative .md links but no KB index was provided to resolve them; supply the reviewed index snapshot',
+                        { actionId: action?.stableId || null },
+                    );
+                }
                 verbatimContent = resolveRelativeLinks(verbatimContent, {
                     resolveSlug: slugResolverFromRecords(indexRecords),
                     currentCategory: typeof action?.stableId === 'string'

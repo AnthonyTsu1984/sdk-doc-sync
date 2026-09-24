@@ -829,6 +829,13 @@ class SdkDocSync {
                     dependsOn: batchAction.dependsOn,
                     preconditionDigest: digestSemantic(planned.plan.preconditions || []),
                     mutation: { action: planned.plan.action, artifactDigest: planned.plan.artifactDigest },
+                    // Attested invariant ids ride the prepared entry so the
+                    // acceptance finalizer can require per-invariant
+                    // evidence (e.g. content-fidelity for verbatim pages)
+                    // without trusting the caller.
+                    invariantAttestationIds: (planned.plan.invariantAttestations || [])
+                        .map((attestation) => attestation?.id)
+                        .filter((id) => typeof id === 'string' && id.length > 0),
                     rollbackCapsule,
                 });
                 if (failedDependencies.length > 0) {

@@ -8,15 +8,16 @@
 // raw_content against the same canonicalization that produced the digest.
 //
 // refetchChannel: raw_content (GET /docx/v1/documents/{id}/raw_content).
-// canonicalVersion: 1 — declared normalization applied to BOTH sides:
+// canonicalVersion: 2 — declared normalization applied to BOTH sides:
 //   - drop the leading page-title line (raw_content line 1 is the title);
 //   - drop `[dotenv …]` stdout noise lines captured into dumps;
+//   - align exactly ONE separator blank line at each edge (after the title,
+//     and the trailing newline the normalizer appends) — FURTHER blank-line
+//     differences are diffs, because empty lines are significant;
 //   - outside code fences: strip rendered link markup `[text](url)` → text,
 //     html-unescape entities, strip leading heading hashes, normalize bullet
-//     markers, and strip end-of-cell `<br>` in pipe-table rows (the write
-//     side of that fixed point lives in markdown-to-feishu
-//     normalizeRefetchedMarkdown).
-// Lines inside code fences stay verbatim; empty lines are significant.
+//     markers, and strip end-of-cell `<br>` in pipe-table rows.
+// Lines inside code fences stay verbatim.
 
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
@@ -38,6 +39,17 @@ const HTML_ENTITIES = {
 };
 const INCLUDE_MARKER = /<include\s+target=/i;
 const FENCE_LINE = /^\s*`{3,}/;
+
+// The end-of-cell `<br>` fixed point: Feishu stores single-line cell text
+// with a trailing line break, which markdown rendering surfaces as `<br>`
+// before the cell separator. Strips end-of-cell breaks only; in-cell line
+// breaks stay. Canonical definition — markdown-to-feishu re-exports this.
+function normalizeRefetchedMarkdown(markdown) {
+    return String(markdown || '')
+        .split('\n')
+        .map((line) => (line.startsWith('|') ? line.replace(/<br>\s*\|/g, ' |') : line))
+        .join('\n');
+}
 
 // Strips the trailing web-content metadata comment and the leading H1 (the
 // Feishu page title already carries the interface name). Idempotent.
@@ -81,7 +93,7 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
             line = line.replace(BULLET_PREFIX, '$1');
             line = line.replace(INLINE_LINK, '$1');
             line = htmlUnescape(line);
-            if (line.startsWith('|')) line = line.replace(/<br>\s*\|/g, ' |');
+            if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
         }
         out.push(line);
     }
@@ -95,13 +107,14 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     // off-by-one false divergence).
     const expected = canonicalVerbatimLines({ markdown: normalizeVerbatimContent(expectedContent) });
     const observed = canonicalVerbatimLines({ markdown: rawContent, dropLeadingTitle: true });
-    // The write body carries no leading blank line (trimStart in the
-    // normalizer) while raw_content keeps the blank after the title line —
-    // align both sides by dropping leading and trailing blank lines.
-    while (expected.length > 0 && expected[0] === '') expected.shift();
-    while (observed.length > 0 && observed[0] === '') observed.shift();
-    while (expected.length > 0 && expected[expected.length - 1] === '') expected.pop();
-    while (observed.length > 0 && observed[observed.length - 1] === '') observed.pop();
+    // Align the KNOWN separator blanks — the blank after the raw_content
+    // title line, and the single trailing newline the normalizer appends —
+    // by stripping at most one blank line per edge. Further blank-line
+    // differences remain diffs: empty lines are significant.
+    if (expected[0] === '') expected.shift();
+    if (observed[0] === '') observed.shift();
+    if (expected[expected.length - 1] === '') expected.pop();
+    if (observed[observed.length - 1] === '') observed.pop();
     const diffs = [];
     const max = Math.max(expected.length, observed.length);
     for (let index = 0; index < max; index += 1) {
@@ -114,7 +127,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     return {
         ok: diffs.length === 0,
         invariantId: INVARIANT_ID,
-        canonicalVersion: 1,
+        canonicalVersion: 2,
         expectedLines: expected.length,
         observedLines: observed.length,
         diffs: diffs.slice(0, 20),
@@ -123,6 +136,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
 
 module.exports = {
     INVARIANT_ID,
+    normalizeRefetchedMarkdown,
     normalizeVerbatimContent,
     verbatimContentDigest,
     verbatimCarriesIncludeMarker,

@@ -84,7 +84,9 @@ class BitableWriter {
         // refused before the write; clearing (null/undefined/empty string)
         // stays allowed. Structured values (e.g. Feishu text-run arrays from
         // rollback restores) are enforced, not skipped — only a true clear
-        // bypasses the check. (api.record-description-scope)
+        // bypasses the check. createRecord has no recordId to re-read, so a
+        // description without an explicit Type fails closed by design
+        // (api.record-description-scope).
         const description = fieldsView.Description;
         if (description === undefined || description === null) return;
         if (typeof description === 'string' && description.trim() === '') return;

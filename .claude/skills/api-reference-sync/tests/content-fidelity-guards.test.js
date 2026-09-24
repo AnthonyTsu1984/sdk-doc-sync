@@ -146,3 +146,35 @@ test('structured description values (text-run arrays) are enforced, not skipped'
   );
   assert.deepEqual(writeCalls, []);
 });
+
+test('relative links with no KB index to resolve against are refused at plan time', async () => {
+  const cliModule = loadWithFetch('../bin/sdk-doc-sync', async () => {
+    throw new Error('network must not be reached');
+  });
+  const provider = cliModule.createSchemaFirstArtifactProvider({
+    language: 'cpp',
+    referenceContextProvider: async () => ({
+      verbatimContent: 'see [Search](../Vector/Search.md)',
+      title: 'X()',
+      summary: 'summary',
+    }),
+  });
+  await assert.rejects(
+    provider({ type: 'UPDATE', stableId: 'cpp:Vector:X', pr: { number: 1, path: 'X.md' } }, { index: [] }),
+    (error) => error.code === 'RELATIVE_LINK_RESOLUTION_UNAVAILABLE',
+  );
+  // With the reviewed index supplied, the same content resolves cleanly.
+  const resolving = cliModule.createSchemaFirstArtifactProvider({
+    language: 'cpp',
+    referenceContextProvider: async () => ({
+      verbatimContent: 'see [Search](../Vector/Search.md)',
+      title: 'X()',
+      summary: 'summary',
+    }),
+  });
+  const artifact = await resolving(
+    { type: 'UPDATE', stableId: 'cpp:Vector:Search', pr: { number: 1, path: 'X.md' } },
+    { index: [{ fields: { Slug: 'Vector-Search', Docs: { text: 'Search', link: 'https://zilliverse.feishu.cn/docx/AAA' } } }] },
+  );
+  assert.ok(artifact.content.includes('https://zilliverse.feishu.cn/docx/AAA'));
+});

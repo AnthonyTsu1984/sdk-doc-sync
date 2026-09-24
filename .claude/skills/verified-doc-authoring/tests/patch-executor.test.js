@@ -106,11 +106,19 @@ test('executor journals exact patch, refetches, and acceptance binds claims and 
     executionJournalDigest: result.executionJournalDigest,
     liveResultDigest: result.liveResultDigest,
     decisionDigest: `sha256:${'d'.repeat(64)}`,
-    rollbackManifestDigest: rollback.rollbackManifestDigest,
+    rollbackManifest: rollback,
   });
   assert.equal(session.status, 'accepted');
   assert.equal(session.acceptanceReceipt.claimInventoryDigest, patchPlan.claimInventory.inventoryDigest);
   assert.equal(session.acceptanceReceipt.rollbackManifestDigest, rollback.rollbackManifestDigest);
+  // A manifest whose claimed digest does not match its content is refused.
+  const pendingSession = recordAuthoringExecution(createAuthoringSession({ sessionId: 'authoring:3', plan: patchPlan }), result);
+  assert.throws(() => recordAuthoringAcceptance(pendingSession, {
+    executionJournalDigest: result.executionJournalDigest,
+    liveResultDigest: result.liveResultDigest,
+    decisionDigest: `sha256:${'d'.repeat(64)}`,
+    rollbackManifest: { ...rollback, rollbackManifestDigest: `sha256:${'0'.repeat(64)}` },
+  }), /digest mismatch/i);
 });
 
 test('rollback differentiates existing restoration from proven dependency-free creation deletion', () => {

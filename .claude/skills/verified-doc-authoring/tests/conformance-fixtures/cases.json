@@ -132,6 +132,7 @@
   "id": "authoring-rollback-plan-required",
   "assertions": {
    "code": "ROLLBACK_PLAN_REQUIRED",
+   "forgedCode": "ROLLBACK_PLAN_INVALID",
    "sessionStatus": "acceptance_pending"
   },
   "executable": {
@@ -159,6 +160,17 @@
   "executable": {
    "runner": "invariant-conformance",
    "scenario": "authoringRollbackBoundPositive"
+  }
+ },
+ {
+  "id": "authoring-rollback-session-mismatch",
+  "assertions": {
+   "code": "ROLLBACK_MANIFEST_SESSION_MISMATCH",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackSessionMismatch"
   }
  }
 ]

@@ -259,7 +259,26 @@ const scenarios = {
     } catch (error) {
       code = error.code || null;
     }
-    return { code, sessionStatus: session.status };
+    // A self-asserted digest on an arbitrary object is not enough either: the
+    // content must hash to the claimed digest.
+    let forgedCode = null;
+    try {
+      recordAuthoringAcceptance(session, {
+        executionJournalDigest: result.executionJournalDigest,
+        liveResultDigest: result.liveResultDigest,
+        decisionDigest: DECISION_DIGEST,
+        rollbackManifest: {
+          schemaVersion: 1,
+          reviewUnitId: plan.reviewUnitId,
+          originalExecutionJournalDigest: result.executionJournalDigest,
+          actions: [{ operation: 'restore-before-state', documentId: 'doc-1', beforeState: plan.target }],
+          rollbackManifestDigest: `sha256:${'0'.repeat(64)}`,
+        },
+      });
+    } catch (error) {
+      forgedCode = error.code || null;
+    }
+    return { code, forgedCode, sessionStatus: session.status };
   },
 
   authoringRollbackCreationUnproven() {
@@ -296,13 +315,44 @@ const scenarios = {
       executionJournalDigest: result.executionJournalDigest,
       liveResultDigest: result.liveResultDigest,
       decisionDigest: DECISION_DIGEST,
-      rollbackManifestDigest: rollback.rollbackManifestDigest,
+      rollbackManifest: rollback,
     });
     return {
       status: session.status,
       rollbackOperation: rollback.actions[0].operation,
       rollbackDigestBound: session.acceptanceReceipt.rollbackManifestDigest === rollback.rollbackManifestDigest,
     };
+  },
+
+  async authoringRollbackSessionMismatch() {
+    const plan = planFixture();
+    const result = await executeAuthoringPatch({
+      plan,
+      approval: approvalFixture(plan),
+      journalPath: tmpJournal(),
+      adapter: happyAdapter(plan),
+    });
+    let session = createAuthoringSession({ sessionId: 'authoring:conf:3', plan });
+    session = recordAuthoringExecution(session, result);
+    // A real manifest from a DIFFERENT execution: digest is internally
+    // consistent, but the journal binding does not match this session.
+    const rollback = planAuthoringRollback({
+      plan,
+      execution: { ...result, executionJournalDigest: `sha256:${'e'.repeat(64)}` },
+      liveState: { documentId: result.documentId, protectedBlocksDigest: plan.target.protectedBlocksDigest },
+    });
+    let code = null;
+    try {
+      recordAuthoringAcceptance(session, {
+        executionJournalDigest: result.executionJournalDigest,
+        liveResultDigest: result.liveResultDigest,
+        decisionDigest: DECISION_DIGEST,
+        rollbackManifest: rollback,
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, sessionStatus: session.status };
   },
 };
 

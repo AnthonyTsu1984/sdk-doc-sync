@@ -104,7 +104,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       executionJournalDigest: session.execution?.executionJournalDigest,
       liveResultDigest: session.execution?.liveResultDigest,
       decisionDigest: args.decisionDigest,
-      rollbackManifestDigest: readJson(args.rollbackManifest).rollbackManifestDigest,
+      rollbackManifest: readJson(args.rollbackManifest),
     });
     saveAuthoringSession(args.session, accepted);
     if (args.output) writeJson(args.output, accepted.acceptanceReceipt);

@@ -150,6 +150,8 @@
           "module": ".claude/skills/verified-doc-authoring/src/review-session-store.js",
           "codes": [
             "ROLLBACK_PLAN_REQUIRED",
+            "ROLLBACK_PLAN_INVALID",
+            "ROLLBACK_MANIFEST_SESSION_MISMATCH",
             "ACCEPTANCE_NOT_PENDING",
             "ACCEPTANCE_EVIDENCE_MISMATCH",
             "EXECUTION_SESSION_MISMATCH",

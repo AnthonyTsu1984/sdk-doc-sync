@@ -38,11 +38,32 @@ function recordAuthoringExecution(session, execution) {
   return Object.freeze({ ...structuredClone(session), status: 'acceptance_pending', execution: structuredClone(execution) });
 }
 
-function recordAuthoringAcceptance(session, { executionJournalDigest, liveResultDigest, decisionDigest, rollbackManifestDigest }) {
-  if (session.status !== 'acceptance_pending') throw typedError('ACCEPTANCE_NOT_PENDING', 'Authoring acceptance is not pending');
-  if (typeof rollbackManifestDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(rollbackManifestDigest)) {
-    throw typedError('ROLLBACK_PLAN_REQUIRED', 'Acceptance requires the corrective rollback plan manifest digest generated before finalization');
+// The caller supplies the whole corrective rollback manifest; the digest is
+// recomputed from its semantic content so a self-asserted digest field can
+// never admit acceptance, and the manifest must belong to this review unit
+// and this execution journal.
+function verifyRollbackManifest(session, rollbackManifest) {
+  if (!rollbackManifest || typeof rollbackManifest !== 'object' || Array.isArray(rollbackManifest)) {
+    throw typedError('ROLLBACK_PLAN_REQUIRED', 'Acceptance requires the corrective rollback plan generated before finalization');
   }
+  const { schemaVersion, reviewUnitId, originalExecutionJournalDigest, actions, rollbackManifestDigest } = rollbackManifest;
+  if (typeof rollbackManifestDigest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(rollbackManifestDigest)
+      || schemaVersion !== 1 || !Array.isArray(actions)) {
+    throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback manifest is malformed or carries a non-digest field');
+  }
+  const recomputed = digestSemantic({ schemaVersion, reviewUnitId, originalExecutionJournalDigest, actions });
+  if (recomputed !== rollbackManifestDigest) {
+    throw typedError('ROLLBACK_PLAN_INVALID', `Rollback manifest digest mismatch: content hashes to ${recomputed}, manifest claims ${rollbackManifestDigest}`);
+  }
+  if (reviewUnitId !== session.reviewUnitId || originalExecutionJournalDigest !== session.execution.executionJournalDigest) {
+    throw typedError('ROLLBACK_MANIFEST_SESSION_MISMATCH', 'Rollback manifest was generated for a different review unit or execution journal');
+  }
+  return rollbackManifestDigest;
+}
+
+function recordAuthoringAcceptance(session, { executionJournalDigest, liveResultDigest, decisionDigest, rollbackManifest }) {
+  if (session.status !== 'acceptance_pending') throw typedError('ACCEPTANCE_NOT_PENDING', 'Authoring acceptance is not pending');
+  const rollbackManifestDigest = verifyRollbackManifest(session, rollbackManifest);
   if (executionJournalDigest !== session.execution.executionJournalDigest || liveResultDigest !== session.execution.liveResultDigest) {
     throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance is bound to different execution evidence');
   }

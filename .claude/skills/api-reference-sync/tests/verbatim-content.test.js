@@ -62,10 +62,12 @@ test('compareVerbatimContent reconciles rendered raw_content through the declare
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded, pageTitle: 'X()' });
     assert.equal(landed.ok, true);
     assert.equal(landed.invariantId, 'api.pr-verbatim-content');
+    assert.equal(landed.canonicalVersion, 3);
     assert.deepEqual(landed.diffs, []);
 
-    // Code fences stay verbatim: a changed line inside a fence must fail.
-    const rawFenced = `${rawLanded}\n\n\`\`\`cpp\nold();\n\`\`\``;
+    // Code content lines compare exactly: a changed line that landed as code
+    // text must fail even though the serializer drops the fence delimiters.
+    const rawFenced = `${rawLanded}\nold();`;
     const driftedFence = compareVerbatimContent({
         expectedContent: `${upstream}\n\n\`\`\`cpp\nnew();\n\`\`\``,
         rawContent: rawFenced,
@@ -95,13 +97,82 @@ test('the raw_content title line is dropped even when the caller cannot name it'
     assert.equal(comparison.ok, true);
 });
 
-test('blank-line differences beyond the title separator remain visible diffs', () => {
-    // Two blank lines after the title on the live page (a manual edit) must
-    // not be masked by canonicalization — empty lines are significant.
-    const comparison = compareVerbatimContent({
-        expectedContent: 'first\nsecond',
-        rawContent: 'title\n\n\nfirst\nsecond',
+test('canonicalization v3 absorbs exactly the tokens the raw_content serializer cannot carry', () => {
+    // Landed-shape fixture derived from the first real code-bearing verbatim
+    // unit (cpp Management/ListRefreshExternalCollectionJobs, PR #1151): the
+    // upstream markdown carries fences, bold labels, backticked builders,
+    // indented descriptions, and blank lines — the serializer carries none of
+    // them, so canonicalization v3 ignores those tokens on both sides.
+    const upstream = [
+        '# ListRefreshExternalCollectionJobs()',
+        '',
+        'This operation lists refresh jobs for external collections.',
+        '',
+        '```cpp',
+        'Status ListRefreshExternalCollectionJobs(const ListRefreshExternalCollectionJobsRequest& request)',
+        '```',
+        '',
+        '## Request Syntax',
+        '',
+        '```cpp',
+        'auto request = milvus::ListRefreshExternalCollectionJobsRequest()',
+        '    .WithDatabaseName(db_name)',
+        '    .WithCollectionName(collection_name);',
+        '```',
+        '',
+        '**REQUEST METHODS:**',
+        '',
+        '- `WithDatabaseName(const std::string& db_name)`',
+        '',
+        '    Sets the target database name. The default database applies if it is empty.',
+        '',
+        '**RETURNS:**',
+        '',
+        '*Status*',
+        '',
+        '## Example',
+        '',
+        '```cpp',
+        'auto status = client->ListRefreshExternalCollectionJobs(request, response);',
+        '    std::cout << status.Message() << std::endl;',
+        '```',
+    ].join('\n');
+    const rawLanded = [
+        'ListRefreshExternalCollectionJobs()',
+        'This operation lists refresh jobs for external collections.',
+        'Status ListRefreshExternalCollectionJobs(const ListRefreshExternalCollectionJobsRequest& request)',
+        'Request Syntax',
+        'auto request = milvus::ListRefreshExternalCollectionJobsRequest()',
+        '.WithDatabaseName(db_name)',
+        '.WithCollectionName(collection_name);',
+        'REQUEST METHODS:',
+        'WithDatabaseName(const std::string& db_name)',
+        'Sets the target database name. The default database applies if it is empty.',
+        'RETURNS:',
+        'Status',
+        'Example',
+        'auto status = client->ListRefreshExternalCollectionJobs(request, response);',
+        'std::cout << status.Message() << std::endl;',
+    ].join('\n');
+    const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded });
+    assert.equal(landed.ok, true, `expected v3 to absorb serializer-only tokens: ${JSON.stringify(landed.diffs.slice(0, 3))}`);
+    assert.equal(landed.canonicalVersion, 3);
+
+    // A genuinely missing content line still fails: drop the builder row.
+    const missingBuilder = compareVerbatimContent({
+        expectedContent: upstream,
+        rawContent: rawLanded
+            .replace('WithDatabaseName(const std::string& db_name)\n', '')
+            .replace('Sets the target database name. The default database applies if it is empty.\n', ''),
     });
-    assert.equal(comparison.ok, false);
-    assert.ok(comparison.diffs.length > 0);
+    assert.equal(missingBuilder.ok, false);
+    assert.ok(missingBuilder.diffs.length > 0);
+
+    // A genuinely altered code line still fails.
+    const alteredCode = compareVerbatimContent({
+        expectedContent: upstream,
+        rawContent: rawLanded.replace('auto status = client->ListRefreshExternalCollectionJobs(request, response);', 'auto status = client->ListRefreshExternalCollectionJobs(request);'),
+    });
+    assert.equal(alteredCode.ok, false);
+    assert.ok(alteredCode.diffs.length > 0);
 });

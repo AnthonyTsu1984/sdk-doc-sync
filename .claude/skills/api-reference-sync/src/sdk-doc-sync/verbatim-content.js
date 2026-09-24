@@ -8,16 +8,25 @@
 // raw_content against the same canonicalization that produced the digest.
 //
 // refetchChannel: raw_content (GET /docx/v1/documents/{id}/raw_content).
-// canonicalVersion: 2 — declared normalization applied to BOTH sides:
+// The raw_content serializer carries content but not presentation tokens:
+// it never emits fence delimiter lines, bold/italic/inline-code markers,
+// paragraph separator blanks, or any leading whitespace — including inside
+// code blocks. The declared normalization therefore compares content lines
+// and ignores exactly those tokens.
+// canonicalVersion: 3 — declared normalization applied to BOTH sides:
 //   - drop the leading page-title line (raw_content line 1 is the title);
 //   - drop `[dotenv …]` stdout noise lines captured into dumps;
-//   - align exactly ONE separator blank line at each edge (after the title,
-//     and the trailing newline the normalizer appends) — FURTHER blank-line
-//     differences are diffs, because empty lines are significant;
-//   - outside code fences: strip rendered link markup `[text](url)` → text,
-//     html-unescape entities, strip leading heading hashes, normalize bullet
-//     markers, and strip end-of-cell `<br>` in pipe-table rows.
-// Lines inside code fences stay verbatim.
+//   - drop fence delimiter lines (```/~~~) while tracking fenced state, so
+//     code CONTENT lines still compare verbatim;
+//   - strip ALL leading whitespace on every line (the serializer keeps no
+//     indentation, inside or outside code);
+//   - drop empty lines (the serializer inserts none);
+//   - outside fenced code: strip rendered link markup `[text](url)` → text,
+//     bold/italic/inline-code markers, html-unescape entities, strip leading
+//     heading hashes, normalize bullet markers, and strip end-of-cell `<br>`
+//     in pipe-table rows.
+// Code content lines still compare exactly: a missing or altered code line,
+// builder row, or parameter description is a diff.
 
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
@@ -83,15 +92,20 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
     for (const raw of lines) {
         if (FENCE_LINE.test(raw)) {
             inFence = !inFence;
-            out.push(raw.trimEnd());
             continue;
         }
         if (NOISE_LINE.test(raw)) continue;
-        let line = raw.trimEnd();
+        // The raw_content serializer keeps no leading whitespace anywhere —
+        // paragraphs and code content alike — so indentation is not evidence.
+        let line = raw.replace(/^\s+/, '').trimEnd();
+        if (line === '') continue;
         if (!inFence) {
             line = line.replace(HEADING_PREFIX, '');
-            line = line.replace(BULLET_PREFIX, '$1');
+            line = line.replace(BULLET_PREFIX, '');
             line = line.replace(INLINE_LINK, '$1');
+            line = line.replace(/(\*\*|__)(.*?)\1/g, '$2');
+            line = line.replace(/(^|[^\\])\*([^*\n]+)\*/g, '$1$2');
+            line = line.replace(/`([^`]*)`/g, '$1');
             line = htmlUnescape(line);
             if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
         }
@@ -107,14 +121,6 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     // off-by-one false divergence).
     const expected = canonicalVerbatimLines({ markdown: normalizeVerbatimContent(expectedContent) });
     const observed = canonicalVerbatimLines({ markdown: rawContent, dropLeadingTitle: true });
-    // Align the KNOWN separator blanks — the blank after the raw_content
-    // title line, and the single trailing newline the normalizer appends —
-    // by stripping at most one blank line per edge. Further blank-line
-    // differences remain diffs: empty lines are significant.
-    if (expected[0] === '') expected.shift();
-    if (observed[0] === '') observed.shift();
-    if (expected[expected.length - 1] === '') expected.pop();
-    if (observed[observed.length - 1] === '') observed.pop();
     const diffs = [];
     const max = Math.max(expected.length, observed.length);
     for (let index = 0; index < max; index += 1) {
@@ -127,7 +133,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     return {
         ok: diffs.length === 0,
         invariantId: INVARIANT_ID,
-        canonicalVersion: 2,
+        canonicalVersion: 3,
         expectedLines: expected.length,
         observedLines: observed.length,
         diffs: diffs.slice(0, 20),

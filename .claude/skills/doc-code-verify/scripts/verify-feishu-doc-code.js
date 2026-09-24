@@ -421,7 +421,7 @@ function classify(snippet, opts) {
 
     if (ann.mode === 'run') {
         const gate = annotatedRunGate({ allowRun: opts.allowRun, live: opts.live, safetyFlags });
-        return { action: gate.action, reason: gate.reason, safetyFlags };
+        return { action: gate.action, code: gate.code, reason: gate.reason, safetyFlags };
     }
 
     if (ann.mode === 'live' && !opts.live && !['json', 'yaml', 'toml', 'python', 'bash', 'javascript', 'typescript', 'go', 'java', 'cpp', 'c'].includes(lang)) {

@@ -1006,6 +1006,91 @@
       "stableId": "cpp:Management:GetFlushAllState",
       "canonicalSlug": "Management-GetFlushAllState",
       "category": "Management"
+    },
+    "Authentication.PrivilegeGroupInfo": {
+      "stableId": "cpp:Authentication:PrivilegeGroupInfo",
+      "canonicalSlug": "Authentication-PrivilegeGroupInfo",
+      "category": "Authentication"
+    },
+    "Authentication.RoleDesc": {
+      "stableId": "cpp:Authentication:RoleDesc",
+      "canonicalSlug": "Authentication-RoleDesc",
+      "category": "Authentication"
+    },
+    "Authentication.UserDesc": {
+      "stableId": "cpp:Authentication:UserDesc",
+      "canonicalSlug": "Authentication-UserDesc",
+      "category": "Authentication"
+    },
+    "Client.RetryParam": {
+      "stableId": "cpp:Client:RetryParam",
+      "canonicalSlug": "Client-RetryParam",
+      "category": "Client"
+    },
+    "Collections.AliasDesc": {
+      "stableId": "cpp:Collections:AliasDesc",
+      "canonicalSlug": "Collections-AliasDesc",
+      "category": "Collections"
+    },
+    "Collections.CollectionDesc": {
+      "stableId": "cpp:Collections:CollectionDesc",
+      "canonicalSlug": "Collections-CollectionDesc",
+      "category": "Collections"
+    },
+    "Collections.CollectionInfo": {
+      "stableId": "cpp:Collections:CollectionInfo",
+      "canonicalSlug": "Collections-CollectionInfo",
+      "category": "Collections"
+    },
+    "Collections.CollectionSchema": {
+      "stableId": "cpp:Collections:CollectionSchema",
+      "canonicalSlug": "Collections-CollectionSchema",
+      "category": "Collections"
+    },
+    "Collections.ConsistencyLevel": {
+      "stableId": "cpp:Collections:ConsistencyLevel",
+      "canonicalSlug": "Collections-ConsistencyLevel",
+      "category": "Collections"
+    },
+    "Collections.FieldSchema": {
+      "stableId": "cpp:Collections:FieldSchema",
+      "canonicalSlug": "Collections-FieldSchema",
+      "category": "Collections"
+    },
+    "Collections.Function": {
+      "stableId": "cpp:Collections:Function",
+      "canonicalSlug": "Collections-Function",
+      "category": "Collections"
+    },
+    "Collections.LoadState": {
+      "stableId": "cpp:Collections:LoadState",
+      "canonicalSlug": "Collections-LoadState",
+      "category": "Collections"
+    },
+    "Collections.StructFieldSchema": {
+      "stableId": "cpp:Collections:StructFieldSchema",
+      "canonicalSlug": "Collections-StructFieldSchema",
+      "category": "Collections"
+    },
+    "Management.IndexDesc": {
+      "stableId": "cpp:Management:IndexDesc",
+      "canonicalSlug": "Management-IndexDesc",
+      "category": "Management"
+    },
+    "Management.MetricType": {
+      "stableId": "cpp:Management:MetricType",
+      "canonicalSlug": "Management-MetricType",
+      "category": "Management"
+    },
+    "ResourceGroup.ResourceGroupConfig": {
+      "stableId": "cpp:ResourceGroup:ResourceGroupConfig",
+      "canonicalSlug": "ResourceGroup-ResourceGroupConfig",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ResourceGroupDesc": {
+      "stableId": "cpp:ResourceGroup:ResourceGroupDesc",
+      "canonicalSlug": "ResourceGroup-ResourceGroupDesc",
+      "category": "ResourceGroup"
     }
   }
 }

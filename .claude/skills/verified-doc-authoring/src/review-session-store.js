@@ -58,6 +58,23 @@ function verifyRollbackManifest(session, rollbackManifest) {
   if (reviewUnitId !== session.reviewUnitId || originalExecutionJournalDigest !== session.execution.executionJournalDigest) {
     throw typedError('ROLLBACK_MANIFEST_SESSION_MISMATCH', 'Rollback manifest was generated for a different review unit or execution journal');
   }
+  // The manifest must be the corrective shape planAuthoringRollback() can
+  // actually produce: exactly one action, matching the execution's created
+  // state, targeting the executed document, with the captured before-state.
+  if (actions.length !== 1 || !actions[0] || typeof actions[0] !== 'object') {
+    throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback manifest must carry exactly one corrective action');
+  }
+  const action = actions[0];
+  const expectedOperation = session.execution.created === true ? 'delete-created-document' : 'restore-before-state';
+  if (action.operation !== expectedOperation) {
+    throw typedError('ROLLBACK_PLAN_INVALID', `Rollback action must be ${expectedOperation} for this execution`);
+  }
+  if (action.documentId !== session.execution.documentId) {
+    throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback action targets a different document than the execution produced');
+  }
+  if (expectedOperation === 'restore-before-state' && (!action.beforeState || typeof action.beforeState !== 'object')) {
+    throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback restore action requires the captured before-state');
+  }
   return rollbackManifestDigest;
 }
 

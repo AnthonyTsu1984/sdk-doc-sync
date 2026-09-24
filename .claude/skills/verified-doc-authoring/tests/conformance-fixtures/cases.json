@@ -172,5 +172,16 @@
    "runner": "invariant-conformance",
    "scenario": "authoringRollbackSessionMismatch"
   }
+ },
+ {
+  "id": "authoring-rollback-empty-actions",
+  "assertions": {
+   "code": "ROLLBACK_PLAN_INVALID",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackEmptyActions"
+  }
  }
 ]

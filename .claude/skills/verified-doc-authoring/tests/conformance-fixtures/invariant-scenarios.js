@@ -12,6 +12,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { buildClaimInventory, buildDraftArtifact } = require('../../src/claim-inventory');
 const { buildAuthoringPatchPlan } = require('../../src/patch-planner');
 const { executeAuthoringPatch, planAuthoringRollback } = require('../../src/patch-executor');
@@ -322,6 +323,38 @@ const scenarios = {
       rollbackOperation: rollback.actions[0].operation,
       rollbackDigestBound: session.acceptanceReceipt.rollbackManifestDigest === rollback.rollbackManifestDigest,
     };
+  },
+
+  async authoringRollbackEmptyActions() {
+    const plan = planFixture();
+    const result = await executeAuthoringPatch({
+      plan,
+      approval: approvalFixture(plan),
+      journalPath: tmpJournal(),
+      adapter: happyAdapter(plan),
+    });
+    let session = createAuthoringSession({ sessionId: 'authoring:conf:4', plan });
+    session = recordAuthoringExecution(session, result);
+    // A self-consistent manifest with NO corrective action: the honest digest
+    // over the empty action list must not admit acceptance either.
+    const semantic = {
+      schemaVersion: 1,
+      reviewUnitId: plan.reviewUnitId,
+      originalExecutionJournalDigest: result.executionJournalDigest,
+      actions: [],
+    };
+    let code = null;
+    try {
+      recordAuthoringAcceptance(session, {
+        executionJournalDigest: result.executionJournalDigest,
+        liveResultDigest: result.liveResultDigest,
+        decisionDigest: DECISION_DIGEST,
+        rollbackManifest: { ...semantic, rollbackManifestDigest: digestSemantic(semantic) },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, sessionStatus: session.status };
   },
 
   async authoringRollbackSessionMismatch() {

@@ -131,6 +131,7 @@
       "enforcement": ["post-write"],
       "statementDigest": "sha256:29af6ac93f9f1d6d80c5691b7624e97f3469da44591faa9259827770501b8eef",
       "fixtureIds": [
+        "authoring-rollback-empty-actions",
         "authoring-rollback-plan-required",
         "authoring-rollback-creation-unproven",
         "authoring-rollback-bound-positive"

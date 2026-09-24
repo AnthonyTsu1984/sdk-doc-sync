@@ -53,7 +53,16 @@ test('real pinned Milvus source produces deterministic route evidence', {skip: !
 test('real pinned zilliz-cloud source scans only configured services', {skip: !fs.existsSync(CLOUD_REPO)}, () => {
   const config = JSON.parse(fs.readFileSync(path.join(__dirname, '../config/rest-control-plane-services.json'), 'utf8'));
   const inventory = scanZillizCloudRoutes({repo: CLOUD_REPO, revision: CLOUD_SHA, config});
-  assert.equal(inventory.services.length, 18);
+  // The scanner must mirror the configured allowlist exactly. The explicit
+  // count pin forces a deliberate test update whenever the allowlist changes
+  // (9d26e91 grew it 18 -> 21: removed `pipelines`, added `card`, `import`,
+  // `private-link`, `byoc`) instead of leaving a stale failure behind.
+  assert.equal(inventory.services.length, config.services.length);
+  assert.equal(inventory.services.length, 21);
+  for (const id of ['card', 'import', 'private-link', 'byoc']) {
+    assert.ok(inventory.services.find(service => service.id === id), `missing configured service: ${id}`);
+  }
+  assert.ok(!inventory.services.find(service => service.id === 'pipelines'));
   assert.ok(inventory.services.find(service => service.id === 'cloud-api-keys').routes.some(route => route.path === '/v2/api-keys'));
   assert.equal(inventory.services.find(service => service.id === 'cloud-access-control').status, 'CONTROLLER_MISSING');
 });

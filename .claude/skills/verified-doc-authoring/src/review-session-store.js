@@ -14,6 +14,10 @@ function typedError(code, message) {
 
 function createAuthoringSession({ sessionId, plan }) {
   if (!sessionId || !plan?.planDigest) throw new TypeError('sessionId and plan are required');
+  // Persist the approved action's before-state digest so acceptance can hold
+  // any rollback restore to the exact snapshot the approved plan captured —
+  // an unrelated or empty beforeState object cannot restore the document.
+  const approvedBeforeState = plan.actionBatch.actions[0]?.beforeState || null;
   return Object.freeze({
     schemaVersion: 1,
     sessionId,
@@ -22,6 +26,7 @@ function createAuthoringSession({ sessionId, plan }) {
     reviewUnitId: plan.reviewUnitId,
     claimInventoryDigest: plan.claimInventory.inventoryDigest,
     draftSemanticDigest: plan.draftArtifact.semanticDigest,
+    beforeStateDigest: approvedBeforeState ? digestSemantic(approvedBeforeState) : null,
     execution: null,
     acceptanceReceipt: null,
     editorialCandidates: [],
@@ -72,8 +77,13 @@ function verifyRollbackManifest(session, rollbackManifest) {
   if (action.documentId !== session.execution.documentId) {
     throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback action targets a different document than the execution produced');
   }
-  if (expectedOperation === 'restore-before-state' && (!action.beforeState || typeof action.beforeState !== 'object')) {
-    throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback restore action requires the captured before-state');
+  if (expectedOperation === 'restore-before-state') {
+    if (!action.beforeState || typeof action.beforeState !== 'object') {
+      throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback restore action requires the captured before-state');
+    }
+    if (!session.beforeStateDigest || digestSemantic(action.beforeState) !== session.beforeStateDigest) {
+      throw typedError('ROLLBACK_PLAN_INVALID', 'Rollback before-state does not match the snapshot captured by the approved plan');
+    }
   }
   return rollbackManifestDigest;
 }

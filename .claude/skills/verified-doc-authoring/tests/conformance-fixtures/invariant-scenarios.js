@@ -357,6 +357,39 @@ const scenarios = {
     return { code, sessionStatus: session.status };
   },
 
+  async authoringRollbackBeforeStateMismatch() {
+    const plan = planFixture();
+    const result = await executeAuthoringPatch({
+      plan,
+      approval: approvalFixture(plan),
+      journalPath: tmpJournal(),
+      adapter: happyAdapter(plan),
+    });
+    let session = createAuthoringSession({ sessionId: 'authoring:conf:5', plan });
+    session = recordAuthoringExecution(session, result);
+    // A self-consistent manifest whose beforeState is an empty object: honest
+    // digest, correct document, but it cannot restore the document — the
+    // approved plan's before-state digest is the only acceptable snapshot.
+    const semantic = {
+      schemaVersion: 1,
+      reviewUnitId: plan.reviewUnitId,
+      originalExecutionJournalDigest: result.executionJournalDigest,
+      actions: [{ operation: 'restore-before-state', documentId: 'doc-1', beforeState: {} }],
+    };
+    let code = null;
+    try {
+      recordAuthoringAcceptance(session, {
+        executionJournalDigest: result.executionJournalDigest,
+        liveResultDigest: result.liveResultDigest,
+        decisionDigest: DECISION_DIGEST,
+        rollbackManifest: { ...semantic, rollbackManifestDigest: digestSemantic(semantic) },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, sessionStatus: session.status };
+  },
+
   async authoringRollbackSessionMismatch() {
     const plan = planFixture();
     const result = await executeAuthoringPatch({

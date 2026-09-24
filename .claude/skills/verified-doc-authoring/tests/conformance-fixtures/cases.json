@@ -183,5 +183,16 @@
    "runner": "invariant-conformance",
    "scenario": "authoringRollbackEmptyActions"
   }
+ },
+ {
+  "id": "authoring-rollback-beforestate-mismatch",
+  "assertions": {
+   "code": "ROLLBACK_PLAN_INVALID",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackBeforeStateMismatch"
+  }
  }
 ]

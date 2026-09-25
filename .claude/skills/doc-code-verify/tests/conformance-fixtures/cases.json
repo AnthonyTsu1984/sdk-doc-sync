@@ -1,8 +1,187 @@
 [
-  { "id": "read-only", "assertions": { "writesPerformed": false, "remediationApproved": false } },
-  { "id": "check-strength", "assertions": { "preferReliableStrongest": true } },
-  { "id": "live-gates", "assertions": { "allowRunRequired": true, "liveRequired": true, "scenarioRunRequiresBoth": true } },
-  { "id": "scenario-separation", "assertions": { "rawAndScenarioSeparate": true } },
-  { "id": "result-contract", "assertions": { "exitCodes": [0, 1, 2, 64], "semanticDigest": true } },
-  { "id": "deterministic-diagnostics", "assertions": { "sortKeys": ["code", "target"] } }
+ {
+  "id": "read-only",
+  "assertions": {
+   "writesPerformed": false,
+   "remediationApproved": false
+  }
+ },
+ {
+  "id": "check-strength",
+  "assertions": {
+   "preferReliableStrongest": true
+  }
+ },
+ {
+  "id": "live-gates",
+  "assertions": {
+   "allowRunRequired": true,
+   "liveRequired": true,
+   "scenarioRunRequiresBoth": true
+  }
+ },
+ {
+  "id": "scenario-separation",
+  "assertions": {
+   "rawAndScenarioSeparate": true
+  }
+ },
+ {
+  "id": "result-contract",
+  "assertions": {
+   "exitCodes": [
+    0,
+    1,
+    2,
+    64
+   ],
+   "semanticDigest": true
+  }
+ },
+ {
+  "id": "deterministic-diagnostics",
+  "assertions": {
+   "sortKeys": [
+    "code",
+    "target"
+   ]
+  }
+ },
+ {
+  "id": "verify-readonly-write-authorization-refused",
+  "assertions": {
+   "code": "HANDOFF_WRITE_AUTHORIZED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyReadonlyWriteAuthorizationRefused"
+  }
+ },
+ {
+  "id": "verify-gates-scenario-requires-allow-run",
+  "assertions": {
+   "status": "manual",
+   "code": "RUNTIME_REQUIRES_ALLOW_RUN"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyGatesScenarioRequiresAllowRun"
+  }
+ },
+ {
+  "id": "verify-gates-scenario-requires-live",
+  "assertions": {
+   "status": "manual",
+   "code": "RUNTIME_REQUIRES_LIVE"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyGatesScenarioRequiresLive"
+  }
+ },
+ {
+  "id": "verify-gates-annotated-run-requires-allow-run",
+  "assertions": {
+   "action": "manual",
+   "code": "RUNTIME_REQUIRES_ALLOW_RUN"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyGatesAnnotatedRunRequiresAllowRun"
+  }
+ },
+ {
+  "id": "verify-gates-annotated-run-safety-policy",
+  "assertions": {
+   "action": "manual",
+   "code": "RUNTIME_BLOCKED_BY_SAFETY_POLICY"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyGatesAnnotatedRunSafetyPolicy"
+  }
+ },
+ {
+  "id": "verify-gates-annotated-run-positive",
+  "assertions": {
+   "action": "run",
+   "code": null
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyGatesAnnotatedRunPositive"
+  }
+ },
+ {
+  "id": "verify-manifest-digest-required",
+  "assertions": {
+   "code": "RUNTIME_DIGEST_REQUIRED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyManifestDigestRequired"
+  }
+ },
+ {
+  "id": "verify-manifest-digest-mismatch",
+  "assertions": {
+   "code": "RUNTIME_DIGEST_MISMATCH"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyManifestDigestMismatch"
+  }
+ },
+ {
+  "id": "verify-residual-blocked-with-recovery",
+  "assertions": {
+   "status": "BLOCKED",
+   "blockerCode": "RESIDUAL_RESOURCES_BLOCKED",
+   "residualResources": [
+    "docs-test-alpha"
+   ],
+   "recoveryCommands": [
+    "drop docs-test-alpha"
+   ]
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyResidualBlockedWithRecovery"
+  }
+ },
+ {
+  "id": "verify-residual-verified-positive",
+  "assertions": {
+   "status": "VERIFIED",
+   "blockerCode": null,
+   "residualResources": []
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyResidualVerifiedPositive"
+  }
+ },
+ {
+  "id": "verify-handoff-item-invalid",
+  "assertions": {
+   "code": "HANDOFF_ITEM_INVALID"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyHandoffItemInvalid"
+  }
+ },
+ {
+  "id": "verify-handoff-positive",
+  "assertions": {
+   "writeAuthorized": false,
+   "requiresNewActionBatch": true,
+   "recommendedSkill": "procedure-code-sync",
+   "handoffDigestPresent": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "verifyHandoffPositive"
+  }
+ }
 ]

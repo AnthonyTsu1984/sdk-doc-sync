@@ -43,7 +43,10 @@ function runtimeItemFromSnippet(snippet, opts = {}) {
     || /(?:-x|--request)\s+delete\b/i.test(code);
   const mutating = creates || updates || deletes;
   if (mutating && !String(opts.resourceSuffix || '').trim()) {
-    throw new Error(`Mutating runtime item ${snippet?.id || '(unknown)'} requires an isolated resource suffix`);
+    throw Object.assign(
+      new Error(`Mutating runtime item ${snippet?.id || '(unknown)'} requires an isolated resource suffix`),
+      { code: 'RUNTIME_RESOURCE_SUFFIX_REQUIRED' },
+    );
   }
   let resources = quotedResources(code, opts.resourceSuffix || '');
   if (mutating && resources.length === 0) resources = [`doc-verify-${normalizeResourceName(opts.resourceSuffix)}`];
@@ -142,8 +145,18 @@ function buildRuntimeManifest({ runId, liveProfile, requiredEnvGroups = [], item
 
 function assertRuntimeApproval({ manifest, approvedDigest }) {
   if (!manifest?.mutating) return true;
-  if (!approvedDigest) throw new Error(`Runtime approval is required for ${manifest.runtimeManifestDigest}`);
-  if (approvedDigest !== manifest.runtimeManifestDigest) throw new Error(`Runtime approval digest mismatch: expected ${manifest.runtimeManifestDigest}`);
+  if (!approvedDigest) {
+    throw Object.assign(
+      new Error(`Runtime approval is required for ${manifest.runtimeManifestDigest}`),
+      { code: 'RUNTIME_DIGEST_REQUIRED', expectedDigest: manifest.runtimeManifestDigest },
+    );
+  }
+  if (approvedDigest !== manifest.runtimeManifestDigest) {
+    throw Object.assign(
+      new Error(`Runtime approval digest mismatch: expected ${manifest.runtimeManifestDigest}`),
+      { code: 'RUNTIME_DIGEST_MISMATCH', expectedDigest: manifest.runtimeManifestDigest },
+    );
+  }
   return true;
 }
 

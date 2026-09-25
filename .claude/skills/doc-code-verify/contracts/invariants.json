@@ -1,0 +1,126 @@
+{
+  "schemaVersion": 1,
+  "skill": "doc-code-verify",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED).",
+  "invariants": [
+    {
+      "id": "verify.read-only-default",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "verification-pass",
+      "status": "runtime-enforced",
+      "enforcement": ["plan", "pre-write"],
+      "statementDigest": "sha256:494df4838c3140254ce91d5746a78b79c295f45d2d6df4462642036145fc468f",
+      "fixtureIds": [
+        "verify-readonly-write-authorization-refused"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/doc-code-verify/src/remediation-handoff.js",
+          "codes": [
+            "HANDOFF_WRITE_AUTHORIZED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "verify.execution-gates",
+      "version": 1,
+      "risk": "runtime-safety",
+      "scope": "runtime-execution",
+      "status": "runtime-enforced",
+      "enforcement": ["evidence"],
+      "statementDigest": "sha256:af0c4e5ecf11a0fe754846cc48b21918ca5103415f89fe804c85ad3f95ef65e0",
+      "fixtureIds": [
+        "verify-gates-scenario-requires-allow-run",
+        "verify-gates-scenario-requires-live",
+        "verify-gates-annotated-run-requires-allow-run",
+        "verify-gates-annotated-run-safety-policy",
+        "verify-gates-annotated-run-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/doc-code-verify/src/execution-gates.js",
+          "codes": [
+            "RUNTIME_REQUIRES_ALLOW_RUN",
+            "RUNTIME_REQUIRES_LIVE",
+            "RUNTIME_REQUIRES_RUN_SCENARIOS",
+            "RUNTIME_ENV_MISSING",
+            "RUNTIME_BLOCKED_BY_SAFETY_POLICY"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "verify.runtime-manifest-digest",
+      "version": 1,
+      "risk": "runtime-safety",
+      "scope": "runtime-execution",
+      "status": "runtime-enforced",
+      "enforcement": ["pre-write"],
+      "statementDigest": "sha256:1b65169546a74e20fcc8ef3a056ba9f7217f0647cb2398ca33632fc9d6f38eec",
+      "fixtureIds": [
+        "verify-manifest-digest-required",
+        "verify-manifest-digest-mismatch"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/doc-code-verify/src/runtime-policy.js",
+          "codes": [
+            "RUNTIME_DIGEST_REQUIRED",
+            "RUNTIME_DIGEST_MISMATCH",
+            "RUNTIME_RESOURCE_SUFFIX_REQUIRED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "verify.residual-cleanup",
+      "version": 1,
+      "risk": "runtime-safety",
+      "scope": "runtime-execution",
+      "status": "runtime-enforced",
+      "enforcement": ["post-write"],
+      "statementDigest": "sha256:f569127c257890f5c6b1f6c0b5b7399ff472205131bba54033c5be7253498d42",
+      "fixtureIds": [
+        "verify-residual-blocked-with-recovery",
+        "verify-residual-verified-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/doc-code-verify/src/runtime-session.js",
+          "codes": [
+            "RESIDUAL_RESOURCES_BLOCKED",
+            "RUNTIME_MUTATIONS_FAILED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "verify.handoff-no-write",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "verification-pass",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:6590d710c4acbe187465b02fe7d295d06c2734c3de2ed7eb7a66fe3de8282f15",
+      "fixtureIds": [
+        "verify-handoff-item-invalid",
+        "verify-handoff-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/doc-code-verify/src/remediation-handoff.js",
+          "codes": [
+            "HANDOFF_ITEM_INVALID"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -138,13 +138,13 @@ snapshot blocks (`OPERATION_BLOCK_NOT_IN_SNAPSHOT`); executor errors are typed
 (`ACCEPTANCE_EVIDENCE_MISMATCH` etc.). 13 executable fixtures replace the assertion-only pattern;
 procedure suite 11/11.
 
-### Step 2 — doc-code-verify (PR C)
+### Step 2 — doc-code-verify (PR C) — DELIVERED 2026-09-24, branch `feat/phase5-doc-code-verify` (stacked on PR #32)
 
 Mostly read-only with sharply gated runtime mutation; enforcers already largely exist in
 `src/runtime-policy.js` / `runtime-session.js` / `remediation-handoff.js` — phase 5 work here is
 mostly registration + fixtures.
 
-- [ ] 2.1 SKILL.md Domain Invariants + registry:
+- [x] 2.1 SKILL.md Domain Invariants + registry:
 
   | id | stages | enforcer module today | proposed blocker codes |
   | --- | --- | --- | --- |
@@ -154,14 +154,23 @@ mostly registration + fixtures.
   | `verify.residual-cleanup` | post-write | `src/runtime-session.js` | `RESIDUAL_RESOURCES_BLOCKED` |
   | `verify.handoff-no-write` | plan | `src/remediation-handoff.js` | `HANDOFF_WRITE_ATTEMPT` |
 
-- [ ] 2.2 Confirm `writeAuthorized: false` is structurally forced in the handoff (not a default
+- [x] 2.2 Confirm `writeAuthorized: false` is structurally forced in the handoff (not a default
       that a caller can override); if it is a field, harden it.
-- [ ] 2.3 Fixtures: negative (verification pass emits a patch → blocked), gate matrix
+- [x] 2.3 Fixtures: negative (verification pass emits a patch → blocked), gate matrix
       (`--allow-run`/`--live`/`--run-scenarios` combinations), runtime-digest drift (manifest edited
       after approval → mismatch), residual-resource case producing `BLOCKED` with recovery
       commands.
-- [ ] 2.4 Behavior pressure: "just fix the broken example while you're in there" (remediation
+- [x] 2.4 Behavior pressure: "just fix the broken example while you're in there" (remediation
       without a separate batch).
+
+Delivery notes: `writeAuthorized: false` was already structurally forced (input coercion throws
+`HANDOFF_WRITE_AUTHORIZED`; the artifact hardcodes the field) — confirmed, not changed. The CLI's
+inline scenario gate and the annotated-run arm were productized into
+`src/execution-gates.js` with the gate strings preserved verbatim (the CLI surfaces them as
+manual-status reasons); runtime-policy/remediation-handoff errors are now typed, and
+`RuntimeSession.finalize()` carries `blockerCode` (`RESIDUAL_RESOURCES_BLOCKED` /
+`RUNTIME_MUTATIONS_FAILED`). 12 executable fixtures; suite 10/11 with the one failure being the
+pre-existing local clang++ self-test (reproduced on a clean master worktree).
 
 ### Step 3 — verified-doc-authoring (PR D)
 

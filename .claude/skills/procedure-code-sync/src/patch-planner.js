@@ -54,6 +54,10 @@ function assertOperationsAgainstSnapshot(snapshot, operations) {
       if (typeof operation.languageLabel === 'string' && existingLanguages.has(operation.languageLabel)) {
         throw typedError('INSERT_LANGUAGE_DUPLICATE', `insert ${operation.operationId} adds ${operation.languageLabel}, which the procedure already has`);
       }
+      if (typeof operation.languageLabel === 'string' && operation.languageLabel) {
+        // Two inserts in the same batch must not add the same language twice.
+        existingLanguages.add(operation.languageLabel);
+      }
     }
   }
 }

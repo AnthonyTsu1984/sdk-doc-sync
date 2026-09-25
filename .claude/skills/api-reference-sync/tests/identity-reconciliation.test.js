@@ -46,6 +46,19 @@ test('reconcileIdentityCoverage reports governed slugs that resolve to no identi
     assert.deepEqual(report.diagnostics[0].slugs, ['Collections-HasCollection']);
 });
 
+test('multi-fragment rich-text slug cells join without a delimiter', () => {
+    // A Slug cell may carry one scalar value as several text fragments;
+    // joining with a delimiter would invent a slug like 'Collections-|HasCollection'.
+    const report = reconcileIdentityCoverage({
+        records: [
+            { record_id: 'rec-frag', fields: { Slug: [{ text: 'Collections-' }, { text: 'HasCollection' }], Type: [{ text: 'Function' }] } },
+        ],
+        identityMap: mapFixture(['Collections.CreateCollection']),
+    });
+    assert.equal(report.checked, 1);
+    assert.deepEqual(report.missing, ['Collections-HasCollection']);
+});
+
 test('reconcileIdentityCoverage reports map keys no record represents as extras', () => {
     const report = reconcileIdentityCoverage({
         records: recordsFixture(),

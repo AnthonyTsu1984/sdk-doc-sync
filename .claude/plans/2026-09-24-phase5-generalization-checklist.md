@@ -278,9 +278,17 @@ names. Each is now closed at the boundary it targeted (materialized digest
 recomputation; full semantic digest + freshness-artifact binding at plan;
 batch/unit binding plus the source-locale refusal repeated in the executor;
 in-order marker comparison), and each reproduced bypass is fixture-proven to a
-typed refusal. With those landed, the phase 5 acceptance criterion holds: no
-runtime-enforced rule relies only on a prose assertion or a model eval, and
-each one's enforcement has survived a known attack on its own boundary.
+typed refusal. The second review round then held the first fixes insufficient — correctly:
+the freshness artifact could be minted from the same snapshots it attested,
+the batch/unit binding compared only IDs and targets, and the new binding
+broke the canonical agent-team live-write caller. Final state: plan
+re-enumerates both bases live at the enforcement boundary (the artifact
+approach was dropped, not repaired), the executor binds the batch by exact
+canonical digest or full per-field action comparison, and the agent-team
+handoff carries the bound digest and target locale. With those landed, the
+phase 5 acceptance criterion holds: no runtime-enforced rule relies only on
+a prose assertion or a model eval, and each one's enforcement has survived
+two rounds of known attacks on its own boundary.
 
 ## Execution Notes
 

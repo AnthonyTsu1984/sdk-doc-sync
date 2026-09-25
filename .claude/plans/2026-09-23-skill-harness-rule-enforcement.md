@@ -14,16 +14,22 @@ verified-doc-authoring, localized-doc-sync — with 30 runtime-enforced
 invariants, every one backed by executable fixtures that drive production
 code and at least one negative arm asserting a typed blocker code
 (`node scripts/invariant-coverage-report.js --strict` is the standing
-acceptance artifact). The phase 5 review round reproduced four bypasses in
-the localized-doc-sync invariants (forged digest strings passing the
-completeness derivation, post-scan issue injection accepted, a separately
-approved source-side batch executing past the planner-only guard, and
-reordered protected markers swapping API names); each is closed at the
-boundary it targeted — materialized digest recomputation, full semantic
-digest plus freshness-artifact binding at plan, batch/unit binding with the
-source-locale refusal repeated in the executor, and in-order marker
-comparison — with fixtures driving each reproduced bypass to a typed
-refusal. Phase 6 follow-ups: waiver expiry/ownership for declared-only
+acceptance artifact). Two review rounds reproduced six bypasses in
+the localized-doc-sync invariants. Round one: forged digest strings passing
+the completeness derivation, post-scan issue injection accepted, a
+separately approved source-side batch executing past the planner-only
+guard, and reordered protected markers swapping API names. Round two held
+the first set of fixes insufficient and reproduced three more: a freshness
+artifact self-attested from the same snapshots, unit/batch binding comparing
+only IDs and targets (payload and side-effect tampering still executed),
+and the new binding breaking the canonical agent-team live-write caller.
+Final state: materialized digest recomputation for completeness; live
+re-enumeration of both bases at the plan boundary (the self-attested
+artifact was dropped, not repaired) refusing stale queues; batch binding by
+exact canonical digest or full per-field action comparison, repeated with
+the source-locale refusal in the executor; in-order marker comparison; and
+the agent-team handoff carrying the bound batch digest and target locale —
+with fixtures driving every reproduced bypass to a typed refusal. Phase 6 follow-ups: waiver expiry/ownership for declared-only
 entries, violation and false-block tracking by invariant ID,
 admission-artifact publication, and the second-wave `declared` entries noted
 in the phase 5 checklist (receipt merge policy, locale metadata

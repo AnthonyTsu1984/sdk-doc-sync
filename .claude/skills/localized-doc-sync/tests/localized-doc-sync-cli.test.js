@@ -7,7 +7,6 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
-const { baseInventoryDigest } = require('../src/issue-classifier');
 const { runCli } = require('../bin/localized-doc-sync');
 
 function writeJson(filePath, value) {
@@ -21,7 +20,6 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
   const mapPath = path.join(directory, 'table-map.json');
   const policyPath = path.join(directory, 'locale-policy.json');
   const scanPath = path.join(directory, 'scan.json');
-  const freshnessPath = path.join(directory, 'freshness.json');
   const planPath = path.join(directory, 'units.json');
   const fields = [
     { fieldId: 'docs', name: 'Docs', type: 'text', isPrimary: true },
@@ -34,19 +32,38 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
       record_id: `${tableId}-rec-1`,
       fields: { Docs: 'doc', 'Placement Type': 'canonical', Slug: tableId, Targets: ['Milvus'] },
     }];
-    const table = {
+    return {
       tableId, name, primaryFieldId,
       fields, views: [], records,
       recordCount: records.length,
+      tableDigest: digestSemantic({ tableId, name, primaryFieldId, fields, views: [], records }),
       fieldSchemaDigest: digestSemantic(fields),
       viewScopeDigest: digestSemantic([]),
       recordSetDigest: digestSemantic(records),
     };
-    table.tableDigest = digestSemantic({ tableId, name, primaryFieldId, fields, views: [], records });
-    return table;
   };
-  const sourceBase = { baseToken: 'en', revision: 1, tables: [materialize('en-dev', 'Development', 'docs')] };
-  const targetBase = { baseToken: 'zh', revision: 1, tables: [materialize('zh-dev', '开发指南', 'docs')] };
+  const sourceBase = { baseToken: 'en', revision: 1, title: null, timezone: null, tables: [materialize('en-dev', 'Development', 'docs')] };
+  const targetBase = { baseToken: 'zh', revision: 1, title: null, timezone: null, tables: [materialize('zh-dev', '开发指南', 'docs')] };
+  // Paginated live client over the same content: plan re-enumerates through
+  // it, and matching per-base digests prove the queue is not stale.
+  const clientFor = (...bases) => {
+    const byToken = new Map(bases.map((base) => [base.baseToken, base]));
+    const page = (items) => ({ items, hasMore: false });
+    return {
+      async getBase({ baseToken }) {
+        const base = byToken.get(baseToken);
+        return { title: base.title || null, revision: base.revision ?? null, timezone: base.timezone || null };
+      },
+      async listTables(args) { return page(byToken.get(args.baseToken).tables.map(({ tableId, name, primaryFieldId }) => ({ tableId, name, primaryFieldId }))); },
+      async listFields(args) { return page(byToken.get(args.baseToken).tables.flatMap((table) => table.fields).filter((field, index, all) => all.length === 0 || true)); },
+      async listViews() { return page([]); },
+      async listRecords(args) {
+        const base = byToken.get(args.baseToken);
+        return page(base.tables.find((table) => table.tableId === args.tableId)?.records || []);
+      },
+    };
+  };
+  const sameContentClient = clientFor(sourceBase, targetBase);
   writeJson(sourcePath, sourceBase);
   writeJson(targetPath, targetBase);
   writeJson(mapPath, { schemaVersion: 1, mappings: [{ relation: 'mapped', sourceTableId: 'en-dev', targetTableId: 'zh-dev', provenance: 'test' }] });
@@ -66,37 +83,37 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
   assert.match(scan.semanticDigest, /^sha256:/);
   assert.equal(scan.tableMappings.length, 1);
 
-  const freshness = {
-    schemaVersion: 1,
-    sourceInventoryDigest: baseInventoryDigest(sourceBase),
-    targetInventoryDigest: baseInventoryDigest(targetBase),
-    manifestSemanticDigest: scan.semanticDigest,
-    capturedAt: '2026-09-25T00:00:00.000Z',
-  };
-  writeJson(freshnessPath, freshness);
-  await runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--freshness', freshnessPath, '--output', planPath] });
+  await runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--output', planPath], dependencies: { onStdout() {}, client: sameContentClient } });
   const units = JSON.parse(fs.readFileSync(planPath, 'utf8'));
   assert.ok(units.length >= 1);
   for (const unit of units) assert.equal(unit.scanManifestDigest, scan.semanticDigest);
+
+  // Planning without a live re-enumeration is refused outright: the
+  // self-generated freshness artifact from the previous round proved nothing.
+  await assert.rejects(
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--output', planPath] }),
+    (error) => error.code === 'FRESHNESS_RESCAN_REQUIRED',
+  );
 
   // Injecting an issue after the scan breaks the manifest's semantic digest:
   // plan must refuse the tampered queue (the reviewer's exact bypass).
   scan.issues.push({ issueId: 'issue:new', code: 'NEW', placement: 'canonical', identity: 'canonical:new', actions: [{ actionId: 'a:injected', sideEffects: ['record:update'] }], tableMappingId: scan.tableMappings[0].mappingId });
   writeJson(scanPath, scan);
   await assert.rejects(
-    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--freshness', freshnessPath, '--output', planPath] }),
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--output', planPath], dependencies: { onStdout() {}, client: sameContentClient } }),
     (error) => error.code === 'QUEUE_DECISION_STALE',
   );
 
-  // A freshness artifact attesting a different enumeration (here: a forged
-  // source digest) cannot vouch for this scan.
+  // A base that gained a table after the scan is stale: the live
+  // re-enumeration no longer matches the manifest's snapshots.
   const untampered = JSON.parse(fs.readFileSync(scanPath, 'utf8'));
   untampered.issues.splice(untampered.issues.length - 1, 1);
   writeJson(scanPath, untampered);
-  writeJson(freshnessPath, { ...freshness, sourceInventoryDigest: `sha256:${'0'.repeat(64)}` });
+  const grownSource = JSON.parse(JSON.stringify(sourceBase));
+  grownSource.tables.push(materialize('en-extra', 'Extra', 'docs'));
   await assert.rejects(
-    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--freshness', freshnessPath, '--output', planPath] }),
-    (error) => error.code === 'FRESHNESS_DIGEST_MISMATCH',
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--output', planPath], dependencies: { onStdout() {}, client: clientFor(grownSource, targetBase) } }),
+    (error) => error.code === 'QUEUE_DECISION_STALE',
   );
 });
 

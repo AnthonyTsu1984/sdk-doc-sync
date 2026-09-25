@@ -9,7 +9,7 @@ const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { profileTableSchema } = require('../src/schema-profiler');
 const { mapTables } = require('../src/table-mapper');
 const { buildTranslationPairs, resolveTableIdentities } = require('../src/identity-resolver');
-const { buildScanManifest, verifyFreshnessArtifact } = require('../src/issue-classifier');
+const { buildScanManifest, reEnumerateForFreshness } = require('../src/issue-classifier');
 const { buildReviewUnits } = require('../src/planner');
 const { executeReviewUnit } = require('../src/executor');
 
@@ -145,7 +145,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     return manifest;
   }
   if (args.command === 'plan') {
-    for (const name of ['scanManifest', 'freshness', 'output']) required(args, name);
+    for (const name of ['scanManifest', 'output']) required(args, name);
     const manifest = readJson(args.scanManifest);
     if (manifest.completeInventory !== true || manifest.partialScanAuthoritative === true) {
       throw Object.assign(
@@ -164,13 +164,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         { code: 'QUEUE_DECISION_STALE' },
       );
     }
-    // Freshness: a separately verified artifact must attest this exact
-    // enumeration. Its per-base digests recompute from the manifest's own
-    // snapshots, so an artifact captured before a base changed cannot vouch
-    // for it — content addressing makes stale attestations detectable.
-    verifyFreshnessArtifact(readJson(args.freshness), manifest, {
-      expectedManifestSemanticDigest: semanticDigest,
-    });
+    // Freshness at the enforcement boundary: re-enumerate both bases live
+    // (paginated, exhaustion-proven) and compare against the manifest's
+    // snapshots. A self-generated artifact cannot substitute for this.
+    const client = dependencies.client
+      || (args.clientModule ? require(path.resolve(args.clientModule)) : null);
+    await reEnumerateForFreshness({ client, sourceBase: manifest.sourceBase, targetBase: manifest.targetBase });
     const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [] });
     writeJson(args.output, units);
     out(`Review units: ${units.length}`);

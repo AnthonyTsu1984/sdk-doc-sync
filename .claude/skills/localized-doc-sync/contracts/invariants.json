@@ -44,7 +44,7 @@
       "fixtureIds": [
         "localization-incomplete-scan-refused",
         "localization-stale-manifest-refused",
-        "localization-freshness-mismatch-refused"
+        "localization-freshness-rescan-required"
       ],
       "enforcers": [
         {
@@ -52,8 +52,8 @@
           "module": ".claude/skills/localized-doc-sync/src/issue-classifier.js",
           "codes": [
             "INVENTORY_INCOMPLETE",
-            "FRESHNESS_ARTIFACT_REQUIRED",
-            "FRESHNESS_DIGEST_MISMATCH"
+            "FRESHNESS_RESCAN_REQUIRED",
+            "QUEUE_DECISION_STALE"
           ]
         },
         {
@@ -62,8 +62,7 @@
           "codes": [
             "INVENTORY_INCOMPLETE",
             "QUEUE_DECISION_STALE",
-            "FRESHNESS_ARTIFACT_REQUIRED",
-            "FRESHNESS_DIGEST_MISMATCH"
+            "FRESHNESS_RESCAN_REQUIRED"
           ]
         }
       ]

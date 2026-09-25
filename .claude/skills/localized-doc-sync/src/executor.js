@@ -5,31 +5,48 @@ const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { assertTranslationRecoveryCompatible } = require('./translation-state');
 
+const { canonicalize } = require('../../doc-ops-core/src/canonical-json');
+
 const SOURCE_LOCALES = new Set(['en']);
+const ACTION_BINDING_FIELDS = ['target', 'sideEffects', 'dependsOn', 'payload', 'beforeState'];
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
-function sameSorted(left, right) {
-  return JSON.stringify([...(left || [])].sort()) === JSON.stringify([...(right || [])].sort());
-}
-
 // The executor is the last line of defense: unit and batch arrive as
-// independent files, so a separately approved batch must be bound back to the
-// planned unit — same action IDs, same targets — and a source-locale unit is
-// refused outright, repeating the planner guard where it can no longer be
-// bypassed.
+// independent files, so the approved batch must be bound back to the planned
+// unit. Two binding forms are accepted:
+//   - `unit.boundBatchDigest`: an exact canonical digest binding (the
+//     agent-team handoff stamps it with the digest-verified stored batch);
+//   - otherwise every unit action must be present in the batch and every
+//     field the unit declares (target, sideEffects, dependencies, payload,
+//     beforeState) must equal the batch action's field — swapping payloads or
+//     side effects behind a matching actionId is refused.
+// A source-locale unit is refused outright, repeating the planner guard where
+// it can no longer be bypassed.
 function assertBatchMatchesUnit({ unit, batch }) {
-  const unitActionIds = (unit.actions || []).map((action) => action.actionId);
-  const batchActionIds = batch.actions.map((action) => action.actionId);
-  if (!sameSorted(unitActionIds, batchActionIds)) {
-    throw typedError('BATCH_UNIT_MISMATCH', 'Action batch does not match the planned review unit actions');
-  }
-  const unitTargets = (unit.actions || []).map((action) => action.target);
-  const batchTargets = batch.actions.map((action) => action.target);
-  if (!sameSorted(unitTargets, batchTargets)) {
-    throw typedError('BATCH_UNIT_MISMATCH', 'Action batch targets do not match the planned review unit targets');
+  if (unit.boundBatchDigest !== undefined && unit.boundBatchDigest !== null) {
+    if (unit.boundBatchDigest !== batch.batchDigest) {
+      throw typedError('BATCH_UNIT_MISMATCH', `unit is bound to batch digest ${unit.boundBatchDigest}, but the submitted batch is ${batch.batchDigest}`);
+    }
+  } else if (Array.isArray(unit.actions)) {
+    const unitById = new Map(unit.actions.map((action) => [action.actionId, action]));
+    if (unitById.size !== unit.actions.length || unit.actions.length !== batch.actions.length) {
+      throw typedError('BATCH_UNIT_MISMATCH', 'Action batch does not match the planned review unit actions');
+    }
+    for (const batchAction of batch.actions) {
+      const unitAction = unitById.get(batchAction.actionId);
+      if (!unitAction) {
+        throw typedError('BATCH_UNIT_MISMATCH', `batch action ${batchAction.actionId} is not part of the planned review unit`);
+      }
+      for (const field of ACTION_BINDING_FIELDS) {
+        if (unitAction[field] === undefined) continue;
+        if (JSON.stringify(canonicalize(unitAction[field])) !== JSON.stringify(canonicalize(batchAction[field] === undefined ? null : batchAction[field]))) {
+          throw typedError('BATCH_UNIT_MISMATCH', `batch action ${batchAction.actionId} field ${field} does not match the planned review unit action`);
+        }
+      }
+    }
   }
   if (SOURCE_LOCALES.has(unit.locale)) {
     throw typedError('SOURCE_MUTATION_UNAUTHORIZED', `source-locale review unit ${unit.reviewUnitId} cannot be executed; source records are read-only without a separately approved source-side change`);

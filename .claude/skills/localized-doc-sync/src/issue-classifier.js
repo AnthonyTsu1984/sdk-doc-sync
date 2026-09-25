@@ -65,31 +65,33 @@ function baseInventoryDigest(base) {
   });
 }
 
-// A freshness artifact is "separately verified" by binding it to the exact
-// enumeration it attests: its per-base digests must recompute from the
-// manifest's own snapshots, so an artifact captured before a table was added
-// cannot vouch for the newer scan. capturedAt is an attested claim recorded
-// by the enumeration run; the content-addressed digests are the check.
-function verifyFreshnessArtifact(artifact, { sourceBase, targetBase }, { expectedManifestSemanticDigest = null } = {}) {
-  if (!artifact || typeof artifact !== 'object' || Array.isArray(artifact)) {
-    throw Object.assign(new Error('A freshness artifact is required for queue decisions'), { code: 'FRESHNESS_ARTIFACT_REQUIRED' });
-  }
-  if (artifact.schemaVersion !== 1 || typeof artifact.capturedAt !== 'string' || Number.isNaN(Date.parse(artifact.capturedAt))) {
-    throw Object.assign(new Error('Freshness artifact is malformed'), { code: 'FRESHNESS_ARTIFACT_REQUIRED' });
-  }
-  const mismatches = [];
-  if (artifact.sourceInventoryDigest !== baseInventoryDigest(sourceBase)) mismatches.push('sourceInventoryDigest');
-  if (artifact.targetInventoryDigest !== baseInventoryDigest(targetBase)) mismatches.push('targetInventoryDigest');
-  if (expectedManifestSemanticDigest !== null && artifact.manifestSemanticDigest !== expectedManifestSemanticDigest) {
-    mismatches.push('manifestSemanticDigest');
-  }
-  if (mismatches.length > 0) {
+// Freshness at the enforcement boundary: plan re-enumerates both bases
+// through the paginated client (collectPages proves table-list exhaustion)
+// and compares per-base inventory digests against the manifest's snapshots.
+// A self-generated artifact cannot substitute for this — only a scan of what
+// the Base actually returns right now can prove the queue is not stale.
+async function reEnumerateForFreshness({ client, sourceBase, targetBase }) {
+  if (!client || typeof client.getBase !== 'function') {
     throw Object.assign(
-      new Error(`Freshness artifact does not attest this enumeration: ${mismatches.join(', ')}`),
-      { code: 'FRESHNESS_DIGEST_MISMATCH', fields: mismatches },
+      new Error('Queue decisions require live re-enumeration of both bases; provide a client (dependencies.client or --client-module)'),
+      { code: 'FRESHNESS_RESCAN_REQUIRED' },
     );
   }
-  return true;
+  const { scanBase } = require('./inventory-scanner');
+  const [freshSource, freshTarget] = await Promise.all([
+    scanBase({ client, baseToken: sourceBase?.baseToken }),
+    scanBase({ client, baseToken: targetBase?.baseToken }),
+  ]);
+  const mismatches = [];
+  if (baseInventoryDigest(freshSource) !== baseInventoryDigest(sourceBase)) mismatches.push('sourceBase');
+  if (baseInventoryDigest(freshTarget) !== baseInventoryDigest(targetBase)) mismatches.push('targetBase');
+  if (mismatches.length > 0) {
+    throw Object.assign(
+      new Error(`Bases changed since the scan manifest was produced: ${mismatches.join(', ')} differ from the live re-enumeration`),
+      { code: 'QUEUE_DECISION_STALE', fields: mismatches },
+    );
+  }
+  return { freshSource, freshTarget };
 }
 
 function buildScanManifest(input) {
@@ -127,5 +129,5 @@ module.exports = {
   baseInventoryDigest,
   buildScanManifest,
   classifyPairIssue,
-  verifyFreshnessArtifact,
+  reEnumerateForFreshness,
 };

@@ -191,13 +191,13 @@
   }
  },
  {
-  "id": "localization-freshness-mismatch-refused",
+  "id": "localization-freshness-rescan-required",
   "assertions": {
-   "code": "FRESHNESS_DIGEST_MISMATCH"
+   "code": "FRESHNESS_RESCAN_REQUIRED"
   },
   "executable": {
    "runner": "invariant-conformance",
-   "scenario": "localizationFreshnessMismatchRefused"
+   "scenario": "localizationFreshnessRescanRequired"
   }
  },
  {

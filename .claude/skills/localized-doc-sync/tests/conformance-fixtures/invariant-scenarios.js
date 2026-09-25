@@ -15,7 +15,7 @@ const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-g
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { executeReviewUnit } = require('../../src/executor');
 const { buildReviewUnits } = require('../../src/planner');
-const { baseInventoryDigest, buildScanManifest, verifyFreshnessArtifact } = require('../../src/issue-classifier');
+const { baseInventoryDigest, buildScanManifest, reEnumerateForFreshness } = require('../../src/issue-classifier');
 const { applyTranslationResponse, prepareTranslationContent } = require('../../src/translation-content');
 const { parseAndAuthorizeReview } = require('../../src/review-evidence');
 const { TranslationReceiptStore, assertTranslationRecoveryCompatible } = require('../../src/translation-state');
@@ -35,19 +35,44 @@ function completeBase(baseToken, tableId, seed) {
   const fields = [{ id: `${tableId}-field`, name: 'Slug' }];
   const views = [{ id: `${tableId}-view`, name: 'grid' }];
   const records = [{ record_id: `${tableId}-rec-1`, fields: { Slug: `${tableId}-slug` } }];
+  const table = {
+    tableId,
+    name: `${tableId}-name`,
+    primaryFieldId: null,
+    fields,
+    views,
+    records,
+    recordCount: records.length,
+    tableDigest: digestSemantic({ tableId, name: `${tableId}-name`, primaryFieldId: null, fields, views, records }),
+    fieldSchemaDigest: digestSemantic(fields),
+    viewScopeDigest: digestSemantic(views),
+    recordSetDigest: digestSemantic(records),
+  };
+  return { baseToken, revision: 9, title: null, timezone: null, tables: [table] };
+}
+
+// Paginated live client over the given bases, mirroring scanBase's contract.
+function clientFor(...bases) {
+  const byToken = new Map(bases.map((base) => [base.baseToken, base]));
+  const page = (items) => ({ items, hasMore: false });
   return {
-    baseToken,
-    revision: 9,
-    tables: [{
-      tableId,
-      fields,
-      views,
-      records,
-      recordCount: records.length,
-      fieldSchemaDigest: digestSemantic(fields),
-      viewScopeDigest: digestSemantic(views),
-      recordSetDigest: digestSemantic(records),
-    }],
+    async getBase({ baseToken }) {
+      const base = byToken.get(baseToken);
+      if (!base) throw new Error(`unknown base ${baseToken}`);
+      return { title: base.title || null, revision: base.revision ?? null, timezone: base.timezone || null };
+    },
+    async listTables({ baseToken }) {
+      return page(byToken.get(baseToken).tables.map(({ tableId, name, primaryFieldId }) => ({ tableId, name, primaryFieldId })));
+    },
+    async listFields({ baseToken, tableId }) {
+      return page(byToken.get(baseToken).tables.find((table) => table.tableId === tableId)?.fields || []);
+    },
+    async listViews({ baseToken, tableId }) {
+      return page(byToken.get(baseToken).tables.find((table) => table.tableId === tableId)?.views || []);
+    },
+    async listRecords({ baseToken, tableId }) {
+      return page(byToken.get(baseToken).tables.find((table) => table.tableId === tableId)?.records || []);
+    },
   };
 }
 
@@ -65,29 +90,16 @@ function manifestFixture() {
   });
 }
 
-function freshnessFixture(manifest) {
-  return {
-    schemaVersion: 1,
-    sourceInventoryDigest: baseInventoryDigest(manifest.sourceBase),
-    targetInventoryDigest: baseInventoryDigest(manifest.targetBase),
-    manifestSemanticDigest: manifest.semanticDigest,
-    capturedAt: '2026-09-25T00:00:00.000Z',
-  };
-}
-
-async function planRefusal(manifest, freshness = null) {
+async function planRefusal(manifest, { client = null } = {}) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-'));
   const manifestPath = path.join(directory, 'manifest.json');
   const outputPath = path.join(directory, 'units.json');
   writeJson(manifestPath, manifest);
   const { runCli } = require('../../bin/localized-doc-sync');
-  const argv = ['node', 'localized-doc-sync.js', 'plan', '--scan-manifest', manifestPath,
-    '--freshness', freshness ? freshness.path : path.join(directory, 'freshness.json'),
-    '--output', outputPath];
-  if (freshness) writeJson(freshness.path, freshness.artifact);
+  const argv = ['node', 'localized-doc-sync.js', 'plan', '--scan-manifest', manifestPath, '--output', outputPath];
   let code = null;
   try {
-    await runCli({ argv, dependencies: { onStdout() {} } });
+    await runCli({ argv, dependencies: { onStdout() {}, client } });
   } catch (error) {
     code = error.code || null;
   }
@@ -133,7 +145,7 @@ const scenarios = {
       localePolicyDigest: `sha256:${'c'.repeat(64)}`,
       issues: [],
     });
-    const { code } = await planRefusal(partialManifest, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: freshnessFixture(partialManifest) });
+    const { code } = await planRefusal(partialManifest, { client: clientFor(forgedBase, completeBase('zh', 'zh-dev', 'bb')) });
     return { code, completeInventory: partialManifest.completeInventory };
   },
 
@@ -145,21 +157,20 @@ const scenarios = {
       ...manifest,
       issues: [{ issueId: 'issue:injected', code: 'NEW', locale: 'zh', placement: 'canonical', actions: [{ actionId: 'a:injected', sideEffects: ['record:update'] }] }],
     };
-    const tamperedResult = await planRefusal(tampered, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: freshnessFixture(manifest) });
+    const tamperedResult = await planRefusal(tampered, { client: clientFor(manifest.sourceBase, manifest.targetBase) });
 
-    // A manifest whose claimed inventory digest no longer recomputes is
-    // equally stale.
-    const staleManifest = { ...manifestFixture(), inventoryDigest: `sha256:${'0'.repeat(64)}` };
-    const stale = await planRefusal(staleManifest, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: freshnessFixture(manifestFixture()) });
+    // A base that gained a table after the scan is stale: the live
+    // re-enumeration no longer matches the manifest's snapshots.
+    const grown = JSON.parse(JSON.stringify(manifest.sourceBase));
+    grown.tables.push(completeBase('en', 'en-extra', 'cc').tables[0]);
+    const stale = await planRefusal(manifest, { client: clientFor(grown, manifest.targetBase) });
     return { tamperedCode: tamperedResult.code, staleCode: stale.code };
   },
 
-  async localizationFreshnessMismatchRefused() {
-    // An artifact attesting a different enumeration (forged source digest)
-    // cannot vouch for this scan.
-    const manifest = manifestFixture();
-    const forged = { ...freshnessFixture(manifest), sourceInventoryDigest: `sha256:${'0'.repeat(64)}` };
-    const result = await planRefusal(manifest, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: forged });
+  async localizationFreshnessRescanRequired() {
+    // No client, no queue decision: a self-generated artifact cannot
+    // substitute for live re-enumeration.
+    const result = await planRefusal(manifestFixture(), {});
     return { code: result.code };
   },
 

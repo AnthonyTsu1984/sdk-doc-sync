@@ -117,6 +117,7 @@ async function executeApprovedActionBatch({
   approvedBatchDigest,
   journalPath,
   adapter,
+  locale = 'zh',
 }) {
   const approval = createApprovalEnvelope({
     skill: actionBatch.skill,
@@ -133,6 +134,11 @@ async function executeApprovedActionBatch({
   return executeReviewUnit({
     unit: {
       reviewUnitId: `agent-team:${actionBatch.batchDigest}`,
+      // The handoff binds the unit to the exact digest-verified stored batch
+      // and carries the target locale: the executor re-checks both before the
+      // first adapter call.
+      boundBatchDigest: actionBatch.batchDigest,
+      locale,
       requiresDocumentAcceptance,
     },
     batch: actionBatch,
@@ -195,6 +201,7 @@ async function main() {
     approvedBatchDigest,
     journalPath: path.join(store.taskDir(taskId), 'execution-journal.jsonl'),
     adapter: createLiveAdapter(config, captures),
+    locale: localization.targetLang,
   });
   store.writeArtifact(taskId, 'meta-only-result.json', captures.metaOnlyResults);
   store.writeArtifact(taskId, 'live-write-result.json', captures.translationResults);

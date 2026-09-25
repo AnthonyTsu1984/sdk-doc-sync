@@ -259,16 +259,28 @@ merge policy, locale metadata non-comparison, and Chapter role rules remain a se
 - [x] 5.4 Memory/notes: record the adopted ID prefixes and the shared-runner usage for future
       skill onboarding.
 
-Close-out evidence (2026-09-25): the strict coverage report reads clean across
-all five adopted skills — 30 runtime-enforced invariants, 0 coverage errors. A
-structural sweep over every registry entry confirmed each one has all fixtures
-present and at least one negative arm asserting a SCREAMING_CASE blocker code
-(the sweep first flagged six invariants whose assertion keys are not literally
-`code` — providerCode/violationCode/blockerCode/codes — all six confirmed as
-detection misses, not real gaps). Behavior pressure cases cover every skill
-(41 cases total, ≥3 pressure each, enforced by tests/skills/behavior-cases.test.js).
-The phase 5 acceptance criterion holds: no runtime-enforced rule relies only on
-a prose assertion or a model eval.
+Close-out evidence (2026-09-25, post-review): the strict coverage report reads
+clean across all five adopted skills — 30 runtime-enforced invariants, 0
+coverage errors. A structural sweep over every registry entry confirmed each
+one has all fixtures present and at least one negative arm asserting a
+SCREAMING_CASE blocker code (the sweep first flagged six invariants whose
+assertion keys are not literally `code` — providerCode/violationCode/
+blockerCode/codes — all six confirmed as detection misses, not real gaps).
+Behavior pressure cases cover every skill (41 cases total, ≥3 pressure each,
+enforced by tests/skills/behavior-cases.test.js).
+
+The phase 5 review round reproduced four real bypasses in the localized-doc-sync
+invariants and held the delivered claim until they were closed: forged digest
+strings passing the completeness derivation, post-scan issue injection under
+the old semantic digest, a separately approved source-side batch executing past
+the planner-only guard, and reordered protected markers silently swapping API
+names. Each is now closed at the boundary it targeted (materialized digest
+recomputation; full semantic digest + freshness-artifact binding at plan;
+batch/unit binding plus the source-locale refusal repeated in the executor;
+in-order marker comparison), and each reproduced bypass is fixture-proven to a
+typed refusal. With those landed, the phase 5 acceptance criterion holds: no
+runtime-enforced rule relies only on a prose assertion or a model eval, and
+each one's enforcement has survived a known attack on its own boundary.
 
 ## Execution Notes
 

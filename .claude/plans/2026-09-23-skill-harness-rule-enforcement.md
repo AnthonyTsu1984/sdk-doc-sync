@@ -5,16 +5,26 @@ Date: 2026-09-23
 Status: delivered through Phase 5 (see revision history); Phase 6 (operational
 evidence and governance) remains open.
 
-Delivery status (2026-09-25): Phase 0 = PR #20, Phase 1 = PR #21, Phase 2 =
-PR #22, Phase 3 = PR #23, Phase 4 = PR #24 (+ #25 pin fix), Phase 5 steps
-0–4 = PRs #31/#32/#33/#36/#37 (+ review fixes #35). Five canonical skills
-adopt the invariant registry — api-reference-sync, procedure-code-sync,
-doc-code-verify, verified-doc-authoring, localized-doc-sync — with 30
-runtime-enforced invariants, every one backed by executable fixtures that
-drive production code and at least one negative arm asserting a typed blocker
-code (`node scripts/invariant-coverage-report.js --strict` is the standing
-acceptance artifact). Phase 6 follow-ups: waiver expiry/ownership for
-declared-only entries, violation and false-block tracking by invariant ID,
+Delivery status (2026-09-25, post-review): Phase 0 = PR #20, Phase 1 =
+PR #21, Phase 2 = PR #22, Phase 3 = PR #23, Phase 4 = PR #24 (+ #25 pin
+fix), Phase 5 steps 0–4 = PRs #31/#32/#33/#36/#37 (+ review fixes #35 and
+the #37/#38 review-fix commits). Five canonical skills adopt the invariant
+registry — api-reference-sync, procedure-code-sync, doc-code-verify,
+verified-doc-authoring, localized-doc-sync — with 30 runtime-enforced
+invariants, every one backed by executable fixtures that drive production
+code and at least one negative arm asserting a typed blocker code
+(`node scripts/invariant-coverage-report.js --strict` is the standing
+acceptance artifact). The phase 5 review round reproduced four bypasses in
+the localized-doc-sync invariants (forged digest strings passing the
+completeness derivation, post-scan issue injection accepted, a separately
+approved source-side batch executing past the planner-only guard, and
+reordered protected markers swapping API names); each is closed at the
+boundary it targeted — materialized digest recomputation, full semantic
+digest plus freshness-artifact binding at plan, batch/unit binding with the
+source-locale refusal repeated in the executor, and in-order marker
+comparison — with fixtures driving each reproduced bypass to a typed
+refusal. Phase 6 follow-ups: waiver expiry/ownership for declared-only
+entries, violation and false-block tracking by invariant ID,
 admission-artifact publication, and the second-wave `declared` entries noted
 in the phase 5 checklist (receipt merge policy, locale metadata
 non-comparison, Chapter role rules).

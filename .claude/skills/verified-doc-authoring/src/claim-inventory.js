@@ -64,9 +64,19 @@ function buildDraftArtifact({ markdown, claimInventory, visibleUnresolvedClaimId
     .sort();
   const visible = [...new Set(visibleUnresolvedClaimIds)].sort();
   const missing = expected.filter((claimId) => !visible.includes(claimId));
-  if (missing.length > 0) throw new Error(`Draft must keep unresolved or contradicted claims visible: ${missing.join(', ')}`);
+  if (missing.length > 0) {
+    throw Object.assign(
+      new Error(`Draft must keep unresolved or contradicted claims visible: ${missing.join(', ')}`),
+      { code: 'UNRESOLVED_CLAIMS_HIDDEN', missingClaimIds: missing },
+    );
+  }
   const unknown = visible.filter((claimId) => !expected.includes(claimId));
-  if (unknown.length > 0) throw new Error(`Draft declares unknown visible unresolved claims: ${unknown.join(', ')}`);
+  if (unknown.length > 0) {
+    throw Object.assign(
+      new Error(`Draft declares unknown visible unresolved claims: ${unknown.join(', ')}`),
+      { code: 'UNRESOLVED_CLAIM_UNKNOWN', unknownClaimIds: unknown },
+    );
+  }
   const semantic = canonicalize({
     schemaVersion: 1,
     artifactType: 'verified-doc-draft',

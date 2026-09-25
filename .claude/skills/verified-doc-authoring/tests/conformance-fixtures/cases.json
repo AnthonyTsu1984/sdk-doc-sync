@@ -1,8 +1,198 @@
 [
-  { "id": "claim-inventory", "assertions": { "claimsBeforeDraft": true } },
-  { "id": "source-grounding", "assertions": { "behaviorNeedsImplementationEvidence": true, "inventedApi": false } },
-  { "id": "unresolved-visible", "assertions": { "unresolvedSection": true, "uncertaintyHidden": false } },
-  { "id": "preview-refetch", "assertions": { "dryRun": true, "explicitApproval": true, "refetch": true } },
-  { "id": "evidence-contract", "assertions": { "sourceLocator": true, "verificationStatus": true } },
-  { "id": "result-contract", "assertions": { "semanticDigest": true, "sharedExitCode": true } }
+ {
+  "id": "claim-inventory",
+  "assertions": {
+   "claimsBeforeDraft": true
+  }
+ },
+ {
+  "id": "source-grounding",
+  "assertions": {
+   "behaviorNeedsImplementationEvidence": true,
+   "inventedApi": false
+  }
+ },
+ {
+  "id": "unresolved-visible",
+  "assertions": {
+   "unresolvedSection": true,
+   "uncertaintyHidden": false
+  }
+ },
+ {
+  "id": "preview-refetch",
+  "assertions": {
+   "dryRun": true,
+   "explicitApproval": true,
+   "refetch": true
+  }
+ },
+ {
+  "id": "evidence-contract",
+  "assertions": {
+   "sourceLocator": true,
+   "verificationStatus": true
+  }
+ },
+ {
+  "id": "result-contract",
+  "assertions": {
+   "semanticDigest": true,
+   "sharedExitCode": true
+  }
+ },
+ {
+  "id": "authoring-binding-digest-mismatch",
+  "assertions": {
+   "code": "DRAFT_CLAIM_DIGEST_MISMATCH"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringBindingDigestMismatch"
+  }
+ },
+ {
+  "id": "authoring-unspecified-target-blocked",
+  "assertions": {
+   "code": "TARGET_REQUIRED_NO_BATCH"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringUnspecifiedTargetBlocked"
+  }
+ },
+ {
+  "id": "authoring-writepath-digest-mismatch-zero-writes",
+  "assertions": {
+   "code": "APPROVAL_BATCH_MISMATCH",
+   "patchCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringWritepathDigestMismatchZeroWrites"
+  }
+ },
+ {
+  "id": "authoring-writepath-target-drift-zero-writes",
+  "assertions": {
+   "code": "TARGET_DRIFT_BEFORE_MUTATION",
+   "patchCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringWritepathTargetDriftZeroWrites"
+  }
+ },
+ {
+  "id": "authoring-visibility-draft-hidden-blocked",
+  "assertions": {
+   "code": "UNRESOLVED_CLAIMS_HIDDEN"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringVisibilityDraftHiddenBlocked"
+  }
+ },
+ {
+  "id": "authoring-visibility-review-required",
+  "assertions": {
+   "code": "UNRESOLVED_CLAIM_REVIEW_REQUIRED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringVisibilityReviewRequired"
+  }
+ },
+ {
+  "id": "authoring-visibility-refetch-blocked",
+  "assertions": {
+   "code": "AUTHORING_REFETCH_VERIFICATION_FAILED",
+   "patchCalls": 1
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringVisibilityRefetchBlocked"
+  }
+ },
+ {
+  "id": "authoring-visibility-verified-positive",
+  "assertions": {
+   "status": "ACCEPTANCE_REQUIRED",
+   "patchCalls": 1,
+   "visibleUnresolvedClaimIds": [
+    "claim:rollout"
+   ]
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringVisibilityVerifiedPositive"
+  }
+ },
+ {
+  "id": "authoring-rollback-plan-required",
+  "assertions": {
+   "code": "ROLLBACK_PLAN_REQUIRED",
+   "forgedCode": "ROLLBACK_PLAN_INVALID",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackPlanRequired"
+  }
+ },
+ {
+  "id": "authoring-rollback-creation-unproven",
+  "assertions": {
+   "code": "ROLLBACK_CREATION_UNPROVEN"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackCreationUnproven"
+  }
+ },
+ {
+  "id": "authoring-rollback-bound-positive",
+  "assertions": {
+   "status": "accepted",
+   "rollbackOperation": "restore-before-state",
+   "rollbackDigestBound": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackBoundPositive"
+  }
+ },
+ {
+  "id": "authoring-rollback-session-mismatch",
+  "assertions": {
+   "code": "ROLLBACK_MANIFEST_SESSION_MISMATCH",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackSessionMismatch"
+  }
+ },
+ {
+  "id": "authoring-rollback-empty-actions",
+  "assertions": {
+   "code": "ROLLBACK_PLAN_INVALID",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackEmptyActions"
+  }
+ },
+ {
+  "id": "authoring-rollback-beforestate-mismatch",
+  "assertions": {
+   "code": "ROLLBACK_PLAN_INVALID",
+   "sessionStatus": "acceptance_pending"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "authoringRollbackBeforeStateMismatch"
+  }
+ }
 ]

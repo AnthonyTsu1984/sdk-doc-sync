@@ -172,9 +172,9 @@ manual-status reasons); runtime-policy/remediation-handoff errors are now typed,
 `RUNTIME_MUTATIONS_FAILED`). 12 executable fixtures; suite 10/11 with the one failure being the
 pre-existing local clang++ self-test (reproduced on a clean master worktree).
 
-### Step 3 — verified-doc-authoring (PR D)
+### Step 3 — verified-doc-authoring (PR D) — DELIVERED 2026-09-24, branch `feat/phase5-verified-doc-authoring`
 
-- [ ] 3.1 SKILL.md Domain Invariants + registry:
+- [x] 3.1 SKILL.md Domain Invariants + registry:
 
   | id | stages | enforcer module today | proposed blocker codes |
   | --- | --- | --- | --- |
@@ -184,15 +184,25 @@ pre-existing local clang++ self-test (reproduced on a clean master worktree).
   | `authoring.unresolved-claim-visibility` | post-write | `src/patch-executor.js` refetch verifier + `src/claim-inventory.js` | `UNRESOLVED_CLAIM_HIDDEN` |
   | `authoring.rollback-before-acceptance` | post-write | `src/review-session-store.js` rollback path | `ROLLBACK_PLAN_REQUIRED`, `DELETE_NOT_JOURNAL_PROVEN` |
 
-- [ ] 3.2 `unresolved-claim-visibility` is the deterministic core of "keep unresolved claims
+- [x] 3.2 `unresolved-claim-visibility` is the deterministic core of "keep unresolved claims
       visible": post-write refetch must find the unresolved list present on the live page unless a
       claim-review decision digest accompanies the plan. Implement the refetch check.
-- [ ] 3.3 `canonical-write-path` fixture: a direct `feishu-doc.js patch|push` call for a
+- [x] 3.3 `canonical-write-path` fixture: a direct `feishu-doc.js patch|push` call for a
       verified-doc-authoring live write is rejected (envelope demanded at the writer boundary).
-- [ ] 3.4 Triage example to document in the PR: "a user's statement is not repository evidence" is
+- [x] 3.4 Triage example to document in the PR: "a user's statement is not repository evidence" is
       a judgment rule → behavior pressure case only, never `runtime-enforced`.
-- [ ] 3.5 Behavior pressure: user asserts the behavior is fine (skip verification); pressure to
+- [x] 3.5 Behavior pressure: user asserts the behavior is fine (skip verification); pressure to
       drop the "Needs further verification" list for a cleaner page.
+
+Delivery notes: the unresolved-claim refetch check already existed in `executeAuthoringPatch`
+(content digest + `visibleUnresolvedClaimIds` compared against the draft) — this step typed its
+refusal (`AUTHORING_REFETCH_VERIFICATION_FAILED`) and fixture-proved it (live page dropping the
+visible claim fails after exactly one patch; preserving it succeeds). The executor now owns a
+`WriterGovernance` (same pattern as procedure-code-sync) so the injected adapter cannot mutate
+outside the approved batch; acceptance now *requires* the corrective rollback manifest digest and
+binds it into the receipt (`ROLLBACK_PLAN_REQUIRED`), matching SKILL.md workflow step 8; rollback
+refusals are typed (`ROLLBACK_STRUCTURE_DRIFT` / `ROLLBACK_CREATION_UNPROVEN` /
+`ROLLBACK_DEPENDENT_UNITS`). 11 executable fixtures; authoring suite 11/11.
 
 ### Step 4 — localized-doc-sync (PR E)
 

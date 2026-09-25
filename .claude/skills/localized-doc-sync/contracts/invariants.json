@@ -12,7 +12,8 @@
       "enforcement": ["plan"],
       "statementDigest": "sha256:176fa34a6c78683f389045184ba3a73c5f56df44b04b7d445678717a338452de",
       "fixtureIds": [
-        "localization-source-actions-refused"
+        "localization-source-actions-refused",
+        "localization-source-batch-exec-refused"
       ],
       "enforcers": [
         {
@@ -20,6 +21,14 @@
           "module": ".claude/skills/localized-doc-sync/src/planner.js",
           "codes": [
             "SOURCE_MUTATION_UNAUTHORIZED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/localized-doc-sync/src/executor.js",
+          "codes": [
+            "SOURCE_MUTATION_UNAUTHORIZED",
+            "BATCH_UNIT_MISMATCH"
           ]
         }
       ]
@@ -34,14 +43,17 @@
       "statementDigest": "sha256:096c920a71623e356723b63d2f350524caf3f34717e8f25946f3e41b2791055c",
       "fixtureIds": [
         "localization-incomplete-scan-refused",
-        "localization-stale-manifest-refused"
+        "localization-stale-manifest-refused",
+        "localization-freshness-mismatch-refused"
       ],
       "enforcers": [
         {
           "stage": "evidence",
           "module": ".claude/skills/localized-doc-sync/src/issue-classifier.js",
           "codes": [
-            "INVENTORY_INCOMPLETE"
+            "INVENTORY_INCOMPLETE",
+            "FRESHNESS_ARTIFACT_REQUIRED",
+            "FRESHNESS_DIGEST_MISMATCH"
           ]
         },
         {
@@ -49,7 +61,9 @@
           "module": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
           "codes": [
             "INVENTORY_INCOMPLETE",
-            "QUEUE_DECISION_STALE"
+            "QUEUE_DECISION_STALE",
+            "FRESHNESS_ARTIFACT_REQUIRED",
+            "FRESHNESS_DIGEST_MISMATCH"
           ]
         }
       ]
@@ -85,6 +99,7 @@
       "statementDigest": "sha256:56643948703a95528930f92a9eed3fbb33e23edd79d8eb90e74240d96b8ba041",
       "fixtureIds": [
         "localization-marker-lost-refused",
+        "localization-marker-reordered-refused",
         "localization-marker-roundtrip-positive"
       ],
       "enforcers": [
@@ -93,6 +108,7 @@
           "module": ".claude/skills/localized-doc-sync/src/translation-content.js",
           "codes": [
             "PROTECTED_MARKER_LOST",
+            "PROTECTED_MARKER_REORDERED",
             "PROTECTED_MARKER_UNRESTORED"
           ]
         }

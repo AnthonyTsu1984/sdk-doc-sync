@@ -10,8 +10,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { createActionBatch } = require('../../../doc-ops-core/src/action-batch');
+const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
+const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { executeReviewUnit } = require('../../src/executor');
 const { buildReviewUnits } = require('../../src/planner');
-const { buildScanManifest } = require('../../src/issue-classifier');
+const { baseInventoryDigest, buildScanManifest, verifyFreshnessArtifact } = require('../../src/issue-classifier');
 const { applyTranslationResponse, prepareTranslationContent } = require('../../src/translation-content');
 const { parseAndAuthorizeReview } = require('../../src/review-evidence');
 const { TranslationReceiptStore, assertTranslationRecoveryCompatible } = require('../../src/translation-state');
@@ -25,17 +29,24 @@ function planningError(fn) {
   }
 }
 
-// A complete dual-Base snapshot: every table carries the digests scanBase()
-// derives (field schema, view scope, record set).
+// A complete dual-Base snapshot: every table MATERIALIZES its inventory and
+// the digests recompute from the actual arrays (opaque strings are refused).
 function completeBase(baseToken, tableId, seed) {
+  const fields = [{ id: `${tableId}-field`, name: 'Slug' }];
+  const views = [{ id: `${tableId}-view`, name: 'grid' }];
+  const records = [{ record_id: `${tableId}-rec-1`, fields: { Slug: `${tableId}-slug` } }];
   return {
     baseToken,
     revision: 9,
     tables: [{
       tableId,
-      fieldSchemaDigest: `sha256:${seed}-fields`,
-      viewScopeDigest: `sha256:${seed}-views`,
-      recordSetDigest: `sha256:${seed}-records`,
+      fields,
+      views,
+      records,
+      recordCount: records.length,
+      fieldSchemaDigest: digestSemantic(fields),
+      viewScopeDigest: digestSemantic(views),
+      recordSetDigest: digestSemantic(records),
     }],
   };
 }
@@ -54,9 +65,42 @@ function manifestFixture() {
   });
 }
 
+function freshnessFixture(manifest) {
+  return {
+    schemaVersion: 1,
+    sourceInventoryDigest: baseInventoryDigest(manifest.sourceBase),
+    targetInventoryDigest: baseInventoryDigest(manifest.targetBase),
+    manifestSemanticDigest: manifest.semanticDigest,
+    capturedAt: '2026-09-25T00:00:00.000Z',
+  };
+}
+
+async function planRefusal(manifest, freshness = null) {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-'));
+  const manifestPath = path.join(directory, 'manifest.json');
+  const outputPath = path.join(directory, 'units.json');
+  writeJson(manifestPath, manifest);
+  const { runCli } = require('../../bin/localized-doc-sync');
+  const argv = ['node', 'localized-doc-sync.js', 'plan', '--scan-manifest', manifestPath,
+    '--freshness', freshness ? freshness.path : path.join(directory, 'freshness.json'),
+    '--output', outputPath];
+  if (freshness) writeJson(freshness.path, freshness.artifact);
+  let code = null;
+  try {
+    await runCli({ argv, dependencies: { onStdout() {} } });
+  } catch (error) {
+    code = error.code || null;
+  }
+  return { code };
+}
+
 function writeJson(filePath, value) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, `${JSON.stringify(value)}\n`);
+}
+
+function tmpJournalPath() {
+  return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'journal.jsonl');
 }
 
 const scenarios = {
@@ -75,52 +119,48 @@ const scenarios = {
   // --- localization.complete-dual-base-enumeration ---
 
   async localizationIncompleteScanRefused() {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-'));
-    const manifestPath = path.join(directory, 'manifest.json');
-    const outputPath = path.join(directory, 'units.json');
-    // A hand-assembled snapshot without the per-table scan digests is a
-    // partial scan: the manifest derives completeInventory=false.
+    // Hand-built snapshots with forged digest strings are NOT complete: the
+    // digests must recompute from the materialized arrays.
+    const forgedBase = {
+      baseToken: 'en', revision: 9,
+      tables: [{ tableId: 'en-dev', fieldSchemaDigest: 'forged', viewScopeDigest: 'forged', recordSetDigest: 'forged' }],
+    };
     const partialManifest = buildScanManifest({
-      sourceBase: { baseToken: 'en', revision: 9, tables: [{ tableId: 'en-dev' }] },
+      sourceBase: forgedBase,
       targetBase: completeBase('zh', 'zh-dev', 'bb'),
       tableMappings: [], placementIdentities: [], translationPairs: [],
       translationReceiptDigests: [], hierarchyPolicies: [],
       localePolicyDigest: `sha256:${'c'.repeat(64)}`,
       issues: [],
     });
-    writeJson(manifestPath, partialManifest);
-    const { runCli } = require('../../bin/localized-doc-sync');
-    let code = null;
-    try {
-      await runCli({
-        argv: ['node', 'localized-doc-sync.js', 'plan', '--scan-manifest', manifestPath, '--output', outputPath],
-        dependencies: { onStdout() {} },
-      });
-    } catch (error) {
-      code = error.code || null;
-    }
+    const { code } = await planRefusal(partialManifest, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: freshnessFixture(partialManifest) });
     return { code, completeInventory: partialManifest.completeInventory };
   },
 
   async localizationStaleManifestRefused() {
-    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-'));
-    const manifestPath = path.join(directory, 'manifest.json');
-    const outputPath = path.join(directory, 'units.json');
-    // The claimed inventory digest no longer recomputes from the manifest's
-    // own snapshots: the queue decision is stale.
+    // Injecting an issue (with an executable action) after the scan breaks
+    // the manifest's semantic digest: the tampered queue is refused.
+    const manifest = manifestFixture();
+    const tampered = {
+      ...manifest,
+      issues: [{ issueId: 'issue:injected', code: 'NEW', locale: 'zh', placement: 'canonical', actions: [{ actionId: 'a:injected', sideEffects: ['record:update'] }] }],
+    };
+    const tamperedResult = await planRefusal(tampered, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: freshnessFixture(manifest) });
+
+    // A manifest whose claimed inventory digest no longer recomputes is
+    // equally stale.
     const staleManifest = { ...manifestFixture(), inventoryDigest: `sha256:${'0'.repeat(64)}` };
-    writeJson(manifestPath, staleManifest);
-    const { runCli } = require('../../bin/localized-doc-sync');
-    let code = null;
-    try {
-      await runCli({
-        argv: ['node', 'localized-doc-sync.js', 'plan', '--scan-manifest', manifestPath, '--output', outputPath],
-        dependencies: { onStdout() {} },
-      });
-    } catch (error) {
-      code = error.code || null;
-    }
-    return { code };
+    const stale = await planRefusal(staleManifest, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: freshnessFixture(manifestFixture()) });
+    return { tamperedCode: tamperedResult.code, staleCode: stale.code };
+  },
+
+  async localizationFreshnessMismatchRefused() {
+    // An artifact attesting a different enumeration (forged source digest)
+    // cannot vouch for this scan.
+    const manifest = manifestFixture();
+    const forged = { ...freshnessFixture(manifest), sourceInventoryDigest: `sha256:${'0'.repeat(64)}` };
+    const result = await planRefusal(manifest, { path: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localization-conformance-')), 'freshness.json'), artifact: forged });
+    return { code: result.code };
   },
 
   // --- localization.target-only-preserve ---
@@ -140,6 +180,24 @@ const scenarios = {
   },
 
   // --- localization.protected-marker-preservation ---
+
+  localizationMarkerReorderedRefused() {
+    const prepared = prepareTranslationContent('Use `alpha()` before `beta()`.', { idPrefix: 'conformance' });
+    const translations = prepared.units.map((unit) => {
+      const markers = [...unit.text.matchAll(/⟦LDS:[a-z-]+:\d{4}:[a-f0-9]{8}⟧/g)].map((match) => match[0]);
+      // Same multiset, swapped order: this silently exchanges the two API
+      // names between their slots.
+      const swapped = markers.length === 2 ? [...markers].reverse().join(' 与 ') : unit.text;
+      return { id: unit.id, text: swapped };
+    });
+    let code = null;
+    try {
+      applyTranslationResponse(prepared, { translations });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code };
+  },
 
   localizationMarkerLostRefused() {
     const prepared = prepareTranslationContent('Run `npm test` now.', { idPrefix: 'conformance' });
@@ -236,6 +294,64 @@ const scenarios = {
       requiresDocumentAcceptance: units[0]?.requiresDocumentAcceptance === true,
       actionCarried: units[0]?.actions?.[0]?.actionId === 'a:merge',
     };
+  },
+
+  // --- localization.source-read-only (executor boundary) ---
+
+  async localizationSourceBatchExecRefused() {
+    // The reviewer's exact bypass: a source-locale unit paired with a
+    // separately approved batch against a source record. The batch matches
+    // the unit exactly, so the refusal is the source-locale guard itself.
+    const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'] }];
+    const unit = { reviewUnitId: 'unit:en-1', locale: 'en', requiresDocumentAcceptance: false, actions };
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
+    const approval = createApprovalEnvelope({
+      skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+    });
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit, batch, approval,
+        journalPath: tmpJournalPath(),
+        adapter: {
+          async execute() { adapterCalls += 1; return {}; },
+          async verify() { return { verified: true }; },
+        },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
+  },
+
+  async localizationBatchUnitMismatchRefused() {
+    // A matching-unit batch is required: an approved batch for DIFFERENT
+    // actions cannot ride on this unit.
+    const unitActions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'] }];
+    const unit = { reviewUnitId: 'unit:zh-1', locale: 'zh', requiresDocumentAcceptance: true, actions: unitActions };
+    const otherActions = [{ actionId: 'record:update:b', target: 'record:b', dependsOn: [], sideEffects: ['record:update'] }];
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: otherActions });
+    const approval = createApprovalEnvelope({
+      skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+    });
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit, batch, approval,
+        journalPath: tmpJournalPath(),
+        adapter: {
+          async execute() { adapterCalls += 1; return {}; },
+          async verify() { return { verified: true }; },
+        },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
   },
 
   // --- localization.receipt-identity ---

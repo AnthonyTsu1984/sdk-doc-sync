@@ -76,7 +76,8 @@
  {
   "id": "localization-stale-manifest-refused",
   "assertions": {
-   "code": "QUEUE_DECISION_STALE"
+   "tamperedCode": "QUEUE_DECISION_STALE",
+   "staleCode": "QUEUE_DECISION_STALE"
   },
   "executable": {
    "runner": "invariant-conformance",
@@ -187,6 +188,48 @@
   "executable": {
    "runner": "invariant-conformance",
    "scenario": "localizationRecoveryDriftRefused"
+  }
+ },
+ {
+  "id": "localization-freshness-mismatch-refused",
+  "assertions": {
+   "code": "FRESHNESS_DIGEST_MISMATCH"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationFreshnessMismatchRefused"
+  }
+ },
+ {
+  "id": "localization-marker-reordered-refused",
+  "assertions": {
+   "code": "PROTECTED_MARKER_REORDERED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationMarkerReorderedRefused"
+  }
+ },
+ {
+  "id": "localization-source-batch-exec-refused",
+  "assertions": {
+   "code": "SOURCE_MUTATION_UNAUTHORIZED",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationSourceBatchExecRefused"
+  }
+ },
+ {
+  "id": "localization-batch-unit-mismatch-refused",
+  "assertions": {
+   "code": "BATCH_UNIT_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBatchUnitMismatchRefused"
   }
  }
 ]

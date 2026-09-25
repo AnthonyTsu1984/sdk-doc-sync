@@ -6,6 +6,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { baseInventoryDigest } = require('../src/issue-classifier');
 const { runCli } = require('../bin/localized-doc-sync');
 
 function writeJson(filePath, value) {
@@ -19,6 +21,7 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
   const mapPath = path.join(directory, 'table-map.json');
   const policyPath = path.join(directory, 'locale-policy.json');
   const scanPath = path.join(directory, 'scan.json');
+  const freshnessPath = path.join(directory, 'freshness.json');
   const planPath = path.join(directory, 'units.json');
   const fields = [
     { fieldId: 'docs', name: 'Docs', type: 'text', isPrimary: true },
@@ -26,8 +29,26 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
     { fieldId: 'slug', name: 'Slug', type: 'text' },
     { fieldId: 'targets', name: 'Targets', type: 'multi_select' },
   ];
-  writeJson(sourcePath, { baseToken: 'en', revision: 1, tables: [{ tableId: 'en-dev', name: 'Development', primaryFieldId: 'docs', fields, views: [], records: [], recordSetDigest: 'sha256:en', fieldSchemaDigest: 'sha256:en-fields', viewScopeDigest: 'sha256:en-views' }] });
-  writeJson(targetPath, { baseToken: 'zh', revision: 1, tables: [{ tableId: 'zh-dev', name: '开发指南', primaryFieldId: 'docs', fields, views: [], records: [], recordSetDigest: 'sha256:zh', fieldSchemaDigest: 'sha256:zh-fields', viewScopeDigest: 'sha256:zh-views' }] });
+  const materialize = (tableId, name, primaryFieldId) => {
+    const records = [{
+      record_id: `${tableId}-rec-1`,
+      fields: { Docs: 'doc', 'Placement Type': 'canonical', Slug: tableId, Targets: ['Milvus'] },
+    }];
+    const table = {
+      tableId, name, primaryFieldId,
+      fields, views: [], records,
+      recordCount: records.length,
+      fieldSchemaDigest: digestSemantic(fields),
+      viewScopeDigest: digestSemantic([]),
+      recordSetDigest: digestSemantic(records),
+    };
+    table.tableDigest = digestSemantic({ tableId, name, primaryFieldId, fields, views: [], records });
+    return table;
+  };
+  const sourceBase = { baseToken: 'en', revision: 1, tables: [materialize('en-dev', 'Development', 'docs')] };
+  const targetBase = { baseToken: 'zh', revision: 1, tables: [materialize('zh-dev', '开发指南', 'docs')] };
+  writeJson(sourcePath, sourceBase);
+  writeJson(targetPath, targetBase);
   writeJson(mapPath, { schemaVersion: 1, mappings: [{ relation: 'mapped', sourceTableId: 'en-dev', targetTableId: 'zh-dev', provenance: 'test' }] });
   writeJson(policyPath, {
     schemaVersion: 1,
@@ -45,12 +66,38 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
   assert.match(scan.semanticDigest, /^sha256:/);
   assert.equal(scan.tableMappings.length, 1);
 
-  scan.issues.push({ issueId: 'issue:new', code: 'NEW', placement: 'canonical', identity: 'canonical:new', tableMappingId: scan.tableMappings[0].mappingId });
-  writeJson(scanPath, scan);
-  await runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--output', planPath] });
+  const freshness = {
+    schemaVersion: 1,
+    sourceInventoryDigest: baseInventoryDigest(sourceBase),
+    targetInventoryDigest: baseInventoryDigest(targetBase),
+    manifestSemanticDigest: scan.semanticDigest,
+    capturedAt: '2026-09-25T00:00:00.000Z',
+  };
+  writeJson(freshnessPath, freshness);
+  await runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--freshness', freshnessPath, '--output', planPath] });
   const units = JSON.parse(fs.readFileSync(planPath, 'utf8'));
-  assert.equal(units.length, 1);
-  assert.equal(units[0].scanManifestDigest, scan.semanticDigest);
+  assert.ok(units.length >= 1);
+  for (const unit of units) assert.equal(unit.scanManifestDigest, scan.semanticDigest);
+
+  // Injecting an issue after the scan breaks the manifest's semantic digest:
+  // plan must refuse the tampered queue (the reviewer's exact bypass).
+  scan.issues.push({ issueId: 'issue:new', code: 'NEW', placement: 'canonical', identity: 'canonical:new', actions: [{ actionId: 'a:injected', sideEffects: ['record:update'] }], tableMappingId: scan.tableMappings[0].mappingId });
+  writeJson(scanPath, scan);
+  await assert.rejects(
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--freshness', freshnessPath, '--output', planPath] }),
+    (error) => error.code === 'QUEUE_DECISION_STALE',
+  );
+
+  // A freshness artifact attesting a different enumeration (here: a forged
+  // source digest) cannot vouch for this scan.
+  const untampered = JSON.parse(fs.readFileSync(scanPath, 'utf8'));
+  untampered.issues.splice(untampered.issues.length - 1, 1);
+  writeJson(scanPath, untampered);
+  writeJson(freshnessPath, { ...freshness, sourceInventoryDigest: `sha256:${'0'.repeat(64)}` });
+  await assert.rejects(
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'plan', '--scan-manifest', scanPath, '--freshness', freshnessPath, '--output', planPath] }),
+    (error) => error.code === 'FRESHNESS_DIGEST_MISMATCH',
+  );
 });
 
 test('localized capability references the canonical journaled entrypoint and package suite', () => {

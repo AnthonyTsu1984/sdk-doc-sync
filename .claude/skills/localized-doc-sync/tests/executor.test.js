@@ -23,7 +23,7 @@ test('executor writes prepared journal entries before exact approved target acti
   const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl');
   const observations = [];
   const result = await executeReviewUnit({
-    unit: { reviewUnitId: 'unit:a', requiresDocumentAcceptance: true }, batch, approval, journalPath,
+    unit: { reviewUnitId: 'unit:a', locale: 'zh', requiresDocumentAcceptance: true, actions }, batch, approval, journalPath,
     adapter: {
       async execute(action) {
         const journal = fs.readFileSync(journalPath, 'utf8');
@@ -37,6 +37,47 @@ test('executor writes prepared journal entries before exact approved target acti
   assert.deepEqual(observations, ['record:update:a']);
   assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
   assert.match(fs.readFileSync(journalPath, 'utf8'), /"completionSentinel":true/);
+});
+
+test('executor refuses a batch that does not match the planned review unit', async () => {
+  const unitActions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'] }];
+  const unit = { reviewUnitId: 'unit:a', locale: 'zh', requiresDocumentAcceptance: true, actions: unitActions };
+  const forgedActions = [{ actionId: 'record:update:b', target: 'record:b', dependsOn: [], sideEffects: ['record:update'] }];
+  const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: forgedActions });
+  const approval = createApprovalEnvelope({
+    skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+  });
+  let adapterCalls = 0;
+  await assert.rejects(
+    () => executeReviewUnit({
+      unit, batch, approval,
+      journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl'),
+      adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+    }),
+    (error) => error.code === 'BATCH_UNIT_MISMATCH',
+  );
+  assert.equal(adapterCalls, 0);
+});
+
+test('executor refuses source-locale units even with a matching approved batch', async () => {
+  const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'] }];
+  const unit = { reviewUnitId: 'unit:en', locale: 'en', requiresDocumentAcceptance: false, actions };
+  const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
+  const approval = createApprovalEnvelope({
+    skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+  });
+  let adapterCalls = 0;
+  await assert.rejects(
+    () => executeReviewUnit({
+      unit, batch, approval,
+      journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl'),
+      adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+    }),
+    (error) => error.code === 'SOURCE_MUTATION_UNAUTHORIZED',
+  );
+  assert.equal(adapterCalls, 0);
 });
 
 test('executor rejects recovery when the schema-v2 translation receipt identity is stale', async () => {

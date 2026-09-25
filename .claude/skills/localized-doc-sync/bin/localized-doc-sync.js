@@ -9,7 +9,7 @@ const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { profileTableSchema } = require('../src/schema-profiler');
 const { mapTables } = require('../src/table-mapper');
 const { buildTranslationPairs, resolveTableIdentities } = require('../src/identity-resolver');
-const { buildScanManifest } = require('../src/issue-classifier');
+const { buildScanManifest, verifyFreshnessArtifact } = require('../src/issue-classifier');
 const { buildReviewUnits } = require('../src/planner');
 const { executeReviewUnit } = require('../src/executor');
 
@@ -145,7 +145,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     return manifest;
   }
   if (args.command === 'plan') {
-    for (const name of ['scanManifest', 'output']) required(args, name);
+    for (const name of ['scanManifest', 'freshness', 'output']) required(args, name);
     const manifest = readJson(args.scanManifest);
     if (manifest.completeInventory !== true || manifest.partialScanAuthoritative === true) {
       throw Object.assign(
@@ -153,18 +153,24 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         { code: 'INVENTORY_INCOMPLETE' },
       );
     }
-    // Queue decisions bind to fresh evidence: the claimed inventory digest
-    // must recompute from the manifest's own base snapshots.
-    const recomputedInventoryDigest = digestSemantic({
-      sourceBase: manifest.sourceBase,
-      targetBase: manifest.targetBase,
-    });
-    if (recomputedInventoryDigest !== manifest.inventoryDigest) {
+    // Queue decisions bind to the complete manifest: every field — issues and
+    // their actions included — must hash to the recorded semantic digest, so
+    // post-scan tampering of any part of the manifest is refused.
+    const { scanEpochId, semanticDigest, ...semanticInput } = manifest;
+    if (digestSemantic(semanticInput) !== semanticDigest
+        || scanEpochId !== `scan:localized-doc-sync:${semanticDigest.slice(7, 23)}`) {
       throw Object.assign(
-        new Error('Scan manifest inventory digest does not match its base snapshots'),
+        new Error('Scan manifest content does not match its semantic digest'),
         { code: 'QUEUE_DECISION_STALE' },
       );
     }
+    // Freshness: a separately verified artifact must attest this exact
+    // enumeration. Its per-base digests recompute from the manifest's own
+    // snapshots, so an artifact captured before a base changed cannot vouch
+    // for it — content addressing makes stale attestations detectable.
+    verifyFreshnessArtifact(readJson(args.freshness), manifest, {
+      expectedManifestSemanticDigest: semanticDigest,
+    });
     const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [] });
     writeJson(args.output, units);
     out(`Review units: ${units.length}`);

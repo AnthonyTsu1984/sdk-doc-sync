@@ -51,7 +51,7 @@ function unitId(kind, issueIds) {
 
 function metaGroupKey(issue) {
   return JSON.stringify([
-    issue.tableMappingId, issue.placement, issue.localeOwner,
+    issue.locale, issue.tableMappingId, issue.placement, issue.localeOwner,
     [...(issue.changedFields || [])].sort(), issue.riskClass,
     issue.preconditionSchema, issue.publicationEffect, issue.localePolicyDecision,
   ]);
@@ -88,6 +88,7 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
       kind,
       scanManifestDigest,
       issueIds,
+      locale: issue.locale || null,
       placement: issue.placement,
       identity: issue.identity || null,
       tableMappingId: issue.tableMappingId || null,
@@ -114,6 +115,7 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
       kind: 'metadata',
       scanManifestDigest,
       issueIds,
+      locale: group[0].locale || null,
       placement: group[0].placement,
       tableMappingId: group[0].tableMappingId,
       requiresDocumentAcceptance: false,

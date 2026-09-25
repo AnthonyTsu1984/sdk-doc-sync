@@ -16,8 +16,15 @@ test('issue vocabulary covers full-scan discovery drift work policy and no-op st
 });
 
 test('scan manifest binds complete inventories policy lineage and a stable complete issue queue', () => {
-  const sourceBase = { baseToken: 'en', revision: 9, tables: [{ tableId: 'a', tableDigest: 'sha256:a' }] };
-  const targetBase = { baseToken: 'zh', revision: 19, tables: [{ tableId: 'b', tableDigest: 'sha256:b' }] };
+  const completeTable = (tableId, digest) => ({
+    tableId,
+    tableDigest: `sha256:${digest}`,
+    fieldSchemaDigest: `sha256:${digest}`,
+    viewScopeDigest: `sha256:${digest}`,
+    recordSetDigest: `sha256:${digest}`,
+  });
+  const sourceBase = { baseToken: 'en', revision: 9, tables: [completeTable('a', 'a')] };
+  const targetBase = { baseToken: 'zh', revision: 19, tables: [completeTable('b', 'b')] };
   const issues = [
     { issueId: 'issue:2', code: 'NOOP', identity: 'reference-source:zh:pair' },
     { issueId: 'issue:1', code: 'UNMAPPED_TABLE', tableId: 'a', blocking: true },
@@ -32,6 +39,14 @@ test('scan manifest binds complete inventories policy lineage and a stable compl
   assert.deepEqual(first.issues.map((issue) => issue.issueId), ['issue:1', 'issue:2']);
   assert.equal(first.completeInventory, true);
   assert.equal(first.partialScanAuthoritative, false);
+
+  // Completeness is derived from table-level scan digests, not asserted: a
+  // snapshot missing them is a partial scan and planning must refuse it.
+  const partial = buildScanManifest({
+    ...input,
+    sourceBase: { baseToken: 'en', revision: 9, tables: [{ tableId: 'a', tableDigest: 'sha256:a' }] },
+  });
+  assert.equal(partial.completeInventory, false);
 });
 
 test('valid refs are NOOP and missing reference members reopen the underlying translation pair', () => {

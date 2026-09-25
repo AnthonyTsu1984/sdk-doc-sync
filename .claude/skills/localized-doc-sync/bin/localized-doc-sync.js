@@ -147,7 +147,24 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'plan') {
     for (const name of ['scanManifest', 'output']) required(args, name);
     const manifest = readJson(args.scanManifest);
-    if (manifest.completeInventory !== true || manifest.partialScanAuthoritative === true) throw new Error('Planning requires a complete full-Base scan manifest');
+    if (manifest.completeInventory !== true || manifest.partialScanAuthoritative === true) {
+      throw Object.assign(
+        new Error('Planning requires a complete full-Base scan manifest'),
+        { code: 'INVENTORY_INCOMPLETE' },
+      );
+    }
+    // Queue decisions bind to fresh evidence: the claimed inventory digest
+    // must recompute from the manifest's own base snapshots.
+    const recomputedInventoryDigest = digestSemantic({
+      sourceBase: manifest.sourceBase,
+      targetBase: manifest.targetBase,
+    });
+    if (recomputedInventoryDigest !== manifest.inventoryDigest) {
+      throw Object.assign(
+        new Error('Scan manifest inventory digest does not match its base snapshots'),
+        { code: 'QUEUE_DECISION_STALE' },
+      );
+    }
     const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [] });
     writeJson(args.output, units);
     out(`Review units: ${units.length}`);

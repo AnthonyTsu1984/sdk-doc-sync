@@ -26,8 +26,8 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
     { fieldId: 'slug', name: 'Slug', type: 'text' },
     { fieldId: 'targets', name: 'Targets', type: 'multi_select' },
   ];
-  writeJson(sourcePath, { baseToken: 'en', revision: 1, tables: [{ tableId: 'en-dev', name: 'Development', primaryFieldId: 'docs', fields, views: [], records: [], recordSetDigest: 'sha256:en' }] });
-  writeJson(targetPath, { baseToken: 'zh', revision: 1, tables: [{ tableId: 'zh-dev', name: '开发指南', primaryFieldId: 'docs', fields, views: [], records: [], recordSetDigest: 'sha256:zh' }] });
+  writeJson(sourcePath, { baseToken: 'en', revision: 1, tables: [{ tableId: 'en-dev', name: 'Development', primaryFieldId: 'docs', fields, views: [], records: [], recordSetDigest: 'sha256:en', fieldSchemaDigest: 'sha256:en-fields', viewScopeDigest: 'sha256:en-views' }] });
+  writeJson(targetPath, { baseToken: 'zh', revision: 1, tables: [{ tableId: 'zh-dev', name: '开发指南', primaryFieldId: 'docs', fields, views: [], records: [], recordSetDigest: 'sha256:zh', fieldSchemaDigest: 'sha256:zh-fields', viewScopeDigest: 'sha256:zh-views' }] });
   writeJson(mapPath, { schemaVersion: 1, mappings: [{ relation: 'mapped', sourceTableId: 'en-dev', targetTableId: 'zh-dev', provenance: 'test' }] });
   writeJson(policyPath, {
     schemaVersion: 1,

@@ -187,10 +187,20 @@ function exactTranslations(response, units) {
 function restoreUnit(unit, translatedText) {
   const expected = unit.protection.entries.map((entry) => entry.marker).sort();
   const actual = [...translatedText.matchAll(MARKER_PATTERN)].map((match) => match[0]).sort();
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error(`Protected marker integrity failed for ${unit.id}`);
+  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+    throw Object.assign(
+      new Error(`Protected marker integrity failed for ${unit.id}`),
+      { code: 'PROTECTED_MARKER_LOST', unitId: unit.id },
+    );
+  }
   let restored = translatedText;
   for (const entry of unit.protection.entries) restored = restored.replace(entry.marker, entry.value);
-  if (MARKER_PATTERN.test(restored)) throw new Error(`Protected marker restoration failed for ${unit.id}`);
+  if (MARKER_PATTERN.test(restored)) {
+    throw Object.assign(
+      new Error(`Protected marker restoration failed for ${unit.id}`),
+      { code: 'PROTECTED_MARKER_UNRESTORED', unitId: unit.id },
+    );
+  }
   return restored;
 }
 

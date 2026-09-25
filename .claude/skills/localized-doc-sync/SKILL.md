@@ -31,6 +31,16 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 - Approval must match the exact `batchDigest`, targets, action count, and side effects. Verify the live precondition for record identity, revision, parent mapping, and media inventory immediately before mutation.
 - After writes, refetch and apply the shared `../doc-ops-core/` round-trip guard to content, metadata, hierarchy, images, boards, Figma, sheets, Supademo, and opaque blocks.
 
+## Domain Invariants
+
+- Source records and documents are read-only: source-locale issues are diagnostic-only and can never enter a review unit carrying executable actions; a source-side change requires its own separately approved batch. [localization.source-read-only]
+- Every queue or write decision binds a fresh complete dual-Base scan: manifest completeness is derived from per-table scan digests (not asserted), the claimed inventory digest must recompute from the manifest's own snapshots, and planning refuses anything less. [localization.complete-dual-base-enumeration]
+- `TARGET_ONLY` records are preserved and reported, in that order: a review unit formed from a `TARGET_ONLY` issue can never carry a deletion action; deletion of a target-only record needs a distinct approved deletion batch. [localization.target-only-preserve]
+- Protected bytes survive the whole pipeline: markers replacing protected spans must survive translation, review, and correction byte-exactly, and restoration must leave no marker behind. [localization.protected-marker-preservation]
+- Reviewer allegations are evidence-bound: a correction is authorized only for issues whose location identifies an existing semantic unit and whose source and draft quotes are contiguous within it and do not conflict with the locale contract. [localization.review-evidence-contiguity]
+- Target-local prose is never overwritten implicitly: units from `TARGET_LOCAL_EDIT`/`TRANSLATION_DIVERGED` issues carry actions only after an explicit reviewed `mergeDecision` is recorded on the issue. [localization.target-local-prose]
+- Translation receipts are identity-bound: a schema-v2 receipt requires live verification, an accepted decision, and complete identity fields, and recovery accepts only receipts whose digest and identity fields still match. [localization.receipt-identity]
+
 ## Domain Workflow
 
 1. Run `localized-doc-sync.js scan` from complete source and target inventory snapshots. Discover every table, schema, view scope, and record set before loading the reviewed table map.

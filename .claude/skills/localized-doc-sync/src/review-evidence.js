@@ -50,12 +50,23 @@ function parseAndAuthorizeReview(text, { sourceUnits, draftUnits, localeContract
     const source = sourceById.get(issue.location);
     const draft = draftById.get(issue.location);
     let reason = null;
-    if (source === undefined || draft === undefined) reason = 'Reviewer location must identify the same existing semantic unit in source and draft';
-    else if (!source.includes(issue.source_quote)) reason = 'Reviewer evidence must contain a contiguous source quote from the identified semantic unit';
-    else if (!draft.includes(issue.draft_quote)) reason = 'Reviewer evidence must contain a contiguous draft quote from the identified semantic unit';
-    else if (issue.type !== 'accuracy_omission' && issue.source_quote === issue.draft_quote) reason = 'Identical source and draft quotes do not prove a changed value';
-    else if (conflictsWithLocaleContract(issue, localeContract)) reason = 'Reviewer allegation conflicts with the locale contract';
-    if (reason) unsupportedIssues.push({ issue, reason });
+    let code = null;
+    if (source === undefined || draft === undefined) {
+      code = 'UNIT_NOT_AUTHORIZED';
+      reason = 'Reviewer location must identify the same existing semantic unit in source and draft';
+    } else if (!source.includes(issue.source_quote) || !draft.includes(issue.draft_quote)) {
+      code = 'EVIDENCE_NOT_CONTIGUOUS';
+      reason = !source.includes(issue.source_quote)
+        ? 'Reviewer evidence must contain a contiguous source quote from the identified semantic unit'
+        : 'Reviewer evidence must contain a contiguous draft quote from the identified semantic unit';
+    } else if (issue.type !== 'accuracy_omission' && issue.source_quote === issue.draft_quote) {
+      code = 'EVIDENCE_NOT_CONTIGUOUS';
+      reason = 'Identical source and draft quotes do not prove a changed value';
+    } else if (conflictsWithLocaleContract(issue, localeContract)) {
+      code = 'EVIDENCE_CONTRACT_CONFLICT';
+      reason = 'Reviewer allegation conflicts with the locale contract';
+    }
+    if (reason) unsupportedIssues.push({ issue, reason, code });
     else authorizedIssues.push(issue);
   }
   return Object.freeze({

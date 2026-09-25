@@ -30,7 +30,20 @@ function sorted(values, key) {
   return [...(values || [])].sort((a, b) => String(a?.[key] || '').localeCompare(String(b?.[key] || '')));
 }
 
+// localization.complete-dual-base-enumeration: completeness is derived from
+// evidence, never asserted. A base snapshot only counts as completely
+// enumerated when every table carries the digests that scanBase() produces
+// (field schema, view scope, record set); a hand-assembled or partial
+// snapshot yields completeInventory: false and planning refuses it.
+function baseIsCompletelyEnumerated(base) {
+  if (!base || typeof base !== 'object' || !Array.isArray(base.tables) || base.tables.length === 0) return false;
+  return base.tables.every((table) => typeof table?.fieldSchemaDigest === 'string'
+    && typeof table?.viewScopeDigest === 'string'
+    && typeof table?.recordSetDigest === 'string');
+}
+
 function buildScanManifest(input) {
+  const completeInventory = baseIsCompletelyEnumerated(input.sourceBase) && baseIsCompletelyEnumerated(input.targetBase);
   const semantic = canonicalize({
     schemaVersion: 1,
     sourceBase: input.sourceBase,
@@ -48,7 +61,7 @@ function buildScanManifest(input) {
     hierarchyPolicies: sorted(input.hierarchyPolicies, 'policyId'),
     localePolicyDigest: input.localePolicyDigest,
     issues: sorted(input.issues, 'issueId'),
-    completeInventory: true,
+    completeInventory,
     partialScanAuthoritative: false,
   });
   const semanticDigest = digestSemantic(semantic);

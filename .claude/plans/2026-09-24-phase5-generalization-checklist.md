@@ -247,17 +247,28 @@ stays an output-contract runbook rule (no result-reporting module exists to enfo
 merge policy, locale metadata non-comparison, and Chapter role rules remain a second wave as
 `declared` entries.
 
-### Step 5 — Close-out (PR F)
+### Step 5 — Close-out (PR F) — DELIVERED 2026-09-25, branch `feat/phase5-closeout` (stacked on PR #37)
 
-- [ ] 5.1 Run `scripts/invariant-coverage-report.js` across all five adopted skills; attach the
+- [x] 5.1 Run `scripts/invariant-coverage-report.js` across all five adopted skills; attach the
       artifact to the PR. This *is* the phase 5 acceptance evidence.
-- [ ] 5.2 Verify the acceptance criterion line by line: every `runtime-enforced` entry has enforcer
+- [x] 5.2 Verify the acceptance criterion line by line: every `runtime-enforced` entry has enforcer
       modules that exist, executed fixtures with negative cases, and no rule whose only backing is
       prose or a model eval.
-- [ ] 5.3 Update the master plan: mark Phase 5 delivered; hand `declared`-entry expiry/ownership
+- [x] 5.3 Update the master plan: mark Phase 5 delivered; hand `declared`-entry expiry/ownership
       and violation tracking by invariant ID to Phase 6.
-- [ ] 5.4 Memory/notes: record the adopted ID prefixes and the shared-runner usage for future
+- [x] 5.4 Memory/notes: record the adopted ID prefixes and the shared-runner usage for future
       skill onboarding.
+
+Close-out evidence (2026-09-25): the strict coverage report reads clean across
+all five adopted skills — 30 runtime-enforced invariants, 0 coverage errors. A
+structural sweep over every registry entry confirmed each one has all fixtures
+present and at least one negative arm asserting a SCREAMING_CASE blocker code
+(the sweep first flagged six invariants whose assertion keys are not literally
+`code` — providerCode/violationCode/blockerCode/codes — all six confirmed as
+detection misses, not real gaps). Behavior pressure cases cover every skill
+(41 cases total, ≥3 pressure each, enforced by tests/skills/behavior-cases.test.js).
+The phase 5 acceptance criterion holds: no runtime-enforced rule relies only on
+a prose assertion or a model eval.
 
 ## Execution Notes
 

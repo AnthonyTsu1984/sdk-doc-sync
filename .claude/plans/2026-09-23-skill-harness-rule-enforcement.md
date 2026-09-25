@@ -2,7 +2,22 @@
 
 Date: 2026-09-23
 
-Status: proposed; planning only
+Status: delivered through Phase 5 (see revision history); Phase 6 (operational
+evidence and governance) remains open.
+
+Delivery status (2026-09-25): Phase 0 = PR #20, Phase 1 = PR #21, Phase 2 =
+PR #22, Phase 3 = PR #23, Phase 4 = PR #24 (+ #25 pin fix), Phase 5 steps
+0–4 = PRs #31/#32/#33/#36/#37 (+ review fixes #35). Five canonical skills
+adopt the invariant registry — api-reference-sync, procedure-code-sync,
+doc-code-verify, verified-doc-authoring, localized-doc-sync — with 30
+runtime-enforced invariants, every one backed by executable fixtures that
+drive production code and at least one negative arm asserting a typed blocker
+code (`node scripts/invariant-coverage-report.js --strict` is the standing
+acceptance artifact). Phase 6 follow-ups: waiver expiry/ownership for
+declared-only entries, violation and false-block tracking by invariant ID,
+admission-artifact publication, and the second-wave `declared` entries noted
+in the phase 5 checklist (receipt merge policy, locale metadata
+non-comparison, Chapter role rules).
 
 Revision 2 (2026-09-23, later): adds Phase 4 — content-fidelity invariants derived from the
 completed C++ dual-track campaign (2026-09-21/22, 108 pages across the v3.0/v2.6 tracks). The three

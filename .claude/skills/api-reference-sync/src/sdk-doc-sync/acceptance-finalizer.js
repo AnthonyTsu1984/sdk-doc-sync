@@ -261,11 +261,12 @@ class AcceptanceFinalizer {
         batchDigest: recomputed.acceptanceManifestDigest,
         sessionDigest: `acceptance:${reviewSession.acceptanceManifestDigest}`,
       }), { repoRoot: acceptanceRepoRoot });
-      try {
-        writeRunManifestArtifact(governance.run, {
-          filePath: path.join(acceptanceRepoRoot, 'tmp', 'api-reference-sync', `run-manifest-${recomputed.acceptanceManifestDigest.replace(':', '-')}.json`),
-        });
-      } catch { /* the manifest itself is the gate; artifact persistence is best-effort */ }
+      // Fail-closed: if the manifest evidence cannot be persisted, the
+      // acceptance mutations do not run — same contract as every other
+      // canonical path.
+      writeRunManifestArtifact(governance.run, {
+        filePath: path.join(acceptanceRepoRoot, 'tmp', 'api-reference-sync', `run-manifest-${recomputed.acceptanceManifestDigest.replace(':', '-')}.json`),
+      });
     }
 
     try {

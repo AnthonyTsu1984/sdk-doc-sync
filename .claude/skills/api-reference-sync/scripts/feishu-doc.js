@@ -3,11 +3,14 @@ const { enforceLegacyQuarantine, createExceptionGovernance } = require('../../do
 // Reaching this line means an unexpired reviewed exception AND the
 // DOC_OPS_ALLOW_LEGACY_LIVE=1 gate sanctioned the run; the governance minted
 // from that exception is what lets the mutating subcommands pass the shared
-// writer gates. Such a run is NOT harness-guaranteed.
+// writer gates (it binds the widened working-tree fingerprint via repoRoot —
+// inline so no statement intervenes between the guard require and call).
+// Such a run is NOT harness-guaranteed.
 const legacyGovernance = createExceptionGovernance({
     skill: 'api-reference-sync',
     operation: 'feishu-doc',
     decision: enforceLegacyQuarantine({ entrypointPath: __filename }),
+    repoRoot: require('node:path').resolve(__dirname, '..', '..', '..', '..'),
 });
 
 /**

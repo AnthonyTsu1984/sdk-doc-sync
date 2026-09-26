@@ -495,11 +495,13 @@ not scheduled.**
       4. **Wave 3 — close-out.** `baseline.legacyLiveCount` → 0; production env ban on
          `DOC_OPS_ALLOW_LEGACY_LIVE` (CI + docs); decide whether the exception path survives for
          future sanctioned one-offs or is removed.
-- [x] 6.5 **Canonical run manifest at the writer boundary.** Every writer mutation must require a
+- [ ] 6.5 **Canonical run manifest at the writer boundary.** Every writer mutation must require a
       canonical run manifest — source fingerprint, skill version, policy attestations, batch
       digest, session digest — enforced at the innermost writer layer, not only at entry scripts.
       Today a legacy exception run stays writable end to end (CLAUDE.md Golden Rule 4 notes it is
-      "not harness-guaranteed"); the writer itself must be able to refuse it.
+      "not harness-guaranteed"); the writer itself must be able to refuse it. **Status: core
+      machinery delivered and review-hardened; item stays OPEN until wave 2 rewires the three
+      raw-fetch post-actions, which remain the one live legacy boundary outside the manifest.**
 
       6.5 delivery (2026-09-26, PR #42, branch `feat/phase6-writer-run-manifest`): new
       `doc-ops-core/src/run-manifest.js` — `createRunManifest` binds skill / skillVersion /
@@ -515,10 +517,17 @@ not scheduled.**
       + rollback, verified-doc-authoring patch + live adapter, procedure-code-sync patch), and
       `doc-agent-live-write.js`'s META_ONLY record mutations now ride a governed BitableWriter —
       fixing a latent defect where that path constructed a raw writer and would have thrown
-      `WRITER_ENVELOPE_REQUIRED` at first live use. The legacy carve-out is NOT exempt:
-      `createExceptionGovernance` binds the same widened fingerprint, self-identifying as the
-      exception form (`legacy-exception@<expiry>`, `ops.legacy-live-exception` attestation), so
-      sanctioned exception runs are source-bound during the wave-2 transition. Evidence:
+      `WRITER_ENVELOPE_REQUIRED` at first live use. Legacy carve-out — **scoped honestly after
+      the second review round**: `createExceptionGovernance` binds the same widened fingerprint
+      and self-identifies as the exception form (`legacy-exception@<expiry>`,
+      `ops.legacy-live-exception` attestation), and `feishu-doc.js` (its only consumer) now
+      passes the repository root so exception-routed runs actually create a manifest (previously
+      they always failed `LEGACY_EXCEPTION_MANIFEST_REFUSED`). **However, the three unexpired
+      exception scripts** (`add-type-links.js`, `fix-leading-spaces.js`, `post-fix-links.js`)
+      **call only `enforceLegacyQuarantine` and then mutate via raw `fetch` `batch_update` — no
+      governance, no manifest.** With an unexpired exception plus `DOC_OPS_ALLOW_LEGACY_LIVE=1`
+      those writes still run outside the manifest boundary; that is the real, remaining
+      wave-2 edge, and this item stays open until they are rewired. Evidence:
       run-manifest tests prove O1 (same untracked path, different content ⇒ different
       fingerprint), O2 (doc-tree change far from entrypoints ⇒ drift), bind/mutation-time drift
       refusal, and manifest tamper detection; suites green — doc-ops-core 224/224, unit 662/662,
@@ -559,6 +568,23 @@ not scheduled.**
       230/230, procedure 11/11, authoring 11/11, agent-team 59/59, localized 66/66, unit 662/662,
       offline 808/808, test:skills 120/120, js-syntax 480 files/0 failures, focused-tests 6
       suites/57 tests, validate/check green.
+
+      **6.5 second review round (2026-09-26, two P1 + one P2 closed, item re-opened):**
+      (1) post-first-write manifest swap — `governance.run`/`runVerified` were plain public
+      properties, so after the first mutation set the verification flag, assigning a different
+      valid manifest (same skill/batch/attestations, different fingerprint) let a second write
+      proceed against a drifted tree. Bound approval, verified manifest, and verification state
+      now live in WeakMap-held private state exposed only through **non-configurable** getters —
+      assignment throws in strict mode and `Object.defineProperty` cannot redefine them; the
+      reviewer's exact reproduction (first write → tree drift → swap attempt → second write) is
+      fixture-proven: every replacement path throws and the getter still yields the original
+      verified manifest. (2) the "NOT exempt" carve-out claim was false — the three unexpired
+      exception post-actions mutate via raw fetch with no governance, and `feishu-doc.js` (the
+      only `createExceptionGovernance` consumer) omitted `repoRoot` so exception-routed runs
+      always failed manifest creation. Fixed the repoRoot; the raw post-actions remain outside
+      the manifest boundary until wave 2 rewires them — **this item is back to OPEN with that
+      boundary stated above.** (3) acceptance-finalizer still swallowed manifest-artifact
+      persistence failures; now fail-closed like every other path.
 - [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over

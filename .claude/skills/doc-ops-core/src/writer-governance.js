@@ -42,6 +42,21 @@ function validateInvariantAttestations(attestations) {
     return Object.freeze(list.map((attestation) => Object.freeze({ ...attestation })));
 }
 
+// Per-instance governance state lives behind a WeakMap, and `bound`/`run` are
+// exposed only through non-configurable getters. A caller holding a
+// governance therefore cannot swap the verified manifest (or the approval)
+// after binding — assignment throws in strict mode and even
+// Object.defineProperty cannot redefine the sealed accessors. The 6.5 review
+// reproduced exactly that swap: after the first mutation set the
+// verification flag, assigning a different valid manifest (same skill/batch/
+// attestations, different source fingerprint) let a second write proceed
+// against a drifted tree.
+const INTERNAL = new WeakMap();
+
+function defineSealedGetter(instance, name, read) {
+    Object.defineProperty(instance, name, { get: read, enumerable: true, configurable: false });
+}
+
 class WriterGovernance {
     constructor({ skill, operation }) {
         if (!requireNonEmptyString(skill) || !requireNonEmptyString(operation)) {
@@ -49,9 +64,9 @@ class WriterGovernance {
         }
         this.skill = skill;
         this.operation = operation;
-        this.bound = null;
-        this.run = null;
-        this.runVerified = false;
+        INTERNAL.set(this, { bound: null, run: null, runRepoRoot: null, runVerified: false });
+        defineSealedGetter(this, 'bound', () => INTERNAL.get(this).bound);
+        defineSealedGetter(this, 'run', () => INTERNAL.get(this).run);
     }
 
     get isBound() {
@@ -104,7 +119,7 @@ class WriterGovernance {
             throw error;
         }
         const attestations = validateInvariantAttestations(invariantAttestations);
-        this.bound = Object.freeze({
+        const bound = Object.freeze({
             batchDigest,
             actionCount,
             targets: Object.freeze([...targets]),
@@ -113,7 +128,8 @@ class WriterGovernance {
             invariantAttestations: attestations,
             enforceTargets: enforceTargets === true,
         });
-        return this.bound;
+        INTERNAL.get(this).bound = bound;
+        return bound;
     }
 
     // Phase-6 6.5: bind the canonical run manifest (source fingerprint with
@@ -156,10 +172,12 @@ class WriterGovernance {
             throw error;
         }
         this.assertRunManifestMatchesApproval(runManifest);
-        this.run = Object.freeze({ ...runManifest });
-        this.runRepoRoot = repoRoot;
-        this.runVerified = verifyNow === true;
-        return this.run;
+        const run = Object.freeze({ ...runManifest });
+        const state = INTERNAL.get(this);
+        state.run = run;
+        state.runRepoRoot = repoRoot;
+        state.runVerified = verifyNow === true;
+        return run;
     }
 
     // Full manifest↔approval relationship check, shared by bind time and
@@ -213,22 +231,23 @@ class WriterGovernance {
                 { method: method || null, skill: this.skill, operation: this.operation },
             );
         }
-        if (!this.runVerified && this.runRepoRoot) {
+        const state = INTERNAL.get(this);
+        if (!state.runVerified && state.runRepoRoot) {
             const { RunManifestError, verifyRunManifestSource } = require('./run-manifest');
             try {
-                verifyRunManifestSource(this.run, { repoRoot: this.runRepoRoot });
+                verifyRunManifestSource(this.run, { repoRoot: state.runRepoRoot });
             } catch (error) {
                 if (error instanceof RunManifestError) {
                     throw new WriterGovernanceError(error.code, error.message, { ...error.details, method: method || null });
                 }
                 throw error;
             }
-            this.runVerified = true;
+            state.runVerified = true;
         }
         // Re-assert the full manifest↔approval relationship at mutation time:
         // bind-time checks alone would trust that neither object was replaced
-        // afterwards, but both fields are plain object properties on a
-        // governance a caller holds.
+        // afterwards. The binding itself is private state, so the comparison
+        // always reads the governance's own verified objects.
         this.assertRunManifestMatchesApproval(this.run);
         if (this.bound.enforceTargets && target !== null && target !== undefined) {
             if (!this.bound.targets.includes(target)) {

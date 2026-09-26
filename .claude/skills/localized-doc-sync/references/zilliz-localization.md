@@ -67,13 +67,15 @@ node .claude/skills/localized-doc-sync/bin/localized-doc-sync.js scan \
   --output <scan-manifest.json>
 ```
 
-3. Plan one issue queue from the complete manifest:
+3. Plan one issue queue from the complete manifest. Plan re-enumerates both Bases live through the bundled production client (`src/feishu-base-client.js`, authenticated via the shared `larkTokenFetcher`) and refuses the queue when the full manifest digest no longer matches or either Base has changed since the scan:
 
 ```bash
 node .claude/skills/localized-doc-sync/bin/localized-doc-sync.js plan \
   --scan-manifest <scan-manifest.json> \
   --output <review-units.json>
 ```
+
+`--client-module <path>` may substitute a different module implementing the same scanner contract (`getBase`/`listTables`/`listFields`/`listViews`/`listRecords`, each returning `{ items, hasMore, pageToken }` pages).
 
 4. Review and execute one unit at a time with an exact action-batch approval, reviewed adapter, and write-ahead journal.
 5. Refetch the affected table pair after every accepted unit. Before finalization, repeat the complete full-Base scan and account for every original and newly discovered issue.

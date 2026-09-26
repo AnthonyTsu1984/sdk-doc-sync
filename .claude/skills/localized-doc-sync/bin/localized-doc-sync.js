@@ -127,6 +127,29 @@ function buildManifestFromSnapshots({ sourceBase, targetBase, tablePolicy, local
   });
 }
 
+// Plan-time client for freshness re-enumeration. Defaults to the production
+// FeishuBaseClient module (authenticated via the shared larkTokenFetcher);
+// --client-module overrides the path, dependencies.client replaces the whole
+// client in tests.
+function loadPlanClient(args, dependencies = {}) {
+  if (dependencies.client) return dependencies.client;
+  const modulePath = path.resolve(args.clientModule || path.join(__dirname, '..', 'src', 'feishu-base-client.js'));
+  const loaded = require(modulePath);
+  const factory = typeof loaded.createClient === 'function' ? loaded.createClient : loaded;
+  const byToken = new Map();
+  return {
+    async getBase({ baseToken }) { return clientFor(baseToken).getBase(); },
+    async listTables({ baseToken }) { return clientFor(baseToken).listTables(); },
+    async listFields({ baseToken, tableId }) { return clientFor(baseToken).listFields({ tableId }); },
+    async listViews({ baseToken, tableId }) { return clientFor(baseToken).listViews({ tableId }); },
+    async listRecords({ baseToken, tableId }) { return clientFor(baseToken).listRecords({ tableId }); },
+  };
+  function clientFor(baseToken) {
+    if (!byToken.has(baseToken)) byToken.set(baseToken, factory({ baseToken }));
+    return byToken.get(baseToken);
+  }
+}
+
 async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   const args = parseArgs(argv);
   const out = dependencies.onStdout || ((line) => console.log(line));
@@ -167,8 +190,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // Freshness at the enforcement boundary: re-enumerate both bases live
     // (paginated, exhaustion-proven) and compare against the manifest's
     // snapshots. A self-generated artifact cannot substitute for this.
-    const client = dependencies.client
-      || (args.clientModule ? require(path.resolve(args.clientModule)) : null);
+    const client = loadPlanClient(args, dependencies);
     await reEnumerateForFreshness({ client, sourceBase: manifest.sourceBase, targetBase: manifest.targetBase });
     const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [] });
     writeJson(args.output, units);

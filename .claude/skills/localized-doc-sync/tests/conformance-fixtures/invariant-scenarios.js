@@ -168,9 +168,9 @@ const scenarios = {
   },
 
   async localizationFreshnessRescanRequired() {
-    // No client, no queue decision: a self-generated artifact cannot
-    // substitute for live re-enumeration.
-    const result = await planRefusal(manifestFixture(), {});
+    // A client surface without getBase cannot back a queue decision: the
+    // boundary refuses it instead of degrading to a stale scan.
+    const result = await planRefusal(manifestFixture(), { client: {} });
     return { code: result.code };
   },
 
@@ -313,7 +313,7 @@ const scenarios = {
     // The reviewer's exact bypass: a source-locale unit paired with a
     // separately approved batch against a source record. The batch matches
     // the unit exactly, so the refusal is the source-locale guard itself.
-    const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'] }];
+    const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const unit = { reviewUnitId: 'unit:en-1', locale: 'en', requiresDocumentAcceptance: false, actions };
     const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
     const approval = createApprovalEnvelope({
@@ -340,9 +340,9 @@ const scenarios = {
   async localizationBatchUnitMismatchRefused() {
     // A matching-unit batch is required: an approved batch for DIFFERENT
     // actions cannot ride on this unit.
-    const unitActions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'] }];
+    const unitActions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const unit = { reviewUnitId: 'unit:zh-1', locale: 'zh', requiresDocumentAcceptance: true, actions: unitActions };
-    const otherActions = [{ actionId: 'record:update:b', target: 'record:b', dependsOn: [], sideEffects: ['record:update'] }];
+    const otherActions = [{ actionId: 'record:update:b', target: 'record:b', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: otherActions });
     const approval = createApprovalEnvelope({
       skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,

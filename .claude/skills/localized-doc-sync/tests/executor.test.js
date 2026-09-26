@@ -61,7 +61,7 @@ test('executor refuses a batch that does not match the planned review unit', asy
 });
 
 test('executor refuses source-locale units even with a matching approved batch', async () => {
-  const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'] }];
+  const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
   const unit = { reviewUnitId: 'unit:en', locale: 'en', requiresDocumentAcceptance: false, actions };
   const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
   const approval = createApprovalEnvelope({
@@ -76,6 +76,62 @@ test('executor refuses source-locale units even with a matching approved batch',
       adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
     }),
     (error) => error.code === 'SOURCE_MUTATION_UNAUTHORIZED',
+  );
+  assert.equal(adapterCalls, 0);
+});
+
+test('bound digest path recomputes the batch hash: mutated payloads are refused', async () => {
+  const actions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+  const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
+  const approval = createApprovalEnvelope({
+    skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+  });
+  // Keep the digest and approval; swap the payload for an evil value.
+  const mutated = JSON.parse(JSON.stringify(batch));
+  mutated.actions[0].payload.Labels = ['evil'];
+  let adapterCalls = 0;
+  await assert.rejects(
+    () => executeReviewUnit({
+      unit: { reviewUnitId: 'unit:bound', locale: 'zh', requiresDocumentAcceptance: true, boundBatchDigest: batch.batchDigest },
+      batch: mutated, approval,
+      journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl'),
+      adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+    }),
+    (error) => error.code === 'BATCH_UNIT_MISMATCH',
+  );
+  assert.equal(adapterCalls, 0);
+});
+
+test('a unit action without complete binding fields is refused (no wildcards)', async () => {
+  const fullActions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+  const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: fullActions });
+  const approval = createApprovalEnvelope({
+    skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+  });
+  // A unit action carrying only the approved actionId must not wildcard the
+  // rest into a delete on an unrelated record.
+  const wildcardUnit = { reviewUnitId: 'unit:wildcard', locale: 'zh', requiresDocumentAcceptance: false, actions: [{ actionId: 'record:update:a' }] };
+  let adapterCalls = 0;
+  await assert.rejects(
+    () => executeReviewUnit({
+      unit: wildcardUnit, batch, approval,
+      journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl'),
+      adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+    }),
+    (error) => error.code === 'BATCH_UNIT_MISMATCH',
+  );
+  assert.equal(adapterCalls, 0);
+
+  // A unit with neither a bound digest nor actions is refused outright.
+  await assert.rejects(
+    () => executeReviewUnit({
+      unit: { reviewUnitId: 'unit:empty', locale: 'zh', requiresDocumentAcceptance: false }, batch, approval,
+      journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl'),
+      adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+    }),
+    (error) => error.code === 'BATCH_UNIT_MISMATCH',
   );
   assert.equal(adapterCalls, 0);
 });

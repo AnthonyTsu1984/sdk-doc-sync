@@ -201,12 +201,12 @@ When a parameter type is a complex object (e.g., `HybridSearchSingleReq[]`, `Fun
 
 **Scripts:**
 - `bin/sdk-release-scout.js --language node --sdk-name milvus-sdk-node --track v2.6.x` — v2.6.x release scope discovery
-- `scripts/node-v26-update.js` — v2.6.x create/update run
-- `scripts/node-v26-request-syntax.js` — doc rebuild (version migration reference)
-- `scripts/node-v2610-fix.js`, `scripts/node-v2610-update.js` — v2.6.10 patch runs
-- `scripts/node-doc-quality-fix.js` — batch quality fixes (signatures, Request Syntax, constructors)
-- `scripts/node-add-token.js` — add `token: 'root:Milvus'` to all MilvusClient constructors
-- `scripts/node-data-import-docs.js` — v2.4/v2.5/v2.6/v3.0 Data Import folder, VirtualNode, doc, and record backfill
-- `scripts/node-reformat-constructor.js` — reformat single-line constructor to multi-line
-- `scripts/node-fix-code-lang.js` — change code block language TypeScript→JavaScript
-- `scripts/node-inline-type-fix.js` — extract complex inline types into dedicated ## sections
+- ~~`scripts/node-v26-update.js`~~ — v2.6.x create/update run — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-v26-request-syntax.js`~~ — doc rebuild (version migration reference) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-v2610-fix.js`~~, ~~`scripts/node-v2610-update.js`~~ — v2.6.10 patch runs — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-doc-quality-fix.js`~~ — batch quality fixes (signatures, Request Syntax, constructors) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-add-token.js`~~ — add `token: 'root:Milvus'` to all MilvusClient constructors — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-data-import-docs.js`~~ — v2.4/v2.5/v2.6/v3.0 Data Import folder, VirtualNode, doc, and record backfill — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-reformat-constructor.js`~~ — reformat single-line constructor to multi-line — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-fix-code-lang.js`~~ — change code block language TypeScript→JavaScript — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/node-inline-type-fix.js`~~ — extract complex inline types into dedicated ## sections — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*

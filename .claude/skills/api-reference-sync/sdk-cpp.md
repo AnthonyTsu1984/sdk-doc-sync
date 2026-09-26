@@ -124,18 +124,18 @@ For DML methods that accept `FieldDataPtr` values, keep schema identities and pa
 - C++ `using` aliases (e.g., `using GrantPrivilegeV2Request = PrivilegeV2Request`) resolved via alias chain in `_buildRequestIndex`
 - CreateCollection overload disambiguation: second overload → CreateSimpleCollection
 - Scanner handles two-line method format: `virtual Status\nMethodName(params)` and `ReturnType&\nWithFoo(params)`
-- **`cpp-v261-create.js` has STALE folder/record tokens** — use live values from `memory/cpp-doc-audit.md`
+- **~~`cpp-v261-create.js`~~ has STALE folder/record tokens** — use live values from `memory/cpp-doc-audit.md` — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 
 **Scripts:**
-- `scripts/cpp-v261-create.js` — greenfield v2.6.1 creation (tokens stale, see audit.md)
-- `scripts/cpp-v261-examples-update.js` — add real SDK examples
-- `scripts/cpp-v261-fix-code-lang.js` — fix code block language (PlainText → C++)
-- `scripts/cpp-request-syntax-fix.js` — targeted block content update (reference impl)
-- `scripts/cpp-examples-v2.js` — targeted block prefix/replace (reference impl)
-- `scripts/cpp-missing-types-create.js`, `scripts/cpp-connectparam-create.js`, etc. — one-off type additions
-- `scripts/cpp-response-types-create.js` — 20 response/helper type Class docs (v2.6.1, 2026-03-15)
-- `scripts/cpp-fix-describe-resource-group.js` — fix DescribeResourceGroup example (response.Name() → response.Desc().Name())
-- `scripts/cpp-fix-methods-heading.js` — re-push docs that had h2 Methods headings, replace with **METHODS:** bold
-- `scripts/cpp-v263-fix-returns-format.js` — targeted block patch for v2.6.3 function RETURNS lines (`*Status with Type*` → `*Status* with *Type*`)
-- `scripts/cpp-add-ptr-type-links.js` — C++ pointer-alias cross-reference pass (`XxxPtr` → `Xxx` class doc link)
+- ~~`scripts/cpp-v261-create.js`~~ — greenfield v2.6.1 creation (tokens stale, see audit.md) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-v261-examples-update.js`~~ — add real SDK examples — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-v261-fix-code-lang.js`~~ — fix code block language (PlainText → C++) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-request-syntax-fix.js`~~ — targeted block content update (reference impl) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-examples-v2.js`~~ — targeted block prefix/replace (reference impl) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-missing-types-create.js`~~, ~~`scripts/cpp-connectparam-create.js`~~, etc. — one-off type additions — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-response-types-create.js`~~ — 20 response/helper type Class docs (v2.6.1, 2026-03-15) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-fix-describe-resource-group.js`~~ — fix DescribeResourceGroup example (response.Name() → response.Desc().Name()) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-fix-methods-heading.js`~~ — re-push docs that had h2 Methods headings, replace with **METHODS:** bold — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-v263-fix-returns-format.js`~~ — targeted block patch for v2.6.3 function RETURNS lines (`*Status with Type*` → `*Status* with *Type*`) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/cpp-add-ptr-type-links.js`~~ — C++ pointer-alias cross-reference pass (`XxxPtr` → `Xxx` class doc link) — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 - `scripts/cpp-audit-util.js` — audit helper

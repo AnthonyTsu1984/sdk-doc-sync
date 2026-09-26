@@ -83,7 +83,7 @@ node .claude/skills/api-reference-sync/scripts/post-fix-links.js --bitable <toke
 - `add-type-links.js` adds exact Class/Enum references while skipping code and self-links.
 - `post-fix-links.js` reports links to deleted document tokens and repairs them only when title matching is unambiguous.
 
-For C++ pointer aliases such as `XxxPtr`, use `cpp-add-ptr-type-links.js` after the general type-link pass.
+For C++ pointer aliases such as `XxxPtr`, use ~~`cpp-add-ptr-type-links.js`~~ after the general type-link pass. — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 
 ## Completion Evidence
 

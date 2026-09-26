@@ -3,7 +3,7 @@
 A cross-SDK parameter coverage matrix (Python as baseline, 6 SDKs × 93 methods).
 
 **Bitable:** https://zilliverse.feishu.cn/base/IIY3bzFqca7li9s3JSFcIr88nxh?table=tbl1oHGX1R6HWnvO
-**Rebuild:** `node .claude/skills/api-reference-sync/scripts/rebuild-alignment-bitable.js [--dry-run]`
+**Rebuild:** ~~`node .claude/skills/api-reference-sync/scripts/rebuild-alignment-bitable.js [--dry-run]`~~ — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 **Markdown output:** `docs/sdk-alignment.md`
 
 ## Structure
@@ -34,7 +34,7 @@ A cross-SDK parameter coverage matrix (Python as baseline, 6 SDKs × 93 methods)
 
 ## Updating the Rebuild Script
 
-The script is at `scripts/rebuild-alignment-bitable.js`. To add new aliases when a naming discrepancy is found:
+The script is at ~~`scripts/rebuild-alignment-bitable.js`~~. To add new aliases when a naming discrepancy is found: — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 1. Add to `PARAM_ALIASES`: `python_name: ['python_name', 'alias1', 'alias2']` — matched aliases appear in Remarks
 2. Add to `METHOD_REMARKS` for structural differences that can't be expressed as a param alias
-3. Run `node .claude/skills/api-reference-sync/scripts/rebuild-alignment-bitable.js --dry-run` to verify, then without `--dry-run`
+3. Run ~~`node .claude/skills/api-reference-sync/scripts/rebuild-alignment-bitable.js --dry-run`~~ to verify, then without `--dry-run` — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*

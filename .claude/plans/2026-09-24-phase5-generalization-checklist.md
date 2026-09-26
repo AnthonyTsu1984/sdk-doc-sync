@@ -492,16 +492,20 @@ not scheduled.**
          journal + run manifest), preserving the documented workflow; delete the raw-fetch
          originals. Rides on 6.5: once the run-manifest requirement sits at the writer layer,
          unwired legacy scripts cannot write at all, making wave 2's end state structural.
+         — **DONE 2026-09-27 (PR #43):** `feishu-doc.js` was already governed (repoRoot fixed in
+         the 6.5 round 2); the three post-actions now route through `DocxBlockWriter`; registry
+         basis texts and CLAUDE.md updated; no deletions (the scripts themselves were rewired,
+         and they remain the documented post-action workflow).
       4. **Wave 3 — close-out.** `baseline.legacyLiveCount` → 0; production env ban on
          `DOC_OPS_ALLOW_LEGACY_LIVE` (CI + docs); decide whether the exception path survives for
          future sanctioned one-offs or is removed.
-- [ ] 6.5 **Canonical run manifest at the writer boundary.** Every writer mutation must require a
+- [x] 6.5 **Canonical run manifest at the writer boundary.** Every writer mutation must require a
       canonical run manifest — source fingerprint, skill version, policy attestations, batch
       digest, session digest — enforced at the innermost writer layer, not only at entry scripts.
       Today a legacy exception run stays writable end to end (CLAUDE.md Golden Rule 4 notes it is
-      "not harness-guaranteed"); the writer itself must be able to refuse it. **Status: core
-      machinery delivered and review-hardened; item stays OPEN until wave 2 rewires the three
-      raw-fetch post-actions, which remain the one live legacy boundary outside the manifest.**
+      "not harness-guaranteed"); the writer itself must be able to refuse it. **Closed 2026-09-27
+      by wave 2 (PR #43): the last live boundary — the three raw-fetch post-actions — now routes
+      through the governed `DocxBlockWriter`.**
 
       6.5 delivery (2026-09-26, PR #42, branch `feat/phase6-writer-run-manifest`): new
       `doc-ops-core/src/run-manifest.js` — `createRunManifest` binds skill / skillVersion /
@@ -585,6 +589,26 @@ not scheduled.**
       the manifest boundary until wave 2 rewires them — **this item is back to OPEN with that
       boundary stated above.** (3) acceptance-finalizer still swallowed manifest-artifact
       persistence failures; now fail-closed like every other path.
+
+      **6.5 closed by wave 2 (2026-09-27, PR #43):** new
+      `api-reference-sync/src/sdk-doc-sync/docx-block-writer.js` — `DocxBlockWriter` wraps the
+      one raw endpoint the three post-actions used (`PATCH …/blocks/batch_update`) behind the
+      standard boundary: `assertWriterMutation` refuses without a bound approval and run
+      manifest, re-verifies the tree fingerprint at the first call, and only then invokes the
+      caller's authenticated transport. `add-type-links.js` / `fix-leading-spaces.js` /
+      `post-fix-links.js` now mint `createExceptionGovernance` as their first statement (repoRoot
+      inlined so the first-statement guard window stays intact) and issue every mutation through
+      the writer — the raw endpoint string no longer appears in any of them (fixture-pinned).
+      Registry basis texts updated; CLAUDE.md Golden Rule 4 now describes the governed form
+      ("exception-admitted, source-bound, not harness-guaranteed"). Every legacy-live entry is
+      now either governed+manifest-bound (feishu-doc.js, doc-agent-live-write.js, the three
+      post-actions) or structurally unopenable — the dormant baseline writers
+      (`feishu-doc-translator.js`, `node-v30-update.js`, `java-v26-update.js`) fail the guard
+      with `no-unexpired-exception` regardless of the env flag and await wave-3
+      deletion/downgrade; any future revival must use the governed pattern. End state: **no
+      write path in the repository reaches Feishu without a bound approval + run manifest.**
+      CI paths filter extended (`scripts/admission/**`, the two gate scripts) so toolchain and
+      gate changes trigger admission.
 - [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over

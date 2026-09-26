@@ -1,5 +1,12 @@
 #!/usr/bin/env node
-require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+const { enforceLegacyQuarantine, createExceptionGovernance } = require('../../doc-ops-core/src/legacy-quarantine.js');
+// reached only when the unexpired reviewed exception AND the DOC_OPS_ALLOW_LEGACY_LIVE=1 gate both sanction the run. The governance binds a run manifest naming the working-tree fingerprint (repoRoot inline so no statement intervenes between the guard require and its call). Such a run is exception-admitted, NOT harness-guaranteed, and must never advance accepted scan state.
+const legacyGovernance = createExceptionGovernance({
+    skill: 'api-reference-sync',
+    operation: 'fix-leading-spaces',
+    decision: enforceLegacyQuarantine({ entrypointPath: __filename }),
+    repoRoot: require('node:path').resolve(__dirname, '..', '..', '..', '..'),
+});
 
 /**
  * Fix leading whitespace in text_run elements across all docs in a bitable.
@@ -29,6 +36,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') 
 
 const fetch            = require('node-fetch');
 const BitableWriter    = require('../src/sdk-doc-sync/bitable-writer');
+const DocxBlockWriter  = require('../src/sdk-doc-sync/docx-block-writer');
 const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -85,6 +93,11 @@ async function feishuAPI(method, endpoint, body = null) {
     if (data.code !== 0) throw new Error(`Feishu API: ${data.msg} (code ${data.code})`);
     return data.data;
 }
+
+// All docx block mutations route through the governed writer: every
+// batchUpdate call asserts the bound exception approval and run manifest
+// (and, once per run, the working-tree fingerprint) before any fetch.
+const docxBlocks = new DocxBlockWriter({ governance: legacyGovernance, transport: feishuAPI });
 
 /** Fetch every block in a document, handling pagination. */
 async function getAllBlocks(docId) {
@@ -225,14 +238,12 @@ async function main() {
         for (let i = 0; i < patches.length; i += 20) {
             const batch = patches.slice(i, i + 20);
             try {
-                await feishuAPI('PATCH',
-                    `/open-apis/docx/v1/documents/${docId}/blocks/batch_update`,
-                    {
-                        requests: batch.map(p => ({
-                            block_id:             p.blockId,
-                            update_text_elements: { elements: p.elements },
-                        })),
-                    }
+                await docxBlocks.batchUpdate(
+                    docId,
+                    batch.map(p => ({
+                        block_id:             p.blockId,
+                        update_text_elements: { elements: p.elements },
+                    }))
                 );
                 totalPatched += batch.length;
                 await delay();

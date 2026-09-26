@@ -185,7 +185,7 @@
       "skill": "api-reference-sync",
       "classification": "legacy-live",
       "operation": "add-type-links",
-      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "basis": "exception-admitted post-action; docx block mutations route through the governed DocxBlockWriter behind a createExceptionGovernance run manifest (phase-6 wave 2)",
       "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
       "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
       "admittedAtBaseline": false
@@ -356,7 +356,7 @@
       "skill": "api-reference-sync",
       "classification": "legacy-live",
       "operation": "fix-leading-spaces",
-      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "basis": "exception-admitted post-action; docx block mutations route through the governed DocxBlockWriter behind a createExceptionGovernance run manifest (phase-6 wave 2)",
       "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
       "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
       "admittedAtBaseline": false
@@ -443,7 +443,7 @@
       "skill": "api-reference-sync",
       "classification": "legacy-live",
       "operation": "post-fix-links",
-      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
+      "basis": "exception-admitted post-action; docx block mutations route through the governed DocxBlockWriter behind a createExceptionGovernance run manifest (phase-6 wave 2)",
       "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
       "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
       "admittedAtBaseline": false

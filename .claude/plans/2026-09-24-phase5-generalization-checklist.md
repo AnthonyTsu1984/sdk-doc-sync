@@ -281,14 +281,23 @@ in-order marker comparison), and each reproduced bypass is fixture-proven to a
 typed refusal. The second review round then held the first fixes insufficient — correctly:
 the freshness artifact could be minted from the same snapshots it attested,
 the batch/unit binding compared only IDs and targets, and the new binding
-broke the canonical agent-team live-write caller. Final state: plan
-re-enumerates both bases live at the enforcement boundary (the artifact
-approach was dropped, not repaired), the executor binds the batch by exact
-canonical digest or full per-field action comparison, and the agent-team
-handoff carries the bound digest and target locale. With those landed, the
-phase 5 acceptance criterion holds: no runtime-enforced rule relies only on
-a prose assertion or a model eval, and each one's enforcement has survived
-two rounds of known attacks on its own boundary.
+broke the canonical agent-team live-write caller. The third round held the
+second fixes insufficient too — again correctly: the digest-bound executor
+path trusted a caller-controlled batchDigest without recomputing it (an
+evil payload executed behind an unchanged digest), the fallback binding
+treated absent unit fields as wildcards (an actionId-only unit accepted a
+delete on an unrelated record), and the canonical plan CLI shipped no
+production client, so the documented command could never pass its own
+freshness gate. Final state: plan re-enumerates both bases live at the
+enforcement boundary through a bundled production scanner-contract client
+(the artifact approach was dropped, not repaired), the executor recomputes
+the canonical batch digest from the submitted actions before honoring any
+bound digest and requires complete per-field bindings with no wildcards and
+no unbound units, and the agent-team handoff carries the bound digest and
+target locale. With those landed, the phase 5 acceptance criterion holds:
+no runtime-enforced rule relies only on a prose assertion or a model eval,
+and each one's enforcement has survived three rounds of known attacks on
+its own boundary — including attacks on the fixes themselves.
 
 ## Execution Notes
 

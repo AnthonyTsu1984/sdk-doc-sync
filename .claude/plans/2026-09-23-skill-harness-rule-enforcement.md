@@ -14,22 +14,32 @@ verified-doc-authoring, localized-doc-sync — with 30 runtime-enforced
 invariants, every one backed by executable fixtures that drive production
 code and at least one negative arm asserting a typed blocker code
 (`node scripts/invariant-coverage-report.js --strict` is the standing
-acceptance artifact). Two review rounds reproduced six bypasses in
+acceptance artifact). Three review rounds reproduced nine bypasses in
 the localized-doc-sync invariants. Round one: forged digest strings passing
 the completeness derivation, post-scan issue injection accepted, a
 separately approved source-side batch executing past the planner-only
-guard, and reordered protected markers swapping API names. Round two held
-the first set of fixes insufficient and reproduced three more: a freshness
-artifact self-attested from the same snapshots, unit/batch binding comparing
-only IDs and targets (payload and side-effect tampering still executed),
-and the new binding breaking the canonical agent-team live-write caller.
+guard, and reordered protected markers swapping API names. Round two: a
+freshness artifact self-attested from the same snapshots, unit/batch
+binding comparing only IDs and targets, and the new binding breaking the
+canonical agent-team live-write caller. Round three held the second set of
+fixes insufficient and reproduced three more: the digest-bound executor
+path trusting a caller-controlled batchDigest without recomputing it
+(evil payload executed behind an unchanged digest), the fallback binding
+treating absent unit fields as wildcards (an actionId-only unit accepted a
+delete on an unrelated record), and the canonical plan CLI shipping no
+production client at all (the documented command could never satisfy the
+freshness gate).
 Final state: materialized digest recomputation for completeness; live
-re-enumeration of both bases at the plan boundary (the self-attested
-artifact was dropped, not repaired) refusing stale queues; batch binding by
-exact canonical digest or full per-field action comparison, repeated with
+re-enumeration of both bases at the plan boundary through a production
+scanner-contract client (src/feishu-base-client.js, shared larkTokenFetcher
+auth, bundled by default and overridable via --client-module — the
+self-attested artifact was dropped, not repaired); batch binding by exact
+canonical digest RECOMPUTED from the submitted actions, or a full
+per-field comparison with no wildcards and no unbound units, repeated with
 the source-locale refusal in the executor; in-order marker comparison; and
-the agent-team handoff carrying the bound batch digest and target locale —
-with fixtures driving every reproduced bypass to a typed refusal. Phase 6 follow-ups: waiver expiry/ownership for declared-only
+the agent-team handoff carrying the bound digest and target locale — with
+fixtures driving every reproduced bypass to a typed refusal, including the
+real documented CLI path through the production client module. Phase 6 follow-ups: waiver expiry/ownership for declared-only
 entries, violation and false-block tracking by invariant ID,
 admission-artifact publication, and the second-wave `declared` entries noted
 in the phase 5 checklist (receipt merge policy, locale metadata

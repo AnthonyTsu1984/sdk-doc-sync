@@ -54,6 +54,16 @@ function bindGovernanceFromEnv() {
   });
   return governance;
 }
+  const { createRunManifest } = require('../../.claude/skills/doc-ops-core/src/run-manifest');
+  governance.bindRunManifest(createRunManifest({
+    skill: plan.actionBatch.skill,
+    skillVersion: 'verified-doc-authoring/adapter@1',
+    repoRoot: path.resolve(__dirname, '..', '..'),
+    batchDigest: plan.actionBatch.batchDigest,
+    sessionDigest: `adapter:${plan.actionBatch.batchDigest}`,
+  }));
+  return governance;
+}
 
 function pageTitleText(page) {
   if (typeof page.title === 'string') return page.title;

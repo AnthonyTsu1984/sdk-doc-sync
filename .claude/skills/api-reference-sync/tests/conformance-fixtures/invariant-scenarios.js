@@ -556,6 +556,8 @@ const scenarios = {
       }),
       invariantAttestations: [],
     });
+    const { stubRunManifest } = require('../../../doc-ops-core/src/run-manifest');
+    governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
     const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance', governance });
     let writerCalls = 0;
     writer.tokenFetcher = { token: async () => { writerCalls += 1; return 'tenant-token'; } };
@@ -652,6 +654,8 @@ const scenarios = {
       }),
       invariantAttestations: [],
     });
+    const { stubRunManifest } = require('../../../doc-ops-core/src/run-manifest');
+    governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
     const writer = new BitableWriter({ baseToken: 'conformance', tableId: 'tbl-conformance', governance });
     writer.tokenFetcher = { token: async () => 'tenant-token' };
 
@@ -776,6 +780,8 @@ const scenarios = {
       }),
       invariantAttestations: [],
     });
+    const { stubRunManifest } = require('../../../doc-ops-core/src/run-manifest');
+    governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
     const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'conformance', governance });
     writer.tokenFetcher = { token: async () => 'tenant-token' };
 

@@ -62,6 +62,21 @@ function createRollbackWriterGovernance(manifest, approvedDigest) {
         }),
         invariantAttestations: [],
     });
+    // 6.5: rollback runs under the same source-state binding as execution.
+    const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
+    const rollbackRepoRoot = path.resolve(__dirname, '..', '..', '..');
+    governance.bindRunManifest(createRunManifest({
+        skill: 'api-reference-sync',
+        skillVersion: 'api-reference-sync/rollback@1',
+        repoRoot: rollbackRepoRoot,
+        batchDigest: manifest.rollbackManifestDigest,
+        sessionDigest: `rollback:${manifest.rollbackManifestDigest}`,
+    }), { repoRoot: rollbackRepoRoot });
+    try {
+        writeRunManifestArtifact(governance.run, {
+            filePath: path.join(rollbackRepoRoot, 'tmp', 'api-reference-sync', `run-manifest-${manifest.rollbackManifestDigest.replace(':', '-')}.json`),
+        });
+    } catch { /* best-effort evidence persistence */ }
     return governance;
 }
 

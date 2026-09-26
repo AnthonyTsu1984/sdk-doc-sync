@@ -149,7 +149,7 @@ function enforceLegacyQuarantine({
 // scripts that receive it can write; the envelope records exactly which
 // exception and entrypoint authorized the run. Such runs are NOT
 // harness-guaranteed and must never advance accepted scan state.
-function createExceptionGovernance({ skill, operation, decision }) {
+function createExceptionGovernance({ skill, operation, decision, repoRoot = null }) {
     if (!decision || decision.quarantined !== false || decision.reason !== 'exception-and-gate-present') {
         throw new LegacyQuarantineError(
             'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
@@ -165,6 +165,13 @@ function createExceptionGovernance({ skill, operation, decision }) {
             'sanctioned decision carries no entrypoint path or exception expiry',
         );
     }
+    // 6.5 carve-out: even a sanctioned legacy exception run must name its
+    // source state. The exception manifest carries the same widened
+    // working-tree fingerprint as the canonical path (6.9 O1/O2) and
+    // self-identifies as the exception form (skillVersion/sessionDigest),
+    // so exception runs are source-bound during the wave-2 transition
+    // instead of exempt from the run-manifest requirement.
+    const { RunManifestError, createRunManifest } = require('./run-manifest');
     const envelopeFacts = { entrypointPath, expiresAt, operation };
     const batchDigest = digestSemantic(envelopeFacts);
     const targets = [entrypointPath];
@@ -186,6 +193,30 @@ function createExceptionGovernance({ skill, operation, decision }) {
         }),
         invariantAttestations: [],
     });
+    try {
+        governance.bindRunManifest(createRunManifest({
+            skill,
+            skillVersion: `legacy-exception@${expiresAt}`,
+            repoRoot,
+            batchDigest,
+            sessionDigest: `legacy-exception:${entrypointPath}`,
+            policyAttestations: [{
+                id: 'ops.legacy-live-exception',
+                version: 1,
+                inputDigest: batchDigest,
+                decision: `exception-expires:${expiresAt}`,
+            }],
+        }));
+    } catch (error) {
+        if (error instanceof RunManifestError) {
+            throw new LegacyQuarantineError(
+                'LEGACY_EXCEPTION_MANIFEST_REFUSED',
+                `exception governance could not bind its run manifest: ${error.message}`,
+                { code: error.code },
+            );
+        }
+        throw error;
+    }
     return governance;
 }
 

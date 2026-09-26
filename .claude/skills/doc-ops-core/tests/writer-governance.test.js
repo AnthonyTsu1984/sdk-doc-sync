@@ -13,6 +13,15 @@ const {
   createWriterGovernance,
   validateInvariantAttestations,
 } = require('../../doc-ops-core/src/writer-governance');
+const { stubRunManifest } = require('../../doc-ops-core/src/run-manifest');
+
+function bindRunManifestFor(governance) {
+  governance.bindRunManifest(stubRunManifest({
+    skill: governance.skill,
+    batchDigest: governance.bound.batchDigest,
+  }));
+  return governance;
+}
 
 const BATCH = {
   batchDigest: 'sha256:'.concat('a'.repeat(64)),
@@ -64,6 +73,10 @@ test('unbound governance refuses mutations until an approval envelope is bound',
     approval: approvalFor(),
     invariantAttestations: [attestation()],
   });
+  // 6.5: the envelope alone is no longer enough — the run manifest is the
+  // next typed refusal before the mutation passes.
+  assert.throws(() => governance.assertMutationAllowed({ method: 'createRecord' }), (error) => error.code === 'WRITER_RUN_MANIFEST_REQUIRED');
+  bindRunManifestFor(governance);
   assert.equal(governance.isBound, true);
   assert.equal(governance.assertMutationAllowed({ method: 'createRecord' }), true);
 });
@@ -159,6 +172,7 @@ test('enforceTargets binds the per-call mutation target to the envelope target l
     invariantAttestations: [],
     enforceTargets: true,
   });
+  bindRunManifestFor(governance);
   assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-1' }), true);
   assert.throws(
     () => governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-unapproved' }),
@@ -180,6 +194,7 @@ test('target enforcement stays off unless the bind opted in', () => {
     approval: approvalFor({ ...BATCH, targets: ['folder-1'] }),
     invariantAttestations: [attestation()],
   });
+  bindRunManifestFor(governance);
   // Sync-style binds carry folder-level targets while per-record ids resolve
   // live during execution, so only the envelope presence is enforced.
   assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-any' }), true);

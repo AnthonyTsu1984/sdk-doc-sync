@@ -11,6 +11,8 @@ const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');
 const { createActionBatch } = require('../../skills/doc-ops-core/src/action-batch');
 const { createApprovalEnvelope, assertApproval } = require('../../skills/doc-ops-core/src/approval-guard');
 const { executeReviewUnit, withBoundUnitDigest } = require('../../skills/localized-doc-sync/src/executor');
+const { WriterGovernance } = require('../../skills/doc-ops-core/src/writer-governance');
+const { createRunManifest, writeRunManifestArtifact } = require('../../skills/doc-ops-core/src/run-manifest');
 
 function loadApprovedActionBatch({ store, taskId, approvedBatchDigest }) {
   if (!approvedBatchDigest) throw new Error('APPROVED_BATCH_DIGEST_REQUIRED');
@@ -58,13 +60,16 @@ function groupByTablePair(actions) {
   }, new Map());
 }
 
-async function applyMetaOnlyActions(config, actions) {
+async function applyMetaOnlyActions(config, actions, governance = null) {
   const localization = config.surfaces.localization;
   const results = [];
   for (const group of groupByTablePair(actions).values()) {
     const writer = new BitableWriter({
       baseToken: localization.targetBaseToken,
       tableId: group.targetTableId,
+      // 6.5: META_ONLY record mutations go through the governed writer —
+      // approval envelope + run manifest — instead of a raw writer object.
+      governance,
     });
     for (const action of group.actions) {
       if (!action.target?.id) {
@@ -151,12 +156,12 @@ async function executeApprovedActionBatch({
   });
 }
 
-function createLiveAdapter(config, captures) {
+function createLiveAdapter(config, captures, governance = null) {
   return {
     async execute(action) {
       const payload = action.payload;
       if (payload.type === 'META_ONLY') {
-        const results = await applyMetaOnlyActions(config, [payload]);
+        const results = await applyMetaOnlyActions(config, [payload], governance);
         captures.metaOnlyResults.push(...results);
         return results[0];
       }
@@ -198,12 +203,42 @@ async function main() {
 
   store.writeTask({ ...task, status: TASK_STATUS.LIVE_WRITE_STARTED, liveWriteStartedAt: new Date().toISOString() });
 
+  // 6.5: the META_ONLY record mutations ride a governed BitableWriter —
+  // approval envelope over the digest-verified stored batch plus a run
+  // manifest binding the widened working-tree fingerprint — persisted into
+  // the task's evidence directory.
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const liveGovernance = new WriterGovernance({ skill: actionBatch.skill, operation: 'agent-team-live-write' });
+  liveGovernance.bindApproval({
+    batchDigest: actionBatch.batchDigest,
+    actionCount: actionBatch.actions.length,
+    targets: actionBatch.targets,
+    sideEffects: actionBatch.sideEffects,
+    approval: createApprovalEnvelope({
+      skill: actionBatch.skill,
+      operation: 'agent-team-live-write',
+      batchDigest: approvedBatchDigest,
+      actionCount: actionBatch.actions.length,
+      targets: actionBatch.targets,
+      sideEffects: actionBatch.sideEffects,
+      decision: 'approved',
+    }),
+  });
+  liveGovernance.bindRunManifest(createRunManifest({
+    skill: actionBatch.skill,
+    skillVersion: 'agent-team/live-write@1',
+    repoRoot,
+    batchDigest: actionBatch.batchDigest,
+    sessionDigest: `agent-team:${taskId}`,
+  }), { repoRoot });
+  writeRunManifestArtifact(liveGovernance.run, { filePath: path.join(store.taskDir(taskId), 'run-manifest.json') });
+
   const captures = { translationResults: [], metaOnlyResults: [] };
   const execution = await executeApprovedActionBatch({
     actionBatch,
     approvedBatchDigest,
     journalPath: path.join(store.taskDir(taskId), 'execution-journal.jsonl'),
-    adapter: createLiveAdapter(config, captures),
+    adapter: createLiveAdapter(config, captures, liveGovernance),
     locale: localization.targetLang,
   });
   store.writeArtifact(taskId, 'meta-only-result.json', captures.metaOnlyResults);

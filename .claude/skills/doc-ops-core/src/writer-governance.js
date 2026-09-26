@@ -50,10 +50,16 @@ class WriterGovernance {
         this.skill = skill;
         this.operation = operation;
         this.bound = null;
+        this.run = null;
+        this.runVerified = false;
     }
 
     get isBound() {
         return this.bound !== null;
+    }
+
+    get runManifestBound() {
+        return this.run !== null;
     }
 
     // Bind the governance to one verified execution batch. The approval
@@ -110,6 +116,46 @@ class WriterGovernance {
         return this.bound;
     }
 
+    // Phase-6 6.5: bind the canonical run manifest (source fingerprint with
+    // the 6.9 widened scope, skill version, session lineage, policy
+    // attestations). Mutations are refused without one, so a writer call can
+    // never execute against a source state the manifest does not name.
+    // `repoRoot` opts the governance into source re-verification: once per
+    // governance, the first mutation recomputes the working-tree fingerprint
+    // and refuses on drift (RUN_MANIFEST_SOURCE_DRIFT).
+    // Lazy require: run-manifest imports this module's attestation validator,
+    // so the dependency must not be created at module-init time.
+    bindRunManifest(runManifest, { repoRoot = null, verifyNow = false } = {}) {
+        const { RunManifestError, assertRunManifest, verifyRunManifestSource } = require('./run-manifest');
+        try {
+            assertRunManifest(runManifest);
+            if (verifyNow) verifyRunManifestSource(runManifest, { repoRoot });
+        } catch (error) {
+            if (error instanceof RunManifestError) {
+                throw new WriterGovernanceError(error.code, error.message, { ...error.details });
+            }
+            throw error;
+        }
+        if (runManifest.skill !== this.skill) {
+            throw new WriterGovernanceError(
+                'WRITER_RUN_MANIFEST_SKILL_MISMATCH',
+                `run manifest names skill ${runManifest.skill}, but this governance is ${this.skill}/${this.operation}`,
+                { manifestSkill: runManifest.skill, skill: this.skill },
+            );
+        }
+        if (this.bound && this.bound.batchDigest !== runManifest.batchDigest) {
+            throw new WriterGovernanceError(
+                'WRITER_RUN_MANIFEST_BATCH_MISMATCH',
+                `run manifest batch ${runManifest.batchDigest} does not match the bound approval batch ${this.bound.batchDigest}`,
+                { manifestBatchDigest: runManifest.batchDigest, batchDigest: this.bound.batchDigest },
+            );
+        }
+        this.run = Object.freeze({ ...runManifest });
+        this.runRepoRoot = repoRoot;
+        this.runVerified = verifyNow === true;
+        return this.run;
+    }
+
     assertMutationAllowed({ method, target = null } = {}) {
         if (!this.bound) {
             throw new WriterGovernanceError(
@@ -118,6 +164,26 @@ class WriterGovernance {
                     + (method ? ` (blocked method: ${method})` : ''),
                 { method: method || null, skill: this.skill, operation: this.operation },
             );
+        }
+        if (!this.run) {
+            throw new WriterGovernanceError(
+                'WRITER_RUN_MANIFEST_REQUIRED',
+                `${this.skill}/${this.operation} writer requires a bound run manifest (source fingerprint, skill version, batch digest) before any mutation`
+                    + (method ? ` (blocked method: ${method})` : ''),
+                { method: method || null, skill: this.skill, operation: this.operation },
+            );
+        }
+        if (!this.runVerified && this.runRepoRoot) {
+            const { RunManifestError, verifyRunManifestSource } = require('./run-manifest');
+            try {
+                verifyRunManifestSource(this.run, { repoRoot: this.runRepoRoot });
+            } catch (error) {
+                if (error instanceof RunManifestError) {
+                    throw new WriterGovernanceError(error.code, error.message, { ...error.details, method: method || null });
+                }
+                throw error;
+            }
+            this.runVerified = true;
         }
         if (this.bound.enforceTargets && target !== null && target !== undefined) {
             if (!this.bound.targets.includes(target)) {

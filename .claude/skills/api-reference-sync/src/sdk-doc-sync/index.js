@@ -816,6 +816,14 @@ class SdkDocSync {
             // exact recordId list with enforceTargets enabled.
             enforceTargets: false,
         });
+        const { createRunManifest } = require('../../../doc-ops-core/src/run-manifest');
+        governance.bindRunManifest(createRunManifest({
+            skill: 'api-reference-sync',
+            skillVersion: 'api-reference-sync/execute@1',
+            repoRoot: path.resolve(__dirname, '..', '..', '..', '..', '..'),
+            batchDigest: result.executionBatch.batchDigest,
+            sessionDigest: `execute:${result.executionBatch.batchDigest}`,
+        }));
         bindWriterGovernance(this.m2f, governance);
         bindWriterGovernance(this.bitableWriter, governance);
 

@@ -53,6 +53,24 @@ function bindPlanGovernance({ plan, approval }) {
   });
   return governance;
 }
+  // 6.5: the patch writer also names its source state (widened 6.9 O1/O2
+  // fingerprint) and persists the manifest next to the run evidence.
+  const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
+  const repoRoot = require('node:path').resolve(__dirname, '..', '..', '..');
+  governance.bindRunManifest(createRunManifest({
+    skill: plan.actionBatch.skill,
+    skillVersion: 'verified-doc-authoring/patch@1',
+    repoRoot,
+    batchDigest: plan.actionBatch.batchDigest,
+    sessionDigest: `authoring:${plan.actionBatch.batchDigest}`,
+  }), { repoRoot });
+  try {
+    writeRunManifestArtifact(governance.run, {
+      filePath: require('node:path').join(repoRoot, 'tmp', 'verified-doc-authoring', `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`),
+    });
+  } catch { /* best-effort evidence persistence */ }
+  return governance;
+}
 
 async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
   assertExactApproval(plan, approval);

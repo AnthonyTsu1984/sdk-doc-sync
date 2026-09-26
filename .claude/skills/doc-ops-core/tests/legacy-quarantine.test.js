@@ -238,7 +238,15 @@ test('exception governance is minted only from a sanctioned decision and records
     expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-10-01T00:00:00.000Z' }],
     now: '2026-09-23T00:00:00.000Z',
   });
-  const governance = createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: sanctioned });
+  // 6.5: the exception governance now also binds a run manifest over the
+  // widened working-tree fingerprint — carved out of nothing, source-bound
+  // like the canonical path.
+  const exceptionRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'exception-manifest-'));
+  spawnSync('git', ['init', '-q', '.'], { cwd: exceptionRepo });
+  fs.writeFileSync(path.join(exceptionRepo, 'one-off.js'), 'write stuff\n');
+  const governance = createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: sanctioned, repoRoot: exceptionRepo });
+  assert.equal(governance.runManifestBound, true);
+  assert.match(governance.run.skillVersion, /^legacy-exception@/);
   assert.equal(governance.isBound, true);
   assert.equal(governance.assertMutationAllowed({ method: 'push_markdown', target: 'doc-1' }), true);
 

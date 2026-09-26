@@ -292,16 +292,37 @@ source ownership could be flipped through unit.locale, the production
 client mapped away the real Feishu schema (numeric types, select options,
 primary flags — two differing selects hashed identically; view filters
 were never fetched so FILTERED_VIEW_SCOPE could not fire), and the
---client-module wrapper dropped pageToken. Final state: plan re-enumerates
-both bases live through a bundled production scanner-contract client that
-preserves the real schema and binds each view's authoritative filter
-configuration; canonical batch recomputation sits above BOTH binding
-forms; source ownership derives per action from its digest-bound locale;
-and pagination tokens flow through the override wrapper. With those
-landed, the phase 5 acceptance criterion holds: no runtime-enforced rule
-relies only on a prose assertion or a model eval, and each one's
-enforcement has survived four rounds of known attacks on its own boundary
-— including repeated attacks on the fixes themselves.
+--client-module wrapper dropped pageToken. The fifth round attacked the
+production boundary the fourth round had just created and was right again:
+a digest-valid action with NO locale reached the adapter through the
+boundBatchDigest path (the per-field comparison was skipped there and the
+source guard only rejected an explicitly present `locale: "en"` — the
+canonical agent-team batch builder wrote no locale either), acceptance
+semantics and journal lineage were trusted from the unbound unit file
+(flipping `requiresDocumentAcceptance` to false executed a valid zh
+UPDATE_CONTENT batch straight to EXECUTED, and `reviewUnitId` could be
+relabeled behind the journal), and the production client's snake_cased
+vocabulary (`single_select`/`single_link`) diverged from the checked-in
+policy's (`select`/`relation`), so a live snapshot of the real Bases
+profiled into blocking SCHEMA_DRIFT on valid fields. Final state: plan
+re-enumerates both bases live through a bundled production scanner-contract
+client whose canonical Feishu→policy type mapping (SingleSelect → select,
+SingleLink → relation) is the single vocabulary shared by scanning, policy
+matching, and freshness — fixture-proven against the real Base shapes and
+the real checked-in policy with zero blocking issues; canonical batch
+recomputation sits above BOTH binding forms; every batch action must carry
+its locale in BOTH binding forms (fail-closed ACTION_LOCALE_REQUIRED, with
+the agent-team dry-run builder stamping the target locale); review units
+carry a producer-stamped `boundUnitDigest` over the canonical unit snapshot
+so acceptance and lineage fields are digest-bound in both forms
+(UNIT_DIGEST_REQUIRED / UNIT_DIGEST_MISMATCH, planner CLI and agent-team
+handoff stamp, final status fail-closed to the acceptance ceremony); source
+ownership derives per action from its digest-bound locale; and pagination
+tokens flow through the override wrapper. With those landed, the phase 5
+acceptance criterion holds: no runtime-enforced rule relies only on a
+prose assertion or a model eval, and each one's enforcement has survived
+five rounds of known attacks on its own boundary — including repeated
+attacks on the fixes themselves.
 
 ## Execution Notes
 

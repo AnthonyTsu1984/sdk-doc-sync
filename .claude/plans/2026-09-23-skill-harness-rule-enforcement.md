@@ -5,16 +5,17 @@ Date: 2026-09-23
 Status: delivered through Phase 5 (see revision history); Phase 6 (operational
 evidence and governance) remains open.
 
-Delivery status (2026-09-25, post-review): Phase 0 = PR #20, Phase 1 =
-PR #21, Phase 2 = PR #22, Phase 3 = PR #23, Phase 4 = PR #24 (+ #25 pin
-fix), Phase 5 steps 0–4 = PRs #31/#32/#33/#36/#37 (+ review fixes #35 and
-the #37/#38 review-fix commits). Five canonical skills adopt the invariant
+Delivery status (2026-09-26, post-review round five): Phase 0 = PR #20,
+Phase 1 = PR #21, Phase 2 = PR #22, Phase 3 = PR #23, Phase 4 = PR #24
+(+ #25 pin fix), Phase 5 steps 0–4 = PRs #31/#32/#33/#36/#37 (+ review
+fixes #35 and the #37/#38 review-fix commits). Five canonical skills adopt
+the invariant
 registry — api-reference-sync, procedure-code-sync, doc-code-verify,
 verified-doc-authoring, localized-doc-sync — with 30 runtime-enforced
 invariants, every one backed by executable fixtures that drive production
 code and at least one negative arm asserting a typed blocker code
 (`node scripts/invariant-coverage-report.js --strict` is the standing
-acceptance artifact). Four review rounds reproduced thirteen bypasses in
+acceptance artifact). Five review rounds reproduced sixteen bypasses in
 the localized-doc-sync invariants. Round one: forged digest strings passing
 the completeness derivation, post-scan issue injection accepted, a
 separately approved source-side batch executing past the planner-only
@@ -32,23 +33,43 @@ executed behind a stale digest), source ownership could be flipped through
 the independently supplied unit.locale, the production client mapped away
 the real Feishu schema (numeric types dropped, select options collapsed to
 identical digests, view filters never fetched), and the --client-module
-wrapper dropped pageToken (custom clients loop on page one).
+wrapper dropped pageToken (custom clients loop on page one). Round five
+attacked the production boundary the fourth round had just created: the
+boundBatchDigest path skipped the per-field comparison AND the source guard
+only rejected an explicitly present locale, so a digest-valid action with
+NO locale reached the adapter (the canonical agent-team batch builder wrote
+no locale either); the approval bound only the batch, so acceptance
+semantics (requiresDocumentAcceptance) and journal lineage (reviewUnitId)
+were trusted from the unbound unit file — flipping the flag to false
+executed a valid zh batch straight to EXECUTED, skipping the acceptance
+ceremony; and the production client's snake_cased vocabulary
+(single_select/single_link) diverged from the checked-in policy's
+(select/relation), so a live snapshot of the real Bases profiled into
+blocking SCHEMA_DRIFT on valid fields.
 Final state: materialized digest recomputation for completeness; live
 re-enumeration of both bases at the plan boundary through a production
 scanner-contract client (src/feishu-base-client.js, shared larkTokenFetcher
 auth, bundled by default and overridable via --client-module) that
-preserves the real schema — snake_cased ui_type alongside the numeric type
-code, options, primary/synced flags — and fetches each view's detail so
-viewScopeDigest binds the authoritative filter configuration; canonical
-batch recomputation hoisted ABOVE both binding forms (digest-bound or
-full per-field with no wildcards and no unbound units); source ownership
-derived per action from its digest-bound locale, never from unit.locale;
-in-order marker comparison; pagination tokens forwarded through the
-override wrapper; and the agent-team handoff carrying the bound digest and
-target locale — with fixtures driving every reproduced bypass to a typed
-refusal, including the real documented CLI path through the production
-client module. Phase 6 follow-ups: waiver expiry/ownership for declared-only
-entries, violation and false-block tracking by invariant ID,
+preserves the real schema — canonical policy-vocabulary types alongside the
+numeric type code, options, primary/synced flags — and fetches each view's
+detail so viewScopeDigest binds the authoritative filter configuration;
+canonical batch recomputation hoisted ABOVE both binding forms (digest-bound
+or full per-field with no wildcards and no unbound units); every batch
+action required to carry its locale in BOTH binding forms (fail-closed
+ACTION_LOCALE_REQUIRED), with the agent-team dry-run builder stamping the
+target locale; review units producer-stamped with a boundUnitDigest over
+the canonical unit snapshot so acceptance and lineage fields are
+digest-bound in both forms (UNIT_DIGEST_REQUIRED / UNIT_DIGEST_MISMATCH),
+with the final status fail-closed to the acceptance ceremony; source
+ownership derived per action from its digest-bound locale, never from
+unit.locale; in-order marker comparison; pagination tokens forwarded
+through the override wrapper; the agent-team handoff carrying the bound
+digest and target locale; and a real-artifact compatibility fixture
+profiling the observed live Base schema against the checked-in policy with
+zero blocking issues — with fixtures driving every reproduced bypass to a
+typed refusal, including the real documented CLI path through the
+production client module. Phase 6 follow-ups: waiver expiry/ownership for
+declared-only entries, violation and false-block tracking by invariant ID,
 admission-artifact publication, and the second-wave `declared` entries noted
 in the phase 5 checklist (receipt merge policy, locale metadata
 non-comparison, Chapter role rules).

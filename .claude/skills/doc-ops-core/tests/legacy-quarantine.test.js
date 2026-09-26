@@ -124,7 +124,7 @@ test('enforceLegacyQuarantine terminates a quarantined run with the canonical re
 test('every registered legacy-live entrypoint carries the runtime guard as its first statement', () => {
   const registry = loadWriteEntrypointRegistry({ repoRoot: REPO_ROOT });
   const legacy = registry.entries.filter((entry) => entry.classification === 'legacy-live');
-  assert.equal(legacy.length, 87); // 60 baseline + 27 raw-fetch mutators under exception
+  assert.equal(legacy.length, 8); // 5 baseline + 3 Golden Rule 4 post-actions under exception (phase-6 wave-1 disposition removed the other 79)
   for (const entry of legacy) {
     const source = fs.readFileSync(path.join(REPO_ROOT, entry.path), 'utf8');
     const guardIndex = source.split('\n').findIndex((line) => line.includes('enforceLegacyQuarantine'));

@@ -18,9 +18,9 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 test('tracked entrypoint registry covers the complete frozen inventory with honest governance metadata', () => {
   const registry = loadWriteEntrypointRegistry({ repoRoot: REPO_ROOT });
   const discovered = discoverEntrypoints(REPO_ROOT);
-  // The 27 raw-fetch mutators reclassified during the phase-3 review are
-  // exception-admitted, so the inventory validation runs against the real
-  // reviewed exceptions at the current time.
+  // The three Golden Rule 4 post-action scripts that survived the phase-6
+  // wave-1 disposition are exception-admitted, so the inventory validation
+  // runs against the real reviewed exceptions at the current time.
   const expectedChanges = JSON.parse(fs.readFileSync(
     path.join(REPO_ROOT, '.claude', 'skills', 'doc-ops-core', 'expected-changes.json'),
     'utf8',
@@ -33,8 +33,8 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
     now: new Date().toISOString(),
   });
 
-  // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2); +1 read-only content reconciliation scripts/reconcile-content.js (content-fidelity phase 4); +1 read-only local polish applier scripts/apply-polish-context.js (content-fidelity phase 4 step 5); +1 read-only identity reconciliation bin/identity-reconcile.js (identity-coverage reconciliation); +1 read-only coverage report scripts/invariant-coverage-report.js (phase 5 shared substrate).
-  assert.equal(discovered.length, 165);
+  // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2); +1 read-only content reconciliation scripts/reconcile-content.js (content-fidelity phase 4); +1 read-only local polish applier scripts/apply-polish-context.js (content-fidelity phase 4 step 5); +1 read-only identity reconciliation bin/identity-reconcile.js (identity-coverage reconciliation); +1 read-only coverage report scripts/invariant-coverage-report.js (phase 5 shared substrate); −79 legacy-live one-off campaign scripts removed (phase-6 wave-1 disposition, 165→86).
+  assert.equal(discovered.length, 86);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

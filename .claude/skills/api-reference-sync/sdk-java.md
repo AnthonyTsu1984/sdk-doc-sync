@@ -115,6 +115,6 @@ The scanner returns `parentClass: 'MilvusClientV2'` for all methods. Category mu
 
 **Scripts:**
 - `scripts/java-v26-update.js` — v2.6.x create/update run
-- `scripts/java-v26-examples-update.js` — add real SDK repo examples
-- `scripts/java-v2614-update.js`, `scripts/java-v2614-indexfix.js` — v2.6.14 patch runs
-- `scripts/java-v30-update.js` — historical v3.0.x delta sync against master `80b4f555`; 4 UPDATEs + 6 CREATEs + new `File Resources` category, plus Phase 2b: 2 nested-builder Class UPDATEs (`CollectionSchema`, `FieldSchema`) regenerated with v3.0 builders + drift backfill
+- ~~`scripts/java-v26-examples-update.js`~~ — add real SDK repo examples — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/java-v2614-update.js`~~, ~~`scripts/java-v2614-indexfix.js`~~ — v2.6.14 patch runs — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
+- ~~`scripts/java-v30-update.js`~~ — historical v3.0.x delta sync against master `80b4f555`; 4 UPDATEs + 6 CREATEs + new `File Resources` category, plus Phase 2b: 2 nested-builder Class UPDATEs (`CollectionSchema`, `FieldSchema`) regenerated with v3.0 builders + drift backfill — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*

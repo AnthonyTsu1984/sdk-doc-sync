@@ -119,7 +119,7 @@ Go SDK docs are created via **direct Feishu block API** (not `push_markdown`). E
 - **Error handling:** `// handle error` comment for normal paths; `log.Fatal(...)` for fatal/setup errors
 - **Output:** `fmt.Println(result)` for single values; `log.Println(...)` for multiple struct fields
 - **No package/func wrapper:** examples are raw code blocks (no `package main`, no `func main()`)
-- Run `scripts/go-add-imports.js` to auto-detect and prepend import blocks if missing
+- Run ~~`scripts/go-add-imports.js`~~ to auto-detect and prepend import blocks if missing — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 
 ## Entity/Type Doc Strategy
 
@@ -130,7 +130,7 @@ After greenfield creation, run `scripts/audit-go-todos.js` to find docs with `//
 | **Output-only** (returned by APIs) | Collection, ResourceGroup, ResultSet, InsertResult, DeleteResult, UpsertResult, Alias, IndexDescription, *Task types, LoadState, CompactionState, Segment, Index, User, Role, RBACMeta, PrivilegeGroup, Database | Remove Example section (heading2 + code) via `batch_delete` |
 | **Input types** (passed as parameters) | Schema, Field, FieldType, Function, ConsistencyLevel, IndexType, MetricType, AnnParam, ResourceGroupConfig | Replace TODO with real usage example showing the type in context |
 
-Reference: `scripts/go-fix-entity-examples.js`
+Reference: ~~`scripts/go-fix-entity-examples.js`~~ — *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)*
 
 ## Bitable And Page Profiles
 
@@ -204,17 +204,17 @@ If release scout fails because the Go identity map or scanner coverage is incomp
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/go-v26-create.js` | Greenfield v2.6.x creation |
-| `scripts/go-fix-param-layout.js` | Split inline "param — desc" bullets into bullet + paragraph |
-| `scripts/go-fix-option-code.js` | Restore inline_code style on option method signature bullets |
-| `scripts/go-fix-entity-examples.js` | Remove Example sections from output types; add real examples to input types |
-| `scripts/go-fix-examples.js` | Bulk example replacement |
-| `scripts/go-add-imports.js` | Auto-detect and prepend import block to example code blocks |
-| `scripts/go-add-clientconfig.js` | Add ClientConfig section to docs |
+| ~~`scripts/go-v26-create.js`~~ | Greenfield v2.6.x creation *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-fix-param-layout.js`~~ | Split inline "param — desc" bullets into bullet + paragraph *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-fix-option-code.js`~~ | Restore inline_code style on option method signature bullets *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-fix-entity-examples.js`~~ | Remove Example sections from output types; add real examples to input types *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-fix-examples.js`~~ | Bulk example replacement *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-add-imports.js`~~ | Auto-detect and prepend import block to example code blocks *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-add-clientconfig.js`~~ | Add ClientConfig section to docs *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
 | `scripts/audit-go-todos.js` | Find all docs with `// TODO:` markers (post-greenfield audit) |
 | `scripts/audit-go-docs.js`, `audit-go-docs2.js` | Doc content audit helpers |
 | `scripts/inspect-go-blocks.js` | Debug: print all block types and element styles for a doc |
-| `scripts/cleanup-go-iterators.js` | Remove duplicate class-type docs |
-| `scripts/fix-go-iterator-examples.js` | Fix iterator example code |
-| `scripts/go-fix-indent.js` | Fix tab → 4-space indentation in code blocks |
-| `scripts/go-fix-clientconfig.js` | Patch ClientConfig content |
+| ~~`scripts/cleanup-go-iterators.js`~~ | Remove duplicate class-type docs *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/fix-go-iterator-examples.js`~~ | Fix iterator example code *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-fix-indent.js`~~ | Fix tab → 4-space indentation in code blocks *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |
+| ~~`scripts/go-fix-clientconfig.js`~~ | Patch ClientConfig content *(removed 2026-09-26, phase-6 wave-1 disposition; canonical path: bin/sdk-doc-sync.js)* |

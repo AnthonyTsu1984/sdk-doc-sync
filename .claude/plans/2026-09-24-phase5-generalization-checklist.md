@@ -370,13 +370,13 @@ running model evals / live smoke is the approved workflow stance, not a gap.
 
 ### P0 — make the current admission trustworthy
 
-- [ ] 6.1 **Admission source-fingerprint drift guard.** `scripts/run-skill-admission.js` computes
+- [x] 6.1 **Admission source-fingerprint drift guard.** `scripts/run-skill-admission.js` computes
       `sourceFingerprint` once (line ~161; the existing comparison at ~185 only guards cross-phase
       resume) and never re-checks it, so one admission run can execute different stages against
       different source states — observed live during the review. Require: fingerprint-before →
       re-verify before and after every gate → fingerprint-after must equal fingerprint-before; on
       any change fail with `ADMISSION_SOURCE_CHANGED_DURING_RUN` and void all prior stage results.
-- [ ] 6.2 **Toolchain manifest + preflight.** CI installs Node 22 only
+- [x] 6.2 **Toolchain manifest + preflight.** CI installs Node 22 only
       (`.github/workflows/skill-admission.yml:38`); a local deterministic admission blocked at
       doc-code-verify's Java fragment validation because the machine has no JRE (review
       reproduced; filed as observation F5 in the step 4 close-out). Declare a toolchain manifest —
@@ -384,9 +384,25 @@ running model evals / live smoke is the approved workflow stance, not a gap.
       locale contract / renderer profile / schema versions — and a preflight that fails with
       `TOOLCHAIN_PRECONDITION_FAILED` before any test starts, instead of a mid-suite fixture
       failure.
-- [ ] 6.3 **Dirty-tree admission guard.** Formal admission must refuse a dirty working tree (or
+- [x] 6.3 **Dirty-tree admission guard.** Formal admission must refuse a dirty working tree (or
       bind the dirty patch digest into the admission artifact, so the evidence names the exact
       source state it tested). The review's drift-window finding (6.1) happened on a dirty tree.
+
+Delivery notes (2026-09-26, PR #39, branch `feat/phase6-p0-admission-trust`): all three guards
+land in `runAdmission` ahead of every gate. 6.3 refuses a dirty worktree
+(`ADMISSION_DIRTY_WORKTREE`, first 20 paths recorded); `--allow-dirty` binds a sha256
+status+diff digest (`dirtyTree`/`dirtyPatchDigest`) and undeterminable git state fails closed.
+6.2 declares the toolchain floor in `scripts/admission/toolchain-manifest.json` — scoped to what
+the deterministic gates actually execute (node ≥22, npm, git, javac ≥17, clang++/g++; the
+review's fuller list grows as stages grow) — probed before gate one
+(`TOOLCHAIN_PRECONDITION_FAILED` with per-tool hints; missing/malformed manifest fails closed as
+`TOOLCHAIN_MANIFEST_INVALID`); CI pins Temurin 17 explicitly. 6.1 re-verifies the fingerprint
+before every gate and at completion; drift voids all prior stage results
+(`voidedResults`) with the drift location and both digests, and the manifest/preflight module
+are themselves fingerprinted inputs. Demonstrated live: dirty tree refused; committed tree
+without a JDK refused at preflight with zero gates run. 22 admission-guard tests green;
+test:skills 116/117 locally (single failure = the pre-existing missing-JRE case this PR fixes
+in CI).
 
 ### P1 — close the production bypasses
 

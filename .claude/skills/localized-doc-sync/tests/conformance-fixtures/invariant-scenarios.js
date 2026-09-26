@@ -309,11 +309,63 @@ const scenarios = {
 
   // --- localization.source-read-only (executor boundary) ---
 
+  async localizationFallbackDualTamperRefused() {
+    // Round-four attack: mutate unit AND batch actions to the same evil
+    // payload behind the previously approved digest. The canonical recompute
+    // must refuse before the field comparison ever runs.
+    const staleDigest = `sha256:${'7'.repeat(64)}`;
+    const approval = createApprovalEnvelope({
+      skill: 'localized-doc-sync', operation: 'sync', batchDigest: staleDigest,
+      actionCount: 1, targets: ['document:record:a'], sideEffects: ['record:update'], decision: 'approved',
+    });
+    const evilActions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['evil'] } }];
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: evilActions });
+    const forged = { ...batch, batchDigest: staleDigest };
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit: { reviewUnitId: 'unit:dual', locale: 'zh', requiresDocumentAcceptance: false, actions: evilActions },
+        batch: forged, approval,
+        journalPath: tmpJournalPath(),
+        adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
+  },
+
+  async localizationLocaleOwnershipFromActions() {
+    // Round-four attack: a canonical digest-correct batch against a source
+    // record, authorized only by flipping unit.locale to zh. Ownership is
+    // derived from the digest-bound action locale instead.
+    const actions = [{ actionId: 'record:update:en', locale: 'en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
+    const approval = createApprovalEnvelope({
+      skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+    });
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit: { reviewUnitId: 'unit:tampered', locale: 'zh', requiresDocumentAcceptance: false, actions },
+        batch, approval,
+        journalPath: tmpJournalPath(),
+        adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
+  },
+
   async localizationSourceBatchExecRefused() {
     // The reviewer's exact bypass: a source-locale unit paired with a
     // separately approved batch against a source record. The batch matches
     // the unit exactly, so the refusal is the source-locale guard itself.
-    const actions = [{ actionId: 'record:update:en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const actions = [{ actionId: 'record:update:en', locale: 'en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const unit = { reviewUnitId: 'unit:en-1', locale: 'en', requiresDocumentAcceptance: false, actions };
     const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
     const approval = createApprovalEnvelope({
@@ -340,9 +392,9 @@ const scenarios = {
   async localizationBatchUnitMismatchRefused() {
     // A matching-unit batch is required: an approved batch for DIFFERENT
     // actions cannot ride on this unit.
-    const unitActions = [{ actionId: 'record:update:a', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const unitActions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const unit = { reviewUnitId: 'unit:zh-1', locale: 'zh', requiresDocumentAcceptance: true, actions: unitActions };
-    const otherActions = [{ actionId: 'record:update:b', target: 'record:b', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const otherActions = [{ actionId: 'record:update:b', locale: 'zh', target: 'record:b', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: otherActions });
     const approval = createApprovalEnvelope({
       skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,

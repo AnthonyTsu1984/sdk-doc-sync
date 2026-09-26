@@ -231,5 +231,27 @@
    "runner": "invariant-conformance",
    "scenario": "localizationBatchUnitMismatchRefused"
   }
+ },
+ {
+  "id": "localization-fallback-dual-tamper-refused",
+  "assertions": {
+   "code": "BATCH_UNIT_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationFallbackDualTamperRefused"
+  }
+ },
+ {
+  "id": "localization-locale-ownership-from-actions",
+  "assertions": {
+   "code": "SOURCE_MUTATION_UNAUTHORIZED",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationLocaleOwnershipFromActions"
+  }
  }
 ]

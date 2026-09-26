@@ -13,7 +13,9 @@
       "statementDigest": "sha256:176fa34a6c78683f389045184ba3a73c5f56df44b04b7d445678717a338452de",
       "fixtureIds": [
         "localization-source-actions-refused",
-        "localization-source-batch-exec-refused"
+        "localization-source-batch-exec-refused",
+        "localization-fallback-dual-tamper-refused",
+        "localization-locale-ownership-from-actions"
       ],
       "enforcers": [
         {

@@ -37,6 +37,14 @@ function assertTargetOnlyIssueHasNoDeletion(issue) {
 
 // localization.target-local-prose: target-local prose is never overwritten
 // implicitly — a reviewed merge decision must be recorded on the issue first.
+// localization.source-read-only: target ownership must travel inside the
+// digest-protected action set, so every planned action is stamped with the
+// issue's locale; the executor derives ownership from this field, never from
+// the independently supplied unit.locale.
+function localeStampedActions(issue) {
+  return (issue.actions || []).map((action) => ({ ...action, locale: issue.locale }));
+}
+
 function assertTargetLocalIssueHasMergeDecision(issue) {
   if (!TARGET_LOCAL_CODES.has(issue.code)) return;
   if ((issue.actions || []).length === 0) return;
@@ -95,7 +103,7 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
       translationPairId: issue.translationPairId || null,
       requiresDocumentAcceptance: kind === 'content',
       riskClass: issue.riskClass || 'medium',
-      actions: issue.actions || [],
+      actions: localeStampedActions(issue),
     };
     if (kind === 'publication-scope') {
       unit.publicationChange = {
@@ -120,7 +128,7 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
       tableMappingId: group[0].tableMappingId,
       requiresDocumentAcceptance: false,
       riskClass: group[0].riskClass || 'low',
-      actions: group.flatMap((issue) => issue.actions || []),
+      actions: group.flatMap((issue) => localeStampedActions(issue)),
     }));
   }
   return units.sort((a, b) => a.reviewUnitId.localeCompare(b.reviewUnitId));

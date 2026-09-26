@@ -137,12 +137,14 @@ function loadPlanClient(args, dependencies = {}) {
   const loaded = require(modulePath);
   const factory = typeof loaded.createClient === 'function' ? loaded.createClient : loaded;
   const byToken = new Map();
+  // The full input object (including pageToken) is forwarded so custom
+  // clients paginating with hasMore/pageToken do not loop on page one.
   return {
-    async getBase({ baseToken }) { return clientFor(baseToken).getBase(); },
-    async listTables({ baseToken }) { return clientFor(baseToken).listTables(); },
-    async listFields({ baseToken, tableId }) { return clientFor(baseToken).listFields({ tableId }); },
-    async listViews({ baseToken, tableId }) { return clientFor(baseToken).listViews({ tableId }); },
-    async listRecords({ baseToken, tableId }) { return clientFor(baseToken).listRecords({ tableId }); },
+    async getBase(args) { return clientFor(args.baseToken).getBase(args); },
+    async listTables(args) { return clientFor(args.baseToken).listTables(args); },
+    async listFields(args) { return clientFor(args.baseToken).listFields(args); },
+    async listViews(args) { return clientFor(args.baseToken).listViews(args); },
+    async listRecords(args) { return clientFor(args.baseToken).listRecords(args); },
   };
   function clientFor(baseToken) {
     if (!byToken.has(baseToken)) byToken.set(baseToken, factory({ baseToken }));

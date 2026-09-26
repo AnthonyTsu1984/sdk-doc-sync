@@ -7,6 +7,8 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { baseInventoryDigest, buildScanManifest, reEnumerateForFreshness } = require('../src/issue-classifier');
+const { scanBase } = require('../src/inventory-scanner');
 const { runCli } = require('../bin/localized-doc-sync');
 
 function writeJson(filePath, value) {
@@ -22,10 +24,10 @@ test('canonical CLI builds a full scan manifest then deterministic review units 
   const scanPath = path.join(directory, 'scan.json');
   const planPath = path.join(directory, 'units.json');
   const fields = [
-    { fieldId: 'docs', name: 'Docs', type: 'text', isPrimary: true },
-    { fieldId: 'placement', name: 'Placement Type', type: 'select' },
-    { fieldId: 'slug', name: 'Slug', type: 'text' },
-    { fieldId: 'targets', name: 'Targets', type: 'multi_select' },
+    { fieldId: 'docs', name: 'Docs', type: 'text', typeCode: 1, isPrimary: true, isSynced: false, isExtend: false, options: [], property: null },
+    { fieldId: 'placement', name: 'Placement Type', type: 'select', typeCode: 3, isPrimary: false, isSynced: false, isExtend: false, options: [{ name: 'canonical' }], property: { options: [{ name: 'canonical' }] } },
+    { fieldId: 'slug', name: 'Slug', type: 'text', typeCode: 1, isPrimary: false, isSynced: false, isExtend: false, options: [], property: null },
+    { fieldId: 'targets', name: 'Targets', type: 'multi_select', typeCode: 4, isPrimary: false, isSynced: false, isExtend: false, options: [{ name: 'Milvus' }], property: { options: [{ name: 'Milvus' }] } },
   ];
   const materialize = (tableId, name, primaryFieldId) => {
     const records = [{
@@ -115,14 +117,27 @@ test('plan runs the documented CLI end to end through the production client modu
   // Rebuild the same snapshots and manifest the production chain would
   // produce, then exercise plan --client-module with the REAL
   // feishu-base-client module over a mocked Feishu HTTP surface.
-  // Field shape must match the production client's mapping exactly
-  // ({fieldId, name, type, uiType}) or the re-enumeration digest diverges.
-  const fields = [
-    { fieldId: 'docs', name: 'Docs', type: 'text', uiType: null },
-    { fieldId: 'placement', name: 'Placement Type', type: 'select', uiType: null },
-    { fieldId: 'slug', name: 'Slug', type: 'text', uiType: null },
-    { fieldId: 'targets', name: 'Targets', type: 'multi_select', uiType: null },
+  // Real-world split: the mock serves RAW Feishu API shapes; the snapshot
+  // stores the production client's mapped shape ({fieldId, name, type as
+  // snake_cased ui_type, typeCode, isPrimary, ..., options, property}).
+  const rawFields = [
+    { field_id: 'docs', field_name: 'Docs', type: 1, ui_type: 'Text', is_primary: true, is_synced: false, is_extend: false, property: null },
+    { field_id: 'placement', field_name: 'Placement Type', type: 3, ui_type: 'SingleSelect', is_primary: false, is_synced: false, is_extend: false, property: { options: [{ name: 'canonical' }] } },
+    { field_id: 'slug', field_name: 'Slug', type: 1, ui_type: 'Text', is_primary: false, is_synced: false, is_extend: false, property: null },
+    { field_id: 'targets', field_name: 'Targets', type: 4, ui_type: 'MultiSelect', is_primary: false, is_synced: false, is_extend: false, property: { options: [{ name: 'Milvus' }] } },
   ];
+  const toSnake = (uiType) => uiType.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  const fields = rawFields.map((field) => ({
+    fieldId: field.field_id,
+    name: field.field_name,
+    type: toSnake(field.ui_type),
+    typeCode: field.type,
+    isPrimary: field.is_primary,
+    isSynced: field.is_synced,
+    isExtend: field.is_extend,
+    options: field.property?.options || [],
+    property: field.property,
+  }));
   const materialize = (tableId, name, primaryFieldId) => {
     const records = [{ record_id: `${tableId}-rec-1`, fields: { Docs: 'doc', 'Placement Type': 'canonical', Slug: tableId, Targets: ['Milvus'] } }];
     return {
@@ -177,7 +192,7 @@ test('plan runs the documented CLI end to end through the production client modu
     if (tableMatch) {
       const table = [...liveTables.en, ...liveTables.zh].find((entry) => entry.tableId === tableMatch[1]);
       if (!table) return json({ code: 1, msg: `unknown table ${tableMatch[1]}` });
-      if (tableMatch[2] === 'fields') return json({ code: 0, data: { items: table.fields.map((field) => ({ field_id: field.fieldId, field_name: field.name, type: field.type, ui_type: null })), has_more: false } });
+      if (tableMatch[2] === 'fields') return json({ code: 0, data: { items: rawFields, has_more: false } });
       if (tableMatch[2] === 'views') return json({ code: 0, data: { items: [], has_more: false } });
       return json({ code: 0, data: { items: table.records, has_more: false } });
     }
@@ -211,7 +226,7 @@ test('plan runs the documented CLI end to end through the production client modu
     if (tableMatch) {
       const table = liveTables.en.find((entry) => entry.tableId === tableMatch[1]);
       if (!table) return json({ code: 1, msg: `unknown table ${tableMatch[1]}` });
-      if (tableMatch[2] === 'fields') return json({ code: 0, data: { items: table.fields.map((field) => ({ field_id: field.fieldId, field_name: field.name, type: field.type, ui_type: null })), has_more: false } });
+      if (tableMatch[2] === 'fields') return json({ code: 0, data: { items: rawFields, has_more: false } });
       if (tableMatch[2] === 'views') return json({ code: 0, data: { items: [], has_more: false } });
       return json({ code: 0, data: { items: table.records, has_more: false } });
     }
@@ -230,6 +245,114 @@ test('plan runs the documented CLI end to end through the production client modu
     if (originalTokenFetcher) require.cache[tokenFetcherPath] = originalTokenFetcher; else delete require.cache[tokenFetcherPath];
     delete require.cache[clientModulePath];
   }
+});
+
+test('production client preserves the real field schema: differing select options hash differently', async () => {
+  const fetchPath = require.resolve('node-fetch');
+  const tokenFetcherPath = require.resolve('../../api-reference-sync/lib/lark-docs/larkTokenFetcher');
+  const clientModulePath = require.resolve('../src/feishu-base-client');
+  const originalFetch = require.cache[fetchPath];
+  const originalTokenFetcher = require.cache[tokenFetcherPath];
+  const json = (payload) => ({ async json() { return payload; } });
+
+  const scanWith = (options) => {
+    require.cache[fetchPath] = { id: fetchPath, filename: fetchPath, loaded: true, exports: async (url) => {
+      const u = String(url).split('?')[0];
+      if (u.endsWith('/tables')) return json({ code: 0, data: { items: [{ table_id: 'tbl', name: 'T', primary_field_id: 'docs' }], has_more: false } });
+      if (u.includes('/fields')) return json({ code: 0, data: { items: [
+        { field_id: 'docs', field_name: 'Docs', type: 1, ui_type: 'Text', is_primary: true, is_synced: false, is_extend: false, property: null },
+        { field_id: 'status', field_name: 'Status', type: 3, ui_type: 'SingleSelect', is_primary: false, is_synced: false, is_extend: false, property: { options } },
+      ], has_more: false } });
+      if (u.includes('/views')) return json({ code: 0, data: { items: [], has_more: false } });
+      if (u.includes('/records')) return json({ code: 0, data: { items: [], has_more: false } });
+      return json({ code: 0, data: { app: { name: 'T', revision_id: 1 } } });
+    } };
+    require.cache[tokenFetcherPath] = { id: tokenFetcherPath, filename: tokenFetcherPath, loaded: true, exports: class { async token() { return 't'; } } };
+    delete require.cache[clientModulePath];
+    const { createClient } = require(clientModulePath);
+    return scanBase({ client: createClient({ baseToken: 'en' }), baseToken: 'en' });
+  };
+
+  try {
+    const variantA = await scanWith([{ name: 'canonical' }]);
+    const variantB = await scanWith([{ name: 'canonical' }, { name: 'archived' }]);
+    const fieldA = variantA.tables[0].fields[1];
+    // Real schema evidence survives the mapping: numeric type code kept,
+    // string type normalized for the locale policy, primary flag retained.
+    assert.equal(fieldA.type, 'single_select');
+    assert.equal(fieldA.typeCode, 3);
+    assert.equal(fieldA.isPrimary, false);
+    assert.equal(variantA.tables[0].fields[0].isPrimary, true);
+    assert.deepEqual(fieldA.options, [{ name: 'canonical' }]);
+    // Two selects differing only in options must NOT hash identically.
+    assert.notEqual(variantA.tables[0].fieldSchemaDigest, variantB.tables[0].fieldSchemaDigest);
+    assert.notEqual(variantA.inventoryDigest, variantB.inventoryDigest);
+  } finally {
+    if (originalFetch) require.cache[fetchPath] = originalFetch; else delete require.cache[fetchPath];
+    if (originalTokenFetcher) require.cache[tokenFetcherPath] = originalTokenFetcher; else delete require.cache[tokenFetcherPath];
+    delete require.cache[clientModulePath];
+  }
+});
+
+test('production client binds the authoritative view filter configuration', async () => {
+  const fetchPath = require.resolve('node-fetch');
+  const tokenFetcherPath = require.resolve('../../api-reference-sync/lib/lark-docs/larkTokenFetcher');
+  const clientModulePath = require.resolve('../src/feishu-base-client');
+  const originalFetch = require.cache[fetchPath];
+  const originalTokenFetcher = require.cache[tokenFetcherPath];
+  const json = (payload) => ({ async json() { return payload; } });
+  const detailCalls = [];
+  require.cache[fetchPath] = { id: fetchPath, filename: fetchPath, loaded: true, exports: async (url) => {
+    const u = String(url).split('?')[0];
+    if (u.endsWith('/views')) return json({ code: 0, data: { items: [{ view_id: 'v1', view_name: 'Grid', view_type: 'grid' }], has_more: false } });
+    if (u.endsWith('/views/v1')) {
+      detailCalls.push(u);
+      return json({ code: 0, data: { view: { view_id: 'v1', view_name: 'Grid', view_type: 'grid', property: { filter_info: { conditions: [{ field_name: 'Slug', operator: 'is', value: ['x'] }] }, sort_info: null } } } });
+    }
+    return json({ code: 0, data: { items: [], has_more: false } });
+  } };
+  require.cache[tokenFetcherPath] = { id: tokenFetcherPath, filename: tokenFetcherPath, loaded: true, exports: class { async token() { return 't'; } } };
+  delete require.cache[clientModulePath];
+  try {
+    const { createClient } = require(clientModulePath);
+    const client = createClient({ baseToken: 'en' });
+    const views = await client.listViews({ tableId: 'tbl' });
+    assert.equal(views.items.length, 1);
+    assert.deepEqual(views.items[0].filterInfo.conditions, [{ field_name: 'Slug', operator: 'is', value: ['x'] }]);
+    assert.equal(detailCalls.length, 1, 'view detail (filter config) must be fetched');
+    // The schema profiler can now detect the filtered active view.
+    const { profileTableSchema } = require('../src/schema-profiler');
+    const profile = profileTableSchema({
+      table: { tableId: 'tbl', primaryFieldId: 'docs', fields: [], views: views.items },
+      rolePolicy: {},
+      activeViewId: 'v1',
+    });
+    assert.ok(profile.issues.some((issue) => issue.code === 'FILTERED_VIEW_SCOPE'));
+  } finally {
+    if (originalFetch) require.cache[fetchPath] = originalFetch; else delete require.cache[fetchPath];
+    if (originalTokenFetcher) require.cache[tokenFetcherPath] = originalTokenFetcher; else delete require.cache[tokenFetcherPath];
+    delete require.cache[clientModulePath];
+  }
+});
+
+test('plan forwards pagination tokens to override clients', async () => {
+  // A client paginating in two pages: the second call must receive the
+  // forwarded pageToken, or collection loops on page one forever.
+  const seenTokens = [];
+  const pageClient = {
+    async getBase() { return { title: null, revision: 1, timezone: null }; },
+    async listTables({ pageToken }) {
+      seenTokens.push(pageToken ?? null);
+      if (!pageToken) return { items: [{ tableId: 'en-dev', name: 'Dev', primaryFieldId: null }], hasMore: true, pageToken: 'p2' };
+      return { items: [], hasMore: false };
+    },
+    async listFields() { return { items: [{ fieldId: 'f', name: 'Docs', type: 'text' }], hasMore: false }; },
+    async listViews() { return { items: [], hasMore: false }; },
+    async listRecords() { return { items: [], hasMore: false }; },
+  };
+  const fresh = await scanBase({ client: pageClient, baseToken: 'en' });
+  assert.equal(fresh.tables.length, 1);
+  assert.deepEqual(seenTokens, [null, 'p2']);
 });
 
 test('localized capability references the canonical journaled entrypoint and package suite', () => {

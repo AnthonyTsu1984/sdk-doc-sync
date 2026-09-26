@@ -29,6 +29,11 @@ function writeManifests(root, statusBySkill = {}) {
   }
 }
 
+const PASS_THROUGH_GUARDS = {
+  dirtyState: () => ({ dirty: false, statusOutput: '', diffOutput: '' }),
+  probe: () => ({ ok: true, output: 'mock tool 22.0' }),
+};
+
 test('rollout admission names every required deterministic and model-eval gate without live commands', () => {
   assert.deepEqual(DETERMINISTIC_COMMANDS.map(item => item.label), [
     'validate:skills',
@@ -66,6 +71,7 @@ test('model evaluations never run after a deterministic admission failure', () =
   writeManifests(root);
   const calls = [];
   const result = runAdmission({
+    ...PASS_THROUGH_GUARDS,
     repoRoot: root,
     phase: 'test-failure',
     now: () => '2026-08-06T00:00:00.000Z',
@@ -86,6 +92,7 @@ test('deterministic-only admission skips the model-eval stage and records the mo
   writeManifests(root);
   const calls = [];
   const result = runAdmission({
+    ...PASS_THROUGH_GUARDS,
     repoRoot: root,
     phase: 'test-deterministic-only',
     deterministicOnly: true,
@@ -107,6 +114,7 @@ test('successful admission records every gate in stage order', () => {
   writeManifests(root);
   const calls = [];
   const result = runAdmission({
+    ...PASS_THROUGH_GUARDS,
     repoRoot: root,
     phase: 'test-pass',
     now: () => '2026-08-06T00:00:00.000Z',
@@ -132,6 +140,7 @@ test('resume validates and preserves the passed prefix, then reruns from the fir
   writeManifests(root);
   const firstCalls = [];
   const first = runAdmission({
+    ...PASS_THROUGH_GUARDS,
     repoRoot: root,
     phase: 'resume-pass',
     now: () => '2026-08-06T00:00:00.000Z',
@@ -145,6 +154,7 @@ test('resume validates and preserves the passed prefix, then reruns from the fir
 
   const resumedCalls = [];
   const resumed = runAdmission({
+    ...PASS_THROUGH_GUARDS,
     repoRoot: root,
     phase: 'resume-pass',
     resume: true,
@@ -177,8 +187,10 @@ test('CLI accepts an explicit resume flag only with a phase', () => {
     outputPath: null,
     resume: true,
     deterministicOnly: false,
+    allowDirty: false,
   });
   assert.equal(parseArgs(['--phase', 'hardening', '--deterministic-only']).deterministicOnly, true);
+  assert.equal(parseArgs(['--phase', 'hardening', '--allow-dirty']).allowDirty, true);
   assert.throws(() => parseArgs(['--resume']), /ADMISSION_PHASE_REQUIRED/);
 });
 

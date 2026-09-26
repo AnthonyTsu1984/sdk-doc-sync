@@ -37,6 +37,13 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      # The admission toolchain floor (scripts/admission/toolchain-manifest.json)
+      # requires javac >= 17 for the doc-code-verify Java fragment gate; pin the
+      # toolchain explicitly instead of relying on the runner image.
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
       - run: npm ci
       # Model evals need the isolated credentials and cost real tokens/time, so
       # they run only on manual dispatch; pull_request runs the deterministic

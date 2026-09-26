@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "comment": "Deterministic-admission toolchain floor. run-skill-admission probes every entry before the first gate runs; a miss fails TOOLCHAIN_PRECONDITION_FAILED at preflight instead of a mid-suite environment failure. This file is part of the admission source fingerprint (collectAdmissionInputFiles includes scripts/admission), so editing it invalidates resume and prior evidence.",
+  "tools": [
+    {
+      "id": "node",
+      "probes": [{ "command": "node", "args": ["--version"] }],
+      "minMajor": 22,
+      "hint": "CI pins Node 22 via actions/setup-node; local dev must match"
+    },
+    {
+      "id": "npm",
+      "probes": [{ "command": "npm", "args": ["--version"] }],
+      "hint": "runs every npm-script gate"
+    },
+    {
+      "id": "git",
+      "probes": [{ "command": "git", "args": ["--version"] }],
+      "hint": "runs the git diff --check gate and backs the dirty-tree guard"
+    },
+    {
+      "id": "javac",
+      "probes": [{ "command": "javac", "args": ["-version"] }],
+      "minMajor": 17,
+      "hint": "doc-code-verify Java fragment gate (verify-feishu-doc-code.js degrades to manual without it and verifier tests fail). CI installs Temurin 17 via actions/setup-java; local macOS: brew install --cask temurin@17"
+    },
+    {
+      "id": "cpp-compiler",
+      "probes": [
+        { "command": "clang++", "args": ["--version"] },
+        { "command": "g++", "args": ["--version"] }
+      ],
+      "hint": "doc-code-verify C++ self-test accepts clang++ or g++ (tests/skills/doc-code-verify-cpp.test.js)"
+    }
+  ]
+}

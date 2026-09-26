@@ -7,6 +7,7 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const REPO_ROOT = path.resolve(__dirname, '..');
+const { defaultProbe, loadToolchainManifest, runToolchainPreflight } = require('./admission/toolchain-preflight');
 const CANONICAL_SKILLS = Object.freeze([
   'api-reference-sync',
   'localized-doc-sync',
@@ -102,6 +103,7 @@ function collectAdmissionInputFiles(repoRoot) {
     'evals/skills',
     'tests/skills',
     '.github/workflows/skill-admission.yml',
+    'scripts/admission',
     'scripts/validate-skills.js',
     'package.json',
     'package-lock.json',
@@ -123,6 +125,30 @@ function admissionSourceFingerprint({ repoRoot = REPO_ROOT } = {}) {
     hash.update(fs.readFileSync(path.join(repoRoot, relativePath)));
     hash.update('\0');
   }
+  return `sha256:${hash.digest('hex')}`;
+}
+
+function defaultDirtyState({ repoRoot = REPO_ROOT } = {}) {
+  const status = spawnSync('git', ['status', '--porcelain', '-uall'], { cwd: repoRoot, encoding: 'utf8' });
+  if (status.error || status.status !== 0) {
+    return { error: status.error ? status.error.message : String(status.stderr || 'git status failed').trim() };
+  }
+  const diff = spawnSync('git', ['diff', 'HEAD'], { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  if (diff.error || diff.status !== 0) {
+    return { error: diff.error ? diff.error.message : String(diff.stderr || 'git diff failed').trim() };
+  }
+  return {
+    dirty: status.stdout.trim().length > 0,
+    statusOutput: status.stdout,
+    diffOutput: diff.stdout,
+  };
+}
+
+function dirtyPatchDigest(dirtyState) {
+  const hash = crypto.createHash('sha256');
+  hash.update(String(dirtyState.statusOutput || ''));
+  hash.update('\0');
+  hash.update(String(dirtyState.diffOutput || ''));
   return `sha256:${hash.digest('hex')}`;
 }
 
@@ -151,19 +177,20 @@ function runAdmission({
   outputPath = null,
   resume = false,
   deterministicOnly = false,
+  allowDirty = false,
   env = process.env,
   now = () => new Date().toISOString(),
   runCommand = defaultRunCommand,
+  probe = null,
+  dirtyState = null,
 } = {}) {
   const normalizedPhase = safePhase(phase);
   const rolloutRoot = path.join(repoRoot, 'tmp', 'skill-feedback-rollout', normalizedPhase);
   const resultPath = outputPath || path.join(rolloutRoot, 'results.json');
-  const sourceFingerprint = admissionSourceFingerprint({ repoRoot });
   const result = {
     schemaVersion: 1,
     phase: normalizedPhase,
     generatedAt: now(),
-    sourceFingerprint,
     status: 'BLOCKED',
     deterministicOnly,
     liveExecutionPerformed: false,
@@ -172,6 +199,41 @@ function runAdmission({
     blocker: null,
     outputPath: resultPath,
   };
+
+  // Guard 1 (6.3): a formal admission run must name the exact source state it
+  // tests. A dirty tree is refused outright; --allow-dirty downgrades the run
+  // to a non-formal one by binding the dirty patch digest into the artifact.
+  const dirty = (dirtyState || defaultDirtyState)({ repoRoot });
+  if (dirty.error) {
+    result.blocker = `ADMISSION_DIRTY_STATE_UNAVAILABLE: ${dirty.error}`;
+    writeResult(resultPath, result);
+    return result;
+  }
+  if (dirty.dirty) {
+    if (!allowDirty) {
+      result.blocker = 'ADMISSION_DIRTY_WORKTREE';
+      result.dirtyPaths = String(dirty.statusOutput || '').split('\n').filter(Boolean).slice(0, 20);
+      writeResult(resultPath, result);
+      return result;
+    }
+    result.dirtyTree = true;
+    result.dirtyPatchDigest = dirtyPatchDigest(dirty);
+  }
+
+  // Guard 2 (6.2): the toolchain floor is probed before any gate runs, so an
+  // under-provisioned machine fails TOOLCHAIN_PRECONDITION_FAILED instead of
+  // a mid-suite environment failure.
+  const toolchain = runToolchainPreflight({ manifest: loadToolchainManifest(), probe: probe || defaultProbe });
+  result.toolchain = { ok: toolchain.ok, checks: toolchain.checks };
+  if (!toolchain.ok) {
+    result.toolchain.failures = toolchain.failures;
+    result.blocker = `TOOLCHAIN_PRECONDITION_FAILED: ${toolchain.failures.map(failure => failure.id).join(', ')}`;
+    writeResult(resultPath, result);
+    return result;
+  }
+
+  const sourceFingerprint = admissionSourceFingerprint({ repoRoot });
+  result.sourceFingerprint = sourceFingerprint;
 
   const plannedEntries = admissionEntries(rolloutRoot, deterministicOnly);
   let startIndex = 0;
@@ -210,28 +272,56 @@ function runAdmission({
     return result;
   }
 
-  for (let index = startIndex; index < plannedEntries.length; index += 1) {
-    const { stage, entry } = plannedEntries[index];
-    const startedAt = Date.now();
-    const execution = runCommand(entry, { repoRoot, env });
-    if (execution.stdout) process.stdout.write(execution.stdout);
-    if (execution.stderr) process.stderr.write(execution.stderr);
-    const record = {
-      stage,
-      label: entry.label,
-      command: [entry.command, ...entry.args],
-      exitCode: Number.isInteger(execution.status) ? execution.status : null,
-      signal: execution.signal || null,
-      durationMs: Date.now() - startedAt,
-      passed: execution.status === 0,
-    };
-    result.results.push(record);
-    writeResult(resultPath, result);
-    if (!record.passed) {
-      result.blocker = `ADMISSION_COMMAND_FAILED: ${entry.label}`;
+  // Guard 3 (6.1): the source fingerprint is re-verified before every gate
+  // and once more at the end. A mid-run source change voids every prior
+  // stage result — each stage must run against the same source state.
+  const assertSourceUnchanged = (at) => {
+    const observed = admissionSourceFingerprint({ repoRoot });
+    if (observed !== sourceFingerprint) {
+      const drift = new Error('ADMISSION_SOURCE_CHANGED_DURING_RUN');
+      drift.at = at;
+      drift.expected = sourceFingerprint;
+      drift.observed = observed;
+      throw drift;
+    }
+  };
+
+  try {
+    for (let index = startIndex; index < plannedEntries.length; index += 1) {
+      const { stage, entry } = plannedEntries[index];
+      assertSourceUnchanged(`before:${entry.label}`);
+      const startedAt = Date.now();
+      const execution = runCommand(entry, { repoRoot, env });
+      if (execution.stdout) process.stdout.write(execution.stdout);
+      if (execution.stderr) process.stderr.write(execution.stderr);
+      const record = {
+        stage,
+        label: entry.label,
+        command: [entry.command, ...entry.args],
+        exitCode: Number.isInteger(execution.status) ? execution.status : null,
+        signal: execution.signal || null,
+        durationMs: Date.now() - startedAt,
+        passed: execution.status === 0,
+      };
+      result.results.push(record);
+      writeResult(resultPath, result);
+      if (!record.passed) {
+        result.blocker = `ADMISSION_COMMAND_FAILED: ${entry.label}`;
+        writeResult(resultPath, result);
+        return result;
+      }
+    }
+    assertSourceUnchanged('final');
+  } catch (error) {
+    if (error && error.message === 'ADMISSION_SOURCE_CHANGED_DURING_RUN') {
+      result.voidedResults = true;
+      for (const record of result.results) record.voided = true;
+      result.sourceDrift = { at: error.at, expected: error.expected, observed: error.observed };
+      result.blocker = error.message;
       writeResult(resultPath, result);
       return result;
     }
+    throw error;
   }
 
   result.status = 'ADMITTED';
@@ -242,13 +332,14 @@ function runAdmission({
 }
 
 function parseArgs(argv) {
-  const options = { phase: null, outputPath: null, resume: false, deterministicOnly: false };
+  const options = { phase: null, outputPath: null, resume: false, deterministicOnly: false, allowDirty: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--phase') options.phase = argv[++index];
     else if (arg === '--output') options.outputPath = path.resolve(argv[++index]);
     else if (arg === '--resume') options.resume = true;
     else if (arg === '--deterministic-only') options.deterministicOnly = true;
+    else if (arg === '--allow-dirty') options.allowDirty = true;
     else if (arg === '--help') options.help = true;
     else throw new Error(`ADMISSION_ARGUMENT_UNKNOWN: ${arg}`);
   }
@@ -257,13 +348,14 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-  process.stdout.write('Usage: npm run admit:skills -- --phase <phase> [--output <results.json>] [--resume] [--deterministic-only]\n');
+  process.stdout.write('Usage: npm run admit:skills -- --phase <phase> [--output <results.json>] [--resume] [--deterministic-only] [--allow-dirty]\n');
+  process.stdout.write('--allow-dirty runs on a dirty worktree only by binding the dirty patch digest into the artifact; the run is then marked dirtyTree and is not formal evidence.\n');
 }
 
 function main() {
   const options = parseArgs(process.argv.slice(2));
   if (options.help) return printHelp();
-  const result = runAdmission({ phase: options.phase, outputPath: options.outputPath, resume: options.resume, deterministicOnly: options.deterministicOnly });
+  const result = runAdmission({ phase: options.phase, outputPath: options.outputPath, resume: options.resume, deterministicOnly: options.deterministicOnly, allowDirty: options.allowDirty });
   process.stdout.write(`${JSON.stringify({
     status: result.status,
     phase: result.phase,
@@ -289,6 +381,8 @@ module.exports = {
   admissionSourceFingerprint,
   adapterInventory,
   assertNoPlannedAdapters,
+  defaultDirtyState,
+  dirtyPatchDigest,
   parseArgs,
   runAdmission,
 };

@@ -19,7 +19,13 @@ function sideEffectsFor(action) {
   throw new Error(`Unsupported live action type: ${action.type}`);
 }
 
-function buildLocalizationActionBatch(actions) {
+function buildLocalizationActionBatch(actions, { locale } = {}) {
+  // Target ownership travels inside the digest-protected action set: every
+  // batch action carries the target locale, and the canonical executor
+  // refuses locale-less actions in every binding form.
+  if (typeof locale !== 'string' || !locale.trim()) {
+    throw new Error('locale is required to stamp target ownership onto localization batch actions');
+  }
   return createActionBatch({
     skill: 'localized-doc-sync',
     operation: 'sync',
@@ -28,6 +34,7 @@ function buildLocalizationActionBatch(actions) {
       dependsOn: [],
       target: `record:${action.targetTableId}:${action.target?.id || action.slug}`,
       sideEffects: sideEffectsFor(action),
+      locale,
       payload: action,
     })),
   });
@@ -41,7 +48,7 @@ async function main() {
   const task = store.readTask(taskId);
   const actions = JSON.parse(fs.readFileSync(path.join(store.taskDir(taskId), 'actions.json'), 'utf8'));
   const actionable = actions.filter(action => ['NEW', 'UPDATE', 'META_ONLY'].includes(action.type));
-  const actionBatch = buildLocalizationActionBatch(actionable);
+  const actionBatch = buildLocalizationActionBatch(actionable, { locale: config.surfaces.localization.targetLang });
 
   store.writeTask({ ...task, status: TASK_STATUS.DRY_RUN_STARTED, dryRunStartedAt: new Date().toISOString() });
   const agentResult = runAgentIfEnabled(config, [

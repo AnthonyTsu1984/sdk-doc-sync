@@ -19,10 +19,21 @@ function page(items) {
 }
 
 // Real Feishu fields carry a numeric `type` plus a string `ui_type`; the
-// locale policy compares snake_cased strings ('text', 'single_select'), so
-// ui_type is normalized and the numeric code is preserved alongside.
+// locale policy compares its own vocabulary ('text', 'select', 'relation',
+// 'multi_select', ...), so this module owns THE single canonical
+// Feishu→policy mapping: scanning, policy matching, and freshness digests all
+// consume the value emitted here, and the numeric code is preserved
+// alongside as evidence. Fields whose ui_type already matches the policy
+// vocabulary pass through snake_cased; the two that do not (SingleSelect is
+// 'select', SingleLink is 'relation') are aliased explicitly.
+const POLICY_FIELD_TYPE_ALIASES = {
+    SingleSelect: 'select',
+    SingleLink: 'relation',
+};
+
 function normalizeFieldType(uiType, typeCode) {
     if (typeof uiType === 'string' && uiType) {
+        if (POLICY_FIELD_TYPE_ALIASES[uiType]) return POLICY_FIELD_TYPE_ALIASES[uiType];
         return uiType.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
     }
     return `type_${typeCode}`;

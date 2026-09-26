@@ -10,7 +10,7 @@ const { TaskStore } = require('../src/task-store');
 const { TASK_STATUS, isLiveActionAllowed } = require('../src/contracts');
 const { createActionBatch } = require('../../skills/doc-ops-core/src/action-batch');
 const { createApprovalEnvelope, assertApproval } = require('../../skills/doc-ops-core/src/approval-guard');
-const { executeReviewUnit } = require('../../skills/localized-doc-sync/src/executor');
+const { executeReviewUnit, withBoundUnitDigest } = require('../../skills/localized-doc-sync/src/executor');
 
 function loadApprovedActionBatch({ store, taskId, approvedBatchDigest }) {
   if (!approvedBatchDigest) throw new Error('APPROVED_BATCH_DIGEST_REQUIRED');
@@ -132,7 +132,10 @@ async function executeApprovedActionBatch({
     ['NEW', 'UPDATE'].includes(action.payload?.type)
   ));
   return executeReviewUnit({
-    unit: {
+    // The handoff stamps the canonical unit snapshot (boundBatchDigest,
+    // locale, and acceptance/lineage fields included) so the executor can
+    // prove the unit was not edited between approval and execution.
+    unit: withBoundUnitDigest({
       reviewUnitId: `agent-team:${actionBatch.batchDigest}`,
       // The handoff binds the unit to the exact digest-verified stored batch
       // and carries the target locale: the executor re-checks both before the
@@ -140,7 +143,7 @@ async function executeApprovedActionBatch({
       boundBatchDigest: actionBatch.batchDigest,
       locale,
       requiresDocumentAcceptance,
-    },
+    }),
     batch: actionBatch,
     approval,
     journalPath,

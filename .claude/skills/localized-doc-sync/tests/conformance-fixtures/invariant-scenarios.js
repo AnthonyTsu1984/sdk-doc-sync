@@ -13,7 +13,7 @@ const path = require('node:path');
 const { createActionBatch } = require('../../../doc-ops-core/src/action-batch');
 const { createApprovalEnvelope } = require('../../../doc-ops-core/src/approval-guard');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
-const { executeReviewUnit } = require('../../src/executor');
+const { executeReviewUnit, withBoundUnitDigest } = require('../../src/executor');
 const { buildReviewUnits } = require('../../src/planner');
 const { baseInventoryDigest, buildScanManifest, reEnumerateForFreshness } = require('../../src/issue-classifier');
 const { applyTranslationResponse, prepareTranslationContent } = require('../../src/translation-content');
@@ -325,7 +325,7 @@ const scenarios = {
     let code = null;
     try {
       await executeReviewUnit({
-        unit: { reviewUnitId: 'unit:dual', locale: 'zh', requiresDocumentAcceptance: false, actions: evilActions },
+        unit: withBoundUnitDigest({ reviewUnitId: 'unit:dual', locale: 'zh', requiresDocumentAcceptance: false, actions: evilActions }),
         batch: forged, approval,
         journalPath: tmpJournalPath(),
         adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
@@ -350,7 +350,7 @@ const scenarios = {
     let code = null;
     try {
       await executeReviewUnit({
-        unit: { reviewUnitId: 'unit:tampered', locale: 'zh', requiresDocumentAcceptance: false, actions },
+        unit: withBoundUnitDigest({ reviewUnitId: 'unit:tampered', locale: 'zh', requiresDocumentAcceptance: false, actions }),
         batch, approval,
         journalPath: tmpJournalPath(),
         adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
@@ -366,7 +366,7 @@ const scenarios = {
     // separately approved batch against a source record. The batch matches
     // the unit exactly, so the refusal is the source-locale guard itself.
     const actions = [{ actionId: 'record:update:en', locale: 'en', target: 'record:english-source', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
-    const unit = { reviewUnitId: 'unit:en-1', locale: 'en', requiresDocumentAcceptance: false, actions };
+    const unit = withBoundUnitDigest({ reviewUnitId: 'unit:en-1', locale: 'en', requiresDocumentAcceptance: false, actions });
     const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
     const approval = createApprovalEnvelope({
       skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
@@ -393,7 +393,7 @@ const scenarios = {
     // A matching-unit batch is required: an approved batch for DIFFERENT
     // actions cannot ride on this unit.
     const unitActions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
-    const unit = { reviewUnitId: 'unit:zh-1', locale: 'zh', requiresDocumentAcceptance: true, actions: unitActions };
+    const unit = withBoundUnitDigest({ reviewUnitId: 'unit:zh-1', locale: 'zh', requiresDocumentAcceptance: true, actions: unitActions });
     const otherActions = [{ actionId: 'record:update:b', locale: 'zh', target: 'record:b', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
     const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: otherActions });
     const approval = createApprovalEnvelope({
@@ -410,6 +410,83 @@ const scenarios = {
           async execute() { adapterCalls += 1; return {}; },
           async verify() { return { verified: true }; },
         },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
+  },
+
+  async localizationBoundLocalelessActionRefused() {
+    // Round-five attack: the boundBatchDigest path skips the per-field
+    // binding comparison and the old source guard only rejected an explicit
+    // `locale: "en"` — a digest-valid action WITHOUT a locale reached the
+    // adapter. Locale is required in every binding form.
+    const localeLessActions = [{ actionId: 'record:update:a', target: 'record:source-shaped', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: localeLessActions });
+    const approval = createApprovalEnvelope({
+      skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+    });
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit: withBoundUnitDigest({ reviewUnitId: 'unit:bound-locale-less', locale: 'zh', requiresDocumentAcceptance: false, boundBatchDigest: batch.batchDigest }),
+        batch, approval,
+        journalPath: tmpJournalPath(),
+        adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
+  },
+
+  async localizationBoundAcceptanceTamperRefused() {
+    // Round-five attack: a valid zh UPDATE_CONTENT batch with a matching
+    // boundBatchDigest, executed with the unit's requiresDocumentAcceptance
+    // flipped to false. Acceptance semantics are digest-bound on the unit.
+    const actions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
+    const approval = createApprovalEnvelope({
+      skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+    });
+    const approvedUnit = withBoundUnitDigest({ reviewUnitId: 'unit:acceptance', locale: 'zh', requiresDocumentAcceptance: true, boundBatchDigest: batch.batchDigest });
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit: { ...approvedUnit, requiresDocumentAcceptance: false },
+        batch, approval,
+        journalPath: tmpJournalPath(),
+        adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
+      });
+    } catch (error) {
+      code = error.code || null;
+    }
+    return { code, adapterCalls };
+  },
+
+  async localizationBoundLineageTamperRefused() {
+    // Round-five attack: relabeling reviewUnitId rewrites the journal
+    // lineage; the unit digest binds the field, so the relabel is refused.
+    const actions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
+    const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });
+    const approval = createApprovalEnvelope({
+      skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+      actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+    });
+    const approvedUnit = withBoundUnitDigest({ reviewUnitId: 'unit:lineage', locale: 'zh', requiresDocumentAcceptance: false, boundBatchDigest: batch.batchDigest });
+    let adapterCalls = 0;
+    let code = null;
+    try {
+      await executeReviewUnit({
+        unit: { ...approvedUnit, reviewUnitId: 'unit:somewhere-else' },
+        batch, approval,
+        journalPath: tmpJournalPath(),
+        adapter: { async execute() { adapterCalls += 1; return {}; }, async verify() { return { verified: true }; } },
       });
     } catch (error) {
       code = error.code || null;

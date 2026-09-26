@@ -29,20 +29,23 @@ function actions() {
 }
 
 test('dry-run builds a deterministic immutable localization action batch', () => {
-  const first = buildLocalizationActionBatch(actions());
-  const second = buildLocalizationActionBatch(actions().reverse());
+  const first = buildLocalizationActionBatch(actions(), { locale: 'zh' });
+  const second = buildLocalizationActionBatch(actions().reverse(), { locale: 'zh' });
   assert.equal(first.batchDigest, second.batchDigest);
   assert.equal(first.skill, 'localized-doc-sync');
   assert.equal(first.operation, 'sync');
   assert.deepEqual(first.sideEffects, ['document:update', 'record:update']);
   assert.ok(first.actions.every((action) => action.payload));
+  // Target ownership travels inside the digest-protected action set.
+  assert.ok(first.actions.every((action) => action.locale === 'zh'));
+  assert.throws(() => buildLocalizationActionBatch(actions()), /locale is required/);
 });
 
 test('live write rejects a stale approval digest and a tampered stored batch before mutation', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-live-write-'));
   const store = new TaskStore(root);
   const taskId = 'task-1';
-  const batch = buildLocalizationActionBatch(actions());
+  const batch = buildLocalizationActionBatch(actions(), { locale: 'zh' });
   store.writeCanonicalArtifact(taskId, 'action-batch.json', batch);
 
   assert.throws(
@@ -71,7 +74,7 @@ test('live-write workflow passes the accepted batch digest to the executable', (
 test('agent-team delegates an approved immutable batch to the canonical write-ahead executor', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-canonical-execution-'));
   const journalPath = path.join(root, 'execution.jsonl');
-  const batch = buildLocalizationActionBatch(actions().slice(0, 1));
+  const batch = buildLocalizationActionBatch(actions().slice(0, 1), { locale: 'zh' });
   const seen = [];
   const result = await executeApprovedActionBatch({
     actionBatch: batch,

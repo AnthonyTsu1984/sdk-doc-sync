@@ -119,18 +119,19 @@ test('plan runs the documented CLI end to end through the production client modu
   // feishu-base-client module over a mocked Feishu HTTP surface.
   // Real-world split: the mock serves RAW Feishu API shapes; the snapshot
   // stores the production client's mapped shape ({fieldId, name, type as
-  // snake_cased ui_type, typeCode, isPrimary, ..., options, property}).
+  // policy-vocabulary string, typeCode, isPrimary, ..., options, property}).
   const rawFields = [
     { field_id: 'docs', field_name: 'Docs', type: 1, ui_type: 'Text', is_primary: true, is_synced: false, is_extend: false, property: null },
     { field_id: 'placement', field_name: 'Placement Type', type: 3, ui_type: 'SingleSelect', is_primary: false, is_synced: false, is_extend: false, property: { options: [{ name: 'canonical' }] } },
     { field_id: 'slug', field_name: 'Slug', type: 1, ui_type: 'Text', is_primary: false, is_synced: false, is_extend: false, property: null },
     { field_id: 'targets', field_name: 'Targets', type: 4, ui_type: 'MultiSelect', is_primary: false, is_synced: false, is_extend: false, property: { options: [{ name: 'Milvus' }] } },
   ];
-  const toSnake = (uiType) => uiType.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+  // Mirror the production client's canonical Feishu→policy mapping.
+  const toPolicyType = (uiType) => (uiType === 'SingleSelect' ? 'select' : uiType.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase());
   const fields = rawFields.map((field) => ({
     fieldId: field.field_id,
     name: field.field_name,
-    type: toSnake(field.ui_type),
+    type: toPolicyType(field.ui_type),
     typeCode: field.type,
     isPrimary: field.is_primary,
     isSynced: field.is_synced,
@@ -278,8 +279,9 @@ test('production client preserves the real field schema: differing select option
     const variantB = await scanWith([{ name: 'canonical' }, { name: 'archived' }]);
     const fieldA = variantA.tables[0].fields[1];
     // Real schema evidence survives the mapping: numeric type code kept,
-    // string type normalized for the locale policy, primary flag retained.
-    assert.equal(fieldA.type, 'single_select');
+    // string type normalized to the locale-policy vocabulary, primary flag
+    // retained.
+    assert.equal(fieldA.type, 'select');
     assert.equal(fieldA.typeCode, 3);
     assert.equal(fieldA.isPrimary, false);
     assert.equal(variantA.tables[0].fields[0].isPrimary, true);

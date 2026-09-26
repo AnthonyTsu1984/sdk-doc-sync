@@ -253,5 +253,38 @@
    "runner": "invariant-conformance",
    "scenario": "localizationLocaleOwnershipFromActions"
   }
+ },
+ {
+  "id": "localization-bound-localeless-action-refused",
+  "assertions": {
+   "code": "ACTION_LOCALE_REQUIRED",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBoundLocalelessActionRefused"
+  }
+ },
+ {
+  "id": "localization-bound-acceptance-tamper-refused",
+  "assertions": {
+   "code": "UNIT_DIGEST_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBoundAcceptanceTamperRefused"
+  }
+ },
+ {
+  "id": "localization-bound-lineage-tamper-refused",
+  "assertions": {
+   "code": "UNIT_DIGEST_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBoundLineageTamperRefused"
+  }
  }
 ]

@@ -15,22 +15,55 @@ function typedError(code, message) {
   return Object.assign(new Error(message), { code });
 }
 
+// The review unit arrives as an independent, caller-controlled file, and the
+// approval envelope anchors only the BATCH. Unit-level decisions — document
+// acceptance (requiresDocumentAcceptance) and journal lineage (reviewUnitId)
+// — must therefore be tamper-evident too: the trusted producers (planner CLI,
+// agent-team handoff) stamp boundUnitDigest over the canonical unit snapshot
+// at production time, and the executor refuses any unit that no longer hashes
+// to its stamp — in BOTH binding forms. Producers stamp via
+// withBoundUnitDigest; hand-built units must do the same.
+function boundUnitDigestFor(unit) {
+  const { boundUnitDigest, ...snapshot } = unit || {};
+  return digestSemantic(canonicalize(snapshot));
+}
+
+function withBoundUnitDigest(unit) {
+  return { ...unit, boundUnitDigest: boundUnitDigestFor(unit) };
+}
+
+function assertUnitIsBound(unit) {
+  if (!unit || typeof unit !== 'object') {
+    throw typedError('UNIT_DIGEST_REQUIRED', 'a review unit object is required');
+  }
+  if (typeof unit.boundUnitDigest !== 'string' || !unit.boundUnitDigest) {
+    throw typedError('UNIT_DIGEST_REQUIRED', `review unit ${unit.reviewUnitId || '(unidentified)'} lacks boundUnitDigest; acceptance and lineage fields must be stamped by the producing tool`);
+  }
+  if (unit.boundUnitDigest !== boundUnitDigestFor(unit)) {
+    throw typedError('UNIT_DIGEST_MISMATCH', `review unit ${unit.reviewUnitId} does not match its boundUnitDigest; requiresDocumentAcceptance and reviewUnitId are digest-bound and cannot be edited after production`);
+  }
+}
+
 // The executor is the last line of defense: unit and batch arrive as
 // independent files, so the approved batch must be bound back to the planned
 // unit — and NOTHING trusts a caller-controlled string:
-//   - FIRST, in both binding forms, the batch is REBUILT canonically from its
-//     own actions and must hash to the submitted batchDigest. Tampering
-//     actions (unit, batch, or both) behind a stale digest field is refused.
+//   - FIRST, the unit must carry a valid boundUnitDigest (see above), and the
+//     batch is REBUILT canonically from its own actions and must hash to the
+//     submitted batchDigest. Tampering actions (unit, batch, or both) behind
+//     a stale digest field is refused.
+//   - EVERY batch action must declare its locale in BOTH binding forms, so
+//     target ownership always travels inside the digest-protected action set;
+//     a locale-less action is refused before any adapter call.
 //   - `unit.boundBatchDigest` additionally binds the verified digest to the
 //     planned unit (the agent-team handoff stamps it).
 //   - otherwise every unit action must declare ALL binding fields — locale
-//     included, so target ownership travels inside the digest-protected
-//     action set — and each must equal the batch action's field. No
-//     wildcards, no unbound units.
+//     included — and each must equal the batch action's field. No wildcards,
+//     no unbound units.
 // Source ownership is then derived per ACTION from its digest-bound locale,
 // never from the independently supplied unit.locale: a batch whose actions
 // carry a source locale is refused before the first adapter call.
 function assertBatchMatchesUnit({ unit, batch }) {
+  assertUnitIsBound(unit);
   const recomputed = createActionBatch({
     skill: batch.skill,
     operation: batch.operation,
@@ -38,6 +71,14 @@ function assertBatchMatchesUnit({ unit, batch }) {
   });
   if (recomputed.batchDigest !== batch.batchDigest) {
     throw typedError('BATCH_UNIT_MISMATCH', 'submitted batch actions do not hash to the batch digest');
+  }
+  for (const action of batch.actions) {
+    if (typeof action.locale !== 'string' || !action.locale.trim()) {
+      throw typedError('ACTION_LOCALE_REQUIRED', `action ${action.actionId} lacks a locale; target ownership must travel inside the digest-protected action set in every binding form`);
+    }
+    if (SOURCE_LOCALES.has(action.locale)) {
+      throw typedError('SOURCE_MUTATION_UNAUTHORIZED', `action ${action.actionId} carries source locale ${action.locale}; source records are read-only without a separately approved source-side change`);
+    }
   }
   if (unit.boundBatchDigest !== undefined && unit.boundBatchDigest !== null) {
     if (unit.boundBatchDigest !== batch.batchDigest) {
@@ -64,11 +105,6 @@ function assertBatchMatchesUnit({ unit, batch }) {
           throw typedError('BATCH_UNIT_MISMATCH', `batch action ${batchAction.actionId} field ${field} does not match the planned review unit action`);
         }
       }
-    }
-  }
-  for (const action of batch.actions) {
-    if (action.locale !== undefined && SOURCE_LOCALES.has(action.locale)) {
-      throw typedError('SOURCE_MUTATION_UNAUTHORIZED', `action ${action.actionId} carries source locale ${action.locale}; source records are read-only without a separately approved source-side change`);
     }
   }
   if (SOURCE_LOCALES.has(unit.locale)) {
@@ -125,10 +161,12 @@ async function executeReviewUnit({
   }
   journal.complete();
   return {
-    status: unit.requiresDocumentAcceptance ? 'ACCEPTANCE_REQUIRED' : 'EXECUTED',
+    // Fail closed: only a digest-bound explicit false counts as executed;
+    // anything else keeps the acceptance ceremony mandatory.
+    status: unit.requiresDocumentAcceptance === false ? 'EXECUTED' : 'ACCEPTANCE_REQUIRED',
     reviewUnitId: unit.reviewUnitId,
     journalDigest: digestSemantic(journal.entries),
   };
 }
 
-module.exports = { executeReviewUnit };
+module.exports = { boundUnitDigestFor, executeReviewUnit, withBoundUnitDigest };

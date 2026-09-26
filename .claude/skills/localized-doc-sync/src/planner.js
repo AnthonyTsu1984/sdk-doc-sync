@@ -2,6 +2,7 @@
 
 const { canonicalize } = require('../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { withBoundUnitDigest } = require('./executor');
 
 const CONTENT_CODES = new Set(['NEW', 'UPDATE_CONTENT', 'TARGET_LOCAL_EDIT', 'TRANSLATION_DIVERGED', 'TRANSLATION_BASELINE_REQUIRED', 'TRANSLATION_CONTRACT_STALE']);
 const SKIP_CODES = new Set(['NOOP', 'POLICY_EXCLUDED', 'LOCALE_EQUIVALENT']);
@@ -112,12 +113,15 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
         chineseSourceEvidence: issue.chineseSourceEvidence || null,
       };
     }
-    units.push(canonicalize(unit));
+    // boundUnitDigest stamps the canonical unit snapshot (acceptance and
+    // lineage fields included) so post-plan edits of the unit file are
+    // refused at the executor boundary.
+    units.push(withBoundUnitDigest(canonicalize(unit)));
   }
   for (const group of metadataGroups.values()) {
     group.sort((a, b) => a.issueId.localeCompare(b.issueId));
     const issueIds = group.map((issue) => issue.issueId);
-    units.push(canonicalize({
+    units.push(withBoundUnitDigest(canonicalize({
       schemaVersion: 1,
       reviewUnitId: unitId('metadata', issueIds),
       kind: 'metadata',
@@ -129,7 +133,7 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
       requiresDocumentAcceptance: false,
       riskClass: group[0].riskClass || 'low',
       actions: group.flatMap((issue) => localeStampedActions(issue)),
-    }));
+    })));
   }
   return units.sort((a, b) => a.reviewUnitId.localeCompare(b.reviewUnitId));
 }

@@ -247,17 +247,99 @@ stays an output-contract runbook rule (no result-reporting module exists to enfo
 merge policy, locale metadata non-comparison, and Chapter role rules remain a second wave as
 `declared` entries.
 
-### Step 5 — Close-out (PR F)
+### Step 5 — Close-out (PR F) — DELIVERED 2026-09-25, branch `feat/phase5-closeout` (stacked on PR #37)
 
-- [ ] 5.1 Run `scripts/invariant-coverage-report.js` across all five adopted skills; attach the
+- [x] 5.1 Run `scripts/invariant-coverage-report.js` across all five adopted skills; attach the
       artifact to the PR. This *is* the phase 5 acceptance evidence.
-- [ ] 5.2 Verify the acceptance criterion line by line: every `runtime-enforced` entry has enforcer
+- [x] 5.2 Verify the acceptance criterion line by line: every `runtime-enforced` entry has enforcer
       modules that exist, executed fixtures with negative cases, and no rule whose only backing is
       prose or a model eval.
-- [ ] 5.3 Update the master plan: mark Phase 5 delivered; hand `declared`-entry expiry/ownership
+- [x] 5.3 Update the master plan: mark Phase 5 delivered; hand `declared`-entry expiry/ownership
       and violation tracking by invariant ID to Phase 6.
-- [ ] 5.4 Memory/notes: record the adopted ID prefixes and the shared-runner usage for future
+- [x] 5.4 Memory/notes: record the adopted ID prefixes and the shared-runner usage for future
       skill onboarding.
+
+Close-out evidence (2026-09-25, post-review): the strict coverage report reads
+clean across all five adopted skills — 30 runtime-enforced invariants, 0
+coverage errors. A structural sweep over every registry entry confirmed each
+one has all fixtures present and at least one negative arm asserting a
+SCREAMING_CASE blocker code (the sweep first flagged six invariants whose
+assertion keys are not literally `code` — providerCode/violationCode/
+blockerCode/codes — all six confirmed as detection misses, not real gaps).
+Behavior pressure cases cover every skill (41 cases total, ≥3 pressure each,
+enforced by tests/skills/behavior-cases.test.js).
+
+The phase 5 review round reproduced four real bypasses in the localized-doc-sync
+invariants and held the delivered claim until they were closed: forged digest
+strings passing the completeness derivation, post-scan issue injection under
+the old semantic digest, a separately approved source-side batch executing past
+the planner-only guard, and reordered protected markers silently swapping API
+names. Each is now closed at the boundary it targeted (materialized digest
+recomputation; full semantic digest + freshness-artifact binding at plan;
+batch/unit binding plus the source-locale refusal repeated in the executor;
+in-order marker comparison), and each reproduced bypass is fixture-proven to a
+typed refusal. The second review round then held the first fixes insufficient — correctly:
+the freshness artifact could be minted from the same snapshots it attested,
+the batch/unit binding compared only IDs and targets, and the new binding
+broke the canonical agent-team live-write caller. The third round held the
+second fixes insufficient too — again correctly: the digest-bound executor
+path trusted a caller-controlled batchDigest without recomputing it, the
+fallback binding treated absent unit fields as wildcards, and the
+canonical plan CLI shipped no production client. The fourth round went
+further and was right again: the recompute was still missing from the
+fallback branch (dual-mutated actions executed behind a stale digest),
+source ownership could be flipped through unit.locale, the production
+client mapped away the real Feishu schema (numeric types, select options,
+primary flags — two differing selects hashed identically; view filters
+were never fetched so FILTERED_VIEW_SCOPE could not fire), and the
+--client-module wrapper dropped pageToken. The fifth round attacked the
+production boundary the fourth round had just created and was right again:
+a digest-valid action with NO locale reached the adapter through the
+boundBatchDigest path (the per-field comparison was skipped there and the
+source guard only rejected an explicitly present `locale: "en"` — the
+canonical agent-team batch builder wrote no locale either), acceptance
+semantics and journal lineage were trusted from the unbound unit file
+(flipping `requiresDocumentAcceptance` to false executed a valid zh
+UPDATE_CONTENT batch straight to EXECUTED, and `reviewUnitId` could be
+relabeled behind the journal), and the production client's snake_cased
+vocabulary (`single_select`/`single_link`) diverged from the checked-in
+policy's (`select`/`relation`), so a live snapshot of the real Bases
+profiled into blocking SCHEMA_DRIFT on valid fields. Final state: plan
+re-enumerates both bases live through a bundled production scanner-contract
+client whose canonical Feishu→policy type mapping (SingleSelect → select,
+SingleLink → relation) is the single vocabulary shared by scanning, policy
+matching, and freshness — fixture-proven against the real Base shapes and
+the real checked-in policy with zero blocking issues; canonical batch
+recomputation sits above BOTH binding forms; every batch action must carry
+its locale in BOTH binding forms (fail-closed ACTION_LOCALE_REQUIRED, with
+the agent-team dry-run builder stamping the target locale); review units
+carry a producer-stamped `boundUnitDigest` over the canonical unit snapshot
+so acceptance and lineage fields are digest-bound in both forms
+(UNIT_DIGEST_REQUIRED / UNIT_DIGEST_MISMATCH, planner CLI and agent-team
+handoff stamp, final status fail-closed to the acceptance ceremony); source
+ownership derives per action from its digest-bound locale; and pagination
+tokens flow through the override wrapper. The sixth review round
+(independent review on GLM-5.3) re-verified all five prior rounds and then
+found two latent defects that no authorization boundary misses: the batch
+digest hashes the topologically sorted canonical rebuild while the executor
+iterated the SUBMITTED array order, so a child-before-parent batch passed
+every check and executed out of dependency order (fixed one line: the
+execution loop now reads the canonical form end to end — binding
+comparison, approval assertion, journal, and adapter calls); and protected
+span restoration used string.replace, so a protected value containing a
+`$`-replacement sequence corrupted its own restoration and tripped
+PROTECTED_MARKER_UNRESTORED, hard-blocking legal content (fixed one line:
+function replacer; fixture proves a `$&`-containing span round-trips
+byte-identically). Three low-severity observations are filed for Phase 6:
+F3 (fallback comparison binds a unit null to an absent batch field — not
+exploitable, digest and approval still hold), F4 (--client-module keeps
+freshness strength equal to the caller's trustworthiness — record the
+override path in plan artifacts), F5 (doc-code-verify needs a Java runtime
+in the local environment; pre-existing, not a PR defect). With those
+landed, the phase 5 acceptance criterion holds: no runtime-enforced rule
+relies only on a prose assertion or a model eval, and each one's
+enforcement has survived six rounds of known attacks on its own boundary —
+including repeated attacks on the fixes themselves.
 
 ## Execution Notes
 

@@ -49,8 +49,12 @@ function assertUnitIsBound(unit) {
 // unit — and NOTHING trusts a caller-controlled string:
 //   - FIRST, the unit must carry a valid boundUnitDigest (see above), and the
 //     batch is REBUILT canonically from its own actions and must hash to the
-//     submitted batchDigest. Tampering actions (unit, batch, or both) behind
-//     a stale digest field is refused.
+//     submitted batchDigest. The canonical rebuild is the digest-protected
+//     form: its topologically sorted action order and derived
+//     targets/sideEffects are what the digest hashes, and it is returned so
+//     EVERYTHING downstream — binding comparison, approval assertion, the
+//     journal, and the execution loop — reads from it. A submitted array
+//     ordered child-before-parent therefore still executes parent-first.
 //   - EVERY batch action must declare its locale in BOTH binding forms, so
 //     target ownership always travels inside the digest-protected action set;
 //     a locale-less action is refused before any adapter call.
@@ -64,15 +68,15 @@ function assertUnitIsBound(unit) {
 // carry a source locale is refused before the first adapter call.
 function assertBatchMatchesUnit({ unit, batch }) {
   assertUnitIsBound(unit);
-  const recomputed = createActionBatch({
+  const canonical = createActionBatch({
     skill: batch.skill,
     operation: batch.operation,
     actions: batch.actions,
   });
-  if (recomputed.batchDigest !== batch.batchDigest) {
+  if (canonical.batchDigest !== batch.batchDigest) {
     throw typedError('BATCH_UNIT_MISMATCH', 'submitted batch actions do not hash to the batch digest');
   }
-  for (const action of batch.actions) {
+  for (const action of canonical.actions) {
     if (typeof action.locale !== 'string' || !action.locale.trim()) {
       throw typedError('ACTION_LOCALE_REQUIRED', `action ${action.actionId} lacks a locale; target ownership must travel inside the digest-protected action set in every binding form`);
     }
@@ -81,18 +85,18 @@ function assertBatchMatchesUnit({ unit, batch }) {
     }
   }
   if (unit.boundBatchDigest !== undefined && unit.boundBatchDigest !== null) {
-    if (unit.boundBatchDigest !== batch.batchDigest) {
-      throw typedError('BATCH_UNIT_MISMATCH', `unit is bound to batch digest ${unit.boundBatchDigest}, but the submitted batch is ${batch.batchDigest}`);
+    if (unit.boundBatchDigest !== canonical.batchDigest) {
+      throw typedError('BATCH_UNIT_MISMATCH', `unit is bound to batch digest ${unit.boundBatchDigest}, but the submitted batch is ${canonical.batchDigest}`);
     }
   } else {
-    if (!Array.isArray(unit.actions) || unit.actions.length !== batch.actions.length) {
+    if (!Array.isArray(unit.actions) || unit.actions.length !== canonical.actions.length) {
       throw typedError('BATCH_UNIT_MISMATCH', 'unit must carry either a verified boundBatchDigest or complete planned actions matching the batch');
     }
     const unitById = new Map(unit.actions.map((action) => [action.actionId, action]));
     if (unitById.size !== unit.actions.length) {
       throw typedError('BATCH_UNIT_MISMATCH', 'planned review unit actions contain duplicate actionIds');
     }
-    for (const batchAction of batch.actions) {
+    for (const batchAction of canonical.actions) {
       const unitAction = unitById.get(batchAction.actionId);
       if (!unitAction) {
         throw typedError('BATCH_UNIT_MISMATCH', `batch action ${batchAction.actionId} is not part of the planned review unit`);
@@ -110,6 +114,7 @@ function assertBatchMatchesUnit({ unit, batch }) {
   if (SOURCE_LOCALES.has(unit.locale)) {
     throw typedError('SOURCE_MUTATION_UNAUTHORIZED', `source-locale review unit ${unit.reviewUnitId} cannot be executed; source records are read-only without a separately approved source-side change`);
   }
+  return canonical;
 }
 
 async function executeReviewUnit({
@@ -124,21 +129,21 @@ async function executeReviewUnit({
   if (recoveryReceipt || recoveryIdentity) {
     assertTranslationRecoveryCompatible({ receipt: recoveryReceipt, expected: recoveryIdentity });
   }
-  assertBatchMatchesUnit({ unit, batch });
+  const canonicalBatch = assertBatchMatchesUnit({ unit, batch });
   assertApproval(approval, {
-    skill: batch.skill,
-    operation: batch.operation,
-    batchDigest: batch.batchDigest,
-    actionCount: batch.actions.length,
-    targets: batch.targets,
-    sideEffects: batch.sideEffects,
+    skill: canonicalBatch.skill,
+    operation: canonicalBatch.operation,
+    batchDigest: canonicalBatch.batchDigest,
+    actionCount: canonicalBatch.actions.length,
+    targets: canonicalBatch.targets,
+    sideEffects: canonicalBatch.sideEffects,
   });
   const journal = new ExecutionJournal({
     filePath: journalPath,
-    batchDigest: batch.batchDigest,
-    approvedActionIds: batch.actions.map((action) => action.actionId),
+    batchDigest: canonicalBatch.batchDigest,
+    approvedActionIds: canonicalBatch.actions.map((action) => action.actionId),
   });
-  for (const action of batch.actions) {
+  for (const action of canonicalBatch.actions) {
     journal.prepared({ actionId: action.actionId, reviewUnitId: unit.reviewUnitId, target: action.target, beforeState: action.beforeState || null });
     let result;
     try {

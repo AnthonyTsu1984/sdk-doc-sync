@@ -142,6 +142,31 @@ test('a locale-less digest-valid bound batch is refused before the adapter runs'
   assert.equal(adapterCalls, 0);
 });
 
+test('a submitted out-of-order batch executes in the canonical topological order', async () => {
+  // Round-six finding F1: the digest hashes the topologically sorted
+  // canonical rebuild, but the executor used to iterate the SUBMITTED array
+  // order — a child-first batch passed every check and executed child before
+  // parent. The execution loop reads the canonical form, so the submitted
+  // order cannot smuggle a dependency inversion past the binding chain.
+  const parentAction = { actionId: 'record:update:parent', locale: 'zh', target: 'record:parent', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } };
+  const childAction = { actionId: 'record:update:child', locale: 'zh', target: 'record:child', dependsOn: ['record:update:parent'], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } };
+  const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: [childAction, parentAction] });
+  assert.deepEqual(batch.actions.map((action) => action.actionId), ['record:update:parent', 'record:update:child']);
+  const approval = createApprovalEnvelope({
+    skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+  });
+  const observed = [];
+  const result = await executeReviewUnit({
+    unit: withBoundUnitDigest({ reviewUnitId: 'unit:dag', locale: 'zh', requiresDocumentAcceptance: false, boundBatchDigest: batch.batchDigest }),
+    batch, approval,
+    journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-executor-')), 'journal.jsonl'),
+    adapter: { async execute(action) { observed.push(action.actionId); return { status: 'success' }; }, async verify() { return { verified: true }; } },
+  });
+  assert.deepEqual(observed, ['record:update:parent', 'record:update:child']);
+  assert.equal(result.status, 'EXECUTED');
+});
+
 test('a unit action without complete binding fields is refused (no wildcards)', async () => {
   const fullActions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
   const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: fullActions });

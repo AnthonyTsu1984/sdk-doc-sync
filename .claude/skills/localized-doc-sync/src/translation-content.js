@@ -204,7 +204,10 @@ function restoreUnit(unit, translatedText) {
     );
   }
   let restored = translatedText;
-  for (const entry of unit.protection.entries) restored = restored.replace(entry.marker, entry.value);
+  // Function replacer on purpose: a string replacement would interpret `$&`,
+  // "$`", and "$'" inside the protected value itself, corrupting the
+  // restoration of legal content (e.g. a code span literally about `$&`).
+  for (const entry of unit.protection.entries) restored = restored.replace(entry.marker, () => entry.value);
   if (MARKER_PATTERN.test(restored)) {
     throw Object.assign(
       new Error(`Protected marker restoration failed for ${unit.id}`),

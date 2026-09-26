@@ -445,6 +445,21 @@ not scheduled.**
          that are finished and accepted (v3.0 62/62, v2.6 46/46, membership doc, PR intakes);
          capabilities are historical, not live workflows. PR deletes file + entry, drops the
          count pins, records the disposition in the commit message.
+
+      Wave-1 delivery (2026-09-26, PR #40, branch `chore/phase6-wave1-legacy-live-disposition`,
+      executed under the review's conditional approval): the deleted set was rederived with
+      deletion semantics and reconciled **set-equal** against the approval list — the count is
+      **79, not 80** (the review's own correction: `doc-agent-live-write.js` is package.json +
+      CI-referenced production infrastructure and stays; `java-v26-update.js` stays via the
+      discover script's display string). A supplementary require/import audit (extensionless
+      specifiers included) found **zero edges** from living code into any legacy-live path.
+      Keep-set pinned at 8 (5 baseline + 3 exception). Diff scope per the approval conditions:
+      registry 165→86 entries (baseline legacyLiveCount 60→5), expected-changes 28→4 with the
+      24 dangling exceptions removed, count pins updated (exceptionAdmitted 27→3, discovered
+      165→86, legacy total 87→8), and 43 runbook lines across 7 files annotated as removed with
+      the canonical path (review counted 39 refs in 6 files; this diff also covers
+      `references/post-write-verification.md` and works at line granularity). The precise
+      79-file list is the commit message's disposition record.
       2. **Re-audit the remaining 7.** `feishu-doc-translator.js` and `node-v30-update.js` are
          referenced only by wave-1 scripts — their refcount likely collapses to zero → join
          wave 1 or wave 2.

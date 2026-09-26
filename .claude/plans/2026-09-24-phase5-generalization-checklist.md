@@ -420,6 +420,42 @@ not scheduled.**
       or permanently downgrade the 87 legacy-live entries; production credentials must never see
       `DOC_OPS_ALLOW_LEGACY_LIVE`; end state is "legacy-live cannot write", not "legacy-live is
       quarantined by default".
+
+      Groundtruth (2026-09-26 disposition audit, read-only):
+      - **Every one of the 87 entries carries a `canonicalReplacement`** pointing at exactly two
+        canonical CLIs: 85 → `api-reference-sync/bin/sdk-doc-sync.js`, 2 →
+        `localized-doc-sync/bin/localized-doc-sync.js` (both exist on disk). The migration target
+        is singular and already documented per entry.
+      - **80/87 have zero inbound references** (tests, sibling bin scripts, CLAUDE.md, docs,
+        plans). The 7 referenced: `feishu-doc.js` (13 — the shared writer library CLI),
+        `feishu-doc-translator.js` (6), the three CLAUDE.md Golden Rule 4 post-actions
+        (`add-type-links.js` / `fix-leading-spaces.js` / `post-fix-links.js` — user-mandated
+        workflow), and `node-v30-update.js` (1).
+      - **27 of 28 exceptions expire 2026-10-31T23:59:59Z.** After that date the guard blocks
+        every legacy entry even with the env flag set — the default-blocked end state partially
+        self-executes, but unmigrated scripts become unusable rather than migrated. Waves must
+        land before then (or consciously re-issue exceptions, which contradicts 6.4).
+      - Mechanics: `ENTRYPOINT_FILE_MISSING` means each deletion removes the file + registry
+        entry in the same diff; `baseline.legacyLiveCount` (60) is monotone downward; the
+        entrypoint-count pins in `write-entrypoint-admission.test.js` move with each wave.
+
+      Wave plan (deletion waves execute only after user approval — these are user campaign
+      scripts):
+      1. **Wave 1 — delete the 80 zero-reference one-offs.** Campaign-era helpers for campaigns
+         that are finished and accepted (v3.0 62/62, v2.6 46/46, membership doc, PR intakes);
+         capabilities are historical, not live workflows. PR deletes file + entry, drops the
+         count pins, records the disposition in the commit message.
+      2. **Re-audit the remaining 7.** `feishu-doc-translator.js` and `node-v30-update.js` are
+         referenced only by wave-1 scripts — their refcount likely collapses to zero → join
+         wave 1 or wave 2.
+      3. **Wave 2 — re-wire the user-mandated four** (`feishu-doc.js` CLI, three Golden Rule 4
+         post-actions) as canonical-governed scripts over the governed writer (envelope +
+         journal + run manifest), preserving the documented workflow; delete the raw-fetch
+         originals. Rides on 6.5: once the run-manifest requirement sits at the writer layer,
+         unwired legacy scripts cannot write at all, making wave 2's end state structural.
+      4. **Wave 3 — close-out.** `baseline.legacyLiveCount` → 0; production env ban on
+         `DOC_OPS_ALLOW_LEGACY_LIVE` (CI + docs); decide whether the exception path survives for
+         future sanctioned one-offs or is removed.
 - [ ] 6.5 **Canonical run manifest at the writer boundary.** Every writer mutation must require a
       canonical run manifest — source fingerprint, skill version, policy attestations, batch
       digest, session digest — enforced at the innermost writer layer, not only at entry scripts.

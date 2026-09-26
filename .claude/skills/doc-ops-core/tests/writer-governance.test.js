@@ -13,6 +13,16 @@ const {
   createWriterGovernance,
   validateInvariantAttestations,
 } = require('../../doc-ops-core/src/writer-governance');
+const { stubRunManifest } = require('../../doc-ops-core/src/run-manifest');
+
+function bindRunManifestFor(governance) {
+  governance.bindRunManifest(stubRunManifest({
+    skill: governance.skill,
+    batchDigest: governance.bound.batchDigest,
+    policyAttestations: governance.bound.invariantAttestations,
+  }));
+  return governance;
+}
 
 const BATCH = {
   batchDigest: 'sha256:'.concat('a'.repeat(64)),
@@ -64,6 +74,10 @@ test('unbound governance refuses mutations until an approval envelope is bound',
     approval: approvalFor(),
     invariantAttestations: [attestation()],
   });
+  // 6.5: the envelope alone is no longer enough — the run manifest is the
+  // next typed refusal before the mutation passes.
+  assert.throws(() => governance.assertMutationAllowed({ method: 'createRecord' }), (error) => error.code === 'WRITER_RUN_MANIFEST_REQUIRED');
+  bindRunManifestFor(governance);
   assert.equal(governance.isBound, true);
   assert.equal(governance.assertMutationAllowed({ method: 'createRecord' }), true);
 });
@@ -159,6 +173,7 @@ test('enforceTargets binds the per-call mutation target to the envelope target l
     invariantAttestations: [],
     enforceTargets: true,
   });
+  bindRunManifestFor(governance);
   assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-1' }), true);
   assert.throws(
     () => governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-unapproved' }),
@@ -180,7 +195,91 @@ test('target enforcement stays off unless the bind opted in', () => {
     approval: approvalFor({ ...BATCH, targets: ['folder-1'] }),
     invariantAttestations: [attestation()],
   });
+  bindRunManifestFor(governance);
   // Sync-style binds carry folder-level targets while per-record ids resolve
   // live during execution, so only the envelope presence is enforced.
   assert.equal(governance.assertMutationAllowed({ method: 'BitableWriter.updateRecord', target: 'rec-any' }), true);
+});
+
+test('a run manifest cannot be bound before the approval (bind-order bypass closed)', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  const manifest = stubRunManifest({ skill: 'api-reference-sync', batchDigest: BATCH.batchDigest });
+  assert.throws(() => governance.bindRunManifest(manifest), (error) => error.code === 'WRITER_RUN_MANIFEST_REQUIRES_APPROVAL');
+  // The reviewer's bypass: bind batch-A manifest first, then a valid batch-B
+  // approval. Both orders are now refused — the manifest requires a bound
+  // approval, and binding the approval afterwards still faces an unbound
+  // manifest at mutation time.
+  governance.bindApproval({
+    ...BATCH,
+    approval: approvalFor(),
+    invariantAttestations: [attestation()],
+  });
+  assert.throws(() => governance.bindRunManifest(manifest), (error) => error.code === 'WRITER_RUN_MANIFEST_ATTESTATION_MISMATCH');
+});
+
+test('a bound run manifest is immutable (no silent replacement under an approval)', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  governance.bindApproval({ ...BATCH, approval: approvalFor(), invariantAttestations: [attestation()] });
+  bindRunManifestFor(governance);
+  const swapped = stubRunManifest({
+    skill: 'api-reference-sync',
+    batchDigest: BATCH.batchDigest,
+    sourceFingerprint: `sha256:${'f'.repeat(64)}`,
+    policyAttestations: governance.bound.invariantAttestations,
+  });
+  assert.throws(() => governance.bindRunManifest(swapped), (error) => error.code === 'WRITER_RUN_MANIFEST_ALREADY_BOUND');
+});
+
+test('a manifest with different policy attestations than the approval is refused', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  governance.bindApproval({ ...BATCH, approval: approvalFor(), invariantAttestations: [attestation()] });
+  assert.throws(() => governance.bindRunManifest(stubRunManifest({
+    skill: 'api-reference-sync',
+    batchDigest: BATCH.batchDigest,
+  })), (error) => error.code === 'WRITER_RUN_MANIFEST_ATTESTATION_MISMATCH');
+});
+
+test('the verified manifest cannot be replaced after the first write (review reproduction)', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  governance.bindApproval({ ...BATCH, approval: approvalFor(), invariantAttestations: [attestation()] });
+  bindRunManifestFor(governance);
+  // First mutation passes and pins the verification flag.
+  assert.equal(governance.assertMutationAllowed({ method: 'createRecord' }), true);
+  const originalFingerprint = governance.run.sourceFingerprint;
+  // The reviewer's attack: swap in a DIFFERENT valid manifest (same skill /
+  // batch / attestations, different source fingerprint) so the second write
+  // proceeds against a drifted tree without source re-verification. The
+  // bound manifest and verification state are private behind sealed getters:
+  // plain assignment throws in strict mode, and the accessor cannot be
+  // redefined even via Object.defineProperty.
+  const swapped = stubRunManifest({
+    skill: 'api-reference-sync',
+    batchDigest: BATCH.batchDigest,
+    sourceFingerprint: `sha256:${'f'.repeat(64)}`,
+    policyAttestations: governance.bound.invariantAttestations,
+  });
+  assert.notEqual(swapped.sourceFingerprint, originalFingerprint);
+  assert.throws(() => { governance.run = swapped; }, TypeError);
+  assert.throws(() => Object.defineProperty(governance, 'run', { value: swapped }), TypeError);
+  assert.throws(() => Object.defineProperty(governance, 'bound', { value: null }), TypeError);
+  // The getter still yields the ORIGINAL verified manifest — no swap happened.
+  assert.equal(governance.run.sourceFingerprint, originalFingerprint);
+  assert.equal(governance.run.manifestDigest, governance.run.manifestDigest);
+  assert.equal(governance.assertMutationAllowed({ method: 'createRecord' }), true);
+});
+
+test('mutation time re-asserts the manifest↔approval relationship', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  governance.bindApproval({ ...BATCH, approval: approvalFor(), invariantAttestations: [attestation()] });
+  bindRunManifestFor(governance);
+  assert.equal(governance.assertMutationAllowed({ method: 'createRecord' }), true);
+  // The bound manifest is frozen and privately held; the relationship check
+  // at mutation time compares the internal binding (skill, batch, and the
+  // frozen attestation set) on every call.
+  assert.equal(governance.assertRunManifestMatchesApproval(governance.run), true);
+  assert.throws(() => governance.assertRunManifestMatchesApproval(stubRunManifest({
+    skill: 'api-reference-sync',
+    batchDigest: 'sha256:'.concat('e'.repeat(64)),
+    policyAttestations: governance.bound.invariantAttestations,
+  })), (error) => error.code === 'WRITER_RUN_MANIFEST_BATCH_MISMATCH');
 });

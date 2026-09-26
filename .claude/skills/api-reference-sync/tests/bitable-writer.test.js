@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { stubRunManifest } = require('../../doc-ops-core/src/run-manifest');
 
 const BATCH = {
   batchDigest: 'sha256:'.concat('a'.repeat(64)),
@@ -28,6 +29,7 @@ function boundGovernance() {
     }),
     invariantAttestations: [],
   });
+  governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
   return governance;
 }
 
@@ -139,6 +141,7 @@ test('an enforceTargets governance rejects record ids outside the bound envelope
     invariantAttestations: [],
     enforceTargets: true,
   });
+  governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
   const writer = new BitableWriter({ baseToken: 'base-1', tableId: 'table-1', governance });
   writer.tokenFetcher = { token: async () => 'tenant-token' };
 

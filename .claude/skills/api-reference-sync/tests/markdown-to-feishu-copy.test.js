@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { stubRunManifest } = require('../../doc-ops-core/src/run-manifest');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 
 // Phase 3: writer mutations are gated on a bound approval envelope. These
@@ -28,6 +29,7 @@ function boundGovernance() {
     }),
     invariantAttestations: [],
   });
+  governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
   return governance;
 }
 

@@ -5,6 +5,7 @@ const MarkdownToFeishu = require('../src/markdown-to-feishu');
 const layoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { stubRunManifest } = require('../../doc-ops-core/src/run-manifest');
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 
 // Phase 3: writer mutations are gated on a bound approval envelope. These
@@ -29,6 +30,7 @@ function boundGovernance() {
     }),
     invariantAttestations: [],
   });
+  governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
   return governance;
 }
 

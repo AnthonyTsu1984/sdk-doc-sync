@@ -249,6 +249,24 @@ class AcceptanceFinalizer {
         // updateRecord, so every mutation is cross-checked against it.
         enforceTargets: true,
       });
+      // 6.5: the acceptance writer also names its source state — the widened
+      // working-tree fingerprint (6.9 O1/O2) — and the artifact lands next to
+      // the acceptance receipts for the evidence trail.
+      const { createRunManifest, writeRunManifestArtifact } = require('../../../doc-ops-core/src/run-manifest');
+      const acceptanceRepoRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
+      governance.bindRunManifest(createRunManifest({
+        skill: 'api-reference-sync',
+        skillVersion: 'api-reference-sync/acceptance@1',
+        repoRoot: acceptanceRepoRoot,
+        batchDigest: recomputed.acceptanceManifestDigest,
+        sessionDigest: `acceptance:${reviewSession.acceptanceManifestDigest}`,
+      }), { repoRoot: acceptanceRepoRoot });
+      // Fail-closed: if the manifest evidence cannot be persisted, the
+      // acceptance mutations do not run — same contract as every other
+      // canonical path.
+      writeRunManifestArtifact(governance.run, {
+        filePath: path.join(acceptanceRepoRoot, 'tmp', 'api-reference-sync', `run-manifest-${recomputed.acceptanceManifestDigest.replace(':', '-')}.json`),
+      });
     }
 
     try {

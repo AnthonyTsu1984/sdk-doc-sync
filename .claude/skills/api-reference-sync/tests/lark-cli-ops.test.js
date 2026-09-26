@@ -78,6 +78,7 @@ test('historyList builds lark-cli docs history-list argv', async () => {
 // approved envelope so the transport shape stays testable.
 function mutationGovernance() {
   const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { stubRunManifest } = require('../../doc-ops-core/src/run-manifest');
   const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
   const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
   const batchDigest = 'sha256:'.concat('a'.repeat(64));
@@ -97,6 +98,7 @@ function mutationGovernance() {
     }),
     invariantAttestations: [],
   });
+  governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
   return governance;
 }
 

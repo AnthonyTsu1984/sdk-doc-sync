@@ -1,9 +1,14 @@
 'use strict';
 
+const path = require('node:path');
 const { assertApproval } = require('../../doc-ops-core/src/approval-guard');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 const { assertWriterMutation, createWriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
+
+// .claude/skills/verified-doc-authoring/src → repository root
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
 function sameSorted(left, right) {
   return JSON.stringify([...(left || [])].sort()) === JSON.stringify([...(right || [])].sort());
@@ -50,6 +55,19 @@ function bindPlanGovernance({ plan, approval }) {
     sideEffects: plan.actionBatch.sideEffects,
     approval,
     enforceTargets: true,
+  });
+  // 6.5: the patch writer also names its source state (widened 6.9 O1/O2
+  // fingerprint) and persists the manifest next to the run evidence —
+  // fail-closed, before the first mutation can run.
+  governance.bindRunManifest(createRunManifest({
+    skill: plan.actionBatch.skill,
+    skillVersion: 'verified-doc-authoring/patch@1',
+    repoRoot: REPO_ROOT,
+    batchDigest: plan.actionBatch.batchDigest,
+    sessionDigest: `authoring:${plan.actionBatch.batchDigest}`,
+  }), { repoRoot: REPO_ROOT });
+  writeRunManifestArtifact(governance.run, {
+    filePath: path.join(REPO_ROOT, 'tmp', 'verified-doc-authoring', `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`),
   });
   return governance;
 }

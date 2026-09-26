@@ -1,9 +1,14 @@
 'use strict';
 
+const path = require('node:path');
 const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { assertWriterMutation, createWriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
 const { assertWholeDocumentApproval } = require('./patch-planner');
+
+// .claude/skills/procedure-code-sync/src → repository root
+const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -32,6 +37,19 @@ function bindPlanGovernance({ plan, approval }) {
     sideEffects: plan.actionBatch.sideEffects,
     approval,
     enforceTargets: true,
+  });
+  // 6.5: the patch writer also names its source state (widened 6.9 O1/O2
+  // fingerprint) and persists the manifest next to the run evidence —
+  // fail-closed, before the first mutation can run.
+  governance.bindRunManifest(createRunManifest({
+    skill: plan.actionBatch.skill,
+    skillVersion: 'procedure-code-sync/patch@1',
+    repoRoot: REPO_ROOT,
+    batchDigest: plan.actionBatch.batchDigest,
+    sessionDigest: `procedure:${plan.actionBatch.batchDigest}`,
+  }), { repoRoot: REPO_ROOT });
+  writeRunManifestArtifact(governance.run, {
+    filePath: path.join(REPO_ROOT, 'tmp', 'procedure-code-sync', `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`),
   });
   return governance;
 }

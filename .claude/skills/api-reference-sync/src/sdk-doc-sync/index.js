@@ -802,6 +802,10 @@ class SdkDocSync {
         // also removes the writer's license to mutate.
         const governance = this.writerGovernance
             || new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+        // The SAME canonicalized attestation list feeds the approval and the
+        // run manifest — the writer boundary re-checks their equality at bind
+        // time and at every mutation.
+        const invariantAttestations = approvedPlans.flatMap(({ plan }) => plan.invariantAttestations || []);
         const issuedApproval = approvals.get(approvedPlans[0].plan.stableId);
         governance.bindApproval({
             batchDigest: result.executionBatch.batchDigest,
@@ -809,12 +813,27 @@ class SdkDocSync {
             targets: result.executionBatch.targets,
             sideEffects: result.executionBatch.sideEffects,
             approval: issuedApproval,
-            invariantAttestations: approvedPlans.flatMap(({ plan }) => plan.invariantAttestations || []),
+            invariantAttestations,
             // Batch targets are folder/document-level refs while the executor
             // resolves per-record ids live during execution, so per-call target
             // enforcement stays off here; the acceptance finalizer binds the
             // exact recordId list with enforceTargets enabled.
             enforceTargets: false,
+        });
+        const { createRunManifest, writeRunManifestArtifact } = require('../../../doc-ops-core/src/run-manifest');
+        const repoRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
+        governance.bindRunManifest(createRunManifest({
+            skill: 'api-reference-sync',
+            skillVersion: 'api-reference-sync/execute@1',
+            repoRoot,
+            batchDigest: result.executionBatch.batchDigest,
+            sessionDigest: `execute:${result.executionBatch.batchDigest}`,
+            policyAttestations: invariantAttestations,
+        }), { repoRoot });
+        // Durable evidence before the first mutation — a manifest that cannot
+        // be persisted stops the run instead of executing unrecorded.
+        writeRunManifestArtifact(governance.run, {
+            filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', `run-manifest-${result.executionBatch.batchDigest.replace(':', '-')}.json`),
         });
         bindWriterGovernance(this.m2f, governance);
         bindWriterGovernance(this.bitableWriter, governance);

@@ -283,21 +283,25 @@ the freshness artifact could be minted from the same snapshots it attested,
 the batch/unit binding compared only IDs and targets, and the new binding
 broke the canonical agent-team live-write caller. The third round held the
 second fixes insufficient too — again correctly: the digest-bound executor
-path trusted a caller-controlled batchDigest without recomputing it (an
-evil payload executed behind an unchanged digest), the fallback binding
-treated absent unit fields as wildcards (an actionId-only unit accepted a
-delete on an unrelated record), and the canonical plan CLI shipped no
-production client, so the documented command could never pass its own
-freshness gate. Final state: plan re-enumerates both bases live at the
-enforcement boundary through a bundled production scanner-contract client
-(the artifact approach was dropped, not repaired), the executor recomputes
-the canonical batch digest from the submitted actions before honoring any
-bound digest and requires complete per-field bindings with no wildcards and
-no unbound units, and the agent-team handoff carries the bound digest and
-target locale. With those landed, the phase 5 acceptance criterion holds:
-no runtime-enforced rule relies only on a prose assertion or a model eval,
-and each one's enforcement has survived three rounds of known attacks on
-its own boundary — including attacks on the fixes themselves.
+path trusted a caller-controlled batchDigest without recomputing it, the
+fallback binding treated absent unit fields as wildcards, and the
+canonical plan CLI shipped no production client. The fourth round went
+further and was right again: the recompute was still missing from the
+fallback branch (dual-mutated actions executed behind a stale digest),
+source ownership could be flipped through unit.locale, the production
+client mapped away the real Feishu schema (numeric types, select options,
+primary flags — two differing selects hashed identically; view filters
+were never fetched so FILTERED_VIEW_SCOPE could not fire), and the
+--client-module wrapper dropped pageToken. Final state: plan re-enumerates
+both bases live through a bundled production scanner-contract client that
+preserves the real schema and binds each view's authoritative filter
+configuration; canonical batch recomputation sits above BOTH binding
+forms; source ownership derives per action from its digest-bound locale;
+and pagination tokens flow through the override wrapper. With those
+landed, the phase 5 acceptance criterion holds: no runtime-enforced rule
+relies only on a prose assertion or a model eval, and each one's
+enforcement has survived four rounds of known attacks on its own boundary
+— including repeated attacks on the fixes themselves.
 
 ## Execution Notes
 

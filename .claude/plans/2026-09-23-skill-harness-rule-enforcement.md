@@ -475,6 +475,13 @@ Acceptance: all canonical skills produce complete invariant coverage reports; no
 - Add expiry and ownership to exceptions.
 - Track violations and false blocks by invariant ID, not by free-form incident text.
 
+Full actionable intake — from the 2026-09-26 independent review (admission source-fingerprint
+drift guard, toolchain preflight, dirty-tree guard, legacy-live to zero, writer-boundary run
+manifest, one shared session/finalization state machine, fault injection, disposable-tenant live
+smoke as a harness release gate, admitted-fingerprint binding for production runs) plus the
+carried-over items above — lives in the **Phase 6 Intake** section of
+`.claude/plans/2026-09-24-phase5-generalization-checklist.md`; work from there.
+
 Acceptance: reviewers can answer “which code enforces this rule, on which paths, with which fixtures, and with what latest evidence?” from one artifact.
 
 ## Recommended Implementation Order

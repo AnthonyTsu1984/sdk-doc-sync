@@ -2,7 +2,7 @@
 
 Date: 2026-09-24
 
-Status: proposed; planning only
+Status: phase 5 delivered (PRs #31–#38 merged; see close-out below) — phase 6 intake recorded 2026-09-26
 
 Source: Phase 5 of `.claude/plans/2026-09-23-skill-harness-rule-enforcement.md` (revision 2), broken
 out into executable steps. Grounded in repository state after the merge of PR #24 (phase 4 content
@@ -354,3 +354,102 @@ including repeated attacks on the fixes themselves.
   binding via the registry.
 - Model behavior cases run on manual admission dispatch only (`--deterministic-only` stays the PR
   boundary) — do not claim them as enforcement anywhere in SKILL.md.
+
+## Phase 6 Intake (2026-09-26)
+
+Phase 5 is delivered and merged (PRs #31–#38, master `ca2dde8`). An independent review of the
+harness (2026-09-25, findings verified line-by-line against the repo before filing) accepted the
+determinism claims for the canonical path — stable plans, digest-exact approval, write-ahead
+journaling, refetch verification, idempotent finalization in `api-reference-sync` — and rejected
+the end-to-end claim until the gaps below close. Its framing is adopted here verbatim: *the model
+is an uncertain candidate generator, never the state machine, approver, or write authority; once
+a candidate is chosen, every later stage must be fully deterministic harness control.* Two review
+claims were superseded before intake: the 12 `INVARIANT_FIXTURE_MISSING` reports were an
+uncommitted mid-review state of PR #37 (validate/check green on the committed tree), and PRs not
+running model evals / live smoke is the approved workflow stance, not a gap.
+
+### P0 — make the current admission trustworthy
+
+- [ ] 6.1 **Admission source-fingerprint drift guard.** `scripts/run-skill-admission.js` computes
+      `sourceFingerprint` once (line ~161; the existing comparison at ~185 only guards cross-phase
+      resume) and never re-checks it, so one admission run can execute different stages against
+      different source states — observed live during the review. Require: fingerprint-before →
+      re-verify before and after every gate → fingerprint-after must equal fingerprint-before; on
+      any change fail with `ADMISSION_SOURCE_CHANGED_DURING_RUN` and void all prior stage results.
+- [ ] 6.2 **Toolchain manifest + preflight.** CI installs Node 22 only
+      (`.github/workflows/skill-admission.yml:38`); a local deterministic admission blocked at
+      doc-code-verify's Java fragment validation because the machine has no JRE (review
+      reproduced; filed as observation F5 in the step 4 close-out). Declare a toolchain manifest —
+      Node + package lock, JDK version, Python/Go/C++ compilers, `lark-cli`/adapter versions,
+      locale contract / renderer profile / schema versions — and a preflight that fails with
+      `TOOLCHAIN_PRECONDITION_FAILED` before any test starts, instead of a mid-suite fixture
+      failure.
+- [ ] 6.3 **Dirty-tree admission guard.** Formal admission must refuse a dirty working tree (or
+      bind the dirty patch digest into the admission artifact, so the evidence names the exact
+      source state it tested). The review's drift-window finding (6.1) happened on a dirty tree.
+
+### P1 — close the production bypasses
+
+- [ ] 6.4 **Legacy-live to zero.** `write-entrypoints.json` holds 165 entries: 71 read-only /
+      87 legacy-live / 6 canonical-governed / 1 test-only (review numbers confirmed exact). The
+      dual gate (unexpired `expected-changes.json` exception + `DOC_OPS_ALLOW_LEGACY_LIVE=1`,
+      `legacy-quarantine.js`) guarantees default-blocking, not absence of bypass. Migrate, delete,
+      or permanently downgrade the 87 legacy-live entries; production credentials must never see
+      `DOC_OPS_ALLOW_LEGACY_LIVE`; end state is "legacy-live cannot write", not "legacy-live is
+      quarantined by default".
+- [ ] 6.5 **Canonical run manifest at the writer boundary.** Every writer mutation must require a
+      canonical run manifest — source fingerprint, skill version, policy attestations, batch
+      digest, session digest — enforced at the innermost writer layer, not only at entry scripts.
+      Today a legacy exception run stays writable end to end (CLAUDE.md Golden Rule 4 notes it is
+      "not harness-guaranteed"); the writer itself must be able to refuse it.
+- [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
+      already carries the reference implementation (canonical persisted session as sole authority;
+      receipts may not embed a self-claimed session; the acceptance manifest is recomputed over
+      all accepted units; a durable acceptance receipt makes crash retry idempotent; the session
+      flips to `finalized` last — hardened across PR #22's five review rounds). Extract it into
+      `doc-ops-core` and adopt it in localization / authoring / procedure / verification.
+      Specifically for `localized-doc-sync`:
+      - `finalizeLocalizationSession` trusts caller booleans and a caller-supplied
+        `finalScanManifestDigest` (`src/review-session-store.js:107`): `fullInventory`,
+        `completeIssueDisposition` must be recomputed from the persisted scan manifest, issue
+        disposition ledger, and execution journals.
+      - Session saves are direct overwriting `writeFileSync` (`review-session-store.js:115`);
+        switch to tmp + atomic rename + directory fsync, binding the previous state digest so
+        concurrent writers cannot clobber.
+      - `finalizeLocalizationSession` has no production caller at all today (tests only; the CLI
+        never wired finalization) — wire it for the first time with harness-derived evidence
+        rather than adapting the caller-boolean API.
+
+### P2 — runtime proof beyond offline determinism
+
+- [ ] 6.7 **Fault injection.** Cover crash/retry at each seam: before mutation, after mutation,
+      mid-refetch, before completion sentinel, after acceptance receipt. The api
+      acceptance-receipt recovery path (PR #22 final round: a matching durable receipt proves
+      persistence, rerun completes with zero writes) is the pattern to generalize.
+- [ ] 6.8 **Disposable-tenant live smoke as a harness release gate.** create → patch → verify →
+      accept → cleanup against a disposable Feishu tenant, under its own exact digest approval.
+      This is an admission condition for releasing new harness versions, run as the existing
+      manual operator gate — never PR-automated (workflow stance unchanged).
+- [ ] 6.9 **Admitted-fingerprint binding for production runs.** A production run must bind the
+      exact admitted source fingerprint; "tested similar code" is not proof.
+
+### Carried-over phase 6 items (from this checklist and the master plan)
+
+- [ ] 6.10 Second-wave `declared` invariants: receipt-merge policy, locale metadata
+      non-comparison, `Chapter` role rules (step 4.5); plus registry-marking the 15
+      `api-reference-sync` Domain Invariants bullets that still carry no `[api.*]` marker
+      (23 bullets, 8 marked — review confirmed) — the review's end state is every rule with
+      executable proof, promotion path per the phase 1 waiver mechanism.
+- [ ] 6.11 Governance artifacts: waiver expiry/ownership and violation tracking by invariant ID
+      (master plan phase 6 section; step 5.3 handoff); admission artifact publication;
+      receipt-digest verification (phase 0/1 deferral).
+- [ ] 6.12 Sixth-review-round low-severity observations: F3 — fallback binding compares a unit
+      `null` against an absent batch field (tighten the null binding; not exploitable, digest and
+      approval still hold); F4 — `--client-module` keeps freshness strength equal to the caller's
+      trustworthiness (record the override path in plan artifacts). F5 is folded into 6.2.
+
+Acceptance for the phase: the review's closing statement flips — canonical entrypoints are
+deterministic (already true) *and* no write reaches production outside them (6.4–6.5), every
+admission names the exact source and toolchain it tested (6.1–6.3, 6.9), all five skills share one
+session/finalization machine (6.6), and the harness's own release is gated by injected-fault and
+live-smoke evidence (6.7–6.8).

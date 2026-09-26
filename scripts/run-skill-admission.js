@@ -19,6 +19,13 @@ const CANONICAL_SKILLS = Object.freeze([
 const DETERMINISTIC_COMMANDS = Object.freeze([
   { label: 'validate:skills', command: 'npm', args: ['run', 'validate:skills'] },
   { label: 'check:invariants', command: 'npm', args: ['run', 'check:invariants'] },
+  // Phase-6 6.5 review hardening: a production module that cannot parse
+  // silently drops every guard inside it, and advertised focused tests were
+  // recorded as metadata without ever running — both gaps passed all other
+  // stages. Syntax is checked before any behavioral suite; focused tests
+  // execute the exact suites each skill's capabilities.json advertises.
+  { label: 'js-syntax', command: 'node', args: ['scripts/check-js-syntax.js'] },
+  { label: 'focused-tests', command: 'node', args: ['scripts/run-focused-tests.js'] },
   { label: 'test:skills', command: 'npm', args: ['run', 'test:skills'] },
   { label: 'test:doc-ops-core', command: 'npm', args: ['run', 'test:doc-ops-core'] },
   { label: 'test:agent-team', command: 'npm', args: ['run', 'test:agent-team'] },

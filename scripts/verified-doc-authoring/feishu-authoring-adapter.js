@@ -28,6 +28,10 @@ const { renderMarkdown } = require(path.join(API_SYNC, 'src/document-ir/ir-to-ma
 const { canonicalBytes } = require(path.join(DOC_OPS, 'src/canonical-json'));
 const { sha256Digest } = require(path.join(DOC_OPS, 'src/digest'));
 const { WriterGovernance } = require(path.join(DOC_OPS, 'src/writer-governance'));
+const { createRunManifest } = require(path.join(DOC_OPS, 'src/run-manifest'));
+
+// scripts/verified-doc-authoring → repository root
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
 
 const DRAFT_PATH = process.env.VERIFIED_DOC_DRAFT
   ? path.resolve(process.env.VERIFIED_DOC_DRAFT)
@@ -52,16 +56,15 @@ function bindGovernanceFromEnv() {
     sideEffects: plan.actionBatch.sideEffects,
     approval,
   });
-  return governance;
-}
-  const { createRunManifest } = require('../../.claude/skills/doc-ops-core/src/run-manifest');
+  // 6.5: the live adapter names its source state too — binding is immutable
+  // and must precede the first mutation.
   governance.bindRunManifest(createRunManifest({
     skill: plan.actionBatch.skill,
     skillVersion: 'verified-doc-authoring/adapter@1',
-    repoRoot: path.resolve(__dirname, '..', '..'),
+    repoRoot: REPO_ROOT,
     batchDigest: plan.actionBatch.batchDigest,
     sessionDigest: `adapter:${plan.actionBatch.batchDigest}`,
-  }));
+  }), { repoRoot: REPO_ROOT });
   return governance;
 }
 

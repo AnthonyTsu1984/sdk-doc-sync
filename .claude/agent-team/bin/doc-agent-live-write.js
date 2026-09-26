@@ -201,13 +201,14 @@ async function main() {
     throw new Error(`Refusing live write for disallowed action types: ${unsafe.map(a => a.type).join(', ')}`);
   }
 
-  store.writeTask({ ...task, status: TASK_STATUS.LIVE_WRITE_STARTED, liveWriteStartedAt: new Date().toISOString() });
-
   // 6.5: the META_ONLY record mutations ride a governed BitableWriter —
   // approval envelope over the digest-verified stored batch plus a run
   // manifest binding the widened working-tree fingerprint — persisted into
-  // the task's evidence directory.
-  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  // the task's evidence directory. The governance and manifest are built and
+  // verified BEFORE the durable task state moves to LIVE_WRITE_STARTED, so a
+  // manifest failure cannot strand a task in a started state it never earned.
+  // .claude/agent-team/bin → repository root (three levels).
+  const repoRoot = path.resolve(__dirname, '..', '..', '..');
   const liveGovernance = new WriterGovernance({ skill: actionBatch.skill, operation: 'agent-team-live-write' });
   liveGovernance.bindApproval({
     batchDigest: actionBatch.batchDigest,
@@ -232,6 +233,8 @@ async function main() {
     sessionDigest: `agent-team:${taskId}`,
   }), { repoRoot });
   writeRunManifestArtifact(liveGovernance.run, { filePath: path.join(store.taskDir(taskId), 'run-manifest.json') });
+
+  store.writeTask({ ...task, status: TASK_STATUS.LIVE_WRITE_STARTED, liveWriteStartedAt: new Date().toISOString() });
 
   const captures = { translationResults: [], metaOnlyResults: [] };
   const execution = await executeApprovedActionBatch({

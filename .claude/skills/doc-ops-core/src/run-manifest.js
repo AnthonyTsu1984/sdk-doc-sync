@@ -37,9 +37,31 @@ function requireDigestString(value, field) {
     return typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
 }
 
+// The fingerprint's scope claim ("whole working tree") is only true when the
+// enumeration runs from the real repository root: `git ls-files` from a
+// subdirectory silently narrows to that subtree, so a caller passing
+// `<repo>/.claude` would fingerprint a fraction of the tree while the
+// manifest still claims full scope. Resolve the toplevel once and enumerate
+// from there, so any in-repo caller root produces the same, whole-tree
+// fingerprint (6.9 O2).
+function resolveRepositoryRoot(repoRoot) {
+    if (!repoRoot || typeof repoRoot !== 'string') {
+        throw new RunManifestError('RUN_MANIFEST_FIELD_REQUIRED', 'repoRoot is required to compute the production input fingerprint');
+    }
+    const execution = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: repoRoot, encoding: 'utf8' });
+    if (execution.error || execution.status !== 0) {
+        throw new RunManifestError(
+            'RUN_MANIFEST_SOURCE_UNAVAILABLE',
+            `cannot resolve the repository root for the run manifest (repoRoot ${repoRoot}): ${execution.error ? execution.error.message : String(execution.stderr || 'git failed').trim()}`,
+        );
+    }
+    return path.resolve(execution.stdout.trim());
+}
+
 function workingTreeFiles(repoRoot) {
+    const root = resolveRepositoryRoot(repoRoot);
     const run = (args) => {
-        const execution = spawnSync('git', args, { cwd: repoRoot, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+        const execution = spawnSync('git', args, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
         if (execution.error || execution.status !== 0) {
             throw new RunManifestError(
                 'RUN_MANIFEST_SOURCE_UNAVAILABLE',
@@ -50,20 +72,21 @@ function workingTreeFiles(repoRoot) {
     };
     const tracked = run(['ls-files', '-z']).split('\0').filter(Boolean);
     const untracked = run(['ls-files', '--others', '--exclude-standard', '-z']).split('\0').filter(Boolean);
-    return [...new Set([...tracked, ...untracked])].sort();
+    return { root, files: [...new Set([...tracked, ...untracked])].sort() };
 }
 
 function productionInputFingerprint({ repoRoot }) {
     if (!repoRoot || typeof repoRoot !== 'string') {
         throw new RunManifestError('RUN_MANIFEST_FIELD_REQUIRED', 'repoRoot is required to compute the production input fingerprint');
     }
+    const { root, files } = workingTreeFiles(repoRoot);
     const hash = crypto.createHash('sha256');
-    for (const relativePath of workingTreeFiles(repoRoot)) {
+    for (const relativePath of files) {
         hash.update(relativePath);
         hash.update('\0');
         let content;
         try {
-            content = fs.readFileSync(path.join(repoRoot, relativePath));
+            content = fs.readFileSync(path.join(root, relativePath));
         } catch (error) {
             throw new RunManifestError('RUN_MANIFEST_SOURCE_UNAVAILABLE', `cannot read ${relativePath} while fingerprinting the working tree: ${error.message}`);
         }
@@ -188,6 +211,7 @@ module.exports = {
     assertRunManifest,
     createRunManifest,
     productionInputFingerprint,
+    resolveRepositoryRoot,
     runManifestDigest,
     stubRunManifest,
     verifyRunManifestSource,

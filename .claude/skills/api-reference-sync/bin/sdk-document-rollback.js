@@ -63,8 +63,9 @@ function createRollbackWriterGovernance(manifest, approvedDigest) {
         invariantAttestations: [],
     });
     // 6.5: rollback runs under the same source-state binding as execution.
+    // .claude/skills/api-reference-sync/bin → repository root (four levels).
     const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
-    const rollbackRepoRoot = path.resolve(__dirname, '..', '..', '..');
+    const rollbackRepoRoot = path.resolve(__dirname, '..', '..', '..', '..');
     governance.bindRunManifest(createRunManifest({
         skill: 'api-reference-sync',
         skillVersion: 'api-reference-sync/rollback@1',
@@ -72,11 +73,9 @@ function createRollbackWriterGovernance(manifest, approvedDigest) {
         batchDigest: manifest.rollbackManifestDigest,
         sessionDigest: `rollback:${manifest.rollbackManifestDigest}`,
     }), { repoRoot: rollbackRepoRoot });
-    try {
-        writeRunManifestArtifact(governance.run, {
-            filePath: path.join(rollbackRepoRoot, 'tmp', 'api-reference-sync', `run-manifest-${manifest.rollbackManifestDigest.replace(':', '-')}.json`),
-        });
-    } catch { /* best-effort evidence persistence */ }
+    writeRunManifestArtifact(governance.run, {
+        filePath: path.join(rollbackRepoRoot, 'tmp', 'api-reference-sync', `run-manifest-${manifest.rollbackManifestDigest.replace(':', '-')}.json`),
+    });
     return governance;
 }
 

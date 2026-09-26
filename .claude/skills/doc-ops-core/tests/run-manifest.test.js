@@ -144,3 +144,25 @@ test('policy attestations ride inside the manifest digest', () => {
         /WRITER_INVARIANT_ATTESTATION_MALFORMED/,
     );
 });
+
+test('a subdirectory caller root still fingerprints (and detects drift in) the whole repository (6.9 O2)', () => {
+    const root = gitRepo({ 'outside.js': 'const A = 1;\n', 'sub/inside.js': 'const B = 2;\n' });
+    const subdir = path.join(root, 'sub', 'deeper');
+    fs.mkdirSync(subdir, { recursive: true });
+    const fromSubdir = productionInputFingerprint({ repoRoot: subdir });
+    const fromRoot = productionInputFingerprint({ repoRoot: root });
+    assert.equal(fromSubdir, fromRoot, 'a caller root inside the repo must produce the whole-tree fingerprint');
+
+    // The reviewer's reproduction: a root-level change must be visible from a
+    // subdirectory caller — the pre-fix ls-files enumeration missed it.
+    fs.writeFileSync(path.join(root, 'outside.js'), 'const A = 2;\n');
+    assert.notEqual(productionInputFingerprint({ repoRoot: subdir }), fromSubdir,
+        'root-level drift must change the fingerprint even when the caller passes a subdirectory');
+});
+
+test('a repoRoot outside any repository fails closed', () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'run-manifest-outside-'));
+    assert.throws(() => productionInputFingerprint({ repoRoot: outside }), (error) => (
+        error.code === 'RUN_MANIFEST_SOURCE_UNAVAILABLE' && /repository root/.test(error.message)
+    ));
+});

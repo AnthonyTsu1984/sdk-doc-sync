@@ -3,7 +3,7 @@
   "baseline": {
     "recordedAt": "2026-09-23T00:00:00.000Z",
     "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
-    "entrypointCount": 86,
+    "entrypointCount": 88,
     "legacyLiveCount": 5
   },
   "entries": [
@@ -698,6 +698,20 @@
       "classification": "read-only",
       "operation": "apply-polish-context",
       "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/check-js-syntax.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "js-syntax-gate",
+      "basis": "node --check parse gate over the first-party tree; no writes"
+    },
+    {
+      "path": "scripts/run-focused-tests.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "focused-tests-gate",
+      "basis": "executes capabilities.json advertised focused suites; no writes"
     }
   ]
 }

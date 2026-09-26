@@ -118,14 +118,33 @@ class WriterGovernance {
 
     // Phase-6 6.5: bind the canonical run manifest (source fingerprint with
     // the 6.9 widened scope, skill version, session lineage, policy
-    // attestations). Mutations are refused without one, so a writer call can
-    // never execute against a source state the manifest does not name.
-    // `repoRoot` opts the governance into source re-verification: once per
-    // governance, the first mutation recomputes the working-tree fingerprint
-    // and refuses on drift (RUN_MANIFEST_SOURCE_DRIFT).
+    // attestations). The manifest may only be bound AFTER the approval (the
+    // batch facts must already be pinned before the manifest can name them)
+    // and only once — a bound manifest is immutable, so a caller cannot swap
+    // in a different source state under an existing approval. Bind time and
+    // every mutation re-check skill, batch digest, and policy attestations
+    // against the bound approval, so no bind order can pair a manifest with
+    // an approval it does not name. `repoRoot` opts the governance into
+    // source re-verification: once per governance, the first mutation
+    // recomputes the working-tree fingerprint and refuses on drift
+    // (RUN_MANIFEST_SOURCE_DRIFT).
     // Lazy require: run-manifest imports this module's attestation validator,
     // so the dependency must not be created at module-init time.
     bindRunManifest(runManifest, { repoRoot = null, verifyNow = false } = {}) {
+        if (!this.bound) {
+            throw new WriterGovernanceError(
+                'WRITER_RUN_MANIFEST_REQUIRES_APPROVAL',
+                'bind the approval envelope before the run manifest; the manifest names the batch the approval pins',
+                { skill: this.skill, operation: this.operation },
+            );
+        }
+        if (this.run) {
+            throw new WriterGovernanceError(
+                'WRITER_RUN_MANIFEST_ALREADY_BOUND',
+                'a run manifest is already bound to this governance and is immutable; create a fresh governance for a new run',
+                { skill: this.skill, batchDigest: this.run.batchDigest },
+            );
+        }
         const { RunManifestError, assertRunManifest, verifyRunManifestSource } = require('./run-manifest');
         try {
             assertRunManifest(runManifest);
@@ -136,6 +155,23 @@ class WriterGovernance {
             }
             throw error;
         }
+        this.assertRunManifestMatchesApproval(runManifest);
+        this.run = Object.freeze({ ...runManifest });
+        this.runRepoRoot = repoRoot;
+        this.runVerified = verifyNow === true;
+        return this.run;
+    }
+
+    // Full manifest↔approval relationship check, shared by bind time and
+    // every mutation, so a re-bind or reordered bind cannot slip a manifest
+    // past the batch facts the approval pinned (skill, batch digest, and the
+    // policy attestation set must be exactly the ones the approval carries).
+    assertRunManifestMatchesApproval(runManifest) {
+        const manifestAttestations = runManifest.policyAttestations ?? [];
+        const { canonicalize } = require('./canonical-json');
+        const { digestSemantic } = require('./digest');
+        const manifestAttestationDigest = digestSemantic(canonicalize(manifestAttestations));
+        const approvalAttestationDigest = digestSemantic(canonicalize(this.bound.invariantAttestations ?? []));
         if (runManifest.skill !== this.skill) {
             throw new WriterGovernanceError(
                 'WRITER_RUN_MANIFEST_SKILL_MISMATCH',
@@ -143,17 +179,21 @@ class WriterGovernance {
                 { manifestSkill: runManifest.skill, skill: this.skill },
             );
         }
-        if (this.bound && this.bound.batchDigest !== runManifest.batchDigest) {
+        if (runManifest.batchDigest !== this.bound.batchDigest) {
             throw new WriterGovernanceError(
                 'WRITER_RUN_MANIFEST_BATCH_MISMATCH',
                 `run manifest batch ${runManifest.batchDigest} does not match the bound approval batch ${this.bound.batchDigest}`,
                 { manifestBatchDigest: runManifest.batchDigest, batchDigest: this.bound.batchDigest },
             );
         }
-        this.run = Object.freeze({ ...runManifest });
-        this.runRepoRoot = repoRoot;
-        this.runVerified = verifyNow === true;
-        return this.run;
+        if (manifestAttestationDigest !== approvalAttestationDigest) {
+            throw new WriterGovernanceError(
+                'WRITER_RUN_MANIFEST_ATTESTATION_MISMATCH',
+                'run manifest policy attestations differ from the attestations bound with the approval',
+                { manifestBatchDigest: runManifest.batchDigest },
+            );
+        }
+        return true;
     }
 
     assertMutationAllowed({ method, target = null } = {}) {
@@ -185,6 +225,11 @@ class WriterGovernance {
             }
             this.runVerified = true;
         }
+        // Re-assert the full manifest↔approval relationship at mutation time:
+        // bind-time checks alone would trust that neither object was replaced
+        // afterwards, but both fields are plain object properties on a
+        // governance a caller holds.
+        this.assertRunManifestMatchesApproval(this.run);
         if (this.bound.enforceTargets && target !== null && target !== undefined) {
             if (!this.bound.targets.includes(target)) {
                 throw new WriterGovernanceError(

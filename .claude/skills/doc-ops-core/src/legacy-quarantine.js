@@ -176,6 +176,15 @@ function createExceptionGovernance({ skill, operation, decision, repoRoot = null
     const batchDigest = digestSemantic(envelopeFacts);
     const targets = [entrypointPath];
     const sideEffects = ['legacy-live-exception-run'];
+    // The exception self-identifies through this attestation; the approval and
+    // the run manifest must carry the SAME set (the writer boundary enforces
+    // their equality at bind time and at every mutation).
+    const exceptionAttestation = {
+        id: 'ops.legacy-live-exception',
+        version: 1,
+        inputDigest: batchDigest,
+        decision: `exception-expires:${expiresAt}`,
+    };
     const governance = new WriterGovernance({ skill, operation });
     governance.bindApproval({
         batchDigest,
@@ -191,7 +200,7 @@ function createExceptionGovernance({ skill, operation, decision, repoRoot = null
             sideEffects,
             decision: 'approved',
         }),
-        invariantAttestations: [],
+        invariantAttestations: [exceptionAttestation],
     });
     try {
         governance.bindRunManifest(createRunManifest({
@@ -200,13 +209,8 @@ function createExceptionGovernance({ skill, operation, decision, repoRoot = null
             repoRoot,
             batchDigest,
             sessionDigest: `legacy-exception:${entrypointPath}`,
-            policyAttestations: [{
-                id: 'ops.legacy-live-exception',
-                version: 1,
-                inputDigest: batchDigest,
-                decision: `exception-expires:${expiresAt}`,
-            }],
-        }));
+            policyAttestations: [exceptionAttestation],
+        }), { repoRoot });
     } catch (error) {
         if (error instanceof RunManifestError) {
             throw new LegacyQuarantineError(

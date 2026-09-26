@@ -38,6 +38,8 @@ test('rollout admission names every required deterministic and model-eval gate w
   assert.deepEqual(DETERMINISTIC_COMMANDS.map(item => item.label), [
     'validate:skills',
     'check:invariants',
+    'js-syntax',
+    'focused-tests',
     'test:skills',
     'test:doc-ops-core',
     'test:agent-team',
@@ -82,7 +84,7 @@ test('model evaluations never run after a deterministic admission failure', () =
   });
 
   assert.equal(result.status, 'BLOCKED');
-  assert.deepEqual(calls, ['validate:skills', 'check:invariants', 'test:skills']);
+  assert.deepEqual(calls, ['validate:skills', 'check:invariants', 'js-syntax', 'focused-tests', 'test:skills']);
   assert.equal(result.results.some(item => item.stage === 'model-eval'), false);
   assert.equal(fs.existsSync(result.outputPath), true);
 });
@@ -150,7 +152,7 @@ test('resume validates and preserves the passed prefix, then reruns from the fir
     },
   });
   assert.equal(first.status, 'BLOCKED');
-  assert.deepEqual(firstCalls, ['validate:skills', 'check:invariants', 'test:skills', 'test:doc-ops-core']);
+  assert.deepEqual(firstCalls, ['validate:skills', 'check:invariants', 'js-syntax', 'focused-tests', 'test:skills', 'test:doc-ops-core']);
 
   const resumedCalls = [];
   const resumed = runAdmission({
@@ -177,7 +179,7 @@ test('resume validates and preserves the passed prefix, then reruns from the fir
     'eval:skills:behavior',
     'eval:skills:learning',
   ]);
-  assert.deepEqual(resumed.results.slice(0, 3).map(item => item.label), ['validate:skills', 'check:invariants', 'test:skills']);
+  assert.deepEqual(resumed.results.slice(0, 4).map(item => item.label), ['validate:skills', 'check:invariants', 'js-syntax', 'focused-tests']);
   assert.equal(resumed.results.every(item => item.passed), true);
 });
 

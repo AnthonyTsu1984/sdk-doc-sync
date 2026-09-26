@@ -526,6 +526,39 @@ not scheduled.**
       validate/check/coverage--strict all pass. Wave-2 note: the manifest requirement is now
       structural for governed writers; rewiring the four user-mandated scripts onto this path
       makes "unwired legacy cannot write" literal.
+
+      **6.5 review round (2026-09-26, five defect classes found and closed on the same branch):**
+      (1) three production modules (procedure executor, authoring executor, authoring live
+      adapter) had the manifest block inserted OUTSIDE their bind functions — unmatched braces,
+      `node --check` failed, targeted suites 4/8 — yet no admission stage caught it because
+      focused tests were advertised metadata and nothing parsed first-party JS; the blocks are
+      back inside `bindPlanGovernance` / `bindGovernanceFromEnv` before the return, repoRoot
+      depths corrected, and manifest persistence made fail-closed (a manifest that cannot be
+      written stops the run instead of executing unrecorded). (2) `bindRunManifest`'s batch check
+      only ran when an approval was already bound, so manifest-for-batch-A + approval-for-batch-B
+      passed; manifests could also be replaced under a live approval, and policy attestations
+      were never compared. Now: approval-first (`WRITER_RUN_MANIFEST_REQUIRES_APPROVAL`), single
+      immutable bind (`WRITER_RUN_MANIFEST_ALREADY_BOUND`), and the full manifest↔approval
+      relationship (skill, batch digest, policy-attestation set) is re-asserted at bind time AND
+      at every mutation (`WRITER_RUN_MANIFEST_ATTESTATION_MISMATCH`); reverse-bind, re-bind,
+      attestation-mismatch, and post-bind-tamper negatives added; `createExceptionGovernance`
+      carries the same attestation in both objects. (3) the "whole working tree" fingerprint
+      silently narrowed to a subdirectory when the caller passed one (rollback/procedure/authoring
+      passed `.claude`; root-level edits were invisible) — `run-manifest.js` now resolves
+      `git rev-parse --show-toplevel` and enumerates from there, with a negative proving a
+      subdirectory caller still detects root-level drift, and fail-closed refusal outside any
+      repository. (4) `doc-agent-live-write.js` traversed four parents out of the repository and
+      flipped the task to `LIVE_WRITE_STARTED` before the manifest existed — root resolution
+      fixed and governance/manifest construction moved BEFORE the durable state change.
+      (5) the api execute path bound attestations into the approval but dropped them from the
+      manifest, omitted `repoRoot` (mutation-time drift verification dead), and never persisted
+      the artifact — all three restored, fail-closed. **Admission hardening (the meta-lesson):**
+      deterministic admission now runs two new gates — `js-syntax` (`node --check` over the whole
+      first-party tree, ~480 files) and `focused-tests` (actually EXECUTES the suites each
+      capabilities.json advertises; previously metadata only). Post-fix evidence: doc-ops-core
+      230/230, procedure 11/11, authoring 11/11, agent-team 59/59, localized 66/66, unit 662/662,
+      offline 808/808, test:skills 120/120, js-syntax 480 files/0 failures, focused-tests 6
+      suites/57 tests, validate/check green.
 - [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over

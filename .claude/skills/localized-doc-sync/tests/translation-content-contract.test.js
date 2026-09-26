@@ -81,3 +81,25 @@ test('translation content exposes only semantic units and restores protected byt
     /protected marker/i,
   );
 });
+
+test('protected values containing replacement sequences round-trip byte-identically', () => {
+  // Round-six finding F2: string.replace interprets `$&`, "$`", and "$'" in
+  // the replacement string, so restoring a protected value that literally
+  // contains one of those sequences corrupted the output and tripped
+  // PROTECTED_MARKER_UNRESTORED — hard-blocking perfectly legal content.
+  const { prepareTranslationContent, applyTranslationResponse } = require(MODULE_PATH);
+  const source = [
+    '# Replacement semantics',
+    '',
+    'Use `$&` to reference the whole match, and "$\'" for the tail.',
+  ].join('\n');
+  const prepared = prepareTranslationContent(source, { idPrefix: 'doc' });
+  const protectedUnit = prepared.manifest.find((unit) => unit.protection?.entries?.some((entry) => entry.value.includes('$&')));
+  assert.ok(protectedUnit, 'the `$&` code span must be protected');
+  assert.deepEqual(protectedUnit.protection.entries.map((entry) => entry.value), ['`$&`']);
+  const translations = {
+    translations: prepared.units.map((unit) => ({ id: unit.id, text: unit.text.replace('Use', '使用') })),
+  };
+  const output = applyTranslationResponse(prepared, translations);
+  assert.equal(output, source.replace('Use', '使用'));
+});

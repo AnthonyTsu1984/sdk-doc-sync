@@ -1,0 +1,191 @@
+{
+  "schemaVersion": 1,
+  "skill": "localized-doc-sync",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED).",
+  "invariants": [
+    {
+      "id": "localization.source-read-only",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:176fa34a6c78683f389045184ba3a73c5f56df44b04b7d445678717a338452de",
+      "fixtureIds": [
+        "localization-source-actions-refused",
+        "localization-source-batch-exec-refused",
+        "localization-fallback-dual-tamper-refused",
+        "localization-locale-ownership-from-actions"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/localized-doc-sync/src/planner.js",
+          "codes": [
+            "SOURCE_MUTATION_UNAUTHORIZED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/localized-doc-sync/src/executor.js",
+          "codes": [
+            "SOURCE_MUTATION_UNAUTHORIZED",
+            "BATCH_UNIT_MISMATCH"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "localization.complete-dual-base-enumeration",
+      "version": 1,
+      "risk": "evidence-integrity",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["evidence"],
+      "statementDigest": "sha256:096c920a71623e356723b63d2f350524caf3f34717e8f25946f3e41b2791055c",
+      "fixtureIds": [
+        "localization-incomplete-scan-refused",
+        "localization-stale-manifest-refused",
+        "localization-freshness-rescan-required"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/localized-doc-sync/src/issue-classifier.js",
+          "codes": [
+            "INVENTORY_INCOMPLETE",
+            "FRESHNESS_RESCAN_REQUIRED",
+            "QUEUE_DECISION_STALE"
+          ]
+        },
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+          "codes": [
+            "INVENTORY_INCOMPLETE",
+            "QUEUE_DECISION_STALE",
+            "FRESHNESS_RESCAN_REQUIRED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "localization.target-only-preserve",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:dfa64db6c97a6ccab6fa8c2e321e67bc2e3d86b5a3fcba47c7435cf59569c0bd",
+      "fixtureIds": [
+        "localization-target-only-deletion-refused"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/localized-doc-sync/src/planner.js",
+          "codes": [
+            "TARGET_ONLY_DELETE_FORBIDDEN"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "localization.protected-marker-preservation",
+      "version": 1,
+      "risk": "content-integrity",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["pre-write", "post-write"],
+      "statementDigest": "sha256:56643948703a95528930f92a9eed3fbb33e23edd79d8eb90e74240d96b8ba041",
+      "fixtureIds": [
+        "localization-marker-lost-refused",
+        "localization-marker-reordered-refused",
+        "localization-marker-roundtrip-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/localized-doc-sync/src/translation-content.js",
+          "codes": [
+            "PROTECTED_MARKER_LOST",
+            "PROTECTED_MARKER_REORDERED",
+            "PROTECTED_MARKER_UNRESTORED"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "localization.review-evidence-contiguity",
+      "version": 1,
+      "risk": "content-integrity",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:cd6371ebf3710077964806cdb9a0fb3e8e18a8e915723f40595ea98fa1113401",
+      "fixtureIds": [
+        "localization-review-evidence-typed-refusals",
+        "localization-review-evidence-authorized-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/localized-doc-sync/src/review-evidence.js",
+          "codes": [
+            "UNIT_NOT_AUTHORIZED",
+            "EVIDENCE_NOT_CONTIGUOUS",
+            "EVIDENCE_CONTRACT_CONFLICT"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "localization.target-local-prose",
+      "version": 1,
+      "risk": "content-integrity",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["plan"],
+      "statementDigest": "sha256:9d02721314bfa8e8d09450b5851adfcd2ca208915ffad0212f349fb4bf675752",
+      "fixtureIds": [
+        "localization-target-local-merge-decision-required",
+        "localization-target-local-decision-positive"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/localized-doc-sync/src/planner.js",
+          "codes": [
+            "TARGET_LOCAL_OVERWRITE_FORBIDDEN"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "localization.receipt-identity",
+      "version": 1,
+      "risk": "evidence-integrity",
+      "scope": "localization-pipeline",
+      "status": "runtime-enforced",
+      "enforcement": ["post-write"],
+      "statementDigest": "sha256:d50c389a3ab8ad8c08b6d2665ad9189575f0d418e2ebd89d9da537f4470f7ce1",
+      "fixtureIds": [
+        "localization-receipt-identity-typed",
+        "localization-recovery-drift-refused"
+      ],
+      "enforcers": [
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/localized-doc-sync/src/translation-state.js",
+          "codes": [
+            "RECEIPT_IDENTITY_REQUIRED",
+            "RECEIPT_LIVE_VERIFICATION_REQUIRED",
+            "RECEIPT_ACCEPTANCE_REQUIRED",
+            "RECEIPT_SCHEMA_INVALID",
+            "RECEIPT_IDENTITY_CHANGED"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -5,6 +5,10 @@ const path = require('node:path');
 const { canonicalStringify, canonicalize } = require('../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
+function typedError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
 const RECEIPT_IDENTITY_FIELDS = Object.freeze([
   'translationPairId', 'englishDocumentIdentity', 'chineseDocumentIdentity',
   'englishSourceDigest', 'chineseTargetDigest', 'englishMetaDigest', 'chineseMetaDigest',
@@ -43,10 +47,12 @@ class TranslationReceiptStore {
   }
 
   append(receipt, { liveVerified, accepted }) {
-    if (liveVerified !== true) throw new Error('Translation receipt requires live verification');
-    if (accepted !== true) throw new Error('Translation receipt requires accepted decision');
-    if (receipt?.schemaVersion !== 2) throw new Error('Translation receipt must be schema v2 before append');
-    for (const field of RECEIPT_IDENTITY_FIELDS) if (!receipt?.[field]) throw new Error(`Translation receipt requires ${field}`);
+    if (liveVerified !== true) throw typedError('RECEIPT_LIVE_VERIFICATION_REQUIRED', 'Translation receipt requires live verification');
+    if (accepted !== true) throw typedError('RECEIPT_ACCEPTANCE_REQUIRED', 'Translation receipt requires accepted decision');
+    if (receipt?.schemaVersion !== 2) throw typedError('RECEIPT_SCHEMA_INVALID', 'Translation receipt must be schema v2 before append');
+    for (const field of RECEIPT_IDENTITY_FIELDS) {
+      if (!receipt?.[field]) throw typedError('RECEIPT_IDENTITY_REQUIRED', `Translation receipt requires ${field}`);
+    }
     const { receiptDigest: ignoredReceiptDigest, ...receiptInput } = receipt;
     const semantic = canonicalize(receiptInput);
     const normalized = { ...semantic, receiptDigest: digestSemantic(semantic) };
@@ -58,16 +64,16 @@ class TranslationReceiptStore {
 }
 
 function assertTranslationRecoveryCompatible({ receipt, expected }) {
-  if (receipt?.schemaVersion !== 2) throw new Error('Translation recovery requires a schema v2 receipt');
-  if (!receipt.receiptDigest) throw new Error('Translation recovery requires receipt digest');
+  if (receipt?.schemaVersion !== 2) throw typedError('RECEIPT_SCHEMA_INVALID', 'Translation recovery requires a schema v2 receipt');
+  if (!receipt.receiptDigest) throw typedError('RECEIPT_IDENTITY_REQUIRED', 'Translation recovery requires receipt digest');
   const { receiptDigest, ...semanticInput } = receipt;
   if (digestSemantic(canonicalize(semanticInput)) !== receiptDigest) {
-    throw new Error('Translation recovery receipt digest is invalid');
+    throw typedError('RECEIPT_IDENTITY_CHANGED', 'Translation recovery receipt digest is invalid');
   }
-  if (expected?.schemaVersion !== 2) throw new Error('Translation recovery expected identity must be schema v2');
+  if (expected?.schemaVersion !== 2) throw typedError('RECEIPT_SCHEMA_INVALID', 'Translation recovery expected identity must be schema v2');
   for (const field of RECEIPT_IDENTITY_FIELDS) {
     if (digestSemantic(receipt[field]) !== digestSemantic(expected[field])) {
-      throw new Error(`Translation recovery identity mismatch: ${field}`);
+      throw typedError('RECEIPT_IDENTITY_CHANGED', `Translation recovery identity mismatch: ${field}`);
     }
   }
   return true;

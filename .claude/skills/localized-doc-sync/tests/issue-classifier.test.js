@@ -3,6 +3,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { ISSUE_CODES, buildScanManifest, classifyPairIssue } = require('../src/issue-classifier');
 
 test('issue vocabulary covers full-scan discovery drift work policy and no-op states', () => {
@@ -16,8 +17,24 @@ test('issue vocabulary covers full-scan discovery drift work policy and no-op st
 });
 
 test('scan manifest binds complete inventories policy lineage and a stable complete issue queue', () => {
-  const sourceBase = { baseToken: 'en', revision: 9, tables: [{ tableId: 'a', tableDigest: 'sha256:a' }] };
-  const targetBase = { baseToken: 'zh', revision: 19, tables: [{ tableId: 'b', tableDigest: 'sha256:b' }] };
+  // Tables must materialize their inventory: the digests must recompute from
+  // the actual fields/views/records arrays.
+  const completeTable = (tableId, seed) => {
+    const fields = [{ id: `${tableId}-field`, name: 'Slug' }];
+    const views = [{ id: `${tableId}-view`, name: 'grid' }];
+    const records = [{ record_id: `${tableId}-rec-1`, fields: { Slug: `${tableId}-slug` } }];
+    return {
+      tableId,
+      tableDigest: digestSemantic({ tableId, name: `${tableId}-name`, primaryFieldId: null, fields, views, records }),
+      fieldSchemaDigest: digestSemantic(fields),
+      viewScopeDigest: digestSemantic(views),
+      recordSetDigest: digestSemantic(records),
+      recordCount: records.length,
+      fields, views, records,
+    };
+  };
+  const sourceBase = { baseToken: 'en', revision: 9, tables: [completeTable('a', 'a')] };
+  const targetBase = { baseToken: 'zh', revision: 19, tables: [completeTable('b', 'b')] };
   const issues = [
     { issueId: 'issue:2', code: 'NOOP', identity: 'reference-source:zh:pair' },
     { issueId: 'issue:1', code: 'UNMAPPED_TABLE', tableId: 'a', blocking: true },
@@ -32,6 +49,22 @@ test('scan manifest binds complete inventories policy lineage and a stable compl
   assert.deepEqual(first.issues.map((issue) => issue.issueId), ['issue:1', 'issue:2']);
   assert.equal(first.completeInventory, true);
   assert.equal(first.partialScanAuthoritative, false);
+
+  // Completeness is derived from table-level scan digests, not asserted: a
+  // snapshot missing them is a partial scan and planning must refuse it.
+  const partial = buildScanManifest({
+    ...input,
+    sourceBase: { baseToken: 'en', revision: 9, tables: [{ tableId: 'a', tableDigest: 'sha256:a', fieldSchemaDigest: 'forged', viewScopeDigest: 'forged', recordSetDigest: 'forged' }] },
+  });
+  assert.equal(partial.completeInventory, false);
+
+  // Forged digest strings do not pass either: the digests must recompute
+  // from the materialized arrays.
+  const forged = buildScanManifest({
+    ...input,
+    sourceBase: { baseToken: 'en', revision: 9, tables: [{ tableId: 'a', fieldSchemaDigest: 'forged', viewScopeDigest: 'forged', recordSetDigest: 'forged', recordCount: 0, fields: [], views: [], records: [] }] },
+  });
+  assert.equal(forged.completeInventory, false);
 });
 
 test('valid refs are NOOP and missing reference members reopen the underlying translation pair', () => {

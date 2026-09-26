@@ -31,6 +31,16 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 - Approval must match the exact `batchDigest`, targets, action count, and side effects. Verify the live precondition for record identity, revision, parent mapping, and media inventory immediately before mutation.
 - After writes, refetch and apply the shared `../doc-ops-core/` round-trip guard to content, metadata, hierarchy, images, boards, Figma, sheets, Supademo, and opaque blocks.
 
+## Domain Invariants
+
+- Source records and documents are read-only: source-locale issues are diagnostic-only and can never enter a review unit carrying executable actions; a source-side change requires its own separately approved batch. [localization.source-read-only]
+- Every queue or write decision binds a fresh complete dual-Base scan: manifest completeness is derived from per-table scan digests (not asserted), the claimed inventory digest must recompute from the manifest's own snapshots, and planning refuses anything less. [localization.complete-dual-base-enumeration]
+- `TARGET_ONLY` records are preserved and reported, in that order: a review unit formed from a `TARGET_ONLY` issue can never carry a deletion action; deletion of a target-only record needs a distinct approved deletion batch. [localization.target-only-preserve]
+- Protected bytes survive the whole pipeline: markers replacing protected spans must survive translation, review, and correction byte-exactly, and restoration must leave no marker behind. [localization.protected-marker-preservation]
+- Reviewer allegations are evidence-bound: a correction is authorized only for issues whose location identifies an existing semantic unit and whose source and draft quotes are contiguous within it and do not conflict with the locale contract. [localization.review-evidence-contiguity]
+- Target-local prose is never overwritten implicitly: units from `TARGET_LOCAL_EDIT`/`TRANSLATION_DIVERGED` issues carry actions only after an explicit reviewed `mergeDecision` is recorded on the issue. [localization.target-local-prose]
+- Translation receipts are identity-bound: a schema-v2 receipt requires live verification, an accepted decision, and complete identity fields, and recovery accepts only receipts whose digest and identity fields still match. [localization.receipt-identity]
+
 ## Domain Workflow
 
 1. Run `localized-doc-sync.js scan` from complete source and target inventory snapshots. Discover every table, schema, view scope, and record set before loading the reviewed table map.
@@ -40,8 +50,8 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 5. Translate prose, headings, captions, callouts, table prose, and localized UI text. Preserve code, inline code, API names, env vars, URLs, frontmatter tokens, `<!-- feishu-block:` comments, and `<Supademo ... />` components unless explicitly requested otherwise.
 6. For content units, load the versioned locale/audience/product contract, expose only stable semantic units, and replace protected bytes with protected markers. Never execute a whole-document model response directly.
 7. Validate reviewer evidence against contiguous source/draft quotes from the same semantic unit. A reviewer allegation is not correction authority; Correction may edit only runner-authorized unit IDs and must preserve every protected marker.
-8. Use `localized-doc-sync.js plan` to form one canonical content unit per pair or a strictly homogeneous metadata unit. Every unit cites its scan digest and issue IDs.
-9. Use `localized-doc-sync.js execute` only with an exact action batch, approval envelope, adapter, and write-ahead journal. After each accepted unit, rescan the affected scope; before finalization, perform a fresh full-Base scan.
+8. Use `localized-doc-sync.js plan` to form one canonical content unit per pair or a strictly homogeneous metadata unit. Every unit cites its scan digest and issue IDs. Plan re-enumerates both Bases live before forming the queue (through the bundled FeishuBaseClient; override with `--client-module`) and refuses manifests whose full semantic digest or per-Base inventory no longer matches.
+9. Use `localized-doc-sync.js execute` only with an exact action batch, approval envelope, adapter, and write-ahead journal. Every batch action must carry its locale and the review unit must carry its producer-stamped `boundUnitDigest` — the executor refuses locale-less actions and units whose acceptance/lineage snapshot no longer hashes to the stamp. After each accepted unit, rescan the affected scope; before finalization, perform a fresh full-Base scan.
 10. Write a schema-v2 receipt containing `translationContractDigest`, prompt and semantic-unit digests, source/target revisions, model, adapter version, and accepted journal lineage. Any identity change invalidates recovery and prior approval. Preserve or explicitly merge `TARGET_LOCAL_EDIT`/`TRANSLATION_DIVERGED`; never overwrite target-local prose implicitly.
 
 Translator adapter diagnostic only; its interactive or auto-approve path is never executable authority:

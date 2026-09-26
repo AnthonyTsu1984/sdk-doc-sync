@@ -1,9 +1,290 @@
 [
-  { "id": "table-pairs", "assertions": { "visibleTableOnly": false, "allMappedPairs": true } },
-  { "id": "slug-identity", "assertions": { "identityField": "slug", "titleIsIdentity": false } },
-  { "id": "source-read-only", "assertions": { "sourceWrites": false } },
-  { "id": "parent-media", "assertions": { "parentBySlug": true, "preserve": ["board", "figma", "sheet", "supademo"] } },
-  { "id": "orphan-report", "assertions": { "delete": false, "report": true } },
-  { "id": "exact-approval", "assertions": { "batchDigestRequired": true } },
-  { "id": "round-trip", "assertions": { "verifyContent": true, "verifyMetadata": true, "verifyMedia": true } }
+ {
+  "id": "table-pairs",
+  "assertions": {
+   "visibleTableOnly": false,
+   "allMappedPairs": true
+  }
+ },
+ {
+  "id": "slug-identity",
+  "assertions": {
+   "identityField": "slug",
+   "titleIsIdentity": false
+  }
+ },
+ {
+  "id": "source-read-only",
+  "assertions": {
+   "sourceWrites": false
+  }
+ },
+ {
+  "id": "parent-media",
+  "assertions": {
+   "parentBySlug": true,
+   "preserve": [
+    "board",
+    "figma",
+    "sheet",
+    "supademo"
+   ]
+  }
+ },
+ {
+  "id": "orphan-report",
+  "assertions": {
+   "delete": false,
+   "report": true
+  }
+ },
+ {
+  "id": "exact-approval",
+  "assertions": {
+   "batchDigestRequired": true
+  }
+ },
+ {
+  "id": "round-trip",
+  "assertions": {
+   "verifyContent": true,
+   "verifyMetadata": true,
+   "verifyMedia": true
+  }
+ },
+ {
+  "id": "localization-source-actions-refused",
+  "assertions": {
+   "code": "SOURCE_MUTATION_UNAUTHORIZED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationSourceActionsRefused"
+  }
+ },
+ {
+  "id": "localization-incomplete-scan-refused",
+  "assertions": {
+   "code": "INVENTORY_INCOMPLETE",
+   "completeInventory": false
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationIncompleteScanRefused"
+  }
+ },
+ {
+  "id": "localization-stale-manifest-refused",
+  "assertions": {
+   "tamperedCode": "QUEUE_DECISION_STALE",
+   "staleCode": "QUEUE_DECISION_STALE"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationStaleManifestRefused"
+  }
+ },
+ {
+  "id": "localization-target-only-deletion-refused",
+  "assertions": {
+   "code": "TARGET_ONLY_DELETE_FORBIDDEN",
+   "unitsFormed": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationTargetOnlyDeletionRefused"
+  }
+ },
+ {
+  "id": "localization-marker-lost-refused",
+  "assertions": {
+   "code": "PROTECTED_MARKER_LOST"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationMarkerLostRefused"
+  }
+ },
+ {
+  "id": "localization-marker-roundtrip-positive",
+  "assertions": {
+   "inlineCodePreserved": true,
+   "urlPreserved": true,
+   "noMarkerLeft": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationMarkerRoundtripPositive"
+  }
+ },
+ {
+  "id": "localization-review-evidence-typed-refusals",
+  "assertions": {
+   "codes": [
+    "UNIT_NOT_AUTHORIZED",
+    "EVIDENCE_NOT_CONTIGUOUS",
+    "EVIDENCE_NOT_CONTIGUOUS"
+   ],
+   "correctionAuthorized": false
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationReviewEvidenceTypedRefusals"
+  }
+ },
+ {
+  "id": "localization-review-evidence-authorized-positive",
+  "assertions": {
+   "correctionAuthorized": true,
+   "authorizedUnitIds": [
+    "u1"
+   ],
+   "authorizedIssues": 1
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationReviewEvidenceAuthorizedPositive"
+  }
+ },
+ {
+  "id": "localization-target-local-merge-decision-required",
+  "assertions": {
+   "code": "TARGET_LOCAL_OVERWRITE_FORBIDDEN"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationTargetLocalMergeDecisionRequired"
+  }
+ },
+ {
+  "id": "localization-target-local-decision-positive",
+  "assertions": {
+   "unitsFormed": 1,
+   "requiresDocumentAcceptance": true,
+   "actionCarried": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationTargetLocalDecisionPositive"
+  }
+ },
+ {
+  "id": "localization-receipt-identity-typed",
+  "assertions": {
+   "unverified": "RECEIPT_LIVE_VERIFICATION_REQUIRED",
+   "missingIdentity": "RECEIPT_IDENTITY_REQUIRED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationReceiptIdentityTyped"
+  }
+ },
+ {
+  "id": "localization-recovery-drift-refused",
+  "assertions": {
+   "selfAssertedDigestCode": "RECEIPT_IDENTITY_CHANGED",
+   "driftCode": "RECEIPT_IDENTITY_CHANGED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationRecoveryDriftRefused"
+  }
+ },
+ {
+  "id": "localization-freshness-rescan-required",
+  "assertions": {
+   "code": "FRESHNESS_RESCAN_REQUIRED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationFreshnessRescanRequired"
+  }
+ },
+ {
+  "id": "localization-marker-reordered-refused",
+  "assertions": {
+   "code": "PROTECTED_MARKER_REORDERED"
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationMarkerReorderedRefused"
+  }
+ },
+ {
+  "id": "localization-source-batch-exec-refused",
+  "assertions": {
+   "code": "SOURCE_MUTATION_UNAUTHORIZED",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationSourceBatchExecRefused"
+  }
+ },
+ {
+  "id": "localization-batch-unit-mismatch-refused",
+  "assertions": {
+   "code": "BATCH_UNIT_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBatchUnitMismatchRefused"
+  }
+ },
+ {
+  "id": "localization-fallback-dual-tamper-refused",
+  "assertions": {
+   "code": "BATCH_UNIT_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationFallbackDualTamperRefused"
+  }
+ },
+ {
+  "id": "localization-locale-ownership-from-actions",
+  "assertions": {
+   "code": "SOURCE_MUTATION_UNAUTHORIZED",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationLocaleOwnershipFromActions"
+  }
+ },
+ {
+  "id": "localization-bound-localeless-action-refused",
+  "assertions": {
+   "code": "ACTION_LOCALE_REQUIRED",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBoundLocalelessActionRefused"
+  }
+ },
+ {
+  "id": "localization-bound-acceptance-tamper-refused",
+  "assertions": {
+   "code": "UNIT_DIGEST_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBoundAcceptanceTamperRefused"
+  }
+ },
+ {
+  "id": "localization-bound-lineage-tamper-refused",
+  "assertions": {
+   "code": "UNIT_DIGEST_MISMATCH",
+   "adapterCalls": 0
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "localizationBoundLineageTamperRefused"
+  }
+ }
 ]

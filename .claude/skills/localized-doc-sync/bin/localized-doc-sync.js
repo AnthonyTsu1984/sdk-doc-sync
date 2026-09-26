@@ -9,7 +9,7 @@ const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { profileTableSchema } = require('../src/schema-profiler');
 const { mapTables } = require('../src/table-mapper');
 const { buildTranslationPairs, resolveTableIdentities } = require('../src/identity-resolver');
-const { buildScanManifest } = require('../src/issue-classifier');
+const { buildScanManifest, reEnumerateForFreshness } = require('../src/issue-classifier');
 const { buildReviewUnits } = require('../src/planner');
 const { executeReviewUnit } = require('../src/executor');
 
@@ -127,6 +127,31 @@ function buildManifestFromSnapshots({ sourceBase, targetBase, tablePolicy, local
   });
 }
 
+// Plan-time client for freshness re-enumeration. Defaults to the production
+// FeishuBaseClient module (authenticated via the shared larkTokenFetcher);
+// --client-module overrides the path, dependencies.client replaces the whole
+// client in tests.
+function loadPlanClient(args, dependencies = {}) {
+  if (dependencies.client) return dependencies.client;
+  const modulePath = path.resolve(args.clientModule || path.join(__dirname, '..', 'src', 'feishu-base-client.js'));
+  const loaded = require(modulePath);
+  const factory = typeof loaded.createClient === 'function' ? loaded.createClient : loaded;
+  const byToken = new Map();
+  // The full input object (including pageToken) is forwarded so custom
+  // clients paginating with hasMore/pageToken do not loop on page one.
+  return {
+    async getBase(args) { return clientFor(args.baseToken).getBase(args); },
+    async listTables(args) { return clientFor(args.baseToken).listTables(args); },
+    async listFields(args) { return clientFor(args.baseToken).listFields(args); },
+    async listViews(args) { return clientFor(args.baseToken).listViews(args); },
+    async listRecords(args) { return clientFor(args.baseToken).listRecords(args); },
+  };
+  function clientFor(baseToken) {
+    if (!byToken.has(baseToken)) byToken.set(baseToken, factory({ baseToken }));
+    return byToken.get(baseToken);
+  }
+}
+
 async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   const args = parseArgs(argv);
   const out = dependencies.onStdout || ((line) => console.log(line));
@@ -147,7 +172,28 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'plan') {
     for (const name of ['scanManifest', 'output']) required(args, name);
     const manifest = readJson(args.scanManifest);
-    if (manifest.completeInventory !== true || manifest.partialScanAuthoritative === true) throw new Error('Planning requires a complete full-Base scan manifest');
+    if (manifest.completeInventory !== true || manifest.partialScanAuthoritative === true) {
+      throw Object.assign(
+        new Error('Planning requires a complete full-Base scan manifest'),
+        { code: 'INVENTORY_INCOMPLETE' },
+      );
+    }
+    // Queue decisions bind to the complete manifest: every field — issues and
+    // their actions included — must hash to the recorded semantic digest, so
+    // post-scan tampering of any part of the manifest is refused.
+    const { scanEpochId, semanticDigest, ...semanticInput } = manifest;
+    if (digestSemantic(semanticInput) !== semanticDigest
+        || scanEpochId !== `scan:localized-doc-sync:${semanticDigest.slice(7, 23)}`) {
+      throw Object.assign(
+        new Error('Scan manifest content does not match its semantic digest'),
+        { code: 'QUEUE_DECISION_STALE' },
+      );
+    }
+    // Freshness at the enforcement boundary: re-enumerate both bases live
+    // (paginated, exhaustion-proven) and compare against the manifest's
+    // snapshots. A self-generated artifact cannot substitute for this.
+    const client = loadPlanClient(args, dependencies);
+    await reEnumerateForFreshness({ client, sourceBase: manifest.sourceBase, targetBase: manifest.targetBase });
     const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [] });
     writeJson(args.output, units);
     out(`Review units: ${units.length}`);

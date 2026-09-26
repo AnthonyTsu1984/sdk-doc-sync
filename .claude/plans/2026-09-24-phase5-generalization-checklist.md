@@ -204,12 +204,12 @@ binds it into the receipt (`ROLLBACK_PLAN_REQUIRED`), matching SKILL.md workflow
 refusals are typed (`ROLLBACK_STRUCTURE_DRIFT` / `ROLLBACK_CREATION_UNPROVEN` /
 `ROLLBACK_DEPENDENT_UNITS`). 11 executable fixtures; authoring suite 11/11.
 
-### Step 4 — localized-doc-sync (PR E)
+### Step 4 — localized-doc-sync (PR E) — DELIVERED 2026-09-25, branch `feat/phase5-localized-doc-sync`
 
 Largest surface; lands last, reusing the established pattern. Biggest enforcer lift of the phase
 because several rules currently live only in prose.
 
-- [ ] 4.1 SKILL.md Domain Invariants + registry (first wave):
+- [x] 4.1 SKILL.md Domain Invariants + registry (first wave):
 
   | id | stages | enforcer module today | proposed blocker codes |
   | --- | --- | --- | --- |
@@ -221,16 +221,31 @@ because several rules currently live only in prose.
   | `localization.target-local-prose` | plan | `src/planner.js` | `TARGET_LOCAL_OVERWRITE_FORBIDDEN` |
   | `localization.receipt-identity` | post-write | `src/translation-state.js` | `RECEIPT_IDENTITY_CHANGED` |
 
-- [ ] 4.2 Enforcer work is real here, not just registration: dual-Base completeness evidence
+- [x] 4.2 Enforcer work is real here, not just registration: dual-Base completeness evidence
       (re-enumeration digest bound into every queue/write decision), source-side write refusal at
       the adapter boundary, TARGET_ONLY deletion requiring a distinct approved deletion batch,
       `preserve_orphan` before `report_orphan` ordering in the canonical result, protected-marker
       survival through correction.
-- [ ] 4.3 Fixtures per table row; drift variants (table added between scan digest and plan →
+- [x] 4.3 Fixtures per table row; drift variants (table added between scan digest and plan →
       `QUEUE_DECISION_STALE`).
-- [ ] 4.4 Behavior pressure: "delete the orphan to tidy up"; "counts look right, skip the rescan".
+- [x] 4.4 Behavior pressure: "delete the orphan to tidy up"; "counts look right, skip the rescan".
 - [ ] 4.5 Second wave (follow-up PRs, may slip to phase 6): receipt-merge policy, locale metadata
       non-comparison, `Chapter` role rules as `declared` entries with a promotion path.
+
+Delivery notes: the headline fix is `buildScanManifest` — `completeInventory` was a hardcoded
+`true`, so the plan-stage completeness gate was vacuous; it is now derived from per-table scan
+digests (fieldSchema/viewScope/recordSet), and the plan command additionally recomputes the claimed
+inventory digest from the manifest's own snapshots (`QUEUE_DECISION_STALE` on mismatch). Planner
+guards: source-locale issues refuse executable actions (`SOURCE_MUTATION_UNAUTHORIZED`), TARGET_ONLY
+issues refuse deletion actions (`TARGET_ONLY_DELETE_FORBIDDEN`), and
+TARGET_LOCAL_EDIT/TRANSLATION_DIVERGED issues carry actions only with an explicit reviewed
+`mergeDecision` (`TARGET_LOCAL_OVERWRITE_FORBIDDEN`). Marker integrity and receipt/recovery errors
+are typed (PROTECTED_MARKER_LOST/UNRESTORED; RECEIPT_*), and reviewer-allegation refusals carry
+typed codes (UNIT_NOT_AUTHORIZED / EVIDENCE_NOT_CONTIGUOUS / EVIDENCE_CONTRACT_CONFLICT). 12
+executable fixtures; localization suite 45/45. `preserve_orphan` before `report_orphan` ordering
+stays an output-contract runbook rule (no result-reporting module exists to enforce it); receipt
+merge policy, locale metadata non-comparison, and Chapter role rules remain a second wave as
+`declared` entries.
 
 ### Step 5 — Close-out (PR F)
 

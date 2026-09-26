@@ -22,7 +22,7 @@
       "id": "javac",
       "probes": [{ "command": "javac", "args": ["-version"] }],
       "minMajor": 17,
-      "hint": "doc-code-verify Java fragment gate (verify-feishu-doc-code.js degrades to manual without it and verifier tests fail). CI installs Temurin 17 via actions/setup-java; local macOS: brew install --cask temurin@17"
+      "hint": "doc-code-verify Java fragment gate (verify-feishu-doc-code.js degrades to manual without it and verifier tests fail). CI installs Temurin 17 via actions/setup-java; local macOS: brew install --cask temurin@17 (system-wide, needs sudo), or the keg-only formula: brew install openjdk@17 plus ln -sfn /opt/homebrew/opt/openjdk@17/bin/javac /opt/homebrew/bin/javac (the formula alone leaves PATH javac as the macOS stub)"
     },
     {
       "id": "cpp-compiler",

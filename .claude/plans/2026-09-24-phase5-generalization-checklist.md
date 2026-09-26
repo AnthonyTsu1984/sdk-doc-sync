@@ -402,7 +402,14 @@ before every gate and at completion; drift voids all prior stage results
 are themselves fingerprinted inputs. Demonstrated live: dirty tree refused; committed tree
 without a JDK refused at preflight with zero gates run. 22 admission-guard tests green;
 test:skills 116/117 locally (single failure = the pre-existing missing-JRE case this PR fixes
-in CI).
+in CI). **Merged 2026-09-26 (1649e81) after a four-point review with three independent
+reproductions (9/9 real-gate fingerprint-stability audit; end-to-end typed preflight refusal
+on a JDK-less machine; adversarial drift-injection test audit). Review observations
+dispositioned: O1 (untracked content not in `dirtyPatchDigest`) and O2 (admission input set ⊂
+production input set) folded into 6.9's acceptance criteria; O3 (resume failure overwrites
+partial evidence) folded into 6.11; O4 (a change made-and-reverted inside one gate's execution
+window is undetectable) recorded as the inherent limit of sampled verification — accepted,
+not scheduled.**
 
 ### P1 — close the production bypasses
 
@@ -447,7 +454,17 @@ in CI).
       This is an admission condition for releasing new harness versions, run as the existing
       manual operator gate — never PR-automated (workflow stance unchanged).
 - [ ] 6.9 **Admitted-fingerprint binding for production runs.** A production run must bind the
-      exact admitted source fingerprint; "tested similar code" is not proof.
+      exact admitted source fingerprint; "tested similar code" is not proof. Acceptance criteria
+      from the PR #39 review round (2026-09-26):
+      - O1 — the bound state must cover **untracked file content** (the admission
+        `dirtyPatchDigest` binds `git status` text + `git diff HEAD`, which exclude untracked
+        contents; `git ls-files --others` contents must join the digest wherever a degraded /
+        dirty-allowed run claims to name its source).
+      - O2 — the bound fingerprint must cover the **full production input set**, not just the
+        admission input set (`lib/`, non-`run-skill-*` scripts etc. are outside
+        `collectAdmissionInputFiles` by Phase 0 design). "Admitted" means the exact tree the
+        gates executed against, so the production manifest's fingerprint definition must be at
+        least as wide as the code the run actually loads.
 
 ### Carried-over phase 6 items (from this checklist and the master plan)
 
@@ -458,7 +475,9 @@ in CI).
       executable proof, promotion path per the phase 1 waiver mechanism.
 - [ ] 6.11 Governance artifacts: waiver expiry/ownership and violation tracking by invariant ID
       (master plan phase 6 section; step 5.3 handoff); admission artifact publication;
-      receipt-digest verification (phase 0/1 deferral).
+      receipt-digest verification (phase 0/1 deferral). Includes O3 from the PR #39 review:
+      resume failure paths currently overwrite prior partial evidence with the blocker result —
+      preserve and void-mark it the way the mid-run drift path already does.
 - [ ] 6.12 Sixth-review-round low-severity observations: F3 — fallback binding compares a unit
       `null` against an absent batch field (tighten the null binding; not exploitable, digest and
       approval still hold); F4 — `--client-module` keeps freshness strength equal to the caller's

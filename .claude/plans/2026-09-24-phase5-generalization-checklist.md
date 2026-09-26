@@ -318,11 +318,28 @@ so acceptance and lineage fields are digest-bound in both forms
 (UNIT_DIGEST_REQUIRED / UNIT_DIGEST_MISMATCH, planner CLI and agent-team
 handoff stamp, final status fail-closed to the acceptance ceremony); source
 ownership derives per action from its digest-bound locale; and pagination
-tokens flow through the override wrapper. With those landed, the phase 5
-acceptance criterion holds: no runtime-enforced rule relies only on a
-prose assertion or a model eval, and each one's enforcement has survived
-five rounds of known attacks on its own boundary — including repeated
-attacks on the fixes themselves.
+tokens flow through the override wrapper. The sixth review round
+(independent review on GLM-5.3) re-verified all five prior rounds and then
+found two latent defects that no authorization boundary misses: the batch
+digest hashes the topologically sorted canonical rebuild while the executor
+iterated the SUBMITTED array order, so a child-before-parent batch passed
+every check and executed out of dependency order (fixed one line: the
+execution loop now reads the canonical form end to end — binding
+comparison, approval assertion, journal, and adapter calls); and protected
+span restoration used string.replace, so a protected value containing a
+`$`-replacement sequence corrupted its own restoration and tripped
+PROTECTED_MARKER_UNRESTORED, hard-blocking legal content (fixed one line:
+function replacer; fixture proves a `$&`-containing span round-trips
+byte-identically). Three low-severity observations are filed for Phase 6:
+F3 (fallback comparison binds a unit null to an absent batch field — not
+exploitable, digest and approval still hold), F4 (--client-module keeps
+freshness strength equal to the caller's trustworthiness — record the
+override path in plan artifacts), F5 (doc-code-verify needs a Java runtime
+in the local environment; pre-existing, not a PR defect). With those
+landed, the phase 5 acceptance criterion holds: no runtime-enforced rule
+relies only on a prose assertion or a model eval, and each one's
+enforcement has survived six rounds of known attacks on its own boundary —
+including repeated attacks on the fixes themselves.
 
 ## Execution Notes
 

@@ -115,17 +115,8 @@ test('a tree that drifts after binding is refused at the first governed mutation
 });
 
 test('a writer without a transport function is a construction error', () => {
-    assert.throws(() => new DocxBlockWriter({ governance: null, transport: null }), TypeError);
-    void stubRunManifest;
+  assert.throws(() => new DocxBlockWriter({ governance: null, transport: null }), TypeError);
+  void stubRunManifest;
 });
-
-test('the three exception post-actions route mutations through the governed writer', () => {
-    const REPO_ROOT = path.resolve(__dirname, '..', '..');
-    for (const name of ['add-type-links.js', 'fix-leading-spaces.js', 'post-fix-links.js']) {
-        const source = fs.readFileSync(path.join(REPO_ROOT, '.claude', 'skills', 'api-reference-sync', 'scripts', name), 'utf8');
-        assert.match(source, /createExceptionGovernance\(/, `${name} must mint its governance from the sanctioned exception decision`);
-        assert.match(source, /repoRoot: require\('node:path'\)\.resolve/, `${name} must pass the repository root for the run manifest`);
-        assert.match(source, /new DocxBlockWriter\(\{ governance: legacyGovernance/, `${name} must construct the governed block writer`);
-        assert.doesNotMatch(source, /blocks\/batch_update/, `${name} must not carry the raw batch_update endpoint any more`);
-    }
-});
+// Static wiring for the three post-actions lives in
+// tests/skills/post-actions-governed.test.js (canonical two-phase form).

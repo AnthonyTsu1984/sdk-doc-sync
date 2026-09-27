@@ -12,20 +12,5 @@
     },
     "rationale": "Expose deterministic status, digest, diagnostics, artifacts, and blocked outcomes without removing the detailed verifier report.",
     "replacementAssertion": "report.contract is schema version 1 and process exit equals report.contract.exitCode"
-  },
-  {
-    "entrypointPath": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
-    "expiresAt": "2026-10-31T23:59:59Z",
-    "rationale": "Golden Rule 4 mandatory post-action script (CLAUDE.md); pending canonicalization into the governed executor"
-  },
-  {
-    "entrypointPath": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
-    "expiresAt": "2026-10-31T23:59:59Z",
-    "rationale": "Golden Rule 4 mandatory post-action script (CLAUDE.md); pending canonicalization into the governed executor"
-  },
-  {
-    "entrypointPath": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
-    "expiresAt": "2026-10-31T23:59:59Z",
-    "rationale": "Golden Rule 4 mandatory post-action script (CLAUDE.md); pending canonicalization into the governed executor"
   }
 ]

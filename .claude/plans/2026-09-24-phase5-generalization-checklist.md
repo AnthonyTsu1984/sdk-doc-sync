@@ -492,10 +492,22 @@ not scheduled.**
          journal + run manifest), preserving the documented workflow; delete the raw-fetch
          originals. Rides on 6.5: once the run-manifest requirement sits at the writer layer,
          unwired legacy scripts cannot write at all, making wave 2's end state structural.
-         — **DONE 2026-09-27 (PR #43):** `feishu-doc.js` was already governed (repoRoot fixed in
-         the 6.5 round 2); the three post-actions now route through `DocxBlockWriter`; registry
-         basis texts and CLAUDE.md updated; no deletions (the scripts themselves were rewired,
-         and they remain the documented post-action workflow).
+         — **DELIVERED 2026-09-27 (PR #43, second attempt after review):** the first wave-2 cut
+         routed the three post-actions through `DocxBlockWriter` but kept them legacy-live on
+         auto-minted exception approvals whose manifest bound only the entrypoint identity — the
+         review correctly rejected it (an approved manifest still wrote arbitrary documentIds
+         and payloads, no journal, refusals swallowed with exit 0). The delivered form:
+         **reclassified `canonical-governed`** (approval `exact-batch-digest`, journal
+         `required`), two-phase scripts — plan (reads only) → operator `--approve-batch-digest`
+         → governed execution — via a shared `GovernedPostActionBatch` runner whose
+         digest/actionCount/targets cover the EXACT document/request set, with `enforceTargets`
+         plus per-call documentId+payload verification and one-shot execution at the writer,
+         a fresh per-run `ExecutionJournal` (prepared/observed/completion under
+         `tmp/api-reference-sync/post-actions/`), fail-closed manifest persistence, policy
+         refusals rethrown immediately (non-zero exit, journal left honestly incomplete) and
+         per-batch API failures aggregated to exit 1. `feishu-doc.js` was already governed
+         (repoRoot fixed in the 6.5 round 2). The three entrypoint exceptions were removed with
+         the reclassification (expected-changes 4→1); registry 88 entries, legacy-live 8→5.
       4. **Wave 3 — close-out.** `baseline.legacyLiveCount` → 0; production env ban on
          `DOC_OPS_ALLOW_LEGACY_LIVE` (CI + docs); decide whether the exception path survives for
          future sanctioned one-offs or is removed.
@@ -504,8 +516,9 @@ not scheduled.**
       digest, session digest — enforced at the innermost writer layer, not only at entry scripts.
       Today a legacy exception run stays writable end to end (CLAUDE.md Golden Rule 4 notes it is
       "not harness-guaranteed"); the writer itself must be able to refuse it. **Closed 2026-09-27
-      by wave 2 (PR #43): the last live boundary — the three raw-fetch post-actions — now routes
-      through the governed `DocxBlockWriter`.**
+      by wave 2 (PR #43, second attempt): the three post-actions are canonical-governed with the
+      operator-approved batch digest, actionCount, and targets bound at the writer — every write
+      path in the repository now reaches Feishu only through a bound approval + run manifest.**
 
       6.5 delivery (2026-09-26, PR #42, branch `feat/phase6-writer-run-manifest`): new
       `doc-ops-core/src/run-manifest.js` — `createRunManifest` binds skill / skillVersion /
@@ -590,25 +603,30 @@ not scheduled.**
       boundary stated above.** (3) acceptance-finalizer still swallowed manifest-artifact
       persistence failures; now fail-closed like every other path.
 
-      **6.5 closed by wave 2 (2026-09-27, PR #43):** new
-      `api-reference-sync/src/sdk-doc-sync/docx-block-writer.js` — `DocxBlockWriter` wraps the
-      one raw endpoint the three post-actions used (`PATCH …/blocks/batch_update`) behind the
-      standard boundary: `assertWriterMutation` refuses without a bound approval and run
-      manifest, re-verifies the tree fingerprint at the first call, and only then invokes the
-      caller's authenticated transport. `add-type-links.js` / `fix-leading-spaces.js` /
-      `post-fix-links.js` now mint `createExceptionGovernance` as their first statement (repoRoot
-      inlined so the first-statement guard window stays intact) and issue every mutation through
-      the writer — the raw endpoint string no longer appears in any of them (fixture-pinned).
-      Registry basis texts updated; CLAUDE.md Golden Rule 4 now describes the governed form
-      ("exception-admitted, source-bound, not harness-guaranteed"). Every legacy-live entry is
-      now either governed+manifest-bound (feishu-doc.js, doc-agent-live-write.js, the three
-      post-actions) or structurally unopenable — the dormant baseline writers
-      (`feishu-doc-translator.js`, `node-v30-update.js`, `java-v26-update.js`) fail the guard
-      with `no-unexpired-exception` regardless of the env flag and await wave-3
-      deletion/downgrade; any future revival must use the governed pattern. End state: **no
-      write path in the repository reaches Feishu without a bound approval + run manifest.**
-      CI paths filter extended (`scripts/admission/**`, the two gate scripts) so toolchain and
-      gate changes trigger admission.
+      **6.5 closed by wave 2 (2026-09-27, PR #43, two attempts — the first rejected by review):**
+      the first cut bound the manifest only to the exception identity (entrypoint + expiry +
+      operation), so an "approved" run could still write arbitrary documentIds and payloads, had
+      no journal, and swallowed refusals with exit 0. The delivered form adds a shared
+      `governed-post-actions.js` runner: the plan (exact document/request set) becomes a
+      canonical action batch whose **digest, actionCount, and document targets** are what the
+      operator approves (`--approve-batch-digest`) and what the governance binds —
+      `enforceTargets: true` at the envelope, plus per-call documentId **and payload** matching
+      with one-shot execution inside `DocxBlockWriter`; a fresh per-run `ExecutionJournal`
+      records prepared/observed per action and closes with the completion sentinel
+      (`tmp/api-reference-sync/post-actions/`); policy refusals (`WRITER_*`, `RUN_MANIFEST_*`,
+      `GOVERNED_POST_ACTION_*`) rethrow immediately with the journal left honestly incomplete,
+      per-batch API failures aggregate to exit 1; manifest persistence stays fail-closed. The
+      three scripts were **reclassified `canonical-governed`** (their three entrypoint exceptions
+      removed, expected-changes 4→1; legacy-live 8→5 — the remaining five dormant baseline
+      writers fail the guard with `no-unexpired-exception` regardless of the env flag and await
+      wave-3 disposition). Reviewer's counterexample fixture-proven: approved batch refuses
+      `unapproved-doc-A` (`WRITER_TARGET_NOT_IN_ENVELOPE` + `GOVERNED_POST_ACTION_TARGET_NOT_APPROVED`),
+      refuses a payload swap on an approved document (`GOVERNED_POST_ACTION_PAYLOAD_MISMATCH`),
+      refuses replay (`..._ALREADY_EXECUTED`), zero transport calls on every refusal. CLAUDE.md
+      Golden Rule 4 documents the two-phase digest flow. End state: **no write path in the
+      repository reaches Feishu without a bound approval + run manifest, and post-action writes
+      are bound to the exact approved batch.** CI paths filter extended (`scripts/admission/**`,
+      the two gate scripts) so toolchain and gate changes trigger admission.
 - [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over

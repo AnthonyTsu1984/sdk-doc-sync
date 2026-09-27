@@ -1,12 +1,7 @@
 #!/usr/bin/env node
-const { enforceLegacyQuarantine, createExceptionGovernance } = require('../../doc-ops-core/src/legacy-quarantine.js');
-// reached only when the unexpired reviewed exception AND the DOC_OPS_ALLOW_LEGACY_LIVE=1 gate both sanction the run. The governance binds a run manifest naming the working-tree fingerprint (repoRoot inline so no statement intervenes between the guard require and its call). Such a run is exception-admitted, NOT harness-guaranteed, and must never advance accepted scan state.
-const legacyGovernance = createExceptionGovernance({
-    skill: 'api-reference-sync',
-    operation: 'post-fix-links',
-    decision: enforceLegacyQuarantine({ entrypointPath: __filename }),
-    repoRoot: require('node:path').resolve(__dirname, '..', '..', '..', '..'),
-});
+// Canonical-governed post-action (phase-6 wave 2): the planned docx block
+// batch is digest-approved by the operator (--approve-batch-digest) before
+// anything binds or writes.
 
 /**
  * Post-action: scan all docs in a bitable for stale Feishu docx links and
@@ -38,6 +33,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') 
 const fetch        = require('node-fetch');
 const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
 const DocxBlockWriter  = require('../src/sdk-doc-sync/docx-block-writer');
+const { GovernedPostActionBatch, isPolicyError } = require('../src/sdk-doc-sync/governed-post-actions');
 const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -92,11 +88,6 @@ async function feishuAPI(method, endpoint, body = null) {
     if (data.code !== 0) throw new Error(`Feishu API: ${data.msg} (code ${data.code})`);
     return data.data;
 }
-
-// All docx block mutations route through the governed writer: every
-// batchUpdate call asserts the bound exception approval and run manifest
-// (and, once per run, the working-tree fingerprint) before any fetch.
-const docxBlocks = new DocxBlockWriter({ governance: legacyGovernance, transport: feishuAPI });
 
 /** Fetch every block in a document, handling pagination. */
 async function getAllBlocks(docId) {
@@ -212,6 +203,7 @@ async function main() {
     // ── Step 2: scan every doc ────────────────────────────────────────────────
     let docsWithStale = 0;
     let totalBlocks   = 0;
+    const planActions = [];   // { documentId, requests } — one entry per batch_update call
     let totalFixed    = 0;
 
     for (const { docId, title } of scanQueue) {
@@ -242,33 +234,76 @@ async function main() {
         totalBlocks += patches.length;
         console.log(`  → ${patches.length} block(s) to patch in "${title}"`);
 
-        if (DRY_RUN) continue;
-
-        // Patch in batches of 20 (Feishu limit per batch_update call)
+        // Plan only — no writes until the batch is digest-approved.
         for (let i = 0; i < patches.length; i += 20) {
-            const batch = patches.slice(i, i + 20);
-            try {
-                await docxBlocks.batchUpdate(
-                    docId,
-                    batch.map(p => ({
-                        block_id:             p.blockId,
-                        update_text_elements: { elements: p.elements },
-                    }))
-                );
-                totalFixed += batch.length;
-                await delay();
-            } catch (e) {
-                console.error(`  ERROR patching batch in "${title}": ${e.message}`);
-            }
+            planActions.push({
+                documentId: docId,
+                requests: patches.slice(i, i + 20).map(p => ({
+                    block_id:             p.blockId,
+                    update_text_elements: { elements: p.elements },
+                })),
+            });
         }
     }
 
-    // ── Summary ───────────────────────────────────────────────────────────────
-    console.log('\n=== Summary ===');
-    console.log(`Docs with stale links : ${docsWithStale}`);
-    console.log(`Stale blocks found    : ${totalBlocks}`);
-    if (!DRY_RUN) console.log(`Blocks patched        : ${totalFixed}`);
-    console.log(DRY_RUN ? '\n(dry run — no changes written)' : '\nDone.');
+    // ── Dry-run summary (plan only) ───────────────────────────────────────────
+    if (DRY_RUN) {
+        console.log('\n=== Summary (dry run) ===');
+        console.log(`Docs with stale links : ${docsWithStale}`);
+        console.log(`Stale blocks found    : ${totalBlocks}`);
+        console.log(`Plan actions          : ${planActions.length}`);
+        const preview = new GovernedPostActionBatch({ operation: 'post-fix-links', actions: planActions });
+        console.log(`\nBatch digest: ${preview.batchDigest}`);
+        console.log('Re-run with --approve-batch-digest <digest> to execute this exact batch.');
+        return;
+    }
+
+    if (planActions.length === 0) {
+        console.log('No stale links to repair.');
+        return;
+    }
+
+    // ── Governed execution: digest approval + writer + journal ───────────────
+    const batch = new GovernedPostActionBatch({ operation: 'post-fix-links', actions: planActions });
+    console.log(`Action batch : ${batch.actionCount} update call(s) across ${batch.targets.length} doc(s)`);
+    console.log(`Batch digest : ${batch.batchDigest}\n`);
+    batch.assertApproved(argValue('--approve-batch-digest'));
+
+    const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+    const { governance, journal, artifactPath, journalPath } = batch.bind({ repoRoot });
+    console.log(`Run manifest : ${artifactPath}`);
+    console.log(`Journal      : ${journalPath}\n`);
+
+    const docxBlocks = new DocxBlockWriter({ governance, transport: feishuAPI, batch });
+    let apiFailures = 0;
+
+    for (const action of batch.actions) {
+        journal.prepared({ actionId: action.actionId });
+        try {
+            await docxBlocks.batchUpdate(action.documentId, action.requests);
+            journal.observed({ actionId: action.actionId, status: 'success', verified: true });
+            totalFixed += action.requests.length;
+            await delay();
+        } catch (e) {
+            if (isPolicyError(e)) {
+                // Policy refusals abort immediately — the journal stays
+                // deliberately incomplete so the abort is visible in evidence.
+                console.error(`POLICY REFUSAL: ${e.message}`);
+                throw e;
+            }
+            journal.observed({ actionId: action.actionId, status: 'failure', verified: false, error: e.message });
+            apiFailures += 1;
+            console.error(`  ERROR patching batch in ${action.documentId}: ${e.message}`);
+            await delay();
+        }
+    }
+    journal.complete();
+
+    console.log('\nDone.');
+    if (apiFailures > 0) {
+        console.log(`${apiFailures} batch(es) failed — see the journal for the evidence trail.`);
+        process.exitCode = 1;
+    }
 }
 
 main().catch(err => {

@@ -4,24 +4,28 @@ const { assertWriterMutation } = require('../../../doc-ops-core/src/writer-gover
 
 // Governed docx block mutation writer (phase-6 wave 2). The Golden Rule 4
 // post-action scripts historically issued raw `PATCH .../blocks/batch_update`
-// fetches with no writer boundary — the one live legacy path outside the run
-// manifest. This class puts that endpoint behind the same envelope as every
-// other writer: a mutation is refused unless the governance has a bound
-// approval AND an immutable run manifest, and the first call re-verifies the
-// working-tree fingerprint — all through assertWriterMutation. `transport` is
-// the caller's authenticated fetch helper, so the writer owns the boundary
-// while the script keeps its token handling.
+// fetches with no writer boundary. This class puts that endpoint behind the
+// same envelope as every other writer: a mutation is refused unless the
+// governance has a bound approval AND an immutable run manifest, and the
+// first call re-verifies the working-tree fingerprint — all through
+// assertWriterMutation. When a GovernedPostActionBatch is attached, the
+// documentId AND the exact request payload must also match a planned,
+// digest-bound action (enforceTargets alone cannot see payload swaps).
+// `transport` is the caller's authenticated fetch helper, so the writer owns
+// the boundary while the script keeps its token handling.
 class DocxBlockWriter {
-    constructor({ governance, transport }) {
+    constructor({ governance, transport, batch = null }) {
         if (typeof transport !== 'function') {
             throw new TypeError('DocxBlockWriter requires a transport(method, endpoint, body) function');
         }
         this.governance = governance || null;
         this.transport = transport;
+        this.batch = batch || null;
     }
 
     async batchUpdate(documentId, requests) {
         assertWriterMutation(this.governance, 'DocxBlockWriter.batchUpdate', documentId);
+        if (this.batch) this.batch.assertAction(documentId, requests);
         return this.transport('PATCH', `/open-apis/docx/v1/documents/${documentId}/blocks/batch_update`, { requests });
     }
 }

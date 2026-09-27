@@ -16,7 +16,7 @@ const {
   validateRollbackManifest,
 } = require('../src/sdk-doc-sync/rollback-planner');
 const {
-  loadReviewSession,
+  loadReviewSessionState,
   recordDocumentRollback,
   saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -228,7 +228,8 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
   requireValue(args, 'reviewUnitId');
   requireValue(args, 'manifest');
   const sessionPath = path.resolve(args.session);
-  let session = loadReviewSession(sessionPath);
+  const { session: loadedSession, sessionDigest } = loadReviewSessionState(sessionPath);
+  let session = loadedSession;
 
   if (args.command === 'plan') {
     const planned = planner({ session, reviewUnitId: args.reviewUnitId });
@@ -295,7 +296,7 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
       rollbackJournalPath: journalPath,
       rollbackJournalDigest: digestSemantic(entries),
     });
-    saveReviewSession(sessionPath, session);
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
     const result = {
       status: 'RECONCILED',
       reviewUnitId: args.reviewUnitId,
@@ -318,7 +319,7 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
       rollbackJournalPath: execution.rollbackJournalPath,
       rollbackJournalDigest: execution.rollbackJournalDigest,
     });
-    saveReviewSession(sessionPath, session);
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
   }
   const result = {
     ...execution,

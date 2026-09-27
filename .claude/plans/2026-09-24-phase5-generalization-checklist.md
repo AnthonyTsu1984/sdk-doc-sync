@@ -641,7 +641,7 @@ not scheduled.**
       success instead of throwing `ACTIONS_REQUIRED`.
       CI paths filter extended (`scripts/admission/**`,
       the two gate scripts) so toolchain and gate changes trigger admission.
-- [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
+- [x] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over
       all accepted units; a durable acceptance receipt makes crash retry idempotent; the session
@@ -719,6 +719,36 @@ not scheduled.**
         digest field fails integrity, not the comparison) and is idempotent only for the
         verified-equal final manifest. Authoring's `recordEditorialDecision` likewise refuses
         accepted sessions (`SESSION_ACCEPTED`).
+
+      6.6 extraction delivered (2026-09-27, branch `feat/phase6-session-machine-extraction`):
+      `doc-ops-core/src/session-state-machine.js` — `defineSessionMachine` turns a declarative
+      transition table into the shared lifecycle mechanism: a transition is only legal from its
+      named sources (`INVALID_TRANSITION_SOURCE`), the terminal state is immutable
+      (`SESSION_TERMINAL` — finalization flips the status last, nothing revives it), `'@self'`
+      transitions append evidence without changing status, and every apply returns a frozen
+      successor stamped with `updatedAt`. The machine owns the LIFECYCLE; evidence validation
+      (journals, manifests, receipts, derived flags) stays in the owning skill's store, and the
+      machine's asserts run after those checks so the hardened error semantics are preserved.
+      Adopted by all five skills: **api-reference-sync** (the reference) now expresses its six
+      transitions through `REVIEW_MACHINE` and persists through the shared CAS session-store —
+      `loadReviewSessionState`/`saveReviewSession(expectedPreviousDigest)` threaded through
+      sdk-review-session, sdk-document-rollback, and sdk-doc-sync (resume, create, and the
+      acceptance finalizer), closing the last gap in the durability contract; **localized** runs
+      five transitions through `LOCALIZATION_MACHINE` (the finalized idempotent-retry pre-check
+      stays skill-side; `SESSION_FINALIZED` unified to `SESSION_TERMINAL`); **procedure** and
+      **authoring** run their lifecycles through `PROCEDURE_MACHINE`/`AUTHORING_MACHINE`
+      (editorial decisions are a `'@self'` transition refusing accepted sessions); and
+      **verification (doc-code-verify)** puts its in-memory `RuntimeSession` lifecycle
+      (`ready → executing → completed` terminal) on the same machine — observe-after-complete
+      and double-finalize now refuse instead of relying on journal-layer guards. Scope notes:
+      per-skill session schemas stay skill-specific by design; localized/procedure/authoring
+      sessions gain the machine's `updatedAt` stamp (api already stamped it); doc-code-verify
+      has no persisted review session — its durable authority remains the execution journal,
+      which the machine now mirrors explicitly. Known local-run friction (pre-existing #43
+      behavior, working as designed): run-manifest evidence under `tmp/` is keyed by
+      batchDigest while its content covers the source fingerprint, so re-running suites after
+      source edits refuses with `RUN_MANIFEST_EVIDENCE_CONFLICT` until the stale evidence is
+      moved aside; fresh CI runners never see it.
 
 ### P2 — runtime proof beyond offline determinism
 

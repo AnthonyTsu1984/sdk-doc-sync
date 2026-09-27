@@ -7,7 +7,7 @@ const path = require('node:path');
 
 const {
   buildSessionAcceptance,
-  loadReviewSession,
+  loadReviewSessionState,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentChangesRequested,
@@ -83,7 +83,8 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   const args = parseArgs(argv);
   requireValue(args, 'session');
   const sessionPath = path.resolve(args.session);
-  let session = loadReviewSession(sessionPath);
+  const { session: loadedSession, sessionDigest } = loadReviewSessionState(sessionPath);
+  let session = loadedSession;
 
   if (args.command === 'request-document-changes') {
     for (const required of ['reviewUnitId']) {
@@ -93,7 +94,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       reviewUnitId: args.reviewUnitId,
       reason: args.reason || null,
     });
-    saveReviewSession(sessionPath, session);
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
     const summary0 = status(session, sessionPath);
     out(`Change request recorded: ${args.reviewUnitId}`);
     out(`Unit returned to reviewed planning; rebuild it and request a new write approval.`);
@@ -116,10 +117,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       recordLinks: args.recordLinks,
       commentsResolved: true,
     });
-    saveReviewSession(sessionPath, session);
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
   } else if (args.command === 'build-acceptance') {
     session = buildSessionAcceptance(session);
-    saveReviewSession(sessionPath, session);
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
   } else if (args.command === 'record-finalization') {
     requireValue(args, 'acceptanceJournal');
     requireValue(args, 'acceptanceJournalDigest');
@@ -127,7 +128,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       acceptanceJournalPath: path.resolve(args.acceptanceJournal),
       acceptanceJournalDigest: args.acceptanceJournalDigest,
     });
-    saveReviewSession(sessionPath, session);
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
   } else if (args.command === 'record-decision') {
     for (const required of ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest']) {
       requireValue(args, required);

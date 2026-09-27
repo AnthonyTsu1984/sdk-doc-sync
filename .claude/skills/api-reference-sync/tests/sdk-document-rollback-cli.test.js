@@ -48,7 +48,7 @@ function sessionFile(directory) {
     executionJournalDigest: execution.digest,
   });
   const sessionPath = path.join(directory, 'session.json');
-  saveReviewSession(sessionPath, session);
+  saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
   return { session, sessionPath, execution };
 }
 

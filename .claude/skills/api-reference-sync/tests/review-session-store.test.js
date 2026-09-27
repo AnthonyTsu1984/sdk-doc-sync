@@ -98,7 +98,7 @@ test('review session persists exactly one active execution across processes', ()
   });
 
   const active = withExecution(initial, journal);
-  saveReviewSession(sessionPath, active);
+  saveReviewSession(sessionPath, active, { expectedPreviousDigest: null });
   const restored = loadReviewSession(sessionPath);
 
   assert.equal(restored.activeExecution.reviewUnitId, 'review:node:Collections:a');
@@ -171,7 +171,7 @@ test('review session persists a digest-bound accepted-document receipt across pr
     commentsResolved: true,
     acceptedAt: '2026-08-06T10:00:00.000Z',
   });
-  saveReviewSession(sessionPath, accepted);
+  saveReviewSession(sessionPath, accepted, { expectedPreviousDigest: null });
   const restored = loadReviewSession(sessionPath);
 
   assert.deepEqual(restored.acceptedReviewUnits.map((unit) => unit.reviewUnitId), [

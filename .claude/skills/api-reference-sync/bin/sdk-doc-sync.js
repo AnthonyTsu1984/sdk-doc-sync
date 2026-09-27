@@ -34,7 +34,7 @@ const {
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 const {
     createReviewSession,
-    loadReviewSession,
+    loadReviewSessionState,
     recordDocumentExecution,
     saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -568,9 +568,10 @@ async function runCli({
 
     const language = args.language || 'python';
     let reviewSession = null;
+    let resumeSessionDigest = null;
     if (args.resumeSession) {
         try {
-            reviewSession = loadReviewSession(path.resolve(args.resumeSession));
+            ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(path.resolve(args.resumeSession)));
         } catch (error) {
             err(`Error: ${error.message}`);
             exit(1);
@@ -724,7 +725,7 @@ async function runCli({
             executionJournalPath: result.executionJournalPath,
             executionJournalDigest: result.executionJournalDigest,
         });
-        saveReviewSession(sessionPath, reviewSession);
+        saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
         result.reviewSession = {
             ...(result.reviewSession || {}),
             sessionId: reviewSession.sessionId,
@@ -762,7 +763,7 @@ async function runCli({
                 summaryJson: args.summaryJson ? path.resolve(args.summaryJson) : null,
             },
         });
-        saveReviewSession(sessionPath, session);
+        saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
         result.reviewSession = {
             sessionId: session.sessionId,
             sessionPath,
@@ -869,7 +870,7 @@ async function finalizeAcceptance({
     io = {},
 }) {
     const {
-        loadReviewSession,
+        loadReviewSessionState,
         recordAcceptanceFinalization,
         saveReviewSession,
     } = require('../src/sdk-doc-sync/review-session-store');
@@ -913,8 +914,9 @@ async function finalizeAcceptance({
     }
 
     let session;
+    let sessionDigest;
     try {
-        session = loadReviewSession(sessionPath);
+        ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
     } catch (error) {
         err(`Error: canonical review session is unavailable: ${error.message}`);
         exit(1);
@@ -1013,7 +1015,7 @@ async function finalizeAcceptance({
             acceptanceJournalPath: receiptArtifact.path,
             acceptanceJournalDigest: receiptArtifact.digest,
         });
-        saveReviewSession(sessionPath, finalized);
+        saveReviewSession(sessionPath, finalized, { expectedPreviousDigest: sessionDigest });
         out('Acceptance finalized from the canonical session (invariant evidence derived from the accepted-unit manifest and execution journals):');
         out(JSON.stringify({
             acceptanceManifestDigest: session.acceptanceManifestDigest,

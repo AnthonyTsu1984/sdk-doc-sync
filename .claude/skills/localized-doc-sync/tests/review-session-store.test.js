@@ -289,19 +289,19 @@ test('a finalized session is terminal: mutations are refused and re-finalization
   // Every mutation refuses the terminal state...
   assert.throws(
     () => recordUnitExecution(finalized, { reviewUnitId: 'unit:a', journalPath, journalDigest: digestSemantic(entries) }),
-    (error) => error.code === 'SESSION_FINALIZED',
+    (error) => error.code === 'SESSION_TERMINAL',
   );
   assert.throws(
     () => recordUnitAcceptance(finalized, { reviewUnitId: 'unit:a', acceptanceDecisionDigest: C }),
-    (error) => error.code === 'SESSION_FINALIZED',
+    (error) => error.code === 'SESSION_TERMINAL',
   );
   assert.throws(
     () => recordAffectedRescan(finalized, { reviewUnitId: 'unit:a', scanManifest: manifestFixture() }),
-    (error) => error.code === 'SESSION_FINALIZED',
+    (error) => error.code === 'SESSION_TERMINAL',
   );
   assert.throws(
     () => recordUnitRollback(finalized, { reviewUnitId: 'unit:a', journalPath, journalDigest: digestSemantic(entries) }),
-    (error) => error.code === 'SESSION_FINALIZED',
+    (error) => error.code === 'SESSION_TERMINAL',
   );
 
   // ...and a second finalize is idempotent for the SAME final manifest but
@@ -317,7 +317,7 @@ test('a finalized session is terminal: mutations are refused and re-finalization
   assert.notEqual(otherManifest.semanticDigest, finalized.finalScanManifestDigest);
   assert.throws(
     () => finalizeLocalizationSession(finalized, { scanManifest: otherManifest }),
-    (error) => error.code === 'SESSION_FINALIZED',
+    (error) => error.code === 'SESSION_TERMINAL',
   );
   assert.equal(finalized.status, 'finalized');
   assert.equal(finalized.finalScanManifestDigest, manifestFixture().semanticDigest);

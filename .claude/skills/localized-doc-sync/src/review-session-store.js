@@ -5,6 +5,26 @@ const path = require('node:path');
 const { canonicalize } = require('../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { saveState, loadState, SessionStoreError } = require('../../doc-ops-core/src/session-store');
+const {
+  SessionStateMachineError,
+  defineSessionMachine,
+} = require('../../doc-ops-core/src/session-state-machine');
+
+// The localization lifecycle (6.6): every transition's legality and the
+// terminal state's immutability live in the shared machine; this store keeps
+// only the evidence validation (journals, scan manifests, Base binding).
+const LOCALIZATION_MACHINE = defineSessionMachine({
+  name: 'localized-doc-sync:review',
+  initial: 'queue_ready',
+  terminal: 'finalized',
+  transitions: {
+    recordUnitExecution: { from: ['queue_ready', 'rescan_required'], to: 'acceptance_pending' },
+    recordUnitAcceptance: { from: ['acceptance_pending'], to: 'rescan_required' },
+    recordAffectedRescan: { from: ['queue_ready', 'rescan_required'], to: 'queue_ready' },
+    recordUnitRollback: { from: ['queue_ready', 'acceptance_pending', 'rescan_required'], to: 'queue_ready' },
+    finalizeLocalization: { from: ['queue_ready'], to: 'finalized' },
+  },
+});
 
 function clone(value) { return structuredClone(value); }
 
@@ -44,19 +64,6 @@ function readCompletedJournal(journalPath, expectedDigest) {
   return { resolved, entries };
 }
 
-// `finalized` is terminal: no transition may revive a session whose evidence
-// has been accepted as final (the terminal state was previously rewriteable
-// through every mutation, including a second finalize with a different
-// manifest).
-function assertNotFinalized(session) {
-  if (session.status === 'finalized') {
-    throw Object.assign(
-      new Error(`Session ${session.sessionId} is finalized with scan ${session.finalScanManifestDigest}; its evidence is immutable`),
-      { code: 'SESSION_FINALIZED' },
-    );
-  }
-}
-
 function verifyScanManifestIntegrity(scanManifest, { staleCode }) {
   const { scanEpochId, semanticDigest, ...semanticInput } = scanManifest;
   if (!semanticDigest
@@ -85,16 +92,18 @@ function assertManifestBasesBound(session, scanManifest, code) {
 }
 
 function recordUnitExecution(session, { reviewUnitId, journalPath, journalDigest }) {
-  assertNotFinalized(session);
+  LOCALIZATION_MACHINE.assertTransition('recordUnitExecution', session);
   if (session.activeUnit) throw new Error('Another review unit is active');
   if (session.acceptedUnitIds.includes(reviewUnitId)) throw new Error('Review unit is already accepted');
   if (!session.reviewUnits.some((unit) => unit.reviewUnitId === reviewUnitId)) throw new Error(`Unknown review unit: ${reviewUnitId}`);
   const journal = readCompletedJournal(journalPath, journalDigest);
-  return Object.freeze({ ...clone(session), status: 'acceptance_pending', activeUnit: { reviewUnitId, journalPath: journal.resolved, journalDigest } });
+  return LOCALIZATION_MACHINE.apply('recordUnitExecution', session, {
+    activeUnit: { reviewUnitId, journalPath: journal.resolved, journalDigest },
+  });
 }
 
 function recordUnitAcceptance(session, { reviewUnitId, acceptanceDecisionDigest, translationReceiptDigest = null }) {
-  assertNotFinalized(session);
+  LOCALIZATION_MACHINE.assertTransition('recordUnitAcceptance', session);
   if (session.activeUnit?.reviewUnitId !== reviewUnitId) throw new Error('Acceptance must match the active executed unit');
   readCompletedJournal(session.activeUnit.journalPath, session.activeUnit.journalDigest);
   const receipt = {
@@ -103,9 +112,7 @@ function recordUnitAcceptance(session, { reviewUnitId, acceptanceDecisionDigest,
     acceptanceDecisionDigest,
     translationReceiptDigest,
   };
-  return Object.freeze({
-    ...clone(session),
-    status: 'rescan_required',
+  return LOCALIZATION_MACHINE.apply('recordUnitAcceptance', session, {
     activeUnit: null,
     acceptedUnitIds: [...session.acceptedUnitIds, reviewUnitId].sort(),
     acceptanceReceipts: [...session.acceptanceReceipts, receipt].sort((a, b) => a.reviewUnitId.localeCompare(b.reviewUnitId)),
@@ -121,7 +128,7 @@ function recordUnitAcceptance(session, { reviewUnitId, acceptanceDecisionDigest,
 // table cannot prove its issues are gone), and DERIVES the closed issues as
 // the unit's declared issues absent from the rescan's own issue queue.
 function recordAffectedRescan(session, { reviewUnitId, scanManifest }) {
-  assertNotFinalized(session);
+  LOCALIZATION_MACHINE.assertTransition('recordAffectedRescan', session);
   if (session.activeUnit) throw new Error('Another review unit is active');
   if (!session.acceptedUnitIds.includes(reviewUnitId)) throw new Error('Only accepted units may close issues by rescan');
   if (!scanManifest || typeof scanManifest !== 'object') {
@@ -135,16 +142,14 @@ function recordAffectedRescan(session, { reviewUnitId, scanManifest }) {
   const unit = session.reviewUnits.find((entry) => entry.reviewUnitId === reviewUnitId);
   const presentIssueIds = new Set((scanManifest.issues || []).map((issue) => issue.issueId).filter(Boolean));
   const closedIssueIds = (unit.issueIds || []).filter((issueId) => !presentIssueIds.has(issueId));
-  return Object.freeze({
-    ...clone(session),
-    status: 'queue_ready',
+  return LOCALIZATION_MACHINE.apply('recordAffectedRescan', session, {
     affectedRescans: [...session.affectedRescans, { reviewUnitId, scanManifestDigest: rescanDigest, closedIssueIds }]
       .sort((a, b) => a.reviewUnitId.localeCompare(b.reviewUnitId)),
   });
 }
 
 function recordUnitRollback(session, { reviewUnitId, journalPath, journalDigest }) {
-  assertNotFinalized(session);
+  LOCALIZATION_MACHINE.assertTransition('recordUnitRollback', session);
   const resolved = path.resolve(journalPath || '');
   if (!fs.existsSync(resolved)) throw new Error('Rollback journal is missing');
   const entries = fs.readFileSync(resolved, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
@@ -161,9 +166,7 @@ function recordUnitRollback(session, { reviewUnitId, journalPath, journalDigest 
   }
   const unit = session.reviewUnits.find((entry) => entry.reviewUnitId === reviewUnitId);
   if (!unit) throw new Error(`Unknown review unit: ${reviewUnitId}`);
-  return Object.freeze({
-    ...clone(session),
-    status: 'queue_ready',
+  return LOCALIZATION_MACHINE.apply('recordUnitRollback', session, {
     activeUnit: session.activeUnit?.reviewUnitId === reviewUnitId ? null : clone(session.activeUnit),
     acceptedUnitIds: session.acceptedUnitIds.filter((id) => id !== reviewUnitId),
     acceptanceReceipts: session.acceptanceReceipts.filter((entry) => entry.reviewUnitId !== reviewUnitId),
@@ -202,9 +205,10 @@ function finalizeLocalizationSession(session, { scanManifest }) {
     // rewriting the recorded final evidence.
     const semanticDigest = verifyScanManifestIntegrity(scanManifest, { staleCode: 'FINAL_SCAN_MANIFEST_STALE' });
     if (semanticDigest === session.finalScanManifestDigest) return session;
-    throw Object.assign(
-      new Error(`Session ${session.sessionId} is already finalized with scan ${session.finalScanManifestDigest}; finalization cannot be rewritten`),
-      { code: 'SESSION_FINALIZED' },
+    throw new SessionStateMachineError(
+      'SESSION_TERMINAL',
+      `session ${session.sessionId} is terminal (finalized) with scan ${session.finalScanManifestDigest}; finalization cannot be rewritten`,
+      { machine: LOCALIZATION_MACHINE.name, terminal: 'finalized', sessionId: session.sessionId },
     );
   }
   const rescanned = new Set(session.affectedRescans.map(entry => entry.reviewUnitId));
@@ -256,7 +260,7 @@ function finalizeLocalizationSession(session, { scanManifest }) {
       { code: 'FINAL_SCAN_STALE' },
     );
   }
-  return Object.freeze({ ...clone(session), status: 'finalized', finalScanManifestDigest: semanticDigest });
+  return LOCALIZATION_MACHINE.apply('finalizeLocalization', session, { finalScanManifestDigest: semanticDigest });
 }
 
 // Session persistence goes through the shared durable store: lock-bracketed
@@ -281,6 +285,8 @@ function loadLocalizationSessionState(filePath) {
 }
 
 module.exports = {
+  LOCALIZATION_MACHINE,
+  SessionStateMachineError,
   createLocalizationSession,
   finalizeLocalizationSession,
   loadLocalizationSession,

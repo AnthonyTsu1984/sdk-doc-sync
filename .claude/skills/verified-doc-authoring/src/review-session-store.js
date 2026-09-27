@@ -5,12 +5,27 @@ const path = require('node:path');
 const { canonicalStringify, canonicalize } = require('../../doc-ops-core/src/canonical-json');
 const { loadState, saveState } = require('../../doc-ops-core/src/session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { SAME_STATE, defineSessionMachine } = require('../../doc-ops-core/src/session-state-machine');
 
 const EDITORIAL_CATEGORIES = Object.freeze(['placement', 'style', 'factual', 'example', 'rendering']);
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
 }
+
+// The authoring lifecycle (6.6): transition legality and terminal-state
+// immutability live in the shared machine; this store keeps the evidence
+// validation (rollback manifests, execution/verifier digests).
+const AUTHORING_MACHINE = defineSessionMachine({
+  name: 'verified-doc-authoring:review',
+  initial: 'approval_ready',
+  terminal: 'accepted',
+  transitions: {
+    recordAuthoringExecution: { from: ['approval_ready'], to: 'acceptance_pending' },
+    recordAuthoringAcceptance: { from: ['acceptance_pending'], to: 'accepted' },
+    recordEditorialDecision: { from: ['approval_ready', 'acceptance_pending'], to: SAME_STATE },
+  },
+});
 
 function createAuthoringSession({ sessionId, plan }) {
   if (!sessionId || !plan?.planDigest) throw new TypeError('sessionId and plan are required');
@@ -34,13 +49,13 @@ function createAuthoringSession({ sessionId, plan }) {
 }
 
 function recordAuthoringExecution(session, execution) {
-  if (session.status !== 'approval_ready' || execution?.reviewUnitId !== session.reviewUnitId || execution.planDigest !== session.planDigest) {
+  if (execution?.reviewUnitId !== session.reviewUnitId || execution.planDigest !== session.planDigest) {
     throw typedError('EXECUTION_SESSION_MISMATCH', 'Authoring execution does not match the approval-ready session');
   }
   if (execution.status !== 'ACCEPTANCE_REQUIRED' || !execution.executionJournalDigest || !execution.liveResultDigest) {
     throw typedError('EXECUTION_EVIDENCE_REQUIRED', 'Verified execution evidence is required');
   }
-  return Object.freeze({ ...structuredClone(session), status: 'acceptance_pending', execution: structuredClone(execution) });
+  return AUTHORING_MACHINE.apply('recordAuthoringExecution', session, { execution: structuredClone(execution) });
 }
 
 // The caller supplies the whole corrective rollback manifest; the digest is
@@ -89,14 +104,11 @@ function verifyRollbackManifest(session, rollbackManifest) {
 }
 
 function recordAuthoringAcceptance(session, { executionJournalDigest, liveResultDigest, decisionDigest, rollbackManifest }) {
-  if (session.status !== 'acceptance_pending') throw typedError('ACCEPTANCE_NOT_PENDING', 'Authoring acceptance is not pending');
   const rollbackManifestDigest = verifyRollbackManifest(session, rollbackManifest);
   if (executionJournalDigest !== session.execution.executionJournalDigest || liveResultDigest !== session.execution.liveResultDigest) {
     throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance is bound to different execution evidence');
   }
-  return Object.freeze({
-    ...structuredClone(session),
-    status: 'accepted',
+  return AUTHORING_MACHINE.apply('recordAuthoringAcceptance', session, {
     acceptanceReceipt: canonicalize({
       executionJournalDigest,
       liveResultDigest,
@@ -112,11 +124,6 @@ function recordEditorialDecision(session, { decisionId, category, instruction, b
   if (!decisionId || !EDITORIAL_CATEGORIES.includes(category) || !instruction || !beforeDigest || !afterDigest) {
     throw new TypeError('decisionId, supported category, instruction, beforeDigest, and afterDigest are required');
   }
-  if (session.status === 'accepted') {
-    // The accepted session is terminal evidence; editorial candidates belong
-    // to the pre-acceptance review and may not be appended afterwards.
-    throw typedError('SESSION_ACCEPTED', 'Editorial candidates cannot be recorded on an accepted session');
-  }
   if ((session.editorialCandidates || []).some((candidate) => candidate.decisionId === decisionId)) throw new Error(`Duplicate editorial decision: ${decisionId}`);
   const candidate = canonicalize({
     decisionId,
@@ -128,7 +135,9 @@ function recordEditorialDecision(session, { decisionId, category, instruction, b
     automaticPromotion: false,
   });
   candidate.candidateDigest = digestSemantic(candidate);
-  return Object.freeze({ ...structuredClone(session), editorialCandidates: [...(session.editorialCandidates || []), candidate] });
+  return AUTHORING_MACHINE.apply('recordEditorialDecision', session, {
+    editorialCandidates: [...(session.editorialCandidates || []), candidate],
+  });
 }
 
 // Session persistence goes through the shared durable store (6.6): lock-
@@ -156,6 +165,7 @@ function loadAuthoringSession(filePath) {
 }
 
 module.exports = {
+  AUTHORING_MACHINE,
   EDITORIAL_CATEGORIES,
   createAuthoringSession,
   loadAuthoringSession,

@@ -79,7 +79,7 @@ test('record-decision appends feedback but leaves the persisted session byte-ide
     sdkName: 'node',
     track: 'v3.0.x',
     reviewUnitManifest: manifest(),
-  }));
+  }), { expectedPreviousDigest: null });
   const before = fs.readFileSync(sessionPath, 'utf8');
   const stdout = [];
 
@@ -131,7 +131,7 @@ test('review-session CLI persists a journal-derived receipt and builds final acc
     reviewUnitId: 'review:node:Collections:a',
     executionJournalPath: journalPath,
     executionJournalDigest: digestSemantic(entries),
-  }));
+  }), { expectedPreviousDigest: null });
   const stdout = [];
 
   await runCli({

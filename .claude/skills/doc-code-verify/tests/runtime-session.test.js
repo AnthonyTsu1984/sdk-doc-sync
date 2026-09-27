@@ -46,3 +46,24 @@ test('runtime session completes only after mutation and cleanup observations are
   assert.deepEqual(result.residualResources, []);
   assert.match(result.runtimeJournalDigest, /^sha256:/);
 });
+
+test('a completed runtime session is terminal on the shared machine (6.6)', () => {
+  const runtimeManifest = manifest();
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'runtime-session-terminal-'));
+  const session = new RuntimeSession({ manifest: runtimeManifest, journalPath: path.join(directory, 'runtime.jsonl') });
+  session.prepare();
+  for (const action of runtimeManifest.actions) session.observe({ actionId: action.actionId, status: 'success', verified: true });
+  session.finalize();
+
+  // Every further transition refuses the terminal state — no observation may
+  // be appended past the completion sentinel, no second completion written.
+  const create = runtimeManifest.actions.find((action) => action.sideEffectClass === 'create');
+  assert.throws(
+    () => session.observe({ actionId: create.actionId, status: 'success', verified: true }),
+    (error) => error.code === 'SESSION_TERMINAL',
+  );
+  assert.throws(() => session.finalize(), (error) => error.code === 'SESSION_TERMINAL');
+  const fresh = new RuntimeSession({ manifest: runtimeManifest, journalPath: path.join(directory, 'runtime-2.jsonl') });
+  fresh.prepare();
+  assert.throws(() => fresh.prepare(), (error) => error.code === 'INVALID_TRANSITION_SOURCE');
+});

@@ -425,24 +425,59 @@ test('canonical CLI finalizes a session from evidence: manifest digest verificat
     sessionId: 'localization:cli-finalize',
     scanManifestDigest: 'sha256:' + 'a'.repeat(64),
     reviewUnits: [{ reviewUnitId: 'unit:a', issueIds: ['issue:a'], requiresDocumentAcceptance: true }],
+    sourceBaseToken: 'en',
+    targetBaseToken: 'zh',
   });
   saveLocalizationSession(sessionPath, {
     ...recordAffectedRescan(
       { ...session, acceptedUnitIds: ['unit:a'] },
-      { reviewUnitId: 'unit:a', scanManifestDigest: 'sha256:' + 'b'.repeat(64), closedIssueIds: ['issue:a'] },
+      { reviewUnitId: 'unit:a', scanManifest: finalManifest },
     ),
-  });
+  }, { expectedPreviousDigest: null });
 
   await runCli({ argv: ['node', 'localized-doc-sync', 'finalize', '--session', sessionPath, '--scan-manifest', manifestPath], dependencies: { onStdout() {} } });
   const finalized = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
   assert.equal(finalized.status, 'finalized');
   assert.equal(finalized.finalScanManifestDigest, finalManifest.semanticDigest);
 
-  // A tampered final manifest is refused at the CLI boundary too.
+  // Re-finalizing with the SAME manifest is an idempotent retry.
+  await runCli({ argv: ['node', 'localized-doc-sync', 'finalize', '--session', sessionPath, '--scan-manifest', manifestPath], dependencies: { onStdout() {} } });
+  assert.deepEqual(JSON.parse(fs.readFileSync(sessionPath, 'utf8')), finalized);
+
+  // A tampered manifest is refused on integrity even against the terminal
+  // state (it still carries the recorded digest field, so the store verifies
+  // the content BEFORE comparing digests).
   const tamperedPath = path.join(directory, 'tampered-scan.json');
   writeJson(tamperedPath, { ...finalManifest, localePolicyDigest: 'sha256:' + 'f'.repeat(64) });
   await assert.rejects(
     () => runCli({ argv: ['node', 'localized-doc-sync', 'finalize', '--session', sessionPath, '--scan-manifest', tamperedPath], dependencies: { onStdout() {} } }),
+    (error) => error.code === 'FINAL_SCAN_MANIFEST_STALE',
+  );
+
+  // A VALID manifest describing different content can no longer substitute
+  // for the recorded final evidence either.
+  const otherManifest = buildScanManifest({
+    ...finalManifest,
+    sourceBase: { ...finalManifest.sourceBase, revision: 999 },
+  });
+  assert.notEqual(otherManifest.semanticDigest, finalManifest.semanticDigest);
+  const otherPath = path.join(directory, 'other-scan.json');
+  writeJson(otherPath, otherManifest);
+  await assert.rejects(
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'finalize', '--session', sessionPath, '--scan-manifest', otherPath], dependencies: { onStdout() {} } }),
+    (error) => error.code === 'SESSION_FINALIZED',
+  );
+
+  // For a session that is NOT yet finalized, the tampered manifest is still
+  // refused at the CLI boundary on its own merits.
+  const openPath = path.join(directory, 'open-session.json');
+  saveLocalizationSession(openPath, {
+    ...session,
+    acceptedUnitIds: ['unit:a'],
+    affectedRescans: [{ reviewUnitId: 'unit:a', scanManifestDigest: finalManifest.semanticDigest, closedIssueIds: ['issue:a'] }],
+  }, { expectedPreviousDigest: null });
+  await assert.rejects(
+    () => runCli({ argv: ['node', 'localized-doc-sync', 'finalize', '--session', openPath, '--scan-manifest', tamperedPath], dependencies: { onStdout() {} } }),
     (error) => error.code === 'FINAL_SCAN_MANIFEST_STALE',
   );
 });

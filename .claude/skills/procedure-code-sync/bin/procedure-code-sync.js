@@ -11,7 +11,7 @@ const { buildProcedurePatchPlan } = require('../src/patch-planner');
 const { executeProcedurePatch, planProcedureRollback } = require('../src/patch-executor');
 const {
   createProcedureSession,
-  loadProcedureSession,
+  loadProcedureSessionState,
   recordPatchAcceptance,
   recordPatchExecution,
   saveProcedureSession,
@@ -73,7 +73,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const unsupportedGaps = Array.isArray(requested) ? [] : requested.unsupportedGaps || [];
     const plan = buildProcedurePatchPlan({ snapshot, operations, unsupportedGaps });
     writeJson(args.output, plan);
-    saveProcedureSession(args.session, createProcedureSession({ sessionId: args.sessionId, plan }));
+    saveProcedureSession(args.session, createProcedureSession({ sessionId: args.sessionId, plan }), { expectedPreviousDigest: null });
     out(`Procedure patch plan: ${plan.planDigest}`);
     out(`If approved, reply exactly: APPROVE_WRITES procedure-code-sync ${plan.actionBatch.batchDigest}`);
     return plan;
@@ -82,7 +82,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'execute') {
     for (const name of ['plan', 'approval', 'journal', 'output', 'session']) requireValue(args, name);
     const plan = readJson(args.plan);
-    const session = loadProcedureSession(args.session);
+    const { session, sessionDigest } = loadProcedureSessionState(args.session);
     if (session.planDigest !== plan.planDigest || session.status !== 'approval_ready') {
       throw Object.assign(
         new Error('Review session is not approval-ready for this exact plan'),
@@ -97,7 +97,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       verifier: loadVerifier(args, dependencies),
     });
     writeJson(args.output, result);
-    saveProcedureSession(args.session, recordPatchExecution(session, result));
+    saveProcedureSession(args.session, recordPatchExecution(session, result), { expectedPreviousDigest: sessionDigest });
     out(`Execution status: ${result.status}`);
     out(`Verifier result: ${result.verifierResultDigest}`);
     return result;
@@ -105,13 +105,13 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 
   if (args.command === 'accept') {
     for (const name of ['session', 'decisionDigest']) requireValue(args, name);
-    const session = loadProcedureSession(args.session);
+    const { session, sessionDigest } = loadProcedureSessionState(args.session);
     const accepted = recordPatchAcceptance(session, {
       executionJournalDigest: session.execution?.executionJournalDigest,
       verifierResultDigest: session.execution?.verifierResultDigest,
       decisionDigest: args.decisionDigest,
     });
-    saveProcedureSession(args.session, accepted);
+    saveProcedureSession(args.session, accepted, { expectedPreviousDigest: sessionDigest });
     if (args.output) writeJson(args.output, accepted.acceptanceReceipt);
     out(`Procedure document accepted: ${accepted.reviewUnitId}`);
     return accepted;

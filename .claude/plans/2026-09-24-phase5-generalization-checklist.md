@@ -585,12 +585,15 @@ not scheduled.**
       the manifest boundary until wave 2 rewires them — **this item is back to OPEN with that
       boundary stated above.** (3) acceptance-finalizer still swallowed manifest-artifact
       persistence failures; now fail-closed like every other path.
-- [x] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
+- [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over
       all accepted units; a durable acceptance receipt makes crash retry idempotent; the session
       flips to `finalized` last — hardened across PR #22's five review rounds). Extract it into
       `doc-ops-core` and adopt it in localization / authoring / procedure / verification.
+      **OPEN — the `[x]` was withdrawn at independent review (2026-09-27): what shipped is the
+      durability + derivation layer below; the state-machine extraction itself (api's machine
+      into `doc-ops-core`, four-skill adoption incl. doc-code-verify) is NOT delivered.**
       Specifically for `localized-doc-sync`:
       - `finalizeLocalizationSession` trusts caller booleans and a caller-supplied
         `finalScanManifestDigest` (`src/review-session-store.js:107`): `fullInventory`,
@@ -624,6 +627,42 @@ not scheduled.**
       durability + derivation layer; per-skill session schemas stay skill-specific (api's
       richer accepted-unit manifest machine from PR #22 remains the reference for what a
       finalization must recompute).
+
+      6.6 review round 2 (2026-09-27, same branch): independent review proved three
+      counterexamples against that delivery, all in the same class — the terminality and
+      evidence-binding layers were missing — and all are now fixed:
+      - **CAS was check-then-act, not atomic**: the digest check sat outside any mutual
+        exclusion, so two writers could both pass the same stale digest and the later rename
+        clobber the earlier one (and a missing file skipped the check entirely — two
+        concurrent creators both succeeded). `saveState` now brackets
+        digest-check + tmp-write + rename + directory-fsync in an exclusive `.lock` directory
+        (mkdir-atomic, pid-liveness + TTL stale reclaim, `SESSION_LOCK_CONTENDED` on live
+        contention), re-reads the on-disk state INSIDE the lock, and makes the expectation
+        mandatory: `null` asserts a create (`SESSION_STATE_EXISTS` on an existing file), a
+        digest asserts the loaded state (`SESSION_STATE_DIGEST_MISMATCH`), omitting it is a
+        typed refusal (`SESSION_EXPECTED_DIGEST_REQUIRED`). Lost-update detection is no longer
+        opt-in and no longer dead wiring: procedure and authoring CLIs now load-with-digest →
+        save-with-digest at every mutation. Regression tests race two real child processes
+        (create race, same-base-digest update race) — exactly one lands, the loser gets a
+        typed error, no residue.
+      - **Finalization was not bound to the session's Base pair**: a self-consistent manifest
+        produced against a different Base finalized the session; the schema recorded no Base
+        identity and per-rescan digests were write-only dead evidence. Sessions now carry
+        `baseBinding {sourceBaseToken, targetBaseToken}` (creation requires it;
+        `SESSION_BASE_UNBOUND` otherwise), finalize and rescan bind manifests to it
+        (`FINAL_SCAN_BASE_MISMATCH` / `RESCAN_BASE_MISMATCH`), and the final scan's issue
+        queue may not still list an issue the session declared or closed
+        (`FINAL_SCAN_ISSUE_STILL_PRESENT`). `recordAffectedRescan` now takes the rescan
+        manifest OBJECT and verifies digest+epoch+Base+completeness before deriving
+        `closedIssueIds` as declared-minus-present — caller-asserted closures are gone
+        (`RESCAN_MANIFEST_STALE` / `RESCAN_INVENTORY_INCOMPLETE`).
+      - **A finalized session could be rewritten**: no transition checked `status`, and a
+        second finalize with any new manifest overwrote the recorded final scan. Every
+        mutation now refuses `finalized` (`SESSION_FINALIZED`); re-finalization verifies the
+        manifest on its own merits first (a tampered object still carrying the recorded
+        digest field fails integrity, not the comparison) and is idempotent only for the
+        verified-equal final manifest. Authoring's `recordEditorialDecision` likewise refuses
+        accepted sessions (`SESSION_ACCEPTED`).
 
 ### P2 — runtime proof beyond offline determinism
 

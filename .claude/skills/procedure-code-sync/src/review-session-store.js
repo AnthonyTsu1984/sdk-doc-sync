@@ -1,10 +1,9 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
 
 const { canonicalStringify } = require('../../doc-ops-core/src/canonical-json');
-const { saveState } = require('../../doc-ops-core/src/session-store');
+const { loadState, saveState } = require('../../doc-ops-core/src/session-store');
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -49,9 +48,12 @@ function recordPatchAcceptance(session, { executionJournalDigest, verifierResult
   });
 }
 
-// Session persistence goes through the shared durable store (6.6): atomic
-// replace with file+directory fsync and optional lost-update detection.
-function saveProcedureSession(filePath, session, { expectedPreviousDigest = null } = {}) {
+// Session persistence goes through the shared durable store (6.6): lock-
+// bracketed compare-and-set, atomic replace with file+directory fsync, and
+// mandatory lost-update detection — every caller passes the digest of the
+// state it loaded (or null to create) so a concurrent writer's change
+// refuses the save instead of being clobbered.
+function saveProcedureSession(filePath, session, { expectedPreviousDigest } = {}) {
   if (!filePath || !session?.sessionId) throw new TypeError('filePath and session are required');
   return saveState(filePath, session, {
     expectedPreviousDigest,
@@ -60,18 +62,23 @@ function saveProcedureSession(filePath, session, { expectedPreviousDigest = null
   });
 }
 
-function loadProcedureSession(filePath) {
+function loadProcedureSessionState(filePath) {
   const resolved = path.resolve(filePath || '');
-  const session = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (session?.schemaVersion !== 1 || !session.sessionId || !session.planDigest) {
+  const { state, stateDigest } = loadState(resolved);
+  if (state?.schemaVersion !== 1 || !state.sessionId || !state.planDigest) {
     throw new Error(`Invalid procedure review session: ${resolved}`);
   }
-  return session;
+  return { session: state, sessionDigest: stateDigest };
+}
+
+function loadProcedureSession(filePath) {
+  return loadProcedureSessionState(filePath).session;
 }
 
 module.exports = {
   createProcedureSession,
   loadProcedureSession,
+  loadProcedureSessionState,
   recordPatchAcceptance,
   recordPatchExecution,
   saveProcedureSession,

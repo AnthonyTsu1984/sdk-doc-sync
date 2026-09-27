@@ -32,9 +32,24 @@ function isPolicyError(error) {
     );
 }
 
-// Executed-action state lives behind a WeakMap: a caller holding the batch
-// cannot reset the one-shot guard (same hardening as WriterGovernance).
+// Executed-action and binding state live behind a WeakMap: a caller holding
+// the batch cannot reset the one-shot guard or re-bind (same hardening as
+// WriterGovernance).
 const EXECUTED = new WeakMap();
+const BIND_STATE = new WeakMap();
+
+// Round-4 review fix: an approved batch may be bound exactly once, and only
+// through a bind that received the approved digest. assertApproved() alone is
+// a call convention — the structural gate is that bind() refuses to mint the
+// envelope without the digest itself.
+function approvalState(batch) {
+    let state = BIND_STATE.get(batch);
+    if (!state) {
+        state = { approved: false, bound: false };
+        BIND_STATE.set(batch, state);
+    }
+    return state;
+}
 
 class GovernedPostActionBatch {
     // actions: [{ documentId, requests: [{ block_id, update_text_elements }] }]
@@ -80,7 +95,8 @@ class GovernedPostActionBatch {
     }
 
     // The operator confirms the exact planned batch. A missing or mismatched
-    // digest is a typed refusal — nothing binds, nothing writes.
+    // digest is a typed refusal — nothing binds, nothing writes. Success is
+    // recorded in private state; bind() re-checks it structurally.
     assertApproved(approvedDigest) {
         if (typeof approvedDigest !== 'string' || !approvedDigest.trim()) {
             throw new GovernedPostActionError(
@@ -96,13 +112,27 @@ class GovernedPostActionBatch {
                 { batchDigest: this.batchDigest, approvedDigest: approvedDigest.trim() },
             );
         }
+        approvalState(this).approved = true;
         return true;
     }
 
     // Bind approval + manifest over the SAME operator-confirmed digest and
-    // open a fresh per-run journal. Artifact persistence is fail-closed: a
-    // manifest that cannot be written stops the run before the first mutation.
-    bind({ repoRoot }) {
+    // open a fresh per-run journal. The approved digest is a REQUIRED
+    // argument: calling bind without it (or with a stale one) refuses before
+    // any envelope exists — approval is a structural gate, not a call
+    // convention (6.5 review round 4). Artifact persistence is fail-closed: a
+    // manifest that cannot be written stops the run before the first
+    // mutation. A batch binds at most once.
+    bind({ repoRoot, approvedDigest }) {
+        const state = approvalState(this);
+        if (state.bound) {
+            throw new GovernedPostActionError(
+                'GOVERNED_POST_ACTION_ALREADY_BOUND',
+                'this batch is already bound to an approval and manifest; construct a fresh batch for a new run',
+                { batchDigest: this.batchDigest },
+            );
+        }
+        this.assertApproved(approvedDigest);
         if (!repoRoot || typeof repoRoot !== 'string') {
             throw new GovernedPostActionError('GOVERNED_POST_ACTION_REPO_ROOT_REQUIRED', 'repoRoot is required to bind the run');
         }
@@ -143,6 +173,7 @@ class GovernedPostActionBatch {
             batchDigest: this.batchDigest,
             approvedActionIds: this.actions.map(action => action.actionId),
         });
+        state.bound = true;
         return { governance, journal, artifactPath, journalPath };
     }
 
@@ -180,4 +211,23 @@ class GovernedPostActionBatch {
     }
 }
 
-module.exports = { GovernedPostActionBatch, GovernedPostActionError, isPolicyError };
+// Round-4 review fix: a PATCH response alone is not evidence. The caller
+// refetches the document's blocks and this helper compares each approved
+// request's elements against the live block — journal observed entries may
+// claim verified:true only when every patched block matches remotely.
+function verifyBlockRequests({ blocks, requests, getElementsContainer }) {
+    const byId = new Map((blocks || []).map(block => [block.block_id, block]));
+    const mismatches = [];
+    for (const request of requests || []) {
+        const block = byId.get(request.block_id);
+        const container = block ? getElementsContainer(block) : null;
+        const observed = container ? container.elements : null;
+        if (!observed
+            || digestSemantic(canonicalize(observed)) !== digestSemantic(canonicalize(request.update_text_elements.elements))) {
+            mismatches.push(request.block_id);
+        }
+    }
+    return { verified: mismatches.length === 0, mismatches };
+}
+
+module.exports = { GovernedPostActionBatch, GovernedPostActionError, isPolicyError, verifyBlockRequests };

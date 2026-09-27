@@ -49,7 +49,7 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') 
 const fetch            = require('node-fetch');
 const BitableWriter    = require('../src/sdk-doc-sync/bitable-writer');
 const DocxBlockWriter  = require('../src/sdk-doc-sync/docx-block-writer');
-const { GovernedPostActionBatch, isPolicyError } = require('../src/sdk-doc-sync/governed-post-actions');
+const { GovernedPostActionBatch, isPolicyError, verifyBlockRequests } = require('../src/sdk-doc-sync/governed-post-actions');
 const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -324,12 +324,19 @@ async function main() {
     }
 
     if (DRY_RUN) {
-        console.log('=== Summary ===');
+        console.log('=== Summary (dry run) ===');
         console.log(`Type index size  : ${typeMap.size}`);
         console.log(`Docs processed   : ${scanQueue.length}`);
         console.log(`Docs with changes: ${docsWithChanges}`);
         console.log(`Blocks to patch  : ${totalBlocks}`);
-        console.log(DRY_RUN ? '\n(dry run — no changes written)' : '');
+        if (planActions.length === 0) {
+            console.log('\nNo type links to add — nothing to approve.');
+            return;
+        }
+        const preview = new GovernedPostActionBatch({ operation: 'add-type-links', actions: planActions });
+        console.log(`Plan actions      : ${planActions.length}`);
+        console.log(`\nBatch digest: ${preview.batchDigest}`);
+        console.log('Re-run with --approve-batch-digest <digest> to execute this exact batch.');
         return;
     }
 
@@ -342,10 +349,11 @@ async function main() {
     const batch = new GovernedPostActionBatch({ operation: 'add-type-links', actions: planActions });
     console.log(`Action batch : ${batch.actionCount} update call(s) across ${batch.targets.length} doc(s)`);
     console.log(`Batch digest : ${batch.batchDigest}\n`);
-    batch.assertApproved(argValue('--approve-batch-digest'));
+    const approvedDigest = argValue('--approve-batch-digest');
+    batch.assertApproved(approvedDigest);
 
     const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
-    const { governance, journal, artifactPath, journalPath } = batch.bind({ repoRoot });
+    const { governance, journal, artifactPath, journalPath } = batch.bind({ repoRoot, approvedDigest });
     console.log(`Run manifest : ${artifactPath}`);
     console.log(`Journal      : ${journalPath}\n`);
 
@@ -356,8 +364,17 @@ async function main() {
         journal.prepared({ actionId: action.actionId });
         try {
             await docxBlocks.batchUpdate(action.documentId, action.requests);
-            journal.observed({ actionId: action.actionId, status: 'success', verified: true });
-            totalPatched += action.requests.length;
+            // A PATCH response is not evidence — refetch and compare every
+            // patched block against the approved payload before the journal
+            // may claim verified:true (6.5 review round 4).
+            const check = verifyBlockRequests({ blocks: await getAllBlocks(action.documentId), requests: action.requests, getElementsContainer });
+            journal.observed({ actionId: action.actionId, status: check.verified ? 'success' : 'verification_failed', verified: check.verified, mismatches: check.mismatches });
+            if (!check.verified) {
+                apiFailures += 1;
+                console.error(`  VERIFICATION FAILED in ${action.documentId}: blocks ${check.mismatches.join(', ')} do not match the approved payload`);
+            } else {
+                totalPatched += action.requests.length;
+            }
             await delay();
         } catch (e) {
             if (isPolicyError(e)) {

@@ -12,6 +12,7 @@ const {
   GovernedPostActionBatch,
   GovernedPostActionError,
   isPolicyError,
+  verifyBlockRequests,
 } = require('../../.claude/skills/api-reference-sync/src/sdk-doc-sync/governed-post-actions');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -64,7 +65,7 @@ test('the reviewer counterexample is closed: an approved batch refuses other doc
   const root = gitRepo();
   const batch = new GovernedPostActionBatch({ operation: 'add-type-links', actions: ACTIONS });
   batch.assertApproved(batch.batchDigest);
-  const { governance, journal } = batch.bind({ repoRoot: root });
+  const { governance, journal } = batch.bind({ repoRoot: root, approvedDigest: batch.batchDigest });
   const { calls, transport } = transportLog();
   const writer = new DocxBlockWriter({ governance, transport, batch });
 
@@ -108,10 +109,48 @@ test('the reviewer counterexample is closed: an approved batch refuses other doc
   void journal;
 });
 
+test('bind structurally requires the approved digest — skipping assertApproved cannot mint an envelope', async () => {
+  const root = gitRepo();
+  const batch = new GovernedPostActionBatch({ operation: 'add-type-links', actions: ACTIONS });
+  // The round-4 counterexample: never call assertApproved, just bind. The
+  // bind must refuse — no envelope, no manifest, no journal.
+  assert.throws(() => batch.bind({ repoRoot: root }), (error) => error.code === 'GOVERNED_POST_ACTION_APPROVAL_REQUIRED');
+  assert.throws(
+    () => batch.bind({ repoRoot: root, approvedDigest: `sha256:${'b'.repeat(64)}` }),
+    (error) => error.code === 'GOVERNED_POST_ACTION_APPROVAL_MISMATCH',
+  );
+  const { calls, transport } = transportLog();
+  const writer = new DocxBlockWriter({ governance: null, transport, batch });
+  await assert.rejects(
+    () => writer.batchUpdate('docA', ACTIONS[1].requests),
+    (error) => error.code === 'WRITER_ENVELOPE_REQUIRED',
+  );
+  assert.deepEqual(calls, [], 'zero transport calls without a structurally approved bind');
+
+  // A batch binds at most once.
+  const approved = new GovernedPostActionBatch({ operation: 'add-type-links', actions: ACTIONS });
+  approved.bind({ repoRoot: root, approvedDigest: approved.batchDigest });
+  assert.throws(
+    () => approved.bind({ repoRoot: root, approvedDigest: approved.batchDigest }),
+    (error) => error.code === 'GOVERNED_POST_ACTION_ALREADY_BOUND',
+  );
+});
+
+test('verifyBlockRequests treats a PATCH response as evidence only after element comparison', () => {
+  const getElementsContainer = (block) => block.text ?? null;
+  const requests = [{ block_id: 'b1', update_text_elements: { elements: [{ text_run: { content: 'A' } }] } }];
+  const matching = [{ block_id: 'b1', text: { elements: [{ text_run: { content: 'A' } }] } }];
+  const drifted = [{ block_id: 'b1', text: { elements: [{ text_run: { content: 'changed remotely' } }] } }];
+  const missing = [{ block_id: 'other', text: { elements: [] } }];
+  assert.deepEqual(verifyBlockRequests({ blocks: matching, requests, getElementsContainer }), { verified: true, mismatches: [] });
+  assert.deepEqual(verifyBlockRequests({ blocks: drifted, requests, getElementsContainer }), { verified: false, mismatches: ['b1'] });
+  assert.deepEqual(verifyBlockRequests({ blocks: missing, requests, getElementsContainer }), { verified: false, mismatches: ['b1'] });
+});
+
 test('bind pins approval and manifest to the batch digest and journals each action', async () => {
   const root = gitRepo();
   const batch = new GovernedPostActionBatch({ operation: 'post-fix-links', actions: ACTIONS });
-  const { governance, journal, artifactPath, journalPath } = batch.bind({ repoRoot: root });
+  const { governance, journal, artifactPath, journalPath } = batch.bind({ repoRoot: root, approvedDigest: batch.batchDigest });
 
   assert.equal(governance.bound.batchDigest, batch.batchDigest);
   assert.equal(governance.run.batchDigest, batch.batchDigest);
@@ -146,7 +185,9 @@ test('the three post-actions are canonical: digest approval, no guard, no raw en
   for (const name of ['add-type-links.js', 'fix-leading-spaces.js', 'post-fix-links.js']) {
     const source = fs.readFileSync(path.join(REPO_ROOT, '.claude', 'skills', 'api-reference-sync', 'scripts', name), 'utf8');
     assert.match(source, /--approve-batch-digest/, `${name} must require the operator digest`);
-    assert.match(source, /assertApproved\(argValue\('--approve-batch-digest'\)\)/, `${name} must assert the digest before binding`);
+    assert.match(source, /const approvedDigest = argValue\('--approve-batch-digest'\)/, `${name} must read the operator digest once`);
+    assert.match(source, /assertApproved\(approvedDigest\)/, `${name} must assert the digest before binding`);
+    assert.match(source, /bind\(\{ repoRoot, approvedDigest \}\)/, `${name} must pass the digest into bind structurally`);
     assert.match(source, /new GovernedPostActionBatch\(/, `${name} must plan through the governed batch`);
     assert.match(source, /isPolicyError\(e\)/, `${name} must rethrow policy refusals immediately`);
     assert.match(source, /journal\.complete\(\)/, `${name} must close its journal with the completion sentinel`);

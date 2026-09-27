@@ -104,6 +104,10 @@ function verifyRollbackManifest(session, rollbackManifest) {
 }
 
 function recordAuthoringAcceptance(session, { executionJournalDigest, liveResultDigest, decisionDigest, rollbackManifest }) {
+  // Lifecycle before evidence: verifyRollbackManifest and the receipt check
+  // dereference `session.execution`, which only exists in the
+  // acceptance-pending state — the machine's typed refusal comes first.
+  AUTHORING_MACHINE.assertTransition('recordAuthoringAcceptance', session);
   const rollbackManifestDigest = verifyRollbackManifest(session, rollbackManifest);
   if (executionJournalDigest !== session.execution.executionJournalDigest || liveResultDigest !== session.execution.liveResultDigest) {
     throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance is bound to different execution evidence');

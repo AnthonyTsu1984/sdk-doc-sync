@@ -48,6 +48,10 @@ function recordPatchExecution(session, result) {
 }
 
 function recordPatchAcceptance(session, { executionJournalDigest, verifierResultDigest, decisionDigest }) {
+  // Lifecycle before evidence: `session.execution` only exists in the
+  // acceptance-pending state, so the dereference below must not run from an
+  // illegal source — the machine's typed refusal comes first.
+  PROCEDURE_MACHINE.assertTransition('recordPatchAcceptance', session);
   if (executionJournalDigest !== session.execution.executionJournalDigest
       || verifierResultDigest !== session.execution.verifierResultDigest) {
     throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance receipt is bound to different execution or verifier evidence');

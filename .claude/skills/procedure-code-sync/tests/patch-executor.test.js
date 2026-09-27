@@ -60,6 +60,22 @@ test('executor preflights snapshot, patches high index first, journals, and bind
   assert.equal(session.status, 'accepted');
 });
 
+test('acceptance from an approval-ready session refuses with the machine, not a bare TypeError', () => {
+  const plan = fixture();
+  const session = createProcedureSession({ sessionId: 'procedure:premature', plan });
+  assert.equal(session.execution, null);
+  // session.execution only exists once the patch executed; the lifecycle
+  // guard must fire before that dereference (6.6 review round 2).
+  assert.throws(
+    () => recordPatchAcceptance(session, {
+      executionJournalDigest: 'sha256:' + 'e'.repeat(64),
+      verifierResultDigest: 'sha256:' + 'f'.repeat(64),
+      decisionDigest: 'sha256:' + 'd'.repeat(64),
+    }),
+    (error) => error.code === 'INVALID_TRANSITION_SOURCE',
+  );
+});
+
 test('rollback restores exact before blocks and blocks surrounding or generated-identity drift', () => {
   const plan = fixture();
   const rollback = planProcedureRollback({

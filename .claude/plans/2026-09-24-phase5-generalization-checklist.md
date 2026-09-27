@@ -727,8 +727,12 @@ not scheduled.**
       (`SESSION_TERMINAL` — finalization flips the status last, nothing revives it), `'@self'`
       transitions append evidence without changing status, and every apply returns a frozen
       successor stamped with `updatedAt`. The machine owns the LIFECYCLE; evidence validation
-      (journals, manifests, receipts, derived flags) stays in the owning skill's store, and the
-      machine's asserts run after those checks so the hardened error semantics are preserved.
+      (journals, manifests, receipts, derived flags) stays in the owning skill's store. Ordering:
+      the machine's assert runs BEFORE any evidence check that dereferences a field which only
+      exists in a legal source state (api's null-safe `recordAcceptanceFinalization` check is
+      the pattern — the first review round of this PR caught procedure/authoring throwing a
+      bare TypeError from `approval_ready` where `execution` is null), and AFTER the remaining
+      evidence checks so the hardened error semantics are preserved.
       Adopted by all five skills: **api-reference-sync** (the reference) now expresses its six
       transitions through `REVIEW_MACHINE` and persists through the shared CAS session-store —
       `loadReviewSessionState`/`saveReviewSession(expectedPreviousDigest)` threaded through

@@ -12,6 +12,11 @@ const { buildTranslationPairs, resolveTableIdentities } = require('../src/identi
 const { buildScanManifest, reEnumerateForFreshness } = require('../src/issue-classifier');
 const { buildReviewUnits } = require('../src/planner');
 const { executeReviewUnit } = require('../src/executor');
+const {
+  finalizeLocalizationSession,
+  loadLocalizationSessionState,
+  saveLocalizationSession,
+} = require('../src/review-session-store');
 
 function parseArgs(argv) {
   const args = { command: argv[2] || null };
@@ -198,6 +203,15 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     writeJson(args.output, units);
     out(`Review units: ${units.length}`);
     return units;
+  }
+  if (args.command === 'finalize') {
+    for (const name of ['session', 'scanManifest']) required(args, name);
+    const { session: loaded, sessionDigest } = loadLocalizationSessionState(path.resolve(args.session));
+    const finalized = finalizeLocalizationSession(loaded, { scanManifest: readJson(args.scanManifest) });
+    const saved = saveLocalizationSession(path.resolve(args.session), finalized, { expectedPreviousDigest: sessionDigest });
+    out(`Finalized: ${finalized.sessionId} (final scan ${finalized.finalScanManifestDigest})`);
+    out(`Session: ${saved.path} (digest ${saved.stateDigest})`);
+    return finalized;
   }
   if (args.command === 'execute') {
     for (const name of ['unit', 'batch', 'approval', 'adapterModule', 'journal', 'output']) required(args, name);

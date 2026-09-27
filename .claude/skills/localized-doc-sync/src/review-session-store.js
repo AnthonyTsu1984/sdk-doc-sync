@@ -2,7 +2,9 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { canonicalize } = require('../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { saveState, loadState, SessionStoreError } = require('../../doc-ops-core/src/session-store');
 
 function clone(value) { return structuredClone(value); }
 
@@ -104,32 +106,96 @@ function recordUnitRollback(session, { reviewUnitId, journalPath, journalDigest 
   });
 }
 
-function finalizeLocalizationSession(session, { finalScanManifestDigest, completeIssueDisposition, fullInventory }) {
-  const rescanned = new Set(session.affectedRescans.map((entry) => entry.reviewUnitId));
-  if (session.acceptedUnitIds.some((id) => !rescanned.has(id))) throw new Error('Every accepted unit affected scope must be rescanned');
-  if (fullInventory !== true) throw new Error('Finalization requires a fresh full inventory scan');
-  if (completeIssueDisposition !== true) throw new Error('Finalization requires complete issue disposition');
-  return Object.freeze({ ...clone(session), status: 'finalized', finalScanManifestDigest });
+// Finalization derives EVERY claim from evidence — the caller-boolean form
+// this function once had (fullInventory/completeIssueDisposition trusted
+// from the caller) was the 6.6 review finding. Now:
+//   - `scanManifest` is the final full-scan manifest OBJECT; the store
+//     re-verifies its semantic digest and epoch binding (a tampered manifest
+//     is refused), requires derived completeness flags, and takes the final
+//     digest from the manifest itself;
+//   - issue disposition is DERIVED: every issueId across review units must be
+//     covered by an affected rescan's closedIssueIds, and nothing may remain
+//     reopened by rollback;
+//   - every review unit must be accepted and rescanned;
+//   - with accepted units the final digest must differ from the original
+//     scan (executed+accepted changes make the original inventory stale).
+function finalizeLocalizationSession(session, { scanManifest }) {
+  const rescanned = new Set(session.affectedRescans.map(entry => entry.reviewUnitId));
+  if (session.acceptedUnitIds.some(id => !rescanned.has(id))) {
+    throw new Error('Every accepted unit affected scope must be rescanned');
+  }
+  if (!scanManifest || typeof scanManifest !== 'object') {
+    throw new Error('Finalization requires the final scan manifest object');
+  }
+  const { scanEpochId, semanticDigest, ...semanticInput } = scanManifest;
+  if (!semanticDigest
+      || digestSemantic(semanticInput) !== semanticDigest
+      || scanEpochId !== `scan:localized-doc-sync:${semanticDigest.slice(7, 23)}`) {
+    throw Object.assign(new Error('Final scan manifest content does not match its semantic digest'), { code: 'FINAL_SCAN_MANIFEST_STALE' });
+  }
+  if (scanManifest.completeInventory !== true || scanManifest.partialScanAuthoritative !== false) {
+    throw Object.assign(new Error('Finalization requires a complete full-Base scan manifest'), { code: 'INVENTORY_INCOMPLETE' });
+  }
+  const unaccepted = session.reviewUnits.filter(unit => !session.acceptedUnitIds.includes(unit.reviewUnitId));
+  if (unaccepted.length > 0) {
+    throw Object.assign(
+      new Error(`Finalization requires every review unit accepted: ${unaccepted.map(unit => unit.reviewUnitId).join(', ')} remain`),
+      { code: 'UNITS_NOT_ACCEPTED' },
+    );
+  }
+  const declaredIssues = new Set(session.reviewUnits.flatMap(unit => unit.issueIds || []));
+  const closedIssues = new Set(session.affectedRescans.flatMap(entry => entry.closedIssueIds || []));
+  const undisposed = [...declaredIssues].filter(issueId => !closedIssues.has(issueId));
+  if (undisposed.length > 0) {
+    throw Object.assign(
+      new Error(`Finalization requires complete issue disposition: ${undisposed.join(', ')} remain undisposed`),
+      { code: 'ISSUE_DISPOSITION_INCOMPLETE' },
+    );
+  }
+  if ((session.reopenedIssueIds || []).length > 0) {
+    throw Object.assign(
+      new Error(`Finalization requires no reopened issues: ${(session.reopenedIssueIds || []).join(', ')} were reopened by rollback`),
+      { code: 'ISSUES_REOPENED' },
+    );
+  }
+  if (session.acceptedUnitIds.length > 0 && semanticDigest === session.scanManifestDigest) {
+    throw Object.assign(
+      new Error('The final scan manifest equals the original scan digest although accepted units changed content; produce a fresh full scan'),
+      { code: 'FINAL_SCAN_STALE' },
+    );
+  }
+  return Object.freeze({ ...clone(session), status: 'finalized', finalScanManifestDigest: semanticDigest });
 }
 
-function saveLocalizationSession(filePath, session) {
-  const resolved = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, `${JSON.stringify(session, null, 2)}\n`);
-  return resolved;
+// Session persistence goes through the shared durable store: atomic tmp +
+// fsync + rename + directory fsync, with lost-update detection — the caller
+// passes the digest of the state it loaded and a concurrent writer's change
+// refuses the save instead of being clobbered (6.6).
+function saveLocalizationSession(filePath, session, { expectedPreviousDigest = null } = {}) {
+  return saveState(filePath, session, {
+    expectedPreviousDigest,
+    serialize: state => `${JSON.stringify(state, null, 2)}\n`,
+  });
 }
 
 function loadLocalizationSession(filePath) {
-  return JSON.parse(fs.readFileSync(path.resolve(filePath), 'utf8'));
+  return loadState(filePath).state;
+}
+
+function loadLocalizationSessionState(filePath) {
+  const { state, stateDigest } = loadState(filePath);
+  return { session: state, sessionDigest: stateDigest };
 }
 
 module.exports = {
   createLocalizationSession,
   finalizeLocalizationSession,
   loadLocalizationSession,
+  loadLocalizationSessionState,
   recordAffectedRescan,
   recordUnitAcceptance,
   recordUnitExecution,
   recordUnitRollback,
   saveLocalizationSession,
+  SessionStoreError,
 };

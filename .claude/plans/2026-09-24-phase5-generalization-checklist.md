@@ -585,7 +585,7 @@ not scheduled.**
       the manifest boundary until wave 2 rewires them — **this item is back to OPEN with that
       boundary stated above.** (3) acceptance-finalizer still swallowed manifest-artifact
       persistence failures; now fail-closed like every other path.
-- [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
+- [x] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over
       all accepted units; a durable acceptance receipt makes crash retry idempotent; the session
@@ -602,6 +602,28 @@ not scheduled.**
       - `finalizeLocalizationSession` has no production caller at all today (tests only; the CLI
         never wired finalization) — wire it for the first time with harness-derived evidence
         rather than adapting the caller-boolean API.
+
+      6.6 delivery (2026-09-27, branch `feat/phase6-session-state-machine`): shared
+      `doc-ops-core/src/session-store.js` — the durability contract every persisted session now
+      goes through: atomic tmp + file fsync + rename + **directory fsync**, lost-update
+      detection (the caller passes the digest of the state it loaded; a concurrent writer's
+      change refuses the save with `SESSION_STATE_DIGEST_MISMATCH` instead of being clobbered),
+      and a self-naming semantic digest per persisted state. Adopted by localized,
+      procedure-code-sync, and verified-doc-authoring session stores (api-reference-sync's
+      store was already atomic from its PR #22 hardening and gained the directory fsync).
+      localized finalization is REWRITTEN from caller booleans to harness-derived evidence:
+      `finalizeLocalizationSession(session, { scanManifest })` re-verifies the final scan
+      manifest's semantic digest and epoch binding (`FINAL_SCAN_MANIFEST_STALE`), requires the
+      derived completeness flags (`INVENTORY_INCOMPLETE`), derives issue disposition from the
+      session's own units vs rescan closures vs rollback reopenings
+      (`ISSUE_DISPOSITION_INCOMPLETE` / `ISSUES_REOPENED`), requires every unit accepted
+      (`UNITS_NOT_ACCEPTED`) and rescanned, and refuses the original scan digest as final once
+      accepted units changed content (`FINAL_SCAN_STALE`). The CLI wires finalization for the
+      first time (`localized-doc-sync finalize --session <path> --scan-manifest <path>`),
+      persisting atomically against the loaded digest. Scope note: the shared contract is the
+      durability + derivation layer; per-skill session schemas stay skill-specific (api's
+      richer accepted-unit manifest machine from PR #22 remains the reference for what a
+      finalization must recompute).
 
 ### P2 — runtime proof beyond offline determinism
 

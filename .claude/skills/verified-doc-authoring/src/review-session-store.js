@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { canonicalStringify, canonicalize } = require('../../doc-ops-core/src/canonical-json');
+const { saveState } = require('../../doc-ops-core/src/session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
 const EDITORIAL_CATEGORIES = Object.freeze(['placement', 'style', 'factual', 'example', 'rendering']);
@@ -126,11 +127,14 @@ function recordEditorialDecision(session, { decisionId, category, instruction, b
   return Object.freeze({ ...structuredClone(session), editorialCandidates: [...(session.editorialCandidates || []), candidate] });
 }
 
-function saveAuthoringSession(filePath, session) {
-  const resolved = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, canonicalStringify(session), { mode: 0o600 });
-  return resolved;
+// Session persistence goes through the shared durable store (6.6): atomic
+// replace with file+directory fsync and optional lost-update detection.
+function saveAuthoringSession(filePath, session, { expectedPreviousDigest = null } = {}) {
+  return saveState(filePath, session, {
+    expectedPreviousDigest,
+    serialize: state => canonicalStringify(state),
+    mode: 0o600,
+  });
 }
 
 function loadAuthoringSession(filePath) {

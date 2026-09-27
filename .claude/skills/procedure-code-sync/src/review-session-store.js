@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { canonicalStringify } = require('../../doc-ops-core/src/canonical-json');
+const { saveState } = require('../../doc-ops-core/src/session-store');
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -48,20 +49,15 @@ function recordPatchAcceptance(session, { executionJournalDigest, verifierResult
   });
 }
 
-function saveProcedureSession(filePath, session) {
+// Session persistence goes through the shared durable store (6.6): atomic
+// replace with file+directory fsync and optional lost-update detection.
+function saveProcedureSession(filePath, session, { expectedPreviousDigest = null } = {}) {
   if (!filePath || !session?.sessionId) throw new TypeError('filePath and session are required');
-  const resolved = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const temporary = `${resolved}.${process.pid}.tmp`;
-  const descriptor = fs.openSync(temporary, 'w', 0o600);
-  try {
-    fs.writeFileSync(descriptor, canonicalStringify(session));
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  fs.renameSync(temporary, resolved);
-  return resolved;
+  return saveState(filePath, session, {
+    expectedPreviousDigest,
+    serialize: state => canonicalStringify(state),
+    mode: 0o600,
+  });
 }
 
 function loadProcedureSession(filePath) {

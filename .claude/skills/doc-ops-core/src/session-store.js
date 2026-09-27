@@ -35,7 +35,12 @@ class SessionStoreError extends Error {
 const LOCK_POLL_MS = 25;
 const DEFAULT_LOCK_TIMEOUT_MS = 10_000;
 // Backstop for a writer killed hard while holding the lock: the pid check
-// reclaims it immediately, the TTL covers pid reuse.
+// reclaims it immediately, the TTL covers pid reuse. The TTL MUST stay
+// larger than the worst-case critical section — it fires on LIVE holders
+// too (and it is the only reclaim path for a foreign-host holder, see
+// lockIsStale), so stealing a lock whose critical section legitimately runs
+// past it would break mutual exclusion. Saves here are small-JSON
+// rename+fsync (milliseconds), orders of magnitude under the default.
 const DEFAULT_LOCK_TTL_MS = 30_000;
 // Grace for a lock directory whose owner file never materialized (crash
 // between mkdir and the owner write).
@@ -90,7 +95,11 @@ function lockIsStale(lockPath, { lockTtlMs, lockStaleGraceMs }) {
             return false;
         }
     }
-    if (typeof owner.pid === 'number' && !pidAlive(owner.pid)) return true;
+    // pid liveness is a LOCAL process-table semantic: if the state file
+    // ever lives on a shared volume, the recorded pid belongs to another
+    // host's table and "dead here" proves nothing. A foreign-host lock is
+    // therefore only reclaimable by TTL, never by the pid check.
+    if (owner.host === os.hostname() && typeof owner.pid === 'number' && !pidAlive(owner.pid)) return true;
     return Date.now() - owner.acquiredAt >= lockTtlMs;
 }
 

@@ -281,3 +281,30 @@ test('a stale lock is reclaimed: dead owner pid and an orphaned lock directory',
   });
   assert.equal(loadState(orphanPath).state.schemaVersion, 1);
 });
+
+test('a foreign-host lock is never reclaimed by pid liveness — only by TTL', () => {
+  const root = tempDir();
+  const filePath = path.join(root, 'session.json');
+  const lockPath = `${filePath}.lock`;
+  fs.mkdirSync(lockPath);
+  // pid 999999 is dead on THIS host, but the owner names another host:
+  // liveness there is unknowable from the local process table, so the lock
+  // must survive until its TTL lapses.
+  fs.writeFileSync(path.join(lockPath, 'owner.json'), JSON.stringify({
+    pid: 999999,
+    host: 'some-other-host',
+    acquiredAt: Date.now(),
+  }));
+  assert.throws(
+    () => saveState(filePath, { schemaVersion: 1 }, { expectedPreviousDigest: null, lockTimeoutMs: 150 }),
+    (error) => error instanceof SessionStoreError && error.code === 'SESSION_LOCK_CONTENDED',
+  );
+  // Once the TTL lapses, the foreign lock is reclaimable again.
+  fs.writeFileSync(path.join(lockPath, 'owner.json'), JSON.stringify({
+    pid: 999999,
+    host: 'some-other-host',
+    acquiredAt: Date.now() - 60_000,
+  }));
+  saveState(filePath, { schemaVersion: 1 }, { expectedPreviousDigest: null });
+  assert.equal(loadState(filePath).state.schemaVersion, 1);
+});

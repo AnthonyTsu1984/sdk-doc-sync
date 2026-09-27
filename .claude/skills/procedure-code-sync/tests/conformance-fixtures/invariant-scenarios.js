@@ -192,7 +192,7 @@ const scenarios = {
     const sessionPath = path.join(directory, 'session.json');
     fs.writeFileSync(planPath, `${JSON.stringify(plan)}\n`);
     const session = createProcedureSession({ sessionId: 'conformance:1', plan });
-    saveProcedureSession(sessionPath, { ...session, status: 'accepted' });
+    saveProcedureSession(sessionPath, { ...session, status: 'accepted' }, { expectedPreviousDigest: null });
     const { runCli } = require('../../bin/procedure-code-sync');
     let patchCalls = 0;
     let code = null;

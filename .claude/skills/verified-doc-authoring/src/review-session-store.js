@@ -1,9 +1,9 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
 
 const { canonicalStringify, canonicalize } = require('../../doc-ops-core/src/canonical-json');
+const { loadState, saveState } = require('../../doc-ops-core/src/session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
 const EDITORIAL_CATEGORIES = Object.freeze(['placement', 'style', 'factual', 'example', 'rendering']);
@@ -112,6 +112,11 @@ function recordEditorialDecision(session, { decisionId, category, instruction, b
   if (!decisionId || !EDITORIAL_CATEGORIES.includes(category) || !instruction || !beforeDigest || !afterDigest) {
     throw new TypeError('decisionId, supported category, instruction, beforeDigest, and afterDigest are required');
   }
+  if (session.status === 'accepted') {
+    // The accepted session is terminal evidence; editorial candidates belong
+    // to the pre-acceptance review and may not be appended afterwards.
+    throw typedError('SESSION_ACCEPTED', 'Editorial candidates cannot be recorded on an accepted session');
+  }
   if ((session.editorialCandidates || []).some((candidate) => candidate.decisionId === decisionId)) throw new Error(`Duplicate editorial decision: ${decisionId}`);
   const candidate = canonicalize({
     decisionId,
@@ -126,18 +131,28 @@ function recordEditorialDecision(session, { decisionId, category, instruction, b
   return Object.freeze({ ...structuredClone(session), editorialCandidates: [...(session.editorialCandidates || []), candidate] });
 }
 
-function saveAuthoringSession(filePath, session) {
-  const resolved = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  fs.writeFileSync(resolved, canonicalStringify(session), { mode: 0o600 });
-  return resolved;
+// Session persistence goes through the shared durable store (6.6): lock-
+// bracketed compare-and-set, atomic replace with file+directory fsync, and
+// mandatory lost-update detection — every caller passes the digest of the
+// state it loaded (or null to create) so a concurrent writer's change
+// refuses the save instead of being clobbered.
+function saveAuthoringSession(filePath, session, { expectedPreviousDigest } = {}) {
+  return saveState(filePath, session, {
+    expectedPreviousDigest,
+    serialize: state => canonicalStringify(state),
+    mode: 0o600,
+  });
+}
+
+function loadAuthoringSessionState(filePath) {
+  const resolved = path.resolve(filePath || '');
+  const { state, stateDigest } = loadState(resolved);
+  if (state?.schemaVersion !== 1 || !state.sessionId || !state.planDigest) throw new Error(`Invalid authoring session: ${resolved}`);
+  return { session: state, sessionDigest: stateDigest };
 }
 
 function loadAuthoringSession(filePath) {
-  const resolved = path.resolve(filePath || '');
-  const session = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (session?.schemaVersion !== 1 || !session.sessionId || !session.planDigest) throw new Error(`Invalid authoring session: ${resolved}`);
-  return session;
+  return loadAuthoringSessionState(filePath).session;
 }
 
 module.exports = {

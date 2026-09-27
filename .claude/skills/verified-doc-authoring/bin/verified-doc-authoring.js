@@ -11,7 +11,7 @@ const { buildAuthoringPatchPlan } = require('../src/patch-planner');
 const { executeAuthoringPatch, planAuthoringRollback } = require('../src/patch-executor');
 const {
   createAuthoringSession,
-  loadAuthoringSession,
+  loadAuthoringSessionState,
   recordAuthoringAcceptance,
   recordAuthoringExecution,
   saveAuthoringSession,
@@ -76,7 +76,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       claimReviewDecisionDigest: args.claimReviewDecisionDigest || null,
     });
     writeJson(args.output, plan);
-    saveAuthoringSession(args.session, createAuthoringSession({ sessionId: args.sessionId, plan }));
+    saveAuthoringSession(args.session, createAuthoringSession({ sessionId: args.sessionId, plan }), { expectedPreviousDigest: null });
     out(`Authoring plan: ${plan.planDigest}`);
     out(`If approved, reply exactly: APPROVE_WRITES verified-doc-authoring ${plan.actionBatch.batchDigest}`);
     return plan;
@@ -84,7 +84,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'execute') {
     for (const name of ['plan', 'approval', 'journal', 'output', 'session']) required(args, name);
     const plan = readJson(args.plan);
-    const session = loadAuthoringSession(args.session);
+    const { session, sessionDigest } = loadAuthoringSessionState(args.session);
     if (session.status !== 'approval_ready' || session.planDigest !== plan.planDigest) {
       throw Object.assign(
         new Error('Authoring session is not approval-ready for this exact plan'),
@@ -93,20 +93,20 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }
     const result = await executeAuthoringPatch({ plan, approval: readJson(args.approval), journalPath: path.resolve(args.journal), adapter: loadAdapter(args, dependencies) });
     writeJson(args.output, result);
-    saveAuthoringSession(args.session, recordAuthoringExecution(session, result));
+    saveAuthoringSession(args.session, recordAuthoringExecution(session, result), { expectedPreviousDigest: sessionDigest });
     out(`Execution status: ${result.status}`);
     return result;
   }
   if (args.command === 'accept') {
     for (const name of ['session', 'decisionDigest', 'rollbackManifest']) required(args, name);
-    const session = loadAuthoringSession(args.session);
+    const { session, sessionDigest } = loadAuthoringSessionState(args.session);
     const accepted = recordAuthoringAcceptance(session, {
       executionJournalDigest: session.execution?.executionJournalDigest,
       liveResultDigest: session.execution?.liveResultDigest,
       decisionDigest: args.decisionDigest,
       rollbackManifest: readJson(args.rollbackManifest),
     });
-    saveAuthoringSession(args.session, accepted);
+    saveAuthoringSession(args.session, accepted, { expectedPreviousDigest: sessionDigest });
     if (args.output) writeJson(args.output, accepted.acceptanceReceipt);
     out(`Authoring document accepted: ${accepted.reviewUnitId}`);
     return accepted;

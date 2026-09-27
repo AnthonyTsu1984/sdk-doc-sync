@@ -481,6 +481,15 @@ function saveReviewSession(filePath, session) {
   const temporary = `${resolved}.tmp-${process.pid}`;
   fs.writeFileSync(temporary, `${JSON.stringify(session, null, 2)}\n`, { flag: 'wx' });
   fs.renameSync(temporary, resolved);
+  // Directory fsync so the rename itself is durable (shared 6.6 contract).
+  const directory = fs.openSync(path.dirname(resolved), 'r');
+  try {
+    fs.fsyncSync(directory);
+  } catch (error) {
+    void error; // best-effort on filesystems that refuse directory fsync
+  } finally {
+    fs.closeSync(directory);
+  }
   return resolved;
 }
 

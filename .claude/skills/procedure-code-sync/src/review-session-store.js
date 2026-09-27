@@ -1,9 +1,9 @@
 'use strict';
 
-const fs = require('node:fs');
 const path = require('node:path');
 
 const { canonicalStringify } = require('../../doc-ops-core/src/canonical-json');
+const { loadState, saveState } = require('../../doc-ops-core/src/session-store');
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -48,34 +48,37 @@ function recordPatchAcceptance(session, { executionJournalDigest, verifierResult
   });
 }
 
-function saveProcedureSession(filePath, session) {
+// Session persistence goes through the shared durable store (6.6): lock-
+// bracketed compare-and-set, atomic replace with file+directory fsync, and
+// mandatory lost-update detection — every caller passes the digest of the
+// state it loaded (or null to create) so a concurrent writer's change
+// refuses the save instead of being clobbered.
+function saveProcedureSession(filePath, session, { expectedPreviousDigest } = {}) {
   if (!filePath || !session?.sessionId) throw new TypeError('filePath and session are required');
-  const resolved = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const temporary = `${resolved}.${process.pid}.tmp`;
-  const descriptor = fs.openSync(temporary, 'w', 0o600);
-  try {
-    fs.writeFileSync(descriptor, canonicalStringify(session));
-    fs.fsyncSync(descriptor);
-  } finally {
-    fs.closeSync(descriptor);
+  return saveState(filePath, session, {
+    expectedPreviousDigest,
+    serialize: state => canonicalStringify(state),
+    mode: 0o600,
+  });
+}
+
+function loadProcedureSessionState(filePath) {
+  const resolved = path.resolve(filePath || '');
+  const { state, stateDigest } = loadState(resolved);
+  if (state?.schemaVersion !== 1 || !state.sessionId || !state.planDigest) {
+    throw new Error(`Invalid procedure review session: ${resolved}`);
   }
-  fs.renameSync(temporary, resolved);
-  return resolved;
+  return { session: state, sessionDigest: stateDigest };
 }
 
 function loadProcedureSession(filePath) {
-  const resolved = path.resolve(filePath || '');
-  const session = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (session?.schemaVersion !== 1 || !session.sessionId || !session.planDigest) {
-    throw new Error(`Invalid procedure review session: ${resolved}`);
-  }
-  return session;
+  return loadProcedureSessionState(filePath).session;
 }
 
 module.exports = {
   createProcedureSession,
   loadProcedureSession,
+  loadProcedureSessionState,
   recordPatchAcceptance,
   recordPatchExecution,
   saveProcedureSession,

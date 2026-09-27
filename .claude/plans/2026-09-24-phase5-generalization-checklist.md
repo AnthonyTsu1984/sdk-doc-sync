@@ -625,7 +625,21 @@ not scheduled.**
       refuses replay (`..._ALREADY_EXECUTED`), zero transport calls on every refusal. CLAUDE.md
       Golden Rule 4 documents the two-phase digest flow. End state: **no write path in the
       repository reaches Feishu without a bound approval + run manifest, and post-action writes
-      are bound to the exact approved batch.** CI paths filter extended (`scripts/admission/**`,
+      are bound to the exact approved batch.** **Round 4 (2026-09-27, two P1 + two P2 closed, d298abe):** (1) bind
+      structurally requires the approved digest — `assertApproved` alone was a
+      call convention, so skipping it and calling `bind()` still minted an
+      approved envelope; `bind({ repoRoot, approvedDigest })` now validates the
+      digest itself, records approval/binding in WeakMap-private state, and a
+      batch binds at most once. (2) a PATCH response was journal-verified
+      without observation — every action now refetches the document's blocks
+      and compares each patched block against the approved payload
+      (`verifyBlockRequests`) before `verified:true`; mismatches record
+      `verification_failed` and aggregate to exit 1, so a completion sentinel
+      never certifies an unobserved remote state. (3) add-type-links dry-run
+      prints the batch digest (the documented two-phase approval was
+      impossible from its output). (4) empty-plan dry-runs return no-op
+      success instead of throwing `ACTIONS_REQUIRED`.
+      CI paths filter extended (`scripts/admission/**`,
       the two gate scripts) so toolchain and gate changes trigger admission.
 - [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;

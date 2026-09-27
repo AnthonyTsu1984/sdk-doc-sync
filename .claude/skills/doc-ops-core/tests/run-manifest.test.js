@@ -130,6 +130,26 @@ test('writeRunManifestArtifact persists the verified manifest for the evidence t
     assert.throws(() => writeRunManifestArtifact({ ...manifest, sessionDigest: 'swapped' }, { filePath: path.join(directory, 'x.json') }), /RUN_MANIFEST_DIGEST_MISMATCH/);
 });
 
+test('writeRunManifestArtifact is exclusive-create: existing evidence must be byte-identical or the run refuses', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'run-manifest-artifact-'));
+    const filePath = path.join(directory, 'run-manifest.json');
+    const manifest = stubRunManifest({ skill: 'evidence' });
+    const body = `${JSON.stringify(manifest, null, 2)}\n`;
+    writeRunManifestArtifact(manifest, { filePath });
+    // Re-persisting the SAME manifest is idempotent — identical bytes, no error.
+    const rewritten = writeRunManifestArtifact(manifest, { filePath });
+    assert.equal(rewritten.path, filePath);
+    assert.equal(fs.readFileSync(filePath, 'utf8'), body);
+    // A DIFFERENT manifest on the same path is evidence corruption, not an update.
+    const drifted = stubRunManifest({ skill: 'evidence', sessionDigest: 'other-run' });
+    assert.notEqual(drifted.manifestDigest, manifest.manifestDigest);
+    assert.throws(
+        () => writeRunManifestArtifact(drifted, { filePath }),
+        (error) => error.code === 'RUN_MANIFEST_EVIDENCE_CONFLICT',
+    );
+    assert.equal(fs.readFileSync(filePath, 'utf8'), body, 'the original evidence must survive the refused write');
+});
+
 test('policy attestations ride inside the manifest digest', () => {
     const withAttestation = stubRunManifest({
         policyAttestations: [{ id: 'api.record-description-scope', version: 1, inputDigest: SHA('c'), decision: 'enforced' }],

@@ -183,12 +183,15 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
       "skill": "api-reference-sync",
-      "classification": "legacy-live",
+      "classification": "canonical-governed",
       "operation": "add-type-links",
-      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-      "admittedAtBaseline": false
+      "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "content-reconcile",
+      "tests": [
+        "tests/skills/post-actions-governed.test.js"
+      ]
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs.js",
@@ -354,12 +357,15 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
       "skill": "api-reference-sync",
-      "classification": "legacy-live",
+      "classification": "canonical-governed",
       "operation": "fix-leading-spaces",
-      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-      "admittedAtBaseline": false
+      "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "content-reconcile",
+      "tests": [
+        "tests/skills/post-actions-governed.test.js"
+      ]
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-cloud.js",
@@ -441,12 +447,15 @@
     {
       "path": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
       "skill": "api-reference-sync",
-      "classification": "legacy-live",
+      "classification": "canonical-governed",
       "operation": "post-fix-links",
-      "basis": "raw-fetch docx/bitable mutations missed by writer-object detection; runtime-quarantined since phase 3 review",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-      "admittedAtBaseline": false
+      "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "content-reconcile",
+      "tests": [
+        "tests/skills/post-actions-governed.test.js"
+      ]
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",

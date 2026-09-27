@@ -28,3 +28,24 @@ test('journal rejects unapproved actions and duplicate observed results', () => 
   journal.observed({ actionId: 'a', status: 'success' });
   assert.throws(() => journal.observed({ actionId: 'a', status: 'success' }), /DUPLICATE_ACTION_RESULT/);
 });
+
+test('journal entries are stamped with the bound run manifest digest', () => {
+  const filePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-journal-')), 'run.jsonl');
+  const manifestDigest = 'sha256:f'.padEnd(71, 'f');
+  const journal = new ExecutionJournal({ filePath, batchDigest: 'sha256:a'.padEnd(71, 'a'), approvedActionIds: ['a'], manifestDigest });
+  assert.throws(
+    () => new ExecutionJournal({ filePath, batchDigest: 'sha256:a'.padEnd(71, 'a'), manifestDigest: 'not-a-digest' }),
+    /JOURNAL_MANIFEST_DIGEST_INVALID/,
+  );
+  journal.prepared({ actionId: 'a' });
+  journal.observed({ actionId: 'a', status: 'success', verified: true });
+  journal.complete();
+  for (const entry of journal.read()) {
+    assert.equal(entry.manifestDigest, manifestDigest, 'every entry must carry the manifest digest it ran against');
+  }
+  // Journals bound without a manifest keep their historic entry shape.
+  const barePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-journal-')), 'run.jsonl');
+  const bare = new ExecutionJournal({ filePath: barePath, batchDigest: 'sha256:a'.padEnd(71, 'a'), approvedActionIds: ['a'] });
+  bare.prepared({ actionId: 'a' });
+  assert.equal('manifestDigest' in bare.read()[0], false);
+});

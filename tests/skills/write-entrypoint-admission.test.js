@@ -56,12 +56,13 @@ test('repository legacy-live population is runtime-quarantined and does not exce
   const legacy = registry.entries.filter((entry) => entry.classification === 'legacy-live');
   const baselineAdmitted = legacy.filter((entry) => entry.admittedAtBaseline === true);
   const exceptionAdmitted = legacy.filter((entry) => entry.admittedAtBaseline !== true);
-  // 5 scripts remain admitted at the phase-3 baseline after the phase-6 wave-1
-  // disposition removed 79 zero-reference one-off campaign scripts; the three
-  // Golden Rule 4 post-action scripts survive under their expiring reviewed
-  // exceptions pending canonicalization into the governed executor.
+  // 5 scripts remain admitted at the phase-3 baseline after the phase-6
+  // wave-1 disposition removed 79 zero-reference one-off campaign scripts;
+  // the wave-2 reclassification moved the three Golden Rule 4 post-actions
+  // to canonical-governed (exact-digest approval + governed writer + journal),
+  // so no legacy-live entry carries an exception any more.
   assert.equal(baselineAdmitted.length, registry.baseline.legacyLiveCount);
-  assert.equal(exceptionAdmitted.length, 3);
+  assert.equal(exceptionAdmitted.length, 0);
   const expectedChanges = JSON.parse(fs.readFileSync(
     path.join(REPO_ROOT, '.claude', 'skills', 'doc-ops-core', 'expected-changes.json'),
     'utf8',

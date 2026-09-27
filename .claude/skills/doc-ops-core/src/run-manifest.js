@@ -201,7 +201,22 @@ function writeRunManifestArtifact(runManifest, { filePath }) {
     const resolved = path.resolve(filePath);
     fs.mkdirSync(path.dirname(resolved), { recursive: true });
     const body = `${JSON.stringify(runManifest, null, 2)}\n`;
-    fs.writeFileSync(resolved, body);
+    // Evidence is immutable: create exclusively, and when the path already
+    // holds bytes they must be exactly these. A different manifest landing
+    // on an existing path would silently re-point earlier evidence (journals,
+    // receipts) at a source state it never ran against.
+    try {
+        fs.writeFileSync(resolved, body, { flag: 'wx' });
+    } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        if (!fs.readFileSync(resolved).equals(Buffer.from(body))) {
+            throw new RunManifestError(
+                'RUN_MANIFEST_EVIDENCE_CONFLICT',
+                `run-manifest evidence already exists at ${resolved} with different content; move it aside instead of overwriting it`,
+                { path: resolved },
+            );
+        }
+    }
     return { path: resolved, bytes: Buffer.byteLength(body) };
 }
 

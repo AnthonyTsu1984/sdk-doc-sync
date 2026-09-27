@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+// Canonical-governed post-action (phase-6 wave 2): the planned docx block
+// batch is digest-approved by the operator (--approve-batch-digest) before
+// anything binds or writes.
 
 /**
  * Post-action: scan all docs in a bitable for plain-text mentions of Class/Enum
@@ -21,14 +23,17 @@ require('../../doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({
  *   - code blocks (block_type 14)
  *   - self-references (type name == current doc's own title)
  *
- * Usage:
+ * Usage (two-phase, exact-digest approval):
  *   node .claude/skills/api-reference-sync/scripts/add-type-links.js \
- *     --bitable <token> [--title <doc title>] [--dry-run]
+ *     --bitable <token> [--title <doc title>] --dry-run
+ *   node .claude/skills/api-reference-sync/scripts/add-type-links.js \
+ *     --bitable <token> [--title <doc title>] --approve-batch-digest <digest>
  *
  * Options:
- *   --bitable <token>   Bitable app token to scan (required)
- *   --title <doc title> Only scan docs with this exact title. Repeatable.
- *   --dry-run           Report what would be linked without writing anything
+ *   --bitable <token>          Bitable app token to scan (required)
+ *   --title <doc title>        Only scan docs with this exact title. Repeatable.
+ *   --dry-run                  Plan only: print the action batch and its digest
+ *   --approve-batch-digest <d> Execute exactly the planned batch (digest must match)
  *
  * Per-SDK tokens:
  *   C++:  XmndbkxkQaigA8soRiCcTT41nMd
@@ -43,6 +48,8 @@ require('dotenv').config({ path: path.resolve(__dirname, '../../../..', '.env') 
 
 const fetch            = require('node-fetch');
 const BitableWriter    = require('../src/sdk-doc-sync/bitable-writer');
+const DocxBlockWriter  = require('../src/sdk-doc-sync/docx-block-writer');
+const { GovernedPostActionBatch, isPolicyError, verifyBlockRequests } = require('../src/sdk-doc-sync/governed-post-actions');
 const larkTokenFetcher = require('../lib/lark-docs/larkTokenFetcher');
 
 // ── CLI ───────────────────────────────────────────────────────────────────────
@@ -252,10 +259,11 @@ async function main() {
 
     console.log(`Scanning ${scanQueue.length} docs…\n`);
 
-    // ── Steps 3 & 4: Scan and patch ───────────────────────────────────────────
+    // ── Step 3: Scan and plan (reads only) ────────────────────────────────────
     let docsWithChanges = 0;
     let totalBlocks     = 0;
     let totalPatched    = 0;
+    const planActions   = [];   // { documentId, requests } — one entry per batch_update call
 
     for (const { docId, title, selfTypeName } of scanQueue) {
         let blocks;
@@ -303,28 +311,86 @@ async function main() {
         }
         console.log(`  → ${patches.length} block(s) to patch\n`);
 
-        if (DRY_RUN) continue;
-
-        // Apply patches in batches of 20 (Feishu API limit)
+        // Plan only — no writes until the batch is digest-approved.
         for (let i = 0; i < patches.length; i += 20) {
-            const batch = patches.slice(i, i + 20);
-            try {
-                await feishuAPI('PATCH',
-                    `/open-apis/docx/v1/documents/${docId}/blocks/batch_update`,
-                    {
-                        requests: batch.map(p => ({
-                            block_id:             p.blockId,
-                            update_text_elements: { elements: p.elements },
-                        })),
-                    }
-                );
-                totalPatched += batch.length;
-                await delay();
-            } catch (e) {
-                console.error(`  ERROR patching batch in "${title}": ${e.message}`);
-            }
+            planActions.push({
+                documentId: docId,
+                requests: patches.slice(i, i + 20).map(p => ({
+                    block_id:             p.blockId,
+                    update_text_elements: { elements: p.elements },
+                })),
+            });
         }
     }
+
+    if (DRY_RUN) {
+        console.log('=== Summary (dry run) ===');
+        console.log(`Type index size  : ${typeMap.size}`);
+        console.log(`Docs processed   : ${scanQueue.length}`);
+        console.log(`Docs with changes: ${docsWithChanges}`);
+        console.log(`Blocks to patch  : ${totalBlocks}`);
+        if (planActions.length === 0) {
+            console.log('\nNo type links to add — nothing to approve.');
+            return;
+        }
+        const preview = new GovernedPostActionBatch({ operation: 'add-type-links', actions: planActions });
+        console.log(`Plan actions      : ${planActions.length}`);
+        console.log(`\nBatch digest: ${preview.batchDigest}`);
+        console.log('Re-run with --approve-batch-digest <digest> to execute this exact batch.');
+        return;
+    }
+
+    if (planActions.length === 0) {
+        console.log('No changes to apply.');
+        return;
+    }
+
+    // ── Phase 2: digest approval + governed execution ──────────────────────
+    const batch = new GovernedPostActionBatch({ operation: 'add-type-links', actions: planActions });
+    console.log(`Action batch : ${batch.actionCount} update call(s) across ${batch.targets.length} doc(s)`);
+    console.log(`Batch digest : ${batch.batchDigest}\n`);
+    const approvedDigest = argValue('--approve-batch-digest');
+    batch.assertApproved(approvedDigest);
+
+    const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+    const { governance, journal, artifactPath, journalPath } = batch.bind({ repoRoot, approvedDigest });
+    console.log(`Run manifest : ${artifactPath}`);
+    console.log(`Journal      : ${journalPath}\n`);
+
+    const docxBlocks = new DocxBlockWriter({ governance, transport: feishuAPI, batch });
+    let apiFailures = 0;
+
+    for (const action of batch.actions) {
+        journal.prepared({ actionId: action.actionId });
+        try {
+            await docxBlocks.batchUpdate(action.documentId, action.requests);
+            // A PATCH response is not evidence — refetch and compare every
+            // patched block against the approved payload before the journal
+            // may claim verified:true (6.5 review round 4).
+            const check = verifyBlockRequests({ blocks: await getAllBlocks(action.documentId), requests: action.requests, getElementsContainer });
+            journal.observed({ actionId: action.actionId, status: check.verified ? 'success' : 'verification_failed', verified: check.verified, mismatches: check.mismatches });
+            if (!check.verified) {
+                apiFailures += 1;
+                console.error(`  VERIFICATION FAILED in ${action.documentId}: blocks ${check.mismatches.join(', ')} do not match the approved payload`);
+            } else {
+                totalPatched += action.requests.length;
+            }
+            await delay();
+        } catch (e) {
+            if (isPolicyError(e)) {
+                // Policy refusals abort the run immediately — the journal stays
+                // deliberately incomplete (no completion sentinel) so the abort
+                // is visible in the evidence trail.
+                console.error(`POLICY REFUSAL: ${e.message}`);
+                throw e;
+            }
+            journal.observed({ actionId: action.actionId, status: 'failure', verified: false, error: e.message });
+            apiFailures += 1;
+            console.error(`  ERROR patching batch in ${action.documentId}: ${e.message}`);
+            await delay();
+        }
+    }
+    journal.complete();
 
     // ── Summary ───────────────────────────────────────────────────────────────
     console.log('=== Summary ===');
@@ -332,8 +398,12 @@ async function main() {
     console.log(`Docs processed   : ${scanQueue.length}`);
     console.log(`Docs with changes: ${docsWithChanges}`);
     console.log(`Blocks to patch  : ${totalBlocks}`);
-    if (!DRY_RUN) console.log(`Blocks patched   : ${totalPatched}`);
-    console.log(DRY_RUN ? '\n(dry run — no changes written)' : '\nDone.');
+    console.log(`Blocks patched   : ${totalPatched}`);
+    console.log('\nDone.');
+    if (apiFailures > 0) {
+        console.log(`${apiFailures} batch(es) failed — see the journal for the evidence trail.`);
+        process.exitCode = 1;
+    }
 }
 
 main().catch(err => {

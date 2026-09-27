@@ -167,6 +167,69 @@ test('bind pins approval and manifest to the batch digest and journals each acti
   assert.equal(entries.filter(entry => entry.type === 'prepared').length, 2);
   assert.equal(entries.filter(entry => entry.type === 'observed').length, 2);
   assert.equal(entries.filter(entry => entry.type === 'completion' && entry.completionSentinel).length, 1);
+  const manifest = JSON.parse(fs.readFileSync(artifactPath, 'utf8'));
+  assert.equal(
+    entries.every(entry => entry.manifestDigest === manifest.manifestDigest),
+    true,
+    'every journal entry must carry the manifest digest it ran against',
+  );
+});
+
+// Review round 5 P1: the evidence directory used to be keyed by
+// operation+batchDigest alone. batchDigest is invariant under source drift,
+// so re-planning the same batch after a code change overwrote the earlier
+// run's manifest while its journal survived — silently re-pointing historical
+// evidence at a source state it never ran against.
+test('re-planning the same batch after a source change lands beside, not over, the earlier evidence', async () => {
+  const root = gitRepo();
+  const first = new GovernedPostActionBatch({ operation: 'add-type-links', actions: ACTIONS });
+  const firstRun = first.bind({ repoRoot: root, approvedDigest: first.batchDigest });
+  const firstManifest = JSON.parse(fs.readFileSync(firstRun.artifactPath, 'utf8'));
+  for (const action of first.actions) {
+    firstRun.journal.prepared({ actionId: action.actionId });
+    firstRun.journal.observed({ actionId: action.actionId, status: 'success', verified: true });
+  }
+  firstRun.journal.complete();
+
+  // Same plan, same batch digest — but the source state moved.
+  fs.writeFileSync(path.join(root, 'app.js'), 'v2\n');
+  const second = new GovernedPostActionBatch({ operation: 'add-type-links', actions: ACTIONS });
+  assert.equal(second.batchDigest, first.batchDigest, 'the plan did not change, so the batch digest must not change');
+  const secondRun = second.bind({ repoRoot: root, approvedDigest: second.batchDigest });
+
+  assert.notEqual(secondRun.artifactPath, firstRun.artifactPath, 'a drifted source state must never reuse the earlier evidence path');
+  const secondManifest = JSON.parse(fs.readFileSync(secondRun.artifactPath, 'utf8'));
+  assert.notEqual(secondManifest.manifestDigest, firstManifest.manifestDigest);
+  assert.notEqual(secondManifest.sourceFingerprint, firstManifest.sourceFingerprint);
+  assert.deepEqual(
+    JSON.parse(fs.readFileSync(firstRun.artifactPath, 'utf8')),
+    firstManifest,
+    'the first run manifest must survive the second bind byte-for-byte',
+  );
+  for (const action of second.actions) {
+    secondRun.journal.prepared({ actionId: action.actionId });
+    secondRun.journal.observed({ actionId: action.actionId, status: 'success', verified: true });
+  }
+  secondRun.journal.complete();
+  const firstEntries = fs.readFileSync(firstRun.journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(firstEntries.every(entry => entry.manifestDigest === firstManifest.manifestDigest), true);
+  const secondEntries = fs.readFileSync(secondRun.journalPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+  assert.equal(secondEntries.every(entry => entry.manifestDigest === secondManifest.manifestDigest), true);
+});
+
+test('re-binding in an unchanged source state reuses the same evidence file with identical bytes', () => {
+  const root = gitRepo();
+  const first = new GovernedPostActionBatch({ operation: 'post-fix-links', actions: ACTIONS });
+  const firstRun = first.bind({ repoRoot: root, approvedDigest: first.batchDigest });
+  const second = new GovernedPostActionBatch({ operation: 'post-fix-links', actions: ACTIONS });
+  const secondRun = second.bind({ repoRoot: root, approvedDigest: second.batchDigest });
+  assert.equal(secondRun.artifactPath, firstRun.artifactPath, 'the manifest digest keys the evidence directory');
+  assert.equal(
+    fs.readFileSync(secondRun.artifactPath, 'utf8'),
+    fs.readFileSync(firstRun.artifactPath, 'utf8'),
+  );
+  // Each bind still gets its own journal inside the shared evidence directory.
+  assert.notEqual(secondRun.journalPath, firstRun.journalPath);
 });
 
 test('policy errors are classified for immediate rethrow (non-zero exit contract)', () => {

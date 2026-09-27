@@ -1,5 +1,6 @@
 'use strict';
 
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { canonicalize } = require('../../../doc-ops-core/src/canonical-json');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
@@ -162,16 +163,35 @@ class GovernedPostActionBatch {
             sessionDigest: `post-action:${this.operation}:${this.batchDigest}`,
         });
         governance.bindRunManifest(manifest, { repoRoot });
-        const evidenceDir = path.join(repoRoot, 'tmp', 'api-reference-sync', 'post-actions', `${this.operation}-${this.batchDigest.replace(':', '-')}`);
+        // Evidence is immutable per source state (review round 5 P1): the leaf
+        // directory is keyed by the manifestDigest — which covers the widened
+        // working-tree fingerprint — so re-planning the same batch after a
+        // source change lands beside, never over, the previous run's
+        // manifest+journal pair. batchDigest alone cannot name the directory:
+        // it is invariant under source drift, while the manifest it certified
+        // is not.
+        const boundManifest = governance.run;
+        const evidenceDir = path.join(
+            repoRoot,
+            'tmp',
+            'api-reference-sync',
+            'post-actions',
+            `${this.operation}-${this.batchDigest.replace(':', '-')}`,
+            boundManifest.manifestDigest.replace(':', '-'),
+        );
         const artifactPath = path.join(evidenceDir, 'run-manifest.json');
-        writeRunManifestArtifact(governance.run, { filePath: artifactPath });
-        // Fresh journal path per run (memory: DUPLICATE_COMPLETION_SENTINEL and
-        // DUPLICATE_PREPARED_ACTION are digest+path keyed).
-        const journalPath = path.join(evidenceDir, `execution-journal-${Date.now()}.jsonl`);
+        // Exclusive-create: an existing file must already hold exactly these
+        // bytes, or the run refuses (RUN_MANIFEST_EVIDENCE_CONFLICT).
+        writeRunManifestArtifact(boundManifest, { filePath: artifactPath });
+        // Fresh journal per bind (memory: DUPLICATE_COMPLETION_SENTINEL and
+        // DUPLICATE_PREPARED_ACTION are digest+path keyed); every entry is
+        // stamped with the manifestDigest it executed against.
+        const journalPath = path.join(evidenceDir, `execution-journal-${Date.now()}-${crypto.randomUUID()}.jsonl`);
         const journal = new ExecutionJournal({
             filePath: journalPath,
             batchDigest: this.batchDigest,
             approvedActionIds: this.actions.map(action => action.actionId),
+            manifestDigest: boundManifest.manifestDigest,
         });
         state.bound = true;
         return { governance, journal, artifactPath, journalPath };

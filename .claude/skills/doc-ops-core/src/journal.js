@@ -14,11 +14,18 @@ class JournalError extends Error {
 }
 
 class ExecutionJournal {
-  constructor({ filePath, batchDigest, approvedActionIds = [] }) {
+  // manifestDigest is optional lineage: when provided, every appended entry
+  // is stamped with it, so a journal line can never be mistaken for evidence
+  // of a run against a different manifest/source state.
+  constructor({ filePath, batchDigest, approvedActionIds = [], manifestDigest = null }) {
     if (!filePath) throw new JournalError('JOURNAL_PATH_REQUIRED', 'filePath is required');
     if (!batchDigest) throw new JournalError('BATCH_DIGEST_REQUIRED', 'batchDigest is required');
+    if (manifestDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(manifestDigest)) {
+      throw new JournalError('JOURNAL_MANIFEST_DIGEST_INVALID', 'manifestDigest must be a sha256:… digest when provided');
+    }
     this.filePath = filePath;
     this.batchDigest = batchDigest;
+    this.manifestDigest = manifestDigest;
     this.approvedActionIds = new Set(approvedActionIds);
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     this.entries = fs.existsSync(filePath) ? this.read() : [];
@@ -43,6 +50,7 @@ class ExecutionJournal {
 
   _append(entry) {
     const normalized = { schemaVersion: 1, batchDigest: this.batchDigest, ...entry };
+    if (this.manifestDigest !== null) normalized.manifestDigest = this.manifestDigest;
     const fd = fs.openSync(this.filePath, 'a');
     try {
       fs.writeSync(fd, canonicalStringify(normalized));

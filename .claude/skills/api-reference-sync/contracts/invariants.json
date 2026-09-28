@@ -389,6 +389,177 @@
         }
       ],
       "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). Deterministic structural rules only; wording quality stays with the polish prompt and model evals."
+    },
+    {
+      "id": "api.global-layout-rules",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-languages-global",
+      "status": "declared",
+      "enforcement": [
+        "plan",
+        "post-write"
+      ],
+      "statementDigest": "sha256:1cf59faeb49de42b9f7a8f54919a8eb612ae6e733a1acf18b5a846a3cc7957b6"
+    },
+    {
+      "id": "api.ownership-classification",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "evidence",
+        "plan"
+      ],
+      "statementDigest": "sha256:8f4d0ee930defb9fe1bdc82e85b919249ac6227de0e8211591b1dd5887420b07"
+    },
+    {
+      "id": "api.standalone-evidence-gate",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:497b7ad77fc8233b4ec4175a0fd92d09b217332b8d08ad00d945791142f8f92e"
+    },
+    {
+      "id": "api.one-document-per-interface",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:ee7b7f81e6fd42a1b3ba1d605d29c2a6473973968f125318c51c7ffdbe31e38a"
+    },
+    {
+      "id": "api.sparse-version-delta-model",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:e418a8e999c3bfaf3ddf550ad57436d12acb1b4afb08a083189a35e4f4df03db"
+    },
+    {
+      "id": "api.placement-facts-separate",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:fe23b77618b3d93e964c2aec1de3e34788fe9571f5cf29379e5e6f32f122aff4"
+    },
+    {
+      "id": "api.stateful-class-identity",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:4d6032406eff87a8a4740bf21ab2fbf2ed141daf42931d474225fc0eeba5b4e4"
+    },
+    {
+      "id": "api.organization-inventory-binding",
+      "version": 1,
+      "risk": "evidence-integrity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "evidence",
+        "plan"
+      ],
+      "statementDigest": "sha256:ba31a9479b71ec0df58ac667e612053a16249c5670cd3bd8e806e293cb9d6ef5"
+    },
+    {
+      "id": "api.changed-inherited-copy-patch",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:220bbe3ccaca92c038581405937bd01128e2d9d603a3093a0f61d0f99d8128e9"
+    },
+    {
+      "id": "api.unchanged-inherited-metadata-update",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:192463dba1faf5cbb9e4208e559610bdf777e311735223a5b508569d46144b14"
+    },
+    {
+      "id": "api.current-hierarchy-resolution",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "evidence",
+        "plan"
+      ],
+      "statementDigest": "sha256:9b4e38e5fcf00cee5dd2afda038df3df2e26cd11819a2429fa8a6ad507f674c8"
+    },
+    {
+      "id": "api.organization-evidence-manifest",
+      "version": 1,
+      "risk": "evidence-integrity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "evidence"
+      ],
+      "statementDigest": "sha256:f51bf57d32a9aa36e6ef6be213d36b38d7c80aa29412f55efb213cbd860ffd26"
+    },
+    {
+      "id": "api.reviewed-artifact-evidence",
+      "version": 1,
+      "risk": "evidence-integrity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "evidence",
+        "plan"
+      ],
+      "statementDigest": "sha256:564c76bffdacb35ad1366c0003fdf274f7a74122679f6e668ba6f4e0a636f009"
+    },
+    {
+      "id": "api.post-write-verification",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "post-write",
+        "reconcile"
+      ],
+      "statementDigest": "sha256:3a624b718eceb6ce1304c311dc2ff7b019f072d2d357cd2a673c155aa8976db3"
+    },
+    {
+      "id": "api.grouping-proposal-staleness",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:d8764ab4e4b1a08e8e572ba5f62b8c2c56fa19fc35f48072bc743495855b333e"
     }
   ]
 }

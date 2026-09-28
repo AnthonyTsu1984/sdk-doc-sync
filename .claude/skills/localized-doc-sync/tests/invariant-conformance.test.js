@@ -54,5 +54,8 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
     'localization.review-evidence-contiguity',
     'localization.target-local-prose',
     'localization.receipt-identity',
+    'localization.locale-metadata-non-comparison',
+    'localization.chapter-role-ignored',
+    'localization.receipt-merge-policy',
   ]);
 });

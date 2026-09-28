@@ -131,6 +131,13 @@
       "basis": "reads merged web-content PR data and writes deterministic local artifacts only"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/pr-polish.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "pr-polish",
+      "basis": "validates polish manifests and writes deterministic local artifacts only; no Feishu I/O"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

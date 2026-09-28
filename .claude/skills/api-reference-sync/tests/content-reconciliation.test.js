@@ -138,4 +138,31 @@ test('reconcileContextVerbatim binds a sanctioned polish chain to its terminal c
     });
     assert.deepEqual(broken.findings.map((finding) => finding.code), ['CONTENT_POLISH_CHAIN_INVALID']);
     assert.equal(broken.findings[0].severity, 'error');
+    assert.equal(broken.findings[0].invariantId, 'api.pr-polish-governed');
+
+    // A stale recorded provenance is a broken chain even when manifest and
+    // polishedContent are internally consistent.
+    const realProvenance = applyPolishManifest({ manifest, baseContent: base }).provenance;
+    const stale = reconcileContextVerbatim({
+        contexts: [{
+            contextId: 'stale-provenance',
+            content: base,
+            contentDigest: verbatimContentDigest(base),
+            polish: { manifest, polishedContent, provenance: { ...realProvenance, editCount: 99 } },
+        }],
+    });
+    assert.deepEqual(stale.findings.map((finding) => finding.code), ['CONTENT_POLISH_CHAIN_INVALID']);
+
+    // The real provenance round-trips clean.
+    const clean = reconcileContextVerbatim({
+        contexts: [{
+            contextId: 'with-provenance',
+            content: base,
+            contentDigest: verbatimContentDigest(base),
+            polish: { manifest, polishedContent, provenance: realProvenance },
+            title: 'GrantRole()',
+            rawContent: 'GrantRole()\nGrants a role to a user. See the guide.\n',
+        }],
+    });
+    assert.deepEqual(clean.findings, []);
 });

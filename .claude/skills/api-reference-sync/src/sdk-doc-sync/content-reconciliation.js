@@ -159,12 +159,14 @@ function reconcileContextVerbatim({ contexts = [] } = {}) {
                     identity,
                     `recorded polish chain does not deterministically reproduce the terminal content: ${chain.errors.join('; ')}`,
                 );
+                // The polish-chain rule is api.pr-polish-governed, not the
+                // verbatim invariant the surrounding comparison reports under.
+                findings[findings.length - 1].invariantId = POLISH_INVARIANT_ID;
                 continue;
             }
             terminalContent = chain.polishedContent;
             terminalLabel = 'polished terminal content';
-        }
-        if (typeof context.rawContent === 'string') {
+        }        if (typeof context.rawContent === 'string') {
             const comparison = compareVerbatimContent({
                 expectedContent: terminalContent,
                 rawContent: context.rawContent,

@@ -38,7 +38,7 @@ const {
 } = require('./versioned-tree-policy');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
 const { validateResumeSession } = require('./review-session-store');
-const { compareVerbatimContent } = require('./verbatim-content');
+const { compareVerbatimContent, verbatimContentDigest } = require('./verbatim-content');
 
 const VERBATIM_INVARIANT_ID = 'api.pr-verbatim-content';
 
@@ -1019,12 +1019,18 @@ class SdkDocSync {
                 || execResult.createdDocument?.token
                 || planned.plan.source?.documentToken
                 || null;
+            // Digest of the exact bytes the verbatim phase compared — the
+            // post-verbatim polish gate binds its precondition proof to this
+            // digest, so a passing outcome cannot be replayed against
+            // different content (api.pr-polish-governed).
+            const verifiedContentDigest = verbatimContentDigest(planned.context?.artifact?.content ?? '');
             let outcome;
             if (!documentToken || typeof this.m2f.getRawContent !== 'function') {
                 outcome = {
                     actionId: planned.plan.stableId,
                     invariantId: VERBATIM_INVARIANT_ID,
                     decision: verbatimAttestation.decision,
+                    contentDigest: verifiedContentDigest,
                     ok: false,
                     errors: [{ code: 'VERBATIM_REFETCH_UNAVAILABLE', documentToken }],
                 };
@@ -1041,6 +1047,7 @@ class SdkDocSync {
                         invariantId: VERBATIM_INVARIANT_ID,
                         decision: verbatimAttestation.decision,
                         documentToken,
+                        contentDigest: verifiedContentDigest,
                         ok: comparison.ok,
                         errors: comparison.ok ? [] : comparison.diffs,
                     };
@@ -1050,6 +1057,7 @@ class SdkDocSync {
                         invariantId: VERBATIM_INVARIANT_ID,
                         decision: verbatimAttestation.decision,
                         documentToken,
+                        contentDigest: verifiedContentDigest,
                         ok: false,
                         errors: [{ code: error.code || 'VERBATIM_REFETCH_FAILED', message: error.message }],
                     };

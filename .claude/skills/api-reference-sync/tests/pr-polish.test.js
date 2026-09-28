@@ -41,7 +41,7 @@ const BASE = [
 ].join('\n');
 
 const PROSE = 'This method grants a role to a user. It is used by automation pipelines.';
-const PASSING_FIDELITY = { invariantId: 'api.pr-verbatim-content', ok: true };
+const PASSING_FIDELITY = { invariantId: 'api.pr-verbatim-content', ok: true, contentDigest: verbatimContentDigest(BASE) };
 
 function manifestWith(edits, { baseContent = BASE, schemaVersion = 1 } = {}) {
     return {
@@ -71,10 +71,21 @@ test('assertPolishPreconditions is fail-closed without a passing verbatim outcom
         (error) => error.code === 'PR_POLISH_VERBATIM_NOT_PROVEN',
     );
     assert.throws(
-        () => assertPolishPreconditions({ contentFidelity: { invariantId: 'other.invariant', ok: true } }),
+        () => assertPolishPreconditions({ contentFidelity: { invariantId: 'other.invariant', ok: true, contentDigest: PASSING_FIDELITY.contentDigest } }),
+        (error) => error.code === 'PR_POLISH_VERBATIM_NOT_PROVEN',
+    );
+    // A passing outcome that carries no compared digest is not a proof.
+    assert.throws(
+        () => assertPolishPreconditions({ contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: true } }),
         (error) => error.code === 'PR_POLISH_VERBATIM_NOT_PROVEN',
     );
     assert.equal(assertPolishPreconditions({ contentFidelity: PASSING_FIDELITY }), true);
+    assert.equal(assertPolishPreconditions({ contentFidelity: PASSING_FIDELITY, baseContent: BASE }), true);
+    // A proof for OTHER bytes does not unlock polish for these bytes.
+    assert.throws(
+        () => assertPolishPreconditions({ contentFidelity: PASSING_FIDELITY, baseContent: `${BASE}\ndifferent bytes` }),
+        (error) => error.code === 'PR_POLISH_VERBATIM_NOT_PROVEN',
+    );
 });
 
 test('a valid manifest applies deterministically and records the digest chain', () => {
@@ -192,6 +203,79 @@ test('anchors must be unique, non-overlapping, and never cover the body', () => 
     );
 });
 
+test('splice-boundary and partial-overlap exploits are rejected (review round 1 regressions)', () => {
+    // Partial anchor starting INSIDE a code span: unbalanced backticks would
+    // compare as "no code spans changed" on the bare substrings — the
+    // affected-region comparison must catch the rewritten identifier.
+    const codeBase = 'Call this with the `grant_role(request)` helper to proceed.\n';
+    const codeManifest = {
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(codeBase),
+        edits: [{ anchor: 'grant_role(request)` helper to proceed.', replacement: 'EVIL_CALL()` helper to proceed.' }],
+    };
+    assert.equal(firstErrorCode(codeManifest, codeBase), 'PR_POLISH_CODE_SPAN_CHANGED');
+
+    // Partial anchor starting inside a link URL: the URL smuggle must fail
+    // even though terminal canonicalization strips URLs entirely.
+    const urlBase = 'See the [guide](https://example.com/docs/grant) for details.\n';
+    const urlManifest = {
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(urlBase),
+        edits: [{ anchor: 'See the [guide](https://example.com/docs/gr', replacement: 'See the [guide](https://evil.example.com/at' }],
+    };
+    assert.equal(firstErrorCode(urlManifest, urlBase), 'PR_POLISH_URL_SET_CHANGED');
+
+    // URL REORDER inside one edited region is not sanctioned polish.
+    const reorderBase = [
+        'This method grants a role to a user. It is used by automation pipelines.',
+        'See [alpha](https://example.com/a) then [beta](https://example.com/b).',
+        'The granted role takes effect on the next session.',
+        'Automation pipelines should verify the grant before proceeding further.',
+        'Role grants are idempotent and safe to replay from a clean state.',
+    ].join('\n');
+    const reorderManifest = {
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(reorderBase),
+        edits: [{ anchor: 'See [alpha](https://example.com/a) then [beta](https://example.com/b).', replacement: 'See [beta](https://example.com/b) then [alpha](https://example.com/a).' }],
+    };
+    assert.equal(firstErrorCode(reorderManifest, reorderBase), 'PR_POLISH_URL_SET_CHANGED');
+
+    // Splice-boundary fence forging: a one-backtick prefix plus a
+    // two-backtick replacement must not concatenate into a fence delimiter.
+    const fenceBase = '`quoted` text that a polish pass may reword freely.\n';
+    const fenceManifest = {
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(fenceBase),
+        edits: [{ anchor: 'quoted', replacement: '``x' }],
+    };
+    assert.equal(firstErrorCode(fenceManifest, fenceBase), 'PR_POLISH_FORBIDDEN_INTRODUCTION');
+
+    // A replacement may not introduce a REQUEST METHODS marker either.
+    const requestBase = 'This method grants a role to a user. It is used by automation pipelines.\n';
+    const requestManifest = {
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(requestBase),
+        edits: [{ anchor: 'This method grants a role to a user. It is used by automation pipelines.', replacement: 'Grants a role.\n**REQUEST METHODS:**' }],
+    };
+    assert.equal(firstErrorCode(requestManifest, requestBase), 'PR_POLISH_FORBIDDEN_INTRODUCTION');
+
+    // Unbounded expansion: a small anchor replaced by megabytes of new prose
+    // is a rewrite wearing a polish anchor — the tripwire counts the larger
+    // side of each edit.
+    const expandManifest = {
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(requestBase),
+        edits: [{ anchor: 'This method grants a role to a user. It is used by automation pipelines.', replacement: `Injected prose. ${'x'.repeat(5000)}` }],
+    };
+    assert.equal(firstErrorCode(expandManifest, requestBase), 'PR_POLISH_FULL_REWRITE');
+});
+
 test('comparePolishedContent proves the landed page against the recomputed terminal bytes', () => {
     const { polishedContent } = applyPolishManifest({
         manifest: manifestWith([{ anchor: PROSE, replacement: 'Grants a role to a user.' }]),
@@ -300,7 +384,7 @@ test('the CLI validates, emits terminal bytes + provenance, and verifies a refet
     assert.equal(diverged.status, 1);
     assert.match(diverged.stderr, /PR_POLISH_CONTENT_VERIFICATION_FAILED/);
 
-    fs.writeFileSync(fidelityFile, JSON.stringify({ invariantId: 'api.pr-verbatim-content', ok: false }));
+    fs.writeFileSync(fidelityFile, JSON.stringify({ invariantId: 'api.pr-verbatim-content', ok: false, contentDigest: PASSING_FIDELITY.contentDigest }));
     const unproven = run();
     assert.equal(unproven.status, 1);
     assert.match(unproven.stderr, /PR_POLISH_VERBATIM_NOT_PROVEN/);

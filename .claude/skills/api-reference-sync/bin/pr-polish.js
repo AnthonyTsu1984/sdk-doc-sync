@@ -43,16 +43,20 @@ function parseArgs(argv) {
 
 function main(argv = process.argv) {
     const options = parseArgs(argv);
-    // Fail-closed sequencing: no verified verbatim landing, no polish.
-    assertPolishPreconditions({ contentFidelity: readJson(options.fidelityOutcome) });
-
     const baseContent = fs.readFileSync(options.baseContent, 'utf8');
+
+    // Fail-closed sequencing: no verified verbatim landing for THESE bytes,
+    // no polish. The journal outcome carries the digest of the content the
+    // verbatim phase compared, so a passing proof cannot be replayed against
+    // different content.
+    assertPolishPreconditions({ contentFidelity: readJson(options.fidelityOutcome), baseContent });
+
     const manifest = readJson(options.manifest);
     const { polishedContent, provenance } = applyPolishManifest({ manifest, baseContent });
 
-    fs.writeFileSync(options.polishedOutput, polishedContent);
-    fs.writeFileSync(options.provenanceOutput, `${JSON.stringify(provenance, null, 2)}\n`);
-
+    // Terminal proof BEFORE any artifact lands on disk: a divergent refetch
+    // leaves no polished/provenance outputs behind, only the typed failure.
+    let verified = false;
     if (options.verifyRawContent) {
         const rawContent = fs.readFileSync(options.verifyRawContent, 'utf8');
         const comparison = comparePolishedContent({ polishedContent, rawContent });
@@ -61,8 +65,12 @@ function main(argv = process.argv) {
             process.stderr.write(`${JSON.stringify(comparison.diffs, null, 2)}\n`);
             process.exit(1);
         }
+        verified = true;
     }
-    process.stdout.write(`${JSON.stringify({ ok: true, ...provenance, verified: Boolean(options.verifyRawContent) })}\n`);
+
+    fs.writeFileSync(options.polishedOutput, polishedContent);
+    fs.writeFileSync(options.provenanceOutput, `${JSON.stringify(provenance, null, 2)}\n`);
+    process.stdout.write(`${JSON.stringify({ ok: true, ...provenance, verified })}\n`);
 }
 
 if (require.main === module) {

@@ -929,14 +929,21 @@ const scenarios = {
       ],
     };
 
-    // Fail-closed sequencing: no passing verbatim proof, no polish.
+    // Fail-closed sequencing: no passing verbatim proof for THESE bytes,
+    // no polish — the outcome must carry the compared contentDigest.
     let sequencingCode = null;
     try {
-      assertPolishPreconditions({ contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: false } });
+      assertPolishPreconditions({
+        contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: true, contentDigest: verbatimContentDigest(`${base}\ndifferent bytes`) },
+        baseContent: base,
+      });
     } catch (error) {
       sequencingCode = error.code;
     }
-    assertPolishPreconditions({ contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: true } });
+    assertPolishPreconditions({
+      contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: true, contentDigest: verbatimContentDigest(base) },
+      baseContent: base,
+    });
 
     const { polishedContent, provenance } = applyPolishManifest({ manifest, baseContent: base });
     const fenceIntact = polishedContent.includes('client.grant_role(user="a")')

@@ -21,14 +21,19 @@
 //   - `<include target="...">` conditional-marker lines;
 //   - web-content metadata footer lines (`<!-- category: ... -->`);
 //   - `**REQUEST METHODS:**` section markers;
-//   - inline code spans inside an edited span (identifier text is API
+//   - inline code spans inside an edited region (identifier text is API
 //     surface: the multiset of code-span contents must survive an edit);
-//   - absolute link URLs (every `](http...)` target in an edited span must
-//     survive; link text may be reworded).
-// A replacement may not introduce any protected line shape (fence, table,
-// heading, include marker, footer) — polish adds no structure.
+//   - absolute link URLs (every `](http...)` target in an edited region must
+//     survive IN ORDER; link text may be reworded).
+// Preservation is enforced over the whole AFFECTED REGION (the base lines the
+// edit touches, compared against their spliced candidate): anchors that start
+// inside a code span or a link URL, and protected line shapes forged at the
+// splice boundary (e.g. a prefix backtick joining a replacement's backticks
+// into a fence delimiter), both surface on the spliced lines, never on the
+// bare substrings. A replacement may not introduce any protected line shape —
+// polish adds no structure.
 
-const { sha256Digest, digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const {
     INVARIANT_ID: VERBATIM_INVARIANT_ID,
     verbatimContentDigest,
@@ -48,8 +53,10 @@ const INLINE_CODE_SPAN = /`([^`\n]+)`/g;
 const ABSOLUTE_LINK = /\]\((https?:\/\/[^)\s]+)\)/g;
 
 // Rewriting nearly the whole body through "polish" edits is a silent full
-// rewrite, not polish. Both per-edit and aggregate anchors above this
-// fraction of the verified content are rejected.
+// rewrite, not polish. Both per-edit and aggregate footprints — an edit's
+// anchor OR replacement bytes, whichever is larger — above this fraction of
+// the verified content are rejected, so a small anchor cannot smuggle an
+// unbounded expansion past the tripwire.
 const FULL_REWRITE_FRACTION = 0.9;
 
 function polishError(code, detail) {
@@ -59,7 +66,7 @@ function polishError(code, detail) {
     return error;
 }
 
-function collectPattern(text, pattern) {
+function collectMultiset(text, pattern) {
     const found = [];
     let match = pattern.exec(text);
     while (match !== null) {
@@ -70,7 +77,18 @@ function collectPattern(text, pattern) {
     return found.sort();
 }
 
-function sameMultiset(left, right) {
+function collectSequence(text, pattern) {
+    const found = [];
+    let match = pattern.exec(text);
+    while (match !== null) {
+        found.push(match[1]);
+        match = pattern.exec(text);
+    }
+    pattern.lastIndex = 0;
+    return found;
+}
+
+function sameValues(left, right) {
     if (left.length !== right.length) return false;
     return left.every((item, index) => item === right[index]);
 }
@@ -102,25 +120,36 @@ function intersectsProtected(spans, start, end) {
     return spans.some((span) => span.protected && start < span.end && end > span.start);
 }
 
-function replacementIntroducesStructure(replacement) {
-    return String(replacement).split('\n').some((line) => FENCE_LINE.test(line)
+function introducesProtectedShape(text) {
+    return String(text).split('\n').some((line) => FENCE_LINE.test(line)
         || HEADING_LINE.test(line)
         || TABLE_LINE.test(line)
         || INCLUDE_LINE.test(line)
-        || FOOTER_LINE.test(line));
+        || FOOTER_LINE.test(line)
+        || REQUEST_METHODS_LINE.test(line));
 }
 
 // The sequencing gate: polish may start only from a state the verbatim
-// invariant already proved. The caller supplies the journaled
-// content-fidelity outcome for the action that landed the page.
-function assertPolishPreconditions({ contentFidelity } = {}) {
-    const ok = contentFidelity
+// invariant already proved, and the proof must be FOR the exact bytes being
+// polished. The caller supplies the journaled content-fidelity outcome for
+// the action that landed the page (it carries the digest of the content the
+// verbatim phase compared) and the base content under polish.
+function assertPolishPreconditions({ contentFidelity, baseContent } = {}) {
+    const proven = contentFidelity
         && contentFidelity.invariantId === VERBATIM_INVARIANT_ID
-        && contentFidelity.ok === true;
-    if (!ok) {
+        && contentFidelity.ok === true
+        && typeof contentFidelity.contentDigest === 'string'
+        && contentFidelity.contentDigest.length > 0;
+    if (!proven) {
         throw polishError(
             'PR_POLISH_VERBATIM_NOT_PROVEN',
-            'post-verbatim polish requires a passing api.pr-verbatim-content content-fidelity journal outcome for the landed page',
+            'post-verbatim polish requires a passing api.pr-verbatim-content content-fidelity journal outcome carrying the compared contentDigest',
+        );
+    }
+    if (baseContent !== undefined && contentFidelity.contentDigest !== verbatimContentDigest(baseContent)) {
+        throw polishError(
+            'PR_POLISH_VERBATIM_NOT_PROVEN',
+            'the passing content-fidelity outcome is bound to different content bytes than the content under polish',
         );
     }
     return true;
@@ -179,24 +208,37 @@ function validatePolishManifest({ manifest, baseContent } = {}) {
             ));
             continue;
         }
-        if (replacementIntroducesStructure(edit.replacement)) {
+        // Preservation is judged over the whole affected region — the base
+        // lines the edit touches — against their spliced candidate. The bare
+        // anchor/replacement substrings are NOT the unit of comparison: an
+        // anchor starting inside a code span or link URL has unbalanced
+        // delimiters and would compare as "no spans/URLs changed", and a
+        // protected shape forged at the splice boundary (prefix backtick +
+        // replacement backticks = fence delimiter) only exists in the
+        // spliced line.
+        const regionStart = content.lastIndexOf('\n', start) + 1;
+        const newlineAfter = content.indexOf('\n', end);
+        const regionEnd = newlineAfter === -1 ? content.length : newlineAfter;
+        const baseRegion = content.slice(regionStart, regionEnd);
+        const candidateRegion = content.slice(regionStart, start) + edit.replacement + content.slice(end, regionEnd);
+        if (introducesProtectedShape(candidateRegion)) {
             errors.push(polishError(
                 'PR_POLISH_FORBIDDEN_INTRODUCTION',
-                `replacement introduces protected line structure (fence, table, heading, include marker, or footer): ${edit.replacement.slice(0, 60)}`,
+                `edit introduces protected line structure (fence, table, heading, include marker, footer, or REQUEST METHODS marker) in the affected region: ${edit.anchor.slice(0, 60)}`,
             ));
             continue;
         }
-        if (!sameMultiset(collectPattern(edit.anchor, INLINE_CODE_SPAN), collectPattern(edit.replacement, INLINE_CODE_SPAN))) {
+        if (!sameValues(collectMultiset(baseRegion, INLINE_CODE_SPAN), collectMultiset(candidateRegion, INLINE_CODE_SPAN))) {
             errors.push(polishError(
                 'PR_POLISH_CODE_SPAN_CHANGED',
                 `edit changes inline code spans (API identifiers are not prose): ${edit.anchor.slice(0, 60)}`,
             ));
             continue;
         }
-        if (!sameMultiset(collectPattern(edit.anchor, ABSOLUTE_LINK), collectPattern(edit.replacement, ABSOLUTE_LINK))) {
+        if (!sameValues(collectSequence(baseRegion, ABSOLUTE_LINK), collectSequence(candidateRegion, ABSOLUTE_LINK))) {
             errors.push(polishError(
                 'PR_POLISH_URL_SET_CHANGED',
-                `edit adds or drops an absolute link URL: ${edit.anchor.slice(0, 60)}`,
+                `edit adds, drops, or reorders an absolute link URL: ${edit.anchor.slice(0, 60)}`,
             ));
             continue;
         }
@@ -212,11 +254,14 @@ function validatePolishManifest({ manifest, baseContent } = {}) {
         }
     }
 
-    // Full-rewrite tripwire, per edit and in aggregate.
+    // Full-rewrite tripwire, per edit and in aggregate. An edit's footprint
+    // is its larger side (anchor or replacement): a small anchor expanded
+    // into unbounded new prose is a rewrite wearing a polish anchor.
     const contentLength = Math.max(content.length, 1);
-    const anchoredBytes = replacements.reduce((total, item) => total + (item.end - item.start), 0);
-    if (replacements.some((item) => (item.end - item.start) >= FULL_REWRITE_FRACTION * contentLength)
-        || anchoredBytes >= FULL_REWRITE_FRACTION * contentLength) {
+    const editFootprint = (item) => Math.max(item.end - item.start, item.replacement.length);
+    const footprintBytes = replacements.reduce((total, item) => total + editFootprint(item), 0);
+    if (replacements.some((item) => editFootprint(item) >= FULL_REWRITE_FRACTION * contentLength)
+        || footprintBytes >= FULL_REWRITE_FRACTION * contentLength) {
         errors.push(polishError(
             'PR_POLISH_FULL_REWRITE',
             'polish edits cover nearly the whole content; a whole-body change is a new verbatim intake, not polish',
@@ -256,7 +301,9 @@ function comparePolishedContent({ polishedContent, rawContent } = {}) {
 
 // Chain validation for reconciliation and acceptance: given the frozen
 // verbatim context and its recorded polish, recompute the whole chain and
-// return the terminal provenance. Any mismatch is a broken chain.
+// return the terminal provenance. A recorded provenance block, when present,
+// must equal the recomputed one — a stale or hand-edited provenance is a
+// broken chain even if manifest + polishedContent are internally consistent.
 function verifyPolishChain({ content, polish } = {}) {
     if (!polish || typeof polish !== 'object' || !polish.manifest || typeof polish.polishedContent !== 'string') {
         return { ok: false, errors: ['polish chain requires manifest and polishedContent'] };
@@ -269,6 +316,13 @@ function verifyPolishChain({ content, polish } = {}) {
     }
     if (applied.polishedContent !== polish.polishedContent) {
         return { ok: false, errors: ['PR_POLISH_TERMINAL_MISMATCH: recorded polishedContent differs from the deterministic application of the manifest'] };
+    }
+    if (polish.provenance !== undefined) {
+        const recorded = JSON.stringify(polish.provenance);
+        const recomputed = JSON.stringify(applied.provenance);
+        if (recorded !== recomputed) {
+            return { ok: false, errors: ['PR_POLISH_PROVENANCE_MISMATCH: recorded provenance differs from the recomputed digest chain'] };
+        }
     }
     return { ok: true, provenance: applied.provenance, polishedContent: applied.polishedContent };
 }

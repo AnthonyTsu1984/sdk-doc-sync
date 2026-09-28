@@ -47,12 +47,12 @@ After a merged-PR page lands verbatim and its `content-fidelity` outcome is jour
 
 Phase order per unit:
 
-1. **Precondition** — the verbatim execution's `content-fidelity` journal entry (`invariantId: api.pr-verbatim-content`, `ok: true`) is the gate. `bin/pr-polish.js` refuses to start without it (`PR_POLISH_VERBATIM_NOT_PROVEN`).
+1. **Precondition** — the verbatim execution's `content-fidelity` journal entry (`invariantId: api.pr-verbatim-content`, `ok: true`, carrying the `contentDigest` of the exact bytes the verbatim phase compared) is the gate. `bin/pr-polish.js` refuses to start without it and refuses a proof bound to different bytes (`PR_POLISH_VERBATIM_NOT_PROVEN` both ways) — a passing outcome for page X cannot unlock polish for page Y.
 2. **Subagent proposal** — dispatch a polish subagent with the exact verified bytes (the pinned PR content after verbatim normalization) and the protected-content contract below. The subagent returns a polish manifest as data and performs no Feishu I/O.
-3. **Deterministic validation and recompute** — `bin/pr-polish.js --base-content <verified.md> --fidelity-outcome <journal-entry.json> --manifest <manifest.json> --polished-output <polished.md> --provenance-output <provenance.json>` validates the manifest and emits the exact terminal bytes plus the digest chain (`baseContentDigest`, `manifestDigest`, `polishedContentDigest`). Any typed rejection aborts the phase; the manifest is repaired and revalidated, never applied partially.
+3. **Deterministic validation and recompute** — `bin/pr-polish.js --base-content <verified.md> --fidelity-outcome <journal-entry.json> --manifest <manifest.json> --polished-output <polished.md> --provenance-output <provenance.json>` validates the manifest and emits the exact terminal bytes plus the digest chain (`baseContentDigest`, `manifestDigest`, `polishedContentDigest`). Preservation is judged over each edit's whole affected region — the base lines it touches, compared against their spliced candidate — so partial anchors starting inside a code span or link URL, and protected shapes forged at the splice boundary, are rejected rather than compared as bare substrings. Any typed rejection aborts the phase; the manifest is repaired and revalidated, never applied partially.
 4. **Application** — the validated edits are applied to the live page through the governed writer as a separately approved batch: anchored text replacements over prose blocks only. Pages carrying `<include target="...">` markers stay surgical-only (`api.literal-include-preserved`); polish never rebuilds a body.
-5. **Terminal verification** — refetch `raw_content` and run the same CLI with `--verify-raw-content <raw.txt>`: the page must compare line-for-line against the recomputed polished content through the declared canonicalization (`PR_POLISH_CONTENT_VERIFICATION_FAILED` on divergence). Journal the polish outcome with the provenance digests before the completion sentinel.
-6. **Binding** — `DOCUMENT_REVIEW` presents the polished page and the polish manifest summary (edit count + the three digests). The unit's reviewed context records `{ content, contentDigest, polish: { manifest, polishedContent } }`; acceptance and reconciliation then bind the polished terminal state, and a broken chain is `CONTENT_POLISH_CHAIN_INVALID` at reconciliation.
+5. **Terminal verification** — refetch `raw_content` and run the same CLI with `--verify-raw-content <raw.txt>`: the page must compare line-for-line against the recomputed polished content through the declared canonicalization (`PR_POLISH_CONTENT_VERIFICATION_FAILED` on divergence; no artifacts are written on failure). Journal the polish outcome with the provenance digests before the completion sentinel.
+6. **Binding** — `DOCUMENT_REVIEW` presents the polished page and the polish manifest summary (edit count + the three digests). The unit's reviewed context records `{ content, contentDigest, polish: { manifest, polishedContent, provenance } }`; acceptance and reconciliation then bind the polished terminal state, and a chain that no longer deterministically reproduces the terminal bytes (including a stale recorded provenance) is `CONTENT_POLISH_CHAIN_INVALID` at reconciliation.
 
 Polish manifest schema:
 
@@ -68,15 +68,15 @@ Polish manifest schema:
 }
 ```
 
-Protected content — an edit whose anchor overlaps any of these, or whose replacement introduces them, is rejected:
+Protected content — an edit whose anchor overlaps any of these, or whose affected region after splicing introduces them, is rejected:
 
 | Rejection code | Rule |
 |----------------|------|
 | `PR_POLISH_PROTECTED_REGION` | anchor overlaps fenced code, a fence delimiter, a table row, a heading, an `<include …>` line, the web-content footer, or a `**REQUEST METHODS:**` marker |
-| `PR_POLISH_CODE_SPAN_CHANGED` | inline code spans inside an edited span must survive identically (API identifiers are not prose) |
-| `PR_POLISH_URL_SET_CHANGED` | every absolute link URL inside an edited span must survive (link text may be reworded) |
-| `PR_POLISH_FORBIDDEN_INTRODUCTION` | replacement introduces a fence, table, heading, include marker, or footer line |
-| `PR_POLISH_FULL_REWRITE` | edits cover ≥ 90% of the verified content (per edit or aggregate) — a whole-body change is a new verbatim intake, not polish |
+| `PR_POLISH_CODE_SPAN_CHANGED` | inline code spans in the affected region must survive identically as a multiset (API identifiers are not prose) |
+| `PR_POLISH_URL_SET_CHANGED` | every absolute link URL in the affected region must survive, in order (link text may be reworded; re-pairing link text with a different URL while keeping the URL sequence is a document-review concern) |
+| `PR_POLISH_FORBIDDEN_INTRODUCTION` | the spliced affected region introduces a fence, table, heading, include marker, footer, or `**REQUEST METHODS:**` line — including shapes forged at the splice boundary (e.g. a prefix backtick joining a replacement's backticks into a fence delimiter) |
+| `PR_POLISH_FULL_REWRITE` | edit footprints (each edit's larger side: anchor or replacement) cover ≥ 90% of the verified content, per edit or in aggregate — a small anchor expanded into unbounded new prose is a rewrite wearing a polish anchor, and a whole-body change is a new verbatim intake, not polish |
 | `PR_POLISH_ANCHOR_NOT_FOUND` / `PR_POLISH_ANCHOR_NOT_UNIQUE` | anchors must match exactly once in the verified content |
 | `PR_POLISH_EDIT_OVERLAP` | anchors must not overlap each other |
 | `PR_POLISH_BASE_DIGEST_MISMATCH` | the manifest must bind the digest of the exact content the verbatim phase proved |

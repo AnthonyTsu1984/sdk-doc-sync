@@ -325,7 +325,7 @@
         "post-write",
         "reconcile"
       ],
-      "statementDigest": "sha256:cfbc3dd2c9206b60c26262c4467a59cdcce2eae7afa35c856baaae853a6acda0",
+      "statementDigest": "sha256:9a6105cc3ab4268a63475dd44c6899b7f56622e940801e074172e22d9a3412b3",
       "fixtureIds": [
         "content-polish-chain",
         "content-polish-protected-region"

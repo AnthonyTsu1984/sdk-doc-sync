@@ -880,10 +880,39 @@ not scheduled.**
       re-validates the journal from disk so a fabricated `result.reconciliation` can only
       record well-formed durable evidence; pre-flight ordering keeps the normal path
       byte-identical to master.
-- [ ] 6.8 **Disposable-tenant live smoke as a harness release gate.** create → patch → verify →
+- [x] 6.8 **Disposable-tenant live smoke as a harness release gate.** create → patch → verify →
       accept → cleanup against a disposable Feishu tenant, under its own exact digest approval.
       This is an admission condition for releasing new harness versions, run as the existing
       manual operator gate — never PR-automated (workflow stance unchanged).
+
+      6.8 delivered (2026-09-28, branch `feat/phase6-live-smoke-gate`; review round 1 same day
+      caught a P1 — the cleanup phase ran under the PLANNED digest while the executor checks
+      the MATERIALIZED one, so a live run could never pass; fixed with the composition
+      validation + materialized-digest execution + both digests in evidence, and the test fake
+      that masked it replaced with a target-rebinding materializer): the existing
+      `doc-ops-smoke` pipeline (doctor/plan/simulate/live-*/acceptance/cleanup with journal
+      gating and collision-guarded disposable-tenant config) gains a one-shot **`release-gate`
+      command** that is the harness release gate: it verifies all three phase approval digests
+      against the plan BEFORE anything runs (`SMOKE_RELEASE_GATE_DIGEST_MISMATCH`), replays the
+      offline rehearsal (`SMOKE_RELEASE_GATE_REHEARSAL_FAILED`), verifies the sandbox identity,
+      then chains live-create → live-patch → acceptance readback → live-cleanup, each phase
+      journal-gated exactly like the per-phase commands. On PASS it writes
+      `tmp/doc-ops-smoke/release-gate/release-<sourceFingerprint>.json` — exclusive-create,
+      deterministic (no timestamps, so a rerun of a passed gate on the same tree lands
+      byte-equal), binding the whole-tree source fingerprint (the 6.9 O1/O2 definition), the
+      sandbox identity fingerprint, run id, corpus id, the four phase outcomes and the three
+      approved digests; content drift on an existing path refuses
+      (`SMOKE_RELEASE_GATE_EVIDENCE_CONFLICT`). **No PASS artifact for a tree fingerprint ⇒
+      that harness version is not releasable.** Operator procedure recorded in
+      `docs/superpowers/runbooks/harness-release-live-smoke.md` (prerequisites, steps,
+      evidence semantics, recovery via cleanup-resume/recovery-cleanup). Offline evidence:
+      `release-gate.test.js` (7 tests — digest refusal before any call, rehearsal refusal,
+      chain order + evidence content incl. both cleanup digests + preflight rerun refusal,
+      acceptance-failure stop without cleanup, cleanup-derivation divergence refusal, flag
+      reciprocity, evidence-conflict fail-closed). **Honest scope note: the gate is delivered and
+      simulation-proven; the LIVE disposable-tenant run is the operator's release-time action
+      by design (never PR-automated), so no live PASS artifact exists yet — the first harness
+      release after this PR executes the gate per the runbook.**
 - [ ] 6.9 **Admitted-fingerprint binding for production runs.** A production run must bind the
       exact admitted source fingerprint; "tested similar code" is not proof. Acceptance criteria
       from the PR #39 review round (2026-09-26):

@@ -860,6 +860,26 @@ not scheduled.**
       covered there (noted, not separately pinned). Known local friction unchanged: the
       constant-digest run-manifest evidence conflicts after any tree edit (self-drift), local
       loop is clear `tmp/**/run-manifest-*.json` and re-run; CI runners never see it.
+
+      6.7 review round 1 (2026-09-28, independent code-reviewer pass, approve-with-comments,
+      fixed in the same PR): **P2 — the classifier short-circuited `'complete'` on the
+      sentinel**, so a sentinel-only (or failed-observed-before-sentinel) journal classified
+      complete and the authoring resume crashed with a bare TypeError dereferencing a missing
+      observed entry — fail-closed but untyped, violating the PR's own doctrine. Fix: the
+      classifier now validates the evidence BENEATH the sentinel before reporting `'complete'`
+      (a sentinel with zero or failed/unverified observations is `reconciliation-required`),
+      plus strictness hardening: observed-without-prepared, evidence outside the approved set,
+      non-empty journals under an empty approved set, and (when the caller passes
+      `batchDigest`, which all three resume paths now do) entries bound to a different batch
+      are all `reconciliation-required`. Belt-and-suspenders typed guard added to the authoring
+      resume's observed dereference. P3s fixed: the api recovery block now narrates the
+      different-active-unit case typed (accept/roll back that unit first) instead of an
+      unhandled store refusal, and the authoring S5 gained the live-drift companion case
+      (drifted live document vs intact plan). Reviewer explicitly verified: no organic scenario
+      where resumable auto-completion blesses an un-landed mutation; the api recording path
+      re-validates the journal from disk so a fabricated `result.reconciliation` can only
+      record well-formed durable evidence; pre-flight ordering keeps the normal path
+      byte-identical to master.
 - [ ] 6.8 **Disposable-tenant live smoke as a harness release gate.** create → patch → verify →
       accept → cleanup against a disposable Feishu tenant, under its own exact digest approval.
       This is an admission condition for releasing new harness versions, run as the existing

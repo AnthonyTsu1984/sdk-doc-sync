@@ -140,26 +140,57 @@ module.exports = { JournalError, ExecutionJournal, classifyJournalEntries };
 //                                failed/unverified results, foreign types);
 //                                the external state is ambiguous and only an
 //                                operator may resolve it.
-function classifyJournalEntries({ entries, approvedActionIds }) {
+function classifyJournalEntries({ entries, approvedActionIds, batchDigest = null }) {
   if (!Array.isArray(entries)) throw new JournalError('JOURNAL_ENTRY_INVALID', 'entries must be an array');
   const ids = Array.isArray(approvedActionIds) ? approvedActionIds : [];
   if (entries.length === 0) return 'empty';
-  if (entries.some((entry) => entry?.type === 'completion')) return 'complete';
   const observedByAction = new Map();
+  const preparedActionIds = new Set();
+  let hasCompletion = false;
   for (const entry of entries) {
+    if (entry?.type === 'completion') {
+      hasCompletion = true;
+      continue;
+    }
     if (entry?.type === 'observed') {
+      // Evidence for actions outside the approved set, duplicates, or
+      // observations without their prepared counterpart are never absorbed.
+      if (!preparedActionIds.has(entry.actionId) && !entries.some((item) => (
+        item?.type === 'prepared' && item.actionId === entry.actionId
+      ))) {
+        return 'reconciliation-required';
+      }
       if (observedByAction.has(entry.actionId)) return 'reconciliation-required';
       observedByAction.set(entry.actionId, entry);
-    } else if (entry?.type !== 'prepared') {
+    } else if (entry?.type === 'prepared') {
+      preparedActionIds.add(entry.actionId);
+    } else {
+      return 'reconciliation-required';
+    }
+    if (batchDigest !== null && entry?.batchDigest !== batchDigest) {
       return 'reconciliation-required';
     }
   }
   for (const entry of observedByAction.values()) {
     if (entry.status !== 'success' || entry.verified !== true) return 'reconciliation-required';
   }
+  if (hasCompletion) {
+    // A sentinel is only proof of completion when the evidence beneath it is
+    // well-formed — a sentinel alone (or over failed/unverified observations)
+    // is fabricated or torn, not durable.
+    if (observedByAction.size === 0) return 'reconciliation-required';
+    for (const actionId of ids) {
+      if (!observedByAction.has(actionId)) return 'reconciliation-required';
+    }
+    return 'complete';
+  }
   for (const entry of entries) {
     if (entry?.type === 'prepared' && !observedByAction.has(entry.actionId)) return 'reconciliation-required';
   }
+  for (const entry of observedByAction.keys()) {
+    if (!ids.includes(entry)) return 'reconciliation-required';
+  }
+  if (ids.length === 0) return 'reconciliation-required';
   for (const actionId of ids) {
     if (!observedByAction.has(actionId)) return 'reconciliation-required';
   }

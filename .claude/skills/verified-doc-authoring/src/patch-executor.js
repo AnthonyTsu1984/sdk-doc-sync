@@ -149,7 +149,11 @@ async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
 // after the journaled success refuses typed instead of replaying.
 async function resumeAuthoringPatchFromJournal({ plan, journal, adapter }) {
   const entries = journal.read();
-  const phase = classifyJournalEntries({ entries, approvedActionIds: [...journal.approvedActionIds] });
+  const phase = classifyJournalEntries({
+    entries,
+    approvedActionIds: [...journal.approvedActionIds],
+    batchDigest: journal.batchDigest,
+  });
   if (phase === 'reconciliation-required') {
     throw Object.assign(
       new Error('An existing execution journal is incomplete or ambiguous; inspect it and re-plan with a fresh journal path — replay is refused before any mutation.'),
@@ -158,6 +162,14 @@ async function resumeAuthoringPatchFromJournal({ plan, journal, adapter }) {
   }
   if (phase === 'resumable') journal.complete();
   const observed = entries.find((entry) => entry.type === 'observed');
+  // Belt-and-suspenders: the classifier guarantees a well-formed 'complete'
+  // phase carries observations, but the resume must never dereference blind.
+  if (!observed) {
+    throw Object.assign(
+      new Error('Completion journal carries no observed evidence; reconcile before replay.'),
+      { code: 'EXECUTION_RECONCILIATION_REQUIRED' },
+    );
+  }
   const mutation = {
     documentId: observed.documentId,
     created: observed.created === true,

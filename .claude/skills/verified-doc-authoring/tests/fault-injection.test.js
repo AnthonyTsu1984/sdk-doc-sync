@@ -212,6 +212,24 @@ test('S5 after_completion: a completed journal resumes read-only and refuses if 
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(drifted.calls, { snapshot: 0, patch: 0, refetch: 1 });
+
+  // Companion case: the plan intact, but the LIVE document drifted after the
+  // journaled success — the same typed refusal from the read-only re-proof.
+  const liveDriftCalls = { snapshot: 0, patch: 0, refetch: 0 };
+  const liveDriftAdapter = {
+    calls: liveDriftCalls,
+    async snapshot() { throw new Error('resume must not snapshot'); },
+    async patch() { throw new Error('resume must not mutate'); },
+    async refetch() {
+      liveDriftCalls.refetch += 1;
+      return liveState(planValue, { contentDigest: `sha256:${'8'.repeat(64)}` });
+    },
+  };
+  await assert.rejects(
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: liveDriftAdapter }),
+    (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
+  );
+  assert.deepEqual(liveDriftCalls, { snapshot: 0, patch: 0, refetch: 1 });
 });
 
 test('ambiguous journals (prepared-only or failed observations) refuse typed and never touch the adapter', async () => {

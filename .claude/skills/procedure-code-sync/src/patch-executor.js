@@ -124,6 +124,7 @@ async function resumeProcedurePatchFromJournal({ plan, journal, verifier }) {
   const phase = classifyJournalEntries({
     entries: journal.read(),
     approvedActionIds: [...journal.approvedActionIds],
+    batchDigest: journal.batchDigest,
   });
   if (phase === 'reconciliation-required') {
     throw typedError(

@@ -152,6 +152,7 @@ async function executeReviewUnit({
     const phase = classifyJournalEntries({
       entries: journal.read(),
       approvedActionIds: canonicalBatch.actions.map((action) => action.actionId),
+      batchDigest: canonicalBatch.batchDigest,
     });
     if (phase === 'reconciliation-required') {
       throw typedError('EXECUTION_RECONCILIATION_REQUIRED', 'An existing execution journal is incomplete or ambiguous; inspect it and re-plan with a fresh journal path — replay is refused before any mutation.');

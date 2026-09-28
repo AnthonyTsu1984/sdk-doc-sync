@@ -94,4 +94,50 @@ test('classifyJournalEntries names the crash phase for fault-injection recovery 
     entries: [{ type: 'mystery', actionId: 'a' }],
     approvedActionIds: approved,
   }), 'reconciliation-required');
+  // A sentinel alone — or over failed/unverified observations — is fabricated
+  // or torn evidence, never 'complete' (6.7 review round 1).
+  assert.equal(classifyJournalEntries({
+    entries: [{ type: 'completion', completionSentinel: true }],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
+  assert.equal(classifyJournalEntries({
+    entries: [
+      { type: 'prepared', actionId: 'a' }, { type: 'observed', actionId: 'a', status: 'failure', verified: false },
+      { type: 'completion', completionSentinel: true },
+    ],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
+  // An observation without its prepared counterpart never classifies.
+  assert.equal(classifyJournalEntries({
+    entries: [{ type: 'observed', actionId: 'a', status: 'success', verified: true }, { type: 'prepared', actionId: 'b' }, { type: 'observed', actionId: 'b', status: 'success', verified: true }],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
+  // Evidence outside the approved set is never absorbed.
+  assert.equal(classifyJournalEntries({
+    entries: [
+      { type: 'prepared', actionId: 'a' }, { type: 'observed', actionId: 'a', status: 'success', verified: true },
+      { type: 'prepared', actionId: 'b' }, { type: 'observed', actionId: 'b', status: 'success', verified: true },
+      { type: 'prepared', actionId: 'c' }, { type: 'observed', actionId: 'c', status: 'success', verified: true },
+    ],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
+  // Non-empty journals under an empty approved set cannot be resumable.
+  assert.equal(classifyJournalEntries({
+    entries: [{ type: 'prepared', actionId: 'a' }, { type: 'observed', actionId: 'a', status: 'success', verified: true }],
+    approvedActionIds: [],
+  }), 'reconciliation-required');
+  // batchDigest lineage: entries bound to a different batch are never absorbed.
+  assert.equal(classifyJournalEntries({
+    entries: [
+      { type: 'prepared', actionId: 'a', batchDigest: 'sha256:other' }, { type: 'observed', actionId: 'a', status: 'success', verified: true, batchDigest: 'sha256:other' },
+    ],
+    approvedActionIds: approved,
+    batchDigest: 'sha256:mine',
+  }), 'reconciliation-required');
+  const wellFormed = [
+    { type: 'prepared', actionId: 'a', batchDigest: 'sha256:mine' }, { type: 'observed', actionId: 'a', status: 'success', verified: true, batchDigest: 'sha256:mine' },
+    { type: 'prepared', actionId: 'b', batchDigest: 'sha256:mine' }, { type: 'observed', actionId: 'b', status: 'success', verified: true, batchDigest: 'sha256:mine' },
+    { type: 'completion', completionSentinel: true, batchDigest: 'sha256:mine' },
+  ];
+  assert.equal(classifyJournalEntries({ entries: wellFormed, approvedActionIds: approved, batchDigest: 'sha256:mine' }), 'complete');
 });

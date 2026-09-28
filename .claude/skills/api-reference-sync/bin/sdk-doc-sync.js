@@ -760,8 +760,8 @@ async function runCli({
         const sessionPath = path.resolve(args.resumeSession);
         const reviewUnitId = args.reviewUnitId || result.activeReviewUnit.reviewUnitId;
         ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
-        if (!reviewSession.activeExecution
-            || reviewSession.activeExecution.reviewUnitId !== reviewUnitId) {
+        const activeExecution = reviewSession.activeExecution;
+        if (!activeExecution) {
             reviewSession = recordDocumentExecution(reviewSession, {
                 reviewUnitId,
                 executionJournalPath: result.reconciliation.executionJournalPath,
@@ -770,8 +770,14 @@ async function runCli({
             saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
             result.reconciliation = { ...result.reconciliation, sessionRecovered: true };
             err(`Execution recorded from the durable journal for ${reviewUnitId}; rerun is not needed for this unit.`);
-        } else {
+        } else if (activeExecution.reviewUnitId === reviewUnitId) {
+            // Already recovered by a previous rerun — nothing to do.
             result.reconciliation = { ...result.reconciliation, sessionRecovered: false };
+        } else {
+            // A different unit is mid-flight: fail-closed with a typed
+            // narrative instead of an unhandled store refusal.
+            result.reconciliation = { ...result.reconciliation, sessionRecovered: false, blockedByActiveUnit: activeExecution.reviewUnitId };
+            err(`Execution not recorded: review session has active execution ${activeExecution.reviewUnitId}; accept or roll back that unit first, then rerun this recovery.`);
         }
     }
     if (args.sessionState) {

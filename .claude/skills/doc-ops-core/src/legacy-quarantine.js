@@ -3,8 +3,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 
-const { WriterGovernance, createApprovalEnvelope } = require('./writer-governance');
-const { digestSemantic } = require('./digest');
 
 class LegacyQuarantineError extends Error {
     constructor(code, message, details = {}) {
@@ -16,12 +14,10 @@ class LegacyQuarantineError extends Error {
 }
 
 // Runtime enforcement of the write-entrypoint registry. Entry points classified
-// `legacy-live` are quarantined: running them directly requires BOTH an
-// unexpired reviewed exception (expected-changes.json) and the explicit
-// environment gate DOC_OPS_ALLOW_LEGACY_LIVE=1. Without either, the process is
-// refused before any skill code — and therefore before any writer module — is
-// loaded. Anything short of both conditions keeps the path closed; an opened
-// run is "not harness-guaranteed" and must never advance accepted scan state.
+// `legacy-live` are quarantined UNCONDITIONALLY (wave 3, checklist 6.4): the
+// DOC_OPS_ALLOW_LEGACY_LIVE environment gate and the exception channel were
+// removed by ruling, so the process is refused before any skill code — and
+// therefore before any writer module — is loaded. There is no override.
 
 const QUARANTINE_ENV_FLAG = 'DOC_OPS_ALLOW_LEGACY_LIVE';
 const EXIT_QUARANTINED = 2;
@@ -126,9 +122,9 @@ function enforceLegacyQuarantine({
             `[legacy-quarantine] LEGACY_LIVE_QUARANTINED: ${normalized}`,
             `reason: ${decision.reason}`,
             `canonical replacement: ${decision.entry?.canonicalReplacement || '(unspecified)'}`,
-            'legacy-live entrypoints stay blocked unless an unexpired reviewed exception AND',
-            `env ${QUARANTINE_ENV_FLAG}=1 are both present. A run opened this way is`,
-            'NOT harness-guaranteed and must not advance accepted scan state.',
+            'legacy-live entrypoints are blocked unconditionally (wave 3: the env flag and',
+            'the exception channel no longer exist). A legacy run must migrate to the',
+            'canonical governed CLIs and must not advance accepted scan state.',
             '',
         ].join('\n'));
         exit(EXIT_QUARANTINED);
@@ -144,6 +140,8 @@ function enforceLegacyQuarantine({
 // exception and entrypoint authorized the run. Such runs are NOT
 // harness-guaranteed and must never advance accepted scan state.
 function createExceptionGovernance({ skill, operation, decision = null, repoRoot = null }) {
+    void skill;
+    void operation;
     // Wave 3 (6.4 close-out): the exception channel is REMOVED by ruling.
     // The mint refuses unconditionally — evaluateLegacyQuarantine can no
     // longer produce a sanctioned decision, and no hand-built object can
@@ -155,71 +153,6 @@ function createExceptionGovernance({ skill, operation, decision = null, repoRoot
         'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
         'the legacy-live exception channel was removed (wave 3): no governance is minted for legacy runs',
     );
-    const entrypointPath = decision.entry?.path || null;
-    const expiresAt = decision.exceptionExpiresAt || null;
-    if (!entrypointPath || !expiresAt) {
-        throw new LegacyQuarantineError(
-            'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
-            'sanctioned decision carries no entrypoint path or exception expiry',
-        );
-    }
-    // 6.5 carve-out: even a sanctioned legacy exception run must name its
-    // source state. The exception manifest carries the same widened
-    // working-tree fingerprint as the canonical path (6.9 O1/O2) and
-    // self-identifies as the exception form (skillVersion/sessionDigest),
-    // so exception runs are source-bound during the wave-2 transition
-    // instead of exempt from the run-manifest requirement.
-    const { RunManifestError, createRunManifest } = require('./run-manifest');
-    const envelopeFacts = { entrypointPath, expiresAt, operation };
-    const batchDigest = digestSemantic(envelopeFacts);
-    const targets = [entrypointPath];
-    const sideEffects = ['legacy-live-exception-run'];
-    // The exception self-identifies through this attestation; the approval and
-    // the run manifest must carry the SAME set (the writer boundary enforces
-    // their equality at bind time and at every mutation).
-    const exceptionAttestation = {
-        id: 'ops.legacy-live-exception',
-        version: 1,
-        inputDigest: batchDigest,
-        decision: `exception-expires:${expiresAt}`,
-    };
-    const governance = new WriterGovernance({ skill, operation });
-    governance.bindApproval({
-        batchDigest,
-        actionCount: 1,
-        targets,
-        sideEffects,
-        approval: createApprovalEnvelope({
-            skill,
-            operation,
-            batchDigest,
-            actionCount: 1,
-            targets,
-            sideEffects,
-            decision: 'approved',
-        }),
-        invariantAttestations: [exceptionAttestation],
-    });
-    try {
-        governance.bindRunManifest(createRunManifest({
-            skill,
-            skillVersion: `legacy-exception@${expiresAt}`,
-            repoRoot,
-            batchDigest,
-            sessionDigest: `legacy-exception:${entrypointPath}`,
-            policyAttestations: [exceptionAttestation],
-        }), { repoRoot });
-    } catch (error) {
-        if (error instanceof RunManifestError) {
-            throw new LegacyQuarantineError(
-                'LEGACY_EXCEPTION_MANIFEST_REFUSED',
-                `exception governance could not bind its run manifest: ${error.message}`,
-                { code: error.code },
-            );
-        }
-        throw error;
-    }
-    return governance;
 }
 
 module.exports = {

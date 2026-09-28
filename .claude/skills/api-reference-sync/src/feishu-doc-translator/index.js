@@ -63,10 +63,13 @@ class FeishuDocTranslator {
             targetLang: this.targetLang,
         });
 
+        // Wave 3: document writes ride the SAME bound approval as record
+        // writes — without this, push_markdown refuses at the writer gate.
         this.targetWriter_md = new MarkdownToFeishu({
             sourceType: this.driveType,
             rootToken: this.targetRoot,
             baseToken: this.targetBitable,
+            governance: options.governance,
         });
 
         // Cache for bitable records (to avoid repeated fetches during parent lookup)

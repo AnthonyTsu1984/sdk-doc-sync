@@ -21,7 +21,7 @@ const SDK_LANGUAGES = new Map([
   ['milvus-sdk-cpp', 'cpp'],
 ]);
 
-const API_PAGE_PATH = /^API_Reference\/([^/]+)\/(v[^/]+?\.x)\/([^/]+)\/([^/]+)\.md$/;
+const API_PAGE_PATH = /^API_Reference\/([^/]+)\/(v[^/]+?\.x)\/(.+)\/([^/]+)\.md$/;
 const API_ABOUT_PATH = /^API_Reference\/([^/]+)\/(v[^/]+?\.x)\/About\.md$/;
 const FOOTER_META = /<!--\s*category:\s*([^;]+?)\s*;\s*action:\s*(\S+)\s*;\s*addedSince:\s*(\S+)\s*-->/;
 
@@ -49,16 +49,16 @@ function parseApiReferencePage(markdown) {
   if (footerMatch) {
     page.footer = { category: footerMatch[1], action: footerMatch[2], addedSince: footerMatch[3] };
   }
-  let inCppFence = false;
+  let inSignatureFence = false;
   let sawFirstFence = false;
   let section = null;
   for (const line of lines) {
-    if (line.trim() === '```cpp') { inCppFence = true; continue; }
-    if (inCppFence) {
-      if (line.trim() === '```') { inCppFence = false; sawFirstFence = true; continue; }
+    if (line.trim() === '```cpp' || line.trim() === '```java') { inSignatureFence = true; continue; }
+    if (inSignatureFence) {
+      if (line.trim() === '```') { inSignatureFence = false; sawFirstFence = true; continue; }
       if (!page.signature && !sawFirstFence && line.trim()) {
         const candidate = line.trim();
-        if (/\)\s*$/.test(candidate) || /^(?:enum\s+class|class|struct)\s+\w+/.test(candidate)) {
+        if (/\)\s*$/.test(candidate) || /^(?:enum\s+class|class|struct|public\s+(?:final\s+)?(?:class|enum))\s+\w+/.test(candidate)) {
           page.signature = candidate;
         }
       }
@@ -68,7 +68,9 @@ function parseApiReferencePage(markdown) {
     if (boldHeading) { section = boldHeading[1].trim(); continue; }
     if (line.startsWith('#')) { section = null; continue; }
     const bullet = line.match(/^\s*-\s+`([A-Za-z_]\w*)\s*\(/);
-    if (bullet && section === 'REQUEST METHODS') page.requestMethods.push(bullet[1]);
+    // Java pages list request builders under BUILDER METHODS; cpp/go under
+    // REQUEST METHODS. Both feed the same verification set.
+    if (bullet && (section === 'REQUEST METHODS' || section === 'BUILDER METHODS')) page.requestMethods.push(bullet[1]);
     const valueBullet = line.match(/^\s*-\s+`?([A-Za-z_]\w*)`?\s*$/);
     if (valueBullet && section === 'VALUES') page.values.push(valueBullet[1]);
   }
@@ -99,15 +101,41 @@ function runGrepTolerant({ repoDir, args, spawn }) {
 }
 
 function lexicalApiInventory({ repoDir, ref, publicRoots, spawn }) {
-  const output = runGrepTolerant({
-    repoDir,
-    args: ['grep', '-hoE', '[^A-Za-z0-9_](With|Add|Set)[A-Z][A-Za-z0-9]*[[:space:]]*\\(', ref, '--', ...publicRoots],
-    spawn,
-  });
+  // Builder-style method names (cpp/go With*/Add*/Set* builders) plus java
+  // field declarations: java param classes expose Lombok-generated builders
+  // that exist only as source fields, so type-page verification matches the
+  // field names those builders derive from.
+  const output = [
+    runGrepTolerant({
+      repoDir,
+      args: ['grep', '-hoE', '[^A-Za-z0-9_](With|Add|Set)[A-Z][A-Za-z0-9]*[[:space:]]*\\(', ref, '--', ...publicRoots],
+      spawn,
+    }),
+    runGrepTolerant({
+      // A literal ']' must lead the bracket expression, otherwise it closes
+      // the class early (generic/array types carry <> and []).
+      repoDir,
+      args: ['grep', '-hoE', '(^|[[:space:]])(private|protected|public)[[:space:]]+(final[[:space:]]+)?[A-Za-z_][][A-Za-z0-9_.<>, ]*[[:space:]]+[a-z][A-Za-z0-9_]*[[:space:]]*(=[^;]*)?;', ref, '--', ...publicRoots],
+      spawn,
+    }),
+    runGrepTolerant({
+      // Java builder-style methods (public Builder name(...) / addXxx(...))
+      // on request and param classes; Lombok @Builder generates them at
+      // compile time, hand-written Req classes declare them explicitly.
+      repoDir,
+      args: ['grep', '-hoE', '[Bb]uilder[[:space:]]+[a-z][A-Za-z0-9_]*[[:space:]]*\\(', ref, '--', ...publicRoots],
+      spawn,
+    }),
+  ].join('\n');
   const names = new Set();
   for (const line of output.split('\n')) {
-    const match = /(With|Add|Set)[A-Z][A-Za-z0-9]*/.exec(line.trim());
-    if (match) names.add(match[0]);
+    const trimmed = line.trim();
+    const builderMatch = /(With|Add|Set)[A-Z][A-Za-z0-9]*/.exec(trimmed);
+    if (builderMatch) { names.add(builderMatch[0]); continue; }
+    const builderMethodMatch = /[Bb]uilder\s+([a-z][A-Za-z0-9_]*)\s*\(/.exec(trimmed);
+    if (builderMethodMatch) { names.add(builderMethodMatch[1]); continue; }
+    const fieldMatch = /([a-z][A-Za-z0-9_]*)\s*(?:=[^;]*)?;\s*$/.exec(trimmed);
+    if (fieldMatch) names.add(fieldMatch[1]);
   }
   return names;
 }
@@ -116,17 +144,49 @@ function classifyPrFiles(prFiles, scanTrack = null) {
   const targets = new Map();
   const skipped = [];
   const filteredTracks = new Map();
+  const namespaced = new Map();
   for (const file of prFiles || []) {
     const page = API_PAGE_PATH.exec(file.path);
     if (page) {
-      const [, sdkDirName, track, category, pageName] = page;
+      const [, sdkDirName, track, categoryPath, pageName] = page;
       const key = `${sdkDirName}/${track}`;
       if (scanTrack && key !== scanTrack) {
         filteredTracks.set(key, (filteredTracks.get(key) || 0) + 1);
         continue;
       }
+      // Namespace-style trees (milvus-sdk-java): pages live under
+      // v3.0.x/v2/<category>/... where v2/ is the client-API namespace and
+      // flat trees (cpp, node) have exactly one category segment. Member
+      // pages nested under an owning-class directory identify by that class
+      // (<class>.<member>), matching the record slug convention
+      // (v2-<class>-<member>); a page named after its own directory is a
+      // landing/enum page and identifies by the top category
+      // (<category>.<Type>). Deep paths WITHOUT a vN namespace segment (go,
+      // pymilvus) are not a recognized page shape here: they keep the
+      // pre-adaptation out-of-scope behavior instead of inventing an
+      // identity from a speculative owner segment.
+      const segments = categoryPath.split('/');
+      const namespace = /^v\d+$/.test(segments[0]) ? segments.shift() : null;
+      if (namespace === 'v1') {
+        namespaced.set(namespace, (namespaced.get(namespace) || 0) + 1);
+        continue;
+      }
+      if (segments.length === 0 || (segments.length > 1 && !namespace)) {
+        skipped.push(file.path);
+        continue;
+      }
+      const category = segments[0];
+      const parentDir = segments[segments.length - 1];
+      const middle = pageName === parentDir ? category : parentDir;
       if (!targets.has(key)) targets.set(key, []);
-      targets.get(key).push({ ...file, category, pageName, symbol: `${category}.${pageName}` });
+      targets.get(key).push({
+        ...file,
+        category,
+        parentDir,
+        namespace: namespace || null,
+        pageName,
+        symbol: `${middle}.${pageName}`,
+      });
       continue;
     }
     if (API_ABOUT_PATH.test(file.path)) {
@@ -142,17 +202,21 @@ function classifyPrFiles(prFiles, scanTrack = null) {
     }
     skipped.push(file.path);
   }
-  return { targets, skipped, filteredTracks };
+  return { targets, skipped, filteredTracks, namespaced };
 }
 
 function targetTagFromAbout(aboutContent, track) {
   const major = /^v(\d+\.\d+)\.x$/.exec(track)?.[1];
   if (!major) return null;
   for (const line of (aboutContent || '').split('\n')) {
-    const match = line.match(/^\|\s*([^|]+?)\s*\|\s*(v\d+\.\d+\.\d+)\s*\|/);
+    // Pin cells carry the tag with or without the leading 'v' (cpp writes
+    // "v3.0.3", java writes "3.0.10"); normalize to the repo's v-prefixed tags.
+    const match = line.match(/^\|\s*([^|]+?)\s*\|\s*(v?\d+\.\d+\.\d+)\s*\|/);
     if (!match) continue;
     const label = match[1].trim();
-    if (label === `${major}.x` || label === major) return match[2];
+    if (label === `${major}.x` || label === major) {
+      return match[2].startsWith('v') ? match[2] : `v${match[2]}`;
+    }
   }
   return null;
 }
@@ -169,11 +233,26 @@ function assertFullSha(value, label) {
 }
 
 function lexicalNameExists({ repoDir, ref, publicRoots, name, spawn }) {
-  return runGrepTolerant({
-    repoDir,
-    args: ['grep', '-lw', name, ref, '--', ...publicRoots],
-    spawn,
-  }).trim().length > 0;
+  // Java method names are lower camel while pages title-case them
+  // (ListCollectionsV2 vs listCollectionsV2), and overload pages carry a
+  // -N suffix (CreateSchema-2). Exact match first, then case-insensitive,
+  // then the suffix-stripped variants.
+  const candidates = [name];
+  const overloadStripped = name.replace(/-\d+$/, '');
+  if (overloadStripped !== name) candidates.push(overloadStripped);
+  for (const candidate of candidates) {
+    if (runGrepTolerant({
+      repoDir,
+      args: ['grep', '-lw', candidate, ref, '--', ...publicRoots],
+      spawn,
+    }).trim().length > 0) return true;
+    if (runGrepTolerant({
+      repoDir,
+      args: ['grep', '-liw', candidate, ref, '--', ...publicRoots],
+      spawn,
+    }).trim().length > 0) return true;
+  }
+  return false;
 }
 
 function verifyPageAgainstScan({ page, symbol, pageName, lexical, pageNameFound = null }) {
@@ -231,7 +310,7 @@ function sourceEvidenceFor(symbol, sdkRevision) {
   };
 }
 
-function identityFor({ mapped, symbolIdentity, category, pageName, language }) {
+function identityFor({ mapped, symbolIdentity, category, pageName, language, slugPrefix = '' }) {
   if (mapped?.stableId) {
     return {
       identity: { stableId: mapped.stableId, canonicalSlug: mapped.canonicalSlug, category: mapped.category },
@@ -244,6 +323,23 @@ function identityFor({ mapped, symbolIdentity, category, pageName, language }) {
       identity: null,
       ownership: { classification: 'method_owned' },
       methodOwnedOwners: mapped.targets,
+    };
+  }
+  if (slugPrefix) {
+    // Prefixed tracks (java: v2-<middle>-<member>) compose the fallback from
+    // the page symbol's middle segment so the same interface lands on one
+    // stableId/slug whether it arrives through a PR page or a tag scout.
+    const dot = symbolIdentity.lastIndexOf('.');
+    const middle = (dot > 0 ? symbolIdentity.slice(0, dot) : '') || category;
+    return {
+      identity: {
+        stableId: `${language}:${slugPrefix}${middle}:${pageName}`,
+        canonicalSlug: `${slugPrefix}${middle}-${pageName}`,
+        category,
+      },
+      ownership: { classification: 'standalone' },
+      methodOwnedOwners: null,
+      unmapped: true,
     };
   }
   return {
@@ -314,7 +410,7 @@ async function runPrScan({
   const webContentRevision = prMeta.mergeCommit?.oid || prMeta.headRefOid;
   assertFullSha(webContentRevision, 'PR web-content revision');
 
-  const { targets, skipped, filteredTracks } = classifyPrFiles(prMeta.files, scanTrack);
+  const { targets, skipped, filteredTracks, namespaced } = classifyPrFiles(prMeta.files, scanTrack);
   if (scanTrack && !targets.has(scanTrack)) {
     throw new Error(`--scan-track ${scanTrack}: the PR touches no API_Reference pages under that sdk/track`);
   }
@@ -342,6 +438,14 @@ async function runPrScan({
       level: 'info',
       code: 'PR_PATH_SKIPPED',
       message: `${skipped.length} changed file(s) outside API_Reference page scope were skipped.`,
+    });
+  }
+  if (namespaced.size > 0) {
+    const total = [...namespaced.values()].reduce((sum, count) => sum + count, 0);
+    diagnostics.push({
+      level: 'info',
+      code: 'PR_NAMESPACE_SKIPPED',
+      message: `${total} page(s) under legacy ${[...namespaced.keys()].map((ns) => `${ns}/`).join(', ')} namespace(s) were skipped; the track documents the v2 client API only.`,
     });
   }
   if (filteredTracks.size > 0) {
@@ -402,6 +506,7 @@ async function runPrScan({
     track,
   }));
   const pageEntries = targets.get(targetKeys[0]).filter((entry) => !entry.about);
+  const slugPrefix = typeof map.slugPrefix === 'string' ? map.slugPrefix : '';
 
   const [resolvedBaselineSymbols, resolvedTargetSymbols] = await Promise.all([
     baselineSymbols || scanRefSymbols({ ref: baselineTag, repoDir, sdkDir, publicRoots, language, runGit: resolvedRunGit }),
@@ -413,12 +518,19 @@ async function runPrScan({
     diagnostics.push(...resolvedTargetSymbols.scanDiagnostics);
   }
 
-  const changedFiles = [...new Set(pageEntries.flatMap((entry) => {
-    const symbol = targetByIdentity.get(entry.symbol);
-    return symbol ? [symbol.filePath] : [];
-  }))].sort();
-
-  const lexical = lexicalApiInventory({ repoDir, ref: targetTag, publicRoots, spawn: spawnGrep });
+  // Secondary index for category-identified pages: java client methods and
+  // type pages carry `category` on the scan symbol while their public
+  // identity is the owning class (MilvusClientV2.query vs page Vector.query).
+  const targetByCategoryName = new Map(
+    resolvedTargetSymbols
+      .filter((symbol) => symbol.category)
+      .map((symbol) => [`${symbol.category}.${symbol.name}`, symbol]),
+  );
+  const scanSymbolsByName = new Map();
+  for (const symbol of resolvedTargetSymbols) {
+    if (!scanSymbolsByName.has(symbol.name)) scanSymbolsByName.set(symbol.name, []);
+    scanSymbolsByName.get(symbol.name).push(symbol);
+  }
 
   const liveRecordBySlug = feishuRows
     ? new Map(feishuRows.filter((row) => row.slug).map((row) => [row.slug, row]))
@@ -430,6 +542,57 @@ async function runPrScan({
       message: 'No --feishu-snapshot provided; action classification falls back to SDK-baseline semantics and may misclassify pages that already exist live as BACKFILL/CREATE.',
     });
   }
+
+  // Live record categories per page name: the live Bitable is the authority
+  // an UPDATE must match, and per-track placements can disagree with both the
+  // scanner default and the identity map (java getServerVersionV2 is Client
+  // in v3.0.x and Management in v2.6.x).
+  const liveCategoriesByName = new Map();
+  if (feishuRows) {
+    for (const row of feishuRows) {
+      const parts = (row.slug || '').split('-');
+      if (parts.length < 3 || parts[0] !== 'v2') continue;
+      const name = parts[parts.length - 1];
+      const category = parts.slice(1, -1).join('-');
+      if (!liveCategoriesByName.has(name)) liveCategoriesByName.set(name, new Set());
+      liveCategoriesByName.get(name).add(category);
+    }
+  }
+
+  // Resolve a page entry to a scanned symbol. Nested-class member pages match
+  // their owning class directly; category pages try the live record category
+  // first, then the path symbol, then any other live category. A unique
+  // same-name symbol is the last resort so builder verification still runs
+  // when placements disagree with every derived category — that bind is
+  // category-unverified, so it is surfaced with PR_SYMBOL_FALLBACK_BIND.
+  const resolvePageSymbol = (entry) => {
+    const candidates = [];
+    const liveCategories = liveCategoriesByName.get(entry.pageName);
+    if (liveCategories && entry.category && liveCategories.has(entry.category)) {
+      candidates.push(`${entry.category}.${entry.pageName}`);
+    }
+    candidates.push(entry.symbol);
+    if (liveCategories) {
+      for (const category of [...liveCategories].sort()) {
+        candidates.push(`${category}.${entry.pageName}`);
+      }
+    }
+    for (const candidate of candidates) {
+      const resolved = targetByIdentity.get(candidate) || targetByCategoryName.get(candidate);
+      if (resolved) return { symbol: resolved, via: 'derived' };
+    }
+    const sameName = scanSymbolsByName.get(entry.pageName) || [];
+    return sameName.length === 1
+      ? { symbol: sameName[0], via: 'unique-name' }
+      : { symbol: null, via: null };
+  };
+
+  const changedFiles = [...new Set(pageEntries.flatMap((entry) => {
+    const { symbol } = resolvePageSymbol(entry);
+    return symbol ? [symbol.filePath] : [];
+  }))].sort();
+
+  const lexical = lexicalApiInventory({ repoDir, ref: targetTag, publicRoots, spawn: spawnGrep });
 
   const actions = [];
   const prActionsByStableId = new Map();
@@ -443,7 +606,14 @@ async function runPrScan({
       });
       continue;
     }
-    const symbol = targetByIdentity.get(entry.symbol);
+    const { symbol, via } = resolvePageSymbol(entry);
+    if (symbol && via === 'unique-name') {
+      diagnostics.push({
+        level: 'info',
+        code: 'PR_SYMBOL_FALLBACK_BIND',
+        message: `${entry.path}: no category-derived candidate matched; bound by unique page name to ${publicIdentity(symbol)} — the category binding is unverified and must be confirmed at grouping review.`,
+      });
+    }
     const markdown = readWebContentFile({ webContentDir, revision: webContentRevision, filePath: entry.path, runGit: resolvedRunGit });
     const page = parseApiReferencePage(markdown);
     const pageNameFound = symbol ? null
@@ -457,12 +627,17 @@ async function runPrScan({
       });
     }
 
+    // Owner-class-keyed maps (java) resolve through the scanned symbol's
+    // public identity when the path-derived page symbol misses.
+    const mapped = map.symbols[entry.symbol]
+      || (symbol ? map.symbols[publicIdentity(symbol)] : undefined);
     const { identity, ownership, methodOwnedOwners, unmapped } = identityFor({
-      mapped: map.symbols[entry.symbol],
+      mapped,
       symbolIdentity: entry.symbol,
       category: entry.category,
       pageName: entry.pageName,
       language,
+      slugPrefix,
     });
     if (unmapped) {
       diagnostics.push({
@@ -497,7 +672,7 @@ async function runPrScan({
       const prReasonBase = hasLiveRecord
         ? { type: 'UPDATE', reason: 'pr-doc-update' }
         : changeType === 'ADDED'
-          ? (symbol && baselineIdentities.has(entry.symbol)
+          ? (symbol && (baselineIdentities.has(entry.symbol) || baselineIdentities.has(publicIdentity(symbol)))
             ? { type: 'BACKFILL', reason: 'pr-backfill-page' }
             : { type: 'CREATE', reason: 'pr-new-page' })
           : { type: 'UPDATE', reason: 'pr-doc-update' };
@@ -559,7 +734,9 @@ async function runPrScan({
   // Standing inventory reconciliation: with a Feishu snapshot in hand, every
   // governed record slug must resolve to a canonical identity — a record
   // without one can never surface in delta scans or intakes (warn; detect-only).
-  if (feishuRows) {
+  // Delta-style maps (java) intentionally cover only identities introduced by
+  // past syncs; live records resolve through the fallback identity instead.
+  if (feishuRows && map.inventoryCoverage !== 'delta') {
     diagnostics.push(...reconcileIdentityCoverage({ records: feishuRows, identityMap: map }).diagnostics);
   }
 
@@ -701,8 +878,33 @@ function prMetadata(prMeta, webContentRevision, pageEntries) {
 
 function fetchPrMeta({ repo, number, runGh = defaultRunGh }) {
   const output = runGh(['pr', 'view', String(number), '-R', repo, '--json',
-    'number,title,state,baseRefName,headRefName,headRefOid,mergeCommit,mergedAt,files,body']);
-  return JSON.parse(output);
+    'number,title,state,baseRefName,headRefName,headRefOid,mergeCommit,mergedAt,body']);
+  const meta = JSON.parse(output);
+  // gh pr view caps --json files at 100 entries; full-tree reconcile PRs
+  // (java #1149 touched 194 files) silently truncate. Pull the complete
+  // list through the paginated REST endpoint instead and normalize statuses
+  // to the uppercase changeType the classifier expects.
+  meta.files = fetchAllPrFiles({ repo, number, runGh });
+  return meta;
+}
+
+function fetchAllPrFiles({ repo, number, runGh = defaultRunGh }) {
+  const files = [];
+  for (let page = 1; page <= 20; page += 1) {
+    const chunk = JSON.parse(runGh(['api', `repos/${repo}/pulls/${number}/files?per_page=100&page=${page}`]));
+    if (!Array.isArray(chunk) || chunk.length === 0) break;
+    for (const entry of chunk) {
+      files.push({
+        path: entry.filename,
+        changeType: String(entry.status || 'modified').toUpperCase(),
+      });
+    }
+    if (chunk.length < 100) break;
+    if (page === 20) {
+      throw new Error(`PR_FILE_LIST_TRUNCATED: PR #${number} in ${repo} has more than ${20 * 100} changed files; raise the pagination cap before scanning it`);
+    }
+  }
+  return files;
 }
 
 module.exports = {

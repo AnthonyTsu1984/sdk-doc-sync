@@ -2,6 +2,74 @@ const fs = require('fs');
 const path = require('path');
 const BaseScanner = require('./base-scanner');
 
+// Documentation categories for public MilvusClientV2 methods, derived from the
+// live Bitable record slugs (v2-<category>-<method>) of both java tracks and
+// the milvus-io/web-content page tree; the sdk-java.md request-class category
+// exceptions (loadCollection -> Management, describeReplicas -> Collections,
+// updatePassword -> Authentication, ...) are folded into the same evidence.
+// PR intake resolves a MilvusClientV2 page identity through this category
+// (the scanner reports parentClass 'MilvusClientV2' for every method, which
+// alone cannot match a <category>.<method> page symbol). A public client
+// method absent here surfaces through COVERAGE_UNTRACKED_METHODS.
+const MILVUS_CLIENT_METHOD_CATEGORIES = {
+    addPrivilegesToGroup: 'Authentication', alterRole: 'Authentication', createPrivilegeGroup: 'Authentication',
+    createRole: 'Authentication', createUser: 'Authentication', describeRole: 'Authentication',
+    describeUser: 'Authentication', dropPrivilegeGroup: 'Authentication', dropRole: 'Authentication',
+    dropUser: 'Authentication', grantPrivilege: 'Authentication', grantPrivilegeV2: 'Authentication',
+    grantRole: 'Authentication', listPrivilegeGroups: 'Authentication', listRoles: 'Authentication',
+    listUsers: 'Authentication', removePrivilegesFromGroup: 'Authentication', revokePrivilege: 'Authentication',
+    revokePrivilegeV2: 'Authentication', revokeRole: 'Authentication', updatePassword: 'Authentication',
+    updateUser: 'Authentication',
+    dumpMessages: 'CDC', getReplicateConfiguration: 'CDC', getReplicateInfo: 'CDC',
+    clientIsReady: 'Client', close: 'Client', getServerVersionV2: 'Client', getTelemetry: 'Client',
+    retryConfig: 'Client', session: 'Client', startTelemetry: 'Client', withRetry: 'Client', withTimeout: 'Client',
+    CreateSchema: 'Collections', addCollectionField: 'Collections', addCollectionFunction: 'Collections',
+    addCollectionStructField: 'Collections', addFunctionField: 'Collections', alterAlias: 'Collections',
+    alterCollection: 'Collections', alterCollectionField: 'Collections', alterCollectionFunction: 'Collections',
+    alterCollectionProperties: 'Collections', batchDescribeCollection: 'Collections', createAlias: 'Collections',
+    createCollection: 'Collections', createSchema: 'Collections', describeAlias: 'Collections',
+    describeCollection: 'Collections', describeReplicas: 'Collections', dropAlias: 'Collections',
+    dropCollection: 'Collections', dropCollectionField: 'Collections', dropCollectionFieldProperties: 'Collections',
+    dropCollectionFunction: 'Collections', dropCollectionProperties: 'Collections', dropFunctionField: 'Collections',
+    getCollectionStats: 'Collections', getLoadStateV2: 'Collections', hasCollection: 'Collections',
+    listAliases: 'Collections', listCollections: 'Collections', listCollectionsV2: 'Collections',
+    renameCollection: 'Collections', truncateCollection: 'Collections',
+    alterDatabase: 'Database', alterDatabaseProperties: 'Database', createDatabase: 'Database',
+    currentUsedDatabase: 'Database', describeDatabase: 'Database', dropDatabase: 'Database',
+    dropDatabaseProperties: 'Database', listDatabases: 'Database', useDatabase: 'Database',
+    addFileResource: 'FileResources', listFileResources: 'FileResources', removeFileResource: 'FileResources',
+    alterIndex: 'Management', alterIndexProperties: 'Management', checkHealth: 'Management', compact: 'Management',
+    createIndex: 'Management', describeIndex: 'Management', dropIndex: 'Management', dropIndexProperties: 'Management',
+    flush: 'Management', flushAll: 'Management', getCompactionPlans: 'Management', getCompactionState: 'Management',
+    getFlushAllState: 'Management', getLoadState: 'Management', getPersistentSegmentInfo: 'Management',
+    getQuerySegmentInfo: 'Management', getRefreshExternalCollectionProgress: 'Management', getServerVersion: 'Management',
+    listIndexes: 'Management', listRefreshExternalCollectionJobs: 'Management', loadCollection: 'Management',
+    optimize: 'Management', refreshExternalCollection: 'Management', refreshLoad: 'Management',
+    releaseCollection: 'Management', updateReplicateConfiguration: 'Management',
+    createPartition: 'Partitions', dropPartition: 'Partitions', getPartitionStats: 'Partitions',
+    hasPartition: 'Partitions', listPartitions: 'Partitions', loadPartitions: 'Partitions', releasePartitions: 'Partitions',
+    createResourceGroup: 'ResourceGroup', describeResourceGroup: 'ResourceGroup', dropResourceGroup: 'ResourceGroup',
+    listResourceGroups: 'ResourceGroup', transferNode: 'ResourceGroup', transferReplica: 'ResourceGroup',
+    updateResourceGroups: 'ResourceGroup',
+    createSnapshot: 'Snapshots', describeSnapshot: 'Snapshots', dropSnapshot: 'Snapshots',
+    getRestoreSnapshotState: 'Snapshots', listRestoreSnapshotJobs: 'Snapshots', listSnapshots: 'Snapshots',
+    pinSnapshotData: 'Snapshots', restoreSnapshot: 'Snapshots', unpinSnapshotData: 'Snapshots',
+    delete: 'Vector', get: 'Vector', getAsync: 'Vector', hybridSearch: 'Vector', hybridSearchAsync: 'Vector',
+    insert: 'Vector', query: 'Vector', queryAsync: 'Vector', queryIterator: 'Vector', runAnalyzer: 'Vector',
+    search: 'Vector', searchAsync: 'Vector', searchIterator: 'Vector', searchIteratorV2: 'Vector', upsert: 'Vector',
+};
+
+// Categories for scanner-emitted enum/class symbols that own their own page
+// (single-level pages live at v2/<category>/<Type>.md).
+const TYPE_CATEGORIES = {
+    FunctionType: 'Function',
+    LocalBulkWriterParam: 'DataImport',
+    RemoteBulkWriterParam: 'DataImport',
+    VolumeBulkWriterParam: 'DataImport',
+    VolumeFileManagerParam: 'DataImport',
+    VolumeManagerParam: 'DataImport',
+};
+
 class JavaScanner extends BaseScanner {
     constructor(opts) {
         super(opts);
@@ -32,10 +100,45 @@ class JavaScanner extends BaseScanner {
                 const reqFile = reqFiles.get(method.requestClass);
                 if (reqFile) {
                     const reqContent = fs.readFileSync(reqFile, 'utf-8');
-                    method.params = this._extractBuilderFields(reqContent);
+                    // Outer-class fields cover Lombok @Builder request classes;
+                    // hand-written Req classes additionally expose incremental
+                    // builder methods (addStructField, addFunctionChain, ...) on
+                    // a nested Builder class — union both, deduped by name.
+                    const fieldParams = this._extractBuilderFields(reqContent);
+                    const methodParams = this._extractBuilderMethods(reqContent);
+                    const seen = new Set(fieldParams.map((param) => param.name));
+                    method.params = [...fieldParams, ...methodParams.filter((param) => !seen.has(param.name))];
                 }
             }
         }
+
+        // Phase 3: attach documentation categories for page-identity resolution
+        // (bulkwriter manager methods keep their parentClass identity and need
+        // no category). Coverage gate mirrors the cpp scanner: a public client
+        // method absent from MILVUS_CLIENT_METHOD_CATEGORIES is invisible to
+        // PR page resolution — surface it instead of skipping silently.
+        const untracked = [];
+        for (const symbol of methods) {
+            if (symbol.parentClass === 'MilvusClientV2' && symbol.kind === 'method') {
+                const category = MILVUS_CLIENT_METHOD_CATEGORIES[symbol.name];
+                if (category) {
+                    symbol.category = category;
+                } else {
+                    untracked.push(symbol.name);
+                }
+            } else if (symbol.kind === 'enum' || symbol.kind === 'class') {
+                const category = TYPE_CATEGORIES[symbol.name];
+                if (category) symbol.category = category;
+            }
+        }
+        this.lastScanDiagnostics = untracked.length > 0
+            ? [{
+                level: 'warn',
+                code: 'COVERAGE_UNTRACKED_METHODS',
+                message: `${untracked.length} public MilvusClientV2 method(s) are not in MILVUS_CLIENT_METHOD_CATEGORIES and will be invisible to PR page resolution: ${untracked.join(', ')}.`,
+                methods: [...untracked],
+            }]
+            : [];
 
         return methods;
     }
@@ -273,7 +376,10 @@ class JavaScanner extends BaseScanner {
     _extractBuilderFields(content) {
         const params = [];
         const lines = content.split('\n');
-        const fieldRegex = /^\s*private\s+([\w<>,\s\[\]?]+?)\s+(\w+)\s*(?:=\s*(.+?))?\s*;/;
+        // The type class must accept dotted nested types (IndexParam.MetricType,
+        // CreateCollectionReq.Function) — plain \w silently drops those fields.
+        // A trailing line comment must not disqualify the field.
+        const fieldRegex = /^\s*private\s+([\w.<>,\s\[\]?]+?)\s+(\w+)\s*(?:=\s*(.+?))?\s*;(?:\s*\/\/.*)?$/;
         const classRegex = /^\s*(public|private|protected)?\s*(static\s+)?class\s+/;
 
         let seenTopClass = false;

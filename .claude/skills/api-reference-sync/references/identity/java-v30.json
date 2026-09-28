@@ -4,6 +4,8 @@
   "track": "v3.0.x",
   "defaultCategory": "Client",
   "packagePrefix": "",
+  "slugPrefix": "v2-",
+  "inventoryCoverage": "delta",
   "symbols": {
     "BulkImportUtils.abortImport": {
       "stableId": "java:v2-BulkImport:abortImport",

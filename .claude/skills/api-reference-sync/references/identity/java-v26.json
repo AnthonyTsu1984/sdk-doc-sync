@@ -4,6 +4,8 @@
   "track": "v2.6.x",
   "defaultCategory": "Client",
   "packagePrefix": "",
+  "slugPrefix": "v2-",
+  "inventoryCoverage": "delta",
   "symbols": {
     "CloudDescribeImportRequest": {
       "stableId": "java:v2-BulkImport:getImportProgress",

@@ -15,11 +15,28 @@ function loadIdentityMap(filePath) {
 }
 
 function fallbackIdentity(delta, map) {
-  const suffix = delta.symbolIdentity.replace(/\./g, ':');
+  const slugPrefix = typeof map.slugPrefix === 'string' ? map.slugPrefix : '';
+  if (!slugPrefix) {
+    const suffix = delta.symbolIdentity.replace(/\./g, ':');
+    return {
+      stableId: `${map.language}:${map.defaultCategory}:${suffix}`,
+      canonicalSlug: delta.symbolIdentity.replace(/\./g, '-'),
+      category: map.defaultCategory,
+    };
+  }
+  // Prefixed tracks (java: v2-<middle>-<member>) derive the fallback from the
+  // scanner-assigned category (client methods and type pages) or the owning
+  // class (nested members) so tag scouts and PR intakes compose the same
+  // stableId/canonicalSlug for the same interface.
+  const dot = delta.symbolIdentity.lastIndexOf('.');
+  const middle = (delta.symbol && delta.symbol.category)
+    || (dot > 0 ? delta.symbolIdentity.slice(0, dot) : '')
+    || map.defaultCategory;
+  const pageName = dot > 0 ? delta.symbolIdentity.slice(dot + 1) : delta.symbolIdentity;
   return {
-    stableId: `${map.language}:${map.defaultCategory}:${suffix}`,
-    canonicalSlug: delta.symbolIdentity.replace(/\./g, '-'),
-    category: map.defaultCategory,
+    stableId: `${map.language}:${slugPrefix}${middle}:${pageName}`,
+    canonicalSlug: `${slugPrefix}${middle}-${pageName}`,
+    category: middle,
   };
 }
 

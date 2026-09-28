@@ -421,3 +421,255 @@ test('SDK_LANGUAGES maps web-content sdk directory names to scanner languages', 
   assert.equal(SDK_LANGUAGES.get('pymilvus'), 'python');
   assert.equal(SDK_LANGUAGES.has('milvus-sdk-csharp'), false);
 });
+
+test('classifyPrFiles parses java namespace trees: category pages, nested class members, v1 skip', () => {
+  const { targets, skipped, namespaced } = classifyPrFiles([
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Volume/VolumeManager/createVolume.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Collections/CollectionSchema/addField.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Collections/CollectionSchema/CollectionSchema.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Collections/DataType.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v1/Collection/insert.md', changeType: 'MODIFIED' },
+  ]);
+  assert.deepEqual([...targets.keys()], ['milvus-sdk-java/v3.0.x']);
+  const entries = targets.get('milvus-sdk-java/v3.0.x');
+  const byPath = new Map(entries.map((entry) => [entry.path, entry]));
+  assert.equal(byPath.get('API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md').symbol, 'Vector.query');
+  assert.equal(byPath.get('API_Reference/milvus-sdk-java/v3.0.x/v2/Volume/VolumeManager/createVolume.md').symbol, 'VolumeManager.createVolume');
+  assert.equal(byPath.get('API_Reference/milvus-sdk-java/v3.0.x/v2/Collections/CollectionSchema/addField.md').symbol, 'CollectionSchema.addField');
+  // Landing page named after its own directory identifies by the top category.
+  assert.equal(byPath.get('API_Reference/milvus-sdk-java/v3.0.x/v2/Collections/CollectionSchema/CollectionSchema.md').symbol, 'Collections.CollectionSchema');
+  assert.equal(byPath.get('API_Reference/milvus-sdk-java/v3.0.x/v2/Collections/DataType.md').symbol, 'Collections.DataType');
+  assert.equal(byPath.get('API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md').namespace, 'v2');
+  assert.deepEqual(skipped, []);
+  assert.equal(namespaced.get('v1'), 1);
+});
+
+test('classifyPrFiles keeps flat-tree deep paths out of page scope (go/pymilvus pre-adaptation behavior)', () => {
+  const { targets, skipped, namespaced } = classifyPrFiles([
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewAutoIndex.md', changeType: 'ADDED' },
+    { path: 'API_Reference/pymilvus/v3.0.x/DataImport/Volume/VolumeManager/create_volume.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-cpp/v3.0.x/Authentication/AlterRole.md', changeType: 'MODIFIED' },
+  ]);
+  assert.deepEqual([...targets.keys()], ['milvus-sdk-cpp/v3.0.x']);
+  const page = targets.get('milvus-sdk-cpp/v3.0.x').find((entry) => !entry.about);
+  assert.equal(page.symbol, 'Authentication.AlterRole');
+  assert.deepEqual(skipped, [
+    'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewAutoIndex.md',
+    'API_Reference/pymilvus/v3.0.x/DataImport/Volume/VolumeManager/create_volume.md',
+  ]);
+  assert.equal(namespaced.size, 0);
+});
+
+test('targetTagFromAbout normalizes unprefixed java pin rows', () => {
+  const about = [
+    '| Milvus version | Recommended SDK version |',
+    '|:-----:|:-----:|',
+    '| 2.6.x | 2.6.26  |',
+    '| 3.0.x | 3.0.10 |',
+  ].join('\n');
+  assert.equal(targetTagFromAbout(about, 'v3.0.x'), 'v3.0.10');
+  assert.equal(targetTagFromAbout(about, 'v2.6.x'), 'v2.6.26');
+});
+
+test('parseApiReferencePage reads java fences and BUILDER METHODS sections', () => {
+  const page = parseApiReferencePage(`# query()
+
+\`\`\`java
+public QueryResp query(QueryReq request)
+\`\`\`
+
+**BUILDER METHODS:**
+
+- \`collectionName(String collectionName)\`
+
+    Name of the collection.
+
+- \`consistencyLevel(ConsistencyLevel consistencyLevel)\`
+`);
+  assert.equal(page.signature, 'public QueryResp query(QueryReq request)');
+  assert.deepEqual(page.requestMethods, ['collectionName', 'consistencyLevel']);
+});
+
+const JAVA_PAGE = `# query()
+
+Queries entities by primary key.
+
+\`\`\`java
+public QueryResp query(QueryReq request)
+\`\`\`
+
+**BUILDER METHODS:**
+
+- \`collectionName(String collectionName)\`
+
+    Name of the collection.
+`;
+
+function javaScanSymbol(name, category) {
+  return {
+    name,
+    kind: 'method',
+    parentClass: 'MilvusClientV2',
+    category,
+    signature: `public QueryResp ${name}(QueryReq request)`,
+    params: [{ name: 'collectionName', kind: 'keyword' }],
+    filePath: 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java',
+    lineNumber: 10,
+  };
+}
+
+const JAVA_PR_META = {
+  number: 1149,
+  title: 'Reconcile milvus-sdk-java v3.0.x API reference docs',
+  state: 'MERGED',
+  mergedAt: '2026-09-23T08:17:07Z',
+  baseRefName: 'master',
+  headRefName: 'sdk/java-reconcile',
+  headRefOid: 'a'.repeat(40),
+  mergeCommit: { oid: '9'.repeat(40) },
+  files: [
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/About.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/getAsync.md', changeType: 'ADDED' },
+  ],
+};
+
+function javaStubRunGit() {
+  return (args) => {
+    const joined = args.join(' ');
+    if (joined.startsWith('rev-list -n 1 v3.0.10')) return 'c'.repeat(40) + '\n';
+    if (joined.startsWith('show -s --format=%cI')) return '2026-09-16T11:01:11+00:00\n';
+    if (joined.startsWith('show ') && joined.endsWith(':API_Reference/milvus-sdk-java/v3.0.x/About.md')) {
+      return '| 3.0.x | 3.0.10 |';
+    }
+    if (joined.startsWith('show ') && joined.endsWith('getAsync.md')) {
+      return JAVA_PAGE.replace(/query/g, 'getAsync');
+    }
+    if (joined.startsWith('show ')) return JAVA_PAGE;
+    throw new Error(`unexpected git call: ${joined}`);
+  };
+}
+
+test('runPrScan resolves java pages through the owner-keyed map and live v2- prefixed slug', async () => {
+  const scanSymbols = [javaScanSymbol('query', 'Vector'), javaScanSymbol('getAsync', 'Vector')];
+  const scope = await runPrScan({
+    prMeta: JAVA_PR_META,
+    webContentDir: '/tmp/web-content',
+    repoDir: '/tmp/sdk-repo',
+    publicRoots: ['sdk-core/src/main/java/'],
+    identityMapPath: require('node:path').join(__dirname, '..', 'references', 'identity', 'java-v30.json'),
+    scanState: { java: { lastScannedTag: 'v3.0.5' } },
+    feishuRows: [{ slug: 'v2-Vector-query', type: 'Function', progress: 'Draft' }],
+    runGit: javaStubRunGit(),
+    runGh: () => '',
+    baselineSymbols: [javaScanSymbol('query', 'Vector')],
+    targetSymbols: scanSymbols,
+    spawnGrep: stubSpawnGrep({}),
+  });
+  assert.equal(scope.approvalGrade, true);
+  assert.equal(scope.baselineTag, 'v3.0.5');
+  assert.equal(scope.targetTag, 'v3.0.10');
+
+  // query: identity map carries MilvusClientV2.query -> v2-Vector-query; the
+  // live record makes the PR change an UPDATE.
+  const query = scope.actions.find((action) => action.canonicalSlug === 'v2-Vector-query');
+  assert.ok(query, 'query action present');
+  assert.equal(query.type, 'UPDATE');
+  assert.equal(query.reason, 'pr-doc-update');
+  assert.equal(query.stableId, 'java:v2-Vector:query');
+
+  // getAsync: absent from the delta map -> fallback identity with the v2-
+  // prefix composed from the scanner category, classified CREATE.
+  const getAsync = scope.actions.find((action) => action.canonicalSlug === 'v2-Vector-getAsync');
+  assert.ok(getAsync, 'getAsync action present');
+  assert.equal(getAsync.type, 'CREATE');
+  assert.equal(getAsync.reason, 'pr-new-page');
+  assert.equal(getAsync.stableId, 'java:v2-Vector:getAsync');
+  assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'UNMAPPED_CANONICAL_IDENTITY'));
+  // Delta-coverage maps skip the standing inventory reconciliation.
+  assert.ok(!scope.scannerDiagnostics.some((item) => item.code === 'IDENTITY_MAP_INCOMPLETE'));
+  const validation = validateReleaseScope(scope);
+  assert.deepEqual(validation, { valid: true, errors: [] });
+});
+
+test('runPrScan prefers live record categories when scanner and map placements disagree', async () => {
+  // getServerVersionV2: scanner category Client, live v2.6-style record under
+  // Management — the page under Management/ must still resolve the symbol and
+  // match the live slug for the Management identity map entry.
+  const scanSymbols = [javaScanSymbol('getServerVersionV2', 'Client')];
+  const scope = await runPrScan({
+    prMeta: {
+      ...JAVA_PR_META,
+      files: [{ path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Management/getServerVersionV2.md', changeType: 'MODIFIED' }],
+    },
+    targetTag: 'v3.0.10',
+    webContentDir: '/tmp/web-content',
+    repoDir: '/tmp/sdk-repo',
+    publicRoots: ['sdk-core/src/main/java/'],
+    identityMapPath: require('node:path').join(__dirname, '..', 'references', 'identity', 'java-v30.json'),
+    scanState: { java: { lastScannedTag: 'v3.0.5' } },
+    feishuRows: [{ slug: 'v2-Management-getServerVersionV2', type: 'Function', progress: 'Draft' }],
+    runGit: (args) => {
+      const joined = args.join(' ');
+      if (joined.startsWith('rev-list -n 1 v3.0.10')) return 'c'.repeat(40) + '\n';
+      if (joined.startsWith('show -s --format=%cI')) return '2026-09-16T11:01:11+00:00\n';
+      if (joined.startsWith('show ') && joined.endsWith('About.md')) return '| 3.0.x | 3.0.10 |';
+      if (joined.startsWith('show ')) return JAVA_PAGE.replace(/query/g, 'getServerVersionV2');
+      throw new Error(`unexpected git call: ${joined}`);
+    },
+    runGh: () => '',
+    baselineSymbols: scanSymbols,
+    targetSymbols: scanSymbols,
+    spawnGrep: stubSpawnGrep({}),
+  });
+  const action = scope.actions.find((item) => item.canonicalSlug === 'v2-Management-getServerVersionV2');
+  assert.ok(action, 'Management-slug action present');
+  assert.equal(action.type, 'UPDATE');
+  assert.equal(action.stableId, 'java:v2-Management:getServerVersionV2');
+  assert.equal(scope.approvalGrade, true);
+  // The bind came through the unique-same-name last resort (the Client scanner
+  // category disagrees with the Management page/live placement) — surfaced.
+  assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'PR_SYMBOL_FALLBACK_BIND'));
+});
+
+test('fetchPrMeta paginates the complete PR file list beyond the gh view cap', () => {
+  const { fetchPrMeta } = require('../src/sdk-doc-sync/release-scope/pr-scan');
+  const pages = [
+    Array.from({ length: 100 }, (_, i) => ({ filename: `file-${i}.md`, status: 'modified' })),
+    [
+      { filename: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md', status: 'added' },
+      { filename: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/removed.md', status: 'removed' },
+    ],
+  ];
+  const meta = fetchPrMeta({
+    repo: 'milvus-io/web-content',
+    number: 1149,
+    runGh: (args) => {
+      const joined = args.join(' ');
+      if (joined.startsWith('pr view')) return JSON.stringify({ number: 1149, title: 't', state: 'MERGED' });
+      const page = Number(/&page=(\d+)/.exec(joined)?.[1] || 1);
+      return JSON.stringify(pages[page - 1] || []);
+    },
+  });
+  assert.equal(meta.files.length, 102);
+  assert.deepEqual(meta.files[100], { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md', changeType: 'ADDED' });
+  assert.equal(meta.files[101].changeType, 'REMOVED');
+});
+
+test('fetchPrMeta refuses to truncate a PR file list at the pagination cap', () => {
+  const { fetchPrMeta } = require('../src/sdk-doc-sync/release-scope/pr-scan');
+  const fullPage = Array.from({ length: 100 }, (_, i) => ({ filename: `file-${i}.md`, status: 'modified' }));
+  assert.throws(
+    () => fetchPrMeta({
+      repo: 'milvus-io/web-content',
+      number: 9999,
+      runGh: (args) => {
+        const joined = args.join(' ');
+        if (joined.startsWith('pr view')) return JSON.stringify({ number: 9999, title: 't', state: 'MERGED' });
+        return JSON.stringify(fullPage);
+      },
+    }),
+    /PR_FILE_LIST_TRUNCATED/,
+  );
+});

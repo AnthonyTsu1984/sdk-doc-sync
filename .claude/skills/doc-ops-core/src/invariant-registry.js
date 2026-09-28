@@ -205,7 +205,25 @@ function checkSkillInvariantCoverage({
       errors.push({ code: 'INVARIANT_WAIVER_UNREADABLE', path: '$', message: error.message });
     }
     if (waiverDoc !== null) {
-      errors.push(...validateInvariantWaivers(waiverDoc, { enforceExpiry: false }).errors);
+      const waiverValidation = validateInvariantWaivers(waiverDoc, { enforceExpiry: true });
+      errors.push(...waiverValidation.errors);
+      // 6.11: every waiver-gate refusal is a governance event keyed by the
+      // stable invariant ID — recorded to the violations ledger so waiver
+      // pressure is visible per rule.
+      if (!waiverValidation.valid && repoRoot) {
+        const { recordInvariantViolation } = require('./invariant-violations');
+        for (const error of waiverValidation.errors) {
+          try {
+            recordInvariantViolation({
+              repoRoot,
+              invariantId: error.invariantId || error.id || error.path,
+              code: error.code,
+              stage: 'admission',
+              detail: `waiver gate: ${error.path}`,
+            });
+          } catch { /* ledger recording is evidence, never a gate */ }
+        }
+      }
     }
   }
 
@@ -337,23 +355,26 @@ function validateInvariantWaivers(waiverDoc, { now = new Date(), enforceExpiry =
   }
   waiverDoc.waivers.forEach((waiver, index) => {
     const waiverPath = `$.waivers[${index}]`;
+    // Every error carries the invariantId (when identifiable) so downstream
+    // violation tracking can key the refusal by stable ID (6.11).
+    const withId = (error) => ({ ...error, invariantId: waiver?.invariantId || null });
     if (typeof waiver?.invariantId !== 'string' || !waiver.invariantId) {
-      errors.push({ code: 'INVARIANT_WAIVER_ID_REQUIRED', path: `${waiverPath}.invariantId` });
+      errors.push(withId({ code: 'INVARIANT_WAIVER_ID_REQUIRED', path: `${waiverPath}.invariantId` }));
     }
     if (!TRANSITION_KINDS.has(waiver?.transition)) {
-      errors.push({ code: 'INVARIANT_WAIVER_TRANSITION_INVALID', path: `${waiverPath}.transition` });
+      errors.push(withId({ code: 'INVARIANT_WAIVER_TRANSITION_INVALID', path: `${waiverPath}.transition` }));
     }
     if (typeof waiver?.reason !== 'string' || !waiver.reason.trim()) {
-      errors.push({ code: 'INVARIANT_WAIVER_REASON_REQUIRED', path: `${waiverPath}.reason` });
+      errors.push(withId({ code: 'INVARIANT_WAIVER_REASON_REQUIRED', path: `${waiverPath}.reason` }));
     }
     if (typeof waiver?.approvedBy !== 'string' || !waiver.approvedBy.trim()) {
-      errors.push({ code: 'INVARIANT_WAIVER_APPROVAL_REQUIRED', path: `${waiverPath}.approvedBy` });
+      errors.push(withId({ code: 'INVARIANT_WAIVER_APPROVAL_REQUIRED', path: `${waiverPath}.approvedBy` }));
     }
     const expiresAt = Date.parse(waiver?.expiresAt || '');
     if (Number.isNaN(expiresAt)) {
-      errors.push({ code: 'INVARIANT_WAIVER_EXPIRY_INVALID', path: `${waiverPath}.expiresAt` });
+      errors.push(withId({ code: 'INVARIANT_WAIVER_EXPIRY_INVALID', path: `${waiverPath}.expiresAt` }));
     } else if (enforceExpiry && expiresAt < now.getTime()) {
-      errors.push({ code: 'INVARIANT_WAIVER_EXPIRED', path: `${waiverPath}.expiresAt` });
+      errors.push(withId({ code: 'INVARIANT_WAIVER_EXPIRED', path: `${waiverPath}.expiresAt` }));
     }
   });
   return { valid: errors.length === 0, errors, waivers: waiverDoc.waivers };

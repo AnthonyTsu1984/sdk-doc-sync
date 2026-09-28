@@ -1028,10 +1028,23 @@ not scheduled.**
       waiver gate; wiring runtime enforcer refusals into it is part of the declared→runtime
       promotion backlog (6.10), since declared invariants have no runtime enforcers yet.
       Registry pin: entrypoint count 88→89 (+1 read-only publisher).
-- [ ] 6.12 Sixth-review-round low-severity observations: F3 — fallback binding compares a unit
+- [x] 6.12 Sixth-review-round low-severity observations: F3 — fallback binding compares a unit
       `null` against an absent batch field (tighten the null binding; not exploitable, digest and
       approval still hold); F4 — `--client-module` keeps freshness strength equal to the caller's
-      trustworthiness (record the override path in plan artifacts). F5 is folded into 6.2.
+      trustworthiness (record the override path in plan artifacts). F5 is folded into 6.2
+      (delivered there: the toolchain manifest pins temurin 17 and preflight probes it).
+
+      6.12 delivered (2026-09-28, branch `feat/phase6-f3-f4`): **F3** — the fallback binding's
+      per-field comparison no longer canonicalizes an absent batch field to `null`: a batch
+      action lacking one of the six binding fields refuses typed
+      (`BATCH_UNIT_MISMATCH` … "lacks <field>; binding requires the field present even when
+      null") before any adapter call, while a present-and-null field still binds and executes
+      (regression test proves both halves against canonical-shaped actions).
+      **F4** — when `--client-module` overrides the plan-time client, the resolved override
+      path is stamped into every review unit as `planProvenance.clientModule` BEFORE the
+      `boundUnitDigest` stamp, so the freshness provenance is digest-covered and auditable
+      from the plan artifact alone; no override ⇒ no provenance field. Green: localized 77
+      (executor 16, cli 8, planner 4, plus the rest of the suite).
 
 Acceptance for the phase: the review's closing statement flips — canonical entrypoints are
 deterministic (already true) *and* no write reaches production outside them (6.4–6.5), every

@@ -105,7 +105,13 @@ function assertBatchMatchesUnit({ unit, batch }) {
         if (unitAction[field] === undefined) {
           throw typedError('BATCH_UNIT_MISMATCH', `planned action ${batchAction.actionId} lacks ${field}; binding requires complete canonical actions`);
         }
-        if (JSON.stringify(canonicalize(unitAction[field])) !== JSON.stringify(canonicalize(batchAction[field] === undefined ? null : batchAction[field]))) {
+        // F3 (sixth review round): a unit null must require the batch field
+        // to be PRESENT (and null) — an absent batch field is a malformed
+        // action, not a wildcard equal to null.
+        if (batchAction[field] === undefined) {
+          throw typedError('BATCH_UNIT_MISMATCH', `batch action ${batchAction.actionId} lacks ${field}; binding requires the field present even when null`);
+        }
+        if (JSON.stringify(canonicalize(unitAction[field])) !== JSON.stringify(canonicalize(batchAction[field]))) {
           throw typedError('BATCH_UNIT_MISMATCH', `batch action ${batchAction.actionId} field ${field} does not match the planned review unit action`);
         }
       }

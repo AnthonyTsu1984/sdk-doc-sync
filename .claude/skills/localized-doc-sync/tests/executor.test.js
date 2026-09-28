@@ -39,6 +39,44 @@ test('executor writes prepared journal entries before exact approved target acti
   assert.match(fs.readFileSync(journalPath, 'utf8'), /"completionSentinel":true/);
 });
 
+test('fallback binding requires batch fields present even when null (F3)', async () => {
+  const fullAction = {
+    actionId: 'record:update:f3', locale: 'zh', target: 'record:f3', dependsOn: [],
+    sideEffects: ['record:update'], beforeState: null, payload: { Labels: ['new'] },
+  };
+  const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: [fullAction] });
+  const approval = createApprovalEnvelope({
+    skill: batch.skill, operation: batch.operation, batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length, targets: batch.targets, sideEffects: batch.sideEffects, decision: 'approved',
+  });
+  const unit = withBoundUnitDigest({
+    reviewUnitId: 'unit:f3', locale: 'zh', requiresDocumentAcceptance: false,
+    actions: [fullAction],
+  });
+
+  // A batch action MISSING a binding field is malformed: a unit null no
+  // longer binds an absent batch field (F3, sixth review round).
+  const malformedAction = { ...fullAction };
+  delete malformedAction.beforeState;
+  const malformedBatch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions: [malformedAction] });
+  await assert.rejects(
+    () => executeReviewUnit({
+      unit, batch: malformedBatch, approval,
+      journalPath: path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-f3-')), 'journal.jsonl'),
+      adapter: { async execute() { throw new Error('must not execute'); }, async verify() { return { verified: true }; } },
+    }),
+    (error) => error.code === 'BATCH_UNIT_MISMATCH' && /lacks beforeState/.test(error.message),
+  );
+
+  // A present-and-null field still binds and executes.
+  const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'localized-f3-ok-')), 'journal.jsonl');
+  const result = await executeReviewUnit({
+    unit, batch, approval, journalPath,
+    adapter: { async execute() { return { status: 'success' }; }, async verify() { return { verified: true }; } },
+  });
+  assert.equal(result.status, 'EXECUTED');
+});
+
 test('a digest-bound unit without content actions executes to EXECUTED', async () => {
   const actions = [{ actionId: 'record:update:a', locale: 'zh', target: 'record:a', dependsOn: [], sideEffects: ['record:update'], beforeState: { Labels: ['old'] }, payload: { Labels: ['new'] } }];
   const batch = createActionBatch({ skill: 'localized-doc-sync', operation: 'sync', actions });

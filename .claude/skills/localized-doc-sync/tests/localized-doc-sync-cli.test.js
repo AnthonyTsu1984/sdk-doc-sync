@@ -214,7 +214,12 @@ test('plan runs the documented CLI end to end through the production client modu
     });
     const units = JSON.parse(fs.readFileSync(planPath, 'utf8'));
     assert.ok(units.length >= 1);
-    for (const unit of units) assert.equal(unit.scanManifestDigest, scan.semanticDigest);
+    for (const unit of units) {
+      assert.equal(unit.scanManifestDigest, scan.semanticDigest);
+      // F4: the --client-module override path is stamped into the plan
+      // artifact (digest-covered) so freshness provenance is auditable.
+      assert.equal(unit.planProvenance.clientModule, clientModulePath);
+    }
   } finally {
     if (originalFetch) require.cache[fetchPath] = originalFetch; else delete require.cache[fetchPath];
     if (originalTokenFetcher) require.cache[tokenFetcherPath] = originalTokenFetcher; else delete require.cache[tokenFetcherPath];

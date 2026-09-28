@@ -154,20 +154,24 @@ function classifyPrFiles(prFiles, scanTrack = null) {
         filteredTracks.set(key, (filteredTracks.get(key) || 0) + 1);
         continue;
       }
-      // Namespace-style trees (milvus-sdk-java, pymilvus): pages live under
+      // Namespace-style trees (milvus-sdk-java): pages live under
       // v3.0.x/v2/<category>/... where v2/ is the client-API namespace and
-      // flat trees (cpp, go) have no such segment. Member pages nested under
-      // an owning-class directory identify by that class (<class>.<member>),
-      // matching the record slug convention (v2-<class>-<member>); a page
-      // named after its own directory is a landing/enum page and identifies
-      // by the top category (<category>.<Type>).
+      // flat trees (cpp, node) have exactly one category segment. Member
+      // pages nested under an owning-class directory identify by that class
+      // (<class>.<member>), matching the record slug convention
+      // (v2-<class>-<member>); a page named after its own directory is a
+      // landing/enum page and identifies by the top category
+      // (<category>.<Type>). Deep paths WITHOUT a vN namespace segment (go,
+      // pymilvus) are not a recognized page shape here: they keep the
+      // pre-adaptation out-of-scope behavior instead of inventing an
+      // identity from a speculative owner segment.
       const segments = categoryPath.split('/');
       const namespace = /^v\d+$/.test(segments[0]) ? segments.shift() : null;
       if (namespace === 'v1') {
         namespaced.set(namespace, (namespaced.get(namespace) || 0) + 1);
         continue;
       }
-      if (segments.length === 0) {
+      if (segments.length === 0 || (segments.length > 1 && !namespace)) {
         skipped.push(file.path);
         continue;
       }
@@ -325,7 +329,8 @@ function identityFor({ mapped, symbolIdentity, category, pageName, language, slu
     // Prefixed tracks (java: v2-<middle>-<member>) compose the fallback from
     // the page symbol's middle segment so the same interface lands on one
     // stableId/slug whether it arrives through a PR page or a tag scout.
-    const middle = symbolIdentity.slice(0, symbolIdentity.lastIndexOf('.')) || category;
+    const dot = symbolIdentity.lastIndexOf('.');
+    const middle = (dot > 0 ? symbolIdentity.slice(0, dot) : '') || category;
     return {
       identity: {
         stableId: `${language}:${slugPrefix}${middle}:${pageName}`,
@@ -558,7 +563,8 @@ async function runPrScan({
   // their owning class directly; category pages try the live record category
   // first, then the path symbol, then any other live category. A unique
   // same-name symbol is the last resort so builder verification still runs
-  // when placements disagree with every derived category.
+  // when placements disagree with every derived category — that bind is
+  // category-unverified, so it is surfaced with PR_SYMBOL_FALLBACK_BIND.
   const resolvePageSymbol = (entry) => {
     const candidates = [];
     const liveCategories = liveCategoriesByName.get(entry.pageName);
@@ -573,14 +579,16 @@ async function runPrScan({
     }
     for (const candidate of candidates) {
       const resolved = targetByIdentity.get(candidate) || targetByCategoryName.get(candidate);
-      if (resolved) return resolved;
+      if (resolved) return { symbol: resolved, via: 'derived' };
     }
     const sameName = scanSymbolsByName.get(entry.pageName) || [];
-    return sameName.length === 1 ? sameName[0] : null;
+    return sameName.length === 1
+      ? { symbol: sameName[0], via: 'unique-name' }
+      : { symbol: null, via: null };
   };
 
   const changedFiles = [...new Set(pageEntries.flatMap((entry) => {
-    const symbol = resolvePageSymbol(entry);
+    const { symbol } = resolvePageSymbol(entry);
     return symbol ? [symbol.filePath] : [];
   }))].sort();
 
@@ -598,7 +606,14 @@ async function runPrScan({
       });
       continue;
     }
-    const symbol = resolvePageSymbol(entry);
+    const { symbol, via } = resolvePageSymbol(entry);
+    if (symbol && via === 'unique-name') {
+      diagnostics.push({
+        level: 'info',
+        code: 'PR_SYMBOL_FALLBACK_BIND',
+        message: `${entry.path}: no category-derived candidate matched; bound by unique page name to ${publicIdentity(symbol)} — the category binding is unverified and must be confirmed at grouping review.`,
+      });
+    }
     const markdown = readWebContentFile({ webContentDir, revision: webContentRevision, filePath: entry.path, runGit: resolvedRunGit });
     const page = parseApiReferencePage(markdown);
     const pageNameFound = symbol ? null
@@ -885,6 +900,9 @@ function fetchAllPrFiles({ repo, number, runGh = defaultRunGh }) {
       });
     }
     if (chunk.length < 100) break;
+    if (page === 20) {
+      throw new Error(`PR_FILE_LIST_TRUNCATED: PR #${number} in ${repo} has more than ${20 * 100} changed files; raise the pagination cap before scanning it`);
+    }
   }
   return files;
 }

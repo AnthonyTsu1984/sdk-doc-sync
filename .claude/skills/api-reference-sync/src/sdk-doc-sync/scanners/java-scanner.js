@@ -378,7 +378,8 @@ class JavaScanner extends BaseScanner {
         const lines = content.split('\n');
         // The type class must accept dotted nested types (IndexParam.MetricType,
         // CreateCollectionReq.Function) — plain \w silently drops those fields.
-        const fieldRegex = /^\s*private\s+([\w.<>,\s\[\]?]+?)\s+(\w+)\s*(?:=\s*(.+?))?\s*;$/;
+        // A trailing line comment must not disqualify the field.
+        const fieldRegex = /^\s*private\s+([\w.<>,\s\[\]?]+?)\s+(\w+)\s*(?:=\s*(.+?))?\s*;(?:\s*\/\/.*)?$/;
         const classRegex = /^\s*(public|private|protected)?\s*(static\s+)?class\s+/;
 
         let seenTopClass = false;

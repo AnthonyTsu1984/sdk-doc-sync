@@ -445,6 +445,22 @@ test('classifyPrFiles parses java namespace trees: category pages, nested class 
   assert.equal(namespaced.get('v1'), 1);
 });
 
+test('classifyPrFiles keeps flat-tree deep paths out of page scope (go/pymilvus pre-adaptation behavior)', () => {
+  const { targets, skipped, namespaced } = classifyPrFiles([
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewAutoIndex.md', changeType: 'ADDED' },
+    { path: 'API_Reference/pymilvus/v3.0.x/DataImport/Volume/VolumeManager/create_volume.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-cpp/v3.0.x/Authentication/AlterRole.md', changeType: 'MODIFIED' },
+  ]);
+  assert.deepEqual([...targets.keys()], ['milvus-sdk-cpp/v3.0.x']);
+  const page = targets.get('milvus-sdk-cpp/v3.0.x').find((entry) => !entry.about);
+  assert.equal(page.symbol, 'Authentication.AlterRole');
+  assert.deepEqual(skipped, [
+    'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewAutoIndex.md',
+    'API_Reference/pymilvus/v3.0.x/DataImport/Volume/VolumeManager/create_volume.md',
+  ]);
+  assert.equal(namespaced.size, 0);
+});
+
 test('targetTagFromAbout normalizes unprefixed java pin rows', () => {
   const about = [
     '| Milvus version | Recommended SDK version |',
@@ -612,6 +628,9 @@ test('runPrScan prefers live record categories when scanner and map placements d
   assert.equal(action.type, 'UPDATE');
   assert.equal(action.stableId, 'java:v2-Management:getServerVersionV2');
   assert.equal(scope.approvalGrade, true);
+  // The bind came through the unique-same-name last resort (the Client scanner
+  // category disagrees with the Management page/live placement) — surfaced.
+  assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'PR_SYMBOL_FALLBACK_BIND'));
 });
 
 test('fetchPrMeta paginates the complete PR file list beyond the gh view cap', () => {
@@ -636,4 +655,21 @@ test('fetchPrMeta paginates the complete PR file list beyond the gh view cap', (
   assert.equal(meta.files.length, 102);
   assert.deepEqual(meta.files[100], { path: 'API_Reference/milvus-sdk-java/v3.0.x/v2/Vector/query.md', changeType: 'ADDED' });
   assert.equal(meta.files[101].changeType, 'REMOVED');
+});
+
+test('fetchPrMeta refuses to truncate a PR file list at the pagination cap', () => {
+  const { fetchPrMeta } = require('../src/sdk-doc-sync/release-scope/pr-scan');
+  const fullPage = Array.from({ length: 100 }, (_, i) => ({ filename: `file-${i}.md`, status: 'modified' }));
+  assert.throws(
+    () => fetchPrMeta({
+      repo: 'milvus-io/web-content',
+      number: 9999,
+      runGh: (args) => {
+        const joined = args.join(' ');
+        if (joined.startsWith('pr view')) return JSON.stringify({ number: 9999, title: 't', state: 'MERGED' });
+        return JSON.stringify(fullPage);
+      },
+    }),
+    /PR_FILE_LIST_TRUNCATED/,
+  );
 });

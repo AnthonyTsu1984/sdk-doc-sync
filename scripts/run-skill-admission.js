@@ -334,6 +334,32 @@ function runAdmission({
   result.status = 'ADMITTED';
   result.blocker = null;
   result.completedAt = now();
+  // 6.9: record the widened whole-tree fingerprint this admission just
+  // proved, so production runs (DOC_OPS_REQUIRE_ADMITTED_FINGERPRINT=1) can
+  // bind the exact admitted tree at the writer boundary. Best-effort on
+  // purpose: a root where the fingerprint cannot compute (non-git test
+  // fixtures) records nothing, and a MISSING record is the fail-closed
+  // direction — the production writer refuses unadmitted fingerprints.
+  // NOTE: result.sourceFingerprint (set above) is the ADMISSION-scoped
+  // fingerprint the 6.1 drift guard compares. The PRODUCTION binding is a
+  // different, wider fingerprint — the whole-tree productionInputFingerprint
+  // run manifests bind — recorded under its own name.
+  try {
+    const { productionInputFingerprint } = require('../.claude/skills/doc-ops-core/src/run-manifest');
+    const { recordAdmittedFingerprint } = require('../.claude/skills/doc-ops-core/src/admitted-fingerprint');
+    result.productionInputFingerprint = productionInputFingerprint({ repoRoot });
+    recordAdmittedFingerprint({
+      repoRoot,
+      sourceFingerprint: result.productionInputFingerprint,
+      phase: result.phase,
+      deterministicOnly: deterministicOnly === true,
+      resultsPath: resultPath,
+      generatedAt: result.completedAt,
+    });
+  } catch (error) {
+    result.productionInputFingerprint = null;
+    result.productionInputFingerprintError = error.message;
+  }
   writeResult(resultPath, result);
   return result;
 }

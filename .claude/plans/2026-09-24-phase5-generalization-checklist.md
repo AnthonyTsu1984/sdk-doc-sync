@@ -913,7 +913,7 @@ not scheduled.**
       simulation-proven; the LIVE disposable-tenant run is the operator's release-time action
       by design (never PR-automated), so no live PASS artifact exists yet — the first harness
       release after this PR executes the gate per the runbook.**
-- [ ] 6.9 **Admitted-fingerprint binding for production runs.** A production run must bind the
+- [x] 6.9 **Admitted-fingerprint binding for production runs.** A production run must bind the
       exact admitted source fingerprint; "tested similar code" is not proof. Acceptance criteria
       from the PR #39 review round (2026-09-26):
       - O1 — the bound state must cover **untracked file content** (the admission
@@ -925,6 +925,32 @@ not scheduled.**
         `collectAdmissionInputFiles` by Phase 0 design). "Admitted" means the exact tree the
         gates executed against, so the production manifest's fingerprint definition must be at
         least as wide as the code the run actually loads.
+
+      6.9 delivered (2026-09-28, branch `feat/phase6-admitted-fingerprint`): **O1/O2 were
+      already satisfied structurally by 6.5** — `productionInputFingerprint` binds tracked ∪
+      untracked contents over the whole working tree (run-manifest tests prove untracked-content
+      sensitivity and whole-tree scope, a strict superset of the admission input set). This
+      item adds the ADMISSION↔PRODUCTION binding: every ADMITTED admission run now records
+      that fingerprint (append-only ledger `tmp/skill-feedback-rollout/admitted-fingerprints.jsonl`
+      + `results.json.productionInputFingerprint` — deliberately a separate field from the
+      admission-scoped `sourceFingerprint` the 6.1 drift guard compares), naming the phase,
+      the deterministic-subset flag, and
+      the results artifact; and `WriterGovernance.assertMutationAllowed` — the innermost writer
+      boundary every canonical write path already passes through — refuses with typed
+      `RUN_NOT_ADMITTED` when the shell sets `DOC_OPS_REQUIRE_ADMITTED_FINGERPRINT=1` and the
+      bound fingerprint has no exact ADMITTED record. Dev/test shells (flag unset) are not
+      gated; the production discipline is to set the flag in the production shell — the mirror
+      image of the `DOC_OPS_ALLOW_LEGACY_LIVE` ban (wave 3), same env-gate trust model.
+      Injectable at `bindRunManifest({ admittedEnv })` for tests. Operator procedure in
+      `docs/superpowers/runbooks/production-admitted-fingerprint.md` (incl. CI-evidence path
+      for machines that did not run admission locally). Evidence:
+      `admitted-fingerprint.test.js` (4 tests: O1/O2 parity between ledger records and
+      run-manifest fingerprints incl. untracked-content sensitivity; dev-mode no-op; typed
+      refusal without a matching record; exact-match allows + any-source-edit re-refuses).
+      Honest limits, recorded: the flag is operator discipline, not hardware enforcement; O4
+      (make-and-revert inside one gate's execution window) remains the inherent sampling limit
+      accepted at PR #39; a full (non-deterministic) admission is release-grade —
+      deterministic-subset records are marked `deterministicOnly: true`.
 
 ### Carried-over phase 6 items (from this checklist and the master plan)
 

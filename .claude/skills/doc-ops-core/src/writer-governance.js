@@ -146,7 +146,7 @@ class WriterGovernance {
     // (RUN_MANIFEST_SOURCE_DRIFT).
     // Lazy require: run-manifest imports this module's attestation validator,
     // so the dependency must not be created at module-init time.
-    bindRunManifest(runManifest, { repoRoot = null, verifyNow = false } = {}) {
+    bindRunManifest(runManifest, { repoRoot = null, verifyNow = false, admittedEnv = null } = {}) {
         if (!this.bound) {
             throw new WriterGovernanceError(
                 'WRITER_RUN_MANIFEST_REQUIRES_APPROVAL',
@@ -177,6 +177,7 @@ class WriterGovernance {
         state.run = run;
         state.runRepoRoot = repoRoot;
         state.runVerified = verifyNow === true;
+        state.admittedEnv = admittedEnv;
         return run;
     }
 
@@ -243,6 +244,25 @@ class WriterGovernance {
                 throw error;
             }
             state.runVerified = true;
+        }
+        // 6.9: in a production shell (DOC_OPS_REQUIRE_ADMITTED_FINGERPRINT=1)
+        // the bound fingerprint must be the exact tree the admission gates
+        // executed against — checked at every mutation boundary, fail-closed.
+        if (state.runRepoRoot) {
+            const { assertFingerprintAdmitted } = require('./admitted-fingerprint');
+            try {
+                assertFingerprintAdmitted({
+                    repoRoot: state.runRepoRoot,
+                    sourceFingerprint: this.run.sourceFingerprint,
+                    env: state.admittedEnv || undefined,
+                    method: method || null,
+                });
+            } catch (error) {
+                if (error?.code === 'RUN_NOT_ADMITTED') {
+                    throw new WriterGovernanceError(error.code, error.message, { method: method || null, sourceFingerprint: this.run.sourceFingerprint });
+                }
+                throw error;
+            }
         }
         // Re-assert the full manifest↔approval relationship at mutation time:
         // bind-time checks alone would trust that neither object was replaced

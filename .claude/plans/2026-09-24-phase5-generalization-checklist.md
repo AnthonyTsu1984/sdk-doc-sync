@@ -459,16 +459,19 @@ not scheduled.**
       reclassified `canonical-governed` (production infra; fully governed since 6.5/6.6 —
       WriterGovernance + run manifest + write-ahead journal through the shared localized
       executor; quarantine guard removed from the source); `feishu-doc.js`,
-      `feishu-doc-translator.js` (+ its src module), `node-v30-update.js`, `java-v26-update.js`
-      `node-v30-update.js`, `java-v26-update.js` DELETED with their dead references (CLAUDE.md
-      doc-CLI lines, the quarantine spawn fixture, registry test assertions; the wave-1 "two
-      living caller scripts" no longer exist). **Correction during execution: the translation
-      ENGINE (`src/feishu-doc-translator/`) is LIVE production code** — doc-agent-live-write's
-      non-META_ONLY actions run it inside the governed executor — so the module was restored
-      and its latent 6.5 break FIXED instead: `FeishuDocTranslator` now accepts
-      `options.governance` and forwards it to the BitableWriter, and the doc-agent adapter
-      threads its live-governance through `runTranslationActions` — the translation path is
-      governed end to end for the first time. What was retired is the STANDALONE CLI
+      the standalone translator CLI, `node-v30-update.js`, `java-v26-update.js` DELETED with
+      their dead references (CLAUDE.md doc-CLI lines, the quarantine spawn fixture, registry
+      test assertions; the wave-1 "two living caller scripts" no longer exist). **Correction
+      during execution: the translation ENGINE (`src/feishu-doc-translator/`) is LIVE
+      production code** — doc-agent-live-write's non-META_ONLY actions run it inside the
+      governed executor — so the module was restored and its latent 6.5 break FIXED instead:
+      `FeishuDocTranslator` now accepts `options.governance` and forwards it to the
+      BitableWriter, and the doc-agent adapter threads its live-governance through
+      `runTranslationActions`. Review round 4 then caught the DOCUMENT-write half: the
+      engine's second writer (MarkdownToFeishu) was still ungoverned, and the adapter's
+      verify() verified an all-error translation group as true — both fixed (the engine passes
+      its governance to the md writer too; verify() refuses a group whose every action
+      recorded status 'error'). What was retired is the STANDALONE CLI
       (`bin/feishu-doc-translator.js` + npm `translate`): it had no governance mint left after
       the channel removal and was unreachable dormant since wave 2; the engine's adapter
       contract tests were trimmed of bin dependencies and the retired-CLI options test removed. **Exception-channel ruling: REMOVED** — the runtime guard no

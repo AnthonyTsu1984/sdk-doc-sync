@@ -106,7 +106,7 @@ test('enforceLegacyQuarantine terminates a quarantined run with the canonical re
   const output = messages.join('');
   assert.match(output, /LEGACY_LIVE_QUARANTINED/);
   assert.match(output, /canonical\/sync\.js/);
-  assert.match(output, /NOT harness-guaranteed/);
+  assert.match(output, /blocked unconditionally/);
 });
 
 test('every registered legacy-live entrypoint carries the runtime guard as its first statement', () => {

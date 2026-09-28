@@ -94,6 +94,25 @@ test('agent-team delegates an approved immutable batch to the canonical write-ah
   assert.match(journal, /"completionSentinel":true/);
 });
 
+// Wave-3 review round 4: the translation engine's SECOND writer (the
+// MarkdownToFeishu document writer) must carry the same bound governance as
+// the record writer — a NEW action reaches push_markdown through it.
+test('the translation engine rides one governance for both record and document writers', () => {
+  const FeishuDocTranslator = require('../../skills/api-reference-sync/src/feishu-doc-translator');
+  const { WriterGovernance } = require('../../skills/doc-ops-core/src/writer-governance');
+  const governance = new WriterGovernance({ skill: 'localized-doc-sync', operation: 'test' });
+  const translator = new FeishuDocTranslator({
+    sourceBitable: 'src-base', targetBitable: 'tgt-base',
+    sourceTableId: 'tbl-src', targetTableId: 'tbl-tgt',
+    sourceLang: 'en', targetLang: 'zh',
+    dryRun: true,
+    governance,
+    translator: { async translate() { return ''; } },
+  });
+  assert.equal(translator.targetWriter.governance, governance, 'record writer is governed');
+  assert.equal(translator.targetWriter_md.governance, governance, 'document writer is governed');
+});
+
 // 6.7 fault injection: the S4 crash window (journal completed, completion
 // processing never ran) converges through the shared executor's journal
 // pre-flight — a rerun never re-executes a mutation through the agent-team

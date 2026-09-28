@@ -172,6 +172,14 @@ function createLiveAdapter(config, captures, governance = null) {
     },
     async verify(action, result) {
       if (!result || result.status === 'failure' || result.status === 'skipped') return { verified: false };
+      // Wave-3 review hardening: the translation engine records per-action
+      // { status: 'error' } entries and continues — a group wrapper without a
+      // top-level status must not verify as true while every action failed.
+      const inner = result.result;
+      if (inner && Array.isArray(inner.results) && inner.results.length > 0
+          && inner.results.every((entry) => entry.status === 'error')) {
+        return { verified: false };
+      }
       const payload = action.payload;
       if (payload.target?.id) {
         const writer = new BitableWriter({

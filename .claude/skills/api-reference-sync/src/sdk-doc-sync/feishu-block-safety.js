@@ -35,7 +35,11 @@ function assertPublishableContent(content) {
       'Generic generated return placeholders must be replaced with reviewed source-backed content',
     );
   }
-  if (/\b(?:Brief description|Usage example|List relevant exceptions)\b/i.test(value)) {
+  // The legacy generator emitted these phrases as standalone placeholder
+  // text. PR-authored prose legitimately contains the same words inside
+  // sentences (e.g. describing a `description` builder parameter), so the
+  // guard only fires when a text run IS the placeholder.
+  if (/^(?:brief description|usage example|list relevant exceptions)\b\.?$/i.test(String(value).trim())) {
     throw new FeishuBlockSafetyError(
       'LEGACY_SCAFFOLD_ARTIFACT',
       'Legacy scaffold text must not be published',

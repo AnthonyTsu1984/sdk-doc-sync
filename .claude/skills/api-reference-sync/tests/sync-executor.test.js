@@ -2399,3 +2399,23 @@ test('SyncExecutor tree-delta verification removes exactly one repointed referen
     errors: [],
   });
 });
+
+test('block safety publishes PR prose that merely contains the phrase brief description', () => {
+  // #1149 ranker pages describe a `description(String description)` builder
+  // parameter with the sentence "A brief description of the function's
+  // purpose." — legitimate verbatim content, not a legacy scaffold placeholder.
+  const { validateRenderedApiBlocks } = require('../src/sdk-doc-sync/feishu-block-safety');
+  const result = validateRenderedApiBlocks([
+    {
+      block_id: 'p1',
+      paragraph: { elements: [{ text_run: { content: 'A brief description of the function\'s purpose. This can be useful for documentation or clarity in larger projects and defaults to an empty string.' } }] },
+    },
+  ]);
+  assert.deepEqual(result.errors.filter((error) => error.code === 'LEGACY_SCAFFOLD_ARTIFACT'), []);
+
+  // The standalone placeholder itself stays blocked.
+  const placeholder = validateRenderedApiBlocks([
+    { block_id: 'p2', paragraph: { elements: [{ text_run: { content: 'Usage example' } }] } },
+  ]);
+  assert.ok(placeholder.errors.some((error) => error.code === 'LEGACY_SCAFFOLD_ARTIFACT'));
+});

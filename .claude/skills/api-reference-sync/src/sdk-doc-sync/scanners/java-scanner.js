@@ -68,6 +68,14 @@ const TYPE_CATEGORIES = {
     VolumeBulkWriterParam: 'DataImport',
     VolumeFileManagerParam: 'DataImport',
     VolumeManagerParam: 'DataImport',
+    // v3.0.10 telemetry + function-chain type pages (web-content PR #1141)
+    TelemetryConfig: 'Client',
+    FunctionChainArg: 'FunctionChain',
+    FunctionChainExpr: 'FunctionChain',
+    FunctionChainOp: 'FunctionChain',
+    FunctionChainStage: 'FunctionChain',
+    FunctionParamValue: 'FunctionChain',
+    FunctionChain: 'Vector',
 };
 
 class JavaScanner extends BaseScanner {
@@ -274,7 +282,16 @@ class JavaScanner extends BaseScanner {
 
     _extractSelectedCoreTypes(allFiles) {
         const symbols = [];
-        const selectedTypes = new Set(['FunctionType']);
+        const selectedTypes = new Set([
+            'FunctionType',
+            'TelemetryConfig',
+            'FunctionChainArg',
+            'FunctionChainExpr',
+            'FunctionChainOp',
+            'FunctionChainStage',
+            'FunctionParamValue',
+            'FunctionChain',
+        ]);
         for (const file of allFiles) {
             const basename = path.basename(file, '.java');
             if (!selectedTypes.has(basename)) continue;

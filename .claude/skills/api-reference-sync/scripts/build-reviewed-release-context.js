@@ -379,7 +379,9 @@ function assertInheritanceEvidence({ action, spec, identity, current, target }) 
 }
 
 function assertCreateMissingEvidence({ action, spec, identity }) {
-  if (action.type !== 'CREATE') return null;
+  // BACKFILL is a CREATE-like action ("documentation-gap create"): it needs
+  // the same explicit absent-record evidence before planning.
+  if (action.type !== 'CREATE' && action.type !== 'BACKFILL') return null;
   if (spec.existingRecord?.recordId) {
     throw new Error(`Candidate ${action.canonicalSlug} is CREATE but existingRecord ${spec.existingRecord.recordId} was found for ${identity.stableId}`);
   }

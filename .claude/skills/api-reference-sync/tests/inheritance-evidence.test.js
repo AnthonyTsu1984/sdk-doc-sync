@@ -164,3 +164,31 @@ test('trackInventoryDigest is order-insensitive and content-bound', () => {
   assert.notEqual(left, changed);
   assert.match(left, /^sha256:[0-9a-f]{64}$/);
 });
+
+test('cloned-base reference multisets keep duplicate recordIds and validate as shared', () => {
+  // Cloned bases (a track base duplicated from its predecessor) reuse the
+  // same recordId in two bases; one record per base referencing the shared
+  // document must survive as two multiset entries.
+  const value = evidence({
+    current: {
+      recordId: 'rec-clone', documentToken: 'doc-shared', version: 'v2.6.x',
+      folderToken: 'partitions-v26', versionRootToken: 'root-v26',
+      ancestryVerified: true, placementVerified: true,
+    },
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: ['rec-clone', 'rec-clone'],
+  });
+  assert.deepEqual(value.sharedToken.referencedRecordIds, ['rec-clone', 'rec-clone']);
+  assert.deepEqual(validateInheritanceEvidence(value), { valid: true, errors: [] });
+
+  // A cloned-base token that loses one referencing record no longer agrees
+  // with the shared status: the multiset shrank below two references.
+  const drifted = validateInheritanceEvidence({
+    ...value,
+    sharedToken: { ...value.sharedToken, referencedRecordIds: ['rec-clone'] },
+  });
+  assert.equal(drifted.valid, false);
+  assert.ok(drifted.errors.some(
+    (error) => error.code === 'SHARED_TOKEN_EVIDENCE_REFERENCES_INCONSISTENT',
+  ));
+});

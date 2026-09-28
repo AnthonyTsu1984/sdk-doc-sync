@@ -2201,3 +2201,221 @@ test('SyncExecutor UPDATE_IN_PLACE journals a skipped title repair without faili
   const update = calls.find(([step]) => step === 'updateRecord');
   assert.ok(update, 'record update must still land');
 });
+
+test('SyncExecutor compares reference multisets so cloned-base tokens pass pre-write revalidation', async () => {
+  // Cloned bases: both tracks reference old-doc through the SAME recordId
+  // string, so the live enumeration yields the id twice.
+  const calls = [];
+  const documentWriter = {
+    async copyDocument(input) {
+      calls.push('copyDocument');
+      return {
+        token: 'new-doc',
+        url: 'https://zilliverse.feishu.cn/docx/new-doc',
+        title: input.title,
+        folderToken: input.folderToken,
+      };
+    },
+    async patchDocument() {
+      calls.push('patchDocument');
+      return { ok: true };
+    },
+    async deleteDocument(input) {
+      calls.push(['deleteDocument', input]);
+      return { deleted: true };
+    },
+  };
+  const bitableWriter = {
+    async updateRecord() {
+      calls.push('updateRecord');
+      return { ok: true };
+    },
+  };
+  const verifier = {
+    async verifyDocument() {
+      calls.push('verifyDocument');
+      return { ok: true, errors: [] };
+    },
+    async verify() {
+      calls.push('verify');
+      return { ok: true, errors: [] };
+    },
+  };
+  const evidence = copyPatchEvidence({
+    referencedRecordIds: ['record-1', 'record-1'],
+  });
+  let reads = 0;
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        reads += 1;
+        // Pre-write: one record per cloned base. (No post-write read: the
+        // hand-built plan carries no tree-delta attestation.)
+        return reads === 1
+          ? [{ recordId: 'record-1' }, { recordId: 'record-1' }]
+          : [{ recordId: 'record-1' }];
+      },
+    },
+  });
+
+  const result = await executor.execute(Object.freeze({
+    schemaVersion: 1,
+    action: 'COPY_PATCH_AND_REPOINT',
+    stableId: 'python:Authentication:create_user',
+    inheritanceEvidence: evidence,
+    source: { recordId: 'record-1', documentToken: 'old-doc' },
+    copySource: { documentToken: 'old-doc', link: 'https://zilliverse.feishu.cn/docx/old-doc' },
+    target: { version: 'v2.6.x', parentRecordId: 'parent-1', folderToken: 'folder-1' },
+    postconditions: [{ type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' }],
+    artifactDigest: 'digest',
+  }), {
+    approval: { approved: true },
+    artifact: { title: 'create_user()', content: '# create_user()' },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.deepEqual(result.completedSteps, ['verifySharedTokenEvidence', 'copyDocument', 'patchDocument', 'verifyDocument', 'updateRecord', 'verify']);
+});
+
+test('SyncExecutor blocks cloned-base mutations when a reference count drifted', async () => {
+  const { documentWriter, bitableWriter } = spies();
+  const evidence = copyPatchEvidence({
+    referencedRecordIds: ['record-1', 'record-1'],
+  });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        // One cloned base deleted its record: the live multiset shrank to a
+        // single reference while the approved evidence still counts two.
+        return [{ recordId: 'record-1' }];
+      },
+    },
+  });
+
+  const result = await executor.execute(Object.freeze({
+    schemaVersion: 1,
+    action: 'COPY_PATCH_AND_REPOINT',
+    stableId: 'python:Authentication:create_user',
+    inheritanceEvidence: evidence,
+    source: { recordId: 'record-1', documentToken: 'old-doc' },
+    copySource: { documentToken: 'old-doc', link: 'https://zilliverse.feishu.cn/docx/old-doc' },
+    target: { version: 'v2.6.x', parentRecordId: 'parent-1', folderToken: 'folder-1' },
+    artifactDigest: 'digest',
+  }), {
+    approval: { approved: true },
+    artifact: { title: 'create_user()', content: '# create_user()' },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'SHARED_TOKEN_REFERENCES_DRIFTED');
+  assert.deepEqual(result.error.details.liveRecordIds, ['record-1']);
+  assert.deepEqual(result.error.details.approvedRecordIds, ['record-1', 'record-1']);
+});
+
+test('SyncExecutor tree-delta verification removes exactly one repointed reference', async () => {
+  const calls = [];
+  const documentWriter = {
+    async copyDocument(input) {
+      calls.push('copyDocument');
+      return {
+        token: 'new-doc',
+        url: 'https://zilliverse.feishu.cn/docx/new-doc',
+        title: input.title,
+        folderToken: input.folderToken,
+      };
+    },
+    async patchDocument() {
+      calls.push('patchDocument');
+      return { ok: true };
+    },
+    async deleteDocument(input) {
+      calls.push(['deleteDocument', input]);
+      return { deleted: true };
+    },
+  };
+  const bitableWriter = {
+    async updateRecord() {
+      calls.push('updateRecord');
+      return { ok: true };
+    },
+  };
+  const verifier = {
+    async verifyDocument() {
+      calls.push('verifyDocument');
+      return { ok: true, errors: [] };
+    },
+    async verify() {
+      calls.push('verify');
+      return { ok: true, errors: [] };
+    },
+  };
+  const evidence = copyPatchEvidence({
+    referencedRecordIds: ['record-1', 'record-1'],
+  });
+  let reads = 0;
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    verifier,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        reads += 1;
+        // Read 1: pre-write revalidation (one record per cloned base).
+        // Read 2: post-write tree delta — the repointed v3.0.x record left
+        // the old token; the cloned v2.6.x record remains.
+        return reads === 1
+          ? [{ recordId: 'record-1' }, { recordId: 'record-1' }]
+          : [{ recordId: 'record-1' }];
+      },
+    },
+  });
+
+  const result = await executor.execute(Object.freeze({
+    schemaVersion: 1,
+    action: 'COPY_PATCH_AND_REPOINT',
+    stableId: 'python:Authentication:create_user',
+    inheritanceEvidence: evidence,
+    invariantAttestations: [{ id: 'api.versioned-tree-delta', decision: 'COPY_PATCH_AND_REPOINT' }],
+    source: { recordId: 'record-1', documentToken: 'old-doc' },
+    copySource: { documentToken: 'old-doc', link: 'https://zilliverse.feishu.cn/docx/old-doc' },
+    target: { version: 'v2.6.x', parentRecordId: 'parent-1', folderToken: 'folder-1' },
+    postconditions: [{ type: 'TARGET_RECORD_TYPE', expected: 'Function', docsResourceType: 'docx' }],
+    artifactDigest: 'digest',
+  }), {
+    approval: { approved: true },
+    artifact: { title: 'create_user()', content: '# create_user()' },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.deepEqual(result.treeDeltaVerification, {
+    invariantId: 'api.versioned-tree-delta',
+    decision: 'COPY_PATCH_AND_REPOINT',
+    ok: true,
+    errors: [],
+  });
+});
+
+test('block safety publishes PR prose that merely contains the phrase brief description', () => {
+  // #1149 ranker pages describe a `description(String description)` builder
+  // parameter with the sentence "A brief description of the function's
+  // purpose." — legitimate verbatim content, not a legacy scaffold placeholder.
+  const { validateRenderedApiBlocks } = require('../src/sdk-doc-sync/feishu-block-safety');
+  const result = validateRenderedApiBlocks([
+    {
+      block_id: 'p1',
+      paragraph: { elements: [{ text_run: { content: 'A brief description of the function\'s purpose. This can be useful for documentation or clarity in larger projects and defaults to an empty string.' } }] },
+    },
+  ]);
+  assert.deepEqual(result.errors.filter((error) => error.code === 'LEGACY_SCAFFOLD_ARTIFACT'), []);
+
+  // The standalone placeholder itself stays blocked.
+  const placeholder = validateRenderedApiBlocks([
+    { block_id: 'p2', paragraph: { elements: [{ text_run: { content: 'Usage example' } }] } },
+  ]);
+  assert.ok(placeholder.errors.some((error) => error.code === 'LEGACY_SCAFFOLD_ARTIFACT'));
+});

@@ -789,7 +789,35 @@ not scheduled.**
       evidence, but completing it into a session that moved on semantically
       (e.g. accepted by another writer) requires operator reconciliation; the
       rollback path, where that was previously impossible, is the one now
-      fully self-healing via the lease.
+      fully self-healing via the lease (narrowed by the round-3 re-review
+      below and restored by the lease-ownership guard).
+
+      PR #45 re-review round 3 (2026-09-28, independent code-reviewer pass
+      over the two fix commits): approve-with-comments with one P2, fixed in
+      this round. **P2 — lease ownership**: `recordDocumentRollback` cleared
+      `activeRollback` unconditionally, so any receipt path completing unit A
+      while unit B's lease was in flight (multi-unit session, crash-then-rerun
+      interleaving) wiped B's recovery anchor and reopened the round-2
+      counterexample for B. Fix: the apply patch consumes the lease only when
+      it belongs to the completed unit
+      (`activeRollback: intent ? null : clone(session.activeRollback)`), with
+      a multi-unit regression test at store level (A reconciles through its
+      complete journal while B is leased; B's lease survives, still drives
+      B's completion after a concurrent changes-requested, and is cleared
+      only by B's own receipt) verified to fail on the pre-fix code.
+      `status()` now surfaces `activeRollback`, so a
+      `ROLLBACK_INTENT_CONFLICT` is diagnosable from the summary alone.
+      Residuals, recorded honestly (all fail-closed, none blocking): the
+      rollback reconcile save has no bounded CAS retry (unlike the completion
+      path) — a concurrent writer between its load and save surfaces one
+      typed refusal plus a rerun, benign because that path has no side
+      effects between load and save; two simultaneous identical CLI
+      invocations (same unit, manifest, journal) can both pass idempotent
+      lease adoption and both construct executors — the journal's
+      prepared/observed duplicate guards are check-then-append without an
+      interprocess lock, a pre-existing exposure that predates the lease and
+      requires deliberately concurrent identical runs; a per-journal lock
+      would close it if ever needed.
 
 ### P2 — runtime proof beyond offline determinism
 

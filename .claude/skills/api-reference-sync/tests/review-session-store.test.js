@@ -34,13 +34,13 @@ function manifest() {
   };
 }
 
-function executionJournal(directory, actionId = 'node:Collections:a') {
+function executionJournal(directory, actionId = 'node:Collections:a', name = 'execution.jsonl') {
   const entries = [
     { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:batch-a', actionId },
     { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-a', actionId, status: 'success', verified: true },
     { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-a', status: 'executed', completionSentinel: true },
   ];
-  const filePath = path.join(directory, 'execution.jsonl');
+  const filePath = path.join(directory, name);
   fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
   return { filePath, digest: digestSemantic(entries) };
 }
@@ -554,4 +554,77 @@ test('a rollback intent bound before side effects survives a concurrent writer a
     }),
     /does not match the in-flight rollback intent/,
   );
+});
+
+test('completing one unit\u2019s reconcile preserves another unit\u2019s in-flight rollback lease (P2)', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-lease-owner-'));
+  const executionA = executionJournal(directory, 'node:Collections:a', 'execution-a.jsonl');
+  const executionB = executionJournal(directory, 'node:Collections:b', 'execution-b.jsonl');
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:lease-owner',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  const acceptedA = recordDocumentAcceptance(withExecution(initial, executionA), {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: executionA.filePath,
+    executionJournalDigest: executionA.digest,
+    touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+    commentsResolved: true,
+    acceptedAt: '2026-08-06T10:00:00.000Z',
+  });
+  const withExecutionB = withExecution(acceptedA, executionB, 'review:node:Collections:b');
+
+  // Unit B's rollback lease is bound and its executor is mid-flight.
+  const rollbackB = rollbackJournal(directory, {
+    reviewUnitId: 'review:node:Collections:b',
+    originalExecutionJournalDigest: executionB.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest-b',
+    name: 'rollback-b.jsonl',
+  });
+  const leased = recordRollbackIntent(withExecutionB, {
+    reviewUnitId: 'review:node:Collections:b',
+    rollbackManifestDigest: 'sha256:rollback-manifest-b',
+    rollbackJournalPath: rollbackB.filePath,
+  });
+  assert.equal(leased.activeRollback.reviewUnitId, 'review:node:Collections:b');
+
+  // Unit A's rollback completed externally in an earlier run whose completion
+  // save crashed; the rerun reconciles A through its complete journal — the
+  // reconcile path never binds a lease of its own, so it must not consume
+  // B's either.
+  const rollbackA = rollbackJournal(directory, {
+    reviewUnitId: 'review:node:Collections:a',
+    originalExecutionJournalDigest: executionA.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest-a',
+    name: 'rollback-a.jsonl',
+  });
+  const reconciledA = recordDocumentRollback(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollbackA.filePath,
+    rollbackJournalDigest: rollbackA.digest,
+  });
+  assert.deepEqual(reconciledA.rollbackReceipts.map((item) => item.reviewUnitId), ['review:node:Collections:a']);
+  assert.equal(reconciledA.activeRollback.reviewUnitId, 'review:node:Collections:b');
+
+  // B's lease still drives B's completion after a concurrent writer moved
+  // the unit out of active execution — the exact interleaving the lease
+  // exists to survive.
+  const contested = recordDocumentChangesRequested(reconciledA, { reviewUnitId: 'review:node:Collections:b', reason: 'concurrent request' });
+  assert.equal(contested.activeRollback.reviewUnitId, 'review:node:Collections:b');
+  const completedB = recordDocumentRollback(contested, {
+    reviewUnitId: 'review:node:Collections:b',
+    rollbackJournalPath: rollbackB.filePath,
+    rollbackJournalDigest: rollbackB.digest,
+  });
+  assert.equal(completedB.activeRollback, null);
+  assert.deepEqual(completedB.rollbackReceipts.map((item) => item.reviewUnitId).sort(), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.equal(completedB.changeRequests.length, 1);
 });

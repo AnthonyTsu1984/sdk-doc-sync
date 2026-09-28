@@ -481,7 +481,12 @@ function recordDocumentRollback(session, receipt) {
       .map(clone)),
     activeExecution,
     activeReviewUnitId: activeExecution?.reviewUnitId || null,
-    activeRollback: null,
+    // Consume the lease only when it belongs to the unit being completed.
+    // The reconcile path can record a receipt for unit A while unit B's
+    // lease is in flight (crash-then-rerun interleaving); clearing
+    // unconditionally here would wipe B's recovery anchor and reopen the
+    // exact counterexample the lease exists to close.
+    activeRollback: intent ? null : clone(session.activeRollback),
     acceptanceManifest: null,
     acceptanceManifestDigest: null,
     scanStateUpdated: false,

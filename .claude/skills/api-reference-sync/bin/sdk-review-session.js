@@ -73,6 +73,10 @@ function status(session, sessionPath) {
     remainingReviewUnitIds: expected.filter((id) => !acceptedSet.has(id)),
     acceptanceManifestDigest: session.acceptanceManifestDigest || null,
     activeReviewUnitId: session.activeExecution?.reviewUnitId || null,
+    // Surfaced so a ROLLBACK_INTENT_CONFLICT is diagnosable from `status`
+    // alone: the lease names the unit, journal, and start time an operator
+    // needs to rerun or reconcile it deterministically.
+    activeRollback: session.activeRollback || null,
     scanStateUpdated: session.scanStateUpdated === true,
   };
 }

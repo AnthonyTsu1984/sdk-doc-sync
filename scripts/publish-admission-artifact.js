@@ -19,8 +19,16 @@ function buildAdmissionArtifact({ resultsPath, repoRoot, includeLedger = true })
     throw Object.assign(new Error(`admission results artifact does not exist: ${resolved}`), { code: 'ADMISSION_ARTIFACT_RESULTS_MISSING' });
   }
   const results = JSON.parse(fs.readFileSync(resolved, 'utf8'));
+  if (results.status !== 'ADMITTED') {
+    throw Object.assign(new Error(`refusing to publish a non-ADMITTED admission artifact (status ${results.status}); blocked evidence is preserved beside the results file instead`), {
+      code: 'ADMISSION_ARTIFACT_NOT_ADMITTED',
+    });
+  }
   const root = repoRoot || path.resolve(__dirname, '..');
   const productionInputFingerprint = results.productionInputFingerprint || null;
+  if (productionInputFingerprint && typeof results.outputPath === 'string') {
+    results.outputPath = path.relative(root, results.outputPath) || results.outputPath;
+  }
   let ledgerRecords = [];
   if (includeLedger && productionInputFingerprint) {
     const record = findAdmittedRecord({ repoRoot: root, sourceFingerprint: productionInputFingerprint });

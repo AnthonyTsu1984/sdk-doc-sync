@@ -218,7 +218,7 @@ function checkSkillInvariantCoverage({
               repoRoot,
               invariantId: error.invariantId || error.id || error.path,
               code: error.code,
-              stage: 'admission',
+              stage: 'invariant-coverage',
               detail: `waiver gate: ${error.path}`,
             });
           } catch { /* ledger recording is evidence, never a gate */ }
@@ -341,10 +341,16 @@ function detectEnforcementTransitions({ baseRegistry, headRegistry }) {
 
 // Waiver artifact schema: contracts/invariant-waivers.json. A waiver is an
 // explicit, separately reviewed exception that authorizes one weakening
-// transition of one invariant until an expiry date. Expiry is enforced when a
-// waiver is consumed by the diff gate (enforceExpiry: true); static validation
-// only checks the schema so an expired-but-unreferenced waiver does not fail
-// unrelated builds — it is ignored at consumption time instead.
+// transition of one invariant until an expiry date. Expiry is enforced at
+// consumption (waiverCoversTransition) and at the admission coverage check
+// (enforceExpiry: true — an expired waiver refuses the build); the diff gate
+// validates schema only, by design.
+
+// Waiver schema + lifecycle validation. Two consumers with different
+// strictness: the diff gate (check-invariant-coverage) validates schema
+// only, while the coverage check (checkSkillInvariantCoverage) enforces
+// expiry at admission time — an expired waiver refuses the build and is
+// recorded to the violations ledger by invariant ID (6.11).
 function validateInvariantWaivers(waiverDoc, { now = new Date(), enforceExpiry = true } = {}) {
   const errors = [];
   if (!isObject(waiverDoc) || waiverDoc.schemaVersion !== 1) {

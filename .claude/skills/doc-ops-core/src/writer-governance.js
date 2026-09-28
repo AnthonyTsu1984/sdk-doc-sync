@@ -161,6 +161,14 @@ class WriterGovernance {
                 { skill: this.skill, batchDigest: this.run.batchDigest },
             );
         }
+        if (admittedEnv !== null && admittedEnv !== undefined
+            && (typeof admittedEnv !== 'object' || Object.keys(admittedEnv).length === 0)) {
+            throw new WriterGovernanceError(
+                'ADMITTED_ENV_INVALID',
+                'bindRunManifest admittedEnv must be null (inherit process.env) or a non-empty env object; an empty object would silently neutralize the admitted-fingerprint gate',
+                { skill: this.skill, operation: this.operation },
+            );
+        }
         const { RunManifestError, assertRunManifest, verifyRunManifestSource } = require('./run-manifest');
         try {
             assertRunManifest(runManifest);
@@ -258,7 +266,7 @@ class WriterGovernance {
                     method: method || null,
                 });
             } catch (error) {
-                if (error?.code === 'RUN_NOT_ADMITTED') {
+                if (error?.code) {
                     throw new WriterGovernanceError(error.code, error.message, { method: method || null, sourceFingerprint: this.run.sourceFingerprint });
                 }
                 throw error;

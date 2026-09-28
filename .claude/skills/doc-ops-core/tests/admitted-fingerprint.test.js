@@ -56,6 +56,27 @@ function governedWriter(repoRoot, fingerprint, { admittedEnv = null } = {}) {
     return governance;
 }
 
+test('bindRunManifest refuses an admittedEnv that would silently neutralize the gate', () => {
+    const root = tempRepo();
+    const fingerprint = productionInputFingerprint({ repoRoot: root });
+    for (const bad of [{}, 7, 'flag']) {
+        assert.throws(
+            () => governedWriter(root, fingerprint, { admittedEnv: bad }),
+            (error) => error.code === 'ADMITTED_ENV_INVALID',
+        );
+    }
+    // null inherits process.env — the production default.
+    assert.doesNotThrow(() => governedWriter(root, fingerprint, { admittedEnv: null }));
+});
+
+test('dirty-tree admissions are recorded with an explicit dirtyTree marker', () => {
+    const root = tempRepo();
+    const fingerprint = productionInputFingerprint({ repoRoot: root });
+    recordAdmittedFingerprint({ repoRoot: root, sourceFingerprint: fingerprint, phase: 'dirty-phase', dirtyTree: true });
+    const record = findAdmittedRecord({ repoRoot: root, sourceFingerprint: fingerprint });
+    assert.equal(record.dirtyTree, true, 'the record is distinguishable from a clean release-grade admission');
+});
+
 test('admission records bind the same widened fingerprint run manifests use (O1/O2 parity)', () => {
     const root = tempRepo();
     const fingerprint = productionInputFingerprint({ repoRoot: root });

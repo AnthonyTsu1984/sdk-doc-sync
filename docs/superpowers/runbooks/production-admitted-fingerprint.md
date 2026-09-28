@@ -10,7 +10,8 @@ executed against. "Tested similar code" is not proof.
   O1/O2 definition run manifests bind) into the append-only ledger
   `tmp/skill-feedback-rollout/admitted-fingerprints.jsonl`, naming the phase,
   whether it was `--deterministic-only`, and the results artifact path. The
-  same fingerprint is written into `results.json` (`sourceFingerprint`).
+  same fingerprint is written into `results.json` (`productionInputFingerprint`) —
+  distinct from the admission-scoped `sourceFingerprint` the drift guard compares.
 - A governed writer whose shell sets `DOC_OPS_REQUIRE_ADMITTED_FINGERPRINT=1`
   refuses every mutation with typed `RUN_NOT_ADMITTED` unless the bound run
   manifest's source fingerprint has an exact ADMITTED record. Dev/test shells

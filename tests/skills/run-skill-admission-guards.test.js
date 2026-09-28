@@ -226,6 +226,12 @@ test('admission voids every prior stage result when the source drifts mid-run', 
 test('a clean guarded admission records the toolchain report and no dirty fields', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'admission-clean-'));
   writeFixture(root);
+  // 6.9 wiring needs a git root: the whole-tree production fingerprint only
+  // computes inside a repository.
+  require('node:child_process').execSync('git init -q .', { cwd: root });
+  // Mirror the real repo: the admission's own writes (results, ledger) live
+  // under gitignored tmp/ so they cannot drift the whole-tree fingerprint.
+  fs.writeFileSync(path.join(root, '.gitignore'), 'tmp/\n');
   const result = runAdmission({
     repoRoot: root,
     phase: 'guard-clean',
@@ -240,6 +246,11 @@ test('a clean guarded admission records the toolchain report and no dirty fields
   assert.equal('dirtyTree' in result, false);
   assert.equal('dirtyPatchDigest' in result, false);
   assert.match(result.sourceFingerprint, /^sha256:[0-9a-f]{64}$/);
+  // 6.9 wiring: a clean ADMITTED run records the whole-tree production
+  // fingerprint in results.json AND appends an exact ledger record.
+  assert.match(result.productionInputFingerprint, /^sha256:[0-9a-f]{64}$/);
+  const { findAdmittedRecord } = require('../../.claude/skills/doc-ops-core/src/admitted-fingerprint');
+  assert.equal(findAdmittedRecord({ repoRoot: root, sourceFingerprint: result.productionInputFingerprint })?.phase, 'guard-clean');
 });
 
 test('the toolchain manifest is part of the admission source fingerprint', () => {

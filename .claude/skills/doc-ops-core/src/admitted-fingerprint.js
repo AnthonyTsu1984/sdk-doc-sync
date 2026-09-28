@@ -23,7 +23,7 @@ function ledgerPath(repoRoot) {
 // fingerprint admitted by an earlier phase stays admitted; each record names
 // the phase, whether it was the deterministic subset, and the results
 // artifact it came from.
-function recordAdmittedFingerprint({ repoRoot, sourceFingerprint, phase, deterministicOnly = false, resultsPath = null, generatedAt = null }) {
+function recordAdmittedFingerprint({ repoRoot, sourceFingerprint, phase, deterministicOnly = false, dirtyTree = false, resultsPath = null, generatedAt = null }) {
     if (!repoRoot) throw new TypeError('repoRoot is required');
     if (!/^sha256:[a-f0-9]{64}$/.test(sourceFingerprint || '')) {
         throw new TypeError(`sourceFingerprint must be a sha256:… digest, got ${sourceFingerprint}`);
@@ -35,6 +35,7 @@ function recordAdmittedFingerprint({ repoRoot, sourceFingerprint, phase, determi
         sourceFingerprint,
         phase,
         deterministicOnly: deterministicOnly === true,
+        dirtyTree: dirtyTree === true,
         resultsPath: resultsPath || null,
         generatedAt: generatedAt || new Date().toISOString(),
     };

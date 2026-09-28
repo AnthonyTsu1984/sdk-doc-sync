@@ -241,6 +241,13 @@ function runAdmission({
 
   const sourceFingerprint = admissionSourceFingerprint({ repoRoot });
   result.sourceFingerprint = sourceFingerprint;
+  // 6.9 whole-tree baseline: captured before the gates run so the completion
+  // record can prove the tree did not drift outside the admission scope
+  // mid-run. Best-effort (non-git test fixtures record nothing).
+  let productionTreeFingerprintAtStart = null;
+  try {
+    productionTreeFingerprintAtStart = require('../.claude/skills/doc-ops-core/src/run-manifest').productionInputFingerprint({ repoRoot });
+  } catch { /* non-git root: the completion record carries no production fingerprint */ }
 
   const plannedEntries = admissionEntries(rolloutRoot, deterministicOnly);
   let startIndex = 0;
@@ -343,7 +350,31 @@ function runAdmission({
   // NOTE: result.sourceFingerprint (set above) is the ADMISSION-scoped
   // fingerprint the 6.1 drift guard compares. The PRODUCTION binding is a
   // different, wider fingerprint — the whole-tree productionInputFingerprint
-  // run manifests bind — recorded under its own name.
+  // run manifests bind — recorded under its own name. The whole tree is
+  // fingerprinted at START and re-asserted at completion so a mid-run edit
+  // outside the admission scope (docs/, README, …) cannot earn a ledger
+  // record for a tree the gates only partially proved.
+  try {
+    if (productionTreeFingerprintAtStart !== null) {
+      const { productionInputFingerprint: fingerprintNow } = require('../.claude/skills/doc-ops-core/src/run-manifest');
+      const observedTree = fingerprintNow({ repoRoot });
+      if (observedTree !== productionTreeFingerprintAtStart) {
+        const driftError = new Error(`ADMISSION_TREE_DRIFT_DURING_RUN: the whole working tree changed while the gates ran (expected ${productionTreeFingerprintAtStart}, observed ${observedTree}); results are void`);
+        driftError.code = 'ADMISSION_TREE_DRIFT_DURING_RUN';
+        throw driftError;
+      }
+    }
+  } catch (error) {
+    if (error.code === 'ADMISSION_TREE_DRIFT_DURING_RUN') {
+      result.status = 'BLOCKED';
+      for (const record of result.results) record.voided = true;
+      result.treeDrift = { code: error.code, message: error.message };
+      result.blocker = error.message;
+      writeResult(resultPath, result);
+      return result;
+    }
+    throw error;
+  }
   try {
     const { productionInputFingerprint } = require('../.claude/skills/doc-ops-core/src/run-manifest');
     const { recordAdmittedFingerprint } = require('../.claude/skills/doc-ops-core/src/admitted-fingerprint');
@@ -353,6 +384,7 @@ function runAdmission({
       sourceFingerprint: result.productionInputFingerprint,
       phase: result.phase,
       deterministicOnly: deterministicOnly === true,
+      dirtyTree: result.dirtyTree === true,
       resultsPath: resultPath,
       generatedAt: result.completedAt,
     });

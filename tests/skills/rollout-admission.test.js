@@ -137,6 +137,32 @@ test('successful admission records every gate in stage order', () => {
   ]);
 });
 
+test('a blocker write preserves the prior artifact void-marked instead of destroying evidence (O3)', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-admission-o3-'));
+  writeManifests(root);
+  const run = () => runAdmission({
+    ...PASS_THROUGH_GUARDS,
+    repoRoot: root,
+    phase: 'o3-preserve',
+    now: () => '2026-08-06T00:00:00.000Z',
+    runCommand: () => ({ status: 1, signal: null }),
+  });
+  const first = run();
+  assert.equal(first.status, 'BLOCKED');
+  const resultPath = first.outputPath;
+  const firstRecords = JSON.parse(fs.readFileSync(resultPath, 'utf8')).results;
+
+  const second = run();
+  assert.equal(second.status, 'BLOCKED');
+  assert.ok(second.priorEvidence, 'the blocker write names the preserved prior artifact');
+  const preservedPath = path.join(path.dirname(resultPath), second.priorEvidence);
+  const preserved = JSON.parse(fs.readFileSync(preservedPath, 'utf8'));
+  assert.deepEqual(preserved.results.map((record) => record.voided), firstRecords.map(() => true),
+    'the preserved prior records are void-marked');
+  // The live artifact is the new attempt, not the preserved evidence.
+  assert.equal(JSON.parse(fs.readFileSync(resultPath, 'utf8')).priorEvidence, second.priorEvidence);
+});
+
 test('resume validates and preserves the passed prefix, then reruns from the first failed gate', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-admission-resume-'));
   writeManifests(root);

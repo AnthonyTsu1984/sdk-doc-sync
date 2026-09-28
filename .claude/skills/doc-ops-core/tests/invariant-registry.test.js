@@ -177,6 +177,34 @@ test('coverage check binds markers to registry entries by statement digest', () 
   assert.deepEqual(outOfScope, { valid: true, errors: [], bullets: outOfScope.bullets, registry: null, markedIds: [] });
 });
 
+test('coverage enforces waiver expiry at admission and records the refusal by invariant ID', () => {
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'invariant-waiver-expiry-'));
+  const skillDir = path.join(repoRoot, 'skill-under-test');
+  fs.mkdirSync(path.join(skillDir, 'contracts'), { recursive: true });
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), '# Skill\n\n## Domain Invariants\n\n- Rule one. [test.rule]\n');
+  fs.writeFileSync(path.join(skillDir, 'contracts', 'invariants.json'), JSON.stringify({
+    schemaVersion: 1,
+    skill: 'skill-under-test',
+    invariants: [{
+      id: 'test.rule', version: 1, risk: 'write-safety', scope: 'test', status: 'declared',
+      enforcement: ['plan'], statementDigest: 'sha256:'.padEnd(71, 'a'),
+    }],
+  }, null, 2));
+  fs.writeFileSync(path.join(skillDir, 'contracts', 'invariant-waivers.json'), JSON.stringify({
+    schemaVersion: 1,
+    waivers: [{ invariantId: 'test.rule', transition: 'removal', reason: 'temporary', approvedBy: 'operator', expiresAt: '2026-01-01T00:00:00.000Z' }],
+  }, null, 2));
+
+  const coverage = checkSkillInvariantCoverage({ skillDir, repoRoot, fixtureIds: [] });
+  assert.ok(coverage.errors.some((error) => error.code === 'INVARIANT_WAIVER_EXPIRED'),
+    'an expired waiver refuses the coverage check at admission time');
+
+  const { readInvariantViolations } = require('../src/invariant-violations');
+  const events = readInvariantViolations(repoRoot);
+  assert.ok(events.some((event) => event.invariantId === 'test.rule' && event.code === 'INVARIANT_WAIVER_EXPIRED'),
+    'the refusal is recorded to the violations ledger by invariant ID');
+});
+
 test('the committed api-reference-sync registry passes its own coverage check', () => {
   const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
   const skillDir = path.join(repoRoot, '.claude', 'skills', 'api-reference-sync');

@@ -253,6 +253,37 @@ test('a clean guarded admission records the toolchain report and no dirty fields
   assert.equal(findAdmittedRecord({ repoRoot: root, sourceFingerprint: result.productionInputFingerprint })?.phase, 'guard-clean');
 });
 
+test('admission artifact publication binds results, production fingerprint, and ledger records', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'admission-publish-'));
+  writeFixture(root);
+  require('node:child_process').execSync('git init -q .', { cwd: root });
+  fs.writeFileSync(path.join(root, '.gitignore'), 'tmp/\n');
+  const result = runAdmission({
+    repoRoot: root,
+    phase: 'publish-clean',
+    now: () => '2026-09-28T00:00:00.000Z',
+    dirtyState: () => CLEAN_TREE,
+    probe: ALL_TOOLS_PRESENT,
+    runCommand: () => ({ status: 0, signal: null }),
+  });
+  assert.equal(result.status, 'ADMITTED');
+
+  const { buildAdmissionArtifact } = require('../../scripts/publish-admission-artifact');
+  const artifact = buildAdmissionArtifact({ resultsPath: result.outputPath, repoRoot: root });
+  assert.equal(artifact.kind, 'admission-artifact');
+  assert.match(artifact.artifactDigest, /^sha256:[0-9a-f]{64}$/);
+  assert.equal(artifact.productionInputFingerprint, result.productionInputFingerprint);
+  assert.ok(artifact.admittedLedgerRecords.some((record) => record.sourceFingerprint === result.productionInputFingerprint),
+    'the artifact carries the ledger records for the exact fingerprint');
+  // Deterministic: rebuilding from the same inputs lands byte-equal.
+  const rebuilt = buildAdmissionArtifact({ resultsPath: result.outputPath, repoRoot: root });
+  assert.equal(rebuilt.artifactDigest, artifact.artifactDigest);
+  assert.throws(
+    () => buildAdmissionArtifact({ resultsPath: path.join(root, 'missing.json'), repoRoot: root }),
+    (error) => error.code === 'ADMISSION_ARTIFACT_RESULTS_MISSING',
+  );
+});
+
 test('the toolchain manifest is part of the admission source fingerprint', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'admission-manifest-pin-'));
   writeFixture(root);

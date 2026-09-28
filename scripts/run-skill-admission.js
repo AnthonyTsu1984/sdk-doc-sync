@@ -86,6 +86,25 @@ function defaultRunCommand(entry, { repoRoot, env }) {
 }
 
 function writeResult(outputPath, result) {
+  // O3 (PR #39 review, closed in 6.11): a blocker-carrying write must not
+  // destroy the prior artifact's partial evidence. Preserve it void-marked
+  // beside the new result and name it in the new artifact.
+  if (fs.existsSync(outputPath) && (result.blocker || (result.status !== 'ADMITTED'))) {
+    try {
+      const previous = JSON.parse(fs.readFileSync(outputPath, 'utf8'));
+      // Preserve when the incoming write is a blocker OR would overwrite a
+      // prior ADMITTED artifact (its per-stage evidence must survive a rerun).
+      if ((result.blocker || previous.status === 'ADMITTED') && Array.isArray(previous.results)) {
+        for (const record of previous.results) record.voided = true;
+        const stamp = String(previous.generatedAt || 'unknown').replace(/[:.]/g, '-');
+        const preservedPath = outputPath.replace(/\.json$/, `.prior-${stamp}.json`);
+        if (preservedPath !== outputPath) {
+          fs.writeFileSync(preservedPath, `${JSON.stringify(previous, null, 2)}\n`);
+          result.priorEvidence = path.relative(path.dirname(outputPath), preservedPath);
+        }
+      }
+    } catch { /* an unreadable prior file is not evidence to preserve */ }
+  }
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   fs.writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`);
 }

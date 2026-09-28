@@ -992,11 +992,42 @@ not scheduled.**
       the phase-1 pipeline. Three digest-binding conformance pins updated to the full
       markedIds order. Honest scope note: declared entries have no enforcers/fixtures yet;
       the end state ("every rule with executable proof") remains the promotion backlog.
-- [ ] 6.11 Governance artifacts: waiver expiry/ownership and violation tracking by invariant ID
+- [x] 6.11 Governance artifacts: waiver expiry/ownership and violation tracking by invariant ID
       (master plan phase 6 section; step 5.3 handoff); admission artifact publication;
       receipt-digest verification (phase 0/1 deferral). Includes O3 from the PR #39 review:
       resume failure paths currently overwrite prior partial evidence with the blocker result —
       preserve and void-mark it the way the mid-run drift path already does.
+
+      6.11 delivered (2026-09-28, branch `feat/phase6-governance-artifacts`):
+      **O3 closed** — `writeResult` now preserves any prior artifact before a blocker-carrying
+      write: the previous results are void-marked (`record.voided = true`, the drift path's
+      convention) into `<results>.prior-<generatedAt>.json` and the new artifact names it via
+      `priorEvidence`, so a failed (re)run can never destroy earlier partial evidence.
+      **Waiver expiry/ownership enforced** — the coverage check flips
+      `validateInvariantWaivers` from `enforceExpiry: false` to `true`: an expired waiver now
+      refuses `validate:skills`/admission (`INVARIANT_WAIVER_EXPIRED`); ownership was already
+      required (`approvedBy`). **Violation tracking by invariant ID** —
+      `doc-ops-core/src/invariant-violations.js`: append-only ledger
+      (`tmp/invariant-violations.jsonl`), `recordInvariantViolation` /
+      `summarizeInvariantViolations` (per-ID counts by code, first/last seen), npm script
+      `invariants:violations`; wired at the waiver gate (every waiver refusal is recorded by
+      the stable invariant ID — the validator now attaches `invariantId` to every waiver
+      error). **Admission artifact publication** — `scripts/publish-admission-artifact.js`
+      (`npm run admission:publish -- --results … [--output …]`): one self-describing,
+      digest-stamped artifact binding the full gate record + the production input fingerprint
+      + the matching admitted-fingerprint ledger records, for OUT-OF-TREE preservation
+      (release notes / tag annotation — committing it would change the fingerprint it binds);
+      deterministic (same inputs ⇒ same `artifactDigest`). **Receipt-digest verification
+      verified as already delivered** by the accumulated #22/#43-era finalizer work: the
+      finalization re-validates the acceptance journal from disk against its bound digest
+      (`recordAcceptanceFinalization` digest check), the durable-receipt resume recomputes the
+      receipt's semantic digest before trusting it (`loadDurableReceipt` →
+      `digestSemanticReceipt`), and the finalizer recomputes the manifest and per-unit journal
+      digests — no remaining gap found; recorded here as the phase 0/1 deferral's closure
+      evidence. Honest scope note: the violations ledger's live producers today are the
+      waiver gate; wiring runtime enforcer refusals into it is part of the declared→runtime
+      promotion backlog (6.10), since declared invariants have no runtime enforcers yet.
+      Registry pin: entrypoint count 88→89 (+1 read-only publisher).
 - [ ] 6.12 Sixth-review-round low-severity observations: F3 — fallback binding compares a unit
       `null` against an absent batch field (tighten the null binding; not exploitable, digest and
       approval still hold); F4 — `--client-module` keeps freshness strength equal to the caller's

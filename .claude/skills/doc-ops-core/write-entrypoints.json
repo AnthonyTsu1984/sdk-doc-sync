@@ -71,13 +71,6 @@
       "basis": "manual baseline override after source inspection"
     },
     {
-      "path": ".claude/skills/api-reference-sync/bin/identity-reconcile.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "identity-reconcile",
-      "basis": "reads a Bitable snapshot and the identity map; writes deterministic local draft artifacts only when --emit-draft is passed"
-    },
-    {
       "path": ".claude/skills/api-reference-sync/bin/feishu-doc-translator.js",
       "skill": "api-reference-sync",
       "classification": "legacy-live",
@@ -90,6 +83,13 @@
       "canonicalReplacement": "Task 9: .claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
       "admittedAtBaseline": true,
       "tests": []
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/identity-reconcile.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "identity-reconcile",
+      "basis": "reads a Bitable snapshot and the identity map; writes deterministic local draft artifacts only when --emit-draft is passed"
     },
     {
       "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
@@ -192,6 +192,13 @@
       "tests": [
         "tests/skills/post-actions-governed.test.js"
       ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/apply-polish-context.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "apply-polish-context",
+      "basis": "no external mutation signature found"
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs.js",
@@ -458,6 +465,13 @@
       ]
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/reconcile-content.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "reconcile-content",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -660,11 +674,32 @@
       "basis": "git read-only admission diff gate; no external mutation signature found"
     },
     {
+      "path": "scripts/check-js-syntax.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "js-syntax-gate",
+      "basis": "node --check parse gate over the first-party tree; no writes"
+    },
+    {
       "path": "scripts/invariant-coverage-report.js",
       "skill": "doc-ops-core",
       "classification": "read-only",
       "operation": "invariant-coverage-report",
       "basis": "stdout report over invariant registries; no external mutation signature found"
+    },
+    {
+      "path": "scripts/publish-admission-artifact.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "admission-artifact-publish",
+      "basis": "6.11 governance artifact assembly: reads admission results + ledger, writes only the operator-designated --output artifact file; no external mutation signature"
+    },
+    {
+      "path": "scripts/run-focused-tests.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "focused-tests-gate",
+      "basis": "executes capabilities.json advertised focused suites; no writes"
     },
     {
       "path": "scripts/run-skill-admission.js",
@@ -693,34 +728,6 @@
       "classification": "read-only",
       "operation": "validate-skills",
       "basis": "no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/scripts/reconcile-content.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "reconcile-content",
-      "basis": "no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/scripts/apply-polish-context.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "apply-polish-context",
-      "basis": "no external mutation signature found"
-    },
-    {
-      "path": "scripts/check-js-syntax.js",
-      "skill": "doc-ops-core",
-      "classification": "read-only",
-      "operation": "js-syntax-gate",
-      "basis": "node --check parse gate over the first-party tree; no writes"
-    },
-    {
-      "path": "scripts/run-focused-tests.js",
-      "skill": "doc-ops-core",
-      "classification": "read-only",
-      "operation": "focused-tests-gate",
-      "basis": "executes capabilities.json advertised focused suites; no writes"
     }
   ]
 }

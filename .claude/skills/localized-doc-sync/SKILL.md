@@ -40,6 +40,9 @@ Do not use for same-language SDK release synchronization, narrative authoring wi
 - Reviewer allegations are evidence-bound: a correction is authorized only for issues whose location identifies an existing semantic unit and whose source and draft quotes are contiguous within it and do not conflict with the locale contract. [localization.review-evidence-contiguity]
 - Target-local prose is never overwritten implicitly: units from `TARGET_LOCAL_EDIT`/`TRANSLATION_DIVERGED` issues carry actions only after an explicit reviewed `mergeDecision` is recorded on the issue. [localization.target-local-prose]
 - Translation receipts are identity-bound: a schema-v2 receipt requires live verification, an accepted decision, and complete identity fields, and recovery accepts only receipts whose digest and identity fields still match. [localization.receipt-identity]
+- Locale-owned metadata is never compared across languages: planning validates `Parent` within each locale and never requires cross-language `Parent` equality, and among locale-owned data only the paired prose content is verified cross-language. [localization.locale-metadata-non-comparison]
+- An unconfigured `Chapter` field carries no role: it is not a drift signal, an approval field, or a write field, and locale policy ignores it entirely; only explicitly configured fields (such as the canonical `Targets`) are publication-critical. [localization.chapter-role-ignored]
+- Translation receipts merge by explicit decision, never by silent replacement: a receipt for a unit whose target record carries target-local prose (`TARGET_LOCAL_EDIT`/`TRANSLATION_DIVERGED`) is issued only after the reviewed `mergeDecision` preserves or explicitly merges that prose, and recovery accepts only receipts whose digest and identity fields still match — target-local text is never overwritten implicitly by a newer receipt. [localization.receipt-merge-policy]
 
 ## Domain Workflow
 

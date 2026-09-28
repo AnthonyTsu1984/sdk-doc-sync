@@ -57,7 +57,22 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
   });
   assert.deepEqual(coverage.errors, []);
   assert.deepEqual(coverage.markedIds, [
+    'api.global-layout-rules',
+    'api.ownership-classification',
+    'api.standalone-evidence-gate',
+    'api.one-document-per-interface',
+    'api.sparse-version-delta-model',
     'api.versioned-tree-delta',
+    'api.placement-facts-separate',
+    'api.stateful-class-identity',
+    'api.organization-inventory-binding',
+    'api.changed-inherited-copy-patch',
+    'api.unchanged-inherited-metadata-update',
+    'api.current-hierarchy-resolution',
+    'api.organization-evidence-manifest',
+    'api.reviewed-artifact-evidence',
+    'api.post-write-verification',
+    'api.grouping-proposal-staleness',
     'api.markdown-block-fidelity',
     'api.absolute-link-urls',
     'api.literal-include-preserved',

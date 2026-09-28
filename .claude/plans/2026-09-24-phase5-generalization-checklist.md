@@ -229,8 +229,12 @@ because several rules currently live only in prose.
 - [x] 4.3 Fixtures per table row; drift variants (table added between scan digest and plan →
       `QUEUE_DECISION_STALE`).
 - [x] 4.4 Behavior pressure: "delete the orphan to tidy up"; "counts look right, skip the rescan".
-- [ ] 4.5 Second wave (follow-up PRs, may slip to phase 6): receipt-merge policy, locale metadata
+- [x] 4.5 Second wave (follow-up PRs, may slip to phase 6): receipt-merge policy, locale metadata
       non-comparison, `Chapter` role rules as `declared` entries with a promotion path.
+
+      Delivered 2026-09-28 with 6.10 (see the phase 6 checklist entry for the full record): the
+      three rules are `declared` registry entries in localized-doc-sync with their intended
+      enforcement stages and the phase-1 promotion path recorded in the registry comment.
 
 Delivery notes: the headline fix is `buildScanManifest` — `completeInventory` was a hardcoded
 `true`, so the plan-stage completeness gate was vacuous; it is now derived from per-table scan
@@ -954,11 +958,40 @@ not scheduled.**
 
 ### Carried-over phase 6 items (from this checklist and the master plan)
 
-- [ ] 6.10 Second-wave `declared` invariants: receipt-merge policy, locale metadata
+- [x] 6.10 Second-wave `declared` invariants: receipt-merge policy, locale metadata
       non-comparison, `Chapter` role rules (step 4.5); plus registry-marking the 15
       `api-reference-sync` Domain Invariants bullets that still carry no `[api.*]` marker
       (23 bullets, 8 marked — review confirmed) — the review's end state is every rule with
       executable proof, promotion path per the phase 1 waiver mechanism.
+
+      6.10 delivered (2026-09-28, branch `feat/phase6-second-wave-invariants`): **every
+      Domain Invariants bullet in both canonical skills now carries a stable `[id]` marker
+      bound to its registry entry by statement digest.** api-reference-sync: the 15 unmarked
+      bullets were registry-marked (`api.global-layout-rules`, `api.ownership-classification`,
+      `api.standalone-evidence-gate`, `api.one-document-per-interface`,
+      `api.sparse-version-delta-model`, `api.placement-facts-separate`,
+      `api.stateful-class-identity`, `api.organization-inventory-binding`,
+      `api.changed-inherited-copy-patch`, `api.unchanged-inherited-metadata-update`,
+      `api.current-hierarchy-resolution`, `api.organization-evidence-manifest`,
+      `api.reviewed-artifact-evidence`, `api.post-write-verification`,
+      `api.grouping-proposal-staleness`) as status `declared` entries with their intended
+      enforcement stages — the registry now covers all 23 bullets (8 runtime-enforced,
+      15 declared). localized-doc-sync: three new Domain Invariants bullets codify the
+      second-wave rules — `localization.locale-metadata-non-comparison` (cross-language comparison never
+      requires `Parent` equality — governed separately by the locale policy's `parentPolicy` —
+      and never compares `localeOwnedMetadata` fields; among locale-owned data only paired
+      prose is verified),
+      `localization.chapter-role-ignored` (an unconfigured `Chapter` field is not a drift,
+      approval, or write field; only explicitly configured fields are publication-critical),
+      and `localization.receipt-merge-policy` (receipts merge by explicit reviewed decision,
+      never silent replacement; target-local prose is never overwritten implicitly by a
+      newer receipt) — as `declared` entries with the phase-1 promotion path recorded in the
+      registry comment. Markers bind prose by digest, so any semantic edit to a declared
+      rule now fails `validate:skills`/admission exactly like a runtime-enforced one — the
+      declared tier makes rule drift detectable while promotion to executable proof follows
+      the phase-1 pipeline. Three digest-binding conformance pins updated to the full
+      markedIds order. Honest scope note: declared entries have no enforcers/fixtures yet;
+      the end state ("every rule with executable proof") remains the promotion backlog.
 - [ ] 6.11 Governance artifacts: waiver expiry/ownership and violation tracking by invariant ID
       (master plan phase 6 section; step 5.3 handoff); admission artifact publication;
       receipt-digest verification (phase 0/1 deferral). Includes O3 from the PR #39 review:

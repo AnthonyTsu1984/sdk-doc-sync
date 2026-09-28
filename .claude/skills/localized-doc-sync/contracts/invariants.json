@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "skill": "localized-doc-sync",
-  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED).",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED). Second-wave entries (6.10) are status \"declared\": they bind the SKILL.md rule to a stable ID and digest with their intended enforcement stages; promotion to \"runtime-enforced\" follows the phase-1 pipeline (production enforcement point + typed blocker codes + executable fixtures); waivers are only needed for weakening transitions.",
   "invariants": [
     {
       "id": "localization.source-read-only",
@@ -9,7 +9,9 @@
       "risk": "write-safety",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["plan"],
+      "enforcement": [
+        "plan"
+      ],
       "statementDigest": "sha256:176fa34a6c78683f389045184ba3a73c5f56df44b04b7d445678717a338452de",
       "fixtureIds": [
         "localization-source-actions-refused",
@@ -41,7 +43,9 @@
       "risk": "evidence-integrity",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["evidence"],
+      "enforcement": [
+        "evidence"
+      ],
       "statementDigest": "sha256:096c920a71623e356723b63d2f350524caf3f34717e8f25946f3e41b2791055c",
       "fixtureIds": [
         "localization-incomplete-scan-refused",
@@ -75,7 +79,9 @@
       "risk": "write-safety",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["plan"],
+      "enforcement": [
+        "plan"
+      ],
       "statementDigest": "sha256:dfa64db6c97a6ccab6fa8c2e321e67bc2e3d86b5a3fcba47c7435cf59569c0bd",
       "fixtureIds": [
         "localization-target-only-deletion-refused"
@@ -96,7 +102,10 @@
       "risk": "content-integrity",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["pre-write", "post-write"],
+      "enforcement": [
+        "pre-write",
+        "post-write"
+      ],
       "statementDigest": "sha256:56643948703a95528930f92a9eed3fbb33e23edd79d8eb90e74240d96b8ba041",
       "fixtureIds": [
         "localization-marker-lost-refused",
@@ -121,7 +130,9 @@
       "risk": "content-integrity",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["plan"],
+      "enforcement": [
+        "plan"
+      ],
       "statementDigest": "sha256:cd6371ebf3710077964806cdb9a0fb3e8e18a8e915723f40595ea98fa1113401",
       "fixtureIds": [
         "localization-review-evidence-typed-refusals",
@@ -145,7 +156,9 @@
       "risk": "content-integrity",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["plan"],
+      "enforcement": [
+        "plan"
+      ],
       "statementDigest": "sha256:9d02721314bfa8e8d09450b5851adfcd2ca208915ffad0212f349fb4bf675752",
       "fixtureIds": [
         "localization-target-local-merge-decision-required",
@@ -167,7 +180,9 @@
       "risk": "evidence-integrity",
       "scope": "localization-pipeline",
       "status": "runtime-enforced",
-      "enforcement": ["post-write"],
+      "enforcement": [
+        "post-write"
+      ],
       "statementDigest": "sha256:d50c389a3ab8ad8c08b6d2665ad9189575f0d418e2ebd89d9da537f4470f7ce1",
       "fixtureIds": [
         "localization-receipt-identity-typed",
@@ -186,6 +201,40 @@
           ]
         }
       ]
+    },
+    {
+      "id": "localization.locale-metadata-non-comparison",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "dual-base-localization",
+      "status": "declared",
+      "enforcement": [
+        "plan"
+      ],
+      "statementDigest": "sha256:3009de607be6a89649afaa709c4380caf33276317ec13493da5fe0caa65818a0"
+    },
+    {
+      "id": "localization.chapter-role-ignored",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "dual-base-localization",
+      "status": "declared",
+      "enforcement": [
+        "evidence",
+        "plan"
+      ],
+      "statementDigest": "sha256:531fe413b1ce0c86a981c7fa23ae5ef1c0f10f4338443d6b05d7f45fe38d83bf"
+    },
+    {
+      "id": "localization.receipt-merge-policy",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "dual-base-localization",
+      "status": "declared",
+      "enforcement": [
+        "post-write"
+      ],
+      "statementDigest": "sha256:4dda0c0057bc9c3c67c0f04185d2a45d471cc5c099d796e3ce08e2f562c9e756"
     }
   ]
 }

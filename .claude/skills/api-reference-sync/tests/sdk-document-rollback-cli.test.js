@@ -9,6 +9,8 @@ const path = require('node:path');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const {
   createReviewSession,
+  loadReviewSessionState,
+  recordDocumentChangesRequested,
   recordDocumentExecution,
   saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -224,6 +226,107 @@ test('successful rollback updates the session once and completed-journal replay 
   assert.equal(persisted.activeExecution, null);
   assert.equal(persisted.rollbackReceipts.length, 1);
   assert.equal(persisted.scanStateUpdated, false);
+});
+
+test('a concurrent session update during execution cannot orphan the rollback (P1)', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-cli-concurrent-'));
+  const { session, sessionPath, execution } = sessionFile(directory);
+  const manifest = rollbackManifest(session, execution);
+  const manifestPath = path.join(directory, 'rollback.json');
+  const journalPath = path.join(directory, 'rollback.jsonl');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  let executions = 0;
+  const dependencies = {
+    executorFactory: () => ({
+      async execute() {
+        executions += 1;
+        const digest = writeCompletedRollbackJournal(journalPath, manifest);
+        // The concurrent writer lands between the external mutations and the
+        // session completion — the interleaving that used to lose the
+        // rollback: the CAS refusal came after the side effects and the
+        // recovery path was dead.
+        const { session: current, sessionDigest } = loadReviewSessionState(sessionPath);
+        saveReviewSession(sessionPath, recordDocumentChangesRequested(current, {
+          reviewUnitId,
+          reason: 'concurrent request',
+        }), { expectedPreviousDigest: sessionDigest });
+        return { status: 'ROLLED_BACK', rollbackJournalPath: journalPath, rollbackJournalDigest: digest };
+      },
+    }),
+    onStdout: () => {},
+  };
+  const argv = [
+    'node', 'sdk-document-rollback', 'execute',
+    '--session', sessionPath,
+    '--review-unit-id', reviewUnitId,
+    '--manifest', manifestPath,
+    '--journal', journalPath,
+    '--approve-rollback-digest', manifest.rollbackManifestDigest,
+  ];
+
+  const result = await runCli({ argv, dependencies });
+  assert.equal(executions, 1);
+  assert.equal(result.sessionUpdated, true);
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(persisted.rollbackReceipts.length, 1);
+  assert.equal(persisted.rollbackReceipts[0].rollbackManifestDigest, manifest.rollbackManifestDigest);
+  assert.equal(persisted.activeRollback, null);
+  // The concurrent writer's change survives the reconciliation.
+  assert.equal(persisted.changeRequests.length, 1);
+  assert.equal(persisted.changeRequests[0].reason, 'concurrent request');
+
+  // A rerun reconciles idempotently from the durable journal without
+  // touching the executor again.
+  await runCli({ argv, dependencies });
+  assert.equal(executions, 1);
+  assert.equal(JSON.parse(fs.readFileSync(sessionPath, 'utf8')).rollbackReceipts.length, 1);
+});
+
+test('a conflicting in-flight rollback refuses before the executor is constructed (P1)', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-cli-conflict-'));
+  const { session, sessionPath, execution } = sessionFile(directory);
+  const manifest = rollbackManifest(session, execution);
+  const manifestPath = path.join(directory, 'rollback.json');
+  const journalPath = path.join(directory, 'rollback.jsonl');
+  fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  // A lease for a DIFFERENT manifest is already in flight: any new rollback
+  // must refuse before side effects instead of running concurrently.
+  const { sessionDigest } = loadReviewSessionState(sessionPath);
+  saveReviewSession(sessionPath, {
+    ...session,
+    activeRollback: {
+      reviewUnitId,
+      rollbackManifestDigest: 'sha256:some-other-manifest',
+      rollbackJournalPath: path.join(directory, 'other.jsonl'),
+      originalExecutionJournalPath: execution.filePath,
+      originalExecutionJournalDigest: execution.digest,
+      startedAt: '2026-09-28T00:00:00.000Z',
+    },
+  }, { expectedPreviousDigest: sessionDigest });
+  let executions = 0;
+  const dependencies = {
+    executorFactory: () => ({
+      async execute() {
+        executions += 1;
+        return { status: 'ROLLED_BACK', rollbackJournalPath: journalPath, rollbackJournalDigest: writeCompletedRollbackJournal(journalPath, manifest) };
+      },
+    }),
+    onStdout: () => {},
+  };
+  const argv = [
+    'node', 'sdk-document-rollback', 'execute',
+    '--session', sessionPath,
+    '--review-unit-id', reviewUnitId,
+    '--manifest', manifestPath,
+    '--journal', journalPath,
+    '--approve-rollback-digest', manifest.rollbackManifestDigest,
+  ];
+
+  await assert.rejects(
+    () => runCli({ argv, dependencies }),
+    (error) => error.code === 'ROLLBACK_INTENT_CONFLICT',
+  );
+  assert.equal(executions, 0);
 });
 
 test('partial rollback journal returns structured reconciliation without changing the session or replaying mutations', async () => {

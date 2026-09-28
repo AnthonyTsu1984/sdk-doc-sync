@@ -720,6 +720,13 @@ async function runCli({
         // must record them too — otherwise the executed unit is invisible to
         // rollback planning and to the accepted/active transition checks.
         const sessionPath = path.resolve(args.resumeSession);
+        // Completion reloads the session FRESH: the resume digest predates
+        // the unit's live writes and is stale by construction once they ran
+        // (P1, 6.6 review round 2). recordDocumentExecution re-validates the
+        // durable write-ahead journal from disk, so the reloaded session
+        // converges or refuses typed instead of orphaning the external
+        // change; the journal itself remains the recovery evidence.
+        ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
         reviewSession = recordDocumentExecution(reviewSession, {
             reviewUnitId: result.activeReviewUnit.reviewUnitId,
             executionJournalPath: result.executionJournalPath,

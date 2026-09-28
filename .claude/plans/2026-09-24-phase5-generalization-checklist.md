@@ -754,6 +754,43 @@ not scheduled.**
       source edits refuses with `RUN_MANIFEST_EVIDENCE_CONFLICT` until the stale evidence is
       moved aside; fresh CI runners never see it.
 
+      PR #45 review round 2 (2026-09-28, P1 concurrency consistency): the
+      rollback execute path ran the REAL external mutations first and only
+      then saved the session against the pre-execution digest — a concurrent
+      writer mid-flight produced the unrecoverable counterexample (external
+      rollback happened; canonical session kept the concurrent update with
+      `rollbackReceipts: []`; replaying the journal failed because the
+      concurrent update had cleared `activeExecution`). Fix, per the
+      prescription: **the intent/lease is CAS-persisted BEFORE any external
+      mutation** — `recordRollbackIntent` binds reviewUnitId +
+      rollbackManifestDigest + rollbackJournalPath + the original execution
+      journal (validated at lease time; refuses `ROLLBACK_INTENT_CONFLICT`
+      for a different in-flight rollback, refuses before side effects when
+      nothing is executed, adopts an identical lease idempotently), and the
+      **completion is journal-driven from a FRESH session load** (the
+      pre-execution digest is stale by construction once side effects ran):
+      `recordDocumentRollback` accepts the lease as the anchor when a
+      concurrent writer moved the unit out of active/accepted, requires the
+      journal to prove the leased manifest, clears the lease on success, and
+      preserves the concurrent writer's evidence. The counterexample is a
+      regression test at both levels (store + CLI with an injected executor
+      whose `execute` performs the concurrent write). The same
+      "external write, then CAS against a stale digest" ordering was audited
+      across all live-write paths: the sdk-doc-sync resume execution save
+      (`recordDocumentExecution`) and the procedure/authoring execute
+      completions now reload the session FRESH before recording, so the
+      durable write-ahead journals converge or refuse typed; the acceptance
+      finalizer already had this shape (the durable receipt is the recovery
+      evidence — rerun completes with zero writes); the rollback reconcile
+      path has no side effects between load and save, so its load-time CAS is
+      benign. Residual, recorded honestly: a concurrent writer that lands
+      between a fresh reload and a forward-execution completion save still
+      surfaces a typed CAS refusal — the journal remains the recovery
+      evidence, but completing it into a session that moved on semantically
+      (e.g. accepted by another writer) requires operator reconciliation; the
+      rollback path, where that was previously impossible, is the one now
+      fully self-healing via the lease.
+
 ### P2 — runtime proof beyond offline determinism
 
 - [ ] 6.7 **Fault injection.** Cover crash/retry at each seam: before mutation, after mutation,

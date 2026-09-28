@@ -18,6 +18,7 @@ const {
 const {
   loadReviewSessionState,
   recordDocumentRollback,
+  recordRollbackIntent,
   saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
@@ -228,8 +229,9 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
   requireValue(args, 'reviewUnitId');
   requireValue(args, 'manifest');
   const sessionPath = path.resolve(args.session);
-  const { session: loadedSession, sessionDigest } = loadReviewSessionState(sessionPath);
+  const { session: loadedSession, sessionDigest: loadedDigest } = loadReviewSessionState(sessionPath);
   let session = loadedSession;
+  let sessionDigest = loadedDigest;
 
   if (args.command === 'plan') {
     const planned = planner({ session, reviewUnitId: args.reviewUnitId });
@@ -308,18 +310,53 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
     return result;
   }
 
+  // Bind the rollback intent BEFORE any external mutation (P1, 6.6 review
+  // round 2): the CAS-persisted lease (unit + rollback manifest + original
+  // execution journal) is the recovery anchor if anything interrupts the run
+  // between side effects and session completion. Contention reloads and
+  // re-attempts — the intent adopts an identical lease idempotently, and any
+  // semantic refusal surfaces BEFORE the executor is constructed.
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      session = recordRollbackIntent(session, {
+        reviewUnitId: args.reviewUnitId,
+        rollbackManifestDigest: manifest.rollbackManifestDigest,
+        rollbackJournalPath: journalPath,
+      });
+      const saved = saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+      sessionDigest = saved.stateDigest;
+      break;
+    } catch (error) {
+      if (error?.code !== 'SESSION_STATE_DIGEST_MISMATCH' || attempt >= 2) throw error;
+      ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
+    }
+  }
   const executor = executorFactory({ session, manifest, env, approvedDigest: args.approveRollbackDigest });
   const execution = await executor.execute(manifest, {
     approvalDigest: args.approveRollbackDigest,
     journalPath,
   });
   if (execution.status === 'ROLLED_BACK') {
-    session = recordDocumentRollback(session, {
-      reviewUnitId: args.reviewUnitId,
-      rollbackJournalPath: execution.rollbackJournalPath,
-      rollbackJournalDigest: execution.rollbackJournalDigest,
-    });
-    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+    // Completion reloads the session FRESH: the digest loaded before the side
+    // effects is stale by construction once they ran. The durable intent plus
+    // the completion journal make this transition recoverable — on any
+    // refusal, rerunning execute with the same journal reconciles from the
+    // lease instead of losing the external change.
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
+        session = recordDocumentRollback(session, {
+          reviewUnitId: args.reviewUnitId,
+          rollbackJournalPath: execution.rollbackJournalPath,
+          rollbackJournalDigest: execution.rollbackJournalDigest,
+        });
+        const saved = saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+        sessionDigest = saved.stateDigest;
+        break;
+      } catch (error) {
+        if (error?.code !== 'SESSION_STATE_DIGEST_MISMATCH' || attempt >= 2) throw error;
+      }
+    }
   }
   const result = {
     ...execution,

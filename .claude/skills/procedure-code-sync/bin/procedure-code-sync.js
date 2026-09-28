@@ -82,7 +82,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'execute') {
     for (const name of ['plan', 'approval', 'journal', 'output', 'session']) requireValue(args, name);
     const plan = readJson(args.plan);
-    const { session, sessionDigest } = loadProcedureSessionState(args.session);
+    let { session, sessionDigest } = loadProcedureSessionState(args.session);
     if (session.planDigest !== plan.planDigest || session.status !== 'approval_ready') {
       throw Object.assign(
         new Error('Review session is not approval-ready for this exact plan'),
@@ -97,6 +97,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       verifier: loadVerifier(args, dependencies),
     });
     writeJson(args.output, result);
+    // Completion reloads the session FRESH: the digest loaded before the
+    // patch's live writes is stale by construction once they ran (P1, 6.6
+    // review round 2); the write-ahead journal remains the recovery evidence.
+    ({ session, sessionDigest } = loadProcedureSessionState(args.session));
     saveProcedureSession(args.session, recordPatchExecution(session, result), { expectedPreviousDigest: sessionDigest });
     out(`Execution status: ${result.status}`);
     out(`Verifier result: ${result.verifierResultDigest}`);

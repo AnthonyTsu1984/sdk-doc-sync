@@ -14,8 +14,10 @@ const {
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordReviewDecision,
+  recordDocumentChangesRequested,
   recordDocumentExecution,
   recordDocumentRollback,
+  recordRollbackIntent,
   saveReviewSession,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -484,4 +486,72 @@ test('rollback session transition rejects partial, mismatched, and finalized evi
     rollbackJournalPath: complete.filePath,
     rollbackJournalDigest: complete.digest,
   }), /finalized/i);
+});
+
+test('a rollback intent bound before side effects survives a concurrent writer and drives the completion (P1)', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-intent-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-intent',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest, name: 'intent-complete.jsonl' });
+
+  // The lease binds BEFORE any external mutation, anchored to the active
+  // execution the session currently records.
+  const leased = recordRollbackIntent(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  assert.equal(leased.activeRollback.originalExecutionJournalDigest, execution.digest);
+  assert.equal(leased.status, 'in_progress');
+
+  // A concurrent writer lands mid-flight and moves the unit out of active
+  // execution — exactly the interleaving that used to lose the completed
+  // rollback forever (the CAS refusal came after the side effects).
+  const concurrent = recordDocumentChangesRequested(leased, { reviewUnitId: 'review:node:Collections:a', reason: 'concurrent request' });
+  assert.equal(concurrent.activeExecution, null);
+  assert.equal(concurrent.activeRollback.reviewUnitId, 'review:node:Collections:a');
+
+  // Completion is driven by the durable journal through the intent anchor.
+  const completed = recordDocumentRollback(concurrent, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.equal(completed.rollbackReceipts.length, 1);
+  assert.equal(completed.rollbackReceipts[0].rollbackManifestDigest, 'sha256:rollback-manifest');
+  assert.equal(completed.rollbackReceipts[0].originalExecutionJournalDigest, execution.digest);
+  assert.equal(completed.activeRollback, null);
+  // The concurrent writer's evidence survives the reconciliation.
+  assert.equal(completed.changeRequests.length, 1);
+
+  // The lease refuses BEFORE side effects when there is nothing to roll back.
+  assert.throws(
+    () => recordRollbackIntent(initial, {
+      reviewUnitId: 'review:node:Collections:b',
+      rollbackManifestDigest: 'sha256:rollback-manifest',
+      rollbackJournalPath: rollback.filePath,
+    }),
+    /no executed document to roll back/,
+  );
+
+  // A journal proving a DIFFERENT rollback than leased is refused.
+  const otherManifest = rollbackJournal(directory, {
+    originalExecutionJournalDigest: execution.digest,
+    rollbackManifestDigest: 'sha256:other-manifest',
+    name: 'other-manifest.jsonl',
+  });
+  assert.throws(
+    () => recordDocumentRollback(leased, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackJournalPath: otherManifest.filePath,
+      rollbackJournalDigest: otherManifest.digest,
+    }),
+    /does not match the in-flight rollback intent/,
+  );
 });

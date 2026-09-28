@@ -25,6 +25,7 @@ const REVIEW_MACHINE = defineSessionMachine({
     recordDocumentExecution: { from: ['in_progress'], to: SAME_STATE },
     recordDocumentAcceptance: { from: ['in_progress'], to: SAME_STATE },
     recordDocumentChangesRequested: { from: ['in_progress'], to: SAME_STATE },
+    recordRollbackIntent: { from: ['in_progress', 'acceptance_pending'], to: SAME_STATE },
     recordDocumentRollback: { from: ['in_progress', 'acceptance_pending'], to: 'in_progress' },
     buildSessionAcceptance: { from: ['in_progress'], to: 'acceptance_pending' },
     recordAcceptanceFinalization: { from: ['acceptance_pending'], to: 'finalized' },
@@ -96,6 +97,7 @@ function createReviewSession({
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
     activeExecution: null,
+    activeRollback: null,
     rollbackReceipts: [],
     activeReviewUnitId: null,
     acceptanceManifest: null,
@@ -366,6 +368,55 @@ function validateRollbackJournal(filePath, expectedDigest) {
   };
 }
 
+// The rollback intent is the P1 fix (6.6 review round 2): a CAS-persisted
+// lease recorded BEFORE any external mutation, binding the review unit, the
+// rollback manifest, and the original execution journal. If anything
+// interrupts the run between side effects and session completion, the lease
+// is the recovery anchor the completion journal drives — the external
+// reality can always be reconciled into the canonical session.
+function recordRollbackIntent(session, { reviewUnitId, rollbackManifestDigest, rollbackJournalPath }) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.scanStateUpdated === true) {
+    throw new Error('Review session is finalized and cannot be rolled back in place');
+  }
+  if (!nonEmptyString(rollbackManifestDigest) || !nonEmptyString(rollbackJournalPath)) {
+    throw new Error('rollbackManifestDigest and rollbackJournalPath are required for the rollback intent');
+  }
+  if (!session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  }
+  if ((session.rollbackReceipts || []).some((item) => item.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
+  }
+  const existing = session.activeRollback;
+  if (existing) {
+    const identical = existing.reviewUnitId === reviewUnitId
+      && existing.rollbackManifestDigest === rollbackManifestDigest
+      && path.resolve(existing.rollbackJournalPath || '') === path.resolve(rollbackJournalPath);
+    if (identical) return session;
+    throw Object.assign(
+      new Error(`A different rollback is already in flight for ${existing.reviewUnitId}`),
+      { code: 'ROLLBACK_INTENT_CONFLICT' },
+    );
+  }
+  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
+  const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
+  const anchor = activeMatches ? session.activeExecution : accepted || null;
+  if (!anchor) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
+  validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
+  const startedAt = new Date().toISOString();
+  return REVIEW_MACHINE.apply('recordRollbackIntent', session, {
+    activeRollback: Object.freeze({
+      reviewUnitId,
+      rollbackManifestDigest,
+      rollbackJournalPath: path.resolve(rollbackJournalPath),
+      originalExecutionJournalPath: path.resolve(anchor.executionJournalPath),
+      originalExecutionJournalDigest: anchor.executionJournalDigest,
+      startedAt,
+    }),
+  }, { timestamp: startedAt });
+}
+
 function recordDocumentRollback(session, receipt) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
   if (session.scanStateUpdated === true) {
@@ -395,9 +446,24 @@ function recordDocumentRollback(session, receipt) {
   }
 
   REVIEW_MACHINE.assertTransition('recordDocumentRollback', session);
+  const intent = session.activeRollback?.reviewUnitId === reviewUnitId ? session.activeRollback : null;
+  if (intent
+      && (validated.rollbackManifestDigest !== intent.rollbackManifestDigest
+          || validated.originalExecutionJournalDigest !== intent.originalExecutionJournalDigest)) {
+    throw new Error('Rollback journal does not match the in-flight rollback intent');
+  }
   const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const originalExecution = activeMatches ? session.activeExecution : accepted;
+  let originalExecution = activeMatches ? session.activeExecution : accepted || null;
+  if (!originalExecution && intent) {
+    // The intent is the pre-side-effect anchor: even when a concurrent
+    // writer moved the unit out of active/accepted, the durable lease
+    // recorded what this rollback was bound to before any mutation ran.
+    originalExecution = {
+      executionJournalPath: intent.originalExecutionJournalPath,
+      executionJournalDigest: intent.originalExecutionJournalDigest,
+    };
+  }
   if (!originalExecution) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
   if (validated.originalExecutionJournalDigest !== originalExecution.executionJournalDigest) {
     throw new Error('Rollback journal is bound to a different original execution');
@@ -415,6 +481,7 @@ function recordDocumentRollback(session, receipt) {
       .map(clone)),
     activeExecution,
     activeReviewUnitId: activeExecution?.reviewUnitId || null,
+    activeRollback: null,
     acceptanceManifest: null,
     acceptanceManifestDigest: null,
     scanStateUpdated: false,
@@ -591,6 +658,7 @@ module.exports = {
   recordDocumentChangesRequested,
   recordDocumentRollback,
   recordReviewDecision,
+  recordRollbackIntent,
   saveReviewSession,
   validateExecutionJournal,
   validateResumeSession,

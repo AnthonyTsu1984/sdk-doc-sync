@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 
 const { canonicalize } = require('../src/canonical-json');
@@ -29,6 +30,7 @@ const ASYNC_COMMANDS = new Set([
   'recovery-cleanup-plan',
   'identity-fingerprint',
   'acceptance',
+  'release-gate',
 ]);
 const COMMANDS = new Set([
   'doctor',
@@ -40,6 +42,7 @@ const COMMANDS = new Set([
   'recovery-cleanup-plan',
   'identity-fingerprint',
   'acceptance',
+  'release-gate',
   ...LIVE_COMMANDS,
 ]);
 
@@ -62,9 +65,27 @@ function parseArgs(argv) {
       result.approvedBatchDigest = value;
       continue;
     }
+    if (flag === '--approve-create-digest') {
+      const value = raw.shift();
+      if (!value || value.startsWith('--')) throw new Error('Missing value for --approve-create-digest');
+      result.approveCreateDigest = value;
+      continue;
+    }
+    if (flag === '--approve-patch-digest') {
+      const value = raw.shift();
+      if (!value || value.startsWith('--')) throw new Error('Missing value for --approve-patch-digest');
+      result.approvePatchDigest = value;
+      continue;
+    }
+    if (flag === '--approve-cleanup-digest') {
+      const value = raw.shift();
+      if (!value || value.startsWith('--')) throw new Error('Missing value for --approve-cleanup-digest');
+      result.approveCleanupDigest = value;
+      continue;
+    }
     throw new Error(`Unknown argument: ${flag}`);
   }
-  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', 'cleanup-resume-plan', 'recovery-cleanup-plan', 'acceptance', ...LIVE_COMMANDS]);
+  const runCommands = new Set(['plan', 'simulate', 'cleanup-plan', 'cleanup-resume-plan', 'recovery-cleanup-plan', 'acceptance', 'release-gate', ...LIVE_COMMANDS]);
   if (runCommands.has(command) && !result.runId) throw new Error(`${command} requires --run-id`);
   if (!runCommands.has(command) && result.runId) throw new Error(`${command} does not accept --run-id`);
   if (LIVE_COMMANDS.has(command) && !result.approvedBatchDigest) {
@@ -72,6 +93,9 @@ function parseArgs(argv) {
   }
   if (!LIVE_COMMANDS.has(command) && result.approvedBatchDigest) {
     throw new Error(`${command} does not accept --approve-batch-digest`);
+  }
+  if (command === 'release-gate' && !(result.approveCreateDigest && result.approvePatchDigest && result.approveCleanupDigest)) {
+    throw new Error('release-gate requires --approve-create-digest, --approve-patch-digest, and --approve-cleanup-digest');
   }
   return result;
 }
@@ -130,6 +154,108 @@ function main(argv = process.argv, dependencies = {}) {
   }
 }
 
+// 6.8 harness release gate: one operator command that chains the full
+// disposable-tenant smoke — create → patch → verify (acceptance readback) →
+// cleanup — under the run's own exact digest approvals, and records the PASS
+// evidence bound to the exact source fingerprint. NEVER PR-automated: this
+// runs at harness-release time on the operator's disposable tenant.
+// Deterministic-only content in the evidence (no timestamps) so a rerun of a
+// passed gate on the same tree lands byte-equal on the same exclusive path.
+async function runReleaseGate({ args, config, corpus, corpusRoot, out, err, env, dependencies }) {
+  const pathMod = path;
+  const { simulateSmokeRun: runSimulated } = require('../harness/smoke-simulator');
+  const { createRunManifest } = require('../src/run-manifest');
+  const plan = buildSmokePlan({ corpus, corpusRoot, config, runId: args.runId });
+
+  const approvals = [
+    ['create', args.approveCreateDigest, plan.creationBatch.batchDigest],
+    ['patch', args.approvePatchDigest, plan.patchBatch.batchDigest],
+    ['cleanup', args.approveCleanupDigest, plan.cleanupBatch.batchDigest],
+  ];
+  for (const [phase, approved, expected] of approvals) {
+    if (approved !== expected) {
+      const error = new Error(`release gate ${phase} approval digest mismatch: expected ${expected}, got ${approved}`);
+      error.code = 'SMOKE_RELEASE_GATE_DIGEST_MISMATCH';
+      throw error;
+    }
+  }
+
+  const simulated = (dependencies.simulateSmokeRun || runSimulated)({ corpus, corpusRoot, plan });
+  if (!(simulated.creationVerification.valid && simulated.patchVerification.valid && simulated.cleanupVerification.valid)) {
+    const error = new Error('release gate offline rehearsal failed; live phases are refused');
+    error.code = 'SMOKE_RELEASE_GATE_REHEARSAL_FAILED';
+    throw error;
+  }
+
+  const runLark = dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT });
+  const authStatus = await runLark(['auth', 'status', '--json', '--verify']);
+  const profile = await runLark(['config', 'show', '--profile', 'doc-ops-smoke']);
+  if (authStatus.identity !== 'user' || authStatus.verified !== true || authStatus.identities?.user?.tokenStatus !== 'valid') {
+    const error = new Error('sandbox user identity is not verified and valid');
+    error.code = 'SMOKE_IDENTITY_INVALID';
+    throw error;
+  }
+  const identityFingerprint = computeSandboxIdentityFingerprint({ authStatus, profile });
+
+  const runDir = dependencies.runDir || pathMod.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'runs', args.runId);
+  const executeLive = dependencies.executeLive || executeLivePhase;
+  const runAcceptance = dependencies.runAcceptance || runSmokeAcceptance;
+  const materializeCleanup = dependencies.materializeCleanup || materializeCleanupBatch;
+  const adapter = dependencies.adapter || new LarkSandboxAdapter({ config, corpus, corpusRoot, runLark });
+
+  const phases = [];
+  const createResult = await executeLive({ adapter, approvedBatchDigest: args.approveCreateDigest, phase: 'create', plan, runDir });
+  phases.push({ phase: 'create', batchDigest: plan.creationBatch.batchDigest, status: createResult.status });
+  const patchResult = await executeLive({ adapter, approvedBatchDigest: args.approvePatchDigest, phase: 'patch', plan, runDir });
+  phases.push({ phase: 'patch', batchDigest: plan.patchBatch.batchDigest, status: patchResult.status });
+  const acceptance = await runAcceptance({ adapter, corpus, corpusRoot, plan, runDir });
+  if (acceptance.status !== 'VERIFIED') {
+    const error = new Error(`release gate acceptance verification failed: ${acceptance.status}`);
+    error.code = 'SMOKE_RELEASE_GATE_ACCEPTANCE_FAILED';
+    error.recovery = 'Inspect the run dir journals; cleanup via live-cleanup with the approved cleanup digest.';
+    throw error;
+  }
+  phases.push({ phase: 'verify', status: acceptance.status });
+  const cleanupPlan = { ...plan, cleanupBatch: materializeCleanup({ plan, runDir }) };
+  const cleanupResult = await executeLive({ adapter, approvedBatchDigest: args.approveCleanupDigest, phase: 'cleanup', plan: cleanupPlan, runDir });
+  phases.push({ phase: 'cleanup', batchDigest: plan.cleanupBatch.batchDigest, status: cleanupResult.status });
+
+  const releaseManifest = createRunManifest({
+    skill: 'doc-ops-core',
+    skillVersion: 'release-gate@1',
+    repoRoot: PROJECT_ROOT,
+    batchDigest: plan.creationBatch.batchDigest,
+    sessionDigest: `doc-ops-smoke:${corpus.corpusId}`,
+  });
+  const evidence = {
+    schemaVersion: 1,
+    gate: 'doc-ops-smoke release-gate@1',
+    verdict: 'PASS',
+    sourceFingerprint: releaseManifest.sourceFingerprint,
+    identityFingerprint,
+    runId: args.runId,
+    corpusId: corpus.corpusId,
+    phases,
+    liveWritesPerformed: true,
+  };
+  const evidenceDir = dependencies.evidenceDir || pathMod.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'release-gate');
+  fs.mkdirSync(evidenceDir, { recursive: true });
+  const evidencePath = pathMod.join(evidenceDir, `release-${evidence.sourceFingerprint.replace(/[^A-Za-z0-9]/g, '-').slice(0, 80)}.json`);
+  const body = `${JSON.stringify(canonicalize(evidence), null, 2)}\n`;
+  try {
+    fs.writeFileSync(evidencePath, body, { flag: 'wx' });
+  } catch (writeError) {
+    if (writeError.code !== 'EEXIST') throw writeError;
+    if (!fs.readFileSync(evidencePath).equals(Buffer.from(body))) {
+      const conflict = new Error(`release-gate evidence already exists at ${evidencePath} with different content; move it aside instead of overwriting it`);
+      conflict.code = 'SMOKE_RELEASE_GATE_EVIDENCE_CONFLICT';
+      throw conflict;
+    }
+  }
+  out(stableJson({ ...evidence, evidencePath }));
+  return 0;
+}
+
 async function runCli(argv = process.argv, dependencies = {}) {
   const env = dependencies.env || process.env;
   const out = dependencies.out || (value => process.stdout.write(value));
@@ -164,6 +290,9 @@ async function runCli(argv = process.argv, dependencies = {}) {
       return 1;
     }
     const config = loadSmokeConfig(env);
+    if (args.command === 'release-gate') {
+      return await runReleaseGate({ args, config, corpus, corpusRoot, out, err, env, dependencies });
+    }
     let plan = buildSmokePlan({ corpus, corpusRoot, config, runId: args.runId });
     const runDir = dependencies.runDir || path.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'runs', args.runId);
     const materializeCleanup = dependencies.materializeCleanup || materializeCleanupBatch;

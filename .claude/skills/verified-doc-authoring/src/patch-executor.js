@@ -3,7 +3,7 @@
 const path = require('node:path');
 const { assertApproval } = require('../../doc-ops-core/src/approval-guard');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
-const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
+const { ExecutionJournal, classifyJournalEntries } = require('../../doc-ops-core/src/journal');
 const { assertWriterMutation, createWriterGovernance } = require('../../doc-ops-core/src/writer-governance');
 const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
 
@@ -74,15 +74,22 @@ function bindPlanGovernance({ plan, approval }) {
 
 async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
   assertExactApproval(plan, approval);
-  const governance = bindPlanGovernance({ plan, approval });
-  const liveBefore = await adapter.snapshot(plan.target);
-  assertPreflight(plan, liveBefore);
+  // Journal pre-flight BEFORE governance binding or any adapter call (6.7
+  // fault injection): a pre-existing journal for this batch is durable
+  // evidence that a previous run already mutated, so the dispatch is on its
+  // classified phase — never a re-execution.
   const action = plan.actionBatch.actions[0];
   const journal = new ExecutionJournal({
     filePath: journalPath,
     batchDigest: plan.actionBatch.batchDigest,
     approvedActionIds: [action.actionId],
   });
+  if (journal.read().length > 0) {
+    return resumeAuthoringPatchFromJournal({ plan, journal, adapter });
+  }
+  const governance = bindPlanGovernance({ plan, approval });
+  const liveBefore = await adapter.snapshot(plan.target);
+  assertPreflight(plan, liveBefore);
   journal.prepared({
     actionId: action.actionId,
     reviewUnitId: plan.reviewUnitId,
@@ -129,6 +136,71 @@ async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
     documentId: mutation.documentId,
     created: mutation.created === true,
     executionJournalPath: journalPath,
+    executionJournalDigest: digestSemantic(journal.entries),
+    liveResult,
+    liveResultDigest: digestSemantic(liveResult),
+  });
+}
+
+// Journal-driven recoverable completion (6.7): a pre-existing journal means a
+// previous run already mutated (or completed) externally, so this path never
+// calls the adapter's mutating methods. The live re-fetch is read-only and
+// re-proves the journaled end state against the draft digests; any drift
+// after the journaled success refuses typed instead of replaying.
+async function resumeAuthoringPatchFromJournal({ plan, journal, adapter }) {
+  const entries = journal.read();
+  const phase = classifyJournalEntries({
+    entries,
+    approvedActionIds: [...journal.approvedActionIds],
+    batchDigest: journal.batchDigest,
+  });
+  if (phase === 'reconciliation-required') {
+    throw Object.assign(
+      new Error('An existing execution journal is incomplete or ambiguous; inspect it and re-plan with a fresh journal path — replay is refused before any mutation.'),
+      { code: 'EXECUTION_RECONCILIATION_REQUIRED' },
+    );
+  }
+  if (phase === 'resumable') journal.complete();
+  const observed = entries.find((entry) => entry.type === 'observed');
+  // Belt-and-suspenders: the classifier guarantees a well-formed 'complete'
+  // phase carries observations, but the resume must never dereference blind.
+  if (!observed) {
+    throw Object.assign(
+      new Error('Completion journal carries no observed evidence; reconcile before replay.'),
+      { code: 'EXECUTION_RECONCILIATION_REQUIRED' },
+    );
+  }
+  const mutation = {
+    documentId: observed.documentId,
+    created: observed.created === true,
+    revision: null,
+  };
+  const live = await adapter.refetch(mutation.documentId);
+  const verified = live?.documentId === mutation.documentId
+    && live.contentDigest === plan.draftArtifact.markdownDigest
+    && sameSorted(live.visibleUnresolvedClaimIds, plan.draftArtifact.visibleUnresolvedClaimIds)
+    && (plan.target.kind !== 'existing' || live.protectedBlocksDigest === plan.target.protectedBlocksDigest);
+  if (!verified) {
+    throw Object.assign(
+      new Error('Live document no longer matches the journaled execution result; reconcile before replay.'),
+      { code: 'EXECUTION_RECONCILIATION_REQUIRED' },
+    );
+  }
+  const liveResult = {
+    documentId: mutation.documentId,
+    revision: live.revision ?? null,
+    protectedBlocksDigest: live.protectedBlocksDigest || null,
+    contentDigest: live.contentDigest || null,
+    visibleUnresolvedClaimIds: live.visibleUnresolvedClaimIds || [],
+  };
+  return Object.freeze({
+    schemaVersion: 1,
+    status: 'ACCEPTANCE_REQUIRED',
+    reviewUnitId: plan.reviewUnitId,
+    planDigest: plan.planDigest,
+    documentId: mutation.documentId,
+    created: mutation.created,
+    executionJournalPath: journal.filePath,
     executionJournalDigest: digestSemantic(journal.entries),
     liveResult,
     liveResultDigest: digestSemantic(liveResult),

@@ -821,10 +821,65 @@ not scheduled.**
 
 ### P2 — runtime proof beyond offline determinism
 
-- [ ] 6.7 **Fault injection.** Cover crash/retry at each seam: before mutation, after mutation,
+- [x] 6.7 **Fault injection.** Cover crash/retry at each seam: before mutation, after mutation,
       mid-refetch, before completion sentinel, after acceptance receipt. The api
       acceptance-receipt recovery path (PR #22 final round: a matching durable receipt proves
       persistence, rerun completes with zero writes) is the pattern to generalize.
+
+      6.7 delivered (2026-09-28, branch `feat/phase6-fault-injection`): the shared vocabulary is
+      `doc-ops-core` — `classifyJournalEntries` names the on-disk crash phase of any journal
+      (`empty` / `complete` / `resumable` = every approved action observed verified-success with
+      the sentinel missing / `reconciliation-required` = anything ambiguous), and
+      `harness/fault-injector.js` (previously dead code) gains the fifth seam `after_completion`
+      plus hit recording; the five canonical seams are before_mutation, after_mutation,
+      during_refetch, before_completion, after_completion. The generalized recovery doctrine:
+      **a pre-existing journal is durable evidence, never a re-execution** — dispatch on its
+      phase; `resumable` journals auto-complete the sentinel (the journal's own evidence proves
+      every action landed and verified, so appending it is the one safe write) and resume
+      read-only; `complete` journals resume verify-only (procedure re-runs the read-only
+      verifier; authoring re-proves the live state against the draft digests via read-only
+      refetch, drift refuses typed); everything ambiguous refuses typed
+      `EXECUTION_RECONCILIATION_REQUIRED` with ZERO adapter calls, before governance binding.
+      Implemented in the procedure/authoring/localized patch executors (localized's executor is
+      also the doc-agent-live-write engine, so agent-team inherits it). The api executor keeps
+      its digest-path refusal doctrine but now surfaces `result.reconciliation`
+      (journal path + digest + completion sentinel), and the sdk-doc-sync CLI closes its S4
+      crash window (journal complete, session recording never landed — previously permanently
+      wedged): with `--resume-session`, a BLOCKED reconcile-required result whose journal
+      passes the completion-sentinel check records the execution from the durable journal with
+      zero Feishu writes, idempotently (a session that already holds the execution is left
+      untouched); partial journals keep the plain BLOCKED refusal. Evidence: new
+      fault-injection suites per skill (procedure 7, authoring 6, localized 4, api 3 tests),
+      all registered in `capabilities.json` `adapterPolicy.operations` so the admission
+      focused-tests gate EXECUTES them (gate 6→10 suites), plus classifier/injector unit tests
+      in doc-ops-core and an agent-team S4 rerun test (60 pass). Suites prove BOTH halves of
+      every seam: the crash (typed error or honest journal state) and the retry (convergence or
+      zero-mutation typed refusal). api S1/S2/S5 and the PARTIAL/in-place-rollback windows
+      remain covered by the pre-existing sync-executor/sync-planner/finalizer suites; the api
+      S3 injected-reader-throw variant rides the same synthesized-observed-failure path already
+      covered there (noted, not separately pinned). Known local friction unchanged: the
+      constant-digest run-manifest evidence conflicts after any tree edit (self-drift), local
+      loop is clear `tmp/**/run-manifest-*.json` and re-run; CI runners never see it.
+
+      6.7 review round 1 (2026-09-28, independent code-reviewer pass, approve-with-comments,
+      fixed in the same PR): **P2 — the classifier short-circuited `'complete'` on the
+      sentinel**, so a sentinel-only (or failed-observed-before-sentinel) journal classified
+      complete and the authoring resume crashed with a bare TypeError dereferencing a missing
+      observed entry — fail-closed but untyped, violating the PR's own doctrine. Fix: the
+      classifier now validates the evidence BENEATH the sentinel before reporting `'complete'`
+      (a sentinel with zero or failed/unverified observations is `reconciliation-required`),
+      plus strictness hardening: observed-without-prepared, evidence outside the approved set,
+      non-empty journals under an empty approved set, and (when the caller passes
+      `batchDigest`, which all three resume paths now do) entries bound to a different batch
+      are all `reconciliation-required`. Belt-and-suspenders typed guard added to the authoring
+      resume's observed dereference. P3s fixed: the api recovery block now narrates the
+      different-active-unit case typed (accept/roll back that unit first) instead of an
+      unhandled store refusal, and the authoring S5 gained the live-drift companion case
+      (drifted live document vs intact plan). Reviewer explicitly verified: no organic scenario
+      where resumable auto-completion blesses an un-landed mutation; the api recording path
+      re-validates the journal from disk so a fabricated `result.reconciliation` can only
+      record well-formed durable evidence; pre-flight ordering keeps the normal path
+      byte-identical to master.
 - [ ] 6.8 **Disposable-tenant live smoke as a harness release gate.** create → patch → verify →
       accept → cleanup against a disposable Feishu tenant, under its own exact digest approval.
       This is an admission condition for releasing new harness versions, run as the existing

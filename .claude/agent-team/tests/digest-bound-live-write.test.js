@@ -93,3 +93,36 @@ test('agent-team delegates an approved immutable batch to the canonical write-ah
   assert.match(journal, /"type":"observed"/);
   assert.match(journal, /"completionSentinel":true/);
 });
+
+// 6.7 fault injection: the S4 crash window (journal completed, completion
+// processing never ran) converges through the shared executor's journal
+// pre-flight — a rerun never re-executes a mutation through the agent-team
+// delegation path either.
+test('rerun over a completed journal resumes from evidence and never re-executes', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'doc-agent-fault-s4-'));
+  const journalPath = path.join(root, 'execution.jsonl');
+  const batch = buildLocalizationActionBatch(actions().slice(0, 1), { locale: 'zh' });
+  await executeApprovedActionBatch({
+    actionBatch: batch,
+    approvedBatchDigest: batch.batchDigest,
+    journalPath,
+    adapter: {
+      async execute() { return { status: 'success' }; },
+      async verify() { return { verified: true }; },
+    },
+  });
+
+  const seen = [];
+  const result = await executeApprovedActionBatch({
+    actionBatch: batch,
+    approvedBatchDigest: batch.batchDigest,
+    journalPath,
+    adapter: {
+      async execute(action) { seen.push(action.payload.slug); return { status: 'success' }; },
+      async verify() { return { verified: true }; },
+    },
+  });
+  assert.deepEqual(seen, []);
+  assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
+  assert.equal(result.resumed, true);
+});

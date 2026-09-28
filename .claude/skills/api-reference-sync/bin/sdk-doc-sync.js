@@ -742,6 +742,44 @@ async function runCli({
             reviewUnitManifestDigest: reviewSession.reviewUnitManifestDigest,
         };
     }
+    if (args.resumeSession
+        && !args.dryRun
+        && result.executionResult?.status === 'BLOCKED'
+        && (result.executionResult.diagnostics || []).some((diagnostic) => diagnostic.code === 'EXECUTION_RECONCILIATION_REQUIRED')
+        && result.reconciliation?.completionSentinel === true
+        && (args.reviewUnitId || result.activeReviewUnit?.reviewUnitId)) {
+        // S4 crash window (6.7 fault injection): the execution journal
+        // completed but the process died before the session recorded the
+        // execution — a rerun refuses with EXECUTION_RECONCILIATION_REQUIRED,
+        // so without this recovery the executed unit would stay invisible to
+        // acceptance and rollback forever. The durable journal IS the
+        // evidence: recordDocumentExecution re-validates the sentinel, the
+        // digest, and verified results from disk, so recording it is a
+        // zero-Feishu-write convergence. An ambiguous (partial) journal
+        // keeps the BLOCKED refusal — only an operator resolves that.
+        const sessionPath = path.resolve(args.resumeSession);
+        const reviewUnitId = args.reviewUnitId || result.activeReviewUnit.reviewUnitId;
+        ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
+        const activeExecution = reviewSession.activeExecution;
+        if (!activeExecution) {
+            reviewSession = recordDocumentExecution(reviewSession, {
+                reviewUnitId,
+                executionJournalPath: result.reconciliation.executionJournalPath,
+                executionJournalDigest: result.reconciliation.executionJournalDigest,
+            });
+            saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
+            result.reconciliation = { ...result.reconciliation, sessionRecovered: true };
+            err(`Execution recorded from the durable journal for ${reviewUnitId}; rerun is not needed for this unit.`);
+        } else if (activeExecution.reviewUnitId === reviewUnitId) {
+            // Already recovered by a previous rerun — nothing to do.
+            result.reconciliation = { ...result.reconciliation, sessionRecovered: false };
+        } else {
+            // A different unit is mid-flight: fail-closed with a typed
+            // narrative instead of an unhandled store refusal.
+            result.reconciliation = { ...result.reconciliation, sessionRecovered: false, blockedByActiveUnit: activeExecution.reviewUnitId };
+            err(`Execution not recorded: review session has active execution ${activeExecution.reviewUnitId}; accept or roll back that unit first, then rerun this recovery.`);
+        }
+    }
     if (args.sessionState) {
         const sessionPath = path.resolve(args.sessionState);
         if (fs.existsSync(sessionPath)) {

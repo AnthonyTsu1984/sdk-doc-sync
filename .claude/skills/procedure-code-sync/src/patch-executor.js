@@ -1,7 +1,7 @@
 'use strict';
 
 const path = require('node:path');
-const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
+const { ExecutionJournal, classifyJournalEntries } = require('../../doc-ops-core/src/journal');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { assertWriterMutation, createWriterGovernance } = require('../../doc-ops-core/src/writer-governance');
 const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
@@ -56,6 +56,18 @@ function bindPlanGovernance({ plan, approval }) {
 
 async function executeProcedurePatch({ plan, approval, journalPath, adapter, verifier }) {
   assertWholeDocumentApproval({ plan, approval });
+  // Journal pre-flight BEFORE governance binding or any adapter call (6.7
+  // fault injection): a pre-existing journal for this batch is durable
+  // evidence that a previous run already started, so the dispatch is on its
+  // classified phase — never a re-execution.
+  const journal = new ExecutionJournal({
+    filePath: journalPath,
+    batchDigest: plan.actionBatch.batchDigest,
+    approvedActionIds: plan.actionBatch.actions.map((action) => action.actionId),
+  });
+  if (journal.read().length > 0) {
+    return resumeProcedurePatchFromJournal({ plan, journal, verifier });
+  }
   const governance = bindPlanGovernance({ plan, approval });
   const liveBefore = await adapter.inventory(plan.snapshot.documentId);
   assertSnapshot(plan.snapshot, liveBefore);
@@ -63,11 +75,6 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
     (right.payload.childIndex ?? -1) - (left.payload.childIndex ?? -1)
       || right.actionId.localeCompare(left.actionId)
   ));
-  const journal = new ExecutionJournal({
-    filePath: journalPath,
-    batchDigest: plan.actionBatch.batchDigest,
-    approvedActionIds: plan.actionBatch.actions.map((action) => action.actionId),
-  });
   const generatedBlockIds = {};
   for (const action of ordered) {
     journal.prepared({
@@ -103,6 +110,41 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
     }
   }
   journal.complete();
+  return buildProcedurePatchResult({ plan, journal, verifier, generatedBlockIds });
+}
+
+// Journal-driven recoverable completion (6.7): a pre-existing journal means a
+// previous run already mutated (or completed) externally, so this path never
+// touches the adapter's mutating methods and never re-runs a patch. 'resumable'
+// journals are exactly the crash window "after the last verified observation,
+// before the completion sentinel" — the journal's own durable evidence proves
+// every approved action landed and verified, so appending the sentinel is the
+// one safe write; everything else is refused typed BEFORE any adapter call.
+async function resumeProcedurePatchFromJournal({ plan, journal, verifier }) {
+  const phase = classifyJournalEntries({
+    entries: journal.read(),
+    approvedActionIds: [...journal.approvedActionIds],
+    batchDigest: journal.batchDigest,
+  });
+  if (phase === 'reconciliation-required') {
+    throw typedError(
+      'EXECUTION_RECONCILIATION_REQUIRED',
+      'An existing execution journal is incomplete or ambiguous; inspect it and re-plan with a fresh journal path — replay is refused before any mutation.',
+    );
+  }
+  if (phase === 'resumable') journal.complete();
+  const observedById = new Map(journal.read()
+    .filter((entry) => entry.type === 'observed')
+    .map((entry) => [entry.actionId, entry]));
+  const generatedBlockIds = {};
+  for (const action of plan.actionBatch.actions) {
+    const generatedBlockId = observedById.get(action.actionId)?.generatedBlockId;
+    if (generatedBlockId) generatedBlockIds[action.payload.operationId] = generatedBlockId;
+  }
+  return buildProcedurePatchResult({ plan, journal, verifier, generatedBlockIds });
+}
+
+async function buildProcedurePatchResult({ plan, journal, verifier, generatedBlockIds }) {
   const verifierResult = await verifier({ documentId: plan.snapshot.documentId });
   if (!verifierResult?.semanticDigest) {
     throw typedError('VERIFIER_EVIDENCE_REQUIRED', 'Typed verifier result semanticDigest is required');
@@ -112,7 +154,7 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
     status: 'ACCEPTANCE_REQUIRED',
     reviewUnitId: plan.reviewUnit.reviewUnitId,
     planDigest: plan.planDigest,
-    executionJournalPath: journalPath,
+    executionJournalPath: journal.filePath,
     executionJournalDigest: digestSemantic(journal.entries),
     verifierResultDigest: verifierResult.semanticDigest,
     verifierStatus: verifierResult.status,

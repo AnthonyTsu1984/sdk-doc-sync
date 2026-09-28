@@ -749,6 +749,7 @@ class SdkDocSync {
                 approvedActionIds: result.executionBatch.actions.map(action => action.actionId),
             });
         if (journal.read().length > 0) {
+            const existingEntries = journal.read();
             result.executionResult = blockedExecutionResult({
                 batch: result.executionBatch,
                 proposedBatch: result.proposedExecutionBatch,
@@ -757,6 +758,18 @@ class SdkDocSync {
                     message: 'An existing journal must be reconciled before replay.',
                 }],
             });
+            // 6.7 fault injection: surface the durable evidence with the
+            // refusal so the S4 crash window (journal completed, session
+            // recording never landed) is recoverable with zero Feishu writes
+            // — the caller records the execution straight from this journal
+            // instead of replaying anything.
+            result.reconciliation = {
+                executionJournalPath: journal.filePath,
+                executionJournalDigest: digestSemantic(existingEntries),
+                completionSentinel: existingEntries.some((entry) => (
+                    entry.type === 'completion' && entry.completionSentinel === true
+                )),
+            };
             return result;
         }
 

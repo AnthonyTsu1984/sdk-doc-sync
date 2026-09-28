@@ -1,7 +1,7 @@
 'use strict';
 
 const { assertApproval } = require('../../doc-ops-core/src/approval-guard');
-const { ExecutionJournal } = require('../../doc-ops-core/src/journal');
+const { ExecutionJournal, classifyJournalEntries } = require('../../doc-ops-core/src/journal');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { assertTranslationRecoveryCompatible } = require('./translation-state');
 
@@ -143,6 +143,27 @@ async function executeReviewUnit({
     batchDigest: canonicalBatch.batchDigest,
     approvedActionIds: canonicalBatch.actions.map((action) => action.actionId),
   });
+  // Journal pre-flight BEFORE any adapter call (6.7 fault injection): a
+  // pre-existing journal for this batch is durable evidence that a previous
+  // run already started, so the dispatch is on its classified phase — never
+  // a re-execution, and the resume trusts only the journaled evidence (the
+  // acceptance ceremony re-proves live state).
+  if (journal.read().length > 0) {
+    const phase = classifyJournalEntries({
+      entries: journal.read(),
+      approvedActionIds: canonicalBatch.actions.map((action) => action.actionId),
+    });
+    if (phase === 'reconciliation-required') {
+      throw typedError('EXECUTION_RECONCILIATION_REQUIRED', 'An existing execution journal is incomplete or ambiguous; inspect it and re-plan with a fresh journal path — replay is refused before any mutation.');
+    }
+    if (phase === 'resumable') journal.complete();
+    return {
+      status: unit.requiresDocumentAcceptance === false ? 'EXECUTED' : 'ACCEPTANCE_REQUIRED',
+      reviewUnitId: unit.reviewUnitId,
+      journalDigest: digestSemantic(journal.entries),
+      resumed: true,
+    };
+  }
   for (const action of canonicalBatch.actions) {
     journal.prepared({ actionId: action.actionId, reviewUnitId: unit.reviewUnitId, target: action.target, beforeState: action.beforeState || null });
     let result;

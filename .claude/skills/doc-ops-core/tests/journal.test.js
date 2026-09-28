@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { ExecutionJournal } = require('../src/journal');
+const { ExecutionJournal, classifyJournalEntries } = require('../src/journal');
 
 test('journal persists prepared and observed entries before a completion sentinel', () => {
   const filePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-journal-')), 'run.jsonl');
@@ -48,4 +48,50 @@ test('journal entries are stamped with the bound run manifest digest', () => {
   const bare = new ExecutionJournal({ filePath: barePath, batchDigest: 'sha256:a'.padEnd(71, 'a'), approvedActionIds: ['a'] });
   bare.prepared({ actionId: 'a' });
   assert.equal('manifestDigest' in bare.read()[0], false);
+});
+
+test('classifyJournalEntries names the crash phase for fault-injection recovery dispatch (6.7)', () => {
+  const approved = ['a', 'b'];
+  assert.equal(classifyJournalEntries({ entries: [], approvedActionIds: approved }), 'empty');
+  assert.equal(classifyJournalEntries({
+    entries: [
+      { type: 'prepared', actionId: 'a' }, { type: 'observed', actionId: 'a', status: 'success', verified: true },
+      { type: 'prepared', actionId: 'b' }, { type: 'observed', actionId: 'b', status: 'success', verified: true },
+      { type: 'completion', completionSentinel: true },
+    ],
+    approvedActionIds: approved,
+  }), 'complete');
+  // The resumable window: everything observed verified-success, sentinel missing.
+  assert.equal(classifyJournalEntries({
+    entries: [
+      { type: 'prepared', actionId: 'a' }, { type: 'observed', actionId: 'a', status: 'success', verified: true },
+      { type: 'prepared', actionId: 'b' }, { type: 'observed', actionId: 'b', status: 'success', verified: true },
+    ],
+    approvedActionIds: approved,
+  }), 'resumable');
+  // Ambiguous: a hard crash between prepared and observed.
+  assert.equal(classifyJournalEntries({
+    entries: [{ type: 'prepared', actionId: 'a' }, { type: 'prepared', actionId: 'b' }],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
+  // Ambiguous: failed or unverified observations can never be auto-completed.
+  for (const observed of [
+    { type: 'observed', actionId: 'a', status: 'failure', verified: false },
+    { type: 'observed', actionId: 'a', status: 'success', verified: false },
+  ]) {
+    assert.equal(classifyJournalEntries({
+      entries: [{ type: 'prepared', actionId: 'a' }, observed, { type: 'prepared', actionId: 'b' }, { type: 'observed', actionId: 'b', status: 'success', verified: true }],
+      approvedActionIds: approved,
+    }), 'reconciliation-required');
+  }
+  // Ambiguous: an approved action with no result at all.
+  assert.equal(classifyJournalEntries({
+    entries: [{ type: 'prepared', actionId: 'a' }, { type: 'observed', actionId: 'a', status: 'success', verified: true }],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
+  // Ambiguous: foreign entry types are never silently absorbed.
+  assert.equal(classifyJournalEntries({
+    entries: [{ type: 'mystery', actionId: 'a' }],
+    approvedActionIds: approved,
+  }), 'reconciliation-required');
 });

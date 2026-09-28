@@ -122,4 +122,46 @@ class ExecutionJournal {
   }
 }
 
-module.exports = { JournalError, ExecutionJournal };
+module.exports = { JournalError, ExecutionJournal, classifyJournalEntries };
+
+// Phase of an on-disk journal relative to its approved action set — the
+// vocabulary fault-injection recovery (6.7) dispatches on. Computed only
+// from durable evidence, never from memory:
+//   'empty'                    — nothing on disk; a fresh run may proceed.
+//   'complete'                 — completion sentinel present; a rerun must
+//                                never re-mutate and may resume read-only.
+//   'resumable'                — every approved action has a verified-success
+//                                observed result and nothing else happened;
+//                                the crash window is exactly "after the last
+//                                observation, before the sentinel", so
+//                                appending the sentinel is safe and the run
+//                                resumes read-only.
+//   'reconciliation-required'  — anything else (prepared without observed,
+//                                failed/unverified results, foreign types);
+//                                the external state is ambiguous and only an
+//                                operator may resolve it.
+function classifyJournalEntries({ entries, approvedActionIds }) {
+  if (!Array.isArray(entries)) throw new JournalError('JOURNAL_ENTRY_INVALID', 'entries must be an array');
+  const ids = Array.isArray(approvedActionIds) ? approvedActionIds : [];
+  if (entries.length === 0) return 'empty';
+  if (entries.some((entry) => entry?.type === 'completion')) return 'complete';
+  const observedByAction = new Map();
+  for (const entry of entries) {
+    if (entry?.type === 'observed') {
+      if (observedByAction.has(entry.actionId)) return 'reconciliation-required';
+      observedByAction.set(entry.actionId, entry);
+    } else if (entry?.type !== 'prepared') {
+      return 'reconciliation-required';
+    }
+  }
+  for (const entry of observedByAction.values()) {
+    if (entry.status !== 'success' || entry.verified !== true) return 'reconciliation-required';
+  }
+  for (const entry of entries) {
+    if (entry?.type === 'prepared' && !observedByAction.has(entry.actionId)) return 'reconciliation-required';
+  }
+  for (const actionId of ids) {
+    if (!observedByAction.has(actionId)) return 'reconciliation-required';
+  }
+  return 'resumable';
+}

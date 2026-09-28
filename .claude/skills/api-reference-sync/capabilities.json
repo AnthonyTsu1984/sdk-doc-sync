@@ -210,6 +210,13 @@
         "productionEntrypoint": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
         "focusedTest": ".claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js",
         "journalRequiredForWrites": true
+      },
+      {
+        "operation": "fault-injection",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+        "focusedTest": ".claude/skills/api-reference-sync/tests/fault-injection.test.js",
+        "journalRequiredForWrites": true
       }
     ]
   }

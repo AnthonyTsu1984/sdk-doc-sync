@@ -1039,12 +1039,12 @@ not scheduled.**
       action lacking one of the six binding fields refuses typed
       (`BATCH_UNIT_MISMATCH` … "lacks <field>; binding requires the field present even when
       null") before any adapter call, while a present-and-null field still binds and executes
-      (regression test proves both halves against the real planner-shaped actions).
+      (regression test proves both halves against canonical-shaped actions).
       **F4** — when `--client-module` overrides the plan-time client, the resolved override
       path is stamped into every review unit as `planProvenance.clientModule` BEFORE the
       `boundUnitDigest` stamp, so the freshness provenance is digest-covered and auditable
-      from the plan artifact alone; no override ⇒ no provenance field. Green: localized 78
-      (executor 16, cli 8).
+      from the plan artifact alone; no override ⇒ no provenance field. Green: localized 77
+      (executor 16, cli 8, planner 4, plus the rest of the suite).
 
 Acceptance for the phase: the review's closing statement flips — canonical entrypoints are
 deterministic (already true) *and* no write reaches production outside them (6.4–6.5), every

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-require('../../skills/doc-ops-core/src/legacy-quarantine.js').enforceLegacyQuarantine({ entrypointPath: __filename });
+// wave 3: canonical-governed — the governed writer + run manifest below are the gate.
 
 
 const path = require('node:path');
@@ -87,7 +87,7 @@ async function applyMetaOnlyActions(config, actions, governance = null) {
   return results;
 }
 
-async function runTranslationActions(config, approved) {
+async function runTranslationActions(config, approved, governance = null) {
   const localization = config.surfaces.localization;
   const results = [];
   for (const group of groupByTablePair(approved).values()) {
@@ -103,6 +103,7 @@ async function runTranslationActions(config, approved) {
       driveType: localization.driveType,
       translatorType: localization.translator,
       dryRun: false,
+      governance,
       approvalCallback: async (actions) => {
         const approvedSlugs = new Set(group.actions.map(action => `${action.type}:${action.slug}`));
         return actions.filter(action => approvedSlugs.has(`${action.type}:${action.slug}`));
@@ -165,7 +166,7 @@ function createLiveAdapter(config, captures, governance = null) {
         captures.metaOnlyResults.push(...results);
         return results[0];
       }
-      const results = await runTranslationActions(config, [payload]);
+      const results = await runTranslationActions(config, [payload], governance);
       captures.translationResults.push(...results);
       return results[0];
     },

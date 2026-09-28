@@ -4,7 +4,7 @@
     "recordedAt": "2026-09-23T00:00:00.000Z",
     "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
     "entrypointCount": 88,
-    "legacyLiveCount": 5
+    "legacyLiveCount": 0
   },
   "entries": [
     {
@@ -24,16 +24,15 @@
     {
       "path": ".claude/agent-team/bin/doc-agent-live-write.js",
       "skill": "localized-doc-sync",
-      "classification": "legacy-live",
+      "classification": "canonical-governed",
       "operation": "doc-agent-live-write",
-      "basis": "manual baseline override after source inspection",
+      "basis": "phase-6 wave 3: production localization live-write path, fully governed (WriterGovernance + run manifest + write-ahead ExecutionJournal through the shared localized executor; META_ONLY record mutations ride the governed BitableWriter); quarantine guard removed with the legacy-live classification",
       "approval": "exact-batch-digest",
-      "journal": "none",
-      "reconciliation": "none",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": "Task 9: .claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
-      "admittedAtBaseline": true,
-      "tests": []
+      "journal": "required",
+      "reconciliation": "review-session-cas",
+      "tests": [
+        ".claude/agent-team/tests/digest-bound-live-write.test.js"
+      ]
     },
     {
       "path": ".claude/agent-team/bin/doc-agent-scan.js",
@@ -69,20 +68,6 @@
       "classification": "read-only",
       "operation": "export-doc",
       "basis": "manual baseline override after source inspection"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/bin/feishu-doc-translator.js",
-      "skill": "api-reference-sync",
-      "classification": "legacy-live",
-      "operation": "feishu-doc-translator",
-      "basis": "manual baseline override after source inspection",
-      "approval": "none",
-      "journal": "none",
-      "reconciliation": "none",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": "Task 9: .claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
-      "admittedAtBaseline": true,
-      "tests": []
     },
     {
       "path": ".claude/skills/api-reference-sync/bin/identity-reconcile.js",
@@ -348,20 +333,6 @@
       "basis": "no external mutation signature found"
     },
     {
-      "path": ".claude/skills/api-reference-sync/scripts/feishu-doc.js",
-      "skill": "api-reference-sync",
-      "classification": "legacy-live",
-      "operation": "feishu-doc",
-      "basis": "manual baseline override after source inspection",
-      "approval": "none",
-      "journal": "none",
-      "reconciliation": "none",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-      "admittedAtBaseline": true,
-      "tests": []
-    },
-    {
       "path": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
       "skill": "api-reference-sync",
       "classification": "canonical-governed",
@@ -403,20 +374,6 @@
       "basis": "no external mutation signature found"
     },
     {
-      "path": ".claude/skills/api-reference-sync/scripts/java-v26-update.js",
-      "skill": "api-reference-sync",
-      "classification": "legacy-live",
-      "operation": "java-v26-update",
-      "basis": "external mutation call or HTTP mutation verb found",
-      "approval": "none",
-      "journal": "none",
-      "reconciliation": "none",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-      "admittedAtBaseline": true,
-      "tests": []
-    },
-    {
       "path": ".claude/skills/api-reference-sync/scripts/merge-openapi.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -429,20 +386,6 @@
       "classification": "read-only",
       "operation": "node-v30-response-templates",
       "basis": "no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/scripts/node-v30-update.js",
-      "skill": "api-reference-sync",
-      "classification": "legacy-live",
-      "operation": "node-v30-update",
-      "basis": "external mutation call or HTTP mutation verb found",
-      "approval": "none",
-      "journal": "none",
-      "reconciliation": "none",
-      "quarantineFlag": "DOC_OPS_ALLOW_LEGACY_LIVE",
-      "canonicalReplacement": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-      "admittedAtBaseline": true,
-      "tests": []
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/patch-openapi-external.js",

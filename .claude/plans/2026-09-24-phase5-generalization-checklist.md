@@ -451,6 +451,39 @@ not scheduled.**
          intakes); capabilities are historical, not live workflows. PR deletes file + entry,
          drops the count pins, records the disposition in the commit message.
 
+      Wave-3 close-out (2026-09-28, branch `feat/phase6-wave3-legacy-close-out`) — **6.4 END
+      STATE REACHED: baseline `legacyLiveCount` 5→0 and legacy-live cannot write.** The wave-3
+      audit found all five remaining entries DORMANT since wave 2 (the runtime guard requires
+      BOTH the env flag AND an unexpired exception; `expected-changes.json` exceptions were
+      already empty), so removal risk was zero. Disposition: `doc-agent-live-write.js`
+      reclassified `canonical-governed` (production infra; fully governed since 6.5/6.6 —
+      WriterGovernance + run manifest + write-ahead journal through the shared localized
+      executor; quarantine guard removed from the source); `feishu-doc.js`,
+      `feishu-doc-translator.js` (+ its src module), `node-v30-update.js`, `java-v26-update.js`
+      `node-v30-update.js`, `java-v26-update.js` DELETED with their dead references (CLAUDE.md
+      doc-CLI lines, the quarantine spawn fixture, registry test assertions; the wave-1 "two
+      living caller scripts" no longer exist). **Correction during execution: the translation
+      ENGINE (`src/feishu-doc-translator/`) is LIVE production code** — doc-agent-live-write's
+      non-META_ONLY actions run it inside the governed executor — so the module was restored
+      and its latent 6.5 break FIXED instead: `FeishuDocTranslator` now accepts
+      `options.governance` and forwards it to the BitableWriter, and the doc-agent adapter
+      threads its live-governance through `runTranslationActions` — the translation path is
+      governed end to end for the first time. What was retired is the STANDALONE CLI
+      (`bin/feishu-doc-translator.js` + npm `translate`): it had no governance mint left after
+      the channel removal and was unreachable dormant since wave 2; the engine's adapter
+      contract tests were trimmed of bin dependencies and the retired-CLI options test removed. **Exception-channel ruling: REMOVED** — the runtime guard no
+      longer accepts the env flag or an exception (`legacy-live-cannot-write`, unconditional),
+      `createExceptionGovernance` refuses unconditionally (typed dead-end for stale callers),
+      `DOC_OPS_ALLOW_LEGACY_LIVE` is inert in code AND banned in CI (a named
+      `PRODUCTION_ENV_BAN` admission step fails the build if the variable is set), satisfying
+      "production credentials must never see the flag" by construction. The dormant
+      `canonical-exception` governance form (6.5 carve-out) dies with the channel; its writer
+      behavior coverage (endpoint shape, drift refusal) moved onto the canonical governed form
+      in `docx-block-writer.test.js`. Registry 89→85 entries; count pins updated with
+      provenance. The dormant tools were superseded by the canonical CLIs (sdk-doc-sync /
+      localized-doc-sync) exactly as the wave-1 canonicalReplacement fields documented —
+      nothing functional was removed.
+
       Wave-1 delivery (2026-09-26, PR #40, branch `chore/phase6-wave1-legacy-live-disposition`,
       executed under the review's conditional approval): the deleted set was rederived with
       deletion semantics and reconciled **set-equal** against the approval list — the count is

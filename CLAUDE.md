@@ -37,9 +37,6 @@ node .claude/skills/api-reference-sync/scripts/check-sdk-updates.js
 # Scan an SDK (dry-run first)
 node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --language=python --sdk-dir repos/pymilvus/pymilvus --sdk-version v2.6.x --dry-run
 
-# Feishu doc CLI
-node .claude/skills/api-reference-sync/scripts/feishu-doc.js <subcommand> [options]
-
 # OpenAPI spec editing
 node .claude/skills/api-reference-sync/scripts/edit-openapi.js <subcommand> [options]
 ```

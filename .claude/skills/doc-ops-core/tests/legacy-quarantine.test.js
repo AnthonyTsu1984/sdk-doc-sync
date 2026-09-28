@@ -33,49 +33,37 @@ const LEGACY_ENTRY = {
   admittedAtBaseline: true,
 };
 
-test('evaluation quarantines legacy-live entrypoints without the environment gate', () => {
-  const decision = evaluateLegacyQuarantine({
-    entrypointPath: 'scripts/legacy-one-off.js',
-    env: {},
-    registry: registryWith([LEGACY_ENTRY]),
-    expectedChanges: [],
-  });
-  assert.equal(decision.quarantined, true);
-  assert.equal(decision.reason, 'environment-gate-closed');
+test('evaluation quarantines legacy-live entrypoints unconditionally (wave 3: flag removed)', () => {
+  for (const env of [{}, { [QUARANTINE_ENV_FLAG]: '1' }]) {
+    const decision = evaluateLegacyQuarantine({
+      entrypointPath: 'scripts/legacy-one-off.js',
+      env,
+      registry: registryWith([LEGACY_ENTRY]),
+      expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2099-01-01T00:00:00.000Z' }],
+    });
+    assert.equal(decision.quarantined, true);
+    assert.equal(decision.reason, 'legacy-live-cannot-write');
+  }
 });
 
-test('evaluation requires an unexpired reviewed exception even with the gate open', () => {
+test('no exception — expired or not — reopens the gate (wave 3: exception channel removed)', () => {
   const env = { [QUARANTINE_ENV_FLAG]: '1' };
   const registry = registryWith([LEGACY_ENTRY]);
-
-  const missing = evaluateLegacyQuarantine({
-    entrypointPath: 'scripts/legacy-one-off.js',
-    env,
-    registry,
-    expectedChanges: [],
-  });
-  assert.equal(missing.quarantined, true);
-  assert.equal(missing.reason, 'no-unexpired-exception');
-
-  const expired = evaluateLegacyQuarantine({
-    entrypointPath: 'scripts/legacy-one-off.js',
-    env,
-    registry,
-    expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-01-01T00:00:00.000Z' }],
-    now: '2026-09-23T00:00:00.000Z',
-  });
-  assert.equal(expired.quarantined, true);
-
-  const allowed = evaluateLegacyQuarantine({
-    entrypointPath: 'scripts/legacy-one-off.js',
-    env,
-    registry,
-    expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-10-01T00:00:00.000Z' }],
-    now: '2026-09-23T00:00:00.000Z',
-  });
-  assert.equal(allowed.quarantined, false);
-  assert.equal(allowed.reason, 'exception-and-gate-present');
-  assert.equal(allowed.exceptionExpiresAt, '2026-10-01T00:00:00.000Z');
+  for (const expectedChanges of [
+    [],
+    [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-01-01T00:00:00.000Z' }],
+    [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2099-01-01T00:00:00.000Z' }],
+  ]) {
+    const decision = evaluateLegacyQuarantine({
+      entrypointPath: 'scripts/legacy-one-off.js',
+      env,
+      registry,
+      expectedChanges,
+      now: '2026-09-28T00:00:00.000Z',
+    });
+    assert.equal(decision.quarantined, true);
+    assert.equal(decision.reason, 'legacy-live-cannot-write');
+  }
 });
 
 test('evaluation admits non-legacy classifications without any gate', () => {
@@ -124,7 +112,7 @@ test('enforceLegacyQuarantine terminates a quarantined run with the canonical re
 test('every registered legacy-live entrypoint carries the runtime guard as its first statement', () => {
   const registry = loadWriteEntrypointRegistry({ repoRoot: REPO_ROOT });
   const legacy = registry.entries.filter((entry) => entry.classification === 'legacy-live');
-  assert.equal(legacy.length, 5); // 5 dormant baseline entries (phase-6 wave 2 reclassified the three exception post-actions to canonical-governed)
+  assert.equal(legacy.length, 0); // wave 3: baseline 5→0 — doc-agent reclassified canonical-governed, the four dormant tools removed
   for (const entry of legacy) {
     const source = fs.readFileSync(path.join(REPO_ROOT, entry.path), 'utf8');
     const guardIndex = source.split('\n').findIndex((line) => line.includes('enforceLegacyQuarantine'));
@@ -138,18 +126,24 @@ test('every registered legacy-live entrypoint carries the runtime guard as its f
   }
 });
 
-test('running a real quarantined entrypoint refuses before any skill module loads', () => {
-  const result = spawnSync(process.execPath, [
-    path.join(REPO_ROOT, '.claude', 'skills', 'api-reference-sync', 'scripts', 'node-v30-update.js'),
-    '--help',
-  ], {
-    cwd: REPO_ROOT,
-    encoding: 'utf8',
-    env: { ...process.env, [QUARANTINE_ENV_FLAG]: '' },
+// Wave 3: the last real legacy entrypoints are gone, so the process-level
+// proof retires with them. The guard itself is now UNCONDITIONAL — the env
+// flag is inert — and the injected-decision tests above cover the refusal.
+test('the quarantine env flag is inert: even flag=1 cannot open the gate', () => {
+  const decision = evaluateLegacyQuarantine({
+    entrypointPath: 'scripts/legacy-one-off.js',
+    env: { [QUARANTINE_ENV_FLAG]: '1' },
+    registry: registryWith([LEGACY_ENTRY]),
+    expectedChanges: [],
   });
-  assert.equal(result.status, EXIT_QUARANTINED);
-  assert.match(result.stderr, /LEGACY_LIVE_QUARANTINED/);
-  assert.doesNotMatch(result.stderr, / dotenv|FEISHU|token/i);
+  assert.equal(decision.quarantined, true);
+  assert.equal(decision.reason, 'legacy-live-cannot-write');
+});
+
+test('the CI production ban refuses DOC_OPS_ALLOW_LEGACY_LIVE', () => {
+  const workflow = fs.readFileSync(path.join(REPO_ROOT, '.github', 'workflows', 'skill-admission.yml'), 'utf8');
+  assert.match(workflow, /DOC_OPS_ALLOW_LEGACY_LIVE/);
+  assert.match(workflow, /PRODUCTION_ENV_BAN/, 'the ban must be an explicit named guard');
 });
 
 test('guard coverage admission fails for a legacy-live entrypoint without the guard', () => {
@@ -230,32 +224,24 @@ test('guard anchoring rejects mentions that are not the first executable stateme
   }
 });
 
-test('exception governance is minted only from a sanctioned decision and records the exception', () => {
-  const sanctioned = evaluateLegacyQuarantine({
-    entrypointPath: 'scripts/legacy-one-off.js',
-    env: { [QUARANTINE_ENV_FLAG]: '1' },
-    registry: registryWith([LEGACY_ENTRY]),
-    expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2026-10-01T00:00:00.000Z' }],
-    now: '2026-09-23T00:00:00.000Z',
-  });
-  // 6.5: the exception governance now also binds a run manifest over the
-  // widened working-tree fingerprint — carved out of nothing, source-bound
-  // like the canonical path.
-  const exceptionRepo = fs.mkdtempSync(path.join(os.tmpdir(), 'exception-manifest-'));
-  spawnSync('git', ['init', '-q', '.'], { cwd: exceptionRepo });
-  fs.writeFileSync(path.join(exceptionRepo, 'one-off.js'), 'write stuff\n');
-  const governance = createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: sanctioned, repoRoot: exceptionRepo });
-  assert.equal(governance.runManifestBound, true);
-  assert.match(governance.run.skillVersion, /^legacy-exception@/);
-  assert.equal(governance.isBound, true);
-  assert.equal(governance.assertMutationAllowed({ method: 'push_markdown', target: 'doc-1' }), true);
-
-  assert.throws(
-    () => createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: { quarantined: false, reason: 'not-legacy-live' } }),
-    (error) => error.code === 'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
-  );
-  assert.throws(
-    () => createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision: { quarantined: true, reason: 'environment-gate-closed', entry: LEGACY_ENTRY } }),
-    (error) => error.code === 'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
-  );
+test('exception governance is unreachable: the wave-3 ruling removed the channel', () => {
+  // No decision can carry the sanctioned reason anymore (evaluate refuses
+  // unconditionally), and the mint itself refuses any decision — the
+  // function is retained only as a typed dead-end for stale callers.
+  for (const decision of [
+    evaluateLegacyQuarantine({
+      entrypointPath: 'scripts/legacy-one-off.js',
+      env: { [QUARANTINE_ENV_FLAG]: '1' },
+      registry: registryWith([LEGACY_ENTRY]),
+      expectedChanges: [{ entrypointPath: 'scripts/legacy-one-off.js', expiresAt: '2099-01-01T00:00:00.000Z' }],
+    }),
+    { quarantined: false, reason: 'exception-and-gate-present', entry: LEGACY_ENTRY, exceptionExpiresAt: '2099-01-01T00:00:00.000Z' },
+    { quarantined: false, reason: 'exception-and-gate-present', entry: { ...LEGACY_ENTRY, path: 'scripts/legacy-one-off.js' }, exceptionExpiresAt: '2099-01-01T00:00:00.000Z' },
+    { quarantined: false, reason: 'not-legacy-live' },
+  ]) {
+    assert.throws(
+      () => createExceptionGovernance({ skill: 'api-reference-sync', operation: 'feishu-doc', decision }),
+      (error) => error.code === 'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
+    );
+  }
 });

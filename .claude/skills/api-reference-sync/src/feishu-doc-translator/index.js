@@ -49,7 +49,10 @@ class FeishuDocTranslator {
         // Initialize components
         this.sourceReader = new BitableReader({ baseToken: this.sourceBitable, tableId: this.sourceTableId });
         this.targetReader = new BitableReader({ baseToken: this.targetBitable, tableId: this.targetTableId });
-        this.targetWriter = new BitableWriter({ baseToken: this.targetBitable, tableId: this.targetTableId });
+        // Wave 3: the governed BitableWriter is mandatory — callers pass the
+        // WriterGovernance minted for their approved batch (doc-agent passes
+        // its live-governance; a raw construction refuses at first mutation).
+        this.targetWriter = new BitableWriter({ baseToken: this.targetBitable, tableId: this.targetTableId, governance: options.governance });
         this.diff = new TranslationDiff({ strict: true });
 
         // Initialize translator

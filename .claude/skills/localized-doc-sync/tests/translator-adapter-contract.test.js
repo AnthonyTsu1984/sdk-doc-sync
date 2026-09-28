@@ -6,7 +6,6 @@ const path = require('node:path');
 
 const FeishuDocTranslator = require('../../api-reference-sync/src/feishu-doc-translator');
 const ClaudeTranslator = require('../../api-reference-sync/src/feishu-doc-translator/translators/claude-translator');
-const { parseArgs, buildTranslatorOptions } = require('../../api-reference-sync/bin/feishu-doc-translator');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { loadTranslationContract } = require('../src/translation-contract');
 const { buildLocalizationDryRun } = require('../src/translator-adapter');
@@ -196,47 +195,9 @@ test('npm translate dry-run produces a contract-bound semantic-unit preview with
   assert.deepEqual(calls.slice(3).map(([name]) => name), ['translate-units', 'review-units', 'correct-units', 'review-units']);
 });
 
-test('npm translate CLI exposes localization contract mode only as an explicit dry-run path', () => {
-  const args = parseArgs([
-    'node', 'feishu-doc-translator',
-    '--source-bitable', 'source-base',
-    '--target-bitable', 'target-base',
-    '--source-table', 'source-table',
-    '--target-table', 'target-table',
-    '--source-root', 'source-root',
-    '--target-root', 'target-root',
-    '--source-lang', 'en',
-    '--target-lang', 'zh-CN',
-    '--localization-contract',
-    '--audience-profile', 'formal-guide',
-    '--product-profile', 'china-saas',
-    '--translator-adapter-version', 'feishu-doc-translator@2',
-    '--translation-receipts', '/tmp/translation-receipts.jsonl',
-    '--auto-approve',
-    '--dry-run',
-  ]);
-  const receiptStore = { latest() { return null; } };
-  const options = buildTranslatorOptions(args, {
-    localizationSkillRoot: SKILL_ROOT,
-    createTranslationReceiptStore(filePath) {
-      assert.equal(filePath, '/tmp/translation-receipts.jsonl');
-      return receiptStore;
-    },
-  });
-
-  assert.equal(options.localizationMode, true);
-  assert.equal(options.dryRun, true);
-  assert.equal(options.localizationSkillRoot, SKILL_ROOT);
-  assert.equal(options.audienceProfile, 'formal-guide');
-  assert.equal(options.productProfile, 'china-saas');
-  assert.equal(options.translatorAdapterVersion, 'feishu-doc-translator@2');
-  assert.equal(options.translationReceiptStore, receiptStore);
-  assert.throws(
-    () => buildTranslatorOptions({ ...args, dryRun: false }, { localizationSkillRoot: SKILL_ROOT }),
-    /localization contract mode is dry-run only/i,
-  );
-});
-
+// The standalone `npm run translate` CLI was retired at wave 3 (checklist 6.4):
+// the translation engine lives on as the doc-agent governed library path, and
+// its localization-contract mode is exercised through FeishuDocTranslator above.
 test('default Claude translator sends semantic units under the localization contract prompt', async () => {
   const translator = Object.create(ClaudeTranslator.prototype);
   translator.model = 'claude-contract-test';

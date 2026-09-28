@@ -63,19 +63,13 @@ function evaluateLegacyQuarantine({
     if (!entry || entry.classification !== 'legacy-live') {
         return { quarantined: false, reason: 'not-legacy-live' };
     }
-    if (env[QUARANTINE_ENV_FLAG] !== '1') {
-        return { quarantined: true, reason: 'environment-gate-closed', entry };
-    }
-    const exception = findException(expectedChanges, entrypointPath, now);
-    if (!exception) {
-        return { quarantined: true, reason: 'no-unexpired-exception', entry };
-    }
-    return {
-        quarantined: false,
-        reason: 'exception-and-gate-present',
-        entry,
-        exceptionExpiresAt: exception.expiresAt,
-    };
+    // Wave 3 (6.4 close-out): the DOC_OPS_ALLOW_LEGACY_LIVE env escape and the
+    // exception channel are REMOVED. A legacy-live entrypoint is quarantined
+    // unconditionally — legacy-live cannot write, with or without production
+    // credentials. The ruling record lives in the phase-6 checklist.
+    void env;
+    void expectedChanges;
+    return { quarantined: true, reason: 'legacy-live-cannot-write', entry };
 }
 
 function resolveRepoRoot() {
@@ -149,14 +143,18 @@ function enforceLegacyQuarantine({
 // scripts that receive it can write; the envelope records exactly which
 // exception and entrypoint authorized the run. Such runs are NOT
 // harness-guaranteed and must never advance accepted scan state.
-function createExceptionGovernance({ skill, operation, decision, repoRoot = null }) {
-    if (!decision || decision.quarantined !== false || decision.reason !== 'exception-and-gate-present') {
-        throw new LegacyQuarantineError(
-            'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
-            'exception governance requires a sanctioned legacy-live quarantine decision',
-            { reason: decision?.reason || null },
-        );
-    }
+function createExceptionGovernance({ skill, operation, decision = null, repoRoot = null }) {
+    // Wave 3 (6.4 close-out): the exception channel is REMOVED by ruling.
+    // The mint refuses unconditionally — evaluateLegacyQuarantine can no
+    // longer produce a sanctioned decision, and no hand-built object can
+    // reopen the channel. Retained only as a typed dead-end for stale
+    // callers; the checklist records the ruling.
+    void decision;
+    void repoRoot;
+    throw new LegacyQuarantineError(
+        'LEGACY_EXCEPTION_GOVERNANCE_REFUSED',
+        'the legacy-live exception channel was removed (wave 3): no governance is minted for legacy runs',
+    );
     const entrypointPath = decision.entry?.path || null;
     const expiresAt = decision.exceptionExpiresAt || null;
     if (!entrypointPath || !expiresAt) {

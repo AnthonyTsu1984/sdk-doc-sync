@@ -66,7 +66,6 @@
     "sdk-doc-sync": "npm run api-reference-sync --",
     "sdk-doc-sync:release-scout": "npm run api-reference-sync:release-scout --",
     "doc-code-verify": "node .claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
-    "translate": "node .claude/skills/api-reference-sync/bin/feishu-doc-translator.js",
     "test:patch-code-blocks": "node --test .claude/skills/patch-code-blocks/tests/*.test.js",
     "invariants:violations": "node -e \"const { summarizeInvariantViolations } = require('./.claude/skills/doc-ops-core/src/invariant-violations'); process.stdout.write(JSON.stringify(summarizeInvariantViolations(process.cwd()), null, 2) + String.fromCharCode(10))\"",
     "admission:publish": "node scripts/publish-admission-artifact.js"

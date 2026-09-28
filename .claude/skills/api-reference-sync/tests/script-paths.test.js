@@ -92,6 +92,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',
     '.claude/skills/api-reference-sync/tests/inheritance-evidence.test.js',
     '.claude/skills/api-reference-sync/tests/invariant-conformance.test.js',
+    '.claude/skills/api-reference-sync/tests/java-scanner-categories.test.js',
     '.claude/skills/api-reference-sync/tests/lark-cli-ops-governance.test.js',
     '.claude/skills/api-reference-sync/tests/lark-cli-ops.test.js',
     '.claude/skills/api-reference-sync/tests/lark-doc-writer.test.js',

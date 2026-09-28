@@ -977,8 +977,10 @@ not scheduled.**
       `api.grouping-proposal-staleness`) as status `declared` entries with their intended
       enforcement stages — the registry now covers all 23 bullets (8 runtime-enforced,
       15 declared). localized-doc-sync: three new Domain Invariants bullets codify the
-      second-wave rules — `localization.locale-metadata-non-comparison` (locale-owned
-      metadata, incl. `Parent`, is never compared across languages; only paired prose is),
+      second-wave rules — `localization.locale-metadata-non-comparison` (cross-language comparison never
+      requires `Parent` equality — governed separately by the locale policy's `parentPolicy` —
+      and never compares `localeOwnedMetadata` fields; among locale-owned data only paired
+      prose is verified),
       `localization.chapter-role-ignored` (an unconfigured `Chapter` field is not a drift,
       approval, or write field; only explicitly configured fields are publication-critical),
       and `localization.receipt-merge-policy` (receipts merge by explicit reviewed decision,

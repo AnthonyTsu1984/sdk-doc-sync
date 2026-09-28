@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "skill": "localized-doc-sync",
-  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED). Second-wave entries (6.10) are status \"declared\": they bind the SKILL.md rule to a stable ID and digest with their intended enforcement stages; promotion to \"runtime-enforced\" follows the phase-1 pipeline (production enforcement point + typed blocker codes + executable fixtures) per the waiver mechanism.",
+  "comment": "Stable domain-invariant registry. Each entry binds one SKILL.md Domain Invariants bullet (via its trailing [id] marker and statementDigest) to the code that enforces it and the executable fixtures that prove the enforcement. Editing a marked bullet without updating this file fails validate:skills (INVARIANT_STATEMENT_DIGEST_MISMATCH); changing Domain Invariants prose without touching this file fails admission (INVARIANT_COVERAGE_REQUIRED). Second-wave entries (6.10) are status \"declared\": they bind the SKILL.md rule to a stable ID and digest with their intended enforcement stages; promotion to \"runtime-enforced\" follows the phase-1 pipeline (production enforcement point + typed blocker codes + executable fixtures); waivers are only needed for weakening transitions.",
   "invariants": [
     {
       "id": "localization.source-read-only",
@@ -211,7 +211,7 @@
       "enforcement": [
         "plan"
       ],
-      "statementDigest": "sha256:86ce9c338316afb046f201a116740b9483d80fc384cc60ab86887174dfd6ec3d"
+      "statementDigest": "sha256:3009de607be6a89649afaa709c4380caf33276317ec13493da5fe0caa65818a0"
     },
     {
       "id": "localization.chapter-role-ignored",

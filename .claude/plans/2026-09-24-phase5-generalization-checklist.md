@@ -417,7 +417,7 @@ not scheduled.**
 
 ### P1 — close the production bypasses
 
-- [ ] 6.4 **Legacy-live to zero.** `write-entrypoints.json` holds 165 entries: 71 read-only /
+- [x] 6.4 **Legacy-live to zero.** `write-entrypoints.json` holds 165 entries: 71 read-only /
       87 legacy-live / 6 canonical-governed / 1 test-only (review numbers confirmed exact). The
       dual gate (unexpired `expected-changes.json` exception + `DOC_OPS_ALLOW_LEGACY_LIVE=1`,
       `legacy-quarantine.js`) guarantees default-blocking, not absence of bypass. Migrate, delete,

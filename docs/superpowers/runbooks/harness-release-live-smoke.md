@@ -40,10 +40,19 @@ node .claude/skills/doc-ops-core/bin/doc-ops-smoke.js release-gate \
 
 The gate, in order: verifies every approval digest against the plan **before
 anything runs** (`SMOKE_RELEASE_GATE_DIGEST_MISMATCH` otherwise), replays the
-offline rehearsal (`SMOKE_RELEASE_GATE_REHEARSAL_FAILED` otherwise), verifies
-the sandbox identity, then chains live-create → live-patch → acceptance
-readback → live-cleanup. Each phase is journal-gated exactly like the
-per-phase commands; any failure stops the chain typed before the next phase.
+offline rehearsal (`SMOKE_RELEASE_GATE_REHEARSAL_FAILED` otherwise), refuses
+if this tree already holds PASS evidence — the conflict surfaces at preflight,
+before identity or any live write
+(`SMOKE_RELEASE_GATE_EVIDENCE_CONFLICT`; deliberate re-gating means moving
+the old artifact aside first) — verifies the sandbox identity, then chains
+live-create → live-patch → acceptance readback → live-cleanup. Each phase is
+journal-gated exactly like the per-phase commands; any failure stops the
+chain typed before the next phase. The cleanup phase runs under the
+**materialized** batch digest (targets rebound to exact live tokens after
+creation); the gate validates the materialized batch's composition against
+the pre-approved plan (`SMOKE_RELEASE_GATE_CLEANUP_DERIVATION_INVALID` on any
+divergence beyond the target/dependsOn rebinding) and records BOTH digests in
+the evidence.
 
 ## Evidence
 
@@ -51,12 +60,13 @@ On PASS the gate writes
 `tmp/doc-ops-smoke/release-gate/release-<sourceFingerprint>.json` — exclusive
 create, deterministic content (no timestamps), binding: source fingerprint
 (whole-tree, tracked ∪ untracked contents), sandbox identity fingerprint,
-run id, corpus id, the four phase outcomes, and the three approved digests.
-A rerun of a passed gate on the same tree lands byte-equal on the same path;
-any content drift on an existing path refuses
-(`SMOKE_RELEASE_GATE_EVIDENCE_CONFLICT`). That file is the release evidence:
-a harness version is releasable when its tree fingerprint has a PASS gate
-artifact. No artifact ⇒ not gated ⇒ do not release.
+run id, corpus id, the four phase outcomes, the three approved digests, and
+the materialized cleanup digest. That file is the release evidence: a harness
+version is releasable when its tree fingerprint has a PASS gate artifact.
+No artifact ⇒ not gated ⇒ do not release. **Preserve the artifact out of
+tree** (release-notes attachment or the release tag annotation) — `tmp/` is
+gitignored and machine-local, and committing the artifact would change the
+very fingerprint it binds.
 
 ## Recovery (only on failure)
 
@@ -66,4 +76,7 @@ artifact. No artifact ⇒ not gated ⇒ do not release.
   (the journal guard refuses).
 - Acceptance diverged: the gate stops before cleanup with
   `SMOKE_RELEASE_GATE_ACCEPTANCE_FAILED`; inspect the readback, then clean up
-  with `live-cleanup` and the approved cleanup digest.
+  with `cleanup-plan --run-id <run-id>` → take the **materialized**
+  `cleanupBatch.batchDigest` from its output → `live-cleanup --run-id <run-id>
+  --approve-batch-digest <that digest>`. The planned cleanup digest cannot
+  govern cleanup after creation: targets are rebound to exact live tokens.

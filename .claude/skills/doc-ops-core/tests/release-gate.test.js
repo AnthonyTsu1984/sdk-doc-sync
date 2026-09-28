@@ -13,7 +13,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const { runCli } = require('../bin/doc-ops-smoke');
+const { parseArgs, runCli } = require('../bin/doc-ops-smoke');
 const { buildSmokePlan } = require('../harness/smoke-plan');
 
 function smokeEnv() {
@@ -52,15 +52,24 @@ function gateDependencies({ overrides = {}, evidenceDir, runDir } = {}) {
       if (args[0] === 'auth') return { identity: 'user', verified: true, identities: { user: { tokenStatus: 'valid' } } };
       return { profile: 'doc-ops-smoke' };
     },
-    executeLive: async ({ phase }) => {
+    invocations: [],
+    executeLive: async ({ phase, approvedBatchDigest }) => {
       calls.push(['live', phase]);
+      deps.invocations.push({ phase, approvedBatchDigest });
       return { status: 'EXECUTED', phase };
     },
     runAcceptance: async () => {
       calls.push(['acceptance']);
       return { status: 'VERIFIED' };
     },
-    materializeCleanup: ({ plan }) => plan.cleanupBatch,
+    // The real materializer rebinds targets to exact live tokens, so the
+    // materialized digest NEVER equals the planned one — the gate must derive
+    // the executed digest from the materialized batch.
+    materializeCleanup: ({ plan }) => require('../src/action-batch').createActionBatch({
+      skill: plan.cleanupBatch.skill,
+      operation: plan.cleanupBatch.operation,
+      actions: plan.cleanupBatch.actions.map((action) => ({ ...action, target: `live-token:${action.actionId}` })),
+    }),
     adapter: { injected: true },
     ...overrides,
   };
@@ -138,6 +147,11 @@ test('release gate chains create, patch, verify, cleanup in order and writes det
     ['acceptance'],
     ['live', 'cleanup'],
   ]);
+  // Cleanup runs under the MATERIALIZED digest (targets rebound to live
+  // tokens), never the planned one.
+  const cleanupInvocation = deps.invocations.find((invocation) => invocation.phase === 'cleanup');
+  assert.notEqual(cleanupInvocation.approvedBatchDigest, digests.cleanupDigest);
+  assert.match(cleanupInvocation.approvedBatchDigest, /^sha256:[a-f0-9]{64}$/);
 
   const files = fs.readdirSync(evidenceDir);
   assert.equal(files.length, 1);
@@ -147,13 +161,18 @@ test('release gate chains create, patch, verify, cleanup in order and writes det
   assert.match(evidence.sourceFingerprint, /^sha256:[a-f0-9]{64}$/);
   assert.deepEqual(evidence.phases.map((phase) => phase.phase), ['create', 'patch', 'verify', 'cleanup']);
   assert.equal(evidence.phases[0].batchDigest, digests.createDigest);
+  assert.equal(evidence.phases[3].batchDigest, digests.cleanupDigest, 'planned cleanup digest is recorded');
+  assert.equal(evidence.phases[3].executedBatchDigest, cleanupInvocation.approvedBatchDigest, 'materialized cleanup digest is recorded');
   assert.equal(evidence.liveWritesPerformed, true);
   assert.equal(evidence.completedAt, undefined, 'evidence is deterministic: no timestamps');
 
-  // A rerun on the same tree lands byte-equal on the same exclusive path.
+  // A rerun on the same tree refuses at preflight — the fingerprint already
+  // holds PASS evidence; deliberate re-gating means moving the artifact
+  // aside first, and no live write is burned on the refusal.
   const rerunDeps = gateDependencies({ evidenceDir });
   const rerunCode = await runCli(gateArgv({ runId, ...digests }), rerunDeps);
-  assert.equal(rerunCode, 0);
+  assert.equal(rerunCode, 2);
+  assert.deepEqual(rerunDeps.calls, []);
   assert.equal(fs.readdirSync(evidenceDir).length, 1);
 });
 
@@ -175,6 +194,39 @@ test('release gate stops at acceptance failure without cleanup and writes no evi
     ['acceptance'],
   ]);
   assert.equal(fs.existsSync(evidenceDir), false);
+});
+
+test('a materialized cleanup batch that diverges from the approved plan refuses before cleanup', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'smoke-release-gate-'));
+  const runId = '20260928T000000Z-5e6f7a8b';
+  const digests = planDigests(smokeEnv(), runId);
+  const evidenceDir = path.join(directory, 'evidence');
+  const deps = gateDependencies({
+    evidenceDir,
+    overrides: {
+      materializeCleanup: ({ plan }) => require('../src/action-batch').createActionBatch({
+        skill: plan.cleanupBatch.skill,
+        operation: plan.cleanupBatch.operation,
+        actions: plan.cleanupBatch.actions.map((action) => ({ ...action, capabilityContractDigest: `sha256:${'f'.repeat(64)}` })),
+      }),
+    },
+  });
+  const code = await runCli(gateArgv({ runId, ...digests }), deps);
+  assert.equal(code, 2);
+  assert.deepEqual(deps.calls.filter(([kind]) => kind === 'live'), [['live', 'create'], ['live', 'patch']],
+    'cleanup never runs when the materialized batch diverges from the approved composition');
+  assert.equal(fs.existsSync(evidenceDir), false);
+});
+
+test('the release-gate digest flags are refused on every other command', () => {
+  assert.throws(
+    () => parseArgs(['node', 'doc-ops-smoke', 'plan', '--run-id', '20260928T000000Z-aabbccdd', '--approve-create-digest', 'sha256:a']),
+    /does not accept .*release-gate only/,
+  );
+  assert.throws(
+    () => parseArgs(['node', 'doc-ops-smoke', 'live-create', '--run-id', '20260928T000000Z-aabbccdd', '--approve-batch-digest', 'sha256:a', '--approve-cleanup-digest', 'sha256:b']),
+    /does not accept .*release-gate only/,
+  );
 });
 
 test('release gate fails closed on conflicting evidence content for the same source fingerprint', async () => {
@@ -200,5 +252,5 @@ test('release gate fails closed on conflicting evidence content for the same sou
 
   const code = await runCli(gateArgv({ runId, ...digests }), deps);
   assert.equal(code, 2);
-  assert.deepEqual(deps.calls.slice(-2), [['acceptance'], ['live', 'cleanup']], 'the conflict surfaces only after the chain ran');
+  assert.deepEqual(deps.calls, [], 'the conflict refuses at preflight, before identity or any live write');
 });

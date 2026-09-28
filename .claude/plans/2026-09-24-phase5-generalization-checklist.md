@@ -885,7 +885,11 @@ not scheduled.**
       This is an admission condition for releasing new harness versions, run as the existing
       manual operator gate — never PR-automated (workflow stance unchanged).
 
-      6.8 delivered (2026-09-28, branch `feat/phase6-live-smoke-gate`): the existing
+      6.8 delivered (2026-09-28, branch `feat/phase6-live-smoke-gate`; review round 1 same day
+      caught a P1 — the cleanup phase ran under the PLANNED digest while the executor checks
+      the MATERIALIZED one, so a live run could never pass; fixed with the composition
+      validation + materialized-digest execution + both digests in evidence, and the test fake
+      that masked it replaced with a target-rebinding materializer): the existing
       `doc-ops-smoke` pipeline (doctor/plan/simulate/live-*/acceptance/cleanup with journal
       gating and collision-guarded disposable-tenant config) gains a one-shot **`release-gate`
       command** that is the harness release gate: it verifies all three phase approval digests
@@ -902,9 +906,10 @@ not scheduled.**
       that harness version is not releasable.** Operator procedure recorded in
       `docs/superpowers/runbooks/harness-release-live-smoke.md` (prerequisites, steps,
       evidence semantics, recovery via cleanup-resume/recovery-cleanup). Offline evidence:
-      `release-gate.test.js` (5 tests — digest refusal before any call, rehearsal refusal,
-      chain order + deterministic evidence + byte-equal rerun, acceptance-failure stop without
-      cleanup, evidence-conflict fail-closed). **Honest scope note: the gate is delivered and
+      `release-gate.test.js` (7 tests — digest refusal before any call, rehearsal refusal,
+      chain order + evidence content incl. both cleanup digests + preflight rerun refusal,
+      acceptance-failure stop without cleanup, cleanup-derivation divergence refusal, flag
+      reciprocity, evidence-conflict fail-closed). **Honest scope note: the gate is delivered and
       simulation-proven; the LIVE disposable-tenant run is the operator's release-time action
       by design (never PR-automated), so no live PASS artifact exists yet — the first harness
       release after this PR executes the gate per the runbook.**

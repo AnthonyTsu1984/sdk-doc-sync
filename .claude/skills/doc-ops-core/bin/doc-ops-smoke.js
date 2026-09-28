@@ -97,6 +97,9 @@ function parseArgs(argv) {
   if (command === 'release-gate' && !(result.approveCreateDigest && result.approvePatchDigest && result.approveCleanupDigest)) {
     throw new Error('release-gate requires --approve-create-digest, --approve-patch-digest, and --approve-cleanup-digest');
   }
+  if (command !== 'release-gate' && (result.approveCreateDigest || result.approvePatchDigest || result.approveCleanupDigest)) {
+    throw new Error(`${command} does not accept --approve-create/patch/cleanup-digest (release-gate only)`);
+  }
   return result;
 }
 
@@ -149,6 +152,7 @@ function main(argv = process.argv, dependencies = {}) {
     err(stableJson({
       code: error.code || 'SMOKE_CLI_ERROR',
       message: error.message,
+      ...(error.recovery ? { recovery: error.recovery } : {}),
     }));
     return 2;
   }
@@ -162,7 +166,6 @@ function main(argv = process.argv, dependencies = {}) {
 // Deterministic-only content in the evidence (no timestamps) so a rerun of a
 // passed gate on the same tree lands byte-equal on the same exclusive path.
 async function runReleaseGate({ args, config, corpus, corpusRoot, out, err, env, dependencies }) {
-  const pathMod = path;
   const { simulateSmokeRun: runSimulated } = require('../harness/smoke-simulator');
   const { createRunManifest } = require('../src/run-manifest');
   const plan = buildSmokePlan({ corpus, corpusRoot, config, runId: args.runId });
@@ -187,6 +190,26 @@ async function runReleaseGate({ args, config, corpus, corpusRoot, out, err, env,
     throw error;
   }
 
+  // Evidence preflight BEFORE any live write (review round 1): every evidence
+  // field is known now — the four phase statuses are constants the gate
+  // enforces below — so a tree that already holds PASS evidence refuses here
+  // instead of burning a live run and failing at the final write. Deliberate
+  // re-gating means moving the old artifact aside first.
+  const releaseManifest = createRunManifest({
+    skill: 'doc-ops-core',
+    skillVersion: 'release-gate@1',
+    repoRoot: PROJECT_ROOT,
+    batchDigest: plan.creationBatch.batchDigest,
+    sessionDigest: `doc-ops-smoke:${corpus.corpusId}`,
+  });
+  const evidenceDir = dependencies.evidenceDir || path.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'release-gate');
+  const evidencePath = path.join(evidenceDir, `release-${releaseManifest.sourceFingerprint.replace(/[^A-Za-z0-9]/g, '-').slice(0, 80)}.json`);
+  if (fs.existsSync(evidencePath)) {
+    const conflict = new Error(`PASS evidence already exists for this source fingerprint at ${evidencePath}; this tree is already gated. Move it aside to re-gate deliberately.`);
+    conflict.code = 'SMOKE_RELEASE_GATE_EVIDENCE_CONFLICT';
+    throw conflict;
+  }
+
   const runLark = dependencies.runLark || createSandboxCommandRunner({ repoRoot: PROJECT_ROOT });
   const authStatus = await runLark(['auth', 'status', '--json', '--verify']);
   const profile = await runLark(['config', 'show', '--profile', 'doc-ops-smoke']);
@@ -197,36 +220,62 @@ async function runReleaseGate({ args, config, corpus, corpusRoot, out, err, env,
   }
   const identityFingerprint = computeSandboxIdentityFingerprint({ authStatus, profile });
 
-  const runDir = dependencies.runDir || pathMod.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'runs', args.runId);
+  const runDir = dependencies.runDir || path.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'runs', args.runId);
   const executeLive = dependencies.executeLive || executeLivePhase;
   const runAcceptance = dependencies.runAcceptance || runSmokeAcceptance;
   const materializeCleanup = dependencies.materializeCleanup || materializeCleanupBatch;
   const adapter = dependencies.adapter || new LarkSandboxAdapter({ config, corpus, corpusRoot, runLark });
 
+  const assertExecuted = (result, phase) => {
+    if (result?.status !== 'EXECUTED') {
+      const error = new Error(`release gate ${phase} phase did not execute: ${result?.status || '(no result)'}`);
+      error.code = 'SMOKE_RELEASE_GATE_PHASE_FAILED';
+      error.recovery = 'Inspect tmp/doc-ops-smoke/runs journals, then recover via live-cleanup-resume or live-recovery-cleanup with their planned digests.';
+      throw error;
+    }
+  };
   const phases = [];
   const createResult = await executeLive({ adapter, approvedBatchDigest: args.approveCreateDigest, phase: 'create', plan, runDir });
+  assertExecuted(createResult, 'create');
   phases.push({ phase: 'create', batchDigest: plan.creationBatch.batchDigest, status: createResult.status });
   const patchResult = await executeLive({ adapter, approvedBatchDigest: args.approvePatchDigest, phase: 'patch', plan, runDir });
+  assertExecuted(patchResult, 'patch');
   phases.push({ phase: 'patch', batchDigest: plan.patchBatch.batchDigest, status: patchResult.status });
   const acceptance = await runAcceptance({ adapter, corpus, corpusRoot, plan, runDir });
   if (acceptance.status !== 'VERIFIED') {
     const error = new Error(`release gate acceptance verification failed: ${acceptance.status}`);
     error.code = 'SMOKE_RELEASE_GATE_ACCEPTANCE_FAILED';
-    error.recovery = 'Inspect the run dir journals; cleanup via live-cleanup with the approved cleanup digest.';
+    error.recovery = 'Inspect the run dir journals and the acceptance readback; clean up via cleanup-plan → live-cleanup --approve-batch-digest <materialized cleanup digest>.';
     throw error;
   }
   phases.push({ phase: 'verify', status: acceptance.status });
-  const cleanupPlan = { ...plan, cleanupBatch: materializeCleanup({ plan, runDir }) };
-  const cleanupResult = await executeLive({ adapter, approvedBatchDigest: args.approveCleanupDigest, phase: 'cleanup', plan: cleanupPlan, runDir });
-  phases.push({ phase: 'cleanup', batchDigest: plan.cleanupBatch.batchDigest, status: cleanupResult.status });
-
-  const releaseManifest = createRunManifest({
-    skill: 'doc-ops-core',
-    skillVersion: 'release-gate@1',
-    repoRoot: PROJECT_ROOT,
-    batchDigest: plan.creationBatch.batchDigest,
-    sessionDigest: `doc-ops-smoke:${corpus.corpusId}`,
+  // The materialized cleanup batch rewrites targets to exact live tokens, so
+  // its digest can never equal the pre-approved planned digest. What the
+  // approval governs is COMPOSITION: identical action set and fields, with
+  // only targets/dependsOn rebound from creation-bound evidence.
+  const cleanupBatch = materializeCleanup({ plan, runDir });
+  const plannedById = new Map(plan.cleanupBatch.actions.map((action) => [action.actionId, action]));
+  const derivationInvalid = cleanupBatch.actions.length !== plan.cleanupBatch.actions.length
+    || cleanupBatch.actions.some((materialized) => {
+      const planned = plannedById.get(materialized.actionId);
+      if (!planned) return true;
+      return Object.entries(planned).some(([field, value]) => (
+        field !== 'target' && field !== 'dependsOn'
+          && JSON.stringify(materialized[field]) !== JSON.stringify(value)
+      ));
+    });
+  if (derivationInvalid) {
+    const error = new Error('materialized cleanup batch diverges from the approved cleanup plan');
+    error.code = 'SMOKE_RELEASE_GATE_CLEANUP_DERIVATION_INVALID';
+    error.recovery = 'Inspect tmp/doc-ops-smoke/runs state; clean up manually via cleanup-plan and recovery-cleanup-plan outputs.';
+    throw error;
+  }
+  const cleanupResult = await executeLive({
+    adapter, approvedBatchDigest: cleanupBatch.batchDigest, phase: 'cleanup', plan: { ...plan, cleanupBatch }, runDir,
   });
+  assertExecuted(cleanupResult, 'cleanup');
+  phases.push({ phase: 'cleanup', batchDigest: plan.cleanupBatch.batchDigest, executedBatchDigest: cleanupBatch.batchDigest, status: cleanupResult.status });
+
   const evidence = {
     schemaVersion: 1,
     gate: 'doc-ops-smoke release-gate@1',
@@ -238,9 +287,7 @@ async function runReleaseGate({ args, config, corpus, corpusRoot, out, err, env,
     phases,
     liveWritesPerformed: true,
   };
-  const evidenceDir = dependencies.evidenceDir || pathMod.join(PROJECT_ROOT, 'tmp', 'doc-ops-smoke', 'release-gate');
   fs.mkdirSync(evidenceDir, { recursive: true });
-  const evidencePath = pathMod.join(evidenceDir, `release-${evidence.sourceFingerprint.replace(/[^A-Za-z0-9]/g, '-').slice(0, 80)}.json`);
   const body = `${JSON.stringify(canonicalize(evidence), null, 2)}\n`;
   try {
     fs.writeFileSync(evidencePath, body, { flag: 'wx' });
@@ -376,6 +423,7 @@ async function runCli(argv = process.argv, dependencies = {}) {
     err(stableJson({
       code: error.code || 'SMOKE_CLI_ERROR',
       message: error.message,
+      ...(error.recovery ? { recovery: error.recovery } : {}),
     }));
     return 2;
   }

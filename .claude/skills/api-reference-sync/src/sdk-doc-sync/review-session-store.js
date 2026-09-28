@@ -588,6 +588,19 @@ function loadReviewSessionState(filePath) {
   if (loaded.state?.schemaVersion !== 1 || !loaded.state.reviewUnitManifestDigest) {
     throw new Error(`Review session is invalid: ${resolved}`);
   }
+  // Cross-field invariant the transition table maintains implicitly: no unit
+  // holds a rollback receipt and the lease at once — the apply patch clears
+  // lease(U) in the same atomic patch that appends receipt(U), and
+  // recordRollbackIntent refuses receipt-bearing units before touching the
+  // lease. A file violating this never came from those transitions, so
+  // refuse it at load instead of letting the stray lease wedge silently.
+  const activeRollback = loaded.state.activeRollback || null;
+  if (activeRollback
+      && (loaded.state.rollbackReceipts || []).some((item) => item.reviewUnitId === activeRollback.reviewUnitId)) {
+    throw new Error(
+      `Review session is inconsistent: rollback lease and receipt coexist for ${activeRollback.reviewUnitId}: ${resolved}`,
+    );
+  }
   return { session: loaded.state, sessionDigest: loaded.stateDigest };
 }
 

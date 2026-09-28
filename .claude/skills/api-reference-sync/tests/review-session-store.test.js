@@ -62,6 +62,9 @@ function rollbackJournal(directory, {
   complete = true,
   name = 'rollback.jsonl',
 } = {}) {
+  // The journal's actionId is derived from the review unit so unit B's
+  // fixtures carry B's action, mirroring what the planner really emits.
+  const actionId = reviewUnitId.replace(/^review:/, '');
   const binding = {
     schemaVersion: 1,
     operation: 'rollback-document',
@@ -69,8 +72,8 @@ function rollbackJournal(directory, {
     originalExecutionJournalDigest,
   };
   const entries = [
-    { ...binding, type: 'prepared', actionId: 'node:Collections:a', inverse: 'DELETE_CREATED_RECORD_AND_DOCUMENT' },
-    { ...binding, type: 'observed', actionId: 'node:Collections:a', status, verified: status === 'success' },
+    { ...binding, type: 'prepared', actionId, inverse: 'DELETE_CREATED_RECORD_AND_DOCUMENT' },
+    { ...binding, type: 'observed', actionId, status, verified: status === 'success' },
   ];
   if (complete) {
     entries.push({
@@ -627,4 +630,39 @@ test('completing one unit\u2019s reconcile preserves another unit\u2019s in-flig
     'review:node:Collections:b',
   ]);
   assert.equal(completedB.changeRequests.length, 1);
+});
+
+test('loading a session whose lease and receipt share a unit refuses loudly', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-lease-invariant-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:lease-invariant',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest });
+  const leased = recordRollbackIntent(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  saveReviewSession(sessionPath, leased, { expectedPreviousDigest: null });
+
+  // An out-of-band edit no transition can produce: receipt(U) and lease(U)
+  // coexisting. The load-time cross-field check must refuse it instead of
+  // letting the stray lease wedge silently.
+  const tampered = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  tampered.rollbackReceipts = [{
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    originalExecutionJournalDigest: execution.digest,
+    rolledBackAt: '2026-08-06T11:00:00.000Z',
+  }];
+  fs.writeFileSync(sessionPath, `${JSON.stringify(tampered, null, 2)}\n`);
+  assert.throws(() => loadReviewSession(sessionPath), /lease and receipt coexist/);
 });

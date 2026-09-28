@@ -146,7 +146,7 @@ class WriterGovernance {
     // (RUN_MANIFEST_SOURCE_DRIFT).
     // Lazy require: run-manifest imports this module's attestation validator,
     // so the dependency must not be created at module-init time.
-    bindRunManifest(runManifest, { repoRoot = null, verifyNow = false } = {}) {
+    bindRunManifest(runManifest, { repoRoot = null, verifyNow = false, admittedEnv = null } = {}) {
         if (!this.bound) {
             throw new WriterGovernanceError(
                 'WRITER_RUN_MANIFEST_REQUIRES_APPROVAL',
@@ -159,6 +159,14 @@ class WriterGovernance {
                 'WRITER_RUN_MANIFEST_ALREADY_BOUND',
                 'a run manifest is already bound to this governance and is immutable; create a fresh governance for a new run',
                 { skill: this.skill, batchDigest: this.run.batchDigest },
+            );
+        }
+        if (admittedEnv !== null && admittedEnv !== undefined
+            && (typeof admittedEnv !== 'object' || Object.keys(admittedEnv).length === 0)) {
+            throw new WriterGovernanceError(
+                'ADMITTED_ENV_INVALID',
+                'bindRunManifest admittedEnv must be null (inherit process.env) or a non-empty env object; an empty object would silently neutralize the admitted-fingerprint gate',
+                { skill: this.skill, operation: this.operation },
             );
         }
         const { RunManifestError, assertRunManifest, verifyRunManifestSource } = require('./run-manifest');
@@ -177,6 +185,7 @@ class WriterGovernance {
         state.run = run;
         state.runRepoRoot = repoRoot;
         state.runVerified = verifyNow === true;
+        state.admittedEnv = admittedEnv;
         return run;
     }
 
@@ -243,6 +252,25 @@ class WriterGovernance {
                 throw error;
             }
             state.runVerified = true;
+        }
+        // 6.9: in a production shell (DOC_OPS_REQUIRE_ADMITTED_FINGERPRINT=1)
+        // the bound fingerprint must be the exact tree the admission gates
+        // executed against — checked at every mutation boundary, fail-closed.
+        if (state.runRepoRoot) {
+            const { assertFingerprintAdmitted } = require('./admitted-fingerprint');
+            try {
+                assertFingerprintAdmitted({
+                    repoRoot: state.runRepoRoot,
+                    sourceFingerprint: this.run.sourceFingerprint,
+                    env: state.admittedEnv || undefined,
+                    method: method || null,
+                });
+            } catch (error) {
+                if (error?.code) {
+                    throw new WriterGovernanceError(error.code, error.message, { method: method || null, sourceFingerprint: this.run.sourceFingerprint });
+                }
+                throw error;
+            }
         }
         // Re-assert the full manifest↔approval relationship at mutation time:
         // bind-time checks alone would trust that neither object was replaced

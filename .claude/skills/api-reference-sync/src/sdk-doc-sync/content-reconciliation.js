@@ -14,6 +14,10 @@ const {
     compareVerbatimContent,
 } = require('./verbatim-content');
 const {
+    INVARIANT_ID: POLISH_INVARIANT_ID,
+    verifyPolishChain,
+} = require('./pr-polish');
+const {
     LAYOUT_INVARIANT_ID,
     checkLayoutConformance,
     pageFactsFromBlocks,
@@ -126,6 +130,10 @@ function reconcileCalloutBlocks(blocks = []) {
 // 3. Reviewed-context agreement: a context frozen at acceptance must still
 // digest-match its stored content and, when a live raw_content snapshot is
 // supplied, compare clean against it through the declared canonicalization.
+// A context carrying a sanctioned post-verbatim polish chain is verified and
+// compared against its POLISHED terminal content — the verbatim bytes remain
+// the recorded base, the polish manifest deterministically derives the
+// terminal state, and a broken chain is itself a finding.
 function reconcileContextVerbatim({ contexts = [] } = {}) {
     const { findings, report } = makeReporter();
     for (const context of contexts || []) {
@@ -140,9 +148,25 @@ function reconcileContextVerbatim({ contexts = [] } = {}) {
                 'reviewed context content no longer matches its frozen contentDigest',
             );
         }
+        let terminalContent = context.content;
+        let terminalLabel = 'reviewed verbatim content';
+        if (context.polish !== undefined) {
+            const chain = verifyPolishChain({ content: context.content, polish: context.polish });
+            if (!chain.ok) {
+                report(
+                    'error',
+                    'CONTENT_POLISH_CHAIN_INVALID',
+                    identity,
+                    `recorded polish chain does not deterministically reproduce the terminal content: ${chain.errors.join('; ')}`,
+                );
+                continue;
+            }
+            terminalContent = chain.polishedContent;
+            terminalLabel = 'polished terminal content';
+        }
         if (typeof context.rawContent === 'string') {
             const comparison = compareVerbatimContent({
-                expectedContent: context.content,
+                expectedContent: terminalContent,
                 rawContent: context.rawContent,
                 pageTitle: context.title || null,
             });
@@ -151,7 +175,7 @@ function reconcileContextVerbatim({ contexts = [] } = {}) {
                     'error',
                     'CONTENT_CONTEXT_LIVE_DIVERGENT',
                     identity,
-                    `live raw_content diverges from the reviewed verbatim content at ${comparison.diffs.length} line(s)`,
+                    `live raw_content diverges from the ${terminalLabel} at ${comparison.diffs.length} line(s)`,
                 );
             }
         }

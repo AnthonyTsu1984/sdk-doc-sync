@@ -890,6 +890,161 @@ const scenarios = {
       exampleHeadingCode: single.violations.find((violation) => violation.code === 'LAYOUT_EXAMPLE_HEADING')?.code || null,
     };
   },
+
+  // --- api.pr-polish-governed scenarios (deterministic polish gates) ---
+
+  async contentPolishChain() {
+    const {
+      assertPolishPreconditions,
+      applyPolishManifest,
+      comparePolishedContent,
+      verifyPolishChain,
+    } = require('../../src/sdk-doc-sync/pr-polish');
+    const { verbatimContentDigest } = require('../../src/sdk-doc-sync/verbatim-content');
+    const base = [
+      '## Description',
+      '',
+      'This method grants a role to a user. It is useful when automation needs it.',
+      '',
+      '```python',
+      'client.grant_role(user="a")',
+      '```',
+      '',
+      'See the [guide](https://example.com/docs/grant) for details.',
+    ].join('\n');
+    const manifest = {
+      schemaVersion: 1,
+      unit: 'cpp-v30-grantrole',
+      baseContentDigest: verbatimContentDigest(base),
+      rationale: 'tighten two prose sentences',
+      edits: [
+        {
+          anchor: 'This method grants a role to a user. It is useful when automation needs it.',
+          replacement: 'Grants a role to a user. Intended for automation.',
+        },
+        {
+          anchor: 'See the [guide](https://example.com/docs/grant) for details.',
+          replacement: 'See the [guide](https://example.com/docs/grant).',
+        },
+      ],
+    };
+
+    // Fail-closed sequencing: no passing verbatim proof, no polish.
+    let sequencingCode = null;
+    try {
+      assertPolishPreconditions({ contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: false } });
+    } catch (error) {
+      sequencingCode = error.code;
+    }
+    assertPolishPreconditions({ contentFidelity: { invariantId: 'api.pr-verbatim-content', ok: true } });
+
+    const { polishedContent, provenance } = applyPolishManifest({ manifest, baseContent: base });
+    const fenceIntact = polishedContent.includes('client.grant_role(user="a")')
+      && polishedContent.includes('](https://example.com/docs/grant)');
+    // The landed page renders through the raw_content serializer: title first,
+    // headings without hashes, link markup stripped, code content verbatim.
+    const rawLanded = [
+      'GrantRole()',
+      '',
+      'Description',
+      '',
+      'Grants a role to a user. Intended for automation.',
+      '',
+      'client.grant_role(user="a")',
+      '',
+      'See the guide.',
+      '',
+    ].join('\n');
+    const landed = comparePolishedContent({ polishedContent, rawContent: rawLanded });
+    const chain = verifyPolishChain({ content: base, polish: { manifest, polishedContent } });
+    const broken = verifyPolishChain({ content: base, polish: { manifest, polishedContent: `${polishedContent}x` } });
+    return {
+      sequencingCode,
+      fenceIntact,
+      landedOk: landed.ok,
+      invariantId: landed.invariantId,
+      chainOk: chain.ok,
+      brokenChainOk: broken.ok,
+      digestStable: provenance.polishedContentDigest === verbatimContentDigest(polishedContent)
+        && provenance.baseContentDigest === manifest.baseContentDigest,
+    };
+  },
+
+  async contentPolishProtectedRegion() {
+    const { validatePolishManifest, applyPolishManifest } = require('../../src/sdk-doc-sync/pr-polish');
+    const { verbatimContentDigest } = require('../../src/sdk-doc-sync/verbatim-content');
+    const base = [
+      '## Description',
+      '',
+      'This method grants a role to a user. It is used by automation.',
+      'This helper path relies on the `with_role()` helper.',
+      '',
+      '**REQUEST METHODS:**',
+      '',
+      '| method | description |',
+      '| --- | --- |',
+      '| `grant_role(request)` | grants the role |',
+      '',
+      '```python',
+      'client.grant_role(user="a")',
+      '```',
+      '',
+      '<include target="zilliz">Zilliz docs [z-url]</include><include target="milvus">Milvus docs [m-url]</include>',
+      '',
+      'Repeated prose line. This sentence appears twice.',
+      'Repeated prose line. This sentence appears twice.',
+    ].join('\n');
+    const manifestFor = (edits, baseContent = base) => ({
+      schemaVersion: 1,
+      unit: 'u',
+      baseContentDigest: verbatimContentDigest(baseContent),
+      edits,
+    });
+    const rejectionCode = (edits, baseContent) => {
+      try {
+        const { errors } = validatePolishManifest({ manifest: manifestFor(edits, baseContent), baseContent: baseContent || base });
+        return errors.length > 0 ? errors[0].code : null;
+      } catch (error) {
+        return error.code;
+      }
+    };
+    // BASE_DIGEST_MISMATCH: the manifest binds different bytes than the ones
+    // handed to the validator.
+    const staleManifest = manifestFor([{ anchor: 'This method grants a role to a user. It is used by automation.', replacement: 'Grants a role.' }]);
+    let baseDigestCode = null;
+    try {
+      const { errors } = validatePolishManifest({ manifest: staleManifest, baseContent: `${base}\nextra prose line` });
+      baseDigestCode = errors.length > 0 ? errors[0].code : null;
+    } catch (error) {
+      baseDigestCode = error.code;
+    }
+    // FULL_REWRITE needs a prose-dominant page: anchor every prose line of a
+    // body that is ≥ 90% polishable prose.
+    const proseHeavy = ['## Notes', '', 'Alpha prose line that a polish subagent may reword freely.', 'Bravo prose line that a polish subagent may reword freely.', 'Charlie prose line that a polish subagent may reword freely.', 'Delta prose line that a polish subagent may reword freely.', 'Echo prose line that a polish subagent may reword freely.', 'Foxtrot prose line that a polish subagent may reword freely.'].join('\n');
+    const fullRewriteCode = rejectionCode(
+      proseHeavy.split('\n').slice(2).map((line) => ({ anchor: line, replacement: 'Reworded.' })),
+      proseHeavy,
+    );
+    // Deterministic application of a valid prose edit still succeeds.
+    const applied = applyPolishManifest({
+      manifest: manifestFor([{ anchor: 'This method grants a role to a user. It is used by automation.', replacement: 'Grants a role to a user.' }]),
+      baseContent: base,
+    });
+    return {
+      happyPathOk: applied.polishedContent.includes('Grants a role to a user.')
+        && applied.polishedContent.includes('client.grant_role(user="a")'),
+      fenceCode: rejectionCode([{ anchor: 'client.grant_role(user="a")', replacement: 'client.grant_role(user="b")' }]),
+      tableRowCode: rejectionCode([{ anchor: 'grants the role', replacement: 'grants a role' }]),
+      headingCode: rejectionCode([{ anchor: '## Description', replacement: '## Overview' }]),
+      includeLineCode: rejectionCode([{ anchor: 'Zilliz docs [z-url]', replacement: 'Zilliz documentation [z-url]' }]),
+      requestCode: rejectionCode([{ anchor: 'This helper path relies on the `with_role()` helper.', replacement: 'Relies on the helper.' }]),
+      urlCode: rejectionCode([{ anchor: 'This method grants a role to a user. It is used by automation.', replacement: 'See [the docs](https://other.example.com/x).' }]),
+      structureCode: rejectionCode([{ anchor: 'This method grants a role to a user. It is used by automation.', replacement: 'Grants a role.\n### Notes' }]),
+      duplicateAnchorCode: rejectionCode([{ anchor: 'Repeated prose line. This sentence appears twice.', replacement: 'Repeated prose.' }]),
+      fullRewriteCode,
+      baseDigestCode,
+    };
+  },
 };
 
 module.exports = { scenarios };

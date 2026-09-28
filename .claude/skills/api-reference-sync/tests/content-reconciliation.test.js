@@ -86,3 +86,56 @@ test('reconcileContextVerbatim detects digest mismatch and live divergence', () 
         'CONTENT_CONTEXT_LIVE_DIVERGENT',
     ]);
 });
+
+test('reconcileContextVerbatim binds a sanctioned polish chain to its terminal content', () => {
+    const { applyPolishManifest } = require('../src/sdk-doc-sync/pr-polish');
+    const base = 'This method grants a role. See the [guide](https://example.com/g).\n';
+    const manifest = {
+        schemaVersion: 1,
+        unit: 'u1',
+        baseContentDigest: verbatimContentDigest(base),
+        edits: [{ anchor: 'This method grants a role.', replacement: 'Grants a role to a user.' }],
+    };
+    const { polishedContent } = applyPolishManifest({ manifest, baseContent: base });
+
+    // Polished live page against a valid chain: no finding, even though the
+    // live bytes no longer equal the recorded verbatim base.
+    const polishedLive = reconcileContextVerbatim({
+        contexts: [{
+            contextId: 'polished',
+            content: base,
+            contentDigest: verbatimContentDigest(base),
+            polish: { manifest, polishedContent },
+            title: 'GrantRole()',
+            rawContent: 'GrantRole()\nGrants a role to a user. See the guide.\n',
+        }],
+    });
+    assert.deepEqual(polishedLive.findings, []);
+
+    // A live page that still equals the verbatim BASE diverges from the
+    // recorded terminal content — the chain says the page was polished.
+    const regressed = reconcileContextVerbatim({
+        contexts: [{
+            contextId: 'regressed',
+            content: base,
+            contentDigest: verbatimContentDigest(base),
+            polish: { manifest, polishedContent },
+            title: 'GrantRole()',
+            rawContent: 'GrantRole()\nThis method grants a role. See the guide.\n',
+        }],
+    });
+    assert.deepEqual(regressed.findings.map((finding) => finding.code), ['CONTENT_CONTEXT_LIVE_DIVERGENT']);
+
+    // A recorded polish that no longer reproduces the terminal bytes is a
+    // broken chain, reported even without a live snapshot.
+    const broken = reconcileContextVerbatim({
+        contexts: [{
+            contextId: 'broken',
+            content: base,
+            contentDigest: verbatimContentDigest(base),
+            polish: { manifest, polishedContent: `${polishedContent}tampered` },
+        }],
+    });
+    assert.deepEqual(broken.findings.map((finding) => finding.code), ['CONTENT_POLISH_CHAIN_INVALID']);
+    assert.equal(broken.findings[0].severity, 'error');
+});

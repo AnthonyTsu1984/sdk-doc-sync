@@ -315,6 +315,57 @@
       "notes": "Phase 4 step 3: merged-PR pages land line-for-line identical to the pinned upstream markdown. The provider normalizes verbatim content (web-content footer + leading H1 stripped) and the planner attests the normalized content digest into the plan (decision PR_VERBATIM_REBUILD); the executor refuses a verbatim rebuild whose plan carries no attestation or whose bytes no longer match it; patch_document refuses cross-type in-place pairings (replace positional, smart matched) requiring rebuild; after execution the runner refetches raw_content, compares through the declared canonicalization (refetchChannel raw_content, canonicalVersion 1), journals a content-fidelity outcome before the completion sentinel, and the acceptance finalizer accepts content-fidelity outcomes as verified evidence. Reconciliation (phase 4 step 4) reports reviewed contexts whose frozen digest or live raw_content disagrees with their content (CONTENT_CONTEXT_DIGEST_MISMATCH / CONTENT_CONTEXT_LIVE_DIVERGENT)."
     },
     {
+      "id": "api.pr-polish-governed",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write",
+        "post-write",
+        "reconcile"
+      ],
+      "statementDigest": "sha256:cfbc3dd2c9206b60c26262c4467a59cdcce2eae7afa35c856baaae853a6acda0",
+      "fixtureIds": [
+        "content-polish-chain",
+        "content-polish-protected-region"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/pr-polish.js",
+          "codes": [
+            "PR_POLISH_VERBATIM_NOT_PROVEN",
+            "PR_POLISH_BASE_DIGEST_MISMATCH",
+            "PR_POLISH_ANCHOR_NOT_FOUND",
+            "PR_POLISH_ANCHOR_NOT_UNIQUE",
+            "PR_POLISH_EDIT_OVERLAP",
+            "PR_POLISH_PROTECTED_REGION",
+            "PR_POLISH_CODE_SPAN_CHANGED",
+            "PR_POLISH_URL_SET_CHANGED",
+            "PR_POLISH_FORBIDDEN_INTRODUCTION",
+            "PR_POLISH_FULL_REWRITE",
+            "PR_POLISH_MANIFEST_INVALID"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/bin/pr-polish.js",
+          "codes": [
+            "PR_POLISH_CONTENT_VERIFICATION_FAILED"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "CONTENT_POLISH_CHAIN_INVALID"
+          ]
+        }
+      ],
+      "notes": "Post-verbatim polish phase for PR intake: a merged-PR page lands verbatim first (api.pr-verbatim-content), then may be language-polished inside the same review unit before document review closes. The sequencing is fail-closed (assertPolishPreconditions demands the journaled passing content-fidelity outcome); the polish subagent only proposes a manifest ({anchor, replacement} pairs against the verified bytes) and the deterministic validator binds baseContentDigest, refuses anchors or replacements touching protected content (fenced code, inline code spans, table rows, headings, include marker lines, footers, REQUEST METHODS markers), preserves absolute link URLs, refuses whole-body rewrites (>=90% coverage), and recomputes the exact terminal bytes; the live page is edited only through the governed writer as a separately approved batch, the refetched raw_content must compare line-for-line against the recomputed polished content through the declared canonicalization, and the recorded polish chain (content + manifest -> polishedContent) is re-verified at reconciliation (CONTENT_POLISH_CHAIN_INVALID) so acceptance and reconciliation bind the polished terminal state. Apply-to-live wiring rides the existing governed writer envelope; pr-polish.js itself performs no Feishu I/O."
+    },
+    {
       "id": "api.governed-document-inventory",
       "version": 1,
       "risk": "inventory-hygiene",

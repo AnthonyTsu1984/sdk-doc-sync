@@ -292,6 +292,42 @@
   }
  },
  {
+  "id": "content-polish-chain",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentPolishChain"
+  },
+  "assertions": {
+   "sequencingCode": "PR_POLISH_VERBATIM_NOT_PROVEN",
+   "fenceIntact": true,
+   "landedOk": true,
+   "invariantId": "api.pr-polish-governed",
+   "chainOk": true,
+   "brokenChainOk": false,
+   "digestStable": true
+  }
+ },
+ {
+  "id": "content-polish-protected-region",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentPolishProtectedRegion"
+  },
+  "assertions": {
+   "happyPathOk": true,
+   "fenceCode": "PR_POLISH_PROTECTED_REGION",
+   "tableRowCode": "PR_POLISH_PROTECTED_REGION",
+   "headingCode": "PR_POLISH_PROTECTED_REGION",
+   "includeLineCode": "PR_POLISH_PROTECTED_REGION",
+   "requestCode": "PR_POLISH_CODE_SPAN_CHANGED",
+   "urlCode": "PR_POLISH_URL_SET_CHANGED",
+   "structureCode": "PR_POLISH_FORBIDDEN_INTRODUCTION",
+   "duplicateAnchorCode": "PR_POLISH_ANCHOR_NOT_UNIQUE",
+   "fullRewriteCode": "PR_POLISH_FULL_REWRITE",
+   "baseDigestCode": "PR_POLISH_BASE_DIGEST_MISMATCH"
+  }
+ },
+ {
   "id": "content-reconcile-orphan-detected",
   "executable": {
    "runner": "invariant-conformance",

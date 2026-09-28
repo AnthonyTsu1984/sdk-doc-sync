@@ -5,7 +5,32 @@ const path = require('node:path');
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { DecisionLedger } = require('../../../doc-ops-core/src/decision-ledger');
+const {
+  SAME_STATE,
+  SessionStateMachineError,
+  defineSessionMachine,
+} = require('../../../doc-ops-core/src/session-state-machine');
+const { loadState, saveState } = require('../../../doc-ops-core/src/session-store');
 const { buildAcceptanceManifest } = require('./review-units');
+
+// The lifecycle this store hardens (PR #22's five review rounds), now
+// expressed through the shared machine every skill adopts (6.6): transitions
+// are only legal from their named sources, the terminal state is immutable,
+// and finalization flips the status LAST.
+const REVIEW_MACHINE = defineSessionMachine({
+  name: 'api-reference-sync:review',
+  initial: 'in_progress',
+  terminal: 'finalized',
+  transitions: {
+    recordDocumentExecution: { from: ['in_progress'], to: SAME_STATE },
+    recordDocumentAcceptance: { from: ['in_progress'], to: SAME_STATE },
+    recordDocumentChangesRequested: { from: ['in_progress'], to: SAME_STATE },
+    recordRollbackIntent: { from: ['in_progress', 'acceptance_pending'], to: SAME_STATE },
+    recordDocumentRollback: { from: ['in_progress', 'acceptance_pending'], to: 'in_progress' },
+    buildSessionAcceptance: { from: ['in_progress'], to: 'acceptance_pending' },
+    recordAcceptanceFinalization: { from: ['acceptance_pending'], to: 'finalized' },
+  },
+});
 
 function clone(value) {
   return structuredClone(value);
@@ -72,6 +97,7 @@ function createReviewSession({
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
     activeExecution: null,
+    activeRollback: null,
     rollbackReceipts: [],
     activeReviewUnitId: null,
     acceptanceManifest: null,
@@ -181,7 +207,7 @@ function validateExecutionForUnit(session, {
 
 function recordDocumentExecution(session, execution) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (session.status !== 'in_progress' || session.acceptanceManifest || session.scanStateUpdated === true) {
+  if (session.acceptanceManifest || session.scanStateUpdated === true) {
     throw new Error('Review session no longer accepts document executions');
   }
   if (session.activeExecution) {
@@ -192,8 +218,8 @@ function recordDocumentExecution(session, execution) {
   }
   const { journalPath } = validateExecutionForUnit(session, execution || {});
   const executedAt = execution.executedAt || new Date().toISOString();
-  return Object.freeze({
-    ...clone(session),
+  REVIEW_MACHINE.assertTransition('recordDocumentExecution', session);
+  return REVIEW_MACHINE.apply('recordDocumentExecution', session, {
     activeExecution: Object.freeze({
       reviewUnitId: execution.reviewUnitId,
       executionJournalPath: journalPath,
@@ -201,8 +227,7 @@ function recordDocumentExecution(session, execution) {
       executedAt,
     }),
     activeReviewUnitId: execution.reviewUnitId,
-    updatedAt: executedAt,
-  });
+  }, { timestamp: executedAt });
 }
 
 function validateAcceptedReceipt(session, receipt) {
@@ -242,7 +267,7 @@ function validateAcceptedReceipt(session, receipt) {
 
 function recordDocumentAcceptance(session, receipt) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (session.status !== 'in_progress' || session.acceptanceManifest) {
+  if (session.acceptanceManifest) {
     throw new Error('Review session no longer accepts document receipts');
   }
   if ((session.acceptedReviewUnits || []).some((unit) => unit.reviewUnitId === receipt?.reviewUnitId)) {
@@ -257,8 +282,8 @@ function recordDocumentAcceptance(session, receipt) {
     throw new Error(`Document acceptance must match the active execution for ${receipt.reviewUnitId}`);
   }
   const acceptedAt = receipt.acceptedAt || new Date().toISOString();
-  return Object.freeze({
-    ...clone(session),
+  REVIEW_MACHINE.assertTransition('recordDocumentAcceptance', session);
+  return REVIEW_MACHINE.apply('recordDocumentAcceptance', session, {
     acceptedReviewUnits: Object.freeze([...(session.acceptedReviewUnits || []), {
       reviewUnitId: receipt.reviewUnitId,
       executionJournalPath: journalPath,
@@ -271,13 +296,12 @@ function recordDocumentAcceptance(session, receipt) {
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
     activeExecution: null,
     activeReviewUnitId: null,
-    updatedAt: acceptedAt,
-  });
+  }, { timestamp: acceptedAt });
 }
 
 function recordDocumentChangesRequested(session, { reviewUnitId, reason = null } = {}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (session.status === 'finalized' || session.scanStateUpdated === true) {
+  if (session.scanStateUpdated === true) {
     throw new Error('A finalized review session no longer accepts change requests');
   }
   const unit = session.reviewUnitManifest.units.find((item) => item.reviewUnitId === reviewUnitId);
@@ -290,8 +314,8 @@ function recordDocumentChangesRequested(session, { reviewUnitId, reason = null }
     throw new Error(`Change request must match the active execution for ${reviewUnitId}`);
   }
   const requestedAt = new Date().toISOString();
-  return Object.freeze({
-    ...clone(session),
+  REVIEW_MACHINE.assertTransition('recordDocumentChangesRequested', session);
+  return REVIEW_MACHINE.apply('recordDocumentChangesRequested', session, {
     // The executed unit returns to reviewed planning: its journal stays on
     // disk for audit and potential rollback, but no acceptance is recorded.
     activeExecution: null,
@@ -303,8 +327,7 @@ function recordDocumentChangesRequested(session, { reviewUnitId, reason = null }
       reason: nonEmptyString(reason) ? reason : null,
       requestedAt,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
-    updatedAt: requestedAt,
-  });
+  }, { timestamp: requestedAt });
 }
 
 function validateRollbackJournal(filePath, expectedDigest) {
@@ -345,9 +368,58 @@ function validateRollbackJournal(filePath, expectedDigest) {
   };
 }
 
+// The rollback intent is the P1 fix (6.6 review round 2): a CAS-persisted
+// lease recorded BEFORE any external mutation, binding the review unit, the
+// rollback manifest, and the original execution journal. If anything
+// interrupts the run between side effects and session completion, the lease
+// is the recovery anchor the completion journal drives — the external
+// reality can always be reconciled into the canonical session.
+function recordRollbackIntent(session, { reviewUnitId, rollbackManifestDigest, rollbackJournalPath }) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.scanStateUpdated === true) {
+    throw new Error('Review session is finalized and cannot be rolled back in place');
+  }
+  if (!nonEmptyString(rollbackManifestDigest) || !nonEmptyString(rollbackJournalPath)) {
+    throw new Error('rollbackManifestDigest and rollbackJournalPath are required for the rollback intent');
+  }
+  if (!session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  }
+  if ((session.rollbackReceipts || []).some((item) => item.reviewUnitId === reviewUnitId)) {
+    throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
+  }
+  const existing = session.activeRollback;
+  if (existing) {
+    const identical = existing.reviewUnitId === reviewUnitId
+      && existing.rollbackManifestDigest === rollbackManifestDigest
+      && path.resolve(existing.rollbackJournalPath || '') === path.resolve(rollbackJournalPath);
+    if (identical) return session;
+    throw Object.assign(
+      new Error(`A different rollback is already in flight for ${existing.reviewUnitId}`),
+      { code: 'ROLLBACK_INTENT_CONFLICT' },
+    );
+  }
+  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
+  const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
+  const anchor = activeMatches ? session.activeExecution : accepted || null;
+  if (!anchor) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
+  validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
+  const startedAt = new Date().toISOString();
+  return REVIEW_MACHINE.apply('recordRollbackIntent', session, {
+    activeRollback: Object.freeze({
+      reviewUnitId,
+      rollbackManifestDigest,
+      rollbackJournalPath: path.resolve(rollbackJournalPath),
+      originalExecutionJournalPath: path.resolve(anchor.executionJournalPath),
+      originalExecutionJournalDigest: anchor.executionJournalDigest,
+      startedAt,
+    }),
+  }, { timestamp: startedAt });
+}
+
 function recordDocumentRollback(session, receipt) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (session.status === 'finalized' || session.scanStateUpdated === true) {
+  if (session.scanStateUpdated === true) {
     throw new Error('Review session is finalized and cannot be rolled back in place');
   }
   const reviewUnitId = receipt?.reviewUnitId;
@@ -373,9 +445,25 @@ function recordDocumentRollback(session, receipt) {
     throw new Error(`Review unit already has a different rollback receipt: ${reviewUnitId}`);
   }
 
+  REVIEW_MACHINE.assertTransition('recordDocumentRollback', session);
+  const intent = session.activeRollback?.reviewUnitId === reviewUnitId ? session.activeRollback : null;
+  if (intent
+      && (validated.rollbackManifestDigest !== intent.rollbackManifestDigest
+          || validated.originalExecutionJournalDigest !== intent.originalExecutionJournalDigest)) {
+    throw new Error('Rollback journal does not match the in-flight rollback intent');
+  }
   const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const originalExecution = activeMatches ? session.activeExecution : accepted;
+  let originalExecution = activeMatches ? session.activeExecution : accepted || null;
+  if (!originalExecution && intent) {
+    // The intent is the pre-side-effect anchor: even when a concurrent
+    // writer moved the unit out of active/accepted, the durable lease
+    // recorded what this rollback was bound to before any mutation ran.
+    originalExecution = {
+      executionJournalPath: intent.originalExecutionJournalPath,
+      executionJournalDigest: intent.originalExecutionJournalDigest,
+    };
+  }
   if (!originalExecution) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
   if (validated.originalExecutionJournalDigest !== originalExecution.executionJournalDigest) {
     throw new Error('Rollback journal is bound to a different original execution');
@@ -387,14 +475,18 @@ function recordDocumentRollback(session, receipt) {
 
   const rolledBackAt = receipt.rolledBackAt || new Date().toISOString();
   const activeExecution = activeMatches ? null : clone(session.activeExecution);
-  return Object.freeze({
-    ...clone(session),
-    status: 'in_progress',
+  return REVIEW_MACHINE.apply('recordDocumentRollback', session, {
     acceptedReviewUnits: Object.freeze((session.acceptedReviewUnits || [])
       .filter((unit) => unit.reviewUnitId !== reviewUnitId)
       .map(clone)),
     activeExecution,
     activeReviewUnitId: activeExecution?.reviewUnitId || null,
+    // Consume the lease only when it belongs to the unit being completed.
+    // The reconcile path can record a receipt for unit A while unit B's
+    // lease is in flight (crash-then-rerun interleaving); clearing
+    // unconditionally here would wipe B's recovery anchor and reopen the
+    // exact counterexample the lease exists to close.
+    activeRollback: intent ? null : clone(session.activeRollback),
     acceptanceManifest: null,
     acceptanceManifestDigest: null,
     scanStateUpdated: false,
@@ -407,27 +499,24 @@ function recordDocumentRollback(session, receipt) {
       rollbackJournalDigest: receipt.rollbackJournalDigest,
       rolledBackAt,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
-    updatedAt: rolledBackAt,
-  });
+  }, { timestamp: rolledBackAt });
 }
 
 function buildSessionAcceptance(session, builtAt = new Date().toISOString()) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (session.scanStateUpdated === true || session.status === 'finalized') {
+  if (session.scanStateUpdated === true) {
     throw new Error('Review session is already finalized');
   }
   const acceptanceManifest = buildAcceptanceManifest(
     session.reviewUnitManifest,
     session.acceptedReviewUnits || [],
   );
-  return Object.freeze({
-    ...clone(session),
-    status: 'acceptance_pending',
+  REVIEW_MACHINE.assertTransition('buildSessionAcceptance', session);
+  return REVIEW_MACHINE.apply('buildSessionAcceptance', session, {
     activeReviewUnitId: null,
     acceptanceManifest: clone(acceptanceManifest),
     acceptanceManifestDigest: acceptanceManifest.acceptanceManifestDigest,
-    updatedAt: builtAt,
-  });
+  }, { timestamp: builtAt });
 }
 
 function readAcceptanceJournal(filePath) {
@@ -446,7 +535,7 @@ function recordAcceptanceFinalization(session, {
   acceptanceJournalDigest,
   finalizedAt = new Date().toISOString(),
 }) {
-  if (!session?.acceptanceManifestDigest || session.status !== 'acceptance_pending') {
+  if (!session?.acceptanceManifestDigest) {
     throw new Error('Build the complete acceptance manifest before recording finalization');
   }
   if (!nonEmptyString(acceptanceJournalDigest)) throw new Error('acceptanceJournalDigest is required');
@@ -463,45 +552,60 @@ function recordAcceptanceFinalization(session, {
   if (journal.acceptanceManifestDigest !== session.acceptanceManifestDigest) {
     throw new Error('Acceptance journal is bound to a different acceptance manifest');
   }
-  return Object.freeze({
-    ...clone(session),
-    status: 'finalized',
+  REVIEW_MACHINE.assertTransition('recordAcceptanceFinalization', session);
+  return REVIEW_MACHINE.apply('recordAcceptanceFinalization', session, {
     scanStateUpdated: true,
     finalizationJournalPath: journalPath,
     finalizationJournalDigest: acceptanceJournalDigest,
     finalizedAt,
-    updatedAt: finalizedAt,
+  }, { timestamp: finalizedAt });
+}
+
+// Persistence goes through the shared durable store (6.6): lock-bracketed
+// compare-and-set + atomic tmp + file fsync + rename + directory fsync — the
+// caller passes the digest of the state it loaded (or null to create) so a
+// concurrent writer's change refuses the save instead of being clobbered.
+function saveReviewSession(filePath, session, { expectedPreviousDigest } = {}) {
+  if (!nonEmptyString(filePath)) throw new TypeError('Review session path is required');
+  if (!session?.sessionId) throw new TypeError('Review session is required');
+  return saveState(path.resolve(filePath), session, {
+    expectedPreviousDigest,
+    serialize: state => `${JSON.stringify(state, null, 2)}\n`,
+    mode: 0o600,
   });
 }
 
-function saveReviewSession(filePath, session) {
+function loadReviewSessionState(filePath) {
   if (!nonEmptyString(filePath)) throw new TypeError('Review session path is required');
   const resolved = path.resolve(filePath);
-  fs.mkdirSync(path.dirname(resolved), { recursive: true });
-  const temporary = `${resolved}.tmp-${process.pid}`;
-  fs.writeFileSync(temporary, `${JSON.stringify(session, null, 2)}\n`, { flag: 'wx' });
-  fs.renameSync(temporary, resolved);
-  // Directory fsync so the rename itself is durable (shared 6.6 contract).
-  const directory = fs.openSync(path.dirname(resolved), 'r');
+  let loaded;
   try {
-    fs.fsyncSync(directory);
+    loaded = loadState(resolved);
   } catch (error) {
-    void error; // best-effort on filesystems that refuse directory fsync
-  } finally {
-    fs.closeSync(directory);
+    if (error?.code === 'ENOENT') throw new Error(`Review session does not exist: ${resolved}`);
+    throw error;
   }
-  return resolved;
+  if (loaded.state?.schemaVersion !== 1 || !loaded.state.reviewUnitManifestDigest) {
+    throw new Error(`Review session is invalid: ${resolved}`);
+  }
+  // Cross-field invariant the transition table maintains implicitly: no unit
+  // holds a rollback receipt and the lease at once — the apply patch clears
+  // lease(U) in the same atomic patch that appends receipt(U), and
+  // recordRollbackIntent refuses receipt-bearing units before touching the
+  // lease. A file violating this never came from those transitions, so
+  // refuse it at load instead of letting the stray lease wedge silently.
+  const activeRollback = loaded.state.activeRollback || null;
+  if (activeRollback
+      && (loaded.state.rollbackReceipts || []).some((item) => item.reviewUnitId === activeRollback.reviewUnitId)) {
+    throw new Error(
+      `Review session is inconsistent: rollback lease and receipt coexist for ${activeRollback.reviewUnitId}: ${resolved}`,
+    );
+  }
+  return { session: loaded.state, sessionDigest: loaded.stateDigest };
 }
 
 function loadReviewSession(filePath) {
-  if (!nonEmptyString(filePath)) throw new TypeError('Review session path is required');
-  const resolved = path.resolve(filePath);
-  if (!fs.existsSync(resolved)) throw new Error(`Review session does not exist: ${resolved}`);
-  const session = JSON.parse(fs.readFileSync(resolved, 'utf8'));
-  if (session?.schemaVersion !== 1 || !session.reviewUnitManifestDigest) {
-    throw new Error(`Review session is invalid: ${resolved}`);
-  }
-  return session;
+  return loadReviewSessionState(filePath).session;
 }
 
 function recordId(record) {
@@ -560,15 +664,19 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 }
 
 module.exports = {
+  REVIEW_MACHINE,
+  SessionStateMachineError,
   buildSessionAcceptance,
   createReviewSession,
   loadReviewSession,
+  loadReviewSessionState,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentExecution,
   recordDocumentChangesRequested,
   recordDocumentRollback,
   recordReviewDecision,
+  recordRollbackIntent,
   saveReviewSession,
   validateExecutionJournal,
   validateResumeSession,

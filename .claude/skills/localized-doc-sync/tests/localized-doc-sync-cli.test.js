@@ -465,7 +465,7 @@ test('canonical CLI finalizes a session from evidence: manifest digest verificat
   writeJson(otherPath, otherManifest);
   await assert.rejects(
     () => runCli({ argv: ['node', 'localized-doc-sync', 'finalize', '--session', sessionPath, '--scan-manifest', otherPath], dependencies: { onStdout() {} } }),
-    (error) => error.code === 'SESSION_FINALIZED',
+    (error) => error.code === 'SESSION_TERMINAL',
   );
 
   // For a session that is NOT yet finalized, the tampered manifest is still

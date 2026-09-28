@@ -84,7 +84,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'execute') {
     for (const name of ['plan', 'approval', 'journal', 'output', 'session']) required(args, name);
     const plan = readJson(args.plan);
-    const { session, sessionDigest } = loadAuthoringSessionState(args.session);
+    let { session, sessionDigest } = loadAuthoringSessionState(args.session);
     if (session.status !== 'approval_ready' || session.planDigest !== plan.planDigest) {
       throw Object.assign(
         new Error('Authoring session is not approval-ready for this exact plan'),
@@ -93,6 +93,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }
     const result = await executeAuthoringPatch({ plan, approval: readJson(args.approval), journalPath: path.resolve(args.journal), adapter: loadAdapter(args, dependencies) });
     writeJson(args.output, result);
+    // Completion reloads the session FRESH: the digest loaded before the
+    // patch's live writes is stale by construction once they ran (P1, 6.6
+    // review round 2); the write-ahead journal remains the recovery evidence.
+    ({ session, sessionDigest } = loadAuthoringSessionState(args.session));
     saveAuthoringSession(args.session, recordAuthoringExecution(session, result), { expectedPreviousDigest: sessionDigest });
     out(`Execution status: ${result.status}`);
     return result;

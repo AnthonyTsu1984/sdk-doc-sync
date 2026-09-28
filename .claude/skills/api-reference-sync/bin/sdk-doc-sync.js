@@ -34,7 +34,7 @@ const {
 const { createApprovalEnvelope } = require('../../doc-ops-core/src/approval-guard');
 const {
     createReviewSession,
-    loadReviewSession,
+    loadReviewSessionState,
     recordDocumentExecution,
     saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -568,9 +568,10 @@ async function runCli({
 
     const language = args.language || 'python';
     let reviewSession = null;
+    let resumeSessionDigest = null;
     if (args.resumeSession) {
         try {
-            reviewSession = loadReviewSession(path.resolve(args.resumeSession));
+            ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(path.resolve(args.resumeSession)));
         } catch (error) {
             err(`Error: ${error.message}`);
             exit(1);
@@ -719,12 +720,19 @@ async function runCli({
         // must record them too — otherwise the executed unit is invisible to
         // rollback planning and to the accepted/active transition checks.
         const sessionPath = path.resolve(args.resumeSession);
+        // Completion reloads the session FRESH: the resume digest predates
+        // the unit's live writes and is stale by construction once they ran
+        // (P1, 6.6 review round 2). recordDocumentExecution re-validates the
+        // durable write-ahead journal from disk, so the reloaded session
+        // converges or refuses typed instead of orphaning the external
+        // change; the journal itself remains the recovery evidence.
+        ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
         reviewSession = recordDocumentExecution(reviewSession, {
             reviewUnitId: result.activeReviewUnit.reviewUnitId,
             executionJournalPath: result.executionJournalPath,
             executionJournalDigest: result.executionJournalDigest,
         });
-        saveReviewSession(sessionPath, reviewSession);
+        saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
         result.reviewSession = {
             ...(result.reviewSession || {}),
             sessionId: reviewSession.sessionId,
@@ -762,7 +770,7 @@ async function runCli({
                 summaryJson: args.summaryJson ? path.resolve(args.summaryJson) : null,
             },
         });
-        saveReviewSession(sessionPath, session);
+        saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
         result.reviewSession = {
             sessionId: session.sessionId,
             sessionPath,
@@ -869,7 +877,7 @@ async function finalizeAcceptance({
     io = {},
 }) {
     const {
-        loadReviewSession,
+        loadReviewSessionState,
         recordAcceptanceFinalization,
         saveReviewSession,
     } = require('../src/sdk-doc-sync/review-session-store');
@@ -913,8 +921,9 @@ async function finalizeAcceptance({
     }
 
     let session;
+    let sessionDigest;
     try {
-        session = loadReviewSession(sessionPath);
+        ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
     } catch (error) {
         err(`Error: canonical review session is unavailable: ${error.message}`);
         exit(1);
@@ -1013,7 +1022,7 @@ async function finalizeAcceptance({
             acceptanceJournalPath: receiptArtifact.path,
             acceptanceJournalDigest: receiptArtifact.digest,
         });
-        saveReviewSession(sessionPath, finalized);
+        saveReviewSession(sessionPath, finalized, { expectedPreviousDigest: sessionDigest });
         out('Acceptance finalized from the canonical session (invariant evidence derived from the accepted-unit manifest and execution journals):');
         out(JSON.stringify({
             acceptanceManifestDigest: session.acceptanceManifestDigest,

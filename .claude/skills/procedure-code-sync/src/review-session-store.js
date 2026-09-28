@@ -4,10 +4,24 @@ const path = require('node:path');
 
 const { canonicalStringify } = require('../../doc-ops-core/src/canonical-json');
 const { loadState, saveState } = require('../../doc-ops-core/src/session-store');
+const { defineSessionMachine } = require('../../doc-ops-core/src/session-state-machine');
 
 function typedError(code, message) {
   return Object.assign(new Error(message), { code });
 }
+
+// The procedure lifecycle (6.6): transition legality and terminal-state
+// immutability live in the shared machine; this store keeps the evidence
+// validation (execution/verifier digests).
+const PROCEDURE_MACHINE = defineSessionMachine({
+  name: 'procedure-code-sync:review',
+  initial: 'approval_ready',
+  terminal: 'accepted',
+  transitions: {
+    recordPatchExecution: { from: ['approval_ready'], to: 'acceptance_pending' },
+    recordPatchAcceptance: { from: ['acceptance_pending'], to: 'accepted' },
+  },
+});
 
 function createProcedureSession({ sessionId, plan }) {
   if (!sessionId || !plan?.planDigest) throw new TypeError('sessionId and plan are required');
@@ -24,26 +38,25 @@ function createProcedureSession({ sessionId, plan }) {
 }
 
 function recordPatchExecution(session, result) {
-  if (session.status !== 'approval_ready' || result.reviewUnitId !== session.reviewUnitId) {
+  if (result?.reviewUnitId !== session.reviewUnitId) {
     throw typedError('EXECUTION_SESSION_MISMATCH', 'Patch execution does not match the active review unit');
   }
   if (result.status !== 'ACCEPTANCE_REQUIRED' || !result.executionJournalDigest || !result.verifierResultDigest) {
     throw typedError('EXECUTION_EVIDENCE_REQUIRED', 'Complete execution and verifier evidence are required');
   }
-  return Object.freeze({ ...structuredClone(session), status: 'acceptance_pending', execution: structuredClone(result) });
+  return PROCEDURE_MACHINE.apply('recordPatchExecution', session, { execution: structuredClone(result) });
 }
 
 function recordPatchAcceptance(session, { executionJournalDigest, verifierResultDigest, decisionDigest }) {
-  if (session.status !== 'acceptance_pending') {
-    throw typedError('ACCEPTANCE_NOT_PENDING', 'Patch acceptance is not pending');
-  }
+  // Lifecycle before evidence: `session.execution` only exists in the
+  // acceptance-pending state, so the dereference below must not run from an
+  // illegal source — the machine's typed refusal comes first.
+  PROCEDURE_MACHINE.assertTransition('recordPatchAcceptance', session);
   if (executionJournalDigest !== session.execution.executionJournalDigest
       || verifierResultDigest !== session.execution.verifierResultDigest) {
     throw typedError('ACCEPTANCE_EVIDENCE_MISMATCH', 'Acceptance receipt is bound to different execution or verifier evidence');
   }
-  return Object.freeze({
-    ...structuredClone(session),
-    status: 'accepted',
+  return PROCEDURE_MACHINE.apply('recordPatchAcceptance', session, {
     acceptanceReceipt: { executionJournalDigest, verifierResultDigest, decisionDigest },
   });
 }
@@ -76,6 +89,7 @@ function loadProcedureSession(filePath) {
 }
 
 module.exports = {
+  PROCEDURE_MACHINE,
   createProcedureSession,
   loadProcedureSession,
   loadProcedureSessionState,

@@ -14,8 +14,10 @@ const {
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordReviewDecision,
+  recordDocumentChangesRequested,
   recordDocumentExecution,
   recordDocumentRollback,
+  recordRollbackIntent,
   saveReviewSession,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -32,13 +34,13 @@ function manifest() {
   };
 }
 
-function executionJournal(directory, actionId = 'node:Collections:a') {
+function executionJournal(directory, actionId = 'node:Collections:a', name = 'execution.jsonl') {
   const entries = [
     { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:batch-a', actionId },
     { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-a', actionId, status: 'success', verified: true },
     { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-a', status: 'executed', completionSentinel: true },
   ];
-  const filePath = path.join(directory, 'execution.jsonl');
+  const filePath = path.join(directory, name);
   fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
   return { filePath, digest: digestSemantic(entries) };
 }
@@ -60,6 +62,9 @@ function rollbackJournal(directory, {
   complete = true,
   name = 'rollback.jsonl',
 } = {}) {
+  // The journal's actionId is derived from the review unit so unit B's
+  // fixtures carry B's action, mirroring what the planner really emits.
+  const actionId = reviewUnitId.replace(/^review:/, '');
   const binding = {
     schemaVersion: 1,
     operation: 'rollback-document',
@@ -67,8 +72,8 @@ function rollbackJournal(directory, {
     originalExecutionJournalDigest,
   };
   const entries = [
-    { ...binding, type: 'prepared', actionId: 'node:Collections:a', inverse: 'DELETE_CREATED_RECORD_AND_DOCUMENT' },
-    { ...binding, type: 'observed', actionId: 'node:Collections:a', status, verified: status === 'success' },
+    { ...binding, type: 'prepared', actionId, inverse: 'DELETE_CREATED_RECORD_AND_DOCUMENT' },
+    { ...binding, type: 'observed', actionId, status, verified: status === 'success' },
   ];
   if (complete) {
     entries.push({
@@ -98,7 +103,7 @@ test('review session persists exactly one active execution across processes', ()
   });
 
   const active = withExecution(initial, journal);
-  saveReviewSession(sessionPath, active);
+  saveReviewSession(sessionPath, active, { expectedPreviousDigest: null });
   const restored = loadReviewSession(sessionPath);
 
   assert.equal(restored.activeExecution.reviewUnitId, 'review:node:Collections:a');
@@ -171,7 +176,7 @@ test('review session persists a digest-bound accepted-document receipt across pr
     commentsResolved: true,
     acceptedAt: '2026-08-06T10:00:00.000Z',
   });
-  saveReviewSession(sessionPath, accepted);
+  saveReviewSession(sessionPath, accepted, { expectedPreviousDigest: null });
   const restored = loadReviewSession(sessionPath);
 
   assert.deepEqual(restored.acceptedReviewUnits.map((unit) => unit.reviewUnitId), [
@@ -484,4 +489,180 @@ test('rollback session transition rejects partial, mismatched, and finalized evi
     rollbackJournalPath: complete.filePath,
     rollbackJournalDigest: complete.digest,
   }), /finalized/i);
+});
+
+test('a rollback intent bound before side effects survives a concurrent writer and drives the completion (P1)', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-intent-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-intent',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest, name: 'intent-complete.jsonl' });
+
+  // The lease binds BEFORE any external mutation, anchored to the active
+  // execution the session currently records.
+  const leased = recordRollbackIntent(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  assert.equal(leased.activeRollback.originalExecutionJournalDigest, execution.digest);
+  assert.equal(leased.status, 'in_progress');
+
+  // A concurrent writer lands mid-flight and moves the unit out of active
+  // execution — exactly the interleaving that used to lose the completed
+  // rollback forever (the CAS refusal came after the side effects).
+  const concurrent = recordDocumentChangesRequested(leased, { reviewUnitId: 'review:node:Collections:a', reason: 'concurrent request' });
+  assert.equal(concurrent.activeExecution, null);
+  assert.equal(concurrent.activeRollback.reviewUnitId, 'review:node:Collections:a');
+
+  // Completion is driven by the durable journal through the intent anchor.
+  const completed = recordDocumentRollback(concurrent, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.equal(completed.rollbackReceipts.length, 1);
+  assert.equal(completed.rollbackReceipts[0].rollbackManifestDigest, 'sha256:rollback-manifest');
+  assert.equal(completed.rollbackReceipts[0].originalExecutionJournalDigest, execution.digest);
+  assert.equal(completed.activeRollback, null);
+  // The concurrent writer's evidence survives the reconciliation.
+  assert.equal(completed.changeRequests.length, 1);
+
+  // The lease refuses BEFORE side effects when there is nothing to roll back.
+  assert.throws(
+    () => recordRollbackIntent(initial, {
+      reviewUnitId: 'review:node:Collections:b',
+      rollbackManifestDigest: 'sha256:rollback-manifest',
+      rollbackJournalPath: rollback.filePath,
+    }),
+    /no executed document to roll back/,
+  );
+
+  // A journal proving a DIFFERENT rollback than leased is refused.
+  const otherManifest = rollbackJournal(directory, {
+    originalExecutionJournalDigest: execution.digest,
+    rollbackManifestDigest: 'sha256:other-manifest',
+    name: 'other-manifest.jsonl',
+  });
+  assert.throws(
+    () => recordDocumentRollback(leased, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackJournalPath: otherManifest.filePath,
+      rollbackJournalDigest: otherManifest.digest,
+    }),
+    /does not match the in-flight rollback intent/,
+  );
+});
+
+test('completing one unit\u2019s reconcile preserves another unit\u2019s in-flight rollback lease (P2)', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-lease-owner-'));
+  const executionA = executionJournal(directory, 'node:Collections:a', 'execution-a.jsonl');
+  const executionB = executionJournal(directory, 'node:Collections:b', 'execution-b.jsonl');
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:lease-owner',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  const acceptedA = recordDocumentAcceptance(withExecution(initial, executionA), {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: executionA.filePath,
+    executionJournalDigest: executionA.digest,
+    touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+    commentsResolved: true,
+    acceptedAt: '2026-08-06T10:00:00.000Z',
+  });
+  const withExecutionB = withExecution(acceptedA, executionB, 'review:node:Collections:b');
+
+  // Unit B's rollback lease is bound and its executor is mid-flight.
+  const rollbackB = rollbackJournal(directory, {
+    reviewUnitId: 'review:node:Collections:b',
+    originalExecutionJournalDigest: executionB.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest-b',
+    name: 'rollback-b.jsonl',
+  });
+  const leased = recordRollbackIntent(withExecutionB, {
+    reviewUnitId: 'review:node:Collections:b',
+    rollbackManifestDigest: 'sha256:rollback-manifest-b',
+    rollbackJournalPath: rollbackB.filePath,
+  });
+  assert.equal(leased.activeRollback.reviewUnitId, 'review:node:Collections:b');
+
+  // Unit A's rollback completed externally in an earlier run whose completion
+  // save crashed; the rerun reconciles A through its complete journal — the
+  // reconcile path never binds a lease of its own, so it must not consume
+  // B's either.
+  const rollbackA = rollbackJournal(directory, {
+    reviewUnitId: 'review:node:Collections:a',
+    originalExecutionJournalDigest: executionA.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest-a',
+    name: 'rollback-a.jsonl',
+  });
+  const reconciledA = recordDocumentRollback(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollbackA.filePath,
+    rollbackJournalDigest: rollbackA.digest,
+  });
+  assert.deepEqual(reconciledA.rollbackReceipts.map((item) => item.reviewUnitId), ['review:node:Collections:a']);
+  assert.equal(reconciledA.activeRollback.reviewUnitId, 'review:node:Collections:b');
+
+  // B's lease still drives B's completion after a concurrent writer moved
+  // the unit out of active execution — the exact interleaving the lease
+  // exists to survive.
+  const contested = recordDocumentChangesRequested(reconciledA, { reviewUnitId: 'review:node:Collections:b', reason: 'concurrent request' });
+  assert.equal(contested.activeRollback.reviewUnitId, 'review:node:Collections:b');
+  const completedB = recordDocumentRollback(contested, {
+    reviewUnitId: 'review:node:Collections:b',
+    rollbackJournalPath: rollbackB.filePath,
+    rollbackJournalDigest: rollbackB.digest,
+  });
+  assert.equal(completedB.activeRollback, null);
+  assert.deepEqual(completedB.rollbackReceipts.map((item) => item.reviewUnitId).sort(), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.equal(completedB.changeRequests.length, 1);
+});
+
+test('loading a session whose lease and receipt share a unit refuses loudly', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-lease-invariant-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:lease-invariant',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest });
+  const leased = recordRollbackIntent(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  saveReviewSession(sessionPath, leased, { expectedPreviousDigest: null });
+
+  // An out-of-band edit no transition can produce: receipt(U) and lease(U)
+  // coexisting. The load-time cross-field check must refuse it instead of
+  // letting the stray lease wedge silently.
+  const tampered = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  tampered.rollbackReceipts = [{
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    originalExecutionJournalDigest: execution.digest,
+    rolledBackAt: '2026-08-06T11:00:00.000Z',
+  }];
+  fs.writeFileSync(sessionPath, `${JSON.stringify(tampered, null, 2)}\n`);
+  assert.throws(() => loadReviewSession(sessionPath), /lease and receipt coexist/);
 });

@@ -641,7 +641,7 @@ not scheduled.**
       success instead of throwing `ACTIONS_REQUIRED`.
       CI paths filter extended (`scripts/admission/**`,
       the two gate scripts) so toolchain and gate changes trigger admission.
-- [ ] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
+- [x] 6.6 **One session/finalization state machine for all five skills.** `api-reference-sync`
       already carries the reference implementation (canonical persisted session as sole authority;
       receipts may not embed a self-claimed session; the acceptance manifest is recomputed over
       all accepted units; a durable acceptance receipt makes crash retry idempotent; the session
@@ -719,6 +719,105 @@ not scheduled.**
         digest field fails integrity, not the comparison) and is idempotent only for the
         verified-equal final manifest. Authoring's `recordEditorialDecision` likewise refuses
         accepted sessions (`SESSION_ACCEPTED`).
+
+      6.6 extraction delivered (2026-09-27, branch `feat/phase6-session-machine-extraction`):
+      `doc-ops-core/src/session-state-machine.js` — `defineSessionMachine` turns a declarative
+      transition table into the shared lifecycle mechanism: a transition is only legal from its
+      named sources (`INVALID_TRANSITION_SOURCE`), the terminal state is immutable
+      (`SESSION_TERMINAL` — finalization flips the status last, nothing revives it), `'@self'`
+      transitions append evidence without changing status, and every apply returns a frozen
+      successor stamped with `updatedAt`. The machine owns the LIFECYCLE; evidence validation
+      (journals, manifests, receipts, derived flags) stays in the owning skill's store. Ordering:
+      the machine's assert runs BEFORE any evidence check that dereferences a field which only
+      exists in a legal source state (api's null-safe `recordAcceptanceFinalization` check is
+      the pattern — the first review round of this PR caught procedure/authoring throwing a
+      bare TypeError from `approval_ready` where `execution` is null), and AFTER the remaining
+      evidence checks so the hardened error semantics are preserved.
+      Adopted by all five skills: **api-reference-sync** (the reference) now expresses its six
+      transitions through `REVIEW_MACHINE` and persists through the shared CAS session-store —
+      `loadReviewSessionState`/`saveReviewSession(expectedPreviousDigest)` threaded through
+      sdk-review-session, sdk-document-rollback, and sdk-doc-sync (resume, create, and the
+      acceptance finalizer), closing the last gap in the durability contract; **localized** runs
+      five transitions through `LOCALIZATION_MACHINE` (the finalized idempotent-retry pre-check
+      stays skill-side; `SESSION_FINALIZED` unified to `SESSION_TERMINAL`); **procedure** and
+      **authoring** run their lifecycles through `PROCEDURE_MACHINE`/`AUTHORING_MACHINE`
+      (editorial decisions are a `'@self'` transition refusing accepted sessions); and
+      **verification (doc-code-verify)** puts its in-memory `RuntimeSession` lifecycle
+      (`ready → executing → completed` terminal) on the same machine — observe-after-complete
+      and double-finalize now refuse instead of relying on journal-layer guards. Scope notes:
+      per-skill session schemas stay skill-specific by design; localized/procedure/authoring
+      sessions gain the machine's `updatedAt` stamp (api already stamped it); doc-code-verify
+      has no persisted review session — its durable authority remains the execution journal,
+      which the machine now mirrors explicitly. Known local-run friction (pre-existing #43
+      behavior, working as designed): run-manifest evidence under `tmp/` is keyed by
+      batchDigest while its content covers the source fingerprint, so re-running suites after
+      source edits refuses with `RUN_MANIFEST_EVIDENCE_CONFLICT` until the stale evidence is
+      moved aside; fresh CI runners never see it.
+
+      PR #45 review round 2 (2026-09-28, P1 concurrency consistency): the
+      rollback execute path ran the REAL external mutations first and only
+      then saved the session against the pre-execution digest — a concurrent
+      writer mid-flight produced the unrecoverable counterexample (external
+      rollback happened; canonical session kept the concurrent update with
+      `rollbackReceipts: []`; replaying the journal failed because the
+      concurrent update had cleared `activeExecution`). Fix, per the
+      prescription: **the intent/lease is CAS-persisted BEFORE any external
+      mutation** — `recordRollbackIntent` binds reviewUnitId +
+      rollbackManifestDigest + rollbackJournalPath + the original execution
+      journal (validated at lease time; refuses `ROLLBACK_INTENT_CONFLICT`
+      for a different in-flight rollback, refuses before side effects when
+      nothing is executed, adopts an identical lease idempotently), and the
+      **completion is journal-driven from a FRESH session load** (the
+      pre-execution digest is stale by construction once side effects ran):
+      `recordDocumentRollback` accepts the lease as the anchor when a
+      concurrent writer moved the unit out of active/accepted, requires the
+      journal to prove the leased manifest, clears the lease on success, and
+      preserves the concurrent writer's evidence. The counterexample is a
+      regression test at both levels (store + CLI with an injected executor
+      whose `execute` performs the concurrent write). The same
+      "external write, then CAS against a stale digest" ordering was audited
+      across all live-write paths: the sdk-doc-sync resume execution save
+      (`recordDocumentExecution`) and the procedure/authoring execute
+      completions now reload the session FRESH before recording, so the
+      durable write-ahead journals converge or refuse typed; the acceptance
+      finalizer already had this shape (the durable receipt is the recovery
+      evidence — rerun completes with zero writes); the rollback reconcile
+      path has no side effects between load and save, so its load-time CAS is
+      benign. Residual, recorded honestly: a concurrent writer that lands
+      between a fresh reload and a forward-execution completion save still
+      surfaces a typed CAS refusal — the journal remains the recovery
+      evidence, but completing it into a session that moved on semantically
+      (e.g. accepted by another writer) requires operator reconciliation; the
+      rollback path, where that was previously impossible, is the one now
+      fully self-healing via the lease (narrowed by the round-3 re-review
+      below and restored by the lease-ownership guard).
+
+      PR #45 re-review round 3 (2026-09-28, independent code-reviewer pass
+      over the two fix commits): approve-with-comments with one P2, fixed in
+      this round. **P2 — lease ownership**: `recordDocumentRollback` cleared
+      `activeRollback` unconditionally, so any receipt path completing unit A
+      while unit B's lease was in flight (multi-unit session, crash-then-rerun
+      interleaving) wiped B's recovery anchor and reopened the round-2
+      counterexample for B. Fix: the apply patch consumes the lease only when
+      it belongs to the completed unit
+      (`activeRollback: intent ? null : clone(session.activeRollback)`), with
+      a multi-unit regression test at store level (A reconciles through its
+      complete journal while B is leased; B's lease survives, still drives
+      B's completion after a concurrent changes-requested, and is cleared
+      only by B's own receipt) verified to fail on the pre-fix code.
+      `status()` now surfaces `activeRollback`, so a
+      `ROLLBACK_INTENT_CONFLICT` is diagnosable from the summary alone.
+      Residuals, recorded honestly (all fail-closed, none blocking): the
+      rollback reconcile save has no bounded CAS retry (unlike the completion
+      path) — a concurrent writer between its load and save surfaces one
+      typed refusal plus a rerun, benign because that path has no side
+      effects between load and save; two simultaneous identical CLI
+      invocations (same unit, manifest, journal) can both pass idempotent
+      lease adoption and both construct executors — the journal's
+      prepared/observed duplicate guards are check-then-append without an
+      interprocess lock, a pre-existing exposure that predates the lease and
+      requires deliberately concurrent identical runs; a per-journal lock
+      would close it if ever needed.
 
 ### P2 — runtime proof beyond offline determinism
 

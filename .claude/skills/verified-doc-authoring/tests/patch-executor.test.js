@@ -121,6 +121,23 @@ test('executor journals exact patch, refetches, and acceptance binds claims and 
   }), /digest mismatch/i);
 });
 
+test('acceptance from an approval-ready session refuses with the machine, not a bare TypeError', () => {
+  const session = createAuthoringSession({ sessionId: 'authoring:premature', plan: plan() });
+  assert.equal(session.execution, null);
+  // verifyRollbackManifest and the receipt check dereference
+  // session.execution, which only exists once the patch executed; the
+  // lifecycle guard must fire before that dereference (6.6 review round 2).
+  assert.throws(
+    () => recordAuthoringAcceptance(session, {
+      executionJournalDigest: `sha256:${'e'.repeat(64)}`,
+      liveResultDigest: `sha256:${'f'.repeat(64)}`,
+      decisionDigest: `sha256:${'d'.repeat(64)}`,
+      rollbackManifest: null,
+    }),
+    (error) => error.code === 'INVALID_TRANSITION_SOURCE',
+  );
+});
+
 test('rollback differentiates existing restoration from proven dependency-free creation deletion', () => {
   const existing = plan();
   const restore = planAuthoringRollback({

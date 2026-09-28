@@ -799,9 +799,14 @@ class SyncExecutor {
     const liveReferences = await this.tokenReferenceReader.listTokenReferences({
       documentToken: plan.source.documentToken,
     });
-    const liveRecordIds = [...new Set((liveReferences || [])
+    // Reference multiset comparison: duplicates are meaningful because cloned
+    // bases reuse recordIds across tracks, so the live enumeration is kept
+    // unpunished by dedup and compared count-for-count with the approved
+    // evidence.
+    const liveRecordIds = (liveReferences || [])
       .map((entry) => entry?.recordId)
-      .filter(nonEmptyString))].sort();
+      .filter(nonEmptyString)
+      .sort();
     const approvedRecordIds = [...evidence.sharedToken.referencedRecordIds].sort();
     if (JSON.stringify(liveRecordIds) !== JSON.stringify(approvedRecordIds)) {
       const error = new SyncExecutionError(
@@ -833,10 +838,10 @@ class SyncExecutor {
     const approved = [...(plan.inheritanceEvidence?.sharedToken?.referencedRecordIds || [])]
       .filter(nonEmptyString);
     if (approved.length === 0) return;
-    const expected = attestation.decision === 'COPY_PATCH_AND_REPOINT'
-      || attestation.decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE'
-      ? approved.filter((recordId) => recordId !== plan.source.recordId)
-      : approved;
+    // For copy-patch transitions the repointed record drops off the source
+    // token; the single-occurrence removal happens against the live multiset
+    // comparison below (cloned bases can duplicate the recordId).
+    const expected = approved;
     if (typeof this.tokenReferenceReader?.listTokenReferences !== 'function') {
       const error = new SyncExecutionError(
         'TREE_DELTA_VERIFICATION_REQUIRED',
@@ -848,10 +853,20 @@ class SyncExecutor {
     const liveReferences = await this.tokenReferenceReader.listTokenReferences({
       documentToken: plan.source.documentToken,
     });
-    const liveRecordIds = [...new Set((liveReferences || [])
+    // Multiset comparison (see _verifySharedTokenEvidence): cloned bases
+    // reuse recordIds, so duplicates carry real reference counts.
+    const liveRecordIds = (liveReferences || [])
       .map((entry) => entry?.recordId)
-      .filter(nonEmptyString))].sort();
-    const expectedRecordIds = [...new Set(expected)].sort();
+      .filter(nonEmptyString)
+      .sort();
+    // Repointing removes exactly one reference — the repointed track's record
+    // — not every record sharing its (possibly cloned) recordId.
+    const expectedRecordIds = [...expected].sort();
+    if (attestation.decision === 'COPY_PATCH_AND_REPOINT'
+      || attestation.decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
+      const index = expectedRecordIds.indexOf(plan.source.recordId);
+      if (index >= 0) expectedRecordIds.splice(index, 1);
+    }
     const ok = JSON.stringify(liveRecordIds) === JSON.stringify(expectedRecordIds);
     result.treeDeltaVerification = {
       invariantId: attestation.id,

@@ -65,7 +65,11 @@ function createInheritanceEvidence({
     target: clone(target) || null,
     sharedToken: {
       status: sharedTokenStatus || 'unknown',
-      referencedRecordIds: [...new Set((referencedRecordIds || []).filter(nonEmptyString))].sort(),
+      // Reference multiset, kept with duplicates: cloned Bitable bases (e.g. a
+      // track base duplicated from its predecessor) reuse the same recordId in
+      // two bases, and one record per base must each survive as an entry so
+      // the live requery can compare reference counts, not just ids.
+      referencedRecordIds: (referencedRecordIds || []).filter(nonEmptyString).sort(),
     },
     trackInventoryDigests: clone(trackInventoryDigests) || {},
     collectedAt,
@@ -119,16 +123,19 @@ function validateInheritanceEvidence(evidence, {
   } else if (evidence.sharedToken.referencedRecordIds.some((id) => !nonEmptyString(id))) {
     errors.push({ code: 'SHARED_TOKEN_EVIDENCE_REFERENCES_REQUIRED', path: '$.sharedToken.referencedRecordIds' });
   } else if (nonEmptyString(evidence.current?.recordId) && SHARED_TOKEN_STATUSES.has(evidence.sharedToken?.status)) {
-    // referencedRecordIds is the complete set of Bitable records (across every
-    // enumerated track, current record included) whose Docs pointer resolves to
-    // current.documentToken. The status must agree with that set so the live
-    // pre-write requery has an exact approved baseline to compare against.
-    const referenced = new Set(evidence.sharedToken.referencedRecordIds);
-    const includesCurrent = referenced.has(evidence.current.recordId);
+    // referencedRecordIds is the complete reference multiset of Bitable
+    // records (across every enumerated track, current record included) whose
+    // Docs pointer resolves to current.documentToken. Duplicates are
+    // meaningful: cloned bases reuse recordIds, so a token referenced once
+    // per cloned base appears twice. The status must agree with the multiset
+    // so the live pre-write requery has an exact approved baseline to compare
+    // against.
+    const references = evidence.sharedToken.referencedRecordIds.filter(nonEmptyString);
+    const includesCurrent = references.includes(evidence.current.recordId);
     const consistent = evidence.sharedToken.status === 'shared'
-      ? includesCurrent && referenced.size >= 2
+      ? includesCurrent && references.length >= 2
       : evidence.sharedToken.status === 'unshared'
-        ? includesCurrent && referenced.size === 1
+        ? includesCurrent && references.length === 1
         : true;
     if (!consistent) {
       errors.push({ code: 'SHARED_TOKEN_EVIDENCE_REFERENCES_INCONSISTENT', path: '$.sharedToken.referencedRecordIds' });

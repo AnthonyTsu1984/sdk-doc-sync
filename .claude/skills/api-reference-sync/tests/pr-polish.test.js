@@ -276,6 +276,78 @@ test('splice-boundary and partial-overlap exploits are rejected (review round 1 
     assert.equal(firstErrorCode(expandManifest, requestBase), 'PR_POLISH_FULL_REWRITE');
 });
 
+test('junction composition of individually-clean edits is rejected (review round 2 regressions)', () => {
+    const applyErrorCode = (manifest, baseContent) => {
+        try {
+            applyPolishManifest({ manifest, baseContent });
+            return null;
+        } catch (error) {
+            return error.code;
+        }
+    };
+    const manifestOver = (baseContent, edits) => ({
+        schemaVersion: 1,
+        unit: 'u',
+        baseContentDigest: verbatimContentDigest(baseContent),
+        edits,
+    });
+    // Each junction puts the two anchors on ONE line so the forbidden shape
+    // only exists in the COMPOSED splice — neither per-edit candidate ever
+    // contains it. Padding lines keep footprints far under the tripwire.
+    const padding = [
+        'A plain prose line so the page is not trivially small at all.',
+        'Another plain prose line keeps the footprint under the tripwire.',
+        'A third plain prose line rounds the body out for the pass.',
+        'A fourth plain prose line completes the realistic page body.',
+    ];
+
+    // J1: edit1 ends its replacement with a newline and edit2 (on the
+    // adjacent anchor) starts a fence run — the composed second line is a
+    // fence delimiter.
+    const fenceBase = ['Alpha opens AnchorOneBetaTwo and closes the line with prose.', ...padding].join('\n');
+    assert.equal(
+        applyErrorCode(manifestOver(fenceBase, [
+            { anchor: 'AnchorOne', replacement: 'X\n' },
+            { anchor: 'BetaTwo', replacement: ' ```evil' },
+        ]), fenceBase),
+        'PR_POLISH_FORBIDDEN_INTRODUCTION',
+    );
+
+    // J2: two replacements on adjacent anchors compose a complete
+    // <include ...> marker.
+    const includeBase = ['Gamma opens AnchorOneBetaTwo and finishes ordinary prose.', ...padding].join('\n');
+    assert.equal(
+        applyErrorCode(manifestOver(includeBase, [
+            { anchor: 'AnchorOne', replacement: 'Zed <include' },
+            { anchor: 'BetaTwo', replacement: ' target="zilliz">x</include>' },
+        ]), includeBase),
+        'PR_POLISH_FORBIDDEN_INTRODUCTION',
+    );
+
+    // J3: two replacements on adjacent anchors compose a complete absolute
+    // link URL.
+    const urlBase = ['Delta opens AnchorOneBetaTwo and ends the prose.', ...padding].join('\n');
+    assert.equal(
+        applyErrorCode(manifestOver(urlBase, [
+            { anchor: 'AnchorOne', replacement: 'see [d](http' },
+            { anchor: 'BetaTwo', replacement: 's://evil.example.com/y) now' },
+        ]), urlBase),
+        'PR_POLISH_URL_SET_CHANGED',
+    );
+
+    // No false positive: adjacent legitimate edits that touch neighboring
+    // phrases on the same line still compose cleanly.
+    const adjacent = applyPolishManifest({
+        manifest: manifestOver(fenceBase, [
+            { anchor: 'Alpha opens AnchorOne', replacement: 'Reworded opening' },
+            { anchor: 'and closes the line with prose.', replacement: 'and closes the sentence with prose.' },
+        ]),
+        baseContent: fenceBase,
+    });
+    assert.ok(adjacent.polishedContent.includes('Reworded opening'));
+    assert.ok(adjacent.polishedContent.includes('closes the sentence with prose.'));
+});
+
 test('comparePolishedContent proves the landed page against the recomputed terminal bytes', () => {
     const { polishedContent } = applyPolishManifest({
         manifest: manifestWith([{ anchor: PROSE, replacement: 'Grants a role to a user.' }]),

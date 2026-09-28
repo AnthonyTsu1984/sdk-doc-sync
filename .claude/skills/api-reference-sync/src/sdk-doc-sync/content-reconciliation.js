@@ -166,7 +166,8 @@ function reconcileContextVerbatim({ contexts = [] } = {}) {
             }
             terminalContent = chain.polishedContent;
             terminalLabel = 'polished terminal content';
-        }        if (typeof context.rawContent === 'string') {
+        }
+        if (typeof context.rawContent === 'string') {
             const comparison = compareVerbatimContent({
                 expectedContent: terminalContent,
                 rawContent: context.rawContent,

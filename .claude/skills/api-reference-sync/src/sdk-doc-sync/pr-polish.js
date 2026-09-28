@@ -94,12 +94,15 @@ function sameValues(left, right) {
 }
 
 // Classifies the protected lines of the base content. Returns per-line
-// `{ start, end, protected }` spans so anchor offsets can be checked exactly.
+// `{ start, end, lineIndex, protected }` spans so anchor offsets can be
+// checked exactly and protected line texts can be compared as a sequence.
 function lineSpans(content) {
     const spans = [];
     let offset = 0;
     let inFence = false;
-    for (const line of String(content).split('\n')) {
+    const lines = String(content).split('\n');
+    for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+        const line = lines[lineIndex];
         const start = offset;
         const end = start + line.length;
         offset = end + 1;
@@ -111,7 +114,7 @@ function lineSpans(content) {
             || FOOTER_LINE.test(line)
             || REQUEST_METHODS_LINE.test(line);
         if (FENCE_LINE.test(line)) inFence = !inFence;
-        spans.push({ start, end, protected: protectedLine });
+        spans.push({ start, end, lineIndex, protected: protectedLine });
     }
     return spans;
 }
@@ -270,16 +273,57 @@ function validatePolishManifest({ manifest, baseContent } = {}) {
     return { errors, spans, replacements };
 }
 
+// Texts of the protected lines in fence-state order. The protected-line
+// SEQUENCE of the composed output must equal the base's exactly.
+function protectedLineTexts(content) {
+    const lines = String(content).split('\n');
+    return lineSpans(String(content))
+        .filter((span) => span.protected)
+        .map((span) => lines[span.lineIndex]);
+}
+
 // Deterministic application: validates everything first (fail-closed), then
 // splices the replacements back-to-front so earlier offsets stay valid.
 function applyPolishManifest({ manifest, baseContent } = {}) {
     const { errors, replacements } = validatePolishManifest({ manifest, baseContent });
     if (errors.length > 0) throw errors[0];
-    let polished = String(baseContent ?? '');
+    const base = String(baseContent ?? '');
+    let polished = base;
     for (let index = replacements.length - 1; index >= 0; index -= 1) {
         const { start, end, replacement } = replacements[index];
         polished = polished.slice(0, start) + replacement + polished.slice(end);
     }
+
+    // Composed-result assertion: per-edit region checks prove preservation
+    // only inside each edited region. Two individually-clean edits can
+    // assemble forbidden content at their junction (a fence delimiter, an
+    // <include> marker, or a complete link URL split across two
+    // replacements) — bytes no per-edit candidate ever contains. The
+    // document-level comparison of base vs composed output closes every
+    // junction at once and cannot false-positive: anchors never touch
+    // protected lines, and per-region multiset/sequence preservation over
+    // disjoint regions composes by cancellation.
+    const composedProblems = [];
+    if (JSON.stringify(protectedLineTexts(polished)) !== JSON.stringify(protectedLineTexts(base))) {
+        composedProblems.push(polishError(
+            'PR_POLISH_FORBIDDEN_INTRODUCTION',
+            'composed edits change the protected-line sequence (junction forging)',
+        ));
+    }
+    if (!sameValues(collectMultiset(base, INLINE_CODE_SPAN), collectMultiset(polished, INLINE_CODE_SPAN))) {
+        composedProblems.push(polishError(
+            'PR_POLISH_CODE_SPAN_CHANGED',
+            'composed edits change the document-level inline code spans',
+        ));
+    }
+    if (!sameValues(collectSequence(base, ABSOLUTE_LINK), collectSequence(polished, ABSOLUTE_LINK))) {
+        composedProblems.push(polishError(
+            'PR_POLISH_URL_SET_CHANGED',
+            'composed edits add, drop, or reorder an absolute link URL at the document level',
+        ));
+    }
+    if (composedProblems.length > 0) throw composedProblems[0];
+
     const provenance = Object.freeze({
         invariantId: INVARIANT_ID,
         baseContentDigest: manifest.baseContentDigest,

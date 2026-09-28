@@ -54,6 +54,13 @@ jobs:
       - name: Require isolated model-eval credentials
         if: github.event_name == 'workflow_dispatch'
         run: test -n "$LLM_API_KEY"
+      - name: PRODUCTION_ENV_BAN — DOC_OPS_ALLOW_LEGACY_LIVE must never be set
+        run: |
+          if [ -n "${DOC_OPS_ALLOW_LEGACY_LIVE:-}" ]; then
+            echo "PRODUCTION_ENV_BAN: DOC_OPS_ALLOW_LEGACY_LIVE is set in the build environment; production credentials must never see the legacy-live flag (wave-3 close-out, checklist 6.4)." >&2
+            exit 1
+          fi
+
       - name: Run complete admission gate
         env:
           ROLLOUT_PHASE: ${{ github.event.inputs.rollout_phase || format('pr-{0}', github.event.pull_request.number) }}

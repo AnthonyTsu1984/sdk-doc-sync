@@ -33,8 +33,8 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
     now: new Date().toISOString(),
   });
 
-  // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2); +1 read-only content reconciliation scripts/reconcile-content.js (content-fidelity phase 4); +1 read-only local polish applier scripts/apply-polish-context.js (content-fidelity phase 4 step 5); +1 read-only identity reconciliation bin/identity-reconcile.js (identity-coverage reconciliation); +1 read-only coverage report scripts/invariant-coverage-report.js (phase 5 shared substrate); −79 legacy-live one-off campaign scripts removed (phase-6 wave-1 disposition, 165→86); +2 read-only admission gates scripts/check-js-syntax.js and scripts/run-focused-tests.js (6.5 review hardening, 86→88); +1 read-only artifact publisher scripts/publish-admission-artifact.js (6.11 admission artifact publication, 88→89).
-  assert.equal(discovered.length, 89);
+  // Entry-point pin: re-derive with `node -e "const {discoverEntrypoints}=require('.claude/skills/doc-ops-core/src/write-entrypoint-registry');console.log(discoverEntrypoints(process.cwd()).length)"` — 4 additions arrived with the pr-intake toolchain (0cf7505); +1 read-only admission gate scripts/check-invariant-coverage.js (invariant registry phase 1); +1 read-only reconciliation scripts/reconcile-tree-delta.js (invariant policy kernel phase 2); +1 read-only content reconciliation scripts/reconcile-content.js (content-fidelity phase 4); +1 read-only local polish applier scripts/apply-polish-context.js (content-fidelity phase 4 step 5); +1 read-only identity reconciliation bin/identity-reconcile.js (identity-coverage reconciliation); +1 read-only coverage report scripts/invariant-coverage-report.js (phase 5 shared substrate); −79 legacy-live one-off campaign scripts removed (phase-6 wave-1 disposition, 165→86); +2 read-only admission gates scripts/check-js-syntax.js and scripts/run-focused-tests.js (6.5 review hardening, 86→88); +1 read-only artifact publisher scripts/publish-admission-artifact.js (6.11 admission artifact publication, 88→89); −4 dormant legacy-live tools removed with the wave-3 close-out (feishu-doc.js, feishu-doc-translator.js, node-v30-update.js, java-v26-update.js — doc-agent-live-write reclassified canonical-governed; baseline legacyLiveCount 5→0), 89→85.
+  assert.equal(discovered.length, 85);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');
@@ -51,10 +51,15 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   const verifier = registry.entries.find((entry) => entry.path.endsWith('/verify-feishu-doc-code.js'));
   assert.equal(verifier.approval, 'exact-runtime-manifest-digest');
   assert.equal(verifier.journal, 'required-for-mutating-live-runtime');
-  const legacy = registry.entries.find((entry) => entry.path.endsWith('/feishu-doc-translator.js'));
-  assert.equal(legacy.classification, 'legacy-live');
-  assert.equal(legacy.quarantineFlag, 'DOC_OPS_ALLOW_LEGACY_LIVE');
-  assert.match(legacy.canonicalReplacement, /localized-doc-sync|Task 9/);
+  // Wave 3: the legacy-live population is zero — doc-agent-live-write is
+  // canonical-governed and the four dormant tools are removed.
+  const legacy = registry.entries.filter((entry) => entry.classification === 'legacy-live');
+  assert.equal(legacy.length, 0);
+  assert.equal(registry.baseline.legacyLiveCount, 0);
+  const agent = registry.entries.find((entry) => entry.path.endsWith('doc-agent-live-write.js'));
+  assert.equal(agent.classification, 'canonical-governed');
+  assert.equal(agent.approval, 'exact-batch-digest');
+  assert.equal(agent.journal, 'required');
 });
 
 test('write capability detection distinguishes explicit tenant mutations from read-only scans', () => {

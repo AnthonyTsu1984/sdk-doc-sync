@@ -36,7 +36,7 @@ const WRITE_SIGNATURES = [
 // optional 'use strict' directive. A mention buried in a comment, dead branch,
 // or behind other statements does not quarantine anything. The guard may be
 // invoked directly, or the module may be destructured first and the call
-// wrapped in createExceptionGovernance (the sanctioned legacy-live override).
+// legacy-live classification itself was retired at wave 3 (baseline 0).
 function stripLeadingComments(text) {
   return text
     .replace(/\/\*[\s\S]*?\*\//g, ' ')

@@ -9,7 +9,6 @@ const { execSync } = require('node:child_process');
 
 const DocxBlockWriter = require('../../.claude/skills/api-reference-sync/src/sdk-doc-sync/docx-block-writer');
 const { createApprovalEnvelope } = require('../../.claude/skills/doc-ops-core/src/approval-guard');
-const { createExceptionGovernance } = require('../../.claude/skills/doc-ops-core/src/legacy-quarantine');
 const { stubRunManifest } = require('../../.claude/skills/doc-ops-core/src/run-manifest');
 
 function gitRepo() {
@@ -30,13 +29,37 @@ function transportLog() {
     return { calls, transport };
 }
 
-function sanctionedDecision(entrypointPath) {
-    return {
-        quarantined: false,
-        reason: 'exception-and-gate-present',
-        entry: { path: entrypointPath },
-        exceptionExpiresAt: '2099-01-01T00:00:00.000Z',
-    };
+// Wave 3 removed the exception channel; writer-behavior coverage builds the
+// canonical governed form directly (approval + run manifest over a git root).
+function canonicalGoverned(repoRoot, seed) {
+    const { WriterGovernance } = require('../../.claude/skills/doc-ops-core/src/writer-governance');
+    const { createRunManifest } = require('../../.claude/skills/doc-ops-core/src/run-manifest');
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'docx-test' });
+    const batchDigest = `sha256:${seed}`;
+    governance.bindApproval({
+        batchDigest,
+        actionCount: 1,
+        targets: [],
+        sideEffects: [],
+        approval: createApprovalEnvelope({
+            skill: 'api-reference-sync',
+            operation: 'docx-test',
+            batchDigest,
+            actionCount: 1,
+            targets: [],
+            sideEffects: [],
+            decision: 'approved',
+        }),
+        invariantAttestations: [],
+    });
+    governance.bindRunManifest(createRunManifest({
+        skill: 'api-reference-sync',
+        skillVersion: 'docx-block-writer-test@1',
+        repoRoot,
+        batchDigest,
+        sessionDigest: 'docx-block-writer-test',
+    }), { repoRoot });
+    return governance;
 }
 
 test('a docx block mutation without governance is refused before any transport call', async () => {
@@ -78,14 +101,9 @@ test('a governance with an approval but no run manifest is refused', async () =>
     assert.deepEqual(calls, []);
 });
 
-test('an exception-governed batchUpdate reaches transport exactly once with the governed endpoint', async () => {
+test('a canonical-governed batchUpdate reaches transport exactly once with the governed endpoint', async () => {
     const { calls, transport } = transportLog();
-    const governance = createExceptionGovernance({
-        skill: 'api-reference-sync',
-        operation: 'add-type-links',
-        decision: sanctionedDecision('scripts/add-type-links.js'),
-        repoRoot: gitRepo(),
-    });
+    const governance = canonicalGoverned(gitRepo(), 'a'.repeat(64));
     const writer = new DocxBlockWriter({ governance, transport });
     const requests = [{ block_id: 'b1', update_text_elements: { elements: [] } }];
     await writer.batchUpdate('DoXbLoCk', requests);
@@ -99,12 +117,7 @@ test('an exception-governed batchUpdate reaches transport exactly once with the 
 test('a tree that drifts after binding is refused at the first governed mutation', async () => {
     const root = gitRepo();
     const { calls, transport } = transportLog();
-    const governance = createExceptionGovernance({
-        skill: 'api-reference-sync',
-        operation: 'post-fix-links',
-        decision: sanctionedDecision('scripts/post-fix-links.js'),
-        repoRoot: root,
-    });
+    const governance = canonicalGoverned(root, 'b'.repeat(64));
     const writer = new DocxBlockWriter({ governance, transport });
     fs.writeFileSync(path.join(root, 'app.js'), 'v2-mid-run\n');
     await assert.rejects(

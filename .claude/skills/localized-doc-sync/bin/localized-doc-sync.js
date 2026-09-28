@@ -199,7 +199,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // snapshots. A self-generated artifact cannot substitute for this.
     const client = loadPlanClient(args, dependencies);
     await reEnumerateForFreshness({ client, sourceBase: manifest.sourceBase, targetBase: manifest.targetBase });
-    const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [] });
+    // F4 (sixth review round): a --client-module override decides how fresh
+    // the freshness re-enumeration is, so the override path is stamped into
+    // the plan artifact (digest-covered via the units' boundUnitDigest) for
+    // auditable provenance.
+    const planProvenance = args.clientModule ? { clientModule: path.resolve(args.clientModule) } : null;
+    const units = buildReviewUnits({ scanManifestDigest: manifest.semanticDigest, issues: manifest.issues || [], planProvenance });
     writeJson(args.output, units);
     out(`Review units: ${units.length}`);
     return units;

@@ -66,7 +66,7 @@ function metaGroupKey(issue) {
   ]);
 }
 
-function buildReviewUnits({ scanManifestDigest, issues = [] }) {
+function buildReviewUnits({ scanManifestDigest, issues = [], planProvenance = null }) {
   if (!scanManifestDigest) throw new TypeError('scanManifestDigest is required');
   for (const issue of issues) {
     if (issue.placement !== 'canonical' && (issue.changedFields || []).includes('Targets')) {
@@ -116,12 +116,13 @@ function buildReviewUnits({ scanManifestDigest, issues = [] }) {
     // boundUnitDigest stamps the canonical unit snapshot (acceptance and
     // lineage fields included) so post-plan edits of the unit file are
     // refused at the executor boundary.
-    units.push(withBoundUnitDigest(canonicalize(unit)));
+    units.push(withBoundUnitDigest(canonicalize(planProvenance ? { ...unit, planProvenance } : unit)));
   }
   for (const group of metadataGroups.values()) {
     group.sort((a, b) => a.issueId.localeCompare(b.issueId));
     const issueIds = group.map((issue) => issue.issueId);
     units.push(withBoundUnitDigest(canonicalize({
+      ...(planProvenance ? { planProvenance } : {}),
       schemaVersion: 1,
       reviewUnitId: unitId('metadata', issueIds),
       kind: 'metadata',

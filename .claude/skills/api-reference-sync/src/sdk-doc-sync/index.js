@@ -626,7 +626,18 @@ class SdkDocSync {
             const blockedUnitIds = this.batchContinue
                 ? pendingExecutionReviewUnitIds
                 : new Set(activeExecutionReviewUnitId ? [activeExecutionReviewUnitId] : []);
+            // In batch mode a sibling's pending execution is EXPECTED while the
+            // batch works through to its review gate — the planningErrors entry
+            // would block the batch's own execution at the planningErrors gate
+            // below. Only a gate on the unit the operator explicitly selected
+            // stays a planning error; the rest surface informationally.
+            const batchPendingGated = [];
             for (const blockedId of blockedUnitIds) {
+                const isExplicitSelection = this.batchContinue && this.reviewUnitId === blockedId;
+                if (this.batchContinue && !isExplicitSelection) {
+                    batchPendingGated.push(blockedId);
+                    continue;
+                }
                 result.planningErrors.push({
                     stableId: blockedId,
                     diffAction: 'REVIEW_UNIT',
@@ -647,6 +658,12 @@ class SdkDocSync {
             const selectableUnits = reviewUnits.units.filter((unit) => (
                 unit.actionIds.length > 0 && !verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId)
             ) && !blockedUnitIds.has(unit.reviewUnitId));
+            if (batchPendingGated.length > 0) {
+                result.reviewSession = {
+                    ...(result.reviewSession || {}),
+                    pendingGatedUnitIds: batchPendingGated,
+                };
+            }
             result.remainingReviewUnitIds = selectableUnits.map((unit) => unit.reviewUnitId);
             result.allReviewUnitsAccepted = reviewUnits.manifest.units.length > 0
                 && reviewUnits.manifest.units.every((unit) => verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId));

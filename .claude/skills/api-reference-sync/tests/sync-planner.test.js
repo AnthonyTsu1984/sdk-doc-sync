@@ -2329,23 +2329,28 @@ test('per-unit mode blocks on any pending execution; --batch-continue blocks onl
   assert.match(strictErrors[0].message, /must be accepted or rolled back before another write/);
   assert.equal(strictResult.remainingReviewUnitIds.length, 0);
 
-  // Batch mode: only the pending unit itself is blocked; its siblings stay
-  // selectable so the batch can execute through to its review gate.
+  // Batch mode: the pending unit's gate surfaces INFORMATIONALLY (the batch
+  // must execute through to its review gate), so planningErrors stays clean —
+  // only an explicit --review-unit-id ON the pending unit itself blocks.
   const batchCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
   const batch = syncFixture({ dryRun: true, calls: batchCalls, approvalCallback: async (actions) => actions });
   batch.reviewSession = buildSession();
   batch.collaborativeReview = true;
   batch.batchContinue = true;
   const batchResult = await batch.run();
-  const batchErrors = batchResult.planningErrors.filter((entry) => entry.code === 'ACTIVE_DOCUMENT_REVIEW_REQUIRED');
-  assert.equal(batchErrors.length, 1);
-  assert.equal(batchErrors[0].stableId, 'review:node:Collections:createCollection');
-  assert.match(batchErrors[0].message, /has an unaccepted execution/);
-  // The fixture manifest holds exactly the pending unit, so "siblings stay
-  // selectable" reduces to: the pending unit is the only thing gated, and a
-  // NON-pending unit in the same manifest is not added to the gate errors.
+  assert.equal(batchResult.planningErrors.filter((entry) => entry.code === 'ACTIVE_DOCUMENT_REVIEW_REQUIRED').length, 0);
+  assert.deepEqual(batchResult.reviewSession.pendingGatedUnitIds, ['review:node:Collections:createCollection']);
   assert.equal(batchResult.remainingReviewUnitIds.includes('review:node:Collections:createCollection'), false);
-  const batchBlockedIds = new Set(batchErrors.map((entry) => entry.stableId));
-  assert.equal(batchBlockedIds.has('review:node:Collections:createCollection'), true);
-  assert.equal(batchErrors.every((entry) => entry.stableId === 'review:node:Collections:createCollection'), true);
+
+  // An explicit selection OF the pending unit in batch mode stays a hard
+  // planning error — accept or roll back it before re-planning it.
+  const batchExplicit = syncFixture({ dryRun: true, calls: { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 }, approvalCallback: async (actions) => actions });
+  batchExplicit.reviewSession = buildSession();
+  batchExplicit.collaborativeReview = true;
+  batchExplicit.batchContinue = true;
+  batchExplicit.reviewUnitId = 'review:node:Collections:createCollection';
+  const explicitResult = await batchExplicit.run();
+  const explicitErrors = explicitResult.planningErrors.filter((entry) => entry.code === 'ACTIVE_DOCUMENT_REVIEW_REQUIRED');
+  assert.equal(explicitErrors.length, 1);
+  assert.match(explicitErrors[0].message, /has an unaccepted execution/);
 });

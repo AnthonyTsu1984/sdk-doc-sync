@@ -176,3 +176,17 @@ test('canonicalization v3 absorbs exactly the tokens the raw_content serializer 
     assert.equal(alteredCode.ok, false);
     assert.ok(alteredCode.diffs.length > 0);
 });
+
+test('canonicalization normalizes the symmetric HTML-bracket escapes on both sides', () => {
+  // The java authoring side escapes generics as List\<String\>; the converter
+  // unescapes both directions, and the fidelity comparison must normalize the
+  // pair identically — a one-sided stray backslash (the pre-fix asymmetric
+  // converter output) no longer diverges, and a fully-clean page matches too.
+  const expected = 'A list.\n\n*List\\<String\\>*\n';
+  const observedAsymmetric = 'ListRoles()\nA list.\nList\\<String>\n';
+  const observedClean = 'ListRoles()\nA list.\nList<String>\n';
+  assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: observedAsymmetric }).ok, true);
+  assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: observedClean }).ok, true);
+  // A real content difference is still caught.
+  assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: 'ListRoles()\nA list.\nList<Integer>\n' }).ok, false);
+});

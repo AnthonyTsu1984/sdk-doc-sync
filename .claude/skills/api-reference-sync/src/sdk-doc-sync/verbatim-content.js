@@ -107,6 +107,11 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
             line = line.replace(/(^|[^\\])\*([^*\n]+)\*/g, '$1$2');
             line = line.replace(/`([^`]*)`/g, '$1');
             line = htmlUnescape(line);
+            // The authoring side escapes HTML-sensitive `<>` symmetrically
+            // (`List\<String\>`); the converter unescapes both directions, so
+            // the fidelity comparison must normalize the pair identically on
+            // both sides instead of letting a stray backslash diverge.
+            line = line.replace(/\\([<>])/g, '$1');
             if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
         }
         out.push(line);

@@ -79,7 +79,7 @@ class MarkdownToFeishu {
             return [this.__create_text_element(text || '')];
         }
 
-        text = text.replace(/\\([\\`*_[\]{}()#+\-.!>])/g, '$1');
+        text = text.replace(/\\([\\`*_[\]{}()#+\-.!<>])/g, '$1');
         text = text.replace(/&(?:amp|lt|gt|quot|#39|#x27);/gi, entity => ({
             '&amp;': '&',
             '&lt;': '<',

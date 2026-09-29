@@ -671,6 +671,14 @@ function recordProgress(record) {
   return record?.fields?.Progress || record?.metadata?.progress || record?.metadata?.state || record?.progress || null;
 }
 
+// Resume reads records from two shapes: the raw Bitable record (fields.Targets)
+// and the operational type index (metadata.targets). Read both — a projection
+// that omits raw fields must not read as a Targets wipe.
+function recordTargets(record) {
+  const value = record?.fields?.Targets ?? record?.metadata?.targets ?? record?.targets;
+  return value === undefined ? null : value;
+}
+
 function recordDocumentToken(record) {
   const link = record?.fields?.Docs?.link || record?.metadata?.link || record?.metadata?.url || null;
   return record?.metadata?.token || record?.documentToken || (link ? link.split('/').filter(Boolean).at(-1) : null);
@@ -703,7 +711,7 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
         throw new Error(`Accepted record ${touched.recordId} must remain WIP until final acceptance`);
       }
       const expected = baseline.get(touched.actionId) || [];
-      const actual = normalizedTargetsValue(current?.fields?.Targets);
+      const actual = normalizedTargetsValue(recordTargets(current));
       if (JSON.stringify(actual) !== JSON.stringify(expected)) {
         throw new Error(`Accepted record ${touched.recordId} Targets drifted from the execution baseline (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
       }

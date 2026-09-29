@@ -864,3 +864,70 @@ test('recording the rolled-back execution journal is refused; a fresh journal af
   });
   assert.equal(rerecorded.activeExecution.executionJournalDigest, digestSemantic(freshEntries));
 });
+
+test('resume validation reads Targets from the type-index projection shape without reading it as a wipe', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-targets-index-'));
+  const entries = [
+    {
+      schemaVersion: 1,
+      type: 'prepared',
+      batchDigest: 'sha256:batch-a',
+      actionId: 'node:Collections:a',
+      rollbackCapsule: { beforeRecord: { recordId: 'rec-a', rawFields: { Targets: ['Milvus'] } } },
+    },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-a', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-a', status: 'executed', completionSentinel: true },
+  ];
+  const filePath = path.join(directory, 'execution-targets.jsonl');
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const journal = { filePath, digest: digestSemantic(entries) };
+
+  const accepted = recordDocumentAcceptance(
+    withExecution(createReviewSession({
+      sessionId: 'sdk-doc-sync:node:v3.0.x:test',
+      language: 'node',
+      sdkName: 'node',
+      track: 'v3.0.x',
+      reviewUnitManifest: manifest(),
+    }), journal),
+    {
+      reviewUnitId: 'review:node:Collections:a',
+      executionJournalPath: journal.filePath,
+      executionJournalDigest: journal.digest,
+      touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+      documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+      recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+      commentsResolved: true,
+    },
+  );
+
+  // The dry-run type index carries records in the projection shape
+  // (metadata.targets), NOT raw Bitable fields — this is exactly the shape
+  // the first accepted java unit tripped: a preserved ["Milvus"] read as a
+  // wipe because the check only looked at fields.Targets.
+  const indexRecord = (targets) => ({
+    id: 'rec-a',
+    metadata: {
+      progress: 'WIP',
+      targets,
+      token: 'doc-a',
+      link: 'https://example.feishu.cn/docx/doc-a',
+    },
+    parent: 'parent-a',
+  });
+
+  const preserved = validateResumeSession({
+    session: accepted,
+    reviewUnitManifest: manifest(),
+    currentRecords: [indexRecord(['Milvus'])],
+  });
+  assert.deepEqual(preserved.acceptedReviewUnitIds, ['review:node:Collections:a']);
+
+  // A genuinely empty projection still blocks — the shape tolerance must not
+  // swallow a real wipe.
+  assert.throws(() => validateResumeSession({
+    session: accepted,
+    reviewUnitManifest: manifest(),
+    currentRecords: [indexRecord([])],
+  }), /Targets drifted from the execution baseline \(expected \[Milvus\], got \[\]\)/);
+});

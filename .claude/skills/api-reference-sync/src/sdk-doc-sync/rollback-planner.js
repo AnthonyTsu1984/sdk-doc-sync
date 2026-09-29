@@ -86,6 +86,20 @@ function executionRefFor(session, reviewUnitId) {
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
   if (pending) return pending;
   if (session.activeExecution?.reviewUnitId === reviewUnitId) return session.activeExecution;
+  // A change-requested unit returned to reviewed planning, but its executed
+  // artifacts (created/copied records and documents) are still live in the
+  // release tenant. The change-request transition deliberately keeps the
+  // execution journal on disk "for audit and potential rollback" and anchors
+  // it in changeRequests[] — honor that anchor so the rebuild path (CREATE
+  // units demand record absence) can roll the artifacts back first.
+  const changeRequest = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  if (changeRequest) {
+    return {
+      reviewUnitId,
+      executionJournalPath: changeRequest.executionJournalPath,
+      executionJournalDigest: changeRequest.executionJournalDigest,
+    };
+  }
   return (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId) || null;
 }
 

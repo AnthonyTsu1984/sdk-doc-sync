@@ -473,9 +473,15 @@ function recordRollbackIntent(session, {
   }
   const pendings = pendingList(session);
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
-  const activeMatches = pending !== undefined;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const anchor = pending || accepted || null;
+  // A change-requested unit keeps its journal anchored in changeRequests[]
+  // ("for audit and potential rollback") — its executed artifacts are still
+  // live and the rebuild path needs the rollback to run first.
+  const changeRequested = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  const anchor = pending || accepted || (changeRequested ? {
+    executionJournalPath: changeRequested.executionJournalPath,
+    executionJournalDigest: changeRequested.executionJournalDigest,
+  } : null);
   const existing = session.activeRollback;
   if (existing) {
     const identical = existing.reviewUnitId === reviewUnitId
@@ -554,7 +560,11 @@ function recordDocumentRollback(session, receipt) {
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
   const activeMatches = pending !== undefined;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  let originalExecution = pending || accepted || null;
+  const changeRequested = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  let originalExecution = pending || accepted || (changeRequested ? {
+    executionJournalPath: changeRequested.executionJournalPath,
+    executionJournalDigest: changeRequested.executionJournalDigest,
+  } : null);
   if (!originalExecution && intent) {
     // The intent is the pre-side-effect anchor: even when a concurrent
     // writer moved the unit out of active/accepted, the durable lease

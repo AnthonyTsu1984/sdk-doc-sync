@@ -464,7 +464,6 @@ function createSchemaFirstArtifactProvider({
                     description: reference.summary,
                     type: reference.identity.kind,
                     progress: 'Draft',
-                    targets: [],
                     source: 'schema-first',
                 },
             };

@@ -6,6 +6,7 @@ const assert = require('node:assert/strict');
 const {
   executionTargetsBaseline,
   normalizedTargetsValue,
+  sameNormalizedTargets,
 } = require('../src/sdk-doc-sync/record-state');
 
 test('normalizedTargetsValue canonicalizes every observed Targets shape to a sorted string list', () => {
@@ -35,4 +36,13 @@ test('executionTargetsBaseline derives per-action Targets only from journal roll
   assert.equal(baseline.has('action-c'), false);
   assert.deepEqual(executionTargetsBaseline(null), new Map());
   assert.deepEqual(executionTargetsBaseline([]), new Map());
+});
+
+test('sameNormalizedTargets compares every raw shape through the shared canonicalizer', () => {
+  assert.equal(sameNormalizedTargets(['Milvus', 'Zilliz'], ['Zilliz', 'Milvus']), true);
+  assert.equal(sameNormalizedTargets([{ text: 'Milvus' }], ['Milvus']), true);
+  assert.equal(sameNormalizedTargets(undefined, []), true);
+  assert.equal(sameNormalizedTargets(['Milvus'], ['Milvus', 'Zilliz']), false);
+  assert.equal(sameNormalizedTargets(['Milvus'], []), false);
+  assert.equal(sameNormalizedTargets([' Milvus '], ['Milvus']), true);
 });

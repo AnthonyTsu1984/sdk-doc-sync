@@ -87,6 +87,12 @@ function executionTargetsBaseline(entries) {
   return baseline;
 }
 
+// Equality over normalized Targets values — the single canonicalizer every
+// Targets comparison (executor virtual-node guards, resume, finalize) shares.
+function sameNormalizedTargets(left, right) {
+  return JSON.stringify(normalizedTargetsValue(left)) === JSON.stringify(normalizedTargetsValue(right));
+}
+
 module.exports = {
   WRITABLE_FIELD_NAMES,
   captureRecordState,
@@ -95,5 +101,6 @@ module.exports = {
   normalizedTargetsValue,
   recordFields,
   recordId,
+  sameNormalizedTargets,
   writableFieldsFrom,
 };

@@ -7,7 +7,7 @@ const {
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { organizationRecordType } = require('./sdk-organization-contract');
 const { validateInheritanceEvidence } = require('./inheritance-evidence');
-const { captureRecordState } = require('./record-state');
+const { captureRecordState, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
 
 function nonEmptyString(value) {
@@ -149,23 +149,14 @@ function docsField(record) {
   };
 }
 
-function optionValues(value) {
-  const values = Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
-  return values.map(item => scalarText(item)).filter(Boolean).sort();
-}
-
 function virtualNodeFields(record) {
   const fields = recordFields(record);
   return {
     type: scalarText(fields.Type),
-    targets: optionValues(fields.Targets),
+    targets: normalizedTargetsValue(fields.Targets),
     progress: scalarText(fields.Progress),
     slug: scalarText(fields.Slug),
   };
-}
-
-function sameStringValues(left, right) {
-  return JSON.stringify(optionValues(left)) === JSON.stringify(optionValues(right));
 }
 
 function recordMatchesCriteria(record, criteria = {}) {
@@ -610,7 +601,7 @@ class SyncExecutor {
       errors.push({ code: 'VIRTUAL_NODE_CURRENT_LINK_MISMATCH', actual: beforeDocs.link });
     }
     if (beforeNodeFields.type !== expectedFields.type) errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-    if (!sameStringValues(beforeNodeFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+    if (!sameNormalizedTargets(beforeNodeFields.targets, expectedFields.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
     if (beforeNodeFields.progress !== expectedFields.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
     if (beforeNodeFields.slug !== expectedFields.slug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
     if (errors.length > 0) {
@@ -634,7 +625,7 @@ class SyncExecutor {
     const verifyErrors = [];
     if (afterDocs.title !== title || afterDocs.link !== link) verifyErrors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
     if (afterNodeFields.type !== expectedFields.type) verifyErrors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-    if (!sameStringValues(afterNodeFields.targets, expectedFields.targets)) verifyErrors.push({ code: 'VIRTUAL_NODE_TARGETS_CHANGED' });
+    if (!sameNormalizedTargets(afterNodeFields.targets, expectedFields.targets)) verifyErrors.push({ code: 'VIRTUAL_NODE_TARGETS_CHANGED' });
     if (afterNodeFields.progress !== expectedFields.progress) verifyErrors.push({ code: 'VIRTUAL_NODE_PROGRESS_CHANGED' });
     if (afterNodeFields.slug !== expectedFields.slug) verifyErrors.push({ code: 'VIRTUAL_NODE_SLUG_CHANGED' });
     if (verifyErrors.length > 0) {
@@ -709,7 +700,7 @@ class SyncExecutor {
     const errors = [];
     if (docs.title !== resource.title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
     if (actualFields.type !== 'VirtualNode') errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-    if (!sameStringValues(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+    if (!sameNormalizedTargets(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
     if (actualFields.progress !== resource.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
     if (actualFields.slug !== resource.existingLookup.criteria.canonicalSlug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
     if (errors.length > 0) {

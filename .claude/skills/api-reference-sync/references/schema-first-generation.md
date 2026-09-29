@@ -90,9 +90,9 @@ Execute only approved immutable plans with `src/sdk-doc-sync/sync-executor.js`.
 
 Execution must use the narrowest document strategy:
 
-- `CREATE`: create the reviewed page, refetch blocks, validate rendered structure, then create the Bitable record without writing `Slug`; leave `Targets` blank and set `Progress` to `WIP`.
-- `UPDATE_IN_PLACE`: capture history, apply a minimal block-level patch to the target-version doc, refetch blocks, validate rendered structure, then update metadata; leave `Targets` blank and set `Progress` to `WIP`.
-- `COPY_PATCH_AND_REPOINT`: copy the older Docx into the target folder, patch the copy, refetch blocks, validate rendered structure, then repoint the Bitable record with both `title` and `link`; leave `Targets` blank and set `Progress` to `WIP`.
+- `CREATE`: create the reviewed page, refetch blocks, validate rendered structure, then create the Bitable record without writing `Slug` or `Targets` (new records start blank); set `Progress` to `WIP`.
+- `UPDATE_IN_PLACE`: capture history, apply a minimal block-level patch to the target-version doc, refetch blocks, validate rendered structure, then update metadata; never write `Targets` and set `Progress` to `WIP`.
+- `COPY_PATCH_AND_REPOINT`: copy the older Docx into the target folder, patch the copy, refetch blocks, validate rendered structure, then repoint the Bitable record with both `title` and `link`; never write `Targets` and set `Progress` to `WIP`.
 - Deprecate: set deprecation metadata and progress only.
 - Orphan/no-op: leave Feishu untouched.
 
@@ -112,7 +112,7 @@ Refetch the document and record after every mutation. Verify:
 - artifact digest when available;
 - `Docs.link` and document title;
 - `父记录` / parent record;
-- `Targets` is blank and `Progress` is `WIP` for edited create/update/repoint records;
+- `Targets` is unchanged from the execution baseline (blank for records the run created) and `Progress` is `WIP` for edited create/update/repoint records;
 - target version metadata;
 - deprecation state when applicable;
 - older-version source token still exists and remains unchanged for cross-version updates.

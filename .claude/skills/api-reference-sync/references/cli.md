@@ -121,7 +121,7 @@ node .claude/skills/api-reference-sync/bin/sdk-review-session.js accept-document
   --comments-resolved
 ```
 
-This command rereads the journal, verifies its digest, completion sentinel, action results, and document identity, then derives the accepted unit from the receipt. A new process can inspect progress with `sdk-review-session.js status --session "$SESSION"` and continue with `--resume-session "$SESSION"`. Resume reruns the baseline scan and blocks on manifest drift, missing or changed journals, non-`WIP` records, nonblank `Targets`, or changed document tokens. `scan-state.json` remains unchanged.
+This command rereads the journal, verifies its digest, completion sentinel, action results, and document identity, then derives the accepted unit from the receipt. A new process can inspect progress with `sdk-review-session.js status --session "$SESSION"` and continue with `--resume-session "$SESSION"`. Resume reruns the baseline scan and blocks on manifest drift, missing or changed journals, non-`WIP` records, `Targets` drifted from the execution baseline, or changed document tokens. `scan-state.json` remains unchanged.
 
 After every unit has a receipt, build the final acceptance artifact:
 

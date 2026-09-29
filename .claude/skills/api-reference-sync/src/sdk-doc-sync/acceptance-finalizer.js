@@ -1,10 +1,13 @@
 'use strict';
 
+const path = require('node:path');
+
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { createApprovalEnvelope } = require('../../../doc-ops-core/src/writer-governance');
 const { INVARIANT_ID } = require('./versioned-tree-policy');
 const { INVARIANT_ID: VERBATIM_INVARIANT_ID } = require('./verbatim-content');
 const { buildAcceptanceManifest } = require('./review-units');
+const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
 
 function clone(value) {
   return structuredClone(value);
@@ -18,11 +21,6 @@ function invariantEvidenceError(message) {
   const error = new Error(message);
   error.code = 'INVARIANT_EVIDENCE_REQUIRED';
   return error;
-}
-
-function targetsBlank(record) {
-  const value = record?.fields?.Targets;
-  return value === undefined || value === null || value === '' || (Array.isArray(value) && value.length === 0);
 }
 
 class AcceptanceFinalizer {
@@ -45,12 +43,16 @@ class AcceptanceFinalizer {
     return new Map((records || []).map((record) => [record.record_id, record]));
   }
 
-  _validateRecord(recordId, record, expectedProgress) {
+  _validateRecord(recordId, record, expectedProgress, expectedTargets) {
     if (!record) throw new Error(`Acceptance record ${recordId} is missing`);
     if (record.fields?.Progress !== expectedProgress) {
       throw new Error(`Acceptance record ${recordId} must be ${expectedProgress}, got ${record.fields?.Progress || '(blank)'}`);
     }
-    if (!targetsBlank(record)) throw new Error(`Acceptance record ${recordId} must keep Targets blank`);
+    const expected = normalizedTargetsValue(expectedTargets);
+    const actual = normalizedTargetsValue(record?.fields?.Targets);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error(`Acceptance record ${recordId} must keep Targets unchanged from the execution baseline (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
+    }
   }
 
   // Invariant receipts are DERIVED from the acceptance-pending review session
@@ -173,7 +175,7 @@ class AcceptanceFinalizer {
         });
       }
     }
-    return evidence;
+    return { evidence, targetsBaseline: executionTargetsBaseline(entries) };
   }
 
   async finalize({
@@ -194,6 +196,10 @@ class AcceptanceFinalizer {
     const touchedRecords = [];
     const touchedRecordIds = new Set();
     const invariantEvidence = [];
+    // Per-record Targets baseline from each unit's journal: the executor never
+    // writes Targets, so acceptance requires the live values to still match
+    // the pre-execution evidence (records created by their action baseline []).
+    const targetsBaselineByRecordId = new Map();
     for (const unit of recomputed.acceptedUnits) {
       for (const record of unit.touchedRecords || []) {
         if (!nonEmptyString(record?.actionId)) {
@@ -208,13 +214,19 @@ class AcceptanceFinalizer {
         touchedRecordIds.add(record.recordId);
         touchedRecords.push({ actionId: record.actionId, recordId: record.recordId });
       }
-      invariantEvidence.push(...(await this._deriveUnitEvidence(unit)));
+      const unitEvidence = await this._deriveUnitEvidence(unit);
+      invariantEvidence.push(...unitEvidence.evidence);
+      for (const record of unit.touchedRecords || []) {
+        targetsBaselineByRecordId.set(record.recordId, unitEvidence.targetsBaseline.get(record.actionId) || []);
+      }
     }
     invariantEvidence.sort((left, right) => left.actionId.localeCompare(right.actionId));
     touchedRecords.sort((left, right) => left.recordId.localeCompare(right.recordId));
 
     const beforeRecords = await this._recordMap();
-    for (const item of touchedRecords) this._validateRecord(item.recordId, beforeRecords.get(item.recordId), 'WIP');
+    for (const item of touchedRecords) {
+      this._validateRecord(item.recordId, beforeRecords.get(item.recordId), 'WIP', targetsBaselineByRecordId.get(item.recordId));
+    }
     const previousScanState = clone(await this.readScanState());
     const updated = [];
     let scanStateWritten = false;
@@ -276,7 +288,7 @@ class AcceptanceFinalizer {
       }
       const afterRecords = await this._recordMap();
       const results = touchedRecords.map((item) => {
-        this._validateRecord(item.recordId, afterRecords.get(item.recordId), 'Draft');
+        this._validateRecord(item.recordId, afterRecords.get(item.recordId), 'Draft', targetsBaselineByRecordId.get(item.recordId));
         return {
           actionId: item.actionId || null,
           recordId: item.recordId,

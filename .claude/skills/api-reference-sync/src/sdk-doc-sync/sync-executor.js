@@ -30,8 +30,11 @@ function artifactMetadata(artifact) {
   return artifact?.metadata || {};
 }
 
+// Among publication metadata, page-record edits change Progress only: the
+// executor never writes Targets — existing values survive verbatim, and the
+// final [Milvus, Zilliz] unification is an operator step after finalization.
 function editedRecordMetadata() {
-  return { progress: 'WIP', targets: [] };
+  return { progress: 'WIP' };
 }
 
 function containsLegacyTodo(content) {
@@ -1160,7 +1163,6 @@ class SyncExecutor {
       // Record type rides the plan's target (injected by the placement
       // resolver); the artifact metadata rarely carries it for CREATE.
       type: reviewedRecordType || plan.target?.recordType || metadata.type,
-      targets: editedRecordMetadata().targets,
       parentRecordId: plan.target.parentRecordId,
     });
   }

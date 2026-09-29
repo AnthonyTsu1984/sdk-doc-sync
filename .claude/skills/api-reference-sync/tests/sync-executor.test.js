@@ -599,7 +599,9 @@ test('SyncExecutor creates a target document before creating the Bitable record'
   assert.equal(calls[1][1].link, 'https://docs.example/doc-new');
   assert.equal(calls[1][1].parentRecordId, 'parent-v26');
   assert.equal(calls[1][1].progress, 'WIP');
-  assert.deepEqual(calls[1][1].targets, []);
+  // Record creation never writes Targets — new records start blank and are
+  // unified to the final value only after acceptance finalization.
+  assert.equal(calls[1][1].targets, undefined);
   assert.equal(result.completedSteps.at(-1), 'createRecord');
 });
 
@@ -748,7 +750,33 @@ test('SyncExecutor patches in-place only against the planned target-local token'
   assert.equal(calls[1][2].title, 'createCollection()');
   assert.equal(calls[1][2].lastModified, 'v2.6.x');
   assert.equal(calls[1][2].progress, 'WIP');
-  assert.deepEqual(calls[1][2].targets, []);
+  // Page-record updates never write Targets — existing values survive verbatim.
+  assert.equal(calls[1][2].targets, undefined);
+});
+
+test('SyncExecutor never writes Targets on page-record updates (existing values preserved verbatim)', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const updatePlan = plan('UPDATE');
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(updatePlan),
+  });
+
+  const result = await executor.execute(updatePlan, {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-v26', historyVersionId: 'history-1', blockDigest: 'sha256:before' },
+    },
+  });
+
+  assert.equal(result.status, 'success');
+  const updateCalls = calls.filter((entry) => entry[0] === 'updateRecord');
+  assert.ok(updateCalls.length > 0);
+  for (const entry of updateCalls) {
+    assert.equal(Object.prototype.hasOwnProperty.call(entry[2], 'targets'), false);
+  }
 });
 
 test('SyncExecutor blocks in-place patches when the approved evidence marks the token shared', async () => {
@@ -1431,7 +1459,8 @@ test('SyncExecutor copies and repoints before preserving recovery details on rec
   assert.equal(calls[2][2].title, 'createCollection()');
   assert.equal(calls[2][2].link, 'https://docs.example/doc-copy');
   assert.equal(calls[2][2].progress, 'WIP');
-  assert.deepEqual(calls[2][2].targets, []);
+  // Page-record updates never write Targets — existing values survive verbatim.
+  assert.equal(calls[2][2].targets, undefined);
   assert.deepEqual(calls[3][1], { documentToken: 'doc-copy' });
   assert.match(result.suggestedRecovery, /repoint record rec-v26/i);
 });
@@ -1733,7 +1762,6 @@ test('SyncExecutor applies reviewed Bitable-only parent and Type changes without
     {
       parentRecordId: 'rec-bulk-writer',
       progress: 'WIP',
-      targets: [],
       type: 'Function',
     },
   ]]);

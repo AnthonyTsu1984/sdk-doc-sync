@@ -561,3 +561,73 @@ test('execution journal persists one tree-delta outcome per attested action', ()
     }), /TREE_DELTA_OUTCOME_REQUIRED/);
     journal.complete();
 });
+
+test('verifyTreeDeltaPostconditions compares cloned-base reference multisets', () => {
+    // Cloned bases: three tracks reference the source through the SAME
+    // recordId, one more (v2.4.x) through a distinct id. The repoint removes
+    // exactly one rec-clone reference; the surviving multiset is
+    // [rec-clone, rec-clone, rec-distinct].
+    const evidence = inheritanceEvidence({});
+    const plan = {
+        stableId: 'cpp:Partitions:LoadPartitions',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        inheritanceEvidence: createInheritanceEvidence({
+            stableId: 'cpp:Partitions:LoadPartitions',
+            current: {
+                version: 'v2.6.x',
+                recordId: 'rec-load-partitions-v30',
+                documentToken: 'doc-load-partitions-v26',
+                folderToken: 'folder-partitions-v26',
+                versionRootToken: 'root-v26',
+                ancestryVerified: true,
+                placementVerified: true,
+            },
+            target: {
+                version: 'v3.0.x',
+                versionRootToken: 'root-v30',
+                folderToken: 'folder-partitions-v30',
+                ancestryVerified: true,
+            },
+            sharedTokenStatus: 'shared',
+            referencedRecordIds: [
+                'rec-load-partitions-v30',
+                'rec-load-partitions-v30',
+                'rec-load-partitions-v30',
+                'rec-load-partitions-v24',
+            ],
+            trackInventoryDigests: {
+                'v2.6.x': sha256Digest(Buffer.from('v2.6.x', 'utf8')),
+                'v3.0.x': sha256Digest(Buffer.from('v3.0.x', 'utf8')),
+            },
+        }),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 2,
+            inputDigest: sha('plan-cloned'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT,
+            evidenceDigest: null,
+            requiredResourceDag: [],
+        }],
+    };
+    const clean = verifyTreeDeltaPostconditions({
+        plan,
+        observed: {
+            olderDocumentReferences: ['rec-load-partitions-v30', 'rec-load-partitions-v30', 'rec-load-partitions-v24'],
+            createdDocumentToken: 'doc-copy-new',
+            targetRecordDocumentToken: 'doc-copy-new',
+        },
+    });
+    assert.equal(clean.ok, true);
+
+    // One surviving clone reference disappearing is real drift.
+    const drifted = verifyTreeDeltaPostconditions({
+        plan,
+        observed: {
+            olderDocumentReferences: ['rec-load-partitions-v30', 'rec-load-partitions-v24'],
+            createdDocumentToken: 'doc-copy-new',
+            targetRecordDocumentToken: 'doc-copy-new',
+        },
+    });
+    assert.equal(drifted.ok, false);
+    assert.equal(drifted.errors[0].code, 'TREE_DELTA_REFERENCES_DRIFTED');
+});

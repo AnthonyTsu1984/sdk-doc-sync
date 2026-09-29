@@ -313,9 +313,14 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
 
   if (decision === DECISIONS.COPY_PATCH_AND_REPOINT
     || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
-    const expectedRemaining = evidenceReferenceIds(evidence)
-      .filter((recordId) => recordId !== plan.source?.recordId)
-      .sort();
+    // Repointing removes exactly ONE reference — the repointed track's
+    // record — not every record sharing its (possibly cloned) recordId.
+    const expectedRemaining = evidenceReferenceIds(evidence).sort();
+    if (decision === DECISIONS.COPY_PATCH_AND_REPOINT
+      || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
+      const repointedIndex = expectedRemaining.indexOf(plan.source?.recordId);
+      if (repointedIndex >= 0) expectedRemaining.splice(repointedIndex, 1);
+    }
     const live = [...(observed?.olderDocumentReferences || [])].filter(nonEmptyString).sort();
     if (JSON.stringify(expectedRemaining) !== JSON.stringify(live)) {
       errors.push({

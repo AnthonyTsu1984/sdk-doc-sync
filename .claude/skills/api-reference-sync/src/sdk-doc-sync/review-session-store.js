@@ -12,6 +12,7 @@ const {
 } = require('../../../doc-ops-core/src/session-state-machine');
 const { loadState, saveState } = require('../../../doc-ops-core/src/session-store');
 const { buildAcceptanceManifest } = require('./review-units');
+const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
 
 // The lifecycle this store hardens (PR #22's five review rounds), now
 // expressed through the shared machine every skill adopts (6.6): transitions
@@ -238,7 +239,7 @@ function validateAcceptedReceipt(session, receipt) {
   }
   if (!nonEmptyString(receipt.executionJournalDigest)) throw new Error('executionJournalDigest is required');
   const journalPath = path.resolve(receipt.executionJournalPath || '');
-  const { observedActionIds } = validateExecutionForUnit(session, {
+  const { entries, observedActionIds } = validateExecutionForUnit(session, {
     reviewUnitId: receipt.reviewUnitId,
     executionJournalPath: journalPath,
     executionJournalDigest: receipt.executionJournalDigest,
@@ -262,7 +263,7 @@ function validateAcceptedReceipt(session, receipt) {
   if (documentLinks.length === 0 || recordLinks.length === 0) {
     throw new Error('Accepted document requires documentLinks and recordLinks');
   }
-  return { documentLinks, journalPath, recordLinks, touchedRecords };
+  return { documentLinks, entries, journalPath, recordLinks, touchedRecords };
 }
 
 function recordDocumentAcceptance(session, receipt) {
@@ -616,10 +617,6 @@ function recordProgress(record) {
   return record?.fields?.Progress || record?.metadata?.progress || record?.metadata?.state || record?.progress || null;
 }
 
-function recordTargets(record) {
-  return record?.fields?.Targets ?? record?.metadata?.targets ?? record?.targets ?? [];
-}
-
 function recordDocumentToken(record) {
   const link = record?.fields?.Docs?.link || record?.metadata?.link || record?.metadata?.url || null;
   return record?.metadata?.token || record?.documentToken || (link ? link.split('/').filter(Boolean).at(-1) : null);
@@ -639,16 +636,22 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
     });
   }
   for (const receipt of session.acceptedReviewUnits || []) {
-    const { touchedRecords } = validateAcceptedReceipt(session, receipt);
+    const { touchedRecords, entries } = validateAcceptedReceipt(session, receipt);
+    // Targets must be UNCHANGED since the unit executed, not blank: the
+    // baseline is derived from the journal's rollback capsule (the only
+    // evidence of pre-execution Targets), so both executor writes and manual
+    // edits drift the record and block resume.
+    const baseline = executionTargetsBaseline(entries);
     for (const touched of touchedRecords) {
       const current = records.get(touched.recordId);
       if (!current) throw new Error(`Accepted record is missing during resume: ${touched.recordId}`);
       if (recordProgress(current) !== 'WIP') {
         throw new Error(`Accepted record ${touched.recordId} must remain WIP until final acceptance`);
       }
-      const targets = recordTargets(current);
-      if (!(targets === null || targets === '' || (Array.isArray(targets) && targets.length === 0))) {
-        throw new Error(`Accepted record ${touched.recordId} must keep Targets blank`);
+      const expected = baseline.get(touched.actionId) || [];
+      const actual = normalizedTargetsValue(current?.fields?.Targets);
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`Accepted record ${touched.recordId} Targets drifted from the execution baseline (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
       }
       if (touched.documentToken && recordDocumentToken(current) !== touched.documentToken) {
         throw new Error(`Accepted record ${touched.recordId} document token changed during resume`);

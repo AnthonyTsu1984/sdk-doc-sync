@@ -10,7 +10,7 @@ Each SDK version Drive folder is sparse: it lists only documents created or upda
 
 For unchanged entries in a new version, keep the bitable record and keep its `Docs` link pointing to the existing unchanged document unless an approved action creates or updates a version-local document. Still update `父记录` to the matching current-version category or parent record when that parent exists, so the bitable hierarchy reflects the current version even when the document lives in an older sparse folder.
 
-Every interface-document record edited in a synchronization run must end with `Targets` blank and `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. Structural VirtualNode and Module resources are an exception: repointing their folder link must preserve existing `Targets`, `Progress`, `Slug`, type, and unrelated metadata; creating one requires explicit reviewed structural metadata in the resource plan. Never infer blank targets or `WIP` from the interface-document state machine. Verify exact field names and values from the target bitable.
+Every interface-document record edited in a synchronization run must keep `Targets` unchanged and end with `Progress` set to `WIP`, whether the edit creates a new record, patches content, repoints `Docs`, changes `父记录`, or updates other editable metadata. The executor never writes `Targets`: existing values are preserved verbatim, records created by the run start blank, and the final `[Milvus, Zilliz]` unification happens once, as an operator step after Acceptance Finalization. Structural VirtualNode and Module resources follow their own rule: repointing their folder link must preserve existing `Targets`, `Progress`, `Slug`, type, and unrelated metadata; creating one requires explicit reviewed structural metadata in the resource plan. Never infer the targets state or `WIP` from the interface-document state machine. Verify exact field names and values from the target bitable.
 
 Keep edited records at `WIP` through post-write verification and per-document review. Execute one document review unit at a time, including all of that document's required Drive and Bitable operations, and do not start the next unit until the active document is accepted. A unit acceptance does not change `Progress` or advance the baseline. After every unit is accepted, Acceptance Finalization changes every touched record from `WIP` to `Draft`, refetches and verifies those values, and only then advances `scan-state.json`.
 
@@ -106,7 +106,7 @@ When preparing a new version bitable:
 
 - `Docs.link` points to the intended target-version document.
 - `父记录` points to the intended target-version category.
-- Edited interface-document records have blank `Targets` and `Progress` set to `WIP`; structural VirtualNode or Module records match their approved preserved or explicit metadata.
+- Edited interface-document records have `Targets` unchanged from the execution baseline (blank when the run created them) and `Progress` set to `WIP`; structural VirtualNode or Module records match their approved preserved or explicit metadata.
 - Changed or added target documents exist in the canonical sparse version folder.
 - Unchanged carry-forward records keep their approved existing document links.
 - Metadata-only repairs preserve the inherited Docx token and revision while correcting the current release record hierarchy.

@@ -33,7 +33,7 @@ Failure patterns that must block completion:
 ## Record And Folder Checks
 
 1. Use `bitable-show` to verify `Docs.link`, `父记录`, type, version metadata, `Targets`, and `Progress`.
-2. For every edited interface-document record, verify `Targets` is blank and `Progress` is `WIP`. For structural VirtualNode or Module records, verify the approved structural metadata instead: repoints preserve existing `Targets`, `Progress`, `Slug`, and type; creates match the explicit resource-plan values.
+2. For every edited interface-document record, verify `Targets` is unchanged from the execution baseline (blank only when the run created the record) and `Progress` is `WIP`. For structural VirtualNode or Module records, verify the approved structural metadata instead: repoints preserve existing `Targets`, `Progress`, `Slug`, and type; creates match the explicit resource-plan values.
 3. Use `list-folder` to verify the target document exists under the intended canonical version folder.
 4. When moving a version-local document, verify it is absent from the old folder.
 5. When copying across versions, verify the older snapshot still exists and remains unchanged.
@@ -43,7 +43,7 @@ Failure patterns that must block completion:
 
 Post-write verification for one document unit ends with its touched records at `WIP` and `scanStateUpdated: false`. Stop and expose the live document, record links, unit journal digest, and unresolved comments. Do not start the next unit until the user replies with the exact active-unit acceptance command. A comment-driven revision returns the same unit to reviewed planning and invalidates its previous write and journal digests.
 
-After `APPROVE_DOCUMENT`, persist a receipt with `sdk-review-session.js accept-document`. The receipt must bind the unit to the completed execution-journal path and digest, the live Docx and Bitable links, resolved comments, and every touched record's verified journal action, record ID, and document token. Do not hand-edit `acceptedReviewUnits`. Before another process or chat continues, run `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` so the runtime rechecks the journal and live record invariants. A changed token, non-`WIP` progress, nonblank `Targets`, missing record, or manifest drift blocks continuation.
+After `APPROVE_DOCUMENT`, persist a receipt with `sdk-review-session.js accept-document`. The receipt must bind the unit to the completed execution-journal path and digest, the live Docx and Bitable links, resolved comments, and every touched record's verified journal action, record ID, and document token. Do not hand-edit `acceptedReviewUnits`. Before another process or chat continues, run `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` so the runtime rechecks the journal and live record invariants. A changed token, non-`WIP` progress, `Targets` drifted from the execution baseline, missing record, or manifest drift blocks continuation.
 
 After every document unit is accepted and the user explicitly accepts the complete accepted-unit manifest:
 

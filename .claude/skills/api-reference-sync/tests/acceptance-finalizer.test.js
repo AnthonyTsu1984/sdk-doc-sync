@@ -17,8 +17,8 @@ function loadAcceptanceFinalizer() {
   return AcceptanceFinalizer;
 }
 
-function record(recordId, progress = 'WIP') {
-  return { record_id: recordId, fields: { Progress: progress, Targets: [], 'Deprecate Since': 'v3.0.x' } };
+function record(recordId, progress = 'WIP', targets = []) {
+  return { record_id: recordId, fields: { Progress: progress, Targets: targets, 'Deprecate Since': 'v3.0.x' } };
 }
 
 // One complete, digest-bound unit execution journal (prepared/observed/
@@ -157,6 +157,53 @@ test('AcceptanceFinalizer finalizes only from the complete acceptance-pending se
   ]);
   assert.equal(result.status, 'accepted');
   assert.equal(result.scanStateUpdated, true);
+});
+
+test('AcceptanceFinalizer keeps Targets unchanged from the execution baseline instead of requiring blank', async () => {
+  const AcceptanceFinalizer = loadAcceptanceFinalizer();
+  const documents = [
+    { documentStableId: 'node:Collections:a', actionId: 'action-a', recordId: 'rec-a' },
+  ];
+  const session = acceptancePendingSession(documents, {
+    journalOverrides: {
+      'action-a': (actionId) => unitJournal(actionId, (entries) => entries.map((entry) => (
+        entry.type === 'prepared'
+          ? { ...entry, rollbackCapsule: { beforeRecord: { recordId: 'rec-a', rawFields: { Targets: ['Milvus'] } } } }
+          : entry
+      ))),
+    },
+  });
+
+  const finalizeWith = async (writer) => new AcceptanceFinalizer({
+    bitableWriter: writer,
+    readScanState: async () => ({}),
+    writeScanState: async () => {},
+    writeJournal: async () => {},
+    readJournalEntries: async (digest) => {
+      const entries = session.journals.get(digest);
+      if (!entries) throw new Error(`unknown journal ${digest}`);
+      return structuredClone(entries);
+    },
+  }).finalize({
+    userConfirmed: true,
+    reviewSession: session,
+    scanStateKey: 'cpp-v30',
+    scanStateEntry: { lastScannedTag: 'v3.0.1' },
+  });
+
+  // Preserved pre-execution Targets finalize cleanly; the transition writes
+  // Progress only, never Targets.
+  const preserved = statefulWriter([record('rec-a', 'WIP', ['Milvus'])]);
+  const result = await finalizeWith(preserved.writer);
+  assert.equal(result.status, 'accepted');
+  assert.deepEqual(preserved.writes, [['rec-a', { progress: 'Draft' }]]);
+
+  // Cleared or edited Targets drift from the journal baseline and refuse
+  // finalization before any write lands.
+  for (const drifted of [statefulWriter([record('rec-a', 'WIP', [])]), statefulWriter([record('rec-a', 'WIP', ['Milvus', 'Zilliz'])])]) {
+    await assert.rejects(() => finalizeWith(drifted.writer), /must keep Targets unchanged from the execution baseline/);
+    assert.deepEqual(drifted.writes, []);
+  }
 });
 
 test('AcceptanceFinalizer rolls back partial Draft transitions and preserves scan state when a write fails', async () => {

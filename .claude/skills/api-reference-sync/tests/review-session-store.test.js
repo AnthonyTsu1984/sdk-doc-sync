@@ -285,6 +285,62 @@ test('resume validation derives accepted IDs from receipts and verifies journal 
   }), /does not execute document node:Collections:b/i);
 });
 
+test('resume validation compares live Targets against the execution-journal baseline, not blankness', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-targets-'));
+  const entries = [
+    {
+      schemaVersion: 1,
+      type: 'prepared',
+      batchDigest: 'sha256:batch-a',
+      actionId: 'node:Collections:a',
+      rollbackCapsule: { beforeRecord: { recordId: 'rec-a', rawFields: { Targets: ['Milvus'] } } },
+    },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-a', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-a', status: 'executed', completionSentinel: true },
+  ];
+  const filePath = path.join(directory, 'execution-targets.jsonl');
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const journal = { filePath, digest: digestSemantic(entries) };
+
+  const accepted = recordDocumentAcceptance(
+    withExecution(createReviewSession({
+      sessionId: 'sdk-doc-sync:node:v3.0.x:test',
+      language: 'node',
+      sdkName: 'node',
+      track: 'v3.0.x',
+      reviewUnitManifest: manifest(),
+    }), journal),
+    {
+      reviewUnitId: 'review:node:Collections:a',
+      executionJournalPath: journal.filePath,
+      executionJournalDigest: journal.digest,
+      touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+      documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+      recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+      commentsResolved: true,
+    },
+  );
+
+  const record = (targets) => ({
+    record_id: 'rec-a',
+    fields: { Progress: 'WIP', Targets: targets, Docs: { link: 'https://example.feishu.cn/docx/doc-a' } },
+  });
+
+  // Preserved pre-execution Targets pass; both clearing and editing them block.
+  const preserved = validateResumeSession({ session: accepted, reviewUnitManifest: manifest(), currentRecords: [record(['Milvus'])] });
+  assert.deepEqual(preserved.acceptedReviewUnitIds, ['review:node:Collections:a']);
+  assert.throws(() => validateResumeSession({
+    session: accepted,
+    reviewUnitManifest: manifest(),
+    currentRecords: [record([])],
+  }), /Targets drifted from the execution baseline \(expected \[Milvus\], got \[\]\)/);
+  assert.throws(() => validateResumeSession({
+    session: accepted,
+    reviewUnitManifest: manifest(),
+    currentRecords: [record(['Milvus', 'Zilliz'])],
+  }), /Targets drifted from the execution baseline/);
+});
+
 test('review session builds the final acceptance manifest only from complete receipts and records proven finalization', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-finalize-'));
   const firstJournal = executionJournal(directory, 'node:Collections:a');

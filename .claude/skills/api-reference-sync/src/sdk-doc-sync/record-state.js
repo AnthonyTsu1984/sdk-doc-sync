@@ -57,10 +57,42 @@ function matchesRecordState(record, snapshot) {
   );
 }
 
+function normalizedTargetsValue(value) {
+  if (value === undefined || value === null || value === '') return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values
+    .map((item) => {
+      if (item === null || item === undefined) return null;
+      if (typeof item === 'string') return item;
+      if (typeof item === 'object') return item.text ?? item.value ?? null;
+      return String(item);
+    })
+    .filter((item) => typeof item === 'string' && item.trim() !== '')
+    .map((item) => item.trim())
+    .sort();
+}
+
+// Targets baseline for executed actions, derived from the execution journal's
+// 'prepared' entries: the rollback capsule's beforeRecord is the only evidence
+// of the pre-mutation Targets. An action that created its record carries no
+// beforeRecord and baselines to [] — record creation never writes Targets.
+function executionTargetsBaseline(entries) {
+  const baseline = new Map();
+  for (const entry of entries || []) {
+    if (entry?.type !== 'prepared') continue;
+    const before = entry?.rollbackCapsule?.beforeRecord;
+    if (!before) continue;
+    baseline.set(entry.actionId, normalizedTargetsValue(before.rawFields?.Targets));
+  }
+  return baseline;
+}
+
 module.exports = {
   WRITABLE_FIELD_NAMES,
   captureRecordState,
+  executionTargetsBaseline,
   matchesRecordState,
+  normalizedTargetsValue,
   recordFields,
   recordId,
   writableFieldsFrom,

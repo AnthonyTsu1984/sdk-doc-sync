@@ -110,6 +110,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/pr-scan.test.js',
     '.claude/skills/api-reference-sync/tests/prose-quality.test.js',
     '.claude/skills/api-reference-sync/tests/read-consumers.test.js',
+    '.claude/skills/api-reference-sync/tests/record-state.test.js',
     '.claude/skills/api-reference-sync/tests/release-scope.test.js',
     '.claude/skills/api-reference-sync/tests/release-scout-cli.test.js',
     '.claude/skills/api-reference-sync/tests/release-track-registry.test.js',

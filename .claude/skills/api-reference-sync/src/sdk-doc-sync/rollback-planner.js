@@ -77,6 +77,14 @@ function requireValue(value, code, message, details = {}) {
 }
 
 function executionRefFor(session, reviewUnitId) {
+  // Batch mode: executed-but-unaccepted units live in pendingExecutions
+  // (activeExecution mirrors the newest one for sessions saved before the
+  // batch work).
+  const pendings = Array.isArray(session.pendingExecutions)
+    ? session.pendingExecutions
+    : (session.activeExecution ? [session.activeExecution] : []);
+  const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
+  if (pending) return pending;
   if (session.activeExecution?.reviewUnitId === reviewUnitId) return session.activeExecution;
   return (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId) || null;
 }
@@ -86,8 +94,11 @@ function allExecutionRefs(session) {
   for (const receipt of session.acceptedReviewUnits || []) {
     if (receipt?.reviewUnitId) byUnit.set(receipt.reviewUnitId, receipt);
   }
-  if (session.activeExecution?.reviewUnitId) {
-    byUnit.set(session.activeExecution.reviewUnitId, session.activeExecution);
+  const pendings = Array.isArray(session.pendingExecutions)
+    ? session.pendingExecutions
+    : (session.activeExecution ? [session.activeExecution] : []);
+  for (const pending of pendings) {
+    if (pending?.reviewUnitId) byUnit.set(pending.reviewUnitId, pending);
   }
   return [...byUnit.entries()]
     .map(([reviewUnitId, receipt]) => ({ reviewUnitId, ...receipt }))

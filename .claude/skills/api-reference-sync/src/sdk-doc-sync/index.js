@@ -327,6 +327,7 @@ class SdkDocSync {
         executionJournalFactory = null,
         collaborativeReview = false,
         reviewUnitId = null,
+        batchContinue = false,
         reviewSession = null,
         tokenReferenceReader = null,
         tokenReferenceTracks = [],
@@ -381,6 +382,7 @@ class SdkDocSync {
         this.executionJournalFactory = executionJournalFactory;
         this.collaborativeReview = collaborativeReview === true;
         this.reviewUnitId = reviewUnitId;
+        this.batchContinue = batchContinue === true;
         this.reviewSession = reviewSession;
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
@@ -581,6 +583,7 @@ class SdkDocSync {
         result.reviewUnitPreviews = reviewUnits.units;
         const verifiedAcceptedReviewUnitIds = new Set();
         let activeExecutionReviewUnitId = null;
+        const pendingExecutionReviewUnitIds = new Set();
 
         if (this.reviewSession) {
             try {
@@ -590,12 +593,14 @@ class SdkDocSync {
                     currentRecords: typeIndex,
                 });
                 for (const unitId of resumed.acceptedReviewUnitIds) verifiedAcceptedReviewUnitIds.add(unitId);
+                for (const unitId of resumed.pendingReviewUnitIds || []) pendingExecutionReviewUnitIds.add(unitId);
                 activeExecutionReviewUnitId = resumed.activeReviewUnitId;
                 result.reviewSession = {
                     sessionId: this.reviewSession.sessionId,
                     acceptedReviewUnitIds: resumed.acceptedReviewUnitIds,
                     reviewUnitManifestDigest: this.reviewSession.reviewUnitManifestDigest,
                     activeReviewUnitId: activeExecutionReviewUnitId,
+                    pendingReviewUnitIds: resumed.pendingReviewUnitIds || [],
                 };
             } catch (error) {
                 result.planningErrors.push({
@@ -610,12 +615,25 @@ class SdkDocSync {
         let actionablePlanned = fullActionablePlanned;
         let actionablePlanIds = fullActionablePlanIds;
         if (this.collaborativeReview) {
-            if (activeExecutionReviewUnitId) {
+            // Executed-but-unaccepted units need review before another WRITE —
+            // but per-unit mode and batch mode draw the line differently. In
+            // per-unit mode (default, fail-closed) any pending execution
+            // blocks every selection, exactly as before. In batch mode
+            // (--batch-continue: the operator's write approval already bound
+            // the whole unit list), only a unit whose OWN pending execution is
+            // unaccepted blocks its re-selection; sibling pending units stay
+            // selectable so a batch can execute through to its review gate.
+            const blockedUnitIds = this.batchContinue
+                ? pendingExecutionReviewUnitIds
+                : new Set(activeExecutionReviewUnitId ? [activeExecutionReviewUnitId] : []);
+            for (const blockedId of blockedUnitIds) {
                 result.planningErrors.push({
-                    stableId: activeExecutionReviewUnitId,
+                    stableId: blockedId,
                     diffAction: 'REVIEW_UNIT',
                     code: 'ACTIVE_DOCUMENT_REVIEW_REQUIRED',
-                    message: `${activeExecutionReviewUnitId} must be accepted or rolled back before another write`,
+                    message: this.batchContinue
+                        ? `${blockedId} has an unaccepted execution; accept or roll back it before re-planning this unit`
+                        : `${blockedId} must be accepted or rolled back before another write`,
                 });
             }
             if (reviewUnits.manifest.unassignedResourceActionIds.length > 0) {
@@ -628,7 +646,7 @@ class SdkDocSync {
             }
             const selectableUnits = reviewUnits.units.filter((unit) => (
                 unit.actionIds.length > 0 && !verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId)
-            ) && !activeExecutionReviewUnitId);
+            ) && !blockedUnitIds.has(unit.reviewUnitId));
             result.remainingReviewUnitIds = selectableUnits.map((unit) => unit.reviewUnitId);
             result.allReviewUnitsAccepted = reviewUnits.manifest.units.length > 0
                 && reviewUnits.manifest.units.every((unit) => verifiedAcceptedReviewUnitIds.has(unit.reviewUnitId));
@@ -1597,8 +1615,11 @@ class SdkDocSync {
         const executedUnitIds = new Set(
             (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId),
         );
-        if (session.activeExecution?.reviewUnitId) {
-            executedUnitIds.add(session.activeExecution.reviewUnitId);
+        const pendings = Array.isArray(session.pendingExecutions)
+            ? session.pendingExecutions
+            : (session.activeExecution ? [session.activeExecution] : []);
+        for (const pending of pendings) {
+            if (pending?.reviewUnitId) executedUnitIds.add(pending.reviewUnitId);
         }
         if (executedUnitIds.size === 0) return null;
         const documentIds = new Set();

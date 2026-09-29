@@ -97,6 +97,7 @@ function createReviewSession({
     reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
+    pendingExecutions: [],
     activeExecution: null,
     activeRollback: null,
     rollbackReceipts: [],
@@ -107,6 +108,20 @@ function createReviewSession({
     createdAt,
     updatedAt: createdAt,
   });
+}
+
+// Executed-but-unaccepted executions, newest last. Verified batch mode holds
+// K of these between the batch write gate and the batch review gate; the
+// per-unit mode holds at most one. Sessions saved before the batch work only
+// carry activeExecution — synthesize the list from it so every reader sees
+// one shape.
+function pendingList(session) {
+  if (Array.isArray(session?.pendingExecutions)) return session.pendingExecutions;
+  return session?.activeExecution ? [session.activeExecution] : [];
+}
+
+function pendingHead(pendings) {
+  return pendings.length > 0 ? pendings[pendings.length - 1] : null;
 }
 
 const RESULT_BOUND_DECISION_OUTCOMES = new Set([
@@ -206,12 +221,26 @@ function validateExecutionForUnit(session, {
   return { entries, journalPath, observedActionIds, reviewUnit };
 }
 
-function recordDocumentExecution(session, execution) {
+function recordDocumentExecution(session, execution, { batchContinue = false } = {}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
   if (session.acceptanceManifest || session.scanStateUpdated === true) {
     throw new Error('Review session no longer accepts document executions');
   }
-  if (session.activeExecution) {
+  // Executed-but-unaccepted units live in pendingExecutions (head mirrors
+  // activeExecution). Per-unit mode holds at most one — a second execution
+  // needs the explicit --batch-continue operator authorization. Within a
+  // unit: the same journal is an idempotent no-op, a different journal
+  // replaces the pending entry (the superseded journal stays on disk).
+  const pendings = pendingList(session);
+  const existing = pendings.find((item) => item.reviewUnitId === execution?.reviewUnitId);
+  if (existing) {
+    if (existing.executionJournalDigest === execution?.executionJournalDigest) return session;
+    if (!batchContinue) {
+      throw new Error(`Review unit is already pending review with a different journal: ${execution.reviewUnitId} (${existing.executionJournalDigest}); accept or roll back it first, or pass --batch-continue for verified batch mode`);
+    }
+  } else if (pendings.length > 0 && !batchContinue) {
+    throw new Error(`Review session already has pending execution ${pendings[0].reviewUnitId}; accept or roll back it first, or pass --batch-continue for verified batch mode`);
+  } else if (session.activeExecution && !existing && !batchContinue) {
     throw new Error(`Review session already has active execution ${session.activeExecution.reviewUnitId}`);
   }
   if ((session.acceptedReviewUnits || []).some((unit) => unit.reviewUnitId === execution?.reviewUnitId)) {
@@ -236,13 +265,18 @@ function recordDocumentExecution(session, execution) {
   const { journalPath } = validateExecutionForUnit(session, execution || {});
   const executedAt = execution.executedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentExecution', session);
+  const entry = Object.freeze({
+    reviewUnitId: execution.reviewUnitId,
+    executionJournalPath: journalPath,
+    executionJournalDigest: execution.executionJournalDigest,
+    executedAt,
+  });
+  const nextPendings = existing
+    ? pendings.map((item) => (item.reviewUnitId === execution.reviewUnitId ? entry : item))
+    : [...pendings, entry];
   return REVIEW_MACHINE.apply('recordDocumentExecution', session, {
-    activeExecution: Object.freeze({
-      reviewUnitId: execution.reviewUnitId,
-      executionJournalPath: journalPath,
-      executionJournalDigest: execution.executionJournalDigest,
-      executedAt,
-    }),
+    pendingExecutions: Object.freeze(nextPendings),
+    activeExecution: entry,
     activeReviewUnitId: execution.reviewUnitId,
   }, { timestamp: executedAt });
 }
@@ -291,15 +325,17 @@ function recordDocumentAcceptance(session, receipt) {
     throw new Error(`Review unit is already accepted: ${receipt.reviewUnitId}`);
   }
   const { documentLinks, journalPath, recordLinks, touchedRecords } = validateAcceptedReceipt(session, receipt);
-  const active = session.activeExecution;
-  if (!active
-      || active.reviewUnitId !== receipt.reviewUnitId
-      || path.resolve(active.executionJournalPath || '') !== journalPath
-      || active.executionJournalDigest !== receipt.executionJournalDigest) {
-    throw new Error(`Document acceptance must match the active execution for ${receipt.reviewUnitId}`);
+  const pendings = pendingList(session);
+  const pending = pendings.find((item) => item.reviewUnitId === receipt.reviewUnitId);
+  if (!pending
+      || path.resolve(pending.executionJournalPath || '') !== journalPath
+      || pending.executionJournalDigest !== receipt.executionJournalDigest) {
+    throw new Error(`Document acceptance must match a pending execution for ${receipt.reviewUnitId}`);
   }
   const acceptedAt = receipt.acceptedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentAcceptance', session);
+  const remainingPendings = pendings.filter((item) => item.reviewUnitId !== receipt.reviewUnitId);
+  const head = pendingHead(remainingPendings);
   return REVIEW_MACHINE.apply('recordDocumentAcceptance', session, {
     acceptedReviewUnits: Object.freeze([...(session.acceptedReviewUnits || []), {
       reviewUnitId: receipt.reviewUnitId,
@@ -311,8 +347,9 @@ function recordDocumentAcceptance(session, receipt) {
       commentsResolved: true,
       acceptedAt,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
-    activeExecution: null,
-    activeReviewUnitId: null,
+    pendingExecutions: Object.freeze(remainingPendings),
+    activeExecution: head ? clone(head) : null,
+    activeReviewUnitId: head ? head.reviewUnitId : null,
   }, { timestamp: acceptedAt });
 }
 
@@ -326,21 +363,25 @@ function recordDocumentChangesRequested(session, { reviewUnitId, reason = null }
   if ((session.acceptedReviewUnits || []).some((entry) => entry.reviewUnitId === reviewUnitId)) {
     throw new Error(`Review unit is already accepted: ${reviewUnitId}`);
   }
-  const active = session.activeExecution;
-  if (!active || active.reviewUnitId !== reviewUnitId) {
-    throw new Error(`Change request must match the active execution for ${reviewUnitId}`);
+  const pendings = pendingList(session);
+  const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
+  if (!pending) {
+    throw new Error(`Change request must match a pending execution for ${reviewUnitId}`);
   }
   const requestedAt = new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentChangesRequested', session);
+  const remainingPendings = pendings.filter((item) => item.reviewUnitId !== reviewUnitId);
+  const head = pendingHead(remainingPendings);
   return REVIEW_MACHINE.apply('recordDocumentChangesRequested', session, {
     // The executed unit returns to reviewed planning: its journal stays on
     // disk for audit and potential rollback, but no acceptance is recorded.
-    activeExecution: null,
-    activeReviewUnitId: null,
+    pendingExecutions: Object.freeze(remainingPendings),
+    activeExecution: head ? clone(head) : null,
+    activeReviewUnitId: head ? head.reviewUnitId : null,
     changeRequests: Object.freeze([...(session.changeRequests || []), {
       reviewUnitId,
-      executionJournalPath: active.executionJournalPath,
-      executionJournalDigest: active.executionJournalDigest,
+      executionJournalPath: pending.executionJournalPath,
+      executionJournalDigest: pending.executionJournalDigest,
       reason: nonEmptyString(reason) ? reason : null,
       requestedAt,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
@@ -430,9 +471,11 @@ function recordRollbackIntent(session, {
   if ((session.rollbackReceipts || []).some((item) => item.reviewUnitId === reviewUnitId)) {
     throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
   }
-  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
+  const pendings = pendingList(session);
+  const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
+  const activeMatches = pending !== undefined;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const anchor = activeMatches ? session.activeExecution : accepted || null;
+  const anchor = pending || accepted || null;
   const existing = session.activeRollback;
   if (existing) {
     const identical = existing.reviewUnitId === reviewUnitId
@@ -507,9 +550,11 @@ function recordDocumentRollback(session, receipt) {
           || validated.originalExecutionJournalDigest !== intent.originalExecutionJournalDigest)) {
     throw new Error('Rollback journal does not match the in-flight rollback intent');
   }
-  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
+  const pendings = pendingList(session);
+  const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
+  const activeMatches = pending !== undefined;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  let originalExecution = activeMatches ? session.activeExecution : accepted || null;
+  let originalExecution = pending || accepted || null;
   if (!originalExecution && intent) {
     // The intent is the pre-side-effect anchor: even when a concurrent
     // writer moved the unit out of active/accepted, the durable lease
@@ -529,13 +574,15 @@ function recordDocumentRollback(session, receipt) {
   );
 
   const rolledBackAt = receipt.rolledBackAt || new Date().toISOString();
-  const activeExecution = activeMatches ? null : clone(session.activeExecution);
+  const remainingPendings = pendings.filter((item) => item.reviewUnitId !== reviewUnitId);
+  const head = pendingHead(remainingPendings);
   return REVIEW_MACHINE.apply('recordDocumentRollback', session, {
     acceptedReviewUnits: Object.freeze((session.acceptedReviewUnits || [])
       .filter((unit) => unit.reviewUnitId !== reviewUnitId)
       .map(clone)),
-    activeExecution,
-    activeReviewUnitId: activeExecution?.reviewUnitId || null,
+    pendingExecutions: Object.freeze(remainingPendings),
+    activeExecution: head ? clone(head) : null,
+    activeReviewUnitId: head ? head.reviewUnitId : null,
     // Consume the lease only when it belongs to the unit being completed.
     // The reconcile path can record a receipt for unit A while unit B's
     // lease is in flight (crash-then-rerun interleaving); clearing
@@ -690,11 +737,12 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
     throw new Error(`Review-unit manifest digest mismatch: expected ${session?.reviewUnitManifestDigest}, got ${reviewUnitManifest?.manifestDigest}`);
   }
   const records = new Map((currentRecords || []).map((record) => [recordId(record), record]));
-  if (session.activeExecution) {
+  const pendings = pendingList(session);
+  for (const pending of pendings) {
     validateExecutionForUnit(session, {
-      reviewUnitId: session.activeExecution.reviewUnitId,
-      executionJournalPath: session.activeExecution.executionJournalPath,
-      executionJournalDigest: session.activeExecution.executionJournalDigest,
+      reviewUnitId: pending.reviewUnitId,
+      executionJournalPath: pending.executionJournalPath,
+      executionJournalDigest: pending.executionJournalDigest,
     });
   }
   for (const receipt of session.acceptedReviewUnits || []) {
@@ -724,7 +772,8 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
     acceptedReviewUnitIds: (session.acceptedReviewUnits || [])
       .map((unit) => unit.reviewUnitId)
       .sort(),
-    activeReviewUnitId: session.activeExecution?.reviewUnitId || null,
+    activeReviewUnitId: pendingHead(pendings)?.reviewUnitId || null,
+    pendingReviewUnitIds: pendings.map((item) => item.reviewUnitId),
   };
 }
 

@@ -101,6 +101,8 @@ function parseArgs(argv) {
             args.approveBatchDigest = argv[++i];
         } else if (arg === '--review-unit-id' && argv[i + 1]) {
             args.reviewUnitId = argv[++i];
+        } else if (arg === '--batch-continue') {
+            args.batchContinue = true;
         } else if (arg === '--session-state' && argv[i + 1]) {
             args.sessionState = argv[++i];
         } else if (arg === '--resume-session' && argv[i + 1]) {
@@ -139,6 +141,7 @@ Options:
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
   --review-unit-id <id>            Select exactly one document and its required resource operations
+  --batch-continue                 Verified batch mode: permit planning and recording executions while sibling units await review (only a unit's OWN unaccepted execution blocks its re-selection). The operator's batch write approval binds the unit list; without this flag the per-unit strict gate is unchanged
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
   --finalize-acceptance <file>     Finalize acceptance from a receipt bound (by acceptanceManifestDigest) to the canonical --session-state session
@@ -712,6 +715,7 @@ async function runCli({
         printPlans: args.json !== true,
         collaborativeReview: true,
         reviewUnitId: args.reviewUnitId || null,
+        batchContinue: args.batchContinue === true,
         reviewSession,
         tokenReferenceReader: dependencies.tokenReferenceReader || null,
         tokenReferenceTracks,
@@ -740,13 +744,14 @@ async function runCli({
             reviewUnitId: result.activeReviewUnit.reviewUnitId,
             executionJournalPath: result.executionJournalPath,
             executionJournalDigest: result.executionJournalDigest,
-        });
+        }, { batchContinue: args.batchContinue === true });
         saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
         result.reviewSession = {
             ...(result.reviewSession || {}),
             sessionId: reviewSession.sessionId,
             sessionPath,
             activeReviewUnitId: reviewSession.activeExecution.reviewUnitId,
+            pendingReviewUnitIds: (reviewSession.pendingExecutions || []).map((item) => item.reviewUnitId),
             acceptedReviewUnitIds: (reviewSession.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort(),
             reviewUnitManifestDigest: reviewSession.reviewUnitManifestDigest,
         };
@@ -769,10 +774,13 @@ async function runCli({
         const sessionPath = path.resolve(args.resumeSession);
         const reviewUnitId = args.reviewUnitId || result.activeReviewUnit.reviewUnitId;
         ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
-        const activeExecution = reviewSession.activeExecution;
+        const pendings = Array.isArray(reviewSession.pendingExecutions)
+            ? reviewSession.pendingExecutions
+            : (reviewSession.activeExecution ? [reviewSession.activeExecution] : []);
+        const pendingForUnit = pendings.find((item) => item.reviewUnitId === reviewUnitId);
         // A rollback receipt pins the reversed execution by digest: recovering
         // the SAME journal would resurrect a rolled-back execution (receipt
-        // plus active execution wedges the unit — re-rollback is refused and
+        // plus a pending execution wedges the unit — re-rollback is refused and
         // the journal's failed verification outcomes block finalization).
         // The unit stays in reviewed planning; freeing the canonical journal
         // slot is the executor's rollback-receipt archival path.
@@ -783,23 +791,18 @@ async function runCli({
         if (rolledBackReceipt) {
             result.reconciliation = { ...result.reconciliation, sessionRecovered: false, blockedByRolledBackReceipt: true };
             err(`Execution not recorded: journal ${result.reconciliation.executionJournalDigest} belongs to the rolled-back execution of ${reviewUnitId}; the unit stays in reviewed planning.`);
-        } else if (!activeExecution) {
+        } else if (!pendingForUnit) {
             reviewSession = recordDocumentExecution(reviewSession, {
                 reviewUnitId,
                 executionJournalPath: result.reconciliation.executionJournalPath,
                 executionJournalDigest: result.reconciliation.executionJournalDigest,
-            });
+            }, { batchContinue: args.batchContinue === true });
             saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
             result.reconciliation = { ...result.reconciliation, sessionRecovered: true };
             err(`Execution recorded from the durable journal for ${reviewUnitId}; rerun is not needed for this unit.`);
-        } else if (activeExecution.reviewUnitId === reviewUnitId) {
+        } else {
             // Already recovered by a previous rerun — nothing to do.
             result.reconciliation = { ...result.reconciliation, sessionRecovered: false };
-        } else {
-            // A different unit is mid-flight: fail-closed with a typed
-            // narrative instead of an unhandled store refusal.
-            result.reconciliation = { ...result.reconciliation, sessionRecovered: false, blockedByActiveUnit: activeExecution.reviewUnitId };
-            err(`Execution not recorded: review session has active execution ${activeExecution.reviewUnitId}; accept or roll back that unit first, then rerun this recovery.`);
         }
     }
     if (args.sessionState) {

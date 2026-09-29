@@ -49,6 +49,26 @@ function recordId(value) {
   return value?.recordId || value?.record_id || value?.id || null;
 }
 
+// The executor never writes Targets (2026-09-22 rule, codified by the
+// record-state Targets work), so the expected Targets of an executed record is
+// the execution baseline carried by the capsule's beforeRecord — not the
+// executed snapshot. Units executed by the pre-baseline executor had Targets
+// wiped into the observed postRecord, and the record may legitimately have
+// been restored to the baseline afterward; the rollback preflight must expect
+// the baseline so an operator-restored record still matches. An empty
+// baseline keeps the observed shape untouched (records created blank stay
+// blank).
+function expectedPostRecordForRollback(postRecord, beforeRecord) {
+  const baselineTargets = beforeRecord?.writableFields?.Targets;
+  if (!Array.isArray(baselineTargets) || baselineTargets.length === 0) {
+    return structuredClone(postRecord);
+  }
+  const expected = structuredClone(postRecord);
+  expected.rawFields = { ...(expected.rawFields || {}), Targets: structuredClone(baselineTargets) };
+  expected.writableFields = { ...(expected.writableFields || {}), Targets: structuredClone(baselineTargets) };
+  return expected;
+}
+
 function requireValue(value, code, message, details = {}) {
   if (value === null || value === undefined || value === '') {
     throw new RollbackPlanningError(code, message, details);
@@ -194,7 +214,7 @@ function inverseFor(pair) {
       return {
         ...base,
         beforeRecord: structuredClone(capsule.beforeRecord),
-        expectedPostRecord: structuredClone(evidence.postRecord),
+        expectedPostRecord: expectedPostRecordForRollback(evidence.postRecord, capsule.beforeRecord),
         copiedDocument: { ...structuredClone(evidence.createdDocument), token },
       };
     }
@@ -213,7 +233,7 @@ function inverseFor(pair) {
       return {
         ...base,
         beforeRecord: structuredClone(capsule.beforeRecord),
-        expectedPostRecord: structuredClone(evidence.postRecord),
+        expectedPostRecord: expectedPostRecordForRollback(evidence.postRecord, capsule.beforeRecord),
         documentRollback: structuredClone(rollback),
       };
     }
@@ -224,7 +244,7 @@ function inverseFor(pair) {
       return {
         ...base,
         beforeRecord: structuredClone(capsule.beforeRecord),
-        expectedPostRecord: structuredClone(evidence.postRecord),
+        expectedPostRecord: expectedPostRecordForRollback(evidence.postRecord, capsule.beforeRecord),
       };
     case 'CREATE_VIRTUAL_NODE': {
       const createdRecordId = requireValue(
@@ -249,7 +269,7 @@ function inverseFor(pair) {
           ...base,
           inverse: 'RESTORE_VIRTUAL_NODE_AND_DELETE_FOLDER',
           beforeRecord: structuredClone(capsule.beforeRecord),
-          expectedPostRecord: structuredClone(evidence.postRecord),
+          expectedPostRecord: expectedPostRecordForRollback(evidence.postRecord, capsule.beforeRecord),
           createdFolder: { ...structuredClone(evidence.createdFolder), token },
         };
       }

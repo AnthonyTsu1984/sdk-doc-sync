@@ -90,6 +90,7 @@ function parseArgs(argv) {
     else if (argument === '--journal' && argv[index + 1]) args.journal = argv[++index];
     else if (argument === '--approve-rollback-digest' && argv[index + 1]) args.approveRollbackDigest = argv[++index];
     else if (argument === '--json') args.json = true;
+    else if (argument === '--supersede-stale-lease') args.supersedeStaleLease = true;
     else throw new Error(`Unknown or incomplete argument: ${argument}`);
   }
   return args;
@@ -315,13 +316,16 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
   // execution journal) is the recovery anchor if anything interrupts the run
   // between side effects and session completion. Contention reloads and
   // re-attempts — the intent adopts an identical lease idempotently, and any
-  // semantic refusal surfaces BEFORE the executor is constructed.
+  // semantic refusal surfaces BEFORE the executor is constructed. A stale
+  // lease from a run that exited before any mutation (e.g. a BLOCKED
+  // preflight) is re-bound only through the explicit operator flag.
   for (let attempt = 0; ; attempt += 1) {
     try {
       session = recordRollbackIntent(session, {
         reviewUnitId: args.reviewUnitId,
         rollbackManifestDigest: manifest.rollbackManifestDigest,
         rollbackJournalPath: journalPath,
+        supersedeStaleLease: args.supersedeStaleLease === true,
       });
       const saved = saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
       sessionDigest = saved.stateDigest;

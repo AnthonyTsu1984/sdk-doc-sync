@@ -375,7 +375,32 @@ function validateRollbackJournal(filePath, expectedDigest) {
 // interrupts the run between side effects and session completion, the lease
 // is the recovery anchor the completion journal drives — the external
 // reality can always be reconciled into the canonical session.
-function recordRollbackIntent(session, { reviewUnitId, rollbackManifestDigest, rollbackJournalPath }) {
+// Side effects only ever start after a prepared entry lands in the bound
+// rollback journal, so an absent, empty, or prepared-free journal proves the
+// lease never mutated anything (e.g. the executor BLOCKED in its live
+// preflight). A malformed line is treated conservatively as side effects.
+function rollbackJournalHasNoSideEffects(journalPath) {
+  if (!nonEmptyString(journalPath) || !fs.existsSync(journalPath)) return true;
+  const content = fs.readFileSync(journalPath, 'utf8');
+  if (content.trim() === '') return true;
+  return !content.split('\n').some((line) => {
+    if (line.trim() === '') return false;
+    let entry = null;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      return true;
+    }
+    return entry?.type === 'prepared';
+  });
+}
+
+function recordRollbackIntent(session, {
+  reviewUnitId,
+  rollbackManifestDigest,
+  rollbackJournalPath,
+  supersedeStaleLease = false,
+}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
   if (session.scanStateUpdated === true) {
     throw new Error('Review session is finalized and cannot be rolled back in place');
@@ -389,20 +414,33 @@ function recordRollbackIntent(session, { reviewUnitId, rollbackManifestDigest, r
   if ((session.rollbackReceipts || []).some((item) => item.reviewUnitId === reviewUnitId)) {
     throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
   }
+  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
+  const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
+  const anchor = activeMatches ? session.activeExecution : accepted || null;
   const existing = session.activeRollback;
   if (existing) {
     const identical = existing.reviewUnitId === reviewUnitId
       && existing.rollbackManifestDigest === rollbackManifestDigest
       && path.resolve(existing.rollbackJournalPath || '') === path.resolve(rollbackJournalPath);
     if (identical) return session;
-    throw Object.assign(
-      new Error(`A different rollback is already in flight for ${existing.reviewUnitId}`),
-      { code: 'ROLLBACK_INTENT_CONFLICT' },
-    );
+    // Strict conflict by default: a silent supersede could race a concurrent
+    // rollback whose executor is past its own lease check. Supersede is an
+    // explicit operator step (`--supersede-stale-lease`) that additionally
+    // demands the same unit, the same original execution, and a lease journal
+    // that proves no side effect ever started (the executor writes a prepared
+    // entry before its first mutation).
+    const supersedeable = supersedeStaleLease
+      && existing.reviewUnitId === reviewUnitId
+      && anchor
+      && existing.originalExecutionJournalDigest === anchor.executionJournalDigest
+      && rollbackJournalHasNoSideEffects(existing.rollbackJournalPath);
+    if (!supersedeable) {
+      throw Object.assign(
+        new Error(`A different rollback is already in flight for ${existing.reviewUnitId}`),
+        { code: 'ROLLBACK_INTENT_CONFLICT' },
+      );
+    }
   }
-  const activeMatches = session.activeExecution?.reviewUnitId === reviewUnitId;
-  const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const anchor = activeMatches ? session.activeExecution : accepted || null;
   if (!anchor) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
   validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
   const startedAt = new Date().toISOString();

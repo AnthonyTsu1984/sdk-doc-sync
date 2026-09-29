@@ -722,3 +722,97 @@ test('loading a session whose lease and receipt share a unit refuses loudly', ()
   fs.writeFileSync(sessionPath, `${JSON.stringify(tampered, null, 2)}\n`);
   assert.throws(() => loadReviewSession(sessionPath), /lease and receipt coexist/);
 });
+
+test('a no-side-effect lease is superseded only through the explicit operator flag', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-lease-supersede-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:lease-supersede',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+
+  // The first lease was bound, then the executor BLOCKED in its live
+  // preflight: the bound rollback journal was never created, so nothing was
+  // mutated and the operator may re-bind the lease to a regenerated manifest.
+  const leased = recordRollbackIntent(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-v1',
+    rollbackJournalPath: path.join(directory, 'never-created.jsonl'),
+  });
+
+  // The default stays strict (P1): a different in-flight manifest refuses
+  // even when the prior journal is provably side-effect free, because the
+  // tool cannot tell a dead run from a concurrent one mid-preflight.
+  assert.throws(
+    () => recordRollbackIntent(leased, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackManifestDigest: 'sha256:rollback-manifest-v2',
+      rollbackJournalPath: path.join(directory, 'regenerated.jsonl'),
+    }),
+    (error) => error.code === 'ROLLBACK_INTENT_CONFLICT',
+  );
+
+  // The explicit operator flag re-binds the stale lease.
+  const rebound = recordRollbackIntent(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-v2',
+    rollbackJournalPath: path.join(directory, 'regenerated.jsonl'),
+    supersedeStaleLease: true,
+  });
+  assert.equal(rebound.activeRollback.rollbackManifestDigest, 'sha256:rollback-manifest-v2');
+  assert.equal(rebound.activeRollback.originalExecutionJournalDigest, execution.digest);
+
+  // An existing but empty journal file is equally side-effect free.
+  const emptyPath = path.join(directory, 'empty.jsonl');
+  fs.writeFileSync(emptyPath, '');
+  const reboundEmpty = recordRollbackIntent(rebound, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-v3',
+    rollbackJournalPath: emptyPath,
+    supersedeStaleLease: true,
+  });
+  assert.equal(reboundEmpty.activeRollback.rollbackManifestDigest, 'sha256:rollback-manifest-v3');
+
+  // Re-binding onto a fresh path whose predecessor was side-effect free is
+  // allowed; a prepared entry in the CURRENT lease's journal blocks every
+  // later supersede — that journal is the side-effect proof the lease anchors.
+  const startedPath = path.join(directory, 'started.jsonl');
+  const boundToStarted = recordRollbackIntent(reboundEmpty, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-v4',
+    rollbackJournalPath: startedPath,
+    supersedeStaleLease: true,
+  });
+  assert.equal(boundToStarted.activeRollback.rollbackManifestDigest, 'sha256:rollback-manifest-v4');
+  fs.writeFileSync(startedPath, `${JSON.stringify({ schemaVersion: 1, type: 'prepared', actionId: 'node:Collections:a' })}\n`);
+  assert.throws(
+    () => recordRollbackIntent(boundToStarted, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackManifestDigest: 'sha256:rollback-manifest-v5',
+      rollbackJournalPath: path.join(directory, 'regenerated-2.jsonl'),
+      supersedeStaleLease: true,
+    }),
+    (error) => error.code === 'ROLLBACK_INTENT_CONFLICT',
+  );
+
+  // A lease anchored to a different original execution is never re-bound.
+  const driftedLease = {
+    ...reboundEmpty,
+    activeRollback: {
+      ...reboundEmpty.activeRollback,
+      originalExecutionJournalDigest: 'sha256:other-execution',
+    },
+  };
+  assert.throws(
+    () => recordRollbackIntent(driftedLease, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackManifestDigest: 'sha256:rollback-manifest-v6',
+      rollbackJournalPath: path.join(directory, 'regenerated-3.jsonl'),
+      supersedeStaleLease: true,
+    }),
+    (error) => error.code === 'ROLLBACK_INTENT_CONFLICT',
+  );
+});

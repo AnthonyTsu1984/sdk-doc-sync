@@ -11,6 +11,7 @@ const {
   buildRollbackManifest,
   validateRollbackManifest,
 } = require('../src/sdk-doc-sync/rollback-planner');
+const { matchesRecordState } = require('../src/sdk-doc-sync/record-state');
 
 function writeJournal(directory, name, actions, { complete = true } = {}) {
   const entries = [];
@@ -227,6 +228,116 @@ test('rollback planner fails closed for finalized sessions and incomplete or dri
   assert.throws(
     () => buildRollbackManifest({ session: sessionFor(failed, unit([action.actionId])), reviewUnitId: 'review:node:Vector:search' }),
     /unverified or failed actions/i,
+  );
+});
+
+test('rollback planner expects the baseline Targets when the executed snapshot was recorded pre-baseline', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-targets-'));
+  const baselineBeforeRecord = {
+    recordId: 'rec-search',
+    rawFields: {
+      Docs: { text: 'search()', link: 'https://docs.example/docx/source-doc' },
+      Progress: 'Draft',
+      Targets: ['Milvus'],
+    },
+    writableFields: {
+      Docs: { text: 'search()', link: 'https://docs.example/docx/source-doc' },
+      Progress: 'Draft',
+      Targets: ['Milvus'],
+    },
+  };
+  // The observed postRecord as the pre-baseline executor captured it: the
+  // updateRecord payload wiped Targets, so the snapshot carries none.
+  const wipedPostRecord = {
+    recordId: 'rec-search',
+    rawFields: {
+      Docs: { text: 'search()', link: 'https://docs.example/docx/copy-doc' },
+      'Last Modified At': 'v3.0.x',
+      Progress: 'WIP',
+    },
+    writableFields: {
+      Docs: { text: 'search()', link: 'https://docs.example/docx/copy-doc' },
+      'Last Modified At': 'v3.0.x',
+      Progress: 'WIP',
+    },
+  };
+  const journal = writeJournal(directory, 'targets', [{
+    actionId: 'node:Authentication:addPrivilegesToGroup',
+    action: 'COPY_PATCH_AND_REPOINT',
+    beforeRecord: baselineBeforeRecord,
+    postRecord: wipedPostRecord,
+    createdDocument: { token: 'copy-doc', folderToken: 'folder-v30' },
+  }]);
+  const result = buildRollbackManifest({
+    session: sessionFor(journal, unit(['node:Authentication:addPrivilegesToGroup'])),
+    reviewUnitId: 'review:node:Authentication:addPrivilegesToGroup',
+  });
+
+  const expected = result.rollbackManifest.actions[0].expectedPostRecord;
+  assert.deepEqual(expected.writableFields.Targets, ['Milvus']);
+  assert.deepEqual(expected.rawFields.Targets, ['Milvus']);
+  // The operator-restored live record satisfies the preflight comparison.
+  assert.equal(matchesRecordState({
+    recordId: 'rec-search',
+    fields: { ...wipedPostRecord.rawFields, Targets: ['Milvus'] },
+  }, expected), true);
+  // The observed Targets-less snapshot no longer matches — the wiped state is
+  // the defect the planner stops expecting.
+  assert.equal(matchesRecordState({
+    recordId: 'rec-search',
+    fields: wipedPostRecord.rawFields,
+  }, expected), false);
+  // The restore target is untouched: the capsule still carries the baseline.
+  assert.deepEqual(result.rollbackManifest.actions[0].beforeRecord.writableFields.Targets, ['Milvus']);
+});
+
+test('rollback planner keeps the observed shape for empty baselines and compliant snapshots', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-targets-empty-'));
+  const baselineWithTargets = {
+    recordId: 'rec-search',
+    rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/source-doc' }, Progress: 'Draft', Targets: ['Milvus'] },
+    writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/source-doc' }, Progress: 'Draft', Targets: ['Milvus'] },
+  };
+  const compliantPostRecord = {
+    recordId: 'rec-search',
+    rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/copy-doc' }, Progress: 'WIP', Targets: ['Milvus'] },
+    writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/copy-doc' }, Progress: 'WIP', Targets: ['Milvus'] },
+  };
+
+  // Empty baseline (no Targets on the before-record): the observed shape is
+  // preserved verbatim — created-blank records stay blank.
+  const blankBaselineJournal = writeJournal(directory, 'blank-baseline', [{
+    actionId: 'node:Collections:a',
+    action: 'COPY_PATCH_AND_REPOINT',
+    beforeRecord,
+    postRecord,
+    createdDocument: { token: 'copy-doc', folderToken: 'folder-v30' },
+  }]);
+  const blankBaselineResult = buildRollbackManifest({
+    session: sessionFor(blankBaselineJournal, unit(['node:Collections:a'])),
+    reviewUnitId: 'review:node:Collections:a',
+  });
+  assert.deepEqual(
+    blankBaselineResult.rollbackManifest.actions[0].expectedPostRecord,
+    JSON.parse(JSON.stringify(postRecord)),
+  );
+
+  // A compliant snapshot already carries the baseline Targets (the
+  // post-baseline executor never writes them): the overlay is a no-op.
+  const compliantJournal = writeJournal(directory, 'compliant', [{
+    actionId: 'node:Collections:b',
+    action: 'COPY_PATCH_AND_REPOINT',
+    beforeRecord: baselineWithTargets,
+    postRecord: compliantPostRecord,
+    createdDocument: { token: 'copy-doc-2', folderToken: 'folder-v30' },
+  }]);
+  const compliantResult = buildRollbackManifest({
+    session: sessionFor(compliantJournal, unit(['node:Collections:b'])),
+    reviewUnitId: 'review:node:Collections:b',
+  });
+  assert.deepEqual(
+    compliantResult.rollbackManifest.actions[0].expectedPostRecord,
+    JSON.parse(JSON.stringify(compliantPostRecord)),
   );
 });
 

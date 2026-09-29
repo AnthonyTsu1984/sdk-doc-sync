@@ -1226,9 +1226,12 @@ class SdkDocSync {
                     const references = await this.tokenReferenceReader.listTokenReferences({
                         documentToken: plan.source.documentToken,
                     });
-                    observed.olderDocumentReferences = [...new Set((references || [])
+                    // Reference multiset, NOT a set: cloned bases reuse
+                    // recordIds across tracks, so each surviving reference
+                    // must survive as an entry (see verifySharedTokenEvidence).
+                    observed.olderDocumentReferences = (references || [])
                         .map(reference => reference?.recordId)
-                        .filter(Boolean))];
+                        .filter(Boolean);
                 } catch (error) {
                     observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'tokenReferences', message: error.message });
                 }

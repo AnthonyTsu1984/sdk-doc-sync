@@ -2279,3 +2279,73 @@ test('without a matching rollback receipt the canonical slot stays fail-closed',
   assert.ok(fs.existsSync(journalPath));
   assert.equal(fs.existsSync(path.join(journalDir, 'archive')), false);
 });
+
+test('per-unit mode blocks on any pending execution; --batch-continue blocks only the unit own pending execution', async () => {
+  const probeCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const probe = syncFixture({ dryRun: true, calls: probeCalls, approvalCallback: async (actions) => actions });
+  const probeResult = await probe.run();
+  const sessionManifest = probeResult.reviewUnitManifest;
+
+  // Resume validation reads each pending journal from disk: seed a real file
+  // whose semantic digest the pending entry pins.
+  const gateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-reference-gate-'));
+  const pendingEntries = [
+    { schemaVersion: 1, type: 'prepared', actionId: 'node:Collections:createCollection' },
+    { schemaVersion: 1, type: 'observed', actionId: 'node:Collections:createCollection', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  const pendingJournalPath = path.join(gateDir, 'pending.jsonl');
+  fs.writeFileSync(pendingJournalPath, `${pendingEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const buildSession = () => ({
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v2.6.x:batch-gate',
+    language: 'node',
+    sdkName: 'Node SDK',
+    track: 'v2.6.x',
+    status: 'in_progress',
+    scanStateUpdated: false,
+    reviewUnitManifest: sessionManifest,
+    reviewUnitManifestDigest: sessionManifest.manifestDigest,
+    acceptedReviewUnits: [],
+    activeExecution: null,
+    rollbackReceipts: [],
+    pendingExecutions: [{
+      reviewUnitId: 'review:node:Collections:createCollection',
+      executionJournalPath: pendingJournalPath,
+      executionJournalDigest: digestSemantic(pendingEntries),
+      executedAt: '2026-09-29T00:00:00.000Z',
+    }],
+  });
+
+  // Per-unit mode (default): a pending execution blocks EVERY selection —
+  // the sibling unit is not selectable either.
+  const strictCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const strict = syncFixture({ dryRun: true, calls: strictCalls, approvalCallback: async (actions) => actions });
+  strict.reviewSession = buildSession();
+  strict.collaborativeReview = true;
+  const strictResult = await strict.run();
+  const strictErrors = strictResult.planningErrors.filter((entry) => entry.code === 'ACTIVE_DOCUMENT_REVIEW_REQUIRED');
+  assert.equal(strictErrors.length, 1);
+  assert.match(strictErrors[0].message, /must be accepted or rolled back before another write/);
+  assert.equal(strictResult.remainingReviewUnitIds.length, 0);
+
+  // Batch mode: only the pending unit itself is blocked; its siblings stay
+  // selectable so the batch can execute through to its review gate.
+  const batchCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const batch = syncFixture({ dryRun: true, calls: batchCalls, approvalCallback: async (actions) => actions });
+  batch.reviewSession = buildSession();
+  batch.collaborativeReview = true;
+  batch.batchContinue = true;
+  const batchResult = await batch.run();
+  const batchErrors = batchResult.planningErrors.filter((entry) => entry.code === 'ACTIVE_DOCUMENT_REVIEW_REQUIRED');
+  assert.equal(batchErrors.length, 1);
+  assert.equal(batchErrors[0].stableId, 'review:node:Collections:createCollection');
+  assert.match(batchErrors[0].message, /has an unaccepted execution/);
+  // The fixture manifest holds exactly the pending unit, so "siblings stay
+  // selectable" reduces to: the pending unit is the only thing gated, and a
+  // NON-pending unit in the same manifest is not added to the gate errors.
+  assert.equal(batchResult.remainingReviewUnitIds.includes('review:node:Collections:createCollection'), false);
+  const batchBlockedIds = new Set(batchErrors.map((entry) => entry.stableId));
+  assert.equal(batchBlockedIds.has('review:node:Collections:createCollection'), true);
+  assert.equal(batchErrors.every((entry) => entry.stableId === 'review:node:Collections:createCollection'), true);
+});

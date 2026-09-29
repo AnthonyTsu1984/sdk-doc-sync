@@ -73,6 +73,10 @@ function status(session, sessionPath) {
     remainingReviewUnitIds: expected.filter((id) => !acceptedSet.has(id)),
     acceptanceManifestDigest: session.acceptanceManifestDigest || null,
     activeReviewUnitId: session.activeExecution?.reviewUnitId || null,
+    pendingReviewUnitIds: (Array.isArray(session.pendingExecutions)
+        ? session.pendingExecutions
+        : (session.activeExecution ? [session.activeExecution] : [])
+    ).map((item) => item.reviewUnitId),
     // Surfaced so a ROLLBACK_INTENT_CONFLICT is diagnosable from `status`
     // alone: the lease names the unit, journal, and start time an operator
     // needs to rerun or reconcile it deterministically.

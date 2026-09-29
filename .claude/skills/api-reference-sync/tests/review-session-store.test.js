@@ -108,7 +108,7 @@ test('review session persists exactly one active execution across processes', ()
 
   assert.equal(restored.activeExecution.reviewUnitId, 'review:node:Collections:a');
   assert.equal(restored.activeExecution.executionJournalDigest, journal.digest);
-  assert.throws(() => withExecution(restored, journal, 'review:node:Collections:b'), /active execution/i);
+  assert.throws(() => withExecution(restored, journal, 'review:node:Collections:b'), /already has pending execution/i);
 });
 
 test('decision capture appends feedback without mutating any review-session authority state', () => {
@@ -930,4 +930,143 @@ test('resume validation reads Targets from the type-index projection shape witho
     reviewUnitManifest: manifest(),
     currentRecords: [indexRecord([])],
   }), /Targets drifted from the execution baseline \(expected \[Milvus\], got \[\]\)/);
+});
+
+test('verified batch mode: K pending executions accumulate under --batch-continue and drain per unit', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-batch-'));
+  const executionA = executionJournal(directory, 'node:Collections:a', 'execution-a.jsonl');
+  const executionB = executionJournal(directory, 'node:Collections:b', 'execution-b.jsonl');
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:batch-pending',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+
+  // Per-unit mode (no flag): a second pending execution still refuses — the
+  // strict gate is unchanged.
+  const first = recordDocumentExecution(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: executionA.filePath,
+    executionJournalDigest: executionA.digest,
+  });
+  assert.throws(
+    () => recordDocumentExecution(first, {
+      reviewUnitId: 'review:node:Collections:b',
+      executionJournalPath: executionB.filePath,
+      executionJournalDigest: executionB.digest,
+    }),
+    /--batch-continue/,
+  );
+
+  // Batch mode: both units sit pending simultaneously; the head mirrors
+  // activeExecution for older readers.
+  const withB = recordDocumentExecution(first, {
+    reviewUnitId: 'review:node:Collections:b',
+    executionJournalPath: executionB.filePath,
+    executionJournalDigest: executionB.digest,
+  }, { batchContinue: true });
+  assert.deepEqual(withB.pendingExecutions.map((item) => item.reviewUnitId), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.equal(withB.activeExecution.reviewUnitId, 'review:node:Collections:b');
+
+  // Batch drain: accepting A removes only A and re-heads to B.
+  const acceptedA = recordDocumentAcceptance(withB, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: executionA.filePath,
+    executionJournalDigest: executionA.digest,
+    touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+    commentsResolved: true,
+  });
+  assert.deepEqual(acceptedA.pendingExecutions.map((item) => item.reviewUnitId), ['review:node:Collections:b']);
+  assert.equal(acceptedA.activeExecution.reviewUnitId, 'review:node:Collections:b');
+  assert.deepEqual(acceptedA.acceptedReviewUnits.map((unit) => unit.reviewUnitId), ['review:node:Collections:a']);
+
+  // Accepting B drains the list fully.
+  const acceptedB = recordDocumentAcceptance(acceptedA, {
+    reviewUnitId: 'review:node:Collections:b',
+    executionJournalPath: executionB.filePath,
+    executionJournalDigest: executionB.digest,
+    touchedRecords: [{ actionId: 'node:Collections:b', recordId: 'rec-b', documentToken: 'doc-b' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-b'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-b'],
+    commentsResolved: true,
+  });
+  assert.deepEqual(acceptedB.pendingExecutions, []);
+  assert.equal(acceptedB.activeExecution, null);
+  assert.deepEqual(acceptedB.acceptedReviewUnits.map((unit) => unit.reviewUnitId).sort(), [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+
+  // Change request on a pending unit removes only that unit's pending entry
+  // (drain from the two-pending state: A leaves, B stays pending).
+  const changesA = recordDocumentChangesRequested(withB, { reviewUnitId: 'review:node:Collections:a' });
+  assert.deepEqual(changesA.pendingExecutions.map((item) => item.reviewUnitId), ['review:node:Collections:b']);
+  assert.equal(changesA.activeExecution.reviewUnitId, 'review:node:Collections:b');
+  assert.equal(changesA.changeRequests.length, 1);
+
+  // Rollback removes only the rolled-back unit's pending entry (B leaves, list empties).
+  const rollbackB = rollbackJournal(directory, {
+    reviewUnitId: 'review:node:Collections:b',
+    originalExecutionJournalDigest: executionB.digest,
+    rollbackManifestDigest: 'sha256:rollback-manifest-b',
+  });
+  const leasedB = recordRollbackIntent(changesA, {
+    reviewUnitId: 'review:node:Collections:b',
+    rollbackManifestDigest: 'sha256:rollback-manifest-b',
+    rollbackJournalPath: rollbackB.filePath,
+  });
+  const rolledB = recordDocumentRollback(leasedB, {
+    reviewUnitId: 'review:node:Collections:b',
+    rollbackJournalPath: rollbackB.filePath,
+    rollbackJournalDigest: rollbackB.digest,
+  });
+  assert.deepEqual(rolledB.pendingExecutions, []);
+  assert.deepEqual(rolledB.rollbackReceipts.map((item) => item.reviewUnitId), ['review:node:Collections:b']);
+  assert.equal(rolledB.activeExecution, null);
+
+  // Resume validation walks every pending journal and reports the list: use
+  // the two-pending state (withB) — both journals validated, list reported.
+  const resumed = validateResumeSession({
+    session: withB,
+    reviewUnitManifest: manifest(),
+    currentRecords: [],
+  });
+  assert.deepEqual(resumed.pendingReviewUnitIds, [
+    'review:node:Collections:a',
+    'review:node:Collections:b',
+  ]);
+  assert.equal(resumed.activeReviewUnitId, 'review:node:Collections:b');
+});
+
+test('pre-batch sessions without pendingExecutions synthesize the list from activeExecution', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-batch-legacy-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:batch-legacy',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  // Simulate a session saved before the batch work: no pendingExecutions key.
+  const legacy = JSON.parse(JSON.stringify(initial));
+  delete legacy.pendingExecutions;
+  const accepted = recordDocumentAcceptance(legacy, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: execution.filePath,
+    executionJournalDigest: execution.digest,
+    touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc-a' }],
+    documentLinks: ['https://example.feishu.cn/docx/doc-a'],
+    recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'],
+    commentsResolved: true,
+  });
+  assert.deepEqual(accepted.pendingExecutions, []);
+  assert.equal(accepted.activeExecution, null);
 });

@@ -1,4 +1,5 @@
 const { isDeepStrictEqual } = require('node:util');
+const fs = require('node:fs');
 const path = require('node:path');
 
 const FeishuToMarkdown = require('../feishu-to-markdown');
@@ -741,7 +742,7 @@ class SdkDocSync {
             });
             return result;
         }
-        const journal = this.executionJournalFactory
+        let journal = this.executionJournalFactory
             ? this.executionJournalFactory(result.executionBatch)
             : new ExecutionJournal({
                 filePath: journalPathForDigest(result.executionBatch.batchDigest),
@@ -750,27 +751,44 @@ class SdkDocSync {
             });
         if (journal.read().length > 0) {
             const existingEntries = journal.read();
-            result.executionResult = blockedExecutionResult({
-                batch: result.executionBatch,
-                proposedBatch: result.proposedExecutionBatch,
-                diagnostics: [{
-                    code: 'EXECUTION_RECONCILIATION_REQUIRED',
-                    message: 'An existing journal must be reconciled before replay.',
-                }],
-            });
-            // 6.7 fault injection: surface the durable evidence with the
-            // refusal so the S4 crash window (journal completed, session
-            // recording never landed) is recoverable with zero Feishu writes
-            // — the caller records the execution straight from this journal
-            // instead of replaying anything.
-            result.reconciliation = {
-                executionJournalPath: journal.filePath,
-                executionJournalDigest: digestSemantic(existingEntries),
-                completionSentinel: existingEntries.some((entry) => (
-                    entry.type === 'completion' && entry.completionSentinel === true
-                )),
-            };
-            return result;
+            // A rollback receipt pins the reversed execution by digest: when
+            // the occupying journal IS that reversed execution, archive it
+            // byte-intact and free the canonical slot so the approved batch
+            // can execute afresh — the replacement journal is the one
+            // acceptance finalization resolves through this path binding, and
+            // a rolled-back journal's failed verification outcomes could never
+            // support finalization. Receipts reference their journal by
+            // digest from that point on; the recorded path is informational.
+            if (!this._archiveRolledBackJournal({ entries: existingEntries, journalPath: journal.filePath })) {
+                result.executionResult = blockedExecutionResult({
+                    batch: result.executionBatch,
+                    proposedBatch: result.proposedExecutionBatch,
+                    diagnostics: [{
+                        code: 'EXECUTION_RECONCILIATION_REQUIRED',
+                        message: 'An existing journal must be reconciled before replay.',
+                    }],
+                });
+                // 6.7 fault injection: surface the durable evidence with the
+                // refusal so the S4 crash window (journal completed, session
+                // recording never landed) is recoverable with zero Feishu writes
+                // — the caller records the execution straight from this journal
+                // instead of replaying anything.
+                result.reconciliation = {
+                    executionJournalPath: journal.filePath,
+                    executionJournalDigest: digestSemantic(existingEntries),
+                    completionSentinel: existingEntries.some((entry) => (
+                        entry.type === 'completion' && entry.completionSentinel === true
+                    )),
+                };
+                return result;
+            }
+            journal = this.executionJournalFactory
+                ? this.executionJournalFactory(result.executionBatch)
+                : new ExecutionJournal({
+                    filePath: journalPathForDigest(result.executionBatch.batchDigest),
+                    batchDigest: result.executionBatch.batchDigest,
+                    approvedActionIds: result.executionBatch.actions.map(action => action.actionId),
+                });
         }
 
         const approvals = new Map();
@@ -1205,6 +1223,32 @@ class SdkDocSync {
         if (!ref) return null;
         const resolution = resourceResolutions instanceof Map ? resourceResolutions.get(ref) : resourceResolutions?.[ref];
         return resolution?.value || resolution?.token || null;
+    }
+
+    // Frees the canonical digest-keyed journal slot when the occupying journal
+    // is provably the REVERSED execution of a review unit: the session's
+    // rollback receipt pins the original journal by semantic digest, so a
+    // content match is proof of reversal, not evidence of a live execution to
+    // reconcile. The file moves byte-intact into <journal dir>/archive/ via an
+    // atomic rename; the receipt keeps referencing the journal by digest, and
+    // its recorded path becomes informational. Returns true when the slot was
+    // freed and the caller may build a fresh journal.
+    _archiveRolledBackJournal({ entries, journalPath }) {
+        if (!this.reviewSession || !journalPath) return false;
+        const existingDigest = digestSemantic(entries);
+        const receipt = (this.reviewSession.rollbackReceipts || []).find((item) => (
+            item.originalExecutionJournalDigest === existingDigest
+        ));
+        if (!receipt) return false;
+        const archiveDir = path.join(path.dirname(journalPath), 'archive');
+        fs.mkdirSync(archiveDir, { recursive: true });
+        let archivePath = path.join(archiveDir, path.basename(journalPath));
+        if (fs.existsSync(archivePath)) {
+            archivePath = path.join(archiveDir, `${path.basename(journalPath, '.jsonl')}-${Date.now()}.jsonl`);
+        }
+        fs.renameSync(journalPath, archivePath);
+        this.onProgress?.('EXECUTE', `Archived rolled-back execution journal for ${receipt.reviewUnitId}: ${archivePath}`);
+        return true;
     }
 
     // Refetches the drift-prone state VERIFY_TREE_DELTA asserts on. Read-only:

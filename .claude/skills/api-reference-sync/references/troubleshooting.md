@@ -74,6 +74,24 @@ Reproduce Feishu block-API constraints in a throwaway scratch docx (`__create_dr
 
 The user edits the Bitable directly. If a resume, replan, or rollback preflight fails a `WIP`/`Targets`/`Type` check, suspect a manual record edit before debugging the pipeline — live reads are the authority, snapshots can be stale. Ask the user to restore the expected state or declare a rule change; do not "fix" the live record to satisfy the check.
 
+## Wedged Unit: Rollback Receipt Plus Active Execution
+
+Before the executor's rollback-receipt archival existed, a unit could end up
+with `rollbackReceipts[unit]` AND `activeExecution` pointing at the same
+(pinned) execution journal — the S4 recovery resurrected the reversed
+execution. Such a unit is wedged: re-rollback is refused ("already rolled
+back"), and the journal's failed verification outcomes can never support
+finalization. The executor now frees the canonical digest-keyed slot itself
+when the occupying journal matches a receipt's `originalExecutionJournalDigest`
+(byte-intact move into `tmp/api-reference-sync/archive/`), and both the S4
+recovery and `recordDocumentExecution` refuse that digest typed. To recover a
+session already wedged by the old behavior: archive the execution journal
+`tmp/api-reference-sync/sha256-<batch>.jsonl` and the session file (content
+preserved, shasum recorded), recreate the review session from the complete
+initial dry-run with the same reviewed inputs (`--release-scope` AND the
+session's recorded `--reference-context`), then re-execute the approved batch
+digest — the fresh journal carries the replacement execution.
+
 ## Percent-Encoded Block Links
 
 Block link URLs in payloads and exports are percent-encoded. Decode with `decodeURIComponent` before extracting referenced document tokens — the first orphan sweep missed 15 referenced tokens (and nearly trashed live documents) before decoding. The governed reconcilers in `content-reconciliation.js` now do this automatically.

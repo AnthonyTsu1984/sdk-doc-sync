@@ -153,3 +153,34 @@ test('an ambiguous (partial) journal keeps the BLOCKED refusal and never touches
   assert.equal(after.activeExecution, null);
   assert.equal(before.activeExecution, null);
 });
+
+test('S4 recovery never resurrects a rolled-back execution: a matching receipt keeps the session untouched', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-fault-s4-receipt-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const { journalPath, journalDigest } = seedExecutionJournal(directory);
+  const sessionWithReceipt = {
+    ...reviewSession(),
+    rollbackReceipts: [{
+      reviewUnitId: 'review:node:Collections:a',
+      originalExecutionJournalPath: journalPath,
+      originalExecutionJournalDigest: journalDigest,
+      rollbackJournalPath: path.join(directory, 'rollback.jsonl'),
+      rollbackJournalDigest: 'sha256:rollback-journal',
+      rolledBackAt: '2026-09-29T00:00:00.000Z',
+    }],
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(sessionWithReceipt, null, 2)}\n`);
+  const { session: before } = loadReviewSessionState(sessionPath);
+
+  const result = await runRecovery({
+    sessionPath,
+    blocked: blockedResultFixture({ journalPath, journalDigest, completionSentinel: true }),
+  });
+
+  assert.equal(result.executionResult.status, 'BLOCKED');
+  assert.equal(result.reconciliation.sessionRecovered, false);
+  assert.equal(result.reconciliation.blockedByRolledBackReceipt, true);
+  const { session: after } = loadReviewSessionState(sessionPath);
+  assert.equal(after.activeExecution, null);
+  assert.deepEqual(after.rollbackReceipts, before.rollbackReceipts);
+});

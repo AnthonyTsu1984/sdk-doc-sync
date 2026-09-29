@@ -2164,3 +2164,118 @@ test('orchestrator returns typed planning errors and does not approve invalid wr
   assert.equal(calls.documentMutations, 0);
   assert.equal(calls.recordMutations, 0);
 });
+
+test('a rollback receipt frees the canonical journal slot so the approved batch can execute afresh', async () => {
+  const probeCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const probe = syncFixture({ dryRun: true, calls: probeCalls, approvalCallback: async (actions) => actions });
+  const probeResult = await probe.run();
+  const manifest = probeResult.reviewUnitManifest;
+
+  const journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-reference-archive-'));
+  const journalPath = path.join(journalDir, 'execution.jsonl');
+  const reversedEntries = [
+    { type: 'prepared', actionId: 'node:Collections:createCollection' },
+    { type: 'observed', actionId: 'node:Collections:createCollection', status: 'success', verified: true },
+    { type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  fs.writeFileSync(journalPath, `${reversedEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const reversedDigest = digestSemantic(reversedEntries);
+
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0, executor: 0 };
+  const sync = syncFixture({ dryRun: false, calls, approvalCallback: async (actions) => actions });
+  sync.reviewSession = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v2.6.x:archive-test',
+    language: 'node',
+    sdkName: 'Node SDK',
+    track: 'v2.6.x',
+    status: 'in_progress',
+    scanStateUpdated: false,
+    reviewUnitManifest: manifest,
+    reviewUnitManifestDigest: manifest.manifestDigest,
+    acceptedReviewUnits: [],
+    activeExecution: null,
+    rollbackReceipts: [{
+      reviewUnitId: 'review:node:Collections:createCollection',
+      originalExecutionJournalPath: journalPath,
+      originalExecutionJournalDigest: reversedDigest,
+      rollbackJournalPath: path.join(journalDir, 'rollback.jsonl'),
+      rollbackJournalDigest: 'sha256:rollback-journal',
+      rolledBackAt: '2026-09-29T00:00:00.000Z',
+    }],
+  };
+  sync.executionApprovalProvider = (plan, action, batch) => createApprovalEnvelope({
+    skill: batch.skill,
+    operation: batch.operation,
+    batchDigest: batch.batchDigest,
+    actionCount: batch.actions.length,
+    targets: batch.targets,
+    sideEffects: batch.sideEffects,
+    decision: 'approved',
+  });
+  sync.executionJournalFactory = (batch) => new ExecutionJournal({
+    filePath: journalPath,
+    batchDigest: batch.batchDigest,
+    approvedActionIds: batch.actions.map((action) => action.actionId),
+  });
+  sync.executor = { async execute(plan) { calls.executor += 1; return { status: 'success', plan }; } };
+
+  const result = await sync.run();
+
+  assert.equal(result.executionResult.status, 'EXECUTED');
+  assert.notEqual(result.executionJournalDigest, reversedDigest);
+  assert.equal(calls.executor, 1);
+  // The reversed journal moved byte-intact into the archive; the canonical
+  // slot holds the fresh journal of the replacement execution.
+  const archivedPath = path.join(journalDir, 'archive', 'execution.jsonl');
+  assert.ok(fs.existsSync(archivedPath));
+  const archivedEntries = fs.readFileSync(archivedPath, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  assert.equal(digestSemantic(archivedEntries), reversedDigest);
+  assert.ok(fs.existsSync(journalPath));
+});
+
+test('without a matching rollback receipt the canonical slot stays fail-closed', async () => {
+  const probeCalls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0 };
+  const probe = syncFixture({ dryRun: true, calls: probeCalls, approvalCallback: async (actions) => actions });
+  const probeResult = await probe.run();
+  const manifest = probeResult.reviewUnitManifest;
+
+  const journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'api-reference-nofree-'));
+  const journalPath = path.join(journalDir, 'execution.jsonl');
+  const entries = [
+    { type: 'prepared', actionId: 'node:Collections:createCollection' },
+    { type: 'observed', actionId: 'node:Collections:createCollection', status: 'success', verified: true },
+  ];
+  fs.writeFileSync(journalPath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+
+  const calls = { scanner: 0, index: 0, planner: 0, documentMutations: 0, recordMutations: 0, executor: 0 };
+  const sync = syncFixture({ dryRun: false, calls, approvalCallback: async (actions) => actions });
+  sync.reviewSession = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v2.6.x:nofree-test',
+    language: 'node',
+    sdkName: 'Node SDK',
+    track: 'v2.6.x',
+    status: 'in_progress',
+    scanStateUpdated: false,
+    reviewUnitManifest: manifest,
+    reviewUnitManifestDigest: manifest.manifestDigest,
+    acceptedReviewUnits: [],
+    activeExecution: null,
+    rollbackReceipts: [],
+  };
+  sync.executionJournalFactory = (batch) => new ExecutionJournal({
+    filePath: journalPath,
+    batchDigest: batch.batchDigest,
+    approvedActionIds: batch.actions.map((action) => action.actionId),
+  });
+  sync.executor = { async execute() { calls.executor += 1; return { status: 'success' }; } };
+
+  const result = await sync.run();
+
+  assert.equal(result.executionResult.status, 'BLOCKED');
+  assert.equal(result.executionResult.diagnostics[0].code, 'EXECUTION_RECONCILIATION_REQUIRED');
+  assert.equal(calls.executor, 0);
+  assert.ok(fs.existsSync(journalPath));
+  assert.equal(fs.existsSync(path.join(journalDir, 'archive')), false);
+});

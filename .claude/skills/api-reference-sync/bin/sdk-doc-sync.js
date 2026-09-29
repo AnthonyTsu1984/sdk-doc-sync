@@ -583,6 +583,16 @@ async function runCli({
             exit(1);
             return null;
         }
+        // Fail-closed on incomplete planning inputs: without the reviewed
+        // reference context the run degrades silently — the manifest digest
+        // drifts, most units fail planning, and the garbage plan only shows
+        // up buried in --json output. The session records where its reviewed
+        // context lives; require it.
+        if (!args.referenceContext && reviewSession.artifacts?.referenceContext) {
+            err('Error: REVIEW_SESSION_REFERENCE_CONTEXT_REQUIRED: the review session recorded its reference context at ' + reviewSession.artifacts.referenceContext + '; pass --reference-context <path> (the session artifacts field carries the reviewed inputs).');
+            exit(1);
+            return null;
+        }
     }
     let releaseScope = null;
     if (args.releaseScope) {
@@ -760,7 +770,20 @@ async function runCli({
         const reviewUnitId = args.reviewUnitId || result.activeReviewUnit.reviewUnitId;
         ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
         const activeExecution = reviewSession.activeExecution;
-        if (!activeExecution) {
+        // A rollback receipt pins the reversed execution by digest: recovering
+        // the SAME journal would resurrect a rolled-back execution (receipt
+        // plus active execution wedges the unit — re-rollback is refused and
+        // the journal's failed verification outcomes block finalization).
+        // The unit stays in reviewed planning; freeing the canonical journal
+        // slot is the executor's rollback-receipt archival path.
+        const rolledBackReceipt = (reviewSession.rollbackReceipts || []).find((item) => (
+            item.reviewUnitId === reviewUnitId
+            && item.originalExecutionJournalDigest === result.reconciliation.executionJournalDigest
+        ));
+        if (rolledBackReceipt) {
+            result.reconciliation = { ...result.reconciliation, sessionRecovered: false, blockedByRolledBackReceipt: true };
+            err(`Execution not recorded: journal ${result.reconciliation.executionJournalDigest} belongs to the rolled-back execution of ${reviewUnitId}; the unit stays in reviewed planning.`);
+        } else if (!activeExecution) {
             reviewSession = recordDocumentExecution(reviewSession, {
                 reviewUnitId,
                 executionJournalPath: result.reconciliation.executionJournalPath,

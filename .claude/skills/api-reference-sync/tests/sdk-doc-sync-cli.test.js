@@ -2459,3 +2459,99 @@ test('live CLI records PARTIAL executions so rollback planning can see them', as
     'a PARTIAL execution mutates Feishu and must stay visible to rollback planning');
   assert.equal(persisted.activeExecution?.executionJournalDigest, digestSemantic(entries));
 });
+
+test('resume without the session-recorded reference context fails closed instead of degrading silently', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-cli-refctx-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v3.0.x:refctx',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    status: 'in_progress',
+    reviewUnitManifest: { schemaVersion: 1, manifestDigest: 'sha256:review-manifest', units: [] },
+    reviewUnitManifestDigest: 'sha256:review-manifest',
+    acceptedReviewUnits: [],
+    scanStateUpdated: false,
+    artifacts: { referenceContext: 'tmp/sdk-release-scout/reviewed-context.json' },
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+  const stderrLines = [];
+  let exitCode = null;
+
+  await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+      '--json',
+      '--resume-session', sessionPath,
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: () => { throw new Error('sync must not be constructed without the recorded reference context'); },
+      onStdout: () => {},
+      onStderr: (line) => stderrLines.push(line),
+      exit: (code) => { exitCode = code; },
+    },
+  });
+
+  assert.equal(exitCode, 1);
+  assert.match(stderrLines.join('\n'), /REVIEW_SESSION_REFERENCE_CONTEXT_REQUIRED/);
+  assert.match(stderrLines.join('\n'), /--reference-context/);
+});
+
+test('resume with the reference context passes the fail-closed guard and constructs the sync', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'sdk-doc-sync-cli-refctx-ok-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:node:v3.0.x:refctx-ok',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    status: 'in_progress',
+    reviewUnitManifest: { schemaVersion: 1, manifestDigest: 'sha256:review-manifest', units: [] },
+    reviewUnitManifestDigest: 'sha256:review-manifest',
+    acceptedReviewUnits: [],
+    scanStateUpdated: false,
+    artifacts: { referenceContext: 'tmp/sdk-release-scout/reviewed-context.json' },
+  };
+  fs.writeFileSync(sessionPath, `${JSON.stringify(session, null, 2)}\n`);
+  let constructed = false;
+
+  await runCli({
+    argv: [
+      'node', 'sdk-doc-sync',
+      '--sdk-dir', '/fixtures/sdk',
+      '--language', 'node',
+      '--sdk-name', 'node',
+      '--sdk-version', 'v3.0.x',
+      '--dry-run',
+      '--json',
+      '--resume-session', sessionPath,
+      '--reference-context', 'tmp/sdk-release-scout/reviewed-context.json',
+    ],
+    env: {},
+    dependencies: {
+      loadEnv: false,
+      indexReader: async () => [],
+      syncFactory: () => { constructed = true; return { run: async () => ({
+        scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+        planningErrors: [], approved: [], results: [],
+        reviewUnitManifest: session.reviewUnitManifest,
+        reviewUnitPreviews: [],
+        proposedExecutionBatch: null,
+      }) }; },
+      onStdout: () => {},
+    },
+  });
+
+  assert.equal(constructed, true);
+});

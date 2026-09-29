@@ -816,3 +816,51 @@ test('a no-side-effect lease is superseded only through the explicit operator fl
     (error) => error.code === 'ROLLBACK_INTENT_CONFLICT',
   );
 });
+
+test('recording the rolled-back execution journal is refused; a fresh journal after rollback records', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-receipt-guard-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:receipt-guard',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: execution.digest });
+  const rolledBack = recordDocumentRollback(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.equal(rolledBack.activeExecution, null);
+  assert.equal(rolledBack.rollbackReceipts.length, 1);
+
+  // Re-recording the SAME journal — the exact digest the receipt pinned — is
+  // the S4 recovery's resurrection mistake and must refuse typed.
+  assert.throws(
+    () => recordDocumentExecution(rolledBack, {
+      reviewUnitId: 'review:node:Collections:a',
+      executionJournalPath: execution.filePath,
+      executionJournalDigest: execution.digest,
+    }),
+    (error) => error.code === 'ROLLBACK_RECEIPT_EXECUTION_CONFLICT',
+  );
+
+  // A genuinely fresh journal after the rollback carries a new digest (the
+  // replacement execution's journal content differs — new batch, new
+  // evidence) and records normally.
+  const freshEntries = [
+    { type: 'prepared', actionId: 'node:Collections:a', batchDigest: 'sha256:reexec-batch' },
+    { type: 'observed', actionId: 'node:Collections:a', status: 'success', verified: true, batchDigest: 'sha256:reexec-batch' },
+    { type: 'completion', status: 'executed', completionSentinel: true, batchDigest: 'sha256:reexec-batch' },
+  ];
+  const freshPath = path.join(directory, 'execution-fresh.jsonl');
+  fs.writeFileSync(freshPath, `${freshEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const rerecorded = recordDocumentExecution(rolledBack, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: freshPath,
+    executionJournalDigest: digestSemantic(freshEntries),
+  });
+  assert.equal(rerecorded.activeExecution.executionJournalDigest, digestSemantic(freshEntries));
+});

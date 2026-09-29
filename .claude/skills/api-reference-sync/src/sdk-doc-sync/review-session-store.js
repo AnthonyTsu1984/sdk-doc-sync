@@ -217,6 +217,22 @@ function recordDocumentExecution(session, execution) {
   if ((session.acceptedReviewUnits || []).some((unit) => unit.reviewUnitId === execution?.reviewUnitId)) {
     throw new Error(`Review unit is already accepted: ${execution.reviewUnitId}`);
   }
+  // A rollback receipt pins the reversed execution by digest: re-recording a
+  // journal with that SAME digest resurrects a rolled-back execution (the S4
+  // recovery did exactly that once) and wedges the unit — the receipt plus an
+  // active execution blocks re-rollback, and the journal's failed
+  // verification outcomes block finalization forever. A genuinely new journal
+  // after the rollback carries a different digest and stays recordable.
+  const rolledBack = (session.rollbackReceipts || []).find((item) => (
+    item.reviewUnitId === execution?.reviewUnitId
+      && item.originalExecutionJournalDigest === execution?.executionJournalDigest
+  ));
+  if (rolledBack) {
+    throw Object.assign(
+      new Error(`Execution journal ${execution.executionJournalDigest} was already rolled back for ${execution.reviewUnitId}; the unit stays in reviewed planning`),
+      { code: 'ROLLBACK_RECEIPT_EXECUTION_CONFLICT' },
+    );
+  }
   const { journalPath } = validateExecutionForUnit(session, execution || {});
   const executedAt = execution.executedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentExecution', session);

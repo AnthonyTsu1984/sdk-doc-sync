@@ -89,6 +89,7 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
     if (dropLeadingTitle && lines.length > 0) lines.shift();
     const out = [];
     let inFence = false;
+    let inAlertWrapper = false;
     for (const raw of lines) {
         if (FENCE_LINE.test(raw)) {
             inFence = !inFence;
@@ -113,6 +114,19 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
             // both sides instead of letting a stray backslash diverge.
             line = line.replace(/\\([<>])/g, '$1');
             if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
+            // Web-content alert-callout wrappers are presentation markup, not
+            // content: the authored side carries <div class="alert note"> and
+            // its closing </div>, the live side renders the enclosed prose as
+            // a callout block. Drop the wrapper lines on both sides so the
+            // comparison judges the note prose.
+            if (/^<div class="alert [-a-z]+">$/i.test(line)) {
+                inAlertWrapper = true;
+                continue;
+            }
+            if (inAlertWrapper && line === '</div>') {
+                inAlertWrapper = false;
+                continue;
+            }
         }
         out.push(line);
     }

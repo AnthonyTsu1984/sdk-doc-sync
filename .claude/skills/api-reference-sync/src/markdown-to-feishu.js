@@ -374,6 +374,11 @@ class MarkdownToFeishu {
             return this.__parse_admonition(html);
         }
 
+        // Check if it's a web-content alert callout: <div class="alert note">…
+        if (/<div\s+class="alert [-a-z]+"/.test(html)) {
+            return this.__parse_alert_div(html);
+        }
+
         // Check if it's a feishu-block metadata comment (board, iframe, sheet)
         if (html.includes('feishu-block:')) {
             return this.__parse_feishu_metadata(html);
@@ -418,6 +423,44 @@ class MarkdownToFeishu {
                 elements: [this.__create_text_element(text)],
                 style: {}
             }
+        };
+    }
+
+    // Web-content alert callouts: <div class="alert note">…</div> (also
+    // warning/tip/danger/note-int). Rendered as the same Feishu callout block
+    // the Admonition component produces — the class picks the emoji.
+    __parse_alert_div(html) {
+        const $ = cheerio.load(html);
+        const alertDiv = $('div[class*="alert"]').first();
+        const className = String(alertDiv.attr('class') || '');
+        const classEmoji = {
+            note: 'blue_book',
+            'note-int': 'blue_book',
+            warning: 'warning',
+            tip: 'bulb',
+            danger: 'red_circle',
+            info: 'blue_book',
+        };
+        const kind = (className.match(/alert\s+([a-z-]+)/i) || [])[1] || 'note';
+        const content = alertDiv.html() || '';
+        const children = [];
+        const text = alertDiv.text().trim();
+        if (text) {
+            children.push({
+                block_type: this.block_type_map.text,
+                text: {
+                    elements: this.__parse_inline_markdown(text),
+                    style: {}
+                }
+            });
+        }
+        return {
+            block_type: this.block_type_map.callout,
+            callout: {
+                emoji_id: classEmoji[kind] || 'blue_book',
+                ...(kind === 'note' && { background_color: 2, border_color: 2 })
+            },
+            children: children,
         };
     }
 

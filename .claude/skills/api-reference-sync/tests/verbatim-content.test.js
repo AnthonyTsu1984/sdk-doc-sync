@@ -190,3 +190,15 @@ test('canonicalization normalizes the symmetric HTML-bracket escapes on both sid
   // A real content difference is still caught.
   assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: 'ListRoles()\nA list.\nList<Integer>\n' }).ok, false);
 });
+
+test('alert-callout wrapper lines normalize away on both sides', () => {
+  // PR-verbatim authored content carries web-content alert markup; the live
+  // side renders the enclosed prose as a callout block (no wrapper lines).
+  const expected = 'Intro line.\n<div class="alert note">\nA collection alias is an additional name.\nIn Milvus, globally unique.\n</div>\n';
+  const observed = 'listRoles()\nIntro line.\nA collection alias is an additional name.\nIn Milvus, globally unique.\n';
+  const result = compareVerbatimContent({ expectedContent: expected, rawContent: observed });
+  assert.equal(result.ok, true, JSON.stringify(result.diffs || result));
+  // A real prose difference inside the alert still diverges.
+  const divergent = 'listRoles()\nIntro line.\nA collection alias is an extra name.\nIn Milvus, globally unique.\n';
+  assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: divergent }).ok, false);
+});

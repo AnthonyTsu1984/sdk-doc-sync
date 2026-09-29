@@ -1070,3 +1070,38 @@ test('pre-batch sessions without pendingExecutions synthesize the list from acti
   assert.deepEqual(accepted.pendingExecutions, []);
   assert.equal(accepted.activeExecution, null);
 });
+
+test('a change-requested unit keeps its rollback anchor through changeRequests', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-cr-rollback-'));
+  const execution = executionJournal(directory);
+  const initial = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:cr-rollback',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), execution);
+  // Change request: pending drains, but the journal anchor survives in
+  // changeRequests[] — the executed artifacts are still live.
+  const changed = recordDocumentChangesRequested(initial, { reviewUnitId: 'review:node:Collections:a' });
+  assert.equal(changed.activeExecution, null);
+  assert.equal(changed.changeRequests.length, 1);
+
+  // Rollback intent + completion anchor through changeRequests.
+  const rollback = rollbackJournal(directory, {
+    originalExecutionJournalDigest: execution.digest,
+    rollbackManifestDigest: 'sha256:cr-rollback-manifest',
+  });
+  const leased = recordRollbackIntent(changed, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:cr-rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  const rolled = recordDocumentRollback(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.deepEqual(rolled.rollbackReceipts.map((item) => item.reviewUnitId), ['review:node:Collections:a']);
+  assert.equal(rolled.changeRequests.length, 1);
+});

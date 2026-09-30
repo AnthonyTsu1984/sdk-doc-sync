@@ -237,3 +237,36 @@ test('Document IR list descriptions become child paragraph blocks instead of fla
     'The name of the collection to create.',
   ]);
 });
+
+// Regression (PR #1165 intake): a web-content alert-callout div containing
+// blank lines split into three marked.js tokens — a bare opener (empty
+// callout), plain paragraphs, and a stray literal `</div>` text block. The
+// converter must collapse the region back into one callout.
+test('alert div with internal blank lines converts to one callout without stray </div>', async () => {
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'test' });
+  const markdown = [
+    'Intro paragraph.',
+    '',
+    '<div class="alert note">',
+    '',
+    'Do not disconnect the MilvusClientV2 while the iterator is in use.',
+    '',
+    '</div>',
+    '',
+    '## Request Syntax',
+    '',
+    '```cpp',
+    'auto request = QueryIteratorRequest()',
+    '```',
+  ].join('\n');
+  const { tokens } = await converter.parse_markdown(markdown);
+  const blocks = tokens.flatMap((token) => converter.__token_to_blocks(token) || []);
+  const callouts = blocks.filter((block) => block.block_type === converter.block_type_map.callout);
+  assert.equal(callouts.length, 1);
+  const calloutChildren = callouts[0].children || [];
+  assert.equal(calloutChildren.length, 2);
+  assert.equal((calloutChildren[0].text.elements || []).map((e) => e.text_run?.content || '').join(''), 'Notes');
+  assert.equal((calloutChildren[1].text.elements || []).map((e) => e.text_run?.content || '').join(''),
+    'Do not disconnect the MilvusClientV2 while the iterator is in use.');
+  assert.deepEqual(blocks.filter((block) => JSON.stringify(block).includes('</div>')), []);
+});

@@ -446,6 +446,16 @@ class MarkdownToFeishu {
         const children = [];
         const text = alertDiv.text().trim();
         if (text) {
+            // Global callout convention (established 2026-09-22): line 1 is the
+            // "Notes" title (the callout emoji renders beside it), line 2 the
+            // body, no empty lines between.
+            children.push({
+                block_type: this.block_type_map.text,
+                text: {
+                    elements: [this.__create_text_element('Notes')],
+                    style: {}
+                }
+            });
             children.push({
                 block_type: this.block_type_map.text,
                 text: {
@@ -1239,6 +1249,31 @@ class MarkdownToFeishu {
 
         // Remove frontmatter from content
         let content = this.__remove_frontmatter(markdown_content);
+
+        // Collapse blank lines inside web-content alert-callout regions.
+        // marked.js ends an HTML block at the first blank line, so a
+        // multi-line <div class="alert note"> splits into three tokens: a
+        // bare opener (empty callout), plain paragraphs, and a stray literal
+        // `</div>` text block. The alert parser consumes the whole region as
+        // one callout and flattens inner paragraphs itself, so removing the
+        // blank lines keeps the region one token without changing its output.
+        // Leading indentation is captured into the match and dropped as well:
+        // web-content regions embed the whole block at a 4-space indent
+        // inside a bullet's continuation (java LocalBulkWriter), and any
+        // indent left on the opener line makes marked.js read the region as
+        // an indented code block or in-item text — the callout silently
+        // disappears. Stripping lifts the region to a top-level HTML block,
+        // which preserves block order (the callout sits between the
+        // surrounding list items exactly as authored).
+        content = content.replace(
+            /^[ \t]*<div\s+class="alert [-a-z]+">[\s\S]*?<\/div>/gmi,
+            (region) => region
+                .split(/\r?\n[ \t]*\r?\n/)
+                .join('\n')
+                .split('\n')
+                .map((line) => line.replace(/^[ \t]+/, ''))
+                .join('\n'),
+        );
 
         // Extract and store JSX components before parsing
         const jsxComponents = [];

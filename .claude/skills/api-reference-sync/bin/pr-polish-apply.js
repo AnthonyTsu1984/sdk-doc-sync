@@ -32,8 +32,9 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 const LARK = 'lark-cli';
 
 function parseArgs(argv) {
-    const args = { command: argv[2] || null };
-    for (let index = 3; index < argv.length; index += 1) {
+    const args = {};
+    // Single-purpose bin: no subcommand token; options start at argv[2].
+    for (let index = 2; index < argv.length; index += 1) {
         const argument = argv[index];
         if (argument === '--session' && argv[index + 1]) args.session = argv[++index];
         else if (argument === '--review-unit-id' && argv[index + 1]) args.reviewUnitId = argv[++index];

@@ -293,3 +293,37 @@ test('links inside bold/italic emphasis render as links with the emphasis style'
   // No literal markdown link text anywhere.
   assert.equal(elements.some((e) => (e.text_run?.content || '').includes('](')), false);
 });
+
+// Regression (java LexicalHighlighter review): a fenced code block nested in
+// a list item's continuation — the web-content builder-method-docs shape —
+// was silently dropped by the loose-list branch (only paragraph/list children
+// were handled), so the rendered page lost the entire example code and the
+// verbatim fidelity comparison failed on the missing lines.
+test('fenced code nested in a list item renders as a code child in order', async () => {
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'test' });
+  const markdown = [
+    '- `highlightQueries(List<HighlightQuery>)`',
+    '',
+    '    Defines which query terms are highlighted.',
+    '',
+    '    ```java',
+    '    import io.milvus.v2.LexicalHighlighter;',
+    '    HighlightQuery q = new HighlightQuery(',
+    '    ```',
+    '',
+    '    If unset, no filtering terms are highlighted.',
+    '',
+    '- `preTags(List<String>)`',
+  ].join('\n');
+  const { tokens } = await converter.parse_markdown(markdown);
+  const blocks = tokens.flatMap((token) => converter.__token_to_blocks(token) || []);
+  assert.equal(blocks.length, 2);
+  const children = blocks[0].children || [];
+  const kinds = children.map((b) => (b.block_type === converter.block_type_map.code ? 'code' : 'text'));
+  assert.deepEqual(kinds, ['text', 'code', 'text']);
+  const codeChild = children.find((b) => b.block_type === converter.block_type_map.code);
+  const codeText = (codeChild.code.elements || []).map((e) => e.text_run?.content || '').join('');
+  assert.match(codeText, /import io\.milvus\.v2\.LexicalHighlighter;/);
+  assert.match(codeText, /HighlightQuery q = new HighlightQuery\(/);
+  assert.equal(blocks[1].block_type, converter.block_type_map.bullet);
+});

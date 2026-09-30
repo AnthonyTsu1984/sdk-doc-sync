@@ -311,6 +311,11 @@ class MarkdownToFeishu {
                             ...childToken,
                             text: String(childToken.text || '').replace(/^\s+/, ''),
                         }));
+                    } else if (childToken.type === 'code') {
+                        // Nested fenced code inside a list item (web-content
+                        // builder-method docs embed per-method examples this
+                        // way): emit it as a code child, not silently dropped.
+                        children.push(this.__create_code_block(childToken));
                     } else if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
                     }
@@ -353,7 +358,9 @@ class MarkdownToFeishu {
                     children.push(this.__create_text_block({ type: 'text', text: continuation }));
                 }
                 for (const childToken of contentTokens) {
-                    if (childToken.type === 'list') {
+                    if (childToken.type === 'code') {
+                        children.push(this.__create_code_block(childToken));
+                    } else if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
                     } else if (childToken.type === 'checkbox' || childToken === labelToken) {
                         continue;

@@ -62,7 +62,7 @@ test('compareVerbatimContent reconciles rendered raw_content through the declare
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded, pageTitle: 'X()' });
     assert.equal(landed.ok, true);
     assert.equal(landed.invariantId, 'api.pr-verbatim-content');
-    assert.equal(landed.canonicalVersion, 3);
+    assert.equal(landed.canonicalVersion, 4);
     assert.deepEqual(landed.diffs, []);
 
     // Code content lines compare exactly: a changed line that landed as code
@@ -97,7 +97,7 @@ test('the raw_content title line is dropped even when the caller cannot name it'
     assert.equal(comparison.ok, true);
 });
 
-test('canonicalization v3 absorbs exactly the tokens the raw_content serializer cannot carry', () => {
+test('canonicalization v4 absorbs exactly the tokens the raw_content serializer cannot carry', () => {
     // Landed-shape fixture derived from the first real code-bearing verbatim
     // unit (cpp Management/ListRefreshExternalCollectionJobs, PR #1151): the
     // upstream markdown carries fences, bold labels, backticked builders,
@@ -155,8 +155,8 @@ test('canonicalization v3 absorbs exactly the tokens the raw_content serializer 
         'std::cout << status.Message() << std::endl;',
     ].join('\n');
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded });
-    assert.equal(landed.ok, true, `expected v3 to absorb serializer-only tokens: ${JSON.stringify(landed.diffs.slice(0, 3))}`);
-    assert.equal(landed.canonicalVersion, 3);
+    assert.equal(landed.ok, true, `expected v4 to absorb serializer-only tokens: ${JSON.stringify(landed.diffs.slice(0, 3))}`);
+    assert.equal(landed.canonicalVersion, 4);
 
     // A genuinely missing content line still fails: drop the builder row.
     const missingBuilder = compareVerbatimContent({
@@ -201,4 +201,40 @@ test('alert-callout wrapper lines normalize away on both sides', () => {
   // A real prose difference inside the alert still diverges.
   const divergent = 'listRoles()\nIntro line.\nA collection alias is an extra name.\nIn Milvus, globally unique.\n';
   assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: divergent }).ok, false);
+});
+
+test('canonicalization v4 strips inline-code markers inside code on both sides', () => {
+  // Real-world fixture: java alterCollectionField (milvus-docs PR-verbatim)
+  // carries a fenced code comment whose text contains escaped backticks.
+  // raw_content never emits the fence, so the observed side always ran the
+  // markup strip and lost the backtick pair; v3 kept the expected side
+  // fence-protected and false-failed the line. Built from char codes to keep
+  // the backslash/backtick bytes explicit.
+  const BS = String.fromCharCode(92);
+  const BT = String.fromCharCode(96);
+  const esc = (word) => BS + BT + word + BS + BT;
+  const commentLine = `// 2. Alter the ${esc('max_length')} property of a VarChar field named ${esc('varchar')}`;
+  const codeLine = 'properties.put("max_length", "512");';
+  const upstream = [
+    '# alterCollectionField()',
+    '',
+    '```java',
+    commentLine,
+    codeLine,
+    '```',
+  ].join('\n');
+  const landedFull = ['alterCollectionField()', commentLine, codeLine].join('\n');
+  assert.equal(compareVerbatimContent({ expectedContent: upstream, rawContent: landedFull }).ok, true);
+  // The transient render right after the rebuild surfaced the same line with
+  // the backtick pair already consumed by the serializer; the channel cannot
+  // distinguish that lag from a landed page, so both compare equal.
+  const landedTransient = [
+    'alterCollectionField()',
+    `// 2. Alter the ${BS}max_length${BS} property of a VarChar field named ${BS}varchar${BS}`,
+    codeLine,
+  ].join('\n');
+  assert.equal(compareVerbatimContent({ expectedContent: upstream, rawContent: landedTransient }).ok, true);
+  // A genuinely altered code line still fails.
+  const drifted = landedFull.replace('max_length", "512', 'max_length", "256');
+  assert.equal(compareVerbatimContent({ expectedContent: upstream, rawContent: drifted }).ok, false);
 });

@@ -106,6 +106,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/markdown-to-feishu-tables.test.js',
     '.claude/skills/api-reference-sync/tests/operational-harness.test.js',
     '.claude/skills/api-reference-sync/tests/placement-audit.test.js',
+    '.claude/skills/api-reference-sync/tests/pr-polish-apply.test.js',
     '.claude/skills/api-reference-sync/tests/pr-polish.test.js',
     '.claude/skills/api-reference-sync/tests/pr-scan.test.js',
     '.claude/skills/api-reference-sync/tests/prose-quality.test.js',

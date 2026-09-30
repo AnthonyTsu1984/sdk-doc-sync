@@ -270,3 +270,26 @@ test('alert div with internal blank lines converts to one callout without stray 
     'Do not disconnect the MilvusClientV2 while the iterator is in use.');
   assert.deepEqual(blocks.filter((block) => JSON.stringify(block).includes('</div>')), []);
 });
+
+// Regression (java EmbeddingList:add review): a markdown link wrapped in an
+// emphasis — **[text](url)** — used to land as literal `[]()` text because
+// the bold/italic branches emitted their inner span without re-parsing it.
+// The emphasis must recurse so the inner link keeps its url, carrying the
+// emphasis style alongside.
+test('links inside bold/italic emphasis render as links with the emphasis style', async () => {
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'test' });
+  const { tokens } = await converter.parse_markdown(
+    'See an **[EmbeddingList](https://example.com/a)** instance. Return the *[EmbeddingList](https://example.com/b)* type.',
+  );
+  const blocks = tokens.flatMap((token) => converter.__token_to_blocks(token) || []);
+  const elements = blocks.flatMap((block) => block.text?.elements || []);
+  const linkRuns = elements.map((e) => e.text_run).filter((run) => run?.text_element_style?.link);
+  assert.equal(linkRuns.length, 2);
+  assert.equal(linkRuns[0].content, 'EmbeddingList');
+  assert.equal(linkRuns[0].text_element_style.bold, true);
+  assert.equal(linkRuns[0].text_element_style.link.url, encodeURIComponent('https://example.com/a'));
+  assert.equal(linkRuns[1].content, 'EmbeddingList');
+  assert.equal(linkRuns[1].text_element_style.italic, true);
+  // No literal markdown link text anywhere.
+  assert.equal(elements.some((e) => (e.text_run?.content || '').includes('](')), false);
+});

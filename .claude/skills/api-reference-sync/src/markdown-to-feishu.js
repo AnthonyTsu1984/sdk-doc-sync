@@ -73,6 +73,25 @@ class MarkdownToFeishu {
         };
     }
 
+    // Overlay an emphasis style onto recursively parsed elements (bold/italic
+    // containing links, code, …): every inner text_run keeps its own style
+    // (link urls are never touched) and gains the outer emphasis flag.
+    __merge_text_element_style(elements, extra = {}) {
+        return (elements || []).map((element) => {
+            if (!element?.text_run) return element;
+            const base = element.text_run.text_element_style || {};
+            const overlay = Object.fromEntries(
+                Object.entries(extra).filter(([, value]) => value !== undefined && value !== false),
+            );
+            return {
+                text_run: {
+                    ...element.text_run,
+                    text_element_style: { ...base, ...overlay },
+                },
+            };
+        });
+    }
+
     __parse_inline_markdown(text) {
         // Reverse the escaping from larkDocWriter.__text_run()
         if (!text || text.trim() === '') {
@@ -117,7 +136,14 @@ class MarkdownToFeishu {
                         buffer = '';
                     }
                     const bold_text = text.substring(i + 2, end);
-                    elements.push(this.__create_text_element(bold_text, { bold: true }));
+                    // Recurse so markdown inside the emphasis (most
+                    // importantly [links](url) — web-content bolds whole
+                    // cross-reference links) keeps parsing; the emphasis
+                    // style rides along on every inner element.
+                    elements.push(...this.__merge_text_element_style(
+                        this.__parse_inline_markdown(bold_text),
+                        { bold: true },
+                    ));
                     i = end + 1;
                     continue;
                 }
@@ -132,7 +158,10 @@ class MarkdownToFeishu {
                         buffer = '';
                     }
                     const italic_text = text.substring(i + 1, end);
-                    elements.push(this.__create_text_element(italic_text, { italic: true }));
+                    elements.push(...this.__merge_text_element_style(
+                        this.__parse_inline_markdown(italic_text),
+                        { italic: true },
+                    ));
                     i = end;
                     continue;
                 }

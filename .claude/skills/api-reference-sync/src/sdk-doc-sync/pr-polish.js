@@ -336,7 +336,7 @@ function applyPolishManifest({ manifest, baseContent } = {}) {
 
 // Post-polish proof: the refetched page must compare line-for-line against
 // the recomputed polished content through the declared verbatim
-// canonicalization (canonicalVersion 4) — the same comparator, so a polish
+// canonicalization (canonicalVersion 5) — the same comparator, so a polish
 // edit that lands differently than validated is a diff, not a pass.
 function comparePolishedContent({ polishedContent, rawContent } = {}) {
     const comparison = compareVerbatimContent({ expectedContent: polishedContent, rawContent });

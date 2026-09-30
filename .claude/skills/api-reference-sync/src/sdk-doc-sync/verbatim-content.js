@@ -130,6 +130,13 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
             inAlertWrapper = false;
             continue;
         }
+        // The established callout convention renders a "Notes" title line as
+        // the first line of the callout block, beside the emoji — presentation,
+        // not content. Drop it identically on both sides so the comparison
+        // judges the note prose; the converter always emits it for alert
+        // callouts, so the live side carries it whenever the authored side
+        // carried the wrapper at all.
+        if (line === 'Notes') continue;
         out.push(line);
     }
     return out;
@@ -154,7 +161,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     return {
         ok: diffs.length === 0,
         invariantId: INVARIANT_ID,
-        canonicalVersion: 4,
+        canonicalVersion: 5,
         expectedLines: expected.length,
         observedLines: observed.length,
         diffs: diffs.slice(0, 20),

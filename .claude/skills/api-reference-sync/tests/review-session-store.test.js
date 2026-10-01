@@ -333,7 +333,7 @@ test('resume validation compares live Targets against the execution-journal base
     session: accepted,
     reviewUnitManifest: manifest(),
     currentRecords: [record([])],
-  }), /Targets drifted from the execution baseline \(expected \[Milvus\], got \[\]\)/);
+  }), /Targets drifted \(expected \[Milvus\], got \[\]\)/);
   assert.throws(() => validateResumeSession({
     session: accepted,
     reviewUnitManifest: manifest(),
@@ -929,7 +929,7 @@ test('resume validation reads Targets from the type-index projection shape witho
     session: accepted,
     reviewUnitManifest: manifest(),
     currentRecords: [indexRecord([])],
-  }), /Targets drifted from the execution baseline \(expected \[Milvus\], got \[\]\)/);
+  }), /Targets drifted \(expected \[Milvus\], got \[\]\)/);
 });
 
 test('verified batch mode: K pending executions accumulate under --batch-continue and drain per unit', () => {

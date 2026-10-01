@@ -196,10 +196,15 @@ Action table:
 
 Write approval presentation (from the dry-run's writeApprovalPresentation; one
 row per action — surface the FULL markdown, via a linked file when it exceeds
-what the channel renders well):
+what the channel renders well). Two-gate batching (2026-10-01 ruling): fewer
+than 20 pending documents are ONE gate; 20 or more are presented in manifest
+order in batches of 20 (`chunkWriteApprovalBatches`). Every collected material
+appears with its file path as bare absolute text (the channel renders plain
+paths clickable; markdown links do not render):
 | Stable ID | Document link | Record link | Markdown preview |
 |-----------|---------------|-------------|------------------|
 | <stable-id> | <docx-url> | <record-url> | <full markdown of the reviewed artifact, or file path> |
+| Materials: <absolute file path per evidence file, one per line, bare> |
 ```
 
 ## Document Review Gate Message
@@ -229,7 +234,7 @@ Allowed replies:
 If approved, reply exactly:
 APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>
 
-Acceptance records this unit as reviewed, keeps its interface records at WIP, and keeps scan-state unchanged. The bot may plan the next unit only after this command succeeds.
+Acceptance finalizes this unit (two-gate flow): its interface records transition WIP→Draft under governance, a digest-bound per-unit receipt lands, and the unit becomes terminal — rollback and change requests refuse afterwards (corrective release instead). The session closes mechanically via `close-session` once every unit finalized; scan-state moves only there. The bot may plan the next unit only after this command succeeds.
 
 Persist the decision with sdk-review-session.js accept-document. Do not add the ID directly to session state. A later chat must use `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js --resume-session <session-file>` before planning the next unit.
 ```

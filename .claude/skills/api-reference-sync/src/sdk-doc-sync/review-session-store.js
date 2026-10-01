@@ -41,8 +41,17 @@ const REVIEW_MACHINE = defineSessionMachine({
     // by the CLI before this transition), then the remaining units run under
     // the two-gate flow.
     migrateToTwoGate: { from: ['in_progress'], to: SAME_STATE },
+    // Targets normalization (2026-10-01 ruling): the document gate writes the
+    // KB-wide final value with the Draft transition; already-finalized units
+    // (e.g. stock migrated before the ruling) get their finalTargets stamped
+    // by the one-time governed backfill.
+    recordFinalTargets: { from: ['in_progress'], to: SAME_STATE },
   },
 });
+
+// The KB-wide final Targets value written by the document gate. Single source
+// of truth for accept-document, the stock backfill, and resume validation.
+const TARGETS_FINAL = Object.freeze(['Milvus', 'Zilliz']);
 
 // Unit-level machine (two-gate acceptance flow): the session machine governs
 // the campaign, this one governs each document unit. Unit state is DERIVED
@@ -419,6 +428,7 @@ function recordDocumentAcceptance(session, receipt) {
         unitReceiptPath: receipt.unitReceiptPath,
         unitReceiptDigest: receipt.unitReceiptDigest,
       }),
+      finalTargets: validateFinalTargets(receipt.finalTargets, touchedRecords),
       finalizedAt: receipt.acceptedAt || null,
     };
   }
@@ -514,6 +524,24 @@ function validateFinalizationEvidence({ reviewUnitId, executionJournalDigest, to
     throw new Error('Per-unit receipt does not bind this unit and its execution journal');
   }
   return { draftRecords: Object.freeze(draftRecords.map(clone)), unitReceiptPath: resolvedReceiptPath, unitReceiptDigest };
+}
+
+// Validates the final Targets map written by the document gate: every
+// touched record covered, every value a non-empty array (normalized to the
+// KB-wide final value by the caller).
+function validateFinalTargets(finalTargets, touchedRecords) {
+  if (!finalTargets || typeof finalTargets !== 'object' || Array.isArray(finalTargets)) {
+    throw new Error('Two-gate acceptance requires finalTargets for every touched record');
+  }
+  const normalized = {};
+  for (const record of touchedRecords) {
+    const value = finalTargets[record.recordId];
+    if (!Array.isArray(value) || value.length === 0) {
+      throw new Error(`finalTargets for record ${record.recordId} must be a non-empty array`);
+    }
+    normalized[record.recordId] = Object.freeze([...value]);
+  }
+  return Object.freeze(normalized);
 }
 
 // Stock migration (2026-10-01 ruling): stamps every accepted unit with the
@@ -688,6 +716,33 @@ function transferUnitCompletion(session, {
 // Two-gate finalization evidence supplied by the caller after the governed
 // Draft writes is validated by validateFinalizationEvidence (shared with the
 // stock migration and the cross-session transfer).
+
+// One-time stock backfill (2026-10-01 ruling): stamps finalTargets onto
+// already-finalized units whose acceptance predates the Targets-in-gate
+// design. The CLI performs the governed writes first; this validates
+// coverage per unit and stamps the entries.
+function recordFinalTargets(session, { units, stampedAt = new Date().toISOString() } = {}) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (session.scanStateUpdated === true) throw new Error('Review session is finalized');
+  REVIEW_MACHINE.assertTransition('recordFinalTargets', session);
+  if (!Array.isArray(units) || units.length === 0) throw new Error('finalTargets stamping requires units');
+  const acceptedByUnitId = new Map((session.acceptedReviewUnits || []).map((unit) => [unit.reviewUnitId, unit]));
+  const stampedById = new Map();
+  for (const stamp of units) {
+    const accepted = acceptedByUnitId.get(stamp.reviewUnitId);
+    if (!accepted) throw new Error(`finalTargets stamping references a unit that is not accepted: ${stamp.reviewUnitId}`);
+    stampedById.set(stamp.reviewUnitId, {
+      ...clone(accepted),
+      finalTargets: validateFinalTargets(stamp.finalTargets, accepted.touchedRecords),
+    });
+  }
+  return REVIEW_MACHINE.apply('recordFinalTargets', session, {
+    acceptedReviewUnits: Object.freeze((session.acceptedReviewUnits || [])
+      .map((unit) => stampedById.get(unit.reviewUnitId) || clone(unit))
+      .sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
+    finalTargetsStampedAt: stampedAt,
+  }, { timestamp: stampedAt });
+}
 
 function closeSession(session, { scanStateKey, scanStateEntry, closedAt = new Date().toISOString() } = {}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
@@ -1163,10 +1218,15 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
       } else if (recordProgress(current) !== 'WIP') {
         throw new Error(`Accepted record ${touched.recordId} must remain WIP until final acceptance`);
       }
-      const expected = baseline.get(touched.actionId) || [];
+      // Post-acceptance the document gate normalized Targets to the KB-wide
+      // final value; validate against the stamped finalTargets when present,
+      // falling back to the execution baseline for entries finalized before
+      // the ruling.
+      const expected = (receipt.finalTargets && receipt.finalTargets[touched.recordId])
+        || baseline.get(touched.actionId) || [];
       const actual = normalizedTargetsValue(recordTargets(current));
       if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-        throw new Error(`Accepted record ${touched.recordId} Targets drifted from the execution baseline (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
+        throw new Error(`Accepted record ${touched.recordId} Targets drifted (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
       }
       if (touched.documentToken && recordDocumentToken(current) !== touched.documentToken) {
         throw new Error(`Accepted record ${touched.recordId} document token changed during resume`);
@@ -1185,6 +1245,7 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 
 module.exports = {
   REVIEW_MACHINE,
+  TARGETS_FINAL,
   UNIT_MACHINE,
   SessionStateMachineError,
   acceptanceFlowOf,
@@ -1202,6 +1263,7 @@ module.exports = {
   recordReviewDecision,
   recordRollbackIntent,
   prepareDocumentAcceptance,
+  recordFinalTargets,
   saveReviewSession,
   transferUnitCompletion,
   unitStatusOf,

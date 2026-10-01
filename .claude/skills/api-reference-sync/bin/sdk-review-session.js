@@ -10,6 +10,8 @@ const {
   closeSession,
   loadReviewSessionState,
   migrateSessionToTwoGate,
+  recordFinalTargets,
+  TARGETS_FINAL,
   prepareDocumentAcceptance,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
@@ -358,8 +360,13 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     }
   }
 
+  // One governed write per record: the Draft transition carries the KB-wide
+  // final Targets value (2026-10-01 ruling — Targets 终值 lands in the
+  // document gate; the campaign finalize that used to write it is retired).
+  const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
-    await writer.updateRecord(touched.recordId, { progress: 'Draft' });
+    finalTargets[touched.recordId] = [...TARGETS_FINAL];
+    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...TARGETS_FINAL] });
   }
   const afterRecords = await writer.listRecords({ pageSize: 500 });
   const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
@@ -368,6 +375,10 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     const after = afterMap.get(touched.recordId);
     if (!after || after.fields?.Progress !== 'Draft') {
       throw new Error(`Draft transition for record ${touched.recordId} did not verify`);
+    }
+    const actualTargets = normalizedTargetsValue(after?.fields?.Targets);
+    if (JSON.stringify(actualTargets) !== JSON.stringify(TARGETS_FINAL)) {
+      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}])`);
     }
     draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
   }
@@ -383,6 +394,7 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     documentLinks: receipt.documentLinks || [],
     recordLinks: receipt.recordLinks || [],
     draftRecords,
+    finalTargets,
     evidence: prepared.evidence,
     acceptedAt,
   };
@@ -400,6 +412,7 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   const nextSession = recordDocumentAcceptance(session, {
     ...receipt,
     draftRecords,
+    finalTargets,
     unitReceiptPath,
     unitReceiptDigest: digestSemantic(unitReceipt),
     acceptedAt,
@@ -489,6 +502,95 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const summary = status(result.session, sessionPath);
     if (args.json) out(JSON.stringify(summary, null, 2));
     return { session: result.session, summary };
+  }
+
+  if (args.command === 'backfill-targets') {
+    // One-time stock pass: accepted two-gate units whose records sit at
+    // Draft with empty Targets get the KB-wide final value under one gate.
+    requireValue(args, 'session');
+    if (!args.baseToken && !io.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
+    const writer = bitableWriterFor(args, io);
+    const records = await writer.listRecords({ pageSize: 500 });
+    const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
+    const emptyTargets = {};
+    for (const unit of session.acceptedReviewUnits || []) {
+      for (const touched of unit.touchedRecords || []) {
+        if (emptyTargets[touched.recordId]) continue;
+        const record = recordMap.get(touched.recordId);
+        if (!record) continue;
+        const value = normalizedTargetsValue(record?.fields?.Targets);
+        if (value.length === 0) emptyTargets[touched.recordId] = unit.reviewUnitId;
+      }
+    }
+    const plan = Object.entries(emptyTargets).map(([recordId, reviewUnitId]) => ({ recordId, reviewUnitId }))
+      .sort((left, right) => left.recordId.localeCompare(right.recordId));
+    const planDigest = digestSemantic({ schemaVersion: 1, kind: 'backfill-targets', sessionId: session.sessionId, records: plan, targets: TARGETS_FINAL });
+    if (plan.length === 0) {
+      out('No Draft records with empty Targets among this session\'s accepted units.');
+      return { session, summary: status(session, sessionPath) };
+    }
+    if (!args.approveDigest) {
+      for (const entry of plan) out(`- ${entry.recordId} (${entry.reviewUnitId})`);
+      out(`Plan digest: ${planDigest}`);
+      out(`Rerun with --approve-digest ${planDigest} to write Targets=[${TARGETS_FINAL.join(', ')}].`);
+      return { session, summary: status(session, sessionPath) };
+    }
+    if (args.approveDigest !== planDigest) {
+      throw new Error(`Backfill plan digest mismatch: presented ${planDigest}, got ${args.approveDigest}`);
+    }
+    const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+    const { createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
+    const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
+    const governance = writer.governance;
+    if (!governance?.bindApproval) throw new Error('Backfill writer must expose a bindable governance');
+    const targets = plan.map((entry) => entry.recordId);
+    governance.bindApproval({
+      batchDigest: planDigest,
+      actionCount: targets.length,
+      targets,
+      sideEffects: ['bitable.update'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'backfill-targets',
+        batchDigest: planDigest,
+        actionCount: targets.length,
+        targets,
+        sideEffects: ['bitable.update'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+      enforceTargets: true,
+    });
+    governance.bindRunManifest(createRunManifest({
+      skill: 'api-reference-sync',
+      skillVersion: 'api-reference-sync/backfill-targets@1',
+      repoRoot,
+      batchDigest: planDigest,
+      sessionDigest: `backfill-targets:${session.sessionId}`,
+    }), { repoRoot });
+    writeRunManifestArtifact(createRunManifest({
+      skill: 'api-reference-sync',
+      skillVersion: 'api-reference-sync/backfill-targets@1',
+      repoRoot,
+      batchDigest: planDigest,
+      sessionDigest: `backfill-targets:${session.sessionId}`,
+    }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', 'run-manifest-backfill-targets.json') });
+    const stampsByUnit = new Map();
+    for (const entry of plan) {
+      await writer.updateRecord(entry.recordId, { targets: [...TARGETS_FINAL] });
+      const stamp = stampsByUnit.get(entry.reviewUnitId) || {};
+      stamp[entry.recordId] = [...TARGETS_FINAL];
+      stampsByUnit.set(entry.reviewUnitId, stamp);
+      out(`Backfilled: ${entry.recordId} (${entry.reviewUnitId})`);
+    }
+    const nextSession = recordFinalTargets(session, {
+      units: [...stampsByUnit.entries()].map(([reviewUnitId, finalTargets]) => ({ reviewUnitId, finalTargets })),
+    });
+    saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
+    out(`Backfill complete: ${plan.length} record(s) stamped with finalTargets.`);
+    const summary = status(nextSession, sessionPath);
+    if (args.json) out(JSON.stringify(summary, null, 2));
+    return { session: nextSession, summary };
   }
 
   if (args.command === 'request-document-changes') {
@@ -597,7 +699,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     out(`Recorded governed decision: ${decision.decisionDigest}`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

@@ -16,7 +16,9 @@ const {
     createReviewSession,
     migrateSessionToTwoGate,
     prepareDocumentAcceptance,
+    recordFinalTargets,
     transferUnitCompletion,
+    validateResumeSession,
     recordDocumentAcceptance,
     recordDocumentExecution,
     recordDocumentRollback,
@@ -95,6 +97,7 @@ function acceptanceReceipt(journal) {
         documentLinks: ['https://example.com/doc-a'],
         recordLinks: ['https://example.com/rec-a'],
         commentsResolved: true,
+        finalTargets: { 'rec-a': ['Milvus', 'Zilliz'] },
     };
 }
 
@@ -115,6 +118,7 @@ function writeUnitReceipt(directory, receipt, draftRecords) {
         executionJournalPath: receipt.executionJournalPath,
         executionJournalDigest: receipt.executionJournalDigest,
         draftRecords,
+        finalTargets: receipt.finalTargets,
         evidence: [],
         acceptedAt: '2026-10-01T01:00:00.000Z',
     };
@@ -288,6 +292,7 @@ test('closeSession is the two-gate close: all units finalized, mechanical, no ga
             documentLinks: ['https://example.com/doc'],
             recordLinks: ['https://example.com/rec'],
             commentsResolved: true,
+            finalTargets: { [`rec-${unitId}`]: ['Milvus', 'Zilliz'] },
         };
         const draftRecords = draftRecordsFor(receipt);
         const unitReceipt = writeUnitReceipt(directory, receipt, draftRecords);
@@ -452,6 +457,7 @@ test('nextGate derives the fresh-chat gate from durable state alone', () => {
             documentLinks: ['https://example.com/doc'],
             recordLinks: ['https://example.com/rec'],
             commentsResolved: true,
+            finalTargets: { [`rec-${unitId}`]: ['Milvus', 'Zilliz'] },
         };
         const draftRecords = draftRecordsFor(receipt);
         const unitReceipt = writeUnitReceipt(directory2, receipt, draftRecords);
@@ -748,5 +754,73 @@ test('transfer marks a rolled-back unit accepted from the external receipt', () 
             unitReceiptDigest: digestSemantic(externalReceipt),
         }),
         /pending local execution/,
+    );
+});
+
+test('document acceptance stamps finalTargets and resume validates against them', () => {
+    const directory = tempDir();
+    const { session: executed, journal } = twoGateSession(directory);
+    const receipt = acceptanceReceipt(journal);
+    const draftRecords = draftRecordsFor(receipt);
+    const unitReceipt = writeUnitReceipt(directory, receipt, draftRecords);
+    const finalized = recordDocumentAcceptance(executed, {
+        ...receipt,
+        draftRecords,
+        unitReceiptPath: unitReceipt.filePath,
+        unitReceiptDigest: unitReceipt.digest,
+    });
+    const entry = finalized.acceptedReviewUnits.find((unit) => unit.reviewUnitId === UNIT_A);
+    assert.deepEqual(entry.finalTargets, { 'rec-a': ['Milvus', 'Zilliz'] });
+
+    // Missing finalTargets refuses the two-gate acceptance.
+    const { session: executed2, journal: journal2 } = twoGateSession(directory);
+    const receipt2 = { ...acceptanceReceipt(journal2) };
+    delete receipt2.finalTargets;
+    assert.throws(
+        () => recordDocumentAcceptance(executed2, {
+            ...receipt2,
+            draftRecords: draftRecordsFor(receipt2),
+            unitReceiptPath: unitReceipt.filePath,
+            unitReceiptDigest: unitReceipt.digest,
+        }),
+        /finalTargets/,
+    );
+
+    // Resume validates the live value against finalTargets, not the baseline.
+    const resume = validateResumeSession({
+        session: finalized,
+        reviewUnitManifest: finalized.reviewUnitManifest,
+        currentRecords: [{ record_id: 'rec-a', fields: { Progress: 'Draft', Targets: ['Milvus', 'Zilliz'], Docs: { link: 'https://example.com/doc-a' } } }],
+    });
+    assert.deepEqual(resume.acceptedReviewUnitIds, [UNIT_A]);
+    // Drift from finalTargets refuses even though the execution baseline was [].
+    assert.throws(
+        () => validateResumeSession({
+            session: finalized,
+            reviewUnitManifest: finalized.reviewUnitManifest,
+            currentRecords: [{ record_id: 'rec-a', fields: { Progress: 'Draft', Targets: [], Docs: { link: 'https://example.com/doc-a' } } }],
+        }),
+        /Targets drifted/,
+    );
+});
+
+test('recordFinalTargets stamps already-finalized units (stock backfill path)', () => {
+    const directory = tempDir();
+    const { session, journals } = legacyAcceptedSession(directory, { units: [UNIT_A] });
+    const migrated = migrateSessionToTwoGate(session, { units: [migrationEntry(journals.get(UNIT_A), UNIT_A)] });
+    // The migrated entry carries no finalTargets yet (predates the ruling).
+    assert.equal(migrated.acceptedReviewUnits[0].finalTargets, undefined);
+    const stamped = recordFinalTargets(migrated, {
+        units: [{ reviewUnitId: UNIT_A, finalTargets: { 'rec-review:node:Collections:a': ['Milvus', 'Zilliz'] } }],
+    });
+    assert.deepEqual(stamped.acceptedReviewUnits[0].finalTargets, { 'rec-review:node:Collections:a': ['Milvus', 'Zilliz'] });
+    // A stamp for an unaccepted unit refuses; empty values refuse.
+    assert.throws(
+        () => recordFinalTargets(migrated, { units: [{ reviewUnitId: UNIT_B, finalTargets: { x: ['Milvus'] } }] }),
+        /not accepted/,
+    );
+    assert.throws(
+        () => recordFinalTargets(migrated, { units: [{ reviewUnitId: UNIT_A, finalTargets: {} }] }),
+        /must be a non-empty array|finalTargets for record/,
     );
 });

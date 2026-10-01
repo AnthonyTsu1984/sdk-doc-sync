@@ -73,6 +73,25 @@ class MarkdownToFeishu {
         };
     }
 
+    // Overlay an emphasis style onto recursively parsed elements (bold/italic
+    // containing links, code, …): every inner text_run keeps its own style
+    // (link urls are never touched) and gains the outer emphasis flag.
+    __merge_text_element_style(elements, extra = {}) {
+        return (elements || []).map((element) => {
+            if (!element?.text_run) return element;
+            const base = element.text_run.text_element_style || {};
+            const overlay = Object.fromEntries(
+                Object.entries(extra).filter(([, value]) => value !== undefined && value !== false),
+            );
+            return {
+                text_run: {
+                    ...element.text_run,
+                    text_element_style: { ...base, ...overlay },
+                },
+            };
+        });
+    }
+
     __parse_inline_markdown(text) {
         // Reverse the escaping from larkDocWriter.__text_run()
         if (!text || text.trim() === '') {
@@ -117,7 +136,14 @@ class MarkdownToFeishu {
                         buffer = '';
                     }
                     const bold_text = text.substring(i + 2, end);
-                    elements.push(this.__create_text_element(bold_text, { bold: true }));
+                    // Recurse so markdown inside the emphasis (most
+                    // importantly [links](url) — web-content bolds whole
+                    // cross-reference links) keeps parsing; the emphasis
+                    // style rides along on every inner element.
+                    elements.push(...this.__merge_text_element_style(
+                        this.__parse_inline_markdown(bold_text),
+                        { bold: true },
+                    ));
                     i = end + 1;
                     continue;
                 }
@@ -132,7 +158,10 @@ class MarkdownToFeishu {
                         buffer = '';
                     }
                     const italic_text = text.substring(i + 1, end);
-                    elements.push(this.__create_text_element(italic_text, { italic: true }));
+                    elements.push(...this.__merge_text_element_style(
+                        this.__parse_inline_markdown(italic_text),
+                        { italic: true },
+                    ));
                     i = end;
                     continue;
                 }
@@ -282,6 +311,11 @@ class MarkdownToFeishu {
                             ...childToken,
                             text: String(childToken.text || '').replace(/^\s+/, ''),
                         }));
+                    } else if (childToken.type === 'code') {
+                        // Nested fenced code inside a list item (web-content
+                        // builder-method docs embed per-method examples this
+                        // way): emit it as a code child, not silently dropped.
+                        children.push(this.__create_code_block(childToken));
                     } else if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
                     }
@@ -324,7 +358,9 @@ class MarkdownToFeishu {
                     children.push(this.__create_text_block({ type: 'text', text: continuation }));
                 }
                 for (const childToken of contentTokens) {
-                    if (childToken.type === 'list') {
+                    if (childToken.type === 'code') {
+                        children.push(this.__create_code_block(childToken));
+                    } else if (childToken.type === 'list') {
                         children.push(...this.__create_list_blocks(childToken, childToken.ordered));
                     } else if (childToken.type === 'checkbox' || childToken === labelToken) {
                         continue;
@@ -446,6 +482,16 @@ class MarkdownToFeishu {
         const children = [];
         const text = alertDiv.text().trim();
         if (text) {
+            // Global callout convention (established 2026-09-22): line 1 is the
+            // "Notes" title (the callout emoji renders beside it), line 2 the
+            // body, no empty lines between.
+            children.push({
+                block_type: this.block_type_map.text,
+                text: {
+                    elements: [this.__create_text_element('Notes')],
+                    style: {}
+                }
+            });
             children.push({
                 block_type: this.block_type_map.text,
                 text: {
@@ -1239,6 +1285,31 @@ class MarkdownToFeishu {
 
         // Remove frontmatter from content
         let content = this.__remove_frontmatter(markdown_content);
+
+        // Collapse blank lines inside web-content alert-callout regions.
+        // marked.js ends an HTML block at the first blank line, so a
+        // multi-line <div class="alert note"> splits into three tokens: a
+        // bare opener (empty callout), plain paragraphs, and a stray literal
+        // `</div>` text block. The alert parser consumes the whole region as
+        // one callout and flattens inner paragraphs itself, so removing the
+        // blank lines keeps the region one token without changing its output.
+        // Leading indentation is captured into the match and dropped as well:
+        // web-content regions embed the whole block at a 4-space indent
+        // inside a bullet's continuation (java LocalBulkWriter), and any
+        // indent left on the opener line makes marked.js read the region as
+        // an indented code block or in-item text — the callout silently
+        // disappears. Stripping lifts the region to a top-level HTML block,
+        // which preserves block order (the callout sits between the
+        // surrounding list items exactly as authored).
+        content = content.replace(
+            /^[ \t]*<div\s+class="alert [-a-z]+">[\s\S]*?<\/div>/gmi,
+            (region) => region
+                .split(/\r?\n[ \t]*\r?\n/)
+                .join('\n')
+                .split('\n')
+                .map((line) => line.replace(/^[ \t]+/, ''))
+                .join('\n'),
+        );
 
         // Extract and store JSX components before parsing
         const jsxComponents = [];

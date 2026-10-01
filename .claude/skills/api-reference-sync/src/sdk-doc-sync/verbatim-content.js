@@ -13,20 +13,25 @@
 // paragraph separator blanks, or any leading whitespace — including inside
 // code blocks. The declared normalization therefore compares content lines
 // and ignores exactly those tokens.
-// canonicalVersion: 3 — declared normalization applied to BOTH sides:
+// canonicalVersion: 4 — declared normalization applied to BOTH sides:
 //   - drop the leading page-title line (raw_content line 1 is the title);
 //   - drop `[dotenv …]` stdout noise lines captured into dumps;
-//   - drop fence delimiter lines (```/~~~) while tracking fenced state, so
-//     code CONTENT lines still compare verbatim;
+//   - drop fence delimiter lines (```/~~~) wherever they appear;
 //   - strip ALL leading whitespace on every line (the serializer keeps no
 //     indentation, inside or outside code);
 //   - drop empty lines (the serializer inserts none);
-//   - outside fenced code: strip rendered link markup `[text](url)` → text,
-//     bold/italic/inline-code markers, html-unescape entities, strip leading
-//     heading hashes, normalize bullet markers, and strip end-of-cell `<br>`
-//     in pipe-table rows.
-// Code content lines still compare exactly: a missing or altered code line,
-// builder row, or parameter description is a diff.
+//   - strip rendered markup on EVERY content line: link `[text](url)` → text,
+//     bold/italic/inline-code markers, html-unescape entities, leading
+//     heading hashes, bullet markers, and end-of-cell `<br>` in pipe-table
+//     rows.
+// Markup stripping applies inside code content too (v4). The serializer never
+// emits fences, so the observed side cannot be fence-aware: v3 kept the
+// expected side fence-protected and compared literal code markup against an
+// observed side that had already stripped it, false-failing any code line
+// carrying markdown-ish tokens (first hit: java alterCollectionField, whose
+// PR-verbatim example comment carries escaped backticks). Code content still
+// compares exactly for every token the serializer does carry: a missing or
+// altered code line, builder row, or parameter description is a diff.
 
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
@@ -88,46 +93,50 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
     const lines = String(markdown || '').split('\n');
     if (dropLeadingTitle && lines.length > 0) lines.shift();
     const out = [];
-    let inFence = false;
     let inAlertWrapper = false;
     for (const raw of lines) {
-        if (FENCE_LINE.test(raw)) {
-            inFence = !inFence;
-            continue;
-        }
+        // Fence delimiter lines are presentation-only on both sides: the
+        // serializer never emits them, and a literal ``` inside code content
+        // drops identically on both sides.
+        if (FENCE_LINE.test(raw)) continue;
         if (NOISE_LINE.test(raw)) continue;
         // The raw_content serializer keeps no leading whitespace anywhere —
         // paragraphs and code content alike — so indentation is not evidence.
         let line = raw.replace(/^\s+/, '').trimEnd();
         if (line === '') continue;
-        if (!inFence) {
-            line = line.replace(HEADING_PREFIX, '');
-            line = line.replace(BULLET_PREFIX, '');
-            line = line.replace(INLINE_LINK, '$1');
-            line = line.replace(/(\*\*|__)(.*?)\1/g, '$2');
-            line = line.replace(/(^|[^\\])\*([^*\n]+)\*/g, '$1$2');
-            line = line.replace(/`([^`]*)`/g, '$1');
-            line = htmlUnescape(line);
-            // The authoring side escapes HTML-sensitive `<>` symmetrically
-            // (`List\<String\>`); the converter unescapes both directions, so
-            // the fidelity comparison must normalize the pair identically on
-            // both sides instead of letting a stray backslash diverge.
-            line = line.replace(/\\([<>])/g, '$1');
-            if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
-            // Web-content alert-callout wrappers are presentation markup, not
-            // content: the authored side carries <div class="alert note"> and
-            // its closing </div>, the live side renders the enclosed prose as
-            // a callout block. Drop the wrapper lines on both sides so the
-            // comparison judges the note prose.
-            if (/^<div class="alert [-a-z]+">$/i.test(line)) {
-                inAlertWrapper = true;
-                continue;
-            }
-            if (inAlertWrapper && line === '</div>') {
-                inAlertWrapper = false;
-                continue;
-            }
+        line = line.replace(HEADING_PREFIX, '');
+        line = line.replace(BULLET_PREFIX, '');
+        line = line.replace(INLINE_LINK, '$1');
+        line = line.replace(/(\*\*|__)(.*?)\1/g, '$2');
+        line = line.replace(/(^|[^\\])\*([^*\n]+)\*/g, '$1$2');
+        line = line.replace(/`([^`]*)`/g, '$1');
+        line = htmlUnescape(line);
+        // The authoring side escapes HTML-sensitive `<>` symmetrically
+        // (`List\<String\>`); the converter unescapes both directions, so
+        // the fidelity comparison must normalize the pair identically on
+        // both sides instead of letting a stray backslash diverge.
+        line = line.replace(/\\([<>])/g, '$1');
+        if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
+        // Web-content alert-callout wrappers are presentation markup, not
+        // content: the authored side carries <div class="alert note"> and
+        // its closing </div>, the live side renders the enclosed prose as
+        // a callout block. Drop the wrapper lines on both sides so the
+        // comparison judges the note prose.
+        if (/^<div class="alert [-a-z]+">$/i.test(line)) {
+            inAlertWrapper = true;
+            continue;
         }
+        if (inAlertWrapper && line === '</div>') {
+            inAlertWrapper = false;
+            continue;
+        }
+        // The established callout convention renders a "Notes" title line as
+        // the first line of the callout block, beside the emoji — presentation,
+        // not content. Drop it identically on both sides so the comparison
+        // judges the note prose; the converter always emits it for alert
+        // callouts, so the live side carries it whenever the authored side
+        // carried the wrapper at all.
+        if (line === 'Notes') continue;
         out.push(line);
     }
     return out;
@@ -152,7 +161,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     return {
         ok: diffs.length === 0,
         invariantId: INVARIANT_ID,
-        canonicalVersion: 3,
+        canonicalVersion: 5,
         expectedLines: expected.length,
         observedLines: observed.length,
         diffs: diffs.slice(0, 20),

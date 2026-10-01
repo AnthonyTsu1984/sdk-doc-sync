@@ -739,18 +739,32 @@ async function runCli({
         // durable write-ahead journal from disk, so the reloaded session
         // converges or refuses typed instead of orphaning the external
         // change; the journal itself remains the recovery evidence.
-        ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
-        reviewSession = recordDocumentExecution(reviewSession, {
-            reviewUnitId: result.activeReviewUnit.reviewUnitId,
-            executionJournalPath: result.executionJournalPath,
-            executionJournalDigest: result.executionJournalDigest,
-        }, { batchContinue: args.batchContinue === true });
-        saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
+        try {
+            ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
+            reviewSession = recordDocumentExecution(reviewSession, {
+                reviewUnitId: result.activeReviewUnit.reviewUnitId,
+                executionJournalPath: result.executionJournalPath,
+                executionJournalDigest: result.executionJournalDigest,
+            }, { batchContinue: args.batchContinue === true });
+            saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
+        } catch (error) {
+            // A refused recording (typically a journal whose observed actions
+            // failed) must not kill the result JSON: the action's own
+            // diagnostics are the operator's evidence for the real failure.
+            // Attach the refusal and let the caller reconcile; the journal
+            // verification step rejects the batch either way.
+            result.sessionRecordingError = { code: 'SESSION_RECORDING_REFUSED', message: error.message };
+            (result.executionResult.diagnostics || []).push({
+                code: 'SESSION_RECORDING_REFUSED',
+                actionId: result.activeReviewUnit.reviewUnitId,
+                message: `Session recording refused for ${result.activeReviewUnit.reviewUnitId}: ${error.message}`,
+            });
+        }
         result.reviewSession = {
             ...(result.reviewSession || {}),
             sessionId: reviewSession.sessionId,
             sessionPath,
-            activeReviewUnitId: reviewSession.activeExecution.reviewUnitId,
+            activeReviewUnitId: reviewSession.activeExecution?.reviewUnitId ?? null,
             pendingReviewUnitIds: (reviewSession.pendingExecutions || []).map((item) => item.reviewUnitId),
             acceptedReviewUnitIds: (reviewSession.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort(),
             reviewUnitManifestDigest: reviewSession.reviewUnitManifestDigest,
@@ -792,14 +806,27 @@ async function runCli({
             result.reconciliation = { ...result.reconciliation, sessionRecovered: false, blockedByRolledBackReceipt: true };
             err(`Execution not recorded: journal ${result.reconciliation.executionJournalDigest} belongs to the rolled-back execution of ${reviewUnitId}; the unit stays in reviewed planning.`);
         } else if (!pendingForUnit) {
-            reviewSession = recordDocumentExecution(reviewSession, {
-                reviewUnitId,
-                executionJournalPath: result.reconciliation.executionJournalPath,
-                executionJournalDigest: result.reconciliation.executionJournalDigest,
-            }, { batchContinue: args.batchContinue === true });
-            saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
-            result.reconciliation = { ...result.reconciliation, sessionRecovered: true };
-            err(`Execution recorded from the durable journal for ${reviewUnitId}; rerun is not needed for this unit.`);
+            try {
+                reviewSession = recordDocumentExecution(reviewSession, {
+                    reviewUnitId,
+                    executionJournalPath: result.reconciliation.executionJournalPath,
+                    executionJournalDigest: result.reconciliation.executionJournalDigest,
+                }, { batchContinue: args.batchContinue === true });
+                saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
+                result.reconciliation = { ...result.reconciliation, sessionRecovered: true };
+                err(`Execution recorded from the durable journal for ${reviewUnitId}; rerun is not needed for this unit.`);
+            } catch (error) {
+                // An ambiguous or failed-action journal keeps the BLOCKED
+                // refusal (only an operator resolves that), but the refusal
+                // must not kill the result JSON — the reconciliation evidence
+                // plus this message is what the operator reconciles from.
+                result.reconciliation = {
+                    ...result.reconciliation,
+                    sessionRecovered: false,
+                    recordingRefused: { code: 'SESSION_RECORDING_REFUSED', message: error.message },
+                };
+                err(`Session recording refused for ${reviewUnitId}: ${error.message}`);
+            }
         } else {
             // Already recovered by a previous rerun — nothing to do.
             result.reconciliation = { ...result.reconciliation, sessionRecovered: false };

@@ -124,7 +124,7 @@ test('pr-polish-apply runCli applies a validated manifest through injected ops a
     const patches = [];
     const result = await runCli({
         argv: [
-            'node', 'pr-polish-apply', 'apply',
+            'node', 'pr-polish-apply',
             '--session', sessionPath,
             '--review-unit-id', 'review:java:v2-Client:startTelemetry',
             '--base-content', basePath,
@@ -168,7 +168,7 @@ test('pr-polish-apply refuses a digest that does not match the executed batch', 
     await assert.rejects(
         () => runCli({
             argv: [
-                'node', 'pr-polish-apply', 'apply',
+                'node', 'pr-polish-apply',
                 '--session', sessionPath,
                 '--review-unit-id', 'review:java:v2-Client:startTelemetry',
                 '--base-content', path.join(directory, 'base.md'),

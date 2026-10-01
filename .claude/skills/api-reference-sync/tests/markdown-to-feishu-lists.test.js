@@ -237,3 +237,93 @@ test('Document IR list descriptions become child paragraph blocks instead of fla
     'The name of the collection to create.',
   ]);
 });
+
+// Regression (PR #1165 intake): a web-content alert-callout div containing
+// blank lines split into three marked.js tokens — a bare opener (empty
+// callout), plain paragraphs, and a stray literal `</div>` text block. The
+// converter must collapse the region back into one callout.
+test('alert div with internal blank lines converts to one callout without stray </div>', async () => {
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'test' });
+  const markdown = [
+    'Intro paragraph.',
+    '',
+    '<div class="alert note">',
+    '',
+    'Do not disconnect the MilvusClientV2 while the iterator is in use.',
+    '',
+    '</div>',
+    '',
+    '## Request Syntax',
+    '',
+    '```cpp',
+    'auto request = QueryIteratorRequest()',
+    '```',
+  ].join('\n');
+  const { tokens } = await converter.parse_markdown(markdown);
+  const blocks = tokens.flatMap((token) => converter.__token_to_blocks(token) || []);
+  const callouts = blocks.filter((block) => block.block_type === converter.block_type_map.callout);
+  assert.equal(callouts.length, 1);
+  const calloutChildren = callouts[0].children || [];
+  assert.equal(calloutChildren.length, 2);
+  assert.equal((calloutChildren[0].text.elements || []).map((e) => e.text_run?.content || '').join(''), 'Notes');
+  assert.equal((calloutChildren[1].text.elements || []).map((e) => e.text_run?.content || '').join(''),
+    'Do not disconnect the MilvusClientV2 while the iterator is in use.');
+  assert.deepEqual(blocks.filter((block) => JSON.stringify(block).includes('</div>')), []);
+});
+
+// Regression (java EmbeddingList:add review): a markdown link wrapped in an
+// emphasis — **[text](url)** — used to land as literal `[]()` text because
+// the bold/italic branches emitted their inner span without re-parsing it.
+// The emphasis must recurse so the inner link keeps its url, carrying the
+// emphasis style alongside.
+test('links inside bold/italic emphasis render as links with the emphasis style', async () => {
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'test' });
+  const { tokens } = await converter.parse_markdown(
+    'See an **[EmbeddingList](https://example.com/a)** instance. Return the *[EmbeddingList](https://example.com/b)* type.',
+  );
+  const blocks = tokens.flatMap((token) => converter.__token_to_blocks(token) || []);
+  const elements = blocks.flatMap((block) => block.text?.elements || []);
+  const linkRuns = elements.map((e) => e.text_run).filter((run) => run?.text_element_style?.link);
+  assert.equal(linkRuns.length, 2);
+  assert.equal(linkRuns[0].content, 'EmbeddingList');
+  assert.equal(linkRuns[0].text_element_style.bold, true);
+  assert.equal(linkRuns[0].text_element_style.link.url, encodeURIComponent('https://example.com/a'));
+  assert.equal(linkRuns[1].content, 'EmbeddingList');
+  assert.equal(linkRuns[1].text_element_style.italic, true);
+  // No literal markdown link text anywhere.
+  assert.equal(elements.some((e) => (e.text_run?.content || '').includes('](')), false);
+});
+
+// Regression (java LexicalHighlighter review): a fenced code block nested in
+// a list item's continuation — the web-content builder-method-docs shape —
+// was silently dropped by the loose-list branch (only paragraph/list children
+// were handled), so the rendered page lost the entire example code and the
+// verbatim fidelity comparison failed on the missing lines.
+test('fenced code nested in a list item renders as a code child in order', async () => {
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: 'test' });
+  const markdown = [
+    '- `highlightQueries(List<HighlightQuery>)`',
+    '',
+    '    Defines which query terms are highlighted.',
+    '',
+    '    ```java',
+    '    import io.milvus.v2.LexicalHighlighter;',
+    '    HighlightQuery q = new HighlightQuery(',
+    '    ```',
+    '',
+    '    If unset, no filtering terms are highlighted.',
+    '',
+    '- `preTags(List<String>)`',
+  ].join('\n');
+  const { tokens } = await converter.parse_markdown(markdown);
+  const blocks = tokens.flatMap((token) => converter.__token_to_blocks(token) || []);
+  assert.equal(blocks.length, 2);
+  const children = blocks[0].children || [];
+  const kinds = children.map((b) => (b.block_type === converter.block_type_map.code ? 'code' : 'text'));
+  assert.deepEqual(kinds, ['text', 'code', 'text']);
+  const codeChild = children.find((b) => b.block_type === converter.block_type_map.code);
+  const codeText = (codeChild.code.elements || []).map((e) => e.text_run?.content || '').join('');
+  assert.match(codeText, /import io\.milvus\.v2\.LexicalHighlighter;/);
+  assert.match(codeText, /HighlightQuery q = new HighlightQuery\(/);
+  assert.equal(blocks[1].block_type, converter.block_type_map.bullet);
+});

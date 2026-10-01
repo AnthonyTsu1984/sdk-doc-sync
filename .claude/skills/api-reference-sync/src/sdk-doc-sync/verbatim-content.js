@@ -114,8 +114,13 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
         // The authoring side escapes HTML-sensitive `<>` symmetrically
         // (`List\<String\>`); the converter unescapes both directions, so
         // the fidelity comparison must normalize the pair identically on
-        // both sides instead of letting a stray backslash diverge.
-        line = line.replace(/\\([<>])/g, '$1');
+        // both sides instead of letting a stray backslash diverge. The
+        // upstream markdown sometimes stacks the escapes (`List\\\\<X\\\\>`,
+        // java Vector:get RETURNS rows — an MDX authoring artifact layered
+        // on the escaped form), so every run of backslashes before `<`/`>`
+        // normalizes to the bare bracket: all counts render the same on the
+        // docs site and in the converter.
+        line = line.replace(/\\+([<>])/g, '$1');
         if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
         // Web-content alert-callout wrappers are presentation markup, not
         // content: the authored side carries <div class="alert note"> and
@@ -161,7 +166,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     return {
         ok: diffs.length === 0,
         invariantId: INVARIANT_ID,
-        canonicalVersion: 5,
+        canonicalVersion: 6,
         expectedLines: expected.length,
         observedLines: observed.length,
         diffs: diffs.slice(0, 20),

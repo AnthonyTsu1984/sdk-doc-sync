@@ -107,13 +107,20 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       // updateRecord, so every mutation is cross-checked against it.
       enforceTargets: true,
     });
-    writeRunManifestArtifact(createRunManifest({
+    writer.governance.bindRunManifest(createRunManifest({
       skill: 'api-reference-sync',
       skillVersion: 'api-reference-sync/document-acceptance@1',
       repoRoot,
       batchDigest: receipt.executionJournalDigest,
       sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
     }), { repoRoot });
+    writeRunManifestArtifact(createRunManifest({
+      skill: 'api-reference-sync',
+      skillVersion: 'api-reference-sync/document-acceptance@1',
+      repoRoot,
+      batchDigest: receipt.executionJournalDigest,
+      sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
+    }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', `run-manifest-document-acceptance-${receipt.reviewUnitId.replace(/[^A-Za-z0-9-]/g, '-')}.json`) });
   }
 
   // Pre-write verification: WIP progress and untouched Targets from the
@@ -257,7 +264,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         sessionDigest,
         receipt,
         args,
-        io,
+        io: {},
         out,
       });
     } else {

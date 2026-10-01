@@ -4,10 +4,13 @@ const path = require('node:path');
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { createApprovalEnvelope } = require('../../../doc-ops-core/src/writer-governance');
-const { INVARIANT_ID } = require('./versioned-tree-policy');
-const { INVARIANT_ID: VERBATIM_INVARIANT_ID } = require('./verbatim-content');
 const { buildAcceptanceManifest } = require('./review-units');
-const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
+const { normalizedTargetsValue } = require('./record-state');
+const {
+  deriveUnitEvidence,
+  invariantEvidenceError,
+  validateJournalArtifact,
+} = require('./unit-evidence');
 
 function clone(value) {
   return structuredClone(value);
@@ -15,12 +18,6 @@ function clone(value) {
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.trim() !== '';
-}
-
-function invariantEvidenceError(message) {
-  const error = new Error(message);
-  error.code = 'INVARIANT_EVIDENCE_REQUIRED';
-  return error;
 }
 
 class AcceptanceFinalizer {
@@ -102,80 +99,10 @@ class AcceptanceFinalizer {
     } catch (error) {
       throw invariantEvidenceError(`Execution journal for ${digest} is unreadable: ${error.message}`);
     }
-    if (!Array.isArray(entries) || entries.length === 0) {
-      throw invariantEvidenceError(`Execution journal for ${digest} is empty or missing`);
-    }
-    if (digestSemantic(entries) !== digest) {
-      throw invariantEvidenceError(`Execution journal artifact does not match the bound digest ${digest}`);
-    }
-    if (!entries.some((entry) => entry.type === 'completion' && entry.completionSentinel === true)) {
-      throw invariantEvidenceError(`Execution journal ${digest} has no completion sentinel; the batch did not complete`);
-    }
-    // Evidence precedence: the tree-delta outcome is the AUTHORITATIVE
-    // structural verdict (record links, folder placement, tree shape). A
-    // failing tree-delta outcome is never compensated by a passing
-    // content-fidelity outcome, and a failing content-fidelity outcome is
-    // itself disqualifying. Foreign invariant ids are not evidence.
-    const treeDeltaByActionId = new Map();
-    const contentFidelityByActionId = new Map();
-    const attestedInvariantsByActionId = new Map();
-    for (const entry of entries) {
-      if (entry?.type === 'prepared' && Array.isArray(entry.invariantAttestationIds)) {
-        attestedInvariantsByActionId.set(entry.actionId, entry.invariantAttestationIds);
-        continue;
-      }
-      if (entry?.type !== 'tree-delta' && entry?.type !== 'content-fidelity') continue;
-      const expectedInvariantId = entry.type === 'tree-delta' ? INVARIANT_ID : VERBATIM_INVARIANT_ID;
-      if (entry.invariantId !== expectedInvariantId) continue;
-      if (!nonEmptyString(entry.decision)) continue;
-      const outcome = {
-        actionId: entry.actionId,
-        invariantId: entry.invariantId,
-        decision: entry.decision,
-        ok: entry.ok === true,
-      };
-      if (entry.type === 'tree-delta') treeDeltaByActionId.set(entry.actionId, outcome);
-      else contentFidelityByActionId.set(entry.actionId, outcome);
-    }
-    const evidence = [];
-    for (const record of unit.touchedRecords || []) {
-      const treeDelta = treeDeltaByActionId.get(record?.actionId);
-      if (!treeDelta || treeDelta.ok !== true) {
-        throw invariantEvidenceError(`Acceptance requires a verified ${INVARIANT_ID} journal outcome for action ${record?.actionId || '(missing)'} in unit ${unit.reviewUnitId}`);
-      }
-      // A verbatim-attested action (declared on the journaled prepared entry)
-      // must carry a PASSING content-fidelity outcome — a missing one is
-      // fail-open acceptance of unverified verbatim content.
-      const attestedInvariants = attestedInvariantsByActionId.get(record.actionId) || [];
-      if (attestedInvariants.includes(VERBATIM_INVARIANT_ID)) {
-        const contentFidelity = contentFidelityByActionId.get(record.actionId);
-        if (!contentFidelity || contentFidelity.ok !== true) {
-          throw invariantEvidenceError(`Acceptance requires a passing content-fidelity journal outcome for action ${record.actionId} in unit ${unit.reviewUnitId}`);
-        }
-      }
-      const observed = entries.find((entry) => entry.type === 'observed'
-        && entry.actionId === record.actionId
-        && entry.status === 'success');
-      if (!observed) {
-        throw invariantEvidenceError(`Journal action ${record.actionId} has no successful observed result`);
-      }
-      evidence.push({
-        actionId: treeDelta.actionId,
-        invariantId: treeDelta.invariantId,
-        decision: treeDelta.decision,
-        verified: true,
-      });
-      const contentFidelity = contentFidelityByActionId.get(record.actionId);
-      if (contentFidelity && contentFidelity.ok === true) {
-        evidence.push({
-          actionId: contentFidelity.actionId,
-          invariantId: contentFidelity.invariantId,
-          decision: contentFidelity.decision,
-          verified: true,
-        });
-      }
-    }
-    return { evidence, targetsBaseline: executionTargetsBaseline(entries) };
+    validateJournalArtifact({ entries, digest });
+    // Evidence derivation is shared with the two-gate document-acceptance
+    // transition (unit-evidence.js) so both gates enforce the identical bar.
+    return deriveUnitEvidence({ unit, entries });
   }
 
   async finalize({
@@ -188,6 +115,16 @@ class AcceptanceFinalizer {
     if (!nonEmptyString(scanStateKey)) throw new Error('scanStateKey is required');
     if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
       throw new Error('scanStateEntry is required');
+    }
+    // Two-gate acceptance sessions (2026-10-01 ruling) finalize per unit at
+    // document acceptance and close via closeSession — the campaign-level
+    // acceptance gate is retired for them, not weakened: every check this
+    // finalizer ran is enforced per unit by the same shared evidence
+    // derivation.
+    if (reviewSession?.acceptanceFlow === 'two-gate') {
+      const error = new Error('Two-gate acceptance sessions finalize per unit (accept-document) and close via close-session; the campaign-level acceptance gate does not apply');
+      error.code = 'ACCEPTANCE_FLOW_SUPERSEDED';
+      throw error;
     }
 
     // Everything writable is derived from the complete acceptance manifest:

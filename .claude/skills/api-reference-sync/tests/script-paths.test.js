@@ -144,6 +144,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/sync-executor.test.js',
     '.claude/skills/api-reference-sync/tests/sync-planner.test.js',
     '.claude/skills/api-reference-sync/tests/token-reference-reader.test.js',
+    '.claude/skills/api-reference-sync/tests/two-gate-flow.test.js',
     '.claude/skills/api-reference-sync/tests/type-url-index.test.js',
     '.claude/skills/api-reference-sync/tests/verbatim-content.test.js',
     '.claude/skills/api-reference-sync/tests/versioned-tree-policy.test.js',

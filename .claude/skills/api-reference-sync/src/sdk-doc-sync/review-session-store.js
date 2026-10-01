@@ -13,6 +13,7 @@ const {
 const { loadState, saveState } = require('../../../doc-ops-core/src/session-store');
 const { buildAcceptanceManifest } = require('./review-units');
 const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
+const { deriveUnitEvidence } = require('./unit-evidence');
 
 // The lifecycle this store hardens (PR #22's five review rounds), now
 // expressed through the shared machine every skill adopts (6.6): transitions
@@ -30,8 +31,53 @@ const REVIEW_MACHINE = defineSessionMachine({
     recordDocumentRollback: { from: ['in_progress', 'acceptance_pending'], to: 'in_progress' },
     buildSessionAcceptance: { from: ['in_progress'], to: 'acceptance_pending' },
     recordAcceptanceFinalization: { from: ['acceptance_pending'], to: 'finalized' },
+    // Two-gate close (2026-10-01 ruling): no campaign acceptance gate — the
+    // close runs only after EVERY unit finalized (guarded in closeSession).
+    // Legacy sessions never reach it: closeSession refuses them first.
+    closeSession: { from: ['in_progress'], to: 'finalized' },
   },
 });
+
+// Unit-level machine (two-gate acceptance flow): the session machine governs
+// the campaign, this one governs each document unit. Unit state is DERIVED
+// from the session arrays — pendingExecutions = executed, acceptedReviewUnits
+// = finalized — so there is exactly one durable representation, and the
+// machine supplies the typed guards: a finalized unit has no outgoing
+// transitions (rollback and change requests refuse; corrective release
+// instead), and per-acceptance Draft writes drive the terminal transition.
+const UNIT_MACHINE = defineSessionMachine({
+  name: 'api-reference-sync:review-unit',
+  initial: 'in_progress',
+  terminal: 'finalized',
+  transitions: {
+    recordDocumentExecution: { from: ['in_progress', 'executed'], to: 'executed' },
+    recordDocumentAcceptance: { from: ['executed'], to: 'finalized' },
+    recordDocumentChangesRequested: { from: ['executed'], to: 'in_progress' },
+    recordRollbackIntent: { from: ['in_progress', 'executed'], to: SAME_STATE },
+    recordDocumentRollback: { from: ['in_progress', 'executed'], to: 'in_progress' },
+  },
+});
+
+// Acceptance flow selection: sessions created before the two-gate flow carry
+// no field and keep the legacy campaign-acceptance semantics; the CLI
+// (sdk-doc-sync session creation) stamps new sessions 'two-gate'.
+function acceptanceFlowOf(session) {
+  return session?.acceptanceFlow === 'two-gate' ? 'two-gate' : 'legacy';
+}
+
+function unitStatusOf(session, reviewUnitId) {
+  if ((session?.acceptedReviewUnits || []).some((unit) => unit.reviewUnitId === reviewUnitId)) {
+    return 'finalized';
+  }
+  if (pendingList(session).some((item) => item.reviewUnitId === reviewUnitId)) {
+    return 'executed';
+  }
+  return 'in_progress';
+}
+
+function assertUnitTransition(transitionName, session, reviewUnitId) {
+  UNIT_MACHINE.assertTransition(transitionName, { status: unitStatusOf(session, reviewUnitId) });
+}
 
 function clone(value) {
   return structuredClone(value);
@@ -80,11 +126,15 @@ function createReviewSession({
   track,
   reviewUnitManifest,
   artifacts = {},
+  acceptanceFlow = 'legacy',
   createdAt = new Date().toISOString(),
 }) {
   if (!nonEmptyString(sessionId)) throw new TypeError('sessionId is required');
   if (!reviewUnitManifest?.manifestDigest || !Array.isArray(reviewUnitManifest.units)) {
     throw new TypeError('reviewUnitManifest is required');
+  }
+  if (acceptanceFlow !== 'legacy' && acceptanceFlow !== 'two-gate') {
+    throw new TypeError(`acceptanceFlow must be 'legacy' or 'two-gate', got ${acceptanceFlow}`);
   }
   return Object.freeze({
     schemaVersion: 1,
@@ -92,6 +142,7 @@ function createReviewSession({
     language,
     sdkName,
     track,
+    acceptanceFlow,
     status: 'in_progress',
     reviewUnitManifest: clone(reviewUnitManifest),
     reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
@@ -265,6 +316,12 @@ function recordDocumentExecution(session, execution, { batchContinue = false } =
   const { journalPath } = validateExecutionForUnit(session, execution || {});
   const executedAt = execution.executedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentExecution', session);
+  if (acceptanceFlowOf(session) === 'two-gate') {
+    // Unit-level typed guard: a finalized unit (accepted under the two-gate
+    // flow) has no outgoing transitions — re-execution is a corrective
+    // release, not an in-place rewrite.
+    assertUnitTransition('recordDocumentExecution', session, execution.reviewUnitId);
+  }
   const entry = Object.freeze({
     reviewUnitId: execution.reviewUnitId,
     executionJournalPath: journalPath,
@@ -313,7 +370,7 @@ function validateAcceptedReceipt(session, receipt) {
   if (documentLinks.length === 0 || recordLinks.length === 0) {
     throw new Error('Accepted document requires documentLinks and recordLinks');
   }
-  return { documentLinks, entries, journalPath, recordLinks, touchedRecords };
+  return { documentLinks, entries, journalPath, recordLinks, touchedRecords, reviewUnit };
 }
 
 function recordDocumentAcceptance(session, receipt) {
@@ -324,7 +381,7 @@ function recordDocumentAcceptance(session, receipt) {
   if ((session.acceptedReviewUnits || []).some((unit) => unit.reviewUnitId === receipt?.reviewUnitId)) {
     throw new Error(`Review unit is already accepted: ${receipt.reviewUnitId}`);
   }
-  const { documentLinks, journalPath, recordLinks, touchedRecords } = validateAcceptedReceipt(session, receipt);
+  const { documentLinks, entries, journalPath, recordLinks, touchedRecords, reviewUnit } = validateAcceptedReceipt(session, receipt);
   const pendings = pendingList(session);
   const pending = pendings.find((item) => item.reviewUnitId === receipt.reviewUnitId);
   if (!pending
@@ -334,6 +391,24 @@ function recordDocumentAcceptance(session, receipt) {
   }
   const acceptedAt = receipt.acceptedAt || new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentAcceptance', session);
+  // Two-gate acceptance (2026-10-01 ruling): document acceptance IS the
+  // unit's final acceptance. The transition demands the same evidence the
+  // campaign finalizer demanded (tree-delta authoritative, verbatim-attested
+  // content fidelity), verified WIP→Draft transitions for EVERY touched
+  // record (written by the caller before this call, under governance), and a
+  // digest-bound per-unit receipt on disk. The unit then finalizes —
+  // terminal, rollback-proof, no campaign gate behind it.
+  let twoGateFields = {};
+  if (acceptanceFlowOf(session) === 'two-gate') {
+    assertUnitTransition('recordDocumentAcceptance', session, receipt.reviewUnitId);
+    // The receipt's touchedRecords (not the manifest unit's shape — the
+    // manifest carries none) are the per-unit evidence surface.
+    deriveUnitEvidence({ unit: { reviewUnitId: receipt.reviewUnitId, touchedRecords }, entries });
+    twoGateFields = {
+      ...twoGateFields,
+      ...validateTwoGateFinalization(session, receipt, { touchedRecords }),
+    };
+  }
   const remainingPendings = pendings.filter((item) => item.reviewUnitId !== receipt.reviewUnitId);
   const head = pendingHead(remainingPendings);
   return REVIEW_MACHINE.apply('recordDocumentAcceptance', session, {
@@ -346,11 +421,123 @@ function recordDocumentAcceptance(session, receipt) {
       recordLinks,
       commentsResolved: true,
       acceptedAt,
+      ...twoGateFields,
     }].sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId))),
     pendingExecutions: Object.freeze(remainingPendings),
     activeExecution: head ? clone(head) : null,
     activeReviewUnitId: head ? head.reviewUnitId : null,
   }, { timestamp: acceptedAt });
+}
+
+// Pre-write validation for the two-gate document acceptance: the CLI runs
+// this BEFORE any external mutation so a receipt that would refuse never
+// drives a Draft write. recordDocumentAcceptance re-validates everything
+// after the writes — the caller's word is never evidence by itself.
+function prepareDocumentAcceptance(session, receipt) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (acceptanceFlowOf(session) !== 'two-gate') {
+    throw Object.assign(
+      new Error('prepareDocumentAcceptance is the two-gate pre-write validation; legacy sessions accept through recordDocumentAcceptance'),
+      { code: 'ACCEPTANCE_FLOW_LEGACY' },
+    );
+  }
+  if (session.acceptanceManifest) {
+    throw new Error('Review session no longer accepts document receipts');
+  }
+  const { entries, journalPath, touchedRecords, reviewUnit } = validateAcceptedReceipt(session, receipt);
+  const pendings = pendingList(session);
+  const pending = pendings.find((item) => item.reviewUnitId === receipt.reviewUnitId);
+  if (!pending
+      || path.resolve(pending.executionJournalPath || '') !== journalPath
+      || pending.executionJournalDigest !== receipt.executionJournalDigest) {
+    throw new Error(`Document acceptance must match a pending execution for ${receipt.reviewUnitId}`);
+  }
+  assertUnitTransition('recordDocumentAcceptance', session, receipt.reviewUnitId);
+  const { evidence, targetsBaseline } = deriveUnitEvidence({
+    unit: { reviewUnitId: receipt.reviewUnitId, touchedRecords },
+    entries,
+  });
+  return { entries, evidence, journalPath, targetsBaseline, touchedRecords, reviewUnit };
+}
+
+// Two-gate finalization evidence supplied by the caller after the governed
+// Draft writes: a verified WIP→Draft transition for every touched record and
+// a digest-bound per-unit receipt on disk. Both are re-validated here (the
+// caller's word is never evidence by itself).
+function validateTwoGateFinalization(session, receipt, { touchedRecords }) {
+  const draftRecords = receipt.draftRecords;
+  if (!Array.isArray(draftRecords) || touchedRecords.length === 0
+      || draftRecords.length !== touchedRecords.length) {
+    throw new Error(`Two-gate acceptance requires a verified WIP→Draft transition record for every touched record (${touchedRecords.length})`);
+  }
+  const touchedIds = new Set(touchedRecords.map((record) => record.recordId));
+  const seen = new Set();
+  for (const draft of draftRecords) {
+    if (!draft || !touchedIds.has(draft.recordId) || seen.has(draft.recordId)) {
+      throw new Error(`Draft transition records must cover every touched record exactly once: ${draft?.recordId || '(missing)'}`);
+    }
+    seen.add(draft.recordId);
+    if (draft.beforeProgress !== 'WIP' || draft.afterProgress !== 'Draft' || draft.verified !== true) {
+      throw new Error(`Draft transition for record ${draft.recordId} is not a verified WIP→Draft transition`);
+    }
+  }
+  const unitReceiptPath = path.resolve(receipt.unitReceiptPath || '');
+  if (!nonEmptyString(receipt.unitReceiptDigest) || !fs.existsSync(unitReceiptPath)) {
+    throw new Error('Two-gate acceptance requires a per-unit receipt file (unitReceiptPath + unitReceiptDigest)');
+  }
+  let unitReceipt;
+  try {
+    unitReceipt = JSON.parse(fs.readFileSync(unitReceiptPath, 'utf8'));
+  } catch (error) {
+    throw new Error(`Per-unit receipt is unreadable: ${error.message}`);
+  }
+  const actualDigest = digestSemantic(unitReceipt);
+  if (actualDigest !== receipt.unitReceiptDigest) {
+    throw new Error(`Per-unit receipt digest mismatch: expected ${receipt.unitReceiptDigest}, got ${actualDigest}`);
+  }
+  if (unitReceipt.status !== 'document_accepted'
+      || unitReceipt.reviewUnitId !== receipt.reviewUnitId
+      || unitReceipt.executionJournalDigest !== receipt.executionJournalDigest) {
+    throw new Error('Per-unit receipt does not bind this unit and its execution journal');
+  }
+  return {
+    draftRecords: Object.freeze(draftRecords.map(clone)),
+    unitReceiptPath,
+    unitReceiptDigest: receipt.unitReceiptDigest,
+    finalizedAt: receipt.acceptedAt || null,
+  };
+}
+
+function closeSession(session, { scanStateKey, scanStateEntry, closedAt = new Date().toISOString() } = {}) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (acceptanceFlowOf(session) !== 'two-gate') {
+    throw Object.assign(
+      new Error('Legacy sessions close through build-acceptance + APPROVE_ACCEPTANCE; closeSession is the two-gate close'),
+      { code: 'ACCEPTANCE_FLOW_LEGACY' },
+    );
+  }
+  const unfinalized = session.reviewUnitManifest.units
+    .map((unit) => unit.reviewUnitId)
+    .filter((reviewUnitId) => unitStatusOf(session, reviewUnitId) !== 'finalized');
+  if (unfinalized.length > 0) {
+    throw Object.assign(
+      new Error(`Session cannot close: ${unfinalized.length} unit(s) not finalized: ${unfinalized.slice(0, 5).join(', ')}`),
+      { code: 'SESSION_UNITS_NOT_FINALIZED' },
+    );
+  }
+  if (!nonEmptyString(scanStateKey) || !scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
+    throw new Error('scanStateKey and scanStateEntry are required to close the session');
+  }
+  REVIEW_MACHINE.assertTransition('closeSession', session);
+  return REVIEW_MACHINE.apply('closeSession', session, {
+    activeReviewUnitId: null,
+    acceptanceManifest: null,
+    acceptanceManifestDigest: null,
+    scanStateKey,
+    scanStateEntry: clone(scanStateEntry),
+    scanStateUpdated: true,
+    closedAt,
+  }, { timestamp: closedAt });
 }
 
 function recordDocumentChangesRequested(session, { reviewUnitId, reason = null } = {}) {
@@ -370,6 +557,9 @@ function recordDocumentChangesRequested(session, { reviewUnitId, reason = null }
   }
   const requestedAt = new Date().toISOString();
   REVIEW_MACHINE.assertTransition('recordDocumentChangesRequested', session);
+  if (acceptanceFlowOf(session) === 'two-gate') {
+    assertUnitTransition('recordDocumentChangesRequested', session, reviewUnitId);
+  }
   const remainingPendings = pendings.filter((item) => item.reviewUnitId !== reviewUnitId);
   const head = pendingHead(remainingPendings);
   return REVIEW_MACHINE.apply('recordDocumentChangesRequested', session, {
@@ -509,6 +699,11 @@ function recordRollbackIntent(session, {
   if (!anchor) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
   validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
   const startedAt = new Date().toISOString();
+  if (acceptanceFlowOf(session) === 'two-gate') {
+    // A finalized unit (accepted under the two-gate flow) is terminal: the
+    // machine refuses the lease the way it refuses every other transition.
+    assertUnitTransition('recordRollbackIntent', session, reviewUnitId);
+  }
   return REVIEW_MACHINE.apply('recordRollbackIntent', session, {
     activeRollback: Object.freeze({
       reviewUnitId,
@@ -529,6 +724,12 @@ function recordDocumentRollback(session, receipt) {
   const reviewUnitId = receipt?.reviewUnitId;
   if (!session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
     throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  }
+  REVIEW_MACHINE.assertTransition('recordDocumentRollback', session);
+  if (acceptanceFlowOf(session) === 'two-gate') {
+    // The unit-machine refusal precedes journal validation: a finalized unit
+    // is terminal regardless of what evidence the caller presents.
+    assertUnitTransition('recordDocumentRollback', session, reviewUnitId);
   }
   const validated = validateRollbackJournal(
     receipt.rollbackJournalPath,
@@ -755,17 +956,24 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
       executionJournalDigest: pending.executionJournalDigest,
     });
   }
+  const twoGate = acceptanceFlowOf(session) === 'two-gate';
   for (const receipt of session.acceptedReviewUnits || []) {
     const { touchedRecords, entries } = validateAcceptedReceipt(session, receipt);
     // Targets must be UNCHANGED since the unit executed, not blank: the
     // baseline is derived from the journal's rollback capsule (the only
     // evidence of pre-execution Targets), so both executor writes and manual
-    // edits drift the record and block resume.
+    // edits drift the record and block resume. Two-gate sessions finalized
+    // the unit at document acceptance: its records carry the verified Draft
+    // transition instead of sitting at WIP.
     const baseline = executionTargetsBaseline(entries);
     for (const touched of touchedRecords) {
       const current = records.get(touched.recordId);
       if (!current) throw new Error(`Accepted record is missing during resume: ${touched.recordId}`);
-      if (recordProgress(current) !== 'WIP') {
+      if (twoGate) {
+        if (recordProgress(current) !== 'Draft') {
+          throw new Error(`Finalized record ${touched.recordId} must remain Draft (two-gate acceptance finalized the unit)`);
+        }
+      } else if (recordProgress(current) !== 'WIP') {
         throw new Error(`Accepted record ${touched.recordId} must remain WIP until final acceptance`);
       }
       const expected = baseline.get(touched.actionId) || [];
@@ -779,6 +987,7 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
     }
   }
   return {
+    acceptanceFlow: acceptanceFlowOf(session),
     acceptedReviewUnitIds: (session.acceptedReviewUnits || [])
       .map((unit) => unit.reviewUnitId)
       .sort(),
@@ -789,8 +998,11 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 
 module.exports = {
   REVIEW_MACHINE,
+  UNIT_MACHINE,
   SessionStateMachineError,
+  acceptanceFlowOf,
   buildSessionAcceptance,
+  closeSession,
   createReviewSession,
   loadReviewSession,
   loadReviewSessionState,
@@ -801,7 +1013,9 @@ module.exports = {
   recordDocumentRollback,
   recordReviewDecision,
   recordRollbackIntent,
+  prepareDocumentAcceptance,
   saveReviewSession,
+  unitStatusOf,
   validateExecutionJournal,
   validateResumeSession,
 };

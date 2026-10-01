@@ -7,13 +7,17 @@ const path = require('node:path');
 
 const {
   buildSessionAcceptance,
+  closeSession,
   loadReviewSessionState,
+  prepareDocumentAcceptance,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentChangesRequested,
   recordReviewDecision,
   saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
+const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { normalizedTargetsValue } = require('../src/sdk-doc-sync/record-state');
 
 function parseArgs(argv) {
   const args = { command: argv[2] || null, documentLinks: [], recordLinks: [] };
@@ -28,6 +32,11 @@ function parseArgs(argv) {
     else if (argument === '--document-link' && argv[index + 1]) args.documentLinks.push(argv[++index]);
     else if (argument === '--record-link' && argv[index + 1]) args.recordLinks.push(argv[++index]);
     else if (argument === '--comments-resolved') args.commentsResolved = true;
+    else if (argument === '--base-token' && argv[index + 1]) args.baseToken = argv[++index];
+    else if (argument === '--table-id' && argv[index + 1]) args.tableId = argv[++index];
+    else if (argument === '--scan-state' && argv[index + 1]) args.scanState = argv[++index];
+    else if (argument === '--scan-state-key' && argv[index + 1]) args.scanStateKey = argv[++index];
+    else if (argument === '--scan-state-entry' && argv[index + 1]) args.scanStateEntry = argv[++index];
     else if (argument === '--acceptance-journal' && argv[index + 1]) args.acceptanceJournal = argv[++index];
     else if (argument === '--acceptance-journal-digest' && argv[index + 1]) args.acceptanceJournalDigest = argv[++index];
     else if (argument === '--decision-ledger' && argv[index + 1]) args.decisionLedger = argv[++index];
@@ -60,6 +69,118 @@ function requireValue(args, name) {
   if (!args[name]) throw new Error(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
 }
 
+// Two-gate document acceptance (2026-10-01 ruling): pre-write validation,
+// governed WIP→Draft writes with post-write verification, the digest-bound
+// per-unit receipt, then the unit-terminal session transition. Fail-closed at
+// every step: a refusal before the writes leaves nothing mutated; a refusal
+// after them is recovered by replaying the acceptance from the on-disk
+// receipt (the store re-validates everything; nothing is trusted on sight).
+async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, receipt, args, io, out }) {
+  const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+  const { WriterGovernance, createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
+  const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
+
+  const prepared = prepareDocumentAcceptance(session, receipt);
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const targets = prepared.touchedRecords.map((record) => record.recordId);
+
+  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'document-acceptance' });
+  const writer = io.bitableWriter
+    || new BitableWriter({ baseToken: args.baseToken, tableId: args.tableId || undefined, governance });
+  if (writer?.governance?.bindApproval) {
+    writer.governance.bindApproval({
+      batchDigest: receipt.executionJournalDigest,
+      actionCount: targets.length,
+      targets,
+      sideEffects: ['bitable.update'],
+      approval: createApprovalEnvelope({
+        skill: 'api-reference-sync',
+        operation: 'document-acceptance',
+        batchDigest: receipt.executionJournalDigest,
+        actionCount: targets.length,
+        targets,
+        sideEffects: ['bitable.update'],
+        decision: 'approved',
+      }),
+      invariantAttestations: [],
+      // targets is the exact recordId list the write loop below feeds to
+      // updateRecord, so every mutation is cross-checked against it.
+      enforceTargets: true,
+    });
+    writeRunManifestArtifact(createRunManifest({
+      skill: 'api-reference-sync',
+      skillVersion: 'api-reference-sync/document-acceptance@1',
+      repoRoot,
+      batchDigest: receipt.executionJournalDigest,
+      sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
+    }), { repoRoot });
+  }
+
+  // Pre-write verification: WIP progress and untouched Targets from the
+  // unit's journal baseline — the same bar the campaign finalizer applied.
+  const beforeRecords = await writer.listRecords({ pageSize: 500 });
+  const beforeMap = new Map((beforeRecords || []).map((record) => [record.record_id, record]));
+  for (const touched of prepared.touchedRecords) {
+    const before = beforeMap.get(touched.recordId);
+    if (!before) throw new Error(`Acceptance record ${touched.recordId} is missing`);
+    if (before.fields?.Progress !== 'WIP') {
+      throw new Error(`Acceptance record ${touched.recordId} must be WIP before the Draft transition, got ${before.fields?.Progress || '(blank)'}`);
+    }
+    const expected = prepared.targetsBaseline.get(touched.actionId) || [];
+    const actual = normalizedTargetsValue(before?.fields?.Targets);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error(`Acceptance record ${touched.recordId} must keep Targets unchanged from the execution baseline (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
+    }
+  }
+
+  for (const touched of prepared.touchedRecords) {
+    await writer.updateRecord(touched.recordId, { progress: 'Draft' });
+  }
+  const afterRecords = await writer.listRecords({ pageSize: 500 });
+  const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
+  const draftRecords = [];
+  for (const touched of prepared.touchedRecords) {
+    const after = afterMap.get(touched.recordId);
+    if (!after || after.fields?.Progress !== 'Draft') {
+      throw new Error(`Draft transition for record ${touched.recordId} did not verify`);
+    }
+    draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
+  }
+
+  const acceptedAt = new Date().toISOString();
+  const unitReceipt = {
+    schemaVersion: 1,
+    status: 'document_accepted',
+    reviewUnitId: receipt.reviewUnitId,
+    executionJournalPath: receipt.executionJournalPath,
+    executionJournalDigest: receipt.executionJournalDigest,
+    draftRecords,
+    evidence: prepared.evidence,
+    acceptedAt,
+  };
+  const unitReceiptPath = path.join(
+    repoRoot,
+    'tmp',
+    'api-reference-sync',
+    `unit-acceptance-${receipt.reviewUnitId.replace(/[^A-Za-z0-9-]/g, '-')}-${receipt.executionJournalDigest.replace('sha256:', '').slice(0, 16)}.json`,
+  );
+  (io.writeUnitReceipt || ((file, content) => {
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, content);
+  }))(unitReceiptPath, `${JSON.stringify(unitReceipt, null, 2)}\n`);
+
+  const nextSession = recordDocumentAcceptance(session, {
+    ...receipt,
+    draftRecords,
+    unitReceiptPath,
+    unitReceiptDigest: digestSemantic(unitReceipt),
+    acceptedAt,
+  });
+  saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
+  out(`Unit finalized: ${receipt.reviewUnitId} (${draftRecords.length} record(s) WIP→Draft, receipt ${path.basename(unitReceiptPath)})`);
+  return nextSession;
+}
+
 function status(session, sessionPath) {
   const expected = session.reviewUnitManifest?.units?.map((unit) => unit.reviewUnitId).sort() || [];
   const accepted = (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort();
@@ -68,6 +189,7 @@ function status(session, sessionPath) {
     sessionPath,
     sessionId: session.sessionId,
     status: session.status,
+    acceptanceFlow: session.acceptanceFlow || 'legacy',
     reviewUnitManifestDigest: session.reviewUnitManifestDigest,
     acceptedReviewUnitIds: accepted,
     remainingReviewUnitIds: expected.filter((id) => !acceptedSet.has(id)),
@@ -116,7 +238,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }
     if (args.commentsResolved !== true) throw new Error('--comments-resolved is required');
     const touchedRecords = JSON.parse(readFile(path.resolve(args.touchedRecords)));
-    session = recordDocumentAcceptance(session, {
+    const receipt = {
       reviewUnitId: args.reviewUnitId,
       executionJournalPath: path.resolve(args.executionJournal),
       executionJournalDigest: args.executionJournalDigest,
@@ -124,8 +246,51 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       documentLinks: args.documentLinks,
       recordLinks: args.recordLinks,
       commentsResolved: true,
-    });
+    };
+    if ((session.acceptanceFlow || 'legacy') === 'two-gate') {
+      // Two-gate acceptance: this command IS the unit's final acceptance. It
+      // writes the verified WIP→Draft transitions under governance, lands the
+      // per-unit receipt, and finalizes the unit — no campaign gate behind.
+      session = await acceptDocumentTwoGate({
+        session,
+        sessionPath,
+        sessionDigest,
+        receipt,
+        args,
+        io,
+        out,
+      });
+    } else {
+      session = recordDocumentAcceptance(session, receipt);
+      saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+    }
+  } else if (args.command === 'close-session') {
+    // Two-gate close: the campaign-level acceptance gate is retired; the
+    // close runs only when EVERY unit finalized (guarded in the store).
+    for (const required of ['scanStateKey', 'scanStateEntry']) {
+      requireValue(args, required);
+    }
+    const scanStateEntry = JSON.parse(readFile(path.resolve(args.scanStateEntry)));
+    if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
+      throw new Error('--scan-state-entry must point at a JSON object file');
+    }
+    const scanStatePath = path.resolve(args.scanState || path.join(__dirname, '..', 'scan-state.json'));
+    let previousScanState = {};
+    try {
+      previousScanState = JSON.parse((io.readScanState || ((file) => fs.readFileSync(file, 'utf8')))(scanStatePath));
+    } catch {
+      previousScanState = {};
+    }
+    session = closeSession(session, { scanStateKey: args.scanStateKey, scanStateEntry });
+    // Scan state advances before the session save: a crash here is recovered
+    // by rerunning close-session (the merge is idempotent), while the reverse
+    // order would strand a finalized session over an un-advanced scan state.
+    (io.writeScanState || ((file, content) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    }))(scanStatePath, `${JSON.stringify({ ...previousScanState, [args.scanStateKey]: scanStateEntry }, null, 2)}\n`);
     saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+    out(`Review session closed: all ${(session.reviewUnitManifest.units || []).length} unit(s) finalized; scan state ${args.scanStateKey} advanced.`);
   } else if (args.command === 'build-acceptance') {
     session = buildSessionAcceptance(session);
     saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
@@ -157,7 +322,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     out(`Recorded governed decision: ${decision.decisionDigest}`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, close-session, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

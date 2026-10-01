@@ -854,6 +854,11 @@ async function runCli({
             sdkName: args.sdkName,
             track: args.sdkVersion,
             reviewUnitManifest: result.reviewUnitManifest,
+            // Two-gate acceptance flow (2026-10-01 ruling): document
+            // acceptance finalizes the unit (WIP→Draft + per-unit receipt)
+            // and the session closes mechanically once every unit finalized —
+            // no campaign-level acceptance gate.
+            acceptanceFlow: 'two-gate',
             artifacts: {
                 releaseScope: args.releaseScope ? path.resolve(args.releaseScope) : null,
                 referenceContext: args.referenceContext ? path.resolve(args.referenceContext) : null,

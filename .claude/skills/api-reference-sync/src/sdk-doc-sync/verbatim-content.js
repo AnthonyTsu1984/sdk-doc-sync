@@ -13,7 +13,7 @@
 // paragraph separator blanks, or any leading whitespace — including inside
 // code blocks. The declared normalization therefore compares content lines
 // and ignores exactly those tokens.
-// canonicalVersion: 4 — declared normalization applied to BOTH sides:
+// canonicalVersion: 7 — declared normalization applied to BOTH sides:
 //   - drop the leading page-title line (raw_content line 1 is the title);
 //   - drop `[dotenv …]` stdout noise lines captured into dumps;
 //   - drop fence delimiter lines (```/~~~) wherever they appear;
@@ -22,8 +22,21 @@
 //   - drop empty lines (the serializer inserts none);
 //   - strip rendered markup on EVERY content line: link `[text](url)` → text,
 //     bold/italic/inline-code markers, html-unescape entities, leading
-//     heading hashes, bullet markers, and end-of-cell `<br>` in pipe-table
-//     rows.
+//     heading hashes, and bullet markers;
+//   - (v7) canonicalize pipe-table rows to their CELL SEQUENCES on both
+//     sides. raw_content serializes native table blocks as bare cell lines —
+//     one cell per line, no pipe delimiters, no separator row, blank lines
+//     between (verified live on the first table-bearing verbatim page, java
+//     Vector:get response-shape tables, 2026-10-01) — so pipes are table
+//     presentation, cell text is content. An authored row `| a | b |`
+//     canonicalizes to the lines `a`, `b`; separator rows (`| --- | --- |`)
+//     carry no content and drop; end-of-cell `<br>` drops (the established
+//     fixed point). Blank-line dropping (below) then aligns both worlds —
+//     pipe-row tables and cell-line serialization — under one canonical
+//     sequence. Known limitation: an in-cell line break (`a<br>b`) stays a
+//     literal token on the authored side while the serializer emits it as
+//     separate lines — table cells carrying in-cell breaks are a visible
+//     diff until a page needs them.
 // Markup stripping applies inside code content too (v4). The serializer never
 // emits fences, so the observed side cannot be fence-aware: v3 kept the
 // expected side fence-protected and compared literal code markup against an
@@ -63,6 +76,17 @@ function normalizeRefetchedMarkdown(markdown) {
         .split('\n')
         .map((line) => (line.startsWith('|') ? line.replace(/<br>\s*\|/g, ' |') : line))
         .join('\n');
+}
+
+// Splits a markup-stripped pipe row into its canonical cell lines. The
+// separator row (`| --- | --- |`) carries no content and yields nothing;
+// end-of-cell `<br>` drops; empty cells drop (the serializer emits them as
+// blank lines, which the blank-drop below removes anyway).
+function tableRowCells(line) {
+    const trimmed = String(line).trim().replace(/^\|/, '').replace(/\|$/, '');
+    const cells = trimmed.split('|').map((cell) => cell.trim().replace(/<br>\s*$/i, ''));
+    if (cells.length > 0 && cells.every((cell) => /^:?-{2,}:?$/.test(cell))) return [];
+    return cells.filter((cell) => cell !== '');
 }
 
 // Strips the trailing web-content metadata comment and the leading H1 (the
@@ -121,7 +145,14 @@ function canonicalVerbatimLines({ markdown, dropLeadingTitle = false } = {}) {
         // normalizes to the bare bracket: all counts render the same on the
         // docs site and in the converter.
         line = line.replace(/\\+([<>])/g, '$1');
-        if (line.startsWith('|')) line = normalizeRefetchedMarkdown(line);
+        // v7 native-table fixed point: a pipe row (either side — the old
+        // raw_content pipe serialization and the authored markdown share the
+        // shape) becomes its cell sequence; separator rows drop. The line is
+        // already markup-stripped and html-unescaped above.
+        if (line.startsWith('|')) {
+            for (const cell of tableRowCells(line)) out.push(cell);
+            continue;
+        }
         // Web-content alert-callout wrappers are presentation markup, not
         // content: the authored side carries <div class="alert note"> and
         // its closing </div>, the live side renders the enclosed prose as
@@ -166,7 +197,7 @@ function compareVerbatimContent({ expectedContent, rawContent } = {}) {
     return {
         ok: diffs.length === 0,
         invariantId: INVARIANT_ID,
-        canonicalVersion: 6,
+        canonicalVersion: 7,
         expectedLines: expected.length,
         observedLines: observed.length,
         diffs: diffs.slice(0, 20),

@@ -24,7 +24,7 @@ const {
     createApprovalEnvelope,
 } = require('../../doc-ops-core/src/writer-governance');
 const { loadReviewSessionState } = require('../src/sdk-doc-sync/review-session-store');
-const { planPolishBlockEdits } = require('../src/sdk-doc-sync/pr-polish-apply');
+const { planPolishBlockEdits, PolishApplyError } = require('../src/sdk-doc-sync/pr-polish-apply');
 const {
     applyPolishManifest,
     assertPolishPreconditions,
@@ -219,10 +219,19 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
         if (dependencies.patchDocument) {
             await dependencies.patchDocument(documentToken, manifest.replacementContent, 'rebuild');
         } else {
+            // Conversion happens FIRST and must yield blocks before the patch
+            // is allowed to touch the page: patch_document's rebuild deletes
+            // the body before creating, so a zero-block conversion would wipe
+            // the page (incident 2026-10-01: parse_markdown returns { tokens
+            // } — passing the wrapper object produced 0 blocks and the
+            // rebuild deleted without creating).
             const MarkdownToFeishu = require('../src/markdown-to-feishu');
             const renderer = new MarkdownToFeishu({ governance });
-            const tokens = await renderer.parse_markdown(manifest.replacementContent);
+            const { tokens } = await renderer.parse_markdown(manifest.replacementContent);
             const blocks = await renderer.markdown_to_blocks(tokens);
+            if (!Array.isArray(blocks) || blocks.length === 0) {
+                throw new PolishApplyError('PR_POLISH_REBUILD_CONVERSION_EMPTY', 'rebuild conversion produced zero blocks; refusing to patch the live page');
+            }
             journal.observed({
                 schemaVersion: 1,
                 type: 'observed',

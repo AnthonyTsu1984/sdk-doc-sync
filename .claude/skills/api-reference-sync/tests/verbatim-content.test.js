@@ -62,7 +62,7 @@ test('compareVerbatimContent reconciles rendered raw_content through the declare
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded, pageTitle: 'X()' });
     assert.equal(landed.ok, true);
     assert.equal(landed.invariantId, 'api.pr-verbatim-content');
-    assert.equal(landed.canonicalVersion, 6);
+    assert.equal(landed.canonicalVersion, 7);
     assert.deepEqual(landed.diffs, []);
 
     // Code content lines compare exactly: a changed line that landed as code
@@ -156,7 +156,7 @@ test('canonicalization v6 absorbs exactly the tokens the raw_content serializer 
     ].join('\n');
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded });
     assert.equal(landed.ok, true, `expected v4 to absorb serializer-only tokens: ${JSON.stringify(landed.diffs.slice(0, 3))}`);
-    assert.equal(landed.canonicalVersion, 6);
+    assert.equal(landed.canonicalVersion, 7);
 
     // A genuinely missing content line still fails: drop the builder row.
     const missingBuilder = compareVerbatimContent({
@@ -261,10 +261,94 @@ test('canonicalization v6 absorbs stacked backslash escapes before angle bracket
   ].join('\n');
   const landed = compareVerbatimContent({ expectedContent: expected, rawContent: rawLanded });
   assert.equal(landed.ok, true, JSON.stringify(landed.diffs));
-  assert.equal(landed.canonicalVersion, 6);
+  assert.equal(landed.canonicalVersion, 7);
   // Single-escaped forms keep matching too.
   const singleEscaped = 'A list.\n*List\\<String\\>*\n';
   assert.equal(compareVerbatimContent({ expectedContent: singleEscaped, rawContent: 'get()\nA list.\nList<String>\n' }).ok, true);
   // A genuinely different type still fails.
   assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: 'get()\ngetResults (List<Integer>)\npartitionNames(List<String> partitionNames)\n' }).ok, false);
+});
+
+test('v7: native-table cell serialization compares equal to authored pipe rows', () => {
+    const authored = [
+        '# Title()',
+        '',
+        'RETURNS:',
+        '',
+        'Entities by ID.',
+        '',
+        '**RESPONSE SHAPE:**',
+        '',
+        '| field | type | description |',
+        '| --- | --- | --- |',
+        '| getResults | List\\<QueryResp.QueryResult\\> | A list of retrieved entities. |',
+        '| sessionTs | long | The session timestamp of the read. |',
+    ].join('\n');
+    // raw_content serializes native tables as bare cell lines, blank-line
+    // separated, no pipes, no separator row.
+    const rawLanded = [
+        'Title()',
+        '',
+        'RETURNS:',
+        '',
+        'Entities by ID.',
+        '',
+        'RESPONSE SHAPE:',
+        '',
+        '',
+        'field',
+        '',
+        '',
+        'type',
+        '',
+        '',
+        'description',
+        '',
+        '',
+        'getResults',
+        '',
+        '',
+        'List<QueryResp.QueryResult>',
+        '',
+        '',
+        'A list of retrieved entities.',
+        '',
+        '',
+        'sessionTs',
+        '',
+        '',
+        'long',
+        '',
+        '',
+        'The session timestamp of the read.',
+        '',
+    ].join('\n');
+    const comparison = compareVerbatimContent({ expectedContent: authored, rawContent: rawLanded });
+    assert.equal(comparison.ok, true, JSON.stringify(comparison.diffs));
+    assert.equal(comparison.canonicalVersion, 7);
+
+    // The old pipe-row serialization (v6 world) canonicalizes to the same
+    // cell sequence, so both raw_content shapes compare equal.
+    const pipeRowLanded = [
+        'Title()',
+        '',
+        'RETURNS:',
+        '',
+        'Entities by ID.',
+        '',
+        'RESPONSE SHAPE:',
+        '',
+        '| field | type | description |',
+        '| getResults | List<QueryResp.QueryResult> | A list of retrieved entities. |',
+        '| sessionTs | long | The session timestamp of the read. |',
+        '',
+    ].join('\n');
+    const pipeComparison = compareVerbatimContent({ expectedContent: authored, rawContent: pipeRowLanded });
+    assert.equal(pipeComparison.ok, true, JSON.stringify(pipeComparison.diffs));
+
+    // A genuinely altered cell is still a diff.
+    const altered = rawLanded.replace('The session timestamp of the read.', 'Wrong text.');
+    const drift = compareVerbatimContent({ expectedContent: authored, rawContent: altered });
+    assert.equal(drift.ok, false);
+    assert.ok(drift.diffs.some((diff) => diff.observed === 'Wrong text.'));
 });

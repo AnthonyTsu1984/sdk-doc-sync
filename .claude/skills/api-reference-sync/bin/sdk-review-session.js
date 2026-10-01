@@ -188,6 +188,32 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   return nextSession;
 }
 
+// Cross-chat rotation hint (2026-10-01 ruling: one campaign = one canonical
+// session file; chats rotate at ~42% context). Derives the gate a FRESH chat
+// should present next from durable session state alone — no conversation
+// memory required.
+function nextGateOf(session) {
+  if (session.status === 'finalized') return null;
+  // A rollback lease in flight is the wedge: resolving it precedes any new
+  // gate presentation.
+  if (session.activeRollback) {
+    return { gate: 'RESOLVE_ROLLBACK', reviewUnitId: session.activeRollback.reviewUnitId };
+  }
+  const manifestIds = (session.reviewUnitManifest?.units || []).map((unit) => unit.reviewUnitId);
+  const acceptedIds = new Set((session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId));
+  const pendings = Array.isArray(session.pendingExecutions)
+    ? session.pendingExecutions
+    : (session.activeExecution ? [session.activeExecution] : []);
+  if (pendings.length > 0) {
+    return { gate: 'APPROVE_DOCUMENT', reviewUnitId: pendings[pendings.length - 1].reviewUnitId };
+  }
+  const nextUnit = manifestIds.find((id) => !acceptedIds.has(id));
+  if (nextUnit) return { gate: 'APPROVE_WRITE', reviewUnitId: nextUnit };
+  if (session.acceptanceFlow === 'two-gate') return { gate: 'CLOSE_SESSION', reviewUnitId: null };
+  if (!session.acceptanceManifest) return { gate: 'BUILD_ACCEPTANCE', reviewUnitId: null };
+  return { gate: 'APPROVE_ACCEPTANCE', reviewUnitId: null };
+}
+
 function status(session, sessionPath) {
   const expected = session.reviewUnitManifest?.units?.map((unit) => unit.reviewUnitId).sort() || [];
   const accepted = (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort();
@@ -197,6 +223,7 @@ function status(session, sessionPath) {
     sessionId: session.sessionId,
     status: session.status,
     acceptanceFlow: session.acceptanceFlow || 'legacy',
+    nextGate: nextGateOf(session),
     reviewUnitManifestDigest: session.reviewUnitManifestDigest,
     acceptedReviewUnitIds: accepted,
     remainingReviewUnitIds: expected.filter((id) => !acceptedSet.has(id)),

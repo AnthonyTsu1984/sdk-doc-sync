@@ -409,3 +409,104 @@ test('write-approval batches: fewer than 20 units are one batch; 20+ chunk in or
     assert.deepEqual(chunkWriteApprovalBatches([]), []);
     assert.throws(() => chunkWriteApprovalBatches(['a'], { batchSize: 0 }), /positive integer/);
 });
+
+test('nextGate derives the fresh-chat gate from durable state alone', () => {
+    const { status } = require('../bin/sdk-review-session');
+    const sessionPath = '/tmp/unused-session.json';
+    const base = () => createReviewSession({
+        sessionId: 'ng',
+        language: 'node',
+        sdkName: 'sdk',
+        track: 'v1',
+        reviewUnitManifest: manifest(),
+        acceptanceFlow: 'two-gate',
+    });
+
+    // Executed unit awaits document review.
+    const directory = tempDir();
+    const { session: executed, journal } = twoGateSession(directory);
+    assert.deepEqual(status(executed, sessionPath).nextGate, { gate: 'APPROVE_DOCUMENT', reviewUnitId: UNIT_A });
+
+    // Nothing executed: the first unfinalized unit needs a write approval.
+    assert.deepEqual(status(base(), sessionPath).nextGate, { gate: 'APPROVE_WRITE', reviewUnitId: UNIT_A });
+
+    // All units finalized: the mechanical close.
+    const directory2 = tempDir();
+    let fullyFinalized = base();
+    for (const unitId of [UNIT_A, UNIT_B]) {
+        const actionId = unitId.replace(/^review:/, '');
+        const journalU = executionJournal(directory2, { actionId, name: `ng-${actionId.replace(/[^a-z0-9]/gi, '-')}.jsonl` });
+        fullyFinalized = recordDocumentExecution(fullyFinalized, {
+            reviewUnitId: unitId,
+            executionJournalPath: journalU.filePath,
+            executionJournalDigest: journalU.digest,
+            batchContinue: true,
+        });
+        const receipt = {
+            reviewUnitId: unitId,
+            executionJournalPath: journalU.filePath,
+            executionJournalDigest: journalU.digest,
+            touchedRecords: [{ actionId, recordId: `rec-${unitId}`, documentToken: 'doc' }],
+            documentLinks: ['https://example.com/doc'],
+            recordLinks: ['https://example.com/rec'],
+            commentsResolved: true,
+        };
+        const draftRecords = draftRecordsFor(receipt);
+        const unitReceipt = writeUnitReceipt(directory2, receipt, draftRecords);
+        fullyFinalized = recordDocumentAcceptance(fullyFinalized, {
+            ...receipt,
+            draftRecords,
+            unitReceiptPath: unitReceipt.filePath,
+            unitReceiptDigest: unitReceipt.digest,
+        });
+    }
+    assert.deepEqual(status(fullyFinalized, sessionPath).nextGate, { gate: 'CLOSE_SESSION', reviewUnitId: null });
+    const closed = closeSession(fullyFinalized, { scanStateKey: 'node', scanStateEntry: { lastScannedTag: 'v1' } });
+    assert.equal(status(closed, sessionPath).nextGate, null);
+
+    // A rollback lease in flight is the wedge and precedes every other gate.
+    const { session: leased } = twoGateSession(tempDir());
+    const rollbackPath = path.join(directory, 'ng-lease.jsonl');
+    fs.writeFileSync(rollbackPath, '{}\n');
+    const withLease = recordRollbackIntent(executed, {
+        reviewUnitId: UNIT_A,
+        rollbackManifestDigest: 'sha256:rm',
+        rollbackJournalPath: rollbackPath,
+    });
+    void leased;
+    assert.deepEqual(status(withLease, sessionPath).nextGate, { gate: 'RESOLVE_ROLLBACK', reviewUnitId: UNIT_A });
+
+    // Legacy semantics: all accepted without a manifest → build acceptance.
+    const legacyAllAccepted = (() => {
+        const dir = tempDir();
+        const session = createReviewSession({
+            sessionId: 'legacy-ng',
+            language: 'node',
+            sdkName: 'sdk',
+            track: 'v1',
+            reviewUnitManifest: {
+                schemaVersion: 1,
+                manifestDigest: 'sha256:legacy-ng',
+                units: [{ reviewUnitId: UNIT_A, documentStableId: 'node:Collections:a' }],
+                unassignedResourceActionIds: [],
+            },
+        });
+        const journalL = executionJournal(dir);
+        let s = recordDocumentExecution(session, {
+            reviewUnitId: UNIT_A,
+            executionJournalPath: journalL.filePath,
+            executionJournalDigest: journalL.digest,
+        });
+        s = recordDocumentAcceptance(s, {
+            reviewUnitId: UNIT_A,
+            executionJournalPath: journalL.filePath,
+            executionJournalDigest: journalL.digest,
+            touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc' }],
+            documentLinks: ['https://example.com/doc'],
+            recordLinks: ['https://example.com/rec'],
+            commentsResolved: true,
+        });
+        return s;
+    })();
+    assert.deepEqual(status(legacyAllAccepted, sessionPath).nextGate, { gate: 'BUILD_ACCEPTANCE', reviewUnitId: null });
+});

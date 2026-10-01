@@ -449,3 +449,29 @@ Use these minimal conversations to test the channel:
 21. Rollback stops partially. Bot preserves the active execution or accepted receipt, leaves scan state unchanged, and requests journal reconciliation without replaying destructive actions.
 22. User selects a subset of an existing write batch. Bot rejects the stale digest, regenerates a reduced `proposedExecutionBatch` whose semantic actions are exactly `reject_stale_digest` and `regenerate_batch`, and stops for a new exact `APPROVE_WRITES`.
 23. User requests partial release acceptance. Bot blocks finalization, keeps all records and scan state unchanged, and reports `APPROVE_ACCEPTANCE` as the next missing gate until every unit is accepted and a complete acceptance-manifest digest can be approved.
+
+## Context Rotation (Session Handoff)
+
+One campaign = ONE canonical review-session file; chats rotate, the file
+persists. A chat approaching its context budget (~42%) hands off at a GATE
+BOUNDARY only:
+
+1. Finish the current gate so its artifacts are durable on disk: scoped
+   dry-run presentation (re-presentable), execution journal + session
+   `pendingExecutions` entry (APPROVE_WRITE consumed), polish provenance +
+   journal, or the per-unit acceptance receipt + finalized unit
+   (APPROVE_DOCUMENT consumed). Never rotate mid-gate when a durable
+   artifact is one step away.
+2. An approval that has NOT yet produced its durable artifact does not
+   survive rotation: if the operator approved a write and the execution has
+   not run, the fresh chat RE-PRESENTS the APPROVE_WRITE gate (replan the
+   scoped dry-run against current live state first — the old batch is stale
+   by approval time anyway). Same for an approved-but-unrun acceptance.
+3. The fresh chat's entry point is always the same, with no conversation
+   memory: `sdk-doc-sync.js --resume-session <file>` → `sdk-review-session.js
+   status` → act on `nextGate` (the durable next gate: RESOLVE_ROLLBACK /
+   APPROVE_DOCUMENT / APPROVE_WRITE / CLOSE_SESSION, or the legacy
+   BUILD_ACCEPTANCE / APPROVE_ACCEPTANCE) → replan the unit scoped dry-run
+   immediately before any write approval.
+4. scan-state advances ONLY at the campaign session's `close-session` (two
+   gate: every unit finalized) — never per chat, never per unit batch.

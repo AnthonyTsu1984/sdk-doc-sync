@@ -62,7 +62,7 @@ test('compareVerbatimContent reconciles rendered raw_content through the declare
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded, pageTitle: 'X()' });
     assert.equal(landed.ok, true);
     assert.equal(landed.invariantId, 'api.pr-verbatim-content');
-    assert.equal(landed.canonicalVersion, 5);
+    assert.equal(landed.canonicalVersion, 6);
     assert.deepEqual(landed.diffs, []);
 
     // Code content lines compare exactly: a changed line that landed as code
@@ -97,7 +97,7 @@ test('the raw_content title line is dropped even when the caller cannot name it'
     assert.equal(comparison.ok, true);
 });
 
-test('canonicalization v5 absorbs exactly the tokens the raw_content serializer cannot carry', () => {
+test('canonicalization v6 absorbs exactly the tokens the raw_content serializer cannot carry', () => {
     // Landed-shape fixture derived from the first real code-bearing verbatim
     // unit (cpp Management/ListRefreshExternalCollectionJobs, PR #1151): the
     // upstream markdown carries fences, bold labels, backticked builders,
@@ -156,7 +156,7 @@ test('canonicalization v5 absorbs exactly the tokens the raw_content serializer 
     ].join('\n');
     const landed = compareVerbatimContent({ expectedContent: upstream, rawContent: rawLanded });
     assert.equal(landed.ok, true, `expected v4 to absorb serializer-only tokens: ${JSON.stringify(landed.diffs.slice(0, 3))}`);
-    assert.equal(landed.canonicalVersion, 5);
+    assert.equal(landed.canonicalVersion, 6);
 
     // A genuinely missing content line still fails: drop the builder row.
     const missingBuilder = compareVerbatimContent({
@@ -203,7 +203,7 @@ test('alert-callout wrapper lines normalize away on both sides', () => {
   assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: divergent }).ok, false);
 });
 
-test('canonicalization v5 strips inline-code markers inside code on both sides', () => {
+test('canonicalization v6 strips inline-code markers inside code on both sides', () => {
   // Real-world fixture: java alterCollectionField (milvus-docs PR-verbatim)
   // carries a fenced code comment whose text contains escaped backticks.
   // raw_content never emits the fence, so the observed side always ran the
@@ -237,4 +237,34 @@ test('canonicalization v5 strips inline-code markers inside code on both sides',
   // A genuinely altered code line still fails.
   const drifted = landedFull.replace('max_length", "512', 'max_length", "256');
   assert.equal(compareVerbatimContent({ expectedContent: upstream, rawContent: drifted }).ok, false);
+});
+
+test('canonicalization v6 absorbs stacked backslash escapes before angle brackets', () => {
+  // Real-world fixture: java Vector:get RETURNS rows carry the upstream MDX
+  // authoring artifact `List\\\\<QueryResp.QueryResult\\\\>` (four
+  // backslashes; the same file mixes clean `List<String>` rows), while the
+  // rendered page and the converter output carry the bare bracket. Built
+  // from char codes to keep the backslash counts explicit.
+  const BS = String.fromCharCode(92);
+  const four = BS.repeat(4);
+  const expected = [
+    '# get()',
+    '',
+    '- **getResults** (*List' + four + '<QueryResp.QueryResult' + four + '>*)',
+    '',
+    '- `partitionNames(List<String> partitionNames)`',
+  ].join('\n');
+  const rawLanded = [
+    'get()',
+    'getResults (List<QueryResp.QueryResult>)',
+    'partitionNames(List<String> partitionNames)',
+  ].join('\n');
+  const landed = compareVerbatimContent({ expectedContent: expected, rawContent: rawLanded });
+  assert.equal(landed.ok, true, JSON.stringify(landed.diffs));
+  assert.equal(landed.canonicalVersion, 6);
+  // Single-escaped forms keep matching too.
+  const singleEscaped = 'A list.\n*List\\<String\\>*\n';
+  assert.equal(compareVerbatimContent({ expectedContent: singleEscaped, rawContent: 'get()\nA list.\nList<String>\n' }).ok, true);
+  // A genuinely different type still fails.
+  assert.equal(compareVerbatimContent({ expectedContent: expected, rawContent: 'get()\ngetResults (List<Integer>)\npartitionNames(List<String> partitionNames)\n' }).ok, false);
 });

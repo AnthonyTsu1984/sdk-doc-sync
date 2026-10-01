@@ -14,7 +14,9 @@ const {
     acceptanceFlowOf,
     closeSession,
     createReviewSession,
+    migrateSessionToTwoGate,
     prepareDocumentAcceptance,
+    transferUnitCompletion,
     recordDocumentAcceptance,
     recordDocumentExecution,
     recordDocumentRollback,
@@ -509,4 +511,242 @@ test('nextGate derives the fresh-chat gate from durable state alone', () => {
         return s;
     })();
     assert.deepEqual(status(legacyAllAccepted, sessionPath).nextGate, { gate: 'BUILD_ACCEPTANCE', reviewUnitId: null });
+});
+
+function legacyAcceptedSession(directory, { units = [UNIT_A] } = {}) {
+    let session = createReviewSession({
+        sessionId: 'legacy-migrate',
+        language: 'node',
+        sdkName: 'sdk',
+        track: 'v1',
+        reviewUnitManifest: {
+            schemaVersion: 1,
+            manifestDigest: 'sha256:legacy-migrate',
+            units: units.map((unitId) => ({ reviewUnitId: unitId, documentStableId: unitId.replace(/^review:/, '') })),
+            unassignedResourceActionIds: [],
+        },
+    });
+    const journals = new Map();
+    for (const unitId of units) {
+        const actionId = unitId.replace(/^review:/, '');
+        const journal = executionJournal(directory, { actionId, name: `mig-${actionId.replace(/[^a-z0-9]/gi, '-')}.jsonl` });
+        journals.set(unitId, journal);
+        session = recordDocumentExecution(session, {
+            reviewUnitId: unitId,
+            executionJournalPath: journal.filePath,
+            executionJournalDigest: journal.digest,
+            batchContinue: true,
+        });
+        session = recordDocumentAcceptance(session, {
+            reviewUnitId: unitId,
+            executionJournalPath: journal.filePath,
+            executionJournalDigest: journal.digest,
+            touchedRecords: [{ actionId, recordId: `rec-${unitId}`, documentToken: 'doc' }],
+            documentLinks: ['https://example.com/doc'],
+            recordLinks: ['https://example.com/rec'],
+            commentsResolved: true,
+        });
+    }
+    return { session, journals };
+}
+
+function migrationEntry(journal, unitId) {
+    const touchedRecords = [{ actionId: unitId.replace(/^review:/, ''), recordId: `rec-${unitId}`, documentToken: 'doc' }];
+    const draftRecords = touchedRecords.map((record) => ({ recordId: record.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true }));
+    const receipt = {
+        schemaVersion: 1,
+        status: 'document_accepted',
+        reviewUnitId: unitId,
+        executionJournalPath: journal.filePath,
+        executionJournalDigest: journal.digest,
+        touchedRecords,
+        documentLinks: ['https://example.com/doc'],
+        recordLinks: ['https://example.com/rec'],
+        draftRecords,
+        migratedFromLegacy: true,
+        acceptedAt: '2026-10-01T02:00:00.000Z',
+    };
+    const filePath = path.join(path.dirname(journal.filePath), `mig-receipt-${unitId.replace(/[^a-z0-9-]/gi, '-')}.json`);
+    fs.writeFileSync(filePath, `${JSON.stringify(receipt, null, 2)}\n`);
+    return {
+        reviewUnitId: unitId,
+        executionJournalDigest: journal.digest,
+        draftRecords,
+        unitReceiptPath: filePath,
+        unitReceiptDigest: digestSemantic(receipt),
+        finalizedAt: '2026-10-01T02:00:00.000Z',
+    };
+}
+
+test('migration stamps every accepted unit with two-gate evidence and flips the flow', () => {
+    const directory = tempDir();
+    const { session, journals } = legacyAcceptedSession(directory, { units: [UNIT_A, UNIT_B] });
+    const units = [UNIT_A, UNIT_B].map((unitId) => migrationEntry(journals.get(unitId), unitId));
+    const migrated = migrateSessionToTwoGate(session, { units });
+    assert.equal(migrated.acceptanceFlow, 'two-gate');
+    assert.ok(migrated.migratedToTwoGateAt);
+    for (const unitId of [UNIT_A, UNIT_B]) {
+        assert.equal(unitStatusOf(migrated, unitId), 'finalized');
+        const entry = migrated.acceptedReviewUnits.find((item) => item.reviewUnitId === unitId);
+        assert.equal(entry.draftRecords.length, 1);
+        assert.ok(entry.unitReceiptDigest.startsWith('sha256:'));
+    }
+    // With every manifest unit finalized by the migration, the mechanical
+    // close is reachable — no campaign gate in between.
+    const closed = closeSession(migrated, { scanStateKey: 'node', scanStateEntry: { lastScannedTag: 'v1' } });
+    assert.equal(closed.status, 'finalized');
+    assert.equal(closed.scanStateUpdated, true);
+});
+
+test('migration refuses partial coverage, double migration, and digest drift', () => {
+    const directory = tempDir();
+    const { session, journals } = legacyAcceptedSession(directory, { units: [UNIT_A, UNIT_B] });
+    // Partial coverage is all-or-nothing.
+    assert.throws(
+        () => migrateSessionToTwoGate(session, { units: [migrationEntry(journals.get(UNIT_A), UNIT_A)] }),
+        (error) => error.code === 'MIGRATION_INCOMPLETE',
+    );
+    // Journal digest drift refuses.
+    const drifted = migrationEntry(journals.get(UNIT_A), UNIT_A);
+    assert.throws(
+        () => migrateSessionToTwoGate(session, {
+            units: [drifted, { ...migrationEntry(journals.get(UNIT_B), UNIT_B), executionJournalDigest: 'sha256:' + '3'.repeat(64) }],
+        }),
+        /does not match the accepted unit/,
+    );
+    // Migrating twice refuses.
+    const migrated = migrateSessionToTwoGate(session, { units: [drifted, migrationEntry(journals.get(UNIT_B), UNIT_B)] });
+    assert.throws(
+        () => migrateSessionToTwoGate(migrated, { units: [drifted, migrationEntry(journals.get(UNIT_B), UNIT_B)] }),
+        (error) => error.code === 'ACCEPTANCE_FLOW_ALREADY_TWO_GATE',
+    );
+});
+
+test('transfer marks a rolled-back unit accepted from the external receipt', () => {
+    const directory = tempDir();
+    // Two-unit manifest: UNIT_A accepted (legacy), UNIT_B rolled back then
+    // finalized in the "external" session.
+    let session = createReviewSession({
+        sessionId: 'legacy-migrate',
+        language: 'node',
+        sdkName: 'sdk',
+        track: 'v1',
+        reviewUnitManifest: manifest(),
+    });
+    const journalA = executionJournal(directory, { actionId: 'node:Collections:a', name: 'tr-a.jsonl' });
+    session = recordDocumentExecution(session, {
+        reviewUnitId: UNIT_A,
+        executionJournalPath: journalA.filePath,
+        executionJournalDigest: journalA.digest,
+    });
+    session = recordDocumentAcceptance(session, {
+        reviewUnitId: UNIT_A,
+        executionJournalPath: journalA.filePath,
+        executionJournalDigest: journalA.digest,
+        touchedRecords: [{ actionId: 'node:Collections:a', recordId: 'rec-a', documentToken: 'doc' }],
+        documentLinks: ['https://example.com/doc'],
+        recordLinks: ['https://example.com/rec'],
+        commentsResolved: true,
+    });
+    // UNIT_B: executed here, rolled back, then re-executed and finalized ELSEWHERE.
+    const originalJournal = executionJournal(directory, { actionId: 'node:Collections:b', name: 'tr-original.jsonl' });
+    let withExecution = recordDocumentExecution(session, {
+        reviewUnitId: UNIT_B,
+        executionJournalPath: originalJournal.filePath,
+        executionJournalDigest: originalJournal.digest,
+        batchContinue: true,
+    });
+    const rollbackManifest = 'sha256:tr-rollback-manifest';
+    const binding = {
+        schemaVersion: 1,
+        operation: 'rollback-document',
+        rollbackManifestDigest: rollbackManifest,
+        originalExecutionJournalDigest: originalJournal.digest,
+    };
+    const rollbackEntries = [
+        { ...binding, type: 'prepared', actionId: 'node:Collections:b' },
+        { ...binding, type: 'observed', actionId: 'node:Collections:b', status: 'success', verified: true },
+        { ...binding, type: 'completion', status: 'rolled_back', completionSentinel: true, scanStateUpdated: false, reviewUnitId: UNIT_B },
+    ];
+    const rollbackPath = path.join(directory, 'tr-rollback.jsonl');
+    fs.writeFileSync(rollbackPath, `${rollbackEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+    withExecution = recordRollbackIntent(withExecution, {
+        reviewUnitId: UNIT_B,
+        rollbackManifestDigest: rollbackManifest,
+        rollbackJournalPath: rollbackPath,
+    });
+    const rolledBack = recordDocumentRollback(withExecution, {
+        reviewUnitId: UNIT_B,
+        rollbackJournalPath: rollbackPath,
+        rollbackJournalDigest: digestSemantic(rollbackEntries),
+    });
+    // The external session re-executed (fresh journal — different batch bytes,
+    // hence a different digest than the rolled-back original) and finalized.
+    const externalEntries = [
+        { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:batch-external', actionId: 'node:Collections:b', invariantAttestationIds: [VERBATIM_INVARIANT_ID] },
+        { schemaVersion: 1, type: 'tree-delta', actionId: 'node:Collections:b', invariantId: TREE_DELTA_INVARIANT_ID, decision: 'PASS', ok: true },
+        { schemaVersion: 1, type: 'content-fidelity', actionId: 'node:Collections:b', invariantId: VERBATIM_INVARIANT_ID, decision: 'PASS', ok: true },
+        { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-external', actionId: 'node:Collections:b', status: 'success', verified: true },
+        { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-external', status: 'executed', completionSentinel: true },
+    ];
+    const externalJournalPath = path.join(directory, 'tr-external.jsonl');
+    fs.writeFileSync(externalJournalPath, `${externalEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+    const externalJournal = { filePath: externalJournalPath, digest: digestSemantic(externalEntries) };
+    const touchedRecords = [{ actionId: 'node:Collections:b', recordId: 'rec-external', documentToken: 'doc' }];
+    const externalReceipt = {
+        schemaVersion: 1,
+        status: 'document_accepted',
+        reviewUnitId: UNIT_B,
+        executionJournalPath: externalJournal.filePath,
+        executionJournalDigest: externalJournal.digest,
+        touchedRecords,
+        documentLinks: ['https://example.com/ext-doc'],
+        recordLinks: ['https://example.com/ext-rec'],
+        draftRecords: touchedRecords.map((record) => ({ recordId: record.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true })),
+        acceptedAt: '2026-10-01T03:00:00.000Z',
+    };
+    const receiptPath = path.join(directory, 'tr-external-receipt.json');
+    fs.writeFileSync(receiptPath, `${JSON.stringify(externalReceipt, null, 2)}\n`);
+    const transferred = transferUnitCompletion(rolledBack, {
+        reviewUnitId: UNIT_B,
+        unitReceiptPath: receiptPath,
+        unitReceiptDigest: digestSemantic(externalReceipt),
+        draftRecords: externalReceipt.draftRecords,
+        transferredAt: '2026-10-01T03:30:00.000Z',
+    });
+    assert.equal(unitStatusOf(transferred, UNIT_B), 'finalized');
+    const entry = transferred.acceptedReviewUnits.find((item) => item.reviewUnitId === UNIT_B);
+    assert.equal(entry.transferredAt, '2026-10-01T03:30:00.000Z');
+    assert.equal(entry.executionJournalDigest, externalJournal.digest, 'the transfer binds the EXTERNAL re-execution journal');
+    // A receipt pinning the rolled-back digest refuses.
+    const staleReceipt = { ...externalReceipt, executionJournalDigest: originalJournal.digest };
+    const stalePath = path.join(directory, 'tr-stale-receipt.json');
+    fs.writeFileSync(stalePath, `${JSON.stringify(staleReceipt, null, 2)}\n`);
+    assert.throws(
+        () => transferUnitCompletion(rolledBack, {
+            reviewUnitId: UNIT_B,
+            unitReceiptPath: stalePath,
+            unitReceiptDigest: digestSemantic(staleReceipt),
+        }),
+        /already rolled back/,
+    );
+    // Double transfer refuses.
+    assert.throws(
+        () => transferUnitCompletion(transferred, {
+            reviewUnitId: UNIT_B,
+            unitReceiptPath: receiptPath,
+            unitReceiptDigest: digestSemantic(externalReceipt),
+        }),
+        /already accepted/,
+    );
+    // A pending local execution must go through the document gate instead.
+    const { session: pendingSession } = twoGateSession(tempDir());
+    assert.throws(
+        () => transferUnitCompletion(pendingSession, {
+            reviewUnitId: UNIT_A,
+            unitReceiptPath: receiptPath,
+            unitReceiptDigest: digestSemantic(externalReceipt),
+        }),
+        /pending local execution/,
+    );
 });

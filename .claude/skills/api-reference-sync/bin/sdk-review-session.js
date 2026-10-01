@@ -9,15 +9,19 @@ const {
   buildSessionAcceptance,
   closeSession,
   loadReviewSessionState,
+  migrateSessionToTwoGate,
   prepareDocumentAcceptance,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
   recordDocumentChangesRequested,
   recordReviewDecision,
   saveReviewSession,
+  transferUnitCompletion,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { normalizedTargetsValue } = require('../src/sdk-doc-sync/record-state');
+const { deriveUnitEvidence } = require('../src/sdk-doc-sync/unit-evidence');
+const { executionTargetsBaseline } = require('../src/sdk-doc-sync/record-state');
 
 function parseArgs(argv) {
   const args = { command: argv[2] || null, documentLinks: [], recordLinks: [] };
@@ -32,6 +36,8 @@ function parseArgs(argv) {
     else if (argument === '--document-link' && argv[index + 1]) args.documentLinks.push(argv[++index]);
     else if (argument === '--record-link' && argv[index + 1]) args.recordLinks.push(argv[++index]);
     else if (argument === '--comments-resolved') args.commentsResolved = true;
+    else if (argument === '--approve-digest' && argv[index + 1]) args.approveDigest = argv[++index];
+    else if (argument === '--external-receipt' && argv[index + 1]) args.externalReceipt = argv[++index];
     else if (argument === '--base-token' && argv[index + 1]) args.baseToken = argv[++index];
     else if (argument === '--table-id' && argv[index + 1]) args.tableId = argv[++index];
     else if (argument === '--scan-state' && argv[index + 1]) args.scanState = argv[++index];
@@ -67,6 +73,210 @@ function parseArgs(argv) {
 
 function requireValue(args, name) {
   if (!args[name]) throw new Error(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
+}
+
+function bitableWriterFor(args, io) {
+  const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+  const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
+  return io.bitableWriter || new BitableWriter({
+    baseToken: args.baseToken,
+    tableId: args.tableId || undefined,
+    governance: new WriterGovernance({ skill: 'api-reference-sync', operation: 'two-gate-migration' }),
+  });
+}
+
+// Stock migration (2026-10-01 ruling: continue, don't rebuild): the operator
+// gate presents the FULL list of accepted units and their records once; the
+// approval digest binds that exact plan. The run verifies every unit's
+// journal evidence and every record's live WIP state and Targets baseline
+// BEFORE any write, then performs the governed WIP→Draft transitions, lands
+// a digest-bound per-unit receipt, and flips the session to the two-gate
+// flow via the store transition.
+async function runMigration({ session, sessionPath, sessionDigest, args, io, out }) {
+  if ((session.acceptanceFlow || 'legacy') !== 'legacy') {
+    throw new Error('Session is already on the two-gate acceptance flow');
+  }
+  const plan = (session.acceptedReviewUnits || []).map((unit) => ({
+    reviewUnitId: unit.reviewUnitId,
+    executionJournalDigest: unit.executionJournalDigest,
+    executionJournalPath: unit.executionJournalPath,
+    touchedRecords: unit.touchedRecords || [],
+  })).sort((left, right) => left.reviewUnitId.localeCompare(right.reviewUnitId));
+  if (plan.length === 0) throw new Error('Session has no accepted units to migrate');
+  const planDigest = digestSemantic({ schemaVersion: 1, kind: 'migrate-to-two-gate', sessionId: session.sessionId, units: plan });
+  if (!args.approveDigest) {
+    out(`Migration plan: ${plan.length} accepted unit(s), ${plan.reduce((sum, unit) => sum + unit.touchedRecords.length, 0)} record(s)`);
+    for (const unit of plan) {
+      for (const record of unit.touchedRecords) {
+        out(`- ${unit.reviewUnitId} record ${record.recordId} doc ${record.documentToken || '?'}`);
+      }
+    }
+    out(`Plan digest: ${planDigest}`);
+    out('Reply exactly: MIGRATE_TO_TWO_GATE ' + planDigest.slice(0, 18) + '… or rerun with --approve-digest ' + planDigest);
+    return { plan, planDigest, dryRun: true };
+  }
+  if (args.approveDigest !== planDigest) {
+    throw new Error(`Migration plan digest mismatch: the presented plan is ${planDigest}, got ${args.approveDigest}`);
+  }
+
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  const { WriterGovernance, createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
+  const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
+  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'two-gate-migration' });
+  const writer = bitableWriterFor(args, io);
+
+  // Pre-write verification across ALL units before any mutation: journal
+  // evidence derives, every record is live at WIP, Targets unchanged from
+  // the journal's rollback capsule.
+  const baselines = new Map();
+  for (const unit of plan) {
+    const journalPath = path.resolve(unit.executionJournalPath);
+    const entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+    if (digestSemantic(entries) !== unit.executionJournalDigest) {
+      throw new Error(`Journal digest mismatch for ${unit.reviewUnitId}`);
+    }
+    deriveUnitEvidence({ unit: { reviewUnitId: unit.reviewUnitId, touchedRecords: unit.touchedRecords }, entries });
+    baselines.set(unit.reviewUnitId, executionTargetsBaseline(entries));
+  }
+  const records = await writer.listRecords({ pageSize: 500 });
+  const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
+  for (const unit of plan) {
+    const baseline = baselines.get(unit.reviewUnitId);
+    for (const touched of unit.touchedRecords) {
+      const record = recordMap.get(touched.recordId);
+      if (!record) throw new Error(`Migration record is missing: ${touched.recordId} (${unit.reviewUnitId})`);
+      if (record.fields?.Progress !== 'WIP') {
+        throw new Error(`Migration record ${touched.recordId} (${unit.reviewUnitId}) must be WIP before the Draft transition, got ${record.fields?.Progress || '(blank)'}`);
+      }
+      const expected = baseline.get(touched.actionId) || [];
+      const actual = normalizedTargetsValue(record?.fields?.Targets);
+      if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+        throw new Error(`Migration record ${touched.recordId} (${unit.reviewUnitId}) Targets drifted from the execution baseline (expected [${expected.join(', ')}], got [${actual.join(', ')}])`);
+      }
+    }
+  }
+
+  const targets = plan.flatMap((unit) => unit.touchedRecords.map((record) => record.recordId));
+  governance.bindApproval({
+    batchDigest: planDigest,
+    actionCount: targets.length,
+    targets,
+    sideEffects: ['bitable.update'],
+    approval: createApprovalEnvelope({
+      skill: 'api-reference-sync',
+      operation: 'two-gate-migration',
+      batchDigest: planDigest,
+      actionCount: targets.length,
+      targets,
+      sideEffects: ['bitable.update'],
+      decision: 'approved',
+    }),
+    invariantAttestations: [],
+    enforceTargets: true,
+  });
+  governance.bindRunManifest(createRunManifest({
+    skill: 'api-reference-sync',
+    skillVersion: 'api-reference-sync/two-gate-migration@1',
+    repoRoot,
+    batchDigest: planDigest,
+    sessionDigest: `two-gate-migration:${session.sessionId}`,
+  }), { repoRoot });
+  writeRunManifestArtifact(createRunManifest({
+    skill: 'api-reference-sync',
+    skillVersion: 'api-reference-sync/two-gate-migration@1',
+    repoRoot,
+    batchDigest: planDigest,
+    sessionDigest: `two-gate-migration:${session.sessionId}`,
+  }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', 'run-manifest-two-gate-migration.json') });
+
+  const convertedAt = new Date().toISOString();
+  const migrations = [];
+  for (const unit of plan) {
+    const draftRecords = [];
+    for (const touched of unit.touchedRecords) {
+      await writer.updateRecord(touched.recordId, { progress: 'Draft' });
+      draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
+    }
+    const afterRecords = await writer.listRecords({ pageSize: 500 });
+    const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
+    for (const draft of draftRecords) {
+      const after = afterMap.get(draft.recordId);
+      if (!after || after.fields?.Progress !== 'Draft') {
+        throw new Error(`Draft transition for record ${draft.recordId} did not verify (${unit.reviewUnitId})`);
+      }
+    }
+    const receipt = {
+      schemaVersion: 1,
+      status: 'document_accepted',
+      reviewUnitId: unit.reviewUnitId,
+      executionJournalPath: unit.executionJournalPath,
+      executionJournalDigest: unit.executionJournalDigest,
+      touchedRecords: unit.touchedRecords,
+      documentLinks: [],
+      recordLinks: [],
+      draftRecords,
+      migratedFromLegacy: true,
+      acceptedAt: convertedAt,
+    };
+    const acceptedEntry = session.acceptedReviewUnits.find((item) => item.reviewUnitId === unit.reviewUnitId);
+    receipt.documentLinks = acceptedEntry.documentLinks || [];
+    receipt.recordLinks = acceptedEntry.recordLinks || [];
+    const unitReceiptPath = path.join(repoRoot, 'tmp', 'api-reference-sync', `unit-acceptance-${unit.reviewUnitId.replace(/[^A-Za-z0-9-]/g, '-')}-${unit.executionJournalDigest.replace('sha256:', '').slice(0, 16)}.json`);
+    (io.writeUnitReceipt || ((file, content) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    }))(unitReceiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+    migrations.push({
+      reviewUnitId: unit.reviewUnitId,
+      executionJournalDigest: unit.executionJournalDigest,
+      draftRecords,
+      unitReceiptPath,
+      unitReceiptDigest: digestSemantic(receipt),
+      finalizedAt: convertedAt,
+    });
+    out(`Migrated: ${unit.reviewUnitId} (${draftRecords.length} record(s) WIP→Draft)`);
+  }
+
+  const nextSession = migrateSessionToTwoGate(session, { units: migrations, convertedAt });
+  saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
+  out(`Migration complete: ${migrations.length} unit(s) finalized, acceptance flow flipped to two-gate.`);
+  return { session: nextSession, migrations, planDigest };
+}
+
+// Cross-session completion transfer: verify the external receipt, the live
+// Draft states, and the Targets baseline, then mark the unit accepted here.
+async function runTransfer({ session, sessionPath, sessionDigest, args, io, out }) {
+  const receiptFile = path.resolve(args.externalReceipt);
+  const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
+  const writer = bitableWriterFor(args, io);
+  const entries = fs.readFileSync(path.resolve(receipt.executionJournalPath), 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
+  if (digestSemantic(entries) !== receipt.executionJournalDigest) {
+    throw new Error(`External receipt journal digest mismatch for ${args.reviewUnitId}`);
+  }
+  const baseline = executionTargetsBaseline(entries);
+  const records = await writer.listRecords({ pageSize: 500 });
+  const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
+  const draftRecords = (receipt.touchedRecords || []).map((touched) => {
+    const record = recordMap.get(touched.recordId);
+    if (!record || record.fields?.Progress !== 'Draft') {
+      throw new Error(`Transfer record ${touched.recordId} is not at Draft live state`);
+    }
+    const expected = baseline.get(touched.actionId) || [];
+    const actual = normalizedTargetsValue(record?.fields?.Targets);
+    if (JSON.stringify(actual) !== JSON.stringify(expected)) {
+      throw new Error(`Transfer record ${touched.recordId} Targets drifted from the journal baseline`);
+    }
+    return { recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true };
+  });
+  const nextSession = transferUnitCompletion(session, {
+    reviewUnitId: args.reviewUnitId,
+    unitReceiptPath: receiptFile,
+    unitReceiptDigest: digestSemantic(receipt),
+    draftRecords,
+  });
+  saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
+  out(`Transferred completion: ${args.reviewUnitId} (finalized in this session from the external receipt)`);
+  return { session: nextSession };
 }
 
 // Two-gate document acceptance (2026-10-01 ruling): pre-write validation,
@@ -250,6 +460,26 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   const { session: loadedSession, sessionDigest } = loadReviewSessionState(sessionPath);
   let session = loadedSession;
 
+  if (args.command === 'migrate-to-two-gate') {
+    requireValue(args, 'session');
+    if (!args.baseToken && !io.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
+    const result = await runMigration({ session, sessionPath, sessionDigest, args, io, out });
+    if (result.dryRun) return { session, summary: status(session, sessionPath) };
+    const summary = status(result.session, sessionPath);
+    if (args.json) out(JSON.stringify(summary, null, 2));
+    return { session: result.session, summary };
+  }
+
+  if (args.command === 'transfer-unit-completion') {
+    for (const required of ['session', 'reviewUnitId', 'externalReceipt', 'baseToken']) {
+      requireValue(args, required);
+    }
+    const result = await runTransfer({ session, sessionPath, sessionDigest, args, io, out });
+    const summary = status(result.session, sessionPath);
+    if (args.json) out(JSON.stringify(summary, null, 2));
+    return { session: result.session, summary };
+  }
+
   if (args.command === 'request-document-changes') {
     for (const required of ['reviewUnitId']) {
       requireValue(args, required);
@@ -356,7 +586,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     out(`Recorded governed decision: ${decision.decisionDigest}`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, close-session, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

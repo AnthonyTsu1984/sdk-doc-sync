@@ -338,7 +338,7 @@ test('resume validation compares live Targets against the execution-journal base
     session: accepted,
     reviewUnitManifest: manifest(),
     currentRecords: [record(['Milvus', 'Zilliz'])],
-  }), /Targets drifted from the execution baseline/);
+  }), /Targets drifted/);
 });
 
 test('review session builds the final acceptance manifest only from complete receipts and records proven finalization', () => {

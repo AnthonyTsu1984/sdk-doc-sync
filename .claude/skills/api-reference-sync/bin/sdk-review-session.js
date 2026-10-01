@@ -120,10 +120,14 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
   }
 
   const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
-  const { WriterGovernance, createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
+  const { createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
   const { createRunManifest, writeRunManifestArtifact } = require('../../doc-ops-core/src/run-manifest');
-  const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'two-gate-migration' });
   const writer = bitableWriterFor(args, io);
+  // Bind on the WRITER's own governance — a separate instance would carry
+  // the approval the writer never sees (pilot lesson, same class as the
+  // document-acceptance binding fix).
+  const governance = writer.governance;
+  if (!governance?.bindApproval) throw new Error('Migration writer must expose a bindable governance');
 
   // Pre-write verification across ALL units before any mutation: journal
   // evidence derives, every record is live at WIP, Targets unchanged from
@@ -247,6 +251,7 @@ async function runMigration({ session, sessionPath, sessionDigest, args, io, out
 // Draft states, and the Targets baseline, then mark the unit accepted here.
 async function runTransfer({ session, sessionPath, sessionDigest, args, io, out }) {
   const receiptFile = path.resolve(args.externalReceipt);
+  const touchedRecords = JSON.parse(fs.readFileSync(path.resolve(args.touchedRecords), 'utf8'));
   const receipt = JSON.parse(fs.readFileSync(receiptFile, 'utf8'));
   const writer = bitableWriterFor(args, io);
   const entries = fs.readFileSync(path.resolve(receipt.executionJournalPath), 'utf8').trim().split('\n').filter(Boolean).map((line) => JSON.parse(line));
@@ -256,7 +261,7 @@ async function runTransfer({ session, sessionPath, sessionDigest, args, io, out 
   const baseline = executionTargetsBaseline(entries);
   const records = await writer.listRecords({ pageSize: 500 });
   const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
-  const draftRecords = (receipt.touchedRecords || []).map((touched) => {
+  const draftRecords = (touchedRecords || []).map((touched) => {
     const record = recordMap.get(touched.recordId);
     if (!record || record.fields?.Progress !== 'Draft') {
       throw new Error(`Transfer record ${touched.recordId} is not at Draft live state`);
@@ -272,7 +277,10 @@ async function runTransfer({ session, sessionPath, sessionDigest, args, io, out 
     reviewUnitId: args.reviewUnitId,
     unitReceiptPath: receiptFile,
     unitReceiptDigest: digestSemantic(receipt),
+    touchedRecords,
     draftRecords,
+    documentLinks: args.documentLinks,
+    recordLinks: args.recordLinks,
   });
   saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
   out(`Transferred completion: ${args.reviewUnitId} (finalized in this session from the external receipt)`);
@@ -371,6 +379,9 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     reviewUnitId: receipt.reviewUnitId,
     executionJournalPath: receipt.executionJournalPath,
     executionJournalDigest: receipt.executionJournalDigest,
+    touchedRecords: receipt.touchedRecords,
+    documentLinks: receipt.documentLinks || [],
+    recordLinks: receipt.recordLinks || [],
     draftRecords,
     evidence: prepared.evidence,
     acceptedAt,
@@ -463,7 +474,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.command === 'migrate-to-two-gate') {
     requireValue(args, 'session');
     if (!args.baseToken && !io.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
-    const result = await runMigration({ session, sessionPath, sessionDigest, args, io, out });
+    const result = await runMigration({ session, sessionPath, sessionDigest, args, io: {}, out });
     if (result.dryRun) return { session, summary: status(session, sessionPath) };
     const summary = status(result.session, sessionPath);
     if (args.json) out(JSON.stringify(summary, null, 2));
@@ -471,10 +482,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   if (args.command === 'transfer-unit-completion') {
-    for (const required of ['session', 'reviewUnitId', 'externalReceipt', 'baseToken']) {
+    for (const required of ['session', 'reviewUnitId', 'externalReceipt', 'touchedRecords', 'baseToken']) {
       requireValue(args, required);
     }
-    const result = await runTransfer({ session, sessionPath, sessionDigest, args, io, out });
+    const result = await runTransfer({ session, sessionPath, sessionDigest, args, io: {}, out });
     const summary = status(result.session, sessionPath);
     if (args.json) out(JSON.stringify(summary, null, 2));
     return { session: result.session, summary };

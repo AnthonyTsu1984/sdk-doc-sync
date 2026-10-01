@@ -590,7 +590,10 @@ function transferUnitCompletion(session, {
   reviewUnitId,
   unitReceiptPath,
   unitReceiptDigest,
+  touchedRecords,
   draftRecords,
+  documentLinks,
+  recordLinks,
   transferredAt = new Date().toISOString(),
 } = {}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
@@ -634,21 +637,32 @@ function transferUnitCompletion(session, {
     path.resolve(receipt.executionJournalPath),
     receipt.executionJournalDigest,
   );
-  const touchedRecords = (receipt.touchedRecords || []).map((record) => {
-    if (!nonEmptyString(record?.recordId)) throw new Error('External receipt touched recordId is required');
+  // Touched records come from the caller (early receipts predate the
+  // touchedRecords field); every action must be a verified journal action.
+  const observedActionIds = new Set(entries
+    .filter((entry) => entry.type === 'observed' && entry.status === 'success' && entry.verified === true)
+    .map((entry) => entry.actionId));
+  const verifiedTouched = (Array.isArray(touchedRecords) && touchedRecords.length > 0
+    ? touchedRecords
+    : (receipt.touchedRecords || [])).map((record) => {
+    if (!nonEmptyString(record?.recordId)) throw new Error('Transfer touched recordId is required');
+    if (!nonEmptyString(record?.actionId) || !observedActionIds.has(record.actionId)) {
+      throw new Error(`Transfer touched record ${record.recordId} must reference a verified journal action`);
+    }
     return { actionId: record.actionId, recordId: record.recordId, documentToken: record.documentToken || null };
   }).sort((left, right) => left.recordId.localeCompare(right.recordId));
-  if (touchedRecords.length === 0) throw new Error('External receipt carries no touched records');
-  deriveUnitEvidence({ unit: { reviewUnitId, touchedRecords }, entries });
-  const documentLinks = [...(receipt.documentLinks || [])].filter(nonEmptyString).sort();
-  const recordLinks = [...(receipt.recordLinks || [])].filter(nonEmptyString).sort();
-  if (documentLinks.length === 0 || recordLinks.length === 0) {
-    throw new Error('External receipt carries no document/record links');
+  if (verifiedTouched.length === 0) throw new Error('Transfer carries no touched records');
+  const normalizedTouched = verifiedTouched;
+  deriveUnitEvidence({ unit: { reviewUnitId, touchedRecords: normalizedTouched }, entries });
+  const verifiedDocumentLinks = [...(documentLinks || receipt.documentLinks || [])].filter(nonEmptyString).sort();
+  const verifiedRecordLinks = [...(recordLinks || receipt.recordLinks || [])].filter(nonEmptyString).sort();
+  if (verifiedDocumentLinks.length === 0 || verifiedRecordLinks.length === 0) {
+    throw new Error('Transfer carries no document/record links (receipt or --document-link/--record-link)');
   }
   const evidence = validateFinalizationEvidence({
     reviewUnitId,
     executionJournalDigest: receipt.executionJournalDigest,
-    touchedRecords,
+    touchedRecords: normalizedTouched,
     draftRecords: draftRecords ?? receipt.draftRecords,
     unitReceiptPath: resolvedReceiptPath,
     unitReceiptDigest,
@@ -659,9 +673,9 @@ function transferUnitCompletion(session, {
       reviewUnitId,
       executionJournalPath: path.resolve(receipt.executionJournalPath),
       executionJournalDigest: receipt.executionJournalDigest,
-      touchedRecords,
-      documentLinks,
-      recordLinks,
+      touchedRecords: normalizedTouched,
+      documentLinks: verifiedDocumentLinks,
+      recordLinks: verifiedRecordLinks,
       commentsResolved: true,
       acceptedAt: transferredAt,
       transferredAt,

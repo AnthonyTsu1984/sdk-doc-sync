@@ -505,11 +505,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   if (args.command === 'backfill-targets') {
+    const io0 = {};
     // One-time stock pass: accepted two-gate units whose records sit at
     // Draft with empty Targets get the KB-wide final value under one gate.
     requireValue(args, 'session');
-    if (!args.baseToken && !io.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
-    const writer = bitableWriterFor(args, io);
+    if (!args.baseToken && !io0.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
+    const writer = bitableWriterFor(args, io0);
     const records = await writer.listRecords({ pageSize: 500 });
     const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
     const emptyTargets = {};

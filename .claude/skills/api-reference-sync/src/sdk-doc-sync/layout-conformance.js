@@ -18,6 +18,20 @@ function nonEmptyString(value) {
     return typeof value === 'string' && value.length > 0;
 }
 
+// Section label vocabulary shared with the KB-wide section convention
+// (api-section-model label roles). Lines exactly matching one of these
+// terminate a RETURNS section scan; heading text is indistinguishable from
+// prose in the flat line facts, so only labels bound the scan.
+const KNOWN_LABEL_PATTERN = /^(return type|returns|parameters|builder methods|request methods|option methods|methods|exceptions|error handling|response shape|notes):?$/i;
+
+function isKnownLabel(line) {
+    return KNOWN_LABEL_PATTERN.test(String(line ?? '').trim());
+}
+
+function normalizeTypeToken(line) {
+    return String(line ?? '').replace(/[*_`]/g, '').trim();
+}
+
 function compilePatterns(sources) {
     return (sources || []).map((source) => new RegExp(source));
 }
@@ -131,6 +145,40 @@ function checkLayoutConformance(profile, facts = {}) {
         const outsideCallout = lines.find((line) => prose.test(line));
         if (outsideCallout) {
             report('LAYOUT_DEPRECATION_NOT_CALLOUT', `deprecation prose outside a callout: ${outsideCallout}`);
+        }
+    }
+
+    // Return sections (declared per profile, java first): RETURN TYPE and
+    // RETURNS are two separate labeled sections; a RETURNS section without a
+    // RETURN TYPE is the merged/missing-section failure mode; the type token
+    // must not repeat as a bare line inside RETURNS; RETURNS carries prose.
+    // Pages with neither label (void methods, concept pages) are not bound.
+    if (rules.returnSections?.split) {
+        const returnTypeIndex = lines.findIndex((line) => /^return type:?$/i.test(String(line).trim()));
+        const returnsIndex = lines.findIndex((line) => /^returns:?$/i.test(String(line).trim()));
+        if (returnsIndex !== -1 && returnTypeIndex === -1) {
+            report('LAYOUT_RETURN_TYPE_MISSING', 'RETURNS section present without a separate RETURN TYPE section');
+        }
+        if (returnTypeIndex !== -1 && returnsIndex === -1) {
+            report('LAYOUT_RETURNS_MISSING', 'RETURN TYPE section present without a separate RETURNS section');
+        }
+        if (returnTypeIndex !== -1 && returnsIndex !== -1) {
+            const rawToken = returnTypeIndex + 1 < lines.length ? lines[returnTypeIndex + 1] : '';
+            const typeToken = isKnownLabel(rawToken) ? '' : normalizeTypeToken(rawToken);
+            let proseLines = 0;
+            for (let index = returnsIndex + 1; index < lines.length; index += 1) {
+                const line = String(lines[index]).trim();
+                if (isKnownLabel(line)) break;
+                if (line === '') continue;
+                if (typeToken !== '' && normalizeTypeToken(line) === typeToken) {
+                    report('LAYOUT_RETURNS_TYPE_ROW', `type token "${typeToken}" repeats inside the RETURNS section; it belongs in RETURN TYPE`);
+                    continue;
+                }
+                proseLines += 1;
+            }
+            if (rules.returnsProseRequired && proseLines === 0) {
+                report('LAYOUT_RETURNS_PROSE_MISSING', 'RETURNS section carries no prose');
+            }
         }
     }
 

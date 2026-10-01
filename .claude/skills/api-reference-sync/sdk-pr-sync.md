@@ -50,7 +50,7 @@ Phase order per unit:
 1. **Precondition** — the verbatim execution's `content-fidelity` journal entry (`invariantId: api.pr-verbatim-content`, `ok: true`, carrying the `contentDigest` of the exact bytes the verbatim phase compared) is the gate. `bin/pr-polish.js` refuses to start without it and refuses a proof bound to different bytes (`PR_POLISH_VERBATIM_NOT_PROVEN` both ways) — a passing outcome for page X cannot unlock polish for page Y.
 2. **Subagent proposal** — dispatch a polish subagent with the exact artifact bytes the verbatim phase compared (the bytes behind the journaled `contentDigest` — NOT a re-normalized derivative, which would fail the digest gate) and the protected-content contract below. The subagent returns a polish manifest as data and performs no Feishu I/O.
 3. **Deterministic validation and recompute** — `bin/pr-polish.js --base-content <verified.md> --fidelity-outcome <journal-entry.json> --manifest <manifest.json> --polished-output <polished.md> --provenance-output <provenance.json>` validates the manifest and emits the exact terminal bytes plus the digest chain (`baseContentDigest`, `manifestDigest`, `polishedContentDigest`). Preservation is judged over each edit's whole affected region — the base lines it touches, compared against their spliced candidate — so partial anchors starting inside a code span or link URL, and protected shapes forged at the splice boundary, are rejected rather than compared as bare substrings. Any typed rejection aborts the phase; the manifest is repaired and revalidated, never applied partially.
-4. **Application** — the validated edits are applied to the live page through the governed writer as a separately approved batch: anchored text replacements over prose blocks only. Pages carrying `<include target="...">` markers stay surgical-only (`api.literal-include-preserved`); polish never rebuilds a body.
+4. **Application** — the validated edits are applied to the live page through the governed writer as a separately approved batch: anchored text replacements over prose blocks only. Pages carrying `<include target="...">` markers stay surgical-only (`api.literal-include-preserved`); prose polish never rebuilds a body (restructure mode below is the one governed rebuild path).
 5. **Terminal verification** — refetch `raw_content` and run the same CLI with `--verify-raw-content <raw.txt>`: the page must compare line-for-line against the recomputed polished content through the declared canonicalization (`PR_POLISH_CONTENT_VERIFICATION_FAILED` on divergence; no artifacts are written on failure). Journal the polish outcome with the provenance digests before the completion sentinel.
 6. **Binding** — `DOCUMENT_REVIEW` presents the polished page and the polish manifest summary (edit count + the three digests). The unit's reviewed context records `{ content, contentDigest, polish: { manifest, polishedContent, provenance } }`; acceptance and reconciliation then bind the polished terminal state, and a chain that no longer deterministically reproduces the terminal bytes (including a stale recorded provenance) is `CONTENT_POLISH_CHAIN_INVALID` at reconciliation.
 
@@ -83,6 +83,38 @@ Protected content — an edit whose anchor overlaps any of these, or whose affec
 | `PR_POLISH_MANIFEST_INVALID` | shape violations (schemaVersion, missing edits, empty anchors) |
 
 Diagnostics: `PR_POLISH_VERBATIM_NOT_PROVEN` (fail-closed sequencing), `PR_POLISH_CONTENT_VERIFICATION_FAILED` (post-write terminal divergence), `CONTENT_POLISH_CHAIN_INVALID` (reconciliation: recorded polish no longer reproduces the terminal bytes).
+
+### Restructure mode (format unification, 2026-10-01 semantic ruling)
+
+Prose polish rewords; it cannot fix upstream structural gaps (missing sections, truncated RETURNS prose, undocumented response shapes). Restructure mode is the second governed polish mode: its fidelity object is the upstream STRUCTURAL INVENTORY (parameter/builder/exception items, fenced code blocks, the declared return type, tables, include markers — `semantic-content-map.js`), while page FORMAT is unified KB-wide. Description wording is never machine-compared (presence only): description rewrites stay with the polish proposal and human review.
+
+Restructure manifest schema (`mode` selects the validator; the prose manifest schema above is unchanged):
+
+```json
+{
+  "schemaVersion": 1,
+  "mode": "restructure",
+  "unit": "<review-unit-id>",
+  "baseContentDigest": "sha256:<digest of the verified verbatim content>",
+  "rationale": "<one-line human summary>",
+  "replacementContent": "<the full canonical markdown>",
+  "sources": [
+    { "tableHeader": "<normalized header row of the introduced table>", "path": "<SDK source file>", "lines": "37-42" }
+  ]
+}
+```
+
+Guards (validateRestructureManifest):
+
+| Rejection code | Rule |
+|----------------|------|
+| `PR_POLISH_SEMANTIC_CONTENT_LOST` | the semantic content map comparison found a loss: an upstream item, code block, return type, exception, table, or include marker dropped/altered/removed (items match as ordered containment — canonical may interleave additions, never drop or reorder upstream content; description presence is required where the upstream had prose) |
+| `PR_POLISH_SOURCE_CITATION_REQUIRED` | the canonical content introduces a response-shape table the upstream does not carry, without `sources[]` citations (each citation needs non-empty `tableHeader`, `path`, `lines`) |
+| `PR_POLISH_SOURCE_TABLE_UNBOUND` | an introduced table's normalized header row matches no `sources[].tableHeader` — every introduced table is cited to its SDK source |
+| `PR_POLISH_RESTRUCTURE_INVALID` | shape violations (`replacementContent` missing/empty) |
+| `PR_POLISH_MODE_INVALID` | mode/validator mismatch: restructure manifests on the prose path, prose manifests declaring a mode |
+
+Rules of the mode: fenced code may never be added, altered, or dropped (code is the semantic vehicle); the `PR_POLISH_FULL_REWRITE` tripwire is prose-mode-only (a restructure IS a whole-body rewrite, lawful only under the semantic map gate); application is a governed whole-body rebuild through the same writer envelope (`bin/pr-polish-apply.js` converts the canonical markdown to blocks and rebuilds; PR-verbatim pages carry no foreign preserved blocks). Sequencing precondition, terminal `raw_content` verification, and the three-digest chain (`provenance` additionally carries `mode` and `sourcesDigest`) are identical to prose polish, and reconciliation re-verifies the chain the same way.
 
 ## Inheritance
 

@@ -108,3 +108,49 @@ test('headings inside callouts count for neither heading checks nor body lines',
   const result = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
   assert.equal(result.violations.length, 0);
 });
+
+test('java return-section rules flag the merged/missing-section failure modes', () => {
+  const code = (lines, name) => checkLayoutConformance(sdkLayoutProfiles.java, { headings: [], lines, callouts: [] })
+    .violations.find((violation) => violation.code === name)?.code || null;
+
+  // The rejected-batch failure: RETURNS present, no RETURN TYPE section.
+  assert.equal(code(['RETURNS:', 'A GetResp object.'], 'LAYOUT_RETURN_TYPE_MISSING'), 'LAYOUT_RETURN_TYPE_MISSING');
+  assert.equal(code(['RETURN TYPE:', 'GetResp'], 'LAYOUT_RETURNS_MISSING'), 'LAYOUT_RETURNS_MISSING');
+});
+
+test('the return type token must not repeat inside RETURNS, and RETURNS carries prose', () => {
+  const violations = checkLayoutConformance(sdkLayoutProfiles.java, {
+    headings: [],
+    lines: ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'GetResp', 'Entities by ID.'],
+    callouts: [],
+  }).violations;
+  assert.equal(violations.find((violation) => violation.code === 'LAYOUT_RETURNS_TYPE_ROW')?.code, 'LAYOUT_RETURNS_TYPE_ROW');
+
+  const noProse = checkLayoutConformance(sdkLayoutProfiles.java, {
+    headings: [],
+    lines: ['RETURN TYPE:', 'GetResp', 'RETURNS:'],
+    callouts: [],
+  }).violations;
+  assert.equal(noProse.find((violation) => violation.code === 'LAYOUT_RETURNS_PROSE_MISSING')?.code, 'LAYOUT_RETURNS_PROSE_MISSING');
+});
+
+test('split return sections conform, profiles without the declaration stay unbound', () => {
+  const clean = checkLayoutConformance(sdkLayoutProfiles.java, {
+    headings: [],
+    lines: ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'A GetResp object representing entities.', 'PARAMETERS:'],
+    callouts: [],
+  });
+  assert.deepEqual(clean.violations, []);
+  const cppUnbound = checkLayoutConformance(sdkLayoutProfiles.cpp, {
+    headings: [],
+    lines: ['RETURNS:', 'A GetResp object.'],
+    callouts: [],
+  });
+  assert.deepEqual(cppUnbound.violations, [], 'cpp has not declared returnSections yet');
+  const neitherLabel = checkLayoutConformance(sdkLayoutProfiles.java, {
+    headings: [],
+    lines: ['This operation deletes entities.'],
+    callouts: [],
+  });
+  assert.deepEqual(neitherLabel.violations, [], 'pages with neither label are not bound');
+});

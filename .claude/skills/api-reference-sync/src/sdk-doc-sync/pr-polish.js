@@ -31,7 +31,19 @@
 // splice boundary (e.g. a prefix backtick joining a replacement's backticks
 // into a fence delimiter), both surface on the spliced lines, never on the
 // bare substrings. A replacement may not introduce any protected line shape —
-// polish adds no structure.
+// prose polish adds no structure.
+//
+// Restructure mode (2026-10-01 semantic ruling: fidelity = the upstream
+// structural inventory survives; format is unified KB-wide) is the second
+// governed mode. Its manifest carries the full canonical replacement content
+// instead of anchored edits, and the guards change shape accordingly: the
+// semantic content map (semantic-content-map.js) proves every upstream item,
+// code block, return type, exception, table, and include marker survives;
+// fenced code may never be added, altered, or dropped; every introduced
+// response-shape table must cite the SDK source it was authored from
+// ({ tableHeader, path, lines }). The full-rewrite tripwire does not apply —
+// a restructure IS a whole-body rewrite, lawful only under the semantic map
+// gate.
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const {
@@ -39,9 +51,17 @@ const {
     verbatimContentDigest,
     compareVerbatimContent,
 } = require('./verbatim-content');
+const {
+    SEMANTIC_MAP_VERSION,
+    extractSemanticMap,
+    compareSemanticContent,
+    matchOrdered,
+} = require('./semantic-content-map');
 
 const INVARIANT_ID = 'api.pr-polish-governed';
 const MANIFEST_SCHEMA_VERSION = 1;
+const PROSE_MODE = 'prose';
+const RESTRUCTURE_MODE = 'restructure';
 
 const FENCE_LINE = /^\s*(?:`{3,}|~{3,})/;
 const HEADING_LINE = /^#{1,9}\s+/;
@@ -164,6 +184,9 @@ function validatePolishManifest({ manifest, baseContent } = {}) {
     if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
         throw polishError('PR_POLISH_MANIFEST_INVALID', 'manifest must be an object');
     }
+    if (manifest.mode !== undefined && manifest.mode !== PROSE_MODE) {
+        throw polishError('PR_POLISH_MODE_INVALID', `prose manifest cannot carry mode ${manifest.mode}`);
+    }
     if (manifest.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
         throw polishError('PR_POLISH_MANIFEST_INVALID', `schemaVersion must be ${MANIFEST_SCHEMA_VERSION}`);
     }
@@ -282,9 +305,119 @@ function protectedLineTexts(content) {
         .map((span) => lines[span.lineIndex]);
 }
 
+// Restructure validation: the manifest binds the verified verbatim bytes and
+// carries the full canonical replacement. Guards, in order: manifest shape,
+// base digest, semantic content map (nothing upstream is lost), code
+// immutability, and per-table SDK source citations for every introduced
+// response-shape table.
+function validateRestructureManifest({ manifest, baseContent } = {}) {
+    const errors = [];
+    const content = String(baseContent ?? '');
+    if (!manifest || typeof manifest !== 'object' || Array.isArray(manifest)) {
+        throw polishError('PR_POLISH_MANIFEST_INVALID', 'manifest must be an object');
+    }
+    if (manifest.mode !== RESTRUCTURE_MODE) {
+        throw polishError('PR_POLISH_MODE_INVALID', 'restructure manifest must declare mode "restructure"');
+    }
+    if (manifest.schemaVersion !== MANIFEST_SCHEMA_VERSION) {
+        throw polishError('PR_POLISH_MANIFEST_INVALID', `schemaVersion must be ${MANIFEST_SCHEMA_VERSION}`);
+    }
+    if (typeof manifest.baseContentDigest !== 'string') {
+        throw polishError('PR_POLISH_MANIFEST_INVALID', 'baseContentDigest is required');
+    }
+    if (typeof manifest.replacementContent !== 'string' || manifest.replacementContent.trim() === '') {
+        throw polishError('PR_POLISH_RESTRUCTURE_INVALID', 'replacementContent must be the full canonical markdown');
+    }
+    if (manifest.baseContentDigest !== verbatimContentDigest(content)) {
+        errors.push(polishError(
+            'PR_POLISH_BASE_DIGEST_MISMATCH',
+            'manifest.baseContentDigest does not match the supplied verified content; restructure must start from the proven verbatim state',
+        ));
+        return { errors };
+    }
+    if (manifest.sources !== undefined && !Array.isArray(manifest.sources)) {
+        errors.push(polishError('PR_POLISH_SOURCE_CITATION_REQUIRED', 'sources must be an array when present'));
+        return { errors };
+    }
+
+    const comparison = compareSemanticContent({ upstreamContent: content, canonicalContent: manifest.replacementContent });
+    if (!comparison.ok) {
+        errors.push(polishError(
+            'PR_POLISH_SEMANTIC_CONTENT_LOST',
+            `semantic content map found ${comparison.diffs.length} upstream loss(es): ${JSON.stringify(comparison.diffs.slice(0, 5))}`,
+        ));
+    }
+
+    // Per-table citation binding: every canonical table the upstream does not
+    // carry must be cited by a source entry whose tableHeader equals the
+    // table's normalized header row.
+    const upstreamTables = extractSemanticMap(content).tables.map((rows) => JSON.stringify(rows));
+    const canonicalMap = extractSemanticMap(manifest.replacementContent);
+    const canonicalTableKeys = canonicalMap.tables.map((rows) => JSON.stringify(rows));
+    const matchedCanonical = new Set(matchOrdered(upstreamTables, canonicalTableKeys).filter((index) => index !== -1));
+    const addedTables = canonicalMap.tables.filter((_, index) => !matchedCanonical.has(index));
+    const sources = Array.isArray(manifest.sources) ? manifest.sources : [];
+    if (addedTables.length > 0) {
+        if (sources.length === 0) {
+            errors.push(polishError(
+                'PR_POLISH_SOURCE_CITATION_REQUIRED',
+                `${addedTables.length} introduced response-shape table(s) carry no SDK source citation`,
+            ));
+        } else {
+            for (const source of sources) {
+                if (!source || typeof source !== 'object'
+                    || typeof source.tableHeader !== 'string' || source.tableHeader.trim() === ''
+                    || typeof source.path !== 'string' || source.path.trim() === ''
+                    || typeof source.lines !== 'string' || source.lines.trim() === '') {
+                    errors.push(polishError(
+                        'PR_POLISH_SOURCE_CITATION_REQUIRED',
+                        'every source citation needs non-empty tableHeader, path, and lines',
+                    ));
+                    break;
+                }
+            }
+            for (const table of addedTables) {
+                const header = table[0] || '';
+                const bound = sources.some((source) => source && source.tableHeader === header);
+                if (!bound) {
+                    errors.push(polishError(
+                        'PR_POLISH_SOURCE_TABLE_UNBOUND',
+                        `introduced table header "${header}" matches no sources[].tableHeader`,
+                    ));
+                }
+            }
+        }
+    }
+    return { errors, semanticComparison: comparison, semanticMapVersion: SEMANTIC_MAP_VERSION };
+}
+
+// Restructure application is deterministic by construction: the polished
+// bytes ARE the validated replacement content.
+function applyRestructureManifest({ manifest, baseContent } = {}) {
+    const { errors } = validateRestructureManifest({ manifest, baseContent });
+    if (errors.length > 0) throw errors[0];
+    const polished = String(manifest.replacementContent);
+    const provenance = Object.freeze({
+        invariantId: INVARIANT_ID,
+        mode: RESTRUCTURE_MODE,
+        baseContentDigest: manifest.baseContentDigest,
+        manifestDigest: digestSemantic(manifest),
+        polishedContentDigest: verbatimContentDigest(polished),
+        editCount: 0,
+        sourcesDigest: manifest.sources ? digestSemantic(manifest.sources) : null,
+        semanticMapVersion: SEMANTIC_MAP_VERSION,
+    });
+    return Object.freeze({ polishedContent: polished, provenance });
+}
+
 // Deterministic application: validates everything first (fail-closed), then
 // splices the replacements back-to-front so earlier offsets stay valid.
+// Restructure manifests take the whole-body path (validateRestructureManifest
+// + verbatim replacement).
 function applyPolishManifest({ manifest, baseContent } = {}) {
+    if (manifest && typeof manifest === 'object' && !Array.isArray(manifest) && manifest.mode === RESTRUCTURE_MODE) {
+        return applyRestructureManifest({ manifest, baseContent });
+    }
     const { errors, replacements } = validatePolishManifest({ manifest, baseContent });
     if (errors.length > 0) throw errors[0];
     const base = String(baseContent ?? '');
@@ -374,9 +507,13 @@ function verifyPolishChain({ content, polish } = {}) {
 module.exports = {
     INVARIANT_ID,
     MANIFEST_SCHEMA_VERSION,
+    PROSE_MODE,
+    RESTRUCTURE_MODE,
     FULL_REWRITE_FRACTION,
     assertPolishPreconditions,
     validatePolishManifest,
+    validateRestructureManifest,
+    applyRestructureManifest,
     applyPolishManifest,
     comparePolishedContent,
     verifyPolishChain,

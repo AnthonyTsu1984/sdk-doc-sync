@@ -316,7 +316,7 @@
     },
     {
       "id": "api.pr-polish-governed",
-      "version": 1,
+      "version": 2,
       "risk": "content-fidelity",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
@@ -325,10 +325,11 @@
         "post-write",
         "reconcile"
       ],
-      "statementDigest": "sha256:9a6105cc3ab4268a63475dd44c6899b7f56622e940801e074172e22d9a3412b3",
+      "statementDigest": "sha256:86abf40af12120e5c55da3ec4dbac9031290c0a916f90bd81683cd44f8c0a3a5",
       "fixtureIds": [
         "content-polish-chain",
-        "content-polish-protected-region"
+        "content-polish-protected-region",
+        "content-polish-restructure"
       ],
       "enforcers": [
         {
@@ -345,7 +346,12 @@
             "PR_POLISH_URL_SET_CHANGED",
             "PR_POLISH_FORBIDDEN_INTRODUCTION",
             "PR_POLISH_FULL_REWRITE",
-            "PR_POLISH_MANIFEST_INVALID"
+            "PR_POLISH_MANIFEST_INVALID",
+            "PR_POLISH_MODE_INVALID",
+            "PR_POLISH_RESTRUCTURE_INVALID",
+            "PR_POLISH_SEMANTIC_CONTENT_LOST",
+            "PR_POLISH_SOURCE_CITATION_REQUIRED",
+            "PR_POLISH_SOURCE_TABLE_UNBOUND"
           ]
         },
         {
@@ -363,7 +369,7 @@
           ]
         }
       ],
-      "notes": "Post-verbatim polish phase for PR intake: a merged-PR page lands verbatim first (api.pr-verbatim-content), then may be language-polished inside the same review unit before document review closes. The sequencing is fail-closed (assertPolishPreconditions demands the journaled passing content-fidelity outcome); the polish subagent only proposes a manifest ({anchor, replacement} pairs against the verified bytes) and the deterministic validator binds baseContentDigest, refuses anchors or replacements touching protected content (fenced code, inline code spans, table rows, headings, include marker lines, footers, REQUEST METHODS markers), preserves absolute link URLs, refuses whole-body rewrites (>=90% coverage), and recomputes the exact terminal bytes; the live page is edited only through the governed writer as a separately approved batch, the refetched raw_content must compare line-for-line against the recomputed polished content through the declared canonicalization, and the recorded polish chain (content + manifest -> polishedContent) is re-verified at reconciliation (CONTENT_POLISH_CHAIN_INVALID) so acceptance and reconciliation bind the polished terminal state. Apply-to-live wiring rides the existing governed writer envelope; pr-polish.js itself performs no Feishu I/O."
+      "notes": "Post-verbatim polish phase for PR intake: a merged-PR page lands verbatim first (api.pr-verbatim-content), then may be language-polished inside the same review unit before document review closes. The sequencing is fail-closed (assertPolishPreconditions demands the journaled passing content-fidelity outcome); the polish subagent only proposes a manifest ({anchor, replacement} pairs against the verified bytes) and the deterministic validator binds baseContentDigest, refuses anchors or replacements touching protected content (fenced code, inline code spans, table rows, headings, include marker lines, footers, REQUEST METHODS markers), preserves absolute link URLs, refuses whole-body rewrites (>=90% coverage), and recomputes the exact terminal bytes; the live page is edited only through the governed writer as a separately approved batch, the refetched raw_content must compare line-for-line against the recomputed polished content through the declared canonicalization, and the recorded polish chain (content + manifest -> polishedContent) is re-verified at reconciliation (CONTENT_POLISH_CHAIN_INVALID) so acceptance and reconciliation bind the polished terminal state. Apply-to-live wiring rides the existing governed writer envelope; pr-polish.js itself performs no Feishu I/O. v2 (2026-10-01 semantic ruling: fidelity = the upstream structural inventory survives, format is unified KB-wide) adds the restructure mode — a replacement-content manifest guarded by the semantic content map (semantic-content-map.js: parameter/builder/exception items, fenced code, return type, tables, include markers survive; description wording never machine-compared), code-block immutability, and per-table SDK source citations (PR_POLISH_SOURCE_CITATION_REQUIRED / PR_POLISH_SOURCE_TABLE_UNBOUND) for introduced response-shape tables; the full-rewrite tripwire is prose-mode-only. Restructure application is a governed whole-body rebuild through the same writer envelope."
     },
     {
       "id": "api.governed-document-inventory",
@@ -391,7 +397,7 @@
     },
     {
       "id": "api.sdk-page-layout",
-      "version": 1,
+      "version": 2,
       "risk": "content-fidelity",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
@@ -399,10 +405,11 @@
         "post-write",
         "reconcile"
       ],
-      "statementDigest": "sha256:878ace6ed3a9dc5e4546be145cc39080730489d18255699126dba9cc00bd8aea",
+      "statementDigest": "sha256:8a99bc1c829c2b24ba17dad1e2468f98cf8cbf4b8d146f2abe9f59db861d9c87",
       "fixtureIds": [
         "content-layout-cpp-prefix-violation",
-        "content-layout-single-request-h3"
+        "content-layout-single-request-h3",
+        "content-layout-return-sections"
       ],
       "enforcers": [
         {
@@ -413,7 +420,11 @@
             "LAYOUT_SINGLE_REQUEST_H3",
             "LAYOUT_EXAMPLE_HEADING",
             "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
-            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+            "LAYOUT_DEPRECATION_NOT_CALLOUT",
+            "LAYOUT_RETURN_TYPE_MISSING",
+            "LAYOUT_RETURNS_MISSING",
+            "LAYOUT_RETURNS_TYPE_ROW",
+            "LAYOUT_RETURNS_PROSE_MISSING"
           ]
         },
         {
@@ -424,7 +435,11 @@
             "LAYOUT_SINGLE_REQUEST_H3",
             "LAYOUT_EXAMPLE_HEADING",
             "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
-            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+            "LAYOUT_DEPRECATION_NOT_CALLOUT",
+            "LAYOUT_RETURN_TYPE_MISSING",
+            "LAYOUT_RETURNS_MISSING",
+            "LAYOUT_RETURNS_TYPE_ROW",
+            "LAYOUT_RETURNS_PROSE_MISSING"
           ]
         },
         {
@@ -435,11 +450,15 @@
             "LAYOUT_SINGLE_REQUEST_H3",
             "LAYOUT_EXAMPLE_HEADING",
             "LAYOUT_DEPRECATION_CALLOUT_SHAPE",
-            "LAYOUT_DEPRECATION_NOT_CALLOUT"
+            "LAYOUT_DEPRECATION_NOT_CALLOUT",
+            "LAYOUT_RETURN_TYPE_MISSING",
+            "LAYOUT_RETURNS_MISSING",
+            "LAYOUT_RETURNS_TYPE_ROW",
+            "LAYOUT_RETURNS_PROSE_MISSING"
           ]
         }
       ],
-      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). Deterministic structural rules only; wording quality stays with the polish prompt and model evals."
+      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). Deterministic structural rules only; wording quality stays with the polish prompt and model evals. v2 adds the return-section rules (split RETURN TYPE/RETURNS sections, RETURNS prose, no duplicated type row), declared so far only by the java profile (2026-10-01 semantic ruling; other tracks adopt with their stock repolish batches)."
     },
     {
       "id": "api.global-layout-rules",

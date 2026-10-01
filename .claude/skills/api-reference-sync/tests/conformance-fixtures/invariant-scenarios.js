@@ -1052,6 +1052,169 @@ const scenarios = {
       baseDigestCode,
     };
   },
+
+  // --- restructure mode (2026-10-01 semantic ruling: format unification) ---
+
+  contentPolishRestructure() {
+    const {
+      validatePolishManifest,
+      validateRestructureManifest,
+      applyPolishManifest,
+      comparePolishedContent,
+      verifyPolishChain,
+    } = require('../../src/sdk-doc-sync/pr-polish');
+    const { verbatimContentDigest } = require('../../src/sdk-doc-sync/verbatim-content');
+    const base = [
+      '# get()',
+      '',
+      'This operation gets specific entities by their IDs.',
+      '',
+      '```Java',
+      'public GetResp get(GetReq request)',
+      '```',
+      '',
+      '**BUILDER METHODS:**',
+      '',
+      '- `ids(List<Object> ids)`',
+      'A specific entity ID or a list of entity IDs.',
+      '- `outputFields(List<String> outputFields)`',
+      'A list of names of the fields to be included in the query result.',
+      '',
+      '**RETURN TYPE:**',
+      '',
+      '*GetResp*',
+      '',
+      '**RETURNS:**',
+      '',
+      'A **GetResp** object representing one or more queried entities.',
+      '',
+      '<include target="zilliz">Zilliz docs [z-url]</include><include target="milvus">Milvus docs [m-url]</include>',
+    ].join('\n');
+    const restructured = base.replace(
+      'A **GetResp** object representing one or more queried entities.',
+      [
+        'A **GetResp** object representing one or more queried entities, plus the session timestamp and cost of the read.',
+        '',
+        '**RESPONSE SHAPE:**',
+        '',
+        '| field | type | description |',
+        '| --- | --- | --- |',
+        '| getResults | List<QueryResp.QueryResult> | A list of QueryResp.QueryResult objects. |',
+        '| sessionTs | long | Session timestamp of the response. |',
+      ].join('\n'),
+    );
+    const manifestFor = (overrides) => ({
+      schemaVersion: 1,
+      mode: 'restructure',
+      unit: 'java-v30-vector-get',
+      baseContentDigest: verbatimContentDigest(base),
+      replacementContent: restructured,
+      rationale: 'complete RETURNS prose and add the cited response-shape table',
+      sources: [
+        { tableHeader: 'field | type | description', path: 'io/milvus/v2/service/vector/response/QueryResp.java', lines: '37-42' },
+      ],
+      ...overrides,
+    });
+    const rejectionCode = (overrides) => {
+      try {
+        const { errors } = validateRestructureManifest({ manifest: manifestFor(overrides), baseContent: base });
+        return errors.length > 0 ? errors[0].code : null;
+      } catch (error) {
+        return error.code;
+      }
+    };
+
+    // The prose validator refuses restructure manifests outright (mode guard).
+    let modeInvalidCode = null;
+    try {
+      validatePolishManifest({ manifest: manifestFor({ edits: [{ anchor: 'x', replacement: 'y' }] }), baseContent: base });
+    } catch (error) {
+      modeInvalidCode = error.code;
+    }
+
+    const applied = applyPolishManifest({ manifest: manifestFor(), baseContent: base });
+    // Terminal proof through the declared canonicalization: the live page
+    // serializes the title first, headings without hashes, fence delimiters
+    // gone, markup stripped, table rows as pipe rows.
+    const rawLanded = [
+      'get()',
+      '',
+      'This operation gets specific entities by their IDs.',
+      '',
+      'public GetResp get(GetReq request)',
+      '',
+      'BUILDER METHODS:',
+      '',
+      'ids(List<Object> ids)',
+      'A specific entity ID or a list of entity IDs.',
+      'outputFields(List<String> outputFields)',
+      'A list of names of the fields to be included in the query result.',
+      '',
+      'RETURN TYPE:',
+      '',
+      'GetResp',
+      '',
+      'RETURNS:',
+      '',
+      'A GetResp object representing one or more queried entities, plus the session timestamp and cost of the read.',
+      '',
+      'RESPONSE SHAPE:',
+      '',
+      '| field | type | description |',
+      '| --- | --- | --- |',
+      '| getResults | List<QueryResp.QueryResult> | A list of QueryResp.QueryResult objects. |',
+      '| sessionTs | long | Session timestamp of the response. |',
+      '',
+      '<include target="zilliz">Zilliz docs [z-url]</include><include target="milvus">Milvus docs [m-url]</include>',
+      '',
+    ].join('\n');
+    const terminal = comparePolishedContent({ polishedContent: applied.polishedContent, rawContent: rawLanded });
+    const chain = verifyPolishChain({ content: base, polish: { manifest: manifestFor(), polishedContent: applied.polishedContent } });
+    const broken = verifyPolishChain({ content: base, polish: { manifest: manifestFor(), polishedContent: `${applied.polishedContent}x` } });
+    return {
+      modeInvalidCode,
+      semanticLossCode: rejectionCode({ replacementContent: base.replace('- `outputFields(List<String> outputFields)`\nA list of names of the fields to be included in the query result.\n', '') }),
+      codeAlterCode: rejectionCode({ replacementContent: base.replace('public GetResp get(GetReq request)', 'public GetResp fetch(GetReq request)') }),
+      citationRequiredCode: rejectionCode({ sources: [] }),
+      tableUnboundCode: rejectionCode({ sources: [{ tableHeader: 'name | type', path: 'x.java', lines: '1-2' }] }),
+      happyOk: applied.polishedContent.includes('**RESPONSE SHAPE:**') && applied.polishedContent.includes('client') === false,
+      terminalOk: terminal.ok,
+      invariantId: terminal.invariantId,
+      chainOk: chain.ok,
+      brokenChainOk: broken.ok,
+      provenanceMode: applied.provenance.mode,
+    };
+  },
+
+  // --- api.sdk-page-layout return-section rules (java-declared) ---
+
+  contentLayoutReturnSections() {
+    const { checkLayoutConformance } = require('../../src/sdk-doc-sync/layout-conformance');
+    const profiles = require('../../src/renderers/sdk-layout-profiles');
+    const firstCode = (violations, code) => violations.find((violation) => violation.code === code)?.code || null;
+    const violationsFor = (profile, lines) => checkLayoutConformance(profile, { lines, headings: [], callouts: [] }).violations;
+
+    const returnTypeMissing = violationsFor(profiles.java, ['RETURNS:', 'A GetResp object representing one or more queried entities.']);
+    const returnsMissing = violationsFor(profiles.java, ['RETURN TYPE:', 'GetResp', 'PARAMETERS:', '- **ids** (*List<Object>*)']);
+    const typeRow = violationsFor(profiles.java, ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'GetResp', 'Entities by ID.']);
+    const proseMissing = violationsFor(profiles.java, ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'PARAMETERS:']);
+    const cppUnbound = violationsFor(profiles.cpp, ['RETURNS:', 'A GetResp object representing one or more queried entities.']);
+    const clean = violationsFor(profiles.java, [
+      'RETURN TYPE:',
+      'GetResp',
+      'RETURNS:',
+      'A GetResp object representing one or more queried entities.',
+      'PARAMETERS:',
+    ]);
+    return {
+      returnTypeMissingCode: firstCode(returnTypeMissing, 'LAYOUT_RETURN_TYPE_MISSING'),
+      returnsMissingCode: firstCode(returnsMissing, 'LAYOUT_RETURNS_MISSING'),
+      typeRowCode: firstCode(typeRow, 'LAYOUT_RETURNS_TYPE_ROW'),
+      proseMissingCode: firstCode(proseMissing, 'LAYOUT_RETURNS_PROSE_MISSING'),
+      cppUnboundClean: cppUnbound.length === 0,
+      cleanOk: clean.length === 0,
+    };
+  },
 };
 
 module.exports = { scenarios };

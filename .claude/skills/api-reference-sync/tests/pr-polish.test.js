@@ -461,3 +461,88 @@ test('the CLI validates, emits terminal bytes + provenance, and verifies a refet
     assert.equal(unproven.status, 1);
     assert.match(unproven.stderr, /PR_POLISH_VERBATIM_NOT_PROVEN/);
 });
+
+test('restructure manifests are refused on the prose path and validated on their own', () => {
+    const {
+        validateRestructureManifest,
+        applyRestructureManifest,
+    } = require('../src/sdk-doc-sync/pr-polish');
+    const { compareSemanticContent } = require('../src/sdk-doc-sync/semantic-content-map');
+
+    const base = [
+        '```Java',
+        'public GetResp get(GetReq request)',
+        '```',
+        '',
+        '**RETURN TYPE:**',
+        '',
+        '*GetResp*',
+        '',
+        '**RETURNS:**',
+        '',
+        'A **GetResp** object representing one or more queried entities.',
+        '',
+        '<include target="zilliz">Z docs [z]</include><include target="milvus">M docs [m]</include>',
+    ].join('\n');
+    const table = [
+        '**RESPONSE SHAPE:**',
+        '',
+        '| field | type | description |',
+        '| --- | --- | --- |',
+        '| getResults | List<QueryResp.QueryResult> | A list of results. |',
+    ].join('\n');
+    const canonical = base.replace(
+        'A **GetResp** object representing one or more queried entities.',
+        `A **GetResp** object representing one or more queried entities.\n\n${table}`,
+    );
+    const manifestFor = (overrides = {}) => ({
+        schemaVersion: 1,
+        mode: 'restructure',
+        unit: 'java-v30-vector-get',
+        baseContentDigest: verbatimContentDigest(base),
+        replacementContent: canonical,
+        sources: [{ tableHeader: 'field | type | description', path: 'QueryResp.java', lines: '37-42' }],
+        ...overrides,
+    });
+    const errorCode = (overrides) => {
+        try {
+            const { errors } = validateRestructureManifest({ manifest: manifestFor(overrides), baseContent: base });
+            return errors.length > 0 ? errors[0].code : null;
+        } catch (error) {
+            return error.code;
+        }
+    };
+
+    // Prose path refuses the restructure mode outright.
+    assert.throws(
+        () => validatePolishManifest({ manifest: manifestFor({ edits: [{ anchor: 'a', replacement: 'b' }] }), baseContent: base }),
+        (error) => error.code === 'PR_POLISH_MODE_INVALID',
+    );
+
+    assert.equal(errorCode({ baseContentDigest: verbatimContentDigest(`${base}\nother`) }), 'PR_POLISH_BASE_DIGEST_MISMATCH');
+    assert.equal(
+        errorCode({ replacementContent: base.replace('A **GetResp** object representing one or more queried entities.\n\n', '') }),
+        'PR_POLISH_SEMANTIC_CONTENT_LOST',
+        'losing the RETURNS prose is a semantic failure',
+    );
+    assert.equal(errorCode({ sources: [] }), 'PR_POLISH_SOURCE_CITATION_REQUIRED');
+    assert.equal(
+        errorCode({ sources: [{ tableHeader: 'name | type', path: 'x.java', lines: '1-2' }] }),
+        'PR_POLISH_SOURCE_TABLE_UNBOUND',
+    );
+
+    const applied = applyRestructureManifest({ manifest: manifestFor(), baseContent: base });
+    assert.equal(applied.polishedContent, canonical);
+    assert.equal(applied.provenance.mode, 'restructure');
+    assert.equal(applied.provenance.baseContentDigest, verbatimContentDigest(base));
+    assert.equal(applied.provenance.polishedContentDigest, verbatimContentDigest(canonical));
+    assert.ok(applied.provenance.sourcesDigest.length > 0);
+
+    const comparison = compareSemanticContent({ upstreamContent: base, canonicalContent: applied.polishedContent });
+    assert.equal(comparison.ok, true, JSON.stringify(comparison.diffs));
+
+    const chain = verifyPolishChain({ content: base, polish: { manifest: manifestFor(), polishedContent: applied.polishedContent } });
+    assert.equal(chain.ok, true, JSON.stringify(chain.errors || chain));
+    const tampered = verifyPolishChain({ content: base, polish: { manifest: manifestFor(), polishedContent: `${applied.polishedContent}x` } });
+    assert.equal(tampered.ok, false);
+});

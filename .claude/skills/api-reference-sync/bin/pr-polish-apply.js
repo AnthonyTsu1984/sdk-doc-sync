@@ -4,10 +4,13 @@
 // Governed application of a validated post-verbatim polish manifest
 // (api.pr-polish-governed, application step). The polish is authorized under
 // the unit's already-approved write batch (--approve-digest must equal the
-// executed batch digest); edits are anchored text replacements over prose
-// blocks applied through writer governance, and the run completes only after
-// the refetched raw_content compares line-for-line against the recomputed
-// polished content through the declared canonicalization.
+// executed batch digest); prose edits are anchored text replacements over
+// prose blocks applied through writer governance, restructure manifests
+// (2026-10-01 semantic ruling) rebuild the page body from the canonical
+// replacement content through the same governed writer, and the run
+// completes only after the refetched raw_content compares line-for-line
+// against the recomputed polished content through the declared
+// canonicalization.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -26,6 +29,7 @@ const {
     applyPolishManifest,
     assertPolishPreconditions,
     comparePolishedContent,
+    RESTRUCTURE_MODE,
 } = require('../src/sdk-doc-sync/pr-polish');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -136,16 +140,17 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
     assertPolishPreconditions({ contentFidelity, baseContent });
 
     const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'pr-polish-apply' });
+    const actionCount = manifest.mode === RESTRUCTURE_MODE ? 1 : manifest.edits.length;
     governance.bindApproval({
         batchDigest,
-        actionCount: manifest.edits.length,
+        actionCount,
         targets: [args.reviewUnitId],
         sideEffects: ['feishu.docx.patch'],
         approval: createApprovalEnvelope({
             skill: 'api-reference-sync',
             operation: 'pr-polish-apply',
             batchDigest,
-            actionCount: manifest.edits.length,
+            actionCount,
             targets: [args.reviewUnitId],
             sideEffects: ['feishu.docx.patch'],
             decision: 'approved',
@@ -190,31 +195,68 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
         batchDigest,
         manifestDigest: provenance.manifestDigest,
         baseContentDigest: provenance.baseContentDigest,
-        edits: manifest.edits.map((edit) => ({ anchor: edit.anchor, replacement: edit.replacement })),
+        mode: manifest.mode === RESTRUCTURE_MODE ? RESTRUCTURE_MODE : 'prose',
+        edits: manifest.mode === RESTRUCTURE_MODE
+            ? []
+            : manifest.edits.map((edit) => ({ anchor: edit.anchor, replacement: edit.replacement })),
     });
 
-    const blocks = await Promise.resolve(dependencies.fetchBlocks
-        ? dependencies.fetchBlocks(documentToken)
-        : fetchBlocks(documentToken));
-    const planned = planPolishBlockEdits(blocks, manifest.edits);
-
     let applied = 0;
-    for (const edit of planned) {
-        if (dependencies.patchTextBlock) {
-            await dependencies.patchTextBlock(documentToken, edit.blockId, edit.contentAfter);
-        } else {
-            patchTextBlock(documentToken, edit.blockId, edit.contentAfter);
-        }
-        applied += 1;
+    if (manifest.mode === RESTRUCTURE_MODE) {
+        // Restructure application is a governed whole-body rebuild: the
+        // canonical content converts to blocks and replaces the page body.
+        // PR-verbatim pages carry no foreign preserved blocks (whiteboards
+        // live elsewhere), so the rebuild path is safe here.
         journal.observed({
             schemaVersion: 1,
             type: 'observed',
             operation: 'pr-polish-apply',
             reviewUnitId: args.reviewUnitId,
-            blockId: edit.blockId,
-            anchor: edit.anchor,
-            applied: applied,
+            documentToken,
+            rebuild: true,
+            sourcesDigest: provenance.sourcesDigest,
         });
+        if (dependencies.patchDocument) {
+            await dependencies.patchDocument(documentToken, manifest.replacementContent, 'rebuild');
+        } else {
+            const MarkdownToFeishu = require('../src/markdown-to-feishu');
+            const renderer = new MarkdownToFeishu({ governance });
+            const tokens = await renderer.parse_markdown(manifest.replacementContent);
+            const blocks = await renderer.markdown_to_blocks(tokens);
+            journal.observed({
+                schemaVersion: 1,
+                type: 'observed',
+                operation: 'pr-polish-apply',
+                reviewUnitId: args.reviewUnitId,
+                documentToken,
+                rebuildBlocks: blocks.length,
+            });
+            await renderer.patch_document({ document_id: documentToken, blocks, strategy: 'rebuild' });
+        }
+        applied = 1;
+    } else {
+        const blocks = await Promise.resolve(dependencies.fetchBlocks
+            ? dependencies.fetchBlocks(documentToken)
+            : fetchBlocks(documentToken));
+        const planned = planPolishBlockEdits(blocks, manifest.edits);
+
+        for (const edit of planned) {
+            if (dependencies.patchTextBlock) {
+                await dependencies.patchTextBlock(documentToken, edit.blockId, edit.contentAfter);
+            } else {
+                patchTextBlock(documentToken, edit.blockId, edit.contentAfter);
+            }
+            applied += 1;
+            journal.observed({
+                schemaVersion: 1,
+                type: 'observed',
+                operation: 'pr-polish-apply',
+                reviewUnitId: args.reviewUnitId,
+                blockId: edit.blockId,
+                anchor: edit.anchor,
+                applied: applied,
+            });
+        }
     }
 
     const rawContent = dependencies.fetchRawContent

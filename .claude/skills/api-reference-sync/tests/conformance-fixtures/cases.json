@@ -328,6 +328,25 @@
   }
  },
  {
+  "id": "content-polish-restructure",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentPolishRestructure"
+  },
+  "assertions": {
+   "modeInvalidCode": "PR_POLISH_MODE_INVALID",
+   "semanticLossCode": "PR_POLISH_SEMANTIC_CONTENT_LOST",
+   "codeAlterCode": "PR_POLISH_SEMANTIC_CONTENT_LOST",
+   "citationRequiredCode": "PR_POLISH_SOURCE_CITATION_REQUIRED",
+   "tableUnboundCode": "PR_POLISH_SOURCE_TABLE_UNBOUND",
+   "happyOk": true,
+   "terminalOk": true,
+   "chainOk": true,
+   "brokenChainOk": false,
+   "provenanceMode": "restructure"
+  }
+ },
+ {
   "id": "content-reconcile-orphan-detected",
   "executable": {
    "runner": "invariant-conformance",
@@ -370,6 +389,21 @@
    "singleH3Code": "LAYOUT_SINGLE_REQUEST_H3",
    "multiRequestClean": true,
    "exampleHeadingCode": "LAYOUT_EXAMPLE_HEADING"
+  }
+ },
+ {
+  "id": "content-layout-return-sections",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentLayoutReturnSections"
+  },
+  "assertions": {
+   "returnTypeMissingCode": "LAYOUT_RETURN_TYPE_MISSING",
+   "returnsMissingCode": "LAYOUT_RETURNS_MISSING",
+   "typeRowCode": "LAYOUT_RETURNS_TYPE_ROW",
+   "proseMissingCode": "LAYOUT_RETURNS_PROSE_MISSING",
+   "cppUnboundClean": true,
+   "cleanOk": true
   }
  }
 ]

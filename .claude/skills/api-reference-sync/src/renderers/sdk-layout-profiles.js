@@ -20,6 +20,18 @@ const CPP_LAYOUT_RULES = Object.freeze({
   builderSignature: Object.freeze({ prefixForbidden: Object.freeze(['Request& (With|Add)']) }),
 });
 
+// Java declares the 2026-10-01 return-section rules (semantic ruling: the
+// return type and the RETURNS prose live in two separate labeled sections,
+// the type token never repeats inside RETURNS, RETURNS carries prose). Other
+// tracks adopt when their stock repolish batches land — absence here is a
+// reviewed decision, not a blind spot.
+const JAVA_LAYOUT_RULES = Object.freeze({
+  ...GLOBAL_LAYOUT_RULES,
+  version: 2,
+  returnSections: Object.freeze({ split: true }),
+  returnsProseRequired: true,
+});
+
 function freezeLayoutRules(rules) {
   if (!rules) return undefined;
   return Object.freeze({
@@ -31,6 +43,7 @@ function freezeLayoutRules(rules) {
       })
       : undefined,
     deprecation: rules.deprecation ? Object.freeze({ ...rules.deprecation }) : undefined,
+    returnSections: rules.returnSections ? Object.freeze({ ...rules.returnSections }) : undefined,
   });
 }
 
@@ -59,7 +72,7 @@ const profiles = Object.freeze({
     order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'Java', 'request-signature': 'Java', 'example-code': 'Java' },
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, Number.POSITIVE_INFINITY] },
-    layoutRules: GLOBAL_LAYOUT_RULES,
+    layoutRules: JAVA_LAYOUT_RULES,
   }),
   node: freezeProfile({
     id: 'node', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',

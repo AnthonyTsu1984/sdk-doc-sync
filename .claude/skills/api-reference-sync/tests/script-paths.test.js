@@ -140,6 +140,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/sdk-reference-ir.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js',
+    '.claude/skills/api-reference-sync/tests/semantic-content-map.test.js',
     '.claude/skills/api-reference-sync/tests/sync-executor.test.js',
     '.claude/skills/api-reference-sync/tests/sync-planner.test.js',
     '.claude/skills/api-reference-sync/tests/token-reference-reader.test.js',

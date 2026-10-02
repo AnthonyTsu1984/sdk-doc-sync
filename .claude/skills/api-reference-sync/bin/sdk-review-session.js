@@ -647,6 +647,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   } else if (args.command === 'close-session') {
     // Two-gate close: the campaign-level acceptance gate is retired; the
     // close runs only when EVERY unit finalized (guarded in the store).
+    const io = {};
     for (const required of ['scanStateKey', 'scanStateEntry']) {
       requireValue(args, required);
     }

@@ -30,11 +30,13 @@ function buildGraph(blocks, pageId) {
   let n = 0;
   const next = () => 'b' + (n++);
   const add = (node) => { nodes.push(node); return node.block_id; };
-  const childOrder = [];
-  for (const block of blocks) {
+  // Nested lists (bullet inside bullet) produce grandchild blocks; the graph
+  // must recurse or the IR sees child ids that were never added
+  // (DOCX_GRAPH_MISSING_CHILD) even though the real write path handles them.
+  const addNode = (block, parentId) => {
     const { children: sub, table, ...rest } = block;
     const id = next();
-    const rec = { block_id: id, parent_id: pageId, ...rest };
+    const rec = { block_id: id, parent_id: parentId, ...rest };
     if (table && Array.isArray(table.cells)) {
       const cellIds = table.cells.map((cell) => {
         const cellId = next();
@@ -46,15 +48,12 @@ function buildGraph(blocks, pageId) {
       rec.table = { ...table, cells: cellIds };
     }
     if (sub && sub.length) {
-      rec.children = sub.map((child) => {
-        const cid = next();
-        add({ block_id: cid, parent_id: id, ...child });
-        return cid;
-      });
+      rec.children = sub.map((child) => addNode(child, id));
     }
     add(rec);
-    childOrder.push(id);
-  }
+    return id;
+  };
+  const childOrder = blocks.map((block) => addNode(block, pageId));
   return [{ block_id: pageId, block_type: 1, children: childOrder }, ...nodes];
 }
 

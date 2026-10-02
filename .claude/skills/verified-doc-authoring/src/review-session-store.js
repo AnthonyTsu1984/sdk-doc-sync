@@ -173,6 +173,7 @@ module.exports = {
   EDITORIAL_CATEGORIES,
   createAuthoringSession,
   loadAuthoringSession,
+  loadAuthoringSessionState,
   recordAuthoringAcceptance,
   recordAuthoringExecution,
   recordEditorialDecision,

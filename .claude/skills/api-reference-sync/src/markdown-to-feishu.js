@@ -1847,6 +1847,28 @@ class MarkdownToFeishu {
         // Remove children field - API doesn't accept inline children
         const cleanBlocks = this.__remove_children_recursively(blocks);
 
+        // The children API caps table property row_size at 9 (column_size at
+        // 9); a larger table is rejected with 1770001 after real writes may
+        // already have landed. Oversized tables route through the descendant
+        // API with explicit type-32 cells carrying their content, which has
+        // no row_size cap. Cells for those tables are written in the same
+        // call, so the post-create populate loop must skip them. Snapshots
+        // are taken before the strip below detaches cells/merge_info from
+        // the (shared) table objects.
+        const descendantTables = new Map();
+        blocks.forEach((block, idx) => {
+            if (block.block_type === this.block_type_map.table && block.table?.property) {
+                const { row_size, column_size } = block.table.property;
+                if (Number(row_size) > 9 || Number(column_size) > 9) {
+                    descendantTables.set(idx, {
+                        property: { ...block.table.property },
+                        cells: (block.table.cells || []).slice(),
+                    });
+                }
+            }
+        });
+        const descendantTableIndices = new Set(descendantTables.keys());
+
         // Strip cells and merge_info from table blocks — API creates empty cells, we populate after
         for (const block of cleanBlocks) {
             if (block.block_type === this.block_type_map.table && block.table) {
@@ -1878,7 +1900,7 @@ class MarkdownToFeishu {
                     segments.push({ blocks: currentBatch, startIdx: currentStartIdx });
                     currentBatch = [];
                 }
-                segments.push({ blocks: [cleanBlocks[i]], startIdx: i });
+                segments.push({ blocks: [cleanBlocks[i]], startIdx: i, viaDescendant: descendantTableIndices.has(i) });
                 currentStartIdx = i + 1;
             } else {
                 if (currentBatch.length === 0) currentStartIdx = i;
@@ -1893,6 +1915,31 @@ class MarkdownToFeishu {
         for (const segment of segments) {
             const segBlocks = segment.blocks;
             const isTable = segBlocks.length === 1 && segBlocks[0].block_type === this.block_type_map.table;
+
+            if (isTable && segment.viaDescendant) {
+                const snapshot = descendantTables.get(segment.startIdx);
+                const data = await this.__create_descendant_table({
+                    document_id,
+                    parentId,
+                    property: snapshot.property,
+                    cells: snapshot.cells,
+                    index: startIndex + segment.startIdx,
+                    token,
+                    seq: segment.startIdx,
+                });
+                const created = data.data?.children?.[0];
+                if (created) {
+                    createdBlockIds.push(created.block_id);
+                    createdBlocksByIndex.set(segment.startIdx, created);
+                }
+                globalCreated += 1;
+                results.push(data);
+                if (!parentBlockId) {
+                    console.log(`Created blocks ${globalCreated}/${cleanBlocks.length}`);
+                }
+                await new Promise(r => setTimeout(r, 200));
+                continue;
+            }
 
             // Send in batches (tables go one at a time, non-tables in batches of 50)
             const segBatchSize = isTable ? 1 : batchSize;
@@ -1944,8 +1991,10 @@ class MarkdownToFeishu {
             }
         }
 
-        // Populate table cells with content
+        // Populate table cells with content (tables created through the
+        // descendant API already carry their cell content and are skipped)
         for (const [idx, cellContents] of tableCellsMap) {
+            if (descendantTableIndices.has(idx)) continue;
             const cellIds = tableCellIds.get(idx);
             if (!cellIds) continue;
 
@@ -2041,6 +2090,72 @@ class MarkdownToFeishu {
             }],
             remainingChildren: desiredChildren.slice(1),
         };
+    }
+
+    // Create one table through the descendant API with explicit type-32 cells
+    // carrying their content. The children API caps row_size at 9, so tables
+    // with more rows can only be built this way; the cells arrive populated
+    // and no follow-up __populateTableCell pass is needed.
+    async __create_descendant_table({ document_id, parentId, property, cells, index, token, seq }) {
+        assertWriterMutation(this.governance, 'MarkdownToFeishu.__create_descendant_table', document_id);
+        const rowSize = Number(property?.row_size);
+        const columnSize = Number(property?.column_size);
+        if (!Number.isInteger(rowSize) || rowSize < 1 || !Number.isInteger(columnSize) || columnSize < 1) {
+            throw new Error(`Descendant table requires integer row_size/column_size, got row_size=${property?.row_size} column_size=${property?.column_size}`);
+        }
+        if (cells.length !== rowSize * columnSize) {
+            throw new Error(`Descendant table cell count ${cells.length} does not match row_size*column_size = ${rowSize * columnSize}`);
+        }
+        const tableTempId = `tmp_tbl_${seq}`;
+        // merge_info is read-only at table creation ("此属性只读，将由系统自动
+        // 生成") — sending it rejects the request with 1770001. Merges, when
+        // ever needed, go through the update-block merge_table_cells request.
+        const descendants = [{
+            block_id: tableTempId,
+            block_type: this.block_type_map.table,
+            table: {
+                property: {
+                    row_size: rowSize,
+                    column_size: columnSize,
+                },
+            },
+            children: cells.map((_, i) => `tmp_cell_${seq}_${i}`),
+        }];
+        cells.forEach((cell, i) => {
+            if (cell?.block_type !== this.block_type_map.text || (cell.children && cell.children.length > 0)) {
+                throw new Error(`Descendant table cell ${i} must be a plain text block without children`);
+            }
+            descendants.push({
+                block_id: `tmp_cell_${seq}_${i}`,
+                block_type: this.block_type_map.table_cell,
+                table_cell: {},
+                children: [`tmp_celltxt_${seq}_${i}`],
+            });
+            descendants.push({
+                block_id: `tmp_celltxt_${seq}_${i}`,
+                block_type: this.block_type_map.text,
+                text: cell.text,
+                children: [],
+            });
+        });
+        const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks/${parentId}/descendant`;
+        const data = await this.__fetch_feishu_json(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`,
+            },
+            body: JSON.stringify({
+                children_id: [tableTempId],
+                descendants,
+                index,
+            }),
+        });
+        if (data.code !== 0) {
+            console.error(`Descendant table creation failed. API response:`, JSON.stringify(data).slice(0, 300));
+            throw new Error(`Failed to create descendant table: ${data.msg}`);
+        }
+        return data;
     }
 
     async __populateTableCell(document_id, cellBlockId, cellContent, token) {

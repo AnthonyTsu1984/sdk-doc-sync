@@ -99,6 +99,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/layout-conformance.test.js',
     '.claude/skills/api-reference-sync/tests/markdown-link-resolution.test.js',
     '.claude/skills/api-reference-sync/tests/markdown-to-feishu-copy.test.js',
+    '.claude/skills/api-reference-sync/tests/markdown-to-feishu-descendant-tables.test.js',
     '.claude/skills/api-reference-sync/tests/markdown-to-feishu-governance.test.js',
     '.claude/skills/api-reference-sync/tests/markdown-to-feishu-lists.test.js',
     '.claude/skills/api-reference-sync/tests/markdown-to-feishu-patch.test.js',

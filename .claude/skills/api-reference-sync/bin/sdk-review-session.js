@@ -77,13 +77,15 @@ function requireValue(args, name) {
   if (!args[name]) throw new Error(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
 }
 
-function bitableWriterFor(args, io) {
+function bitableWriterFor(args, io, operation = 'two-gate-migration') {
   const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
   const { WriterGovernance } = require('../../doc-ops-core/src/writer-governance');
   return io.bitableWriter || new BitableWriter({
     baseToken: args.baseToken,
     tableId: args.tableId || undefined,
-    governance: new WriterGovernance({ skill: 'api-reference-sync', operation: 'two-gate-migration' }),
+    // The governance identity must match the approval envelope's operation —
+    // a mismatch refuses the bind (APPROVAL_OPERATION_MISMATCH).
+    governance: new WriterGovernance({ skill: 'api-reference-sync', operation }),
   });
 }
 
@@ -510,7 +512,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // Draft with empty Targets get the KB-wide final value under one gate.
     requireValue(args, 'session');
     if (!args.baseToken && !io0.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
-    const writer = bitableWriterFor(args, io0);
+    const writer = bitableWriterFor(args, io0, 'backfill-targets');
     const records = await writer.listRecords({ pageSize: 500 });
     const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
     const emptyTargets = {};

@@ -329,7 +329,7 @@ function sdkContext(language) {
       fixture: 'python-search.json',
       category: 'Vector',
       repository: 'milvus-io/pymilvus',
-      summary: 'Searches vectors in a collection and returns nearest matches.',
+      summary: 'This operation searches vectors in a collection and returns nearest matches.',
       params: [
         { name: 'collection_name', kind: 'positional', type: 'str', default: null, description: 'The name of the target collection.' },
         { name: 'data', kind: 'positional', type: 'list[list[float]]', default: null, description: 'The query vectors.' },
@@ -346,7 +346,9 @@ function sdkContext(language) {
       result: {
         type: 'list[SearchResult]',
         description: 'Returns the matching entities ordered by similarity.',
-        fields: [],
+        fields: [
+          { name: 'results', type: 'list[SearchResult]', description: 'The matching search results ordered by similarity.' },
+        ],
       },
       exceptions: [{
         name: 'MilvusException',
@@ -358,7 +360,7 @@ function sdkContext(language) {
       fixture: 'java-create-collection.json',
       category: 'Collections',
       repository: 'zilliztech/milvus-sdk-java',
-      summary: 'Creates a collection through the Java v2 client.',
+      summary: 'This operation creates a collection through the Java v2 client.',
       requiredFields: ['collectionName', 'dimension'],
       examples: [{
         title: 'Create a collection',
@@ -366,7 +368,7 @@ function sdkContext(language) {
         language: 'java',
         code: 'client.createCollection(CreateCollectionReq.builder()\n    .collectionName("docs")\n    .dimension(128)\n    .build());',
       }],
-      result: { type: 'void', description: 'Completes after the collection is created.', fields: [] },
+      result: null, // void operations carry no return sections (describeReplicas baseline)
       exceptions: [{
         name: 'MilvusClientException',
         condition: 'The request cannot be completed.',
@@ -377,7 +379,7 @@ function sdkContext(language) {
       fixture: 'node-create-collection.json',
       category: 'Collections',
       repository: 'zilliztech/milvus-sdk-node',
-      summary: 'Creates a collection through the Node.js client.',
+      summary: 'This operation creates a collection through the Node.js client.',
       examples: [{
         title: 'Create a collection',
         description: 'Creates a simple collection.',
@@ -395,7 +397,7 @@ function sdkContext(language) {
       fixture: 'go-create-collection.json',
       category: 'Collections',
       repository: 'milvus-io/milvus-sdk-go',
-      summary: 'Creates a collection through the Go client.',
+      summary: 'This operation creates a collection through the Go client.',
       requestSyntax: 'option := milvusclient.SimpleCreateCollectionOptions("docs", 128)\nerr := client.CreateCollection(ctx, option)',
       examples: [{
         title: 'Create a collection',
@@ -403,7 +405,13 @@ function sdkContext(language) {
         language: 'go',
         code: 'option := milvusclient.SimpleCreateCollectionOptions("docs", 128)\nerr := client.CreateCollection(ctx, option)\nif err != nil {\n    log.Fatal(err)\n}',
       }],
-      result: { type: 'error', description: 'Returns nil on success or an error on failure.', fields: [] },
+      result: {
+        type: 'error',
+        description: 'Returns nil on success or an error on failure.',
+        fields: [
+          { name: 'error', type: 'error', description: 'nil on success, or the failure reason the caller must inspect.' },
+        ],
+      },
       exceptions: [{
         name: 'error',
         condition: 'The operation fails.',
@@ -414,7 +422,7 @@ function sdkContext(language) {
       fixture: 'cpp-create-collection.json',
       category: 'Collections',
       repository: 'zilliztech/milvus-sdk-cpp',
-      summary: 'Creates a collection through the C++ client.',
+      summary: 'This operation creates a collection through the C++ client.',
       examples: [{
         title: 'Create a collection',
         description: 'Builds a request and checks the returned status.',
@@ -437,7 +445,7 @@ function sdkContext(language) {
       category: 'Project',
       repository: 'zilliztech/zilliz-cli',
       title: 'zilliz project create',
-      summary: 'Creates a Zilliz Cloud project.',
+      summary: 'This operation creates a Zilliz Cloud project.',
       examples: [{
         title: 'Create a project',
         description: '',
@@ -1183,7 +1191,7 @@ test('complete Bitable type index reaches artifact generation while diff records
       return {
         artifact: {
           title: 'search()',
-          content: 'Searches vectors in a collection.',
+          content: 'This operation searches vectors in a collection.',
           reviewed: true,
           validated: true,
           validation: { valid: true },
@@ -1480,7 +1488,7 @@ test('schema-first CLI blocks ambiguous release-scope ownership instead of plann
       indexReader: async () => [],
       artifactProvider: async () => ({
         title: 'search()',
-        content: 'Searches vectors in a collection.',
+        content: 'This operation searches vectors in a collection.',
         reviewed: true,
         validated: true,
         validation: { valid: true },
@@ -1957,7 +1965,7 @@ test('reviewed helper ownership preserves every source variant through filtered-
       }],
       artifactProvider: async () => ({
         title: 'search()',
-        content: 'Searches vectors in a collection.',
+        content: 'This operation searches vectors in a collection.',
         reviewed: true,
         validated: true,
         validation: { valid: true },
@@ -2072,7 +2080,7 @@ test('release-scope duplicate owner actions reject incompatible planning targets
         rendered += 1;
         return {
           title: 'search()',
-          content: 'Searches vectors in a collection.',
+          content: 'This operation searches vectors in a collection.',
           reviewed: true,
           validated: true,
           validation: { valid: true },

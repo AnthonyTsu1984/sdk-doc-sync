@@ -235,84 +235,134 @@ function checkLayoutConformance(profile, facts = {}) {
     // 2026-10-03 global ruling: the five byte-judgeable content rules. All
     // tracks declare them through GLOBAL_LAYOUT_RULES.contentQuality; a
     // profile that does not declare one stays unbound by it.
-    const contentRules = rules.contentQuality;
-    if (contentRules) {
-        const entries = normalizeEntries(facts);
-
-        if (contentRules.cjkForbidden) {
-            const offending = entries
-                .filter((entry) => CJK_PATTERN.test(entry.text))
-                .concat((facts.callouts || []).flatMap((callout) => (callout.lines || [])
-                    .filter((line) => CJK_PATTERN.test(line))
-                    .map((line) => ({ kind: 'callout', text: line }))));
-            if (offending.length > 0) {
-                report('CONTENT_CJK_MIXING', `${offending.length} line(s) carry CJK characters, first: ${offending[0].text}`);
-            }
-        }
-
-        if (nonEmptyString(contentRules.firstSentencePattern)) {
-            const firstBody = entries.find((entry) => entry.kind === 'text' && !isKnownLabel(entry.text));
-            if (firstBody && !new RegExp(contentRules.firstSentencePattern).test(firstBody.text.trim())) {
-                report('FIRST_SENTENCE_REGISTER', `page body first sentence does not match the declared register /${contentRules.firstSentencePattern}/: ${firstBody.text}`);
-            }
-        }
-
-        // Strong form: any page that renders a RETURNS section must carry a
-        // response-fields PARAMETERS bullet list after it (describeReplicas
-        // baseline shape). Pages without a RETURNS label are not bound here.
-        if (contentRules.returnsResponseFieldsRequired) {
-            const returnsIndex = entries.findIndex((entry) => isLabel(entry.text, 'returns'));
-            if (returnsIndex !== -1) {
-                const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex && isLabel(entry.text, 'parameters'));
-                let fieldBullets = 0;
-                if (parametersIndex !== -1) {
-                    for (let index = parametersIndex + 1; index < entries.length; index += 1) {
-                        if (isKnownLabel(entries[index].text)) break;
-                        if (entries[index].kind === 'bullet') fieldBullets += 1;
-                    }
-                }
-                if (fieldBullets === 0) {
-                    report('RETURNS_MIN_DEPTH', parametersIndex === -1
-                        ? 'RETURNS section carries no response-fields PARAMETERS list'
-                        : 'response-fields PARAMETERS list carries no field bullets');
-                }
-            }
-        }
-
-        // Bold-name parameter bullets (request or response side) must carry a
-        // non-empty description after the name/type prefix; plain prose
-        // bullets (nested field descriptions) are not parameter entries.
-        if (contentRules.paramDescRequired) {
-            for (let index = 0; index < entries.length; index += 1) {
-                if (!isLabel(entries[index].text, 'parameters')) continue;
-                for (let cursor = index + 1; cursor < entries.length; cursor += 1) {
-                    const entry = entries[cursor];
-                    if (isKnownLabel(entry.text)) break;
-                    if (entry.kind !== 'bullet') continue;
-                    const text = entry.text.trim().replace(/^[-•*]\s+/, '');
-                    const parameterMatch = text.match(/^\*\*([^*]+)\*\*(?:\s+\(\*[^*]*\*\))?\s*(.*)$/);
-                    if (!parameterMatch) continue;
-                    const description = (parameterMatch[2] || '').replace(/^[-–—]\s*/, '').trim();
-                    if (description === '') {
-                        report('PARAM_DESC_REQUIRED', `parameter bullet carries no description: ${entry.text}`);
-                    }
-                }
-            }
-        }
-
-        if (contentRules.bareNotesSectionForbidden) {
-            const bareNote = entries.find((entry) => /^notes:?$/i.test(entry.text.trim()));
-            if (bareNote) {
-                report('INTERNAL_NOTE_LEAK', `"Notes" line outside a governed callout: ${bareNote.text}`);
-            }
-        }
+    if (rules.contentQuality) {
+        checkContentRules(rules.contentQuality, normalizeEntries(facts), facts.callouts || [], report);
     }
 
     return { invariantId: LAYOUT_INVARIANT_ID, violations };
 }
 
+// The five content rules, shared by the block-facts path and the markdown
+// preview path. `entries` are ordered {kind: text|heading|bullet, text};
+// `calloutGroups` are governed callouts whose lines are scanned for CJK only.
+function checkContentRules(contentRules, entries, calloutGroups, report) {
+    if (contentRules.cjkForbidden) {
+        const offending = entries
+            .filter((entry) => CJK_PATTERN.test(entry.text))
+            .concat((calloutGroups || []).flatMap((callout) => (callout.lines || [])
+                .filter((line) => CJK_PATTERN.test(line))
+                .map((line) => ({ kind: 'callout', text: line }))));
+        if (offending.length > 0) {
+            report('CONTENT_CJK_MIXING', `${offending.length} line(s) carry CJK characters, first: ${offending[0].text}`);
+        }
+    }
+
+    if (nonEmptyString(contentRules.firstSentencePattern)) {
+        const firstBody = entries.find((entry) => entry.kind === 'text' && !isKnownLabel(entry.text));
+        if (firstBody && !new RegExp(contentRules.firstSentencePattern).test(firstBody.text.trim())) {
+            report('FIRST_SENTENCE_REGISTER', `page body first sentence does not match the declared register /${contentRules.firstSentencePattern}/: ${firstBody.text}`);
+        }
+    }
+
+    // Strong form: any page that renders a RETURNS section must carry a
+    // response-fields PARAMETERS bullet list after it (describeReplicas
+    // baseline shape). Pages without a RETURNS label are not bound here.
+    if (contentRules.returnsResponseFieldsRequired) {
+        const returnsIndex = entries.findIndex((entry) => isLabel(entry.text, 'returns'));
+        if (returnsIndex !== -1) {
+            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex && isLabel(entry.text, 'parameters'));
+            let fieldBullets = 0;
+            if (parametersIndex !== -1) {
+                for (let index = parametersIndex + 1; index < entries.length; index += 1) {
+                    if (isKnownLabel(entries[index].text)) break;
+                    if (entries[index].kind === 'bullet') fieldBullets += 1;
+                }
+            }
+            if (fieldBullets === 0) {
+                report('RETURNS_MIN_DEPTH', parametersIndex === -1
+                    ? 'RETURNS section carries no response-fields PARAMETERS list'
+                    : 'response-fields PARAMETERS list carries no field bullets');
+            }
+        }
+    }
+
+    // Bold-name parameter bullets (request or response side) must carry a
+    // non-empty description; the description may live inline after the
+    // name/type prefix or as continuation child prose of the bullet (the
+    // renderer emits descriptions as child paragraphs), so a bullet and its
+    // following non-bullet prose lines coalesce into one parameter entry.
+    // Plain prose bullets (nested field descriptions) are not parameter
+    // entries.
+    if (contentRules.paramDescRequired) {
+        for (let index = 0; index < entries.length; index += 1) {
+            if (!isLabel(entries[index].text, 'parameters')) continue;
+            for (let cursor = index + 1; cursor < entries.length; cursor += 1) {
+                const entry = entries[cursor];
+                if (isKnownLabel(entry.text)) break;
+                if (entry.kind !== 'bullet') continue;
+                const text = entry.text.trim().replace(/^[-•*]\s+/, '');
+                const parameterMatch = text.match(/^\*\*([^*]+)\*\*(?:\s+\(\*[^*]*\*\))?\s*(.*)$/);
+                if (!parameterMatch) continue;
+                const descriptionParts = [(parameterMatch[2] || '').replace(/^[-–—]\s*/, '').trim()];
+                let lookahead = cursor + 1;
+                while (lookahead < entries.length && entries[lookahead].kind === 'text' && !isKnownLabel(entries[lookahead].text)) {
+                    descriptionParts.push(entries[lookahead].text.trim());
+                    lookahead += 1;
+                }
+                if (descriptionParts.join(' ').trim() === '') {
+                    report('PARAM_DESC_REQUIRED', `parameter bullet carries no description: ${entry.text}`);
+                }
+            }
+        }
+    }
+
+    if (contentRules.bareNotesSectionForbidden) {
+        const bareNote = entries.find((entry) => /^notes:?$/i.test(entry.text.trim()));
+        if (bareNote) {
+            report('INTERNAL_NOTE_LEAK', `"Notes" line outside a governed callout: ${bareNote.text}`);
+        }
+    }
+}
+
+// Markdown-preview path (campaign-control hardening §3.7): the same five
+// content rules over the write-approval presentation preview — the preview
+// is the page verbatim, so a violation must stop the batch before it reaches
+// the operator. Fenced code is skipped: rule targets are page prose, never
+// example code.
+function checkMarkdownContentQuality(markdown, profile) {
+    const violations = [];
+    const rules = profile?.layoutRules;
+    if (!rules?.contentQuality || typeof markdown !== 'string') {
+        return { invariantId: LAYOUT_INVARIANT_ID, violations };
+    }
+    const report = (code, detail) => violations.push({ code, detail });
+    const entries = [];
+    let insideFence = false;
+    for (const rawLine of markdown.split(/\r?\n/)) {
+        const trimmed = rawLine.trim();
+        if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+            insideFence = !insideFence;
+            continue;
+        }
+        if (insideFence || trimmed === '') continue;
+        let kind = 'text';
+        let line = trimmed;
+        if (/^[-•*]\s+/.test(line)) {
+            kind = 'bullet';
+            line = line.replace(/^[-•*]\s+/, '');
+        }
+        line = line.replace(/^#{1,6}\s*/, '').replace(/^\*\*(.+)\*\*$/, '$1').trim();
+        if (line === '') continue;
+        entries.push({ kind, text: line });
+    }
+    checkContentRules(rules.contentQuality, entries, [], report);
+    return { invariantId: LAYOUT_INVARIANT_ID, violations };
+}
+
 module.exports = {
     LAYOUT_INVARIANT_ID,
+    CJK_PATTERN,
     pageFactsFromBlocks,
     checkLayoutConformance,
+    checkMarkdownContentQuality,
 };

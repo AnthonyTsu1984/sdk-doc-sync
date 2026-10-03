@@ -316,7 +316,13 @@ function renderReturns(document, policy, context) {
   }
   blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
   if (Array.isArray(result.fields) && result.fields.length > 0) {
-      blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
+    // describeReplicas baseline (2026-10-03 strong-form ruling): response
+    // fields render as a labeled PARAMETERS bullet list after the RETURNS
+    // prose, mirroring the request-side parameter list.
+    if (policy.parametersLabel) {
+      blocks.push(label(policy.parametersLabel, semantic('result-fields-label')));
+    }
+    blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
   }
   return blocks;
 }

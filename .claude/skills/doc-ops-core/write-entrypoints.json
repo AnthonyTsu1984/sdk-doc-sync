@@ -262,6 +262,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "intake-preflight",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

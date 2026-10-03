@@ -7,6 +7,7 @@ const {
     LAYOUT_INVARIANT_ID,
     pageFactsFromBlocks,
     checkLayoutConformance,
+    checkMarkdownContentQuality,
 } = require('../src/sdk-doc-sync/layout-conformance');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
@@ -228,4 +229,48 @@ test('the five 2026-10-03 global content rules flag their failure modes and pass
         callouts: [{ lines: ['Notes', 'Deprecated in v3.0.x. Use queryAsync().'] }],
     });
     assert.deepEqual(clean.violations, []);
+});
+
+test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
+    const profile = sdkLayoutProfiles.java;
+    const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)
+        .violations.find((violation) => violation.code === name)?.code || null;
+
+    // Compliant preview: registered first sentence, bold labels, described fields.
+    assert.deepEqual(checkMarkdownContentQuality([
+        'This operation queries entities by ID.',
+        '',
+        '**PARAMETERS:**',
+        '- **ids** (*List<Object>*) - The entity IDs to query.',
+        '',
+        '**RETURN TYPE:**',
+        'GetResp',
+        '',
+        '**RETURNS:**',
+        'A GetResp object representing the queried entities.',
+        '**PARAMETERS:**',
+        '- **entities** (*List<Object>*) - The queried entities.',
+    ].join('\n'), profile).violations, []);
+
+    // Failure modes: CJK, register, returns depth, param description, bare notes.
+    assert.equal(code('该操作查询实体。', 'CONTENT_CJK_MIXING'), 'CONTENT_CJK_MIXING');
+    assert.equal(code('Deletes entities.', 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
+    assert.equal(code('This operation queries entities.\n**RETURNS:**\nA GetResp object.', 'RETURNS_MIN_DEPTH'), 'RETURNS_MIN_DEPTH');
+    assert.equal(code('This operation waits.\n**PARAMETERS:**\n- **maxWaitSeconds** (*long*)', 'PARAM_DESC_REQUIRED'), 'PARAM_DESC_REQUIRED');
+    assert.equal(code('This operation deletes entities.\nNotes\n', 'INTERNAL_NOTE_LEAK'), 'INTERNAL_NOTE_LEAK');
+
+    // Fenced code is prose-exempt: CJK comments, dash lines, and Notes strings
+    // inside example code never count.
+    assert.deepEqual(checkMarkdownContentQuality([
+        'This operation searches vectors.',
+        '```java',
+        '// 按 ID 查询',
+        'client.query(ids); // Notes',
+        '- not-a-param-bullet',
+        '```',
+    ].join('\n'), profile).violations, []);
+
+    // A profile without content rules stays unbound.
+    const bare = { id: 'custom', version: 1, order: [], fences: {}, cardinality: {} };
+    assert.deepEqual(checkMarkdownContentQuality('Deletes entities.', bare).violations, []);
 });

@@ -33,6 +33,8 @@ def search(self, collection_name: str, data: list[list[float]], *, limit: int = 
 
 Returns the matching entities ordered by similarity.
 
+**PARAMETERS:**
+
 - **items** ([SearchResult\[\]](/reference/python/search-result)) -
   **\[REQUIRED\]**
   The matching entities.

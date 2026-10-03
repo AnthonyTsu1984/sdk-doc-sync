@@ -270,7 +270,14 @@ function validateSharedUpdateReviews(reviews, { referencedRecordIds, sourceRecor
 // reviewed, so the digest must not depend on the caller's array order.
 function normalizeSharedUpdateReviews(reviews) {
   if (!Array.isArray(reviews)) return reviews;
-  return [...reviews].sort((left, right) => String(left?.recordId || '').localeCompare(String(right?.recordId || '')));
+  // Codepoint comparison — never localeCompare, whose collation is ICU- and
+  // locale-dependent and would make the same set digest differently across
+  // environments (the rest of the digest path is codepoint-ordered too).
+  return [...reviews].sort((left, right) => {
+    const a = String(left?.recordId || '');
+    const b = String(right?.recordId || '');
+    return a < b ? -1 : a > b ? 1 : 0;
+  });
 }
 
 // Input facts for one canonical identity. `sourceDiff` comes from the diff

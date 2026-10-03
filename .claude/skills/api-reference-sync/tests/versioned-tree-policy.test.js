@@ -295,11 +295,36 @@ test('policy kernel v4 gates a shared in-place patch on classified inheriting re
     });
     assert.equal(reclassified.status, 'allowed');
     assert.notEqual(allowed.attestation.inputDigest, reclassified.attestation.inputDigest);
-    const reordered = evaluateVersionedTreeDelta({
-        ...sharedLocalFacts(),
-        sharedUpdateReviews: [reviews()[0]],
-    });
-    assert.equal(reordered.attestation.inputDigest, allowed.attestation.inputDigest);
+    // Genuine reordering: a two-entry classification set in both array
+    // orders must digest identically (the reviewer's vacuous-test catch —
+    // a single-entry array is identical to its own reverse).
+    const threeRefFacts = (order) => {
+        const facts = sharedLocalFacts();
+        facts.inheritanceEvidence = createInheritanceEvidence({
+            stableId: 'cpp:Partitions:LoadPartitions',
+            current: facts.current,
+            target: facts.target,
+            sharedTokenStatus: 'shared',
+            referencedRecordIds: ['rec-load-partitions-v30', 'rec-load-partitions-v26', 'rec-load-partitions-v25'],
+            trackInventoryDigests: { 'v3.0.x': sha256Digest(Buffer.from('v3.0.x', 'utf8')) },
+        });
+        facts.sharedUpdateReviews = order === 'a'
+            ? [
+                { recordId: 'rec-load-partitions-v25', track: 'v2.5.x', decision: 'no_successor_action' },
+                { recordId: 'rec-load-partitions-v26', track: 'v2.6.x', decision: 'no_successor_action' },
+            ]
+            : [
+                { recordId: 'rec-load-partitions-v26', track: 'v2.6.x', decision: 'no_successor_action' },
+                { recordId: 'rec-load-partitions-v25', track: 'v2.5.x', decision: 'no_successor_action' },
+            ];
+        return facts;
+    };
+    const reordered = evaluateVersionedTreeDelta(threeRefFacts('a'));
+    assert.equal(reordered.status, 'allowed');
+    assert.equal(
+        evaluateVersionedTreeDelta(threeRefFacts('b')).attestation.inputDigest,
+        reordered.attestation.inputDigest,
+    );
 
     // Placement predicate failure on the same-track shared shape blocks with
     // PLACEMENT_UNKNOWN — it must never fall through to the copy table and

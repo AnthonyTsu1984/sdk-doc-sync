@@ -580,6 +580,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const selectedSlugs = new Set();
   const contexts = {};
   const emittedDocIdentities = new Set();
+  const deferredDriftReminders = [];
   const target = required(candidateSpec.target, 'Candidate spec is missing target');
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
@@ -685,6 +686,24 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     const existingRecord = assertExistingRecordEvidence({ action: planningAction, spec, identity });
     const existingRecordLookup = assertCreateMissingEvidence({ action: planningAction, spec, identity });
     const inheritanceReview = assertInheritanceReview({ action: planningAction, spec, requiredSuccessorTracks });
+    // Defer drift reminder (issue #76 change 5): a source-track UPDATE whose
+    // successor review deferred a track means the change will not flow
+    // structurally to that successor's same-name document. Surface it so the
+    // review is re-triggered (or the divergence recorded) instead of the
+    // defer silently going stale. Reminder only — never a gate.
+    if (planningAction.type === 'UPDATE') {
+      for (const successor of inheritanceReview?.successors || []) {
+        if (successor.decision !== 'defer') continue;
+        deferredDriftReminders.push({
+          stableId: identity.stableId,
+          canonicalSlug: identity.canonicalSlug,
+          successorTrack: successor.track,
+          status: successor.status,
+          decision: successor.decision,
+          message: `Source track updated ${identity.canonicalSlug} this release while successor track ${successor.track} is deferred (${successor.status}); the change does not flow to the deferred successor — re-trigger the inheritance review or record the divergence.`,
+        });
+      }
+    }
     for (const sourceSlug of groupedSources) {
       if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
     }
@@ -855,6 +874,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       contexts,
     },
     selectedCount: selected.length,
+    deferredDriftReminders,
   };
 }
 
@@ -881,6 +901,7 @@ function main(argv = process.argv) {
   writeJson(args.outputContext, result.referenceContext);
   console.log(JSON.stringify({
     selectedCount: result.selectedCount,
+    deferredDriftReminders: result.deferredDriftReminders,
     outputScope: args.outputScope,
     outputContext: args.outputContext,
   }, null, 2));

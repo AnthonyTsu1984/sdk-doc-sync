@@ -145,3 +145,17 @@ map, and reports findings without mutating anything:
 Findings are keyed by invariant ID and an evidence digest over the inputs.
 Reconciliation detects manual edits and historical drift; it does not
 authorize cleanup.
+
+### Changed-identity classification (`--changed-identities`)
+
+Without a diff classification the delta-inventory findings stay at `warn`:
+the CLI cannot know which identities a scan marked changed, so
+`TREE_DELTA_CHANGED_NOT_REPOINTED` / `TREE_DELTA_TARGET_RECORD_MISSING`
+would be guesswork. Pass `--changed-identities <file>` — a JSON object
+mapping track version to the slugs that track's latest scan/diff classified
+as changed (`{ "v2.6.x": ["Partitions-LoadPartitions"], ... }`) — and the
+findings escalate to `error` for the affected pairs (both tracks of a pair
+are consulted), while correctly forked changed identities stop surfacing as
+false `TREE_DELTA_UNCHANGED_DIVERGENT` warnings. The classification artifact
+is produced by the scan/diff tooling per release; malformed files fail
+closed.

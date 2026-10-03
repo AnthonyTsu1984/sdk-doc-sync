@@ -7,7 +7,16 @@
 // inventory, then reports delta-inventory, shared-document, and
 // VirtualNode/folder findings. Detect-only: this script never mutates live
 // state and does not authorize cleanup.
+//
+// --changed-identities (issue #76 change 4) wakes the dormant findings: the
+// file maps track version -> slugs classified changed by that track's latest
+// scan/diff (the DiffEngine UPDATE classification). With it,
+// TREE_DELTA_CHANGED_NOT_REPOINTED ("should have forked, didn't") and
+// TREE_DELTA_TARGET_RECORD_MISSING escalate to errors, and correctly forked
+// changed identities stop surfacing as false UNCHANGED_DIVERGENT warnings.
+// Without it the classification is absent and those findings stay at warn.
 
+const fs = require('node:fs');
 const path = require('node:path');
 const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
 const MarkdownToFeishu = require('../src/markdown-to-feishu');
@@ -54,11 +63,51 @@ function parseArgs(argv) {
         const arg = argv[index];
         if (arg === '--language') options.language = argv[++index];
         else if (arg === '--registry') options.registry = path.resolve(argv[++index]);
+        else if (arg === '--changed-identities') options.changedIdentitiesPath = path.resolve(argv[++index]);
         else if (arg === '--json') options.json = true;
         else throw new Error(`Unknown argument: ${arg}`);
     }
     if (!options.language) throw new Error('--language is required');
     return options;
+}
+
+// Parses and validates the changed-identity classification artifact: a JSON
+// object mapping track version -> array of non-empty slugs. Duplicates within
+// one track collapse; any other shape fails closed.
+function loadChangedIdentities(filePath) {
+    let raw;
+    try {
+        raw = fs.readFileSync(filePath, 'utf8');
+    } catch (error) {
+        throw new Error(`--changed-identities file is unreadable: ${error.message}`);
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch (error) {
+        throw new Error(`--changed-identities file is not valid JSON: ${error.message}`);
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+        throw new Error('--changed-identities must be a JSON object mapping track version -> array of changed slugs');
+    }
+    const byTrack = {};
+    for (const [track, slugs] of Object.entries(parsed)) {
+        if (!Array.isArray(slugs) || slugs.some((slug) => typeof slug !== 'string' || slug.length === 0)) {
+            throw new Error(`--changed-identities["${track}"] must be an array of non-empty slugs`);
+        }
+        byTrack[track] = [...new Set(slugs)];
+    }
+    return byTrack;
+}
+
+// A changed identity affects the pair when either track's scan classified it:
+// the older track's update is exactly the change that must flow (or fork),
+// and the newer track's classification marks its own fork points.
+function pairChangedIdentities(byTrack, baselineVersion, targetVersion) {
+    return new Set([
+        ...(byTrack[baselineVersion] || []),
+        ...(byTrack[targetVersion] || []),
+    ]);
 }
 
 async function main(argv = process.argv) {
@@ -68,6 +117,9 @@ async function main(argv = process.argv) {
     if (tracks.length < 2) {
         throw new Error(`Language ${options.language} has fewer than two registered tracks; nothing to reconcile`);
     }
+    const changedIdentitiesByTrack = options.changedIdentitiesPath
+        ? loadChangedIdentities(options.changedIdentitiesPath)
+        : null;
     const folderReader = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
 
     const reports = [];
@@ -107,30 +159,43 @@ async function main(argv = process.argv) {
             targetFolders = await folderReader.listFolder({ folderToken: versionRootToken, type: 'folder' }) || [];
         }
         const categoryNodes = targetRecords.filter(record => record.type === 'VirtualNode');
+        const pairChanged = changedIdentitiesByTrack
+            ? pairChangedIdentities(changedIdentitiesByTrack, baselineTrack.version, targetTrack.version)
+            : null;
 
         const report = reconcileTreeDelta({
             baselineRecords,
             targetRecords,
+            changedIdentities: pairChanged,
             targetFolders,
             categoryNodes,
             tokenReferences,
             evidenceInputs: {
                 baselineTrack: baselineTrack.version,
                 baselineBaseToken: baselineBase,
+                changedIdentitiesPath: options.changedIdentitiesPath ?? null,
                 collectedAt: new Date().toISOString(),
                 targetTrack: targetTrack.version,
                 targetBaseToken: targetBase,
                 versionRootToken,
             },
         });
-        reports.push({ baseline: baselineTrack.version, target: targetTrack.version, ...report });
+        reports.push({
+            baseline: baselineTrack.version,
+            target: targetTrack.version,
+            changedIdentities: pairChanged ? pairChanged.size : null,
+            ...report,
+        });
     }
 
     if (options.json) {
         process.stdout.write(`${JSON.stringify(reports, null, 2)}\n`);
     } else {
         for (const report of reports) {
-            console.log(`${report.baseline} -> ${report.target}: ${report.summary.errors} errors, ${report.summary.warnings} warnings (${report.summary.sharedIdentities} shared identities)`);
+            const classification = report.changedIdentities == null
+                ? 'no --changed-identities (findings stay at warn)'
+                : `${report.changedIdentities} changed identities classified`;
+            console.log(`${report.baseline} -> ${report.target}: ${report.summary.errors} errors, ${report.summary.warnings} warnings (${report.summary.sharedIdentities} shared identities; ${classification})`);
             for (const finding of report.findings) {
                 if (finding.severity === 'info') continue;
                 console.log(`  ${finding.severity.toUpperCase()} ${finding.code} ${finding.identity}`);
@@ -154,4 +219,8 @@ if (require.main === module) {
     });
 }
 
-module.exports = { main };
+module.exports = {
+    loadChangedIdentities,
+    main,
+    pairChangedIdentities,
+};

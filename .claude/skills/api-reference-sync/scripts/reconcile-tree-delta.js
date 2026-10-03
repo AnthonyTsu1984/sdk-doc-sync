@@ -100,14 +100,42 @@ function loadChangedIdentities(filePath) {
     return byTrack;
 }
 
-// A changed identity affects the pair when either track's scan classified it:
-// the older track's update is exactly the change that must flow (or fork),
-// and the newer track's classification marks its own fork points.
+// A changed identity affects the pair when either track's scan classified it,
+// but the two sides mean different things under the issue #76 ruling:
+// - TARGET-track classification = that track's own sync changed the identity
+//   (ruling case 3): a still-shared pointer is a genuine missing fork —
+//   TREE_DELTA_CHANGED_NOT_REPOINTED escalates to error.
+// - BASELINE-track classification = a source-track update (ruling case 1):
+//   still-shared is the correct post-release state when the change flowed
+//   in-place, so it stays advisory; a forked pointer is case 2 (legitimate).
+// Both sides suppress TREE_DELTA_UNCHANGED_DIVERGENT for forked identities.
+// `changed` (union) drives TARGET_RECORD_MISSING escalation and divergent
+// suppression; `mustRepoint` (target only) drives the escalation.
 function pairChangedIdentities(byTrack, baselineVersion, targetVersion) {
-    return new Set([
-        ...(byTrack[baselineVersion] || []),
-        ...(byTrack[targetVersion] || []),
-    ]);
+    const targetSlugs = byTrack[targetVersion] || [];
+    return {
+        changed: new Set([...(byTrack[baselineVersion] || []), ...targetSlugs]),
+        mustRepoint: new Set(targetSlugs),
+    };
+}
+
+// Typo'd track keys (e.g. "v2.6x") would silently no-op a classification and
+// de-escalate findings. Keys that match no registered track version anywhere
+// fail closed; keys of other languages' tracks are allowed (multi-language
+// artifacts) and simply unused for this run.
+function assertKnownTrackKeys(registry, byTrack) {
+    const knownVersions = new Set();
+    for (const entry of Object.values(registry?.languages || {})) {
+        for (const track of entry?.tracks || []) {
+            if (track?.version) knownVersions.add(track.version);
+        }
+    }
+    const unknown = Object.keys(byTrack).filter((track) => !knownVersions.has(track));
+    if (unknown.length > 0) {
+        throw new Error(
+            `--changed-identities has unknown track version(s): ${unknown.sort().join(', ')}; registered versions: ${[...knownVersions].sort().join(', ')}`,
+        );
+    }
 }
 
 async function main(argv = process.argv) {
@@ -120,6 +148,7 @@ async function main(argv = process.argv) {
     const changedIdentitiesByTrack = options.changedIdentitiesPath
         ? loadChangedIdentities(options.changedIdentitiesPath)
         : null;
+    if (changedIdentitiesByTrack) assertKnownTrackKeys(registry, changedIdentitiesByTrack);
     const folderReader = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
 
     const reports = [];
@@ -166,7 +195,8 @@ async function main(argv = process.argv) {
         const report = reconcileTreeDelta({
             baselineRecords,
             targetRecords,
-            changedIdentities: pairChanged,
+            changedIdentities: pairChanged ? pairChanged.changed : null,
+            mustRepointIdentities: pairChanged ? pairChanged.mustRepoint : null,
             targetFolders,
             categoryNodes,
             tokenReferences,
@@ -183,7 +213,7 @@ async function main(argv = process.argv) {
         reports.push({
             baseline: baselineTrack.version,
             target: targetTrack.version,
-            changedIdentities: pairChanged ? pairChanged.size : null,
+            changedIdentities: pairChanged ? pairChanged.changed.size : null,
             ...report,
         });
     }
@@ -220,6 +250,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+    assertKnownTrackKeys,
     loadChangedIdentities,
     main,
     pairChangedIdentities,

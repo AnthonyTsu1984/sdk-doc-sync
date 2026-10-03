@@ -581,6 +581,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const contexts = {};
   const emittedDocIdentities = new Set();
   const deferredDriftReminders = [];
+  const emittedDeferredReminders = new Set();
   const target = required(candidateSpec.target, 'Candidate spec is missing target');
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
@@ -686,14 +687,24 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     const existingRecord = assertExistingRecordEvidence({ action: planningAction, spec, identity });
     const existingRecordLookup = assertCreateMissingEvidence({ action: planningAction, spec, identity });
     const inheritanceReview = assertInheritanceReview({ action: planningAction, spec, requiredSuccessorTracks });
+    for (const sourceSlug of groupedSources) {
+      if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
+    }
+    if (emittedDocIdentities.has(identity.stableId)) continue;
+    emittedDocIdentities.add(identity.stableId);
     // Defer drift reminder (issue #76 change 5): a source-track UPDATE whose
     // successor review deferred a track means the change will not flow
     // structurally to that successor's same-name document. Surface it so the
     // review is re-triggered (or the divergence recorded) instead of the
-    // defer silently going stale. Reminder only — never a gate.
+    // defer silently going stale. Reminder only — never a gate. Only the
+    // required successor tracks participate (extra unvalidated successor
+    // entries are ignored), deduped per identity+track.
     if (planningAction.type === 'UPDATE') {
       for (const successor of inheritanceReview?.successors || []) {
-        if (successor.decision !== 'defer') continue;
+        if (successor.decision !== 'defer' || !requiredSuccessorTracks.includes(successor.track)) continue;
+        const reminderKey = `${identity.stableId}\u0000${successor.track}`;
+        if (emittedDeferredReminders.has(reminderKey)) continue;
+        emittedDeferredReminders.add(reminderKey);
         deferredDriftReminders.push({
           stableId: identity.stableId,
           canonicalSlug: identity.canonicalSlug,
@@ -704,11 +715,6 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         });
       }
     }
-    for (const sourceSlug of groupedSources) {
-      if (candidates[sourceSlug]) selectedSlugs.add(sourceSlug);
-    }
-    if (emittedDocIdentities.has(identity.stableId)) continue;
-    emittedDocIdentities.add(identity.stableId);
 
     const folderToken = spec.folderToken || folders[category] || null;
     const folderRef = spec.folderRef || null;

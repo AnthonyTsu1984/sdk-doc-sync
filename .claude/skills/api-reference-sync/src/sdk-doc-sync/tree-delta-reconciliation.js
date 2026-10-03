@@ -72,6 +72,7 @@ function reconcileTreeDelta({
   baselineRecords,
   targetRecords,
   changedIdentities = null,
+  mustRepointIdentities = null,
   targetFolders,
   categoryNodes,
   tokenReferences = null,
@@ -96,6 +97,15 @@ function reconcileTreeDelta({
   // 1. Delta inventory: every identity is added, changed, unchanged, or a
   // reviewed exception. Missing target pages for changed identities and
   // still-shared pages for changed identities are delta-model violations.
+  // Issue #76 ruling: only the TARGET track's classification escalates
+  // CHANGED_NOT_REPOINTED — a still-shared pointer after the target track's
+  // own sync marked the identity changed is a genuinely missing fork, while a
+  // baseline-track classification (source-track update) with a still-shared
+  // pointer is the correct post-release state when the change flowed in
+  // place (kernel v4 case 1), so it stays advisory. Direct callers passing
+  // only changedIdentities keep the historical escalate-on-classified
+  // behavior (mustRepointIdentities defaults to it).
+  const repointClassifier = mustRepointIdentities || changedIdentities;
   const sharedIdentities = new Set();
   for (const [slug, baseline] of baselineBySlug) {
     const target = targetBySlug.get(slug);
@@ -109,7 +119,8 @@ function reconcileTreeDelta({
     if (target.documentToken && target.documentToken === baseline.documentToken) {
       sharedIdentities.add(slug);
       if (changedIdentities && changedIdentities.has(slug)) {
-        report('error', 'TREE_DELTA_CHANGED_NOT_REPOINTED', slug, {
+        const severity = repointClassifier && repointClassifier.has(slug) ? 'error' : 'warn';
+        report(severity, 'TREE_DELTA_CHANGED_NOT_REPOINTED', slug, {
           sharedDocumentToken: baseline.documentToken ?? null,
         });
       }

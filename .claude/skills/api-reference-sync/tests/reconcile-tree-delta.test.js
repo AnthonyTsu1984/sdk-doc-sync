@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const { reconcileTreeDelta } = require('../src/sdk-doc-sync/tree-delta-reconciliation');
 const {
+    assertKnownTrackKeys,
     loadChangedIdentities,
     pairChangedIdentities,
 } = require('../scripts/reconcile-tree-delta');
@@ -36,26 +37,55 @@ function pairState({ baselineToken = SHARED_TOKEN, targetToken = SHARED_TOKEN } 
     };
 }
 
-test('changedIdentities escalates a still-shared changed identity to an error finding', () => {
+test('a target-track classification escalates a still-shared changed identity to an error finding', () => {
+    const pair = pairChangedIdentities({ 'v3.0.x': [SLUG] }, 'v2.6.x', 'v3.0.x');
     const classified = reconcileTreeDelta({
         ...pairState(),
-        changedIdentities: new Set([SLUG]),
+        changedIdentities: pair.changed,
+        mustRepointIdentities: pair.mustRepoint,
     });
     const finding = classified.findings.find((entry) => entry.code === 'TREE_DELTA_CHANGED_NOT_REPOINTED');
     assert.ok(finding, 'expected the wake-up finding');
     assert.equal(finding.severity, 'error');
     assert.equal(classified.ok, false);
 
-    // Without the classification the same live shape stays advisory.
+    // Without any classification the same live shape stays advisory.
     const unclassified = reconcileTreeDelta(pairState());
     assert.equal(unclassified.findings.some((entry) => entry.code === 'TREE_DELTA_CHANGED_NOT_REPOINTED'), false);
     assert.equal(unclassified.ok, true);
 });
 
+test('a baseline-only classification keeps a still-shared changed identity advisory (issue #76 case 1)', () => {
+    // The source track's own update flowed in place: still-shared is the
+    // correct post-release state, so the finding must not fail the run.
+    const pair = pairChangedIdentities({ 'v2.6.x': [SLUG] }, 'v2.6.x', 'v3.0.x');
+    const report = reconcileTreeDelta({
+        ...pairState(),
+        changedIdentities: pair.changed,
+        mustRepointIdentities: pair.mustRepoint,
+    });
+    const finding = report.findings.find((entry) => entry.code === 'TREE_DELTA_CHANGED_NOT_REPOINTED');
+    assert.ok(finding, 'expected the advisory finding');
+    assert.equal(finding.severity, 'warn');
+    assert.equal(report.ok, true);
+});
+
+test('direct callers passing only changedIdentities keep the escalate-on-classified behavior', () => {
+    const report = reconcileTreeDelta({
+        ...pairState(),
+        changedIdentities: new Set([SLUG]),
+    });
+    const finding = report.findings.find((entry) => entry.code === 'TREE_DELTA_CHANGED_NOT_REPOINTED');
+    assert.equal(finding.severity, 'error');
+    assert.equal(report.ok, false);
+});
+
 test('a classified changed identity with a target-local document is the expected post-transition state', () => {
+    const pair = pairChangedIdentities({ 'v2.6.x': [SLUG], 'v3.0.x': [SLUG] }, 'v2.6.x', 'v3.0.x');
     const report = reconcileTreeDelta({
         ...pairState({ targetToken: 'doc-load-partitions-v30' }),
-        changedIdentities: new Set([SLUG]),
+        changedIdentities: pair.changed,
+        mustRepointIdentities: pair.mustRepoint,
     });
     assert.equal(report.findings.some((entry) => entry.code === 'TREE_DELTA_CHANGED_NOT_REPOINTED'), false);
     assert.equal(report.findings.some((entry) => entry.code === 'TREE_DELTA_UNCHANGED_DIVERGENT'), false);
@@ -110,12 +140,31 @@ test('loadChangedIdentities validates the classification artifact and dedupes sl
     assert.throws(() => loadChangedIdentities(filePath), /array of non-empty slugs/);
 });
 
-test('pairChangedIdentities unions both tracks of the pair', () => {
-    const union = pairChangedIdentities({
+test('pairChangedIdentities splits escalation from suppression', () => {
+    const pair = pairChangedIdentities({
         'v2.6.x': ['Partitions-LoadPartitions'],
         'v3.0.x': ['Database-DescribeReplicas'],
         'v2.5.x': ['Somewhere-Else'],
     }, 'v2.6.x', 'v3.0.x');
-    assert.deepEqual([...union].sort(), ['Database-DescribeReplicas', 'Partitions-LoadPartitions']);
-    assert.deepEqual([...pairChangedIdentities({}, 'v2.6.x', 'v3.0.x')], []);
+    assert.deepEqual([...pair.changed].sort(), ['Database-DescribeReplicas', 'Partitions-LoadPartitions']);
+    // Only the target track's classification demands a repoint.
+    assert.deepEqual([...pair.mustRepoint], ['Database-DescribeReplicas']);
+    const empty = pairChangedIdentities({}, 'v2.6.x', 'v3.0.x');
+    assert.equal(empty.changed.size, 0);
+    assert.equal(empty.mustRepoint.size, 0);
+});
+
+test("assertKnownTrackKeys fails closed on typo'd track versions but accepts other languages' tracks", () => {
+    const registry = { languages: {
+        python: { tracks: [{ version: 'v2.6.x' }, { version: 'v3.0.x' }] },
+        cpp: { tracks: [{ version: 'v2.4.x' }, { version: 'v2.5.x' }] },
+    } };
+    assertKnownTrackKeys(registry, { 'v2.6.x': ['Slug-One'] });
+    // Another language's track version is registered, so a multi-language
+    // artifact reconciled for one language does not trip.
+    assertKnownTrackKeys(registry, { 'v2.4.x': ['Slug-One'] });
+    assert.throws(
+        () => assertKnownTrackKeys(registry, { 'v2.6x': ['Slug-One'] }),
+        /unknown track version\(s\): v2\.6x/,
+    );
 });

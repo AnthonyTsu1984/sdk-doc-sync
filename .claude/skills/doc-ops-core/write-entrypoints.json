@@ -698,6 +698,19 @@
       "classification": "read-only",
       "operation": "validate-skills",
       "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/repair-same-name-placement.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "repair-same-name-placement",
+      "basis": "drive move / folder create / category VirtualNode repoint for SAME_NAME_COPY_MISPLACED repair; plan-digest + --approve-batch-digest approval gate + live per-action verification + journal",
+      "journal": "required",
+      "reconciliation": "plan-digest-journal",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js"
+      ],
+      "approval": "exact-batch-digest"
     }
   ]
 }

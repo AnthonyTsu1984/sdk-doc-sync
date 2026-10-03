@@ -468,7 +468,7 @@ BOUNDARY only:
    scoped dry-run against current live state first — the old batch is stale
    by approval time anyway). Same for an approved-but-unrun acceptance.
 3. The fresh chat's entry point is always the same, with no conversation
-   memory: `sdk-doc-sync.js --resume-session <file>` → `sdk-review-session.js
+   memory: `bin/sdk-doc-sync.js --resume-session <file>` → `sdk-review-session.js
    status` → act on `nextGate` (the durable next gate: RESOLVE_ROLLBACK /
    APPROVE_DOCUMENT / APPROVE_WRITE / CLOSE_SESSION, or the legacy
    BUILD_ACCEPTANCE / APPROVE_ACCEPTANCE) → replan the unit scoped dry-run

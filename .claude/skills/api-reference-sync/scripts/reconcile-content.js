@@ -206,10 +206,16 @@ async function main(argv = process.argv) {
     });
     inventory.language = options.language;
 
-    // Callout structure: from an injected blocks dump when provided.
+    // Callout structure: from an injected blocks dump when provided. The
+    // collector wrapper ({schemaVersion, pages}) unwraps to the page array.
     const blocksInput = loadJsonInput(options.blocksJson);
+    const blocksPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
+        ? blocksInput
+        : (blocksInput && Array.isArray(blocksInput.pages) && blocksInput.pages.some((entry) => entry && Array.isArray(entry.blocks))
+            ? blocksInput.pages
+            : [{ pageId: `injected:${options.language}`, blocks: blocksInput }]);
     const callouts = blocksInput
-        ? reconcileCalloutBlocks(blocksInput)
+        ? reconcileCalloutBlocks(blocksPages.flatMap((page) => page.blocks || []))
         : { invariantId: 'api.markdown-block-fidelity', findings: [], skipped: true };
 
     // Reviewed-context verbatim agreement: from an injected dump.
@@ -219,15 +225,7 @@ async function main(argv = process.argv) {
         : { invariantId: 'api.pr-verbatim-content', findings: [], skipped: true };
 
     // Page layout conformance against the language's declared rules: from
-    // the injected blocks dump when provided. The dump may be a flat block
-    // array (one page), an array of {pageId, blocks} pages, or a
-    // collect-page-blocks.js {schemaVersion, pages} wrapper — normalize so
-    // the reconciler always sees the page shape.
-    const blocksPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
-        ? blocksInput
-        : (blocksInput && Array.isArray(blocksInput.pages) && blocksInput.pages.some((entry) => entry && Array.isArray(entry.blocks))
-            ? blocksInput.pages
-            : [{ pageId: `injected:${options.language}`, blocks: blocksInput }]);
+    // the injected blocks dump when provided (same unwrapped pages).
     const layout = blocksInput
         ? reconcilePageLayout({ pages: blocksPages, profile: sdkLayoutProfiles[options.language] })
         : { invariantId: 'api.sdk-page-layout', findings: [], skipped: true };

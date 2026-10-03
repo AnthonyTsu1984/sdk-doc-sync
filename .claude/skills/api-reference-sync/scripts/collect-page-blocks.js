@@ -19,7 +19,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const MarkdownToFeishu = require('../src/markdown-to-feishu');
-const LarkCliOps = require('../src/sdk-doc-sync/lark-cli-ops');
+const { LarkCliOps } = require('../src/sdk-doc-sync/lark-cli-ops');
 const {
     listLanguageTracks,
     loadReleaseTrackRegistry,

@@ -166,9 +166,24 @@
   }
  },
  {
+  "id": "delta-shared-inplace-classified",
+  "assertions": {
+   "plannerAction": "UPDATE_IN_PLACE",
+   "attestationVersion": 4,
+   "executorStatus": "success",
+   "patchedToken": "doc-load-partitions-v26",
+   "writerCalls": 2,
+   "treeDeltaOk": true
+  },
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "delta-shared-inplace-classified"
+  }
+ },
+ {
   "id": "delta-shared-inplace-forbidden",
   "assertions": {
-   "plannerAction": "COPY_PATCH_AND_REPOINT",
+   "planningBlocker": "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED",
    "executorBlocker": "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
    "executorFailedStep": "verifySharedTokenEvidence",
    "writerCalls": 0

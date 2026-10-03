@@ -397,28 +397,27 @@ const scenarios = {
     };
   },
 
-  // Shared cross-track token: planning must never select an in-place patch,
-  // and even a forged UPDATE_IN_PLACE plan must be blocked by the executor's
-  // pre-write guard with zero writer calls.
-  'delta-shared-inplace-forbidden': async () => {
-    const planner = new SyncPlanner();
-    const context = sharedInheritedContext();
-    const plan = planner.planAction(updateAction(), context);
-
-    // Forge the unsafe plan shape the guard must refuse: same bindings, but
-    // action forced to UPDATE_IN_PLACE with target-local placement.
+  // Kernel v4 (issue #76): in the source track's own sync, a shared
+  // cross-track document may be patched in place when every other referencing
+  // record is classified by the inheritance review as inheriting the change.
+  // The planner attests the classified shape, and the executor writes the
+  // patch on the shared token after verifying the classification coverage.
+  'delta-shared-inplace-classified': async () => {
     const localCurrent = {
-      ...context.current,
-      version: 'v3.0.x',
-      folderToken: 'folder-partitions-v30',
-      versionRootToken: 'root-v30',
+      version: 'v2.6.x',
+      recordId: 'rec-load-partitions-v26',
+      documentToken: 'doc-load-partitions-v26',
+      folderToken: 'folder-partitions-v26',
+      versionRootToken: 'root-v26',
+      parentRecordId: 'rec-partitions-vnode-v26',
+      ancestryVerified: true,
+      placementVerified: true,
     };
     const localTarget = {
-      version: 'v3.0.x',
-      parentRecordId: 'rec-partitions-vnode-v30',
-      folderToken: 'folder-partitions-v30',
-      versionRootToken: 'root-v30',
-      folderAncestry: ['root-v30', 'folder-partitions-v30'],
+      version: 'v2.6.x',
+      parentRecordId: 'rec-partitions-vnode-v26',
+      folderToken: 'folder-partitions-v26',
+      versionRootToken: 'root-v26',
       ancestryVerified: true,
     };
     const sharedEvidence = createInheritanceEvidence({
@@ -426,20 +425,118 @@ const scenarios = {
       current: localCurrent,
       target: localTarget,
       sharedTokenStatus: 'shared',
-      referencedRecordIds: ['rec-load-partitions-v30', 'rec-load-partitions-v26'],
-      trackInventoryDigests: digestsFor('v3.0.x', 'v2.6.x'),
+      referencedRecordIds: ['rec-load-partitions-v26', 'rec-load-partitions-v30'],
+      trackInventoryDigests: digestsFor('v2.6.x'),
     });
-    const inPlacePlan = new SyncPlanner().planAction(updateAction(), {
-      ...context,
+    const context = {
+      ...sharedInheritedContext(),
       current: localCurrent,
       target: localTarget,
+      inheritanceEvidence: sharedEvidence,
+      sharedUpdateReviews: [{
+        recordId: 'rec-load-partitions-v30',
+        track: 'v3.0.x',
+        status: 'inherited',
+        decision: 'no_successor_action',
+      }],
+    };
+    const plan = new SyncPlanner().planAction(updateAction(), context);
+    if (plan.action !== 'UPDATE_IN_PLACE') {
+      throw new Error(`classified shared update planned ${plan.action}, expected UPDATE_IN_PLACE`);
+    }
+    const writerCalls = [];
+    const executor = new SyncExecutor({
+      documentWriter: {
+        async patchDocument(input) {
+          writerCalls.push(['patchDocument', input.documentToken]);
+          return { token: input.documentToken };
+        },
+      },
+      bitableWriter: {
+        async updateRecord(recordId, fields) {
+          writerCalls.push(['updateRecord', recordId, fields]);
+          return { record_id: recordId, fields };
+        },
+      },
+      tokenReferenceReader: {
+        async listTokenReferences() {
+          return sharedEvidence.sharedToken.referencedRecordIds.map((recordId) => ({ recordId }));
+        },
+      },
+    });
+    const result = await executor.execute(plan, {
+      artifact: reviewedArtifact(),
+      approval: { approved: true },
+      rollbackCapsule: {
+        documentRollback: {
+          documentToken: localCurrent.documentToken,
+          historyVersionId: 'history-1',
+          blockDigest: 'sha256:before',
+        },
+      },
+    });
+    return {
+      plannerAction: plan.action,
+      attestationVersion: (plan.invariantAttestations || [])
+        .find((entry) => entry?.id === 'api.versioned-tree-delta')?.version ?? null,
+      executorStatus: result.status,
+      patchedToken: result.patchedDocument?.token || null,
+      writerCalls: writerCalls.length,
+      treeDeltaOk: result.treeDeltaVerification?.ok ?? null,
+    };
+  },
+
+  // Negative control for the kernel v4 classification gate: a shared
+  // cross-track in-place patch without the inheritance-review classification
+  // fails closed at planning (TREE_DELTA_POINTING_TRACK_UNCLASSIFIED), and
+  // even a forged executor plan performs zero writer calls.
+  'delta-shared-inplace-forbidden': async () => {
+    const localCurrent = {
+      version: 'v2.6.x',
+      recordId: 'rec-load-partitions-v26',
+      documentToken: 'doc-load-partitions-v26',
+      folderToken: 'folder-partitions-v26',
+      versionRootToken: 'root-v26',
+      parentRecordId: 'rec-partitions-vnode-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    };
+    const localTarget = {
+      version: 'v2.6.x',
+      parentRecordId: 'rec-partitions-vnode-v26',
+      folderToken: 'folder-partitions-v26',
+      versionRootToken: 'root-v26',
+      ancestryVerified: true,
+    };
+    const sharedEvidence = createInheritanceEvidence({
+      stableId: 'cpp:Partitions:LoadPartitions',
+      current: localCurrent,
+      target: localTarget,
+      sharedTokenStatus: 'shared',
+      referencedRecordIds: ['rec-load-partitions-v26', 'rec-load-partitions-v30'],
+      trackInventoryDigests: digestsFor('v2.6.x'),
+    });
+    const unclassifiedContext = {
+      ...sharedInheritedContext(),
+      current: localCurrent,
+      target: localTarget,
+      inheritanceEvidence: sharedEvidence,
+    };
+    const planningBlocker = planningError(
+      () => new SyncPlanner().planAction(updateAction(), unclassifiedContext),
+    );
+
+    // Forge the unsafe plan shape the guard must refuse: an unshared in-place
+    // plan with its evidence swapped to shared and no classifications.
+    const inPlacePlan = new SyncPlanner().planAction(updateAction(), {
+      ...unclassifiedContext,
       inheritanceEvidence: createInheritanceEvidence({
         stableId: 'cpp:Partitions:LoadPartitions',
         current: localCurrent,
         target: localTarget,
         sharedTokenStatus: 'unshared',
         referencedRecordIds: [localCurrent.recordId],
-        trackInventoryDigests: digestsFor('v3.0.x'),
+        trackInventoryDigests: digestsFor('v2.6.x'),
       }),
     });
     if (inPlacePlan.action !== 'UPDATE_IN_PLACE') {
@@ -472,7 +569,7 @@ const scenarios = {
       approval: { approved: true },
     });
     return {
-      plannerAction: plan.action,
+      planningBlocker,
       executorBlocker: result.error?.code || null,
       executorFailedStep: result.failedStep || null,
       writerCalls: writerCalls.length,

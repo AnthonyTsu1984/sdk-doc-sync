@@ -588,6 +588,11 @@ class SyncPlanner {
         },
         target,
         category: context.treeDelta?.category ?? null,
+        // Kernel v4: classification evidence for a shared cross-track in-place
+        // patch (one entry per other referencing record, joined from the
+        // inheritance review). The kernel fails closed when the decision is a
+        // shared patch and these are missing or incompatible.
+        sharedUpdateReviews: context.sharedUpdateReviews ?? null,
       });
       if (treeDelta.status === 'blocked') {
         throw new SyncPlanningError(
@@ -660,7 +665,7 @@ class SyncPlanner {
         postconditions = this._writePostconditions(target, source, plannedAction);
         break;
       case 'UPDATE': {
-        const safeInPlace = treeDecision === DECISIONS.UPDATE_IN_PLACE_VERIFIED_UNSHARED;
+        const safeInPlace = treeDecision === DECISIONS.UPDATE_IN_PLACE_VERIFIED;
         let copySource = null;
         if (!safeInPlace) {
           copySource = copySourceFrom(context);
@@ -745,6 +750,12 @@ class SyncPlanner {
       organizationInventory: context.organizationInventory,
       releasePlacement: context.releasePlacement,
       inheritanceEvidence: inheritanceEvidence ? deepClone(inheritanceEvidence) : undefined,
+      // Kernel v4: the classification evidence a shared in-place patch was
+      // allowed on. The executor revalidates coverage against the live
+      // reference multiset immediately before the write.
+      sharedUpdateReviews: plannedAction === 'UPDATE_IN_PLACE' && inheritanceEvidence?.sharedToken?.status === 'shared'
+        ? deepClone(context.sharedUpdateReviews)
+        : undefined,
       invariantAttestations: invariantAttestations ? deepClone(invariantAttestations) : undefined,
       apiPatchPlan: context.artifact?.layout && diffAction === 'UPDATE'
         ? context.apiPatchPlan

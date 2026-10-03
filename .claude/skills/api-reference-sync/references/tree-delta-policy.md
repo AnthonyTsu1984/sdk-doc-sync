@@ -1,10 +1,11 @@
 # Versioned-Tree Delta Policy (api.versioned-tree-delta)
 
-Enforcement reference for the `api.versioned-tree-delta` invariant, version 2
-(policy-kernel phase 2 of `.claude/plans/2026-09-23-skill-harness-rule-enforcement.md`).
-Phase 0 closed the shared-token evidence path; Phase 1 made the rule
-traceable; this document describes the deterministic enforcement that now
-covers the complete delta transition.
+Enforcement reference for the `api.versioned-tree-delta` invariant, version 4
+(issue #76, 2026-10-03 ruling: successor inheritance is never broken by
+forcing an in-directory fork; the same-title sibling constraint is absolute).
+Earlier versions: v2 = policy-kernel phase 2 of
+`.claude/plans/2026-09-23-skill-harness-rule-enforcement.md`; v3 = folder
+containment evidence for copy targets (2026-10-03 java audit).
 
 ## Decision authority
 
@@ -18,14 +19,18 @@ identical decisions, action DAGs, and digests.
 | --- | --- |
 | Unchanged interface inherited from the older track | `REUSE_INHERITED_DOCUMENT` — no target-track page is created or patched |
 | Attempt to mirror an unchanged page into the newer tree | `DELTA_MODEL_MIRROR_BLOCKED` |
-| Changed interface, target category exists | `COPY_PATCH_AND_REPOINT` |
-| Changed interface, target category absent | `COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE` + required resource DAG |
-| Changed interface verified target-local and unshared | `UPDATE_IN_PLACE_VERIFIED_UNSHARED` |
+| Changed interface, cross-track sync (target is the newer track), category exists | `COPY_PATCH_AND_REPOINT` |
+| Changed interface, cross-track sync, target category absent | `COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE` + required resource DAG |
+| Changed interface verified target-local and unshared | `UPDATE_IN_PLACE_VERIFIED` |
+| Changed interface, source track's own sync, shared, every other referencing record classified `no_successor_action` | `UPDATE_IN_PLACE_VERIFIED` — the change flows to all pointing tracks |
+| Same-track shared update with any unclassified / `defer` / `exclude` / `include_successor_action` referencing record | `TREE_DELTA_POINTING_TRACK_UNCLASSIFIED` — blocked; use the successor-side copy+repoint exception path, then patch from post-repoint evidence |
+| Same-track shared update without verified target-local placement | `TREE_DELTA_PLACEMENT_UNKNOWN` — blocked; never an in-track copy of a shared document |
 | Unknown diff, unknown placement, or incomplete inventory | `TREE_DELTA_DIFF_UNKNOWN` / `TREE_DELTA_PLACEMENT_UNKNOWN` / `TREE_DELTA_INVENTORY_INCOMPLETE` — blocked |
 | Added identity with checked-and-absent lookup | `CREATE_ADDED_IDENTITY` |
 
 Unknown and unsafe cases block before approval; the planner never falls back
-to an in-place patch.
+to an in-place patch of an unclassified shared document, and never copies a
+shared document inside its own track.
 
 ## Attestations
 
@@ -34,7 +39,7 @@ Every document write plan carries an `invariantAttestations` entry:
 ```json
 {
   "id": "api.versioned-tree-delta",
-  "version": 2,
+  "version": 4,
   "inputDigest": "sha256:...",
   "decision": "COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE",
   "evidenceDigest": "sha256:...",

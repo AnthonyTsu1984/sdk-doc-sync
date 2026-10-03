@@ -2045,6 +2045,8 @@ test('failed resource execution is journaled and blocks dependent documents', as
               name: 'Collections',
               parentFolderToken: 'root-v26',
               versionRootToken: 'root-v26',
+              // Kernel v3: containment evidence for the category-create parent.
+              parentAncestry: ['root-v26'],
               existingLookup: {
                 checked: true,
                 absent: true,

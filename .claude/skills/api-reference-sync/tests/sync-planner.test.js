@@ -991,6 +991,56 @@ test('execution batch construction cannot bypass an unselected document dependen
   );
 });
 
+test('exception-path batches order the successor-side copy before the shared in-place patch', () => {
+  // Issue #76 exception path: the successor-side copy+repoint (into the
+  // successor track's own tree) preserves the pre-patch content, so it must
+  // execute before the shared document's in-place patch. The shared unit
+  // declares the companion as a plan dependency and the batch topologically
+  // orders it first; the executor's live reference drift check remains the
+  // content guard (an in-place patch executed before its companion fails
+  // closed because the successor record still points at the shared token).
+  const companion = Object.freeze({
+    schemaVersion: 1,
+    action: 'COPY_PATCH_AND_REPOINT',
+    stableId: 'cpp:Partitions:LoadPartitions:successor-copy',
+    dependencies: [],
+    source: { documentToken: 'doc-shared-v26' },
+    target: { folderToken: 'folder-partitions-v30' },
+    invariantAttestations: [minimalAttestation('COPY_PATCH_AND_REPOINT')],
+  });
+  const sharedInPlace = Object.freeze({
+    schemaVersion: 1,
+    action: 'UPDATE_IN_PLACE',
+    stableId: 'cpp:Partitions:LoadPartitions',
+    dependencies: ['cpp:Partitions:LoadPartitions:successor-copy'],
+    source: { documentToken: 'doc-shared-v26' },
+    target: {},
+    invariantAttestations: [minimalAttestation()],
+  });
+
+  const batch = SdkDocSync.buildExecutionBatch([{ plan: sharedInPlace }, { plan: companion }]);
+  const order = batch.actions.map((action) => action.actionId);
+  assert.ok(
+    order.indexOf('cpp:Partitions:LoadPartitions:successor-copy') < order.indexOf('cpp:Partitions:LoadPartitions'),
+    `expected the companion copy first, got: ${order.join(' -> ')}`,
+  );
+  assert.deepEqual(
+    batch.actions.find((action) => action.actionId === 'cpp:Partitions:LoadPartitions').dependsOn,
+    ['cpp:Partitions:LoadPartitions:successor-copy'],
+  );
+
+  // The companion is not optional: an in-place unit declaring it fails batch
+  // construction when the manifest knows the companion but the selected
+  // batch leaves it out.
+  assert.throws(
+    () => SdkDocSync.buildExecutionBatch(
+      [{ plan: sharedInPlace }],
+      new Set(['cpp:Partitions:LoadPartitions', 'cpp:Partitions:LoadPartitions:successor-copy']),
+    ),
+    /MISSING_DEPENDENCY/,
+  );
+});
+
 test('execution batch includes resource plans and normalizes raw resource refs into DAG dependencies', () => {
   const resourcePlan = new SyncPlanner().planResource({
     kind: 'folder',

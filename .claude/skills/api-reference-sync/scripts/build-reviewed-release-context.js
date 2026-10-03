@@ -442,6 +442,63 @@ function assertNoSyntheticGroupAcrossExistingRecords({ spec, identity }) {
   }
 }
 
+// Deterministic join of the inheritance review into the kernel v4
+// classification evidence (issue #76 follow-up): successor entries may carry
+// `pointingRecordIds` — the records of THAT track whose Docs pointer resolves
+// to the shared document (attributed by the placement audit's per-track
+// enumeration). The join pairs every OTHER referenced record with its track's
+// review entry, producing the `sharedUpdateReviews` the kernel requires
+// before it allows a shared cross-track in-place patch. Records the review
+// does not attribute are omitted — the kernel fails closed naming them, so
+// the operator sees the exact spec gap. Only meaningful for shared evidence;
+// anything else returns undefined and the in-place route stays unclassified.
+function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
+  if (!evidence || evidence.sharedToken?.status !== 'shared') return undefined;
+  const successors = Array.isArray(inheritanceReview?.successors) ? inheritanceReview.successors : [];
+  const byRecordId = new Map();
+  for (const successor of successors) {
+    if (successor.pointingRecordIds === undefined) continue;
+    if (!Array.isArray(successor.pointingRecordIds)
+      || successor.pointingRecordIds.some((recordId) => typeof recordId !== 'string' || recordId.length === 0)) {
+      throw reviewedContextError(
+        'SHARED_UPDATE_REVIEW_INVALID',
+        `Candidate ${identity.stableId} successor track ${successor.track} has malformed pointingRecordIds (expected an array of non-empty record ids)`,
+      );
+    }
+    for (const recordId of successor.pointingRecordIds) {
+      const existing = byRecordId.get(recordId);
+      if (existing) {
+        throw reviewedContextError(
+          'SHARED_UPDATE_REVIEW_AMBIGUOUS',
+          `Candidate ${identity.stableId} references record ${recordId} under successor tracks ${existing.track} and ${successor.track}; a pointing record belongs to exactly one track`,
+        );
+      }
+      byRecordId.set(recordId, successor);
+    }
+  }
+  if (evidence.current?.recordId && byRecordId.has(evidence.current.recordId)) {
+    throw reviewedContextError(
+      'SHARED_UPDATE_REVIEW_INVALID',
+      `Candidate ${identity.stableId} attributes its own record ${evidence.current.recordId} to a successor track; pointingRecordIds cover the OTHER referencing records only`,
+    );
+  }
+  const reviews = [];
+  const seen = new Set();
+  for (const recordId of evidence.sharedToken.referencedRecordIds || []) {
+    if (!recordId || recordId === evidence.current?.recordId || seen.has(recordId)) continue;
+    seen.add(recordId);
+    const successor = byRecordId.get(recordId);
+    if (!successor) continue;
+    reviews.push({
+      recordId,
+      track: successor.track,
+      status: successor.status ?? null,
+      decision: successor.decision ?? null,
+    });
+  }
+  return reviews.length > 0 ? reviews : undefined;
+}
+
 const REVIEWED_ACTION_TYPES = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL']);
 
 function actionForPlanning(action, spec) {
@@ -799,6 +856,11 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         target: planningTarget,
         dependencies,
         inheritanceEvidence,
+        sharedUpdateReviews: joinSharedUpdateReviews({
+          identity,
+          evidence: inheritanceEvidence,
+          inheritanceReview,
+        }),
         tokenReferencedByOlderVersions: inheritanceEvidence?.sharedToken.status === 'shared',
         organization,
         organizationInventory,

@@ -81,6 +81,48 @@ CREATE_FOLDER
   document's unit, so the exact approval digest covers the entire transition
   and no orphan resource action remains.
 
+## Classification supply (`sharedUpdateReviews`)
+
+The kernel v4 classified route — a shared cross-track in-place patch —
+requires `sharedUpdateReviews` on the planning context. The reviewed-context
+builder derives them deterministically: a successor entry in
+`inheritanceReview` may carry `pointingRecordIds`, the records of THAT track
+whose `Docs` pointer resolves to the shared document (attributed from the
+placement audit's per-track enumeration, which records
+`{ recordId, version }` for every referencing record). The builder pairs
+every OTHER referenced record with its track's review entry and emits
+`{ recordId, track, status, decision }` into `planningContext`.
+
+- A referencing record no successor entry attributes is omitted from the
+  reviews; the kernel then fails closed naming it, so the spec gap surfaces
+  at planning with the exact record id.
+- A record attributed under two successor tracks is a spec error
+  (`SHARED_UPDATE_REVIEW_AMBIGUOUS`); so is attributing the candidate's own
+  record (`SHARED_UPDATE_REVIEW_INVALID`) or a malformed attribution array.
+
+## Exception-path batch assembly
+
+When a review rules that a still-pointing successor track must not receive
+the change, the batch assembles two units for the identity:
+
+1. **Companion** — a successor-side copy+repoint: an ordinary cross-track
+   `COPY_PATCH_AND_REPOINT` unit whose target category folder lives inside
+   the successor track's own tree (kernel v3 containment gates apply). The
+   copy preserves the pre-patch content.
+2. **Shared in-place patch** — planned from refreshed post-companion
+   evidence (reference set = the source track's own record → unshared), with
+   the companion listed in its `dependencies`.
+
+The batch topologically orders `dependsOn` first, so the companion executes
+before the patch; a batch that knows the companion but omits it fails
+construction (`MISSING_DEPENDENCY`), and the executor's live reference drift
+check remains the content guard — an in-place patch executed before its
+companion fails closed because the successor record still points at the
+shared token. When the successor has already forked its own same-name
+document (ruling case 2), the successor file's update is an ordinary
+successor-track unit in the same batch; the two documents are independent
+and no ordering constraint applies.
+
 ## Pre-write and post-write enforcement
 
 Immediately before the first mutation the executor revalidates the approved

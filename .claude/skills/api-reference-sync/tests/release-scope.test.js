@@ -2467,6 +2467,163 @@ test('reviewed release context builder reminds on deferred successors of source-
   assert.deepEqual(inheriting.deferredDriftReminders, []);
 });
 
+test('reviewed release context builder joins successor pointing records into shared update reviews', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+      symbol: 'bulk_import',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 109 },
+      reason: 'signature changed',
+    }],
+  });
+  const baseSpec = () => ({
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-import-folder' },
+    },
+    candidates: {
+      'BulkImport-bulk_import': {
+        category: 'BulkImport',
+        folderToken: 'bulk-import-folder',
+        existingRecord: {
+          recordId: 'rec-bulk',
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          parentRecordId: 'rec-bulk-parent',
+          placement: verifiedPlacement({
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+            referencedByOlderVersions: true,
+          }),
+        },
+        inheritanceEvidence: inheritanceEvidenceFixture({
+          stableId: 'python:BulkImport:bulk_import',
+          current: {
+            recordId: 'rec-bulk',
+            documentToken: 'doc-bulk',
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          target: {
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          sharedTokenStatus: 'shared',
+          referencedRecordIds: ['rec-bulk', 'rec-bulk-v30'],
+        }),
+        copySource: {
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+        },
+        summary: 'Starts a bulk import job.',
+        example: { code: 'from pymilvus.bulk_writer import bulk_import' },
+        inheritanceReview: {
+          reviewed: true,
+          successors: [{
+            track: 'v3.0.x',
+            status: 'inherited',
+            decision: 'no_successor_action',
+            pointingRecordIds: ['rec-bulk-v30'],
+            evidence: [{ kind: 'source', locator: 'pymilvus/bulk_writer/bulk_import.py:109' }],
+          }],
+        },
+      },
+    },
+  });
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec: baseSpec() });
+  assert.deepEqual(result.filteredScope.actions[0].planningContext.sharedUpdateReviews, [{
+    recordId: 'rec-bulk-v30',
+    track: 'v3.0.x',
+    status: 'inherited',
+    decision: 'no_successor_action',
+  }]);
+
+  // An unattributed referencing record is omitted from the reviews — the
+  // kernel fails closed naming it, so the spec gap is visible at planning.
+  const gapSpec = baseSpec();
+  gapSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds = ['rec-somewhere-else'];
+  const gapped = buildReviewedReleaseContext({ releaseScope, candidateSpec: gapSpec });
+  assert.equal(gapped.filteredScope.actions[0].planningContext.sharedUpdateReviews, undefined);
+
+  // A pointing record under two successor tracks is a spec error.
+  const ambiguousSpec = baseSpec();
+  ambiguousSpec.inheritance = { requiredSuccessorTracks: ['v3.0.x', 'v2.5.x'] };
+  ambiguousSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors = [
+    {
+      track: 'v3.0.x',
+      status: 'inherited',
+      decision: 'no_successor_action',
+      pointingRecordIds: ['rec-bulk-v30'],
+    },
+    {
+      track: 'v2.5.x',
+      status: 'inherited',
+      decision: 'no_successor_action',
+      pointingRecordIds: ['rec-bulk-v30'],
+    },
+  ];
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: ambiguousSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_AMBIGUOUS',
+  );
+
+  // The candidate's own record is not an "other" reference.
+  const ownRecordSpec = baseSpec();
+  ownRecordSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds = ['rec-bulk'];
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: ownRecordSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID',
+  );
+
+  // Malformed attribution arrays fail closed.
+  const malformedSpec = baseSpec();
+  malformedSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds = [''];
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: malformedSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID',
+  );
+
+  // Unshared evidence ignores the attribution entirely.
+  const unsharedSpec = baseSpec();
+  unsharedSpec.candidates['BulkImport-bulk_import'].inheritanceEvidence = inheritanceEvidenceFixture({
+    stableId: 'python:BulkImport:bulk_import',
+    current: {
+      recordId: 'rec-bulk',
+      documentToken: 'doc-bulk',
+      version: 'v2.6.x',
+      folderToken: 'bulk-import-folder',
+      versionRootToken: 'root-v26',
+    },
+    target: {
+      version: 'v2.6.x',
+      folderToken: 'bulk-import-folder',
+      versionRootToken: 'root-v26',
+    },
+    sharedTokenStatus: 'unshared',
+  });
+  const unshared = buildReviewedReleaseContext({ releaseScope, candidateSpec: unsharedSpec });
+  assert.equal(unshared.filteredScope.actions[0].planningContext.sharedUpdateReviews, undefined);
+});
+
 test('reviewed release context builder requires complete successor doc identity for planned successor actions', () => {
   const releaseScope = createReleaseScope({
     language: 'python',

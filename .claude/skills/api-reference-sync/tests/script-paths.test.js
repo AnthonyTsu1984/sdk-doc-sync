@@ -24,6 +24,8 @@ test('sdk-doc-sync planning helper scripts exist', () => {
     'audit-sdk-type-ownership.js',
     'build-current-placement-audit.js',
     'build-reviewed-release-context.js',
+    'collect-page-blocks.js',
+    'reconcile-content.js',
     'render-grouping-inheritance-table.js',
   ]) {
     assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);

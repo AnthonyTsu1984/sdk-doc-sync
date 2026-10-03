@@ -14,15 +14,19 @@
 // Detect-only: this script never mutates live state and does not authorize
 // cleanup.
 //
-// Output schemaVersion 2: the former per-track reports are replaced by
-// language-scoped sections (inventory, sameNameSiblings, callouts, contexts,
-// layout).
+// Output schemaVersion 3: layout findings now include the five 2026-10-03
+// global content rules (CONTENT_CJK_MIXING / FIRST_SENTENCE_REGISTER /
+// RETURNS_MIN_DEPTH / PARAM_DESC_REQUIRED / INTERNAL_NOTE_LEAK) and the JSON
+// report carries a per-code layout summary for the corpus sweep worklist.
+// The blocks dump may come from scripts/collect-page-blocks.js (its
+// {schemaVersion, pages} wrapper is unwrapped here).
 //
 // Usage:
-//   node scripts/reconcile-content.js --language cpp [--json] [--strict]
+//   node scripts/collect-page-blocks.js --language java --out tmp/.../blocks.json
+//   node scripts/reconcile-content.js --language java [--json] [--strict]
 //       [--registry config/release-tracks.json]
 //       [--page-links-json <file>]   # percent-decoded docx tokens referenced from page blocks
-//       [--blocks-json <file>]       # array of page block subtrees for the callout check
+//       [--blocks-json <file>]       # collect-page-blocks.js dump or array of page block subtrees
 //       [--contexts-json <file>]     # reviewed-context snapshots for the verbatim check
 
 const fs = require('node:fs');
@@ -215,15 +219,25 @@ async function main(argv = process.argv) {
         : { invariantId: 'api.pr-verbatim-content', findings: [], skipped: true };
 
     // Page layout conformance against the language's declared rules: from
-    // the injected blocks dump when provided. The dump may be a flat
-    // block array (one page) or an array of {pageId, blocks} pages —
-    // normalize so the reconciler always sees the page shape.
-    const layoutPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
+    // the injected blocks dump when provided. The dump may be a flat block
+    // array (one page), an array of {pageId, blocks} pages, or a
+    // collect-page-blocks.js {schemaVersion, pages} wrapper — normalize so
+    // the reconciler always sees the page shape.
+    const blocksPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
         ? blocksInput
-        : [{ pageId: `injected:${options.language}`, blocks: blocksInput }];
+        : (blocksInput && Array.isArray(blocksInput.pages) && blocksInput.pages.some((entry) => entry && Array.isArray(entry.blocks))
+            ? blocksInput.pages
+            : [{ pageId: `injected:${options.language}`, blocks: blocksInput }]);
     const layout = blocksInput
-        ? reconcilePageLayout({ pages: layoutPages, profile: sdkLayoutProfiles[options.language] })
+        ? reconcilePageLayout({ pages: blocksPages, profile: sdkLayoutProfiles[options.language] })
         : { invariantId: 'api.sdk-page-layout', findings: [], skipped: true };
+    const layoutSummary = {
+        pages: blocksPages.length,
+        byCode: {},
+    };
+    for (const finding of layout.findings) {
+        layoutSummary.byCode[finding.code] = (layoutSummary.byCode[finding.code] || 0) + 1;
+    }
 
     const findings = [
         ...inventory.findings,
@@ -242,7 +256,7 @@ async function main(argv = process.argv) {
 
     if (options.json) {
         process.stdout.write(`${JSON.stringify({
-            schemaVersion: 2,
+            schemaVersion: 3,
             generatedAt: new Date().toISOString(),
             language: options.language,
             tracks: trackRoots,
@@ -257,11 +271,14 @@ async function main(argv = process.argv) {
             callouts,
             contexts,
             layout,
+            layoutSummary,
         }, null, 2)}\n`);
     } else {
         for (const finding of findings) {
             process.stdout.write(`[${finding.severity}] ${finding.code} ${finding.identity} — ${finding.detail}\n`);
         }
+        const layoutCodes = Object.entries(layoutSummary.byCode).map(([code, count]) => `${code}×${count}`).join(', ');
+        process.stdout.write(`layout: ${layoutSummary.pages} page(s)${layoutCodes ? ` — ${layoutCodes}` : ''}\n`);
         process.stdout.write(`same-name sibling groups: ${summary.groups} (dual-track pairs ${summary.dualTrackPairs}, orphan copies ${summary.orphanCopies}, misplaced copies ${summary.misplacedCopies}, track conflicts ${summary.trackConflicts})\n`);
         process.stdout.write(`${findings.length} finding(s) across ${tracks.length} track(s)\n`);
     }

@@ -2361,6 +2361,112 @@ test('reviewed release context builder carries reviewed successor-track inherita
   assert.equal(result.referenceContext.contexts['python:Authentication:create_user'].inheritanceReview.successors[0].decision, 'include_successor_action');
 });
 
+test('reviewed release context builder reminds on deferred successors of source-track updates', () => {
+  const releaseScope = createReleaseScope({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    changedFiles: ['pymilvus/bulk_writer/bulk_import.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+      symbol: 'bulk_import',
+      source: { file: 'pymilvus/bulk_writer/bulk_import.py', line: 109 },
+      reason: 'signature changed',
+    }],
+  });
+  const candidateSpec = {
+    language: 'python',
+    track: 'v2.6.x',
+    target: {
+      version: 'v2.6.x',
+      versionRootToken: 'root-v26',
+      folders: { BulkImport: 'bulk-import-folder' },
+    },
+    candidates: {
+      'BulkImport-bulk_import': {
+        category: 'BulkImport',
+        folderToken: 'bulk-import-folder',
+        existingRecord: {
+          recordId: 'rec-bulk',
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          parentRecordId: 'rec-bulk-parent',
+          placement: verifiedPlacement({
+            version: 'v2.5.x',
+            folderToken: 'bulk-import-folder-v25',
+            versionRootToken: 'root-v25',
+            referencedByOlderVersions: true,
+          }),
+        },
+        inheritanceEvidence: inheritanceEvidenceFixture({
+          stableId: 'python:BulkImport:bulk_import',
+          current: {
+            recordId: 'rec-bulk',
+            documentToken: 'doc-bulk',
+            version: 'v2.5.x',
+            folderToken: 'bulk-import-folder-v25',
+            versionRootToken: 'root-v25',
+          },
+          target: {
+            version: 'v2.6.x',
+            folderToken: 'bulk-import-folder',
+            versionRootToken: 'root-v26',
+          },
+          sharedTokenStatus: 'shared',
+        }),
+        copySource: {
+          documentToken: 'doc-bulk',
+          title: 'bulk_import()',
+          link: 'https://zilliverse.feishu.cn/docx/docBulk',
+        },
+        summary: 'Starts a bulk import job.',
+        example: { code: 'from pymilvus.bulk_writer import bulk_import' },
+        inheritanceReview: {
+          reviewed: true,
+          successors: [{
+            track: 'v3.0.x',
+            status: 'deferred',
+            decision: 'defer',
+            evidence: [{ kind: 'source', locator: 'pymilvus/bulk_writer/bulk_import.py:109' }],
+          }],
+        },
+      },
+    },
+  };
+
+  const result = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+  assert.equal(result.selectedCount, 1);
+  assert.deepEqual(result.deferredDriftReminders, [{
+    stableId: 'python:BulkImport:bulk_import',
+    canonicalSlug: 'BulkImport-bulk_import',
+    successorTrack: 'v3.0.x',
+    status: 'deferred',
+    decision: 'defer',
+    message: 'Source track updated BulkImport-bulk_import this release while successor track v3.0.x is deferred (deferred); the change does not flow to the deferred successor — re-trigger the inheritance review or record the divergence.',
+  }]);
+
+  // No deferral, no reminder: an inheriting successor stays silent.
+  candidateSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0] = {
+    track: 'v3.0.x',
+    status: 'successor_action_planned',
+    decision: 'include_successor_action',
+    docIdentity: {
+      stableId: 'python:BulkImport:bulk_import',
+      canonicalSlug: 'BulkImport-bulk_import',
+    },
+    evidence: [{ kind: 'source', locator: 'pymilvus/bulk_writer/bulk_import.py:109' }],
+  };
+  const inheriting = buildReviewedReleaseContext({ releaseScope, candidateSpec });
+  assert.deepEqual(inheriting.deferredDriftReminders, []);
+});
+
 test('reviewed release context builder requires complete successor doc identity for planned successor actions', () => {
   const releaseScope = createReleaseScope({
     language: 'python',

@@ -580,6 +580,8 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
   const selectedSlugs = new Set();
   const contexts = {};
   const emittedDocIdentities = new Set();
+  const deferredDriftReminders = [];
+  const emittedDeferredReminders = new Set();
   const target = required(candidateSpec.target, 'Candidate spec is missing target');
   const version = required(target.version || releaseScope.track, 'Candidate spec target is missing version');
   const versionRootToken = required(target.versionRootToken, 'Candidate spec target is missing versionRootToken');
@@ -690,6 +692,29 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     }
     if (emittedDocIdentities.has(identity.stableId)) continue;
     emittedDocIdentities.add(identity.stableId);
+    // Defer drift reminder (issue #76 change 5): a source-track UPDATE whose
+    // successor review deferred a track means the change will not flow
+    // structurally to that successor's same-name document. Surface it so the
+    // review is re-triggered (or the divergence recorded) instead of the
+    // defer silently going stale. Reminder only — never a gate. Only the
+    // required successor tracks participate (extra unvalidated successor
+    // entries are ignored), deduped per identity+track.
+    if (planningAction.type === 'UPDATE') {
+      for (const successor of inheritanceReview?.successors || []) {
+        if (successor.decision !== 'defer' || !requiredSuccessorTracks.includes(successor.track)) continue;
+        const reminderKey = `${identity.stableId}\u0000${successor.track}`;
+        if (emittedDeferredReminders.has(reminderKey)) continue;
+        emittedDeferredReminders.add(reminderKey);
+        deferredDriftReminders.push({
+          stableId: identity.stableId,
+          canonicalSlug: identity.canonicalSlug,
+          successorTrack: successor.track,
+          status: successor.status,
+          decision: successor.decision,
+          message: `Source track updated ${identity.canonicalSlug} this release while successor track ${successor.track} is deferred (${successor.status}); the change does not flow to the deferred successor — re-trigger the inheritance review or record the divergence.`,
+        });
+      }
+    }
 
     const folderToken = spec.folderToken || folders[category] || null;
     const folderRef = spec.folderRef || null;
@@ -855,6 +880,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       contexts,
     },
     selectedCount: selected.length,
+    deferredDriftReminders,
   };
 }
 
@@ -881,6 +907,7 @@ function main(argv = process.argv) {
   writeJson(args.outputContext, result.referenceContext);
   console.log(JSON.stringify({
     selectedCount: result.selectedCount,
+    deferredDriftReminders: result.deferredDriftReminders,
     outputScope: args.outputScope,
     outputContext: args.outputContext,
   }, null, 2));

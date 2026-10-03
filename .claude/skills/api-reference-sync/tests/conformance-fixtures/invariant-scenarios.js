@@ -54,6 +54,7 @@ function sharedInheritedContext({ stableId = 'cpp:Partitions:LoadPartitions' } =
     parentRecordId: 'rec-partitions-vnode-v30',
     folderToken: 'folder-partitions-v30',
     versionRootToken: 'root-v30',
+    folderAncestry: ['root-v30', 'folder-partitions-v30'],
     ancestryVerified: true,
   };
   return {
@@ -175,6 +176,7 @@ const scenarios = {
         name: 'Partitions',
         parentFolderToken: 'root-v30',
         versionRootToken: 'root-v30',
+        parentAncestry: ['root-v30'],
         existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v30', name: 'Partitions' },
       },
       repoint: {
@@ -272,6 +274,12 @@ const scenarios = {
     const liveReferences = [...approvedReferences];
     const writerCalls = [];
     const documentWriter = {
+      async listFolder({ folderToken }) {
+        // Kernel v3 containment: the live tree under the target version root.
+        return folderToken === 'root-v30'
+          ? [{ token: 'folder-partitions-v30', type: 'folder', name: 'Partitions' }]
+          : [];
+      },
       async copyDocument(input) {
         writerCalls.push(['copyDocument', input.sourceDocumentToken]);
         return { token: 'doc-copy-new', url: `https://zilliverse.feishu.cn/docx/doc-copy-new` };
@@ -309,6 +317,11 @@ const scenarios = {
     let referenceReads = 0;
     const driftedExecutor = new SyncExecutor({
       documentWriter: {
+        async listFolder({ folderToken }) {
+          return folderToken === 'root-v30'
+            ? [{ token: 'folder-partitions-v30', type: 'folder', name: 'Partitions' }]
+            : [];
+        },
         async copyDocument(input) {
           return { token: 'doc-copy-drift', url: `https://zilliverse.feishu.cn/docx/doc-copy-drift` };
         },
@@ -405,6 +418,7 @@ const scenarios = {
       parentRecordId: 'rec-partitions-vnode-v30',
       folderToken: 'folder-partitions-v30',
       versionRootToken: 'root-v30',
+      folderAncestry: ['root-v30', 'folder-partitions-v30'],
       ancestryVerified: true,
     };
     const sharedEvidence = createInheritanceEvidence({
@@ -842,6 +856,78 @@ const scenarios = {
     return {
       emptyChildCode: findings.find((finding) => finding.identity === 'empty-auto')?.code || null,
       cleanCalloutFindings: findings.filter((finding) => finding.identity !== 'empty-auto').length,
+    };
+  },
+
+  // --- api.same-name-sibling-placement scenarios (language-wide classifier) ---
+
+  async contentReconcileSameNamePlacement() {
+    const {
+      classifySameNameSiblings,
+      reconcileContentInventory,
+    } = require('../../src/sdk-doc-sync/content-reconciliation');
+    const trackRoots = [
+      { version: 'v2.6.x', releaseRootToken: 'rootv26track0000000000000' },
+      { version: 'v3.0.x', releaseRootToken: 'rootv30track0000000000000' },
+    ];
+    const records = [
+      { recordId: 'rec-old', track: 'v2.6.x', documentToken: 'docoldpartition000000001' },
+      { recordId: 'rec-new', track: 'v3.0.x', documentToken: 'docnewpartition000000001' },
+      { recordId: 'rec-old-db', track: 'v2.6.x', documentToken: 'docolddatabase00000000001' },
+      { recordId: 'rec-new-db', track: 'v3.0.x', documentToken: 'docnewdatabase00000000001' },
+      { recordId: 'rec-index-twin', track: 'v2.6.x', documentToken: 'docindextwin00000000001' },
+      { recordId: 'rec-dup-a', track: 'v2.6.x', documentToken: 'docdupflusha0000000001' },
+      { recordId: 'rec-dup-b', track: 'v2.6.x', documentToken: 'docdupflushb0000000001' },
+    ];
+    const folderEntries = [
+      // Protected: each copy claimed by a distinct track and contained under
+      // its claiming track's release root — the correct two-tree structure.
+      { token: 'docoldpartition000000001', name: 'CreatePartition()', parentToken: 'folder-partitions-v26', roots: ['rootv26track0000000000000'] },
+      { token: 'docnewpartition000000001', name: 'CreatePartition()', parentToken: 'folder-partitions-v30', roots: ['rootv30track0000000000000'] },
+      // Misplaced: the v3.0-pointed copy of the pair was copied into the
+      // older tree's folder instead of the v3.0 tree (2026-10-03 hole).
+      { token: 'docnewdatabase00000000001', name: 'DropDatabase()', parentToken: 'folder-database-v26', roots: ['rootv26track0000000000000'] },
+      { token: 'docolddatabase00000000001', name: 'DropDatabase()', parentToken: 'folder-database-v26', roots: ['rootv26track0000000000000'] },
+      // Zero-row copy with a pointed twin: true orphan candidate (the twin
+      // itself is claimed by v2.6 but lives in a legacy container subtree,
+      // so it also reports as misplaced).
+      { token: 'docindexorphan00000000001', name: 'DescribeIndex()', parentToken: 'folder-management-v25', roots: ['rootcontainerv25000000000'] },
+      { token: 'docindextwin00000000001', name: 'DescribeIndex()', parentToken: 'folder-management-v25', roots: ['rootcontainerv25000000000'] },
+      // Within-track duplicate: one track claims two same-title copies under
+      // one parent folder.
+      { token: 'docdupflusha0000000001', name: 'FlushAll()', parentToken: 'folder-management-v26', roots: ['rootv26track0000000000000'] },
+      { token: 'docdupflushb0000000001', name: 'FlushAll()', parentToken: 'folder-management-v26', roots: ['rootv26track0000000000000'] },
+    ];
+    const classification = classifySameNameSiblings({
+      folderEntries,
+      records,
+      pageLinkTokens: [],
+      trackRoots,
+    });
+    const findings = classification.findings;
+    const codesFor = (identity) => findings
+      .filter((finding) => finding.identity === identity)
+      .map((finding) => finding.code);
+    // Generic inventory suppression: the zero-row same-name copy is reported
+    // once (by the classifier), while a loose orphan still gets the generic
+    // CONTENT_ORPHAN_DOCUMENT finding.
+    const inventory = reconcileContentInventory({
+      records,
+      folderDocuments: ['docindexorphan00000000001', 'doclooseorphan000000001'],
+      pageLinkTokens: [],
+      exceptTokens: findings
+        .filter((finding) => finding.code === 'SAME_NAME_SIBLING_ORPHAN')
+        .map((finding) => finding.identity),
+    });
+    const protectedGroup = classification.groups.find((group) => group.title === 'CreatePartition()');
+    return {
+      misplacedCode: codesFor('docnewdatabase00000000001')[0] || null,
+      orphanCode: codesFor('docindexorphan00000000001')[0] || null,
+      conflictCode: codesFor('docdupflusha0000000001')[0] || null,
+      protectedFindings: codesFor('docoldpartition000000001').length + codesFor('docnewpartition000000001').length,
+      protectedState: protectedGroup ? protectedGroup.state : null,
+      genericOrphanSuppressed: !inventory.findings.some((finding) => finding.identity === 'docindexorphan00000000001')
+        && inventory.findings.some((finding) => finding.identity === 'doclooseorphan000000001'),
     };
   },
 

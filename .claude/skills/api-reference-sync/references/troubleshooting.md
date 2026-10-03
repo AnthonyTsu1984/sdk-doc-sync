@@ -95,3 +95,13 @@ digest — the fresh journal carries the replacement execution.
 ## Percent-Encoded Block Links
 
 Block link URLs in payloads and exports are percent-encoded. Decode with `decodeURIComponent` before extracting referenced document tokens — the first orphan sweep missed 15 referenced tokens (and nearly trashed live documents) before decoding. The governed reconcilers in `content-reconciliation.js` now do this automatically.
+
+## Same-Title Sibling Pages Are Copy-Patch Structure, Not Duplicates
+
+A same-title document set spanning tracks is the copy-patch-and-repoint structure — never a duplicate to merge or clean. `reconcile-content.js` classifies every same-title set language-wide (records from every track's Bitable, containment per walked root) and reports:
+
+- `SAME_NAME_COPY_MISPLACED` — a claimed copy contained only outside every claiming track's release root. The newer track's copy of a changed interface belongs in the newer track's tree (e.g. a v3.0-pointed copy must live under the v3.0 release root, not beside the older copy in an older version's category folder). Root cause ruling (user, 2026-10-03): this is a copy-patch-and-repoint mechanism failure — no copy happened; the new document was created in place inside the older version's directory, then patched and repointed, so one copy landed in the older version's table and the duplicate in the newer version's table. Live java audit (2026-10-03): 21 misplaced copies — the v3.0-claimed halves of the load/list/has/drop/create/release Partitions pairs under v2.6.x, the alter/create/describe/drop/list/use Database pairs under v2.4.x, the ResourceGroup family and transferReplica under v2.5.x, plus the v2.6-claimed describeRole/describeUser copies under v2.5.x and the v2.6-claimed FieldSchema copy under v2.4.x.
+- `SAME_NAME_SIBLING_ORPHAN` — a copy with zero pointing rows (no record `Docs` link, no page block link). This is the only true orphan candidate; verify unregistered legacy inventories first, then disposal requires explicit operator approval (2026-10-03 java audit: 16 such copies, including the describeIndex() copy `JBBldcrAHoYZ2mxMGeocZHMAnze`).
+- `SAME_NAME_TRACK_CONFLICT` — one track's records pointing at several same-title copies under one parent folder; re-point records to the surviving copy.
+
+Correctly placed pairs (each copy claimed by a distinct track and contained under its claiming track's release root) are report-only protected structure. Generic `CONTENT_ORPHAN_DOCUMENT` is suppressed for tokens the same-name classifier already reported. All findings are detect-only: none authorizes disposal.

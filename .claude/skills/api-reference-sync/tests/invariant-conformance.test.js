@@ -81,5 +81,6 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
     'api.pr-polish-governed',
     'api.governed-document-inventory',
     'api.sdk-page-layout',
+    'api.same-name-sibling-placement',
   ]);
 });

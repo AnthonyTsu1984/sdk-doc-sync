@@ -9,6 +9,7 @@ const { organizationRecordType } = require('./sdk-organization-contract');
 const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { captureRecordState, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
+const { deriveFolderAncestry } = require('./tree-delta-reconciliation');
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -522,6 +523,18 @@ class SyncExecutor {
 
   async _executeCreateFolder(plan, result) {
     const resource = plan.resource;
+    // Kernel v3 containment: verify the approved parent chain live before the
+    // category folder is created.
+    if (Array.isArray(resource.parentAncestry) && resource.parentAncestry.length > 0) {
+      await this._assertLiveFolderChain({
+        rootToken: resource.versionRootToken,
+        chain: resource.parentAncestry,
+        leafToken: resource.parentFolderToken,
+        stableId: resource.ref,
+        evidenceLabel: 'category.folder.parentAncestry',
+      });
+      result.completedSteps.push('verifyResourceContainment');
+    }
     const before = await this._listFolder(resource.parentFolderToken, 'folder');
     result.completedSteps.push('verifyResourceAbsent');
     const existing = before.find(item => isFolderItem(item) && item.name === resource.name);
@@ -825,6 +838,58 @@ class SyncExecutor {
   // approved evidence set, minus the repointed target record for copy-patch
   // transitions (that record now points at the new document). The full tree
   // postconditions are verified batch-level; this is the immediate fast-fail.
+  // Kernel v3 containment gate, executed live: the copy must land under the
+  // target track's version root. The plan carries the approved folder chain
+  // (target.folderAncestry); the executor re-derives it from the live tree
+  // before the first write, so a target resolved inside the older tree — the
+  // 2026-10-03 in-place-copy failure mode — fails closed here. Plans attested
+  // before kernel v3 carry no chain and keep verifying as before.
+  async _verifyCopyTargetPlacement(plan, result) {
+    const attestation = (plan.invariantAttestations || [])
+      .find((entry) => entry?.id === 'api.versioned-tree-delta');
+    if (!attestation || attestation.decision !== 'COPY_PATCH_AND_REPOINT') return;
+    const chain = plan.target?.folderAncestry;
+    if (!Array.isArray(chain) || chain.length === 0) {
+      // Kernel v3 binds a chain into every plain-copy plan; a v3+ attestation
+      // without one means the plan body lost its containment evidence —
+      // refuse here instead of silently skipping the live gate. Plans
+      // attested before kernel v3 keep verifying as before (no chain).
+      if ((attestation.version || 0) >= 3) {
+        const error = new SyncExecutionError(
+          'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT',
+          `kernel v3 attestation for ${plan.stableId} carries no target.folderAncestry; the approved plan body is missing its containment evidence`,
+        );
+        error.step = 'verifyTargetPlacement';
+        throw error;
+      }
+      return;
+    }
+    await this._assertLiveFolderChain({
+      rootToken: plan.target?.versionRootToken,
+      chain,
+      leafToken: plan.target?.folderToken,
+      stableId: plan.stableId,
+      evidenceLabel: 'target.folderAncestry',
+    });
+    result.completedSteps.push('verifyTargetPlacement');
+  }
+
+  async _assertLiveFolderChain({ rootToken, chain, leafToken, stableId, evidenceLabel }) {
+    const derived = await deriveFolderAncestry({
+      listFolder: ({ folderToken, type }) => this._listFolder(folderToken, type),
+      versionRootToken: rootToken,
+      folderToken: leafToken,
+    });
+    if (!derived || JSON.stringify(derived) !== JSON.stringify(chain)) {
+      const error = new SyncExecutionError(
+        'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT',
+        `Live Drive containment disagrees with the approved ${evidenceLabel} for ${stableId}: ${leafToken} is not reachable under version root ${rootToken ?? '(missing)'}`,
+      );
+      error.step = 'verifyTargetPlacement';
+      throw error;
+    }
+  }
+
   async _verifyTreeDeltaReferences(plan, result) {
     const attestation = (plan.invariantAttestations || [])
       .find((entry) => entry?.id === 'api.versioned-tree-delta');
@@ -970,6 +1035,7 @@ class SyncExecutor {
   }
 
   async _executeCopyPatchAndRepoint(plan, artifact, action, result) {
+    await this._verifyCopyTargetPlacement(plan, result);
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
 
@@ -1254,9 +1320,15 @@ class SyncExecutor {
   }
 
   _inferFailedStep(plan, completedSteps, result = {}) {
-    // verifySharedTokenEvidence is a read-only pre-write guard; failures that
-    // need step inference read as if the guard had not been recorded yet.
-    completedSteps = completedSteps.filter((step) => step !== 'verifySharedTokenEvidence');
+    // Read-only pre-write guards (shared-token evidence, kernel v3 target
+    // containment, folder-resource containment) are journaled but read as if
+    // not yet recorded when a later failure needs step inference — otherwise
+    // a pure read failure on a folder resource would be misattributed to the
+    // createFolder write step.
+    completedSteps = completedSteps.filter((step) => (
+      step !== 'verifySharedTokenEvidence' && step !== 'verifyTargetPlacement'
+      && step !== 'verifyResourceContainment'
+    ));
     if (plan.action === 'CREATE_FOLDER') {
       if (completedSteps.length === 0) return 'verifyResourceAbsent';
       if (!completedSteps.includes('createFolder')) return 'createFolder';

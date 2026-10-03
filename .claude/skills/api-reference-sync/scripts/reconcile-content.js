@@ -3,9 +3,20 @@
 
 // Read-only content reconciliation across the registered release tracks of
 // one language (content-fidelity invariants, enforcement stage "reconcile").
-// Reports governed-inventory orphan candidates, callout empty children, and
-// reviewed-context verbatim divergence. Detect-only: this script never
-// mutates live state and does not authorize cleanup.
+// Facts are collected language-wide: records from every track's Bitable and
+// one deduplicated Drive walk per root (release roots plus their configured
+// container roots), because cross-track shared documents (both tracks'
+// records pointing at one older-tree document) are governed inventory and
+// same-title sibling sets span trees. Reports governed-inventory orphan
+// candidates, same-title sibling placement (orphan copies, copies misplaced
+// outside their claiming track's release root, within-track duplicates),
+// callout empty children, and reviewed-context verbatim divergence.
+// Detect-only: this script never mutates live state and does not authorize
+// cleanup.
+//
+// Output schemaVersion 2: the former per-track reports are replaced by
+// language-scoped sections (inventory, sameNameSiblings, callouts, contexts,
+// layout).
 //
 // Usage:
 //   node scripts/reconcile-content.js --language cpp [--json] [--strict]
@@ -23,6 +34,7 @@ const {
     folderTokenFromLink,
 } = require('../src/sdk-doc-sync/tree-delta-reconciliation');
 const {
+    classifySameNameSiblings,
     reconcileContentInventory,
     reconcileCalloutBlocks,
     reconcileContextVerbatim,
@@ -90,93 +102,168 @@ async function main(argv = process.argv) {
         throw new Error(`Language ${options.language} has no registered tracks`);
     }
     const folderReader = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+    const pageLinkTokens = loadJsonInput(options.pageLinksJson) || [];
 
-    const reports = [];
+    // Language-wide facts: records from every track's Bitable, tagged with
+    // their track; one deduplicated walk per root. Container roots are walked
+    // in addition to release roots so legacy version subtrees (e.g. a
+    // v2.5.x tree outside every release root) reach the same-title
+    // classification; containment per root keeps the governance footprint
+    // limited to the release-root trees.
+    const allRecords = [];
+    const trackRoots = [];
+    const scanRoots = [];
     for (const track of tracks) {
         const baseToken = trackBaseToken(track);
         if (!baseToken) throw new Error(`Track ${track.version} has an unresolved Bitable identity`);
         const records = (await new BitableWriter({ baseToken, tableId: trackTableId(track) })
-            .listRecords({ pageSize: 500 })).map(normalizeRecord);
+            .listRecords({ pageSize: 500 })).map(normalizeRecord)
+            .map((record) => ({ ...record, track: track.version }));
+        allRecords.push(...records);
 
-        // Governed inventory: every docx under the track's release-root tree.
-        const folderDocuments = [];
-        const versionRootToken = trackReleaseRootToken(track);
-        const visitFolder = async (folderToken) => {
-            const children = await folderReader.listFolder({ folderToken, type: 'all' }) || [];
-            for (const child of children) {
-                const token = child?.token || child?.file_token || null;
-                const childType = child?.type || null;
-                if (childType === 'folder' && token && folderToken !== token) {
-                    await visitFolder(token);
-                } else if (token && (childType === 'docx' || childType === null || childType === 'all')) {
-                    folderDocuments.push(token);
-                }
-            }
-        };
-        if (versionRootToken) await visitFolder(versionRootToken);
-
-        const inventory = reconcileContentInventory({
-            records,
-            folderDocuments,
-            pageLinkTokens: loadJsonInput(options.pageLinksJson) || [],
-        });
-        inventory.track = track.version;
-
-        // Callout structure: from an injected blocks dump when provided.
-        const blocksInput = loadJsonInput(options.blocksJson);
-        const callouts = blocksInput
-            ? reconcileCalloutBlocks(blocksInput)
-            : { invariantId: 'api.markdown-block-fidelity', findings: [], skipped: true };
-        callouts.track = track.version;
-
-        // Reviewed-context verbatim agreement: from an injected dump.
-        const contextsInput = loadJsonInput(options.contextsJson);
-        const contexts = contextsInput
-            ? reconcileContextVerbatim({ contexts: contextsInput })
-            : { invariantId: 'api.pr-verbatim-content', findings: [], skipped: true };
-
-        // Page layout conformance against the language's declared rules: from
-        // the injected blocks dump when provided. The dump may be a flat
-        // block array (one page) or an array of {pageId, blocks} pages —
-        // normalize so the reconciler always sees the page shape.
-        const layoutPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
-            ? blocksInput
-            : [{ pageId: `injected:${track.version}`, blocks: blocksInput }];
-        const layout = blocksInput
-            ? reconcilePageLayout({ pages: layoutPages, profile: sdkLayoutProfiles[options.language] })
-            : { invariantId: 'api.sdk-page-layout', findings: [], skipped: true };
-        layout.track = track.version;
-
-        reports.push({
-            track: track.version,
-            versionRootToken,
-            inventory,
-            callouts,
-            contexts,
-            layout,
-        });
+        const releaseRootToken = trackReleaseRootToken(track);
+        const configuredRootToken = track.drive?.configuredRootToken || null;
+        trackRoots.push({ version: track.version, releaseRootToken: releaseRootToken || null });
+        if (releaseRootToken) {
+            scanRoots.push({ token: releaseRootToken, kind: 'release-root', track: track.version });
+        }
+        if (configuredRootToken && configuredRootToken !== releaseRootToken) {
+            scanRoots.push({ token: configuredRootToken, kind: 'container', track: track.version });
+        }
     }
 
-    const findings = reports.flatMap((report) => [
-        ...report.inventory.findings,
-        ...report.callouts.findings,
-        ...report.contexts.findings,
-        ...report.layout.findings,
-    ]);
+    const folderEntries = [];
+    const entriesByToken = new Map();
+    // One visited set across every walk: release roots nested inside their
+    // configured container are not re-walked (halving API traffic), and a
+    // folder cycle terminates instead of recursing until the stack overflows.
+    const visitedFolders = new Set();
+    const visitFolder = async (folderToken, rootToken) => {
+        if (visitedFolders.has(folderToken)) return;
+        visitedFolders.add(folderToken);
+        const children = await folderReader.listFolder({ folderToken, type: 'all' }) || [];
+        for (const child of children) {
+            const token = child?.token || child?.file_token || null;
+            const childType = child?.type || null;
+            if (childType === 'folder' && token && folderToken !== token) {
+                await visitFolder(token, rootToken);
+            } else if (token && (childType === 'docx' || childType === null || childType === 'all')) {
+                const existing = entriesByToken.get(token);
+                if (existing) {
+                    if (!existing.roots.includes(rootToken)) existing.roots.push(rootToken);
+                } else {
+                    const entry = {
+                        token,
+                        name: child?.name || null,
+                        parentToken: folderToken,
+                        roots: [rootToken],
+                    };
+                    entriesByToken.set(token, entry);
+                    folderEntries.push(entry);
+                }
+            }
+        }
+    };
+    for (const root of scanRoots) await visitFolder(root.token, root.token);
+
+    // Same-title sibling placement: protected cross-track pairs, misplaced
+    // copies (claimed outside every claiming track's release root), zero-row
+    // orphan candidates, and within-track duplicates. Tracks whose release
+    // root is unresolved cannot host placement judgments — the classifier
+    // skips them and the run says so explicitly.
+    const unresolvedTracks = trackRoots.filter((root) => !root.releaseRootToken).map((root) => root.version);
+    if (unresolvedTracks.length > 0) {
+        process.stderr.write(`WARNING: tracks with unresolved release roots are excluded from placement judgment: ${unresolvedTracks.join(', ')}\n`);
+    }
+    const sameName = classifySameNameSiblings({
+        folderEntries,
+        records: allRecords,
+        pageLinkTokens,
+        trackRoots,
+    });
+    sameName.unresolvedTracks = unresolvedTracks;
+
+    // Governed inventory closure over the release-root footprint with
+    // language-wide pointers; tokens the same-name classifier already
+    // reported as orphans are not double-reported.
+    const releaseRootTokens = new Set(trackRoots
+        .map((root) => root.releaseRootToken)
+        .filter(Boolean));
+    const governedDocuments = folderEntries
+        .filter((entry) => entry.roots.some((rootToken) => releaseRootTokens.has(rootToken)))
+        .map((entry) => entry.token);
+    const inventory = reconcileContentInventory({
+        records: allRecords,
+        folderDocuments: governedDocuments,
+        pageLinkTokens,
+        exceptTokens: sameName.findings
+            .filter((finding) => finding.code === 'SAME_NAME_SIBLING_ORPHAN')
+            .map((finding) => finding.identity),
+    });
+    inventory.language = options.language;
+
+    // Callout structure: from an injected blocks dump when provided.
+    const blocksInput = loadJsonInput(options.blocksJson);
+    const callouts = blocksInput
+        ? reconcileCalloutBlocks(blocksInput)
+        : { invariantId: 'api.markdown-block-fidelity', findings: [], skipped: true };
+
+    // Reviewed-context verbatim agreement: from an injected dump.
+    const contextsInput = loadJsonInput(options.contextsJson);
+    const contexts = contextsInput
+        ? reconcileContextVerbatim({ contexts: contextsInput })
+        : { invariantId: 'api.pr-verbatim-content', findings: [], skipped: true };
+
+    // Page layout conformance against the language's declared rules: from
+    // the injected blocks dump when provided. The dump may be a flat
+    // block array (one page) or an array of {pageId, blocks} pages —
+    // normalize so the reconciler always sees the page shape.
+    const layoutPages = Array.isArray(blocksInput) && blocksInput.some((entry) => entry && typeof entry === 'object' && Array.isArray(entry.blocks))
+        ? blocksInput
+        : [{ pageId: `injected:${options.language}`, blocks: blocksInput }];
+    const layout = blocksInput
+        ? reconcilePageLayout({ pages: layoutPages, profile: sdkLayoutProfiles[options.language] })
+        : { invariantId: 'api.sdk-page-layout', findings: [], skipped: true };
+
+    const findings = [
+        ...inventory.findings,
+        ...sameName.findings,
+        ...callouts.findings,
+        ...contexts.findings,
+        ...layout.findings,
+    ];
+    const summary = {
+        groups: sameName.groups.length,
+        dualTrackPairs: sameName.groups.filter((group) => group.state === 'multi-track-pair').length,
+        orphanCopies: sameName.findings.filter((finding) => finding.code === 'SAME_NAME_SIBLING_ORPHAN').length,
+        misplacedCopies: sameName.findings.filter((finding) => finding.code === 'SAME_NAME_COPY_MISPLACED').length,
+        trackConflicts: sameName.findings.filter((finding) => finding.code === 'SAME_NAME_TRACK_CONFLICT').length,
+    };
 
     if (options.json) {
         process.stdout.write(`${JSON.stringify({
-            schemaVersion: 1,
+            schemaVersion: 2,
             generatedAt: new Date().toISOString(),
             language: options.language,
+            tracks: trackRoots,
             findings,
-            reports,
+            inventory,
+            sameNameSiblings: {
+                invariantId: sameName.invariantId,
+                unresolvedTracks,
+                summary,
+                groups: sameName.groups,
+            },
+            callouts,
+            contexts,
+            layout,
         }, null, 2)}\n`);
     } else {
         for (const finding of findings) {
             process.stdout.write(`[${finding.severity}] ${finding.code} ${finding.identity} — ${finding.detail}\n`);
         }
-        process.stdout.write(`${findings.length} finding(s) across ${reports.length} track(s)\n`);
+        process.stdout.write(`same-name sibling groups: ${summary.groups} (dual-track pairs ${summary.dualTrackPairs}, orphan copies ${summary.orphanCopies}, misplaced copies ${summary.misplacedCopies}, track conflicts ${summary.trackConflicts})\n`);
+        process.stdout.write(`${findings.length} finding(s) across ${tracks.length} track(s)\n`);
     }
 
     if (options.strict && findings.length > 0) process.exitCode = 1;

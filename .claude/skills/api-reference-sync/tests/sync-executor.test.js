@@ -96,6 +96,7 @@ function planningContext(overrides = {}) {
       parentRecordId: 'parent-v26',
       folderToken: 'collections-v26',
       versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'collections-v26'],
       ancestryVerified: true,
     },
     current: {
@@ -174,6 +175,12 @@ function spies({ failPatch = false, failRecordCreate = false, failRecordUpdate =
         title: input.title,
         folderToken: input.folderToken,
       };
+    },
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
     },
     async copyDocument(input) {
       calls.push(['copyDocument', input]);
@@ -923,6 +930,12 @@ test('SyncExecutor routes SDK API updates through the reviewed semantic patch pl
 test('SyncExecutor identifies the approved source document when patching a copied SDK API page', async () => {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async copyDocument(input) {
       calls.push(['copyDocument', input]);
       return { token: 'doc-copy', url: 'https://docs.example/doc-copy' };
@@ -970,6 +983,12 @@ test('SyncExecutor identifies the approved source document when patching a copie
 test('SyncExecutor rebuilds only the copied document and removes it when verification fails', async () => {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async copyDocument(input) {
       calls.push(['copyDocument', input.sourceDocumentToken]);
       return { token: 'doc-copy', url: 'https://docs.example/doc-copy' };
@@ -1468,6 +1487,12 @@ test('SyncExecutor copies and repoints before preserving recovery details on rec
 test('copy-patch-repoint verifies the copy before record update without touching source history', async () => {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async copyDocument(input) {
       calls.push('copyDocument');
       return {
@@ -1536,6 +1561,12 @@ test('copy-patch-repoint verifies the copy before record update without touching
 test('document verification failure prevents updateRecord after copy and patch', async () => {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async copyDocument(input) {
       calls.push('copyDocument');
       return {
@@ -2235,6 +2266,12 @@ test('SyncExecutor compares reference multisets so cloned-base tokens pass pre-w
   // string, so the live enumeration yields the id twice.
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async copyDocument(input) {
       calls.push('copyDocument');
       return {
@@ -2348,6 +2385,12 @@ test('SyncExecutor blocks cloned-base mutations when a reference count drifted',
 test('SyncExecutor tree-delta verification removes exactly one repointed reference', async () => {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      // Kernel v3 containment: the live tree under the target version root.
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async copyDocument(input) {
       calls.push('copyDocument');
       return {
@@ -2446,4 +2489,110 @@ test('block safety publishes PR prose that merely contains the phrase brief desc
     { block_id: 'p2', paragraph: { elements: [{ text_run: { content: 'Usage example' } }] } },
   ]);
   assert.ok(placeholder.errors.some((error) => error.code === 'LEGACY_SCAFFOLD_ARTIFACT'));
+});
+
+test('failed-step inference treats the folder containment read as a read-only guard', () => {
+    // P1 review hardening: verifyResourceContainment is journaled but must not
+    // shift step inference — a pure read failure on a folder resource reads
+    // as verifyResourceAbsent, never as the createFolder write step.
+    const executor = new SyncExecutor({ documentWriter: {}, bitableWriter: {} });
+    assert.equal(
+        executor._inferFailedStep({ action: 'CREATE_FOLDER' }, ['verifyResourceContainment']),
+        'verifyResourceAbsent',
+    );
+    assert.equal(
+        executor._inferFailedStep({ action: 'CREATE_FOLDER' }, ['verifyResourceContainment', 'createFolder']),
+        'verifyFolder',
+    );
+    assert.equal(
+        executor._inferFailedStep({ action: 'COPY_PATCH_AND_REPOINT' }, ['verifyTargetPlacement']),
+        'copyDocument',
+    );
+});
+test('SyncExecutor refuses a copy when the live tree disagrees with the approved containment chain', async () => {
+    // Kernel-valid chain shape (root..leaf, no duplicates) that the live tree
+    // cannot confirm: BFS from the version root returns a different path.
+    // The executor must refuse before the first writer call.
+    const context = planningContext({
+        current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+        target: { ...planningContext().target, folderAncestry: ['root-v26', 'folder-fake', 'collections-v26'] },
+    });
+    const copyPlan = plan('UPDATE', context);
+    const calls = [];
+    const documentWriter = {
+        async listFolder({ folderToken }) {
+            return folderToken === 'root-v26'
+                ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+                : [];
+        },
+        async copyDocument(input) { calls.push(['copyDocument', input]); return { token: 'doc-copy' }; },
+    };
+    const result = await new SyncExecutor({ documentWriter, bitableWriter: {} }).execute(copyPlan, {
+        artifact: artifact('Creates a collection.\n'),
+        approval: { approved: true },
+    });
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT');
+    assert.deepEqual(calls, []);
+});
+
+test('SyncExecutor refuses a kernel v3 copy plan that lost its containment chain', async () => {
+    // A kernel v3 attestation without the chain it must bind is a plan-body
+    // defect (some assembly path bypassed the kernel): strip the chain from
+    // an otherwise-approved v3 plan and expect a pre-write refusal, not a
+    // legacy skip. Plans arrive frozen, so clone to unfrozen before editing.
+    const context = planningContext({
+        current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+    });
+    const approved = plan('UPDATE', context);
+    // JSON round-trip unfreezes (structuredClone preserves frozen status);
+    // re-freeze after stripping so the plan passes the approved-plan gate.
+    const copyPlan = JSON.parse(JSON.stringify(approved));
+    delete copyPlan.target.folderAncestry;
+    const deepFreeze = (value) => {
+        if (value && typeof value === 'object' && !Object.isFrozen(value)) {
+            Object.freeze(value);
+            for (const child of Object.values(value)) deepFreeze(child);
+        }
+        return value;
+    };
+    deepFreeze(copyPlan);
+    let copyCalled = false;
+    const result = await new SyncExecutor({
+        documentWriter: {
+            async listFolder() { return []; },
+            async copyDocument(input) { copyCalled = true; return { token: 'doc-copy' }; },
+        },
+        bitableWriter: {},
+    }).execute(copyPlan, { artifact: artifact('Creates a collection.\n'), approval: { approved: true } });
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT');
+    assert.equal(copyCalled, false);
+});
+
+test('SyncExecutor verifies a folder resource parent chain before creating the folder', async () => {
+    const createCalls = [];
+    // planResource embeds the resource verbatim (parentAncestry included)
+    // and freezes the plan — the shape the executor's approval gate demands.
+    const resourcePlan = new SyncPlanner().planResource({
+        kind: 'folder',
+        ref: 'folder:cpp:v30:Partitions',
+        name: 'Partitions',
+        parentFolderToken: 'root-v30',
+        versionRootToken: 'root-v30',
+        parentAncestry: ['root-v30', 'folder-somewhere-else'],
+        existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v30', name: 'Partitions' },
+    });
+    const result = await new SyncExecutor({
+        documentWriter: {
+            async listFolder({ folderToken }) {
+                return folderToken === 'root-v30' ? [{ token: 'folder-other', type: 'folder', name: 'Other' }] : [];
+            },
+            async createFolder(input) { createCalls.push(input); return { token: 'folder-new' }; },
+        },
+        bitableWriter: {},
+    }).execute(resourcePlan, { approval: { approved: true } });
+    assert.equal(result.status, 'error');
+    assert.equal(result.error.code, 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT');
+    assert.deepEqual(createCalls, []);
 });

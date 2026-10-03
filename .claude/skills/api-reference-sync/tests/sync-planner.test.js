@@ -62,6 +62,7 @@ function planningContext(overrides = {}) {
       parentRecordId: 'parent-v26',
       folderToken: 'collections-v26',
       versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'collections-v26'],
       ancestryVerified: true,
     },
     current: {
@@ -214,6 +215,7 @@ test('SyncPlanner plans CREATE from reviewed validated content with an exact SHA
     parentRecordId: 'parent-v26',
     folderToken: 'collections-v26',
     versionRootToken: 'root-v26',
+    folderAncestry: ['root-v26', 'collections-v26'],
     releaseVersion: 'v2.6.x',
     documentHomeVersion: null,
   });
@@ -290,6 +292,7 @@ test('SyncPlanner binds reviewed organization and release placement contracts in
       parentRecordId: 'rec-data-import',
       folderToken: 'folder-bulk-writer',
       versionRootToken: 'root-v30',
+      folderAncestry: ['root-v30', 'folder-bulk-writer'],
       ancestryVerified: true,
     },
     current: {
@@ -345,6 +348,7 @@ test('SyncPlanner rejects organization plans that omit or contradict scanner-der
       parentRecordId: 'rec-data-import',
       folderToken: 'folder-bulk-writer',
       versionRootToken: 'root-v30',
+      folderAncestry: ['root-v30', 'folder-bulk-writer'],
       ancestryVerified: true,
     },
     current: {
@@ -2041,6 +2045,8 @@ test('failed resource execution is journaled and blocks dependent documents', as
               name: 'Collections',
               parentFolderToken: 'root-v26',
               versionRootToken: 'root-v26',
+              // Kernel v3: containment evidence for the category-create parent.
+              parentAncestry: ['root-v26'],
               existingLookup: {
                 checked: true,
                 absent: true,

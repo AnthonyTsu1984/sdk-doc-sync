@@ -1333,6 +1333,34 @@ class SdkDocSync {
             }
         }
 
+        if (decision === 'COPY_PATCH_AND_REPOINT') {
+            // Plain-copy placement observation (kernel v3): prove the created
+            // document actually landed in the planned target folder. Drive
+            // listing is eventually consistent right after the create, so the
+            // absence check retries with backoff (same precedent as
+            // SyncExecutor._getRecordWithRetry) before concluding misplacement.
+            if (typeof this.m2f?.listFolder === 'function'
+                && plan.target?.folderToken
+                && observed.createdDocumentToken) {
+                try {
+                    let created = null;
+                    for (let attempt = 1; attempt <= 4 && !created; attempt += 1) {
+                        if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 800 * (attempt - 1)));
+                        const files = await this.m2f.listFolder({ folderToken: plan.target.folderToken, type: 'all' });
+                        created = (files || []).find(file => (
+                            file.token === observed.createdDocumentToken
+                            || file.file_token === observed.createdDocumentToken
+                            || file.obj_token === observed.createdDocumentToken
+                        ));
+                    }
+                    observed.createdDocumentFolderToken = created ? plan.target.folderToken : null;
+                    observed.createdDocumentMissingFromTargetFolder = !created;
+                } catch (error) {
+                    observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'createdDocumentLocation', message: error.message });
+                }
+            }
+        }
+
         if (decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
             const folderToken = this._resolvedResourceToken(resourceResolutions, plan.target.folderRef);
             observed.categoryFolderToken = folderToken;

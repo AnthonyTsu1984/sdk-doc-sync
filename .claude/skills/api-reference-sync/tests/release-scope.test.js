@@ -2557,12 +2557,45 @@ test('reviewed release context builder joins successor pointing records into sha
     decision: 'no_successor_action',
   }]);
 
-  // An unattributed referencing record is omitted from the reviews — the
-  // kernel fails closed naming it, so the spec gap is visible at planning.
+  // A partially attributed reference set emits reviews only for the
+  // attributed records — the kernel fails closed naming the rest, so the
+  // spec gap is visible at planning.
+  const partialSpec = baseSpec();
+  partialSpec.candidates['BulkImport-bulk_import'].inheritanceEvidence = inheritanceEvidenceFixture({
+    stableId: 'python:BulkImport:bulk_import',
+    current: {
+      recordId: 'rec-bulk',
+      documentToken: 'doc-bulk',
+      version: 'v2.6.x',
+      folderToken: 'bulk-import-folder',
+      versionRootToken: 'root-v26',
+    },
+    target: {
+      version: 'v2.6.x',
+      folderToken: 'bulk-import-folder',
+      versionRootToken: 'root-v26',
+    },
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: ['rec-bulk', 'rec-bulk-v30', 'rec-bulk-v25'],
+  });
+  const partial = buildReviewedReleaseContext({ releaseScope, candidateSpec: partialSpec });
+  assert.deepEqual(partial.filteredScope.actions[0].planningContext.sharedUpdateReviews, [
+    { recordId: 'rec-bulk-v30', track: 'v3.0.x', status: 'inherited', decision: 'no_successor_action' },
+  ]);
+  const fullGapSpec = baseSpec();
+  delete fullGapSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds;
+  const fullGap = buildReviewedReleaseContext({ releaseScope, candidateSpec: fullGapSpec });
+  assert.equal(fullGap.filteredScope.actions[0].planningContext.sharedUpdateReviews, undefined);
+
+  // An attribution for a record outside the reference multiset is a typo —
+  // surfaced at build time instead of silently no-oping (and it must never
+  // stand in for the real record's attribution).
   const gapSpec = baseSpec();
   gapSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds = ['rec-somewhere-else'];
-  const gapped = buildReviewedReleaseContext({ releaseScope, candidateSpec: gapSpec });
-  assert.equal(gapped.filteredScope.actions[0].planningContext.sharedUpdateReviews, undefined);
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: gapSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID' && /not referenced by: rec-somewhere-else/.test(error.message),
+  );
 
   // A pointing record under two successor tracks is a spec error.
   const ambiguousSpec = baseSpec();
@@ -2584,6 +2617,48 @@ test('reviewed release context builder joins successor pointing records into sha
   assert.throws(
     () => buildReviewedReleaseContext({ releaseScope, candidateSpec: ambiguousSpec }),
     (error) => error.code === 'SHARED_UPDATE_REVIEW_AMBIGUOUS',
+  );
+
+  // An entry carrying attributions must itself be reviewed: an unvalidated
+  // extra successor entry with an invalid pairing (the PR #81 review P1 —
+  // 'missing' pairs only with defer/exclude/include, never no_successor_action)
+  // must not be able to clear the shared in-place gate. v2.5.x is an older
+  // track, so it is not required and assertInheritanceReview never sees it.
+  const unreviewedExtraSpec = baseSpec();
+  unreviewedExtraSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors.push({
+    track: 'v2.5.x',
+    status: 'missing',
+    decision: 'no_successor_action',
+    pointingRecordIds: ['rec-bulk-v30'],
+  });
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: unreviewedExtraSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID'
+      && /unreviewed or invalid status\/decision/.test(error.message),
+  );
+
+  // A duplicate recordId inside ONE entry's attribution is malformed, not
+  // cross-track ambiguity.
+  const duplicateSpec = baseSpec();
+  duplicateSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds = [
+    'rec-bulk-v30',
+    'rec-bulk-v30',
+  ];
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: duplicateSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID' && /twice/.test(error.message),
+  );
+
+  // An attribution for a record the shared document is not referenced by is
+  // a typo — surfaced at build time instead of silently no-oping.
+  const extraSpec = baseSpec();
+  extraSpec.candidates['BulkImport-bulk_import'].inheritanceReview.successors[0].pointingRecordIds = [
+    'rec-bulk-v30',
+    'rec-typo',
+  ];
+  assert.throws(
+    () => buildReviewedReleaseContext({ releaseScope, candidateSpec: extraSpec }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID' && /not referenced by: rec-typo/.test(error.message),
   );
 
   // The candidate's own record is not an "other" reference.

@@ -458,6 +458,21 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
   const byRecordId = new Map();
   for (const successor of successors) {
     if (successor.pointingRecordIds === undefined) continue;
+    // Entries carrying attributions are review evidence: they must pass the
+    // same status/decision pairing the builder enforces for required
+    // successor tracks. The kernel deliberately delegates that pairing here,
+    // and assertInheritanceReview only validates requiredSuccessorTracks —
+    // an unreviewed extra entry must never be able to clear the shared
+    // in-place gate (PR #81 review P1).
+    if (typeof successor.track !== 'string' || successor.track.length === 0
+      || !INHERITANCE_STATUSES.has(successor.status)
+      || !INHERITANCE_DECISIONS.has(successor.decision)
+      || !ALLOWED_INHERITANCE_DECISIONS_BY_STATUS[successor.status]?.has(successor.decision)) {
+      throw reviewedContextError(
+        'SHARED_UPDATE_REVIEW_INVALID',
+        `Candidate ${identity.stableId} successor track ${successor.track ?? '(missing)'} carries pointingRecordIds but has an unreviewed or invalid status/decision (${successor.status ?? 'none'}/${successor.decision ?? 'none'}); review the track or drop its attribution`,
+      );
+    }
     if (!Array.isArray(successor.pointingRecordIds)
       || successor.pointingRecordIds.some((recordId) => typeof recordId !== 'string' || recordId.length === 0)) {
       throw reviewedContextError(
@@ -468,6 +483,12 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
     for (const recordId of successor.pointingRecordIds) {
       const existing = byRecordId.get(recordId);
       if (existing) {
+        if (existing.track === successor.track) {
+          throw reviewedContextError(
+            'SHARED_UPDATE_REVIEW_INVALID',
+            `Candidate ${identity.stableId} successor track ${successor.track} lists record ${recordId} twice in pointingRecordIds`,
+          );
+        }
         throw reviewedContextError(
           'SHARED_UPDATE_REVIEW_AMBIGUOUS',
           `Candidate ${identity.stableId} references record ${recordId} under successor tracks ${existing.track} and ${successor.track}; a pointing record belongs to exactly one track`,
@@ -480,6 +501,17 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
     throw reviewedContextError(
       'SHARED_UPDATE_REVIEW_INVALID',
       `Candidate ${identity.stableId} attributes its own record ${evidence.current.recordId} to a successor track; pointingRecordIds cover the OTHER referencing records only`,
+    );
+  }
+  // Typo'd attributions (records outside the reference multiset) would
+  // otherwise never surface directly — fail closed naming them so the spec
+  // gets fixed instead of silently no-oping.
+  const referenceSet = new Set((evidence.sharedToken.referencedRecordIds || []).filter(Boolean));
+  const extras = [...byRecordId.keys()].filter((recordId) => !referenceSet.has(recordId));
+  if (extras.length > 0) {
+    throw reviewedContextError(
+      'SHARED_UPDATE_REVIEW_INVALID',
+      `Candidate ${identity.stableId} attributes records the shared document is not referenced by: ${extras.sort().join(', ')}`,
     );
   }
   const reviews = [];

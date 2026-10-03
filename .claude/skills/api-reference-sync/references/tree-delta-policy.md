@@ -94,11 +94,16 @@ every OTHER referenced record with its track's review entry and emits
 `{ recordId, track, status, decision }` into `planningContext`.
 
 - A referencing record no successor entry attributes is omitted from the
-  reviews; the kernel then fails closed naming it, so the spec gap surfaces
-  at planning with the exact record id.
+  reviews; the kernel then fails closed — naming each unattributed record
+  once at least one attribution exists (a fully unattributed reference set
+  is reported as "none were supplied"). Every entry that carries
+  `pointingRecordIds` must itself pass the reviewed status/decision pairing,
+  whether or not its track is a required successor track.
 - A record attributed under two successor tracks is a spec error
   (`SHARED_UPDATE_REVIEW_AMBIGUOUS`); so is attributing the candidate's own
-  record (`SHARED_UPDATE_REVIEW_INVALID`) or a malformed attribution array.
+  record, a malformed or duplicated attribution array, an unreviewed
+  status/decision pairing, or an attribution for a record the shared
+  document is not referenced by (all `SHARED_UPDATE_REVIEW_INVALID`).
 
 ## Exception-path batch assembly
 

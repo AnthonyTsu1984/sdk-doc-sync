@@ -630,6 +630,32 @@
         "plan"
       ],
       "statementDigest": "sha256:d8764ab4e4b1a08e8e572ba5f62b8c2c56fa19fc35f48072bc743495855b333e"
+    },
+    {
+      "id": "api.same-name-sibling-placement",
+      "version": 1,
+      "risk": "inventory-hygiene",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "reconcile"
+      ],
+      "statementDigest": "sha256:b2ff17dfadc6ec325646f47f90a35572c8080a678a8b97260bac37aa6507c4c3",
+      "fixtureIds": [
+        "content-reconcile-same-name-placement"
+      ],
+      "enforcers": [
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/content-reconciliation.js",
+          "codes": [
+            "SAME_NAME_SIBLING_ORPHAN",
+            "SAME_NAME_COPY_MISPLACED",
+            "SAME_NAME_TRACK_CONFLICT"
+          ]
+        }
+      ],
+      "notes": "2026-10-03 user ruling + live java audit. Ruling: same-title files inside an older version directory — one copy claimed by the older version's table, the duplicate by the newer version's table — are definitively a copy-patch-and-repoint mechanism failure: no copy happened, the new document was created in place in the older directory, then patched and repointed. (Multi-version directories themselves are normal structure; unchanged-interface fallback reaches back to v2.3.x for java.) Live java reconciliation validated the classifier: 21 SAME_NAME_COPY_MISPLACED (v3.0-claimed Partitions halves under v2.6.x, Database pairs under v2.4.x, ResourceGroup family + transferReplica under v2.5.x, v2.6-claimed describeRole/describeUser under v2.5.x, v2.6-claimed FieldSchema under v2.4.x), 16 SAME_NAME_SIBLING_ORPHAN (including describeIndex() copy JBBldcrAHoYZ2mxMGeocZHMAnze), 113 correctly placed cross-track pairs, 0 conflicts. Known write-path half (closed separately from this detection invariant): the planner trusts target.folderToken without version-root containment evidence (TARGET_ANCESTRY is self-declared verified), so a candidate-spec that resolves the target category folder inside the older tree plans a copy that lands in-place next to the source; the executor's live tree-delta verification checks reference multisets only, and the kernel's TREE_DELTA_CREATED_DOCUMENT_MISPLACED now also compares the created document's folder against plan.target.folderToken for the plain copy decision — which catches executor drift but NOT this failure mode, because the wrong resolution makes plan.target.folderToken itself the older folder. Full closure requires a pre-write containment gate: evidence that target.folderToken sits under the target track's release root."
     }
   ]
 }

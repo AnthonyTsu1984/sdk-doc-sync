@@ -243,6 +243,7 @@ test('the committed api-reference-sync registry passes its own coverage check', 
     'api.pr-polish-governed',
     'api.governed-document-inventory',
     'api.sdk-page-layout',
+    'api.same-name-sibling-placement',
   ]);
 });
 

@@ -405,5 +405,20 @@
    "cppUnboundClean": true,
    "cleanOk": true
   }
+ },
+ {
+  "id": "content-reconcile-same-name-placement",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentReconcileSameNamePlacement"
+  },
+  "assertions": {
+   "misplacedCode": "SAME_NAME_COPY_MISPLACED",
+   "orphanCode": "SAME_NAME_SIBLING_ORPHAN",
+   "conflictCode": "SAME_NAME_TRACK_CONFLICT",
+   "protectedFindings": 0,
+   "protectedState": "multi-track-pair",
+   "genericOrphanSuppressed": true
+  }
  }
 ]

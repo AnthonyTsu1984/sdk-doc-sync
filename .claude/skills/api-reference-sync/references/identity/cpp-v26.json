@@ -87,12 +87,12 @@
     },
     "Management.FlushAll": {
       "stableId": "cpp:Management:FlushAll",
-      "canonicalSlug": "v2-Management-FlushAll",
+      "canonicalSlug": "Management-FlushAll",
       "category": "Management"
     },
     "Management.GetFlushAllState": {
       "stableId": "cpp:Management:GetFlushAllState",
-      "canonicalSlug": "v2-Management-GetFlushAllState",
+      "canonicalSlug": "Management-GetFlushAllState",
       "category": "Management"
     },
     "Management.GetLoadState": {

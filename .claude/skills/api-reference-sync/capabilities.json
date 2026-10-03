@@ -31,6 +31,7 @@
         "delta-unchanged-inherited",
         "delta-changed-existing-category",
         "delta-changed-missing-category",
+        "delta-shared-inplace-classified",
         "delta-shared-inplace-forbidden",
         "delta-postwrite-verified"
       ]

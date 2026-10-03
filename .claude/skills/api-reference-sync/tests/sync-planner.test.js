@@ -562,7 +562,6 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
 test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location with copy source evidence', () => {
   const cases = [
     ['older version', { current: { ...planningContext().current, version: 'v2.5.x' } }],
-    ['shared token', { tokenReferencedByOlderVersions: true }],
     ['wrong folder', { current: { ...planningContext().current, folderToken: 'wrong-folder' } }],
   ];
 
@@ -585,6 +584,44 @@ test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location w
       current: { ...planningContext().current, ancestryVerified: false },
     })),
     (error) => error.code === 'INHERITANCE_EVIDENCE_CURRENT_UNVERIFIED',
+  );
+});
+
+test('SyncPlanner gates a same-track shared update on classified inheriting references', () => {
+  // Kernel v4: an unclassified shared cross-track in-place patch fails
+  // closed at planning — the change would push onto unreviewed tracks.
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), planningContext({
+      tokenReferencedByOlderVersions: true,
+    })),
+    (error) => error.code === 'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED',
+  );
+
+  // Classified inheriting: the in-place route, with the classification set
+  // carried on the plan for the executor's live coverage revalidation.
+  const classified = planningContext({ tokenReferencedByOlderVersions: true });
+  classified.sharedUpdateReviews = [{
+    recordId: 'rec-shared-older',
+    track: 'v2.5.x',
+    status: 'inherited',
+    decision: 'no_successor_action',
+  }];
+  const plan = new SyncPlanner().planAction(updateAction(), classified);
+  assert.equal(plan.action, 'UPDATE_IN_PLACE');
+  assert.deepEqual(plan.sharedUpdateReviews, classified.sharedUpdateReviews);
+  assert.equal(plan.metadata.invariantDecision, 'UPDATE_IN_PLACE_VERIFIED');
+
+  // A defer/exclude classification never plans the in-place patch.
+  const deferred = planningContext({ tokenReferencedByOlderVersions: true });
+  deferred.sharedUpdateReviews = [{
+    recordId: 'rec-shared-older',
+    track: 'v2.5.x',
+    status: 'deferred',
+    decision: 'defer',
+  }];
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), deferred),
+    (error) => error.code === 'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED',
   );
 });
 
@@ -1136,7 +1173,7 @@ test('acceptance manifest binds every document-unit journal and touched-record i
   assert.throws(() => buildAcceptanceManifest(reviewUnitManifest, [accepted.acceptedUnits[0]]), /must exactly match/);
 });
 
-function minimalAttestation(decision = 'UPDATE_IN_PLACE_VERIFIED_UNSHARED') {
+function minimalAttestation(decision = 'UPDATE_IN_PLACE_VERIFIED') {
   return {
     id: 'api.versioned-tree-delta',
     version: 2,

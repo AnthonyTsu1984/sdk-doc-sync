@@ -18,6 +18,8 @@ const {
     categoryResourceDefinitions,
     evaluateVersionedTreeDelta,
     factsDigest,
+    validFolderAncestry,
+    validateSharedUpdateReviews,
     verifyTreeDeltaPostconditions,
 } = require('../src/sdk-doc-sync/versioned-tree-policy');
 const { buildReviewUnitManifest } = require('../src/sdk-doc-sync/review-units');
@@ -168,11 +170,11 @@ test('policy kernel returns the full PR #19 decision table', () => {
         },
     }));
     assert.equal(inPlace.status, 'allowed');
-    assert.equal(inPlace.decision, DECISIONS.UPDATE_IN_PLACE_VERIFIED_UNSHARED);
+    assert.equal(inPlace.decision, DECISIONS.UPDATE_IN_PLACE_VERIFIED);
 
-    // shared token with an in-place intent (placement drift) never lands in place:
-    // a shared cross-track token with same-version placement still routes to copy.
-    const sharedLocal = evaluateVersionedTreeDelta(updateFacts({
+    // kernel v4: a shared cross-track token with same-version placement (the
+    // source track's own sync) is classified-gated, not copy-routed.
+    const sharedLocalFacts = updateFacts({
         current: {
             version: 'v3.0.x',
             recordId: 'rec-load-partitions-v30',
@@ -180,8 +182,23 @@ test('policy kernel returns the full PR #19 decision table', () => {
             folderToken: 'folder-partitions-v30',
             ancestryVerified: true,
         },
-    }));
-    assert.equal(sharedLocal.decision, DECISIONS.COPY_PATCH_AND_REPOINT);
+        inheritanceEvidence: inheritanceEvidence({ currentVersion: 'v3.0.x', targetVersion: 'v3.0.x' }),
+    });
+    const unclassifiedShared = evaluateVersionedTreeDelta(sharedLocalFacts);
+    assert.equal(unclassifiedShared.status, 'blocked');
+    assert.equal(unclassifiedShared.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+
+    const classifiedShared = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts,
+        sharedUpdateReviews: [{
+            recordId: 'rec-load-partitions-v26',
+            track: 'v2.6.x',
+            status: 'inherited',
+            decision: 'no_successor_action',
+        }],
+    });
+    assert.equal(classifiedShared.status, 'allowed');
+    assert.equal(classifiedShared.decision, DECISIONS.UPDATE_IN_PLACE_VERIFIED);
 
     // unknown diff, unknown placement, incomplete inventory all block
     assert.equal(evaluateVersionedTreeDelta(updateFacts({ sourceDiff: 'unknown' })).blocker, BLOCKERS.TREE_DELTA_DIFF_UNKNOWN);
@@ -243,6 +260,140 @@ test('policy kernel v3 blocks copy decisions without valid containment evidence'
     const badParentDecision = evaluateVersionedTreeDelta(badParent);
     assert.equal(badParentDecision.status, 'blocked');
     assert.equal(badParentDecision.blocker, BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT);
+});
+
+test('policy kernel v4 gates a shared in-place patch on classified inheriting references', () => {
+    // The source track's own sync hitting a shared document: same-version
+    // placement, shared evidence, refs = own + one successor record.
+    const sharedLocalFacts = () => updateFacts({
+        current: {
+            version: 'v3.0.x',
+            recordId: 'rec-load-partitions-v30',
+            documentToken: 'doc-load-partitions-v30',
+            folderToken: 'folder-partitions-v30',
+            ancestryVerified: true,
+        },
+        inheritanceEvidence: inheritanceEvidence({ currentVersion: 'v3.0.x', targetVersion: 'v3.0.x' }),
+    });
+    const reviews = (overrides = {}) => [{
+        recordId: 'rec-load-partitions-v26',
+        track: 'v2.6.x',
+        status: 'inherited',
+        decision: 'no_successor_action',
+        ...overrides,
+    }];
+
+    // Classified inheriting: allowed, and the reviews bind into the facts
+    // digest (a classification change re-binds the attestation).
+    const allowed = evaluateVersionedTreeDelta({ ...sharedLocalFacts(), sharedUpdateReviews: reviews() });
+    assert.equal(allowed.status, 'allowed');
+    assert.equal(allowed.decision, DECISIONS.UPDATE_IN_PLACE_VERIFIED);
+    const reclassified = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts(),
+        sharedUpdateReviews: reviews({ status: 'not_applicable' }),
+    });
+    assert.equal(reclassified.status, 'allowed');
+    assert.notEqual(allowed.attestation.inputDigest, reclassified.attestation.inputDigest);
+
+    // Missing classification: fail-closed — no reviews at all, and a
+    // partial set names the uncovered record.
+    const missing = evaluateVersionedTreeDelta(sharedLocalFacts());
+    assert.equal(missing.status, 'blocked');
+    assert.equal(missing.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+    assert.match(missing.detail, /none were supplied/);
+    const partial = evaluateVersionedTreeDelta({ ...sharedLocalFacts(), sharedUpdateReviews: [] });
+    assert.equal(partial.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+    const oneOfTwo = validateSharedUpdateReviews(
+        [{ recordId: 'rec-other', track: 'v2.5.x', decision: 'no_successor_action' }],
+        { referencedRecordIds: ['rec-own', 'rec-unclassified'], sourceRecordId: 'rec-own' },
+    );
+    assert.match(oneOfTwo.detail, /rec-unclassified/);
+
+    // A defer/exclude classification forbids the in-place patch: the change
+    // would leak onto a track the review did not clear.
+    for (const decision of ['defer', 'exclude', 'include_successor_action']) {
+        const incompatible = evaluateVersionedTreeDelta({
+            ...sharedLocalFacts(),
+            sharedUpdateReviews: reviews({ decision }),
+        });
+        assert.equal(incompatible.status, 'blocked');
+        assert.equal(incompatible.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+        assert.match(incompatible.detail, new RegExp(decision));
+    }
+
+    // Malformed entries: unknown decision, missing track, duplicate record.
+    const malformed = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts(),
+        sharedUpdateReviews: reviews({ decision: 'maybe' }),
+    });
+    assert.equal(malformed.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+    const noTrack = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts(),
+        sharedUpdateReviews: [{ recordId: 'rec-load-partitions-v26', decision: 'no_successor_action' }],
+    });
+    assert.equal(noTrack.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+    const duplicate = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts(),
+        sharedUpdateReviews: [...reviews(), ...reviews()],
+    });
+    assert.equal(duplicate.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+
+    // Reviews for records that do not reference the shared document.
+    const extra = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts(),
+        sharedUpdateReviews: [...reviews(), {
+            recordId: 'rec-somewhere-else',
+            track: 'v2.5.x',
+            decision: 'no_successor_action',
+        }],
+    });
+    assert.equal(extra.blocker, BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED);
+
+    // The unshared in-place shape needs no classifications (unchanged).
+    const unshared = evaluateVersionedTreeDelta(updateFacts({
+        inheritanceEvidence: inheritanceEvidence({ shared: 'unshared', currentVersion: 'v3.0.x', targetVersion: 'v3.0.x' }),
+        current: {
+            version: 'v3.0.x',
+            recordId: 'rec-load-partitions-v30',
+            documentToken: 'doc-load-partitions-v30',
+            folderToken: 'folder-partitions-v30',
+            ancestryVerified: true,
+        },
+    }));
+    assert.equal(unshared.status, 'allowed');
+    assert.equal(unshared.decision, DECISIONS.UPDATE_IN_PLACE_VERIFIED);
+
+    // Cross-track shared updates keep routing to the copy table (the
+    // successor's own sync), classifications or not.
+    const crossTrack = evaluateVersionedTreeDelta(updateFacts());
+    assert.equal(crossTrack.decision, DECISIONS.COPY_PATCH_AND_REPOINT);
+    const crossTrackClassified = evaluateVersionedTreeDelta({
+        ...updateFacts(),
+        sharedUpdateReviews: reviews(),
+    });
+    assert.equal(crossTrackClassified.decision, DECISIONS.COPY_PATCH_AND_REPOINT);
+});
+
+test('validateSharedUpdateReviews is the executor-reusable classification gate', () => {
+    const referencedRecordIds = ['rec-own', 'rec-a', 'rec-b'];
+    const ok = validateSharedUpdateReviews([
+        { recordId: 'rec-a', track: 'v2.6.x', decision: 'no_successor_action' },
+        { recordId: 'rec-b', track: 'v2.5.x', decision: 'no_successor_action' },
+    ], { referencedRecordIds, sourceRecordId: 'rec-own' });
+    assert.equal(ok.ok, true);
+
+    // Multiset sources collapse to set coverage: a duplicated recordId from a
+    // cloned base needs one classification, not two.
+    const clonedBase = validateSharedUpdateReviews([
+        { recordId: 'rec-a', track: 'v2.6.x', decision: 'no_successor_action' },
+    ], { referencedRecordIds: ['rec-own', 'rec-a', 'rec-a'], sourceRecordId: 'rec-own' });
+    assert.equal(clonedBase.ok, true);
+
+    const gap = validateSharedUpdateReviews([
+        { recordId: 'rec-a', track: 'v2.6.x', decision: 'no_successor_action' },
+    ], { referencedRecordIds, sourceRecordId: 'rec-own' });
+    assert.equal(gap.ok, false);
+    assert.match(gap.detail, /rec-b/);
 });
 
 test('policy kernel attestations are deterministic and input-sensitive', () => {

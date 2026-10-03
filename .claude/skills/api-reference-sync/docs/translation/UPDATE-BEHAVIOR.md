@@ -6,7 +6,7 @@ UPDATE is **not** a single universal behavior. It depends on whether source and 
 
 ## Case A: Same-version update (in-place allowed)
 
-Use in-place update only when the target doc already resides in the correct target-version folder **and the token is not shared by older-version bitables**.
+Use in-place update when the target doc already resides in the correct target-version folder and either the token is **not shared** by older-version bitables, or the token **is shared** and every other referencing record's inheritance review classifies its track as inheriting the change (`no_successor_action`; kernel v4 `sharedUpdateReviews`, fail-closed on unclassified/deferred/excluded references — see `[api.versioned-tree-delta]` in SKILL.md).
 
 Flow:
 1. Resolve target doc token from bitable `Docs.link`.

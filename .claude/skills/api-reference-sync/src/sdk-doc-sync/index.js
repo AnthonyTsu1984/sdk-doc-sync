@@ -1299,7 +1299,7 @@ class SdkDocSync {
 
         if (decision === 'COPY_PATCH_AND_REPOINT'
             || decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE'
-            || decision === 'UPDATE_IN_PLACE_VERIFIED_UNSHARED') {
+            || decision === 'UPDATE_IN_PLACE_VERIFIED') {
             if (this.tokenReferenceReader) {
                 try {
                     const references = await this.tokenReferenceReader.listTokenReferences({

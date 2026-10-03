@@ -36,12 +36,18 @@ test('every runtime-enforced invariant fixture executes against production polic
 });
 
 test('delta model scenarios keep the older shared document untouched by construction', async () => {
-  // Negative control: the executor guard scenario proves a forged in-place
-  // plan performs zero writer calls; the planning scenarios prove the safe
-  // route is the only route the planner returns for shared tokens.
-  const forbidden = await scenarios['delta-shared-inplace-forbidden']();
-  assert.equal(forbidden.executorBlocker, 'SHARED_TOKEN_INPLACE_PATCH_BLOCKED');
-  assert.equal(forbidden.writerCalls, 0);
+  // Negative control: the executor guard scenario proves an unclassified
+  // shared in-place plan performs zero writer calls; the classified scenario
+  // proves the kernel-v4 route plans and executes the in-place patch when
+  // every referencing record is inheritance-review-classified.
+  const unclassified = await scenarios['delta-shared-inplace-forbidden']();
+  assert.equal(unclassified.planningBlocker, 'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED');
+  assert.equal(unclassified.executorBlocker, 'SHARED_TOKEN_INPLACE_PATCH_BLOCKED');
+  assert.equal(unclassified.writerCalls, 0);
+
+  const classified = await scenarios['delta-shared-inplace-classified']();
+  assert.equal(classified.plannerAction, 'UPDATE_IN_PLACE');
+  assert.equal(classified.executorStatus, 'success');
 
   const missingCategory = scenarios['delta-changed-missing-category']();
   assert.equal(missingCategory.documentAction, 'COPY_PATCH_AND_REPOINT');

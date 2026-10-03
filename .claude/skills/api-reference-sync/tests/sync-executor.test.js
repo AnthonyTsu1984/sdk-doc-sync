@@ -818,6 +818,85 @@ test('SyncExecutor blocks in-place patches when the approved evidence marks the 
   assert.deepEqual(calls, []);
 });
 
+test('SyncExecutor executes a shared in-place patch carried by kernel-v4 classifications', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const basePlan = plan('UPDATE');
+  const sharedEvidence = createInheritanceEvidence({
+    stableId: basePlan.stableId,
+    current: basePlan.inheritanceEvidence.current,
+    target: basePlan.inheritanceEvidence.target,
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: ['rec-v26', 'rec-v30'],
+    trackInventoryDigests: basePlan.inheritanceEvidence.trackInventoryDigests,
+  });
+  const classifiedPlan = Object.freeze({
+    ...basePlan,
+    inheritanceEvidence: sharedEvidence,
+    sharedUpdateReviews: [{
+      recordId: 'rec-v30',
+      track: 'v3.0.x',
+      status: 'inherited',
+      decision: 'no_successor_action',
+    }],
+  });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(classifiedPlan),
+  });
+
+  const result = await executor.execute(classifiedPlan, {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-v26', historyVersionId: 'history-1', blockDigest: 'sha256:before' },
+    },
+  });
+
+  assert.equal(result.status, 'success');
+  assert.equal(result.treeDeltaVerification.ok, true);
+  assert.deepEqual(calls.map((entry) => entry[0]), ['patchDocument', 'updateRecord']);
+  assert.equal(calls[0][1].documentToken, 'doc-v26');
+});
+
+test('SyncExecutor still blocks a shared in-place patch whose classifications do not cover the references', async () => {
+  const { calls, documentWriter, bitableWriter } = spies();
+  const basePlan = plan('UPDATE');
+  const classifiedPlan = Object.freeze({
+    ...basePlan,
+    inheritanceEvidence: createInheritanceEvidence({
+      stableId: basePlan.stableId,
+      current: basePlan.inheritanceEvidence.current,
+      target: basePlan.inheritanceEvidence.target,
+      sharedTokenStatus: 'shared',
+      referencedRecordIds: ['rec-v26', 'rec-v30'],
+      trackInventoryDigests: basePlan.inheritanceEvidence.trackInventoryDigests,
+    }),
+    // Classification names a record that does not reference the token and
+    // misses the one that does: the coverage check fails closed.
+    sharedUpdateReviews: [{
+      recordId: 'rec-somewhere-else',
+      track: 'v3.0.x',
+      decision: 'no_successor_action',
+    }],
+  });
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(classifiedPlan),
+  });
+
+  const result = await executor.execute(classifiedPlan, {
+    artifact: artifact('updated markdown'),
+    approval: { approved: true },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'SHARED_TOKEN_INPLACE_PATCH_BLOCKED');
+  assert.match(result.error.details.classification, /rec-v30/);
+  assert.deepEqual(calls, []);
+});
+
 test('SyncExecutor blocks mutations when live references drifted from the approved evidence', async () => {
   const { calls, documentWriter, bitableWriter } = spies();
   const updatePlan = plan('UPDATE');

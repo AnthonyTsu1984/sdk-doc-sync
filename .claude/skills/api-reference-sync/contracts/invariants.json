@@ -5,7 +5,7 @@
   "invariants": [
     {
       "id": "api.versioned-tree-delta",
-      "version": 3,
+      "version": 4,
       "risk": "write-safety",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
@@ -16,11 +16,12 @@
         "post-write",
         "reconcile"
       ],
-      "statementDigest": "sha256:ff1da141882e49f89935542924b0f5291acd8fe3d30140ec52f5c33bce4cbbf1",
+      "statementDigest": "sha256:402b0da04a61ad6d693d8daf834c7114e51eb772632d1fc974b98dc34179931a",
       "fixtureIds": [
         "delta-unchanged-inherited",
         "delta-changed-existing-category",
         "delta-changed-missing-category",
+        "delta-shared-inplace-classified",
         "delta-shared-inplace-forbidden",
         "delta-postwrite-verified"
       ],
@@ -53,7 +54,8 @@
             "TREE_DELTA_DIFF_UNKNOWN",
             "TREE_DELTA_INVENTORY_INCOMPLETE",
             "TREE_DELTA_PLACEMENT_UNKNOWN",
-            "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT"
+            "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT",
+            "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED"
           ]
         },
         {

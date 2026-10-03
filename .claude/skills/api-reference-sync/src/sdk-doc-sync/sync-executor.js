@@ -10,6 +10,7 @@ const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { captureRecordState, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
 const { deriveFolderAncestry } = require('./tree-delta-reconciliation');
+const { DECISIONS, INVARIANT_ID, validateSharedUpdateReviews } = require('./versioned-tree-policy');
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
@@ -784,16 +785,36 @@ class SyncExecutor {
       throw error;
     }
     if (plan.action === 'UPDATE_IN_PLACE' && evidence.sharedToken.status !== 'unshared') {
-      const error = new SyncExecutionError(
-        'SHARED_TOKEN_INPLACE_PATCH_BLOCKED',
-        `Document ${plan.source.documentToken} is referenced by records outside its own track record; in-place patch is blocked for ${plan.stableId}`,
-        {
-          status: evidence.sharedToken.status,
+      // Kernel v4 (issue #76): a shared cross-track in-place patch is allowed
+      // only in the classified shape — a v4+ UPDATE_IN_PLACE_VERIFIED
+      // attestation plus sharedUpdateReviews covering every other referenced
+      // record with an inheriting classification. Pre-v4 attestations never
+      // issued this shape, so they stay blocked here. The live multiset
+      // comparison below still pins the approved reference set at write time.
+      const attestation = (plan.invariantAttestations || [])
+        .find((entry) => entry?.id === INVARIANT_ID) || null;
+      const classifiedShape = evidence.sharedToken.status === 'shared'
+        && (attestation?.version || 0) >= 4
+        && attestation?.decision === DECISIONS.UPDATE_IN_PLACE_VERIFIED;
+      const reviewVerdict = classifiedShape
+        ? validateSharedUpdateReviews(plan.sharedUpdateReviews, {
           referencedRecordIds: evidence.sharedToken.referencedRecordIds,
-        },
-      );
-      error.step = 'verifySharedTokenEvidence';
-      throw error;
+          sourceRecordId: plan.source?.recordId,
+        })
+        : { ok: false, detail: null };
+      if (!reviewVerdict.ok) {
+        const error = new SyncExecutionError(
+          'SHARED_TOKEN_INPLACE_PATCH_BLOCKED',
+          `Document ${plan.source.documentToken} is referenced by records outside its own track record; in-place patch is blocked for ${plan.stableId}`,
+          {
+            status: evidence.sharedToken.status,
+            referencedRecordIds: evidence.sharedToken.referencedRecordIds,
+            ...(reviewVerdict.detail ? { classification: reviewVerdict.detail } : {}),
+          },
+        );
+        error.step = 'verifySharedTokenEvidence';
+        throw error;
+      }
     }
     if (typeof this.tokenReferenceReader?.listTokenReferences !== 'function') {
       const error = new SyncExecutionError(

@@ -9,12 +9,18 @@
 // invariant attestation that plans bind into their (digest-covered) body and
 // the execution batch revalidates before approval. Equivalent inputs always
 // produce identical decisions, DAGs, and digests.
+//
+// Kernel v4 (issue #76, 2026-10-03 ruling): the blanket "never patch a shared
+// cross-track document in place" rule is conditional — in the source track's
+// own sync, a shared document may be patched in place when every other
+// referencing record is inheritance-review-classified as inheriting the
+// change; all other shapes keep the copy-patch-and-repoint table.
 
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
 const INVARIANT_ID = 'api.versioned-tree-delta';
-const INVARIANT_VERSION = 3;
+const INVARIANT_VERSION = 4;
 
 // Shared with the executor's live re-derivation (deriveFolderAncestry in
 // tree-delta-reconciliation.js): a containment chain deeper than this can
@@ -25,7 +31,7 @@ const DECISIONS = {
   REUSE_INHERITED_DOCUMENT: 'REUSE_INHERITED_DOCUMENT',
   COPY_PATCH_AND_REPOINT: 'COPY_PATCH_AND_REPOINT',
   COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE: 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE',
-  UPDATE_IN_PLACE_VERIFIED_UNSHARED: 'UPDATE_IN_PLACE_VERIFIED_UNSHARED',
+  UPDATE_IN_PLACE_VERIFIED: 'UPDATE_IN_PLACE_VERIFIED',
   CREATE_ADDED_IDENTITY: 'CREATE_ADDED_IDENTITY',
 };
 
@@ -35,7 +41,31 @@ const BLOCKERS = {
   TREE_DELTA_PLACEMENT_UNKNOWN: 'TREE_DELTA_PLACEMENT_UNKNOWN',
   TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT: 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT',
   TREE_DELTA_DIFF_UNKNOWN: 'TREE_DELTA_DIFF_UNKNOWN',
+  TREE_DELTA_POINTING_TRACK_UNCLASSIFIED: 'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED',
 };
+
+// The inheritance-review decision vocabulary (mirrors
+// scripts/build-reviewed-release-context.js, which enforces the status/
+// decision pairing upstream). The kernel only gates on the decision: a
+// referencing record is compatible with a shared in-place patch when its
+// track inherits the change; every other decision must take the exception
+// path (successor-side copy+repoint, then a post-repoint in-place patch).
+const INHERITANCE_DECISIONS = new Set([
+  'no_successor_action',
+  'include_successor_action',
+  'defer',
+  'exclude',
+]);
+const INHERITANCE_STATUSES = new Set([
+  'inherited',
+  'missing',
+  'renamed',
+  'changed',
+  'not_applicable',
+  'deferred',
+  'successor_action_planned',
+]);
+const SHARED_UPDATE_INHERITING_DECISION = 'no_successor_action';
 
 const WRITE_PLAN_ACTIONS = new Set(['CREATE', 'BACKFILL', 'UPDATE_IN_PLACE', 'COPY_PATCH_AND_REPOINT']);
 
@@ -179,6 +209,63 @@ function allowed(decision, { inputDigest, evidenceDigest = null, requiredResourc
   });
 }
 
+// Kernel v4 (issue #76 ruling, 2026-10-03): classification gate for a shared
+// in-place patch in the source track's own sync. `reviews` carries one entry
+// per OTHER record referencing the shared document — { recordId, track,
+// decision, status? } joined from the inheritance review — and must cover the
+// reference set exactly. Every entry must classify its track as inheriting
+// the change (`no_successor_action`); any gap, unknown record, or other
+// decision fails closed, because an in-place patch would push the change onto
+// tracks the review did not clear. A referencing record classified
+// include_successor_action / defer / exclude must take the exception path
+// instead: a successor-side copy+repoint executed first, then an in-place
+// patch planned against refreshed post-repoint (unshared) evidence — the
+// executor's live reference drift check refuses the in-place patch while the
+// successor record still points at the shared document, so batch ordering is
+// structurally enforced. Shared with the executor's pre-write revalidation.
+function validateSharedUpdateReviews(reviews, { referencedRecordIds, sourceRecordId }) {
+  const others = [...new Set(referencedRecordIds.filter((id) => id !== sourceRecordId))];
+  const blocked = (detail) => ({ ok: false, code: BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED, detail });
+  if (!Array.isArray(reviews) || reviews.length === 0) {
+    return blocked(
+      'A shared cross-track in-place patch requires a sharedUpdateReviews classification for every other referencing record (inheritance review decision no_successor_action); none were supplied',
+    );
+  }
+  const byRecordId = new Map();
+  for (const review of reviews) {
+    if (!nonEmptyString(review?.recordId)
+      || !nonEmptyString(review?.track)
+      || !INHERITANCE_DECISIONS.has(review?.decision)
+      || (review?.status !== undefined && !INHERITANCE_STATUSES.has(review.status))) {
+      return blocked('sharedUpdateReviews entries require recordId, track, and an inheritance-review decision');
+    }
+    if (byRecordId.has(review.recordId)) {
+      return blocked(`Duplicate sharedUpdateReviews entry for referencing record ${review.recordId}`);
+    }
+    byRecordId.set(review.recordId, review);
+  }
+  const missing = others.filter((recordId) => !byRecordId.has(recordId));
+  if (missing.length > 0) {
+    return blocked(
+      `Referencing records not classified in the inheritance review: ${missing.join(', ')}; classification is required before a shared in-place patch`,
+    );
+  }
+  const extra = [...byRecordId.keys()].filter((recordId) => !others.includes(recordId));
+  if (extra.length > 0) {
+    return blocked(
+      `sharedUpdateReviews classify records that do not reference the shared document: ${extra.join(', ')}`,
+    );
+  }
+  for (const [recordId, review] of byRecordId) {
+    if (review.decision !== SHARED_UPDATE_INHERITING_DECISION) {
+      return blocked(
+        `Referencing record ${recordId} (track ${review.track}) is classified ${review.decision}; an in-place patch would push the change onto a track the review did not clear — use the successor-side copy+repoint exception path, then patch from post-repoint evidence`,
+      );
+    }
+  }
+  return { ok: true, reviews };
+}
+
 // Input facts for one canonical identity. `sourceDiff` comes from the diff
 // engine (UPDATE ⇒ changed, SKIP ⇒ unchanged); `operation` is the requested
 // plan operation. Everything else mirrors the planner context the builder
@@ -253,7 +340,40 @@ function evaluateVersionedTreeDelta(input) {
       stableId,
       target,
     };
-    return allowed(DECISIONS.UPDATE_IN_PLACE_VERIFIED_UNSHARED, {
+    return allowed(DECISIONS.UPDATE_IN_PLACE_VERIFIED, {
+      inputDigest: factsDigest(facts),
+      evidenceDigest: evidence.evidenceDigest,
+    });
+  }
+
+  // Kernel v4: a source-track sync hitting a shared cross-track document may
+  // patch it in place — the change structurally flows to every track that
+  // still points at it — but only when every other referencing record is
+  // classified by the inheritance review as inheriting the change. Anything
+  // else fails closed (validateSharedUpdateReviews).
+  const sameTrackShared = evidenceSharedStatus(evidence) === 'shared'
+    && current.version === target.version
+    && current.ancestryVerified === true
+    && nonEmptyString(current.folderToken)
+    && current.folderToken === target.folderToken;
+  if (sameTrackShared) {
+    const referencedRecordIds = evidenceReferenceIds(evidence);
+    const verdict = validateSharedUpdateReviews(input.sharedUpdateReviews, {
+      referencedRecordIds,
+      sourceRecordId: current.recordId,
+    });
+    if (!verdict.ok) {
+      return blocked(verdict.code, verdict.detail);
+    }
+    const facts = {
+      current,
+      referencedRecordIds,
+      sharedUpdateReviews: input.sharedUpdateReviews,
+      sourceDiff,
+      stableId,
+      target,
+    };
+    return allowed(DECISIONS.UPDATE_IN_PLACE_VERIFIED, {
       inputDigest: factsDigest(facts),
       evidenceDigest: evidence.evidenceDigest,
     });
@@ -443,7 +563,11 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
         });
       }
     }
-  } else if (decision === DECISIONS.UPDATE_IN_PLACE_VERIFIED_UNSHARED) {
+  } else if (decision === DECISIONS.UPDATE_IN_PLACE_VERIFIED) {
+    // Both in-place flavors (target-local unshared, and the kernel v4
+    // classified shared patch) assert the same post-write fact: the live
+    // reference multiset still equals the approved evidence, so no track was
+    // silently repointed onto or away from the patched document.
     const expected = evidenceReferenceIds(evidence).sort();
     const live = [...(observed?.olderDocumentReferences || [])].filter(nonEmptyString).sort();
     if (JSON.stringify(expected) !== JSON.stringify(live)) {
@@ -465,6 +589,8 @@ module.exports = {
   BLOCKERS,
   DECISIONS,
   FOLDER_ANCESTRY_MAX_DEPTH,
+  INHERITANCE_DECISIONS,
+  INHERITANCE_STATUSES,
   INVARIANT_ID,
   INVARIANT_VERSION,
   WRITE_PLAN_ACTIONS,
@@ -472,5 +598,6 @@ module.exports = {
   evaluateVersionedTreeDelta,
   factsDigest,
   validFolderAncestry,
+  validateSharedUpdateReviews,
   verifyTreeDeltaPostconditions,
 };

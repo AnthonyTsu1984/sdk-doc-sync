@@ -8,11 +8,21 @@
 // its own version so the renderer-shape version above (pinned by artifacts
 // and contracts) stays untouched.
 const GLOBAL_LAYOUT_RULES = Object.freeze({
-  version: 1,
+  version: 2,
   requestH3: 'multi-only',
   requestHeadingPattern: 'Request$',
   exampleHeading: false,
   deprecation: Object.freeze({ shape: 'callout', lines: 2, firstLine: 'Notes', prosePattern: 'Deprecated in v' }),
+  // 2026-10-03 global ruling: the five byte-judgeable content rules apply to
+  // every track. Open-ended wording quality still stays with the governed
+  // polish phase and model evals — these five are deterministic page facts.
+  contentQuality: Object.freeze({
+    cjkForbidden: true,
+    firstSentencePattern: '^This operation\\b',
+    returnsResponseFieldsRequired: true,
+    paramDescRequired: true,
+    bareNotesSectionForbidden: true,
+  }),
 });
 
 const CPP_LAYOUT_RULES = Object.freeze({
@@ -22,12 +32,13 @@ const CPP_LAYOUT_RULES = Object.freeze({
 
 // Java declares the 2026-10-01 return-section rules (semantic ruling: the
 // return type and the RETURNS prose live in two separate labeled sections,
-// the type token never repeats inside RETURNS, RETURNS carries prose). Other
-// tracks adopt when their stock repolish batches land — absence here is a
-// reviewed decision, not a blind spot.
+// the type token never repeats inside RETURNS, RETURNS carries prose). The
+// 2026-10-03 global ruling puts the five content rules in the GLOBAL base
+// every track declares, so only the split-section family stays java-only
+// until other tracks adopt it with their repolish batches.
 const JAVA_LAYOUT_RULES = Object.freeze({
   ...GLOBAL_LAYOUT_RULES,
-  version: 2,
+  version: 3,
   returnSections: Object.freeze({ split: true }),
   returnsProseRequired: true,
 });
@@ -38,12 +49,13 @@ function freezeLayoutRules(rules) {
     ...rules,
     builderSignature: rules.builderSignature
       ? Object.freeze({
-        ...rules.builderSignature,
-        prefixForbidden: Object.freeze([...(rules.builderSignature.prefixForbidden || [])]),
-      })
+          ...rules.builderSignature,
+          prefixForbidden: Object.freeze([...(rules.builderSignature.prefixForbidden || [])]),
+        })
       : undefined,
     deprecation: rules.deprecation ? Object.freeze({ ...rules.deprecation }) : undefined,
     returnSections: rules.returnSections ? Object.freeze({ ...rules.returnSections }) : undefined,
+    contentQuality: rules.contentQuality ? Object.freeze({ ...rules.contentQuality }) : undefined,
   });
 }
 

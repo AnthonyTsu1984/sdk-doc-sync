@@ -390,8 +390,8 @@
    "scenario": "contentLayoutCppPrefixViolation"
   },
   "assertions": {
-   "cppViolationCode": "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
-   "javaClean": true
+    "cppViolationCode": "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+    "javaNoBuilderPrefix": true
   }
  },
  {
@@ -413,12 +413,27 @@
    "scenario": "contentLayoutReturnSections"
   },
   "assertions": {
-   "returnTypeMissingCode": "LAYOUT_RETURN_TYPE_MISSING",
-   "returnsMissingCode": "LAYOUT_RETURNS_MISSING",
-   "typeRowCode": "LAYOUT_RETURNS_TYPE_ROW",
-   "proseMissingCode": "LAYOUT_RETURNS_PROSE_MISSING",
-   "cppUnboundClean": true,
-   "cleanOk": true
+    "returnTypeMissingCode": "LAYOUT_RETURN_TYPE_MISSING",
+    "returnsMissingCode": "LAYOUT_RETURNS_MISSING",
+    "typeRowCode": "LAYOUT_RETURNS_TYPE_ROW",
+    "proseMissingCode": "LAYOUT_RETURNS_PROSE_MISSING",
+    "cppUnboundNoSplitCodes": true,
+    "cleanOk": true
+  }
+ },
+ {
+  "id": "content-layout-content-quality",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "contentLayoutContentQuality"
+  },
+  "assertions": {
+    "cjkCode": "CONTENT_CJK_MIXING",
+    "firstSentenceCode": "FIRST_SENTENCE_REGISTER",
+    "returnsDepthCode": "RETURNS_MIN_DEPTH",
+    "paramDescCode": "PARAM_DESC_REQUIRED",
+    "noteLeakCode": "INTERNAL_NOTE_LEAK",
+    "cleanOk": true
   }
  },
  {

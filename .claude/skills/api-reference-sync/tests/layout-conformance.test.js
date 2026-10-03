@@ -10,7 +10,7 @@ const {
 } = require('../src/sdk-doc-sync/layout-conformance');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
-test('pageFactsFromBlocks separates headings, body lines, and per-callout child lines', () => {
+test('pageFactsFromBlocks separates headings, body lines, callout child lines, and bullets', () => {
     const facts = pageFactsFromBlocks([
         { block_id: 'h', block_type: 3, heading1: { elements: [{ text_run: { content: 'AlterRole()' } }] } },
         {
@@ -22,18 +22,30 @@ test('pageFactsFromBlocks separates headings, body lines, and per-callout child 
             ],
         },
         { block_id: 't', block_type: 2, text: { elements: [{ text_run: { content: 'CreateAliasRequest& WithAlias()' } }] } },
+        { block_id: 'b', block_type: 12, bullet: { elements: [{ text_run: { content: '**cost** (*long*) - The query cost.' } }] } },
     ]);
     assert.deepEqual(facts.headings, [{ level: 1, text: 'AlterRole()' }]);
     assert.deepEqual(facts.lines, ['AlterRole()', 'CreateAliasRequest& WithAlias()']);
     assert.deepEqual(facts.callouts, [{ lines: ['Notes', 'Deprecated in v3.0.x.'] }]);
+    assert.deepEqual(facts.bullets, ['**cost** (*long*) - The query cost.']);
+    assert.deepEqual(facts.stream, [
+        { kind: 'heading', text: 'AlterRole()' },
+        { kind: 'text', text: 'CreateAliasRequest& WithAlias()' },
+        { kind: 'bullet', text: '**cost** (*long*) - The query cost.' },
+    ]);
 });
 
-test('cpp profile flags the forbidden builder prefix; java without the rule is clean', () => {
+test('cpp profile flags the forbidden builder prefix; a register-compliant body line stays clean', () => {
     const facts = { headings: [], lines: ['AlterAliasRequest& WithCollectionName(const std::string& name)'], callouts: [] };
     const cpp = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
     assert.equal(cpp.invariantId, 'api.sdk-page-layout');
     assert.equal(cpp.violations[0]?.code, 'LAYOUT_BUILDER_PREFIX_FORBIDDEN');
-    assert.equal(checkLayoutConformance(sdkLayoutProfiles.java, facts).violations.length, 0);
+    const clean = checkLayoutConformance(sdkLayoutProfiles.java, {
+        headings: [],
+        lines: ['This operation alters an alias through the builder methods below.'],
+        callouts: [],
+    });
+    assert.deepEqual(clean.violations, []);
 });
 
 test('a single request-type H3 violates multi-only; two request H3s conform', () => {
@@ -134,23 +146,86 @@ test('the return type token must not repeat inside RETURNS, and RETURNS carries 
   assert.equal(noProse.find((violation) => violation.code === 'LAYOUT_RETURNS_PROSE_MISSING')?.code, 'LAYOUT_RETURNS_PROSE_MISSING');
 });
 
-test('split return sections conform, profiles without the declaration stay unbound', () => {
-  const clean = checkLayoutConformance(sdkLayoutProfiles.java, {
-    headings: [],
-    lines: ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'A GetResp object representing entities.', 'PARAMETERS:'],
-    callouts: [],
-  });
-  assert.deepEqual(clean.violations, []);
-  const cppUnbound = checkLayoutConformance(sdkLayoutProfiles.cpp, {
-    headings: [],
-    lines: ['RETURNS:', 'A GetResp object.'],
-    callouts: [],
-  });
-  assert.deepEqual(cppUnbound.violations, [], 'cpp has not declared returnSections yet');
-  const neitherLabel = checkLayoutConformance(sdkLayoutProfiles.java, {
-    headings: [],
-    lines: ['This operation deletes entities.'],
-    callouts: [],
-  });
-  assert.deepEqual(neitherLabel.violations, [], 'pages with neither label are not bound');
+test('split return sections conform with described response fields; profiles without the split declaration stay unbound for it', () => {
+    const clean = checkLayoutConformance(sdkLayoutProfiles.java, {
+        headings: [],
+        lines: [
+            'This operation queries entities by ID.',
+            'RETURN TYPE:', 'GetResp',
+            'RETURNS:', 'A GetResp object representing the queried entities.',
+            'PARAMETERS:', '- **entities** (*List<Object>*) - The queried entities by ID.',
+        ],
+        callouts: [],
+    });
+    assert.deepEqual(clean.violations, []);
+    const cppUnbound = checkLayoutConformance(sdkLayoutProfiles.cpp, {
+        headings: [],
+        lines: ['This operation queries entities by ID.', 'RETURNS:', 'A GetResp object.'],
+        callouts: [],
+    });
+    assert.equal(
+        cppUnbound.violations.some((violation) => violation.code === 'LAYOUT_RETURN_TYPE_MISSING'
+            || violation.code === 'LAYOUT_RETURNS_MISSING'),
+        false,
+        'cpp has not declared returnSections split',
+    );
+    assert.equal(
+        cppUnbound.violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'the 2026-10-03 global content rules bind every track that declares them',
+    );
+    const neitherLabel = checkLayoutConformance(sdkLayoutProfiles.java, {
+        headings: [],
+        lines: ['This operation deletes entities.'],
+        callouts: [],
+    });
+    assert.deepEqual(neitherLabel.violations, [], 'pages with neither label are not bound');
+});
+
+test('the five 2026-10-03 global content rules flag their failure modes and pass a compliant page', () => {
+    const code = (lines, name) => checkLayoutConformance(sdkLayoutProfiles.java, { headings: [], lines, callouts: [] })
+        .violations.find((violation) => violation.code === name)?.code || null;
+
+    // CJK residue in the page body.
+    assert.equal(code(['This operation 查询实体。'], 'CONTENT_CJK_MIXING'), 'CONTENT_CJK_MIXING');
+    // First sentence outside the declared register.
+    assert.equal(code(['Deletes entities from the collection.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
+    // RETURNS section without a response-fields PARAMETERS list (strong form).
+    assert.equal(code([
+        'This operation queries entities by ID.',
+        'RETURN TYPE:', 'GetResp',
+        'RETURNS:', 'A GetResp object representing the queried entities.',
+    ], 'RETURNS_MIN_DEPTH'), 'RETURNS_MIN_DEPTH');
+    // PARAMETERS list present but empty of field bullets.
+    assert.equal(code([
+        'This operation queries entities by ID.',
+        'RETURN TYPE:', 'GetResp',
+        'RETURNS:', 'A GetResp object representing the queried entities.',
+        'PARAMETERS:',
+    ], 'RETURNS_MIN_DEPTH'), 'RETURNS_MIN_DEPTH');
+    // Parameter bullet without a description (the maxWaitSeconds failure).
+    assert.equal(code([
+        'This operation waits for a bulk import to finish.',
+        'PARAMETERS:', '- **maxWaitSeconds** (*long*)',
+    ], 'PARAM_DESC_REQUIRED'), 'PARAM_DESC_REQUIRED');
+    // Bare Notes line outside a governed callout.
+    assert.equal(code([
+        'This operation deletes entities.',
+        'Notes', 'Internal scouting residue.',
+    ], 'INTERNAL_NOTE_LEAK'), 'INTERNAL_NOTE_LEAK');
+
+    // Compliant page: registered first sentence, described response fields,
+    // described request parameters, notes only in the governed callout.
+    const clean = checkLayoutConformance(sdkLayoutProfiles.java, {
+        headings: [],
+        lines: [
+            'This operation queries entities by ID.',
+            'PARAMETERS:', '- **ids** (*List<Object>*) - The entity IDs to query.',
+            'RETURN TYPE:', 'GetResp',
+            'RETURNS:', 'A GetResp object representing the queried entities.',
+            'PARAMETERS:', '- **entities** (*List<Object>*) - The queried entities by ID.',
+        ],
+        callouts: [{ lines: ['Notes', 'Deprecated in v3.0.x. Use queryAsync().'] }],
+    });
+    assert.deepEqual(clean.violations, []);
 });

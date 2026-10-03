@@ -54,6 +54,7 @@ function sharedInheritedContext({ stableId = 'cpp:Partitions:LoadPartitions' } =
     parentRecordId: 'rec-partitions-vnode-v30',
     folderToken: 'folder-partitions-v30',
     versionRootToken: 'root-v30',
+    folderAncestry: ['root-v30', 'folder-partitions-v30'],
     ancestryVerified: true,
   };
   return {
@@ -175,6 +176,7 @@ const scenarios = {
         name: 'Partitions',
         parentFolderToken: 'root-v30',
         versionRootToken: 'root-v30',
+        parentAncestry: ['root-v30'],
         existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v30', name: 'Partitions' },
       },
       repoint: {
@@ -272,6 +274,12 @@ const scenarios = {
     const liveReferences = [...approvedReferences];
     const writerCalls = [];
     const documentWriter = {
+      async listFolder({ folderToken }) {
+        // Kernel v3 containment: the live tree under the target version root.
+        return folderToken === 'root-v30'
+          ? [{ token: 'folder-partitions-v30', type: 'folder', name: 'Partitions' }]
+          : [];
+      },
       async copyDocument(input) {
         writerCalls.push(['copyDocument', input.sourceDocumentToken]);
         return { token: 'doc-copy-new', url: `https://zilliverse.feishu.cn/docx/doc-copy-new` };
@@ -309,6 +317,11 @@ const scenarios = {
     let referenceReads = 0;
     const driftedExecutor = new SyncExecutor({
       documentWriter: {
+        async listFolder({ folderToken }) {
+          return folderToken === 'root-v30'
+            ? [{ token: 'folder-partitions-v30', type: 'folder', name: 'Partitions' }]
+            : [];
+        },
         async copyDocument(input) {
           return { token: 'doc-copy-drift', url: `https://zilliverse.feishu.cn/docx/doc-copy-drift` };
         },
@@ -405,6 +418,7 @@ const scenarios = {
       parentRecordId: 'rec-partitions-vnode-v30',
       folderToken: 'folder-partitions-v30',
       versionRootToken: 'root-v30',
+      folderAncestry: ['root-v30', 'folder-partitions-v30'],
       ancestryVerified: true,
     };
     const sharedEvidence = createInheritanceEvidence({

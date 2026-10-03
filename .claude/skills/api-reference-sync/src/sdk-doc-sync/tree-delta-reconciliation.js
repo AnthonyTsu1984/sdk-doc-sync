@@ -7,7 +7,7 @@
 // anything. Reconciliation detects manual edits and historical drift — it does
 // not authorize cleanup and does not replace the pre-write guard.
 
-const { INVARIANT_ID } = require('./versioned-tree-policy');
+const { INVARIANT_ID, FOLDER_ANCESTRY_MAX_DEPTH } = require('./versioned-tree-policy');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
 function nonEmptyString(value) {
@@ -24,6 +24,47 @@ function documentTokenFromLink(link) {
   if (!nonEmptyString(link)) return null;
   const match = /\/docx\/([A-Za-z0-9]+)/.exec(link);
   return match ? match[1] : null;
+}
+
+// Live containment evidence for the kernel v3 copy gates: walks the Drive tree
+// breadth-first from the track's version root and returns the folder chain
+// [versionRoot, ..., folderToken] (inclusive), or null when folderToken is not
+// reachable under versionRootToken. `listFolder` is injected ({ folderToken,
+// type } => files[]) so planning and execution share one derivation —
+// planning binds the chain into the plan, the executor re-derives it live
+// before the first write. The visited set keeps a token reachable through
+// two parents from being queued twice and terminates folder cycles.
+async function deriveFolderAncestry({
+  listFolder,
+  versionRootToken,
+  folderToken,
+  maxDepth = FOLDER_ANCESTRY_MAX_DEPTH,
+} = {}) {
+  if (typeof listFolder !== 'function') {
+    throw new TypeError('deriveFolderAncestry requires a listFolder function');
+  }
+  if (!nonEmptyString(versionRootToken) || !nonEmptyString(folderToken)) return null;
+  if (versionRootToken === folderToken) return null; // a category folder cannot be the version root itself
+  const visited = new Set([versionRootToken]);
+  let frontier = [{ token: versionRootToken, chain: [versionRootToken] }];
+  for (let depth = 0; depth < maxDepth && frontier.length > 0; depth += 1) {
+    const next = [];
+    for (const node of frontier) {
+      const children = await listFolder({ folderToken: node.token, type: 'folder' }) || [];
+      for (const child of children) {
+        const childToken = child?.token || child?.file_token || child?.folder_token || null;
+        if (!nonEmptyString(childToken) || childToken === node.token || visited.has(childToken)) continue;
+        const childType = child?.type || 'folder';
+        if (childType !== 'folder' && childType !== 'all' && childType !== null) continue;
+        visited.add(childToken);
+        const chain = [...node.chain, childToken];
+        if (childToken === folderToken) return chain;
+        next.push({ token: childToken, chain });
+      }
+    }
+    frontier = next;
+  }
+  return null;
 }
 
 // Normalized record shape: { recordId, slug, documentToken, link, type }.
@@ -155,6 +196,7 @@ function reconcileTreeDelta({
 }
 
 module.exports = {
+  deriveFolderAncestry,
   documentTokenFromLink,
   folderTokenFromLink,
   reconcileTreeDelta,

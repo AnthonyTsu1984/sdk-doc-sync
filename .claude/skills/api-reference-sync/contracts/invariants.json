@@ -5,7 +5,7 @@
   "invariants": [
     {
       "id": "api.versioned-tree-delta",
-      "version": 2,
+      "version": 3,
       "risk": "write-safety",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
@@ -52,7 +52,8 @@
             "DELTA_MODEL_MIRROR_BLOCKED",
             "TREE_DELTA_DIFF_UNKNOWN",
             "TREE_DELTA_INVENTORY_INCOMPLETE",
-            "TREE_DELTA_PLACEMENT_UNKNOWN"
+            "TREE_DELTA_PLACEMENT_UNKNOWN",
+            "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT"
           ]
         },
         {
@@ -82,7 +83,8 @@
           "codes": [
             "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
             "SHARED_TOKEN_REFERENCES_DRIFTED",
-            "SHARED_TOKEN_REVALIDATION_REQUIRED"
+            "SHARED_TOKEN_REVALIDATION_REQUIRED",
+            "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT"
           ]
         },
         {
@@ -130,7 +132,7 @@
         }
       ],
       "reference": "references/tree-delta-policy.md",
-      "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing."
+      "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing. Kernel v3 (2026-10-03): copy decisions require folder containment evidence — target.folderAncestry (plain copy) or category.folder.parentAncestry (category-create), the folder chain from the target version root down to the target/parent folder; absent evidence blocks TREE_DELTA_PLACEMENT_UNKNOWN, a chain that does not contain the version root blocks TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT. The executor re-derives the chain live before the first write (pre-write TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT) and the plain-copy post-write observation now proves the created document landed in the planned target folder."
     },
     {
       "id": "api.markdown-block-fidelity",

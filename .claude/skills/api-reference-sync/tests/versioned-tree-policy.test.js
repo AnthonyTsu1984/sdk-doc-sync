@@ -13,6 +13,7 @@ const { sha256Digest } = require('../../doc-ops-core/src/digest');
 const {
     BLOCKERS,
     DECISIONS,
+    FOLDER_ANCESTRY_MAX_DEPTH,
     INVARIANT_ID,
     categoryResourceDefinitions,
     evaluateVersionedTreeDelta,
@@ -75,6 +76,7 @@ function updateFacts(overrides = {}) {
             version: 'v3.0.x',
             folderToken: 'folder-partitions-v30',
             versionRootToken: 'root-v30',
+            folderAncestry: ['root-v30', 'folder-partitions-v30'],
             ancestryVerified: true,
         },
         category: null,
@@ -89,6 +91,7 @@ function categorySpec() {
             name: 'Partitions',
             parentFolderToken: 'root-v30',
             versionRootToken: 'root-v30',
+            parentAncestry: ['root-v30'],
             existingLookup: { checked: true, absent: true, parentFolderToken: 'root-v30', name: 'Partitions' },
         },
         repoint: {
@@ -196,6 +199,50 @@ test('policy kernel returns the full PR #19 decision table', () => {
     });
     assert.equal(added.status, 'allowed');
     assert.equal(added.decision, DECISIONS.CREATE_ADDED_IDENTITY);
+});
+
+test('policy kernel v3 blocks copy decisions without valid containment evidence', () => {
+    // Absent chain: fail-closed placement unknown.
+    const absentDecision = evaluateVersionedTreeDelta(updateFacts({
+        target: {
+            version: 'v3.0.x',
+            folderToken: 'folder-partitions-v30',
+            versionRootToken: 'root-v30',
+            ancestryVerified: true,
+        },
+    }));
+    assert.equal(absentDecision.status, 'blocked');
+    assert.equal(absentDecision.blocker, BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN);
+
+    // A chain that starts at the OLDER version root: the target was resolved
+    // inside the older tree — the 2026-10-03 in-place-copy hole.
+    const outsideDecision = evaluateVersionedTreeDelta(updateFacts({
+        target: {
+            version: 'v3.0.x',
+            folderToken: 'folder-partitions-v26',
+            versionRootToken: 'root-v30',
+            folderAncestry: ['root-v26', 'folder-partitions-v26'],
+            ancestryVerified: true,
+        },
+    }));
+    assert.equal(outsideDecision.status, 'blocked');
+    assert.equal(outsideDecision.blocker, BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT);
+
+    // Category-create decisions gate the parent chain the same way.
+    const badParent = updateFacts({
+        target: {
+            version: 'v3.0.x',
+            folderToken: null,
+            folderRef: 'folder:cpp:v30:Partitions',
+            versionRootToken: 'root-v30',
+            ancestryVerified: true,
+        },
+        category: categorySpec(),
+    });
+    badParent.category.folder.parentAncestry = ['root-v26', 'folder-partitions-v26'];
+    const badParentDecision = evaluateVersionedTreeDelta(badParent);
+    assert.equal(badParentDecision.status, 'blocked');
+    assert.equal(badParentDecision.blocker, BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT);
 });
 
 test('policy kernel attestations are deterministic and input-sensitive', () => {
@@ -362,6 +409,52 @@ test('verifyTreeDeltaPostconditions proves the executed transition and catches d
     const unattested = verifyTreeDeltaPostconditions({ plan: { stableId: 'x', invariantAttestations: [] }, observed: {} });
     assert.equal(unattested.ok, false);
     assert.equal(unattested.errors[0].code, 'INVARIANT_ATTESTATION_REQUIRED');
+});
+
+test('verifyTreeDeltaPostconditions checks plain copy placement when the observation carries the folder', () => {
+    // 2026-10-03 placement closure: the plain COPY_PATCH_AND_REPOINT decision
+    // (category folder already present) must also verify where the copy
+    // landed, not only that references drifted correctly.
+    const plan = {
+        stableId: 'cpp:Partitions:LoadPartitions',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        target: { folderToken: 'folder-partitions-v30' },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 2,
+            inputDigest: sha('plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT,
+            evidenceDigest: null,
+        }],
+    };
+    const cleanObserved = {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+        createdDocumentFolderToken: 'folder-partitions-v30',
+    };
+    assert.equal(verifyTreeDeltaPostconditions({ plan, observed: cleanObserved }).ok, true);
+
+    const misplaced = verifyTreeDeltaPostconditions({
+        plan,
+        observed: { ...cleanObserved, createdDocumentFolderToken: 'folder-partitions-v26' },
+    });
+    assert.equal(misplaced.ok, false);
+    assert.equal(misplaced.errors[0].code, 'TREE_DELTA_CREATED_DOCUMENT_MISPLACED');
+    assert.equal(misplaced.errors[0].expected, 'folder-partitions-v30');
+    assert.equal(misplaced.errors[0].actual, 'folder-partitions-v26');
+
+    // In-flight compatibility: an observation without the folder field keeps
+    // verifying — the check runs only when the refetch carries placement.
+    assert.equal(verifyTreeDeltaPostconditions({
+        plan,
+        observed: {
+            olderDocumentReferences: ['rec-load-partitions-v26'],
+            createdDocumentToken: 'doc-copy-new',
+            targetRecordDocumentToken: 'doc-copy-new',
+        },
+    }).ok, true);
 });
 
 function minimalWritePlan(action, stableId, { dependencies = [], attestation = true, decision = 'CREATE_ADDED_IDENTITY' } = {}) {
@@ -630,4 +723,144 @@ test('verifyTreeDeltaPostconditions compares cloned-base reference multisets', (
     });
     assert.equal(drifted.ok, false);
     assert.equal(drifted.errors[0].code, 'TREE_DELTA_REFERENCES_DRIFTED');
+});
+
+test('policy kernel rejects folder chains the live BFS can never produce', () => {
+    // Duplicate tokens: not a simple path — the live re-derivation returns
+    // simple paths only, so planning must not approve this shape.
+    const duplicate = evaluateVersionedTreeDelta(updateFacts({
+        target: {
+            version: 'v3.0.x',
+            folderToken: 'folder-partitions-v30',
+            versionRootToken: 'root-v30',
+            folderAncestry: ['root-v30', 'folder-mid', 'root-v30', 'folder-partitions-v30'],
+            ancestryVerified: true,
+        },
+    }));
+    assert.equal(duplicate.status, 'blocked');
+    assert.equal(duplicate.blocker, BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT);
+
+    // Depth cap: a chain deeper than FOLDER_ANCESTRY_MAX_DEPTH can never be
+    // re-derived live, so it is refused at planning time.
+    const deep = evaluateVersionedTreeDelta(updateFacts({
+        target: {
+            version: 'v3.0.x',
+            folderToken: 'folder-deep',
+            versionRootToken: 'root-v30',
+            folderAncestry: ['root-v30', ...Array.from({ length: FOLDER_ANCESTRY_MAX_DEPTH + 1 }, (_, i) => `folder-level-${i}`)],
+            ancestryVerified: true,
+        },
+    }));
+    assert.equal(deep.status, 'blocked');
+    assert.equal(deep.blocker, BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT);
+
+    // Plain-copy targets must sit BELOW the version root: a single-element
+    // chain (folder == version root) is only legal for category-create
+    // parents.
+    const atRoot = evaluateVersionedTreeDelta(updateFacts({
+        target: {
+            version: 'v3.0.x',
+            folderToken: 'root-v30',
+            versionRootToken: 'root-v30',
+            folderAncestry: ['root-v30'],
+            ancestryVerified: true,
+        },
+    }));
+    assert.equal(atRoot.status, 'blocked');
+    assert.equal(atRoot.blocker, BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT);
+});
+
+test('deriveFolderAncestry walks simple paths, honours the type filter, and terminates cycles', async () => {
+    const { deriveFolderAncestry } = require('../src/sdk-doc-sync/tree-delta-reconciliation');
+    const tree = {
+        'root-v30': [
+            { token: 'folder-a', type: 'folder', name: 'A' },
+            { token: 'folder-doc', type: 'docx', name: 'a page' },
+        ],
+        'folder-a': [
+            { token: 'folder-b', type: 'folder', name: 'B' },
+            // A cycle back to the root must not loop forever.
+            { token: 'root-v30', type: 'folder', name: 'root' },
+        ],
+        'folder-b': [
+            { token: 'folder-target', type: 'folder', name: 'Target' },
+        ],
+        'folder-target': [],
+    };
+    const calls = [];
+    const chain = await deriveFolderAncestry({
+        listFolder: async ({ folderToken }) => {
+            calls.push(folderToken);
+            return tree[folderToken] || [];
+        },
+        versionRootToken: 'root-v30',
+        folderToken: 'folder-target',
+    });
+    assert.deepEqual(chain, ['root-v30', 'folder-a', 'folder-b', 'folder-target']);
+    // The docx child never enters the BFS frontier.
+    assert.ok(!calls.includes('folder-doc'));
+
+    // A category folder cannot be the version root itself.
+    assert.equal(await deriveFolderAncestry({
+        listFolder: async () => [],
+        versionRootToken: 'root-v30',
+        folderToken: 'root-v30',
+    }), null);
+
+    // Unreachable leaf: bounded by maxDepth, returns null.
+    assert.equal(await deriveFolderAncestry({
+        listFolder: async ({ folderToken }) => (folderToken === 'root-v30' ? [{ token: 'folder-a', type: 'folder' }] : []),
+        versionRootToken: 'root-v30',
+        folderToken: 'folder-target',
+    }), null);
+
+    // Cycle safety: a folder pointing back at its parent terminates.
+    const cyclic = await deriveFolderAncestry({
+        listFolder: async ({ folderToken }) => (tree[folderToken] || []),
+        versionRootToken: 'root-v30',
+        folderToken: 'folder-nowhere',
+    });
+    assert.equal(cyclic, null);
+});
+
+test('the post-write comparator rules a created document misplaced when the target folder never lists it', () => {
+    const plan = {
+        stableId: 'cpp:Partitions:LoadPartitions',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        target: { folderToken: 'folder-partitions-v30' },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 3,
+            inputDigest: sha('plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT,
+            evidenceDigest: null,
+        }],
+    };
+    // Drive read-after-write lag must not silently pass: the missing flag is
+    // the observation's bounded-retry conclusion.
+    const misplaced = verifyTreeDeltaPostconditions({
+        plan,
+        observed: {
+            olderDocumentReferences: ['rec-load-partitions-v26'],
+            createdDocumentToken: 'doc-copy-new',
+            targetRecordDocumentToken: 'doc-copy-new',
+            createdDocumentFolderToken: null,
+            createdDocumentMissingFromTargetFolder: true,
+        },
+    });
+    assert.equal(misplaced.ok, false);
+    assert.equal(misplaced.errors[0].code, 'TREE_DELTA_CREATED_DOCUMENT_MISPLACED');
+
+    // Without the flag or folder field (legacy observations), the comparator
+    // keeps verifying — the in-flight compatibility contract.
+    const legacy = verifyTreeDeltaPostconditions({
+        plan,
+        observed: {
+            olderDocumentReferences: ['rec-load-partitions-v26'],
+            createdDocumentToken: 'doc-copy-new',
+            targetRecordDocumentToken: 'doc-copy-new',
+        },
+    });
+    assert.equal(legacy.ok, true);
 });

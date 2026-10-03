@@ -125,6 +125,10 @@ function targetFrom(context) {
   if (target.parentRecordRef !== undefined) result.parentRecordRef = target.parentRecordRef ?? null;
   if (target.folderRef !== undefined) result.folderRef = target.folderRef ?? null;
   if (target.recordType !== undefined) result.recordType = target.recordType ?? null;
+  // Kernel v3 containment evidence: the folder chain from the target version
+  // root down to the target folder. The kernel blocks copy decisions without
+  // it; pass it through untouched so the attestation digest binds the bytes.
+  if (target.folderAncestry !== undefined) result.folderAncestry = target.folderAncestry;
   return result;
 }
 

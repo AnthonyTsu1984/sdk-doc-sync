@@ -14,7 +14,12 @@ const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
 const INVARIANT_ID = 'api.versioned-tree-delta';
-const INVARIANT_VERSION = 2;
+const INVARIANT_VERSION = 3;
+
+// Shared with the executor's live re-derivation (deriveFolderAncestry in
+// tree-delta-reconciliation.js): a containment chain deeper than this can
+// never be re-derived live, so planning must not approve one.
+const FOLDER_ANCESTRY_MAX_DEPTH = 10;
 
 const DECISIONS = {
   REUSE_INHERITED_DOCUMENT: 'REUSE_INHERITED_DOCUMENT',
@@ -28,6 +33,7 @@ const BLOCKERS = {
   DELTA_MODEL_MIRROR_BLOCKED: 'DELTA_MODEL_MIRROR_BLOCKED',
   TREE_DELTA_INVENTORY_INCOMPLETE: 'TREE_DELTA_INVENTORY_INCOMPLETE',
   TREE_DELTA_PLACEMENT_UNKNOWN: 'TREE_DELTA_PLACEMENT_UNKNOWN',
+  TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT: 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT',
   TREE_DELTA_DIFF_UNKNOWN: 'TREE_DELTA_DIFF_UNKNOWN',
 };
 
@@ -68,6 +74,31 @@ function validExpectedFields(fields) {
     && Array.isArray(fields.targets) && fields.targets.length > 0 && fields.targets.every(nonEmptyString)
     && nonEmptyString(fields.progress)
     && nonEmptyString(fields.slug);
+}
+
+// Placement containment evidence (kernel v3, 2026-10-03 java audit): the
+// folder chain from the target track's version root down to the target
+// folder, inclusive. A copy decision without it is unplanable — a target
+// resolved inside the older tree is exactly the in-place-copy failure mode
+// where the "copy" was created beside its source and both tables ended up
+// pointing at same-title documents in one directory.
+// Shape contract shared with the executor's live re-derivation
+// (deriveFolderAncestry): a duplicate-free folder chain from the version root
+// to the leaf. minLength 2 applies to plain-copy targets (a category folder
+// sits below the root); a category-create parent may BE the root
+// (minLength 1). Chains the live BFS can never produce — duplicates, or depth
+// beyond FOLDER_ANCESTRY_MAX_DEPTH — are rejected here so planning never
+// approves a shape that execution will refuse.
+function validFolderAncestry(chain, { rootToken, leafToken, minLength = 1 }) {
+  return Array.isArray(chain)
+    && chain.length >= minLength
+    && chain.length <= FOLDER_ANCESTRY_MAX_DEPTH + 1
+    && chain.every(nonEmptyString)
+    && nonEmptyString(rootToken)
+    && nonEmptyString(leafToken)
+    && chain[0] === rootToken
+    && chain[chain.length - 1] === leafToken
+    && new Set(chain).size === chain.length;
 }
 
 function validCategorySpec(category) {
@@ -237,6 +268,41 @@ function evaluateVersionedTreeDelta(input) {
       `Target category placement is unknown for ${stableId}; planning cannot fall back to an in-place patch`,
     );
   }
+  if (categoryPresent) {
+    if (target.folderAncestry === undefined) {
+      return blocked(
+        BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN,
+        `Copy target containment evidence is required for ${stableId}: supply target.folderAncestry (the folder chain from the target version root down to target.folderToken)`,
+      );
+    }
+    if (!validFolderAncestry(target.folderAncestry, {
+      rootToken: target.versionRootToken,
+      leafToken: target.folderToken,
+      minLength: 2,
+    })) {
+      return blocked(
+        BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT,
+        `Copy target ${target.folderToken} for ${stableId} is not contained under version root ${target.versionRootToken ?? '(missing)'} per the supplied folderAncestry (the chain must run from the version root to the target folder without duplicates and within depth ${FOLDER_ANCESTRY_MAX_DEPTH})`,
+      );
+    }
+  } else {
+    const parentAncestry = input.category?.folder?.parentAncestry;
+    if (parentAncestry === undefined) {
+      return blocked(
+        BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN,
+        `Category-create containment evidence is required for ${stableId}: supply category.folder.parentAncestry (the folder chain from the target version root down to category.folder.parentFolderToken)`,
+      );
+    }
+    if (!validFolderAncestry(parentAncestry, {
+      rootToken: input.category.folder.versionRootToken,
+      leafToken: input.category.folder.parentFolderToken,
+    })) {
+      return blocked(
+        BLOCKERS.TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT,
+        `Category-create parent ${input.category.folder.parentFolderToken} for ${stableId} is not contained under version root ${input.category.folder.versionRootToken ?? '(missing)'} per the supplied parentAncestry`,
+      );
+    }
+  }
   if (categoryAbsentWithResource && !validCategorySpec(input.category)) {
     return blocked(
       BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN,
@@ -280,6 +346,7 @@ function categoryResourceDefinitions({ stableId, category }) {
       name: folder.name,
       parentFolderToken: folder.parentFolderToken,
       versionRootToken: folder.versionRootToken,
+      ...(Array.isArray(folder.parentAncestry) ? { parentAncestry: Object.freeze([...folder.parentAncestry]) } : {}),
       existingLookup: Object.freeze({ ...folder.existingLookup }),
     }),
     Object.freeze({
@@ -311,7 +378,7 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
   const decision = attestation.decision;
   const evidence = plan?.inheritanceEvidence;
 
-  if (decision === DECISIONS.COPY_PATCH_AND_REPOINT
+    if (decision === DECISIONS.COPY_PATCH_AND_REPOINT
     || decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
     // Repointing removes exactly ONE reference — the repointed track's
     // record — not every record sharing its (possibly cloned) recordId.
@@ -335,6 +402,26 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
         code: 'TREE_DELTA_TARGET_RECORD_NOT_REPOINTED',
         expected: expectedToken,
         actual: observed?.targetRecordDocumentToken ?? null,
+      });
+    }
+    // Placement closure (2026-10-03 ruling: the copy must land under the
+    // target track's tree). For WITH_CATEGORY_CREATE the expected folder is
+    // the freshly created category folder; for the plain copy decision it is
+    // the planned target folder. The check runs only when the observation
+    // carries placement (the created document's folder, or the
+    // missing-from-target-folder flag) so already-approved in-flight
+    // plans without those fields keep verifying.
+    const expectedFolderToken = decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE
+      ? (observed?.categoryFolderToken ?? null)
+      : (plan?.target?.folderToken ?? null);
+    if (nonEmptyString(expectedFolderToken)
+      && (observed?.createdDocumentMissingFromTargetFolder === true
+        || (observed?.createdDocumentFolderToken != null
+          && observed.createdDocumentFolderToken !== expectedFolderToken))) {
+      errors.push({
+        code: 'TREE_DELTA_CREATED_DOCUMENT_MISPLACED',
+        expected: expectedFolderToken,
+        actual: observed.createdDocumentFolderToken,
       });
     }
     if (decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
@@ -377,11 +464,13 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
 module.exports = {
   BLOCKERS,
   DECISIONS,
+  FOLDER_ANCESTRY_MAX_DEPTH,
   INVARIANT_ID,
   INVARIANT_VERSION,
   WRITE_PLAN_ACTIONS,
   categoryResourceDefinitions,
   evaluateVersionedTreeDelta,
   factsDigest,
+  validFolderAncestry,
   verifyTreeDeltaPostconditions,
 };

@@ -13,6 +13,7 @@ const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
 const { bitableRecordTokens, createTokenReferenceReader } = require('./token-reference-reader');
 const { planApiReferencePatch } = require('./docx-section-patcher');
+const { checkMarkdownContentQuality } = require('./layout-conformance');
 const sdkLayoutProfiles = require('../renderers/sdk-layout-profiles');
 const PythonScanner = require('./scanners/python-scanner');
 const JavaScanner = require('./scanners/java-scanner');
@@ -1210,19 +1211,36 @@ class SdkDocSync {
     // Standardized WRITE_APPROVAL gate payload: what will land (markdown) and
     // where it will land (direct doc/record links) for the exact batch the
     // digest covers. Presentation only — never part of the signed batch.
+    // §3.7 third mount point: the preview is the page verbatim, so it runs
+    // the five content rules before the batch is presented — a violation
+    // refuses the presentation (PREVIEW_CONTENT_PREFLIGHT_FAILED) instead of
+    // reaching the operator.
     async _buildWriteApprovalPresentation(plannedEntries) {
         if (!Array.isArray(plannedEntries)) return [];
         const entries = [];
         for (const planned of plannedEntries) {
             const { action, plan, context } = planned;
             if (!plan || plan.action === 'NOOP') continue;
+            const markdownPreview = typeof context?.artifact?.content === 'string' ? context.artifact.content : null;
+            const profile = context?.artifact?.layout ? sdkLayoutProfiles[context.artifact.layout.profileId] : null;
+            let contentPreflight = null;
+            if (markdownPreview !== null && profile) {
+                const check = checkMarkdownContentQuality(markdownPreview, profile);
+                contentPreflight = { ok: check.violations.length === 0, violations: check.violations };
+                if (check.violations.length > 0) {
+                    const error = new Error(`write-approval preview fails the content preflight for ${plan.stableId}: ${check.violations.map((violation) => `${violation.code} (${violation.detail})`).join('; ')}`);
+                    error.code = 'PREVIEW_CONTENT_PREFLIGHT_FAILED';
+                    throw error;
+                }
+            }
             entries.push({
                 stableId: plan.stableId,
                 action: plan.action,
                 title: context?.artifact?.title || action?.slug || plan.stableId,
                 documentLink: this.docxLink(plan?.source?.documentToken),
                 recordLink: await this.recordLink(plan?.source?.recordId),
-                markdownPreview: typeof context?.artifact?.content === 'string' ? context.artifact.content : null,
+                markdownPreview,
+                contentPreflight,
             });
         }
         return entries;

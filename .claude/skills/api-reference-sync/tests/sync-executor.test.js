@@ -2080,7 +2080,7 @@ test('FeishuOperationalVerifier rejects malformed semantic layout and missing pr
   const blocks = [
     { block_id: 'page', block_type: 1, children: ['title', 'summary', 'request', 'request-code', 'examples', 'example-code'], page: { elements: [] } },
     { block_id: 'title', parent_id: 'page', block_type: 3, heading1: { elements: [{ text_run: { content: 'search()', text_element_style: {} } }] } },
-    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'This operation searches vectors.', text_element_style: {} } }] } },
     { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
     { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
     { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
@@ -2111,7 +2111,7 @@ test('FeishuOperationalVerifier rejects malformed semantic layout and missing pr
 test('FeishuOperationalVerifier rejects a preserved block outside its approved top-level position', async () => {
   const blocks = [
     { block_id: 'page', block_type: 1, children: ['summary', 'request', 'request-code', 'examples', 'example-code', 'callout'], page: { elements: [] } },
-    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'This operation searches vectors.', text_element_style: {} } }] } },
     { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
     { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
     { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
@@ -2141,7 +2141,7 @@ test('FeishuOperationalVerifier rejects a preserved block outside its approved t
 test('FeishuOperationalVerifier accepts a valid Python semantic layout and numeric code fences', async () => {
   const blocks = [
     { block_id: 'page', block_type: 1, children: ['summary', 'request', 'request-code', 'examples', 'example-code'], page: { elements: [] } },
-    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'summary', parent_id: 'page', block_type: 2, text: { elements: [{ text_run: { content: 'This operation searches vectors.', text_element_style: {} } }] } },
     { block_id: 'request', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Request Syntax', text_element_style: {} } }] } },
     { block_id: 'request-code', parent_id: 'page', block_type: 14, code: { elements: [{ text_run: { content: 'client.search(data)', text_element_style: {} } }], style: { language: 49 } } },
     { block_id: 'examples', parent_id: 'page', block_type: 4, heading2: { elements: [{ text_run: { content: 'Examples', text_element_style: {} } }] } },
@@ -2168,7 +2168,7 @@ test('FeishuOperationalVerifier accepts a valid Python semantic layout and numer
 test('FeishuOperationalVerifier checks preserved block IDs rebound onto a copied document', async () => {
   const blocks = [
     { block_id: 'copy-page', block_type: 1, children: ['summary', 'copy-callout'], page: { elements: [] } },
-    { block_id: 'summary', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'Searches vectors.', text_element_style: {} } }] } },
+    { block_id: 'summary', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'This operation searches vectors.', text_element_style: {} } }] } },
     { block_id: 'copy-callout', parent_id: 'copy-page', block_type: 19, callout: {} },
   ];
   const verifier = new FeishuOperationalVerifier({

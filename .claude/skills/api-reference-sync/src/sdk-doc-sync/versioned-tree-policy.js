@@ -266,6 +266,13 @@ function validateSharedUpdateReviews(reviews, { referencedRecordIds, sourceRecor
   return { ok: true, reviews };
 }
 
+// Attestation-facts normalization: the classification SET is what was
+// reviewed, so the digest must not depend on the caller's array order.
+function normalizeSharedUpdateReviews(reviews) {
+  if (!Array.isArray(reviews)) return reviews;
+  return [...reviews].sort((left, right) => String(left?.recordId || '').localeCompare(String(right?.recordId || '')));
+}
+
 // Input facts for one canonical identity. `sourceDiff` comes from the diff
 // engine (UPDATE ⇒ changed, SKIP ⇒ unchanged); `operation` is the requested
 // plan operation. Everything else mirrors the planner context the builder
@@ -350,25 +357,34 @@ function evaluateVersionedTreeDelta(input) {
   // patch it in place — the change structurally flows to every track that
   // still points at it — but only when every other referencing record is
   // classified by the inheritance review as inheriting the change. Anything
-  // else fails closed (validateSharedUpdateReviews).
-  const sameTrackShared = evidenceSharedStatus(evidence) === 'shared'
-    && current.version === target.version
-    && current.ancestryVerified === true
-    && nonEmptyString(current.folderToken)
-    && current.folderToken === target.folderToken;
-  if (sameTrackShared) {
+  // else fails closed (validateSharedUpdateReviews). The same-track shared
+  // shape OWNS this identity end to end: a placement predicate failure blocks
+  // here instead of falling through to the copy table, because an in-track
+  // copy of a shared document is exactly the same-title sibling fork the
+  // same-name-sibling-placement ruling calls a defect.
+  if (evidenceSharedStatus(evidence) === 'shared' && current.version === target.version) {
+    const targetLocal = current.ancestryVerified === true
+      && nonEmptyString(current.folderToken)
+      && current.folderToken === target.folderToken;
+    if (!targetLocal) {
+      return blocked(
+        BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN,
+        `A same-track shared update requires verified target-local placement for ${stableId} (ancestry verified, document inside the planned folder); planning cannot fall back to an in-track copy of a shared document`,
+      );
+    }
     const referencedRecordIds = evidenceReferenceIds(evidence);
-    const verdict = validateSharedUpdateReviews(input.sharedUpdateReviews, {
+    const verdict = validateSharedUpdateReviews(normalizeSharedUpdateReviews(input.sharedUpdateReviews), {
       referencedRecordIds,
       sourceRecordId: current.recordId,
     });
     if (!verdict.ok) {
       return blocked(verdict.code, verdict.detail);
     }
+    const sharedUpdateReviews = normalizeSharedUpdateReviews(input.sharedUpdateReviews);
     const facts = {
       current,
       referencedRecordIds,
-      sharedUpdateReviews: input.sharedUpdateReviews,
+      sharedUpdateReviews,
       sourceDiff,
       stableId,
       target,

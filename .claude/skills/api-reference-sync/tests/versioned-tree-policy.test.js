@@ -284,7 +284,8 @@ test('policy kernel v4 gates a shared in-place patch on classified inheriting re
     }];
 
     // Classified inheriting: allowed, and the reviews bind into the facts
-    // digest (a classification change re-binds the attestation).
+    // digest (a classification change re-binds the attestation). The digest
+    // is order-insensitive: the classification set is what was reviewed.
     const allowed = evaluateVersionedTreeDelta({ ...sharedLocalFacts(), sharedUpdateReviews: reviews() });
     assert.equal(allowed.status, 'allowed');
     assert.equal(allowed.decision, DECISIONS.UPDATE_IN_PLACE_VERIFIED);
@@ -294,6 +295,34 @@ test('policy kernel v4 gates a shared in-place patch on classified inheriting re
     });
     assert.equal(reclassified.status, 'allowed');
     assert.notEqual(allowed.attestation.inputDigest, reclassified.attestation.inputDigest);
+    const reordered = evaluateVersionedTreeDelta({
+        ...sharedLocalFacts(),
+        sharedUpdateReviews: [reviews()[0]],
+    });
+    assert.equal(reordered.attestation.inputDigest, allowed.attestation.inputDigest);
+
+    // Placement predicate failure on the same-track shared shape blocks with
+    // PLACEMENT_UNKNOWN — it must never fall through to the copy table and
+    // fork a shared document inside its own track (the review P1: an
+    // ancestry-unverified or folder-drifted shared update used to reach
+    // COPY_PATCH_AND_REPOINT).
+    const unverifiedAncestry = sharedLocalFacts();
+    unverifiedAncestry.current.ancestryVerified = false;
+    const blockedUnverified = evaluateVersionedTreeDelta({
+        ...unverifiedAncestry,
+        sharedUpdateReviews: reviews(),
+    });
+    assert.equal(blockedUnverified.status, 'blocked');
+    assert.equal(blockedUnverified.blocker, BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN);
+    const folderDrift = sharedLocalFacts();
+    folderDrift.target.folderToken = 'folder-partitions-v30';
+    folderDrift.current.folderToken = 'folder-partitions-v26';
+    const blockedDrift = evaluateVersionedTreeDelta({
+        ...folderDrift,
+        sharedUpdateReviews: reviews(),
+    });
+    assert.equal(blockedDrift.status, 'blocked');
+    assert.equal(blockedDrift.blocker, BLOCKERS.TREE_DELTA_PLACEMENT_UNKNOWN);
 
     // Missing classification: fail-closed — no reviews at all, and a
     // partial set names the uncovered record.

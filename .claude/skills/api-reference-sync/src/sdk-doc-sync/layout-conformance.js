@@ -104,12 +104,16 @@ function pageFactsFromBlocks(blocks = []) {
             }
             if (block.block_type === BULLET_BLOCK_TYPE || block.block_type === ORDERED_BLOCK_TYPE) {
                 const holder = block.block_type === BULLET_BLOCK_TYPE ? block.bullet : block.ordered;
-                const text = (holder?.elements || [])
-                    .map((element) => element?.text_run?.content || '')
-                    .join('');
+                const runs = holder?.elements || [];
+                const text = runs.map((element) => element?.text_run?.content || '').join('');
+                // Feishu bold is a style, never literal asterisks: a bold
+                // first run is the block-path signal of a parameter-name
+                // bullet (the markdown path matches literal **name**).
+                const firstContentRun = runs.find((element) => (element?.text_run?.content || '').trim() !== '');
+                const boldName = Boolean(firstContentRun?.text_run?.text_element_style?.bold);
                 if (!insideCallout && text.trim() !== '') {
                     bullets.push(text);
-                    stream.push({ kind: 'bullet', text });
+                    stream.push({ kind: 'bullet', text, boldName });
                 }
                 if (Array.isArray(block.children)) walk(block.children, insideCallout);
                 continue;
@@ -258,10 +262,10 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
     }
 
     if (nonEmptyString(contentRules.firstSentencePattern) || (contentRules.firstSentencePatterns || []).length > 0) {
-        // 2026-10-04 adjudication: registers are a declared set — operation
-        // (and getter) pages "This operation …", class/type pages
-        // "This class …". A page passes when its first body sentence matches
-        // any declared register.
+        // 2026-10-04 adjudication (revised same day): registers are a
+        // declared set — operation (and getter) pages "This operation …",
+        // class/type pages "A Xxx instance is …". A page passes when its
+        // first body sentence matches any declared register.
         const registers = [
             ...(nonEmptyString(contentRules.firstSentencePattern) ? [contentRules.firstSentencePattern] : []),
             ...(contentRules.firstSentencePatterns || []).filter(nonEmptyString),
@@ -300,8 +304,12 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
     // renderer emits descriptions as child paragraphs), so a bullet and its
     // following non-bullet prose lines coalesce into one parameter entry.
     // Plain prose bullets (nested field descriptions) are not parameter
-    // entries.
+    // entries. Markdown facts carry literal **name** markers; block facts
+    // carry bold as a style (entry.boldName) and unmarked (*Type*)/linked
+    // ([Type](url)) type groups.
     if (contentRules.paramDescRequired) {
+        const markdownParamShape = /^\*\*([^*]+)\*\*(?:\s+(?:\(\*[^*]*\*\)|\(\[[^\]]*\]\([^)]*\)\)))?\s*(.*)$/;
+        const blockParamShape = /^([^\s([]+)(?:\s+\([^)]*\))?\s*(.*)$/;
         for (let index = 0; index < entries.length; index += 1) {
             if (!isLabel(entries[index].text, 'parameters')) continue;
             for (let cursor = index + 1; cursor < entries.length; cursor += 1) {
@@ -309,7 +317,9 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
                 if (isKnownLabel(entry.text)) break;
                 if (entry.kind !== 'bullet') continue;
                 const text = entry.text.trim().replace(/^[-•*]\s+/, '');
-                const parameterMatch = text.match(/^\*\*([^*]+)\*\*(?:\s+\(\*[^*]*\*\))?\s*(.*)$/);
+                const parameterMatch = text.startsWith('**')
+                    ? text.match(markdownParamShape)
+                    : (entry.boldName ? text.match(blockParamShape) : null);
                 if (!parameterMatch) continue;
                 const descriptionParts = [(parameterMatch[2] || '').replace(/^[-–—]\s*/, '').trim()];
                 let lookahead = cursor + 1;
@@ -346,8 +356,15 @@ function checkMarkdownContentQuality(markdown, profile) {
     const report = (code, detail) => violations.push({ code, detail });
     const entries = [];
     let insideFence = false;
+    let insideAdmonition = false;
     for (const rawLine of markdown.split(/\r?\n/)) {
         const trimmed = rawLine.trim();
+        // Governed callouts render as <Admonition> blocks whose interior
+        // (e.g. the Notes label of a deprecation notice) is sanctioned —
+        // exempt it exactly like the block path exempts callout children.
+        if (/^<Admonition\b/i.test(trimmed)) { insideAdmonition = true; continue; }
+        if (/^<\/Admonition>/i.test(trimmed)) { insideAdmonition = false; continue; }
+        if (insideAdmonition) continue;
         if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
             insideFence = !insideFence;
             continue;

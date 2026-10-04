@@ -76,7 +76,7 @@ Anthropic《Equipping agents for the real world with Agent Skills》（2025-10-1
 
 ### 3.4 首战执行（2026-10-04 裁定收窄：修订战役仅 v3.0.x）
 
-sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10-04 裁定收窄为仅 java v3.0.x**（v2.6.x 及更老树的存量债留各自战役；worklist 按 v3.0.x 切片）。处置按 §3.1 附带裁定——移除内部 notes、改写首句（operation/getter="This operation returns…"、类页="This class initiates…"）、修写 RETURNS（强式形态），参数/方法等内容项一个不能少（语义门看住）；走既有治理管线分批 APPROVE；**共享页 update-in-place**（token 级共享实测为 0，规则备用）。这一步把"语料的账"从黑变白。其余语言轨：写时门即刻生效，存量债由各自下一场战役的修订轮清偿（sweep 报告先行）。
+sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10-04 裁定收窄为仅 java v3.0.x**（v2.6.x 及更老树的存量债留各自战役；worklist 按 v3.0.x 切片）。处置按 §3.1 附带裁定——移除内部 notes、改写首句（operation/getter="This operation returns…"、类页="A Xxx instance is…"）、修写 RETURNS（强式形态），参数/方法等内容项一个不能少（语义门看住）；走既有治理管线分批 APPROVE；**共享页 update-in-place**（token 级共享实测为 0，规则备用）。这一步把"语料的账"从黑变白。其余语言轨：写时门即刻生效，存量债由各自下一场战役的修订轮清偿（sweep 报告先行）。
 
 ### 3.5 打回即铸 fixture（成文规则）
 

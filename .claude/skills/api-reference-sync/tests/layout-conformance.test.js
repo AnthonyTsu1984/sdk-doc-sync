@@ -32,7 +32,7 @@ test('pageFactsFromBlocks separates headings, body lines, callout child lines, a
     assert.deepEqual(facts.stream, [
         { kind: 'heading', text: 'AlterRole()' },
         { kind: 'text', text: 'CreateAliasRequest& WithAlias()' },
-        { kind: 'bullet', text: '**cost** (*long*) - The query cost.' },
+        { kind: 'bullet', text: '**cost** (*long*) - The query cost.', boldName: false },
     ]);
 });
 
@@ -292,4 +292,60 @@ test('2026-10-04 adjudication: operation and class registers are both accepted; 
     // "This class initiates …" draft form.
     assert.equal(code(['This getter returns the parameters of this request.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
     assert.equal(code(['This class initiates a MilvusClientV2 instance that connects to a Milvus deployment.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
+});
+
+test('block-path parameter bullets are judged by bold style, not literal markers (review r1 P1)', () => {
+    const profile = sdkLayoutProfiles.java;
+    // Feishu bold is a style: name run carries text_element_style.bold.
+    const facts = pageFactsFromBlocks([
+        { block_id: 'p', block_type: 2, text: { elements: [{ text_run: { content: 'This operation waits for a bulk import.' } }] } },
+        { block_id: 'l', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:' } }] } },
+        { block_id: 'b1', block_type: 12, bullet: { elements: [
+            { text_run: { content: 'maxWaitSeconds', text_element_style: { bold: true } } },
+            { text_run: { content: ' (long) -' } },
+        ] } },
+        { block_id: 'b2', block_type: 12, bullet: { elements: [
+            { text_run: { content: 'collectionName', text_element_style: { bold: true } } },
+            { text_run: { content: ' (String) - The target collection.' } },
+        ] } },
+        { block_id: 'b3', block_type: 12, bullet: { elements: [
+            { text_run: { content: 'A plain prose bullet, not a parameter.' } },
+        ] } },
+    ]);
+    const violations = checkLayoutConformance(profile, facts).violations;
+    assert.equal(
+        violations.filter((violation) => violation.code === 'PARAM_DESC_REQUIRED').length,
+        1,
+        'only the description-less bold-name bullet is flagged',
+    );
+    assert.match(violations.find((violation) => violation.code === 'PARAM_DESC_REQUIRED').detail, /maxWaitSeconds/);
+});
+
+test('markdown linked-type parameter bullets with no description are flagged (review r1 P1)', () => {
+    const profile = sdkLayoutProfiles.java;
+    const flagged = checkMarkdownContentQuality([
+        'This operation searches vectors.',
+        '**PARAMETERS:**',
+        '- **collection_name** ([str](https://zilliverse.feishu.cn/docx/str)) -',
+    ].join('\n'), profile).violations;
+    assert.equal(flagged.find((violation) => violation.code === 'PARAM_DESC_REQUIRED')?.code, 'PARAM_DESC_REQUIRED');
+    const clean = checkMarkdownContentQuality([
+        'This operation searches vectors.',
+        '**PARAMETERS:**',
+        '- **collection_name** ([str](https://zilliverse.feishu.cn/docx/str)) - The name of the target collection.',
+    ].join('\n'), profile).violations;
+    assert.deepEqual(clean, []);
+});
+
+test('markdown governed Admonition interiors are exempt from the Notes-leak rule (review r1 P0)', () => {
+    const profile = sdkLayoutProfiles.java;
+    assert.deepEqual(checkMarkdownContentQuality([
+        'This operation deletes entities from a collection.',
+        '<Admonition icon="📘">',
+        'Notes',
+        'Deprecated in v3.0.x. Use deleteAsync().',
+        '</Admonition>',
+    ].join('\n'), profile).violations, []);
+    const bare = checkMarkdownContentQuality('This operation deletes entities.\nNotes\n', profile).violations;
+    assert.equal(bare.find((violation) => violation.code === 'INTERNAL_NOTE_LEAK')?.code, 'INTERNAL_NOTE_LEAK');
 });

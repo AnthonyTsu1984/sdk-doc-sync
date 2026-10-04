@@ -89,3 +89,15 @@ test('--json emits the schemaVersion 1 report with byCode summary', () => {
     assert.equal(report.schemaVersion, 1);
     assert.equal(report.summary.byCode.INTAKE_SUMMARY_REGISTER, 1);
 });
+
+test('adapter-consumed optional keys (params/result/signature/typeUrls) are not unexpected (review r1)', () => {
+    const entry = makeContextEntry({
+        params: [{ name: 'collectionName', type: 'String', description: 'The target collection.' }],
+        result: { type: 'void', description: '', fields: [] },
+        signature: 'void delete(String collectionName)',
+        typeUrls: { DataType: 'https://zilliverse.feishu.cn/docx/data-type' },
+    });
+    const { result } = runPreflight({ 'java:v2-Collections:delete': entry });
+    assert.equal(result.status, 0, result.stdout);
+    assert.doesNotMatch(result.stdout, /INTAKE_CONTEXT_KEYS_UNEXPECTED/);
+});

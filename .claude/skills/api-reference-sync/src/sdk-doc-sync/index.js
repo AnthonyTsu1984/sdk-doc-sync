@@ -1222,16 +1222,21 @@ class SdkDocSync {
             const { action, plan, context } = planned;
             if (!plan || plan.action === 'NOOP') continue;
             const markdownPreview = typeof context?.artifact?.content === 'string' ? context.artifact.content : null;
-            const profile = context?.artifact?.layout ? sdkLayoutProfiles[context.artifact.layout.profileId] : null;
+            // Verbatim-rebuild artifacts carry no artifact.layout, but the
+            // 2026-10-03 ruling does not exempt them — resolve the profile
+            // from the run's language instead of failing the gate open.
+            const profile = sdkLayoutProfiles[context?.artifact?.layout?.profileId]
+                || sdkLayoutProfiles[this.language]
+                || null;
             let contentPreflight = null;
             if (markdownPreview !== null && profile) {
                 const check = checkMarkdownContentQuality(markdownPreview, profile);
-                contentPreflight = { ok: check.violations.length === 0, violations: check.violations };
                 if (check.violations.length > 0) {
                     const error = new Error(`write-approval preview fails the content preflight for ${plan.stableId}: ${check.violations.map((violation) => `${violation.code} (${violation.detail})`).join('; ')}`);
                     error.code = 'PREVIEW_CONTENT_PREFLIGHT_FAILED';
                     throw error;
                 }
+                contentPreflight = { ok: true, violations: [] };
             }
             entries.push({
                 stableId: plan.stableId,

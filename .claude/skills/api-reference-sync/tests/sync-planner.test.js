@@ -24,7 +24,7 @@ function inventoryDigest(seed) {
   return sha256Digest(Buffer.from(seed, 'utf8'));
 }
 
-function artifact(content = '# Reviewed documentation\n') {
+function artifact(content = 'This operation is described by reviewed documentation.\n') {
   return {
     content,
     reviewed: true,

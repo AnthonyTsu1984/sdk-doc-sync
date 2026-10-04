@@ -123,11 +123,19 @@ async function main(argv = process.argv) {
         }
     }
 
-    const dump = { schemaVersion: 1, generatedAt: new Date().toISOString(), pages };
+    const dump = {
+        schemaVersion: 2,
+        generatedAt: new Date().toISOString(),
+        discovered: documents.length,
+        collected: pages.length,
+        failures,
+        pages,
+    };
     fs.mkdirSync(path.dirname(options.out), { recursive: true });
     fs.writeFileSync(options.out, `${JSON.stringify(dump, null, 2)}\n`);
-    process.stderr.write(`wrote ${pages.length} page(s) (${failures} fetch failure(s)) to ${options.out}\n`);
-    if (pages.length === 0) process.exitCode = 1;
+    process.stderr.write(`wrote ${pages.length}/${documents.length} page(s) (${failures} fetch failure(s)) to ${options.out}\n`);
+    // Fail-closed: a truncated corpus must not pass a later --strict sweep.
+    if (pages.length === 0 || failures > 0) process.exitCode = 1;
 }
 
 main(process.argv).catch((error) => {

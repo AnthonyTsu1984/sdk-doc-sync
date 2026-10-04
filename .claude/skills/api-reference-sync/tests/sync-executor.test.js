@@ -65,7 +65,7 @@ function copyPatchEvidence(overrides = {}) {
   });
 }
 
-function artifact(content = '# Reviewed documentation\n') {
+function artifact(content = 'This operation is described by reviewed documentation.\n') {
   return {
     title: 'createCollection()',
     content,
@@ -600,7 +600,7 @@ test('SyncExecutor creates a target document before creating the Bitable record'
   assert.equal(result.status, 'success');
   assert.deepEqual(calls.map((entry) => entry[0]), ['createDocument', 'createRecord']);
   assert.equal(calls[0][1].folderToken, 'collections-v26');
-  assert.equal(calls[0][1].content, '# Reviewed documentation\n');
+  assert.equal(calls[0][1].content, 'This operation is described by reviewed documentation.\n');
   assert.deepEqual(calls[1][1].Docs, undefined);
   assert.equal(calls[1][1].title, 'createCollection()');
   assert.equal(calls[1][1].link, 'https://docs.example/doc-new');

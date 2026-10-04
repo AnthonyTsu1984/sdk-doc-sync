@@ -35,6 +35,10 @@ const CONTEXT_KEYS = [
     'notes', 'pr', 'reasons', 'repository', 'reviewedEvidence', 'revision',
     'sourceVariants', 'summary', 'symbolName', 'title', 'verbatimContent',
 ];
+// Keys the pipeline itself consumes when present (adapter inputs for
+// request/callable entries, reviewed type URLs) — expected on the entries
+// that carry them, never flagged as UNEXPECTED.
+const OPTIONAL_CONTEXT_KEYS = ['params', 'result', 'signature', 'typeUrls', 'requestSyntax', 'requiredFields'];
 
 function parseArgs(argv) {
     const options = { language: 'java', json: false, strict: false };
@@ -77,9 +81,10 @@ function hasPrEvidence(entry) {
 function main(argv = process.argv) {
     const options = parseArgs(argv);
     const profile = sdkLayoutProfiles[options.language];
-    // 2026-10-04 adjudication: registers are a declared set (operation pages
-    // "This operation …", class/type pages "This class …"); a summary passes
-    // when it matches any declared register.
+    // 2026-10-04 adjudication (revised same day): registers are a declared
+    // set (operation/getter pages "This operation …", class/type pages
+    // "A Xxx instance is …"); a summary passes when it matches any declared
+    // register.
     const contentQuality = profile?.layoutRules?.contentQuality || {};
     const registers = [
         ...(typeof contentQuality.firstSentencePattern === 'string' && contentQuality.firstSentencePattern ? [contentQuality.firstSentencePattern] : ['^This operation\\b']),
@@ -97,7 +102,7 @@ function main(argv = process.argv) {
         }
         const keys = Object.keys(entry).sort();
         const missing = CONTEXT_KEYS.filter((key) => !(key in entry));
-        const unexpected = keys.filter((key) => !CONTEXT_KEYS.includes(key));
+        const unexpected = keys.filter((key) => !CONTEXT_KEYS.includes(key) && !OPTIONAL_CONTEXT_KEYS.includes(key));
         if (missing.length > 0) report('error', 'INTAKE_CONTEXT_KEYS_MISSING', identity, `missing ${missing.join(', ')}`);
         if (unexpected.length > 0) report('error', 'INTAKE_CONTEXT_KEYS_UNEXPECTED', identity, `unexpected ${unexpected.join(', ')}`);
 

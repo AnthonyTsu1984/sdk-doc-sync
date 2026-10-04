@@ -1145,7 +1145,7 @@ function nonEmptyReceiptString(value) {
 
 if (require.main === module) {
     runCli().catch(err => {
-        console.error('Fatal error:', err.message);
+        console.error('Fatal error:', err && err.code ? `[${err.code}] ${err.message}` : err.message);
         process.exit(1);
     });
 }

@@ -1039,12 +1039,14 @@ const scenarios = {
       callouts: [],
     };
     const cpp = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
-    // The same page under a profile without the builder rule is clean: the
-    // language difference lives in profile data, not in the checker.
+    // The same page under a profile without the builder rule carries no
+    // builder-prefix violation: the language difference lives in profile
+    // data, not in the checker. (java does flag the first-sentence register
+    // on this line — covered by the content-quality fixture.)
     const java = checkLayoutConformance(sdkLayoutProfiles.java, facts);
     return {
       cppViolationCode: cpp.violations.find((violation) => violation.code === 'LAYOUT_BUILDER_PREFIX_FORBIDDEN')?.code || null,
-      javaClean: java.violations.length === 0,
+      javaNoBuilderPrefix: java.violations.some((violation) => violation.code === 'LAYOUT_BUILDER_PREFIX_FORBIDDEN') === false,
     };
   },
 
@@ -1381,20 +1383,63 @@ const scenarios = {
     const returnsMissing = violationsFor(profiles.java, ['RETURN TYPE:', 'GetResp', 'PARAMETERS:', '- **ids** (*List<Object>*)']);
     const typeRow = violationsFor(profiles.java, ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'GetResp', 'Entities by ID.']);
     const proseMissing = violationsFor(profiles.java, ['RETURN TYPE:', 'GetResp', 'RETURNS:', 'PARAMETERS:']);
-    const cppUnbound = violationsFor(profiles.cpp, ['RETURNS:', 'A GetResp object representing one or more queried entities.']);
+    // cpp does not declare the split rules, but the 2026-10-03 global content
+    // rules bind it: this page still reports RETURNS_MIN_DEPTH.
+    const cppUnbound = violationsFor(profiles.cpp, ['This operation queries entities by ID.', 'RETURNS:', 'A GetResp object.']);
     const clean = violationsFor(profiles.java, [
+      'This operation queries entities by ID.',
       'RETURN TYPE:',
       'GetResp',
       'RETURNS:',
       'A GetResp object representing one or more queried entities.',
       'PARAMETERS:',
+      '- **entities** (*List<Object>*) - The queried entities by ID.',
     ]);
     return {
       returnTypeMissingCode: firstCode(returnTypeMissing, 'LAYOUT_RETURN_TYPE_MISSING'),
       returnsMissingCode: firstCode(returnsMissing, 'LAYOUT_RETURNS_MISSING'),
       typeRowCode: firstCode(typeRow, 'LAYOUT_RETURNS_TYPE_ROW'),
       proseMissingCode: firstCode(proseMissing, 'LAYOUT_RETURNS_PROSE_MISSING'),
-      cppUnboundClean: cppUnbound.length === 0,
+      cppUnboundNoSplitCodes: cppUnbound
+        .filter((violation) => ['LAYOUT_RETURN_TYPE_MISSING', 'LAYOUT_RETURNS_MISSING', 'LAYOUT_RETURNS_TYPE_ROW', 'LAYOUT_RETURNS_PROSE_MISSING'].includes(violation.code))
+        .length === 0,
+      cleanOk: clean.length === 0,
+    };
+  },
+
+  // --- api.sdk-page-layout five content rules (2026-10-03 global ruling) ---
+
+  contentLayoutContentQuality() {
+    const { checkLayoutConformance } = require('../../src/sdk-doc-sync/layout-conformance');
+    const profiles = require('../../src/renderers/sdk-layout-profiles');
+    const firstCode = (violations, code) => violations.find((violation) => violation.code === code)?.code || null;
+    const violationsFor = (lines) => checkLayoutConformance(profiles.java, { lines, headings: [], callouts: [] }).violations;
+
+    const cjk = violationsFor(['This operation 查询实体。']);
+    const firstSentence = violationsFor(['Deletes entities from the collection.']);
+    const returnsDepth = violationsFor([
+      'This operation queries entities by ID.',
+      'RETURN TYPE:', 'GetResp',
+      'RETURNS:', 'A GetResp object representing the queried entities.',
+    ]);
+    const paramDesc = violationsFor([
+      'This operation waits for a bulk import to finish.',
+      'PARAMETERS:', '- **maxWaitSeconds** (*long*)',
+    ]);
+    const noteLeak = violationsFor(['This operation deletes entities.', 'Notes', 'Internal scouting residue.']);
+    const clean = violationsFor([
+      'This operation queries entities by ID.',
+      'PARAMETERS:', '- **ids** (*List<Object>*) - The entity IDs to query.',
+      'RETURN TYPE:', 'GetResp',
+      'RETURNS:', 'A GetResp object representing the queried entities.',
+      'PARAMETERS:', '- **entities** (*List<Object>*) - The queried entities by ID.',
+    ]);
+    return {
+      cjkCode: firstCode(cjk, 'CONTENT_CJK_MIXING'),
+      firstSentenceCode: firstCode(firstSentence, 'FIRST_SENTENCE_REGISTER'),
+      returnsDepthCode: firstCode(returnsDepth, 'RETURNS_MIN_DEPTH'),
+      paramDescCode: firstCode(paramDesc, 'PARAM_DESC_REQUIRED'),
+      noteLeakCode: firstCode(noteLeak, 'INTERNAL_NOTE_LEAK'),
       cleanOk: clean.length === 0,
     };
   },

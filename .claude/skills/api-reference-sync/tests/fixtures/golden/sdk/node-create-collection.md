@@ -57,6 +57,8 @@ await client.createCollection({ collection_name, schema })
 
 Resolves after the collection is created.
 
+**PARAMETERS:**
+
 - **status** (*Status*) -
   **\[REQUIRED\]**
   Operation status.

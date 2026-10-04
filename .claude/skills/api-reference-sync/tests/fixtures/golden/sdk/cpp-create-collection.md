@@ -41,6 +41,8 @@ auto request = CreateCollectionRequest()
 
 Returns the operation status and fills the response object.
 
+**PARAMETERS:**
+
 - **response** ([CreateCollectionResponse](/reference/cpp/create-collection-response)) -
   **\[REQUIRED\]**
   The created collection response.

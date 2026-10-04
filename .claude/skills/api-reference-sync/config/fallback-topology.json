@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "comment": "Action-semantics decision table and audit exemptions for track topology (campaign-control hardening batch 2, docs/campaign-control-hardening.md §4). The fallback chain itself is the registry track order per language (oldest first) and is never duplicated here — each track's recorded fallback source is the adjacent older track. 'Record points at a recorded fallback source' is the CORRECT topology for unchanged interfaces, never a defect (grantPrivilege precedent, 2026-10-03).",
+  "decisionTable": [
+    {
+      "case": "document-resides-in-own-tree",
+      "action": "IN_PLACE"
+    },
+    {
+      "case": "fallback-source-changed",
+      "action": "COPY_PATCH_AND_REPOINT",
+      "steps": [
+        "copy the document under the owning tree's section folder (create the section folder when absent)",
+        "repoint the section record"
+      ]
+    },
+    {
+      "case": "no-section-folder-in-own-tree",
+      "action": "CREATE_FOLDER_THEN_REPOINT",
+      "steps": [
+        "create the section folder under the owning release root",
+        "repoint the section record"
+      ]
+    },
+    {
+      "case": "record-points-at-recorded-fallback-source",
+      "action": "NONE",
+      "note": "correct topology, not a defect (grantPrivilege precedent, 2026-10-03)"
+    }
+  ],
+  "sameNameInOneDirectory": "always-a-defect",
+  "languages": {
+    "java": { "audit": true, "pageExemptions": [] },
+    "cpp": { "audit": true, "pageExemptions": [] },
+    "python": { "audit": true, "pageExemptions": [] },
+    "node": { "audit": true, "pageExemptions": [] },
+    "go": { "audit": true, "pageExemptions": [] }
+  }
+}

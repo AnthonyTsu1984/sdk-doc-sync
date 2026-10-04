@@ -269,6 +269,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-track-topology.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-track-topology",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

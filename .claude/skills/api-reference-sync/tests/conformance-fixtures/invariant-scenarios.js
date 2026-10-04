@@ -1443,6 +1443,42 @@ const scenarios = {
       cleanOk: clean.length === 0,
     };
   },
+
+  // --- api.track-topology-audit (campaign-control hardening batch 2) ---
+
+  trackTopologyAudit() {
+    const { classifyTrackTopology } = require('../../src/sdk-doc-sync/track-topology');
+    const indexes = new Map([
+      ['v3.0.x', new Map([['authFolder', { parentFolderToken: 'r30' }], ['doc1', { parentFolderToken: 'authFolder' }], ['doc2', { parentFolderToken: 'rootLevel' }]])],
+      ['v2.6.x', new Map([['vectorFolder', { parentFolderToken: 'r26' }]])],
+    ]);
+    const chain = ['v2.6.x', 'v3.0.x'];
+    const sections = [
+      { recordId: 's1', slug: 'v2-Authentication', token: 'authFolder' },
+      { recordId: 's2', slug: 'v2-Vector', token: 'vectorFolder' },
+    ];
+    const clean = classifyTrackTopology({
+      sections,
+      pages: [{ recordId: 'p1', slug: 'v2-Authentication-addPrivilegesToGroup', token: 'doc1' }],
+      indexes, chainVersions: chain, ownVersion: 'v3.0.x',
+    });
+    const misplaced = classifyTrackTopology({
+      sections,
+      pages: [{ recordId: 'p2', slug: 'v2-Authentication-createRole', token: 'doc2' }],
+      indexes, chainVersions: chain, ownVersion: 'v3.0.x',
+    });
+    const foreign = classifyTrackTopology({
+      sections,
+      pages: [],
+      indexes, chainVersions: chain, ownVersion: 'v2.6.x',
+    });
+    return {
+      cleanOk: clean.findings.length === 0,
+      fallbackOk: clean.findings.filter((f) => f.code.startsWith('TOPOLOGY_SECTION_FOLDER_')).length === 0,
+      misplacedCode: misplaced.findings.find((f) => f.code === 'TOPOLOGY_PAGE_OUTSIDE_SECTION')?.code || null,
+      foreignCode: foreign.findings.find((f) => f.code === 'TOPOLOGY_SECTION_FOLDER_FOREIGN')?.code || null,
+    };
+  },
 };
 
 module.exports = { scenarios };

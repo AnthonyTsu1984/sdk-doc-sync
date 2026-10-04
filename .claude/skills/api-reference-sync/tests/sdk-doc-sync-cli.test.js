@@ -1845,7 +1845,7 @@ test('reviewed helper ownership preserves every source variant through filtered-
   };
   const candidateSpec = {
     language: 'python',
-    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
+    placementWalk: { digest: 'sha256:' + 'a'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',

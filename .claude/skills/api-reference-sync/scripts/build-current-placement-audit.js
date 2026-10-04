@@ -381,7 +381,9 @@ async function buildPlacementAudit({
         referencedRecordIds: sharing.referencedRecordIds,
         references: (referencesByToken.get(entry.documentToken) || [])
           .map((reference) => ({ ...reference }))
-          .sort((left, right) => left.recordId.localeCompare(right.recordId)),
+          // Codepoint order, not locale order: this list feeds the walk
+          // digest, which must be deterministic across environments.
+          .sort((left, right) => (left.recordId < right.recordId ? -1 : left.recordId > right.recordId ? 1 : 0)),
       },
       targetFolderVerified,
       inheritanceEvidence,
@@ -402,8 +404,9 @@ async function buildPlacementAudit({
     stableId: entry.stableId,
     documentToken: entry.documentToken,
     placement: entry.placement,
+    // sharedToken carries the reference list (sorted) — the reference
+    // coverage rides the digest through it.
     sharedToken: entry.sharedToken,
-    references: (entry.references || []).map((reference) => reference.recordId).sort(),
     targetFolderVerified: entry.targetFolderVerified,
   }))));
 

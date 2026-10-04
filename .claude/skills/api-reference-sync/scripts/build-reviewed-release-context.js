@@ -842,12 +842,18 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     if (!parentRecordId && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
       throw new Error(`Candidate ${action.canonicalSlug} has no parent record or approved parent resource`);
     }
+    // T3 creation-side gate supply: the target folder's containment chain
+    // (from the placement audit walk product) rides the planning target for
+    // walk-bound CREATE plans — the executor re-derives it live and refuses
+    // walk-bound CREATES without it.
+    const targetFolderAncestry = Array.isArray(spec.folderAncestry) ? spec.folderAncestry : null;
     const planningTarget = {
       version,
       folderToken,
       parentRecordId,
       versionRootToken,
       ancestryVerified: true,
+      ...(targetFolderAncestry ? { folderAncestry: targetFolderAncestry } : {}),
     };
     if (folderRef) planningTarget.folderRef = folderRef;
     if (parentRecordRef) planningTarget.parentRecordRef = parentRecordRef;
@@ -863,6 +869,15 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
         `Candidate ${action.canonicalSlug} placementWalk (digest + collectedAt, from the placement audit product's walkDigest) is required — placement decisions must be bound to a live walk`,
       );
     }
+    // Shape-strict: a non-string digest would silently downgrade the plan to
+    // legacy (unbound) at the executor — the gate would never fire.
+    if (!/^sha256:[0-9a-f]{64}$/.test(String(placementWalk.digest))) {
+      throw reviewedContextError(
+        'PLACEMENT_WALK_REQUIRED',
+        `Candidate ${action.canonicalSlug} placementWalk.digest must match sha256:<64 hex> (got ${JSON.stringify(placementWalk.digest).slice(0, 40)})`,
+      );
+    }
+
     const inheritanceEvidence = assertInheritanceEvidence({
       action: planningAction,
       spec,

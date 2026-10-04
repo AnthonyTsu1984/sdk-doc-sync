@@ -921,7 +921,21 @@ class SyncExecutor {
   // behavior; the kernel requires chains for new plans.
   async _verifyCreateTargetPlacement(plan, result) {
     const chain = plan.target?.folderAncestry;
-    if (!Array.isArray(chain) || chain.length === 0) return;
+    // A walk-bound plan (placementWalkDigest) carries the new-era evidence
+    // contract: its CREATE must name the target chain — a bound plan without
+    // one is missing placement evidence, not legacy. Legacy plans (no bound
+    // walk) keep the prior behavior.
+    if (!Array.isArray(chain) || chain.length === 0) {
+      if (typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0) {
+        const error = new SyncExecutionError(
+          'PLACEMENT_TARGET_UNRESOLVED',
+          `walk-bound CREATE plan for ${plan.stableId} carries no target.folderAncestry — placement evidence is missing (supply spec.folderAncestry from the placement audit walk product)`,
+        );
+        error.step = 'verifyTargetPlacement';
+        throw error;
+      }
+      return;
+    }
     if (!plan.target?.versionRootToken || !plan.target?.folderToken) return;
     try {
       await this._assertLiveFolderChain({

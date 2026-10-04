@@ -529,6 +529,15 @@ function verifyPlacementWalkBinding({ plans, boundWalkDigest = null }) {
       });
     }
   } else {
+    // A bound run executes ONLY walk-carrying plans: legacy plans in the
+    // same batch would ride their siblings' binding and silently bypass the
+    // PLACEMENT_WALK_UNBOUND refusal they owe on their own.
+    if (carrying.length < (plans || []).length && nonEmptyString(boundWalkDigest)) {
+      errors.push({
+        code: 'PLACEMENT_WALK_UNBOUND',
+        detail: `execution names walk ${boundWalkDigest} but ${((plans || []).length - carrying.length)} plan(s) carry no placementWalkDigest — legacy plans execute only under an unbound run`,
+      });
+    }
     const digests = [...new Set(carrying.map((plan) => plan.placementWalkDigest))];
     if (digests.length > 1) {
       errors.push({

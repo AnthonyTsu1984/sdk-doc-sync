@@ -98,7 +98,7 @@ test('createReviewSession binds the placement walk digest when supplied and vali
     track: 'v3.0.x',
     reviewUnitManifest: { manifestDigest: 'sha256:' + 'm'.repeat(64), units: [] },
   };
-  const digest = 'sha256:' + 'w'.repeat(64);
+  const digest = 'sha256:' + 'a'.repeat(64);
   const session = createReviewSession({ ...base, placementWalk: { digest, collectedAt: '2026-10-04T00:00:00Z' } });
   assert.deepEqual(session.placementWalk, { digest, collectedAt: '2026-10-04T00:00:00Z' });
   assert.equal(createReviewSession({ ...base }).placementWalk, null, 'legacy sessions carry null');

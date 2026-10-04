@@ -562,7 +562,7 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
 });
 
 test('SyncPlanner binds the context placement walk digest into the immutable plan', () => {
-  const digest = 'sha256:' + 'w'.repeat(64);
+  const digest = 'sha256:' + 'a'.repeat(64);
   const withWalk = planningContext({
     placementWalk: { digest, collectedAt: '2026-10-04T00:00:00Z' },
   });

@@ -1445,6 +1445,20 @@ test('SyncExecutor rejects legacy CREATE_AND_REPOINT plans before mutation', asy
   assert.deepEqual(calls, []);
 });
 
+test('SyncExecutor refuses a walk-bound CREATE that carries no target chain (placement evidence missing)', async () => {
+  const { documentWriter, bitableWriter } = spies();
+  const strippedContext = planningContext({ current: null, placementWalk: { digest: 'sha256:' + 'a'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' } });
+  strippedContext.target = { ...strippedContext.target, folderAncestry: undefined };
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const result = await executor.execute(plan('CREATE', strippedContext), {
+    artifact: artifact(),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'PLACEMENT_TARGET_UNRESOLVED');
+  assert.match(result.error.message, /placement evidence is missing/);
+});
+
 test('SyncExecutor refuses a CREATE whose planned target folder is not live-resolvable (PLACEMENT_TARGET_UNRESOLVED)', async () => {
   const { bitableWriter } = spies();
   // The mock serves the target tree — this writer does NOT, so the planned

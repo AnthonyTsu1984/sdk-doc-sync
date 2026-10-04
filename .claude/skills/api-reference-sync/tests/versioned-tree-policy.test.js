@@ -585,6 +585,11 @@ test('verifyPlacementWalkBinding binds plans to the execution-named placement wa
     assert.equal(divergent.errors.some((entry) => entry.code === 'PLACEMENT_WALK_DIVERGENT'), true);
     // Legacy: no plan carries a walk and the execution names none.
     assert.equal(verifyPlacementWalkBinding({ plans: [plan(null)], boundWalkDigest: null }).ok, true);
+    // Mixed batch under a named walk: the legacy plan must NOT ride its
+    // siblings' binding.
+    const mixed = verifyPlacementWalkBinding({ plans: [plan(null), plan(walkA)], boundWalkDigest: walkA });
+    assert.equal(mixed.ok, false);
+    assert.equal(mixed.errors.some((entry) => entry.code === 'PLACEMENT_WALK_UNBOUND'), true);
     // Session/plans disagreement: the execution names a walk, the plans carry none.
     const reversed = verifyPlacementWalkBinding({ plans: [plan(null)], boundWalkDigest: walkA });
     assert.equal(reversed.errors[0].code, 'PLACEMENT_WALK_UNBOUND');

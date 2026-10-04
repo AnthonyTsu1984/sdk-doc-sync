@@ -427,10 +427,17 @@ function assertCopySourceEvidence({ action, spec, identity, current, targetVersi
   if (!copySource || !copySource.documentToken || !copySource.link) {
     throw new Error(`Candidate ${action.canonicalSlug} copySource evidence is required before changing inherited doc ${identity.stableId}`);
   }
+  // Kernel v5: the copy-structure mirror gate needs the source document's
+  // live placement (take it from the source record's placement-audit entry).
+  const placement = copySource.placement || null;
+  if (!placement || !placement.versionRootToken || !placement.folderToken) {
+    throw new Error(`Candidate ${action.canonicalSlug} copySource.placement (versionRootToken + folderToken, from the live placement audit entry) is required for the copy-structure mirror gate`);
+  }
   return {
     documentToken: copySource.documentToken,
     link: copySource.link,
     title: copySource.title || null,
+    placement: { versionRootToken: placement.versionRootToken, folderToken: placement.folderToken },
   };
 }
 

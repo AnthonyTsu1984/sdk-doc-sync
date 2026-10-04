@@ -9,7 +9,7 @@ const { organizationRecordType } = require('./sdk-organization-contract');
 const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { captureRecordState, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
-const { deriveFolderAncestry } = require('./tree-delta-reconciliation');
+const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
 const { DECISIONS, INVARIANT_ID, validateSharedUpdateReviews } = require('./versioned-tree-policy');
 
 function nonEmptyString(value) {
@@ -911,6 +911,51 @@ class SyncExecutor {
     }
   }
 
+  // Kernel v5 copy-structure mirror gate (campaign-control batch 2c, T2):
+  // a copy must land in a target section that MIRRORS the source section's
+  // structure — same depth, same folder name at every level under the
+  // respective version roots. The V1 failure mode (a subdirectory-backed
+  // source copied flat into the parent directory) diverges here, before any
+  // write. Both chains are re-derived live, exactly like the containment
+  // gate above; plans attested before kernel v5 keep verifying as before.
+  async _assertCopyStructureMirror(plan, result) {
+    const attestation = (plan.invariantAttestations || [])
+      .find((entry) => entry?.id === 'api.versioned-tree-delta');
+    if (!attestation || attestation.decision !== 'COPY_PATCH_AND_REPOINT') return;
+    if ((attestation.version || 0) < 5) return;
+    const placement = plan.copySource && plan.copySource.placement;
+    if (!placement || !placement.versionRootToken || !placement.folderToken) {
+      const error = new SyncExecutionError(
+        'COPY_SOURCE_PLACEMENT_REQUIRED',
+        `kernel v5 copy plan for ${plan.stableId} carries no copySource.placement; the approved plan body is missing its mirror evidence`,
+      );
+      error.step = 'verifyCopyStructure';
+      throw error;
+    }
+    const sourceNames = await this._folderChainNames(placement.versionRootToken, placement.folderToken);
+    const targetChain = plan.target?.folderAncestry || [];
+    const targetNames = targetChain.length >= 2
+      ? await this._folderChainNames(targetChain[0], targetChain[targetChain.length - 1])
+      : null;
+    if (!sourceNames || !targetNames || JSON.stringify(sourceNames) !== JSON.stringify(targetNames)) {
+      const error = new SyncExecutionError(
+        'TREE_DELTA_COPY_STRUCTURE_MISMATCH',
+        `Copy target must mirror the source section structure for ${plan.stableId}: source [${(sourceNames || []).join(' / ')}] under ${placement.versionRootToken} vs target [${(targetNames || []).join(' / ')}] under ${plan.target?.versionRootToken ?? '(missing)'}`,
+      );
+      error.step = 'verifyCopyStructure';
+      throw error;
+    }
+    result.completedSteps.push('verifyCopyStructure');
+  }
+
+  async _folderChainNames(rootToken, leafFolderToken) {
+    return deriveFolderChainNames({
+      listFolder: ({ folderToken, type }) => this._listFolder(folderToken, type),
+      versionRootToken: rootToken,
+      folderToken: leafFolderToken,
+    });
+  }
+
   async _verifyTreeDeltaReferences(plan, result) {
     const attestation = (plan.invariantAttestations || [])
       .find((entry) => entry?.id === 'api.versioned-tree-delta');
@@ -1057,6 +1102,7 @@ class SyncExecutor {
 
   async _executeCopyPatchAndRepoint(plan, artifact, action, result) {
     await this._verifyCopyTargetPlacement(plan, result);
+    await this._assertCopyStructureMirror(plan, result);
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
 
@@ -1348,7 +1394,7 @@ class SyncExecutor {
     // createFolder write step.
     completedSteps = completedSteps.filter((step) => (
       step !== 'verifySharedTokenEvidence' && step !== 'verifyTargetPlacement'
-      && step !== 'verifyResourceContainment'
+      && step !== 'verifyResourceContainment' && step !== 'verifyCopyStructure'
     ));
     if (plan.action === 'CREATE_FOLDER') {
       if (completedSteps.length === 0) return 'verifyResourceAbsent';

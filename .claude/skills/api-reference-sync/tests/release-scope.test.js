@@ -914,6 +914,7 @@ test('reviewed context requires and carries the complete Node stateful-class org
       copySource: {
         documentToken: 'doc-bulk-writer-v26',
         link: 'https://docs.example/docx/doc-bulk-writer-v26',
+        placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
       },
       summary: 'Writes rows into import-ready files.',
       example: { code: 'const writer = new BulkWriter(options);' },
@@ -1010,6 +1011,7 @@ test('reviewed context requires and carries the complete Node stateful-class org
     copySource: {
       documentToken: 'doc-append-v26',
       link: 'https://docs.example/docx/doc-append-v26',
+        placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
     },
   };
   delete inheritedMethodSpec.candidates['DataImport-BulkWriter-append'].existingRecordLookup;
@@ -2425,6 +2427,7 @@ test('reviewed release context builder reminds on deferred successors of source-
           documentToken: 'doc-bulk',
           title: 'bulk_import()',
           link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          placement: { versionRootToken: 'root-v25', folderToken: 'bulk-import-folder-v25' },
         },
         summary: 'Starts a bulk import job.',
         example: { code: 'from pymilvus.bulk_writer import bulk_import' },
@@ -2532,6 +2535,7 @@ test('reviewed release context builder joins successor pointing records into sha
           documentToken: 'doc-bulk',
           title: 'bulk_import()',
           link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          placement: { versionRootToken: 'root-v25', folderToken: 'bulk-import-folder-v25' },
         },
         summary: 'Starts a bulk import job.',
         example: { code: 'from pymilvus.bulk_writer import bulk_import' },
@@ -3105,6 +3109,7 @@ test('reviewed release context builder carries existing record and copy source e
           documentToken: 'doc-bulk',
           title: 'bulk_import()',
           link: 'https://zilliverse.feishu.cn/docx/docBulk',
+          placement: { versionRootToken: 'root-v25', folderToken: 'bulk-import-folder-v25' },
         },
         summary: 'Starts a bulk import job.',
         example: { code: 'from pymilvus.bulk_writer import bulk_import' },
@@ -3130,6 +3135,7 @@ test('reviewed release context builder carries existing record and copy source e
     documentToken: 'doc-bulk',
     link: 'https://zilliverse.feishu.cn/docx/docBulk',
     title: 'bulk_import()',
+    placement: { versionRootToken: 'root-v25', folderToken: 'bulk-import-folder-v25' },
   });
 });
 
@@ -3331,6 +3337,7 @@ test('reviewed release context builder rejects synthetic grouping across multipl
       copySource: {
         documentToken: 'doc-update-user',
         link: 'https://zilliverse.feishu.cn/docx/docUpdateUser',
+        placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
       },
       summary: 'Updates RBAC description fields.',
       example: { code: 'client.update_user("alice", description="Owner")' },

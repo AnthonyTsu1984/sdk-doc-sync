@@ -134,10 +134,18 @@ function targetFrom(context) {
 
 function copySourceFrom(context) {
   const copySource = context.copySource || {};
+  const placement = copySource.placement || {};
   return {
     documentToken: copySource.documentToken ?? null,
     link: copySource.link ?? null,
     title: copySource.title ?? null,
+    // Kernel v5: the source document's live placement (from the placement
+    // audit entry of the record the copy repoints away from) — the executor's
+    // copy-structure mirror gate re-derives both chains live and asserts the
+    // target mirrors the source section structure level-by-level.
+    placement: (nonEmptyString(placement.versionRootToken) && nonEmptyString(placement.folderToken))
+      ? { versionRootToken: placement.versionRootToken, folderToken: placement.folderToken }
+      : null,
   };
 }
 
@@ -673,6 +681,14 @@ class SyncPlanner {
             throw new SyncPlanningError(
               'COPY_SOURCE_REQUIRED',
               `Unsafe UPDATE ${stableId} requires copySource document evidence before patching inherited docs`,
+            );
+          }
+          // Kernel v5: a copy without the source's live placement evidence
+          // cannot be mirror-checked (V1 flat-copy failure mode).
+          if (!copySource.placement) {
+            throw new SyncPlanningError(
+              'COPY_SOURCE_PLACEMENT_REQUIRED',
+              `Unsafe UPDATE ${stableId} requires copySource.placement (versionRootToken + folderToken from the live placement audit) for the copy-structure mirror gate`,
             );
           }
         }

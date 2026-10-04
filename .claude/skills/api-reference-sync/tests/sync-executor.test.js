@@ -113,6 +113,7 @@ function planningContext(overrides = {}) {
       documentToken: 'doc-v26',
       link: 'https://docs.example/docx/doc-v26',
       title: 'createCollection()',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections-v26' },
     },
     existingRecordLookup: {
       checked: true,
@@ -178,6 +179,8 @@ function spies({ failPatch = false, failRecordCreate = false, failRecordUpdate =
     },
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];
@@ -1057,6 +1060,8 @@ test('SyncExecutor identifies the approved source document when patching a copie
   const documentWriter = {
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];
@@ -1110,6 +1115,8 @@ test('SyncExecutor rebuilds only the copied document and removes it when verific
   const documentWriter = {
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];
@@ -1414,6 +1421,60 @@ test('SyncExecutor rejects legacy CREATE_AND_REPOINT plans before mutation', asy
   assert.deepEqual(calls, []);
 });
 
+test('SyncExecutor refuses a kernel v5 copy whose target does not mirror the source section structure', async () => {
+  const { documentWriter, bitableWriter } = spies();
+  // Same mocks, but the source tree serves a DIFFERENTLY-named section —
+  // the target [Collections] cannot mirror the source [Vector].
+  const sourceTree = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Vector' }];
+      return documentWriter.listFolder({ folderToken });
+    },
+  };
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+  });
+  const copyPlan = plan('UPDATE', context);
+  const executor = new SyncExecutor({
+    documentWriter: sourceTree,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
+  const result = await executor.execute(copyPlan, {
+    artifact: artifact('# createCollection\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'TREE_DELTA_COPY_STRUCTURE_MISMATCH');
+  assert.match(result.error.message, /source \[Vector\].*vs target \[Collections\]/);
+});
+
+test('SyncExecutor refuses a kernel v5 copy plan that lost its copySource.placement evidence', async () => {
+  const { documentWriter, bitableWriter } = spies();
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+  });
+  const copyPlan = structuredClone(plan('UPDATE', context));
+  delete copyPlan.copySource.placement;
+  (function deepFreeze(value) {
+    if (value && typeof value === 'object') {
+      for (const child of Object.values(value)) deepFreeze(child);
+      Object.freeze(value);
+    }
+  })(copyPlan);
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: tokenReferenceReaderFor(copyPlan),
+  });
+  const result = await executor.execute(copyPlan, {
+    artifact: artifact('# createCollection\n\nupdated copied markdown'),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'COPY_SOURCE_PLACEMENT_REQUIRED');
+});
+
 test('SyncExecutor rejects unsafe artifacts before copying inherited docs', async () => {
   const context = planningContext({
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
@@ -1614,6 +1675,8 @@ test('copy-patch-repoint verifies the copy before record update without touching
   const documentWriter = {
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];
@@ -1688,6 +1751,8 @@ test('document verification failure prevents updateRecord after copy and patch',
   const documentWriter = {
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];
@@ -2393,6 +2458,8 @@ test('SyncExecutor compares reference multisets so cloned-base tokens pass pre-w
   const documentWriter = {
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];
@@ -2512,6 +2579,8 @@ test('SyncExecutor tree-delta verification removes exactly one repointed referen
   const documentWriter = {
     async listFolder({ folderToken }) {
       // Kernel v3 containment: the live tree under the target version root.
+      // Kernel v5 mirror: the source tree serves a same-named section folder.
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
       return folderToken === 'root-v26'
         ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
         : [];

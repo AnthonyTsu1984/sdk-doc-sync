@@ -34,6 +34,24 @@ function documentTokenFromLink(link) {
 // planning binds the chain into the plan, the executor re-derives it live
 // before the first write. The visited set keeps a token reachable through
 // two parents from being queued twice and terminates folder cycles.
+// Derive the folder-NAME sequence of a containment chain (version root
+// excluded — roots differ by design), resolving each level's name from the
+// live tree. Shared by the executor's kernel v5 copy-structure mirror gate
+// and the batch-level post-write drift observation. Returns null when the
+// chain is unreachable or a level's name cannot be resolved.
+async function deriveFolderChainNames({ listFolder, versionRootToken, folderToken }) {
+    const chain = await deriveFolderAncestry({ listFolder, versionRootToken, folderToken });
+    if (!chain || chain.length < 2) return null;
+    const names = [];
+    for (let level = 1; level < chain.length; level += 1) {
+        const children = await listFolder({ folderToken: chain[level - 1], type: 'all' });
+        const entry = (children || []).find((item) => (item.token || item.file_token) === chain[level]);
+        if (!entry || typeof entry.name !== 'string' || entry.name === '') return null;
+        names.push(entry.name);
+    }
+    return names;
+}
+
 async function deriveFolderAncestry({
   listFolder,
   versionRootToken,
@@ -207,6 +225,7 @@ function reconcileTreeDelta({
 }
 
 module.exports = {
+    deriveFolderChainNames,
   deriveFolderAncestry,
   documentTokenFromLink,
   folderTokenFromLink,

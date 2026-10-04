@@ -20,7 +20,7 @@ const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
 const INVARIANT_ID = 'api.versioned-tree-delta';
-const INVARIANT_VERSION = 4;
+const INVARIANT_VERSION = 5;
 
 // Shared with the executor's live re-derivation (deriveFolderAncestry in
 // tree-delta-reconciliation.js): a containment chain deeper than this can
@@ -546,6 +546,14 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
         expected: expectedToken,
         actual: observed?.targetRecordDocumentToken ?? null,
       });
+    }
+    // Kernel v5 copy-structure mirror drift (campaign-control batch 2c, T2):
+    // the batch observation re-derives both chains live after the write; a
+    // mirrored=false outcome is a post-write defect even when every placement
+    // closure below holds (the world, not the plan, diverged). Only runs for
+    // observations that carry the mirror verdict (kernel v5+ plans).
+    if (observed?.copyStructureMirrored === false) {
+      errors.push({ code: 'TREE_DELTA_COPY_STRUCTURE_DRIFT' });
     }
     // Placement closure (2026-10-03 ruling: the copy must land under the
     // target track's tree). For WITH_CATEGORY_CREATE the expected folder is

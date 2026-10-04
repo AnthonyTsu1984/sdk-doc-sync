@@ -295,3 +295,78 @@ test('inherited navigation without in-tree claimed presence is never repointed',
     assert.deepEqual(plan.actions, []);
     assert.equal(plan.summary.repointCategoryNode, 0);
 });
+
+// --- 2026-10-04 campaign-defect regression: the Docs cell must be written as
+// {text: <section name>, link} — a bare-URL string poisons the Slug formula
+// for the whole family (TOPOLOGY_RECORD_SLUG_URL). ---
+
+test('repoint writes Docs as {text, link} with a clean section name, never a bare URL', async () => {
+    const larkCalls = [];
+    const plan = {
+        language: 'java',
+        actions: [{
+            kind: 'repoint-category-node', ref: 'repoint:collections',
+            track: 'v2.6.x', recordId: 'rec1', category: 'Collections',
+            toFolderToken: 'fold2',
+        }],
+    };
+    const records = [
+        { record_id: 'rec1', fields: { Docs: { text: 'https://zilliverse.feishu.cn/drive/folder/old', link: 'https://zilliverse.feishu.cn/drive/folder/old' } } },
+    ];
+    let writtenText = null;
+    await executePlan({
+        plan,
+        approvedDigest: planDigest(plan),
+        journalPath: journalPath(),
+        deps: {
+            larkJson: async (args) => {
+                larkCalls.push(args);
+                if (args[0] === 'api' && args[1] === 'PUT') {
+                    const body = JSON.parse(args[args.indexOf('--data') + 1]);
+                    writtenText = body.fields.Docs.text;
+                    return { ok: true };
+                }
+                if (args[0] === 'base' && args[1] === '+table-list') return { data: { tables: [{ id: 'tbl1' }] } };
+                return { ok: true };
+            },
+            listFolder: async () => [],
+            listRecords: async () => records.map((r) => ({
+                ...r,
+                fields: {
+                    ...r.fields,
+                    Docs: writtenText !== null
+                        ? { text: writtenText, link: 'https://zilliverse.feishu.cn/drive/folder/fold2' }
+                        : r.fields.Docs,
+                },
+            })),
+        },
+    });
+    const put = larkCalls.find((args) => args[0] === 'api' && args[1] === 'PUT');
+    assert.ok(put, 'the repoint goes through the raw records PUT');
+    const body = JSON.parse(put[put.indexOf('--data') + 1]);
+    assert.deepEqual(body.fields.Docs, { text: 'Collections', link: 'https://zilliverse.feishu.cn/drive/folder/fold2' });
+    assert.equal(writtenText, 'Collections', 'verification rereads the display text, not just the link');
+});
+
+test('repoint refuses when every text candidate is URL-shaped (no clean section name)', async () => {
+    const plan = {
+        language: 'java',
+        actions: [{
+            kind: 'repoint-category-node', ref: 'repoint:ghost',
+            track: 'v2.6.x', recordId: 'rec9', toFolderToken: 'fold3',
+        }],
+    };
+    await assert.rejects(
+        executePlan({
+            plan,
+            approvedDigest: planDigest(plan),
+            journalPath: journalPath(),
+            deps: {
+                larkJson: async (args) => (args[0] === 'base' && args[1] === '+table-list' ? { data: { tables: [{ id: 'tbl1' }] } } : { ok: true }),
+                listFolder: async () => [],
+                listRecords: async () => [{ record_id: 'rec9', fields: { Docs: { text: 'https://x', link: 'https://x' } } }],
+            },
+        }),
+        /no clean section name for the Docs text/,
+    );
+});

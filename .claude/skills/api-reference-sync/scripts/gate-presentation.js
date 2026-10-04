@@ -195,19 +195,22 @@ function main(argv = process.argv) {
         ? readManifest(options.manifest)
         : manifestFromDryrun(options.fromDryrun);
 
-    const indexPath = path.join(options.indexDir, 'latest.html');
-    writeAtomic(indexPath, renderIndexHtml(manifest));
-
-    const primaryTarget = manifest.links.length === 1
-        ? manifest.links[0].url
-        : indexPath;
     // `open` (and most launchers) parse a leading '-' as a flag; a
     // presentation target is a URL or a local path, never an option.
+    // Checked before anything is written — a refused presentation leaves
+    // no partial index behind (same zero-write semantics as a malformed
+    // manifest).
+    const primaryTarget = manifest.links.length === 1
+        ? manifest.links[0].url
+        : path.join(options.indexDir, 'latest.html');
     if (/^-/.test(primaryTarget)) {
         const error = new Error(`primary target starts with '-' and would be parsed as a flag by open: ${primaryTarget}`);
         error.code = 'GATE_PRESENTATION_MANIFEST_INVALID';
         throw error;
     }
+
+    const indexPath = path.join(options.indexDir, 'latest.html');
+    writeAtomic(indexPath, renderIndexHtml(manifest));
 
     const warnings = [];
     let opened = false;

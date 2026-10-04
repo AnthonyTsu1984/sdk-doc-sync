@@ -170,9 +170,12 @@ test('a primary target starting with "-" is refused before open (flag injection)
         gate: 'DOCUMENT_REVIEW',
         links: [{ label: 'weird', url: '-foo' }],
     });
-    const result = runPresentation(['--manifest', manifest, '--index-dir', path.join(dir, 'out')]);
+    const outDir = path.join(dir, 'out');
+    const result = runPresentation(['--manifest', manifest, '--index-dir', outDir]);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /would be parsed as a flag/);
+    // Zero-write semantics (review r2 note): the refusal leaves no index behind
+    assert.equal(fs.existsSync(outDir), false);
 });
 
 test('exactly one input mode is required; open/clipboard skip via env as well', () => {

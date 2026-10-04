@@ -19,10 +19,10 @@
 // agreement into the focused admission gate.
 //
 // Rollout note (expected churn, not a defect): audit entries carry the
-// deduped multiset in sharedToken.referencedRecordIds and walkDigest covers
-// sharedToken, so walks over libraries with cloned pairs change digest under
-// this module — sessions bound to a pre-fix walk report
-// PLACEMENT_SOURCE_STALE until the audit is re-run.
+// duplicate-keeping (undeduped) multiset in sharedToken.referencedRecordIds
+// and walkDigest covers sharedToken, so walks over libraries with cloned
+// pairs change digest under this module — sessions bound to a pre-fix walk
+// report PLACEMENT_SOURCE_STALE until the audit is re-run.
 
 // Same validity predicate as the evidence contract (inheritance-evidence,
 // sync-executor): nonempty = length > 0. Whitespace-only ids stay entries so

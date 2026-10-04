@@ -1076,7 +1076,11 @@ class SyncExecutor {
   async _executeRebuild(plan, artifact, action, result, rollbackCapsule = null) {
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
-    if (artifact.layout && plan.apiPatchPlan) {
+    // Mirrors the planner gate exactly (layout + non-rebuild strategy is the
+    // surgical shape), plus the hand-patched apiPatchPlan form — both are the
+    // UPDATE path and never land as whole-body bytes (review r1 P3-1).
+    if ((artifact.layout && artifact.patchStrategy !== 'rebuild')
+      || (artifact.layout && plan.apiPatchPlan)) {
       const error = new SyncExecutionError(
         'REBUILD_STRATEGY_REQUIRED',
         `REBUILD ${plan.stableId} must land whole-body replacement bytes; a surgical apiPatchPlan artifact is the UPDATE path`,
@@ -1126,7 +1130,8 @@ class SyncExecutor {
     result.completedSteps.push('updateRecord');
   }
 
-  async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {    await this._assertSharedTokenEvidence(plan, result);
+  async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {
+    await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
     await this._captureRollbackBeforeMutation(plan, result, rollbackCapsule);
 
@@ -1480,8 +1485,13 @@ class SyncExecutor {
   }
 
   async _rollbackInPlaceMutation(plan, result, originalError) {
-    if (plan.action !== 'UPDATE_IN_PLACE') return;
-    if (!result.patchAttempted && !result.completedSteps.includes('patchDocument')) return;
+    // Batch 5 review r1 (P2-2): a REBUILD whose replacement bytes landed but
+    // whose verify/record step failed rolls back exactly like an in-place
+    // patch — otherwise the whole-body redo stays on live with no auto path.
+    if (plan.action !== 'UPDATE_IN_PLACE' && plan.action !== 'REBUILD') return;
+    if (!result.patchAttempted
+      && !result.completedSteps.includes('patchDocument')
+      && !result.completedSteps.includes('rebuildDocument')) return;
     if (result.completedSteps.includes('rollbackRevert') || result.completedSteps.includes('rollbackRevertFailed')) return;
     if (typeof this.verifier?.rollback !== 'function') return;
     try {
@@ -1531,6 +1541,10 @@ class SyncExecutor {
       && !completedSteps.includes('patchDocument')) {
       return 'patchDocument';
     }
+    // REBUILD pre-write refusals also land here (most carry an explicit
+    // error.step; this is the fallback label, and it makes the
+    // completedSteps.length === 0 branch below unreachable for REBUILD by
+    // design — a REBUILD's first mutating step is always rebuildDocument).
     if (plan.action === 'REBUILD') return 'rebuildDocument';
     if (completedSteps.length === 0) {
       if (plan.action === 'COPY_PATCH_AND_REPOINT') return 'copyDocument';

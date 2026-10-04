@@ -13,6 +13,10 @@ const assert = require('node:assert/strict');
 const SyncPlanner = require('../src/sdk-doc-sync/sync-planner');
 const SyncExecutor = require('../src/sdk-doc-sync/sync-executor');
 const { createInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
+const {
+  executedUnitIdsOf,
+  rebuildLineageFor,
+} = require('../src/sdk-doc-sync/review-session-store');
 const { sha256Digest } = require('../../doc-ops-core/src/digest');
 
 function inventoryDigest(seed) {
@@ -241,30 +245,100 @@ test('executor REBUILD reuses recordId+documentToken and lands whole-body replac
   assert.ok(!calls.some((entry) => entry[0] === 'createDocument' || entry[0] === 'createRecord'));
 });
 
-test('executor REBUILD refuses a surgical apiPatchPlan artifact before any write (defense in depth)', async () => {
-  const { calls, documentWriter, bitableWriter } = executorSpies();
+test('executor REBUILD refuses surgical artifacts before any write (defense in depth, both shapes)', async () => {
   const basePlan = new SyncPlanner().planAction(rebuildAction(), rebuildContext());
-  // Plans are frozen: clone, then hand-patch the surgical field to bypass the
-  // planner gate and prove the executor's defense in depth
-  // (frozen top level satisfies _assertApprovedPlan; assignment before freeze)
-  const plan = Object.freeze({ ...structuredClone(basePlan), apiPatchPlan: { approval: { required: false } } });
-  const executor = new SyncExecutor({
-    documentWriter,
-    bitableWriter,
-    tokenReferenceReader: {
-      async listTokenReferences() {
-        return [{ recordId: 'rec-campaign' }];
+  for (const [name, plan, artifact] of [
+    // The real bypass shape (review r1 P3-1): a layout artifact with a
+    // non-rebuild strategy and NO plan.apiPatchPlan — planner would refuse it,
+    // so only a plan/artifact mismatch can deliver it here
+    ['layout-smart', basePlan, { ...rebuildContext().artifact, layout: { profileId: 'java', profileVersion: 3 }, patchStrategy: 'smart' }],
+    // The hand-patched form: an approved plan tampered to carry an apiPatchPlan
+    ['tampered-plan', Object.freeze({ ...structuredClone(basePlan), apiPatchPlan: { approval: { required: false } } }), { ...rebuildContext().artifact, layout: { profileId: 'java', profileVersion: 3 } }],
+  ]) {
+    const { calls, documentWriter, bitableWriter } = executorSpies();
+    const executor = new SyncExecutor({
+      documentWriter,
+      bitableWriter,
+      tokenReferenceReader: {
+        async listTokenReferences() {
+          return [{ recordId: 'rec-campaign' }];
+        },
       },
+    });
+    const result = await executor.execute(plan, {
+      artifact,
+      approval: { approved: true },
+      rollbackCapsule: {
+        documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+      },
+    });
+    assert.equal(result.status, 'error', name);
+    assert.equal(result.error.code, 'REBUILD_STRATEGY_REQUIRED', name);
+    assert.deepEqual(calls, [], name);
+  }
+});
+
+test('the changes-requested redo window proves execution and binds lineage (review r1 P1-1/P1-2)', () => {
+  // The flagship J6 scenario: execute → document review requests changes →
+  // the unit returns to in_progress with its pending entry REMOVED and the
+  // prior journal digest preserved in changeRequests. The machine-proof set
+  // must still contain the unit (else REBUILD dies on REBUILD_SCOPE_FOREIGN),
+  // and the lineage must cite the replaced journal.
+  const digestA = `sha256:${'a'.repeat(64)}`;
+  const digestB = `sha256:${'b'.repeat(64)}`;
+  const session = {
+    reviewUnitManifest: {
+      units: [{ reviewUnitId: 'review:java:Collections:getAsync', documentStableId: 'java:Collections:getAsync' }],
     },
-  });
-  const result = await executor.execute(plan, {
-    artifact: { ...rebuildContext().artifact, layout: { profileId: 'java', profileVersion: 3 } },
-    approval: { approved: true },
-    rollbackCapsule: {
-      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
-    },
-  });
-  assert.equal(result.status, 'error');
-  assert.equal(result.error.code, 'REBUILD_STRATEGY_REQUIRED');
-  assert.deepEqual(calls, []);
+    acceptedReviewUnits: [],
+    pendingExecutions: [{
+      reviewUnitId: 'review:java:Collections:getAsync',
+      executionJournalDigest: digestA,
+    }],
+    changeRequests: [],
+  };
+
+  // Pending window: proof exists, lineage cites the pending journal (a redo
+  // over an unreviewed execution replaces it)
+  assert.ok(executedUnitIdsOf(session).has('review:java:Collections:getAsync'));
+  assert.deepEqual(
+    rebuildLineageFor(session, ['review:java:Collections:getAsync']),
+    [digestA],
+  );
+
+  // changes-requested window (the P1-1 regression): pending removed, digest
+  // moved into changeRequests — proof MUST survive via the change-request entry
+  const requested = {
+    ...session,
+    pendingExecutions: [],
+    changeRequests: [{
+      reviewUnitId: 'review:java:Collections:getAsync',
+      executionJournalDigest: digestA,
+      requestedAt: '2026-10-04T10:00:00.000Z',
+    }],
+  };
+  assert.ok(executedUnitIdsOf(requested).has('review:java:Collections:getAsync'),
+    'change-request entry proves the campaign executed the unit');
+  assert.deepEqual(
+    rebuildLineageFor(requested, ['review:java:Collections:getAsync']),
+    [digestA],
+  );
+
+  // Two prior changes-requests arrive stored reviewUnitId-sorted; lineage
+  // must order by requestedAt so the newest binds as rebuildOf
+  const twoRounds = {
+    ...requested,
+    changeRequests: [
+      { reviewUnitId: 'review:java:Collections:getAsync', executionJournalDigest: digestB, requestedAt: '2026-10-04T12:00:00.000Z' },
+      { reviewUnitId: 'review:java:Collections:getAsync', executionJournalDigest: digestA, requestedAt: '2026-10-04T10:00:00.000Z' },
+    ],
+  };
+  assert.deepEqual(
+    rebuildLineageFor(twoRounds, ['review:java:Collections:getAsync']),
+    [digestA, digestB],
+    'requestedAt ordering, not storage order',
+  );
+
+  // A foreign unit (never executed by this campaign) stays unproven
+  assert.equal(executedUnitIdsOf(requested).has('review:java:Other:unit'), false);
 });

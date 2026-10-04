@@ -9,6 +9,7 @@ const INVERSE_BY_ACTION = Object.freeze({
   CREATE: 'DELETE_CREATED_RECORD_AND_DOCUMENT',
   COPY_PATCH_AND_REPOINT: 'RESTORE_RECORD_AND_DELETE_COPY',
   UPDATE_IN_PLACE: 'REVERT_DOCUMENT_AND_RESTORE_RECORD',
+  REBUILD: 'REVERT_DOCUMENT_AND_RESTORE_RECORD',
   UPDATE_RECORD_METADATA: 'RESTORE_RECORD',
   DEPRECATE: 'RESTORE_RECORD',
   CREATE_VIRTUAL_NODE: 'DELETE_CREATED_RECORD',
@@ -243,7 +244,11 @@ function inverseFor(pair) {
         copiedDocument: { ...structuredClone(evidence.createdDocument), token },
       };
     }
-    case 'UPDATE_IN_PLACE': {
+    // REBUILD shares the UPDATE_IN_PLACE capsule shape (beforeRecord +
+    // documentRollback): a whole-body redo reverts through the same history
+    // restore (batch 5 review r1 P2-2).
+    case 'UPDATE_IN_PLACE':
+    case 'REBUILD': {
       requireValue(capsule.beforeRecord, 'ROLLBACK_EVIDENCE_MISSING', `Original Bitable state is missing for ${capsule.actionId}`);
       requireValue(evidence.postRecord, 'ROLLBACK_EVIDENCE_MISSING', `Executed Bitable state is missing for ${capsule.actionId}`);
       const rollback = capsule.documentRollback;

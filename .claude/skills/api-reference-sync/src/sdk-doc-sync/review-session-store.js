@@ -788,6 +788,45 @@ function closeSession(session, { scanStateKey, scanStateEntry, closedAt = new Da
   }, { timestamp: closedAt });
 }
 
+// Batch 5 (review r1 P1-1/P1-2): machine proof a unit is this campaign's
+// product, and the REBUILD lineage (prior execution journal digests the unit
+// replaced). A change-request entry IS execution proof — the unit was
+// executed, then its pending entry was removed on executed → in_progress —
+// without it the changes-requested redo window (the flagship REBUILD
+// scenario) finds no proof and dies on REBUILD_SCOPE_FOREIGN /
+// CREATE_RECORD_ALREADY_EXISTS exactly as before batch 5.
+function executedUnitIdsOf(session) {
+  const executedUnitIds = new Set(
+    (session?.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId),
+  );
+  const pendings = Array.isArray(session?.pendingExecutions)
+    ? session.pendingExecutions
+    : (session?.activeExecution ? [session.activeExecution] : []);
+  for (const pending of pendings) {
+    if (pending?.reviewUnitId) executedUnitIds.add(pending.reviewUnitId);
+  }
+  for (const entry of session?.changeRequests || []) {
+    if (entry?.reviewUnitId) executedUnitIds.add(entry.reviewUnitId);
+  }
+  return executedUnitIds;
+}
+
+// Prior journals a REBUILD of this unit replaces, oldest → newest: every
+// changes-requested digest (requestedAt order — the stored array is sorted by
+// reviewUnitId, NOT time) followed by the unit's CURRENT pending journal when
+// one exists (a redo over an unreviewed execution replaces it too).
+function rebuildLineageFor(session, reviewUnitIds) {
+  const wanted = reviewUnitIds instanceof Set ? reviewUnitIds : new Set(reviewUnitIds || []);
+  const requests = (session?.changeRequests || [])
+    .filter((entry) => wanted.has(entry.reviewUnitId) && entry.executionJournalDigest)
+    .sort((left, right) => String(left.requestedAt || '').localeCompare(String(right.requestedAt || '')))
+    .map((entry) => entry.executionJournalDigest);
+  const pendingDigest = (session?.pendingExecutions || [])
+    .find((entry) => wanted.has(entry.reviewUnitId))
+    ?.executionJournalDigest;
+  return pendingDigest ? [...requests, pendingDigest] : requests;
+}
+
 function recordDocumentChangesRequested(session, { reviewUnitId, reason = null } = {}) {
   if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
   if (session.scanStateUpdated === true) {
@@ -1256,6 +1295,8 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 }
 
 module.exports = {
+  executedUnitIdsOf,
+  rebuildLineageFor,
   REVIEW_MACHINE,
   TARGETS_FINAL,
   UNIT_MACHINE,

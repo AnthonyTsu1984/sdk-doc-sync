@@ -654,7 +654,7 @@ class SyncPlanner {
         const first = validation.errors[0];
         throw new SyncPlanningError(
           first.code === 'SHARED_TOKEN_EVIDENCE_UNKNOWN' ? 'SHARED_TOKEN_EVIDENCE_REQUIRED' : first.code,
-          `UPDATE ${stableId} requires verified inheritance evidence before planning`,
+          `${effectiveDiffAction} ${stableId} requires verified inheritance evidence before planning`,
           { errors: validation.errors },
         );
       }
@@ -874,7 +874,7 @@ class SyncPlanner {
       // Kernel v4: the classification evidence a shared in-place patch was
       // allowed on. The executor revalidates coverage against the live
       // reference multiset immediately before the write.
-      sharedUpdateReviews: plannedAction === 'UPDATE_IN_PLACE' && inheritanceEvidence?.sharedToken?.status === 'shared'
+      sharedUpdateReviews: (plannedAction === 'UPDATE_IN_PLACE' || plannedAction === 'REBUILD') && inheritanceEvidence?.sharedToken?.status === 'shared'
         ? deepClone(context.sharedUpdateReviews)
         : undefined,
       invariantAttestations: invariantAttestations ? deepClone(invariantAttestations) : undefined,

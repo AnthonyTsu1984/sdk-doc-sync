@@ -29,7 +29,9 @@ const STYLE_MIRROR_INVARIANT_ID = 'api.style-mirror-allowlist';
 // Every language the release-track registry serves must have an explicit
 // allowlist section — absence is a malformed config, not an implicit empty
 // list (a language with no designated exemplar declares allowlist: []).
-const SUPPORTED_LANGUAGES = ['java', 'cpp', 'python', 'node', 'go'];
+// Derived from the layout profiles (the single language registry) so a new
+// track forces its allowlist section the day it gains a profile.
+const SUPPORTED_LANGUAGES = Object.keys(require('../renderers/sdk-layout-profiles'));
 
 function loadStyleMirrorAllowlist(configPath) {
     let config;
@@ -59,8 +61,8 @@ function loadStyleMirrorAllowlist(configPath) {
         }
         const seen = new Set();
         for (const entry of section.allowlist) {
-            if (typeof entry !== 'string' || entry.trim() === '') {
-                const e = new Error(`style-mirror-allowlist languages.${language}.allowlist entries must be non-empty strings (got ${JSON.stringify(entry)})`);
+            if (typeof entry !== 'string' || entry.trim() === '' || entry !== entry.trim()) {
+                const e = new Error(`style-mirror-allowlist languages.${language}.allowlist entries must be trimmed non-empty strings (got ${JSON.stringify(entry)}) — a padded entry can load but never match`);
                 e.code = 'STYLE_MIRROR_ALLOWLIST_MALFORMED';
                 throw e;
             }

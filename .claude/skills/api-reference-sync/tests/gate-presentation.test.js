@@ -99,11 +99,12 @@ test('labels and URLs are HTML-escaped in the index', () => {
     assert.ok(html.includes('https://x/&quot;&gt;&lt;script&gt;'));
 });
 
-test('--from-dryrun extracts writeApprovalPresentation links (null record links skipped)', () => {
+test('--from-dryrun extracts writeApprovalPresentation links and binds the batch digest (null record links skipped)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
     const indexDir = path.join(dir, 'gate-presentation-out');
     const dryrun = path.join(dir, 'unit-dryrun.json');
     fs.writeFileSync(dryrun, JSON.stringify({
+        proposedExecutionBatch: { batchDigest: `sha256:${'b'.repeat(64)}` },
         writeApprovalPresentation: [
             { stableId: 'java:Collections:getAsync', title: 'getAsync()', documentLink: 'https://host/wiki/a', recordLink: 'https://host/base/t/ra', markdownPreview: 'x' },
             { stableId: 'java:Collections:queryAsync', title: 'queryAsync()', documentLink: 'https://host/wiki/b', recordLink: null, markdownPreview: 'x' },
@@ -114,6 +115,8 @@ test('--from-dryrun extracts writeApprovalPresentation links (null record links 
     const report = JSON.parse(result.stdout);
     assert.equal(report.gate, 'APPROVE_WRITES');
     assert.equal(report.linkCount, 3);
+    // The card snippet binds the digest the APPROVE_WRITES reply carries
+    assert.match(report.cardSnippet, /Bound digest: sha256:bbbb/);
     const html = fs.readFileSync(report.indexHtml, 'utf8');
     assert.ok(html.includes('getAsync() — page preview'));
     assert.ok(html.includes('queryAsync() — Bitable record') === false);
@@ -126,6 +129,50 @@ test('--from-dryrun without presentation entries fails closed', () => {
     const result = runPresentation(['--from-dryrun', dryrun]);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /writeApprovalPresentation/);
+});
+
+test('--from-dryrun without a well-formed batch digest fails closed (review r1 P2)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
+    for (const [name, batch] of [
+        ['missing', undefined],
+        ['short', { batchDigest: 'sha256:short' }],
+        ['null', { batchDigest: null }],
+    ]) {
+        const dryrun = path.join(dir, `dryrun-${name}.json`);
+        fs.writeFileSync(dryrun, JSON.stringify({
+            proposedExecutionBatch: batch,
+            writeApprovalPresentation: [
+                { stableId: 's', title: 't', documentLink: 'https://host/wiki/a', recordLink: null, markdownPreview: 'x' },
+            ],
+        }));
+        const result = runPresentation(['--from-dryrun', dryrun]);
+        assert.notEqual(result.status, 0, name);
+        assert.match(result.stderr, /batchDigest must match sha256:<64 hex>/, name);
+    }
+});
+
+test('a card snippet that would leak ANY scheme (HTTPS://, file://) fails with GATE_CARD_LINK_LEAK (review r1 P2)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
+    for (const [name, gate] of [
+        ['uppercase-https', 'G — HTTPS://EVIL.COM/payload'],
+        ['file-scheme', 'G file:///etc/passwd'],
+    ]) {
+        const manifest = writeManifest(dir, { gate, links: [{ label: 'a', url: 'https://x' }] });
+        const result = runPresentation(['--manifest', manifest, '--index-dir', path.join(dir, `out-${name}`)]);
+        assert.notEqual(result.status, 0, name);
+        assert.match(result.stderr, /GATE_CARD_LINK_LEAK/, name);
+    }
+});
+
+test('a primary target starting with "-" is refused before open (flag injection)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
+    const manifest = writeManifest(dir, {
+        gate: 'DOCUMENT_REVIEW',
+        links: [{ label: 'weird', url: '-foo' }],
+    });
+    const result = runPresentation(['--manifest', manifest, '--index-dir', path.join(dir, 'out')]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /would be parsed as a flag/);
 });
 
 test('exactly one input mode is required; open/clipboard skip via env as well', () => {

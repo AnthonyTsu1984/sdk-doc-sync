@@ -139,7 +139,8 @@ test('a malformed allowlist config aborts the run fail-closed (never "everything
     );
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /STYLE_MIRROR_ALLOWLIST_MALFORMED/);
-    assert.match(result.stderr, /languages\.java must carry an allowlist array/);
+    // The first missing language section is named (profile order), any of them
+    assert.match(result.stderr, /languages\.\w+ must carry an allowlist array/);
 });
 
 test('entries without styleMirrors never load the allowlist (absence is the reviewed default)', () => {

@@ -8,10 +8,12 @@ const path = require('node:path');
 
 const {
     STYLE_MIRROR_INVARIANT_ID,
+    SUPPORTED_LANGUAGES,
     loadStyleMirrorAllowlist,
     checkStyleMirrors,
     defaultAllowlistPath,
 } = require('../src/sdk-doc-sync/style-mirror-policy');
+const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 function writeAllowlist(config) {
     const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'style-mirror-allowlist-'));
@@ -58,6 +60,12 @@ test('malformed allowlist configs all fail closed with STYLE_MIRROR_ALLOWLIST_MA
         (() => {
             const config = validAllowlist();
             config.languages.go = { allowlist: [''] }; // empty entry
+            return config;
+        })(),
+        (() => {
+            const config = validAllowlist();
+            // padded entry — loads but can never match (review r1 P3)
+            config.languages.go = { allowlist: [' describeReplicas '] };
             return config;
         })(),
         (() => {
@@ -111,4 +119,10 @@ test('checkStyleMirrors judges declarations against the language allowlist', () 
 
 test('the policy carries the invariant id for registry binding', () => {
     assert.equal(STYLE_MIRROR_INVARIANT_ID, 'api.style-mirror-allowlist');
+});
+
+test('SUPPORTED_LANGUAGES derives from the layout profiles (single language registry)', () => {
+    // A new track gaining a profile must force its allowlist section the
+    // same day — the derived list keeps loader and registry from drifting.
+    assert.deepEqual([...SUPPORTED_LANGUAGES].sort(), Object.keys(sdkLayoutProfiles).sort());
 });

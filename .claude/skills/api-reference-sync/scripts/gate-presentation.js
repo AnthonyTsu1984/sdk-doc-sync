@@ -129,11 +129,19 @@ function manifestFromDryrun(filePath) {
     if (links.length === 0) {
         throw invalid('writeApprovalPresentation entries carry no document/record links');
     }
+    // The write gate's card snippet must bind the batch digest the approval
+    // reply will carry (proposedExecutionBatch.batchDigest) — presenting a
+    // write approval without its digest pushes digest assembly back onto
+    // the runner, exactly what this script exists to remove.
+    const batchDigest = document?.proposedExecutionBatch?.batchDigest;
+    if (typeof batchDigest !== 'string' || !DIGEST_PATTERN.test(batchDigest)) {
+        throw invalid(`dry-run proposedExecutionBatch.batchDigest must match sha256:<64 hex> to present a write approval (got ${JSON.stringify(batchDigest)})`);
+    }
     return {
         gate: 'APPROVE_WRITES',
         title: `write-approval previews (${presentation.length} planned entr${presentation.length === 1 ? 'y' : 'ies'})`,
         run: null,
-        digest: null,
+        digest: batchDigest,
         session: null,
         links,
     };
@@ -148,7 +156,7 @@ function escapeHtml(text) {
         .replaceAll("'", '&#39;');
 }
 
-function renderIndexHtml(manifest, indexPath) {
+function renderIndexHtml(manifest) {
     const lines = [];
     lines.push('<!DOCTYPE html>');
     lines.push('<html lang="en">');
@@ -188,11 +196,18 @@ function main(argv = process.argv) {
         : manifestFromDryrun(options.fromDryrun);
 
     const indexPath = path.join(options.indexDir, 'latest.html');
-    writeAtomic(indexPath, renderIndexHtml(manifest, indexPath));
+    writeAtomic(indexPath, renderIndexHtml(manifest));
 
     const primaryTarget = manifest.links.length === 1
         ? manifest.links[0].url
         : indexPath;
+    // `open` (and most launchers) parse a leading '-' as a flag; a
+    // presentation target is a URL or a local path, never an option.
+    if (/^-/.test(primaryTarget)) {
+        const error = new Error(`primary target starts with '-' and would be parsed as a flag by open: ${primaryTarget}`);
+        error.code = 'GATE_PRESENTATION_MANIFEST_INVALID';
+        throw error;
+    }
 
     const warnings = [];
     let opened = false;
@@ -216,7 +231,10 @@ function main(argv = process.argv) {
         copied ? `Primary target copied to the clipboard — ⌘V works in a browser address bar or terminal (${path.basename(primaryTarget)}).` : null,
         manifest.digest ? `Bound digest: ${manifest.digest}` : null,
     ].filter((line) => line !== null).join('\n');
-    if (/https?:\/\//.test(cardSnippet)) {
+    // Scheme-agnostic and case-insensitive: the snippet must carry no
+    // clickable-looking target at all — https, HTTPS, file://, any scheme
+    // (a leaked file:// path is just as much a link as a web URL).
+    if (/\b[a-z][a-z0-9+.-]*:\/\//i.test(cardSnippet)) {
         const error = new Error('generated card snippet contains a URL — gate cards are plain text and must carry only the index path (2026-10-03 ruling)');
         error.code = 'GATE_CARD_LINK_LEAK';
         throw error;

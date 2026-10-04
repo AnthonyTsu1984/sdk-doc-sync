@@ -41,7 +41,11 @@ const {
 } = require('./versioned-tree-policy');
 const { deriveFolderChainNames } = require('./tree-delta-reconciliation');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
-const { validateResumeSession } = require('./review-session-store');
+const {
+    validateResumeSession,
+    executedUnitIdsOf,
+    rebuildLineageFor,
+} = require('./review-session-store');
 const { compareVerbatimContent, verbatimContentDigest } = require('./verbatim-content');
 
 const VERBATIM_INVARIANT_ID = 'api.pr-verbatim-content';
@@ -66,6 +70,7 @@ function executionSideEffects(plan) {
         case 'REPOINT_CATEGORY_VIRTUAL_NODE': return ['feishu.bitable.update'];
         case 'CREATE': return ['feishu.doc.create', 'feishu.bitable.create'];
         case 'UPDATE_IN_PLACE': return ['feishu.doc.patch', 'feishu.bitable.update'];
+        case 'REBUILD': return ['feishu.doc.patch', 'feishu.bitable.update'];
         case 'UPDATE_RECORD_METADATA': return ['feishu.bitable.update'];
         case 'COPY_PATCH_AND_REPOINT': return ['feishu.drive.copy', 'feishu.doc.patch', 'feishu.bitable.update'];
         case 'DEPRECATE': return ['feishu.bitable.update'];
@@ -558,6 +563,22 @@ class SdkDocSync {
                     : action;
                 if (sessionExecutedDocumentIds?.has(plannableAction.stableId)) {
                     context.reviewSessionExecuted = true;
+                    // Batch 5 REBUILD lineage: the session's changeRequests
+                    // remember every prior execution journal this unit
+                    // replaced (recordDocumentChangesRequested preserves the
+                    // digest); the newest one binds into the REBUILD plan as
+                    // rebuildOf so the receipt cites what it replaced.
+                    const unitIds = new Set(
+                        (this.reviewSession?.reviewUnitManifest?.units || [])
+                            .filter((unit) => unit.documentStableId === plannableAction.stableId)
+                            .map((unit) => unit.reviewUnitId),
+                    );
+                    // Single source (review-session-store): requestedAt-ordered
+                    // change-request digests plus the unit's current pending
+                    // journal (a redo over an unreviewed execution replaces it
+                    // too) — batch 5 review r1 P1-2.
+                    const lineage = rebuildLineageFor(this.reviewSession, unitIds);
+                    if (lineage.length > 0) context.reviewSessionRebuildLineage = lineage;
                 }
                 const plan = this.planner.planAction(plannableAction, context);
                 result.plans.push(plan);
@@ -1753,15 +1774,12 @@ class SdkDocSync {
     _sessionExecutedDocumentIds() {
         const session = this.reviewSession;
         if (!session) return null;
-        const executedUnitIds = new Set(
-            (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId),
-        );
-        const pendings = Array.isArray(session.pendingExecutions)
-            ? session.pendingExecutions
-            : (session.activeExecution ? [session.activeExecution] : []);
-        for (const pending of pendings) {
-            if (pending?.reviewUnitId) executedUnitIds.add(pending.reviewUnitId);
-        }
+        // Single source (review-session-store): accepted ∪ pending ∪
+        // change-requests — a change-request entry is itself machine proof the
+        // campaign executed that unit (batch 5 review r1 P1-1: without it the
+        // changes-requested redo window finds no proof and dies on
+        // REBUILD_SCOPE_FOREIGN / CREATE_RECORD_ALREADY_EXISTS).
+        const executedUnitIds = executedUnitIdsOf(session);
         if (executedUnitIds.size === 0) return null;
         const documentIds = new Set();
         for (const unit of session.reviewUnitManifest?.units || []) {

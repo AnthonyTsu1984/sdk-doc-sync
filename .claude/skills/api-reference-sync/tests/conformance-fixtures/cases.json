@@ -508,5 +508,20 @@
    "cliExit": 1,
    "cliRefused": true
   }
+ },
+ {
+  "id": "rebuild-first-class",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "rebuild-first-class"
+  },
+  "assertions": {
+   "routedAction": "REBUILD",
+   "autoRoutedFrom": "CREATE",
+   "foreignCode": "REBUILD_SCOPE_FOREIGN",
+   "surgicalCode": "REBUILD_STRATEGY_REQUIRED",
+   "lineageBound": true,
+   "linkRecordId": "rec-campaign"
+  }
  }
 ]

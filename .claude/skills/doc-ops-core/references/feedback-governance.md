@@ -9,6 +9,14 @@ Review decisions are evidence, not executable rules. An exact approval authorize
 - Keep candidates, shadow evaluations, and promotion proposals outside active skill instructions until a reviewed Git change promotes them.
 - Redact credential fields and token-like values before persistence.
 
+## Automatic capture (打回即铸, 2026-10-04)
+
+The first mile of the loop is mechanical, not discretionary:
+
+- Session close captures: a two-gate `close-session` (api-reference-sync first) mechanically converts every session change request and every `changes_requested`/`rejected` decision bound to the session into a rule-candidate draft under `tmp/skill-feedback/<skill>/candidates/` (`auto-<digest16>.json`, deterministic and idempotent), or skips it when an explicit suppression with a recorded rationale exists (`record-learning-suppression --event-key <key> --rationale <text>`; the close refuses a suppression matching no derived event). A close with uncaptured events fails closed (`PROCESS_LEARNING_CAPTURE_REQUIRED`); a capture that cannot persist a candidate blocks the close (`PROCESS_LEARNING_CAPTURE_FAILED`). No-text events still become `one-off-exception` candidates ("triage required") — an unrecorded rejection is exactly the silent evaporation this prevents.
+- Runtime refusals are evidence: every typed pre-write refusal at the writer-governance boundary lands in `tmp/invariant-violations.jsonl` as `kind: runtime_refusal` (registered codes keyed by invariant ID, first-seen codes keyed by code — `npm run invariants:violations`). A brand-new refusal code is learning material by definition.
+- Triage stays human: drafts carry provenance (`applicableWhen.derivedFrom`/`eventKey`) and enter the normal lifecycle below; nothing auto-activates.
+
 ## Rule lifecycle
 
 Rules move only through:

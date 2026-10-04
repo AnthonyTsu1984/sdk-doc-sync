@@ -6,6 +6,12 @@ const path = require('node:path');
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { DecisionLedger } = require('../../../doc-ops-core/src/decision-ledger');
 const {
+    LEARNING_DECISION_OUTCOMES,
+    assertSuppressionsKnown,
+    captureLearningCandidates,
+    validateLearningCapture,
+} = require('../../../doc-ops-core/src/process-learning');
+const {
   SAME_STATE,
   SessionStateMachineError,
   defineSessionMachine,
@@ -46,6 +52,10 @@ const REVIEW_MACHINE = defineSessionMachine({
     // (e.g. stock migrated before the ruling) get their finalTargets stamped
     // by the one-time governed backfill.
     recordFinalTargets: { from: ['in_progress'], to: SAME_STATE },
+    // Process-learning suppression (打回即铸): recorded while the session is
+    // still open, it is the explicit "why this rejection is not a rule"
+    // rationale that lets the close skip one learning event's capture.
+    recordLearningSuppression: { from: ['in_progress'], to: SAME_STATE },
   },
 });
 
@@ -756,36 +766,145 @@ function recordFinalTargets(session, { units, stampedAt = new Date().toISOString
   }, { timestamp: stampedAt });
 }
 
-function closeSession(session, { scanStateKey, scanStateEntry, closedAt = new Date().toISOString() } = {}) {
-  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
-  if (acceptanceFlowOf(session) !== 'two-gate') {
-    throw Object.assign(
-      new Error('Legacy sessions close through build-acceptance + APPROVE_ACCEPTANCE; closeSession is the two-gate close'),
-      { code: 'ACCEPTANCE_FLOW_LEGACY' },
-    );
-  }
-  const unfinalized = session.reviewUnitManifest.units
-    .map((unit) => unit.reviewUnitId)
-    .filter((reviewUnitId) => unitStatusOf(session, reviewUnitId) !== 'finalized');
-  if (unfinalized.length > 0) {
-    throw Object.assign(
-      new Error(`Session cannot close: ${unfinalized.length} unit(s) not finalized: ${unfinalized.slice(0, 5).join(', ')}`),
-      { code: 'SESSION_UNITS_NOT_FINALIZED' },
-    );
-  }
-  if (!nonEmptyString(scanStateKey) || !scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
-    throw new Error('scanStateKey and scanStateEntry are required to close the session');
-  }
-  REVIEW_MACHINE.assertTransition('closeSession', session);
-  return REVIEW_MACHINE.apply('closeSession', session, {
-    activeReviewUnitId: null,
-    acceptanceManifest: null,
-    acceptanceManifestDigest: null,
+// Process-learning events (打回即铸, campaign-control §3.5): the operator
+// rejections this session accumulated — every change request recorded in the
+// session plus every changes_requested/rejected decision in the skill's
+// decision ledger bound to this session. Keys are stable so capture, replay,
+// and suppression all address the same event.
+function learningEventsOf(session, { decisions = [] } = {}) {
+    if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+    const events = [];
+    for (const entry of session?.changeRequests || []) {
+        if (!entry?.reviewUnitId) continue;
+        events.push({
+            key: `change-request:${session.sessionId}:${entry.reviewUnitId}:${entry.requestedAt || ''}`,
+            source: 'change-request',
+            sessionId: session.sessionId,
+            reviewUnitId: entry.reviewUnitId,
+            gate: 'DOCUMENT_REVIEW',
+            statement: nonEmptyString(entry.reason) ? entry.reason : null,
+            eventAt: entry.requestedAt || null,
+            decisionDigest: null,
+            durableRuleRequested: false,
+            taskId: null,
+        });
+    }
+    for (const decision of decisions) {
+        if (!decision || decision.sessionId !== session.sessionId) continue;
+        if (!LEARNING_DECISION_OUTCOMES.includes(decision.outcome)) continue;
+        events.push({
+            key: `decision:${decision.decisionId}`,
+            source: 'decision',
+            sessionId: session.sessionId,
+            reviewUnitId: decision.reviewUnitId || null,
+            gate: decision.gate || null,
+            statement: [decision.instruction, decision.rationale].find(nonEmptyString) || null,
+            eventAt: null,
+            decisionDigest: decision.decisionDigest || null,
+            durableRuleRequested: decision.durableRuleRequested === true,
+            taskId: decision.taskId || null,
+        });
+    }
+    return events.sort((left, right) => (
+        left.key < right.key ? -1 : (left.key > right.key ? 1 : 0)
+    ));
+}
+
+// The close-time capture step (run by the CLI before closeSession): derives
+// the session's learning events, writes one rule-candidate draft per event
+// (idempotent) into tmp/skill-feedback/<skill>/candidates/, and returns the
+// report closeSession validates. Suppressions recorded on the session skip
+// their events by key.
+function captureSessionLearnings(session, { repoRoot, decisions = [], capturedAt = null } = {}) {
+    if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+    return captureLearningCandidates({
+        repoRoot,
+        skill: 'api-reference-sync',
+        events: learningEventsOf(session, { decisions }),
+        suppressions: session.learningSuppressions || [],
+        capturedAt,
+    });
+}
+
+// The explicit not-cast rationale: one suppression per learning event, only
+// while the session is open. The close later refuses a suppression whose
+// eventKey matches no derived event (PROCESS_LEARNING_SUPPRESSION_UNKNOWN_EVENT).
+function recordLearningSuppression(session, { eventKey, rationale, suppressedAt = new Date().toISOString() } = {}) {
+    if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+    if (session.scanStateUpdated === true) {
+        throw new Error('A finalized review session no longer accepts learning suppressions');
+    }
+    if (!nonEmptyString(eventKey) || !nonEmptyString(rationale)) {
+        throw Object.assign(
+            new Error('learning suppression requires an eventKey and a non-empty rationale'),
+            { code: 'PROCESS_LEARNING_SUPPRESSION_INVALID' },
+        );
+    }
+    if ((session.learningSuppressions || []).some((entry) => entry.eventKey === eventKey)) {
+        throw Object.assign(
+            new Error(`learning suppression already recorded for ${eventKey}`),
+            { code: 'PROCESS_LEARNING_SUPPRESSION_DUPLICATE' },
+        );
+    }
+    REVIEW_MACHINE.assertTransition('recordLearningSuppression', session);
+    return REVIEW_MACHINE.apply('recordLearningSuppression', session, {
+        learningSuppressions: Object.freeze([...(session.learningSuppressions || []), {
+            eventKey,
+            rationale,
+            suppressedAt,
+        }].sort((left, right) => (
+            left.eventKey < right.eventKey ? -1 : (left.eventKey > right.eventKey ? 1 : 0)
+        ))),
+    }, { timestamp: suppressedAt });
+}
+
+function closeSession(session, {
     scanStateKey,
-    scanStateEntry: clone(scanStateEntry),
-    scanStateUpdated: true,
-    closedAt,
-  }, { timestamp: closedAt });
+    scanStateEntry,
+    closedAt = new Date().toISOString(),
+    learning = null,
+} = {}) {
+    if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+    if (acceptanceFlowOf(session) !== 'two-gate') {
+        throw Object.assign(
+            new Error('Legacy sessions close through build-acceptance + APPROVE_ACCEPTANCE; closeSession is the two-gate close'),
+            { code: 'ACCEPTANCE_FLOW_LEGACY' },
+        );
+    }
+    const unfinalized = session.reviewUnitManifest.units
+        .map((unit) => unit.reviewUnitId)
+        .filter((reviewUnitId) => unitStatusOf(session, reviewUnitId) !== 'finalized');
+    if (unfinalized.length > 0) {
+        throw Object.assign(
+            new Error(`Session cannot close: ${unfinalized.length} unit(s) not finalized: ${unfinalized.slice(0, 5).join(', ')}`),
+            { code: 'SESSION_UNITS_NOT_FINALIZED' },
+        );
+    }
+    if (!nonEmptyString(scanStateKey) || !scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
+        throw new Error('scanStateKey and scanStateEntry are required to close the session');
+    }
+    // Process-learning capture (打回即铸): the close refuses while any
+    // operator rejection from this session would evaporate. Events are
+    // re-derived here from the session plus the caller-supplied decisions and
+    // cross-checked against the capture report the CLI produced — capture is
+    // done before the close so a failure leaves the session open.
+    const learningEvents = learningEventsOf(session, { decisions: learning?.decisions || [] });
+    assertSuppressionsKnown(session.learningSuppressions || [], learningEvents);
+    const learningSummary = validateLearningCapture({
+        report: learningEvents.length > 0 ? learning?.captureReport || null : null,
+        events: learningEvents,
+    });
+    REVIEW_MACHINE.assertTransition('closeSession', session);
+    return REVIEW_MACHINE.apply('closeSession', session, {
+        activeReviewUnitId: null,
+        acceptanceManifest: null,
+        acceptanceManifestDigest: null,
+        scanStateKey,
+        scanStateEntry: clone(scanStateEntry),
+        scanStateUpdated: true,
+        processLearning: learningSummary,
+        closedAt,
+    }, { timestamp: closedAt });
 }
 
 // Batch 5 (review r1 P1-1/P1-2): machine proof a unit is this campaign's
@@ -1324,6 +1443,9 @@ module.exports = {
   recordRollbackIntent,
   prepareDocumentAcceptance,
   recordFinalTargets,
+  recordLearningSuppression,
+  captureSessionLearnings,
+  learningEventsOf,
   saveReviewSession,
   transferUnitCompletion,
   unitStatusOf,

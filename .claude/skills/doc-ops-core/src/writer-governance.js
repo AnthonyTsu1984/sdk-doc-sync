@@ -57,6 +57,26 @@ function defineSealedGetter(instance, name, read) {
     Object.defineProperty(instance, name, { get: read, enumerable: true, configurable: false });
 }
 
+// 6.11 runtime-refusal accounting: every typed pre-write refusal at this
+// boundary is a governance event. Recording goes to the violations ledger
+// (evidence, never a gate — recording cannot change the refusal outcome) and
+// only happens when the governance knows its repoRoot, which the canonical
+// write paths establish by binding the run manifest with one. Pre-bind
+// refusals (no envelope/manifest at all) stay unrecorded: that class is
+// caught by CI admission, not by production pressure signals.
+function recordRuntimeRefusalEvidence(repoRoot, { skill, operation, code, method, target }) {
+    if (!repoRoot) return;
+    try {
+        const { recordRuntimeRefusal } = require('./invariant-violations');
+        recordRuntimeRefusal({
+            repoRoot,
+            code,
+            stage: 'pre-write',
+            detail: { skill, operation: operation || null, method: method || null, target: target ?? null },
+        });
+    } catch { /* ledger recording is evidence, never a gate */ }
+}
+
 class WriterGovernance {
     constructor({ skill, operation }) {
         if (!requireNonEmptyString(skill) || !requireNonEmptyString(operation)) {
@@ -223,7 +243,26 @@ class WriterGovernance {
         return true;
     }
 
-    assertMutationAllowed({ method, target = null } = {}) {
+    // The recording wrapper: run the checks, and every typed refusal on the
+    // way out is accounted to the violations ledger before it propagates.
+    assertMutationAllowed(options = {}) {
+        try {
+            return this.assertMutationAllowedChecked(options);
+        } catch (error) {
+            if (error instanceof WriterGovernanceError && error.code) {
+                recordRuntimeRefusalEvidence(INTERNAL.get(this).runRepoRoot, {
+                    skill: this.skill,
+                    operation: this.operation,
+                    code: error.code,
+                    method: options?.method || null,
+                    target: options?.target ?? null,
+                });
+            }
+            throw error;
+        }
+    }
+
+    assertMutationAllowedChecked({ method, target = null } = {}) {
         if (!this.bound) {
             throw new WriterGovernanceError(
                 'WRITER_ENVELOPE_REQUIRED',

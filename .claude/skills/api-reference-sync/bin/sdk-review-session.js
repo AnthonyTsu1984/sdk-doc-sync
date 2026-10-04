@@ -7,10 +7,13 @@ const path = require('node:path');
 
 const {
   buildSessionAcceptance,
+  captureSessionLearnings,
   closeSession,
+  learningEventsOf,
   loadReviewSessionState,
   migrateSessionToTwoGate,
   recordFinalTargets,
+  recordLearningSuppression,
   TARGETS_FINAL,
   prepareDocumentAcceptance,
   recordAcceptanceFinalization,
@@ -21,6 +24,8 @@ const {
   transferUnitCompletion,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const { DecisionLedger } = require('../../doc-ops-core/src/decision-ledger');
+const { candidateFilePath } = require('../../doc-ops-core/src/process-learning');
 const { normalizedTargetsValue } = require('../src/sdk-doc-sync/record-state');
 const { deriveUnitEvidence } = require('../src/sdk-doc-sync/unit-evidence');
 const { executionTargetsBaseline } = require('../src/sdk-doc-sync/record-state');
@@ -60,6 +65,7 @@ const ARG_SPECS = Object.freeze([
   { flag: '--rationale', key: 'rationale', kind: 'value' },
   { flag: '--scope-hint', key: 'scopeHint', kind: 'json-object' },
   { flag: '--durable-rule-requested', key: 'durableRuleRequested', kind: 'boolean' },
+  { flag: '--event-key', key: 'eventKey', kind: 'value' },
   { flag: '--json', key: 'json', kind: 'boolean' },
 ]);
 const ARG_BY_FLAG = new Map(ARG_SPECS.map((spec) => [spec.flag, spec]));
@@ -105,6 +111,7 @@ const COMMAND_REQUIREMENTS = Object.freeze({
   'request-document-changes': ['reviewUnitId'],
   'close-session': ['scanStateKey', 'scanStateEntry'],
   'record-decision': ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest'],
+  'record-learning-suppression': ['eventKey', 'rationale'],
 });
 
 function requireCommandArgs(args) {
@@ -115,6 +122,17 @@ function requireCommandArgs(args) {
 
 function requireValue(args, name) {
   if (!args[name]) throw new Error(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
+}
+
+// Process-learning material (打回即铸): the skill's decision ledger holds the
+// changes_requested/rejected decisions; a missing ledger simply contributes
+// no decision events (in-session change requests are still captured).
+function loadDecisionLedgerEntries(repoRoot, decisionLedger) {
+  const decisionLedgerPath = decisionLedger
+    ? path.resolve(decisionLedger)
+    : path.join(repoRoot, 'tmp', 'skill-feedback', 'api-reference-sync', 'decisions.jsonl');
+  if (!fs.existsSync(decisionLedgerPath)) return [];
+  return new DecisionLedger({ filePath: decisionLedgerPath }).entries;
 }
 
 function bitableWriterFor(args, io, operation = 'two-gate-migration') {
@@ -683,12 +701,24 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }
   } else if (args.command === 'close-session') {
     // Two-gate close: the campaign-level acceptance gate is retired; the
-    // close runs only when EVERY unit finalized (guarded in the store).
+    // close runs only when EVERY unit finalized (guarded in the store). The
+    // close also runs the process-learning capture (打回即铸): every change
+    // request and operator rejection becomes a rule-candidate draft — or an
+    // explicitly suppressed event — before the session may close; capture
+    // failures leave the session open (fail-closed in closeSession).
     const io = {};
     requireCommandArgs(args); // COMMAND_REQUIREMENTS: close-session
     const scanStateEntry = JSON.parse(readFile(path.resolve(args.scanStateEntry)));
     if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
       throw new Error('--scan-state-entry must point at a JSON object file');
+    }
+    const repoRoot = dependencies.repoRoot || path.resolve(__dirname, '..', '..', '..', '..');
+    const decisions = loadDecisionLedgerEntries(repoRoot, args.decisionLedger);
+    const learningEvents = learningEventsOf(session, { decisions });
+    let captureReport = null;
+    if (learningEvents.length > 0) {
+      captureReport = captureSessionLearnings(session, { repoRoot, decisions });
+      out(`Process learning captured: ${captureReport.captured.length} candidate(s) written, ${captureReport.suppressed.length} suppressed — ${captureReport.candidatesDir}`);
     }
     const scanStatePath = path.resolve(args.scanState || path.join(__dirname, '..', 'scan-state.json'));
     let previousScanState = {};
@@ -697,7 +727,11 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     } catch {
       previousScanState = {};
     }
-    session = closeSession(session, { scanStateKey: args.scanStateKey, scanStateEntry });
+    session = closeSession(session, {
+      scanStateKey: args.scanStateKey,
+      scanStateEntry,
+      learning: { decisions, captureReport },
+    });
     // Scan state advances before the session save: a crash here is recovered
     // by rerunning close-session (the merge is idempotent), while the reverse
     // order would strand a finalized session over an un-advanced scan state.
@@ -735,8 +769,35 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       durableRuleRequested: args.durableRuleRequested === true,
     });
     out(`Recorded governed decision: ${decision.decisionDigest}`);
+  } else if (args.command === 'list-learning-events') {
+    // Process-learning triage aid (打回即铸): lists every learning event the
+    // close would have to capture, with its capture/suppression status, so
+    // the operator can pick the eventKey to suppress with a rationale.
+    const repoRoot = dependencies.repoRoot || path.resolve(__dirname, '..', '..', '..', '..');
+    const decisions = loadDecisionLedgerEntries(repoRoot, args.decisionLedger);
+    const events = learningEventsOf(session, { decisions });
+    const suppressedKeys = new Set((session.learningSuppressions || []).map((entry) => entry.eventKey));
+    if (events.length === 0) {
+      out('No learning events: no change requests and no changes_requested/rejected decisions bound to this session.');
+    }
+    for (const event of events) {
+      const captured = fs.existsSync(candidateFilePath(repoRoot, 'api-reference-sync', event));
+      const flags = [event.source];
+      if (captured) flags.push('captured');
+      if (suppressedKeys.has(event.key)) flags.push('suppressed');
+      out(`- [${flags.join(', ')}] ${event.key}`);
+      out(`  ${event.statement ? event.statement.slice(0, 160) : '(no reason recorded)'}`);
+    }
+  } else if (args.command === 'record-learning-suppression') {
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: record-learning-suppression
+    session = recordLearningSuppression(session, {
+      eventKey: args.eventKey,
+      rationale: args.rationale,
+    });
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+    out(`Learning suppression recorded: ${args.eventKey}`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, list-learning-events, record-learning-suppression, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

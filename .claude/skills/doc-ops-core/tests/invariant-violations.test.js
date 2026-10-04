@@ -37,10 +37,21 @@ test('violations ledger records and summarizes by invariant ID', () => {
 
 test('an empty repo has an empty summary and a corrupt ledger refuses typed', () => {
     const root = tempRoot();
-    assert.deepEqual(summarizeInvariantViolations(root), { schemaVersion: 1, total: 0, invariants: [] });
+    assert.deepEqual(summarizeInvariantViolations(root), { schemaVersion: 1, total: 0, byKind: {}, invariants: [] });
 
     const ledger = path.join(root, 'tmp', 'invariant-violations.jsonl');
     fs.mkdirSync(path.dirname(ledger), { recursive: true });
     fs.writeFileSync(ledger, '{"invariantId": "a"\n');
     assert.throws(() => readInvariantViolations(root), (error) => error.code === 'INVARIANT_VIOLATIONS_LEDGER_INVALID');
+});
+
+test('legacy lines without a kind read back as waiver refusals', () => {
+    const root = tempRoot();
+    const ledger = path.join(root, 'tmp', 'invariant-violations.jsonl');
+    fs.mkdirSync(path.dirname(ledger), { recursive: true });
+    fs.writeFileSync(ledger, `${JSON.stringify({ schemaVersion: 1, invariantId: 'api.x', code: 'X', stage: 'evidence', detail: null, at: '2026-10-04T00:00:00.000Z' })}\n`);
+    const [event] = readInvariantViolations(root);
+    assert.equal(event.kind, 'waiver_refusal');
+    const summary = summarizeInvariantViolations(root);
+    assert.deepEqual(summary.byKind, { waiver_refusal: 1 });
 });

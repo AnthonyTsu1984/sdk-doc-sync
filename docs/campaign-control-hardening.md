@@ -1,7 +1,7 @@
 # 战役控制力补强设计：三类巡检 + 写时门 + 语义动作
 
 日期：2026-10-03
-状态：设计提案（待评审，未实施）
+状态：批1–6 已合并（#82/#83/#85/#86/#87/#88/#89/#90）；**批7 = §3.5/§3.7 铁律一的会话侧落地**（2026-10-04，process-learning capture：close-session 打回即铸硬校验 + runtime 拒绝接入 violation ledger + rule-candidate 自动捕获；仓库级评审规则成文于 docs/review-checklist.md）。
 输入：2026-10-03 两份战役复盘（机制模型 V1/V2 + J1–J7 五缺口；巡检模型"三类巡检缺失"）、既有补强清单 ①–⑨（本文取代，对账见 §9）、代码实况核查、外部实践调研。
 本文取代 backlog 中的补强清单 ①–⑨，作为唯一路线图。
 
@@ -81,6 +81,8 @@ sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10
 ### 3.5 打回即铸 fixture（成文规则）
 
 人工评审打下的每一类缺陷 → 当 PR 内反例 fixture + 规则/runbook，PR 才算清偿。写入 SKILL.md 评审节 + 本仓评审检查单。
+
+**落地（2026-10-04，批7）**：SKILL.md `api.process-learning-capture` invariant（registry+fixture 三件套）；仓库级检查单 = `docs/review-checklist.md`；close-session 侧的硬校验 = 每个 change-request / changes_requested / rejected 决策必须落 rule-candidate 草稿（`tmp/skill-feedback/<skill>/candidates/`）或显式抑制（`record-learning-suppression`，rationale 必填），未捕获事件使 close fail-closed（`PROCESS_LEARNING_CAPTURE_REQUIRED`）；writer-governance 的 typed 拒绝同批接入 violation ledger（`kind: runtime_refusal`），§3.7 铁律一的"操作员拒绝机器可查规则"自此有自动记账面。
 
 ### 3.6 Intake 内容/结构预检脚本（批1 交付物之二，2026-10-03 报告三并入）
 

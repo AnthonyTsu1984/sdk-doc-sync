@@ -108,6 +108,48 @@ test('record-decision appends feedback but leaves the persisted session byte-ide
   assert.doesNotMatch(stdout.join('\n'), /APPROVE_|PROPOSE_RULE/);
 });
 
+test('argument vocabulary is data-driven: unknown flags fail loudly and required flags name themselves at construction (batch 6)', async () => {
+  // Unknown/incomplete flags keep the exact error shape the chain produced
+  assert.throws(() => parseArgs(['node', 'cli', 'status', '--nonexistent']), /Unknown or incomplete argument: --nonexistent/);
+  assert.throws(() => parseArgs(['node', 'cli', 'status', '--session']), /Unknown or incomplete argument: --session/);
+
+  const args = parseArgs([
+    'node', 'cli', 'accept-document',
+    '--document-link', 'https://host/a', '--record-link', 'https://host/b',
+    '--document-link', 'https://host/c',
+    '--comments-resolved', '--json',
+  ]);
+  assert.deepEqual(args.documentLinks, ['https://host/a', 'https://host/c']);
+  assert.deepEqual(args.recordLinks, ['https://host/b']);
+  assert.equal(args.commentsResolved, true);
+  assert.equal(args.json, true);
+
+  // A missing required flag names itself at construction time (J5-d): the
+  // accept-document command over a REAL session missing --execution-journal
+  // fails with the flag named, before any journal/receipt interpretation.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-cli-req-'));
+  const sessionPath = path.join(directory, 'session.json');
+  saveReviewSession(sessionPath, createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:req',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), { expectedPreviousDigest: null });
+  await assert.rejects(
+    () => runCli({
+      argv: [
+        'node', 'sdk-review-session', 'accept-document',
+        '--session', sessionPath,
+        '--review-unit-id', 'review:node:Collections:a',
+        '--touched-records', path.join(directory, 'touched.json'),
+      ],
+      dependencies: { onStdout: () => {} },
+    }),
+    (error) => /--execution-journal is required/.test(error.message),
+  );
+});
+
 test('review-session CLI persists a journal-derived receipt and builds final acceptance', async () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-cli-'));
   const sessionPath = path.join(directory, 'session.json');

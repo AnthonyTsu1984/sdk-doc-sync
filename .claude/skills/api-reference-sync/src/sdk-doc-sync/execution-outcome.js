@@ -58,6 +58,4 @@ function interpretExecutionOutcome(executionResult) {
 
 module.exports = {
     interpretExecutionOutcome,
-    MUTATING_STATUSES,
-    SUCCESS_STATUSES,
 };

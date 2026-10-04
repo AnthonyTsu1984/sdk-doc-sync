@@ -82,10 +82,10 @@ function parseArgs(argv) {
       try {
         args[spec.key] = JSON.parse(source);
       } catch (error) {
-        throw new Error(`--scope-hint must be a JSON object: ${error.message}`);
+        throw new Error(`${spec.flag} must be a JSON object: ${error.message}`);
       }
       if (!args[spec.key] || Array.isArray(args[spec.key]) || typeof args[spec.key] !== 'object') {
-        throw new Error('--scope-hint must be a JSON object');
+        throw new Error(`${spec.flag} must be a JSON object`);
       }
     } else {
       args[spec.key] = source;
@@ -99,7 +99,9 @@ function parseArgs(argv) {
 // (base-token-or-io, comments-resolved) keep those inline right after.
 const COMMAND_REQUIREMENTS = Object.freeze({
   'transfer-unit-completion': ['session', 'reviewUnitId', 'externalReceipt', 'touchedRecords', 'baseToken'],
-  'accept-document': ['session', 'reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords'],
+  // --session is enforced globally in runCli for every command; per-command
+  // lists carry only their own flags.
+  'accept-document': ['reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords'],
   'request-document-changes': ['reviewUnitId'],
   'close-session': ['scanStateKey', 'scanStateEntry'],
   'record-decision': ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest'],
@@ -526,7 +528,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 
   if (args.command === 'migrate-to-two-gate') {
     requireValue(args, 'session');
-    if (!args.baseToken && !io.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
+    // runCli has no injectable io at this point; the migration CLI path never
+    // injects a writer, so gate on the flag alone (batch 6 review r1 P2 —
+    // the old !io.bitableWriter short-circuit crashed as ReferenceError).
+    if (!args.baseToken) throw new Error('--base-token is required (with optional --table-id)');
     const result = await runMigration({ session, sessionPath, sessionDigest, args, io: {}, out });
     if (result.dryRun) return { session, summary: status(session, sessionPath) };
     const summary = status(result.session, sessionPath);

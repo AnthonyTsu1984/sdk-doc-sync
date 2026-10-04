@@ -12,6 +12,7 @@ const {
   validateReleasePlacement,
 } = require('../src/sdk-doc-sync/sdk-organization-contract');
 const { validateInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
+const { normalizeReferenceMultiset } = require('../src/sdk-doc-sync/reference-multiset');
 
 const SDK_REFERENCE_BY_LANGUAGE = {
   cpp: 'sdk-cpp.md',
@@ -517,8 +518,10 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
   }
   // Typo'd attributions (records outside the reference multiset) would
   // otherwise never surface directly — fail closed naming them so the spec
-  // gets fixed instead of silently no-oping.
-  const referenceSet = new Set((evidence.sharedToken.referencedRecordIds || []).filter(Boolean));
+  // gets fixed instead of silently no-oping. The multiset is normalized
+  // through the shared semantics module (batch 4c single source of truth).
+  const referenceMultiset = normalizeReferenceMultiset(evidence.sharedToken.referencedRecordIds);
+  const referenceSet = new Set(referenceMultiset);
   const extras = [...byRecordId.keys()].filter((recordId) => !referenceSet.has(recordId));
   if (extras.length > 0) {
     throw reviewedContextError(
@@ -528,7 +531,13 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
   }
   const reviews = [];
   const seen = new Set();
-  for (const recordId of evidence.sharedToken.referencedRecordIds || []) {
+  for (const recordId of referenceMultiset) {
+    // Clone-ID blind spot (inherited, documented): reviews are keyed by
+    // recordId, so an occurrence whose id equals evidence.current.recordId is
+    // skipped even when it is a CLONED sibling in another base — review
+    // attribution cannot tell a cloned pair apart. The executor's post-write
+    // multiset check still counts every occurrence, so reference COUNTS stay
+    // locked; only per-occurrence review coverage has this gap.
     if (!recordId || recordId === evidence.current?.recordId || seen.has(recordId)) continue;
     seen.add(recordId);
     const successor = byRecordId.get(recordId);

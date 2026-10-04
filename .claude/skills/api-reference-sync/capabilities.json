@@ -218,6 +218,13 @@
         "productionEntrypoint": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
         "focusedTest": ".claude/skills/api-reference-sync/tests/fault-injection.test.js",
         "journalRequiredForWrites": true
+      },
+      {
+        "operation": "placement-audit",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
+        "focusedTest": ".claude/skills/api-reference-sync/tests/reference-multiset.test.js",
+        "journalRequiredForWrites": false
       }
     ]
   }

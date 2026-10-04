@@ -224,6 +224,12 @@ function allowed(decision, { inputDigest, evidenceDigest = null, requiredResourc
 // successor record still points at the shared document, so batch ordering is
 // structurally enforced. Shared with the executor's pre-write revalidation.
 function validateSharedUpdateReviews(reviews, { referencedRecordIds, sourceRecordId }) {
+  // Clone-ID blind spot (inherited, documented): classification coverage is
+  // keyed by recordId, so a CLONED sibling occurrence sharing sourceRecordId
+  // in another base is filtered out here and escapes review attribution —
+  // the executor's post-write multiset check still counts every occurrence,
+  // so reference counts stay locked; only per-occurrence review coverage has
+  // this gap.
   const others = [...new Set(referencedRecordIds.filter((id) => id !== sourceRecordId))];
   const blocked = (detail) => ({ ok: false, code: BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED, detail });
   if (!Array.isArray(reviews) || reviews.length === 0) {

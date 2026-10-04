@@ -90,6 +90,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/docx-reader.test.js',
     '.claude/skills/api-reference-sync/tests/docx-section-patcher.test.js',
     '.claude/skills/api-reference-sync/tests/evidence-manifest.test.js',
+    '.claude/skills/api-reference-sync/tests/execution-outcome.test.js',
     '.claude/skills/api-reference-sync/tests/fault-injection.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',

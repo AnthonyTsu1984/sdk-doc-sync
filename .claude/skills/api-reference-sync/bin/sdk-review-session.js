@@ -25,52 +25,92 @@ const { normalizedTargetsValue } = require('../src/sdk-doc-sync/record-state');
 const { deriveUnitEvidence } = require('../src/sdk-doc-sync/unit-evidence');
 const { executionTargetsBaseline } = require('../src/sdk-doc-sync/record-state');
 
+// Campaign-control hardening batch 6 (J5-d): the argument vocabulary is DATA,
+// not a hand-grown if/else chain — the spec table drives parsing, unknown
+// flags still fail loudly, and per-command required flags live in
+// COMMAND_REQUIREMENTS below so a missing --base-token class defect dies at
+// construction with the flag named.
+const ARG_SPECS = Object.freeze([
+  { flag: '--session', key: 'session', kind: 'value' },
+  { flag: '--review-unit-id', key: 'reviewUnitId', kind: 'value' },
+  { flag: '--reason', key: 'reason', kind: 'value' },
+  { flag: '--execution-journal', key: 'executionJournal', kind: 'value' },
+  { flag: '--execution-journal-digest', key: 'executionJournalDigest', kind: 'value' },
+  { flag: '--touched-records', key: 'touchedRecords', kind: 'value' },
+  { flag: '--document-link', key: 'documentLinks', kind: 'multi' },
+  { flag: '--record-link', key: 'recordLinks', kind: 'multi' },
+  { flag: '--comments-resolved', key: 'commentsResolved', kind: 'boolean' },
+  { flag: '--approve-digest', key: 'approveDigest', kind: 'value' },
+  { flag: '--external-receipt', key: 'externalReceipt', kind: 'value' },
+  { flag: '--base-token', key: 'baseToken', kind: 'value' },
+  { flag: '--table-id', key: 'tableId', kind: 'value' },
+  { flag: '--scan-state', key: 'scanState', kind: 'value' },
+  { flag: '--scan-state-key', key: 'scanStateKey', kind: 'value' },
+  { flag: '--scan-state-entry', key: 'scanStateEntry', kind: 'value' },
+  { flag: '--acceptance-journal', key: 'acceptanceJournal', kind: 'value' },
+  { flag: '--acceptance-journal-digest', key: 'acceptanceJournalDigest', kind: 'value' },
+  { flag: '--decision-ledger', key: 'decisionLedger', kind: 'value' },
+  { flag: '--decision-id', key: 'decisionId', kind: 'value' },
+  { flag: '--gate', key: 'gate', kind: 'value' },
+  { flag: '--outcome', key: 'outcome', kind: 'value' },
+  { flag: '--task-id', key: 'taskId', kind: 'value' },
+  { flag: '--proposal-digest', key: 'proposalDigest', kind: 'value' },
+  { flag: '--result-digest', key: 'resultDigest', kind: 'value' },
+  { flag: '--instruction', key: 'instruction', kind: 'value' },
+  { flag: '--rationale', key: 'rationale', kind: 'value' },
+  { flag: '--scope-hint', key: 'scopeHint', kind: 'json-object' },
+  { flag: '--durable-rule-requested', key: 'durableRuleRequested', kind: 'boolean' },
+  { flag: '--json', key: 'json', kind: 'boolean' },
+]);
+const ARG_BY_FLAG = new Map(ARG_SPECS.map((spec) => [spec.flag, spec]));
+
 function parseArgs(argv) {
   const args = { command: argv[2] || null, documentLinks: [], recordLinks: [] };
   for (let index = 3; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === '--session' && argv[index + 1]) args.session = argv[++index];
-    else if (argument === '--review-unit-id' && argv[index + 1]) args.reviewUnitId = argv[++index];
-    else if (argument === '--reason' && argv[index + 1]) args.reason = argv[++index];
-    else if (argument === '--execution-journal' && argv[index + 1]) args.executionJournal = argv[++index];
-    else if (argument === '--execution-journal-digest' && argv[index + 1]) args.executionJournalDigest = argv[++index];
-    else if (argument === '--touched-records' && argv[index + 1]) args.touchedRecords = argv[++index];
-    else if (argument === '--document-link' && argv[index + 1]) args.documentLinks.push(argv[++index]);
-    else if (argument === '--record-link' && argv[index + 1]) args.recordLinks.push(argv[++index]);
-    else if (argument === '--comments-resolved') args.commentsResolved = true;
-    else if (argument === '--approve-digest' && argv[index + 1]) args.approveDigest = argv[++index];
-    else if (argument === '--external-receipt' && argv[index + 1]) args.externalReceipt = argv[++index];
-    else if (argument === '--base-token' && argv[index + 1]) args.baseToken = argv[++index];
-    else if (argument === '--table-id' && argv[index + 1]) args.tableId = argv[++index];
-    else if (argument === '--scan-state' && argv[index + 1]) args.scanState = argv[++index];
-    else if (argument === '--scan-state-key' && argv[index + 1]) args.scanStateKey = argv[++index];
-    else if (argument === '--scan-state-entry' && argv[index + 1]) args.scanStateEntry = argv[++index];
-    else if (argument === '--acceptance-journal' && argv[index + 1]) args.acceptanceJournal = argv[++index];
-    else if (argument === '--acceptance-journal-digest' && argv[index + 1]) args.acceptanceJournalDigest = argv[++index];
-    else if (argument === '--decision-ledger' && argv[index + 1]) args.decisionLedger = argv[++index];
-    else if (argument === '--decision-id' && argv[index + 1]) args.decisionId = argv[++index];
-    else if (argument === '--gate' && argv[index + 1]) args.gate = argv[++index];
-    else if (argument === '--outcome' && argv[index + 1]) args.outcome = argv[++index];
-    else if (argument === '--task-id' && argv[index + 1]) args.taskId = argv[++index];
-    else if (argument === '--proposal-digest' && argv[index + 1]) args.proposalDigest = argv[++index];
-    else if (argument === '--result-digest' && argv[index + 1]) args.resultDigest = argv[++index];
-    else if (argument === '--instruction' && argv[index + 1]) args.instruction = argv[++index];
-    else if (argument === '--rationale' && argv[index + 1]) args.rationale = argv[++index];
-    else if (argument === '--scope-hint' && argv[index + 1]) {
-      const source = argv[++index];
+    const spec = ARG_BY_FLAG.get(argument);
+    if (!spec) throw new Error(`Unknown or incomplete argument: ${argument}`);
+    if (spec.kind === 'boolean') {
+      args[spec.key] = true;
+      continue;
+    }
+    const source = argv[++index];
+    if (!source) throw new Error(`Unknown or incomplete argument: ${argument}`);
+    if (spec.kind === 'multi') {
+      args[spec.key].push(source);
+    } else if (spec.kind === 'json-object') {
       try {
-        args.scopeHint = JSON.parse(source);
+        args[spec.key] = JSON.parse(source);
       } catch (error) {
-        throw new Error(`--scope-hint must be a JSON object: ${error.message}`);
+        throw new Error(`${spec.flag} must be a JSON object: ${error.message}`);
       }
-      if (!args.scopeHint || Array.isArray(args.scopeHint) || typeof args.scopeHint !== 'object') {
-        throw new Error('--scope-hint must be a JSON object');
+      if (!args[spec.key] || Array.isArray(args[spec.key]) || typeof args[spec.key] !== 'object') {
+        throw new Error(`${spec.flag} must be a JSON object`);
       }
-    } else if (argument === '--durable-rule-requested') args.durableRuleRequested = true;
-    else if (argument === '--json') args.json = true;
-    else throw new Error(`Unknown or incomplete argument: ${argument}`);
+    } else {
+      args[spec.key] = source;
+    }
   }
   return args;
+}
+
+// Per-command required flags as data (batch 6, J5-d): the construction-time
+// check names the missing flag; commands with bespoke extra validations
+// (base-token-or-io, comments-resolved) keep those inline right after.
+const COMMAND_REQUIREMENTS = Object.freeze({
+  'transfer-unit-completion': ['session', 'reviewUnitId', 'externalReceipt', 'touchedRecords', 'baseToken'],
+  // --session is enforced globally in runCli for every command; per-command
+  // lists carry only their own flags.
+  'accept-document': ['reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords'],
+  'request-document-changes': ['reviewUnitId'],
+  'close-session': ['scanStateKey', 'scanStateEntry'],
+  'record-decision': ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest'],
+});
+
+function requireCommandArgs(args) {
+  const required = COMMAND_REQUIREMENTS[args.command];
+  if (!required) return;
+  for (const name of required) requireValue(args, name);
 }
 
 function requireValue(args, name) {
@@ -488,7 +528,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 
   if (args.command === 'migrate-to-two-gate') {
     requireValue(args, 'session');
-    if (!args.baseToken && !io.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
+    // runCli has no injectable io at this point; the migration CLI path never
+    // injects a writer, so gate on the flag alone (batch 6 review r1 P2 —
+    // the old !io.bitableWriter short-circuit crashed as ReferenceError).
+    if (!args.baseToken) throw new Error('--base-token is required (with optional --table-id)');
     const result = await runMigration({ session, sessionPath, sessionDigest, args, io: {}, out });
     if (result.dryRun) return { session, summary: status(session, sessionPath) };
     const summary = status(result.session, sessionPath);
@@ -497,9 +540,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   if (args.command === 'transfer-unit-completion') {
-    for (const required of ['session', 'reviewUnitId', 'externalReceipt', 'touchedRecords', 'baseToken']) {
-      requireValue(args, required);
-    }
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: transfer-unit-completion
     const result = await runTransfer({ session, sessionPath, sessionDigest, args, io: {}, out });
     const summary = status(result.session, sessionPath);
     if (args.json) out(JSON.stringify(summary, null, 2));
@@ -597,9 +638,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   if (args.command === 'request-document-changes') {
-    for (const required of ['reviewUnitId']) {
-      requireValue(args, required);
-    }
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: request-document-changes
     session = recordDocumentChangesRequested(session, {
       reviewUnitId: args.reviewUnitId,
       reason: args.reason || null,
@@ -613,9 +652,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   if (args.command === 'accept-document') {
-    for (const required of ['reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords']) {
-      requireValue(args, required);
-    }
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: accept-document
     if (args.commentsResolved !== true) throw new Error('--comments-resolved is required');
     const touchedRecords = JSON.parse(readFile(path.resolve(args.touchedRecords)));
     const receipt = {
@@ -648,9 +685,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // Two-gate close: the campaign-level acceptance gate is retired; the
     // close runs only when EVERY unit finalized (guarded in the store).
     const io = {};
-    for (const required of ['scanStateKey', 'scanStateEntry']) {
-      requireValue(args, required);
-    }
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: close-session
     const scanStateEntry = JSON.parse(readFile(path.resolve(args.scanStateEntry)));
     if (!scanStateEntry || typeof scanStateEntry !== 'object' || Array.isArray(scanStateEntry)) {
       throw new Error('--scan-state-entry must point at a JSON object file');
@@ -684,9 +719,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
   } else if (args.command === 'record-decision') {
-    for (const required of ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest']) {
-      requireValue(args, required);
-    }
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: record-decision
     const decision = recordReviewDecision(session, {
       decisionLedgerPath: path.resolve(args.decisionLedger),
       decisionId: args.decisionId,

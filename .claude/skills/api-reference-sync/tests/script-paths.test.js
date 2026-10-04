@@ -122,6 +122,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/release-scope.test.js',
     '.claude/skills/api-reference-sync/tests/release-scout-cli.test.js',
     '.claude/skills/api-reference-sync/tests/release-track-registry.test.js',
+    '.claude/skills/api-reference-sync/tests/repair-java-topology.test.js',
     '.claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js',
     '.claude/skills/api-reference-sync/tests/rest-control-plane-reconcile.test.js',
     '.claude/skills/api-reference-sync/tests/rest-control-plane-review.test.js',

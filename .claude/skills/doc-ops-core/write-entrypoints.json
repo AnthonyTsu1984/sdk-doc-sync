@@ -280,7 +280,7 @@
       "skill": "api-reference-sync",
       "classification": "canonical-governed",
       "operation": "repair-java-topology",
-      "basis": "Docs-field text repair + drive folder/doc moves + folder create + Bitable record Type fills for the 2026-10-04 topology disposition; plan-digest + --approve-batch-digest approval gate + live per-action read-after-write verification + journal",
+      "basis": "Docs-field text repair + drive folder/doc moves + folder create + Bitable record Type fills for the 2026-10-04 topology disposition; parts E/F add the Collections/Function anchor move and governed CONTENT writes (MarkdownToFeishu.push_markdown under WriterGovernance bound to the plan digest + run manifest, round-trip-verified with rollback); plan-digest + --approve-batch-digest approval gate + live per-action read-after-write verification + journal",
       "journal": "required",
       "reconciliation": "plan-digest-journal",
       "tests": [

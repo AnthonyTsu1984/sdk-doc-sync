@@ -126,11 +126,10 @@ function buildInvariantCodeIndex(repoRoot) {
                     index.set(code, ids);
                 }
             }
-        }
     }
-    const frozen = Object.freeze(index);
-    CODE_INDEX_CACHE.set(repoRoot, frozen);
-    return frozen;
+  }
+  CODE_INDEX_CACHE.set(repoRoot, index);
+  return index;
 }
 
 // Records a typed runtime enforcement refusal. Resolution against the skills'

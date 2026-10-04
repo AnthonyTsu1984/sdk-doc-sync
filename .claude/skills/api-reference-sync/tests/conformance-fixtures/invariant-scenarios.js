@@ -1922,7 +1922,7 @@ scenarios['process-learning-close-refused-uncaptured'] = () => {
     closeSession(session, {
       scanStateKey: 'node',
       scanStateEntry: { lastScannedTag: 'v1' },
-      learning: { decisions: [], captureReport: null },
+      learning: { decisions: [], captureReport: null, repoRoot: plTempDir('pl-repo-') },
     });
   } catch (error) {
     refusalCode = error.code;
@@ -1939,7 +1939,7 @@ scenarios['process-learning-change-request-captured'] = () => {
   const closed = closeSession(session, {
     scanStateKey: 'node',
     scanStateEntry: { lastScannedTag: 'v1' },
-    learning: { decisions: [], captureReport: report },
+    learning: { decisions: [], captureReport: report, repoRoot },
   });
   return {
     eventCount: report.captured.length + report.suppressed.length,
@@ -1976,7 +1976,7 @@ scenarios['process-learning-suppression-recorded'] = () => {
   const { DecisionLedger } = require('../../../doc-ops-core/src/decision-ledger');
   const decisions = new DecisionLedger({ filePath: decisionLedgerPath }).entries;
   session = recordLearningSuppression(session, {
-    eventKey: 'decision:decision-pl-suppression',
+    eventKey: 'decision:sdk-doc-sync:test:process-learning-suppression:decision-pl-suppression',
     rationale: 'Not a rule: rejection restated the style-mirror allowlist invariant, already enforced',
   });
   const repoRoot = plTempDir('pl-repo-');
@@ -1984,7 +1984,7 @@ scenarios['process-learning-suppression-recorded'] = () => {
   const closed = closeSession(session, {
     scanStateKey: 'node',
     scanStateEntry: { lastScannedTag: 'v1' },
-    learning: { decisions, captureReport: report },
+    learning: { decisions, captureReport: report, repoRoot },
   });
   return {
     capturedCandidateCount: report.captured.length,

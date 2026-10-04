@@ -232,8 +232,11 @@ function assertSuppressionsKnown(suppressions, events) {
 // Validates a capture report against the re-derived events: every event is
 // either captured (candidate on record) or explicitly suppressed. Used by
 // the session close, which re-derives events itself and trusts only reports
-// that cover them completely.
-function validateLearningCapture({ report, events }) {
+// that cover them completely — the report is caller-produced evidence, so
+// every captured entry must name the event's DETERMINISTIC candidate id, and
+// a repoRoot makes the close verify the candidate file is actually on disk
+// (a hand-written report cannot fake capture).
+function validateLearningCapture({ report, events, repoRoot = null, skill = null } = {}) {
     const eventKeys = events.map((event) => learningEventKey(event));
     if (eventKeys.length === 0) {
         return { eventCount: 0, capturedCandidateIds: [], suppressedEventKeys: [], candidatesDir: null };
@@ -245,7 +248,23 @@ function validateLearningCapture({ report, events }) {
             { eventKeys: eventKeys.slice(0, 5) },
         );
     }
-    const capturedKeys = new Set(report.captured.map((entry) => entry?.eventKey));
+    for (const entry of report.captured) {
+        if (!nonEmptyString(entry?.eventKey) || !nonEmptyString(entry?.candidateId)) {
+            throw new ProcessLearningError(
+                'PROCESS_LEARNING_CAPTURE_INVALID',
+                'every captured report entry requires eventKey and candidateId',
+                { eventKey: entry?.eventKey || null },
+            );
+        }
+        if (entry.candidateId !== candidateIdForEvent({ key: entry.eventKey, source: 'decision' })) {
+            throw new ProcessLearningError(
+                'PROCESS_LEARNING_CAPTURE_INVALID',
+                `candidateId for ${entry.eventKey} is not the deterministic id of that event`,
+                { eventKey: entry.eventKey, candidateId: entry.candidateId },
+            );
+        }
+    }
+    const capturedKeys = new Set(report.captured.map((entry) => entry.eventKey));
     const suppressedKeys = new Set(report.suppressed);
     const missing = eventKeys.filter((key) => !capturedKeys.has(key) && !suppressedKeys.has(key));
     if (missing.length > 0) {
@@ -255,13 +274,24 @@ function validateLearningCapture({ report, events }) {
             { missing: missing.slice(0, 5) },
         );
     }
-    const capturedCandidateIds = report.captured
-        .filter((entry) => missing.indexOf(entry?.eventKey) === -1)
-        .map((entry) => entry.candidateId)
-        .sort();
+    // Entries the report captured for events this session never derived must
+    // not leak into the close stamp — only derived events count.
+    const derivedCaptured = report.captured.filter((entry) => eventKeys.indexOf(entry.eventKey) !== -1);
+    if (repoRoot && skill) {
+        for (const entry of derivedCaptured) {
+            const filePath = candidateFilePath(repoRoot, skill, { key: entry.eventKey, source: 'decision' });
+            if (!fs.existsSync(filePath)) {
+                throw new ProcessLearningError(
+                    'PROCESS_LEARNING_CAPTURE_REQUIRED',
+                    `candidate for ${entry.eventKey} is not on record under the skill feedback tree (${filePath})`,
+                    { eventKey: entry.eventKey },
+                );
+            }
+        }
+    }
     return {
         eventCount: eventKeys.length,
-        capturedCandidateIds,
+        capturedCandidateIds: derivedCaptured.map((entry) => entry.candidateId).sort(),
         suppressedEventKeys: [...suppressedKeys].sort(),
         candidatesDir: report.candidatesDir || null,
     };

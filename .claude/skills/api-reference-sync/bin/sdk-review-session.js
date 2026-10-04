@@ -22,6 +22,7 @@ const {
   recordReviewDecision,
   saveReviewSession,
   transferUnitCompletion,
+  unitStatusOf,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const { DecisionLedger } = require('../../doc-ops-core/src/decision-ledger');
@@ -125,14 +126,15 @@ function requireValue(args, name) {
 }
 
 // Process-learning material (打回即铸): the skill's decision ledger holds the
-// changes_requested/rejected decisions; a missing ledger simply contributes
-// no decision events (in-session change requests are still captured).
-function loadDecisionLedgerEntries(repoRoot, decisionLedger) {
+// changes_requested/rejected decisions. A missing ledger contributes no
+// decision events (in-session change requests are still captured) — the
+// caller surfaces that explicitly instead of silently deriving zero.
+function loadDecisionLedger(repoRoot, decisionLedger) {
   const decisionLedgerPath = decisionLedger
     ? path.resolve(decisionLedger)
     : path.join(repoRoot, 'tmp', 'skill-feedback', 'api-reference-sync', 'decisions.jsonl');
-  if (!fs.existsSync(decisionLedgerPath)) return [];
-  return new DecisionLedger({ filePath: decisionLedgerPath }).entries;
+  if (!fs.existsSync(decisionLedgerPath)) return { entries: [], path: decisionLedgerPath, found: false };
+  return { entries: new DecisionLedger({ filePath: decisionLedgerPath }).entries, path: decisionLedgerPath, found: true };
 }
 
 function bitableWriterFor(args, io, operation = 'two-gate-migration') {
@@ -713,12 +715,23 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       throw new Error('--scan-state-entry must point at a JSON object file');
     }
     const repoRoot = dependencies.repoRoot || path.resolve(__dirname, '..', '..', '..', '..');
-    const decisions = loadDecisionLedgerEntries(repoRoot, args.decisionLedger);
+    const ledger = loadDecisionLedger(repoRoot, args.decisionLedger);
+    if (!ledger.found) {
+      out(`Decision ledger not found at ${ledger.path} — decision-side learning events not derived; pass --decision-ledger if rejections were recorded elsewhere.`);
+    }
+    const decisions = ledger.entries;
     const learningEvents = learningEventsOf(session, { decisions });
+    // Capture only once the close is actually reachable: an unfinalized unit
+    // refuses inside closeSession (ahead of the learning gate) without any
+    // candidate drafts being written for a session that cannot close yet.
+    const allFinalized = (session.reviewUnitManifest.units || [])
+      .every((unit) => unitStatusOf(session, unit.reviewUnitId) === 'finalized');
     let captureReport = null;
-    if (learningEvents.length > 0) {
+    if (learningEvents.length > 0 && allFinalized) {
       captureReport = captureSessionLearnings(session, { repoRoot, decisions });
-      out(`Process learning captured: ${captureReport.captured.length} candidate(s) written, ${captureReport.suppressed.length} suppressed — ${captureReport.candidatesDir}`);
+      const writtenCount = captureReport.captured.filter((entry) => entry.status === 'written').length;
+      const onRecordCount = captureReport.captured.length - writtenCount;
+      out(`Process learning captured: ${captureReport.captured.length} candidate(s) on record (${writtenCount} written, ${onRecordCount} already on disk), ${captureReport.suppressed.length} suppressed — ${captureReport.candidatesDir}`);
     }
     const scanStatePath = path.resolve(args.scanState || path.join(__dirname, '..', 'scan-state.json'));
     let previousScanState = {};
@@ -730,7 +743,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     session = closeSession(session, {
       scanStateKey: args.scanStateKey,
       scanStateEntry,
-      learning: { decisions, captureReport },
+      learning: { decisions, captureReport, repoRoot },
     });
     // Scan state advances before the session save: a crash here is recovered
     // by rerunning close-session (the merge is idempotent), while the reverse
@@ -774,8 +787,11 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // close would have to capture, with its capture/suppression status, so
     // the operator can pick the eventKey to suppress with a rationale.
     const repoRoot = dependencies.repoRoot || path.resolve(__dirname, '..', '..', '..', '..');
-    const decisions = loadDecisionLedgerEntries(repoRoot, args.decisionLedger);
-    const events = learningEventsOf(session, { decisions });
+    const ledger = loadDecisionLedger(repoRoot, args.decisionLedger);
+    if (!ledger.found) {
+      out(`Decision ledger not found at ${ledger.path} — decision-side learning events not derived; pass --decision-ledger if rejections were recorded elsewhere.`);
+    }
+    const events = learningEventsOf(session, { decisions: ledger.entries });
     const suppressedKeys = new Set((session.learningSuppressions || []).map((entry) => entry.eventKey));
     if (events.length === 0) {
       out('No learning events: no change requests and no changes_requested/rejected decisions bound to this session.');

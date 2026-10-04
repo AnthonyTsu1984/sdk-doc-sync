@@ -420,10 +420,19 @@
           "codes": [
             "PROCESS_LEARNING_CAPTURE_REQUIRED",
             "PROCESS_LEARNING_CAPTURE_INCOMPLETE",
+            "PROCESS_LEARNING_REPO_ROOT_REQUIRED",
+            "PROCESS_LEARNING_SUPPRESSION_DUPLICATE"
+          ]
+        },
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/doc-ops-core/src/process-learning.js",
+          "codes": [
+            "PROCESS_LEARNING_CAPTURE_INVALID",
             "PROCESS_LEARNING_CAPTURE_FAILED",
             "PROCESS_LEARNING_CAPTURE_CONFLICT",
+            "PROCESS_LEARNING_EVENT_INVALID",
             "PROCESS_LEARNING_SUPPRESSION_INVALID",
-            "PROCESS_LEARNING_SUPPRESSION_DUPLICATE",
             "PROCESS_LEARNING_SUPPRESSION_UNKNOWN_EVENT"
           ]
         }

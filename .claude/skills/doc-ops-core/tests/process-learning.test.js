@@ -159,6 +159,50 @@ test('validateLearningCapture: zero events pass, missing or partial reports refu
     assert.deepEqual(summary.suppressedEventKeys, []);
 });
 
+test('a forged or hollow capture report cannot fake capture', () => {
+    const root = tempRoot();
+    const theEvent = event();
+
+    // Missing candidateId, or a candidateId that is not the event's
+    // deterministic id, is a typed invalid report.
+    assert.throws(
+        () => validateLearningCapture({ report: { captured: [{ eventKey: theEvent.key }], suppressed: [] }, events: [theEvent] }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_INVALID',
+    );
+    assert.throws(
+        () => validateLearningCapture({
+            report: { captured: [{ eventKey: theEvent.key, candidateId: 'auto-deadbeefdeadbeef' }], suppressed: [] },
+            events: [theEvent],
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_INVALID',
+    );
+
+    // With repoRoot + skill, a structurally valid report whose candidate is
+    // not actually on disk still refuses — capture cannot be faked.
+    assert.throws(
+        () => validateLearningCapture({
+            report: {
+                captured: [{ eventKey: theEvent.key, candidateId: candidateIdForEvent(theEvent) }],
+                suppressed: [],
+            },
+            events: [theEvent],
+            repoRoot: root,
+            skill: 'api-reference-sync',
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_REQUIRED',
+    );
+
+    // Foreign entries (events this session never derived) do not leak into
+    // the close stamp.
+    const report = captureLearningCandidates({ repoRoot: root, skill: 'api-reference-sync', events: [theEvent] });
+    const withForeign = {
+        ...report,
+        captured: [...report.captured, { eventKey: 'decision:s-other:stale', candidateId: candidateIdForEvent({ key: 'decision:s-other:stale', source: 'decision' }) }],
+    };
+    const summary = validateLearningCapture({ report: withForeign, events: [theEvent] });
+    assert.deepEqual(summary.capturedCandidateIds, [report.captured[0].candidateId]);
+});
+
 test('assertSuppressionsKnown refuses suppressions that match no derived event', () => {
     assertSuppressionsKnown([{ eventKey: event().key, rationale: 'ok' }], [event()]);
     assert.throws(

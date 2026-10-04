@@ -793,7 +793,7 @@ function learningEventsOf(session, { decisions = [] } = {}) {
         if (!decision || decision.sessionId !== session.sessionId) continue;
         if (!LEARNING_DECISION_OUTCOMES.includes(decision.outcome)) continue;
         events.push({
-            key: `decision:${decision.decisionId}`,
+            key: `decision:${session.sessionId}:${decision.decisionId}`,
             source: 'decision',
             sessionId: session.sessionId,
             reviewUnitId: decision.reviewUnitId || null,
@@ -886,13 +886,23 @@ function closeSession(session, {
     // Process-learning capture (打回即铸): the close refuses while any
     // operator rejection from this session would evaporate. Events are
     // re-derived here from the session plus the caller-supplied decisions and
-    // cross-checked against the capture report the CLI produced — capture is
+    // cross-checked against the capture report the CLI produced — including
+    // the report's deterministic candidate ids and, through the mandatory
+    // repoRoot, that every captured candidate is actually on disk. Capture is
     // done before the close so a failure leaves the session open.
     const learningEvents = learningEventsOf(session, { decisions: learning?.decisions || [] });
     assertSuppressionsKnown(session.learningSuppressions || [], learningEvents);
+    if (learningEvents.length > 0 && !nonEmptyString(learning?.repoRoot)) {
+        throw Object.assign(
+            new Error('closing a session with learning events requires learning.repoRoot so the close can verify the captured candidates on disk'),
+            { code: 'PROCESS_LEARNING_REPO_ROOT_REQUIRED' },
+        );
+    }
     const learningSummary = validateLearningCapture({
         report: learningEvents.length > 0 ? learning?.captureReport || null : null,
         events: learningEvents,
+        repoRoot: learningEvents.length > 0 ? learning.repoRoot : null,
+        skill: 'api-reference-sync',
     });
     REVIEW_MACHINE.assertTransition('closeSession', session);
     return REVIEW_MACHINE.apply('closeSession', session, {

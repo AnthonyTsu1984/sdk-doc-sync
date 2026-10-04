@@ -177,15 +177,15 @@ test('learning events derive from change requests and session-bound rejection de
 
     const events = learningEventsOf(session, { decisions: allEntries });
     assert.deepEqual(events.map((item) => item.key).sort(), [
-        'change-request:sdk-doc-sync:test:process-learning:review:node:Collections:pl-a:REDACTED-TIME'.replace('REDACTED-TIME', session.changeRequests[0].requestedAt),
-        'decision:decision-pl-1',
+        `change-request:sdk-doc-sync:test:process-learning:review:node:Collections:pl-a:${session.changeRequests[0].requestedAt}`,
+        'decision:sdk-doc-sync:test:process-learning:decision-pl-1',
     ]);
     const decisionEvent = events.find((item) => item.source === 'decision');
     assert.equal(decisionEvent.decisionDigest, allEntries.find((entry) => entry.decisionId === 'decision-pl-1').decisionDigest);
     assert.equal(decisionEvent.durableRuleRequested, true);
     // The approved decision and the other session's rejection are not events.
-    assert.equal(events.some((item) => item.key === 'decision:decision-pl-2'), false);
-    assert.equal(events.some((item) => item.key === 'decision:decision-pl-foreign'), false);
+    assert.equal(events.some((item) => item.key === 'decision:sdk-doc-sync:test:process-learning:decision-pl-2'), false);
+    assert.equal(events.some((item) => item.key === 'decision:sdk-doc-sync:test:other-session:decision-pl-foreign'), false);
 });
 
 test('close refuses while a learning event is uncaptured, then closes with the capture stamped', () => {
@@ -195,10 +195,47 @@ test('close refuses while a learning event is uncaptured, then closes with the c
 
     assert.throws(
         () => closeSession(session, { scanStateKey: 'node', scanStateEntry: { lastScannedTag: 'v1' } }),
+        (error) => error.code === 'PROCESS_LEARNING_REPO_ROOT_REQUIRED',
+    );
+    assert.throws(
+        () => closeSession(session, {
+            scanStateKey: 'node',
+            scanStateEntry: { lastScannedTag: 'v1' },
+            learning: { decisions: [], captureReport: null, repoRoot },
+        }),
         (error) => error.code === 'PROCESS_LEARNING_CAPTURE_REQUIRED',
     );
 
     const report = captureSessionLearnings(session, { repoRoot, decisions: [] });
+
+    // A forged report cannot fake capture: entries must carry the event's
+    // deterministic candidate id, and the candidate must be on disk.
+    assert.throws(
+        () => closeSession(session, {
+            scanStateKey: 'node',
+            scanStateEntry: { lastScannedTag: 'v1' },
+            learning: { decisions: [], captureReport: { captured: [{ eventKey: report.captured[0].eventKey }], suppressed: [] }, repoRoot },
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_INVALID',
+    );
+    assert.throws(
+        () => closeSession(session, {
+            scanStateKey: 'node',
+            scanStateEntry: { lastScannedTag: 'v1' },
+            learning: { decisions: [], captureReport: { captured: [{ eventKey: report.captured[0].eventKey, candidateId: 'auto-deadbeefdeadbeef' }], suppressed: [] }, repoRoot },
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_INVALID',
+    );
+    fs.rmSync(report.captured[0].path);
+    assert.throws(
+        () => closeSession(session, {
+            scanStateKey: 'node',
+            scanStateEntry: { lastScannedTag: 'v1' },
+            learning: { decisions: [], captureReport: report, repoRoot },
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_REQUIRED',
+    );
+    const recaptured = captureSessionLearnings(session, { repoRoot, decisions: [] });
     assert.equal(report.captured.length, 1);
     const candidatePath = report.captured[0].path;
     assert.ok(candidatePath.startsWith(path.join(repoRoot, 'tmp', 'skill-feedback', 'api-reference-sync', 'candidates')));
@@ -208,11 +245,11 @@ test('close refuses while a learning event is uncaptured, then closes with the c
     const closed = closeSession(session, {
         scanStateKey: 'node',
         scanStateEntry: { lastScannedTag: 'v1' },
-        learning: { decisions: [], captureReport: report },
+        learning: { decisions: [], captureReport: recaptured, repoRoot },
     });
     assert.equal(closed.status, 'finalized');
     assert.equal(closed.processLearning.eventCount, 1);
-    assert.deepEqual(closed.processLearning.capturedCandidateIds, [report.captured[0].candidateId]);
+    assert.deepEqual(closed.processLearning.capturedCandidateIds, [recaptured.captured[0].candidateId]);
     assert.deepEqual(closed.processLearning.suppressedEventKeys, []);
 });
 
@@ -270,7 +307,11 @@ test('suppressions: recorded with rationale, refused for duplicates and unknown 
         () => closeSession(withGhost, {
             scanStateKey: 'node',
             scanStateEntry: { lastScannedTag: 'v1' },
-            learning: { decisions, captureReport: captureSessionLearnings(session, { repoRoot: tempDir('pl-repo-'), decisions }) },
+            learning: {
+                decisions,
+                captureReport: captureSessionLearnings(session, { repoRoot: tempDir('pl-repo-'), decisions }),
+                repoRoot: tempDir('pl-repo-'),
+            },
         }),
         (error) => error.code === 'PROCESS_LEARNING_SUPPRESSION_UNKNOWN_EVENT',
     );
@@ -284,7 +325,7 @@ test('suppressions: recorded with rationale, refused for duplicates and unknown 
     const closed = closeSession(suppressed, {
         scanStateKey: 'node',
         scanStateEntry: { lastScannedTag: 'v1' },
-        learning: { decisions, captureReport: report },
+        learning: { decisions, captureReport: report, repoRoot },
     });
     assert.deepEqual(closed.processLearning.suppressedEventKeys, [decisionEvent.key]);
 });
@@ -297,7 +338,7 @@ test('a finalized session no longer accepts suppressions', () => {
     const closed = closeSession(session, {
         scanStateKey: 'node',
         scanStateEntry: { lastScannedTag: 'v1' },
-        learning: { decisions: [], captureReport: report },
+        learning: { decisions: [], captureReport: report, repoRoot },
     });
     assert.throws(
         () => recordLearningSuppression(closed, { eventKey: 'decision:x', rationale: 'late' }),
@@ -327,14 +368,14 @@ test('CLI close-session captures learning events and lists/suppresses them', asy
         argv: ['node', 'sdk-review-session.js', 'list-learning-events', '--session', sessionPath],
         dependencies: { repoRoot, onStdout },
     });
-    assert.ok(lines.some((line) => line.includes('decision:decision-pl-1')));
+    assert.ok(lines.some((line) => line.includes('decision-pl-1')));
     assert.ok(lines.some((line) => line.includes('change-request:')));
 
     const { session: reloaded } = loadReviewSessionState(sessionPath);
     await runCli({
         argv: ['node', 'sdk-review-session.js', 'record-learning-suppression',
             '--session', sessionPath,
-            '--event-key', 'decision:decision-pl-1',
+            '--event-key', 'decision:sdk-doc-sync:test:process-learning:decision-pl-1',
             '--rationale', 'Not a rule: standalone-evidence gate already enforced'],
         dependencies: { repoRoot, onStdout },
     });
@@ -348,7 +389,7 @@ test('CLI close-session captures learning events and lists/suppresses them', asy
             '--scan-state', scanStatePath],
         dependencies: { repoRoot, onStdout: (line) => closedLines.push(line) },
     });
-    assert.ok(closedLines.some((line) => line.startsWith('Process learning captured: 1 candidate(s) written, 1 suppressed')));
+    assert.ok(closedLines.some((line) => line.startsWith('Process learning captured: 1 candidate(s) on record (1 written, 0 already on disk), 1 suppressed')));
     const { session: closedSession } = loadReviewSessionState(sessionPath);
     assert.equal(closedSession.status, 'finalized');
     assert.equal(closedSession.processLearning.eventCount, 2);

@@ -18,16 +18,26 @@
 // Usage:
 //   node scripts/intake-preflight.js --contexts <reviewed-context.json>
 //       [--language java] [--json] [--strict] [--allow-missing-verbatim]
+//       [--mirror-allowlist config/style-mirror-allowlist.json]
 //
 // Findings (severity error → --strict exits 1):
 //   INTAKE_CONTEXT_KEYS_MISSING / INTAKE_CONTEXT_KEYS_UNEXPECTED
 //   INTAKE_VERBATIM_EMPTY, INTAKE_VERBATIM_BARE_NOTES
 //   INTAKE_NOTES_KEY_NONEMPTY, INTAKE_SUMMARY_REGISTER, CONTENT_CJK_MIXING
 //   INTAKE_PR_MISSING (warn — scan-only actions legitimately have no PR)
+//   STYLE_MIRROR_ENTRY_INVALID / STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED
+//   (batch 3: styleMirrors must reference operator-designated exemplar
+//   pages only; a malformed allowlist config aborts the whole run with
+//   STYLE_MIRROR_ALLOWLIST_MALFORMED — fail closed)
 
 const fs = require('node:fs');
 const path = require('node:path');
 const { CJK_PATTERN } = require('../src/sdk-doc-sync/layout-conformance');
+const {
+    loadStyleMirrorAllowlist,
+    checkStyleMirrors,
+    defaultAllowlistPath,
+} = require('../src/sdk-doc-sync/style-mirror-policy');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 const CONTEXT_KEYS = [
@@ -38,7 +48,7 @@ const CONTEXT_KEYS = [
 // Keys the pipeline itself consumes when present (adapter inputs for
 // request/callable entries, reviewed type URLs) — expected on the entries
 // that carry them, never flagged as UNEXPECTED.
-const OPTIONAL_CONTEXT_KEYS = ['params', 'result', 'signature', 'typeUrls', 'requestSyntax', 'requiredFields'];
+const OPTIONAL_CONTEXT_KEYS = ['params', 'result', 'signature', 'typeUrls', 'requestSyntax', 'requiredFields', 'styleMirrors'];
 
 function parseArgs(argv) {
     const options = { language: 'java', json: false, strict: false };
@@ -46,6 +56,7 @@ function parseArgs(argv) {
         const arg = argv[index];
         if (arg === '--contexts') options.contexts = path.resolve(argv[++index]);
         else if (arg === '--language') options.language = argv[++index];
+        else if (arg === '--mirror-allowlist') options.mirrorAllowlist = path.resolve(argv[++index]);
         else if (arg === '--json') options.json = true;
         else if (arg === '--strict') options.strict = true;
         else if (arg === '--allow-missing-verbatim') options.allowMissingVerbatim = true;
@@ -93,6 +104,20 @@ function main(argv = process.argv) {
     const document = JSON.parse(fs.readFileSync(options.contexts, 'utf8'));
     const entries = contextEntries(document);
 
+    // The allowlist is load-bearing for the styleMirrors check: a malformed
+    // config aborts before any entry is judged (fail closed — an unreadable
+    // allowlist must not degrade into "everything allowed").
+    let mirrorAllowlist = null;
+    const allowlistPath = options.mirrorAllowlist || defaultAllowlistPath();
+    if (entries.some(([, entry]) => entry && typeof entry === 'object' && 'styleMirrors' in entry)) {
+        try {
+            mirrorAllowlist = loadStyleMirrorAllowlist(allowlistPath);
+        } catch (error) {
+            process.stderr.write(`${error.code || 'STYLE_MIRROR_ALLOWLIST_MALFORMED'}: ${error.message}\n`);
+            process.exit(1);
+        }
+    }
+
     const findings = [];
     const report = (severity, code, identity, detail) => findings.push({ severity, code, identity, detail });
     for (const [identity, entry] of entries) {
@@ -124,6 +149,15 @@ function main(argv = process.argv) {
 
         const cjk = cjkOffendingTexts(entry);
         for (const detail of cjk) report('error', 'CONTENT_CJK_MIXING', identity, detail);
+
+        if ('styleMirrors' in entry) {
+            const { violations } = checkStyleMirrors({
+                language: options.language,
+                styleMirrors: entry.styleMirrors,
+                allowlist: mirrorAllowlist,
+            });
+            for (const violation of violations) report('error', violation.code, identity, violation.detail);
+        }
 
         if (!hasPrEvidence(entry)) report('warn', 'INTAKE_PR_MISSING', identity, 'no PR evidence in reviewedEvidence (legitimate only for scan-only actions)');
     }

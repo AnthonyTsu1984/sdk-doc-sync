@@ -1629,6 +1629,70 @@ const scenarios = {
       contractRefused,
     };
   },
+
+  // Campaign-control hardening batch 3: style mirrors come only from
+  // operator-designated exemplar pages. "Accepted ≠ correct template" —
+  // the production supply path is the intake CLI, so the scenario proves
+  // both the policy kernel and the enforcer module refuse a non-allowlisted
+  // mirror (a gate that only holds inside fixtures does not hold).
+  async 'style-mirror-allowlist'() {
+    const {
+      loadStyleMirrorAllowlist,
+      checkStyleMirrors,
+      defaultAllowlistPath,
+    } = require('../../src/sdk-doc-sync/style-mirror-policy');
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { spawnSync } = require('node:child_process');
+
+    const allowlist = loadStyleMirrorAllowlist(defaultAllowlistPath());
+    const refused = checkStyleMirrors({ language: 'java', styleMirrors: ['compact'], allowlist });
+    const allowed = checkStyleMirrors({
+      language: 'java',
+      styleMirrors: allowlist.languages.java.allowlist.slice(),
+      allowlist,
+    });
+
+    // Malformed allowlist fails closed
+    let malformedRefused = false;
+    try {
+      const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'style-mirror-scenario-'));
+      const broken = path.join(temp, 'broken.json');
+      fs.writeFileSync(broken, JSON.stringify({ schemaVersion: 1, languages: {} }));
+      loadStyleMirrorAllowlist(broken);
+    } catch (error) {
+      malformedRefused = error.code === 'STYLE_MIRROR_ALLOWLIST_MALFORMED';
+    }
+
+    // Production enforcer: the intake CLI over a context entry that mirrors
+    // an accepted-but-non-designated page
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'style-mirror-cli-'));
+    const contexts = path.join(temp, 'contexts.json');
+    const entry = {
+      repository: 'milvus-io/milvus-sdk-java', revision: 'r1', category: 'v2-Collections',
+      symbolName: 'getAsync', kind: 'method', title: 'getAsync()',
+      summary: 'This operation gets asynchronously.', notes: '',
+      pr: 'https://github.com/milvus-io/milvus-sdk-java/pull/1', reasons: [],
+      reviewedEvidence: [{ kind: 'pr', locator: 'API_Reference/x.md', confidence: 'direct' }],
+      sourceVariants: [], examples: '', exceptions: '', documentationOwnership: 'owned',
+      verbatimContent: 'This operation gets asynchronously.\n',
+      styleMirrors: ['compact'],
+    };
+    fs.writeFileSync(contexts, JSON.stringify({ schemaVersion: 1, contexts: { 'java:v2-Collections:getAsync': entry } }));
+    const cli = spawnSync(process.execPath, [
+      path.join(__dirname, '..', '..', 'scripts', 'intake-preflight.js'),
+      '--contexts', contexts, '--language', 'java',
+    ], { encoding: 'utf8' });
+
+    return {
+      refusedCode: refused.violations[0]?.code || null,
+      allowedClean: allowed.violations.length,
+      malformedRefused,
+      cliExit: cli.status,
+      cliRefused: /STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED/.test(cli.stdout || ''),
+    };
+  },
 };
 
 module.exports = { scenarios };

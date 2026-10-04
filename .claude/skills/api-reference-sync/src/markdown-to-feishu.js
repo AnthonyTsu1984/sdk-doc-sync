@@ -1455,27 +1455,85 @@ class MarkdownToFeishu {
         return files;
     }
 
+    // Shared write discipline (campaign-control batch 2c, T4): a write whose
+    // response is lost is NEVER blind-retried — reconcile against live state
+    // first and adopt only what the read-back proves. Blind retries
+    // double-apply side effects (the J7 duplicate empty-directory incident).
+    async __writeWithReconcile({ write, reconcile }) {
+        try {
+            return await write();
+        } catch (error) {
+            if (typeof reconcile === 'function') {
+                const adopted = await reconcile(error);
+                if (adopted) return { ...adopted, reconciledAfterFailure: true };
+            }
+            throw error;
+        }
+    }
+
+    __driveFolderItems(items) {
+        return (items || []).filter((item) => (item.type || 'folder') === 'folder');
+    }
+
     async createFolder({ name, parentFolderToken }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.createFolder');
         if (!name || !parentFolderToken) throw new TypeError('name and parentFolderToken are required to create a folder');
-        const token = await this.tokenFetcher.token();
-        const response = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files/create_folder`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+        // T1 same-name gate (campaign-control batch 2c): a same-named FOLDER
+        // sibling in the parent directory is always a defect (the J2
+        // duplicate-directory class) — refuse before the write, whatever the
+        // caller. Callers that deliberately adopt an existing folder (repair
+        // replays) pre-check it themselves and never reach this write.
+        const before = await this.listFolder({ folderToken: parentFolderToken, type: 'folder' }) || [];
+        const clash = this.__driveFolderItems(before).find((item) => item.name === name);
+        if (clash) {
+            const error = new Error(`Folder "${name}" already exists below ${parentFolderToken} (${clash.token || clash.file_token}) — same-name folders in one directory are always a defect`);
+            error.code = 'FOLDER_NAME_COLLISION';
+            throw error;
+        }
+        const result = await this.__writeWithReconcile({
+            write: async () => {
+                const token = await this.tokenFetcher.token();
+                const response = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files/create_folder`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ name, folder_token: parentFolderToken })
+                });
+                const data = await response.json();
+                if (data.code !== 0) throw new Error(`Failed to create folder: ${data.msg}`);
+                const folder = data.data?.folder || data.data || {};
+                return {
+                    ...folder,
+                    token: folder.token || folder.folder_token || null,
+                    name: folder.name || name,
+                    parentFolderToken: folder.parent_token || parentFolderToken,
+                };
             },
-            body: JSON.stringify({ name, folder_token: parentFolderToken })
+            // Lost response: reconcile by name; adopt only what live state proves.
+            reconcile: async () => {
+                const after = await this.listFolder({ folderToken: parentFolderToken, type: 'folder' }) || [];
+                const found = this.__driveFolderItems(after).find((item) => item.name === name);
+                if (!found) return null;
+                return {
+                    ...found,
+                    token: found.token || found.file_token || null,
+                    name: found.name || name,
+                    parentFolderToken,
+                };
+            },
         });
-        const data = await response.json();
-        if (data.code !== 0) throw new Error(`Failed to create folder: ${data.msg}`);
-        const folder = data.data?.folder || data.data || {};
-        return {
-            ...folder,
-            token: folder.token || folder.folder_token || null,
-            name: folder.name || name,
-            parentFolderToken: folder.parent_token || parentFolderToken,
-        };
+        // T4 read-back: the expected terminal state must be observable.
+        const verified = await this.listFolder({ folderToken: parentFolderToken, type: 'folder' }) || [];
+        const ok = this.__driveFolderItems(verified).some((item) => item.name === name
+            && (!result.token || (item.token || item.file_token) === result.token));
+        if (!ok) {
+            const error = new Error(`createFolder post-check failed: "${name}" not verifiable below ${parentFolderToken} (token ${result.token})`);
+            error.code = 'FOLDER_CREATE_POSTCHECK_FAILED';
+            throw error;
+        }
+        return result;
     }
 
     async create_document({ title, folder_token = null, parent_node_token = null }) {
@@ -1503,19 +1561,48 @@ class MarkdownToFeishu {
         const current = meta.data?.document?.title;
         if (current === name) return { renamed: false, title: current };
 
-        const res = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files/${encodeURIComponent(token)}?type=docx`, {
-            method: 'PATCH',
-            headers: {
-                'Content-Type': 'application/json; charset=utf-8',
-                Authorization: `Bearer ${authToken}`,
+        const result = await this.__writeWithReconcile({
+            write: async () => {
+                const res = await fetch(`${FEISHU_HOST}/open-apis/drive/v1/files/${encodeURIComponent(token)}?type=docx`, {
+                    method: 'PATCH',
+                    headers: {
+                        'Content-Type': 'application/json; charset=utf-8',
+                        Authorization: `Bearer ${authToken}`,
+                    },
+                    body: JSON.stringify({ name }),
+                });
+                const data = await res.json();
+                if (data.code !== 0) {
+                    throw new Error(`Failed to rename document: ${data.msg}`);
+                }
+                return { renamed: true, from: current, to: name };
             },
-            body: JSON.stringify({ name }),
+            // Lost response: reconcile by re-reading the title; adopt only
+            // what live state proves (no blind re-rename).
+            reconcile: async () => {
+                const probe = await fetch(`${FEISHU_HOST}/open-apis/docx/v1/documents/${encodeURIComponent(token)}`, {
+                    method: 'get',
+                    headers: { Authorization: `Bearer ${authToken}` },
+                });
+                const probeData = await probe.json();
+                if (probeData.code === 0 && probeData.data?.document?.title === name) {
+                    return { renamed: true, from: current, to: name };
+                }
+                return null;
+            },
         });
-        const data = await res.json();
-        if (data.code !== 0) {
-            throw new Error(`Failed to rename document: ${data.msg}`);
+        // T4 read-back: the terminal title must be observable.
+        const verifyRes = await fetch(`${FEISHU_HOST}/open-apis/docx/v1/documents/${encodeURIComponent(token)}`, {
+            method: 'get',
+            headers: { Authorization: `Bearer ${authToken}` },
+        });
+        const verifyData = await verifyRes.json();
+        if (verifyData.code !== 0 || verifyData.data?.document?.title !== name) {
+            const error = new Error(`renameDocument post-check failed: "${name}" not verifiable on ${token}`);
+            error.code = 'WRITE_POSTCHECK_FAILED';
+            throw error;
         }
-        return { renamed: true, from: current, to: name };
+        return result;
     }
 
     async copyDocument({ sourceDocumentToken, title, folderToken }) {
@@ -1526,42 +1613,78 @@ class MarkdownToFeishu {
         if (!sourceDocumentToken || !folderToken) {
             throw new Error('sourceDocumentToken and folderToken are required to copy a document');
         }
-        const token = await this.tokenFetcher.token();
-        const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${sourceDocumentToken}/copy`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+        const result = await this.__writeWithReconcile({
+            write: async () => {
+                const token = await this.tokenFetcher.token();
+                const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${sourceDocumentToken}/copy`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        name: title,
+                        type: 'docx',
+                        folder_token: folderToken
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.code !== 0) {
+                    throw new Error(`Failed to copy document: ${data.msg}`);
+                }
+
+                const file = data.data?.file || {};
+                return {
+                    token: file.token,
+                    documentToken: file.token,
+                    url: file.url,
+                    title: file.name || title,
+                    type: file.type,
+                    folderToken: file.parent_token || folderToken,
+                };
             },
-            body: JSON.stringify({
-                name: title,
-                type: 'docx',
-                folder_token: folderToken
-            })
+            // Lost response: reconcile by title in the target folder; adopt
+            // only what live state proves (no blind re-copy).
+            reconcile: async () => {
+                const after = await this.listFolder({ folderToken, type: 'docx' }) || [];
+                const expected = (title || '').trim();
+                const found = (after || []).find((item) => item.type === 'docx' && (item.name || '').trim() === expected);
+                if (!found) return null;
+                const foundToken = found.token || found.file_token;
+                return {
+                    token: foundToken,
+                    documentToken: foundToken,
+                    url: found.url || null,
+                    title: found.name || title,
+                    type: 'docx',
+                    folderToken,
+                };
+            },
         });
-
-        const data = await response.json();
-
-        if (data.code !== 0) {
-            throw new Error(`Failed to copy document: ${data.msg}`);
+        // T4 read-back: the copy must be observable in the target folder.
+        const verified = await this.listFolder({ folderToken, type: 'docx' }) || [];
+        const ok = (verified || []).some((item) => item.type === 'docx'
+            && (item.name === result.title || item.name === title)
+            && (item.token || item.file_token) === result.token);
+        if (!ok) {
+            const error = new Error(`copyDocument post-check failed: "${title}" (token ${result.token}) not verifiable in ${folderToken}`);
+            error.code = 'WRITE_POSTCHECK_FAILED';
+            throw error;
         }
-
-        const file = data.data?.file || {};
-        return {
-            token: file.token,
-            documentToken: file.token,
-            url: file.url,
-            title: file.name || title,
-            type: file.type,
-            folderToken: file.parent_token || folderToken,
-        };
+        return result;
     }
 
     async deleteFile({ fileToken, type }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.deleteFile', fileToken);
         if (!fileToken) throw new Error('fileToken is required to delete a Drive file');
         if (!['docx', 'folder'].includes(type)) throw new Error(`Unsupported Drive file type: ${type || '(missing)'}`);
+        // No reconcile wrapper by policy: deletes are not duplicate-prone (a
+        // blind retry of a delete that already landed fails loudly as
+        // not-found rather than doubling a side effect), and absence cannot
+        // be proven without the parent folder token.
         const token = await this.tokenFetcher.token();
         const url = `${process.env.FEISHU_HOST}/open-apis/drive/v1/files/${fileToken}?type=${type}`;
         const response = await fetch(url, {
@@ -1589,35 +1712,65 @@ class MarkdownToFeishu {
 
     async __create_drive_document({ title, folder_token = null }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.__create_drive_document');
-        const token = await this.tokenFetcher.token();
+        const targetFolderToken = folder_token || this.root_token;
+        const result = await this.__writeWithReconcile({
+            write: async () => {
+                const token = await this.tokenFetcher.token();
 
-        const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents`;
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${token}`
+                const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents`;
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        title: title,
+                        folder_token: targetFolderToken
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.code !== 0) {
+                    throw new Error(`Failed to create document: ${data.msg}`);
+                }
+
+                this.document_id = data.data.document.document_id;
+                console.log(`Created document: ${title} (${this.document_id})`);
+
+                return {
+                    document_id: data.data.document.document_id,
+                    revision_id: data.data.document.revision_id,
+                    title: title
+                };
             },
-            body: JSON.stringify({
-                title: title,
-                folder_token: folder_token || this.root_token
-            })
+            // Lost response: reconcile by title in the target folder (when
+            // one is known); adopt only what live state proves — a blind
+            // re-create would produce a duplicate page.
+            reconcile: async () => {
+                if (!targetFolderToken) return null;
+                const after = await this.listFolder({ folderToken: targetFolderToken, type: 'docx' }) || [];
+                const expected = (title || '').trim();
+                const found = (after || []).find((item) => item.type === 'docx' && (item.name || '').trim() === expected);
+                if (!found) return null;
+                return { document_id: found.token || found.file_token, revision_id: null, title: found.name || title };
+            },
         });
-
-        const data = await response.json();
-
-        if (data.code !== 0) {
-            throw new Error(`Failed to create document: ${data.msg}`);
+        // T4 read-back: when the target folder is known, the created page
+        // must be observable in it.
+        if (targetFolderToken) {
+            const verified = await this.listFolder({ folderToken: targetFolderToken, type: 'docx' }) || [];
+            const ok = (verified || []).some((item) => item.type === 'docx'
+                && (item.name || '').trim() === (title || '').trim()
+                && (item.token || item.file_token) === result.document_id);
+            if (!ok) {
+                const error = new Error(`create document post-check failed: "${title}" (token ${result.document_id}) not verifiable in ${targetFolderToken}`);
+                error.code = 'WRITE_POSTCHECK_FAILED';
+                throw error;
+            }
         }
-
-        this.document_id = data.data.document.document_id;
-        console.log(`Created document: ${title} (${this.document_id})`);
-
-        return {
-            document_id: data.data.document.document_id,
-            revision_id: data.data.document.revision_id,
-            title: title
-        };
+        return result;
     }
 
     async __create_wiki_node({ title, parent_node_token = null }) {

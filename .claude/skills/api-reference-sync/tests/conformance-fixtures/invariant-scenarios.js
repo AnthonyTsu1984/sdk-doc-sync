@@ -1489,11 +1489,41 @@ const scenarios = {
       pages: [],
       indexes, chainVersions: chain, ownVersion: 'v3.0.x',
     });
+    // Same-name sibling (sameNameInOneDirectory policy): a document sitting
+    // BESIDE a same-named folder is the stray-duplicate class — never a
+    // fallback form. Entries must carry name and type for the scan.
+    const sameNameIndexes = new Map([
+      ['v2.6.x', new Map([
+        ['vecFolder', { parentFolderToken: 'r26', name: 'Vector', type: 'folder' }],
+        ['scoreFolder', { parentFolderToken: 'vecFolder', name: 'FunctionScore', type: 'folder' }],
+        ['strayScore', { parentFolderToken: 'vecFolder', name: 'FunctionScore', type: 'docx' }],
+        ['inFolderScore', { parentFolderToken: 'scoreFolder', name: 'FunctionScore', type: 'docx' }],
+      ])],
+    ]);
+    const sameName = classifyTrackTopology({
+      sections: [], pages: [],
+      indexes: sameNameIndexes, chainVersions: chain, ownVersion: 'v2.6.x',
+      sameNamePolicy: 'always-a-defect',
+    });
+    // The decision table is load-bearing: without the fallback-source NONE
+    // row the classifier refuses to run (grantPrivilege precedent).
+    let contractRefused = false;
+    try {
+      classifyTrackTopology({
+        sections: [], pages: [], indexes, chainVersions: chain, ownVersion: 'v3.0.x',
+        decisionTable: [{ case: 'fallback-source-changed', action: 'COPY_PATCH_AND_REPOINT' }],
+      });
+    } catch (error) {
+      contractRefused = /record-points-at-recorded-fallback-source/.test(error.message);
+    }
     return {
       fallbackOk: fallback.findings.length === 0,
       forwardCode: forward.findings.find((f) => f.code === 'TOPOLOGY_PAGE_OUTSIDE_SECTION')?.code || null,
       fallbackSectionOk: clean.findings.filter((f) => f.code.startsWith('TOPOLOGY_SECTION_FOLDER_')).length === 0,
+      fallbackCounted: clean.summary.fallbackSourceSections === 1,
       urlSlugCode: urlSlug.findings.find((f) => f.code === 'TOPOLOGY_RECORD_SLUG_URL')?.code || null,
+      sameNameCode: sameName.findings.find((f) => f.code === 'TOPOLOGY_SAME_NAME_SIBLING' && f.identity === 'FunctionScore' && /vecFolder/.test(f.detail))?.code || null,
+      contractRefused,
     };
   },
 };

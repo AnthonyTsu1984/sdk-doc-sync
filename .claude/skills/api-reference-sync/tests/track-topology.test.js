@@ -166,6 +166,80 @@ test('the shipped decision table config loads and carries the grantPrivilege pre
     assert.equal(config.languages.java.audit, true);
 });
 
+test('the decision table is load-bearing: a missing fallback-source NONE row or an unknown same-name policy is refused', () => {
+    const sections = [{ recordId: 's1', slug: 'v2-Authentication', token: 'authFolder' }];
+    const indexes = makeIndexes({ 'v3.0.x': { authFolder: 'r30' } });
+    const base = { sections, pages: [], indexes, chainVersions: ['v3.0.x'], ownVersion: 'v3.0.x' };
+    assert.throws(
+        () => classifyTrackTopology({ ...base, decisionTable: [{ case: 'fallback-source-changed', action: 'COPY_PATCH_AND_REPOINT' }] }),
+        /record-points-at-recorded-fallback-source.*NONE/,
+    );
+    assert.throws(
+        () => classifyTrackTopology({ ...base, sameNamePolicy: 'sometimes-fine' }),
+        /unsupported sameNameInOneDirectory policy/,
+    );
+});
+
+test('sameNameInOneDirectory: a document beside a same-named folder is the stray-duplicate error class', () => {
+    const indexes = makeIndexes({
+        'v2.6.x': {
+            vecFolder: 'r26',
+            scoreFolder: 'vecFolder',
+            strayScore: 'vecFolder',
+            inFolderScore: 'scoreFolder',
+        },
+    });
+    // Entries must carry name and type for the policy scan.
+    indexes.get('v2.6.x').get('vecFolder').name = 'Vector';
+    indexes.get('v2.6.x').get('vecFolder').type = 'folder';
+    indexes.get('v2.6.x').get('scoreFolder').name = 'FunctionScore';
+    indexes.get('v2.6.x').get('scoreFolder').type = 'folder';
+    indexes.get('v2.6.x').get('strayScore').name = 'FunctionScore';
+    indexes.get('v2.6.x').get('strayScore').type = 'docx';
+    indexes.get('v2.6.x').get('inFolderScore').name = 'FunctionScore';
+    indexes.get('v2.6.x').get('inFolderScore').type = 'docx';
+    const result = classifyTrackTopology({
+        sections: [], pages: [], indexes,
+        chainVersions: ['v2.6.x'], ownVersion: 'v2.6.x',
+        sameNamePolicy: 'always-a-defect',
+    });
+    const finding = result.findings.find((f) => f.code === 'TOPOLOGY_SAME_NAME_SIBLING');
+    assert.ok(finding, 'the beside-the-folder copy is flagged');
+    assert.equal(finding.severity, 'error');
+    assert.equal(finding.identity, 'FunctionScore');
+    assert.match(finding.detail, /strayScore/);
+    assert.equal(result.findings.some((f) => f.code === 'TOPOLOGY_SAME_NAME_SIBLING' && /inFolderScore/.test(f.detail)), false,
+        'the in-folder copy (different directory) is not flagged');
+    // Without the policy the scan does not run.
+    const withoutPolicy = classifyTrackTopology({ sections: [], pages: [], indexes, chainVersions: ['v2.6.x'], ownVersion: 'v2.6.x' });
+    assert.deepEqual(withoutPolicy.findings, []);
+});
+
+test('recorded fallback sections are counted in the summary under the decision case', () => {
+    const result = classifyTrackTopology({
+        sections: SECTIONS, // s2 (v2-Vector) lives in the older v2.6 tree
+        pages: [],
+        indexes: makeIndexes({
+            'v3.0.x': { authFolder30: 'r30' },
+            'v2.6.x': { vectorFolder26: 'r26' },
+        }),
+        chainVersions: CHAIN,
+        ownVersion: 'v3.0.x',
+    });
+    assert.deepEqual(result.findings, []);
+    assert.equal(result.summary.fallbackSourceSections, 1);
+});
+
+test('an ownVersion outside the chain is refused instead of silently judging nothing', () => {
+    assert.throws(
+        () => classifyTrackTopology({
+            sections: [], pages: [], indexes: makeIndexes({}),
+            chainVersions: ['v2.6.x', 'v3.0.x'], ownVersion: 'v2.5.x',
+        }),
+        /ownVersion v2\.5\.x is not in the chain/,
+    );
+});
+
 test('the audit CLI rejects an unknown argument and requires --language', () => {
     const script = path.join(SKILL_ROOT, 'scripts', 'audit-track-topology.js');
     const bad = spawnSync(process.execPath, [script, '--language', 'java', '--nope'], { cwd: REPO_ROOT, encoding: 'utf8' });

@@ -8,9 +8,11 @@
 // container roots), because cross-track shared documents (both tracks'
 // records pointing at one older-tree document) are governed inventory and
 // same-title sibling sets span trees. Reports governed-inventory orphan
-// candidates, same-title sibling placement (orphan copies, copies misplaced
+// candidates, same-name sibling placement (orphan copies, copies misplaced
 // outside their claiming track's release root, within-track duplicates),
-// callout empty children, and reviewed-context verbatim divergence.
+// track topology against the fallback-chain model
+// (api.track-topology-audit — error findings gate --strict), callout empty
+// children, and reviewed-context verbatim divergence.
 // Detect-only: this script never mutates live state and does not authorize
 // cleanup.
 //
@@ -44,6 +46,10 @@ const {
     reconcileContextVerbatim,
     reconcilePageLayout,
 } = require('../src/sdk-doc-sync/content-reconciliation');
+const {
+    classifyTrackTopology,
+    loadFallbackTopologyConfig,
+} = require('../src/sdk-doc-sync/track-topology');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 const {
     listLanguageTracks,
@@ -54,6 +60,7 @@ const {
 } = require('../src/sdk-doc-sync/release-track-registry');
 
 const DEFAULT_REGISTRY_PATH = path.join(__dirname, '..', 'config', 'release-tracks.json');
+const DEFAULT_TOPOLOGY_CONFIG = path.join(__dirname, '..', 'config', 'fallback-topology.json');
 
 function scalarText(value) {
     if (value === null || value === undefined) return null;
@@ -77,11 +84,12 @@ function normalizeRecord(raw) {
 }
 
 function parseArgs(argv) {
-    const options = { registry: DEFAULT_REGISTRY_PATH, json: false, strict: false };
+    const options = { registry: DEFAULT_REGISTRY_PATH, topologyConfig: DEFAULT_TOPOLOGY_CONFIG, json: false, strict: false };
     for (let index = 2; index < argv.length; index += 1) {
         const arg = argv[index];
         if (arg === '--language') options.language = argv[++index];
         else if (arg === '--registry') options.registry = path.resolve(argv[++index]);
+        else if (arg === '--topology-config') options.topologyConfig = path.resolve(argv[++index]);
         else if (arg === '--page-links-json') options.pageLinksJson = path.resolve(argv[++index]);
         else if (arg === '--blocks-json') options.blocksJson = path.resolve(argv[++index]);
         else if (arg === '--contexts-json') options.contextsJson = path.resolve(argv[++index]);
@@ -138,6 +146,10 @@ async function main(argv = process.argv) {
 
     const folderEntries = [];
     const entriesByToken = new Map();
+    // Full tree graph (folders AND documents) for the track-topology
+    // classification — the same-name walk records documents only, so folders
+    // are captured here as a second structure at zero extra API cost.
+    const treeByToken = new Map();
     // One visited set across every walk: release roots nested inside their
     // configured container are not re-walked (halving API traffic), and a
     // folder cycle terminates instead of recursing until the stack overflows.
@@ -150,8 +162,10 @@ async function main(argv = process.argv) {
             const token = child?.token || child?.file_token || null;
             const childType = child?.type || null;
             if (childType === 'folder' && token && folderToken !== token) {
+                if (!treeByToken.has(token)) treeByToken.set(token, { token, name: child?.name || null, parentToken: folderToken, isFolder: true });
                 await visitFolder(token, rootToken);
             } else if (token && (childType === 'docx' || childType === null || childType === 'all')) {
+                if (!treeByToken.has(token)) treeByToken.set(token, { token, name: child?.name || null, parentToken: folderToken, isFolder: false });
                 const existing = entriesByToken.get(token);
                 if (existing) {
                     if (!existing.roots.includes(rootToken)) existing.roots.push(rootToken);
@@ -186,6 +200,83 @@ async function main(argv = process.argv) {
         trackRoots,
     });
     sameName.unresolvedTracks = unresolvedTracks;
+
+    // Track topology (api.track-topology-audit, enforcement stage "reconcile"):
+    // classify each track's sections and pages against the fallback-chain
+    // model, using per-version indexes derived from the tree graph above —
+    // an entry belongs to a version's tree when its ancestor chain reaches
+    // that version's release root. Error findings join the global report and
+    // gate --strict; info observations stay in the trackTopology section.
+    const topologyConfig = loadFallbackTopologyConfig(options.topologyConfig);
+    const languageTopology = topologyConfig.languages?.[options.language];
+    const trackTopology = {
+        invariantId: 'api.track-topology-audit',
+        skipped: !languageTopology?.audit,
+        skippedReason: languageTopology?.audit ? null : 'language not audit-enabled in the topology config',
+        tracks: [],
+    };
+    if (!trackTopology.skipped) {
+        const topologyIndexes = new Map();
+        for (const root of trackRoots) {
+            if (!root.releaseRootToken) continue;
+            const entries = new Map();
+            for (const [token, entry] of treeByToken) {
+                const ancestors = [];
+                const seen = new Set([token]);
+                let current = entry.parentToken;
+                while (current && !seen.has(current) && treeByToken.has(current)) {
+                    ancestors.push(current);
+                    seen.add(current);
+                    current = treeByToken.get(current).parentToken;
+                }
+                if (current === root.releaseRootToken || ancestors.includes(root.releaseRootToken)) {
+                    entries.set(token, {
+                        parentFolderToken: entry.parentToken,
+                        ancestors,
+                        name: entry.name,
+                        type: entry.isFolder ? 'folder' : 'docx',
+                    });
+                }
+            }
+            topologyIndexes.set(root.version, entries);
+        }
+        const chainVersions = tracks.map((track) => track.version);
+        for (const track of tracks) {
+            if (unresolvedTracks.includes(track.version)) continue;
+            const sections = [];
+            const pages = [];
+            for (const record of allRecords) {
+                if (record.track !== track.version || !record.slug || !record.link) continue;
+                if (record.type === 'VirtualNode') {
+                    const token = folderTokenFromLink(record.link);
+                    if (token) sections.push({ recordId: record.recordId, slug: record.slug, token });
+                } else if (record.documentToken) {
+                    pages.push({ recordId: record.recordId, slug: record.slug, token: record.documentToken });
+                }
+            }
+            const result = classifyTrackTopology({
+                sections,
+                pages,
+                indexes: topologyIndexes,
+                chainVersions,
+                ownVersion: track.version,
+                pageExemptions: languageTopology.pageExemptions || [],
+                decisionTable: topologyConfig.decisionTable,
+                sameNamePolicy: topologyConfig.sameNameInOneDirectory,
+            });
+            trackTopology.tracks.push({
+                track: track.version,
+                sections: sections.length,
+                pages: pages.length,
+                summary: result.summary,
+                findings: result.findings,
+            });
+        }
+    }
+    const topologyErrorFindings = trackTopology.tracks
+        .flatMap((report) => report.findings
+            .filter((finding) => finding.severity === 'error')
+            .map((finding) => ({ ...finding, track: report.track })));
 
     // Governed inventory closure over the release-root footprint with
     // language-wide pointers; tokens the same-name classifier already
@@ -243,6 +334,7 @@ async function main(argv = process.argv) {
         ...callouts.findings,
         ...contexts.findings,
         ...layout.findings,
+        ...topologyErrorFindings,
     ];
     const summary = {
         groups: sameName.groups.length,
@@ -250,6 +342,7 @@ async function main(argv = process.argv) {
         orphanCopies: sameName.findings.filter((finding) => finding.code === 'SAME_NAME_SIBLING_ORPHAN').length,
         misplacedCopies: sameName.findings.filter((finding) => finding.code === 'SAME_NAME_COPY_MISPLACED').length,
         trackConflicts: sameName.findings.filter((finding) => finding.code === 'SAME_NAME_TRACK_CONFLICT').length,
+        topologyErrors: topologyErrorFindings.length,
     };
 
     if (options.json) {
@@ -266,6 +359,7 @@ async function main(argv = process.argv) {
                 summary,
                 groups: sameName.groups,
             },
+            trackTopology,
             callouts,
             contexts,
             layout,
@@ -278,6 +372,12 @@ async function main(argv = process.argv) {
         const layoutCodes = Object.entries(layoutSummary.byCode).map(([code, count]) => `${code}×${count}`).join(', ');
         process.stdout.write(`layout: ${layoutSummary.pages} page(s)${layoutCodes ? ` — ${layoutCodes}` : ''}\n`);
         process.stdout.write(`same-name sibling groups: ${summary.groups} (dual-track pairs ${summary.dualTrackPairs}, orphan copies ${summary.orphanCopies}, misplaced copies ${summary.misplacedCopies}, track conflicts ${summary.trackConflicts})\n`);
+        if (trackTopology.skipped) {
+            process.stdout.write(`track topology: skipped (${trackTopology.skippedReason})\n`);
+        } else {
+            const fallbackSections = trackTopology.tracks.reduce((total, report) => total + (report.summary?.fallbackSourceSections || 0), 0);
+            process.stdout.write(`track topology: ${trackTopology.tracks.length} track(s) classified, ${summary.topologyErrors} error(s), ${fallbackSections} section folder(s) on recorded fallback sources\n`);
+        }
         process.stdout.write(`${findings.length} finding(s) across ${tracks.length} track(s)\n`);
     }
 

@@ -77,7 +77,7 @@ async function main(argv = process.argv) {
         if (!rootToken) throw new Error(`Track ${track.version} has an unresolved release root`);
         if (!indexes.has(track.version)) {
             const index = await indexVersionRoot(tokenFetcher, rootToken);
-            indexes.set(track.version, new Map([...index.entries()].map(([token, entry]) => [token, { parentFolderToken: entry.parentFolderToken, ancestors: entry.ancestors, name: entry.name }])));
+            indexes.set(track.version, new Map([...index.entries()].map(([token, entry]) => [token, { parentFolderToken: entry.parentFolderToken, ancestors: entry.ancestors, name: entry.name, type: entry.type }])));
         }
     }
 
@@ -106,6 +106,8 @@ async function main(argv = process.argv) {
             chainVersions,
             ownVersion: track.version,
             pageExemptions: languageConfig.pageExemptions || [],
+            decisionTable: topologyConfig.decisionTable,
+            sameNamePolicy: topologyConfig.sameNameInOneDirectory,
         });
         const errors = result.findings.filter((finding) => finding.severity === 'error');
         const exempted = result.findings.filter((finding) => finding.code === 'TOPOLOGY_PAGE_EXEMPTED');
@@ -114,6 +116,7 @@ async function main(argv = process.argv) {
             sections: sections.length,
             pages: pages.length,
             findings: result.findings,
+            summary: result.summary,
             errorCount: errors.length,
             exemptedCount: exempted.length,
         });
@@ -139,7 +142,8 @@ async function main(argv = process.argv) {
         for (const finding of allFindings) {
             process.stdout.write(`[${finding.severity}] ${finding.code} ${finding.track} ${finding.identity} — ${finding.detail}\n`);
         }
-        process.stdout.write(`${chainVersions.length} track(s) in chain ${chainVersions.join(' → ')}: ${allFindings.filter((f) => f.severity === 'error').length} error(s)\n`);
+        const fallbackSections = trackReports.reduce((total, report) => total + (report.summary?.fallbackSourceSections || 0), 0);
+        process.stdout.write(`${chainVersions.length} track(s) in chain ${chainVersions.join(' → ')}: ${allFindings.filter((f) => f.severity === 'error').length} error(s), ${fallbackSections} section folder(s) on recorded fallback sources (decision case ${'record-points-at-recorded-fallback-source'} → NONE)\n`);
     }
     const errors = allFindings.filter((finding) => finding.severity === 'error').length;
     if (errors > 0 || (options.strict && allFindings.length > 0)) process.exitCode = 1;

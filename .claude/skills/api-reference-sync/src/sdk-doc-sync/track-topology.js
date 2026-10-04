@@ -20,10 +20,23 @@
 //     (TOPOLOGY_SECTION_FOLDER_FOREIGN/UNRESOLVED); documents under no
 //     walked root (TOPOLOGY_PAGE_UNRESOLVED).
 // Detect-only: findings never authorize moves or repoints; dispositions run
-// through the governed pipeline. Live wiring lives in
-// scripts/audit-track-topology.js (read-only walk per language).
+// through the governed pipeline. Live wiring: scripts/audit-track-topology.js
+// (intake preflight walk per language) and scripts/reconcile-content.js
+// (routine patrol, enforcement stage "reconcile" — error findings gate
+// --strict).
+//
+// The decision table in config/fallback-topology.json is load-bearing here,
+// not documentation: the record-points-at-recorded-fallback-source → NONE row
+// is the contractual basis for "section folder in an older tree is correct"
+// (classifyTrackTopology refuses to run without it), and
+// sameNameInOneDirectory: always-a-defect drives the TOPOLOGY_SAME_NAME_SIBLING
+// scan (a document sitting beside a same-named folder — the 2026-10-04 stray
+// FunctionScore class). The planner/workflow consumers land with batch 3.
 
 const TOPOLOGY_INVARIANT_ID = 'api.track-topology-audit';
+
+const FALLBACK_SOURCE_CASE = 'record-points-at-recorded-fallback-source';
+const SUPPORTED_SAME_NAME_POLICY = 'always-a-defect';
 
 function slugText(field) {
     if (typeof field === 'string') return field;
@@ -45,6 +58,11 @@ function sectionForSlug(slug, sectionNames) {
 // walked release root, keyed by track version. `chainVersions`: ordered
 // oldest→newest; `ownVersion` must be one of them. `sections`/`pages` carry
 // { recordId, slug, token } with token = folder / document token.
+// `decisionTable` (from config/fallback-topology.json) and `sameNamePolicy`
+// (its sameNameInOneDirectory value) make the data load-bearing: the
+// fallback-source NONE row is contractual and the same-name policy drives the
+// sibling scan. Both are optional so narrow callers can classify without a
+// config, but the audit and reconcile wiring always pass them.
 function classifyTrackTopology({
     sections = [],
     pages = [],
@@ -52,14 +70,30 @@ function classifyTrackTopology({
     chainVersions = [],
     ownVersion,
     pageExemptions = [],
+    decisionTable = null,
+    sameNamePolicy = null,
 } = {}) {
     const findings = [];
     const report = (severity, code, identity, detail) => findings.push({ severity, code, identity, detail });
     if (!indexes || typeof indexes.get !== 'function') {
         throw new TypeError('classifyTrackTopology requires an indexes Map');
     }
+    if (decisionTable !== null) {
+        const recorded = (Array.isArray(decisionTable) ? decisionTable : [])
+            .find((entry) => entry && entry.case === FALLBACK_SOURCE_CASE);
+        if (!recorded || recorded.action !== 'NONE') {
+            throw new Error(`fallback-topology decisionTable must keep case ${FALLBACK_SOURCE_CASE} with action NONE — it is the contractual basis for treating recorded fallback sources as correct topology (grantPrivilege precedent, 2026-10-03)`);
+        }
+    }
+    if (sameNamePolicy !== null && sameNamePolicy !== SUPPORTED_SAME_NAME_POLICY) {
+        throw new Error(`unsupported sameNameInOneDirectory policy ${JSON.stringify(sameNamePolicy)} — only "${SUPPORTED_SAME_NAME_POLICY}" is implemented`);
+    }
+    if (chainVersions.indexOf(ownVersion) === -1) {
+        throw new Error(`ownVersion ${ownVersion} is not in the chain ${chainVersions.join(' → ')}`);
+    }
     const olderVersions = chainVersions.slice(0, Math.max(chainVersions.indexOf(ownVersion), 0));
     const newerVersions = chainVersions.slice(chainVersions.indexOf(ownVersion) + 1);
+    let fallbackSourceSections = 0;
     const locate = (token) => {
         for (const [version, index] of indexes.entries()) {
             const entry = index.get(token);
@@ -86,7 +120,12 @@ function classifyTrackTopology({
             continue;
         }
         if (located.version === ownVersion) continue;
-        if (olderVersions.includes(located.version)) continue; // recorded fallback source — correct form
+        if (olderVersions.includes(located.version)) {
+            // Recorded fallback source — the decision table's NONE row is the
+            // contractual basis for treating this as correct topology.
+            fallbackSourceSections += 1;
+            continue;
+        }
         report('error', 'TOPOLOGY_SECTION_FOLDER_FOREIGN', section.slug,
             `section folder lives under ${located.version}, which is neither the own tree nor a recorded fallback source (chain: ${chainVersions.join(' → ')})`);
     }
@@ -126,7 +165,41 @@ function classifyTrackTopology({
         }
     }
 
-    return { invariantId: TOPOLOGY_INVARIANT_ID, findings };
+    // sameNameInOneDirectory policy scan (own tree only): a document sitting
+    // BESIDE a same-named folder is the stray-duplicate class (2026-10-04
+    // v2.6.x FunctionScore at Vector root) — never a fallback form. Runs on
+    // index entries that carry name and type; the audit and reconcile wiring
+    // always provide them.
+    if (sameNamePolicy === SUPPORTED_SAME_NAME_POLICY) {
+        const ownIndex = indexes.get(ownVersion);
+        if (ownIndex) {
+            const byDirectory = new Map();
+            for (const [token, entry] of ownIndex.entries()) {
+                if (!entry || typeof entry.name !== 'string') continue;
+                const dir = byDirectory.get(entry.parentFolderToken) || { folderNames: new Set(), documents: [] };
+                if (entry.type === 'folder') dir.folderNames.add(entry.name);
+                else dir.documents.push({ token, name: entry.name });
+                byDirectory.set(entry.parentFolderToken, dir);
+            }
+            for (const [directoryToken, { folderNames, documents }] of byDirectory) {
+                for (const doc of documents) {
+                    if (folderNames.has(doc.name)) {
+                        report('error', 'TOPOLOGY_SAME_NAME_SIBLING', doc.name,
+                            `document ${doc.token} sits beside a same-named folder in directory ${directoryToken} — sameNameInOneDirectory=${SUPPORTED_SAME_NAME_POLICY}: the family's pages belong inside the folder (or the folder's flat form), a beside-the-folder copy is a stray/duplicate`);
+                    }
+                }
+            }
+        }
+    }
+
+    return {
+        invariantId: TOPOLOGY_INVARIANT_ID,
+        findings,
+        summary: {
+            fallbackSourceSections,
+            sameNamePolicy: sameNamePolicy || null,
+        },
+    };
 }
 
 function loadFallbackTopologyConfig(configPath) {
@@ -134,6 +207,13 @@ function loadFallbackTopologyConfig(configPath) {
     if (config.schemaVersion !== 1) throw new Error(`Unsupported fallback-topology schemaVersion ${config.schemaVersion}`);
     if (!Array.isArray(config.decisionTable) || config.decisionTable.length === 0) {
         throw new Error('fallback-topology decisionTable must be a non-empty array');
+    }
+    const recorded = config.decisionTable.find((entry) => entry && entry.case === FALLBACK_SOURCE_CASE);
+    if (!recorded || recorded.action !== 'NONE') {
+        throw new Error(`fallback-topology decisionTable must keep case ${FALLBACK_SOURCE_CASE} with action NONE (grantPrivilege precedent)`);
+    }
+    if (config.sameNameInOneDirectory !== SUPPORTED_SAME_NAME_POLICY) {
+        throw new Error(`fallback-topology sameNameInOneDirectory must be "${SUPPORTED_SAME_NAME_POLICY}" (got ${JSON.stringify(config.sameNameInOneDirectory)})`);
     }
     return config;
 }

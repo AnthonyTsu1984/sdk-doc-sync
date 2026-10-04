@@ -13,7 +13,12 @@
 //   C. FunctionScore family: Vector/FunctionScore subdirectory created and
 //      the four flat docs move in (v2.6.x form);
 //   D. v2.6.x stray duplicate FunctionScore at Vector root is deleted
-//      (after the claiming record is verified against the in-folder copy).
+//      after every claimant is repointed to the in-folder copy — the repoint
+//      writes {text, link} (never a bare-URL Docs string) and the delete
+//      re-verifies its premises against live state before firing (stray
+//      still present and same-named, retained copy still present, zero
+//      Bitable claimants, and — when a collect-page-blocks dump is supplied
+//      via --page-links-json — zero page-block references).
 //
 // Governance follows scripts/repair-same-name-placement.js: `plan` is
 // read-only and prints the batch digest; `execute` requires
@@ -57,7 +62,7 @@ async function larkJson(args) {
     return parsed;
 }
 
-async function listFolder(folderToken) {
+async function listFolderDefault(folderToken) {
     const token = await new larkTokenFetcher().token();
     const query = new URLSearchParams({ folder_token: folderToken, page_size: '200' });
     const files = [];
@@ -97,29 +102,34 @@ function planDigest(plan) {
     return sha256Digest(Buffer.from(`${JSON.stringify(plan.actions)}`, 'utf8'));
 }
 
-async function buildPlan() {
-    const registry = loadReleaseTrackRegistry(REGISTRY_PATH);
+async function buildPlan(deps = {}) {
+    const registry = deps.registry || loadReleaseTrackRegistry(REGISTRY_PATH);
+    const indexVersionRootFn = deps.indexVersionRoot || indexVersionRoot;
+    const listBitableRecordsFn = deps.listBitableRecords || listBitableRecords;
+    // Local binding shadows the module-level helper so injected test doubles
+    // reach every part below.
+    const listFolder = deps.listFolder || listFolderDefault;
+    const tokenFetcher = deps.tokenFetcher || new larkTokenFetcher();
     const tracks = listLanguageTracks(registry, 'java');
     const trackByVersion = new Map(tracks.map((t) => [t.version, t]));
-    const tokenFetcher = new larkTokenFetcher();
     const indexes = new Map();
     const recordsByTrack = new Map();
     for (const version of ['v2.6.x', 'v3.0.x']) {
         const track = trackByVersion.get(version);
-        indexes.set(version, await indexVersionRoot(tokenFetcher, trackReleaseRootToken(track)));
-        recordsByTrack.set(version, await listBitableRecords(tokenFetcher, trackBaseToken(track), null));
+        indexes.set(version, await indexVersionRootFn(tokenFetcher, trackReleaseRootToken(track)));
+        recordsByTrack.set(version, await listBitableRecordsFn(tokenFetcher, trackBaseToken(track), null));
     }
     const actions = [];
     const notes = [];
 
-    // ---- A. Docs-field text fixes (v3.0.x operator scope: Database,
-    // Partitions, ResourceGroup) -----------------------------------------
+    // ---- A. Docs-field text fixes ---------------------------------------
     // The Slug column is a READONLY formula: "v2-" + 父记录 title + "-" +
     // Docs.name. The URL-slug defect is the Docs field's DISPLAY TEXT (the
-    // pasted folder URL); fixing the three section VirtualNodes' Docs text
-    // to the folder name heals every family page slug through the formula.
-    // The v2.6.x Collections record is out of the operator's scope this
-    // round — it stays on the audit ledger.
+    // pasted folder URL); fixing a section VirtualNode's Docs text to the
+    // folder name heals every family page slug through the formula. Both
+    // tracks are scanned — the 2026-10-04 disposition covered v3.0.x
+    // (Database, Partitions, ResourceGroup) and v2.6.x (Collections); any
+    // later URL-text VirtualNode heals the same way.
     for (const [version, records] of recordsByTrack) {
         const folderNameByToken = new Map([...indexes.get(version).entries()].map(([token, entry]) => [token, entry.name]));
         for (const record of records) {
@@ -200,18 +210,48 @@ async function buildPlan() {
     }
 
     // ---- D. v2.6.x stray duplicate FunctionScore ------------------------
+    const pageLinkTokens = deps.pageLinkTokens || [];
     const v26Index = indexes.get('v2.6.x');
     const v26Vector = [...v26Index.values()].find((e) => e.type === 'folder' && e.name === 'Vector');
     const v26ScoreFolder = v26Vector && [...v26Index.values()].find((e) => e.type === 'folder' && e.name === 'FunctionScore' && e.parentFolderToken === v26Vector.token);
     const strayScore = v26Vector && [...v26Index.values()].find((e) => e.type !== 'folder' && e.name === 'FunctionScore' && e.parentFolderToken === v26Vector.token);
     const inFolderScore = v26ScoreFolder && [...v26Index.values()].find((e) => e.type !== 'folder' && e.name === 'FunctionScore' && e.parentFolderToken === v26ScoreFolder.token);
     if (strayScore && inFolderScore && strayScore.token !== inFolderScore.token) {
+        // Protected lineage: page blocks may also reference the stray — a
+        // supplied collect-page-blocks dump (percent-decoded docx tokens)
+        // must not contain it before a delete is planned.
+        if (pageLinkTokens.includes(strayScore.token)) {
+            throw new Error(`page blocks still reference the stray FunctionScore copy ${strayScore.token} — disposition the references first (replan)`);
+        }
         // Make sure no v2.6 record still claims the stray copy before deleting.
+        // The repoint writes {text, link} — a bare-URL Docs string poisons
+        // every family slug through the Slug formula (2026-10-04 defect
+        // class; TOPOLOGY_RECORD_SLUG_URL).
         const claimants = recordsByTrack.get('v2.6.x').filter((r) => documentTokenFromLink(r.fields?.Docs?.link || r.fields?.Docs?.url || '') === strayScore.token);
         for (const claimant of claimants) {
-            actions.push({ kind: 'update-record-field', track: 'v2.6.x', recordId: claimant.record_id, field: 'Docs', value: `https://zilliverse.feishu.cn/docx/${inFolderScore.token}`, from: 'stray Vector-root copy' });
+            actions.push({
+                kind: 'update-record-docs-text',
+                track: 'v2.6.x',
+                recordId: claimant.record_id,
+                text: inFolderScore.name,
+                link: `https://zilliverse.feishu.cn/docx/${inFolderScore.token}`,
+                from: `stray Vector-root copy (${strayScore.token})`,
+                detail: `claimant repointed to the in-folder copy before the stray is deleted (text "${inFolderScore.name}")`,
+            });
         }
-        actions.push({ kind: 'delete-document', ref: `stray:${strayScore.token}`, documentToken: strayScore.token, detail: 'v2.6.x duplicate FunctionScore at Vector root (in-folder copy retained; delete lands in Drive trash)' });
+        actions.push({
+            kind: 'delete-document',
+            ref: `stray:${strayScore.token}`,
+            documentToken: strayScore.token,
+            documentName: strayScore.name,
+            // Execution-time re-verification premises (checked live before
+            // the unreplayable delete fires).
+            parentFolderToken: v26Vector.token,
+            duplicateOfToken: inFolderScore.token,
+            duplicateOfParentToken: v26ScoreFolder.token,
+            pageLinksJsonPath: deps.pageLinksJsonPath || null,
+            detail: 'v2.6.x duplicate FunctionScore at Vector root (in-folder copy retained; delete lands in Drive trash)',
+        });
     } else {
         notes.push('v2.6.x stray FunctionScore not found (or already cleaned)');
     }
@@ -219,14 +259,19 @@ async function buildPlan() {
     return { generatedAt: new Date().toISOString(), actions, notes };
 }
 
-async function executePlan({ plan, approvedDigest, journalPath }) {
+async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
     const digest = planDigest(plan);
     if (String(approvedDigest).trim() !== digest) {
         const error = new Error(`REFUSED: approved digest does not match the plan (plan ${digest}, approved ${approvedDigest})`);
         error.code = 'REPAIR_PLAN_APPROVAL_MISMATCH';
         throw error;
     }
-    const registry = loadReleaseTrackRegistry(REGISTRY_PATH);
+    const larkJsonFn = deps.larkJson || larkJson;
+    const listFolderFn = deps.listFolder || listFolderDefault;
+    const listBitableRecordsFn = deps.listBitableRecords || listBitableRecords;
+    const resolveTableIdFn = deps.resolveTableId || resolveTableId;
+    const verifyWithRetryFn = deps.verifyWithRetry || verifyWithRetry;
+    const registry = (deps.loadRegistry || (() => loadReleaseTrackRegistry(REGISTRY_PATH)))();
     const baseByTrack = new Map(listLanguageTracks(registry, 'java').map((t) => [t.version, trackBaseToken(t)]));
     const createdFolders = new Map();
     const journal = [];
@@ -235,7 +280,7 @@ async function executePlan({ plan, approvedDigest, journalPath }) {
         fs.mkdirSync(JOURNAL_DIR, { recursive: true });
         fs.writeFileSync(journalPath, `${JSON.stringify({ planDigest: digest, journal }, null, 1)}\n`);
     };
-    const tokenFetcher = new larkTokenFetcher();
+    const tokenFetcher = deps.tokenFetcher || new larkTokenFetcher();
 
     let index = 0;
     for (const action of plan.actions) {
@@ -244,15 +289,15 @@ async function executePlan({ plan, approvedDigest, journalPath }) {
         try {
             if (action.kind === 'update-record-field') {
                 const baseToken = baseByTrack.get(action.track);
-                const tableId = await resolveTableId(baseToken);
-                await larkJson([
+                const tableId = await resolveTableIdFn(baseToken);
+                await larkJsonFn([
                     'base', '+record-batch-update',
                     '--base-token', baseToken,
                     '--table-id', tableId,
                     '--json', JSON.stringify({ update_records: { [action.recordId]: { [action.field]: action.value } } }),
                 ]);
-                const check = await verifyWithRetry(async () => {
-                    const after = await listBitableRecords(tokenFetcher, baseToken, null);
+                const check = await verifyWithRetryFn(async () => {
+                    const after = await listBitableRecordsFn(tokenFetcher, baseToken, null);
                     const reread = after.find((r) => r.record_id === action.recordId);
                     const value = action.field === 'Docs'
                         ? (reread?.fields?.Docs?.link || reread?.fields?.Docs?.url || '')
@@ -263,26 +308,31 @@ async function executePlan({ plan, approvedDigest, journalPath }) {
                 entry.result = { field: action.field, verified: true };
             } else if (action.kind === 'update-record-docs-text') {
                 const baseToken = baseByTrack.get(action.track);
-                const tableId = await resolveTableId(baseToken);
+                const tableId = await resolveTableIdFn(baseToken);
                 // The batch-update validator rejects {text,link} URL cells;
-                // the raw records PUT accepts them.
-                await larkJson([
+                // the raw records PUT accepts them. Never write a bare-URL
+                // string — the Slug formula poisons the family slugs.
+                await larkJsonFn([
                     'api', 'PUT',
                     `/open-apis/bitable/v1/apps/${baseToken}/tables/${tableId}/records/${action.recordId}`,
                     '--data', JSON.stringify({ fields: { Docs: { text: action.text, link: action.link } } }),
                 ]);
-                const check = await verifyWithRetry(async () => {
-                    const after = await listBitableRecords(tokenFetcher, baseToken, null);
+                const check = await verifyWithRetryFn(async () => {
+                    const after = await listBitableRecordsFn(tokenFetcher, baseToken, null);
                     const reread = after.find((r) => r.record_id === action.recordId);
                     const docs = reread?.fields?.Docs || {};
                     const text = String(docs.text ?? '');
                     const slugNow = slugText(reread?.fields?.Slug);
-                    return { ok: text === action.text && slugNow === `v2-${action.text}`, text, slugNow };
+                    // The Slug is "v2-" + parent title + "-" + Docs.name: a
+                    // section VirtualNode heals to "v2-<name>", a page record
+                    // to "v2-<section>-<name>". Both end with the display
+                    // text, and neither is URL-shaped.
+                    return { ok: text === action.text && !slugNow.includes('http') && slugNow.endsWith(action.text), text, slugNow };
                 }, 10);
                 if (!check.ok) throw new Error(`Docs text / Slug formula not verifiable: text=${check.text} slug=${JSON.stringify(check.slugNow)}`);
                 entry.result = { text: action.text, slug: check.slugNow, verified: true };
             } else if (action.kind === 'create-folder') {
-                const siblings = await listFolder(action.parentFolderToken);
+                const siblings = await listFolderFn(action.parentFolderToken);
                 const existingFolder = siblings.find((c) => c.name === action.name && (c.type || 'folder') === 'folder');
                 if (existingFolder) {
                     // Replay-safe adoption: a partially executed prior run (or a
@@ -291,7 +341,7 @@ async function executePlan({ plan, approvedDigest, journalPath }) {
                     createdFolders.set(action.ref, existingToken);
                     entry.result = { folderToken: existingToken, alreadyExisted: true };
                 } else {
-                    const created = await larkJson(['drive', '+create-folder', '--folder-token', action.parentFolderToken, '--name', action.name]);
+                    const created = await larkJsonFn(['drive', '+create-folder', '--folder-token', action.parentFolderToken, '--name', action.name]);
                     const token = created?.data?.folder_token || created?.data?.token || created?.data?.folder?.token || created?.token;
                     if (!token) throw new Error(`create-folder returned no token: ${JSON.stringify(created).slice(0, 160)}`);
                     createdFolders.set(action.ref, token);
@@ -306,19 +356,54 @@ async function executePlan({ plan, approvedDigest, journalPath }) {
                 }
                 const toFolder = createdFolders.get(action.toFolderRef) || action.toFolderToken;
                 if (!toFolder) throw new Error(`unresolved target folder for ${action.ref}`);
-                const children = await listFolder(toFolder);
+                const children = await listFolderFn(toFolder);
                 if (!children.some((c) => (c.token || c.file_token) === fileToken)) {
-                    await larkJson(['drive', '+move', '--file-token', fileToken, '--folder-token', toFolder, '--type', action.kind === 'move-folder' ? 'folder' : 'docx']);
+                    await larkJsonFn(['drive', '+move', '--file-token', fileToken, '--folder-token', toFolder, '--type', action.kind === 'move-folder' ? 'folder' : 'docx']);
                 }
-                const placed = await verifyWithRetry(async () => {
-                    const after = await listFolder(toFolder);
+                const placed = await verifyWithRetryFn(async () => {
+                    const after = await listFolderFn(toFolder);
                     return { ok: after.some((c) => (c.token || c.file_token) === fileToken) };
                 });
                 if (!placed.ok) throw new Error(`${fileToken} not found under ${toFolder} after move`);
                 entry.result = { toFolderToken: toFolder, verified: true };
             } else if (action.kind === 'delete-document') {
-                await larkJson(['drive', '+delete', '--file-token', action.documentToken, '--type', 'docx', '--yes']);
-                entry.result = { deleted: true, trash: true };
+                // Unreplayable action: re-verify every premise against live
+                // state before it fires (plan and execution can be far
+                // apart). A prior run's delete is adopted idempotently.
+                const parentChildren = await listFolderFn(action.parentFolderToken);
+                const strayLive = parentChildren.find((c) => (c.token || c.file_token) === action.documentToken);
+                if (!strayLive) {
+                    entry.result = { deleted: true, alreadyAbsent: true };
+                } else {
+                    if (String(strayLive.name) !== String(action.documentName)) {
+                        throw new Error(`stray document name drifted: planned "${action.documentName}", live is "${strayLive.name}" — replan`);
+                    }
+                    const dupChildren = await listFolderFn(action.duplicateOfParentToken);
+                    const duplicateLive = dupChildren.some((c) => (c.token || c.file_token) === action.duplicateOfToken);
+                    if (!duplicateLive) {
+                        throw new Error(`retained copy ${action.duplicateOfToken} no longer exists — refusing to delete the stray — replan`);
+                    }
+                    // Claimant re-sweep: no record in either java track may
+                    // still point at the stray token.
+                    for (const [version, baseToken] of baseByTrack) {
+                        const records = await listBitableRecordsFn(tokenFetcher, baseToken, null);
+                        const stale = records.filter((r) => documentTokenFromLink(r.fields?.Docs?.link || r.fields?.Docs?.url || '') === action.documentToken);
+                        if (stale.length > 0) {
+                            throw new Error(`${stale.length} ${version} record(s) still claim the stray ${action.documentToken} — replan`);
+                        }
+                    }
+                    // Page-block claimants: when the plan binds a
+                    // collect-page-blocks dump, re-read it fresh and refuse
+                    // if any page still references the stray token.
+                    if (action.pageLinksJsonPath) {
+                        const tokens = JSON.parse(fs.readFileSync(action.pageLinksJsonPath, 'utf8'));
+                        if (Array.isArray(tokens) && tokens.includes(action.documentToken)) {
+                            throw new Error(`page blocks still reference ${action.documentToken} per ${action.pageLinksJsonPath} — disposition the references first (replan)`);
+                        }
+                    }
+                    await larkJsonFn(['drive', '+delete', '--file-token', action.documentToken, '--type', 'docx', '--yes']);
+                    entry.result = { deleted: true, trash: true };
+                }
             } else {
                 throw new Error(`unknown action kind ${action.kind}`);
             }
@@ -342,10 +427,14 @@ async function main(argv = process.argv) {
     for (let i = 3; i < argv.length; i += 1) {
         if (argv[i] === '--approve-batch-digest') options.approvedDigest = argv[++i];
         else if (argv[i] === '--plan-json') options.planJson = argv[++i];
+        else if (argv[i] === '--page-links-json') options.pageLinksJson = argv[++i];
         else throw new Error(`Unknown argument: ${argv[i]}`);
     }
     if (mode === 'plan') {
-        const plan = await buildPlan();
+        const pageLinkTokens = options.pageLinksJson
+            ? JSON.parse(fs.readFileSync(options.pageLinksJson, 'utf8'))
+            : [];
+        const plan = await buildPlan({ pageLinkTokens, pageLinksJsonPath: options.pageLinksJson || null });
         fs.mkdirSync(JOURNAL_DIR, { recursive: true });
         const planPath = path.join(JOURNAL_DIR, `plan-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
         fs.writeFileSync(planPath, `${JSON.stringify(plan, null, 1)}\n`);

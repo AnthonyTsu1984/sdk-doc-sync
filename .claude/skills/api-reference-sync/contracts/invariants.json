@@ -686,7 +686,7 @@
       "enforcement": [
         "reconcile"
       ],
-      "statementDigest": "sha256:51f86f74772152c73949f416377807fa5b40f45f7f529c643f00cb3ef30136e0",
+      "statementDigest": "sha256:f8d70a88686e2f748a0bdf7acd16dba960af8d7f0ff9c36d6a1ddfcc17396ea4",
       "fixtureIds": [
         "track-topology-classification"
       ],
@@ -701,11 +701,12 @@
             "TOPOLOGY_PAGE_SECTION_UNKNOWN",
             "TOPOLOGY_PAGE_UNRESOLVED",
             "TOPOLOGY_PAGE_EXEMPTED",
-            "TOPOLOGY_RECORD_SLUG_URL"
+            "TOPOLOGY_RECORD_SLUG_URL",
+            "TOPOLOGY_SAME_NAME_SIBLING"
           ]
         }
       ],
-      "notes": "Campaign-control hardening batch 2 (2026-10-04, docs/campaign-control-hardening.md §4): the fallback chain is the registry track order per language — a record pointing at a recorded fallback source is correct topology, never a defect (grantPrivilege precedent, 2026-10-03). classifyTrackTopology (pure) judges section folders (own tree or recorded fallback source, else FOREIGN/UNRESOLVED) and page documents (claiming section folder via longest-prefix slug match, else OUTSIDE_SECTION/SECTION_UNKNOWN/UNRESOLVED, with operator exemptions surfaced as EXEMPTED info). Live wiring: scripts/audit-track-topology.js (read-only walk per language, detect-only, blocks intake planning per the design); action semantics live as data in config/fallback-topology.json (IN_PLACE / COPY_PATCH_AND_REPOINT / CREATE_FOLDER_THEN_REPOINT / NONE), so a correct answer is never mis-ranked as a risky option again."
+      "notes": "Campaign-control hardening batch 2 (2026-10-04, docs/campaign-control-hardening.md §4): the fallback chain is the registry track order per language — a record pointing at a recorded fallback source is correct topology, never a defect (grantPrivilege precedent, 2026-10-03). classifyTrackTopology (pure) judges section folders (own tree or recorded fallback source, else FOREIGN/UNRESOLVED) and page documents (claiming section folder via longest-prefix slug match, else OUTSIDE_SECTION/SECTION_UNKNOWN/UNRESOLVED, with operator exemptions surfaced as EXEMPTED info), and scans same-name document-beside-folder siblings under the sameNameInOneDirectory policy (TOPOLOGY_SAME_NAME_SIBLING — the 2026-10-04 stray FunctionScore class). Enforcement at the reconcile stage is wired in scripts/reconcile-content.js (per-track classification over the language-wide walk; error findings join the patrol report and gate --strict); scripts/audit-track-topology.js is the intake-preflight walk (non-zero exit on errors; the saved-workflow hard step lands with batch 3). The decision table in config/fallback-topology.json is load-bearing, not documentation: classifyTrackTopology and loadFallbackTopologyConfig refuse to run without the record-points-at-recorded-fallback-source → NONE row and the sameNameInOneDirectory: always-a-defect policy; planner/workflow consumers land with batch 3."
     }
   ]
 }

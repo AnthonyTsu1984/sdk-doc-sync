@@ -461,7 +461,10 @@
    "fallbackOk": true,
    "forwardCode": "TOPOLOGY_PAGE_OUTSIDE_SECTION",
    "fallbackSectionOk": true,
-   "urlSlugCode": "TOPOLOGY_RECORD_SLUG_URL"
+   "fallbackCounted": true,
+   "urlSlugCode": "TOPOLOGY_RECORD_SLUG_URL",
+   "sameNameCode": "TOPOLOGY_SAME_NAME_SIBLING",
+   "contractRefused": true
   }
  }
 ]

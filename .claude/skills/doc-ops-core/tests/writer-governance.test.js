@@ -283,3 +283,52 @@ test('mutation time re-asserts the manifest↔approval relationship', () => {
     policyAttestations: governance.bound.invariantAttestations,
   })), (error) => error.code === 'WRITER_RUN_MANIFEST_BATCH_MISMATCH');
 });
+
+// 6.11 runtime-refusal accounting: a typed pre-write refusal at the mutation
+// boundary lands in the violations ledger (evidence, never a gate) when the
+// governance knows its repoRoot through the bound run manifest.
+test('a typed pre-write refusal is recorded to the violations ledger before propagating', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'wg-ledger-'));
+  fs.writeFileSync(path.join(repoRoot, 'tree.txt'), 'fixture tree');
+
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  governance.bindApproval({
+    ...BATCH,
+    approval: approvalFor(),
+    invariantAttestations: [attestation()],
+  });
+  const batch = { ...BATCH };
+  governance.bindRunManifest(stubRunManifest({
+    skill: 'api-reference-sync',
+    batchDigest: batch.batchDigest,
+    policyAttestations: batch.invariantAttestations || governance.bound.invariantAttestations,
+  }), { repoRoot });
+
+  let refusal = null;
+  try {
+    governance.assertMutationAllowed({ method: 'updateRecord', target: 'rec-1' });
+  } catch (error) {
+    refusal = error;
+  }
+  // The temp tree cannot match the stub manifest's fingerprint, so the
+  // mutation refuses deterministically — and the refusal is on the ledger.
+  assert.ok(refusal instanceof WriterGovernanceError);
+  assert.ok(refusal.code);
+
+  const { readInvariantViolations } = require('../../doc-ops-core/src/invariant-violations');
+  const events = readInvariantViolations(repoRoot);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].kind, 'runtime_refusal');
+  assert.equal(events[0].code, refusal.code);
+  assert.equal(events[0].stage, 'pre-write');
+  assert.equal(events[0].detail.skill, 'api-reference-sync');
+  assert.equal(events[0].detail.method, 'updateRecord');
+
+  // Without a repoRoot (pre-manifest refusals) nothing is recorded and the
+  // refusal path itself is unchanged.
+  const unrooted = createWriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+  assert.throws(() => unrooted.assertMutationAllowed({ method: 'updateRecord' }), (error) => error.code === 'WRITER_ENVELOPE_REQUIRED');
+});

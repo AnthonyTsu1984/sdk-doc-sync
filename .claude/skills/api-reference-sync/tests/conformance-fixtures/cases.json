@@ -1,527 +1,567 @@
 [
- {
-  "id": "release-range",
-  "assertions": {
-   "fullScanIsApprovalGrade": false,
-   "rangeRequired": true
-  }
- },
- {
-  "id": "ann-search-request",
-  "assertions": {
-   "symbol": "AnnSearchRequest",
-   "classification": "method_owned",
-   "owner": "hybrid_search()",
-   "standalone": false
-  }
- },
- {
-  "id": "response-wrapper-ownership",
-  "assertions": {
-   "symbols": [
-    "RoleItem",
-    "UserItem"
-   ],
-   "owners": [
-    "describe_role()",
-    "describe_user()"
-   ],
-   "standalone": false
-  }
- },
- {
-  "id": "sparse-version-copy",
-  "assertions": {
-   "changedInheritedAction": "COPY_PATCH_AND_REPOINT",
-   "patchOlderVersionInPlace": false
-  }
- },
- {
-  "id": "phase-gates",
-  "assertions": {
-   "writeApprovalImpliesAcceptance": false,
-   "groupingApprovalImpliesWrite": false
-  }
- },
- {
-  "id": "scan-state-acceptance",
-  "assertions": {
-   "advanceBeforeAcceptance": false,
-   "requiredProgress": "Draft"
-  }
- },
- {
-  "id": "exact-approval",
-  "assertions": {
-   "batchDigestRequired": true
-  }
- },
- {
-  "id": "recoverable-execution",
-  "assertions": {
-   "preparedBeforeMutation": true,
-   "blindReplay": false
-  }
- },
- {
-  "id": "pr-intake",
-  "assertions": {
-   "pinnedSourceRevision": true,
-   "schemaValidScopeArtifact": true,
-   "liveRecordStateClassification": true
-  }
- },
- {
-  "id": "rest-track-26",
-  "assertions": {
-   "minorTrack": "v2.6.x",
-   "scannedIndependently": true
-  }
- },
- {
-  "id": "rest-track-30",
-  "assertions": {
-   "minorTrack": "v3.0.x",
-   "scannedIndependently": true
-  }
- },
- {
-  "id": "rest-lifecycle-fields",
-  "assertions": {
-   "operationLifecycle": true,
-   "contractElementLifecycle": true,
-   "minorGranularity": true
-  }
- },
- {
-  "id": "rest-review-manifest",
-  "assertions": {
-   "unitPerVersionTrackEndpointMethod": true
-  }
- },
- {
-  "id": "rest-fragment-collection",
-  "assertions": {
-   "deterministic": true,
-   "planeAware": true,
-   "boundToFullSourceRevision": true,
-   "reviewApprovalRequired": true
-  }
- },
- {
-  "id": "rest-control-plane-review",
-  "assertions": {
-   "fullBaseToFullHead": true,
-   "releaseTracks": false
-  }
- },
- {
-  "id": "delta-unchanged-inherited",
-  "assertions": {
-   "mirrorCreateBlocker": "CREATE_RECORD_ALREADY_EXISTS",
-   "sharedUpdateAction": "COPY_PATCH_AND_REPOINT",
-   "olderSourceUnchangedPostcondition": true
+  {
+    "id": "ann-search-request",
+    "assertions": {
+      "symbol": "AnnSearchRequest",
+      "classification": "method_owned",
+      "owner": "hybrid_search()",
+      "standalone": false
+    }
   },
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "delta-unchanged-inherited"
-  }
- },
- {
-  "id": "delta-changed-existing-category",
-  "assertions": {
-   "action": "COPY_PATCH_AND_REPOINT",
-   "copySourceDocumentToken": "doc-load-partitions-v26",
-   "repointedRecordId": "rec-load-partitions-v30",
-   "olderSourceUnchanged": true
+  {
+    "id": "content-description-scope-violation",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentDescriptionScopeViolation"
+    },
+    "assertions": {
+      "violationCode": "DESCRIPTION_SCOPE_VIOLATION",
+      "violationWrites": 0,
+      "virtualNodeWrites": 1
+    }
   },
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "delta-changed-existing-category"
-  }
- },
- {
-  "id": "delta-changed-missing-category",
-  "assertions": {
-   "resourceAction": "CREATE_FOLDER",
-   "folderEmbedsRepoint": false,
-   "repointAction": "REPOINT_CATEGORY_VIRTUAL_NODE",
-   "repointDependsOnFolder": true,
-   "repointDependsOnDocument": true,
-   "documentAction": "COPY_PATCH_AND_REPOINT",
-   "documentDependsOnFolderResource": true,
-   "attestationDecision": "COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE",
-   "requiredDag": [
-    "CREATE_FOLDER",
-    "COPY_PATCH_AND_REPOINT",
-    "REPOINT_CATEGORY_VIRTUAL_NODE",
-    "VERIFY_TREE_DELTA"
-   ],
-   "requiredDagEndsWithVerify": true,
-   "repointAfterDocumentInBatch": true
+  {
+    "id": "content-include-rebuild-blocked",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentIncludeRebuildBlocked"
+    },
+    "assertions": {
+      "providerCode": "INCLUDE_REBUILD_FORBIDDEN"
+    }
   },
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "delta-changed-missing-category"
-  }
- },
- {
-  "id": "delta-shared-inplace-classified",
-  "assertions": {
-   "plannerAction": "UPDATE_IN_PLACE",
-   "attestationVersion": 5,
-   "executorStatus": "success",
-   "patchedToken": "doc-load-partitions-v26",
-   "writerCalls": 2,
-   "treeDeltaOk": true
+  {
+    "id": "content-layout-content-quality",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentLayoutContentQuality"
+    },
+    "assertions": {
+      "cjkCode": "CONTENT_CJK_MIXING",
+      "firstSentenceCode": "FIRST_SENTENCE_REGISTER",
+      "returnsDepthCode": "RETURNS_MIN_DEPTH",
+      "paramDescCode": "PARAM_DESC_REQUIRED",
+      "noteLeakCode": "INTERNAL_NOTE_LEAK",
+      "cleanOk": true
+    }
   },
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "delta-shared-inplace-classified"
-  }
- },
- {
-  "id": "delta-shared-inplace-forbidden",
-  "assertions": {
-   "planningBlocker": "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED",
-   "executorBlocker": "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
-   "executorFailedStep": "verifySharedTokenEvidence",
-   "writerCalls": 0
+  {
+    "id": "content-layout-cpp-prefix-violation",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentLayoutCppPrefixViolation"
+    },
+    "assertions": {
+      "cppViolationCode": "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
+      "javaNoBuilderPrefix": true
+    }
   },
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "delta-shared-inplace-forbidden"
-  }
- },
- {
-  "id": "delta-postwrite-verified",
-  "assertions": {
-   "attestationDecision": "COPY_PATCH_AND_REPOINT",
-   "postWriteVerificationOk": true,
-   "successStatus": "success",
-   "writerCallsAfterVerification": 3,
-   "driftedStatus": "error",
-   "driftedErrorCode": "TREE_DELTA_REFERENCES_DRIFTED",
-   "driftedVerificationOk": false,
-   "comparatorOk": true,
-   "categoryNodeDriftCode": "TREE_DELTA_CATEGORY_NODE_NOT_REPOINTED"
+  {
+    "id": "content-layout-return-sections",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentLayoutReturnSections"
+    },
+    "assertions": {
+      "returnTypeMissingCode": "LAYOUT_RETURN_TYPE_MISSING",
+      "returnsMissingCode": "LAYOUT_RETURNS_MISSING",
+      "typeRowCode": "LAYOUT_RETURNS_TYPE_ROW",
+      "proseMissingCode": "LAYOUT_RETURNS_PROSE_MISSING",
+      "cppUnboundNoSplitCodes": true,
+      "cleanOk": true
+    }
   },
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "delta-postwrite-verified"
-  }
- },
- {
-  "id": "content-table-native-roundtrip",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentTableNativeRoundtrip"
+  {
+    "id": "content-layout-single-request-h3",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentLayoutSingleRequestH3"
+    },
+    "assertions": {
+      "singleH3Code": "LAYOUT_SINGLE_REQUEST_H3",
+      "multiRequestClean": true,
+      "exampleHeadingCode": "LAYOUT_EXAMPLE_HEADING"
+    }
   },
-  "assertions": {
-   "blockType": 31,
-   "rowSize": 2,
-   "columnSize": 2,
-   "underscoreCell": "membership_match",
-   "inlineCodeCellKept": true,
-   "normalizedRefetchLine": "| membership\\_match | `x` |"
-  }
- },
- {
-  "id": "content-unrepresentable-token-blocked",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentUnrepresentableTokenBlocked"
+  {
+    "id": "content-polish-chain",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentPolishChain"
+    },
+    "assertions": {
+      "sequencingCode": "PR_POLISH_VERBATIM_NOT_PROVEN",
+      "fenceIntact": true,
+      "landedOk": true,
+      "invariantId": "api.pr-polish-governed",
+      "chainOk": true,
+      "brokenChainOk": false,
+      "digestStable": true
+    }
   },
-  "assertions": {
-   "blocked": true,
-   "code": "MD_TOKEN_UNREPRESENTABLE"
-  }
- },
- {
-  "id": "content-relative-link-resolved",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentRelativeLinkResolved"
+  {
+    "id": "content-polish-protected-region",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentPolishProtectedRegion"
+    },
+    "assertions": {
+      "happyPathOk": true,
+      "fenceCode": "PR_POLISH_PROTECTED_REGION",
+      "tableRowCode": "PR_POLISH_PROTECTED_REGION",
+      "headingCode": "PR_POLISH_PROTECTED_REGION",
+      "includeLineCode": "PR_POLISH_PROTECTED_REGION",
+      "requestCode": "PR_POLISH_CODE_SPAN_CHANGED",
+      "urlCode": "PR_POLISH_URL_SET_CHANGED",
+      "structureCode": "PR_POLISH_FORBIDDEN_INTRODUCTION",
+      "duplicateAnchorCode": "PR_POLISH_ANCHOR_NOT_UNIQUE",
+      "fullRewriteCode": "PR_POLISH_FULL_REWRITE",
+      "baseDigestCode": "PR_POLISH_BASE_DIGEST_MISMATCH"
+    }
   },
-  "assertions": {
-   "crossTrackResolved": "https://zilliverse.feishu.cn/docx/AAA",
-   "sameDirResolved": "https://zilliverse.feishu.cn/docx/BBB",
-   "unresolvedErrorCode": "RELATIVE_LINK_UNRESOLVED",
-   "deLinkedFragment": "Ghost plain"
-  }
- },
- {
-  "id": "content-relative-link-blocked",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentRelativeLinkBlocked"
+  {
+    "id": "content-polish-restructure",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentPolishRestructure"
+    },
+    "assertions": {
+      "modeInvalidCode": "PR_POLISH_MODE_INVALID",
+      "semanticLossCode": "PR_POLISH_SEMANTIC_CONTENT_LOST",
+      "codeAlterCode": "PR_POLISH_SEMANTIC_CONTENT_LOST",
+      "citationRequiredCode": "PR_POLISH_SOURCE_CITATION_REQUIRED",
+      "tableUnboundCode": "PR_POLISH_SOURCE_TABLE_UNBOUND",
+      "happyOk": true,
+      "terminalOk": true,
+      "chainOk": true,
+      "brokenChainOk": false,
+      "provenanceMode": "restructure"
+    }
   },
-  "assertions": {
-   "code": "RELATIVE_LINK_URL_REJECTED",
-   "writerCalls": 0
-  }
- },
- {
-  "id": "content-include-rebuild-blocked",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentIncludeRebuildBlocked"
+  {
+    "id": "content-reconcile-callout-empty-child",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentReconcileCalloutEmptyChild"
+    },
+    "assertions": {
+      "emptyChildCode": "CALLOUT_EMPTY_CHILD",
+      "cleanCalloutFindings": 0
+    }
   },
-  "assertions": {
-   "providerCode": "INCLUDE_REBUILD_FORBIDDEN"
-  }
- },
- {
-  "id": "content-description-scope-violation",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentDescriptionScopeViolation"
+  {
+    "id": "content-reconcile-orphan-detected",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentReconcileOrphanDetected"
+    },
+    "assertions": {
+      "orphanCode": "CONTENT_ORPHAN_DOCUMENT",
+      "referencedClean": true
+    }
   },
-  "assertions": {
-   "violationCode": "DESCRIPTION_SCOPE_VIOLATION",
-   "violationWrites": 0,
-   "virtualNodeWrites": 1
-  }
- },
- {
-  "id": "content-verbatim-roundtrip",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentVerbatimRoundtrip"
+  {
+    "id": "content-reconcile-same-name-placement",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentReconcileSameNamePlacement"
+    },
+    "assertions": {
+      "misplacedCode": "SAME_NAME_COPY_MISPLACED",
+      "orphanCode": "SAME_NAME_SIBLING_ORPHAN",
+      "conflictCode": "SAME_NAME_TRACK_CONFLICT",
+      "protectedFindings": 0,
+      "protectedState": "multi-track-pair",
+      "genericOrphanSuppressed": true
+    }
   },
-  "assertions": {
-   "normalizedOk": true,
-   "driftOk": false,
-   "invariantId": "api.pr-verbatim-content"
-  }
- },
- {
-  "id": "content-shape-mismatch-requires-rebuild",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentShapeMismatchRequiresRebuild"
+  {
+    "id": "content-relative-link-blocked",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentRelativeLinkBlocked"
+    },
+    "assertions": {
+      "code": "RELATIVE_LINK_URL_REJECTED",
+      "writerCalls": 0
+    }
   },
-  "assertions": {
-   "code": "REBUILD_REQUIRED_SHAPE_MISMATCH",
-   "writeCalls": 0
-  }
- },
- {
-  "id": "content-polish-chain",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentPolishChain"
+  {
+    "id": "content-relative-link-resolved",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentRelativeLinkResolved"
+    },
+    "assertions": {
+      "crossTrackResolved": "https://zilliverse.feishu.cn/docx/AAA",
+      "sameDirResolved": "https://zilliverse.feishu.cn/docx/BBB",
+      "unresolvedErrorCode": "RELATIVE_LINK_UNRESOLVED",
+      "deLinkedFragment": "Ghost plain"
+    }
   },
-  "assertions": {
-   "sequencingCode": "PR_POLISH_VERBATIM_NOT_PROVEN",
-   "fenceIntact": true,
-   "landedOk": true,
-   "invariantId": "api.pr-polish-governed",
-   "chainOk": true,
-   "brokenChainOk": false,
-   "digestStable": true
-  }
- },
- {
-  "id": "content-polish-protected-region",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentPolishProtectedRegion"
+  {
+    "id": "content-shape-mismatch-requires-rebuild",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentShapeMismatchRequiresRebuild"
+    },
+    "assertions": {
+      "code": "REBUILD_REQUIRED_SHAPE_MISMATCH",
+      "writeCalls": 0
+    }
   },
-  "assertions": {
-   "happyPathOk": true,
-   "fenceCode": "PR_POLISH_PROTECTED_REGION",
-   "tableRowCode": "PR_POLISH_PROTECTED_REGION",
-   "headingCode": "PR_POLISH_PROTECTED_REGION",
-   "includeLineCode": "PR_POLISH_PROTECTED_REGION",
-   "requestCode": "PR_POLISH_CODE_SPAN_CHANGED",
-   "urlCode": "PR_POLISH_URL_SET_CHANGED",
-   "structureCode": "PR_POLISH_FORBIDDEN_INTRODUCTION",
-   "duplicateAnchorCode": "PR_POLISH_ANCHOR_NOT_UNIQUE",
-   "fullRewriteCode": "PR_POLISH_FULL_REWRITE",
-   "baseDigestCode": "PR_POLISH_BASE_DIGEST_MISMATCH"
-  }
- },
- {
-  "id": "content-polish-restructure",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentPolishRestructure"
+  {
+    "id": "content-table-native-roundtrip",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentTableNativeRoundtrip"
+    },
+    "assertions": {
+      "blockType": 31,
+      "rowSize": 2,
+      "columnSize": 2,
+      "underscoreCell": "membership_match",
+      "inlineCodeCellKept": true,
+      "normalizedRefetchLine": "| membership\\_match | `x` |"
+    }
   },
-  "assertions": {
-   "modeInvalidCode": "PR_POLISH_MODE_INVALID",
-   "semanticLossCode": "PR_POLISH_SEMANTIC_CONTENT_LOST",
-   "codeAlterCode": "PR_POLISH_SEMANTIC_CONTENT_LOST",
-   "citationRequiredCode": "PR_POLISH_SOURCE_CITATION_REQUIRED",
-   "tableUnboundCode": "PR_POLISH_SOURCE_TABLE_UNBOUND",
-   "happyOk": true,
-   "terminalOk": true,
-   "chainOk": true,
-   "brokenChainOk": false,
-   "provenanceMode": "restructure"
-  }
- },
- {
-  "id": "content-reconcile-orphan-detected",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentReconcileOrphanDetected"
+  {
+    "id": "content-unrepresentable-token-blocked",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentUnrepresentableTokenBlocked"
+    },
+    "assertions": {
+      "blocked": true,
+      "code": "MD_TOKEN_UNREPRESENTABLE"
+    }
   },
-  "assertions": {
-   "orphanCode": "CONTENT_ORPHAN_DOCUMENT",
-   "referencedClean": true
-  }
- },
- {
-  "id": "content-reconcile-callout-empty-child",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentReconcileCalloutEmptyChild"
+  {
+    "id": "content-verbatim-roundtrip",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentVerbatimRoundtrip"
+    },
+    "assertions": {
+      "normalizedOk": true,
+      "driftOk": false,
+      "invariantId": "api.pr-verbatim-content"
+    }
   },
-  "assertions": {
-   "emptyChildCode": "CALLOUT_EMPTY_CHILD",
-   "cleanCalloutFindings": 0
-  }
- },
- {
-  "id": "content-layout-cpp-prefix-violation",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentLayoutCppPrefixViolation"
+  {
+    "id": "delta-changed-existing-category",
+    "assertions": {
+      "action": "COPY_PATCH_AND_REPOINT",
+      "copySourceDocumentToken": "doc-load-partitions-v26",
+      "repointedRecordId": "rec-load-partitions-v30",
+      "olderSourceUnchanged": true
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "delta-changed-existing-category"
+    }
   },
-  "assertions": {
-   "cppViolationCode": "LAYOUT_BUILDER_PREFIX_FORBIDDEN",
-   "javaNoBuilderPrefix": true
-  }
- },
- {
-  "id": "content-layout-single-request-h3",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentLayoutSingleRequestH3"
+  {
+    "id": "delta-changed-missing-category",
+    "assertions": {
+      "resourceAction": "CREATE_FOLDER",
+      "folderEmbedsRepoint": false,
+      "repointAction": "REPOINT_CATEGORY_VIRTUAL_NODE",
+      "repointDependsOnFolder": true,
+      "repointDependsOnDocument": true,
+      "documentAction": "COPY_PATCH_AND_REPOINT",
+      "documentDependsOnFolderResource": true,
+      "attestationDecision": "COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE",
+      "requiredDag": [
+        "CREATE_FOLDER",
+        "COPY_PATCH_AND_REPOINT",
+        "REPOINT_CATEGORY_VIRTUAL_NODE",
+        "VERIFY_TREE_DELTA"
+      ],
+      "requiredDagEndsWithVerify": true,
+      "repointAfterDocumentInBatch": true
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "delta-changed-missing-category"
+    }
   },
-  "assertions": {
-   "singleH3Code": "LAYOUT_SINGLE_REQUEST_H3",
-   "multiRequestClean": true,
-   "exampleHeadingCode": "LAYOUT_EXAMPLE_HEADING"
-  }
- },
- {
-  "id": "content-layout-return-sections",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentLayoutReturnSections"
+  {
+    "id": "delta-postwrite-verified",
+    "assertions": {
+      "attestationDecision": "COPY_PATCH_AND_REPOINT",
+      "postWriteVerificationOk": true,
+      "successStatus": "success",
+      "writerCallsAfterVerification": 3,
+      "driftedStatus": "error",
+      "driftedErrorCode": "TREE_DELTA_REFERENCES_DRIFTED",
+      "driftedVerificationOk": false,
+      "comparatorOk": true,
+      "categoryNodeDriftCode": "TREE_DELTA_CATEGORY_NODE_NOT_REPOINTED"
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "delta-postwrite-verified"
+    }
   },
-  "assertions": {
-   "returnTypeMissingCode": "LAYOUT_RETURN_TYPE_MISSING",
-   "returnsMissingCode": "LAYOUT_RETURNS_MISSING",
-   "typeRowCode": "LAYOUT_RETURNS_TYPE_ROW",
-   "proseMissingCode": "LAYOUT_RETURNS_PROSE_MISSING",
-   "cppUnboundNoSplitCodes": true,
-   "cleanOk": true
-  }
- },
- {
-  "id": "content-layout-content-quality",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentLayoutContentQuality"
+  {
+    "id": "delta-shared-inplace-classified",
+    "assertions": {
+      "plannerAction": "UPDATE_IN_PLACE",
+      "attestationVersion": 5,
+      "executorStatus": "success",
+      "patchedToken": "doc-load-partitions-v26",
+      "writerCalls": 2,
+      "treeDeltaOk": true
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "delta-shared-inplace-classified"
+    }
   },
-  "assertions": {
-   "cjkCode": "CONTENT_CJK_MIXING",
-   "firstSentenceCode": "FIRST_SENTENCE_REGISTER",
-   "returnsDepthCode": "RETURNS_MIN_DEPTH",
-   "paramDescCode": "PARAM_DESC_REQUIRED",
-   "noteLeakCode": "INTERNAL_NOTE_LEAK",
-   "cleanOk": true
-  }
- },
- {
-  "id": "content-reconcile-same-name-placement",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "contentReconcileSameNamePlacement"
+  {
+    "id": "delta-shared-inplace-forbidden",
+    "assertions": {
+      "planningBlocker": "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED",
+      "executorBlocker": "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
+      "executorFailedStep": "verifySharedTokenEvidence",
+      "writerCalls": 0
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "delta-shared-inplace-forbidden"
+    }
   },
-  "assertions": {
-   "misplacedCode": "SAME_NAME_COPY_MISPLACED",
-   "orphanCode": "SAME_NAME_SIBLING_ORPHAN",
-   "conflictCode": "SAME_NAME_TRACK_CONFLICT",
-   "protectedFindings": 0,
-   "protectedState": "multi-track-pair",
-   "genericOrphanSuppressed": true
-  }
- },
- {
-  "id": "track-topology-classification",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "trackTopologyAudit"
+  {
+    "id": "delta-unchanged-inherited",
+    "assertions": {
+      "mirrorCreateBlocker": "CREATE_RECORD_ALREADY_EXISTS",
+      "sharedUpdateAction": "COPY_PATCH_AND_REPOINT",
+      "olderSourceUnchangedPostcondition": true
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "delta-unchanged-inherited"
+    }
   },
-  "assertions": {
-   "fallbackOk": true,
-   "forwardCode": "TOPOLOGY_PAGE_OUTSIDE_SECTION",
-   "fallbackSectionOk": true,
-   "fallbackCounted": true,
-   "urlSlugCode": "TOPOLOGY_RECORD_SLUG_URL",
-   "sameNameCode": "TOPOLOGY_SAME_NAME_SIBLING",
-   "contractRefused": true
-  }
- },
- {
-  "id": "write-boundary-reconcile",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "write-boundary-reconcile"
+  {
+    "id": "exact-approval",
+    "assertions": {
+      "batchDigestRequired": true
+    }
   },
-  "assertions": {
-   "collisionCode": "FOLDER_NAME_COLLISION",
-   "collisionWrites": 0,
-   "adopted": true,
-   "adoptionAttempts": 1,
-   "postcheckCode": "WRITE_POSTCHECK_FAILED"
-  }
- },
- {
-  "id": "placement-live-binding",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "placement-live-binding"
+  {
+    "id": "phase-gates",
+    "assertions": {
+      "writeApprovalImpliesAcceptance": false,
+      "groupingApprovalImpliesWrite": false
+    }
   },
-  "assertions": {
-   "boundOk": true,
-   "staleCode": "PLACEMENT_SOURCE_STALE",
-   "unboundCode": "PLACEMENT_SOURCE_STALE",
-   "divergentCode": "PLACEMENT_WALK_DIVERGENT",
-   "legacyOk": true
-  }
- },
- {
-  "id": "style-mirror-allowlist",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "style-mirror-allowlist"
+  {
+    "id": "placement-live-binding",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "placement-live-binding"
+    },
+    "assertions": {
+      "boundOk": true,
+      "staleCode": "PLACEMENT_SOURCE_STALE",
+      "unboundCode": "PLACEMENT_SOURCE_STALE",
+      "divergentCode": "PLACEMENT_WALK_DIVERGENT",
+      "legacyOk": true
+    }
   },
-  "assertions": {
-   "refusedCode": "STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED",
-   "allowedClean": 0,
-   "malformedRefused": true,
-   "cliExit": 1,
-   "cliRefused": true
-  }
- },
- {
-  "id": "rebuild-first-class",
-  "executable": {
-   "runner": "invariant-conformance",
-   "scenario": "rebuild-first-class"
+  {
+    "id": "pr-intake",
+    "assertions": {
+      "pinnedSourceRevision": true,
+      "schemaValidScopeArtifact": true,
+      "liveRecordStateClassification": true
+    }
   },
-  "assertions": {
-   "routedAction": "REBUILD",
-   "autoRoutedFrom": "CREATE",
-   "foreignCode": "REBUILD_SCOPE_FOREIGN",
-   "surgicalCode": "REBUILD_STRATEGY_REQUIRED",
-   "lineageBound": true,
-   "linkRecordId": "rec-campaign"
+  {
+    "id": "process-learning-change-request-captured",
+    "assertions": {
+      "eventCount": 1,
+      "candidateIdPrefix": "auto-",
+      "candidateRuleClass": "deterministic-procedure",
+      "candidateCarriesProvenance": true,
+      "statementMentionsUnit": true,
+      "closedStatus": "finalized",
+      "stampedCapturedCount": 1
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "process-learning-change-request-captured"
+    }
+  },
+  {
+    "id": "process-learning-close-refused-uncaptured",
+    "assertions": {
+      "refusalCode": "PROCESS_LEARNING_CAPTURE_REQUIRED"
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "process-learning-close-refused-uncaptured"
+    }
+  },
+  {
+    "id": "process-learning-suppression-recorded",
+    "assertions": {
+      "capturedCandidateCount": 0,
+      "suppressedEventKeys": [
+        "decision:sdk-doc-sync:test:process-learning-suppression:decision-pl-suppression"
+      ],
+      "closedStatus": "finalized"
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "process-learning-suppression-recorded"
+    }
+  },
+  {
+    "id": "rebuild-first-class",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "rebuild-first-class"
+    },
+    "assertions": {
+      "routedAction": "REBUILD",
+      "autoRoutedFrom": "CREATE",
+      "foreignCode": "REBUILD_SCOPE_FOREIGN",
+      "surgicalCode": "REBUILD_STRATEGY_REQUIRED",
+      "lineageBound": true,
+      "linkRecordId": "rec-campaign"
+    }
+  },
+  {
+    "id": "recoverable-execution",
+    "assertions": {
+      "preparedBeforeMutation": true,
+      "blindReplay": false
+    }
+  },
+  {
+    "id": "release-range",
+    "assertions": {
+      "fullScanIsApprovalGrade": false,
+      "rangeRequired": true
+    }
+  },
+  {
+    "id": "response-wrapper-ownership",
+    "assertions": {
+      "symbols": [
+        "RoleItem",
+        "UserItem"
+      ],
+      "owners": [
+        "describe_role()",
+        "describe_user()"
+      ],
+      "standalone": false
+    }
+  },
+  {
+    "id": "rest-control-plane-review",
+    "assertions": {
+      "fullBaseToFullHead": true,
+      "releaseTracks": false
+    }
+  },
+  {
+    "id": "rest-fragment-collection",
+    "assertions": {
+      "deterministic": true,
+      "planeAware": true,
+      "boundToFullSourceRevision": true,
+      "reviewApprovalRequired": true
+    }
+  },
+  {
+    "id": "rest-lifecycle-fields",
+    "assertions": {
+      "operationLifecycle": true,
+      "contractElementLifecycle": true,
+      "minorGranularity": true
+    }
+  },
+  {
+    "id": "rest-review-manifest",
+    "assertions": {
+      "unitPerVersionTrackEndpointMethod": true
+    }
+  },
+  {
+    "id": "rest-track-26",
+    "assertions": {
+      "minorTrack": "v2.6.x",
+      "scannedIndependently": true
+    }
+  },
+  {
+    "id": "rest-track-30",
+    "assertions": {
+      "minorTrack": "v3.0.x",
+      "scannedIndependently": true
+    }
+  },
+  {
+    "id": "scan-state-acceptance",
+    "assertions": {
+      "advanceBeforeAcceptance": false,
+      "requiredProgress": "Draft"
+    }
+  },
+  {
+    "id": "sparse-version-copy",
+    "assertions": {
+      "changedInheritedAction": "COPY_PATCH_AND_REPOINT",
+      "patchOlderVersionInPlace": false
+    }
+  },
+  {
+    "id": "style-mirror-allowlist",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "style-mirror-allowlist"
+    },
+    "assertions": {
+      "refusedCode": "STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED",
+      "allowedClean": 0,
+      "malformedRefused": true,
+      "cliExit": 1,
+      "cliRefused": true
+    }
+  },
+  {
+    "id": "track-topology-classification",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "trackTopologyAudit"
+    },
+    "assertions": {
+      "fallbackOk": true,
+      "forwardCode": "TOPOLOGY_PAGE_OUTSIDE_SECTION",
+      "fallbackSectionOk": true,
+      "fallbackCounted": true,
+      "urlSlugCode": "TOPOLOGY_RECORD_SLUG_URL",
+      "sameNameCode": "TOPOLOGY_SAME_NAME_SIBLING",
+      "contractRefused": true
+    }
+  },
+  {
+    "id": "write-boundary-reconcile",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "write-boundary-reconcile"
+    },
+    "assertions": {
+      "collisionCode": "FOLDER_NAME_COLLISION",
+      "collisionWrites": 0,
+      "adopted": true,
+      "adoptionAttempts": 1,
+      "postcheckCode": "WRITE_POSTCHECK_FAILED"
+    }
   }
- }
 ]

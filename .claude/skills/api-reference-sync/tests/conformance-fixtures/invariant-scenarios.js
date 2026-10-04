@@ -1786,4 +1786,211 @@ const scenarios = {
   },
 };
 
+// --- api.process-learning-capture (打回即铸 close-time capture) -----------
+// Executable scenarios for the process-learning invariant: they drive the
+// PRODUCTION session store (execution → changes-requested → acceptance →
+// close) through the same transitions the CLI uses, against temp journals and
+// a temp repoRoot, and report the typed outcomes the fixtures pin.
+
+const {
+  createReviewSession,
+  recordDocumentExecution,
+  recordDocumentChangesRequested,
+  recordDocumentAcceptance,
+  recordLearningSuppression,
+  recordReviewDecision,
+  captureSessionLearnings,
+  closeSession,
+} = require('../../src/sdk-doc-sync/review-session-store');
+
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+const { INVARIANT_ID: TREE_DELTA_INVARIANT_ID } = require('../../src/sdk-doc-sync/versioned-tree-policy');
+const { INVARIANT_ID: VERBATIM_INVARIANT_ID } = require('../../src/sdk-doc-sync/verbatim-content');
+
+function plTempDir(prefix) {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+}
+
+const PL_UNIT_A = 'review:node:Collections:pl-a';
+const PL_UNIT_B = 'review:node:Collections:pl-b';
+
+function plManifest() {
+  return {
+    schemaVersion: 1,
+    manifestDigest: 'sha256:review-manifest-pl',
+    units: [
+      { reviewUnitId: PL_UNIT_A, documentStableId: 'node:Collections:pl-a' },
+      { reviewUnitId: PL_UNIT_B, documentStableId: 'node:Collections:pl-b' },
+    ],
+    unassignedResourceActionIds: [],
+  };
+}
+
+function plJournal(directory, name, actionId, batchDigest) {
+  const entries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest, actionId, invariantAttestationIds: [VERBATIM_INVARIANT_ID] },
+    { schemaVersion: 1, type: 'tree-delta', actionId, invariantId: TREE_DELTA_INVARIANT_ID, decision: 'PASS', ok: true },
+    { schemaVersion: 1, type: 'content-fidelity', actionId, invariantId: VERBATIM_INVARIANT_ID, decision: 'PASS', ok: true },
+    { schemaVersion: 1, type: 'observed', batchDigest, actionId, status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', batchDigest, status: 'executed', completionSentinel: true },
+  ];
+  const filePath = path.join(directory, name);
+  fs.writeFileSync(filePath, entries.map((entry) => JSON.stringify(entry)).join('\n') + '\n');
+  return { filePath, digest: digestSemantic(entries) };
+}
+
+function plFinalizeUnit(session, directory, unitId, sequence) {
+  const actionId = unitId.replace(/^review:/, '');
+  const journal = plJournal(directory, `pl-${sequence}.jsonl`, actionId, `sha256:pl-batch-${sequence}`);
+  const executed = recordDocumentExecution(session, {
+    reviewUnitId: unitId,
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: journal.digest,
+  });
+  const receipt = {
+    reviewUnitId: unitId,
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: journal.digest,
+    touchedRecords: [{ actionId, recordId: `rec-${sequence}`, documentToken: 'doc' }],
+    documentLinks: ['https://example.com/doc'],
+    recordLinks: ['https://example.com/rec'],
+    commentsResolved: true,
+    finalTargets: { [`rec-${sequence}`]: ['Milvus', 'Zilliz'] },
+  };
+  const draftRecords = receipt.touchedRecords.map((record) => ({
+    recordId: record.recordId,
+    beforeProgress: 'WIP',
+    afterProgress: 'Draft',
+    verified: true,
+  }));
+  const unitReceipt = {
+    schemaVersion: 1,
+    status: 'document_accepted',
+    reviewUnitId: unitId,
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: journal.digest,
+    draftRecords,
+    finalTargets: receipt.finalTargets,
+    evidence: [],
+    acceptedAt: '2026-10-04T00:00:00.000Z',
+  };
+  const receiptPath = path.join(directory, `pl-receipt-${sequence}.json`);
+  fs.writeFileSync(receiptPath, JSON.stringify(unitReceipt, null, 2) + '\n');
+  return recordDocumentAcceptance(executed, {
+    ...receipt,
+    draftRecords,
+    unitReceiptPath: receiptPath,
+    unitReceiptDigest: digestSemantic(unitReceipt),
+    acceptedAt: '2026-10-04T00:00:00.000Z',
+  });
+}
+
+// A fully-finalized two-gate session whose unit A went through one
+// changes-requested redo, leaving one learning event behind.
+function plSessionWithChangeRequest() {
+  const directory = plTempDir('pl-close-');
+  let session = createReviewSession({
+    sessionId: 'sdk-doc-sync:test:process-learning',
+    language: 'node',
+    sdkName: 'sdk',
+    track: 'v1',
+    reviewUnitManifest: plManifest(),
+    acceptanceFlow: 'two-gate',
+  });
+  const journal = plJournal(directory, 'pl-first.jsonl', 'node:Collections:pl-a', 'sha256:pl-batch-first');
+  session = recordDocumentExecution(session, {
+    reviewUnitId: PL_UNIT_A,
+    executionJournalPath: journal.filePath,
+    executionJournalDigest: journal.digest,
+  });
+  session = recordDocumentChangesRequested(session, {
+    reviewUnitId: PL_UNIT_A,
+    reason: 'Notes callout missing the Notes heading line',
+  });
+  session = plFinalizeUnit(session, directory, PL_UNIT_A, 'redo');
+  session = plFinalizeUnit(session, directory, PL_UNIT_B, 'b');
+  return { session, directory };
+}
+
+scenarios['process-learning-close-refused-uncaptured'] = () => {
+  const { session } = plSessionWithChangeRequest();
+  let refusalCode = null;
+  try {
+    closeSession(session, {
+      scanStateKey: 'node',
+      scanStateEntry: { lastScannedTag: 'v1' },
+      learning: { decisions: [], captureReport: null, repoRoot: plTempDir('pl-repo-') },
+    });
+  } catch (error) {
+    refusalCode = error.code;
+  }
+  return { refusalCode };
+};
+
+scenarios['process-learning-change-request-captured'] = () => {
+  const { session } = plSessionWithChangeRequest();
+  const repoRoot = plTempDir('pl-repo-');
+  const report = captureSessionLearnings(session, { repoRoot, decisions: [] });
+  const first = report.captured[0];
+  const candidate = JSON.parse(fs.readFileSync(first.path, 'utf8'));
+  const closed = closeSession(session, {
+    scanStateKey: 'node',
+    scanStateEntry: { lastScannedTag: 'v1' },
+    learning: { decisions: [], captureReport: report, repoRoot },
+  });
+  return {
+    eventCount: report.captured.length + report.suppressed.length,
+    candidateIdPrefix: candidate.candidateId.slice(0, 5),
+    candidateRuleClass: candidate.ruleClass,
+    candidateCarriesProvenance: candidate.applicableWhen.derivedFrom === 'change-request',
+    statementMentionsUnit: candidate.statement.includes('Notes callout missing'),
+    closedStatus: closed.status,
+    stampedCapturedCount: closed.processLearning.capturedCandidateIds.length,
+  };
+};
+
+scenarios['process-learning-suppression-recorded'] = () => {
+  const directory = plTempDir('pl-suppress-');
+  let session = createReviewSession({
+    sessionId: 'sdk-doc-sync:test:process-learning-suppression',
+    language: 'node',
+    sdkName: 'sdk',
+    track: 'v1',
+    reviewUnitManifest: plManifest(),
+    acceptanceFlow: 'two-gate',
+  });
+  session = plFinalizeUnit(session, directory, PL_UNIT_A, 'a');
+  session = plFinalizeUnit(session, directory, PL_UNIT_B, 'b');
+  const decisionLedgerPath = path.join(directory, 'decisions.jsonl');
+  recordReviewDecision(session, {
+    decisionLedgerPath,
+    decisionId: 'decision-pl-suppression',
+    gate: 'DOCUMENT_REVIEW',
+    outcome: 'changes_requested',
+    proposalDigest: 'sha256:' + '2'.repeat(64),
+    instruction: 'Rejected: mirrored a defective accepted page as the style template',
+  });
+  const { DecisionLedger } = require('../../../doc-ops-core/src/decision-ledger');
+  const decisions = new DecisionLedger({ filePath: decisionLedgerPath }).entries;
+  session = recordLearningSuppression(session, {
+    eventKey: 'decision:sdk-doc-sync:test:process-learning-suppression:decision-pl-suppression',
+    rationale: 'Not a rule: rejection restated the style-mirror allowlist invariant, already enforced',
+  });
+  const repoRoot = plTempDir('pl-repo-');
+  const report = captureSessionLearnings(session, { repoRoot, decisions });
+  const closed = closeSession(session, {
+    scanStateKey: 'node',
+    scanStateEntry: { lastScannedTag: 'v1' },
+    learning: { decisions, captureReport: report, repoRoot },
+  });
+  return {
+    capturedCandidateCount: report.captured.length,
+    suppressedEventKeys: closed.processLearning.suppressedEventKeys,
+    closedStatus: closed.status,
+  };
+};
+
 module.exports = { scenarios };

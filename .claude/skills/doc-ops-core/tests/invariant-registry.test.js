@@ -249,6 +249,7 @@ test('the committed api-reference-sync registry passes its own coverage check', 
     'api.rebuild-first-class',
     'api.track-topology-audit',
     'api.style-mirror-allowlist',
+    'api.process-learning-capture',
   ]);
 });
 

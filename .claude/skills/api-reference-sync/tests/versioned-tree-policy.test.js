@@ -20,6 +20,7 @@ const {
     factsDigest,
     validFolderAncestry,
     validateSharedUpdateReviews,
+    verifyPlacementWalkBinding,
     verifyTreeDeltaPostconditions,
 } = require('../src/sdk-doc-sync/versioned-tree-policy');
 const { buildReviewUnitManifest } = require('../src/sdk-doc-sync/review-units');
@@ -563,6 +564,30 @@ test('attested missing-category spec assembles into plannable resources and an e
     const blocked = evaluateVersionedTreeDelta(updateFacts({ target, category: unassemblable }));
     assert.equal(blocked.status, 'blocked');
     assert.equal(blocked.blocker, 'TREE_DELTA_PLACEMENT_UNKNOWN');
+});
+
+test('verifyPlacementWalkBinding binds plans to the execution-named placement walk', () => {
+    const walkA = 'sha256:' + 'a'.repeat(64);
+    const walkB = 'sha256:' + 'b'.repeat(64);
+    const plan = (digest) => ({ stableId: 'x', placementWalkDigest: digest });
+    // Match: bound and carried digests agree.
+    assert.equal(verifyPlacementWalkBinding({ plans: [plan(walkA), plan(walkA)], boundWalkDigest: walkA }).ok, true);
+    // Stale: the plans derive from a different walk than the execution names.
+    const stale = verifyPlacementWalkBinding({ plans: [plan(walkA)], boundWalkDigest: walkB });
+    assert.equal(stale.ok, false);
+    assert.equal(stale.errors[0].code, 'PLACEMENT_SOURCE_STALE');
+    // Unbound: plans carry a walk but the execution names none.
+    const unbound = verifyPlacementWalkBinding({ plans: [plan(walkA)], boundWalkDigest: null });
+    assert.equal(unbound.errors[0].code, 'PLACEMENT_SOURCE_STALE');
+    assert.match(unbound.errors[0].detail, /--placement-walk-digest/);
+    // Divergent: plans within one batch derive from different walks.
+    const divergent = verifyPlacementWalkBinding({ plans: [plan(walkA), plan(walkB)], boundWalkDigest: walkA });
+    assert.equal(divergent.errors.some((entry) => entry.code === 'PLACEMENT_WALK_DIVERGENT'), true);
+    // Legacy: no plan carries a walk and the execution names none.
+    assert.equal(verifyPlacementWalkBinding({ plans: [plan(null)], boundWalkDigest: null }).ok, true);
+    // Session/plans disagreement: the execution names a walk, the plans carry none.
+    const reversed = verifyPlacementWalkBinding({ plans: [plan(null)], boundWalkDigest: walkA });
+    assert.equal(reversed.errors[0].code, 'PLACEMENT_WALK_UNBOUND');
 });
 
 test('verifyTreeDeltaPostconditions reports kernel v5 copy-structure mirror drift', () => {

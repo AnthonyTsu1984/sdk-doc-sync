@@ -561,6 +561,27 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
   });
 });
 
+test('SyncPlanner binds the context placement walk digest into the immutable plan', () => {
+  const digest = 'sha256:' + 'w'.repeat(64);
+  const withWalk = planningContext({
+    placementWalk: { digest, collectedAt: '2026-10-04T00:00:00Z' },
+  });
+  const createPlan = new SyncPlanner().planAction({
+    type: 'CREATE',
+    stableId: 'node:Collections:createCollection',
+    canonicalSlug: 'createCollection()',
+    symbol: 'createCollection',
+  }, { ...withWalk, current: null });
+  assert.equal(createPlan.placementWalkDigest, digest);
+  const legacyPlan = new SyncPlanner().planAction({
+    type: 'CREATE',
+    stableId: 'node:Collections:createCollection',
+    canonicalSlug: 'createCollection()',
+    symbol: 'createCollection',
+  }, { ...planningContext(), current: null });
+  assert.equal(legacyPlan.placementWalkDigest, null, 'legacy contexts without a bound walk carry null');
+});
+
 test('SyncPlanner refuses an unsafe UPDATE without copySource.placement (kernel v5 mirror evidence)', () => {
   const context = planningContext({
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },

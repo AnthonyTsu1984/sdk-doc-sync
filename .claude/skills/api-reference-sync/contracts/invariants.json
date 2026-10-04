@@ -747,6 +747,47 @@
         }
       ],
       "notes": "Campaign-control hardening batch 2c, T1+T4 (2026-10-04): the governed Drive/docx write boundary enforces the same-name gate on every folder create (MarkdownToFeishu.createFolder lists the parent and refuses a same-named FOLDER sibling \u2014 the executor step machine and the plan-governed repair tools keep their own gates; the writer is the capability backstop), reads back the expected post-state of every duplicate-prone mutation, and reconciles-by-name on a lost write response through ONE shared policy helper (__writeWithReconcile) \u2014 never a blind retry. deleteFile is exempt by documented policy. Codes are thrown as typed errors (error.code) with reconciledAfterFailure surfacing adoptions to the caller (executor journal persistence is follow-up wiring). Adoptions exclude a pre-write snapshot of the target folder, so a foreign same-titled page is never adopted; post-checks and reconcile probes retry with backoff (Drive listing is eventually consistent right after a write). The pre-list and the create are not atomic \u2014 a concurrent same-name create is caught by the detect-only topology patrol, not this gate."
+    },
+    {
+      "id": "api.placement-live-binding",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "plan",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:b61d14879bfe5bcd126ddfb464580ece4424069966789d2e1bf73148f04cd080",
+      "fixtureIds": [
+        "placement-live-binding"
+      ],
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
+          "codes": [
+            "PLACEMENT_WALK_REQUIRED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/versioned-tree-policy.js",
+          "codes": [
+            "PLACEMENT_SOURCE_STALE",
+            "PLACEMENT_WALK_DIVERGENT",
+            "PLACEMENT_WALK_UNBOUND"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
+          "codes": [
+            "PLACEMENT_TARGET_UNRESOLVED"
+          ]
+        }
+      ],
+      "notes": "The walk product itself (build-current-placement-audit walkDigest, schemaVersion 3) is the evidence SOURCE; its machine check is the binding verification. Campaign-control hardening batch 2c, T3 (2026-10-04): placement decisions must derive from ONE live audit walk. The audit product carries walkDigest (sha256 over the canonical placement-relevant content of every entry \u2014 stableId, documentToken, placement, sharedToken, sorted reference record ids, targetFolderVerified; volatile fields like generatedAt excluded, determinism follows canonicalBytes). Candidate specs must carry it (placementWalk, PLACEMENT_WALK_REQUIRED \u2014 the top-level candidateSpec supplies the default, groups may override); the planner binds placementWalkDigest into every plan; a live execution names its walk via --placement-walk-digest (from the session's placementWalk, recorded at session creation) and verifyPlacementWalkBinding refuses before any write: stale derivation (PLACEMENT_SOURCE_STALE \u2014 the J1 failure mode: the real directory was in the live walk output, the plan used an older snapshot), divergent walks in one batch (PLACEMENT_WALK_DIVERGENT), or a named walk over walk-less plans (PLACEMENT_WALK_UNBOUND). Legacy plans (no digest) execute only under an unbound run. CREATE actions additionally get the executor-side live containment gate: the planned target folder chain must be re-derivable live under the target version root (PLACEMENT_TARGET_UNRESOLVED) \u2014 the audit-side target-folder verification enforced at the write boundary."
     }
   ]
 }

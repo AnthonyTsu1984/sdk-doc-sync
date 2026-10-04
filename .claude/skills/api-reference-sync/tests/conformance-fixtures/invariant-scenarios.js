@@ -1526,6 +1526,27 @@ const scenarios = {
     return out;
   },
 
+  // --- api.placement-live-binding (campaign-control hardening batch 2c, T3) ---
+
+  'placement-live-binding'() {
+    const { verifyPlacementWalkBinding } = require('../../src/sdk-doc-sync/versioned-tree-policy');
+    const walkA = 'sha256:' + 'a'.repeat(64);
+    const walkB = 'sha256:' + 'b'.repeat(64);
+    const plan = (digest) => ({ stableId: 'x', placementWalkDigest: digest });
+    const bound = verifyPlacementWalkBinding({ plans: [plan(walkA)], boundWalkDigest: walkA });
+    const stale = verifyPlacementWalkBinding({ plans: [plan(walkA)], boundWalkDigest: walkB });
+    const unbound = verifyPlacementWalkBinding({ plans: [plan(walkA)], boundWalkDigest: null });
+    const divergent = verifyPlacementWalkBinding({ plans: [plan(walkA), plan(walkB)], boundWalkDigest: walkA });
+    const legacy = verifyPlacementWalkBinding({ plans: [plan(null)], boundWalkDigest: null });
+    return {
+      boundOk: bound.ok === true,
+      staleCode: stale.errors[0]?.code || null,
+      unboundCode: unbound.errors[0]?.code || null,
+      divergentCode: divergent.errors.some((entry) => entry.code === 'PLACEMENT_WALK_DIVERGENT') ? 'PLACEMENT_WALK_DIVERGENT' : null,
+      legacyOk: legacy.ok === true,
+    };
+  },
+
   // --- api.track-topology-audit (campaign-control hardening batch 2) ---
 
   trackTopologyAudit() {

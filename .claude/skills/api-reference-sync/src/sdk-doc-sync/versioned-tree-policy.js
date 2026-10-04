@@ -511,6 +511,46 @@ function categoryResourceDefinitions({ stableId, category }) {
 // Pure post-write comparator for VERIFY_TREE_DELTA. `observed` carries freshly
 // refetched state; every mismatch becomes one typed finding. This function
 // never reads or writes — callers own the refetch.
+// T3 placement-live binding (campaign-control batch 2c): plans carry the
+// digest of the placement audit walk their placement decisions derive from,
+// and an execution names the walk it is bound to. A plan carrying a walk
+// digest must execute under exactly that one — a stale-snapshot derivation
+// (the J1 failure mode: the real directory was in the live walk output,
+// the plan used an older snapshot) fails closed here, before any write.
+// Legacy plans without a bound walk execute only under an unbound run.
+function verifyPlacementWalkBinding({ plans, boundWalkDigest = null }) {
+  const errors = [];
+  const carrying = (plans || []).filter((plan) => typeof plan?.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0);
+  if (carrying.length === 0) {
+    if (boundWalkDigest) {
+      errors.push({
+        code: 'PLACEMENT_WALK_UNBOUND',
+        detail: `execution names walk ${boundWalkDigest} but no plan carries a placementWalkDigest — the session and the plans disagree about their source walk`,
+      });
+    }
+  } else {
+    const digests = [...new Set(carrying.map((plan) => plan.placementWalkDigest))];
+    if (digests.length > 1) {
+      errors.push({
+        code: 'PLACEMENT_WALK_DIVERGENT',
+        detail: `plans derive from ${digests.length} different walks: ${digests.join(', ')}`,
+      });
+    }
+    if (!nonEmptyString(boundWalkDigest)) {
+      errors.push({
+        code: 'PLACEMENT_SOURCE_STALE',
+        detail: `plans carry placementWalkDigest ${digests[0]} but the execution names no walk — bind the session's walk with --placement-walk-digest`,
+      });
+    } else if (boundWalkDigest !== digests[0]) {
+      errors.push({
+        code: 'PLACEMENT_SOURCE_STALE',
+        detail: `plans derive from walk ${digests[0]} but the execution is bound to ${boundWalkDigest} — stale placement derivation, re-run the placement audit and replan`,
+      });
+    }
+  }
+  return { ok: errors.length === 0, errors };
+}
+
 function verifyTreeDeltaPostconditions({ plan, observed }) {
   const errors = [];
   const attestation = (plan?.invariantAttestations || [])
@@ -617,6 +657,7 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
 }
 
 module.exports = {
+    verifyPlacementWalkBinding,
   BLOCKERS,
   DECISIONS,
   FOLDER_ANCESTRY_MAX_DEPTH,

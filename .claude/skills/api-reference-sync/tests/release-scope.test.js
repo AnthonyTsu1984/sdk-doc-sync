@@ -937,6 +937,7 @@ test('reviewed context requires and carries the complete Node stateful-class org
   };
   const candidateSpec = {
     language: 'node',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v3.0.x',
     target: {
       version: 'v3.0.x',
@@ -1418,6 +1419,7 @@ test('reviewed release context builder filters candidates and carries scoped pla
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     repository: 'milvus-io/pymilvus',
     target: {
@@ -1555,6 +1557,7 @@ test('reviewed release context builder accepts hyphenated Java documentation cat
   });
   const candidateSpec = {
     language: 'java',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -1650,6 +1653,7 @@ test('reviewed release context builder preserves helper planning context in eith
   };
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -1749,6 +1753,7 @@ test('reviewed release context builder rejects conflicting planning context for 
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -1803,6 +1808,7 @@ test('reviewed release context builder accepts version-prefixed Go slugs with un
   });
   const candidateSpec = {
     language: 'go',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -1855,6 +1861,7 @@ test('reviewed release context builder carries approved dependent folder and Vir
   });
   const candidateSpec = {
     language: 'cpp',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -1992,6 +1999,7 @@ test('reviewed release context builder rejects category and documentation identi
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2044,6 +2052,7 @@ test('reviewed release context builder rejects grouping multiple interface actio
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2114,6 +2123,7 @@ test('reviewed release context builder requires reviewed grouping for multi-symb
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2159,6 +2169,7 @@ test('reviewed release context builder requires inheritance review for configure
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     inheritance: {
       requiredSuccessorTracks: ['v3.0.x'],
@@ -2209,6 +2220,7 @@ test('reviewed release context builder detects successor tracks from SDK referen
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2320,6 +2332,7 @@ test('reviewed release context builder carries reviewed successor-track inherita
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     inheritance: {
       requiredSuccessorTracks: ['v3.0.x'],
@@ -2384,6 +2397,7 @@ test('reviewed release context builder reminds on deferred successors of source-
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2491,6 +2505,7 @@ test('reviewed release context builder joins successor pointing records into sha
   });
   const baseSpec = () => ({
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2724,6 +2739,7 @@ test('reviewed release context builder requires complete successor doc identity 
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     inheritance: {
       requiredSuccessorTracks: ['v3.0.x'],
@@ -2785,6 +2801,7 @@ test('reviewed release context builder rejects unresolved successor-track inheri
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     inheritance: {
       requiredSuccessorTracks: ['v3.0.x'],
@@ -2843,6 +2860,7 @@ test('reviewed release context builder rejects contradictory successor-track dec
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     inheritance: {
       requiredSuccessorTracks: ['v3.0.x'],
@@ -2920,6 +2938,7 @@ test('reviewed release context builder rejects UPDATE candidates without existin
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -2963,6 +2982,7 @@ test('reviewed release context builder rejects UPDATE without verified current p
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -3021,6 +3041,7 @@ test('reviewed release context builder rejects CREATE candidates without explici
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -3066,6 +3087,7 @@ test('reviewed release context builder carries existing record and copy source e
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -3160,6 +3182,7 @@ test('reviewed release context builder allows safe target-local UPDATE without c
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -3228,6 +3251,7 @@ test('reviewed release context builder rejects changed inherited docs without co
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',
@@ -3310,6 +3334,7 @@ test('reviewed release context builder rejects synthetic grouping across multipl
   });
   const candidateSpec = {
     language: 'python',
+    placementWalk: { digest: 'sha256:' + 'w'.repeat(64), collectedAt: '2026-10-04T00:00:00Z' },
     track: 'v2.6.x',
     target: {
       version: 'v2.6.x',

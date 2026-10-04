@@ -773,6 +773,11 @@ class SyncPlanner {
         ? deepClone(context.sharedUpdateReviews)
         : undefined,
       invariantAttestations: invariantAttestations ? deepClone(invariantAttestations) : undefined,
+      // T3 placement-live binding (batch 2c): the placement audit walk this
+      // plan's placement decisions derive from — executions must name the
+      // same digest (PLACEMENT_SOURCE_STALE otherwise). Legacy contexts
+      // without a bound walk carry null.
+      placementWalkDigest: context.placementWalk?.digest || null,
       apiPatchPlan: context.artifact?.layout && diffAction === 'UPDATE'
         ? context.apiPatchPlan
         : undefined,

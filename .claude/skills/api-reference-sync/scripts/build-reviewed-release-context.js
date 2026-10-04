@@ -234,13 +234,18 @@ function evidenceFor(action, spec, releaseScope) {
 function expandCandidateSpec(candidateSpec) {
   const candidates = {};
   for (const [canonicalSlug, spec] of Object.entries(candidateSpec.candidates || {})) {
-    candidates[canonicalSlug] = { ...spec, canonicalSlug };
+    candidates[canonicalSlug] = { placementWalk: candidateSpec.placementWalk || null, ...spec, canonicalSlug };
   }
 
   for (const [groupIndex, group] of (candidateSpec.groups || []).entries()) {
     const sourceCanonicalSlugs = [...(group.canonicalSlugs || [])];
     for (const canonicalSlug of group.canonicalSlugs || []) {
       candidates[canonicalSlug] = {
+        // T3 placement-live binding: the walk digest is a product-level fact
+        // (every placement decision in this candidate spec derives from ONE
+        // audit walk); a group may override, the top level supplies the
+        // default.
+        placementWalk: candidateSpec.placementWalk || null,
         ...group,
         ...(group.overrides?.[canonicalSlug] || {}),
         canonicalSlug,
@@ -846,6 +851,18 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     };
     if (folderRef) planningTarget.folderRef = folderRef;
     if (parentRecordRef) planningTarget.parentRecordRef = parentRecordRef;
+    // T3 placement-live binding (campaign-control batch 2c): the placement
+    // decisions in this context derive from ONE placement audit walk — the
+    // spec carries that walk's digest (from the audit product's walkDigest)
+    // and the planner binds it into every plan. Executions must name the
+    // same digest (PLACEMENT_SOURCE_STALE otherwise).
+    const placementWalk = spec.placementWalk || null;
+    if (!placementWalk || !placementWalk.digest || !placementWalk.collectedAt) {
+      throw reviewedContextError(
+        'PLACEMENT_WALK_REQUIRED',
+        `Candidate ${action.canonicalSlug} placementWalk (digest + collectedAt, from the placement audit product's walkDigest) is required — placement decisions must be bound to a live walk`,
+      );
+    }
     const inheritanceEvidence = assertInheritanceEvidence({
       action: planningAction,
       spec,
@@ -889,6 +906,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       inheritanceReview,
       planningContext: {
         ...(releasePlanningContext || {}),
+        placementWalk: { digest: placementWalk.digest, collectedAt: placementWalk.collectedAt },
         current: existingRecord || undefined,
         existingRecordLookup: existingRecordLookup || undefined,
         copySource,

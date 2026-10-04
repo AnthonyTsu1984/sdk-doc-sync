@@ -99,6 +99,8 @@ function parseArgs(argv) {
             args.approvePlanDigest = (args.approvePlanDigest || []).concat(argv[++i]);
         } else if (arg === '--approve-batch-digest' && argv[i + 1]) {
             args.approveBatchDigest = argv[++i];
+        } else if (arg === '--placement-walk-digest' && argv[i + 1]) {
+            args.placementWalkDigest = argv[++i];
         } else if (arg === '--review-unit-id' && argv[i + 1]) {
             args.reviewUnitId = argv[++i];
         } else if (arg === '--batch-continue') {
@@ -140,6 +142,7 @@ Options:
   --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
+  --placement-walk-digest <hash>   Bind execution to the placement audit walk digest (session placementWalk / audit walkDigest); plans carrying a different (or no) bound walk are refused (PLACEMENT_SOURCE_STALE)
   --review-unit-id <id>            Select exactly one document and its required resource operations
   --batch-continue                 Verified batch mode: permit planning and recording executions while sibling units await review (only a unit's OWN unaccepted execution blocks its re-selection). The operator's batch write approval binds the unit list; without this flag the per-unit strict gate is unchanged
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
@@ -719,6 +722,7 @@ async function runCli({
         reviewSession,
         tokenReferenceReader: dependencies.tokenReferenceReader || null,
         tokenReferenceTracks,
+        placementWalkDigest: args.placementWalkDigest || null,
     };
     const sync = dependencies.syncFactory ? dependencies.syncFactory(syncOptions) : new SdkDocSync(syncOptions);
 

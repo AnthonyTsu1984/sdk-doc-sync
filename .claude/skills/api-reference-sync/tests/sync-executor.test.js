@@ -168,6 +168,12 @@ function plan(type, context = planningContext()) {
 function spies({ failPatch = false, failRecordCreate = false, failRecordUpdate = false, failDelete = false } = {}) {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async createDocument(input) {
       calls.push(['createDocument', input]);
       return {
@@ -560,6 +566,12 @@ test('SyncExecutor resolves approved folder and parent refs only at document exe
   const createPlan = plan('CREATE', context);
   const executor = new SyncExecutor({
     documentWriter: {
+      async listFolder({ folderToken }) {
+        if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+        return folderToken === 'root-v26'
+          ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+          : [];
+      },
       async createDocument(input) {
         calls.push(['createDocument', input]);
         return { token: 'doc-new', url: 'https://docs.example/doc-new' };
@@ -642,6 +654,12 @@ test('SyncExecutor uses the reviewed organization record type for child creation
 test('SyncExecutor builds a document URL fallback from document_id before writing Bitable', async () => {
   const { calls, bitableWriter } = spies();
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async createDocument(input) {
       calls.push(['createDocument', input]);
       return { document_id: 'doc-from-id', title: input.title };
@@ -662,6 +680,12 @@ test('SyncExecutor builds a document URL fallback from document_id before writin
 test('SyncExecutor stops before Bitable mutation when a created document has no usable link or token', async () => {
   const { calls, bitableWriter } = spies();
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async createDocument(input) {
       calls.push(['createDocument', input]);
       return { title: input.title };
@@ -1421,6 +1445,24 @@ test('SyncExecutor rejects legacy CREATE_AND_REPOINT plans before mutation', asy
   assert.deepEqual(calls, []);
 });
 
+test('SyncExecutor refuses a CREATE whose planned target folder is not live-resolvable (PLACEMENT_TARGET_UNRESOLVED)', async () => {
+  const { bitableWriter } = spies();
+  // The mock serves the target tree — this writer does NOT, so the planned
+  // folderAncestry cannot be re-derived live.
+  const documentWriter = {
+    async listFolder() { return []; },
+    async createDocument(input) { return { token: 'doc-new', url: 'https://docs.example/doc-new' }; },
+  };
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const result = await executor.execute(plan('CREATE', planningContext({ current: null })), {
+    artifact: artifact(),
+    approval: { approved: true },
+  });
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'PLACEMENT_TARGET_UNRESOLVED');
+  assert.match(result.error.message, /not live-resolvable under version root root-v26/);
+});
+
 test('SyncExecutor refuses a kernel v5 copy whose target does not mirror the source section structure', async () => {
   const { documentWriter, bitableWriter } = spies();
   // Same mocks, but the source tree serves a DIFFERENTLY-named section —
@@ -1834,6 +1876,12 @@ test('document verification failure prevents updateRecord after copy and patch',
 test('document verification failure after create deletes the created document before record create', async () => {
   const calls = [];
   const documentWriter = {
+    async listFolder({ folderToken }) {
+      if (folderToken === 'root-v24-src') return [{ token: 'src-collections-v26', type: 'folder', name: 'Collections' }];
+      return folderToken === 'root-v26'
+        ? [{ token: 'collections-v26', type: 'folder', name: 'Collections' }]
+        : [];
+    },
     async createDocument(input) {
       calls.push(['createDocument', input]);
       return {

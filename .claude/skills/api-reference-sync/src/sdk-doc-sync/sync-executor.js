@@ -251,6 +251,7 @@ class SyncExecutor {
           await this._executeRepointVirtualNode(effectivePlan, resourceResolutions, result);
           break;
         case 'CREATE':
+          await this._verifyCreateTargetPlacement(effectivePlan, result);
           await this._executeCreate(effectivePlan, artifact, action, result);
           break;
         case 'UPDATE_IN_PLACE':
@@ -909,6 +910,36 @@ class SyncExecutor {
       error.step = 'verifyTargetPlacement';
       throw error;
     }
+  }
+
+  // T3 creation-side live placement gate (campaign-control batch 2c): a
+  // CREATE's planned target folder must be live-resolvable under the target
+  // version root — the audit-side "target = the sibling pages' measured
+  // folder" check, enforced at the write boundary. The plan carries the
+  // approved folder chain (target.folderAncestry); the executor re-derives
+  // it live. Plans without a chain (legacy evidence) keep the prior
+  // behavior; the kernel requires chains for new plans.
+  async _verifyCreateTargetPlacement(plan, result) {
+    const chain = plan.target?.folderAncestry;
+    if (!Array.isArray(chain) || chain.length === 0) return;
+    if (!plan.target?.versionRootToken || !plan.target?.folderToken) return;
+    try {
+      await this._assertLiveFolderChain({
+        rootToken: plan.target.versionRootToken,
+        chain,
+        leafToken: plan.target.folderToken,
+        stableId: plan.stableId,
+        evidenceLabel: 'target.folderAncestry',
+      });
+    } catch (error) {
+      if (error.code === 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT') {
+        error.code = 'PLACEMENT_TARGET_UNRESOLVED';
+        error.message = `PLACEMENT_TARGET_UNRESOLVED: the planned target folder for ${plan.stableId} is not live-resolvable under version root ${plan.target.versionRootToken} — re-run the placement audit and replan (${error.message.replace(/^TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT: /, '')})`;
+      }
+      error.step = 'verifyTargetPlacement';
+      throw error;
+    }
+    result.completedSteps.push('verifyTargetPlacement');
   }
 
   // Kernel v5 copy-structure mirror gate (campaign-control batch 2c, T2):

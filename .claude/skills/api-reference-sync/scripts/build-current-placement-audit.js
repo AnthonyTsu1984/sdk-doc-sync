@@ -18,6 +18,8 @@ const {
   trackInventoryDigest,
 } = require('../src/sdk-doc-sync/inheritance-evidence');
 const { bitableRecordTokens } = require('../src/sdk-doc-sync/token-reference-reader');
+const { sha256Digest } = require('../../doc-ops-core/src/digest');
+const { canonicalBytes } = require('../../doc-ops-core/src/canonical-json');
 const {
   listLanguageTracks,
   loadReleaseTrackRegistry,
@@ -390,8 +392,24 @@ async function buildPlacementAudit({
   const sharedTokenSummary = { shared: 0, unshared: 0, unknown: 0 };
   for (const entry of entries) sharedTokenSummary[entry.sharedToken.status] += 1;
 
+  // T3 placement-live binding (campaign-control batch 2c): the machine
+  // fingerprint of THIS walk. Sessions bind it (session.placementWalk) and
+  // executions must name it (--placement-walk-digest) — placement decisions
+  // derived from any other walk product are stale and refused
+  // (PLACEMENT_SOURCE_STALE). The digest covers the placement-relevant
+  // content of every entry, not volatile fields like generatedAt.
+  const walkDigest = sha256Digest(canonicalBytes(entries.map((entry) => ({
+    stableId: entry.stableId,
+    documentToken: entry.documentToken,
+    placement: entry.placement,
+    sharedToken: entry.sharedToken,
+    references: (entry.references || []).map((reference) => reference.recordId).sort(),
+    targetFolderVerified: entry.targetFolderVerified,
+  }))));
+
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
+    walkDigest,
     status: entries.every((entry) => entry.placement.verified) ? 'placement_audit_ready' : 'placement_audit_blocked',
     inheritanceEvidenceStatus: entries.every((entry) => entry.inheritanceEvidence) ? 'evidence_complete' : 'evidence_blocked',
     generatedAt: new Date().toISOString(),

@@ -51,7 +51,7 @@ Anthropic《Equipping agents for the real world with Agent Skills》（2025-10-1
 3. **verbatim 认证页不豁免内容规则**：pr-verbatim 保护语义内容不被篡改，不保护不合规文风/注记；修订走治理 polish 管线（pr-polish-governed），语义门（第 1 条）同时看住"不能少"。
 4. **"语言不通顺→改写"归 polish 域**（模型/eval），五条机器门归 invariant 域——边界移动后的准确分界线。
 5. **存量修订授权**：java v3.0.x 与 v2.6.x 既有文档全局扫描后重启一轮修订（§3.4）。
-6. **2026-10-04 四条补充裁定**：①getter 首句="This operation returns xx"（与其它 Function 页同结构，不豁免）；②类页首句="This class initiates a xxx instance that xxx"（注册式扩为声明集合：operation/getter 页 "This operation…"、class/type 页 "This class…"，进 profile 数据 `firstSentencePatterns`）；③Go 全 error 返回在强式 RETURNS 下按 error 字段列示（现实现即为此形态，裁定确认）；④**修订战役范围收窄为仅 v3.0.x**，且 v3.0.x 与其它版本共享的页面在修订战役中 **update-in-place**（与共享档模型一致，不 copy-fork）——sweep 实测 v3.0.x findings 中 token 级共享页为 0，规则入档备用。
+6. **2026-10-04 四条补充裁定**：①getter 首句="This operation returns xx"（与其它 Function 页同结构，不豁免）；②类页首句=**"A xxx instance is xxx"**（同日修订——语料既有类页形态即正字；注册式为声明集合：operation/getter 页 "This operation…"、class/type 页 "A Xxx instance is…"，进 profile 数据 `firstSentencePatterns`）；③Go 全 error 返回在强式 RETURNS 下按 error 字段列示（现实现即为此形态，裁定确认）；④**修订战役范围收窄为仅 v3.0.x**，且 v3.0.x 与其它版本共享的页面在修订战役中 **update-in-place**（与共享档模型一致，不 copy-fork）——sweep 实测 v3.0.x findings 中 token 级共享页为 0，规则入档备用。
 
 正例锚点：describeReplicas 样板页（两段式 RT/RETURNS + 响应字段 PARAMETERS bullets，2026-10-01 格式基线裁定）。
 

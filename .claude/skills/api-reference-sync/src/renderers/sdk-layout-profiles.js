@@ -16,12 +16,13 @@ const GLOBAL_LAYOUT_RULES = Object.freeze({
   // 2026-10-03 global ruling: the five byte-judgeable content rules apply to
   // every track. Open-ended wording quality still stays with the governed
   // polish phase and model evals — these five are deterministic page facts.
-  // 2026-10-04 adjudication: two registered first-sentence forms — operation
-  // (and getter) pages "This operation …", class/type pages "This class …".
+  // 2026-10-04 adjudication (revised same day): two registered first-sentence
+  // forms — operation (and getter) pages "This operation …", class/type
+  // pages "A Xxx instance is …" (the standing corpus form).
   contentQuality: Object.freeze({
     cjkForbidden: true,
     firstSentencePattern: '^This operation\\b',
-    firstSentencePatterns: Object.freeze(['^This class\\b']),
+    firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b']),
     returnsResponseFieldsRequired: true,
     paramDescRequired: true,
     bareNotesSectionForbidden: true,

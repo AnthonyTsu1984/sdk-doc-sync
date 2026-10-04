@@ -274,3 +274,21 @@ test('checkMarkdownContentQuality runs the five rules over preview markdown, ski
     const bare = { id: 'custom', version: 1, order: [], fences: {}, cardinality: {} };
     assert.deepEqual(checkMarkdownContentQuality('Deletes entities.', bare).violations, []);
 });
+
+test('2026-10-04 adjudication: operation and class registers are both accepted; getter/instance phrasings are not', () => {
+    const profile = sdkLayoutProfiles.java;
+    const code = (lines, name) => checkLayoutConformance(profile, { headings: [], lines, callouts: [] })
+        .violations.find((violation) => violation.code === name)?.code || null;
+
+    // Operation register (getters included): "This operation returns …".
+    assert.deepEqual(checkLayoutConformance(profile, {
+        headings: [], lines: ['This operation returns the parameters of this request.'], callouts: [],
+    }).violations, []);
+    // Class register: "This class initiates a … instance that …".
+    assert.deepEqual(checkLayoutConformance(profile, {
+        headings: [], lines: ['This class initiates a MilvusClientV2 instance that connects to a Milvus deployment.'], callouts: [],
+    }).violations, []);
+    // Unregistered forms still fail: "This getter returns …", "A FunctionScore instance is …".
+    assert.equal(code(['This getter returns the parameters of this request.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
+    assert.equal(code(['A FunctionScore instance is a scoring function expression.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
+});

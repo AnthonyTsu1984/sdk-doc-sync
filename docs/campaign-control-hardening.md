@@ -51,6 +51,7 @@ Anthropic《Equipping agents for the real world with Agent Skills》（2025-10-1
 3. **verbatim 认证页不豁免内容规则**：pr-verbatim 保护语义内容不被篡改，不保护不合规文风/注记；修订走治理 polish 管线（pr-polish-governed），语义门（第 1 条）同时看住"不能少"。
 4. **"语言不通顺→改写"归 polish 域**（模型/eval），五条机器门归 invariant 域——边界移动后的准确分界线。
 5. **存量修订授权**：java v3.0.x 与 v2.6.x 既有文档全局扫描后重启一轮修订（§3.4）。
+6. **2026-10-04 四条补充裁定**：①getter 首句="This operation returns xx"（与其它 Function 页同结构，不豁免）；②类页首句="This class initiates a xxx instance that xxx"（注册式扩为声明集合：operation/getter 页 "This operation…"、class/type 页 "This class…"，进 profile 数据 `firstSentencePatterns`）；③Go 全 error 返回在强式 RETURNS 下按 error 字段列示（现实现即为此形态，裁定确认）；④**修订战役范围收窄为仅 v3.0.x**，且 v3.0.x 与其它版本共享的页面在修订战役中 **update-in-place**（与共享档模型一致，不 copy-fork）——sweep 实测 v3.0.x findings 中 token 级共享页为 0，规则入档备用。
 
 正例锚点：describeReplicas 样板页（两段式 RT/RETURNS + 响应字段 PARAMETERS bullets，2026-10-01 格式基线裁定）。
 
@@ -73,9 +74,9 @@ Anthropic《Equipping agents for the real world with Agent Skills》（2025-10-1
 1. **写前**：`content-reconciliation.js reconcilePageLayout` 已调用 `checkLayoutConformance`——五条规则进入即自动覆盖写路径；scoped dry-run 产物同检（compact 那次 live 写入+自动回滚本可死在离线）。
 2. **全库**：`scripts/reconcile-content.js` 就是现成的全库只读巡检（逐轨枚举 Bitable+去重 Drive walk，`--strict` 非-zero 退出，schemaVersion 2）——扩到 schemaVersion 3 带五规则结果列，即语料 sweep CLI，**不新造轮子**。
 
-### 3.4 首战执行（2026-10-03 裁定扩容：v3.0.x + v2.6.x 双轨）
+### 3.4 首战执行（2026-10-04 裁定收窄：修订战役仅 v3.0.x）
 
-sweep 范围按裁定=java **v3.0.x 与 v2.6.x 两条轨全树**（本轮已证实的债：v3.0 compact 单句 RETURNS、async 系首句风格、跨轨镜像传入 v2.6 的同病、未知面的薄 RETURNS/参数无描述），产出 worklist（页×规则×证据摘要）后**重启一轮修订战役**：处置按 §3.1 附带裁定——移除内部 notes、改写首句、改写不通顺语句、修写 RETURNS（强式形态），参数/方法等内容项一个不能少（语义门看住）；走既有治理管线分批 APPROVE。这一步把"语料的账"从黑变白。cpp/python/node/go 轨：写时门即刻生效，存量债由各自下一场战役的修订轮清偿（sweep 报告先行）。
+sweep 覆盖 java 全语料（499 页实测），**修订战役范围按 2026-10-04 裁定收窄为仅 java v3.0.x**（v2.6.x 及更老树的存量债留各自战役；worklist 按 v3.0.x 切片）。处置按 §3.1 附带裁定——移除内部 notes、改写首句（operation/getter="This operation returns…"、类页="This class initiates…"）、修写 RETURNS（强式形态），参数/方法等内容项一个不能少（语义门看住）；走既有治理管线分批 APPROVE；**共享页 update-in-place**（token 级共享实测为 0，规则备用）。这一步把"语料的账"从黑变白。其余语言轨：写时门即刻生效，存量债由各自下一场战役的修订轮清偿（sweep 报告先行）。
 
 ### 3.5 打回即铸 fixture（成文规则）
 

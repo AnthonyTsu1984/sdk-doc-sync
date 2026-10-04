@@ -77,7 +77,14 @@ function hasPrEvidence(entry) {
 function main(argv = process.argv) {
     const options = parseArgs(argv);
     const profile = sdkLayoutProfiles[options.language];
-    const registerPattern = profile?.layoutRules?.contentQuality?.firstSentencePattern || '^This operation\\b';
+    // 2026-10-04 adjudication: registers are a declared set (operation pages
+    // "This operation …", class/type pages "This class …"); a summary passes
+    // when it matches any declared register.
+    const contentQuality = profile?.layoutRules?.contentQuality || {};
+    const registers = [
+        ...(typeof contentQuality.firstSentencePattern === 'string' && contentQuality.firstSentencePattern ? [contentQuality.firstSentencePattern] : ['^This operation\\b']),
+        ...(contentQuality.firstSentencePatterns || []).filter((pattern) => typeof pattern === 'string' && pattern),
+    ];
     const document = JSON.parse(fs.readFileSync(options.contexts, 'utf8'));
     const entries = contextEntries(document);
 
@@ -106,8 +113,8 @@ function main(argv = process.argv) {
         }
 
         if (typeof entry.summary === 'string' && entry.summary.trim() !== ''
-            && !new RegExp(registerPattern).test(entry.summary.trim())) {
-            report('error', 'INTAKE_SUMMARY_REGISTER', identity, `summary first sentence does not match /${registerPattern}/: ${entry.summary.slice(0, 80)}`);
+            && !registers.some((pattern) => new RegExp(pattern).test(entry.summary.trim()))) {
+            report('error', 'INTAKE_SUMMARY_REGISTER', identity, `summary first sentence does not match any declared register (${registers.map((pattern) => `/${pattern}/`).join(' ')}): ${entry.summary.slice(0, 80)}`);
         }
 
         const cjk = cjkOffendingTexts(entry);

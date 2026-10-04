@@ -257,10 +257,18 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
         }
     }
 
-    if (nonEmptyString(contentRules.firstSentencePattern)) {
+    if (nonEmptyString(contentRules.firstSentencePattern) || (contentRules.firstSentencePatterns || []).length > 0) {
+        // 2026-10-04 adjudication: registers are a declared set — operation
+        // (and getter) pages "This operation …", class/type pages
+        // "This class …". A page passes when its first body sentence matches
+        // any declared register.
+        const registers = [
+            ...(nonEmptyString(contentRules.firstSentencePattern) ? [contentRules.firstSentencePattern] : []),
+            ...(contentRules.firstSentencePatterns || []).filter(nonEmptyString),
+        ];
         const firstBody = entries.find((entry) => entry.kind === 'text' && !isKnownLabel(entry.text));
-        if (firstBody && !new RegExp(contentRules.firstSentencePattern).test(firstBody.text.trim())) {
-            report('FIRST_SENTENCE_REGISTER', `page body first sentence does not match the declared register /${contentRules.firstSentencePattern}/: ${firstBody.text}`);
+        if (firstBody && !registers.some((pattern) => new RegExp(pattern).test(firstBody.text.trim()))) {
+            report('FIRST_SENTENCE_REGISTER', `page body first sentence does not match any declared register (${registers.map((pattern) => `/${pattern}/`).join(' ')}): ${firstBody.text}`);
         }
     }
 

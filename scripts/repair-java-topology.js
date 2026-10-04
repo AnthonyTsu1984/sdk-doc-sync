@@ -142,13 +142,25 @@ function defaultGovernanceFactory({ digest, actionCount, targets }) {
         sideEffects,
         approval: createApprovalEnvelope({ skill, operation, batchDigest: digest, actionCount, targets, sideEffects, decision: 'approved' }),
     });
-    governance.bindRunManifest(createRunManifest({
+    const manifest = createRunManifest({
         skill,
         skillVersion: 'repair-java-topology@2',
         repoRoot: REPO_ROOT,
         batchDigest: digest,
         sessionDigest: `repair:${digest}`,
-    }), { repoRoot: REPO_ROOT });
+    });
+    governance.bindRunManifest(manifest, { repoRoot: REPO_ROOT });
+    // Evidence parity with the doc-agent-live-write precedent: the manifest
+    // artifact lands beside the journal (immutable create; a same-digest
+    // rerun must carry identical bytes). Persistence is evidence, not a
+    // gate — a failure must not block an approved write, but it is never
+    // silent.
+    try {
+        const { writeRunManifestArtifact } = require('../.claude/skills/doc-ops-core/src/run-manifest');
+        writeRunManifestArtifact(manifest, { filePath: path.join(JOURNAL_DIR, `run-manifest-${digest.slice(7, 19)}.json`) });
+    } catch (error) {
+        process.stderr.write(`run-manifest artifact not persisted: ${error.message}\n`);
+    }
     return governance;
 }
 
@@ -293,13 +305,17 @@ async function buildPlan(deps = {}) {
         // class; TOPOLOGY_RECORD_SLUG_URL).
         const claimants = recordsByTrack.get('v2.6.x').filter((r) => documentTokenFromLink(r.fields?.Docs?.link || r.fields?.Docs?.url || '') === strayScore.token);
         for (const claimant of claimants) {
+            const claimantSlug = slugText(claimant.fields?.Slug);
+            if (claimantSlug.includes('http')) {
+                throw new Error(`part D claimant ${claimant.record_id} has a URL-poisoned slug (${claimantSlug.slice(0, 60)}…) — heal the Docs text (part A form) first, replan`);
+            }
             actions.push({
                 kind: 'update-record-docs-text',
                 track: 'v2.6.x',
                 recordId: claimant.record_id,
                 text: inFolderScore.name,
                 link: `https://zilliverse.feishu.cn/docx/${inFolderScore.token}`,
-                expectedSlug: slugText(claimant.fields?.Slug),
+                expectedSlug: claimantSlug,
                 from: `stray Vector-root copy (${strayScore.token})`,
                 detail: `claimant repointed to the in-folder copy before the stray is deleted (text "${inFolderScore.name}")`,
             });
@@ -347,8 +363,12 @@ async function buildPlan(deps = {}) {
             actions.push({ kind: 'move-document', ref: 'collections-function-anchor', documentToken: besideAnchor.token, toFolderToken: fnFolder.token, detail: 'v3.0.x Collections/Function anchor joins its family folder (2026-10-04 operator ruling, v2.6.x form)' });
         } else if (inFolderAnchor) {
             notes.push('v3.0.x Collections/Function anchor already inside the family folder');
+        } else if (besideAnchor && !fnFolder) {
+            notes.push('v3.0.x Collections/Function: beside-anchor present but no family folder (flat form) — nothing to do');
+        } else if (!besideAnchor && fnFolder) {
+            notes.push('v3.0.x Collections/Function: family folder present, no beside-anchor — already clean');
         } else {
-            notes.push(`v3.0.x Collections/Function: familyFolder=${Boolean(fnFolder)} besideAnchor=${Boolean(besideAnchor)} — no anchor-beside-folder form, nothing to do`);
+            notes.push('v3.0.x Collections/Function: neither family folder nor beside-anchor — nothing to do');
         }
     } else {
         notes.push('v3.0.x Collections folder (VirtualNode target) not found — part E skipped');
@@ -512,14 +532,30 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
             } else if (action.kind === 'create-document') {
                 // Governed content write: the page is authored from the
                 // plan-inlined draft through MarkdownToFeishu (WriterGovernance
-                // bound to this plan's digest + run manifest), then the
-                // refetched page must round-trip byte-exactly against the
-                // draft — the same comparison the pre-write roundtrip gate
-                // applies. A failed verification rolls the fresh copy back
-                // (nothing depends on a document created seconds ago).
+                // bound to this plan's digest + run manifest); a failed
+                // verification rolls the fresh copy back (nothing depends on
+                // a document created seconds ago).
+                // Read-after-write: the refetched page must round-trip
+                // byte-exactly against the draft through the same
+                // normalization the pre-write roundtrip gate uses. Pipeline
+                // note: roundtrip-sim preprocesses pipe tables to HTML
+                // (native-table path) while this writer pushes the markdown
+                // as-is — keep restoration drafts table-free, or a
+                // table-carrying draft may pass the gate and fail here
+                // (fail-safe: rollback, but a wasted run).
                 const content = String(action.markdown);
                 if (sha256Digest(Buffer.from(content, 'utf8')) !== action.markdownSha256) {
                     throw new Error(`create-document ${action.ref}: markdown digest mismatch (plan ${action.markdownSha256}) — replan`);
+                }
+                // Replay guard: a partially executed prior run may have
+                // already created the page — refuse rather than duplicate
+                // (a second same-named copy is exactly the stray-sibling
+                // defect class this campaign removes). Adopt-or-delete is an
+                // operator replan decision, never automatic.
+                const siblings = await listFolderFn(action.folderToken);
+                const clash = siblings.find((c) => c.name === action.title && (c.type || 'docx') === 'docx');
+                if (clash) {
+                    throw new Error(`create-document ${action.ref}: "${action.title}" already exists in ${action.folderToken} (${clash.token || clash.file_token}) — replan (adopt or delete manually)`);
                 }
                 const writerFactory = deps.markdownWriterFactory || defaultMarkdownWriterFactory;
                 const writer = await writerFactory(getGovernance());
@@ -528,7 +564,23 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
                 if (!documentId) throw new Error(`push_markdown returned no document id: ${JSON.stringify(pushed).slice(0, 160)}`);
                 createdDocuments.set(action.ref, documentId);
                 const refetch = deps.refetchMarkdown || defaultRefetchMarkdown;
-                const live = await refetch(writer, documentId);
+                let live;
+                try {
+                    live = await refetch(writer, documentId);
+                } catch (refetchError) {
+                    // An unreadable fresh copy is unverifiable — roll it back
+                    // like a failed comparison; if even the delete fails, the
+                    // journal names the manual cleanup.
+                    createdDocuments.delete(action.ref);
+                    let rollback = 'REFETCH FAILED — ROLLBACK DELETE FAILED — MANUAL CLEANUP REQUIRED';
+                    try {
+                        await larkJsonFn(['drive', '+delete', '--file-token', documentId, '--type', 'docx', '--yes']);
+                        rollback = `refetch error (${refetchError.message}) — rolled back (created copy deleted; Drive trash)`;
+                    } catch (deleteError) {
+                        rollback = `${rollback} (delete error: ${deleteError.message})`;
+                    }
+                    throw new Error(`created document ${documentId} could not be re-read — ${rollback}`);
+                }
                 if (live !== content) {
                     createdDocuments.delete(action.ref);
                     let rollback = 'ROLLBACK DELETE FAILED — MANUAL CLEANUP REQUIRED';
@@ -674,4 +726,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { buildPlan, executePlan, planDigest };
+module.exports = { buildPlan, executePlan, planDigest, defaultGovernanceFactory };

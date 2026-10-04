@@ -30,7 +30,14 @@ function javaTrackTokens() {
 // the stray. v3.0.x is in its post-disposition shape except the Collections/
 // Function anchor (part E). v2.4.x/v2.5.x carry the dead-linked
 // dropDatabaseProperties records (part F).
-function partDDeps({ pageLinkTokens = [], pageMarkdown = null } = {}) {
+function partDDeps({
+    pageLinkTokens = [],
+    pageMarkdown = null,
+    anchorState = 'beside',
+    healthy24 = false,
+    missingDbFolder = null,
+    duplicateDead24 = false,
+} = {}) {
     const { registry, byVersion } = javaTrackTokens();
     const v24 = byVersion.get('v2.4.x');
     const v25 = byVersion.get('v2.5.x');
@@ -39,7 +46,8 @@ function partDDeps({ pageLinkTokens = [], pageMarkdown = null } = {}) {
     const entry = (token, name, type, parentFolderToken, extra = {}) => ({ token, name, type, parentFolderToken, ancestors: [], ...extra });
     const indexV24 = new Map([
         [v24.rootToken, entry(v24.rootToken, 'v2.4 root', 'folder', null)],
-        ['db24', entry('db24', 'Database', 'folder', v24.rootToken)],
+        ...((missingDbFolder === 'v2.4.x') ? [] : [['db24', entry('db24', 'Database', 'folder', v24.rootToken)]]),
+        ['livePage24', entry('livePage24', 'dropDatabaseProperties()', 'docx', 'db24')],
     ]);
     const indexV25 = new Map([
         [v25.rootToken, entry(v25.rootToken, 'v2.5 root', 'folder', null)],
@@ -59,17 +67,24 @@ function partDDeps({ pageLinkTokens = [], pageMarkdown = null } = {}) {
         ['scoreUnderVector', entry('scoreUnderVector', 'FunctionScore', 'folder', 'vec30')],
         ['collections30', entry('collections30', 'Collections', 'folder', v30.rootToken)],
         ['functionFolder30', entry('functionFolder30', 'Function', 'folder', 'collections30')],
-        ['functionAnchor30', entry('functionAnchor30', 'Function', 'docx', 'collections30')],
+        ...(anchorState === 'beside' || anchorState === 'both'
+            ? [['functionAnchor30', entry('functionAnchor30', 'Function', 'docx', 'collections30')]]
+            : []),
+        ...(anchorState === 'inside' || anchorState === 'both'
+            ? [['functionInside30', entry('functionInside30', 'Function', 'docx', 'functionFolder30')]]
+            : []),
     ]);
     const deadRecord = (id) => ({
         record_id: id,
         fields: {
-            Docs: { text: 'dropDatabaseProperties()', link: 'https://zilliverse.feishu.cn/docx/deadToken' },
+            Docs: { text: 'dropDatabaseProperties()', link: healthy24 && id === 'rec-dead-24'
+                ? 'https://zilliverse.feishu.cn/docx/livePage24'
+                : 'https://zilliverse.feishu.cn/docx/deadToken' },
             Slug: [{ text: 'v2-Database-dropDatabaseProperties' }],
             Type: 'Function',
         },
     });
-    const recordsV24 = [deadRecord('rec-dead-24')];
+    const recordsV24 = [deadRecord('rec-dead-24'), ...(duplicateDead24 ? [deadRecord('rec-dead-24b')] : [])];
     const recordsV25 = [deadRecord('rec-dead-25')];
     const recordsV26 = [{
         record_id: 'rec-claimant',
@@ -273,14 +288,42 @@ test('part F plans a governed create + linkRef repoint for each dead-linked reco
     assert.equal(repoint24.recordId, 'rec-dead-24');
     assert.equal(repoint24.linkRef, 'restore:v2.4.x');
     assert.equal(repoint24.expectedSlug, 'v2-Database-dropDatabaseProperties');
-    assert.equal(plan.actions.some((a) => a.kind === 'create-document' && a.track === 'v2.6.x'), false,
-        'v2.6.x (healthy link) gets no restoration');
 
     // No draft supplied → the plan refuses rather than silently skipping.
     await assert.rejects(
         buildPlan(partDDeps({ pageLinkTokens: [] })),
         /no restoration draft was supplied/,
     );
+});
+
+test('part F skips a track whose record already points at a live in-tree page', async () => {
+    const plan = await buildPlan(partDDeps({ pageLinkTokens: [], pageMarkdown: 'x', healthy24: true }));
+    assert.equal(plan.actions.some((a) => a.kind === 'create-document' && a.track === 'v2.4.x'), false,
+        'v2.4.x (healthy in-tree link) gets no restoration');
+    assert.equal(plan.actions.some((a) => a.kind === 'create-document' && a.track === 'v2.5.x'), true,
+        'v2.5.x (still dead-linked) is restored');
+    assert.ok(plan.notes.some((note) => note.includes('v2.4.x') && note.includes('healthy or absent')));
+});
+
+test('part F refuses: duplicate dead records, or a missing Database folder', async () => {
+    await assert.rejects(
+        buildPlan(partDDeps({ pageLinkTokens: [], pageMarkdown: 'x', duplicateDead24: true })),
+        /v2\.4\.x carries 2 v2-Database-dropDatabaseProperties records/,
+    );
+    await assert.rejects(
+        buildPlan(partDDeps({ pageLinkTokens: [], pageMarkdown: 'x', missingDbFolder: 'v2.4.x' })),
+        /v2\.4\.x has no Database folder under its release root — CREATE_FOLDER_THEN_REPOINT/,
+    );
+});
+
+test('part E guards: dual anchors refused; already-inside is a note, not an action', async () => {
+    await assert.rejects(
+        buildPlan(partDDeps({ pageLinkTokens: [], pageMarkdown: 'x', anchorState: 'both' })),
+        /BOTH beside and inside the family folder — duplicate class/,
+    );
+    const inside = await buildPlan(partDDeps({ pageLinkTokens: [], pageMarkdown: 'x', anchorState: 'inside' }));
+    assert.equal(inside.actions.some((a) => a.ref === 'collections-function-anchor'), false);
+    assert.ok(inside.notes.some((note) => note.includes('already inside the family folder')));
 });
 
 test('part F executes: governed create verified by roundtrip, then the repoint binds the new document', async () => {
@@ -290,6 +333,7 @@ test('part F executes: governed create verified by roundtrip, then the repoint b
     let governanceBound = 0;
     const deps = {
         ...javaTrackTokensFixture(),
+        listFolder: async () => [],
         resolveTableId: async () => 'tblTest',
         larkJson: async (args) => { larkCalls.push(args); return {}; },
         listBitableRecords: async () => [{
@@ -338,6 +382,7 @@ test('part F roundtrip failure rolls the fresh copy back and fails the run', asy
     const larkCalls = [];
     const deps = {
         ...javaTrackTokensFixture(),
+        listFolder: async () => [],
         larkJson: async (args) => { larkCalls.push(args); return {}; },
         governanceFactory: () => ({ bound: true }),
         markdownWriterFactory: async () => ({ push_markdown: async () => ({ document_id: 'newDoc24', blocks_created: 7 }) }),
@@ -397,6 +442,85 @@ test('an expectedSlug mismatch refuses the repoint (the slug must not move)', as
         executePlan({ plan, approvedDigest: planDigest(plan), journalPath, deps }),
         /not verifiable/,
     );
+});
+
+test('create-document refuses a replay: a same-named page already in the target folder blocks the write', async () => {
+    const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'repair-java-topology-')), 'journal.json');
+    let writerTouched = false;
+    const deps = {
+        ...javaTrackTokensFixture(),
+        listFolder: async (folderToken) => (folderToken === 'db24'
+            ? [{ token: 'existingCopy', name: 'dropDatabaseProperties()', type: 'docx' }]
+            : []),
+        governanceFactory: () => ({ bound: true }),
+        markdownWriterFactory: async () => { writerTouched = true; return { push_markdown: async () => { throw new Error('must not run'); } }; },
+    };
+    const plan = {
+        actions: [
+            { kind: 'create-document', ref: 'restore:v2.4.x', track: 'v2.4.x', folderToken: 'db24', title: 'dropDatabaseProperties()', markdown: 'm', markdownSha256: planDigestOf('m') },
+        ],
+    };
+    await assert.rejects(
+        executePlan({ plan, approvedDigest: planDigest(plan), journalPath, deps }),
+        /"dropDatabaseProperties\(\)" already exists in db24 \(existingCopy\) — replan/,
+    );
+    assert.equal(writerTouched, false, 'the writer is never called on a replay clash');
+});
+
+test('a refetch EXCEPTION rolls the fresh copy back (not only a mismatch)', async () => {
+    const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'repair-java-topology-')), 'journal.json');
+    const larkCalls = [];
+    const deps = {
+        ...javaTrackTokensFixture(),
+        listFolder: async () => [],
+        larkJson: async (args) => { larkCalls.push(args); return {}; },
+        governanceFactory: () => ({ bound: true }),
+        markdownWriterFactory: async () => ({ push_markdown: async () => ({ document_id: 'newDoc24', blocks_created: 3 }) }),
+        refetchMarkdown: async () => { throw new Error('HTTP 500 from blocks endpoint'); },
+    };
+    const plan = {
+        actions: [
+            { kind: 'create-document', ref: 'restore:v2.4.x', track: 'v2.4.x', folderToken: 'db24', title: 't', markdown: 'm', markdownSha256: planDigestOf('m') },
+        ],
+    };
+    await assert.rejects(
+        executePlan({ plan, approvedDigest: planDigest(plan), journalPath, deps }),
+        (error) => /could not be re-read.*rolled back/.test(error.message),
+    );
+    assert.ok(larkCalls.some((args) => args[0] === 'drive' && args[1] === '+delete' && args.includes('newDoc24')),
+        'the unreadable copy is deleted');
+    // The journal records the failure honestly — ok:false with the rollback
+    // detail, so a post-mortem never mistakes it for a clean run.
+    const journal = JSON.parse(fs.readFileSync(journalPath, 'utf8'));
+    assert.equal(journal.journal[0].ok, false);
+    assert.match(journal.journal[0].error, /could not be re-read/);
+});
+
+test('a repoint whose linkRef was never created is refused before any write', async () => {
+    const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'repair-java-topology-')), 'journal.json');
+    const deps = {
+        ...javaTrackTokensFixture(),
+        resolveTableId: async () => 'tblTest',
+        larkJson: async () => { throw new Error('must not be called'); },
+    };
+    const plan = {
+        actions: [
+            { kind: 'update-record-docs-text', track: 'v2.4.x', recordId: 'rec-x', text: 't()', linkRef: 'restore:v2.4.x' },
+        ],
+    };
+    await assert.rejects(
+        executePlan({ plan, approvedDigest: planDigest(plan), journalPath, deps }),
+        /unresolved linkRef restore:v2\.4\.x/,
+    );
+});
+
+test('defaultGovernanceFactory binds a real envelope + run manifest (construction smoke)', () => {
+    const { defaultGovernanceFactory } = require('../../../../scripts/repair-java-topology');
+    const digest = `sha256:${'a'.repeat(64)}`;
+    const governance = defaultGovernanceFactory({ digest, actionCount: 2, targets: ['restore:v2.4.x', 'rec-x'] });
+    assert.equal(typeof governance.assertMutationAllowed, 'function');
+    // The binding itself is the contract under test: a malformed envelope or
+    // manifest shape would have thrown inside bindApproval/bindRunManifest.
 });
 
 function planDigestOf(text) {

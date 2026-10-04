@@ -676,6 +676,38 @@
         }
       ],
       "notes": "2026-10-03 user ruling + live java audit. Ruling: same-title files inside an older version directory — one copy claimed by the older version's table, the duplicate by the newer version's table — are definitively a copy-patch-and-repoint mechanism failure: no copy happened, the new document was created in place in the older directory, then patched and repointed. (Multi-version directories themselves are normal structure; unchanged-interface fallback reaches back to v2.3.x for java.) Live java reconciliation validated the classifier: 21 SAME_NAME_COPY_MISPLACED (v3.0-claimed Partitions halves under v2.6.x, Database pairs under v2.4.x, ResourceGroup family + transferReplica under v2.5.x, v2.6-claimed describeRole/describeUser under v2.5.x, v2.6-claimed FieldSchema under v2.4.x), 16 SAME_NAME_SIBLING_ORPHAN (including describeIndex() copy JBBldcrAHoYZ2mxMGeocZHMAnze), 113 correctly placed cross-track pairs, 0 conflicts. Known write-path half (closed separately from this detection invariant): the planner trusts target.folderToken without version-root containment evidence (TARGET_ANCESTRY is self-declared verified), so a candidate-spec that resolves the target category folder inside the older tree plans a copy that lands in-place next to the source; the executor's live tree-delta verification checks reference multisets only, and the kernel's TREE_DELTA_CREATED_DOCUMENT_MISPLACED now also compares the created document's folder against plan.target.folderToken for the plain copy decision — which catches executor drift but NOT this failure mode, because the wrong resolution makes plan.target.folderToken itself the older folder. Full closure requires a pre-write containment gate: evidence that target.folderToken sits under the target track's release root."
+    },
+    {
+      "id": "api.track-topology-audit",
+      "version": 1,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "reconcile"
+      ],
+      "statementDigest": "sha256:3c0cc80b8eb20a0fb6c22d0d88257a2bed465b26ec401118cc46697addf2dff2",
+      "fixtureIds": [
+        "track-topology-classification"
+      ],
+      "enforcers": [
+        {
+          "stage": "reconcile",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/track-topology.js",
+          "codes": [
+            "TOPOLOGY_SECTION_FOLDER_FOREIGN",
+            "TOPOLOGY_SECTION_FOLDER_UNRESOLVED",
+            "TOPOLOGY_PAGE_OUTSIDE_SECTION",
+            "TOPOLOGY_PAGE_SECTION_UNKNOWN",
+            "TOPOLOGY_PAGE_UNRESOLVED",
+            "TOPOLOGY_PAGE_EXEMPTED",
+            "TOPOLOGY_RECORD_SLUG_URL",
+            "TOPOLOGY_SAME_NAME_SIBLING",
+            "TOPOLOGY_SAME_NAME_EXEMPTED"
+          ]
+        }
+      ],
+      "notes": "Campaign-control hardening batch 2 (2026-10-04, docs/campaign-control-hardening.md §4): the fallback chain is the registry track order per language — a record pointing at a recorded fallback source is correct topology, never a defect (grantPrivilege precedent, 2026-10-03). classifyTrackTopology (pure) judges section folders (own tree or recorded fallback source, else FOREIGN/UNRESOLVED) and page documents (claiming section folder via longest-prefix slug match, else OUTSIDE_SECTION/SECTION_UNKNOWN/UNRESOLVED, with operator exemptions surfaced as EXEMPTED info), and scans same-name document-beside-folder siblings under the sameNameInOneDirectory policy (TOPOLOGY_SAME_NAME_SIBLING — the 2026-10-04 stray FunctionScore class; operator-adjudicated copies exempt by token surface as TOPOLOGY_SAME_NAME_EXEMPTED info, never silently dropped). Enforcement at the reconcile stage is wired in scripts/reconcile-content.js (per-track classification over the language-wide walk; error findings join the patrol report and gate --strict); scripts/audit-track-topology.js is the intake-preflight walk (non-zero exit on errors; the saved-workflow hard step lands with batch 3). The decision table in config/fallback-topology.json is load-bearing, not documentation: classifyTrackTopology and loadFallbackTopologyConfig refuse to run without the record-points-at-recorded-fallback-source → NONE row and the sameNameInOneDirectory: always-a-defect policy; planner/workflow consumers land with batch 3."
     }
   ]
 }

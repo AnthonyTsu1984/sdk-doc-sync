@@ -502,30 +502,42 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
                     // Replay-safe: the record already points at the target.
                     entry.result = { toFolderToken: toFolder, alreadyRepointed: true };
                 } else {
+                    // The Docs cell must be written as {text, link}: the Slug
+                    // column is a formula over Docs.name, so a bare-URL string
+                    // poisons every family page slug (2026-10-04 campaign
+                    // defect class — TOPOLOGY_RECORD_SLUG_URL). Never reuse an
+                    // existing URL-shaped display text.
                     const docs = record.fields?.Docs || {};
-                    const text = docs.text || scalarTextLocal(docs) || action.slug || action.category;
+                    const candidates = [action.category, action.slug, scalarTextLocal(docs)]
+                        .filter((value) => typeof value === 'string' && value.trim() !== '' && !value.includes('http'));
+                    const text = candidates[0];
+                    if (!text) {
+                        throw new Error(`repoint ${action.recordId}: no clean section name for the Docs text (category/slug missing and current text is a URL) — replan with the folder name`);
+                    }
                     const tableId = await resolveTableId(base.baseToken, callLark);
+                    const link = `https://zilliverse.feishu.cn/drive/folder/${toFolder}`;
+                    // record-batch-update rejects {text,link} URL cells — the
+                    // raw records PUT accepts them.
                     await callLark([
-                        'base', '+record-batch-update',
-                        '--base-token', base.baseToken,
-                        '--table-id', tableId,
-                        '--json', JSON.stringify({
-                            update_records: {
-                                [action.recordId]: { Docs: `https://zilliverse.feishu.cn/drive/folder/${toFolder}` },
-                            },
-                        }),
+                        'api', 'PUT',
+                        `/open-apis/bitable/v1/apps/${base.baseToken}/tables/${tableId}/records/${action.recordId}`,
+                        '--data', JSON.stringify({ fields: { Docs: { text, link } } }),
                     ]);
-                    // Live verification with read-after-write backoff.
+                    // Live verification with read-after-write backoff — the
+                    // display text must equal the written name, not just the
+                    // link (this is exactly the check the poisoned-slug class
+                    // would have failed).
                     const check = await verifyWithRetry(async () => {
                         const after = await listRecords(base.baseToken);
                         const reread = after.find((r) => r.record_id === action.recordId);
-                        const afterLink = String(reread?.fields?.Docs?.link || reread?.fields?.Docs?.url || '');
-                        return { ok: afterLink.includes(toFolder), afterLink };
+                        const afterDocs = reread?.fields?.Docs || {};
+                        const afterLink = String(afterDocs.link || afterDocs.url || '');
+                        return { ok: afterLink.includes(toFolder) && String(afterDocs.text || '') === text, afterLink, text: afterDocs.text };
                     });
                     if (!check.ok) {
-                        throw new Error(`repoint verification failed: record ${action.recordId} still points at ${check.afterLink || '(unreadable)'}`);
+                        throw new Error(`repoint verification failed: record ${action.recordId} still points at ${check.afterLink || '(unreadable)'} or text is ${JSON.stringify(check.text)}`);
                     }
-                    entry.result = { toFolderToken: toFolder, link: check.afterLink };
+                    entry.result = { toFolderToken: toFolder, link: check.afterLink, text };
                 }
             } else {
                 throw new Error(`unknown action kind ${action.kind}`);

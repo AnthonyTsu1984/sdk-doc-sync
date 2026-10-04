@@ -99,6 +99,8 @@ function parseArgs(argv) {
             args.approvePlanDigest = (args.approvePlanDigest || []).concat(argv[++i]);
         } else if (arg === '--approve-batch-digest' && argv[i + 1]) {
             args.approveBatchDigest = argv[++i];
+        } else if (arg === '--placement-walk-digest' && argv[i + 1]) {
+            args.placementWalkDigest = argv[++i];
         } else if (arg === '--review-unit-id' && argv[i + 1]) {
             args.reviewUnitId = argv[++i];
         } else if (arg === '--batch-continue') {
@@ -140,6 +142,7 @@ Options:
   --repair-approve <doc-token>     Bind approval to an exact full-body repair token (repeatable)
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
+  --placement-walk-digest <hash>   Bind execution to the placement audit walk digest (session placementWalk / audit walkDigest); plans carrying a different walk are refused (PLACEMENT_SOURCE_STALE); a named walk over walk-less plans is PLACEMENT_WALK_UNBOUND
   --review-unit-id <id>            Select exactly one document and its required resource operations
   --batch-continue                 Verified batch mode: permit planning and recording executions while sibling units await review (only a unit's OWN unaccepted execution blocks its re-selection). The operator's batch write approval binds the unit list; without this flag the per-unit strict gate is unchanged
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
@@ -586,6 +589,19 @@ async function runCli({
             exit(1);
             return null;
         }
+        // T3 placement-live binding: the session names the walk its plans
+        // derive from. A resumed execution either adopts it (no flag) or
+        // must name the same one — a disagreeing flag means the plans and
+        // the caller are looking at different walks.
+        if (reviewSession.placementWalk) {
+            if (!args.placementWalkDigest) {
+                args.placementWalkDigest = reviewSession.placementWalk.digest;
+            } else if (args.placementWalkDigest !== reviewSession.placementWalk.digest) {
+                err(`Error: PLACEMENT_WALK_SESSION_MISMATCH: --placement-walk-digest ${args.placementWalkDigest} disagrees with the session's recorded walk ${reviewSession.placementWalk.digest} — re-run the placement audit and replan`);
+                exit(1);
+                return null;
+            }
+        }
         // Fail-closed on incomplete planning inputs: without the reviewed
         // reference context the run degrades silently — the manifest digest
         // drifts, most units fail planning, and the garbage plan only shows
@@ -644,8 +660,17 @@ async function runCli({
         language,
         referenceContextProvider: dependencies.referenceContextProvider || fileContextProvider,
     });
-    const planningContextProvider = dependencies.planningContextProvider
+    const innerPlanningContextProvider = dependencies.planningContextProvider
         || createDefaultPlanningContextProvider({ rootToken: rootToken || 'dummy', sdkVersion: args.sdkVersion });
+    // T3 placement-live binding: capture the placement walk the planning
+    // contexts actually derive from — the session records it at creation and
+    // resumed executions cross-check their --placement-walk-digest against it.
+    let capturedPlacementWalk = null;
+    const planningContextProvider = async (action) => {
+        const context = await innerPlanningContextProvider(action);
+        if (capturedPlacementWalk === null && context?.placementWalk) capturedPlacementWalk = context.placementWalk;
+        return context;
+    };
     const typeIndexReader = dependencies.typeIndexReader || (
         !dependencies.indexReader
         && args.previousBaseToken
@@ -719,6 +744,7 @@ async function runCli({
         reviewSession,
         tokenReferenceReader: dependencies.tokenReferenceReader || null,
         tokenReferenceTracks,
+        placementWalkDigest: args.placementWalkDigest || null,
     };
     const sync = dependencies.syncFactory ? dependencies.syncFactory(syncOptions) : new SdkDocSync(syncOptions);
 
@@ -859,6 +885,7 @@ async function runCli({
             // and the session closes mechanically once every unit finalized —
             // no campaign-level acceptance gate.
             acceptanceFlow: 'two-gate',
+            placementWalk: capturedPlacementWalk,
             artifacts: {
                 releaseScope: args.releaseScope ? path.resolve(args.releaseScope) : null,
                 referenceContext: args.referenceContext ? path.resolve(args.referenceContext) : null,

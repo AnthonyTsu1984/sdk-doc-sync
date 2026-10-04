@@ -37,6 +37,7 @@ const {
     INVARIANT_ID,
     verifyTreeDeltaPostconditions,
     WRITE_PLAN_ACTIONS,
+    verifyPlacementWalkBinding,
 } = require('./versioned-tree-policy');
 const { deriveFolderChainNames } = require('./tree-delta-reconciliation');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
@@ -333,6 +334,7 @@ class SdkDocSync {
         reviewSession = null,
         tokenReferenceReader = null,
         tokenReferenceTracks = [],
+        placementWalkDigest = null,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -391,6 +393,9 @@ class SdkDocSync {
         this.executor = executor || null;
         this.verifier = verifier || null;
         this.tokenReferenceReader = tokenReferenceReader || null;
+        // T3 placement-live binding: the placement audit walk this execution is
+        // named to (from the session's placementWalk / --placement-walk-digest).
+        this.placementWalkDigest = placementWalkDigest;
 
         if (!dryRun) {
             // Writers refuse every mutation until this governance is bound to
@@ -777,6 +782,22 @@ class SdkDocSync {
                 proposedBatch: result.proposedExecutionBatch,
                 diagnostics: [diagnosticFor(error)],
             });
+            return result;
+        }
+        // T3 placement-live binding (campaign-control batch 2c): the batch's
+        // plans must derive from exactly the walk this execution names — a
+        // stale-snapshot placement derivation fails closed before any write.
+        const placementWalkBinding = verifyPlacementWalkBinding({
+            plans: approvedPlans.map((entry) => entry.plan),
+            boundWalkDigest: this.placementWalkDigest,
+        });
+        if (!placementWalkBinding.ok) {
+            result.executionResult = blockedExecutionResult({
+                batch: null,
+                proposedBatch: result.proposedExecutionBatch,
+                diagnostics: placementWalkBinding.errors.map((entry) => diagnosticFor(new Error(`${entry.code}: ${entry.detail}`))),
+            });
+            this.onProgress('APPROVE', `Placement walk binding refused: ${placementWalkBinding.errors[0].detail}`);
             return result;
         }
         let journal = this.executionJournalFactory

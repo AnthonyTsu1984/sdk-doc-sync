@@ -480,5 +480,19 @@
    "adoptionAttempts": 1,
    "postcheckCode": "WRITE_POSTCHECK_FAILED"
   }
+ },
+ {
+  "id": "placement-live-binding",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "placement-live-binding"
+  },
+  "assertions": {
+   "boundOk": true,
+   "staleCode": "PLACEMENT_SOURCE_STALE",
+   "unboundCode": "PLACEMENT_SOURCE_STALE",
+   "divergentCode": "PLACEMENT_WALK_DIVERGENT",
+   "legacyOk": true
+  }
  }
 ]

@@ -89,6 +89,7 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
     'api.sdk-page-layout',
     'api.same-name-sibling-placement',
     'api.write-boundary-reconcile',
+    'api.placement-live-binding',
     'api.track-topology-audit',
   ]);
 });

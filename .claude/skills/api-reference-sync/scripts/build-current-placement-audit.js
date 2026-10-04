@@ -18,6 +18,8 @@ const {
   trackInventoryDigest,
 } = require('../src/sdk-doc-sync/inheritance-evidence');
 const { bitableRecordTokens } = require('../src/sdk-doc-sync/token-reference-reader');
+const { sha256Digest } = require('../../doc-ops-core/src/digest');
+const { canonicalBytes } = require('../../doc-ops-core/src/canonical-json');
 const {
   listLanguageTracks,
   loadReleaseTrackRegistry,
@@ -379,7 +381,9 @@ async function buildPlacementAudit({
         referencedRecordIds: sharing.referencedRecordIds,
         references: (referencesByToken.get(entry.documentToken) || [])
           .map((reference) => ({ ...reference }))
-          .sort((left, right) => left.recordId.localeCompare(right.recordId)),
+          // Codepoint order, not locale order: this list feeds the walk
+          // digest, which must be deterministic across environments.
+          .sort((left, right) => (left.recordId < right.recordId ? -1 : left.recordId > right.recordId ? 1 : 0)),
       },
       targetFolderVerified,
       inheritanceEvidence,
@@ -390,8 +394,25 @@ async function buildPlacementAudit({
   const sharedTokenSummary = { shared: 0, unshared: 0, unknown: 0 };
   for (const entry of entries) sharedTokenSummary[entry.sharedToken.status] += 1;
 
+  // T3 placement-live binding (campaign-control batch 2c): the machine
+  // fingerprint of THIS walk. Sessions bind it (session.placementWalk) and
+  // executions must name it (--placement-walk-digest) — placement decisions
+  // derived from any other walk product are stale and refused
+  // (PLACEMENT_SOURCE_STALE). The digest covers the placement-relevant
+  // content of every entry, not volatile fields like generatedAt.
+  const walkDigest = sha256Digest(canonicalBytes(entries.map((entry) => ({
+    stableId: entry.stableId,
+    documentToken: entry.documentToken,
+    placement: entry.placement,
+    // sharedToken carries the reference list (sorted) — the reference
+    // coverage rides the digest through it.
+    sharedToken: entry.sharedToken,
+    targetFolderVerified: entry.targetFolderVerified,
+  }))));
+
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
+    walkDigest,
     status: entries.every((entry) => entry.placement.verified) ? 'placement_audit_ready' : 'placement_audit_blocked',
     inheritanceEvidenceStatus: entries.every((entry) => entry.inheritanceEvidence) ? 'evidence_complete' : 'evidence_blocked',
     generatedAt: new Date().toISOString(),

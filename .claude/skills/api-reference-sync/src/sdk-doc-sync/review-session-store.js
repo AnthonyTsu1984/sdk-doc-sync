@@ -142,6 +142,7 @@ function createReviewSession({
   reviewUnitManifest,
   artifacts = {},
   acceptanceFlow = 'legacy',
+  placementWalk = null,
   createdAt = new Date().toISOString(),
 }) {
   if (!nonEmptyString(sessionId)) throw new TypeError('sessionId is required');
@@ -150,6 +151,16 @@ function createReviewSession({
   }
   if (acceptanceFlow !== 'legacy' && acceptanceFlow !== 'two-gate') {
     throw new TypeError(`acceptanceFlow must be 'legacy' or 'two-gate', got ${acceptanceFlow}`);
+  }
+  // T3 placement-live binding (campaign-control batch 2c): the placement
+  // audit walk this session derives its placement decisions from. Sessions
+  // created before the binding carry null (legacy); executions of plans
+  // that DO carry a placementWalkDigest must name the same digest
+  // (PLACEMENT_SOURCE_STALE otherwise).
+  if (placementWalk !== null) {
+    if (!nonEmptyString(placementWalk.digest) || !nonEmptyString(placementWalk.collectedAt)) {
+      throw new TypeError('placementWalk requires { digest, collectedAt } from the placement audit product');
+    }
   }
   return Object.freeze({
     schemaVersion: 1,
@@ -161,6 +172,7 @@ function createReviewSession({
     status: 'in_progress',
     reviewUnitManifest: clone(reviewUnitManifest),
     reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
+    placementWalk: placementWalk === null ? null : clone(placementWalk),
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
     pendingExecutions: [],

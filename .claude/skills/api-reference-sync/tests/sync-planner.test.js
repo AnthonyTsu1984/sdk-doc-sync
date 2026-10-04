@@ -79,6 +79,7 @@ function planningContext(overrides = {}) {
       documentToken: 'doc-v26',
       link: 'https://docs.example/docx/doc-v26',
       title: 'createCollection()',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
     },
     existingRecordLookup: {
       checked: true,
@@ -309,6 +310,7 @@ test('SyncPlanner binds reviewed organization and release placement contracts in
       documentToken: 'doc-bulk-writer',
       link: 'https://docs.example/docx/doc-bulk-writer',
       title: 'BulkWriter',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
     },
   });
   context.inheritanceEvidence = createInheritanceEvidence({
@@ -559,6 +561,17 @@ test('SyncPlanner allows UPDATE_IN_PLACE only for a verified target-local unshar
   });
 });
 
+test('SyncPlanner refuses an unsafe UPDATE without copySource.placement (kernel v5 mirror evidence)', () => {
+  const context = planningContext({
+    current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },
+    copySource: { ...planningContext().copySource, placement: undefined },
+  });
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), context),
+    (error) => error.code === 'COPY_SOURCE_PLACEMENT_REQUIRED' && /mirror gate/.test(error.message),
+  );
+});
+
 test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location with copy source evidence', () => {
   const cases = [
     ['older version', { current: { ...planningContext().current, version: 'v2.5.x' } }],
@@ -572,6 +585,7 @@ test('SyncPlanner uses COPY_PATCH_AND_REPOINT for every unsafe update location w
       documentToken: 'doc-v26',
       link: 'https://docs.example/docx/doc-v26',
       title: 'createCollection()',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
     }, label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_DOCUMENT'), label);
     assert.ok(plan.postconditions.some((entry) => entry.type === 'TARGET_LINK'), label);
@@ -660,6 +674,7 @@ test('changed inherited Python docs plan as copy-patch-repoint with source prese
           documentToken,
           link: `https://docs.example/docx/${encodeURIComponent(documentToken)}`,
           title,
+          placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
       },
       tokenReferencedByOlderVersions: true,
     });
@@ -687,6 +702,7 @@ test('changed inherited Python docs plan as copy-patch-repoint with source prese
       documentToken,
       link: `https://docs.example/docx/${encodeURIComponent(documentToken)}`,
       title,
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-collections' },
     }, stableId);
     assert.deepEqual(plan.postconditions.find((entry) => entry.type === 'OLDER_SOURCE_UNCHANGED'), {
       type: 'OLDER_SOURCE_UNCHANGED',

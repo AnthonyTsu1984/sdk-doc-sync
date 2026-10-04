@@ -65,6 +65,7 @@ function sharedInheritedContext({ stableId = 'cpp:Partitions:LoadPartitions' } =
       documentToken: current.documentToken,
       link: `https://zilliverse.feishu.cn/docx/${current.documentToken}`,
       title: 'LoadPartitions()',
+      placement: { versionRootToken: 'root-v26', folderToken: 'partitions-folder-v26' },
     },
     inheritanceEvidence: createInheritanceEvidence({
       stableId,
@@ -275,7 +276,9 @@ const scenarios = {
     const writerCalls = [];
     const documentWriter = {
       async listFolder({ folderToken }) {
-        // Kernel v3 containment: the live tree under the target version root.
+        // Kernel v3 containment: the live tree under the target version root;
+        // kernel v5 mirror: the source tree serves a same-named section.
+        if (folderToken === 'root-v26') return [{ token: 'partitions-folder-v26', type: 'folder', name: 'Partitions' }];
         return folderToken === 'root-v30'
           ? [{ token: 'folder-partitions-v30', type: 'folder', name: 'Partitions' }]
           : [];
@@ -318,6 +321,7 @@ const scenarios = {
     const driftedExecutor = new SyncExecutor({
       documentWriter: {
         async listFolder({ folderToken }) {
+          if (folderToken === 'root-v26') return [{ token: 'partitions-folder-v26', type: 'folder', name: 'Partitions' }];
           return folderToken === 'root-v30'
             ? [{ token: 'folder-partitions-v30', type: 'folder', name: 'Partitions' }]
             : [];
@@ -1442,6 +1446,84 @@ const scenarios = {
       noteLeakCode: firstCode(noteLeak, 'INTERNAL_NOTE_LEAK'),
       cleanOk: clean.length === 0,
     };
+  },
+
+  async 'write-boundary-reconcile'() {
+    const path = require('node:path');
+    let mockFetch = async () => { throw new Error('unset'); };
+    let calls = [];
+    const repoRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
+    const { WriterGovernance } = require(path.join(repoRoot, '.claude/skills/doc-ops-core/src/writer-governance'));
+    const { stubRunManifest } = require(path.join(repoRoot, '.claude/skills/doc-ops-core/src/run-manifest'));
+    const { createApprovalEnvelope } = require(path.join(repoRoot, '.claude/skills/doc-ops-core/src/approval-guard'));
+    // Swap node-fetch in the require cache (same pattern as the
+    // markdown-to-feishu-copy suite) so the production writer runs against
+    // a routed mock transport.
+    const modulePath = require.resolve(path.join(repoRoot, '.claude/skills/api-reference-sync/src/markdown-to-feishu'));
+    const fetchPath = require.resolve('node-fetch');
+    const originalFetch = require.cache[fetchPath];
+    delete require.cache[modulePath];
+    // Stable delegating export: the module captures THIS function at load
+    // time; it forwards to the per-phase mutable mockFetch binding.
+    require.cache[fetchPath] = { id: fetchPath, filename: fetchPath, loaded: true, exports: (url, options) => mockFetch(url, options) };
+    const MarkdownToFeishu = require(modulePath);
+    delete require.cache[modulePath];
+    if (originalFetch) require.cache[fetchPath] = originalFetch;
+    else delete require.cache[fetchPath];
+
+    const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'execute' });
+    const batchDigest = 'sha256:'.concat('a'.repeat(64));
+    governance.bindApproval({
+      batchDigest,
+      actionCount: 1,
+      targets: ['doc-under-test'],
+      sideEffects: ['docx.patch'],
+      approval: createApprovalEnvelope({ skill: 'api-reference-sync', operation: 'execute', batchDigest, actionCount: 1, targets: ['doc-under-test'], sideEffects: ['docx.patch'], decision: 'approved' }),
+      invariantAttestations: [],
+    });
+    governance.bindRunManifest(stubRunManifest({ skill: governance.skill, batchDigest: governance.bound.batchDigest }));
+
+    const makeWriter = () => {
+      const writer = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance });
+      writer.tokenFetcher = { token: async () => 'tenant-token' };
+      return writer;
+    };
+    const out = {};
+    // 1) Same-name collision: the create never fires.
+    mockFetch = async (url, options) => {
+      calls.push(options?.method || 'GET');
+      return { async json() { return { code: 0, data: { files: [{ token: 'fld-existing', name: 'Database', type: 'folder' }], has_more: false } }; } };
+    };
+    calls = [];
+    try { await makeWriter().createFolder({ name: 'Database', parentFolderToken: 'parent' }); out.collisionCode = null; }
+    catch (error) { out.collisionCode = error.code || null; }
+    out.collisionWrites = calls.filter((method) => method === 'POST').length;
+    // 2) Lost create response, folder provably live: adopt, never re-POST.
+    let posted = false;
+    mockFetch = async (url, options) => {
+      calls.push(options?.method || 'GET');
+      if (options?.method === 'POST') {
+        posted = true;
+        return { async json() { throw new Error('lost response'); } };
+      }
+      return { async json() { return { code: 0, data: { files: posted ? [{ token: 'fld-adopted', name: 'Database', type: 'folder' }] : [], has_more: false } }; } };
+    };
+    calls = [];
+    const adopted = await makeWriter().createFolder({ name: 'Database', parentFolderToken: 'parent' });
+    out.adopted = adopted.reconciledAfterFailure === true && adopted.token === 'fld-adopted';
+    out.adoptionAttempts = calls.filter((method) => method === 'POST').length;
+    // 3) Post-check mismatch fails closed.
+    let createdDoc = false;
+    mockFetch = async (url, options) => {
+      if (options?.method === 'POST') {
+        createdDoc = true;
+        return { async json() { return { code: 0, data: { document: { document_id: 'doc-new', revision_id: 1 } } }; } };
+      }
+      return { async json() { return { code: 0, data: { files: [], has_more: false } }; } };
+    };
+    try { await makeWriter().create_document({ title: 'x()', folder_token: 'f' }); out.postcheckCode = null; }
+    catch (error) { out.postcheckCode = error.code || null; }
+    return out;
   },
 
   // --- api.track-topology-audit (campaign-control hardening batch 2) ---

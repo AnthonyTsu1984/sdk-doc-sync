@@ -531,6 +531,7 @@ test('attested missing-category spec assembles into plannable resources and an e
             documentToken: updateFacts().current.documentToken,
             link: 'https://zilliverse.feishu.cn/docx/doc-load-partitions-v26',
             title: 'LoadPartitions()',
+            placement: { versionRootToken: 'root-v26', folderToken: 'partitions-folder-v26' },
         },
         treeDelta: { category: categorySpec() },
         inheritanceEvidence: evidence,
@@ -562,6 +563,37 @@ test('attested missing-category spec assembles into plannable resources and an e
     const blocked = evaluateVersionedTreeDelta(updateFacts({ target, category: unassemblable }));
     assert.equal(blocked.status, 'blocked');
     assert.equal(blocked.blocker, 'TREE_DELTA_PLACEMENT_UNKNOWN');
+});
+
+test('verifyTreeDeltaPostconditions reports kernel v5 copy-structure mirror drift', () => {
+    const plan = {
+        stableId: 'cpp:Partitions:LoadPartitions',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 5,
+            inputDigest: sha('plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE,
+            evidenceDigest: null,
+            requiredResourceDag: [],
+        }],
+    };
+    const observed = {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+        categoryFolderToken: 'folder-partitions-v30',
+        categoryFolderLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        categoryNodeLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        createdDocumentFolderToken: 'folder-partitions-v30',
+        copyStructureMirrored: false,
+    };
+    const drifted = verifyTreeDeltaPostconditions({ plan, observed });
+    assert.equal(drifted.ok, false);
+    assert.ok(drifted.errors.some((entry) => entry.code === 'TREE_DELTA_COPY_STRUCTURE_DRIFT'));
+    const clean = verifyTreeDeltaPostconditions({ plan, observed: { ...observed, copyStructureMirrored: true } });
+    assert.equal(clean.ok, true);
 });
 
 test('verifyTreeDeltaPostconditions proves the executed transition and catches drift', () => {

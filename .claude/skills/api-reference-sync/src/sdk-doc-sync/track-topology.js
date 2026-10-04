@@ -72,6 +72,7 @@ function classifyTrackTopology({
     pageExemptions = [],
     decisionTable = null,
     sameNamePolicy = null,
+    sameNameExemptions = [],
 } = {}) {
     const findings = [];
     const report = (severity, code, identity, detail) => findings.push({ severity, code, identity, detail });
@@ -183,10 +184,17 @@ function classifyTrackTopology({
             }
             for (const [directoryToken, { folderNames, documents }] of byDirectory) {
                 for (const doc of documents) {
-                    if (folderNames.has(doc.name)) {
-                        report('error', 'TOPOLOGY_SAME_NAME_SIBLING', doc.name,
-                            `document ${doc.token} sits beside a same-named folder in directory ${directoryToken} — sameNameInOneDirectory=${SUPPORTED_SAME_NAME_POLICY}: the family's pages belong inside the folder (or the folder's flat form), a beside-the-folder copy is a stray/duplicate`);
+                    if (!folderNames.has(doc.name)) continue;
+                    if (sameNameExemptions.includes(doc.token)) {
+                        // Operator-recorded disposition — surfaced as info so
+                        // the exemption stays visible in every patrol run,
+                        // never silently dropped.
+                        report('info', 'TOPOLOGY_SAME_NAME_EXEMPTED', doc.name,
+                            `document ${doc.token} beside a same-named folder in directory ${directoryToken} is exempted by operator disposition (config sameNameExemptions)`);
+                        continue;
                     }
+                    report('error', 'TOPOLOGY_SAME_NAME_SIBLING', doc.name,
+                        `document ${doc.token} sits beside a same-named folder in directory ${directoryToken} — sameNameInOneDirectory=${SUPPORTED_SAME_NAME_POLICY}: the family's pages belong inside the folder (or the folder's flat form), a beside-the-folder copy is a stray/duplicate`);
                 }
             }
         }

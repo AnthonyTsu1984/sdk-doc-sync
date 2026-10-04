@@ -108,6 +108,7 @@ async function main(argv = process.argv) {
             pageExemptions: languageConfig.pageExemptions || [],
             decisionTable: topologyConfig.decisionTable,
             sameNamePolicy: topologyConfig.sameNameInOneDirectory,
+            sameNameExemptions: languageConfig.sameNameExemptions || [],
         });
         const errors = result.findings.filter((finding) => finding.severity === 'error');
         const exempted = result.findings.filter((finding) => finding.code === 'TOPOLOGY_PAGE_EXEMPTED');

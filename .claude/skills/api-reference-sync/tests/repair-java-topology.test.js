@@ -122,6 +122,29 @@ test('part D refuses to plan when page blocks still reference the stray copy', a
     );
 });
 
+test('part D requires a page-links dump before any delete can be planned', async () => {
+    const deps = partDDeps();
+    delete deps.pageLinkTokens;
+    await assert.rejects(
+        buildPlan(deps),
+        /part D requires --page-links-json/,
+    );
+});
+
+test('update-record-field refuses Docs writes entirely (producer closed)', async () => {
+    const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'repair-java-topology-')), 'journal.json');
+    const plan = {
+        actions: [{
+            kind: 'update-record-field', track: 'v2.6.x', recordId: 'rec-x', field: 'Docs',
+            value: 'https://zilliverse.feishu.cn/docx/someToken',
+        }],
+    };
+    await assert.rejects(
+        executePlan({ plan, approvedDigest: planDigest(plan), journalPath, deps: javaTrackTokensFixture() }),
+        (error) => error.code === 'REPAIR_DOCS_FIELD_FORBIDDEN',
+    );
+});
+
 test('update-record-docs-text writes {text, link} via the raw records PUT and verifies a page-record slug form', async () => {
     const journalPath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'repair-java-topology-')), 'journal.json');
     const larkCalls = [];

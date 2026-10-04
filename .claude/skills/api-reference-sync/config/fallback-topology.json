@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "comment": "Action-semantics decision table and audit exemptions for track topology (campaign-control hardening batch 2, docs/campaign-control-hardening.md §4). The fallback chain itself is the registry track order per language (oldest first) and is never duplicated here — each track's recorded fallback source is the adjacent older track. 'Record points at a recorded fallback source' is the CORRECT topology for unchanged interfaces, never a defect (grantPrivilege precedent, 2026-10-03).",
+  "comment": "Action-semantics decision table and audit exemptions for track topology (campaign-control hardening batch 2, docs/campaign-control-hardening.md §4). The fallback chain itself is the registry track order per language (oldest first) and is never duplicated here — each track's recorded fallback source is the adjacent older track. 'Record points at a recorded fallback source' is the CORRECT topology for unchanged interfaces, never a defect (grantPrivilege precedent, 2026-10-03). Exemptions are operator-recorded dispositions: pageExemptions by page slug, sameNameExemptions by document token (a beside-the-folder copy the operator adjudicated as sanctioned — surfaced again as TOPOLOGY_SAME_NAME_EXEMPTED info, never silently dropped).",
   "decisionTable": [
     {
       "case": "document-resides-in-own-tree",
@@ -30,10 +30,10 @@
   ],
   "sameNameInOneDirectory": "always-a-defect",
   "languages": {
-    "java": { "audit": true, "pageExemptions": [] },
-    "cpp": { "audit": true, "pageExemptions": [] },
-    "python": { "audit": true, "pageExemptions": [] },
-    "node": { "audit": true, "pageExemptions": [] },
-    "go": { "audit": true, "pageExemptions": [] }
+    "java": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
+    "cpp": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
+    "python": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
+    "node": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
+    "go": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] }
   }
 }

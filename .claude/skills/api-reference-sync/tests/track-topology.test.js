@@ -230,6 +230,31 @@ test('recorded fallback sections are counted in the summary under the decision c
     assert.equal(result.summary.fallbackSourceSections, 1);
 });
 
+test('an operator-recorded sameNameExemptions token surfaces as info, never silently dropped', () => {
+    const indexes = makeIndexes({
+        'v2.6.x': {
+            vecFolder: 'r26',
+            scoreFolder: 'vecFolder',
+            strayScore: 'vecFolder',
+        },
+    });
+    indexes.get('v2.6.x').get('vecFolder').name = 'Vector';
+    indexes.get('v2.6.x').get('vecFolder').type = 'folder';
+    indexes.get('v2.6.x').get('scoreFolder').name = 'FunctionScore';
+    indexes.get('v2.6.x').get('scoreFolder').type = 'folder';
+    indexes.get('v2.6.x').get('strayScore').name = 'FunctionScore';
+    indexes.get('v2.6.x').get('strayScore').type = 'docx';
+    const base = { sections: [], pages: [], indexes, chainVersions: ['v2.6.x'], ownVersion: 'v2.6.x', sameNamePolicy: 'always-a-defect' };
+    const flagged = classifyTrackTopology(base);
+    assert.equal(flagged.findings.filter((f) => f.code === 'TOPOLOGY_SAME_NAME_SIBLING').length, 1);
+    const exempted = classifyTrackTopology({ ...base, sameNameExemptions: ['strayScore'] });
+    assert.deepEqual(
+        exempted.findings.map((f) => `${f.severity}:${f.code}`),
+        ['info:TOPOLOGY_SAME_NAME_EXEMPTED'],
+        'the exemption removes the error and stays visible as info',
+    );
+});
+
 test('an ownVersion outside the chain is refused instead of silently judging nothing', () => {
     assert.throws(
         () => classifyTrackTopology({

@@ -263,6 +263,7 @@ async function main(argv = process.argv) {
                 pageExemptions: languageTopology.pageExemptions || [],
                 decisionTable: topologyConfig.decisionTable,
                 sameNamePolicy: topologyConfig.sameNameInOneDirectory,
+                sameNameExemptions: languageTopology.sameNameExemptions || [],
             });
             trackTopology.tracks.push({
                 track: track.version,

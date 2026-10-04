@@ -17,8 +17,9 @@
 //      writes {text, link} (never a bare-URL Docs string) and the delete
 //      re-verifies its premises against live state before firing (stray
 //      still present and same-named, retained copy still present, zero
-//      Bitable claimants, and — when a collect-page-blocks dump is supplied
-//      via --page-links-json — zero page-block references).
+//      Bitable claimants, and — via the REQUIRED --page-links-json
+//      collect-page-blocks dump, checked at plan time and re-read fresh at
+//      execution — zero page-block references).
 //
 // Governance follows scripts/repair-same-name-placement.js: `plan` is
 // read-only and prints the batch digest; `execute` requires
@@ -210,16 +211,19 @@ async function buildPlan(deps = {}) {
     }
 
     // ---- D. v2.6.x stray duplicate FunctionScore ------------------------
-    const pageLinkTokens = deps.pageLinkTokens || [];
+    // Protected lineage: a delete may only be planned against a supplied
+    // collect-page-blocks dump (percent-decoded docx tokens) — page blocks
+    // may reference the stray even when no Bitable record does.
+    const pageLinkTokens = deps.pageLinkTokens ?? null;
     const v26Index = indexes.get('v2.6.x');
     const v26Vector = [...v26Index.values()].find((e) => e.type === 'folder' && e.name === 'Vector');
     const v26ScoreFolder = v26Vector && [...v26Index.values()].find((e) => e.type === 'folder' && e.name === 'FunctionScore' && e.parentFolderToken === v26Vector.token);
     const strayScore = v26Vector && [...v26Index.values()].find((e) => e.type !== 'folder' && e.name === 'FunctionScore' && e.parentFolderToken === v26Vector.token);
     const inFolderScore = v26ScoreFolder && [...v26Index.values()].find((e) => e.type !== 'folder' && e.name === 'FunctionScore' && e.parentFolderToken === v26ScoreFolder.token);
     if (strayScore && inFolderScore && strayScore.token !== inFolderScore.token) {
-        // Protected lineage: page blocks may also reference the stray — a
-        // supplied collect-page-blocks dump (percent-decoded docx tokens)
-        // must not contain it before a delete is planned.
+        if (pageLinkTokens === null) {
+            throw new Error('part D requires --page-links-json (a collect-page-blocks dump): page blocks may reference the stray even when no Bitable record does — replan with the dump');
+        }
         if (pageLinkTokens.includes(strayScore.token)) {
             throw new Error(`page blocks still reference the stray FunctionScore copy ${strayScore.token} — disposition the references first (replan)`);
         }
@@ -288,6 +292,15 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
         const entry = { index, action };
         try {
             if (action.kind === 'update-record-field') {
+                if (action.field === 'Docs') {
+                    // Close the producer entirely: the Docs cell is {text,
+                    // link} via update-record-docs-text only — a hand-built
+                    // plan must not smuggle a bare-URL string through the
+                    // generic path (2026-10-04 defect class).
+                    const forbidden = new Error('update-record-field refuses Docs writes — use update-record-docs-text ({text, link})');
+                    forbidden.code = 'REPAIR_DOCS_FIELD_FORBIDDEN';
+                    throw forbidden;
+                }
                 const baseToken = baseByTrack.get(action.track);
                 const tableId = await resolveTableIdFn(baseToken);
                 await larkJsonFn([
@@ -299,9 +312,7 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
                 const check = await verifyWithRetryFn(async () => {
                     const after = await listBitableRecordsFn(tokenFetcher, baseToken, null);
                     const reread = after.find((r) => r.record_id === action.recordId);
-                    const value = action.field === 'Docs'
-                        ? (reread?.fields?.Docs?.link || reread?.fields?.Docs?.url || '')
-                        : slugText(reread?.fields?.[action.field]);
+                    const value = slugText(reread?.fields?.[action.field]);
                     return { ok: value.includes(String(action.value).split('/').pop() || action.value), value };
                 });
                 if (!check.ok) throw new Error(`field update not verifiable: ${check.value}`);
@@ -413,7 +424,7 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
             entry.error = error.message;
             appendJournal(entry);
             const wrapped = new Error(`action ${index}/${plan.actions.length} (${action.kind} ${action.ref || action.recordId}) failed: ${error.message}`);
-            wrapped.code = 'REPAIR_ACTION_FAILED';
+            wrapped.code = error.code || 'REPAIR_ACTION_FAILED';
             throw wrapped;
         }
         appendJournal(entry);
@@ -433,7 +444,7 @@ async function main(argv = process.argv) {
     if (mode === 'plan') {
         const pageLinkTokens = options.pageLinksJson
             ? JSON.parse(fs.readFileSync(options.pageLinksJson, 'utf8'))
-            : [];
+            : null;
         const plan = await buildPlan({ pageLinkTokens, pageLinksJsonPath: options.pageLinksJson || null });
         fs.mkdirSync(JOURNAL_DIR, { recursive: true });
         const planPath = path.join(JOURNAL_DIR, `plan-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);

@@ -819,7 +819,14 @@ function rebuildLineageFor(session, reviewUnitIds) {
   const wanted = reviewUnitIds instanceof Set ? reviewUnitIds : new Set(reviewUnitIds || []);
   const requests = (session?.changeRequests || [])
     .filter((entry) => wanted.has(entry.reviewUnitId) && entry.executionJournalDigest)
-    .sort((left, right) => String(left.requestedAt || '').localeCompare(String(right.requestedAt || '')))
+    // Codepoint comparison (repo doctrine for anything feeding a digest):
+    // the ordered digests bind into metadata.rebuildOf → planDigest, so
+    // locale-sensitive ordering must never leak in.
+    .sort((left, right) => {
+      const a = String(left.requestedAt || '');
+      const b = String(right.requestedAt || '');
+      return a < b ? -1 : (a > b ? 1 : 0);
+    })
     .map((entry) => entry.executionJournalDigest);
   const pendingDigest = (session?.pendingExecutions || [])
     .find((entry) => wanted.has(entry.reviewUnitId))

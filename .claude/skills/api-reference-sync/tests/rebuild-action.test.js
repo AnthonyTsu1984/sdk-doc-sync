@@ -278,6 +278,63 @@ test('executor REBUILD refuses surgical artifacts before any write (defense in d
   }
 });
 
+test('a classified shared-token REBUILD plans reviews and executes against the shared document (review r2 nit)', async () => {
+  // Shared evidence: this campaign's record + a successor track's record both
+  // point at the document; the successor's classification rides
+  // sharedUpdateReviews through the plan into the executor's live check.
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  const digests = {
+    'v2.6.x': inventoryDigest('v2.6.x:inventory'),
+    'v2.6.x:target': inventoryDigest('v2.6.x:target'),
+  };
+  const sharedEvidence = createInheritanceEvidence({
+    stableId: 'java:Collections:getAsync',
+    current: {
+      version: 'v2.6.x', recordId: 'rec-campaign', documentToken: 'doc-campaign',
+      folderToken: 'collections-v26', versionRootToken: 'root-v26', parentRecordId: 'parent-v26',
+      ancestryVerified: true, placementVerified: true,
+    },
+    target: {
+      version: 'v2.6.x', parentRecordId: 'parent-v26', folderToken: 'collections-v26',
+      versionRootToken: 'root-v26', ancestryVerified: true,
+    },
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: ['rec-campaign', 'rec-successor'],
+    trackInventoryDigests: digests,
+  });
+  const plan = new SyncPlanner().planAction(rebuildAction(), rebuildContext({
+    tokenReferencedByOlderVersions: true,
+    inheritanceEvidence: sharedEvidence,
+    sharedUpdateReviews: [{
+      recordId: 'rec-successor',
+      track: 'v3.0.x',
+      status: 'inherited',
+      decision: 'no_successor_action',
+    }],
+  }));
+  assert.equal(plan.action, 'REBUILD');
+  assert.ok(Array.isArray(plan.sharedUpdateReviews), 'classified reviews ride the REBUILD plan');
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-campaign' }, { recordId: 'rec-successor' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: rebuildContext().artifact,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.deepEqual(calls.map((entry) => entry[0]), ['patchDocument', 'renameDocument', 'updateRecord']);
+  assert.ok(result.sharedTokenRevalidation, 'the pre-write shared revalidation ran');
+});
+
 test('the changes-requested redo window proves execution and binds lineage (review r1 P1-1/P1-2)', () => {
   // The flagship J6 scenario: execute → document review requests changes →
   // the unit returns to in_progress with its pending entry REMOVED and the

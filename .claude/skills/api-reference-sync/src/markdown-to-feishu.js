@@ -1459,16 +1459,42 @@ class MarkdownToFeishu {
     // response is lost is NEVER blind-retried — reconcile against live state
     // first and adopt only what the read-back proves. Blind retries
     // double-apply side effects (the J7 duplicate empty-directory incident).
+    // The reconcile read itself retries with backoff: Drive listing is
+    // eventually consistent right after a landed write, so a not-found on
+    // the first probe may be lag, not absence. A reconcile that THROWS never
+    // masks the original write error — it is appended to the message and the
+    // original propagates.
     async __writeWithReconcile({ write, reconcile }) {
         try {
             return await write();
         } catch (error) {
             if (typeof reconcile === 'function') {
-                const adopted = await reconcile(error);
-                if (adopted) return { ...adopted, reconciledAfterFailure: true };
+                for (let attempt = 1; attempt <= 4; attempt += 1) {
+                    let adopted = null;
+                    try {
+                        adopted = await reconcile(error);
+                    } catch (reconcileError) {
+                        error.message = `${error.message} (reconcile also failed: ${reconcileError.message})`;
+                        break;
+                    }
+                    if (adopted) return { ...adopted, reconciledAfterFailure: true };
+                    if (attempt < 4) await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+                }
             }
             throw error;
         }
+    }
+
+    // Eventually-consistent post-check probe (same backoff family as
+    // SyncExecutor._getRecordWithRetry and the batch tree-delta observation):
+    // Drive listing may lag a just-landed write, and a false WRITE_POSTCHECK_
+    // FAILED would send the caller into a re-plan that duplicates the write.
+    async __verifyEventually({ probe, attempts = 4 }) {
+        for (let attempt = 1; attempt <= attempts; attempt += 1) {
+            if (attempt > 1) await new Promise((resolve) => setTimeout(resolve, 800 * (attempt - 1)));
+            if (await probe()) return true;
+        }
+        return false;
     }
 
     __driveFolderItems(items) {
@@ -1524,11 +1550,16 @@ class MarkdownToFeishu {
                 };
             },
         });
-        // T4 read-back: the expected terminal state must be observable.
-        const verified = await this.listFolder({ folderToken: parentFolderToken, type: 'folder' }) || [];
-        const ok = this.__driveFolderItems(verified).some((item) => item.name === name
-            && (!result.token || (item.token || item.file_token) === result.token));
-        if (!ok) {
+        // T4 read-back: the expected terminal state must be observable
+        // (eventually — the listing may lag the just-landed create).
+        const verified = await this.__verifyEventually({
+            probe: async () => {
+                const listing = await this.listFolder({ folderToken: parentFolderToken, type: 'folder' }) || [];
+                return this.__driveFolderItems(listing).some((item) => item.name === name
+                    && (!result.token || (item.token || item.file_token) === result.token));
+            },
+        });
+        if (!verified) {
             const error = new Error(`createFolder post-check failed: "${name}" not verifiable below ${parentFolderToken} (token ${result.token})`);
             error.code = 'FOLDER_CREATE_POSTCHECK_FAILED';
             throw error;
@@ -1613,6 +1644,13 @@ class MarkdownToFeishu {
         if (!sourceDocumentToken || !folderToken) {
             throw new Error('sourceDocumentToken and folderToken are required to copy a document');
         }
+        // Pre-state snapshot: on a lost response, reconcile may adopt ONLY a
+        // same-titled document THIS run produced — a foreign same-titled page
+        // (protected cross-track lineage) must never be adopted and patched.
+        const expectedTitle = (title || '').trim();
+        const preState = new Set((await this.listFolder({ folderToken, type: 'docx' }) || [])
+            .filter((item) => item.type === 'docx' && (item.name || '').trim() === expectedTitle)
+            .map((item) => item.token || item.file_token));
         const result = await this.__writeWithReconcile({
             write: async () => {
                 const token = await this.tokenFetcher.token();
@@ -1646,12 +1684,14 @@ class MarkdownToFeishu {
                     folderToken: file.parent_token || folderToken,
                 };
             },
-            // Lost response: reconcile by title in the target folder; adopt
-            // only what live state proves (no blind re-copy).
+            // Lost response: reconcile by title in the target folder, EXCLUDING
+            // the pre-state snapshot (only what THIS run produced is adoptable);
+            // never a blind re-copy.
             reconcile: async () => {
                 const after = await this.listFolder({ folderToken, type: 'docx' }) || [];
-                const expected = (title || '').trim();
-                const found = (after || []).find((item) => item.type === 'docx' && (item.name || '').trim() === expected);
+                const found = (after || []).find((item) => item.type === 'docx'
+                    && (item.name || '').trim() === expectedTitle
+                    && !preState.has(item.token || item.file_token));
                 if (!found) return null;
                 const foundToken = found.token || found.file_token;
                 return {
@@ -1664,12 +1704,17 @@ class MarkdownToFeishu {
                 };
             },
         });
-        // T4 read-back: the copy must be observable in the target folder.
-        const verified = await this.listFolder({ folderToken, type: 'docx' }) || [];
-        const ok = (verified || []).some((item) => item.type === 'docx'
-            && (item.name === result.title || item.name === title)
-            && (item.token || item.file_token) === result.token);
-        if (!ok) {
+        // T4 read-back: the copy must be observable in the target folder
+        // (eventually — the listing may lag the just-landed copy).
+        const verified = await this.__verifyEventually({
+            probe: async () => {
+                const listing = await this.listFolder({ folderToken, type: 'docx' }) || [];
+                return (listing || []).some((item) => item.type === 'docx'
+                    && (item.name === result.title || item.name === title)
+                    && (item.token || item.file_token) === result.token);
+            },
+        });
+        if (!verified) {
             const error = new Error(`copyDocument post-check failed: "${title}" (token ${result.token}) not verifiable in ${folderToken}`);
             error.code = 'WRITE_POSTCHECK_FAILED';
             throw error;
@@ -1713,6 +1758,13 @@ class MarkdownToFeishu {
     async __create_drive_document({ title, folder_token = null }) {
         assertWriterMutation(this.governance, 'MarkdownToFeishu.__create_drive_document');
         const targetFolderToken = folder_token || this.root_token;
+        const expectedTitle = (title || '').trim();
+        // Pre-state snapshot for adoption safety (see copyDocument).
+        const preState = new Set((targetFolderToken
+            ? ((await this.listFolder({ folderToken: targetFolderToken, type: 'docx' })) || [])
+            : [])
+            .filter((item) => item.type === 'docx' && (item.name || '').trim() === expectedTitle)
+            .map((item) => item.token || item.file_token));
         const result = await this.__writeWithReconcile({
             write: async () => {
                 const token = await this.tokenFetcher.token();
@@ -1746,25 +1798,32 @@ class MarkdownToFeishu {
                 };
             },
             // Lost response: reconcile by title in the target folder (when
-            // one is known); adopt only what live state proves — a blind
-            // re-create would produce a duplicate page.
+            // one is known), EXCLUDING the pre-state snapshot; adopt only
+            // what THIS run produced — a blind re-create would duplicate.
             reconcile: async () => {
                 if (!targetFolderToken) return null;
                 const after = await this.listFolder({ folderToken: targetFolderToken, type: 'docx' }) || [];
-                const expected = (title || '').trim();
-                const found = (after || []).find((item) => item.type === 'docx' && (item.name || '').trim() === expected);
+                const found = (after || []).find((item) => item.type === 'docx'
+                    && (item.name || '').trim() === expectedTitle
+                    && !preState.has(item.token || item.file_token));
                 if (!found) return null;
-                return { document_id: found.token || found.file_token, revision_id: null, title: found.name || title };
+                const adoptedId = found.token || found.file_token;
+                this.document_id = adoptedId;
+                return { document_id: adoptedId, revision_id: null, title: found.name || title };
             },
         });
         // T4 read-back: when the target folder is known, the created page
-        // must be observable in it.
+        // must be observable in it (eventually).
         if (targetFolderToken) {
-            const verified = await this.listFolder({ folderToken: targetFolderToken, type: 'docx' }) || [];
-            const ok = (verified || []).some((item) => item.type === 'docx'
-                && (item.name || '').trim() === (title || '').trim()
-                && (item.token || item.file_token) === result.document_id);
-            if (!ok) {
+            const verified = await this.__verifyEventually({
+                probe: async () => {
+                    const listing = await this.listFolder({ folderToken: targetFolderToken, type: 'docx' }) || [];
+                    return (listing || []).some((item) => item.type === 'docx'
+                        && (item.name || '').trim() === expectedTitle
+                        && (item.token || item.file_token) === result.document_id);
+                },
+            });
+            if (!verified) {
                 const error = new Error(`create document post-check failed: "${title}" (token ${result.document_id}) not verifiable in ${targetFolderToken}`);
                 error.code = 'WRITE_POSTCHECK_FAILED';
                 throw error;

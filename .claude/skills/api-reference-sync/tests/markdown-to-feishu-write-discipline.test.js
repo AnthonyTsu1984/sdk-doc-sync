@@ -171,6 +171,56 @@ withHost(() => {
     assert.equal(calls.filter((c) => c.method === 'PATCH').length, 1, 'no blind re-rename');
   });
 
+  test('copyDocument: a lost response never adopts a FOREIGN same-titled page (pre-state exclusion)', async () => {
+    const calls = [];
+    const MarkdownToFeishu = loadWithFetch(async (url, options) => {
+      calls.push({ url: String(url), method: options?.method || 'GET' });
+      if (options?.method === 'POST') {
+        return { async json() { throw new Error('connection reset'); } };
+      }
+      // The target folder already held a same-titled page BEFORE this run —
+      // protected cross-track lineage that must never be adopted and patched.
+      return driveListResponse([{ token: 'foreign-copy', name: 'create_user()', type: 'docx' }]);
+    });
+    await assert.rejects(
+      makeWriter(MarkdownToFeishu).copyDocument({ sourceDocumentToken: 'src', title: 'create_user()', folderToken: 'target-folder' }),
+      /connection reset/,
+    );
+    assert.equal(calls.filter((c) => c.method === 'POST').length, 1, 'no blind re-copy');
+  });
+
+  test('createFolder: the post-check tolerates eventual-consistency lag (retries before failing)', async () => {
+    let created = false;
+    let postLists = 0;
+    const MarkdownToFeishu = loadWithFetch(async (url, options) => {
+      if (options?.method === 'POST') {
+        created = true;
+        return { async json() { return { code: 0, data: { folder: { token: 'fld-lag', name: 'Database' } } }; } };
+      }
+      if (created) postLists += 1;
+      // First listing after the create lags; the second shows the folder.
+      return driveListResponse(created && postLists >= 2 ? [{ token: 'fld-lag', name: 'Database', type: 'folder' }] : []);
+    });
+    const result = await makeWriter(MarkdownToFeishu).createFolder({ name: 'Database', parentFolderToken: 'parent' });
+    assert.equal(result.token, 'fld-lag');
+  });
+
+  test('a reconcile that itself throws never masks the original write error', async () => {
+    let posted = false;
+    const MarkdownToFeishu = loadWithFetch(async (url, options) => {
+      if (options?.method === 'POST') {
+        posted = true;
+        return { async json() { throw new Error('write exploded'); } };
+      }
+      if (posted) throw new Error('list endpoint down');
+      return driveListResponse([]);
+    });
+    await assert.rejects(
+      makeWriter(MarkdownToFeishu).createFolder({ name: 'Database', parentFolderToken: 'parent' }),
+      (error) => /write exploded/.test(error.message) && /reconcile also failed: list endpoint down/.test(error.message),
+    );
+  });
+
   test('create_document: the fresh page is read back in the target folder', async () => {
     const calls = [];
     let created = false;

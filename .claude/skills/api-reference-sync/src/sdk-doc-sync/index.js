@@ -1434,6 +1434,32 @@ class SdkDocSync {
                         || file.obj_token === observed.createdDocumentToken
                     ));
                     observed.createdDocumentFolderToken = created ? folderToken : null;
+                    // Kernel v5 copy-structure mirror for the category-create
+                    // decision (post-write only: pre-write the category folder
+                    // does not exist yet). The freshly created category folder
+                    // must sit in a chain that mirrors the source section.
+                    if ((attestation.version || 0) >= 5
+                        && created
+                        && plan.copySource?.placement?.versionRootToken
+                        && plan.copySource?.placement?.folderToken) {
+                        try {
+                            const mirrorListFolder = ({ folderToken: token, type }) => this.m2f.listFolder({ folderToken: token, type });
+                            const sourceNames = await deriveFolderChainNames({
+                                listFolder: mirrorListFolder,
+                                versionRootToken: plan.copySource.placement.versionRootToken,
+                                folderToken: plan.copySource.placement.folderToken,
+                            });
+                            const targetNames = await deriveFolderChainNames({
+                                listFolder: mirrorListFolder,
+                                versionRootToken: plan.target.versionRootToken,
+                                folderToken,
+                            });
+                            observed.copyStructureMirrored = Boolean(sourceNames && targetNames
+                                && JSON.stringify(sourceNames) === JSON.stringify(targetNames));
+                        } catch (error) {
+                            observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'copyStructureMirror', message: error.message });
+                        }
+                    }
                 } catch (error) {
                     observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'createdDocumentLocation', message: error.message });
                 }

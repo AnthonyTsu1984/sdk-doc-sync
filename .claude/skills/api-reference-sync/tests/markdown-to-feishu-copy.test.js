@@ -103,16 +103,17 @@ test('copyDocument copies a drive docx file into the target folder', async () =>
     folderToken: 'target-folder',
   });
 
-  assert.equal(calls.length, 2, 'copy POST + post-check list');
-  assert.equal(calls[0].url, 'https://zilliverse.feishu.cn/open-apis/drive/v1/files/old-doc-token/copy');
-  assert.equal(calls[0].options.method, 'POST');
-  assert.equal(calls[0].options.headers.Authorization, 'Bearer tenant-token');
-  assert.deepEqual(JSON.parse(calls[0].options.body), {
+  assert.equal(calls.length, 3, 'pre-state list + copy POST + post-check list');
+  assert.equal(calls[0].url.includes('folder_token=target-folder'), true, 'pre-state snapshot lists the target folder first');
+  assert.equal(calls[1].url, 'https://zilliverse.feishu.cn/open-apis/drive/v1/files/old-doc-token/copy');
+  assert.equal(calls[1].options.method, 'POST');
+  assert.equal(calls[1].options.headers.Authorization, 'Bearer tenant-token');
+  assert.deepEqual(JSON.parse(calls[1].options.body), {
     name: 'create_user()',
     type: 'docx',
     folder_token: 'target-folder',
   });
-  assert.match(calls[1].url, /\/open-apis\/drive\/v1\/files\?.*folder_token=target-folder/);
+  assert.match(calls[2].url, /\/open-apis\/drive\/v1\/files\?.*folder_token=target-folder/);
   assert.deepEqual(result, {
     token: 'new-doc-token',
     documentToken: 'new-doc-token',

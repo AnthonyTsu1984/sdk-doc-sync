@@ -19,8 +19,8 @@ const {
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
 
-const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE', 'BACKFILL']);
-const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP', 'BACKFILL']);
+const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE', 'BACKFILL', 'REBUILD']);
+const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP', 'BACKFILL', 'REBUILD']);
 // BACKFILL is a documentation-gap create: the interface predates the scan
 // baseline, but the record and document still need the full CREATE path.
 const CREATE_LIKE_ACTIONS = new Set(['CREATE', 'BACKFILL']);
@@ -368,6 +368,9 @@ class SyncPlanner {
 
   planAction(action, context = {}) {
     const diffAction = action?.type;
+    let effectiveDiffAction = diffAction;
+    let autoRoutedFromAction = null;
+    let rebuildOfDigest = null;
     if (!KNOWN_ACTIONS.has(diffAction)) {
       throw new SyncPlanningError('UNKNOWN_ACTION', `Unknown SDK sync action: ${diffAction || '(missing)'}`, {
         action: diffAction || null,
@@ -500,12 +503,20 @@ class SyncPlanner {
     }
 
     const currentProof = context.current || {};
-    if (CREATE_LIKE_ACTIONS.has(diffAction) && context.reviewSessionExecuted !== true && (
-      nonEmptyString(currentProof.recordId)
-      || nonEmptyString(currentProof.documentToken)
-      || nonEmptyString(source.recordId)
-      || nonEmptyString(source.documentToken)
-    )) {
+    // Campaign-control hardening batch 5 (J6): a CREATE-like action whose
+    // record already exists used to either die on CREATE_RECORD_ALREADY_EXISTS
+    // (stalling the whole scope's planning) or, inside a session that had
+    // already executed the unit, silently plan another CREATE that would
+    // double-create at write time. When the record is THIS campaign's product
+    // (reviewSessionExecuted — the session's execution history proves it), the
+    // plan routes to REBUILD instead: reuse the recordId, full content
+    // replacement. A record the campaign did not create stays fail-closed.
+    const createLikeOverExisting = CREATE_LIKE_ACTIONS.has(diffAction)
+      && (nonEmptyString(currentProof.recordId)
+        || nonEmptyString(currentProof.documentToken)
+        || nonEmptyString(source.recordId)
+        || nonEmptyString(source.documentToken));
+    if (createLikeOverExisting && context.reviewSessionExecuted !== true) {
       throw new SyncPlanningError(
         'CREATE_RECORD_ALREADY_EXISTS',
         `${diffAction} ${stableId} requires the release Bitable interface record to be absent`,
@@ -515,7 +526,78 @@ class SyncPlanner {
         },
       );
     }
-    if (CREATE_LIKE_ACTIONS.has(diffAction)) {
+    if (createLikeOverExisting && context.reviewSessionExecuted === true) {
+      effectiveDiffAction = 'REBUILD';
+      autoRoutedFromAction = diffAction;
+    }
+    if (effectiveDiffAction === 'REBUILD' && context.reviewSessionExecuted !== true) {
+      // Explicit REBUILD over a record this campaign did not execute is a
+      // scope question only the operator can answer — fail closed (J6).
+      throw new SyncPlanningError(
+        'REBUILD_SCOPE_FOREIGN',
+        `REBUILD ${stableId} targets a record this campaign has not executed; rebuild is reserved for this campaign's own records (changes-requested redo or re-execution) — adjudicate the foreign record with the operator`,
+        {
+          recordId: currentProof.recordId || source.recordId || null,
+          documentToken: currentProof.documentToken || source.documentToken || null,
+        },
+      );
+    }
+    if (effectiveDiffAction === 'REBUILD' && (
+      !nonEmptyString(currentProof.recordId)
+      || !nonEmptyString(currentProof.documentToken)
+      || !nonEmptyString(source.recordId)
+      || !nonEmptyString(source.documentToken)
+    )) {
+      throw new SyncPlanningError(
+        'REBUILD_SOURCE_REQUIRED',
+        `REBUILD ${stableId} requires the existing release record and document tokens it replaces (the campaign created them; the rebuild reuses both)`,
+        { recordId: currentProof.recordId || source.recordId || null, documentToken: currentProof.documentToken || source.documentToken || null },
+      );
+    }
+    if (effectiveDiffAction === 'REBUILD' && (
+      !nonEmptyString(source.version)
+      || !nonEmptyString(source.folderToken)
+      || currentProof.placementVerified !== true
+    )) {
+      throw new SyncPlanningError(
+        'REBUILD_PLACEMENT_REQUIRED',
+        `REBUILD ${stableId} requires verified current document placement before planning`,
+        {
+          version: source.version || null,
+          folderToken: source.folderToken || null,
+          placementVerified: currentProof.placementVerified === true,
+        },
+      );
+    }
+    // Whole-body replacement only: a surgical artifact (layout + apiPatchPlan)
+    // is the UPDATE path — REBUILD must land exact bytes, so it demands a
+    // content artifact with the rebuild strategy (or plain content).
+    if (effectiveDiffAction === 'REBUILD' && context.artifact
+      && context.artifact.layout && context.artifact.patchStrategy !== 'rebuild') {
+      throw new SyncPlanningError(
+        'REBUILD_STRATEGY_REQUIRED',
+        `REBUILD ${stableId} requires a whole-body replacement artifact (patchStrategy 'rebuild'); a surgical apiPatchPlan artifact is the UPDATE path`,
+      );
+    }
+    // Lineage: when the session remembers the unit's previous execution
+    // journal (changes-requested preserved it), bind the newest digest so the
+    // rebuild receipt can cite what it replaces (lineage unbroken).
+    if (effectiveDiffAction === 'REBUILD') {
+      const lineage = context.reviewSessionRebuildLineage;
+      if (lineage !== undefined && lineage !== null) {
+        const digests = (Array.isArray(lineage) ? lineage : [lineage]).filter(nonEmptyString);
+        for (const digest of digests) {
+          if (!/^sha256:[0-9a-f]{64}$/.test(digest)) {
+            throw new SyncPlanningError(
+              'REBUILD_LINEAGE_DIGEST_INVALID',
+              `REBUILD ${stableId} lineage carries a malformed execution journal digest (expected sha256:<64 hex>): ${digest.slice(0, 24)}`,
+            );
+          }
+        }
+        if (digests.length > 0) rebuildOfDigest = digests[digests.length - 1];
+      }
+    }
+    if (CREATE_LIKE_ACTIONS.has(effectiveDiffAction)) {
       const lookup = existingRecordLookupFrom(context);
       if (lookup.checked !== true
         || lookup.absent !== true
@@ -553,7 +635,11 @@ class SyncPlanner {
       );
     }
     let inheritanceEvidence = null;
-    if (diffAction === 'UPDATE') {
+    // REBUILD reuses the record and document (no repoint), but the executor's
+    // pre-write shared-token revalidation still requires the evidence, and a
+    // shared token under REBUILD needs the same classified shape as an
+    // in-place patch — whole-body replacement affects every referencing track.
+    if (diffAction === 'UPDATE' || effectiveDiffAction === 'REBUILD') {
       const validation = validateInheritanceEvidence(context.inheritanceEvidence, {
         stableId,
         current: {
@@ -581,7 +667,11 @@ class SyncPlanner {
     // produces a plan.
     let invariantAttestations = null;
     let treeDecision = null;
-    if (diffAction === 'UPDATE') {
+    // REBUILD rides the UPDATE evaluation: the record, document, and placement
+    // are unchanged, so a shared token needs the same classified shape a
+    // shared in-place patch needs — whole-body replacement affects every
+    // referencing track just the same.
+    if (diffAction === 'UPDATE' || effectiveDiffAction === 'REBUILD') {
       const treeDelta = evaluateVersionedTreeDelta({
         operation: 'UPDATE',
         stableId,
@@ -641,7 +731,7 @@ class SyncPlanner {
     if (artifactDigest) preconditions.push({ type: 'ARTIFACT_DIGEST', expected: artifactDigest });
     preconditions.push({
       type: 'CURRENT_RECORD',
-      expected: CREATE_LIKE_ACTIONS.has(diffAction) ? 'ABSENT' : source.recordId,
+      expected: CREATE_LIKE_ACTIONS.has(effectiveDiffAction) ? 'ABSENT' : source.recordId,
     });
     preconditions.push({ type: 'CURRENT_DOCUMENT_TOKEN', expected: source.documentToken });
     const targetAncestry = {
@@ -662,11 +752,26 @@ class SyncPlanner {
     let postconditions;
     const metadata = {
       reason: action.reason || null,
-      diffAction,
+      diffAction: effectiveDiffAction,
       artifactKind,
     };
+    if (autoRoutedFromAction) metadata.autoRoutedFrom = autoRoutedFromAction;
+    if (rebuildOfDigest) metadata.rebuildOf = rebuildOfDigest;
 
-    switch (diffAction) {
+    switch (effectiveDiffAction) {
+      case 'REBUILD':
+        // The kernel must have decided the verified in-place shape — a
+        // copy-patch decision means the record/document/placement story does
+        // not hold and REBUILD's reuse contract would be a lie.
+        if (treeDecision && treeDecision !== DECISIONS.UPDATE_IN_PLACE_VERIFIED) {
+          throw new SyncPlanningError(
+            'REBUILD_TREE_DELTA_INVALID',
+            `REBUILD ${stableId} requires the verified in-place shape (same record, document, placement); the tree-delta kernel decided ${treeDecision} — plan UPDATE instead or adjudicate the placement change first`,
+          );
+        }
+        plannedAction = 'REBUILD';
+        postconditions = this._writePostconditions(target, source, plannedAction);
+        break;
       case 'CREATE':
       case 'BACKFILL':
         plannedAction = 'CREATE';
@@ -793,7 +898,7 @@ class SyncPlanner {
   }
 
   _writePostconditions(target, source, action) {
-    const documentToken = action === 'UPDATE_IN_PLACE'
+    const documentToken = (action === 'UPDATE_IN_PLACE' || action === 'REBUILD')
       ? source.documentToken
       : 'NEW_DOCUMENT_TOKEN';
     const targetDocument = { type: 'TARGET_DOCUMENT', folderToken: target.folderToken, documentToken };

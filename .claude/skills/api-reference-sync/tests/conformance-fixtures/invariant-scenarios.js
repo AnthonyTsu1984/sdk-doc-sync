@@ -1693,6 +1693,97 @@ const scenarios = {
       cliRefused: /STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED/.test(cli.stdout || ''),
     };
   },
+
+  // Campaign-control hardening batch 5 (J6): REBUILD is the first-class
+  // content redo — drives the REAL planner for routing, the foreign
+  // fail-closed, the surgical refusal, and the lineage binding.
+  async 'rebuild-first-class'() {
+    const SyncPlanner = require('../../src/sdk-doc-sync/sync-planner');
+    const { createInheritanceEvidence } = require('../../src/sdk-doc-sync/inheritance-evidence');
+    const { sha256Digest } = require('../../../doc-ops-core/src/digest');
+    const lineage = `sha256:${'c'.repeat(64)}`;
+
+    const action = (type) => ({
+      type,
+      stableId: 'java:Collections:getAsync',
+      slug: 'Collections-getAsync',
+      reason: 'document review requested changes',
+      symbol: { name: 'getAsync', identity: { stableId: 'java:Collections:getAsync' } },
+      doc: {
+        id: 'rec-campaign',
+        metadata: { token: 'doc-campaign', version: 'v2.6.x', folderToken: 'collections-v26', parentRecordId: 'parent-v26' },
+      },
+    });
+    const context = (overrides = {}) => {
+      const base = {
+        artifact: {
+          title: 'getAsync()',
+          content: 'This operation gets asynchronously.\n',
+          reviewed: true,
+          validated: true,
+          metadata: { description: 'Gets asynchronously.', type: 'Function', progress: 'Done' },
+        },
+        target: {
+          version: 'v2.6.x', parentRecordId: 'parent-v26', folderToken: 'collections-v26',
+          versionRootToken: 'root-v26', folderAncestry: ['root-v26', 'collections-v26'], ancestryVerified: true,
+        },
+        current: {
+          version: 'v2.6.x', recordId: 'rec-campaign', documentToken: 'doc-campaign',
+          folderToken: 'collections-v26', versionRootToken: 'root-v26', parentRecordId: 'parent-v26',
+          ancestryVerified: true, placementVerified: true,
+        },
+        tokenReferencedByOlderVersions: false,
+        reviewSessionExecuted: true,
+        reviewSessionRebuildLineage: [lineage],
+        ...overrides,
+      };
+      if (!Object.hasOwn(overrides, 'inheritanceEvidence')) {
+        const digests = {
+          [base.current.version]: sha256Digest(Buffer.from(`${base.current.version}:inventory`)),
+          [base.target.version]: sha256Digest(Buffer.from(`${base.target.version}:inventory`)),
+        };
+        base.inheritanceEvidence = createInheritanceEvidence({
+          stableId: 'java:Collections:getAsync',
+          current: base.current,
+          target: base.target,
+          sharedTokenStatus: 'unshared',
+          referencedRecordIds: [base.current.recordId],
+          trackInventoryDigests: digests,
+        });
+      }
+      return base;
+    };
+
+    const planner = new SyncPlanner();
+    const routed = planner.planAction(action('CREATE'), context());
+    let foreignCode = null;
+    try {
+      planner.planAction(action('REBUILD'), context({ reviewSessionExecuted: false }));
+    } catch (error) {
+      foreignCode = error.code;
+    }
+    let surgicalCode = null;
+    try {
+      planner.planAction(action('REBUILD'), context({
+        artifact: {
+          ...context().artifact,
+          layout: { profileId: 'java', profileVersion: 3 },
+          patchStrategy: 'smart',
+        },
+      }));
+    } catch (error) {
+      surgicalCode = error.code;
+    }
+    const link = routed.postconditions.find((entry) => entry.type === 'TARGET_LINK');
+    return {
+      routedAction: routed.action,
+      autoRoutedFrom: routed.metadata.autoRoutedFrom,
+      foreignCode,
+      surgicalCode,
+      lineageBound: routed.metadata.rebuildOf === lineage,
+      linkRecordId: link.recordId,
+    };
+  },
 };
 
 module.exports = { scenarios };

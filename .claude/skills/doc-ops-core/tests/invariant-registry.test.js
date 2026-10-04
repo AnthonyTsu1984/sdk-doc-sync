@@ -246,6 +246,7 @@ test('the committed api-reference-sync registry passes its own coverage check', 
     'api.same-name-sibling-placement',
     'api.write-boundary-reconcile',
     'api.placement-live-binding',
+    'api.rebuild-first-class',
     'api.track-topology-audit',
     'api.style-mirror-allowlist',
   ]);

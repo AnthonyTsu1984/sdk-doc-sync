@@ -263,6 +263,9 @@ class SyncExecutor {
         case 'UPDATE_IN_PLACE':
           await this._executeUpdateInPlace(effectivePlan, artifact, action, result, rollbackCapsule);
           break;
+        case 'REBUILD':
+          await this._executeRebuild(effectivePlan, artifact, action, result, rollbackCapsule);
+          break;
         case 'UPDATE_RECORD_METADATA':
           await this._executeRecordMetadataUpdate(effectivePlan, result);
           break;
@@ -319,7 +322,7 @@ class SyncExecutor {
   async prepareRollback(plan, { resourceResolutions = new Map() } = {}) {
     const effectivePlan = this._resolvePlan(plan, resourceResolutions);
     let recordIdValue = null;
-    if (['UPDATE_IN_PLACE', 'UPDATE_RECORD_METADATA', 'COPY_PATCH_AND_REPOINT', 'DEPRECATE'].includes(effectivePlan.action)) {
+    if (['UPDATE_IN_PLACE', 'UPDATE_RECORD_METADATA', 'COPY_PATCH_AND_REPOINT', 'DEPRECATE', 'REBUILD'].includes(effectivePlan.action)) {
       recordIdValue = effectivePlan.source?.recordId || null;
     } else if (effectivePlan.action === 'REPOINT_CATEGORY_VIRTUAL_NODE') {
       recordIdValue = effectivePlan.resource?.recordId || null;
@@ -329,7 +332,7 @@ class SyncExecutor {
       ? captureRecordState(await this._getRecord(recordIdValue))
       : null;
     let documentRollback = null;
-    if (effectivePlan.action === 'UPDATE_IN_PLACE') {
+    if (effectivePlan.action === 'UPDATE_IN_PLACE' || effectivePlan.action === 'REBUILD') {
       if (typeof this.verifier?.beforeMutation !== 'function') {
         throw new SyncExecutionError(
           'ROLLBACK_EVIDENCE_REQUIRED',
@@ -791,13 +794,15 @@ class SyncExecutor {
       error.step = 'verifySharedTokenEvidence';
       throw error;
     }
-    if (plan.action === 'UPDATE_IN_PLACE' && evidence.sharedToken.status !== 'unshared') {
+    if ((plan.action === 'UPDATE_IN_PLACE' || plan.action === 'REBUILD') && evidence.sharedToken.status !== 'unshared') {
       // Kernel v4 (issue #76): a shared cross-track in-place patch is allowed
       // only in the classified shape — a v4+ UPDATE_IN_PLACE_VERIFIED
       // attestation plus sharedUpdateReviews covering every other referenced
       // record with an inheriting classification. Pre-v4 attestations never
       // issued this shape, so they stay blocked here. The live multiset
       // comparison below still pins the approved reference set at write time.
+      // Batch 5: REBUILD over a shared token needs the same classified shape —
+      // whole-body replacement affects every referencing track just the same.
       const attestation = (plan.invariantAttestations || [])
         .find((entry) => entry?.id === INVARIANT_ID) || null;
       const classifiedShape = evidence.sharedToken.status === 'shared'
@@ -1060,8 +1065,68 @@ class SyncExecutor {
     }
   }
 
-  async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {
+  // Campaign-control hardening batch 5 (J6): REBUILD is the first-class
+  // content-level teardown-and-redo — the campaign's OWN record and document,
+  // both reused (no new ids, no repoint), whole-body content replacement
+  // through the governed rebuild patch strategy. It shares the UPDATE_IN_PLACE
+  // write discipline (shared-token revalidation, rollback capsule, verify
+  // before the record mutation, title repair, record metadata update) but
+  // forces the replacement strategy: a surgical apiPatchPlan artifact is the
+  // UPDATE path and is refused here.
+  async _executeRebuild(plan, artifact, action, result, rollbackCapsule = null) {
     await this._assertSharedTokenEvidence(plan, result);
+    assertPublishableArtifact(plan, artifact);
+    if (artifact.layout && plan.apiPatchPlan) {
+      const error = new SyncExecutionError(
+        'REBUILD_STRATEGY_REQUIRED',
+        `REBUILD ${plan.stableId} must land whole-body replacement bytes; a surgical apiPatchPlan artifact is the UPDATE path`,
+      );
+      error.step = 'rebuildStrategy';
+      throw error;
+    }
+    const rebuildArtifact = artifact.patchStrategy === 'rebuild'
+      ? artifact
+      : { ...artifact, patchStrategy: 'rebuild' };
+    await this._captureRollbackBeforeMutation(plan, result, rollbackCapsule);
+
+    result.patchAttempted = true;
+    const patched = await this._patchDocument(plan, rebuildArtifact);
+    result.patchedDocument = patched;
+    result.completedSteps.push('rebuildDocument');
+
+    await this._verifyDocumentBeforeBitableMutation(plan, result);
+
+    const repairedTitle = artifactTitle(plan, artifact, action);
+    try {
+      if (typeof this.documentWriter?.renameDocument === 'function') {
+        result.titleRepair = await this.documentWriter.renameDocument({
+          token: plan.source.documentToken,
+          name: repairedTitle,
+        });
+        if (result.titleRepair.renamed) result.completedSteps.push('renameDocument');
+      }
+    } catch (error) {
+      result.titleRepair = { skipped: true, error: error.message };
+    }
+
+    const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
+    try {
+      result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
+        title: repairedTitle,
+        link: docxLink(plan.source.documentToken),
+        lastModified: plan.target.version,
+        ...editedRecordMetadata(),
+        parentRecordId: plan.target.parentRecordId,
+        ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
+      });
+    } catch (error) {
+      error.step = 'updateRecord';
+      throw error;
+    }
+    result.completedSteps.push('updateRecord');
+  }
+
+  async _executeUpdateInPlace(plan, artifact, action, result, rollbackCapsule = null) {    await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
     await this._captureRollbackBeforeMutation(plan, result, rollbackCapsule);
 
@@ -1456,11 +1521,17 @@ class SyncExecutor {
       if (!completedSteps.includes('createVirtualNode')) return 'createVirtualNode';
       return 'verifyVirtualNode';
     }
+    if (plan.action === 'REBUILD'
+      && result.patchAttempted
+      && !completedSteps.includes('rebuildDocument')) {
+      return 'rebuildDocument';
+    }
     if (plan.action === 'UPDATE_IN_PLACE'
       && result.patchAttempted
       && !completedSteps.includes('patchDocument')) {
       return 'patchDocument';
     }
+    if (plan.action === 'REBUILD') return 'rebuildDocument';
     if (completedSteps.length === 0) {
       if (plan.action === 'COPY_PATCH_AND_REPOINT') return 'copyDocument';
       return plan.action === 'UPDATE_IN_PLACE' ? 'patchDocument' : 'createDocument';

@@ -66,6 +66,7 @@ function executionSideEffects(plan) {
         case 'REPOINT_CATEGORY_VIRTUAL_NODE': return ['feishu.bitable.update'];
         case 'CREATE': return ['feishu.doc.create', 'feishu.bitable.create'];
         case 'UPDATE_IN_PLACE': return ['feishu.doc.patch', 'feishu.bitable.update'];
+        case 'REBUILD': return ['feishu.doc.patch', 'feishu.bitable.update'];
         case 'UPDATE_RECORD_METADATA': return ['feishu.bitable.update'];
         case 'COPY_PATCH_AND_REPOINT': return ['feishu.drive.copy', 'feishu.doc.patch', 'feishu.bitable.update'];
         case 'DEPRECATE': return ['feishu.bitable.update'];
@@ -558,6 +559,20 @@ class SdkDocSync {
                     : action;
                 if (sessionExecutedDocumentIds?.has(plannableAction.stableId)) {
                     context.reviewSessionExecuted = true;
+                    // Batch 5 REBUILD lineage: the session's changeRequests
+                    // remember every prior execution journal this unit
+                    // replaced (recordDocumentChangesRequested preserves the
+                    // digest); the newest one binds into the REBUILD plan as
+                    // rebuildOf so the receipt cites what it replaced.
+                    const unitIds = new Set(
+                        (this.reviewSession?.reviewUnitManifest?.units || [])
+                            .filter((unit) => unit.documentStableId === plannableAction.stableId)
+                            .map((unit) => unit.reviewUnitId),
+                    );
+                    const lineage = (this.reviewSession?.changeRequests || [])
+                        .filter((entry) => unitIds.has(entry.reviewUnitId) && entry.executionJournalDigest)
+                        .map((entry) => entry.executionJournalDigest);
+                    if (lineage.length > 0) context.reviewSessionRebuildLineage = lineage;
                 }
                 const plan = this.planner.planAction(plannableAction, context);
                 result.plans.push(plan);

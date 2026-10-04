@@ -67,7 +67,7 @@ const INHERITANCE_STATUSES = new Set([
 ]);
 const SHARED_UPDATE_INHERITING_DECISION = 'no_successor_action';
 
-const WRITE_PLAN_ACTIONS = new Set(['CREATE', 'BACKFILL', 'UPDATE_IN_PLACE', 'COPY_PATCH_AND_REPOINT']);
+const WRITE_PLAN_ACTIONS = new Set(['CREATE', 'BACKFILL', 'UPDATE_IN_PLACE', 'COPY_PATCH_AND_REPOINT', 'REBUILD']);
 
 function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;

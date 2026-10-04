@@ -532,6 +532,12 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
   const reviews = [];
   const seen = new Set();
   for (const recordId of referenceMultiset) {
+    // Clone-ID blind spot (inherited, documented): reviews are keyed by
+    // recordId, so an occurrence whose id equals evidence.current.recordId is
+    // skipped even when it is a CLONED sibling in another base — review
+    // attribution cannot tell a cloned pair apart. The executor's post-write
+    // multiset check still counts every occurrence, so reference COUNTS stay
+    // locked; only per-occurrence review coverage has this gap.
     if (!recordId || recordId === evidence.current?.recordId || seen.has(recordId)) continue;
     seen.add(recordId);
     const successor = byRecordId.get(recordId);

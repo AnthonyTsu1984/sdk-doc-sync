@@ -13,6 +13,7 @@ const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-r
 const {
   normalizeReferenceMultiset,
   referenceMultisetsEqual,
+  referenceRecordIds,
   removeOneOccurrence,
 } = require('./reference-multiset');
 const { DECISIONS, INVARIANT_ID, validateSharedUpdateReviews } = require('./versioned-tree-policy');
@@ -833,16 +834,13 @@ class SyncExecutor {
     const liveReferences = await this.tokenReferenceReader.listTokenReferences({
       documentToken: plan.source.documentToken,
     });
-    // Reference multiset comparison: duplicates are meaningful because cloned
-    // bases reuse recordIds across tracks, so the live enumeration is kept
-    // unpunished by dedup and compared count-for-count with the approved
-    // evidence.
-    const liveRecordIds = (liveReferences || [])
-      .map((entry) => entry?.recordId)
-      .filter(nonEmptyString)
-      .sort();
-    const approvedRecordIds = [...evidence.sharedToken.referencedRecordIds].sort();
-    if (JSON.stringify(liveRecordIds) !== JSON.stringify(approvedRecordIds)) {
+    // Reference multiset comparison via the shared semantics module:
+    // duplicates are meaningful because cloned bases reuse recordIds across
+    // tracks, so the live enumeration is kept unpunished by dedup and
+    // compared count-for-count with the approved evidence.
+    const liveRecordIds = referenceRecordIds(liveReferences);
+    const approvedRecordIds = normalizeReferenceMultiset(evidence.sharedToken.referencedRecordIds);
+    if (!referenceMultisetsEqual(liveRecordIds, approvedRecordIds)) {
       const error = new SyncExecutionError(
         'SHARED_TOKEN_REFERENCES_DRIFTED',
         `Live references to ${plan.source.documentToken} no longer match the approved evidence for ${plan.stableId}`,
@@ -1029,20 +1027,15 @@ class SyncExecutor {
       documentToken: plan.source.documentToken,
     });
     // Multiset comparison via the shared semantics module (see
-    // _verifySharedTokenEvidence): cloned bases reuse recordIds, so
+    // _assertSharedTokenEvidence): cloned bases reuse recordIds, so
     // duplicates carry real reference counts.
-    const liveRecordIds = (liveReferences || [])
-      .map((entry) => entry?.recordId)
-      .filter(nonEmptyString)
-      .sort();
+    const liveRecordIds = referenceRecordIds(liveReferences);
     // Repointing removes exactly one reference — the repointed track's record
     // — not every record sharing its (possibly cloned) recordId.
-    const expectedRecordIds = normalizeReferenceMultiset(expected);
+    let expectedRecordIds = normalizeReferenceMultiset(expected);
     if (attestation.decision === 'COPY_PATCH_AND_REPOINT'
       || attestation.decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
-      const removal = removeOneOccurrence(expectedRecordIds, plan.source.recordId);
-      expectedRecordIds.length = 0;
-      expectedRecordIds.push(...removal);
+      expectedRecordIds = removeOneOccurrence(expectedRecordIds, plan.source.recordId);
     }
     const ok = referenceMultisetsEqual(expectedRecordIds, liveRecordIds);
     result.treeDeltaVerification = {
@@ -1051,7 +1044,7 @@ class SyncExecutor {
       ok,
       errors: ok ? [] : [{
         code: 'TREE_DELTA_REFERENCES_DRIFTED',
-        expected: normalizeReferenceMultiset(expectedRecordIds),
+        expected: expectedRecordIds,
         actual: liveRecordIds,
       }],
     };

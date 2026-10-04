@@ -10,14 +10,25 @@
 //
 // J4 was exactly one `[...new Set(...)]` in the collector collapsing a cloned
 // pair into a phantom 'unshared' and drift-failing healthy executions. Every
-// producer and consumer now derives its multiset through this module — never
-// through ad-hoc Set/sort inline code — so the semantics can only drift in
-// one place, and the roundtrip test (collector output vs token-reference-
-// reader requery, entry-for-entry) pins the agreement into the focused
-// admission gate.
+// producer and consumer derives its multiset through this module — the
+// collector, the pre-write evidence revalidation (_assertSharedTokenEvidence),
+// the post-write tree-delta verification (_verifyTreeDeltaReferences), the
+// reviewed-context builder, and the evidence contract itself — so the
+// semantics can only drift in one place, and the roundtrip test (collector
+// output vs token-reference-reader requery, entry-for-entry) pins the
+// agreement into the focused admission gate.
+//
+// Rollout note (expected churn, not a defect): audit entries carry the
+// deduped multiset in sharedToken.referencedRecordIds and walkDigest covers
+// sharedToken, so walks over libraries with cloned pairs change digest under
+// this module — sessions bound to a pre-fix walk report
+// PLACEMENT_SOURCE_STALE until the audit is re-run.
 
+// Same validity predicate as the evidence contract (inheritance-evidence,
+// sync-executor): nonempty = length > 0. Whitespace-only ids stay entries so
+// normalization never disagrees with validateInheritanceEvidence's counting.
 function nonEmptyString(value) {
-    return typeof value === 'string' && value.trim() !== '';
+    return typeof value === 'string' && value.length > 0;
 }
 
 // Derive the sorted reference multiset from raw references ({recordId, ...}

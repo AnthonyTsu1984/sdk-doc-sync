@@ -18,6 +18,10 @@ const {
   trackInventoryDigest,
 } = require('../src/sdk-doc-sync/inheritance-evidence');
 const { bitableRecordTokens } = require('../src/sdk-doc-sync/token-reference-reader');
+const {
+  referenceRecordIds,
+  sharedTokenStatus,
+} = require('../src/sdk-doc-sync/reference-multiset');
 const { sha256Digest } = require('../../doc-ops-core/src/digest');
 const { canonicalBytes } = require('../../doc-ops-core/src/canonical-json');
 const {
@@ -192,14 +196,17 @@ function classifySharedToken({ entry, enumerationComplete, referencesByToken, pl
     return { status: 'unknown', referencedRecordIds: [], blockers };
   }
   const references = referencesByToken.get(entry.documentToken) || [];
-  const referencedRecordIds = [...new Set(references.map((reference) => reference.recordId))].sort();
+  // Reference MULTISET (duplicates kept) via the shared semantics module —
+  // a Set here once collapsed cloned-base pairs into phantom 'unshared' and
+  // drift-failed healthy executions (J4, batch 4c).
+  const referencedRecordIds = referenceRecordIds(references);
   if (!nonEmptyString(entry.recordId) || !referencedRecordIds.includes(entry.recordId)) {
     // The proposal's own record does not point at the proposal's own document:
     // the proposal is stale or the record was repointed after review.
     blockers.push('CURRENT_RECORD_NOT_REFERENCING');
     return { status: 'unknown', referencedRecordIds, blockers };
   }
-  const status = referencedRecordIds.length > 1 ? 'shared' : 'unshared';
+  const status = sharedTokenStatus(referencedRecordIds);
   return { status, referencedRecordIds, blockers };
 }
 
@@ -554,6 +561,7 @@ if (require.main === module) {
 
 module.exports = {
   buildPlacementAudit,
+  classifySharedToken,
   indexVersionRoot,
   listBitableRecords,
   parseAdjacentBitable,

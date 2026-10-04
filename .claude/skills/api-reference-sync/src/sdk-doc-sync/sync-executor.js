@@ -10,6 +10,11 @@ const { validateInheritanceEvidence } = require('./inheritance-evidence');
 const { captureRecordState, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
 const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
+const {
+  normalizeReferenceMultiset,
+  referenceMultisetsEqual,
+  removeOneOccurrence,
+} = require('./reference-multiset');
 const { DECISIONS, INVARIANT_ID, validateSharedUpdateReviews } = require('./versioned-tree-policy');
 
 function nonEmptyString(value) {
@@ -1023,28 +1028,30 @@ class SyncExecutor {
     const liveReferences = await this.tokenReferenceReader.listTokenReferences({
       documentToken: plan.source.documentToken,
     });
-    // Multiset comparison (see _verifySharedTokenEvidence): cloned bases
-    // reuse recordIds, so duplicates carry real reference counts.
+    // Multiset comparison via the shared semantics module (see
+    // _verifySharedTokenEvidence): cloned bases reuse recordIds, so
+    // duplicates carry real reference counts.
     const liveRecordIds = (liveReferences || [])
       .map((entry) => entry?.recordId)
       .filter(nonEmptyString)
       .sort();
     // Repointing removes exactly one reference — the repointed track's record
     // — not every record sharing its (possibly cloned) recordId.
-    const expectedRecordIds = [...expected].sort();
+    const expectedRecordIds = normalizeReferenceMultiset(expected);
     if (attestation.decision === 'COPY_PATCH_AND_REPOINT'
       || attestation.decision === 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE') {
-      const index = expectedRecordIds.indexOf(plan.source.recordId);
-      if (index >= 0) expectedRecordIds.splice(index, 1);
+      const removal = removeOneOccurrence(expectedRecordIds, plan.source.recordId);
+      expectedRecordIds.length = 0;
+      expectedRecordIds.push(...removal);
     }
-    const ok = JSON.stringify(liveRecordIds) === JSON.stringify(expectedRecordIds);
+    const ok = referenceMultisetsEqual(expectedRecordIds, liveRecordIds);
     result.treeDeltaVerification = {
       invariantId: attestation.id,
       decision: attestation.decision,
       ok,
       errors: ok ? [] : [{
         code: 'TREE_DELTA_REFERENCES_DRIFTED',
-        expected: expectedRecordIds,
+        expected: normalizeReferenceMultiset(expectedRecordIds),
         actual: liveRecordIds,
       }],
     };

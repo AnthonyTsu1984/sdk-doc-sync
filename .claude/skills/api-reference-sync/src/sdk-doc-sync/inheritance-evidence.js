@@ -2,6 +2,9 @@
 
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
+const {
+  normalizeReferenceMultiset,
+} = require('./reference-multiset');
 
 const SHARED_TOKEN_STATUSES = new Set(['shared', 'unshared', 'unknown']);
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
@@ -69,7 +72,9 @@ function createInheritanceEvidence({
       // track base duplicated from its predecessor) reuse the same recordId in
       // two bases, and one record per base must each survive as an entry so
       // the live requery can compare reference counts, not just ids.
-      referencedRecordIds: (referencedRecordIds || []).filter(nonEmptyString).sort(),
+      // Normalized through the shared semantics module (batch 4c single
+      // source of truth); output-stable so evidence digests never churn.
+      referencedRecordIds: normalizeReferenceMultiset(referencedRecordIds),
     },
     trackInventoryDigests: clone(trackInventoryDigests) || {},
     collectedAt,
@@ -130,7 +135,7 @@ function validateInheritanceEvidence(evidence, {
     // per cloned base appears twice. The status must agree with the multiset
     // so the live pre-write requery has an exact approved baseline to compare
     // against.
-    const references = evidence.sharedToken.referencedRecordIds.filter(nonEmptyString);
+    const references = normalizeReferenceMultiset(evidence.sharedToken.referencedRecordIds);
     const includesCurrent = references.includes(evidence.current.recordId);
     const consistent = evidence.sharedToken.status === 'shared'
       ? includesCurrent && references.length >= 2

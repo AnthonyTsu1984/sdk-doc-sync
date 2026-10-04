@@ -169,7 +169,7 @@
   "id": "delta-shared-inplace-classified",
   "assertions": {
    "plannerAction": "UPDATE_IN_PLACE",
-   "attestationVersion": 4,
+   "attestationVersion": 5,
    "executorStatus": "success",
    "patchedToken": "doc-load-partitions-v26",
    "writerCalls": 2,
@@ -465,6 +465,20 @@
    "urlSlugCode": "TOPOLOGY_RECORD_SLUG_URL",
    "sameNameCode": "TOPOLOGY_SAME_NAME_SIBLING",
    "contractRefused": true
+  }
+ },
+ {
+  "id": "write-boundary-reconcile",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "write-boundary-reconcile"
+  },
+  "assertions": {
+   "collisionCode": "FOLDER_NAME_COLLISION",
+   "collisionWrites": 0,
+   "adopted": true,
+   "adoptionAttempts": 1,
+   "postcheckCode": "WRITE_POSTCHECK_FAILED"
   }
  }
 ]

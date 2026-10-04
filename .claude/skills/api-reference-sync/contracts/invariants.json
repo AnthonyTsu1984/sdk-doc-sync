@@ -5,7 +5,7 @@
   "invariants": [
     {
       "id": "api.versioned-tree-delta",
-      "version": 4,
+      "version": 5,
       "risk": "write-safety",
       "scope": "all-versioned-sdk-tracks",
       "status": "runtime-enforced",
@@ -55,7 +55,8 @@
             "TREE_DELTA_INVENTORY_INCOMPLETE",
             "TREE_DELTA_PLACEMENT_UNKNOWN",
             "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT",
-            "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED"
+            "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED",
+            "TREE_DELTA_COPY_STRUCTURE_DRIFT"
           ]
         },
         {
@@ -68,7 +69,8 @@
             "TARGET_ANCESTRY_REQUIRED",
             "TREE_DELTA_CATEGORY_MISMATCH",
             "VIRTUAL_NODE_REPOINT_REQUIRED",
-            "VIRTUAL_NODE_REPOINT_RESOURCE_INVALID"
+            "VIRTUAL_NODE_REPOINT_RESOURCE_INVALID",
+            "COPY_SOURCE_PLACEMENT_REQUIRED"
           ]
         },
         {
@@ -86,7 +88,9 @@
             "SHARED_TOKEN_INPLACE_PATCH_BLOCKED",
             "SHARED_TOKEN_REFERENCES_DRIFTED",
             "SHARED_TOKEN_REVALIDATION_REQUIRED",
-            "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT"
+            "TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT",
+            "TREE_DELTA_COPY_STRUCTURE_MISMATCH",
+            "COPY_SOURCE_PLACEMENT_REQUIRED"
           ]
         },
         {
@@ -94,7 +98,9 @@
           "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/sync-executor.js",
           "codes": [
             "TREE_DELTA_REFERENCES_DRIFTED",
-            "TREE_DELTA_VERIFICATION_REQUIRED"
+            "TREE_DELTA_VERIFICATION_REQUIRED",
+            "TREE_DELTA_COPY_STRUCTURE_MISMATCH",
+            "COPY_SOURCE_PLACEMENT_REQUIRED"
           ]
         },
         {
@@ -134,7 +140,7 @@
         }
       ],
       "reference": "references/tree-delta-policy.md",
-      "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing. Kernel v3 (2026-10-03): copy decisions require folder containment evidence — target.folderAncestry (plain copy) or category.folder.parentAncestry (category-create), the folder chain from the target version root down to the target/parent folder; absent evidence blocks TREE_DELTA_PLACEMENT_UNKNOWN, a chain that does not contain the version root blocks TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT. The executor re-derives the chain live before the first write (pre-write TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT) and the plain-copy post-write observation now proves the created document landed in the planned target folder."
+      "notes": "Version 2 (policy-kernel phase 2): the deterministic versioned-tree policy kernel issues per-plan attestations bound into batch digests, the category VirtualNode repoint is a distinct downstream action after the verified document action (CREATE_FOLDER -> COPY_PATCH_AND_REPOINT -> REPOINT_CATEGORY_VIRTUAL_NODE -> VERIFY_TREE_DELTA), post-write tree-delta verification persists in the execution journal, and acceptance finalization requires verified invariant evidence. Read-only reconciliation reports drift without disposing. Kernel v3 (2026-10-03): copy decisions require folder containment evidence \u2014 target.folderAncestry (plain copy) or category.folder.parentAncestry (category-create), the folder chain from the target version root down to the target/parent folder; absent evidence blocks TREE_DELTA_PLACEMENT_UNKNOWN, a chain that does not contain the version root blocks TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT. The executor re-derives the chain live before the first write (pre-write TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT) and the plain-copy post-write observation now proves the created document landed in the planned target folder. Kernel v5 (campaign-control batch 2c, T2): every unsafe UPDATE requires copySource.placement (the source record's live placement-audit entry); the executor re-derives both section chains live and refuses a copy whose target does not MIRROR the source structure level-by-level (TREE_DELTA_COPY_STRUCTURE_MISMATCH, pre-write step verifyCopyStructure); the batch observation re-proves the mirror post-write (TREE_DELTA_COPY_STRUCTURE_DRIFT)."
     },
     {
       "id": "api.markdown-block-fidelity",
@@ -233,7 +239,7 @@
           ]
         }
       ],
-      "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): pages carrying user-authored <include target=...> conditional markers are never rebuilt — the schema-first artifact provider refuses a verbatim rebuild artifact whose content contains include markers, and the executor refuses a rebuild patch over such content before conversion. Surgical child-block insertion is the only sanctioned edit path."
+      "notes": "Phase 4 step 2 (campaign rule, user ruling 2026-09-22): pages carrying user-authored <include target=...> conditional markers are never rebuilt \u2014 the schema-first artifact provider refuses a verbatim rebuild artifact whose content contains include markers, and the executor refuses a rebuild patch over such content before conversion. Surgical child-block insertion is the only sanctioned edit path."
     },
     {
       "id": "api.record-description-scope",
@@ -373,7 +379,7 @@
           ]
         }
       ],
-      "notes": "Post-verbatim polish phase for PR intake: a merged-PR page lands verbatim first (api.pr-verbatim-content), then may be language-polished inside the same review unit before document review closes. The sequencing is fail-closed (assertPolishPreconditions demands the journaled passing content-fidelity outcome); the polish subagent only proposes a manifest ({anchor, replacement} pairs against the verified bytes) and the deterministic validator binds baseContentDigest, refuses anchors or replacements touching protected content (fenced code, inline code spans, table rows, headings, include marker lines, footers, REQUEST METHODS markers), preserves absolute link URLs, refuses whole-body rewrites (>=90% coverage), and recomputes the exact terminal bytes; the live page is edited only through the governed writer as a separately approved batch, the refetched raw_content must compare line-for-line against the recomputed polished content through the declared canonicalization, and the recorded polish chain (content + manifest -> polishedContent) is re-verified at reconciliation (CONTENT_POLISH_CHAIN_INVALID) so acceptance and reconciliation bind the polished terminal state. Apply-to-live wiring rides the existing governed writer envelope; pr-polish.js itself performs no Feishu I/O. v2 (2026-10-01 semantic ruling: fidelity = the upstream structural inventory survives, format is unified KB-wide) adds the restructure mode — a replacement-content manifest guarded by the semantic content map (semantic-content-map.js: parameter/builder/exception items, fenced code, return type, tables, include markers survive; description wording never machine-compared), code-block immutability, and per-table SDK source citations (PR_POLISH_SOURCE_CITATION_REQUIRED / PR_POLISH_SOURCE_TABLE_UNBOUND) for introduced response-shape tables; the full-rewrite tripwire is prose-mode-only. Restructure application is a governed whole-body rebuild through the same writer envelope."
+      "notes": "Post-verbatim polish phase for PR intake: a merged-PR page lands verbatim first (api.pr-verbatim-content), then may be language-polished inside the same review unit before document review closes. The sequencing is fail-closed (assertPolishPreconditions demands the journaled passing content-fidelity outcome); the polish subagent only proposes a manifest ({anchor, replacement} pairs against the verified bytes) and the deterministic validator binds baseContentDigest, refuses anchors or replacements touching protected content (fenced code, inline code spans, table rows, headings, include marker lines, footers, REQUEST METHODS markers), preserves absolute link URLs, refuses whole-body rewrites (>=90% coverage), and recomputes the exact terminal bytes; the live page is edited only through the governed writer as a separately approved batch, the refetched raw_content must compare line-for-line against the recomputed polished content through the declared canonicalization, and the recorded polish chain (content + manifest -> polishedContent) is re-verified at reconciliation (CONTENT_POLISH_CHAIN_INVALID) so acceptance and reconciliation bind the polished terminal state. Apply-to-live wiring rides the existing governed writer envelope; pr-polish.js itself performs no Feishu I/O. v2 (2026-10-01 semantic ruling: fidelity = the upstream structural inventory survives, format is unified KB-wide) adds the restructure mode \u2014 a replacement-content manifest guarded by the semantic content map (semantic-content-map.js: parameter/builder/exception items, fenced code, return type, tables, include markers survive; description wording never machine-compared), code-block immutability, and per-table SDK source citations (PR_POLISH_SOURCE_CITATION_REQUIRED / PR_POLISH_SOURCE_TABLE_UNBOUND) for introduced response-shape tables; the full-rewrite tripwire is prose-mode-only. Restructure application is a governed whole-body rebuild through the same writer envelope."
     },
     {
       "id": "api.governed-document-inventory",
@@ -397,7 +403,7 @@
           ]
         }
       ],
-      "notes": "Phase 4 step 4 (campaign lesson: the orphan sweep required percent-decoded block-link extraction and live-VirtualNode folder derivation). Reconciliation reports any document under a tracked release folder that no record Docs link and no percent-decoded page block link references as a detect-only orphan candidate (CONTENT_ORPHAN_DOCUMENT); findings never authorize disposal — copy-on-write rollback sources are legitimate until final-acceptance cleanup."
+      "notes": "Phase 4 step 4 (campaign lesson: the orphan sweep required percent-decoded block-link extraction and live-VirtualNode folder derivation). Reconciliation reports any document under a tracked release folder that no record Docs link and no percent-decoded page block link references as a detect-only orphan candidate (CONTENT_ORPHAN_DOCUMENT); findings never authorize disposal \u2014 copy-on-write rollback sources are legitimate until final-acceptance cleanup."
     },
     {
       "id": "api.sdk-page-layout",
@@ -478,7 +484,7 @@
           ]
         }
       ],
-      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). v2 adds the return-section rules (split RETURN TYPE/RETURNS sections, RETURNS prose, no duplicated type row), declared so far only by the java profile (2026-10-01 semantic ruling; other tracks adopt with their stock repolish batches). v3 adds the five byte-judgeable content rules of the 2026-10-03 global ruling (user-adjudicated, all tracks): CONTENT_CJK_MIXING, FIRST_SENTENCE_REGISTER (registers are a declared set per profile — 2026-10-04 adjudication, revised same day: “This operation …” for operation and getter pages, “A Xxx instance is …” for class/type pages), RETURNS_MIN_DEPTH in the strong describeReplicas form (any rendered RETURNS section carries a response-fields PARAMETERS bullet list), PARAM_DESC_REQUIRED, and INTERNAL_NOTE_LEAK (Notes lines live only inside governed callouts) — declared through GLOBAL_LAYOUT_RULES.contentQuality so every track enforces them at write-verify and reconcile; open-ended wording quality stays with the governed polish phase and model evals, and verbatim pages are not exempt (the ruling: pr-verbatim protects semantics, not non-compliant style or notes — remediation goes through the governed polish pipeline with the semantic content map guarding completeness)."
+      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) \u2014 requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). v2 adds the return-section rules (split RETURN TYPE/RETURNS sections, RETURNS prose, no duplicated type row), declared so far only by the java profile (2026-10-01 semantic ruling; other tracks adopt with their stock repolish batches). v3 adds the five byte-judgeable content rules of the 2026-10-03 global ruling (user-adjudicated, all tracks): CONTENT_CJK_MIXING, FIRST_SENTENCE_REGISTER (registers are a declared set per profile \u2014 2026-10-04 adjudication, revised same day: \u201cThis operation \u2026\u201d for operation and getter pages, \u201cA Xxx instance is \u2026\u201d for class/type pages), RETURNS_MIN_DEPTH in the strong describeReplicas form (any rendered RETURNS section carries a response-fields PARAMETERS bullet list), PARAM_DESC_REQUIRED, and INTERNAL_NOTE_LEAK (Notes lines live only inside governed callouts) \u2014 declared through GLOBAL_LAYOUT_RULES.contentQuality so every track enforces them at write-verify and reconcile; open-ended wording quality stays with the governed polish phase and model evals, and verbatim pages are not exempt (the ruling: pr-verbatim protects semantics, not non-compliant style or notes \u2014 remediation goes through the governed polish pipeline with the semantic content map guarding completeness)."
     },
     {
       "id": "api.global-layout-rules",
@@ -675,7 +681,7 @@
           ]
         }
       ],
-      "notes": "2026-10-03 user ruling + live java audit. Ruling: same-title files inside an older version directory — one copy claimed by the older version's table, the duplicate by the newer version's table — are definitively a copy-patch-and-repoint mechanism failure: no copy happened, the new document was created in place in the older directory, then patched and repointed. (Multi-version directories themselves are normal structure; unchanged-interface fallback reaches back to v2.3.x for java.) Live java reconciliation validated the classifier: 21 SAME_NAME_COPY_MISPLACED (v3.0-claimed Partitions halves under v2.6.x, Database pairs under v2.4.x, ResourceGroup family + transferReplica under v2.5.x, v2.6-claimed describeRole/describeUser under v2.5.x, v2.6-claimed FieldSchema under v2.4.x), 16 SAME_NAME_SIBLING_ORPHAN (including describeIndex() copy JBBldcrAHoYZ2mxMGeocZHMAnze), 113 correctly placed cross-track pairs, 0 conflicts. Known write-path half (closed separately from this detection invariant): the planner trusts target.folderToken without version-root containment evidence (TARGET_ANCESTRY is self-declared verified), so a candidate-spec that resolves the target category folder inside the older tree plans a copy that lands in-place next to the source; the executor's live tree-delta verification checks reference multisets only, and the kernel's TREE_DELTA_CREATED_DOCUMENT_MISPLACED now also compares the created document's folder against plan.target.folderToken for the plain copy decision — which catches executor drift but NOT this failure mode, because the wrong resolution makes plan.target.folderToken itself the older folder. Full closure requires a pre-write containment gate: evidence that target.folderToken sits under the target track's release root."
+      "notes": "2026-10-03 user ruling + live java audit. Ruling: same-title files inside an older version directory \u2014 one copy claimed by the older version's table, the duplicate by the newer version's table \u2014 are definitively a copy-patch-and-repoint mechanism failure: no copy happened, the new document was created in place in the older directory, then patched and repointed. (Multi-version directories themselves are normal structure; unchanged-interface fallback reaches back to v2.3.x for java.) Live java reconciliation validated the classifier: 21 SAME_NAME_COPY_MISPLACED (v3.0-claimed Partitions halves under v2.6.x, Database pairs under v2.4.x, ResourceGroup family + transferReplica under v2.5.x, v2.6-claimed describeRole/describeUser under v2.5.x, v2.6-claimed FieldSchema under v2.4.x), 16 SAME_NAME_SIBLING_ORPHAN (including describeIndex() copy JBBldcrAHoYZ2mxMGeocZHMAnze), 113 correctly placed cross-track pairs, 0 conflicts. Known write-path half (closed separately from this detection invariant): the planner trusts target.folderToken without version-root containment evidence (TARGET_ANCESTRY is self-declared verified), so a candidate-spec that resolves the target category folder inside the older tree plans a copy that lands in-place next to the source; the executor's live tree-delta verification checks reference multisets only, and the kernel's TREE_DELTA_CREATED_DOCUMENT_MISPLACED now also compares the created document's folder against plan.target.folderToken for the plain copy decision \u2014 which catches executor drift but NOT this failure mode, because the wrong resolution makes plan.target.folderToken itself the older folder. Full closure requires a pre-write containment gate: evidence that target.folderToken sits under the target track's release root."
     },
     {
       "id": "api.track-topology-audit",
@@ -707,7 +713,40 @@
           ]
         }
       ],
-      "notes": "Campaign-control hardening batch 2 (2026-10-04, docs/campaign-control-hardening.md §4): the fallback chain is the registry track order per language — a record pointing at a recorded fallback source is correct topology, never a defect (grantPrivilege precedent, 2026-10-03). classifyTrackTopology (pure) judges section folders (own tree or recorded fallback source, else FOREIGN/UNRESOLVED) and page documents (claiming section folder via longest-prefix slug match, else OUTSIDE_SECTION/SECTION_UNKNOWN/UNRESOLVED, with operator exemptions surfaced as EXEMPTED info), and scans same-name document-beside-folder siblings under the sameNameInOneDirectory policy (TOPOLOGY_SAME_NAME_SIBLING — the 2026-10-04 stray FunctionScore class; operator-adjudicated copies exempt by token surface as TOPOLOGY_SAME_NAME_EXEMPTED info, never silently dropped). Enforcement at the reconcile stage is wired in scripts/reconcile-content.js (per-track classification over the language-wide walk; error findings join the patrol report and gate --strict); scripts/audit-track-topology.js is the intake-preflight walk (non-zero exit on errors; the saved-workflow hard step lands with batch 3). The decision table in config/fallback-topology.json is load-bearing, not documentation: classifyTrackTopology and loadFallbackTopologyConfig refuse to run without the record-points-at-recorded-fallback-source → NONE row and the sameNameInOneDirectory: always-a-defect policy; planner/workflow consumers land with batch 3."
+      "notes": "Campaign-control hardening batch 2 (2026-10-04, docs/campaign-control-hardening.md \u00a74): the fallback chain is the registry track order per language \u2014 a record pointing at a recorded fallback source is correct topology, never a defect (grantPrivilege precedent, 2026-10-03). classifyTrackTopology (pure) judges section folders (own tree or recorded fallback source, else FOREIGN/UNRESOLVED) and page documents (claiming section folder via longest-prefix slug match, else OUTSIDE_SECTION/SECTION_UNKNOWN/UNRESOLVED, with operator exemptions surfaced as EXEMPTED info), and scans same-name document-beside-folder siblings under the sameNameInOneDirectory policy (TOPOLOGY_SAME_NAME_SIBLING \u2014 the 2026-10-04 stray FunctionScore class; operator-adjudicated copies exempt by token surface as TOPOLOGY_SAME_NAME_EXEMPTED info, never silently dropped). Enforcement at the reconcile stage is wired in scripts/reconcile-content.js (per-track classification over the language-wide walk; error findings join the patrol report and gate --strict); scripts/audit-track-topology.js is the intake-preflight walk (non-zero exit on errors; the saved-workflow hard step lands with batch 3). The decision table in config/fallback-topology.json is load-bearing, not documentation: classifyTrackTopology and loadFallbackTopologyConfig refuse to run without the record-points-at-recorded-fallback-source \u2192 NONE row and the sameNameInOneDirectory: always-a-defect policy; planner/workflow consumers land with batch 3."
+    },
+    {
+      "id": "api.write-boundary-reconcile",
+      "version": 1,
+      "risk": "write-safety",
+      "scope": "all-governed-drive-writes",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write",
+        "post-write"
+      ],
+      "statementDigest": "sha256:a36fcccf6dcf40c7b5a09ee7caadb5e8c37968b9a9017bda92ef02272c9a17a6",
+      "fixtureIds": [
+        "write-boundary-reconcile"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "FOLDER_NAME_COLLISION"
+          ]
+        },
+        {
+          "stage": "post-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "FOLDER_CREATE_POSTCHECK_FAILED",
+            "WRITE_POSTCHECK_FAILED"
+          ]
+        }
+      ],
+      "notes": "Campaign-control hardening batch 2c, T1+T4 (2026-10-04): the governed Drive/docx write boundary enforces the same-name gate on every folder create (MarkdownToFeishu.createFolder lists the parent and refuses a same-named FOLDER sibling \u2014 the executor step machine and the plan-governed repair tools keep their own gates; the writer is the capability backstop), reads back the expected post-state of every duplicate-prone mutation, and reconciles-by-name on a lost write response through ONE shared policy helper (__writeWithReconcile) \u2014 never a blind retry. deleteFile is exempt by documented policy. Codes are thrown as typed errors (error.code) with reconciledAfterFailure surfacing adoptions for the journal."
     }
   ]
 }

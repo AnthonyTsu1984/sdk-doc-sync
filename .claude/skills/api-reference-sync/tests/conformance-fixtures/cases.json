@@ -458,10 +458,10 @@
    "scenario": "trackTopologyAudit"
   },
   "assertions": {
-   "cleanOk": true,
    "fallbackOk": true,
-   "misplacedCode": "TOPOLOGY_PAGE_OUTSIDE_SECTION",
-   "foreignCode": "TOPOLOGY_SECTION_FOLDER_FOREIGN"
+   "forwardCode": "TOPOLOGY_PAGE_OUTSIDE_SECTION",
+   "fallbackSectionOk": true,
+   "urlSlugCode": "TOPOLOGY_RECORD_SLUG_URL"
   }
  }
 ]

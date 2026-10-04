@@ -2,13 +2,23 @@
 
 // api.track-topology-audit enforcement core (campaign-control hardening
 // batch 2, docs/campaign-control-hardening.md §4). Pure classification of a
-// track's live topology against the fallback-chain model:
-//   - a section's folder either sits under the track's own release root, or
-//     under a RECORDED fallback source (an older track's root, per the
-//     registry track order) — a record pointing at a recorded fallback
-//     source is correct topology, never a defect (grantPrivilege precedent);
-//   - a page document either sits under its claiming section's folder, or
-//     carries an explicit exemption (an operator-recorded disposition).
+// track's live topology against the CORRECTED fallback-chain model
+// (2026-10-04 operator adjudication, after reviewing the zdoc fetch
+// assembly):
+//   - PAGE-LEVEL FALLBACK IS NORMAL: a page record pointing at a document
+//     in an older tree while its section points at the own-tree folder is
+//     the designed fetch-assembly form — never a defect;
+//   - FILE ANCHORS ARE NORMAL: a family may be anchored by a same-directory
+//     document rather than a folder-link VirtualNode, so pages whose slugs
+//     claim no folder-recorded section are a data observation (info), not
+//     an error;
+//   - REAL defects: record Slug fields carrying pasted URLs instead of the
+//     plain section name (TOPOLOGY_RECORD_SLUG_URL — the text/link form is
+//     text=<name>, link in Docs); page documents sitting under a NEWER
+//     track's tree (forward cross, TOPOLOGY_PAGE_OUTSIDE_SECTION); section
+//     folders under neither the owning tree nor a recorded fallback source
+//     (TOPOLOGY_SECTION_FOLDER_FOREIGN/UNRESOLVED); documents under no
+//     walked root (TOPOLOGY_PAGE_UNRESOLVED).
 // Detect-only: findings never authorize moves or repoints; dispositions run
 // through the governed pipeline. Live wiring lives in
 // scripts/audit-track-topology.js (read-only walk per language).
@@ -49,6 +59,7 @@ function classifyTrackTopology({
         throw new TypeError('classifyTrackTopology requires an indexes Map');
     }
     const olderVersions = chainVersions.slice(0, Math.max(chainVersions.indexOf(ownVersion), 0));
+    const newerVersions = chainVersions.slice(chainVersions.indexOf(ownVersion) + 1);
     const locate = (token) => {
         for (const [version, index] of indexes.entries()) {
             const entry = index.get(token);
@@ -64,6 +75,10 @@ function classifyTrackTopology({
     const sectionFolderBySlug = new Map(sections.map((section) => [section.slug, section.token]));
 
     for (const section of sections) {
+        if (section.slug.includes('http')) {
+            report('error', 'TOPOLOGY_RECORD_SLUG_URL', section.slug.slice(0, 120),
+                `section record Slug carries a pasted URL; the form is text=<section name> with the folder link in Docs (recordId ${section.recordId})`);
+        }
         const located = locate(section.token);
         if (!located) {
             report('error', 'TOPOLOGY_SECTION_FOLDER_UNRESOLVED', section.slug,
@@ -77,21 +92,19 @@ function classifyTrackTopology({
     }
 
     for (const page of pages) {
+        if (page.slug.includes('http')) {
+            report('error', 'TOPOLOGY_RECORD_SLUG_URL', `${page.slug.slice(0, 100)}…`,
+                `page record Slug carries a pasted URL; the form is <section>-<symbol> with the document link in Docs (recordId ${page.recordId})`);
+        }
         const claim = sectionForSlug(page.slug, sectionNames);
         const located = locate(page.token);
         if (claim === null) {
-            // Slug encodes no claiming section. If the document nonetheless
-            // sits under some section's folder (possibly nested — the
-            // Vector/Highlighter shape), that is a slug/record data mismatch,
-            // surfaced as info; otherwise the page is unclaimed.
+            // File anchors are a sanctioned section form: the family is
+            // anchored by a same-directory document, so an unclaimed slug is
+            // a data observation, not a topology error.
             const placedUnder = located && sections.find((section) => underFolder(located, section.token));
-            if (placedUnder) {
-                report('info', 'TOPOLOGY_PAGE_SECTION_SLUG_MISMATCH', page.slug,
-                    `page sits under section ${placedUnder.slug} but its slug encodes no section claim (sections: ${sectionNames.join(', ') || 'none'})`);
-            } else {
-                report('error', 'TOPOLOGY_PAGE_SECTION_UNKNOWN', page.slug,
-                    `page slug matches no section record and the document sits under no section folder (sections: ${sectionNames.join(', ') || 'none'})`);
-            }
+            report('info', 'TOPOLOGY_PAGE_SECTION_UNKNOWN', page.slug,
+                `page slug matches no folder-recorded section${placedUnder ? ` (sits under ${placedUnder.slug})` : ''} — file-anchor families are sanctioned; observation only`);
             continue;
         }
         if (pageExemptions.includes(page.slug)) {
@@ -99,18 +112,18 @@ function classifyTrackTopology({
                 `page placement exempted by operator disposition (claim: ${claim})`);
             continue;
         }
-        const expectedFolder = sectionFolderBySlug.get(claim);
         if (!located) {
             report('error', 'TOPOLOGY_PAGE_UNRESOLVED', page.slug,
                 `document ${page.token} is under no walked release root (claim: ${claim})`);
             continue;
         }
-        // Nested placement under the claiming section folder is correct
-        // topology (subdirectories like Vector/Highlighter are sanctioned).
-        if (underFolder(located, expectedFolder)) continue;
-        const actuallyIn = sections.find((section) => underFolder(located, section.token));
-        report('error', 'TOPOLOGY_PAGE_OUTSIDE_SECTION', page.slug,
-            `document sits under ${located.parentFolderToken}${actuallyIn ? ` (folder of ${actuallyIn.slug})` : ''} but its section ${claim} claims ${expectedFolder}${located.version !== ownVersion ? ` [under ${located.version}]` : ''}`);
+        // Page-level fallback is the designed fetch-assembly form: the page
+        // document may legitimately live in an older tree. Only a page
+        // sitting under a NEWER track's tree is a forward-cross defect.
+        if (newerVersions.includes(located.version)) {
+            report('error', 'TOPOLOGY_PAGE_OUTSIDE_SECTION', page.slug,
+                `document lives under ${located.version}, a NEWER tree than its track (claim: ${claim}) — forward cross`);
+        }
     }
 
     return { invariantId: TOPOLOGY_INVARIANT_ID, findings };

@@ -686,7 +686,7 @@
       "enforcement": [
         "reconcile"
       ],
-      "statementDigest": "sha256:15e31fb39a711d5d9dd14ffb7f10257e6296a8e3206f43f003f689b39c18a327",
+      "statementDigest": "sha256:138dddcf8c55dc1f6e492905d6bfc21dddf34b90154800f07bdd7c4aea216ab5",
       "fixtureIds": [
         "track-topology-classification"
       ],
@@ -700,7 +700,8 @@
             "TOPOLOGY_PAGE_OUTSIDE_SECTION",
             "TOPOLOGY_PAGE_SECTION_UNKNOWN",
             "TOPOLOGY_PAGE_UNRESOLVED",
-            "TOPOLOGY_PAGE_EXEMPTED"
+            "TOPOLOGY_PAGE_EXEMPTED",
+            "TOPOLOGY_RECORD_SLUG_URL"
           ]
         }
       ],

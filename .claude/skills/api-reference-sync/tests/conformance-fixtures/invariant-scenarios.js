@@ -1448,35 +1448,52 @@ const scenarios = {
 
   trackTopologyAudit() {
     const { classifyTrackTopology } = require('../../src/sdk-doc-sync/track-topology');
-    const indexes = new Map([
-      ['v3.0.x', new Map([['authFolder', { parentFolderToken: 'r30' }], ['doc1', { parentFolderToken: 'authFolder' }], ['doc2', { parentFolderToken: 'rootLevel' }]])],
-      ['v2.6.x', new Map([['vectorFolder', { parentFolderToken: 'r26' }]])],
-    ]);
     const chain = ['v2.6.x', 'v3.0.x'];
+    const indexes = new Map([
+      ['v3.0.x', new Map([
+        ['authFolder', { parentFolderToken: 'r30' }],
+        ['docNew', { parentFolderToken: 'someV30Folder' }],
+        ['dbFolder', { parentFolderToken: 'r30' }],
+      ])],
+      ['v2.6.x', new Map([
+        ['vectorFolder', { parentFolderToken: 'r26' }],
+        ['docOld', { parentFolderToken: 'v26Folder' }],
+      ])],
+    ]);
     const sections = [
       { recordId: 's1', slug: 'v2-Authentication', token: 'authFolder' },
       { recordId: 's2', slug: 'v2-Vector', token: 'vectorFolder' },
     ];
-    const clean = classifyTrackTopology({
-      sections,
-      pages: [{ recordId: 'p1', slug: 'v2-Authentication-addPrivilegesToGroup', token: 'doc1' }],
+    // Page-level fallback: the v3.0 page document lives in the older v2.6
+    // tree — fetch assembly resolves this; it is the designed form.
+    const fallback = classifyTrackTopology({
+      sections: [sections[0]],
+      pages: [{ recordId: 'p1', slug: 'v2-Authentication-createRole', token: 'docOld' }],
       indexes, chainVersions: chain, ownVersion: 'v3.0.x',
     });
-    const misplaced = classifyTrackTopology({
-      sections,
-      pages: [{ recordId: 'p2', slug: 'v2-Authentication-createRole', token: 'doc2' }],
-      indexes, chainVersions: chain, ownVersion: 'v3.0.x',
-    });
-    const foreign = classifyTrackTopology({
-      sections,
-      pages: [],
+    // Forward cross: a v2.6 page whose document sits in the NEWER v3.0 tree.
+    const forward = classifyTrackTopology({
+      sections: [sections[1]],
+      pages: [{ recordId: 'p2', slug: 'v2-Vector-search', token: 'docNew' }],
       indexes, chainVersions: chain, ownVersion: 'v2.6.x',
     });
+    // Recorded fallback section folder: clean under v3.0.
+    const clean = classifyTrackTopology({
+      sections,
+      pages: [],
+      indexes, chainVersions: chain, ownVersion: 'v3.0.x',
+    });
+    // Pasted-URL slug: the operator-confirmed record defect class.
+    const urlSlug = classifyTrackTopology({
+      sections: [{ recordId: 'recX', slug: 'v2-https://zilliverse.feishu.cn/drive/folder/GBH2', token: 'dbFolder' }],
+      pages: [],
+      indexes, chainVersions: chain, ownVersion: 'v3.0.x',
+    });
     return {
-      cleanOk: clean.findings.length === 0,
-      fallbackOk: clean.findings.filter((f) => f.code.startsWith('TOPOLOGY_SECTION_FOLDER_')).length === 0,
-      misplacedCode: misplaced.findings.find((f) => f.code === 'TOPOLOGY_PAGE_OUTSIDE_SECTION')?.code || null,
-      foreignCode: foreign.findings.find((f) => f.code === 'TOPOLOGY_SECTION_FOLDER_FOREIGN')?.code || null,
+      fallbackOk: fallback.findings.length === 0,
+      forwardCode: forward.findings.find((f) => f.code === 'TOPOLOGY_PAGE_OUTSIDE_SECTION')?.code || null,
+      fallbackSectionOk: clean.findings.filter((f) => f.code.startsWith('TOPOLOGY_SECTION_FOLDER_')).length === 0,
+      urlSlugCode: urlSlug.findings.find((f) => f.code === 'TOPOLOGY_RECORD_SLUG_URL')?.code || null,
     };
   },
 };

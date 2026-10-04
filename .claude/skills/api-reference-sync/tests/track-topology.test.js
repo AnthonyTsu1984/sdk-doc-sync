@@ -2,8 +2,6 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const fs = require('node:fs');
-const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
@@ -41,7 +39,6 @@ function makeIndexes(map) {
 }
 
 const CHAIN = ['v2.3.x', 'v2.4.x', 'v2.5.x', 'v2.6.x', 'v3.0.x'];
-const ROOTS = { 'v2.3.x': 'r23', 'v2.4.x': 'r24', 'v2.5.x': 'r25', 'v2.6.x': 'r26', 'v3.0.x': 'r30' };
 const SECTIONS = [
     { recordId: 's1', slug: 'v2-Authentication', token: 'authFolder30' },
     { recordId: 's2', slug: 'v2-Vector', token: 'vectorFolder26' }, // lives in the v2.6 tree — recorded fallback
@@ -62,83 +59,103 @@ test('in-tree and recorded-fallback section folders are both correct topology (g
     assert.deepEqual(result.findings, []);
 });
 
-test('a section folder under a foreign (non-chain-older) tree is flagged', () => {
-    const result = classifyTrackTopology({
-        sections: [{ recordId: 's3', slug: 'v2-Client', token: 'clientFolder25' }],
-        pages: [],
-        indexes: makeIndexes({ 'v2.5.x': { clientFolder25: 'r25' } }),
+test('page-level fallback is the designed form: a page document in an OLDER tree is clean; a NEWER tree is a forward-cross error', () => {
+    const fallback = classifyTrackTopology({
+        sections: [{ recordId: 's1', slug: 'v2-Authentication', token: 'authFolder30' }],
+        pages: [{ recordId: 'p1', slug: 'v2-Authentication-addPrivilegesToGroup', token: 'docOld' }],
+        // v3.0 section claims the own-tree folder; the page document lives in
+        // the v2.6 tree — fetch assembly resolves this, it is NOT a defect.
+        indexes: makeIndexes({
+            'v3.0.x': { authFolder30: 'r30' },
+            'v2.6.x': { docOld: 'someV26Folder' },
+        }),
         chainVersions: CHAIN,
         ownVersion: 'v3.0.x',
     });
-    // v2.5.x IS chain-older than v3.0.x, so this is also a recorded fallback —
-    // correctness comes from the chain, not from the adjacent track only.
-    assert.deepEqual(result.findings, []);
-    const foreign = classifyTrackTopology({
-        sections: [{ recordId: 's4', slug: 'v2-Client', token: 'cppFolder' }],
-        pages: [],
-        indexes: makeIndexes({ 'v3.0.x': { cppFolder: 'r30' } }),
+    assert.deepEqual(fallback.findings, []);
+
+    const forward = classifyTrackTopology({
+        sections: [{ recordId: 's2', slug: 'v2-Vector', token: 'vectorFolder26' }],
+        pages: [{ recordId: 'p2', slug: 'v2-Vector-search', token: 'docNew' }],
+        indexes: makeIndexes({
+            'v2.6.x': { vectorFolder26: 'r26' },
+            'v3.0.x': { docNew: 'someV30Folder' },
+        }),
+        chainVersions: CHAIN,
+        ownVersion: 'v2.6.x',
+    });
+    const finding = forward.findings.find((f) => f.code === 'TOPOLOGY_PAGE_OUTSIDE_SECTION');
+    assert.ok(finding, 'forward cross is flagged');
+    assert.match(finding.detail, /NEWER tree/);
+});
+
+test('record Slug fields carrying pasted URLs are flagged (the 2026-10-04 operator-confirmed defect class)', () => {
+    const result = classifyTrackTopology({
+        sections: [{ recordId: 'recX', slug: 'v2-https://zilliverse.feishu.cn/drive/folder/GBH2f7LY', token: 'dbFolder' }],
+        pages: [
+            { recordId: 'recY', slug: 'v2-https://zilliverse.feishu.cn/drive/folder/GBH2f7LY-createDatabase', token: 'docDb' },
+            { recordId: 'recZ', slug: 'v2-Database-dropDatabase', token: 'docDb2' },
+        ],
+        indexes: makeIndexes({ 'v3.0.x': { dbFolder: 'r30', docDb: 'dbFolder', docDb2: 'dbFolder' } }),
         chainVersions: ['v3.0.x'],
+        ownVersion: 'v3.0.x',
+    });
+    const urlFindings = result.findings.filter((f) => f.code === 'TOPOLOGY_RECORD_SLUG_URL');
+    assert.equal(urlFindings.length, 2, 'section and page records both flagged');
+    assert.equal(urlFindings.every((f) => f.severity === 'error'), true);
+    assert.match(urlFindings[0].detail, /text=<section name>/);
+});
+
+test('file-anchor families are sanctioned: unclaimed slugs are info observations, and nested placement is clean', () => {
+    const sections = [{ recordId: 's1', slug: 'v2-Vector', token: 'vectorFolder' }];
+    const indexes = makeIndexes({
+        'v3.0.x': {
+            vectorFolder: 'r30',
+            highlighterFolder: 'vectorFolder', // nested subdirectory (Vector/Highlighter)
+            docNested: 'highlighterFolder',
+            anchorDoc: 'vectorFolder',
+        },
+    });
+    const nested = classifyTrackTopology({
+        sections,
+        pages: [{ recordId: 'p1', slug: 'v2-Vector-search', token: 'docNested' }],
+        indexes, chainVersions: CHAIN, ownVersion: 'v3.0.x',
+    });
+    assert.deepEqual(nested.findings, []);
+
+    // A family page whose slug claims no folder-recorded section: file
+    // anchors are a sanctioned form, so this is an info observation.
+    const fileAnchored = classifyTrackTopology({
+        sections,
+        pages: [{ recordId: 'p2', slug: 'Highlighter', token: 'anchorDoc' }],
+        indexes, chainVersions: CHAIN, ownVersion: 'v3.0.x',
+    });
+    assert.deepEqual(fileAnchored.findings.map((f) => `${f.severity}:${f.code}`), ['info:TOPOLOGY_PAGE_SECTION_UNKNOWN']);
+});
+
+test('a section folder under a foreign (non-chain-older) tree is flagged', () => {
+    const foreign = classifyTrackTopology({
+        sections: [{ recordId: 's4', slug: 'v2-Client', token: 'clientFolder30' }],
+        pages: [],
+        indexes: makeIndexes({ 'v3.0.x': { clientFolder30: 'r30' } }),
+        chainVersions: ['v2.6.x', 'v3.0.x'],
         ownVersion: 'v2.6.x', // a v2.6 section pointing into the NEWER v3.0 tree
     });
     assert.equal(foreign.findings[0]?.code, 'TOPOLOGY_SECTION_FOLDER_FOREIGN');
 });
 
-test('pages are placed against their claiming section folder, with longest-prefix section matching', () => {
+test('unresolved sections and documents are flagged distinctly; longest-prefix section matching works', () => {
     assert.equal(sectionForSlug('v2-DataImport-bulkImport', ['v2-Data', 'v2-DataImport']), 'v2-DataImport');
-    const authOnly = [SECTIONS[0]];
-    const placed = classifyTrackTopology({
-        sections: authOnly,
-        pages: [{ recordId: 'p1', slug: 'v2-Authentication-addPrivilegesToGroup', token: 'doc1' }],
-        indexes: makeIndexes({ 'v3.0.x': { authFolder30: 'r30', doc1: 'authFolder30' } }),
-        chainVersions: CHAIN,
-        ownVersion: 'v3.0.x',
-    });
-    assert.deepEqual(placed.findings, []);
-    const misplaced = classifyTrackTopology({
-        sections: authOnly,
-        pages: [{ recordId: 'p2', slug: 'v2-Authentication-createRole', token: 'doc2' }],
-        indexes: makeIndexes({
-            'v3.0.x': { authFolder30: 'r30', rootLevel: 'r30' },
-            'v2.6.x': { vectorFolder26: 'r26', doc2: 'rootLevel' },
-        }),
-        chainVersions: CHAIN,
-        ownVersion: 'v3.0.x',
-    });
-    const finding = misplaced.findings.find((f) => f.code === 'TOPOLOGY_PAGE_OUTSIDE_SECTION');
-    assert.ok(finding, 'misplaced page is flagged');
-    assert.match(finding.detail, /v2-Authentication claims authFolder30/);
-    // An explicitly exempted page (operator disposition) is surfaced as info.
-    const exempted = classifyTrackTopology({
-        sections: authOnly,
-        pages: [{ recordId: 'p2', slug: 'v2-Authentication-createRole', token: 'doc2' }],
-        indexes: makeIndexes({
-            'v3.0.x': { authFolder30: 'r30', rootLevel: 'r30' },
-            'v2.6.x': { doc2: 'rootLevel' },
-        }),
-        chainVersions: CHAIN,
-        ownVersion: 'v3.0.x',
-        pageExemptions: ['v2-Authentication-createRole'],
-    });
-    assert.deepEqual(
-        exempted.findings.map((f) => f.code),
-        ['TOPOLOGY_PAGE_EXEMPTED'],
-    );
-    assert.equal(exempted.findings[0].severity, 'info');
-});
-
-test('unresolved sections and pages, and pages with no claiming section, are flagged distinctly', () => {
     const result = classifyTrackTopology({
         sections: [{ recordId: 's9', slug: 'v2-Ghost', token: 'ghostFolder' }],
-        pages: [
-            { recordId: 'p9', slug: 'v2-Ghost-haunt', token: 'ghostDoc' },
-            { recordId: 'p10', slug: 'no-section-prefix', token: 'doc10' },
-        ],
+        pages: [{ recordId: 'p9', slug: 'v2-Ghost-haunt', token: 'ghostDoc' }],
         indexes: makeIndexes({}),
         chainVersions: CHAIN,
         ownVersion: 'v3.0.x',
     });
     const codes = result.findings.map((f) => f.code).sort();
-    assert.deepEqual(codes, ['TOPOLOGY_PAGE_SECTION_UNKNOWN', 'TOPOLOGY_PAGE_UNRESOLVED', 'TOPOLOGY_SECTION_FOLDER_UNRESOLVED']);
+    assert.deepEqual(codes, ['TOPOLOGY_PAGE_UNRESOLVED', 'TOPOLOGY_SECTION_FOLDER_UNRESOLVED']);
+    assert.equal(result.findings.every((f) => f.severity === 'error'), true);
 });
 
 test('the shipped decision table config loads and carries the grantPrivilege precedent', () => {
@@ -157,40 +174,4 @@ test('the audit CLI rejects an unknown argument and requires --language', () => 
     const missing = spawnSync(process.execPath, [script], { cwd: REPO_ROOT, encoding: 'utf8' });
     assert.notEqual(missing.status, 0);
     assert.match(missing.stderr, /--language is required/);
-});
-
-test('nested placement under the claiming section folder is correct topology; slug mismatch with correct placement downgrades to info', () => {
-    const sections = [{ recordId: 's1', slug: 'v2-Vector', token: 'vectorFolder' }];
-    const indexes = makeIndexes({
-        'v3.0.x': {
-            vectorFolder: 'r30',
-            highlighterFolder: 'vectorFolder', // nested subdirectory (Vector/Highlighter)
-            docNested: 'highlighterFolder',
-            docPlain: 'vectorFolder',
-            docElsewhere: 'r30',
-        },
-    });
-    const nested = classifyTrackTopology({
-        sections,
-        pages: [
-            { recordId: 'p1', slug: 'v2-Vector-search', token: 'docNested' },
-            { recordId: 'p2', slug: 'v2-Vector-query', token: 'docPlain' },
-        ],
-        indexes, chainVersions: CHAIN, ownVersion: 'v3.0.x',
-    });
-    assert.deepEqual(nested.findings, [], 'direct and nested placement both conform');
-
-    const mismatch = classifyTrackTopology({
-        sections,
-        pages: [{ recordId: 'p3', slug: 'Highlighter', token: 'docPlain' }],
-        indexes, chainVersions: CHAIN, ownVersion: 'v3.0.x',
-    });
-    assert.deepEqual(mismatch.findings.map((f) => `${f.severity}:${f.code}`), ['info:TOPOLOGY_PAGE_SECTION_SLUG_MISMATCH']);
-
-    const unknown = classifyTrackTopology({
-        sections,
-        pages: [{ recordId: 'p4', slug: 'Highlighter', token: 'docElsewhere' }],
-        indexes, chainVersions: CHAIN, ownVersion: 'v3.0.x',
-    });
-    assert.equal(unknown.findings[0]?.code, 'TOPOLOGY_PAGE_SECTION_UNKNOWN');
 });

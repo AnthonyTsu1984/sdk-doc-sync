@@ -614,6 +614,13 @@
       ]
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "gate-presentation",
+      "basis": "no external mutation signature found (writes only the local gate-presentation index under tmp/, spawns open/pbcopy for the operator's own desktop)"
+    },
+    {
       "path": ".claude/skills/doc-ops-core/bin/skill-feedback.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

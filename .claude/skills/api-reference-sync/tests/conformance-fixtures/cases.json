@@ -494,5 +494,19 @@
    "divergentCode": "PLACEMENT_WALK_DIVERGENT",
    "legacyOk": true
   }
+ },
+ {
+  "id": "style-mirror-allowlist",
+  "executable": {
+   "runner": "invariant-conformance",
+   "scenario": "style-mirror-allowlist"
+  },
+  "assertions": {
+   "refusedCode": "STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED",
+   "allowedClean": 0,
+   "malformedRefused": true,
+   "cliExit": 1,
+   "cliRefused": true
+  }
  }
 ]

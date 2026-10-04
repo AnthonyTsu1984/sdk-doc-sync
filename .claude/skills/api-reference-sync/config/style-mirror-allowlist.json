@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "comment": "Operator-designated style-template pages (campaign-control hardening batch 3, docs/campaign-control-hardening.md §5). Role dichotomy (2026-10-03 ruling): web-content is the SEMANTIC reference source (completeness governed by the semantic-content-map gate, never by this file); the pages listed here are the only in-KB pages that may serve as style mirrors when materializing new content. An accepted page is NOT a correct template by default — the v3.0 compact defect (thin single-sentence RETURNS) spread into v2.6 exactly through mirroring accepted-but-defective pages. Reviewed-context entries declare the pages they mirror in the optional styleMirrors key; intake-preflight refuses any declared source that is not listed here (STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED). Adding a page to a language's allowlist is an operator decision: record the rationale in that language's notes field in the same change.",
+  "languages": {
+    "java": {
+      "allowlist": [
+        "describeReplicas"
+      ],
+      "notes": "describeReplicas = the 2026-10-01 format baseline anchor (split RETURN TYPE/RETURNS + response-fields PARAMETERS bullets, the RETURNS_MIN_DEPTH positive exemplar)."
+    },
+    "cpp": {
+      "allowlist": [],
+      "notes": "No designated exemplar yet; nominate one when the next cpp repolish campaign lands."
+    },
+    "python": {
+      "allowlist": [],
+      "notes": "No designated exemplar yet; nominate one when the next python repolish campaign lands."
+    },
+    "node": {
+      "allowlist": [],
+      "notes": "No designated exemplar yet; nominate one when the next node repolish campaign lands."
+    },
+    "go": {
+      "allowlist": [],
+      "notes": "No designated exemplar yet; nominate one when the next go repolish campaign lands."
+    }
+  }
+}

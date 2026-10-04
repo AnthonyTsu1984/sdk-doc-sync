@@ -101,3 +101,55 @@ test('adapter-consumed optional keys (params/result/signature/typeUrls) are not 
     assert.equal(result.status, 0, result.stdout);
     assert.doesNotMatch(result.stdout, /INTAKE_CONTEXT_KEYS_UNEXPECTED/);
 });
+
+// Campaign-control hardening batch 3: the style-mirror allowlist. "Accepted
+// ≠ correct template" — the v3.0 compact defect spread into v2.6 through
+// mirroring accepted-but-defective pages, so a context entry may only
+// mirror operator-designated exemplar pages (declared in styleMirrors).
+test('a declared style mirror inside the allowlist passes; outside it is refused', () => {
+    const { result } = runPreflight({
+        'java:v2-Collections:mirrorOk': makeContextEntry({ styleMirrors: ['describeReplicas'] }),
+        'java:v2-Collections:mirrorBad': makeContextEntry({ styleMirrors: ['compact'] }),
+    });
+    assert.notEqual(result.status, 0);
+    const codes = result.stdout.split(/\r?\n/).filter(Boolean).map((line) => line.split(' ')[1]);
+    assert.ok(codes.includes('STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED'), JSON.stringify(codes));
+    assert.equal(codes.filter((code) => code === 'STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED').length, 1);
+    assert.match(result.stdout, /mirror source compact is not in the java style-mirror allowlist/);
+});
+
+test('a malformed styleMirrors declaration is its own finding, not a silent pass', () => {
+    const { result } = runPreflight({
+        'java:v2-Collections:mirrorShape': makeContextEntry({ styleMirrors: ['describeReplicas', 42] }),
+        'java:v2-Collections:mirrorType': makeContextEntry({ styleMirrors: 'describeReplicas' }),
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /STYLE_MIRROR_ENTRY_INVALID/);
+    // The valid source beside the invalid entry is still judged on its own
+    assert.doesNotMatch(result.stdout, /STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED[^\n]*describeReplicas/);
+});
+
+test('a malformed allowlist config aborts the run fail-closed (never "everything allowed")', () => {
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-preflight-allowlist-'));
+    const allowlist = path.join(temp, 'allowlist.json');
+    fs.writeFileSync(allowlist, JSON.stringify({ schemaVersion: 1, languages: { java: {} } }));
+    const { result } = runPreflight(
+        { 'java:v2-Collections:mirror': makeContextEntry({ styleMirrors: ['describeReplicas'] }) },
+        ['--mirror-allowlist', allowlist],
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /STYLE_MIRROR_ALLOWLIST_MALFORMED/);
+    assert.match(result.stderr, /languages\.java must carry an allowlist array/);
+});
+
+test('entries without styleMirrors never load the allowlist (absence is the reviewed default)', () => {
+    // A garbage allowlist must not break campaigns that declare no mirrors
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-preflight-allowlist-'));
+    const allowlist = path.join(temp, 'allowlist.json');
+    fs.writeFileSync(allowlist, '{ not json');
+    const { result } = runPreflight(
+        { 'java:v2-Authentication:describeRole': makeContextEntry() },
+        ['--mirror-allowlist', allowlist],
+    );
+    assert.equal(result.status, 0, result.stderr);
+});

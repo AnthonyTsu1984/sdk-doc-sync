@@ -788,6 +788,32 @@
         }
       ],
       "notes": "The walk product itself (build-current-placement-audit walkDigest, schemaVersion 3) is the evidence SOURCE; its machine check is the binding verification. Campaign-control hardening batch 2c, T3 (2026-10-04): placement decisions must derive from ONE live audit walk. The audit product carries walkDigest (sha256 over the canonical placement-relevant content of every entry \u2014 stableId, documentToken, placement, sharedToken, targetFolderVerified (reference coverage rides the digest through sharedToken, codepoint-sorted); volatile fields like generatedAt excluded, determinism follows canonicalBytes). Candidate specs must carry it (placementWalk, PLACEMENT_WALK_REQUIRED \u2014 the top-level candidateSpec supplies the default, groups may override); the planner binds placementWalkDigest into every plan; a live execution names its walk via --placement-walk-digest (from the session's placementWalk, recorded at session creation) and verifyPlacementWalkBinding refuses before any write: stale derivation (PLACEMENT_SOURCE_STALE \u2014 the J1 failure mode: the real directory was in the live walk output, the plan used an older snapshot), divergent walks in one batch (PLACEMENT_WALK_DIVERGENT), or a named walk over walk-less plans (PLACEMENT_WALK_UNBOUND). Legacy plans (no digest) execute only under an unbound run \u2014 a bound run refuses mixed batches (legacy plans riding their siblings' binding report PLACEMENT_WALK_UNBOUND). CREATE actions additionally get the executor-side live containment gate, enforced for walk-bound plans (placementWalkDigest): the planned target folder chain (spec.folderAncestry from the audit walk product, passed through the planning target) must be present and re-derivable live under the target version root (PLACEMENT_TARGET_UNRESOLVED) \u2014 the audit-side target-folder verification enforced at the write boundary. The session wiring is live: the CLI captures the walk its planning contexts derive from, records it at session creation, and a resumed execution either adopts the session walk or must name the same one (PLACEMENT_WALK_SESSION_MISMATCH)."
+    },
+    {
+      "id": "api.style-mirror-allowlist",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "evidence"
+      ],
+      "statementDigest": "sha256:b403eaedaa51e126ba20e3faf9e77cffd19e802a9795506aa3153b31a0abb41f",
+      "fixtureIds": [
+        "style-mirror-allowlist"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
+          "codes": [
+            "STYLE_MIRROR_ENTRY_INVALID",
+            "STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED",
+            "STYLE_MIRROR_ALLOWLIST_MALFORMED"
+          ]
+        }
+      ],
+      "notes": "Campaign-control hardening batch 3 (2026-10-04): the 2026-10-03 role-dichotomy ruling splits content sources in two \u2014 web-content is the SEMANTIC reference source (completeness governed by the semantic-content-map gate, never by this allowlist), while operator-designated exemplar pages are the only STYLE template source. 'Accepted' does not mean 'correct template': the v3.0 compact defect (thin single-sentence RETURNS) spread into v2.6 exactly through mirroring accepted-but-defective pages. Reviewed-context entries declare the in-KB pages they mirror in the optional styleMirrors key; intake-preflight judges every declaration against config/style-mirror-allowlist.json (per-language lists, java currently carries describeReplicas as the 2026-10-01 format baseline anchor) and refuses a non-listed source (STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED \u2014 the sanctioned path is nominating the page in the config with a recorded rationale, an operator decision, never editing the check away) or a malformed declaration (STYLE_MIRROR_ENTRY_INVALID). A malformed or unreadable allowlist aborts the run before any entry is judged (STYLE_MIRROR_ALLOWLIST_MALFORMED, fail closed \u2014 an unreadable allowlist must not degrade into 'everything allowed'); the config is loaded lazily, only when some entry declares styleMirrors. Enforcement stage is evidence (intake): the gate runs before campaign planning, so a disease vector page never reaches the materialized context."
     }
   ]
 }

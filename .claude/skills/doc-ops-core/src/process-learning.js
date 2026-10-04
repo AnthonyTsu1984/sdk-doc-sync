@@ -248,6 +248,7 @@ function validateLearningCapture({ report, events, repoRoot = null, skill = null
             { eventKeys: eventKeys.slice(0, 5) },
         );
     }
+    const seenCapturedKeys = new Set();
     for (const entry of report.captured) {
         if (!nonEmptyString(entry?.eventKey) || !nonEmptyString(entry?.candidateId)) {
             throw new ProcessLearningError(
@@ -256,6 +257,14 @@ function validateLearningCapture({ report, events, repoRoot = null, skill = null
                 { eventKey: entry?.eventKey || null },
             );
         }
+        if (seenCapturedKeys.has(entry.eventKey)) {
+            throw new ProcessLearningError(
+                'PROCESS_LEARNING_CAPTURE_INVALID',
+                `duplicate captured entry for ${entry.eventKey}`,
+                { eventKey: entry.eventKey },
+            );
+        }
+        seenCapturedKeys.add(entry.eventKey);
         if (entry.candidateId !== candidateIdForEvent({ key: entry.eventKey, source: 'decision' })) {
             throw new ProcessLearningError(
                 'PROCESS_LEARNING_CAPTURE_INVALID',
@@ -266,6 +275,14 @@ function validateLearningCapture({ report, events, repoRoot = null, skill = null
     }
     const capturedKeys = new Set(report.captured.map((entry) => entry.eventKey));
     const suppressedKeys = new Set(report.suppressed);
+    const contradictory = [...capturedKeys].filter((key) => suppressedKeys.has(key));
+    if (contradictory.length > 0) {
+        throw new ProcessLearningError(
+            'PROCESS_LEARNING_CAPTURE_INVALID',
+            `event(s) reported as both captured and suppressed: ${contradictory.slice(0, 3).join(', ')}`,
+            { contradictory: contradictory.slice(0, 5) },
+        );
+    }
     const missing = eventKeys.filter((key) => !capturedKeys.has(key) && !suppressedKeys.has(key));
     if (missing.length > 0) {
         throw new ProcessLearningError(
@@ -278,13 +295,32 @@ function validateLearningCapture({ report, events, repoRoot = null, skill = null
     // not leak into the close stamp — only derived events count.
     const derivedCaptured = report.captured.filter((entry) => eventKeys.indexOf(entry.eventKey) !== -1);
     if (repoRoot && skill) {
+        const eventByKey = new Map(events.map((event) => [learningEventKey(event), event]));
         for (const entry of derivedCaptured) {
+            const expected = learningCandidateForEvent({ skill, event: eventByKey.get(entry.eventKey) });
             const filePath = candidateFilePath(repoRoot, skill, { key: entry.eventKey, source: 'decision' });
             if (!fs.existsSync(filePath)) {
                 throw new ProcessLearningError(
                     'PROCESS_LEARNING_CAPTURE_REQUIRED',
                     `candidate for ${entry.eventKey} is not on record under the skill feedback tree (${filePath})`,
                     { eventKey: entry.eventKey },
+                );
+            }
+            // Presence alone is not capture: the file on disk must BE the
+            // candidate this event deterministically derives (id, skill,
+            // statement) — a garbage file at the right path is a conflict.
+            let onDisk = null;
+            try {
+                onDisk = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+            } catch {
+                onDisk = null;
+            }
+            if (!onDisk || onDisk.candidateId !== expected.candidateId
+                || onDisk.skill !== expected.skill || onDisk.statement !== expected.statement) {
+                throw new ProcessLearningError(
+                    'PROCESS_LEARNING_CAPTURE_CONFLICT',
+                    `candidate file for ${entry.eventKey} does not match the candidate this event derives`,
+                    { eventKey: entry.eventKey, candidateId: entry.candidateId },
                 );
             }
         }

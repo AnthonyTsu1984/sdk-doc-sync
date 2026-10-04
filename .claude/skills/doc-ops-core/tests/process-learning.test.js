@@ -9,6 +9,7 @@ const path = require('node:path');
 const {
     ProcessLearningError,
     assertSuppressionsKnown,
+    candidateFilePath,
     candidateIdForEvent,
     captureLearningCandidates,
     candidatesDirectory,
@@ -190,6 +191,48 @@ test('a forged or hollow capture report cannot fake capture', () => {
             skill: 'api-reference-sync',
         }),
         (error) => error.code === 'PROCESS_LEARNING_CAPTURE_REQUIRED',
+    );
+
+    // Duplicate captured entries and captured+suppressed contradictions are
+    // invalid reports, not stamp input.
+    assert.throws(
+        () => validateLearningCapture({
+            report: {
+                captured: [
+                    { eventKey: theEvent.key, candidateId: candidateIdForEvent(theEvent) },
+                    { eventKey: theEvent.key, candidateId: candidateIdForEvent(theEvent) },
+                ],
+                suppressed: [],
+            },
+            events: [theEvent],
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_INVALID',
+    );
+    assert.throws(
+        () => validateLearningCapture({
+            report: {
+                captured: [{ eventKey: theEvent.key, candidateId: candidateIdForEvent(theEvent) }],
+                suppressed: [theEvent.key],
+            },
+            events: [theEvent],
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_INVALID',
+    );
+
+    // A garbage file at the deterministic path is a conflict, not a capture:
+    // the disk verification compares content, not just presence.
+    const garbageRoot = tempRoot();
+    const garbagePath = candidateFilePath(garbageRoot, 'api-reference-sync', theEvent);
+    fs.mkdirSync(path.dirname(garbagePath), { recursive: true });
+    fs.writeFileSync(garbagePath, `${JSON.stringify({ candidateId: candidateIdForEvent(theEvent), garbage: true })}\n`);
+    assert.throws(
+        () => validateLearningCapture({
+            report: { captured: [{ eventKey: theEvent.key, candidateId: candidateIdForEvent(theEvent) }], suppressed: [] },
+            events: [theEvent],
+            repoRoot: garbageRoot,
+            skill: 'api-reference-sync',
+        }),
+        (error) => error.code === 'PROCESS_LEARNING_CAPTURE_CONFLICT',
     );
 
     // Foreign entries (events this session never derived) do not leak into

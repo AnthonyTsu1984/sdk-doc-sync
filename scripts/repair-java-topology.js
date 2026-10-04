@@ -20,11 +20,25 @@
 //      Bitable claimants, and — via the REQUIRED --page-links-json
 //      collect-page-blocks dump, checked at plan time and re-read fresh at
 //      execution — zero page-block references).
+//   E. v3.0.x Collections/Function anchor joins its family folder (2026-10-04
+//      operator ruling: consistent with v2.6.x, where the anchor lives
+//      inside Collections/Function beside FunctionType).
+//   F. v2.4.x/v2.5.x dropDatabaseProperties restoration (2026-10-04
+//      operator-approved main plan): both records pointed at a shared copy
+//      that was later deleted (v2.6's record had been repointed; these two
+//      were left dangling). Each track gets a freshly authored page under
+//      its own Database folder — content from the upstream
+//      web-content version, preflighted through the roundtrip gate and the
+//      five content rules — then the record repoints at the new copy.
 //
 // Governance follows scripts/repair-same-name-placement.js: `plan` is
 // read-only and prints the batch digest; `execute` requires
 // --approve-batch-digest matching the plan and journals every action.
 // Replay-safe guards and read-after-write verification on every mutation.
+// Content writes (part F) run through the governed MarkdownToFeishu writer
+// (WriterGovernance bound to this plan's digest + a run manifest), and the
+// refetched page must round-trip byte-exactly against the draft through the
+// same normalization the pre-write roundtrip gate uses.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -42,9 +56,16 @@ const {
     trackReleaseRootToken,
 } = require('../.claude/skills/api-reference-sync/src/sdk-doc-sync/release-track-registry');
 const { folderTokenFromLink, documentTokenFromLink } = require('../.claude/skills/api-reference-sync/src/sdk-doc-sync/tree-delta-reconciliation');
+const MarkdownToFeishu = require('../.claude/skills/api-reference-sync/src/markdown-to-feishu');
+const { docxToIr } = require('../.claude/skills/api-reference-sync/src/document-ir/docx-to-ir');
+const { renderMarkdown } = require('../.claude/skills/api-reference-sync/src/document-ir/ir-to-markdown');
+// Reuse the verified-doc-authoring fixed-point normalization — the same
+// comparison the pre-write roundtrip gate applies.
+const { normalizeRefetchMarkdown } = require('./verified-doc-authoring/feishu-authoring-adapter');
 
 const REGISTRY_PATH = path.join(__dirname, '..', '.claude', 'skills', 'api-reference-sync', 'config', 'release-tracks.json');
 const JOURNAL_DIR = path.join(__dirname, '..', 'tmp', 'api-reference-sync', 'topology-repair');
+const REPO_ROOT = path.join(__dirname, '..');
 
 function slugText(field) {
     if (typeof field === 'string') return field;
@@ -103,6 +124,44 @@ function planDigest(plan) {
     return sha256Digest(Buffer.from(`${JSON.stringify(plan.actions)}`, 'utf8'));
 }
 
+// The plan's own approval (--approve-batch-digest, verified at entry) is the
+// operator decision the governed writer envelope binds; the run manifest
+// pins the working-tree source state (re-verified on first mutation).
+function defaultGovernanceFactory({ digest, actionCount, targets }) {
+    const { WriterGovernance } = require('../.claude/skills/doc-ops-core/src/writer-governance');
+    const { createApprovalEnvelope } = require('../.claude/skills/doc-ops-core/src/approval-guard');
+    const { createRunManifest } = require('../.claude/skills/doc-ops-core/src/run-manifest');
+    const skill = 'api-reference-sync';
+    const operation = 'topology-repair';
+    const sideEffects = ['create-document'];
+    const governance = new WriterGovernance({ skill, operation });
+    governance.bindApproval({
+        batchDigest: digest,
+        actionCount,
+        targets,
+        sideEffects,
+        approval: createApprovalEnvelope({ skill, operation, batchDigest: digest, actionCount, targets, sideEffects, decision: 'approved' }),
+    });
+    governance.bindRunManifest(createRunManifest({
+        skill,
+        skillVersion: 'repair-java-topology@2',
+        repoRoot: REPO_ROOT,
+        batchDigest: digest,
+        sessionDigest: `repair:${digest}`,
+    }), { repoRoot: REPO_ROOT });
+    return governance;
+}
+
+async function defaultMarkdownWriterFactory(governance) {
+    return new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance });
+}
+
+async function defaultRefetchMarkdown(writer, documentId) {
+    const blocks = await writer.get_document_blocks(documentId);
+    const ir = docxToIr(blocks, { metadata: { token: documentId } });
+    return normalizeRefetchMarkdown(renderMarkdown(ir, { lossy: true }));
+}
+
 async function buildPlan(deps = {}) {
     const registry = deps.registry || loadReleaseTrackRegistry(REGISTRY_PATH);
     const indexVersionRootFn = deps.indexVersionRoot || indexVersionRoot;
@@ -115,7 +174,7 @@ async function buildPlan(deps = {}) {
     const trackByVersion = new Map(tracks.map((t) => [t.version, t]));
     const indexes = new Map();
     const recordsByTrack = new Map();
-    for (const version of ['v2.6.x', 'v3.0.x']) {
+    for (const version of ['v2.4.x', 'v2.5.x', 'v2.6.x', 'v3.0.x']) {
         const track = trackByVersion.get(version);
         indexes.set(version, await indexVersionRootFn(tokenFetcher, trackReleaseRootToken(track)));
         recordsByTrack.set(version, await listBitableRecordsFn(tokenFetcher, trackBaseToken(track), null));
@@ -148,6 +207,7 @@ async function buildPlan(deps = {}) {
                 recordId: record.record_id,
                 text: folderName,
                 link,
+                expectedSlug: `v2-${folderName}`,
                 from: text.slice(0, 90),
                 detail: `Docs text URL → "${folderName}" (link unchanged); Slug formula heals the family`,
             });
@@ -239,6 +299,7 @@ async function buildPlan(deps = {}) {
                 recordId: claimant.record_id,
                 text: inFolderScore.name,
                 link: `https://zilliverse.feishu.cn/docx/${inFolderScore.token}`,
+                expectedSlug: slugText(claimant.fields?.Slug),
                 from: `stray Vector-root copy (${strayScore.token})`,
                 detail: `claimant repointed to the in-folder copy before the stray is deleted (text "${inFolderScore.name}")`,
             });
@@ -260,6 +321,87 @@ async function buildPlan(deps = {}) {
         notes.push('v2.6.x stray FunctionScore not found (or already cleaned)');
     }
 
+    // ---- E. v3.0.x Collections/Function anchor归位 -----------------------
+    // 2026-10-04 operator ruling: the anchor docx belongs INSIDE the family
+    // folder, consistent with v2.6.x (folder holds Function + FunctionType,
+    // method pages flat in Collections). Upstream web-content placement
+    // (Function.md beside Function/) is the semantic source, not a placement
+    // template for this tree.
+    const collectionsFolder = (() => {
+        for (const record of recordsByTrack.get('v3.0.x')) {
+            if (slugText(record.fields?.Type) !== 'VirtualNode') continue;
+            const token = folderTokenFromLink(record.fields?.Docs?.link || record.fields?.Docs?.url || '');
+            const entry = token && v30Index.get(token);
+            if (entry && entry.type === 'folder' && entry.name === 'Collections') return entry;
+        }
+        return null;
+    })();
+    if (collectionsFolder) {
+        const fnFolder = [...v30Index.values()].find((e) => e.type === 'folder' && e.name === 'Function' && e.parentFolderToken === collectionsFolder.token);
+        const besideAnchor = [...v30Index.values()].find((e) => e.type !== 'folder' && e.name === 'Function' && e.parentFolderToken === collectionsFolder.token);
+        const inFolderAnchor = fnFolder && [...v30Index.values()].find((e) => e.type !== 'folder' && e.name === 'Function' && e.parentFolderToken === fnFolder.token);
+        if (besideAnchor && inFolderAnchor) {
+            throw new Error('v3.0.x Collections has Function anchors BOTH beside and inside the family folder — duplicate class, replan');
+        }
+        if (fnFolder && besideAnchor) {
+            actions.push({ kind: 'move-document', ref: 'collections-function-anchor', documentToken: besideAnchor.token, toFolderToken: fnFolder.token, detail: 'v3.0.x Collections/Function anchor joins its family folder (2026-10-04 operator ruling, v2.6.x form)' });
+        } else if (inFolderAnchor) {
+            notes.push('v3.0.x Collections/Function anchor already inside the family folder');
+        } else {
+            notes.push(`v3.0.x Collections/Function: familyFolder=${Boolean(fnFolder)} besideAnchor=${Boolean(besideAnchor)} — no anchor-beside-folder form, nothing to do`);
+        }
+    } else {
+        notes.push('v3.0.x Collections folder (VirtualNode target) not found — part E skipped');
+    }
+
+    // ---- F. v2.4.x/v2.5.x dropDatabaseProperties restoration -------------
+    // Both records point at a shared copy that was deleted; each track gets
+    // a freshly authored page under its own Database folder and the record
+    // repoints at it. The draft is supplied via --page-markdown-file and is
+    // inlined into the plan (content-bound by the batch digest) — it must
+    // already pass the roundtrip gate and the five content rules.
+    const RESTORE_SLUG = 'v2-Database-dropDatabaseProperties';
+    const anyIndexHas = (token) => token && [...indexes.values()].some((index) => index.has(token));
+    const pageMarkdown = typeof deps.pageMarkdown === 'string' ? deps.pageMarkdown : null;
+    for (const version of ['v2.4.x', 'v2.5.x']) {
+        const dead = (recordsByTrack.get(version) || []).filter((r) => {
+            if (slugText(r.fields?.Slug) !== RESTORE_SLUG) return false;
+            const token = documentTokenFromLink(r.fields?.Docs?.link || r.fields?.Docs?.url || '');
+            return Boolean(token) && !anyIndexHas(token);
+        });
+        if (dead.length === 0) {
+            notes.push(`${version} ${RESTORE_SLUG}: healthy or absent — nothing to restore`);
+            continue;
+        }
+        if (dead.length > 1) throw new Error(`${version} carries ${dead.length} ${RESTORE_SLUG} records — replan`);
+        const record = dead[0];
+        const releaseRoot = trackReleaseRootToken(trackByVersion.get(version));
+        const dbFolder = [...indexes.get(version).values()].find((e) => e.type === 'folder' && e.name === 'Database' && e.parentFolderToken === releaseRoot);
+        if (!dbFolder) throw new Error(`${version} has no Database folder under its release root — CREATE_FOLDER_THEN_REPOINT disposition required, replan`);
+        if (!pageMarkdown) throw new Error(`${version} ${RESTORE_SLUG} is dead-linked but no restoration draft was supplied (--page-markdown-file) — replan`);
+        const ref = `restore:${version}`;
+        actions.push({
+            kind: 'create-document',
+            ref,
+            track: version,
+            folderToken: dbFolder.token,
+            title: 'dropDatabaseProperties()',
+            markdown: pageMarkdown,
+            markdownSha256: sha256Digest(Buffer.from(pageMarkdown, 'utf8')),
+            detail: `${RESTORE_SLUG} restoration — record pointed at a deleted shared copy (2026-10-04 operator-approved main plan)`,
+        });
+        actions.push({
+            kind: 'update-record-docs-text',
+            track: version,
+            recordId: record.record_id,
+            text: 'dropDatabaseProperties()',
+            linkRef: ref,
+            expectedSlug: slugText(record.fields?.Slug),
+            from: 'dead link (deleted shared copy)',
+            detail: 'repoint to the restored in-tree page',
+        });
+    }
+
     return { generatedAt: new Date().toISOString(), actions, notes };
 }
 
@@ -278,6 +420,21 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
     const registry = (deps.loadRegistry || (() => loadReleaseTrackRegistry(REGISTRY_PATH)))();
     const baseByTrack = new Map(listLanguageTracks(registry, 'java').map((t) => [t.version, trackBaseToken(t)]));
     const createdFolders = new Map();
+    const createdDocuments = new Map();
+    let governanceInstance = null;
+    // Lazy, once per run: content writes bind this plan's digest (the same
+    // digest the operator approved via --approve-batch-digest) into the
+    // governed writer envelope plus an immutable run manifest.
+    const getGovernance = () => {
+        if (governanceInstance) return governanceInstance;
+        const factory = deps.governanceFactory || defaultGovernanceFactory;
+        governanceInstance = factory({
+            digest,
+            actionCount: plan.actions.length,
+            targets: plan.actions.map((action) => action.ref || action.recordId || action.documentToken).filter(Boolean),
+        });
+        return governanceInstance;
+    };
     const journal = [];
     const appendJournal = (entry) => {
         journal.push(entry);
@@ -320,13 +477,20 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
             } else if (action.kind === 'update-record-docs-text') {
                 const baseToken = baseByTrack.get(action.track);
                 const tableId = await resolveTableIdFn(baseToken);
+                // linkRef resolves to a document created earlier in this
+                // plan (part F repoints at the freshly authored page).
+                const resolvedToken = action.linkRef ? createdDocuments.get(action.linkRef) : null;
+                if (action.linkRef && !resolvedToken) {
+                    throw new Error(`unresolved linkRef ${action.linkRef} for record ${action.recordId} — the create-document action must precede this repoint`);
+                }
+                const link = resolvedToken ? `https://zilliverse.feishu.cn/docx/${resolvedToken}` : action.link;
                 // The batch-update validator rejects {text,link} URL cells;
                 // the raw records PUT accepts them. Never write a bare-URL
                 // string — the Slug formula poisons the family slugs.
                 await larkJsonFn([
                     'api', 'PUT',
                     `/open-apis/bitable/v1/apps/${baseToken}/tables/${tableId}/records/${action.recordId}`,
-                    '--data', JSON.stringify({ fields: { Docs: { text: action.text, link: action.link } } }),
+                    '--data', JSON.stringify({ fields: { Docs: { text: action.text, link } } }),
                 ]);
                 const check = await verifyWithRetryFn(async () => {
                     const after = await listBitableRecordsFn(tokenFetcher, baseToken, null);
@@ -336,12 +500,47 @@ async function executePlan({ plan, approvedDigest, journalPath, deps = {} }) {
                     const slugNow = slugText(reread?.fields?.Slug);
                     // The Slug is "v2-" + parent title + "-" + Docs.name: a
                     // section VirtualNode heals to "v2-<name>", a page record
-                    // to "v2-<section>-<name>". Both end with the display
-                    // text, and neither is URL-shaped.
-                    return { ok: text === action.text && !slugNow.includes('http') && slugNow.endsWith(action.text), text, slugNow };
+                    // to "v2-<section>-<name>". A plan-supplied expectedSlug
+                    // pins the exact terminal form (a repoint must not move
+                    // the slug at all); otherwise accept the tail-match form.
+                    const slugOk = action.expectedSlug ? slugNow === action.expectedSlug : slugNow.endsWith(action.text);
+                    const liveToken = documentTokenFromLink(docs.link || docs.url || '');
+                    return { ok: text === action.text && !slugNow.includes('http') && slugOk && liveToken === documentTokenFromLink(link), text, slugNow };
                 }, 10);
                 if (!check.ok) throw new Error(`Docs text / Slug formula not verifiable: text=${check.text} slug=${JSON.stringify(check.slugNow)}`);
                 entry.result = { text: action.text, slug: check.slugNow, verified: true };
+            } else if (action.kind === 'create-document') {
+                // Governed content write: the page is authored from the
+                // plan-inlined draft through MarkdownToFeishu (WriterGovernance
+                // bound to this plan's digest + run manifest), then the
+                // refetched page must round-trip byte-exactly against the
+                // draft — the same comparison the pre-write roundtrip gate
+                // applies. A failed verification rolls the fresh copy back
+                // (nothing depends on a document created seconds ago).
+                const content = String(action.markdown);
+                if (sha256Digest(Buffer.from(content, 'utf8')) !== action.markdownSha256) {
+                    throw new Error(`create-document ${action.ref}: markdown digest mismatch (plan ${action.markdownSha256}) — replan`);
+                }
+                const writerFactory = deps.markdownWriterFactory || defaultMarkdownWriterFactory;
+                const writer = await writerFactory(getGovernance());
+                const pushed = await writer.push_markdown({ markdown_content: content, title: action.title, folder_token: action.folderToken });
+                const documentId = pushed?.document_id || pushed?.documentId;
+                if (!documentId) throw new Error(`push_markdown returned no document id: ${JSON.stringify(pushed).slice(0, 160)}`);
+                createdDocuments.set(action.ref, documentId);
+                const refetch = deps.refetchMarkdown || defaultRefetchMarkdown;
+                const live = await refetch(writer, documentId);
+                if (live !== content) {
+                    createdDocuments.delete(action.ref);
+                    let rollback = 'ROLLBACK DELETE FAILED — MANUAL CLEANUP REQUIRED';
+                    try {
+                        await larkJsonFn(['drive', '+delete', '--file-token', documentId, '--type', 'docx', '--yes']);
+                        rollback = 'rolled back (created copy deleted; Drive trash)';
+                    } catch (deleteError) {
+                        rollback = `${rollback} (delete error: ${deleteError.message})`;
+                    }
+                    throw new Error(`created document ${documentId} failed round-trip verification — ${rollback}; draft sha ${action.markdownSha256}, live sha ${sha256Digest(Buffer.from(live, 'utf8'))}`);
+                }
+                entry.result = { documentId, blocksCreated: pushed.blocks_created ?? null, roundtripVerified: true };
             } else if (action.kind === 'create-folder') {
                 const siblings = await listFolderFn(action.parentFolderToken);
                 const existingFolder = siblings.find((c) => c.name === action.name && (c.type || 'folder') === 'folder');
@@ -439,13 +638,17 @@ async function main(argv = process.argv) {
         if (argv[i] === '--approve-batch-digest') options.approvedDigest = argv[++i];
         else if (argv[i] === '--plan-json') options.planJson = argv[++i];
         else if (argv[i] === '--page-links-json') options.pageLinksJson = argv[++i];
+        else if (argv[i] === '--page-markdown-file') options.pageMarkdownFile = argv[++i];
         else throw new Error(`Unknown argument: ${argv[i]}`);
     }
     if (mode === 'plan') {
         const pageLinkTokens = options.pageLinksJson
             ? JSON.parse(fs.readFileSync(options.pageLinksJson, 'utf8'))
             : null;
-        const plan = await buildPlan({ pageLinkTokens, pageLinksJsonPath: options.pageLinksJson || null });
+        const pageMarkdown = options.pageMarkdownFile
+            ? fs.readFileSync(options.pageMarkdownFile, 'utf8')
+            : null;
+        const plan = await buildPlan({ pageLinkTokens, pageLinksJsonPath: options.pageLinksJson || null, pageMarkdown });
         fs.mkdirSync(JOURNAL_DIR, { recursive: true });
         const planPath = path.join(JOURNAL_DIR, `plan-${new Date().toISOString().replace(/[:.]/g, '-')}.json`);
         fs.writeFileSync(planPath, `${JSON.stringify(plan, null, 1)}\n`);

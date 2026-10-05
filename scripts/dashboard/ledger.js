@@ -161,6 +161,16 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
     if (journalRelative) journalPaths.add(journalRelative);
   }
 
+  // Pending executions carry the APPROVE_DOCUMENT digests an operator needs;
+  // pass them through verbatim (never re-derived here).
+  const pendingList = Array.isArray(session.pendingExecutions) && session.pendingExecutions.length > 0
+    ? session.pendingExecutions
+    : (session.activeExecution ? [session.activeExecution] : []);
+  const pendingUnits = pendingList.map((item) => ({
+    reviewUnitId: item.reviewUnitId ?? null,
+    executionJournalDigest: typeof item.executionJournalDigest === 'string' ? item.executionJournalDigest : null,
+  }));
+
   return {
     sessionPath: sessionRelativePath,
     sessionId: session.sessionId || null,
@@ -192,6 +202,7 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
     documentLinks,
     recordLinks,
     journalPaths: [...journalPaths],
+    pendingUnits,
     lastActivityAt: null,
     activityCount: 0,
   };

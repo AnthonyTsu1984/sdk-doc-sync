@@ -56,6 +56,13 @@
   .actions { margin-top: 9px; display: flex; gap: 8px; }
   .act { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 3px 10px; font-size: 12px; color: var(--ink); }
   .act:hover { border-color: var(--blue); color: var(--blue); }
+  .act.danger { border-color: #ddd0f7; color: #6d28d9; }
+  .apform { margin-top: 8px; border: 1px solid #e6dcfa; background: #faf7ff; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
+  .apform .frow { display: flex; gap: 8px; margin: 5px 0; flex-wrap: wrap; }
+  .apform select, .apform input { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+  .apform input { flex: 1; min-width: 160px; }
+  .apform code { display: block; background: #fff; border: 1px dashed #d8cbf2; border-radius: 6px; padding: 5px 8px; margin: 7px 0; word-break: break-all; font-size: 12px; }
+  .apform .hint { color: var(--dim); font-size: 11.5px; }
   .feed { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-height: 320px; overflow-y: auto; }
   .feed .ev { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
   .feed .ev:last-child { border-bottom: 0; }
@@ -207,6 +214,35 @@ async function spawnSession(target) {
   } catch (e) { alert('派会话失败: ' + e); }
 }
 
+let approveCtx = null; // { sessionPath, sessionId }
+
+function approveLinePreview() {
+  const gate = document.getElementById('apGate').value;
+  const unit = document.getElementById('apUnit').value.trim();
+  const digest = document.getElementById('apDigest').value.trim();
+  const line = `${gate}${unit ? ' ' + unit : ''} ${digest || 'sha256:<digest>'}`;
+  document.getElementById('apPreview').textContent = line;
+  document.getElementById('apSubmit').disabled = !/^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)( \S+)? sha256:[a-f0-9]{64}$/.test(line);
+}
+
+async function submitApprove() {
+  if (!approveCtx || !confirm('确认把这条批准行注入 worker 会话？\n\n' + document.getElementById('apPreview').textContent)) return;
+  try {
+    const r = await fetch('/api/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        target: approveCtx.sessionPath,
+        sessionId: approveCtx.sessionId,
+        line: document.getElementById('apPreview').textContent,
+      }),
+    });
+    const j = await r.json();
+    alert(j.note || j.error || JSON.stringify(j));
+    fetch('/api/cards').then((x) => x.json()).then(render).catch(() => {});
+  } catch (e) { alert('批准失败: ' + e); }
+}
+
 function renderCampaigns(d) {
   const host = document.getElementById('campaigns');
   const list = d.campaigns || [];
@@ -244,6 +280,7 @@ function renderCampaigns(d) {
       <div class="actions" onclick="event.stopPropagation()">
         <button class="act" onclick="copyText('/attach ${esc(key)}')">复制 /attach</button>
         ${spawnOn ? `<button class="act" onclick="spawnSession('${esc(c.sessionPath)}')">派会话</button>` : ''}
+        ${spawnOn && d.features && d.features.approveEnabled && c.nextGate && (c.workers || []).some((w) => w.status === 'idle') ? `<button class="act danger" onclick="openDrawer(${i})">⛩ 批准…</button>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -283,9 +320,46 @@ function render(d) {
 
 function copyText(t) { navigator.clipboard?.writeText(t); }
 
+function renderApproveForm(c) {
+  const enabled = Boolean(latest && latest.features && latest.features.approveEnabled);
+  const workers = (c.workers || []).filter((w) => w.sessionId);
+  if (!enabled || !workers.length) return '';
+  const idle = workers.some((w) => w.status === 'idle');
+  const gateMap = {
+    APPROVE_WRITE: 'APPROVE_WRITES',
+    APPROVE_DOCUMENT: 'APPROVE_DOCUMENT',
+    APPROVE_ROLLBACK: 'APPROVE_ROLLBACK',
+    APPROVE_ACCEPTANCE: 'APPROVE_ACCEPTANCE',
+    APPROVE_GROUPING: 'APPROVE_GROUPING',
+  };
+  const gate = gateMap[c.nextGate?.gate] || 'APPROVE_WRITES';
+  const unit = c.nextGate?.reviewUnitId || '';
+  const pending = (c.pendingUnits || []).find((p) => !unit || p.reviewUnitId === unit);
+  const digest = pending?.executionJournalDigest || '';
+  const workerSel = workers.map((w) => `<option value="${esc(w.sessionId)}" ${w.status === 'idle' ? 'selected' : 'disabled'}>${esc(w.sessionId.slice(0, 18))}…（${w.status === 'idle' ? '可注入' : '运行中'}）</option>`).join('');
+  return `<div class="apform">
+    <b style="color:#6d28d9">⛩ 界面批准（转发精确行给 worker 会话）</b>
+    <div class="frow">
+      <select id="apGate" onchange="approveLinePreview()">
+        ${['APPROVE_GROUPING', 'APPROVE_WRITES', 'APPROVE_DOCUMENT', 'APPROVE_ROLLBACK', 'APPROVE_ACCEPTANCE'].map((g) => `<option ${g === gate ? 'selected' : ''}>${g}</option>`).join('')}
+      </select>
+      <select id="apWorker" onchange="approveCtx&&(approveCtx.sessionId=this.value)">
+        ${workerSel}
+      </select>
+    </div>
+    <div class="frow"><input id="apUnit" placeholder="review-unit-id（DOCUMENT/ROLLBACK 需要）" value="${esc(unit)}" oninput="approveLinePreview()"></div>
+    <div class="frow"><input id="apDigest" placeholder="sha256:<digest>（从呈门材料复制；DOCUMENT 有预填）" value="${esc(digest)}" oninput="approveLinePreview()"></div>
+    <code id="apPreview"></code>
+    <button class="act danger" id="apSubmit" onclick="submitApprove()" ${idle ? '' : 'disabled'}>注入批准行</button>
+    <div class="hint">此操作只把上面这行原文注入看板派出的会话（--resume）；语义与 digest 绑定仍由 canonical CLI 的 L1 门禁执法。worker 运行中时不可注入。</div>
+  </div>`;
+}
+
 function fillDrawer(i) {
   const c = latest.campaigns[i];
   if (!c) return;
+  const idleWorker = (c.workers || []).find((w) => w.status === 'idle') || (c.workers || [])[0];
+  approveCtx = idleWorker?.sessionId ? { sessionPath: c.sessionPath, sessionId: idleWorker.sessionId } : null;
   document.getElementById('dTitle').innerHTML = `${esc(c.language)} · ${esc(c.track)} <span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span>`;
   const docs = c.documentLinks.length
     ? c.documentLinks.map((l) => `<li><a href="${esc(l)}" target="_blank">${esc(l)}</a></li>`).join('')
@@ -320,6 +394,7 @@ function fillDrawer(i) {
       <b>当前门</b><span>${c.nextGate ? `<b style="color:#6d28d9">${esc(c.nextGate.gate)}</b>${c.nextGate.reviewUnitId ? ` · ${esc(c.nextGate.reviewUnitId)}` : ''}${c.nextGate.gate === 'CLOSE_SESSION' ? '（机械收口）' : ''}` : '—（由 sdk-review-session status 推导，稍候或无）'}</span>
     </div>
     <div style="margin-top:8px"><button class="act" onclick="copyText('/attach ${esc(attachKey(c))}')">复制 /attach ${esc(attachKey(c))}</button></div>
+    ${renderApproveForm(c)}
     <h3>工件</h3>
     <ul>
       <li>releaseScope: ${viewLink(c.artifacts.releaseScope)}</li>
@@ -332,6 +407,7 @@ function fillDrawer(i) {
     <ul>${docs}</ul>
     <h3>记录</h3>
     <ul>${records}</ul>`;
+  approveLinePreview();
 }
 
 function openDrawer(i) { window._openIndex = i; fillDrawer(i); document.getElementById('drawer').classList.add('open'); }

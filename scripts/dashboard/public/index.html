@@ -516,7 +516,6 @@ function pageHome(d) {
     ${renderInbox(d)}
     <h2>正在运行的会话（近 30 分钟，覆盖主检出与各工作树——战役建到评审会话阶段才会出现在下方卡片里）</h2>
     ${renderRunningSessions(d)}
-    ${(d.revisions || []).length ? `<h2>修订战役（工作单驱动）</h2>${renderRevisions(d, d.revisions)}` : ''}
     <h2>每日哨兵（自动扫描，只发现不处置）</h2>
     <div class="grid">${renderSentinels(d)}</div>
     ${USAGE_GUIDE}
@@ -595,10 +594,11 @@ async function pageSkillApi(d) {
     <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理；战役发现覆盖主检出与各工作树，非主检出的战役带工作树标签）</h2>
     <div class="grid">${cards || '<div class="empty">release-tracks.json 未读到</div>'}</div>
     ${outsideNote}
-    <h2>进行中的战役</h2>
-    ${campaignTable((d.campaigns || []).filter((c) => c.health !== 'finalized'), d, { empty: '无进行中战役（新战役从 dry-run + --session-state 开始）' })}
-    <h2>修订战役（工作单驱动，不走评审会话）</h2>
-    ${renderRevisions(d, d.revisions || []) || '<div class="empty">无修订战役</div>'}`;
+    <h2>进行中的战役（评审会话流 + 修订流共用此表）</h2>
+    ${campaignTable([
+      ...(d.campaigns || []).filter((c) => c.health !== 'finalized'),
+      ...(d.revisions || []).filter((r) => r.status !== 'finalized'),
+    ], d, { empty: '无进行中战役（新战役从 dry-run + --session-state 开始，或轨道页「启动该轨道工作」）' })}`;
 }
 
 // ---------- campaign table (language page / track page / skill page) ----------
@@ -607,18 +607,35 @@ let tableShowFinalized = false;
 
 function campaignRows(list, d) {
   return list.map((c) => {
+    if (c.kind === 'revision') return revisionRow(c);
     const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
     const g = gateSummary(c);
     return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
-      <td><span class="fname">${esc(c.track ?? '?')}</span>${c.acceptanceFlow ? ` <span class="dim">${esc(c.acceptanceFlow)}</span>` : ''} ${checkoutChip(c)}</td>
+      <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}</td>
+      <td><span class="badge ${c.acceptanceFlow === 'two-gate' ? 'active' : ''}">${esc(c.acceptanceFlow ?? 'legacy')}</span></td>
       <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
-      <td class="num">${c.accepted}/${c.units}</td>
-      <td><div class="bar" style="margin:0"><i style="width:${pct}%"></i></div></td>
+      <td class="num" style="min-width:90px">${c.accepted}/${c.units}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
       <td>${g ? `<span class="badge gate" title="${esc(c.nextGate?.reviewUnitId || '')}">${esc(g.title)}</span>` : '<span class="dim">—</span>'}</td>
       <td class="dim">${rel(c.updatedAt)}</td>
       <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 战役键放进剪贴板；粘到新 ZCode 会话即接手本战役" onclick="copyText('/attach ${esc(attachKey(c))}')">复制挂载命令</button></td>
     </tr>`;
   }).join('');
+}
+
+// Revision campaigns share the campaign table: same columns, adapted cells.
+function revisionRow(r) {
+  const pct = r.scope.pages ? Math.round((r.writtenPages / r.scope.pages) * 100) : 0;
+  const writtenSet = r.written.map((w) => w.unit);
+  const writtenHit = (page) => writtenSet.some((u) => u.includes('-' + page));
+  return `<tr class="rowlink" onclick="location.hash='${campaignHref(r).replace(/'/g, '')}'">
+    <td><span class="fname">${esc(r.language ?? '?')}</span> ${checkoutChip(r)}</td>
+    <td><span class="badge gate">revision</span></td>
+    <td><span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></td>
+    <td class="num" style="min-width:90px">${r.writtenPages}/${r.scope.pages}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
+    <td>${r.groupingGate ? `<span class="badge gate" title="${esc(r.groupingGate.digest)}">分组门已呈</span>` : '<span class="dim">—</span>'}</td>
+    <td class="dim">${rel(r.updatedAt)}</td>
+    <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役" onclick="copyText('/attach ${esc(r.worklistStem)}')">复制挂载命令</button></td>
+  </tr>`;
 }
 
 function campaignTable(list, d, { empty = '无战役' } = {}) {
@@ -628,7 +645,7 @@ function campaignTable(list, d, { empty = '无战役' } = {}) {
   const showFinal = tableShowFinalized;
   return `
     <table class="tbl">
-      <thead><tr><th>轨道</th><th>状态</th><th>进度</th><th></th><th>当前门</th><th>更新</th><th>操作</th></tr></thead>
+      <thead><tr><th>轨道</th><th>类型</th><th>状态</th><th>进度</th><th>当前门</th><th>更新</th><th>操作</th></tr></thead>
       <tbody>
         ${campaignRows(live, d)}
         ${showFinal ? campaignRows(finalized, d) : ''}
@@ -650,8 +667,10 @@ async function pageLang(d, lang) {
     ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: `${lang} 战役清单`, href: `#/skill/api/lang/${lang}` }])}
     ${renderFindingsSection(d, lang, scout)}
     <h2>${esc(lang)} 战役清单${entry?.sdkName ? ` <span style="color:var(--dim);font-weight:400">· ${esc(entry.sdkName)}</span>` : ''}</h2>
-    ${campaignTable(list, d, { empty: '该语种暂无战役会话' })}
-    ${(d.revisions || []).some((r) => r.language === lang) ? `<h2>修订战役</h2>${renderRevisions(d, (d.revisions || []).filter((r) => r.language === lang))}` : ''}
+    ${campaignTable([
+      ...list,
+      ...(d.revisions || []).filter((r) => r.language === lang),
+    ], d, { empty: '该语种暂无战役会话' })}
     ${entry ? `<div class="filters" style="margin-top:10px">${entry.tracks.map((t) => `<a class="f" href="#/skill/api/track/${esc(t.key)}">${esc(t.version)} 入口</a>`).join('')}</div>` : ''}`;
 }
 
@@ -967,11 +986,76 @@ async function renderUsagePanel(c) {
   }
 }
 
+function pageRevisionDetail(d, r) {
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
+  const pct = r.scope.pages ? Math.round((r.writtenPages / r.scope.pages) * 100) : 0;
+  const writtenSet = r.written.map((w) => w.unit);
+  const pageRows = (r.pages || []).map((p) => {
+    const hit = writtenSet.some((u) => u.includes('-' + p.page));
+    return `<tr>
+      <td class="fname">${esc(p.page)}</td>
+      <td>${p.codes.map((c) => `<span class="badge active" style="margin-right:4px">${esc(c)}</span>`).join('')}</td>
+      <td>${hit ? '<span class="badge finalized">已写</span>' : '<span class="badge">待写</span>'}</td>
+      <td class="iconlink">${p.documentToken ? `<a href="https://zilliverse.feishu.cn/docx/${esc(p.documentToken)}" target="_blank" title="${esc(p.documentToken)}">文档</a>` : '<span class="dim">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  const writtenList = r.written.map((w) => `<tr>
+      <td class="fname">${esc(w.unit)}</td>
+      <td><span class="badge">${esc(w.flow === 'revision' ? '修订' : 'polish')}</span></td>
+      <td class="dim">${w.writtenAt ? rel(w.writtenAt) : '—'}</td>
+      <td>${viewLink(w.manifest, 'manifest')}</td>
+    </tr>`).join('');
+  document.getElementById('page').innerHTML = `
+    ${crumbs([
+      { label: 'API 参考', href: '#/skill/api' },
+      { label: r.language ?? '?', href: '#/skill/api/lang/' + esc(r.language ?? '') },
+      { label: '修订战役', href: campaignHref(r) },
+    ])}
+    <div class="card" style="cursor:default;margin-bottom:12px">
+      <div class="row1">
+        <span class="title">${esc(r.language ?? '?')} · 修订战役 <span class="dim" style="font-weight:400">· ${esc(r.worklistStem)}</span></span>
+        <span style="display:flex;gap:6px">${r.groupingGate ? `<span class="badge gate" title="${esc(r.groupingGate.digest)}">分组门已呈</span>` : ''}${checkoutChip(r)}<span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></span>
+      </div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="meta">
+        <span>已写 ${r.writtenPages}/${r.scope.pages} 页（剩约 ${r.remainingPages}）</span>
+        <span>发现 ${r.scope.findings} 项</span>
+        <span>更新 ${rel(r.updatedAt)}</span>
+      </div>
+      ${r.ruling ? `<div class="note" style="border:0">裁定：${esc(r.ruling)}</div>` : ''}
+      <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役" onclick="copyText('/attach ${esc(r.worklistStem)}')">复制挂载命令</button>
+        ${spawnOn ? `<button class="act" title="在该工作树派带简报的新会话，逐页 governed 写入" onclick="spawnSession(${JSON.stringify('rev:' + r.worklistStem).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
+      </div>
+    </div>
+    <h2>规模</h2>
+    <div class="card" style="cursor:default"><div class="kv" style="margin-top:0">
+      <b>范围</b><span>发现 ${r.scope.findings} 项 · 唯一页 ${r.scope.uniquePages} · 活体 scope ${r.scope.pages} 页（生成 ${fmt(r.scope.generatedAt)}）</span>
+      <b>分组门</b><span>${r.groupingGate ? esc(r.groupingGate.digest) + (r.groupingGate.title ? ' · ' + esc(r.groupingGate.title) : '') : '未见分组门 manifest'}</span>
+    </div></div>
+    <h2>页面清单（按页分组）</h2>
+    <table class="tbl">
+      <thead><tr><th>页面</th><th>发现</th><th>状态</th><th>飞书</th></tr></thead>
+      <tbody>${pageRows || '<tr><td colspan="4" class="dim" style="text-align:center;padding:12px">工作单无页数据</td></tr>'}</tbody>
+    </table>
+    <div class="note" style="border:0;margin-top:6px">已写状态按 run-manifest 单元名与页名对账（java-v3-&lt;页&gt; / java-v2-&lt;页&gt;-&lt;方法&gt;，其中 <b>v2/v3 为版本族缩写：v2=v2.6.x，v3=v3.0.x</b>）。</div>
+    <h2>已写回执（governed manifest 对账）</h2>
+    <table class="tbl">
+      <thead><tr><th>单元</th><th>流</th><th>时间</th><th>回执</th></tr></thead>
+      <tbody>${writtenList || '<tr><td colspan="4" class="dim" style="text-align:center;padding:12px">尚无——首篇写入后此处逐条累计</td></tr>'}</tbody>
+    </table>
+    <h2>token 消耗</h2>
+    <div id="usageHost"><div class="empty">载入中…</div></div>`;
+  renderUsagePanel({ sessionPath: r.worklistPath, sessionKey: cardKey(r), language: r.language, updatedAt: r.updatedAt });
+}
+
 async function pageCampaign(d, path) {
   const c = (d.campaigns || []).find((x) => cardKey(x) === path || x.sessionPath === path);
   const host = document.getElementById('page');
   window._detailPath = cardKey(c);
   if (!c) {
+    const r = (d.revisions || []).find((x) => cardKey(x) === path);
+    if (r) { pageRevisionDetail(d, r); return; }
     host.innerHTML = `${crumbs([{ label: '战役', href: '#/home' }, { label: '未找到' }])}<div class="empty">没有战役会话匹配该路径。<a href="#/home">回总览</a></div>`;
     return;
   }

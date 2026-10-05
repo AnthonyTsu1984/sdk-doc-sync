@@ -75,6 +75,11 @@ test('revision card: live scope wins, progress reconciles apply-review manifests
   assert.equal(card.groupingGate.digest, 'sha256:' + '7'.repeat(64));
   assert.equal(card.writtenPages, 2);
   assert.equal(card.remainingPages, 202);
+  assert.deepEqual(
+    card.pages.map((p) => `${p.page}:${p.codes.length}`),
+    ['Client:1', 'Vector:2'],
+    'per-page rollup carries page/token/codes for the unified detail table',
+  );
   assert.equal(card.status, 'in_progress');
   const flows = card.written.map((w) => w.flow).sort();
   assert.deepEqual(flows, ['pr-polish', 'revision']);

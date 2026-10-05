@@ -100,6 +100,16 @@ function parseStatusOutput(stdout) {
   }
 }
 
+// Pure resolution of a card → (status-CLI checkout root, relative session
+// path). Worktree cards must be probed inside their own checkout — probing
+// the main root silently drops their gate chip.
+function resolveStatusTarget(card, checkouts) {
+  const checkout = (checkouts || []).find((c) => c.id === card.checkout)
+    || (checkouts || [])[0]
+    || { root: REPO_ROOT };
+  return { root: checkout.root, sessionPath: card.sessionPath };
+}
+
 async function refreshNextGates() {
   if (!currentPayload) return;
   const targets = currentPayload.campaigns
@@ -110,10 +120,10 @@ async function refreshNextGates() {
     const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
     const cached = nextGateCache.get(cardKey);
     if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) continue;
-    const checkout = checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0];
+    const target = resolveStatusTarget(card, checkoutsState);
     let value = null;
     try {
-      value = await fetchNextGate(checkout.root, card.sessionPath);
+      value = await fetchNextGate(target.root, target.sessionPath);
     } catch {
       value = null;
     }
@@ -854,6 +864,7 @@ if (require.main === module) main();
 
 module.exports = {
   buildHeadlessPrompt,
+  resolveStatusTarget,
   buildHeadlessSpawnArgs,
   buildResumeArgs,
   parseArgs,

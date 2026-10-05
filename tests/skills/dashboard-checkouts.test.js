@@ -9,6 +9,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
+const { resolveStatusTarget } = require('../../scripts/dashboard/server.js');
 const {
   attributeKeyFor,
   buildLedger,
@@ -169,4 +170,25 @@ test('resolveSessionTarget: keys, plain paths, unknown checkouts', () => {
   assert.deepEqual(resolveSessionTarget('tmp/sdk-release-scout/s-session.json', checkouts), { checkout: checkouts[0], relative: 'tmp/sdk-release-scout/s-session.json' });
   assert.equal(resolveSessionTarget('nope::x', checkouts).error, 'unknown checkout: nope');
   assert.equal(resolveSessionTarget('', checkouts).error, 'missing target');
+});
+
+
+// ---------- status-target resolution (worktree gate enrichment) ----------
+
+test('resolveStatusTarget probes worktree cards inside their own checkout', () => {
+  const checkouts = [
+    { id: 'main', label: '主检出', root: '/repo' },
+    { id: 'wt', label: 'wt', root: '/repo-wt' },
+  ];
+  // Same relative path in both checkouts — the card's checkout decides.
+  const wtCard = { checkout: 'wt', sessionPath: 'tmp/sdk-release-scout/go-v30-session.json' };
+  assert.deepEqual(resolveStatusTarget(wtCard, checkouts), {
+    root: '/repo-wt',
+    sessionPath: 'tmp/sdk-release-scout/go-v30-session.json',
+  });
+  const mainCard = { checkout: 'main', sessionPath: 'tmp/sdk-release-scout/go-v30-session.json' };
+  assert.equal(resolveStatusTarget(mainCard, checkouts).root, '/repo');
+  // Legacy cards without a checkout field default to main.
+  const legacy = { sessionPath: 'tmp/x-session.json' };
+  assert.equal(resolveStatusTarget(legacy, checkouts).root, '/repo');
 });

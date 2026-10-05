@@ -961,21 +961,15 @@
         "classification": "standalone"
       }
     },
-    "FileResources.BloomFilterBlob": {
-      "stableId": "go:FileResources:BloomFilterBlob",
-      "canonicalSlug": "v2-FileResources-BloomFilterBlob",
-      "category": "FileResources",
-      "documentationOwnership": {
-        "classification": "standalone"
-      }
+    "FileResources.NewBloomFilterBlob": {
+      "stableId": "go:FileResources:NewBloomFilterBlob",
+      "canonicalSlug": "v2-FileResources-NewBloomFilterBlob",
+      "category": "FileResources"
     },
-    "FileResources.RoaringBitmapBlob": {
-      "stableId": "go:FileResources:RoaringBitmapBlob",
-      "canonicalSlug": "v2-FileResources-RoaringBitmapBlob",
-      "category": "FileResources",
-      "documentationOwnership": {
-        "classification": "standalone"
-      }
+    "FileResources.NewRoaringBitmapBlob": {
+      "stableId": "go:FileResources:NewRoaringBitmapBlob",
+      "canonicalSlug": "v2-FileResources-NewRoaringBitmapBlob",
+      "category": "FileResources"
     },
     "Management.NewAISAQIndex": {
       "stableId": "go:Management:NewAISAQIndex",

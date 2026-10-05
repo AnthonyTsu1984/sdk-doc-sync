@@ -133,10 +133,17 @@ const METHOD_CATEGORIES = {
     ExportSnapshot: 'Snapshot',
     GetExportSnapshotState: 'Snapshot',
 
-    // File resources (v3.0.0; new KB group, VirtualNode created at write time)
+    // FileResources (v3.0.0; new KB group, VirtualNode created at write time)
     AddFileResource: 'FileResources',
     ListFileResources: 'FileResources',
     RemoveFileResource: 'FileResources',
+};
+
+// Package-level exported constructors in client/milvusclient that are not
+// Client methods (phase 1 only matches receivers); membership-filter blobs.
+const PACKAGE_FUNC_CATEGORIES = {
+    NewBloomFilterBlob: 'FileResources',
+    NewRoaringBitmapBlob: 'FileResources',
 };
 
 // Methods to skip
@@ -214,8 +221,9 @@ const ENTITY_DEFS = [
 
     // FileResources (v3.0.0)
     { name: 'FileResource', category: 'FileResources', pkg: 'entity', file: 'file_resource.go', kind: 'struct', docstring: 'Represents a file resource registered with a Milvus cluster, including its name and path.' },
-    { name: 'BloomFilterBlob', category: 'FileResources', pkg: 'milvusclient', file: 'bloom_filter.go', kind: 'struct', docstring: 'Serialized stable Bloom filter blob used with membership_match filter expressions.' },
-    { name: 'RoaringBitmapBlob', category: 'FileResources', pkg: 'milvusclient', file: 'roaring_filter.go', kind: 'struct', docstring: 'Serialized roaring bitmap blob used with membership_match filter expressions.' },
+    // NOTE: BloomFilterBlob / RoaringBitmapBlob are `type X []byte` aliases —
+    // struct extraction cannot match them. Their docs live on the
+    // NewBloomFilterBlob / NewRoaringBitmapBlob function pages.
 
     // Authentication
     { name: 'User', category: 'Authentication', pkg: 'entity', file: 'rbac.go', kind: 'struct', docstring: 'Represents a user with their assigned roles, returned by DescribeUser.' },
@@ -312,14 +320,21 @@ class GoScanner extends BaseScanner {
                 const clientMatch = line.match(/^func\s+\(\w+\s+\*Client\)\s+([A-Z]\w+)\s*\(/);
                 // Match standalone New(): func New(
                 const newMatch = !clientMatch && line.match(/^func\s+(New)\s*\(/);
+                // Package-level constructors registered in PACKAGE_FUNC_CATEGORIES
+                let pkgFuncMatch = null;
+                if (!clientMatch && !newMatch) {
+                    const pkgFunc = line.match(/^func\s+(New[A-Z]\w*)\s*\(/);
+                    if (pkgFunc && PACKAGE_FUNC_CATEGORIES[pkgFunc[1]]) pkgFuncMatch = pkgFunc;
+                }
 
-                const match = clientMatch || newMatch;
+                const match = clientMatch || newMatch || pkgFuncMatch;
                 if (!match) continue;
 
                 const name = match[1];
 
                 if (SKIP_METHODS.has(name)) continue;
-                if (!METHOD_CATEGORIES[name]) continue;
+                const category = METHOD_CATEGORIES[name] || PACKAGE_FUNC_CATEGORIES[name];
+                if (!category) continue;
                 if (seenNames.has(name)) continue;
                 seenNames.add(name);
 
@@ -347,7 +362,7 @@ class GoScanner extends BaseScanner {
                     returnType,
                     filePath: relPath,
                     lineNumber: i + 1,
-                    parentClass: METHOD_CATEGORIES[name],
+                    parentClass: category,
                     bodyHash: this._bodyFingerprint(this._extractFuncBody(lines, i)),
                     example: null,
                 });

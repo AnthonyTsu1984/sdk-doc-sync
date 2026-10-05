@@ -122,12 +122,15 @@ function mergeNextGate(payload) {
 
 // ---------- session spawn (opt-in, interactive only) ----------
 
-// Fixed command: open an interactive Terminal in the repo running zcode. No
-// request input ever reaches the shell. Headless/autonomous execution is
-// deliberately NOT offered — campaign gates require the operator.
+// Fixed command: open an interactive Terminal window at the repo root via
+// LaunchServices (`open -a Terminal <dir>` sets the new shell's cwd). No
+// request input ever reaches the shell, and no Apple Events permission is
+// needed (osascript 'do script' times out without Terminal automation
+// consent). The operator types zcode and pastes the copied /attach line.
+// Headless/autonomous execution is deliberately NOT offered — campaign gates
+// require the operator.
 function buildSpawnCommand(repoRoot) {
-  const escaped = String(repoRoot).replace(/"/g, '\\"');
-  return ['osascript', ['-e', `tell application "Terminal" to do script "cd ${escaped} && zcode"`]];
+  return ['open', ['-a', 'Terminal', String(repoRoot)]];
 }
 
 // ---------- aggregation cache + push ----------
@@ -353,7 +356,7 @@ function handler(req, res) {
         sendJson(res, 500, { error: `spawn failed: ${error?.message}` });
         return;
       }
-      sendJson(res, 200, { ok: true, note: '已在 Terminal 打开 zcode——粘贴 /attach <键> 挂载战役（如 /attach java-v30）' });
+      sendJson(res, 200, { ok: true, note: '已在 Terminal 打开仓库目录——输入 zcode 启动，再粘贴剪贴板里已复制的 /attach <键> 挂载战役' });
     });
     return;
   }

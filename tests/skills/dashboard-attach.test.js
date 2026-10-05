@@ -125,10 +125,8 @@ test('server helpers: spawn opt-in flag, fixed command, status parsing', () => {
   assert.equal(parseArgs(['node', 'x', '--allow-spawn']).allowSpawn, true);
 
   const [cmd, args] = buildSpawnCommand('/Users/x/repo');
-  assert.equal(cmd, 'osascript');
-  assert.equal(args.length, 2);
-  assert.ok(args[1].includes('cd /Users/x/repo && zcode'));
-  assert.ok(buildSpawnCommand('/Users/x/"weird')[1][1].includes('\\"weird'), 'quotes escaped');
+  assert.equal(cmd, 'open');
+  assert.deepEqual(args, ['-a', 'Terminal', '/Users/x/repo']);
 
   assert.equal(parseStatusOutput('{"nextGate":null}').nextGate, null);
   assert.equal(parseStatusOutput('not json'), null);

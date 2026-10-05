@@ -375,7 +375,11 @@ let scoutCache = { at: 0, data: null };
 const CLIENT_CACHE_MS = 5 * 60_000;
 
 async function fetchLive() {
-  if (liveCache.data && Date.now() - liveCache.at < CLIENT_CACHE_MS) return liveCache.data;
+  // A warming snapshot (first sweep still running server-side) caches only
+  // briefly so the chip retries and fills in.
+  const warming = liveCache.data && liveCache.data.status === 'never-run';
+  const ttl = warming ? 15_000 : CLIENT_CACHE_MS;
+  if (liveCache.data && Date.now() - liveCache.at < ttl) return liveCache.data;
   try {
     const j = await (await fetch('/api/live-stats')).json();
     liveCache = { at: Date.now(), data: j };

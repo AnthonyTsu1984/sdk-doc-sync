@@ -18,6 +18,12 @@ const FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
 const DEFAULT_TTL_MS = 10 * 60_000;
 const DRIVE_NODE_CAP = 2000;
 const LOOKBACK_DAYS = 14;
+// A full refresh walks every registered track; without a per-call deadline a
+// single wedged connection stalls the whole background loop.
+const FETCH_TIMEOUT_MS = 15_000;
+// Tracks refresh concurrently (small pool — the Feishu API is shared with
+// governed pipelines; 3 keeps a full sweep in tens of seconds, not minutes).
+const TRACK_CONCURRENCY = 3;
 
 function defaultFetchImpl() {
   const fetchImpl = globalThis.fetch;
@@ -40,6 +46,7 @@ async function feishuGet(tokenFetcher, route, fetchImpl) {
   const res = await fetchImpl(`${FEISHU_HOST}${route}`, {
     method: 'GET',
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
   });
   const data = await res.json();
   if (!data || data.code !== 0) {
@@ -166,25 +173,35 @@ function createLiveStatsCollector({
       state.fetchedAt = new Date(now()).toISOString();
       return state;
     }
-    for (const track of list) {
-      const key = `${track.language}:${track.version}`;
-      const entry = { language: track.language, version: track.version };
-      try {
-        if (track.baseToken) {
-          entry.recordTotal = await bitableRecordTotal(fetcher, track.baseToken, getter);
+    // Small worker pool: per-track failures stay isolated, and a full sweep
+    // across 17 tracks finishes in tens of seconds instead of minutes.
+    let cursor = 0;
+    const worker = async () => {
+      while (cursor < list.length) {
+        const track = list[cursor];
+        cursor += 1;
+        const key = `${track.language}:${track.version}`;
+        const entry = { language: track.language, version: track.version };
+        try {
+          if (track.baseToken) {
+            entry.recordTotal = await bitableRecordTotal(fetcher, track.baseToken, getter);
+          }
+          if (track.releaseRootToken) {
+            Object.assign(entry, await driveTreeCounts(fetcher, track.releaseRootToken, getter));
+          }
+          if (entry.recordTotal === undefined && entry.docs === undefined) {
+            throw new Error('track has neither bitable base nor release root on file');
+          }
+        } catch (error) {
+          failures += 1;
+          entry.error = String(error?.message || error);
         }
-        if (track.releaseRootToken) {
-          Object.assign(entry, await driveTreeCounts(fetcher, track.releaseRootToken, getter));
-        }
-        if (entry.recordTotal === undefined && entry.docs === undefined) {
-          throw new Error('track has neither bitable base nor release root on file');
-        }
-      } catch (error) {
-        failures += 1;
-        entry.error = String(error?.message || error);
+        nextTracks[key] = entry;
       }
-      nextTracks[key] = entry;
-    }
+    };
+    await Promise.all(
+      Array.from({ length: Math.min(TRACK_CONCURRENCY, list.length) }, () => worker()),
+    );
     state.tracks = nextTracks;
     state.error = failures > 0 ? `${failures}/${list.length} 轨道拉取失败` : null;
     state.status = failures === 0 ? 'ok' : failures === list.length ? 'failed' : 'partial';

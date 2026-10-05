@@ -10,7 +10,12 @@
 // touches Feishu or mutates state.
 
 const path = require('node:path');
-const { readJsonOrNull } = require('./ledger.js');
+const {
+  RELEASE_TRACKS_RELATIVE_PATH,
+  readJsonOrNull,
+  SCAN_STATE_RELATIVE_PATH,
+  trackScanStateKey,
+} = require('./ledger.js');
 const {
   DAILY_DIR_RELATIVE_PATH,
   allowedScoutPaths,
@@ -73,4 +78,46 @@ function buildIntakeBrief({ repoRoot, language, scoutPath, now = new Date() } = 
   };
 }
 
-module.exports = { buildIntakeBrief, GATE_FORMAT_LINES, IRON_RULES };
+// Track-start brief — the always-available entry on a track page. Unlike the
+// artifact brief above, it does not presuppose findings exist: the worker
+// runs the read-only reconnaissance itself (tags vs scan-state baseline,
+// web-content PRs, SDK source changes) and either builds a review session
+// with a grouping plan or honestly reports "nothing pending". The operator's
+// click is the human action; the grouping gate remains the work-start gate.
+function buildTrackIntakeBrief({ repoRoot, language, trackKey } = {}) {
+  if (!repoRoot || !language || !trackKey) {
+    return { ok: false, error: 'track brief requires repoRoot, language and trackKey' };
+  }
+  const registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH));
+  const entry = registry?.languages?.[language];
+  const track = (entry?.tracks || []).find((t) => trackScanStateKey(language, t.version) === trackKey);
+  if (!track) {
+    return { ok: false, error: `轨道未登记: ${language}/${trackKey}（新版本轨道须先入 release-tracks 注册表）` };
+  }
+  const scanState = readJsonOrNull(path.join(repoRoot, SCAN_STATE_RELATIVE_PATH));
+  const baseline = scanState?.[trackKey]?.lastScannedTag ?? null;
+
+  const lines = [];
+  lines.push(`## 轨道工作简报 · ${language} · ${trackKey}（${track.version}）`);
+  lines.push('');
+  lines.push('- 发起: 操作员在治理看板轨道页一键发起（人工动作）。');
+  lines.push(`- SDK: ${entry.sdkName ?? '—'} · scan-state 基线: ${baseline ?? '无推进记录（首次覆盖）'}`);
+  if (track.bitable?.baseToken) lines.push(`- 记录表 Base: ${track.bitable.baseToken}`);
+  if (track.drive?.releaseRoot?.token) lines.push(`- 版本根目录 token: ${track.drive.releaseRoot.token}`);
+  lines.push('');
+  lines.push('### 工作指令');
+  lines.push('- 对该轨道做**只读侦察**：远端最新 release tag 与基线对照、web-content 该 SDK 目录的已合并 PR、SDK 源码变更；产出发现清单与 release scope。');
+  lines.push('- 有发现 → 按治理流程做 intake（证据核证 → 规划 dry-run → 建评审会话 --session-state）；无发现 → 明确报告"无待处理变更"并结束，**不建会话**。');
+  lines.push('- 产出分组方案后**停在 APPROVE_GROUPING 门**等待操作员批准；未获批准前不进入任何写路径。');
+  lines.push('- 操作员批准分组后才逐单元推进；每个写门（APPROVE_DOCUMENT / APPROVE_WRITES）照常停下等批。');
+  lines.push('');
+  lines.push('### 规则');
+  lines.push(...GATE_FORMAT_LINES, ...IRON_RULES);
+  return {
+    ok: true,
+    text: lines.join('\n'),
+    meta: { language, trackKey, version: track.version, mode: 'track' },
+  };
+}
+
+module.exports = { buildIntakeBrief, buildTrackIntakeBrief, GATE_FORMAT_LINES, IRON_RULES };

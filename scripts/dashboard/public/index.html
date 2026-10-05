@@ -422,11 +422,22 @@ function findingsBannerFor(scout, language) {
 
 async function spawnIntake(language, scoutPath) {
   if (!confirm(`派只读处理会话处理 ${language} 的当日发现？\n\n它会做证据核证与规划，然后停在分组批准门（APPROVE_GROUPING）等你；批准分组后才进入写作。`)) return;
+  await postSpawnIntake({ language, scoutPath });
+}
+
+async function spawnTrackIntake(language, trackKey) {
+  const checkoutSel = document.getElementById('tkCheckout');
+  const checkout = checkoutSel ? checkoutSel.value : 'main';
+  if (!confirm(`启动 ${trackKey} 轨道工作（在 ${checkout === 'main' ? '主检出' : checkout} 检出）？\n\n派出只读侦察会话：对照最新版本/tag 找变更——有发现则建评审会话并停在分组批准门（APPROVE_GROUPING）等你；无发现则明确报告后结束。`)) return;
+  await postSpawnIntake({ mode: 'track', language, trackKey, checkout });
+}
+
+async function postSpawnIntake(payload) {
   try {
     const r = await fetch('/api/spawn-intake', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ language, scoutPath }),
+      body: JSON.stringify(payload),
     });
     const j = await r.json();
     alert(j.note || j.error || JSON.stringify(j));
@@ -606,6 +617,18 @@ async function pageTrack(d, key) {
   document.getElementById('page').innerHTML = `
     ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: lang, href: `#/skill/api/lang/${lang}` }, { label: `${key} 轨道`, href: `#/skill/api/track/${key}` }])}
     <h2>${esc(key)} 轨道${version ? `（${esc(version)}）` : ''}</h2>
+    <div class="card" style="margin-bottom:12px;cursor:default;border-color:#c7d7fb">
+      <div class="row1" style="flex-wrap:wrap;gap:8px">
+        <span class="title">启动该轨道工作</span>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${(d.checkouts || []).length > 1 ? `<select id="tkCheckout" style="font:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:3px 8px">${(d.checkouts || []).map((c) => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('')}</select>` : ''}
+          ${d.features && d.features.spawnEnabled
+            ? `<button class="act primary" title="派只读侦察会话：对照最新版本/tag 找变更；有发现停在分组批准门，无发现明确报告后结束" onclick="spawnTrackIntake('${esc(lang)}', '${esc(key)}')">启动工作（先侦察后分组审批）</button>`
+            : '<span class="badge">一键启动未开启（--allow-spawn）——也可在会话里 /api-reference-sync 手动发起</span>'}
+        </span>
+      </div>
+      <div class="note" style="border:0">不依赖当日扫描工件：侦察由会话现场完成（tag 对照/web-content PR/源码变更）；发现为空则如实报告，不建会话。分组批准=开工门。</div>
+    </div>
     <div class="card" style="margin-bottom:12px;cursor:default">
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>

@@ -21,7 +21,7 @@ const { buildBrief } = require('./attach-brief.js');
 const { buildCampaignDetail, sessionPathAllowed } = require('./campaign-detail.js');
 const { createLiveStatsCollector } = require('./live-stats.js');
 const { buildScoutFindings } = require('./scout-findings.js');
-const { buildIntakeBrief } = require('./intake-brief.js');
+const { buildIntakeBrief, buildTrackIntakeBrief } = require('./intake-brief.js');
 const usage = require('./usage-ledger.js');
 
 const execFileAsync = promisify(execFile);
@@ -557,30 +557,39 @@ async function handler(req, res) {
       if (body.length > 65_536) req.destroy();
     });
     req.on('end', () => {
+      // Malformed bodies degrade to {} and fail mode validation below.
       let request = null;
       try {
-        request = JSON.parse(body || '{}');
+        request = JSON.parse(body || '{}') || {};
       } catch {
-        // fall through to validation below
+        request = {};
       }
-      const { language, scoutPath } = request || {};
-      if (!language || !scoutPath) {
-        sendJson(res, 400, { error: 'missing language/scoutPath' });
+      // Two dispatch modes: an allowed daily-scout artifact (findings already
+      // enumerated) or a registered track (worker runs reconnaissance itself).
+      const briefRoot = (() => {
+        const checkout = (request.checkout && checkoutsState.find((c) => c.id === request.checkout)) || checkoutsState[0];
+        return checkout.root;
+      })();
+      let brief;
+      let workerKey;
+      if (request.mode === 'track') {
+        brief = buildTrackIntakeBrief({ repoRoot: briefRoot, language: request.language, trackKey: request.trackKey });
+        if (brief.ok) workerKey = `track:${request.checkout || 'main'}:${brief.meta.trackKey}`;
+      } else {
+        // Artifact mode is validated against the MAIN checkout's daily set
+        // (that is where the sentinels write).
+        brief = buildIntakeBrief({ repoRoot: REPO_ROOT, language: request.language, scoutPath: request.scoutPath });
+        if (brief.ok) workerKey = `scout:${brief.meta.scoutPath}`;
+      }
+      if (!brief || !brief.ok) {
+        sendJson(res, 404, { error: brief?.error || 'missing language/scoutPath' });
         return;
       }
-      const brief = buildIntakeBrief({ repoRoot: REPO_ROOT, language, scoutPath });
-      if (!brief.ok) {
-        sendJson(res, 404, { error: brief.error });
-        return;
-      }
-      // Workers for intake dispatches key on the scout artifact; once intake
-      // builds a review session, that session's card carries its own workers.
-      const workerKey = `scout:${brief.meta.scoutPath}`;
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
       registerWorker(workerKey, worker);
       const child = spawn(
         'zcode',
-        [...buildHeadlessSpawnArgs(REPO_ROOT, buildIntakeWorkerPrompt(brief.text)), '--json'],
+        [...buildHeadlessSpawnArgs(briefRoot, buildIntakeWorkerPrompt(brief.text)), '--json'],
         { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
       );
       let stdout = '';
@@ -591,17 +600,19 @@ async function handler(req, res) {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
         if (usageDb && worker.sessionId) {
-          // Intake workers attribute to the scout artifact; once intake
+          // Intake workers attribute to their dispatch key; once intake
           // builds a review session, event-based attribution takes over.
-          usage.upsertAttribution(usageDb, worker.sessionId, `scout:${brief.meta.scoutPath}`, 'worker-registry');
+          usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
         }
         scheduleRecompute('intake-worker-exit');
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
-        scout: brief.meta.scoutPath,
-        note: `处理会话已派出（ZCode 桌面端呈现 · ${language} · ${brief.meta.actionCount} 项发现）——只读侦察后停在分组批准门（APPROVE_GROUPING），批准分组后才进入写作`,
+        workerKey,
+        note: brief.meta.mode === 'track'
+          ? `轨道工作会话已派出（ZCode 桌面端呈现 · ${brief.meta.language} ${brief.meta.trackKey}）——只读侦察后：有发现停在分组批准门（APPROVE_GROUPING），无发现则明确报告后结束`
+          : `处理会话已派出（ZCode 桌面端呈现 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——只读侦察后停在分组批准门（APPROVE_GROUPING），批准分组后才进入写作`,
       });
     });
     return;

@@ -17,7 +17,10 @@ const {
   readRecentEvents,
 } = require('../../scripts/dashboard/ledger.js');
 
-const HOOK_PATH = path.resolve(__dirname, '..', '..', '.zcode', 'hooks', 'post-tool-use.cjs');
+// The versioned tap implementation lives in the repo (CI-testable); the
+// .zcode/hooks/post-tool-use.cjs registered in the user config is only a thin
+// local shim over it.
+const HOOK_PATH = path.resolve(__dirname, '..', '..', 'scripts', 'dashboard', 'event-tap.js');
 
 function makeFixtureTree() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dash-events-')));

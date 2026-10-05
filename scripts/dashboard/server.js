@@ -253,10 +253,19 @@ async function refreshCheckouts() {
   }
 }
 
+function indexHtmlVersion() {
+  try {
+    return String(fs.statSync(INDEX_HTML).mtimeMs);
+  } catch {
+    return null;
+  }
+}
+
 function buildPayload() {
   const ledger = buildLedger({ repoRoot: REPO_ROOT, checkouts: checkoutsState });
   const payload = {
     ...ledger,
+    uiVersion: indexHtmlVersion(),
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
     features: { spawnEnabled: spawnOptions.allowSpawn, approveEnabled: spawnOptions.allowApprove },
   };
@@ -269,6 +278,7 @@ function signatureOf(payload) {
   const clone = {
     ...payload,
     generatedAt: undefined,
+    uiVersion: undefined,
     admission: payload.admission
       ? { ...payload.admission, fingerprint: payload.admission.fingerprint
         ? { ...payload.admission.fingerprint, fingerprint: payload.admission.fingerprint.fingerprint?.slice(0, 19) }

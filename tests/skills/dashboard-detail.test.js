@@ -159,6 +159,7 @@ test('buildCampaignDetail joins units ↔ release scope into the file table', (t
   const close = rows.find((r) => r.stableId === 'java:v2-Client:close');
   assert.equal(close.status, 'queued');
   assert.equal(close.filePath, null, 'BACKFILL without pr keeps a null file path, not a fake name');
+  assert.equal(close.sourceLocator, 'sdk-core/src/main/java/io/milvus/v2/client/MilvusClientV2.java:200', 'source-driven rows carry the SDK source locator for the 来源 column');
 
   const orphan = rows.find((r) => r.status === 'ungrouped');
   assert.equal(orphan.fileName, 'CreateSchema-2.md');

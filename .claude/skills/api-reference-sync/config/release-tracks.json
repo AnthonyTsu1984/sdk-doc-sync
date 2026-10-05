@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-23",
+  "updatedAt": "2026-10-05",
   "comment": "Machine-readable release-track registry: per-track Bitable bases, Drive release roots, and track order (oldest first). Identities mirror the published tables in sdk-*.md; adjacency is implicit in track order. drive.releaseRoot.resolution: 'configured-root' = the configured Drive root is the release root; 'explicit-child' = the configured root is a multi-version container and the release root is an explicit child folder; 'unresolved' = no verified release root on file.",
   "languages": {
     "cpp": {
@@ -8,18 +8,30 @@
       "tracks": [
         {
           "version": "v2.6.x",
-          "bitable": { "baseToken": "XmndbkxkQaigA8soRiCcTT41nMd", "tableId": null },
+          "bitable": {
+            "baseToken": "XmndbkxkQaigA8soRiCcTT41nMd",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "PImWfhhIaleQUZd3qrWcsIgOncb",
-            "releaseRoot": { "resolution": "explicit-child", "token": "CSzVfDgfAlne87dDj3vcnR3nnsg" }
+            "releaseRoot": {
+              "resolution": "explicit-child",
+              "token": "CSzVfDgfAlne87dDj3vcnR3nnsg"
+            }
           }
         },
         {
           "version": "v3.0.x",
-          "bitable": { "baseToken": "QdLkbfmnFatl4TsThKDc5Dobn5g", "tableId": null },
+          "bitable": {
+            "baseToken": "QdLkbfmnFatl4TsThKDc5Dobn5g",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "NVjgfJr5aleBsedDoKCcDpnJn9b",
-            "releaseRoot": { "resolution": "configured-root", "token": "NVjgfJr5aleBsedDoKCcDpnJn9b" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "NVjgfJr5aleBsedDoKCcDpnJn9b"
+            }
           }
         }
       ]
@@ -29,34 +41,58 @@
       "tracks": [
         {
           "version": "v2.4.x",
-          "bitable": { "baseToken": "DVVobtXQMamuLqsQij5c29nVn3c", "tableId": null },
+          "bitable": {
+            "baseToken": "DVVobtXQMamuLqsQij5c29nVn3c",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "Vg1kfluyll0h7MdlUMaciXfEnZd",
-            "releaseRoot": { "resolution": "configured-root", "token": "Vg1kfluyll0h7MdlUMaciXfEnZd" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "Vg1kfluyll0h7MdlUMaciXfEnZd"
+            }
           }
         },
         {
           "version": "v2.5.x",
-          "bitable": { "baseToken": "JTBebezMDaV8ZhsHF5wc7lJSnuh", "tableId": null },
+          "bitable": {
+            "baseToken": "JTBebezMDaV8ZhsHF5wc7lJSnuh",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "U9fWfMPdelsPMydYnolcr2aEnBf",
-            "releaseRoot": { "resolution": "configured-root", "token": "U9fWfMPdelsPMydYnolcr2aEnBf" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "U9fWfMPdelsPMydYnolcr2aEnBf"
+            }
           }
         },
         {
           "version": "v2.6.x",
-          "bitable": { "baseToken": "R9i8bww4faNsR6smwQwcAtHGnkb", "tableId": null },
+          "bitable": {
+            "baseToken": "R9i8bww4faNsR6smwQwcAtHGnkb",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "NFmOfwILlln3JgdePZUclweZnIe",
-            "releaseRoot": { "resolution": "configured-root", "token": "NFmOfwILlln3JgdePZUclweZnIe" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "NFmOfwILlln3JgdePZUclweZnIe"
+            }
           }
         },
         {
           "version": "v3.0.x",
-          "bitable": { "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e", "tableId": null },
+          "bitable": {
+            "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "LW67fVlTvlNCZRdxOVYcQZyJnFQ",
-            "releaseRoot": { "resolution": "configured-root", "token": "LW67fVlTvlNCZRdxOVYcQZyJnFQ" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "LW67fVlTvlNCZRdxOVYcQZyJnFQ"
+            }
           }
         }
       ]
@@ -66,34 +102,58 @@
       "tracks": [
         {
           "version": "v2.4.x",
-          "bitable": { "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g", "tableId": null },
+          "bitable": {
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "ACKGfinsNlQCovdK2v1cPxiqnle",
-            "releaseRoot": { "resolution": "configured-root", "token": "ACKGfinsNlQCovdK2v1cPxiqnle" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "ACKGfinsNlQCovdK2v1cPxiqnle"
+            }
           }
         },
         {
           "version": "v2.5.x",
-          "bitable": { "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG", "tableId": null },
+          "bitable": {
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": null,
-            "releaseRoot": { "resolution": "unresolved", "token": null }
+            "releaseRoot": {
+              "resolution": "unresolved",
+              "token": null
+            }
           }
         },
         {
           "version": "v2.6.x",
-          "bitable": { "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc", "tableId": null },
+          "bitable": {
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
-            "releaseRoot": { "resolution": "configured-root", "token": "IaWgf4osAlpdwqdVIclct97wnCg" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "IaWgf4osAlpdwqdVIclct97wnCg"
+            }
           }
         },
         {
           "version": "v3.0.x",
-          "bitable": { "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a", "tableId": null },
+          "bitable": {
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
-            "releaseRoot": { "resolution": "configured-root", "token": "UxyTfjS3wl0TF8dn9tZcRT39nUe" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "UxyTfjS3wl0TF8dn9tZcRT39nUe"
+            }
           }
         }
       ]
@@ -103,42 +163,72 @@
       "tracks": [
         {
           "version": "v2.3.x",
-          "bitable": { "baseToken": "Bp72bJ9wEazV1SsA30lcsuJgnfe", "tableId": null },
+          "bitable": {
+            "baseToken": "Bp72bJ9wEazV1SsA30lcsuJgnfe",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "GYfPfBbdglDhh5dzLH3cYaV1nDf",
-            "releaseRoot": { "resolution": "configured-root", "token": "GYfPfBbdglDhh5dzLH3cYaV1nDf" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "GYfPfBbdglDhh5dzLH3cYaV1nDf"
+            }
           }
         },
         {
           "version": "v2.4.x",
-          "bitable": { "baseToken": "WqHJb3zimaxXjssk4Kic4GEDnte", "tableId": null },
+          "bitable": {
+            "baseToken": "WqHJb3zimaxXjssk4Kic4GEDnte",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "Sg3EfIgVtlTkeBdtguJchE9ynne",
-            "releaseRoot": { "resolution": "configured-root", "token": "Sg3EfIgVtlTkeBdtguJchE9ynne" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "Sg3EfIgVtlTkeBdtguJchE9ynne"
+            }
           }
         },
         {
           "version": "v2.5.x",
-          "bitable": { "baseToken": "Hsq1bRcqraeQW0sGFJbcI3YIn3d", "tableId": null },
+          "bitable": {
+            "baseToken": "Hsq1bRcqraeQW0sGFJbcI3YIn3d",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "LJ6MfN5wzlHjz8dB642cjUh8nqq",
-            "releaseRoot": { "resolution": "configured-root", "token": "LJ6MfN5wzlHjz8dB642cjUh8nqq" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "LJ6MfN5wzlHjz8dB642cjUh8nqq"
+            }
           }
         },
         {
           "version": "v2.6.x",
-          "bitable": { "baseToken": "Sbtcbm660abngWsXryKct5nOn2e", "tableId": null },
+          "bitable": {
+            "baseToken": "Sbtcbm660abngWsXryKct5nOn2e",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "B1agfRbPglv4tpdTkjlcUMgVnRV",
-            "releaseRoot": { "resolution": "configured-root", "token": "B1agfRbPglv4tpdTkjlcUMgVnRV" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "B1agfRbPglv4tpdTkjlcUMgVnRV"
+            }
           }
         },
         {
           "version": "v3.0.x",
-          "bitable": { "baseToken": "AOFDbSmwma9XrNsLa8KcQgt9ngc", "tableId": null },
+          "bitable": {
+            "baseToken": "AOFDbSmwma9XrNsLa8KcQgt9ngc",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "C4Ckfsx5qlKHbnd5PVrcpxvTn2d",
-            "releaseRoot": { "resolution": "configured-root", "token": "C4Ckfsx5qlKHbnd5PVrcpxvTn2d" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "C4Ckfsx5qlKHbnd5PVrcpxvTn2d"
+            }
           }
         }
       ]
@@ -148,18 +238,31 @@
       "tracks": [
         {
           "version": "v2.6.x",
-          "bitable": { "baseToken": "Yc7gbtmgSal2ewsdqlhcLWVanbh", "tableId": null },
+          "bitable": {
+            "baseToken": "Yc7gbtmgSal2ewsdqlhcLWVanbh",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "Pzejf3x4WlXq1HdtTndcfMjVnxh",
-            "releaseRoot": { "resolution": "configured-root", "token": "Pzejf3x4WlXq1HdtTndcfMjVnxh" }
+            "releaseRoot": {
+              "resolution": "configured-root",
+              "token": "Pzejf3x4WlXq1HdtTndcfMjVnxh"
+            }
           }
         },
         {
           "version": "v3.0.x",
-          "bitable": { "baseToken": "KQT5bV62QaioKisKZT0crwZDnke", "tableId": null },
+          "bitable": {
+            "baseToken": "KQT5bV62QaioKisKZT0crwZDnke",
+            "tableId": null
+          },
           "drive": {
             "configuredRootToken": "Lx2efpuK9lt7m5dxNLVckP7enYe",
-            "releaseRoot": { "resolution": "configured-root", "token": "Lx2efpuK9lt7m5dxNLVckP7enYe" }
+            "releaseRoot": {
+              "resolution": "explicit-child",
+              "token": "F9M3fK4Dbl69PPdSxTXcsIwgnDh",
+              "verified": "2026-10-05: container children listed (v2.6.x, v3.0.0 folder, two Bitables); group folders enumerated beneath F9M3fK4Dbl69PPdSxTXcsIwgnDh"
+            }
           }
         }
       ]

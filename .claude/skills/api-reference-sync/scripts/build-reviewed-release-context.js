@@ -301,7 +301,7 @@ function assertActionDocumentationOwnership(action) {
   }
 }
 
-function assertCandidateIdentity({ action, spec, category }) {
+function assertCandidateIdentity({ action, spec, category, language }) {
   const docIdentity = spec.docIdentity || {};
   const effectiveStableId = docIdentity.stableId || spec.stableId || action.stableId;
   const effectiveCanonicalSlug = docIdentity.canonicalSlug || spec.canonicalSlug || action.canonicalSlug;
@@ -313,9 +313,10 @@ function assertCandidateIdentity({ action, spec, category }) {
     );
   }
   if (effectiveCanonicalSlug.includes('-')) {
-    const hasCategoryPrefix = effectiveCanonicalSlug === category
-      || effectiveCanonicalSlug.startsWith(`${category}-`)
-      || new RegExp(`^v\\d+-${category.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}-`).test(effectiveCanonicalSlug);
+    const hasCategoryPrefix = slugPrefixAliases(language, category)
+      .some((alias) => effectiveCanonicalSlug === alias
+        || effectiveCanonicalSlug.startsWith(`${alias}-`)
+        || new RegExp(`^v\\d+-${alias.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}-`).test(effectiveCanonicalSlug));
     if (!hasCategoryPrefix) {
       throw new Error(
         `Candidate ${action.canonicalSlug} category ${category} does not match canonical slug ${effectiveCanonicalSlug}. ` +
@@ -554,6 +555,27 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
 
 const REVIEWED_ACTION_TYPES = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL']);
 
+// Scanner categories whose KB slugs use a different drive-group word, or whose
+// pages live in a nested sub-group folder (go nests Index under Management and
+// AnnParam under Vector). The identity map remains the authority for
+// canonicalSlug (sdk-pr-sync.md); this table only lets the slug-prefix sanity
+// check accept the go KB conventions, mirroring go-v26.json. Slug prefixes
+// outside this table still must match the category.
+const GO_CATEGORY_SLUG_ALIASES = {
+  Collections: ['Collection'],
+  Partitions: ['Partition'],
+  Management: ['Management', 'Index'],
+  Vector: ['Vector', 'AnnParam'],
+};
+
+function slugPrefixAliases(language, category) {
+  const aliases = [category];
+  if (language === 'go' && GO_CATEGORY_SLUG_ALIASES[category]) {
+    aliases.push(...GO_CATEGORY_SLUG_ALIASES[category]);
+  }
+  return aliases;
+}
+
 function actionForPlanning(action, spec) {
   const reviewedType = spec.actionIntent || spec.reviewedActionType || action.type;
   if (!REVIEWED_ACTION_TYPES.has(reviewedType)) {
@@ -784,7 +806,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     selectedSlugs.add(action.canonicalSlug);
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
-    const identity = assertCandidateIdentity({ action: planningAction, spec, category });
+    const identity = assertCandidateIdentity({ action: planningAction, spec, category, language: releaseScope.language });
     const releasePlanningContext = assertCompatibleReviewedActions(sourceActions, identity);
     if (planningAction.documentationOwnership?.classification === 'method_owned'
       && identity.stableId !== planningAction.documentationOwnership.selectedOwnerStableId) {

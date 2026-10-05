@@ -80,10 +80,12 @@ const nextGateCache = new Map(); // sessionPath -> { value, at }
 
 // Authoritative next-gate derivation lives in sdk-review-session.js; the
 // dashboard only caches and displays it. Failures degrade to no chip.
-async function fetchNextGate(sessionPath) {
+async function fetchNextGate(checkoutRoot, sessionPath) {
   const { stdout } = await execFileAsync(
     process.execPath,
-    [REVIEW_SESSION_CLI, 'status', '--session', path.join(REPO_ROOT, sessionPath)],
+    // The authoritative status CLI lives in the main checkout but must be
+    // pointed at the session file inside ITS checkout (worktree campaigns).
+    [REVIEW_SESSION_CLI, 'status', '--session', path.join(checkoutRoot, sessionPath)],
     { timeout: 30_000, encoding: 'utf8' },
   );
   return parseStatusOutput(stdout);
@@ -105,15 +107,17 @@ async function refreshNextGates() {
     .slice(0, NEXT_GATE_MAX_SESSIONS);
   let changed = false;
   for (const card of targets) {
-    const cached = nextGateCache.get(card.sessionPath);
+    const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
+    const cached = nextGateCache.get(cardKey);
     if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) continue;
+    const checkout = checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0];
     let value = null;
     try {
-      value = await fetchNextGate(card.sessionPath);
+      value = await fetchNextGate(checkout.root, card.sessionPath);
     } catch {
       value = null;
     }
-    nextGateCache.set(card.sessionPath, { value, at: Date.now() });
+    nextGateCache.set(cardKey, { value, at: Date.now() });
     changed = true;
   }
   if (changed) scheduleRecompute('next-gate');
@@ -121,7 +125,7 @@ async function refreshNextGates() {
 
 function mergeNextGate(payload) {
   for (const card of payload.campaigns) {
-    const cached = nextGateCache.get(card.sessionPath);
+    const cached = nextGateCache.get(card.sessionKey ?? `main::${card.sessionPath}`);
     if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) {
       card.nextGate = cached.value?.nextGate ?? null;
     }

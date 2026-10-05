@@ -18,6 +18,7 @@ const { promisify } = require('node:util');
 
 const { buildLedger } = require('./ledger.js');
 const { buildBrief } = require('./attach-brief.js');
+const { buildCampaignDetail } = require('./campaign-detail.js');
 
 const execFileAsync = promisify(execFile);
 
@@ -532,6 +533,29 @@ function handler(req, res) {
       if (!currentPayload) recompute('api-cold-start');
       sendJson(res, 200, currentPayload ?? { error: 'not ready' });
       return;
+    case '/api/campaign': {
+      // On-demand campaign detail (file table + scale). Read-only, derived,
+      // fail-closed on undiscoverable paths.
+      const requested = url.searchParams.get('path');
+      if (!requested) {
+        sendJson(res, 400, { error: 'missing ?path=' });
+        return;
+      }
+      const detail = buildCampaignDetail({ repoRoot: REPO_ROOT, sessionPath: requested });
+      if (!detail.ok) {
+        sendJson(res, 404, { error: detail.error });
+        return;
+      }
+      // nextGate/workers are server-side enrichments (CLI cache + worker
+      // registry) already stamped on the cards payload — reuse, never re-derive.
+      const liveCard = (currentPayload?.campaigns || []).find((c) => c.sessionPath === detail.card.sessionPath);
+      if (liveCard) {
+        detail.card.nextGate = liveCard.nextGate ?? null;
+        detail.card.workers = liveCard.workers || [];
+      }
+      sendJson(res, 200, detail);
+      return;
+    }
     case '/api/healthz':
       sendJson(res, 200, { ok: true, clients: sseClients.size });
       return;

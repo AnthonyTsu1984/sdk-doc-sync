@@ -1,7 +1,7 @@
 # 任务看板（Task Dashboard）
 
 日期：2026-10-05
-状态：批 1（只读看板，PR #92）+ 批 2（事件流）已实施；批 3–4 见文末路线
+状态：批 1–4 已实施合并（#92/#93/#94/#95）；批 5（信息架构重排）本 PR；批 6（live 飞书统计 + 发现呈门）/ 批 7（token 消耗）见 §5 路线
 关联设计：`docs/zcode-hooks-determinization.md`（L0 hooks）、`docs/campaign-control-hardening.md` §5（呈门三件套）
 
 ---
@@ -70,14 +70,31 @@
 - **UI 批准表单**（卡片 ⛩ 批准按钮 → 抽屉）：门类型按 nextGate 预填、review-unit-id 预填、**APPROVE_DOCUMENT 的 journal digest 从 `pendingExecutions[].executionJournalDigest` 原样预填**（ledger 只透传不推导），其余门从呈门材料粘贴；实时行预览 + 前端正则与确认弹窗。
 - 已知边界：仅看板派出的 headless worker 可注入（防并发写同一会话）；操作员在桌面端手开的会话走原流程（手打批准行）。
 
+## 4d. 信息架构重排（批 5，本 PR）
+
+操作员反馈驱动：哨兵卡"PR 游标"双语言同值引误解（实为共享的 web-content 全仓水位，Java 扫描器首跑从 C++ 播种）、并行矩阵同轨多会话堆叠不合用、按钮语义不明、其它四技能无看板。重排遵循四条 UX 实践：渐进披露（总览→技能→语种→版本→战役六级下钻，技术细节收折叠）、signal-first（"待你决定"置顶，主按钮=下一个决定）、位置面包屑 + hash 路由（`#/…`，返回不丢上下文）、清单表格化（状态筛选 + finalized 折叠，战役再多只是行数涨）。
+
+- **导航**：五技能入口（API 参考 / 本地化对齐 / 示例补齐 / 代码验证 / 验证式起草）；其余四技能为占位页（技能说明 + SKILL.md 指引 + "数据源待逐个讨论"），按操作员节奏逐个深化。
+- **哨兵卡改版**：主信息=今日报告结论原文（`readDailyReport` 只透传 `**结论：…**` 行，数字仅当结论自带才提取，绝不数 bullet）+ 日报链接；水位降为 footnote 并注明"两扫描器共用同一上游水位，同值属正常"。
+- **语种卡片**（`buildSkillTracks`，registry 驱动）：release-tracks.json 列语种×版本轨道（新版本需登记才受治，live 内容统计批 6 接入）；卡片显示战役计数 + 版本下拉入口 → 轨道页（scan-state 基线 + 该轨战役清单）。未登记轨道的战役在页脚如实列出，不静默丢弃。
+- **战役清单**：表格 + 状态筛选（finalized 默认折叠），行内快捷"复制挂载命令"；点击进战役详情页。并行矩阵区块删除（被本层级取代）。
+- **战役详情页**（`campaign-detail.js` + `GET /api/campaign?path=`，替代抽屉）：工作流 stepper（发现→分组→写入·验收→收口）、规模行（单元/动作/PR 文件/SDK 源码变更/版本区间）、**文件表**（文件名主显+全路径悬停，join 键 = release-scope `actions[].stableId` ≡ 单元 `documentStableId`；BACKFILL 无 PR 文件如实标注"源码证据"；未入组 PR 文件尾列"未入组"）、回执折叠、工件/journal 折叠。
+- **一键批准**：当前门的人话摘要 + 「批准并继续」——前端用批 4 已有的预填链（nextGate + `pendingExecutions[].executionJournalDigest` 原样透传）自动组装精确 APPROVE 行，digest 收"技术详情"折叠；digest 不能自动预填的门引导去高级表单（批 4 手组表单保留为兜底）。服务端 `/api/approve` 语法硬校验与 worker 注册表约束不变。
+- **按钮改名**：「复制挂载命令」（原"复制 /attach"）、「一键派出执行会话」（原"派会话"），均带 tooltip；总览页常驻"看板怎么用"折叠说明。
+- **红线不变**：新增端点全部 GET 只读；`/api/campaign` 对不可发现路径 fail-closed（须在扫描根内、且为 durable 会话契约）。
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
 - **批 2（PR #93）**：事件流钩子 + 活动流 UI + 卡片最近活动 + `/api/file` 目录列表。
 - **批 3（PR #94）**：attach 命令 + nextGate 富集 + 并行矩阵 + 一键派会话（headless → desktop surface，官方 CLI）。
-- **批 4（本 PR）**：界面批准转发（如上 §4c）——原四批路线收官。
+- **批 4（PR #95）**：界面批准转发（§4c）。
+- **批 5（本 PR）**：信息架构重排（§4d）。
+- **批 6**：live 飞书统计（registry 驱动逐轨 Bitable 记录总数 + Drive 文档数，TTL 缓存失败降级）+ 每日发现呈门（scout 工件解析成人话清单，「开始处理」一键派只读 intake worker，**分组门=开工门**：worker 停在 APPROVE_GROUPING 等操作员批准后才进入写作——"哨兵只发现不处置"修订为"呈门后的一键派单仍属人工动作，两道人工确认不变"）。
+- **批 7**：token 消耗（harvest 宿主 `~/.zcode/cli/rollout/model-io-sess_*.jsonl` 逐回合 usage → `node:sqlite` 派生遥测库，approve 回合边界差分归因到单篇；战役详情加消耗面板：总计+分会话小计+分篇明细+采集覆盖率注记；历史无数据如实标注）。
 
 ## 6. 测试
 
 - `tests/skills/dashboard-ledger.test.js`（批 1，fixture 在 `os.tmpdir()`）：双根发现与噪音过滤、awaiting-close/zombie/finalized 判定与排序、scanStateKey 优先级、哨兵 mtime→lastRun/墙钟→nextRun/stale/never-run、准入台账尾条与呈门在位。
 - `tests/skills/dashboard-events.test.js`（批 2）：钩子子进程端到端（fixture 根重定向；exit 0/空 stdout/事件落盘带 sessionRef 与 summary）、仓外 no-op、坏 stdin 容错、跨日文件合并/坏行跳过/绝对路径归因/卡片活动盖章、normalizeSessionRef。
+- `tests/skills/dashboard-detail.test.js`（批 5）：详情 join（单元↔release-scope 文件表：accepted/pending/queued/BACKFILL 无 PR 文件/未入组行、规模计数、回执 repo 相对化）、路径 fail-closed（越界/非扫描根/非 durable 会话）、哨兵今日报告结论透传（无变化/发现 N 项/缺报告）、registry 轨道聚合（计数归属、未登记战役不泄漏、缺 registry 容错）、trackScanStateKey 推导。

@@ -320,6 +320,26 @@ function readAdmission(repoRoot) {
   };
 }
 
+// Gate-presentation presence per checkout: campaigns running in sibling
+// worktrees present gates into THEIR OWN tmp/api-reference-sync/. The
+// header chip and the decide-first inbox must see every checkout's
+// materials, not just main's.
+function readGatePresentations(checkouts) {
+  return (checkouts || [{ id: 'main', label: '主检出', root: null }]).map((checkout) => {
+    const root = checkout.root || '';
+    const relative = GATE_PRESENTATION_RELATIVE_PATH;
+    let present = false;
+    try {
+      present = fs.statSync(path.join(root, relative)).isFile();
+    } catch {
+      // no materials in this checkout
+    }
+    // Non-main links must be absolute: /api/file resolves relative paths
+    // against the main checkout, which would point at the wrong file.
+    return { checkout: checkout.id, label: checkout.label, path: root ? path.join(root, relative) : relative, present };
+  });
+}
+
 // Active work first (most recently touched on top), finalized history last.
 function campaignOrder(card) {
   return (card.health === 'finalized' ? 1 : 0);
@@ -730,6 +750,7 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     sentinels: SENTINELS.map((definition) => buildSentinelCard(repoRoot, definition, now)),
     skillTracks: buildSkillTracks(repoRoot, campaigns),
     admission: readAdmission(repoRoot),
+    gatePresentations: readGatePresentations(effectiveCheckouts),
     activity: activity.slice(-120),
     runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
     revisions: buildRevisionCards(effectiveCheckouts),
@@ -755,6 +776,7 @@ module.exports = {
   compareTags,
   computeNextDailyRun,
   deriveRunningSessions,
+  readGatePresentations,
   healthFor,
   localDateStamp,
   normalizeSessionRef,

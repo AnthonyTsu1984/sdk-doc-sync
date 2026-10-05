@@ -17,7 +17,7 @@
 
 const { normalizeRefetchedMarkdown } = require('./verbatim-content');
 
-const SEMANTIC_MAP_VERSION = 1;
+const SEMANTIC_MAP_VERSION = 2;
 
 const FENCE_LINE = /^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)\s*$/;
 const HEADING_LINE = /^#{1,9}\s+/;
@@ -135,6 +135,7 @@ function extractSemanticMap(markdown) {
         codeBlocks: [],
         returnType: null,
         returnsProseLines: 0,
+        returnsProse: [],
         tables: [],
         includeMarkers: [],
     };
@@ -212,6 +213,7 @@ function extractSemanticMap(markdown) {
         }
         if (label === 'RETURNS') {
             map.returnsProseLines += 1;
+            map.returnsProse.push(text);
         }
     }
     flushTable();
@@ -269,7 +271,18 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
             diffs.push({ kind: 'RETURN_TYPE_ALTERED', detail: `${upstream.returnType} -> ${canonical.returnType}` });
         }
     }
-    if (upstream.returnsProseLines > 0 && canonical.returnsProseLines === 0) {
+    // 2026-10-05 operator ruling (java v3.0.x revision round): a void page's
+    // bare "RETURNS:\nvoid" stub may retire entirely — the v2.6 format
+    // baseline is "void carries no return sections". The exemption is bound
+    // to exactly that shape: no upstream RETURN TYPE section and a RETURNS
+    // section whose only prose is the void token. Any other RETURNS prose
+    // drop stays a loss.
+    const upstreamRet = upstream.returnsProse || [];
+    const voidReturnsRetirement = upstream.returnType === null
+        && upstreamRet.length === 1
+        && /^void\.?$/i.test(String(upstreamRet[0] || '').trim())
+        && canonical.returnsProse.length === 0;
+    if (upstream.returnsProse.length > 0 && canonical.returnsProse.length === 0 && !voidReturnsRetirement) {
         diffs.push({ kind: 'RETURNS_PROSE_MISSING', detail: 'RETURNS section lost its prose' });
     }
 

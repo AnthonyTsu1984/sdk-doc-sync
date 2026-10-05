@@ -177,3 +177,39 @@ test('matchOrdered enforces strictly increasing ordered containment', () => {
     assert.deepEqual(matchOrdered(['a', 'b'], ['b', 'a']), [1, -1]);
     assert.deepEqual(matchOrdered([], ['a']), []);
 });
+
+test('a void page may retire its bare RETURNS stub entirely (2026-10-05 ruling)', () => {
+    const voidPage = [
+        '# dropRole()',
+        '',
+        'This operation drops a specific role.',
+        '',
+        '**RETURNS:**',
+        'void',
+        '',
+        '**EXCEPTIONS:**',
+        'MilvusClientExceptions',
+    ].join('\n');
+    const retired = [
+        '# dropRole()',
+        '',
+        'This operation drops a specific role.',
+        '',
+        '**EXCEPTIONS:**',
+        'MilvusClientExceptions',
+    ].join('\n');
+    const comparison = compareSemanticContent({ upstreamContent: voidPage, canonicalContent: retired });
+    assert.equal(comparison.ok, true, JSON.stringify(comparison.diffs));
+
+    // The exemption is bounded: non-void RETURNS prose still cannot be dropped.
+    const prosePage = voidPage.replace('void', 'This operation returns nothing.');
+    const dropped = compareSemanticContent({ upstreamContent: prosePage, canonicalContent: retired });
+    assert.equal(dropped.ok, false);
+    assert.ok(dropped.diffs.some((diff) => diff.kind === 'RETURNS_PROSE_MISSING'));
+
+    // And a void page WITH a RETURN TYPE section cannot drop that section.
+    const withType = voidPage.replace('**RETURNS:**', '**RETURN TYPE:**\nvoid\n\n**RETURNS:**');
+    const typeDropped = compareSemanticContent({ upstreamContent: withType, canonicalContent: retired });
+    assert.equal(typeDropped.ok, false);
+    assert.ok(typeDropped.diffs.some((diff) => diff.kind === 'RETURN_TYPE_MISSING'));
+});

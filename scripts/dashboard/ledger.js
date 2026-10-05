@@ -444,6 +444,14 @@ function buildRevisionCards(checkouts) {
           generatedAt: scopeGeneratedAt,
         },
         groupingGate,
+        pages: [...pages].sort().map((page) => {
+          const items = payload.items.filter((item) => item.page === page);
+          return {
+            page,
+            documentToken: items[0]?.documentToken ?? null,
+            codes: [...new Set(items.map((item) => item.code))],
+          };
+        }),
         written,
         writtenPages: written.length,
         remainingPages: Math.max(0, total - written.length),

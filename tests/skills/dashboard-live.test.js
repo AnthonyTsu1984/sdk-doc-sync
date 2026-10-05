@@ -166,7 +166,7 @@ function scoutArtifact(actions) {
   };
 }
 
-test('latestScoutFiles recognizes only the exact daily pattern within the window', (t) => {
+test('latestScoutFiles: today only, exact daily pattern, campaign suffixes ignored', (t) => {
   const { root, write } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const now = new Date('2026-10-05T12:00:00');
@@ -174,10 +174,12 @@ test('latestScoutFiles recognizes only the exact daily pattern within the window
   // Campaign-prep artifacts carry suffixes and must be ignored.
   write('tmp/sdk-release-scout/daily/2026-10-05-java-v26-grantpriv.json', scoutArtifact([{ symbol: 'X.y' }]));
   write('tmp/sdk-release-scout/daily/2026-10-05-java-v26-reviewed.json', scoutArtifact([{ symbol: 'X.z' }]));
-  // Stale beyond the lookback window.
-  write('tmp/sdk-release-scout/daily/2026-09-01-java-v26.json', scoutArtifact([{ symbol: 'Old.one' }]));
-  // Different language, same day.
+  // Older artifacts are already-processed history: the scanner re-emits the
+  // artifact daily while findings stay pending and stops once the track's
+  // scan-state advances — an artifact that exists only for yesterday must
+  // NOT resurface as today's findings.
   write('tmp/sdk-release-scout/daily/2026-10-04-cpp-v30.json', scoutArtifact([{ symbol: 'C++', type: 'CREATE' }]));
+  write('tmp/sdk-release-scout/daily/2026-09-01-java-v26.json', scoutArtifact([{ symbol: 'Old.one' }]));
 
   const java = latestScoutFiles(root, { language: 'java', now });
   assert.equal(java.date, '2026-10-05');
@@ -186,8 +188,14 @@ test('latestScoutFiles recognizes only the exact daily pattern within the window
   assert.equal(java.files[0].relative, 'tmp/sdk-release-scout/daily/2026-10-05-java-v26.json');
 
   const all = latestScoutFiles(root, { now });
-  assert.equal(all.date, '2026-10-05', 'latest date across languages wins');
-  assert.equal(all.files.length, 1);
+  assert.equal(all.date, '2026-10-05');
+  assert.equal(all.files.length, 1, 'cpp artifact is dated yesterday → excluded entirely');
+
+  // Nothing for today → no findings, even with history on disk.
+  const yesterday = new Date('2026-10-06T12:00:00');
+  const none = latestScoutFiles(root, { language: 'java', now: yesterday });
+  assert.equal(none.date, null);
+  assert.deepEqual(none.files, []);
 });
 
 test('buildScoutFindings passes scanner words through with counts', (t) => {
@@ -201,7 +209,6 @@ test('buildScoutFindings passes scanner words through with counts', (t) => {
   write('tmp/sdk-release-scout/daily/2026-10-04-java-v26.json', scoutArtifact([
     { symbol: 'Stale.method', type: 'UPDATE', reason: 'old' },
   ]));
-
   const findings = buildScoutFindings({ repoRoot: root, language: 'java', now });
   assert.equal(findings.ok, true);
   assert.equal(findings.date, '2026-10-05');

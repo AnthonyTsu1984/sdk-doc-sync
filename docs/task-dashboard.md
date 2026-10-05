@@ -88,7 +88,7 @@
 **红线修订（操作员已确认）**："哨兵只发现不处置"修订为——发现物呈门后可**一键派出只读 intake 会话**（仍属人工动作），**分组门=开工门**：worker 停在 APPROVE_GROUPING，操作员批准分组后才进入写作；写路径仍全走 canonical CLI + digest 门禁。
 
 - **live 统计**（`live-stats.js` + `GET /api/live-stats`）：registry 驱动逐轨拉取——Bitable 记录总数（tables 解析 + `page_size=1` 读 `data.total`，一页即得）+ Drive release 根 BFS 计 docx 文档数/目录数（cap 2000 节点防失控）。TTL 10min 后台刷新、单飞（single-flight）、逐轨隔离失败（一轨坏不沉全船）、无凭证/无网降级为"live 拉取失败（registry 静态）"chip——降级是载荷不是错误码。认证复用技能侧 `larkTokenFetcher`（node-fetch/dotenv，仓内依赖；token/fetch 可注入故测试零网络）。语种卡片显示聚合 chip，轨道页显示该轨明细行。
-- **每日发现**（`scout-findings.js` + `GET /api/scout?language=`）：只认精确日更工件 `daily/<date>-<lang>-v<N>.json`（带额外后缀的战役制品如 `-grantpriv`/`-reviewed` 一律不算），14 天回看窗内取最新日期；`actions[]` 人话字段（symbol/type/reason/证据定位）原样透传，绝不重推导。语种卡片黄牌"今日发现 N 项待处理"→ 语种页发现表（方法/类型/原因/证据/轨道）。
+- **每日发现**（`scout-findings.js` + `GET /api/scout?language=`）：只认**当日**精确日更工件 `daily/<date>-<lang>-v<N>.json`（带额外后缀的战役制品如 `-grantpriv`/`-reviewed` 一律不算；扫描器对未处理发现每日重发、处理完成后次日不再产出——昨日工件=已处理历史，呈门会误导，故当日无工件即无待办，哨兵卡当日结论为权威）；`actions[]` 人话字段（symbol/type/reason/证据定位）原样透传，绝不重推导。语种卡片黄牌"今日发现 N 项待处理"→ 语种页发现表（方法/类型/原因/证据/轨道）。
 - **一键开始处理**（`intake-brief.js` + `POST /api/spawn-intake`，需 `--allow-spawn`）：以发现工件为种生成确定性处理简报（发现清单原文 + 工作指令：只读 intake→停在分组门 + 门禁格式/铁律），`scout:<工件路径>` 登记 worker；工件路径 fail-closed（必须是该语种当日允许集内成员）。UI 按钮文案"开始处理"并注明"先分组审批"。
 
 ## 4f. token 消耗（批 7，本 PR）

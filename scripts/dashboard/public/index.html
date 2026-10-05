@@ -136,6 +136,18 @@
 <script>
 'use strict';
 let latest = null;
+let uiVersionSeen = null;
+
+// The SPA is a static page: an open tab keeps running old code after a
+// dashboard update. The server stamps the payload with the index.html
+// mtime; when it changes we reload once so the board never lies with a
+// stale UI.
+function maybeReloadOnUiVersion(d) {
+  const v = d?.uiVersion;
+  if (!v) return;
+  if (uiVersionSeen === null) { uiVersionSeen = v; return; }
+  if (v !== uiVersionSeen) location.reload();
+}
 
 // ---------- shared helpers ----------
 
@@ -504,6 +516,7 @@ function pageHome(d) {
     ${renderInbox(d)}
     <h2>正在运行的会话（近 30 分钟，覆盖主检出与各工作树——战役建到评审会话阶段才会出现在下方卡片里）</h2>
     ${renderRunningSessions(d)}
+    ${(d.revisions || []).length ? `<h2>修订战役（工作单驱动）</h2>${renderRevisions(d, d.revisions)}` : ''}
     <h2>每日哨兵（自动扫描，只发现不处置）</h2>
     <div class="grid">${renderSentinels(d)}</div>
     ${USAGE_GUIDE}
@@ -881,15 +894,15 @@ function filesTable(detail) {
       <td>${f.status === 'accepted' ? '<span class="badge finalized">已写入·验收</span>' : f.status === 'pending-approval' ? '<span class="badge gate">待批准写入</span>' : f.status === 'ungrouped' ? '<span class="badge">未入组</span>' : `<span class="badge active">${esc(UNIT_STATUS_LABEL[f.status] ?? f.status)}</span>`}</td>
       <td class="dim">${esc(f.reason ?? '—')}</td>
       <td class="dim num" title="${esc(f.sourceLocator ?? '')}">${f.sourcePr ? `PR #${f.sourcePr}` : (f.sourceLocator ?? f.changeType ?? '—')}</td>
-      <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}</td>
+      <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}${(f.documentLinks?.length || f.recordLinks?.length) ? '' : (f.status === 'accepted' || f.status === 'ungrouped' ? '<span class="dim">—</span>' : '<span class="dim" title="文档/记录链接由该单元的验收回执携带">待写入后生成</span>')}</td>
     </tr>`).join('');
   return `<table class="tbl">
     <thead><tr><th>文件</th><th>单元</th><th>状态</th><th>变更原因</th><th>来源</th><th>飞书</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
   <div class="note" style="border:0">${anyPrFile
-    ? '文件名取自 release-scope 的 web-content 路径；悬停看全路径。「飞书」列为该单元的文档/记录原始链接。'
-    : '本次范围为<b>源码证据驱动</b>（无 web-content PR 文件）：首列为方法/单元名，「来源」列为 SDK 源码定位（仓库 file:line）——变更证据来自 tag 间源码 diff，而非文档 PR。'}</div>`;
+    ? '文件名取自 release-scope 的 web-content 路径；悬停看全路径。「飞书」列链接由<b>已写入·验收单元的回执</b>携带——未写入的单元显示"待写入后生成"。'
+    : '本次范围为<b>源码证据驱动</b>（无 web-content PR 文件）：首列为方法/单元名，「来源」列为 SDK 源码定位（仓库 file:line）。「飞书」列链接由已写入·验收单元的回执携带。'}</div>`;
 }
 
 function fmtTokens(n) {
@@ -1035,6 +1048,7 @@ async function pageCampaign(d, path) {
 
 function route() {
   if (!latest) return;
+  maybeReloadOnUiVersion(latest);
   const r = parseHash();
   renderNav(r);
   renderHeader(latest);

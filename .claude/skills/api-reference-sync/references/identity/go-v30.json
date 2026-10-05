@@ -914,6 +914,136 @@
       "stableId": "go:Vector:UpsertResult",
       "canonicalSlug": "v2-Vector-UpsertResult",
       "category": "Vector"
+    },
+    "Collections.AddFunctionField": {
+      "stableId": "go:Collections:AddFunctionField",
+      "canonicalSlug": "v2-Collection-AddFunctionField",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionField": {
+      "stableId": "go:Collections:DropCollectionField",
+      "canonicalSlug": "v2-Collection-DropCollectionField",
+      "category": "Collections"
+    },
+    "Collections.DropFunctionField": {
+      "stableId": "go:Collections:DropFunctionField",
+      "canonicalSlug": "v2-Collection-DropFunctionField",
+      "category": "Collections"
+    },
+    "Collections.FunctionScore": {
+      "stableId": "go:Collections:FunctionScore",
+      "canonicalSlug": "v2-Collection-FunctionScore",
+      "category": "Collections",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
+    },
+    "FileResources.AddFileResource": {
+      "stableId": "go:FileResources:AddFileResource",
+      "canonicalSlug": "v2-FileResources-AddFileResource",
+      "category": "FileResources"
+    },
+    "FileResources.ListFileResources": {
+      "stableId": "go:FileResources:ListFileResources",
+      "canonicalSlug": "v2-FileResources-ListFileResources",
+      "category": "FileResources"
+    },
+    "FileResources.RemoveFileResource": {
+      "stableId": "go:FileResources:RemoveFileResource",
+      "canonicalSlug": "v2-FileResources-RemoveFileResource",
+      "category": "FileResources"
+    },
+    "FileResources.FileResource": {
+      "stableId": "go:FileResources:FileResource",
+      "canonicalSlug": "v2-FileResources-FileResource",
+      "category": "FileResources",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
+    },
+    "FileResources.BloomFilterBlob": {
+      "stableId": "go:FileResources:BloomFilterBlob",
+      "canonicalSlug": "v2-FileResources-BloomFilterBlob",
+      "category": "FileResources",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
+    },
+    "FileResources.RoaringBitmapBlob": {
+      "stableId": "go:FileResources:RoaringBitmapBlob",
+      "canonicalSlug": "v2-FileResources-RoaringBitmapBlob",
+      "category": "FileResources",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
+    },
+    "Management.NewAISAQIndex": {
+      "stableId": "go:Management:NewAISAQIndex",
+      "canonicalSlug": "v2-Index-NewAISAQIndex",
+      "category": "Management"
+    },
+    "Management.NewFMIndex": {
+      "stableId": "go:Management:NewFMIndex",
+      "canonicalSlug": "v2-Index-NewFMIndex",
+      "category": "Management"
+    },
+    "Management.NewHNSWPQIndex": {
+      "stableId": "go:Management:NewHNSWPQIndex",
+      "canonicalSlug": "v2-Index-NewHNSWPQIndex",
+      "category": "Management"
+    },
+    "Management.NewHNSWPRQIndex": {
+      "stableId": "go:Management:NewHNSWPRQIndex",
+      "canonicalSlug": "v2-Index-NewHNSWPRQIndex",
+      "category": "Management"
+    },
+    "Management.NewHNSWSQIndex": {
+      "stableId": "go:Management:NewHNSWSQIndex",
+      "canonicalSlug": "v2-Index-NewHNSWSQIndex",
+      "category": "Management"
+    },
+    "Management.NewNgramIndex": {
+      "stableId": "go:Management:NewNgramIndex",
+      "canonicalSlug": "v2-Index-NewNgramIndex",
+      "category": "Management"
+    },
+    "Snapshot.ExportSnapshot": {
+      "stableId": "go:Snapshot:ExportSnapshot",
+      "canonicalSlug": "v2-Snapshot-ExportSnapshot",
+      "category": "Snapshot"
+    },
+    "Snapshot.GetExportSnapshotState": {
+      "stableId": "go:Snapshot:GetExportSnapshotState",
+      "canonicalSlug": "v2-Snapshot-GetExportSnapshotState",
+      "category": "Snapshot"
+    },
+    "Vector.ColumnText": {
+      "stableId": "go:Vector:ColumnText",
+      "canonicalSlug": "v2-Vector-ColumnText",
+      "category": "Vector",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
+    },
+    "Vector.NewAISAQAnnParam": {
+      "stableId": "go:Vector:NewAISAQAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewAISAQAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewHNSWPQAnnParam": {
+      "stableId": "go:Vector:NewHNSWPQAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewHNSWPQAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewHNSWPRQAnnParam": {
+      "stableId": "go:Vector:NewHNSWPRQAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewHNSWPRQAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewHNSWSQAnnParam": {
+      "stableId": "go:Vector:NewHNSWSQAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewHNSWSQAnnParam",
+      "category": "Vector"
     }
   }
 }

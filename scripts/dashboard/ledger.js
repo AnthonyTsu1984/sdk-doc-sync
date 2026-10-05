@@ -15,6 +15,7 @@ const SESSION_SCAN_ROOTS = ['tmp/sdk-release-scout', 'tmp/sdk-doc-sync-runs'];
 const SCAN_STATE_RELATIVE_PATH = '.claude/skills/api-reference-sync/scan-state.json';
 const ADMISSION_LEDGER_RELATIVE_PATH = 'tmp/skill-feedback-rollout/admitted-fingerprints.jsonl';
 const GATE_PRESENTATION_RELATIVE_PATH = 'tmp/api-reference-sync/gate-presentation/latest.html';
+const EVENTS_DIR_RELATIVE_PATH = 'tmp/dashboard-events';
 
 // Sentinel (cron automation) definitions. nextRun derives from an explicit
 // daily wall-clock time instead of cron parsing: host-side automation state
@@ -191,6 +192,8 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
     documentLinks,
     recordLinks,
     journalPaths: [...journalPaths],
+    lastActivityAt: null,
+    activityCount: 0,
   };
 }
 
@@ -265,6 +268,74 @@ function campaignOrder(card) {
   return (card.health === 'finalized' ? 1 : 0);
 }
 
+// ---------- event stream (batch 2 taps; read side) ----------
+
+function localDateStamp(date) {
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+// Tail the dashboard event JSONL files (today + yesterday by default). Bad
+// lines are skipped; ordering is chronological as written by the taps.
+function readRecentEvents(repoRoot, { now = new Date(), lookbackDays = 1, limit = 400 } = {}) {
+  const fileNames = [];
+  for (let offset = lookbackDays; offset >= 0; offset -= 1) {
+    const day = new Date(now);
+    day.setDate(day.getDate() - offset);
+    fileNames.push(`events-${localDateStamp(day)}.jsonl`);
+  }
+  const events = [];
+  for (const fileName of fileNames) {
+    let text;
+    try {
+      text = fs.readFileSync(path.join(repoRoot, EVENTS_DIR_RELATIVE_PATH, fileName), 'utf8');
+    } catch {
+      continue; // no events that day
+    }
+    for (const line of text.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const event = JSON.parse(line);
+        if (event && event.ts && event.kind) events.push(event);
+      } catch {
+        // malformed tap line: skip, never fail the ledger
+      }
+    }
+  }
+  return events.slice(-limit);
+}
+
+// A sessionRef may be absolute; campaign cards carry repo-relative paths.
+function normalizeSessionRef(ref) {
+  if (typeof ref !== 'string' || !ref) return null;
+  const index = ref.indexOf('tmp/');
+  return index >= 0 ? ref.slice(index) : ref;
+}
+
+// Attribute events to campaign cards via the session-file path embedded in
+// the tapped tool input, and stamp per-card activity stats in place.
+function attachActivity(campaigns, events) {
+  const byPath = new Map(campaigns.map((card) => [card.sessionPath, card]));
+  const activity = [];
+  for (const event of events) {
+    const ref = normalizeSessionRef(event.sessionRef);
+    const card = ref ? byPath.get(ref) : undefined;
+    if (card) {
+      card.activityCount += 1;
+      if (!card.lastActivityAt || String(event.ts) > card.lastActivityAt) card.lastActivityAt = String(event.ts);
+    }
+    activity.push({
+      ts: String(event.ts),
+      kind: String(event.kind),
+      tool: event.tool ?? null,
+      summary: typeof event.summary === 'string' ? event.summary : '',
+      sessionId: event.sessionId ?? null,
+      campaign: card ? card.sessionPath : null,
+    });
+  }
+  return activity;
+}
+
 function buildLedger({ repoRoot, now = new Date() } = {}) {
   if (!repoRoot) throw new Error('buildLedger requires repoRoot');
   const scanState = readJsonOrNull(path.join(repoRoot, SCAN_STATE_RELATIVE_PATH));
@@ -278,11 +349,13 @@ function buildLedger({ repoRoot, now = new Date() } = {}) {
     campaignOrder(a) - campaignOrder(b)
     || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
   ));
+  const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }));
   return {
     generatedAt: now.toISOString(),
     campaigns,
     sentinels: SENTINELS.map((definition) => buildSentinelCard(repoRoot, definition, now)),
     admission: readAdmission(repoRoot),
+    activity: activity.slice(-120),
   };
 }
 
@@ -292,11 +365,15 @@ module.exports = {
   SCAN_STATE_RELATIVE_PATH,
   SENTINELS,
   SESSION_SCAN_ROOTS,
+  attachActivity,
   buildLedger,
   buildSentinelCard,
   compareTags,
   computeNextDailyRun,
   healthFor,
+  localDateStamp,
+  normalizeSessionRef,
+  readRecentEvents,
   scanStateKeyFor,
   walkSessionFiles,
 };

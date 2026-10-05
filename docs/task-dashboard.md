@@ -1,7 +1,7 @@
 # 任务看板（Task Dashboard）
 
 日期：2026-10-05
-状态：批 1 已实施（只读看板）；批 2–4 见文末路线
+状态：批 1（只读看板，PR #92）+ 批 2（事件流）已实施；批 3–4 见文末路线
 关联设计：`docs/zcode-hooks-determinization.md`（L0 hooks）、`docs/campaign-control-hardening.md` §5（呈门三件套）
 
 ---
@@ -44,17 +44,24 @@
 - **哨兵卡**（cron 自动化 = 定时触发的会话）：下次运行由固定墙钟时刻推导（不解析 cron、不读宿主内部状态）；上次运行取游标文件 mtime（与 CronList 的 lastRunAt 秒级吻合）；>25h 未动游标 → `stale`。新增自动化 = `ledger.js` 的 `SENTINELS` 表加一行。
 - **准入 chip**：台账最新记录 vs 当前树指纹（后台计算），ADMITTED / 未匹配 / 计算中三态；**呈门 chip**：`gate-presentation/latest.html` 在位即黄牌可点。
 
-## 4. 与 hooks 的关系（批 2 预留）
+## 4. 事件流（批 2，已实施）
 
-批 1 不新增任何 hook。批 2 将在现有用户级注册（`~/.zcode/cli/config.json`，与已在跑的 session-start/user-prompt-submit/post-tool-use-failure 三件同款）追加 PostToolUse 事件水龙头：append-only 事件 JSONL 落 `tmp/dashboard-events/`，看板时间线消费。cron 自动化会话天然被同一 hook 覆盖——哨兵卡的运行时间线自动进界面，零额外接线。
+**写侧（hooks，本机用户级注册）**：
+- `.zcode/hooks/post-tool-use.cjs` — PostToolUse 事件水龙头（matcher `Bash|Write|Edit|Agent|Task`，动作类工具，Read/Grep 噪音不进流）。每次成功工具调用追加一条压缩事件：`{v, ts, kind:'tool', sessionId, tool, summary, sessionRef}`；`sessionRef` = 从 tool_input 中提取的战役会话文件路径（归因键）。空 stdout、恒 exit 0、单次 append 亚毫秒。
+- `.zcode/hooks/session-start.cjs` — 原注入钩子顺手追加 `kind:'session-start'` 打卡事件（best-effort，不影响注入契约）。
+- 两者共用 `.zcode/hooks/dashboard-event-lib.cjs`（落盘 `tmp/dashboard-events/events-<YYYY-MM-DD>.jsonl`，append-only；`DASHBOARD_HOOK_ROOT` 环境变量仅供测试重定向）。
+- 注册于 `~/.zcode/cli/config.json`（与既有三钩子同款 process 形态）。**注意 .zcode/ 被 gitignore：钩子源码是本机态，不入库**——插件化（源码进 git）留待 hooks 确定化战役合流。**hooks 配置在会话启动时快照：注册后新开的会话才生效**。
+
+**读侧（ledger + UI）**：`readRecentEvents` 读今天+昨天两份 JSONL（坏行跳过）；`attachActivity` 以 sessionRef 归因到战役卡（绝对路径归一化成 repo 相对路径精确匹配），卡片获得 `lastActivityAt`/`activityCount`；页面新增"活动流"面板（最近 50 条，Start/Bash/Write/Edit/Agent 着色，归因卡片标注）。cron 自动化会话天然被同一钩子覆盖——哨兵运行时间线自动进流，零额外接线。
 
 ## 5. 路线
 
-- **批 1（本 PR）**：聚合层 + 只读 server + 页面 + 测试。验收 = `npm run dashboard` 打开看到全部战役卡/哨兵卡/准入态；改 tmp 下任一 session 文件卡片在秒级刷新。
-- **批 2**：事件流 hook（用户级注册）+ 时间线 UI + 卡片"有人干活/遇门"状态。
+- **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
+- **批 2（本 PR）**：事件流钩子（用户级注册）+ 活动流 UI + 卡片最近活动 + `/api/file` 目录列表（只读、单级、白名单内逐链接复核）。
 - **批 3**：会话生命周期——attach 命令、界面"派会话"按钮（`zcode -p --json --cwd` / agent-hub）、语言×轨道并行视图。
 - **批 4**：界面写操作——批准按钮仅转发 canonical CLI（APPROVE_* 精确行），UI 无独立写路径；server 自身受 R4 同款证据面保护审视。
 
 ## 6. 测试
 
-`tests/skills/dashboard-ledger.test.js`（fixture 在 `os.tmpdir()`，绝不落在仓库扫描根内）：双根发现与噪音过滤、awaiting-close/zombie/finalized 判定与排序、scanStateKey 优先级、哨兵 mtime→lastRun/墙钟→nextRun/stale/never-run、准入台账尾条与呈门在位。
+- `tests/skills/dashboard-ledger.test.js`（批 1，fixture 在 `os.tmpdir()`）：双根发现与噪音过滤、awaiting-close/zombie/finalized 判定与排序、scanStateKey 优先级、哨兵 mtime→lastRun/墙钟→nextRun/stale/never-run、准入台账尾条与呈门在位。
+- `tests/skills/dashboard-events.test.js`（批 2）：钩子子进程端到端（fixture 根重定向；exit 0/空 stdout/事件落盘带 sessionRef 与 summary）、仓外 no-op、坏 stdin 容错、跨日文件合并/坏行跳过/绝对路径归因/卡片活动盖章、normalizeSessionRef。

@@ -198,9 +198,13 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   return scope;
 }
 
+function formatFatal(error) {
+  return `${error.code ? `${error.code}: ` : 'Fatal error: '}${error.message}`;
+}
+
 if (require.main === module) {
   runCli().catch((error) => {
-    console.error(`Fatal error: ${error.message}`);
+    console.error(formatFatal(error));
     process.exit(1);
   });
 }
@@ -208,4 +212,5 @@ if (require.main === module) {
 module.exports = {
   parseArgs,
   runCli,
+  formatFatal,
 };

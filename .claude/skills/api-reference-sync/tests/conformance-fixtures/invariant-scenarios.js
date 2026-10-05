@@ -1993,4 +1993,118 @@ scenarios['process-learning-suppression-recorded'] = () => {
   };
 };
 
+// Grouping-proposal governance (2026-10-06): the APPROVE_GROUPING gate
+// approves a governed artifact with durable materials. Proves the policy
+// kernel (lineage digests, partition refusals), the typed scout identity-map
+// blocker, and the production CLIs — including that the durable approval
+// receipt refuses a hand-assembled proposal without lineage.
+scenarios['grouping-proposal-governance'] = async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const { createReleaseScope } = require('../../src/sdk-doc-sync/release-scope/schema');
+  const { digestSemantic } = require('../../../doc-ops-core/src/digest');
+  const {
+    createGroupingProposal,
+    validateGroupingProposal,
+    groupingProposalDigest,
+  } = require('../../src/sdk-doc-sync/grouping-proposal');
+  const { ScoutIdentityMapError, loadIdentityMap } = require('../../src/sdk-doc-sync/release-scope/identity-normalizer');
+
+  const action = (stableId, symbol) => ({
+    type: 'UPDATE',
+    stableId,
+    symbol,
+    reason: 'changed in release range',
+    source: { file: 'client/example.go', line: 1 },
+  });
+  const scope = createReleaseScope({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    baselineTag: 'client/v3.0.0',
+    targetTag: 'client/v3.0.1',
+    targetCommit: '0123456789abcdef0123456789abcdef01234567',
+    targetDate: '2026-10-05',
+    actions: [action('go:Client:search', 'Client.search'), action('go:Client:flush', 'Client.flush')],
+    approvalGrade: true,
+  });
+  const identityMap = { schemaVersion: 1, language: 'go', track: 'v3.0.x', defaultCategory: 'Client', symbols: {} };
+  const units = [{ id: 'u1', sourceStableId: 'go:Client:search', actionIntent: 'UPDATE', decision: {} }];
+  const exclusions = [{ sourceStableId: 'go:Client:flush', reason: 'internal helper' }];
+
+  const proposal = createGroupingProposal({ scope, identityMap, units, exclusions });
+  const lineageBound = proposal.lineage.scopeDigest === digestSemantic(scope)
+    && validateGroupingProposal(proposal, { scope, identityMap }).valid === true;
+
+  const refusalCode = (fn) => {
+    try {
+      fn();
+      return null;
+    } catch (error) {
+      return error.code || null;
+    }
+  };
+  const partitionIncompleteCode = refusalCode(() => createGroupingProposal({ scope, identityMap, units, exclusions: [] }));
+  const partitionForeignCode = refusalCode(() => createGroupingProposal({
+    scope,
+    identityMap,
+    units: [...units, { id: 'u2', sourceStableId: 'go:Client:ghost', actionIntent: 'CREATE', decision: {} }],
+    exclusions,
+  }));
+  const tampered = structuredClone(proposal);
+  tampered.lineage.identityMapDigest = `sha256:${'0'.repeat(64)}`;
+  const lineageUnboundCode = (validateGroupingProposal(tampered, { scope, identityMap }).errors || [])[0]?.code || null;
+
+  let mapMissingCode = null;
+  try {
+    loadIdentityMap(path.join(os.tmpdir(), 'no-such-identity-map-go-v30.json'));
+  } catch (error) {
+    mapMissingCode = error instanceof ScoutIdentityMapError ? error.code : null;
+  }
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'grouping-gov-'));
+  const scopeFile = path.join(temp, 'scope.json');
+  const mapFile = path.join(temp, 'map.json');
+  const decisionsFile = path.join(temp, 'decisions.json');
+  const outputFile = path.join(temp, 'proposal.json');
+  fs.writeFileSync(scopeFile, JSON.stringify(scope));
+  fs.writeFileSync(mapFile, JSON.stringify(identityMap));
+  fs.writeFileSync(decisionsFile, JSON.stringify({ units, exclusions }));
+  const builder = path.join(__dirname, '..', '..', 'scripts', 'build-grouping-proposal.js');
+  const built = spawnSync(process.execPath, [
+    builder, '--scope', scopeFile, '--identity-map', mapFile, '--decisions', decisionsFile, '--output', outputFile,
+  ], { encoding: 'utf8' });
+  const cliBuilt = built.status === 0
+    && JSON.parse(fs.readFileSync(outputFile, 'utf8')).lineage.scopeDigest === digestSemantic(scope);
+
+  const recorder = path.join(__dirname, '..', '..', 'scripts', 'record-grouping-approval.js');
+  const approvalsDir = path.join(temp, 'approvals');
+  const receiptRun = spawnSync(process.execPath, [
+    recorder, '--proposal', outputFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  const receiptRecorded = receiptRun.status === 0
+    && fs.existsSync(path.join(approvalsDir, `${groupingProposalDigest(proposal)}.json`));
+
+  const handmade = path.join(temp, 'handmade.json');
+  fs.writeFileSync(handmade, JSON.stringify({ schemaVersion: 1, units: [] }));
+  const refused = spawnSync(process.execPath, [
+    recorder, '--proposal', handmade, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+
+  return {
+    lineageBound,
+    partitionIncompleteCode,
+    partitionForeignCode,
+    lineageUnboundCode,
+    mapMissingCode,
+    cliBuilt,
+    receiptRecorded,
+    receiptRefusedCode: refused.status === 1 && /GROUPING_APPROVAL_INVALID/.test(refused.stderr || '')
+      ? 'GROUPING_APPROVAL_INVALID'
+      : null,
+  };
+};
+
 module.exports = { scenarios };

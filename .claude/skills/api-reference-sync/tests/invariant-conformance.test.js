@@ -79,6 +79,7 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
     'api.reviewed-artifact-evidence',
     'api.post-write-verification',
     'api.grouping-proposal-staleness',
+    'api.grouping-proposal-governance',
     'api.markdown-block-fidelity',
     'api.absolute-link-urls',
     'api.literal-include-preserved',

@@ -309,10 +309,26 @@ async function runReleaseScout({
     return action;
   }));
   const actions = normalized.map(({ diagnostic, ...action }) => action);
+  // Identity-map coverage accounting (2026-10-06): a thin map silently
+  // degrades unmapped class/interface symbols to kind-based classification,
+  // where they turn ambiguous and force approvalGrade=false — the operator
+  // saw only "blocked" with no counts. Surface the split as a diagnostic.
+  const identitySymbols = map.symbols && typeof map.symbols === 'object' ? map.symbols : {};
+  let identityMapped = 0;
+  let identityAmbiguous = 0;
+  for (const action of actions) {
+    if (identitySymbols[action.symbol]) identityMapped += 1;
+    if (action.documentationOwnership?.classification === 'ambiguous') identityAmbiguous += 1;
+  }
   const scannerDiagnostics = [
     { level: 'warn', code: 'FULL_SCAN_DIAGNOSTIC_ONLY', message: `Full scanner output is not approval-grade for ${language} ${track}.` },
     ...(Array.isArray(target.scanDiagnostics) ? target.scanDiagnostics : []),
     ...normalized.map((item) => item.diagnostic).filter(Boolean),
+    {
+      level: identityAmbiguous > 0 ? 'warn' : 'info',
+      code: 'IDENTITY_MAP_COVERAGE',
+      message: `Identity map resolves ${identityMapped}/${actions.length} action symbol(s) explicitly; ${actions.length - identityMapped} use derived fallback identities; ${identityAmbiguous} ambiguous (approvalGrade stays false until the map extends).`,
+    },
   ];
   const scope = createReleaseScope({
     ...range,

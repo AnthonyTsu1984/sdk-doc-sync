@@ -4,10 +4,40 @@ const fs = require('node:fs');
 const { sourceOf } = require('./symbol-inventory');
 const { ownershipFor } = require('./type-ownership');
 
+// Typed scout blocker (2026-10-06): a missing or malformed identity map used
+// to surface as a raw ENOENT/JSON crash (the go v3.0.x scout blocker was
+// exactly this), leaving the operator with no recovery pointer. The map is
+// load-bearing for approval-grade actions, so the failure carries its own
+// typed code and the identity-reconcile draft workflow as the way out.
+class ScoutIdentityMapError extends Error {
+  constructor(code, message) {
+    super(message);
+    this.name = 'ScoutIdentityMapError';
+    this.code = code;
+  }
+}
+
 function loadIdentityMap(filePath) {
-  const map = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  if (map.schemaVersion !== 1) throw new Error(`Unsupported identity map schema: ${filePath}`);
-  if (!map.language || !map.track || !map.symbols) throw new Error(`Invalid identity map: ${filePath}`);
+  let raw;
+  try {
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      throw new ScoutIdentityMapError(
+        'SCOUT_IDENTITY_MAP_MISSING',
+        `no identity map at ${filePath} — a track without an identity map cannot produce approval-grade scout actions; draft entries with bin/identity-reconcile.js --emit-draft and merge them as a master-compared edit before scouting this track`,
+      );
+    }
+    throw error;
+  }
+  let map;
+  try {
+    map = JSON.parse(raw);
+  } catch (error) {
+    throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `identity map at ${filePath} is not valid JSON: ${error.message}`);
+  }
+  if (map.schemaVersion !== 1) throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `Unsupported identity map schema: ${filePath}`);
+  if (!map.language || !map.track || !map.symbols) throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `Invalid identity map: ${filePath}`);
   return Object.freeze({
     ...map,
     symbols: Object.freeze({ ...map.symbols }),
@@ -109,6 +139,7 @@ function normalizeDelta(delta, map) {
 }
 
 module.exports = {
+  ScoutIdentityMapError,
   loadIdentityMap,
   normalizeDelta,
   normalizeDeltas,

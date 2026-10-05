@@ -563,5 +563,22 @@
       "adoptionAttempts": 1,
       "postcheckCode": "WRITE_POSTCHECK_FAILED"
     }
+  },
+  {
+    "id": "grouping-proposal-governance",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "grouping-proposal-governance"
+    },
+    "assertions": {
+      "lineageBound": true,
+      "partitionIncompleteCode": "GROUPING_PARTITION_INCOMPLETE",
+      "partitionForeignCode": "GROUPING_PARTITION_FOREIGN",
+      "lineageUnboundCode": "GROUPING_LINEAGE_UNBOUND",
+      "mapMissingCode": "SCOUT_IDENTITY_MAP_MISSING",
+      "cliBuilt": true,
+      "receiptRecorded": true,
+      "receiptRefusedCode": "GROUPING_APPROVAL_INVALID"
+    }
   }
 ]

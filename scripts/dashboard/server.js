@@ -15,7 +15,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { exec } = require('node:child_process');
 
-const { buildLedger, SESSION_SCAN_ROOTS } = require('./ledger.js');
+const { buildLedger } = require('./ledger.js');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
@@ -27,15 +27,13 @@ const FILE_VIEW_PREFIXES = [
   'tmp/sdk-doc-sync-runs/',
   'tmp/api-reference-sync/',
   'tmp/skill-feedback-rollout/',
+  'tmp/dashboard-events/',
 ];
 const FILE_VIEW_EXACT = ['.claude/skills/api-reference-sync/scan-state.json'];
 
-const WATCH_DIRS = [
-  ...SESSION_SCAN_ROOTS,
-  'tmp/api-reference-sync',
-  'tmp/skill-feedback-rollout',
-  '.claude/skills/api-reference-sync',
-];
+// Watch tmp/ recursively: covers all scan roots + evidence dirs + newly
+// created event dirs in one watcher (recompute is cheap and debounced).
+const WATCH_DIRS = ['tmp', '.claude/skills/api-reference-sync'];
 
 const POLL_INTERVAL_MS = 30_000;
 const DEBOUNCE_MS = 400;
@@ -184,6 +182,38 @@ function fileViewAllowed(resolvedRelative) {
   return FILE_VIEW_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+  }[c]));
+}
+
+// Read-only single-level directory listing (for sentinel artifact dirs etc.).
+// Every child link re-enters /api/file, so the allowlist stays enforced.
+function serveDirectoryListing(res, resolved, normalizedRelative) {
+  fs.readdir(resolved, { withFileTypes: true }, (dirError, entries) => {
+    if (dirError) {
+      sendJson(res, 500, { error: String(dirError?.message || dirError) });
+      return;
+    }
+    const childPath = (name) => path.posix.join(normalizedRelative, name);
+    const parent = path.posix.dirname(normalizedRelative);
+    const parentAllowed = fileViewAllowed(`${parent}/`) || FILE_VIEW_EXACT.includes(parent);
+    const rows = entries
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((entry) => `<tr><td><a href="/api/file?path=${encodeURIComponent(childPath(entry.name))}">${escapeHtml(entry.name)}${entry.isDirectory() ? '/' : ''}</a></td><td>${entry.isDirectory() ? 'dir' : ''}</td></tr>`)
+      .join('\n');
+    const up = parentAllowed && parent !== normalizedRelative
+      ? `<p><a href="/api/file?path=${encodeURIComponent(parent)}">.. ${escapeHtml(parent)}/</a></p>`
+      : '';
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' });
+    res.end(`<!doctype html><meta charset="utf-8"><title>${escapeHtml(normalizedRelative)}/</title>
+<style>body{font:13px -apple-system,system-ui,sans-serif;padding:16px}td{padding:2px 14px 2px 0}td:last-child{color:#888}</style>
+<h3>${escapeHtml(normalizedRelative)}/</h3>${up}<table>${rows}</table>`);
+  });
+}
+
 function serveFileView(req, res, query) {
   const requested = query.get('path');
   if (!requested) {
@@ -192,13 +222,22 @@ function serveFileView(req, res, query) {
   }
   const resolved = path.resolve(REPO_ROOT, requested);
   const relative = path.relative(REPO_ROOT, resolved);
-  if (relative.startsWith('..') || path.isAbsolute(relative) || !fileViewAllowed(relative)) {
+  const normalizedRelative = relative.split(path.sep).join('/');
+  if (relative.startsWith('..') || path.isAbsolute(relative) || !fileViewAllowed(normalizedRelative)) {
     sendJson(res, 403, { error: 'path outside dashboard view allowlist' });
     return;
   }
   fs.stat(resolved, (statError, stat) => {
-    if (statError || !stat.isFile()) {
+    if (statError) {
       sendJson(res, 404, { error: 'not found' });
+      return;
+    }
+    if (stat.isDirectory()) {
+      serveDirectoryListing(res, resolved, normalizedRelative);
+      return;
+    }
+    if (!stat.isFile()) {
+      sendJson(res, 404, { error: 'not a regular file' });
       return;
     }
     if (stat.size > FILE_VIEW_MAX_BYTES) {

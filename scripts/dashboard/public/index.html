@@ -44,6 +44,16 @@
   .kv b { color: var(--dim); font-weight: 500; }
   .note { font-size: 12px; color: var(--dim); margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 7px; }
   .empty { color: var(--dim); padding: 18px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; background: var(--card); }
+  .feed { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-height: 320px; overflow-y: auto; }
+  .feed .ev { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
+  .feed .ev:last-child { border-bottom: 0; }
+  .feed .t { color: var(--dim); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .feed .k { white-space: nowrap; background: var(--dim-bg); color: var(--dim); border-radius: 6px; padding: 0 7px; font-size: 11.5px; }
+  .feed .k.start { background: var(--green-bg); color: var(--green); }
+  .feed .k.Bash, .feed .k.Write, .feed .k.Edit { background: var(--blue-bg); color: var(--blue); }
+  .feed .k.Agent, .feed .k.Task { background: var(--amber-bg); color: var(--amber); }
+  .feed .s { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed .c { white-space: nowrap; color: var(--dim); font-size: 11.5px; }
   #drawer { position: fixed; top: 0; right: -560px; width: 540px; max-width: 92vw; height: 100vh; background: var(--card); border-left: 1px solid var(--line); box-shadow: -6px 0 24px rgba(16,24,40,.12); transition: right .18s ease; z-index: 20; display: flex; flex-direction: column; }
   #drawer.open { right: 0; }
   #drawer .head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
@@ -73,6 +83,8 @@
   <div class="grid" id="sentinels"></div>
   <h2>战役任务</h2>
   <div class="grid" id="campaigns"></div>
+  <h2>活动流（会话动作事件，近 24–48h）</h2>
+  <div id="activity" class="feed"></div>
   <footer>只读看板：全部字段派生自盘上治理状态，本页无任何写路径。文件材料经 /api/file 白名单查看。</footer>
 </main>
 
@@ -175,9 +187,30 @@ function renderCampaigns(d) {
         <span>单元 ${c.accepted}/${c.units}</span>
         <span>更新 ${rel(c.updatedAt)}</span>
         <span>${esc(c.scanState.key ?? '')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}</span>
+        ${c.lastActivityAt ? `<span style="color:var(--green)">活动 ${rel(c.lastActivityAt)}${c.activityCount ? ` · ${c.activityCount} 步` : ''}</span>` : ''}
         ${flags ? `<span>${esc(flags)}</span>` : ''}
       </div>
       ${zombieLine}
+    </div>`;
+  }).join('');
+}
+
+function renderActivity(d) {
+  const host = document.getElementById('activity');
+  const events = (d.activity || []).slice(-50).reverse();
+  if (!events.length) { host.innerHTML = '<div class="empty">暂无事件——批 2 钩子注册后，新开的会话动作会实时出现在这里（当前会话的钩子配置在启动时快照，需新会话生效）。</div>'; return; }
+  const cardTitle = new Map((d.campaigns || []).map((c) => [c.sessionPath, `${c.language} · ${c.track}`]));
+  host.innerHTML = events.map((e) => {
+    const time = new Date(e.ts);
+    const hh = String(time.getHours()).padStart(2, '0');
+    const mm = String(time.getMinutes()).padStart(2, '0');
+    const label = e.kind === 'session-start' ? 'Start' : (e.tool || '?');
+    const klass = e.kind === 'session-start' ? 'start' : label;
+    return `<div class="ev">
+      <span class="t">${hh}:${mm}</span>
+      <span class="k ${esc(klass)}">${esc(label)}</span>
+      <span class="s" title="${esc(e.summary)}">${esc(e.summary || '—')}</span>
+      ${e.campaign && cardTitle.has(e.campaign) ? `<span class="c">→ ${esc(cardTitle.get(e.campaign))}</span>` : ''}
     </div>`;
   }).join('');
 }
@@ -187,6 +220,7 @@ function render(d) {
   renderHeader(d);
   renderSentinels(d);
   renderCampaigns(d);
+  renderActivity(d);
   if (document.getElementById('drawer').classList.contains('open') && window._openIndex != null) {
     fillDrawer(window._openIndex);
   }

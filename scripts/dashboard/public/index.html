@@ -1052,7 +1052,9 @@ function pageRevisionDetail(d, r) {
 async function pageCampaign(d, path) {
   const c = (d.campaigns || []).find((x) => cardKey(x) === path || x.sessionPath === path);
   const host = document.getElementById('page');
-  window._detailPath = cardKey(c);
+  // Revision targets have no campaign card yet — keep the raw path so the
+  // fallback below can match them by cardKey before rendering.
+  window._detailPath = c ? cardKey(c) : path;
   if (!c) {
     const r = (d.revisions || []).find((x) => cardKey(x) === path);
     if (r) { pageRevisionDetail(d, r); return; }

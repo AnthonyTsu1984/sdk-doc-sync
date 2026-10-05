@@ -37,6 +37,17 @@ const SENTINELS = [
     reportName: '{date}.md',
   },
   {
+    id: 'go-daily-scan',
+    title: 'Go SDK 每日扫描',
+    schedule: '每天 09:15',
+    hour: 9,
+    minute: 15,
+    language: 'go',
+    cursorFile: 'tmp/sdk-release-scout/go-daily-scan-state.json',
+    artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'go-{date}.md',
+  },
+  {
     id: 'java-daily-scan',
     title: 'Java SDK 每日扫描',
     schedule: '每天 09:30',

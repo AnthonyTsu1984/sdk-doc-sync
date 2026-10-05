@@ -193,11 +193,16 @@ test('sentinel cards carry today report conclusion passthrough', (t) => {
   const now = new Date('2026-10-05T10:00:00');
   const stamp = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   write('tmp/sdk-release-scout/daily/' + stamp(now) + '.md', '# C++ SDK 每日扫描报告\n**结论：无变化**\n');
+  write('tmp/sdk-release-scout/daily/go-' + stamp(now) + '.md', '# Go SDK 每日扫描报告\n**结论：发现 1 项变化**\n');
   write('tmp/sdk-release-scout/daily/java-' + stamp(now) + '.md', '# Java SDK 每日扫描报告\n**结论：发现 2 项变化**\n');
 
   const ledger = buildLedger({ repoRoot: root, now });
   const cpp = ledger.sentinels.find((s) => s.id === 'cpp-daily-scan');
   const java = ledger.sentinels.find((s) => s.id === 'java-daily-scan');
+  const go = ledger.sentinels.find((s) => s.id === 'go-daily-scan');
+  assert.equal(go.language, 'go');
+  assert.equal(go.report.findingsCount, 1);
+  assert.equal(go.report.path, 'tmp/sdk-release-scout/daily/go-' + stamp(now) + '.md');
   assert.equal(cpp.language, 'cpp');
   assert.equal(cpp.report.present, true);
   assert.equal(cpp.report.conclusion, '无变化');

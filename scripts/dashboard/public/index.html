@@ -634,7 +634,13 @@ function revisionRow(r) {
     <td><span class="badge gate">revision</span></td>
     <td><span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></td>
     <td class="num" style="min-width:90px">${r.writtenPages}/${r.scope.pages}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
-    <td>${r.groupingGate ? `<span class="badge gate" title="${esc(r.groupingGate.digest)}">分组门已呈</span>` : '<span class="dim">—</span>'}</td>
+    <td>${r.status === 'finalized'
+      ? '<span class="dim">—</span>'
+      : r.groupingApproved
+        ? `<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）；与 two-gate 的 APPROVE_WRITES 同一批准形态">批准批次写入</span>`
+        : r.groupingGate
+          ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>`
+          : '<span class="dim">—</span>'}</td>
     <td class="dim">${rel(r.updatedAt)}</td>
     <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役" onclick="copyText('/attach ${esc(r.worklistStem)}')">复制挂载命令</button></td>
   </tr>`;
@@ -1016,7 +1022,7 @@ function pageRevisionDetail(d, r) {
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1">
         <span class="title">${esc(r.language ?? '?')} · 修订战役 <span class="dim" style="font-weight:400">· ${esc(r.worklistStem)}</span></span>
-        <span style="display:flex;gap:6px">${r.groupingGate ? `<span class="badge gate" title="${esc(r.groupingGate.digest)}">分组门已呈</span>` : ''}${checkoutChip(r)}<span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></span>
+        <span style="display:flex;gap:6px">${r.status !== 'finalized' && r.groupingApproved ? '<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）">批准批次写入</span>' : ''}${r.groupingGate && !r.groupingApproved ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>` : ''}${checkoutChip(r)}<span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></span>
       </div>
       <div class="bar"><i style="width:${pct}%"></i></div>
       <div class="meta">

@@ -192,3 +192,32 @@ test('resolveStatusTarget probes worktree cards inside their own checkout', () =
   const legacy = { sessionPath: 'tmp/x-session.json' };
   assert.equal(resolveStatusTarget(legacy, checkouts).root, '/repo');
 });
+
+
+// ---------- gate-presentation presence per checkout ----------
+
+test('gate presentations detected in every checkout, absolute for worktrees', (t) => {
+  const main = makeFixtureTree('dash-gp-main-');
+  const sibling = makeFixtureTree('dash-gp-sib-');
+  t.after(() => {
+    fs.rmSync(main.root, { recursive: true, force: true });
+    fs.rmSync(sibling.root, { recursive: true, force: true });
+  });
+  sibling.write('tmp/api-reference-sync/gate-presentation/latest.html', '<html></html>');
+
+  const { buildLedger, readGatePresentations } = require('../../scripts/dashboard/ledger.js');
+  const checkouts = [
+    { id: 'main', label: '主检出', root: main.root },
+    { id: 'sib', label: 'sib', root: sibling.root },
+  ];
+  const list = readGatePresentations(checkouts);
+  const sib = list.find((g) => g.checkout === 'sib');
+  assert.equal(sib.present, true);
+  assert.equal(sib.path, `${sibling.root}/tmp/api-reference-sync/gate-presentation/latest.html`);
+  assert.equal(list.find((g) => g.checkout === 'main').present, false);
+
+  // Full ledger carries the list alongside the legacy main-only field.
+  const ledger = buildLedger({ repoRoot: main.root, checkouts });
+  assert.equal(ledger.gatePresentations.find((g) => g.checkout === 'sib').present, true);
+  assert.equal(ledger.admission.gatePresentation.present, false);
+});

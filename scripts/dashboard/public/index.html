@@ -262,10 +262,13 @@ function renderHeader(d) {
     adm.className = 'chip'; adm.textContent = `准入 台账 ${d.admission?.ledgerEntryCount ?? 0} 条（无指纹比对）`;
   }
   const gate = document.getElementById('gate');
-  const g = d.admission && d.admission.gatePresentation;
-  if (g && g.present) {
+  const present = (d.gatePresentations || []).filter((g) => g.present);
+  if (present.length === 1) {
     gate.className = 'chip warn';
-    gate.innerHTML = `<a href="/api/file?path=${encodeURIComponent(g.path)}" target="_blank">呈门材料待审 →</a>`;
+    gate.innerHTML = `<a href="/api/file?path=${encodeURIComponent(present[0].path)}" target="_blank">呈门材料待审（${esc(present[0].label)}）→</a>`;
+  } else if (present.length > 1) {
+    gate.className = 'chip warn';
+    gate.innerHTML = `<a href="/api/file?path=${encodeURIComponent(present[0].path)}" target="_blank">呈门材料待审 ×${present.length} →</a>`;
   } else {
     gate.className = 'chip'; gate.textContent = '呈门 无待审';
   }
@@ -307,11 +310,10 @@ function renderInbox(d) {
       });
     }
   }
-  const g = d.admission?.gatePresentation;
-  if (g?.present) {
+  for (const g of (d.gatePresentations || []).filter((x) => x.present)) {
     items.push({
-      t: '呈门材料待审',
-      d2: '有战役把审批材料整理成了索引页（写审批预览、live 页、记录链接）',
+      t: `呈门材料待审${(d.gatePresentations || []).filter((x) => x.present).length > 1 ? `（${g.label}）` : ''}`,
+      d2: `${g.label} 的战役把审批材料整理成了索引页（写审批预览、live 页、记录链接）`,
       href: `/api/file?path=${encodeURIComponent(g.path)}`,
       external: true,
       go: '打开材料',

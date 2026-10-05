@@ -5,6 +5,71 @@
   "defaultCategory": "Client",
   "packagePrefix": "pymilvus/",
   "symbols": {
+    "AggregationBucket": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationBucket.__init__": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationBucket.count": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationBucket.hits": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationBucket.key": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationBucket.metrics": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationBucket.sub_groups": {
+      "stableId": "python:Vector:AggregationBucket",
+      "canonicalSlug": "Vector-AggregationBucket",
+      "category": "Vector"
+    },
+    "AggregationHit": {
+      "stableId": "python:Vector:AggregationHit",
+      "canonicalSlug": "Vector-AggregationHit",
+      "category": "Vector"
+    },
+    "AggregationHit.__init__": {
+      "stableId": "python:Vector:AggregationHit",
+      "canonicalSlug": "Vector-AggregationHit",
+      "category": "Vector"
+    },
+    "AggregationHit.field_ids": {
+      "stableId": "python:Vector:AggregationHit",
+      "canonicalSlug": "Vector-AggregationHit",
+      "category": "Vector"
+    },
+    "AggregationHit.fields": {
+      "stableId": "python:Vector:AggregationHit",
+      "canonicalSlug": "Vector-AggregationHit",
+      "category": "Vector"
+    },
+    "AggregationHit.pk": {
+      "stableId": "python:Vector:AggregationHit",
+      "canonicalSlug": "Vector-AggregationHit",
+      "category": "Vector"
+    },
+    "AggregationHit.score": {
+      "stableId": "python:Vector:AggregationHit",
+      "canonicalSlug": "Vector-AggregationHit",
+      "category": "Vector"
+    },
     "AnnSearchRequest": {
       "stableId": "python:Vector:hybrid_search",
       "canonicalSlug": "Vector-hybrid_search",
@@ -15,14 +80,259 @@
       "canonicalSlug": "Vector-hybrid_search",
       "category": "Vector"
     },
+    "ArrowLayout": {
+      "stableId": "python:Internal:ArrowLayout",
+      "canonicalSlug": "Internal-ArrowLayout",
+      "category": "Internal"
+    },
+    "AsyncMilvusClient.add_collection_struct_field": {
+      "stableId": "python:Collections:add_collection_struct_field",
+      "canonicalSlug": "Collections-add_collection_struct_field",
+      "category": "Collections"
+    },
+    "AsyncMilvusClient.add_function_field": {
+      "stableId": "python:Function:add_function_field",
+      "canonicalSlug": "Function-add_function_field",
+      "category": "Function"
+    },
+    "AsyncMilvusClient.alter_role": {
+      "stableId": "python:Authentication:alter_role",
+      "canonicalSlug": "Authentication-alter_role",
+      "category": "Authentication"
+    },
+    "AsyncMilvusClient.create_role": {
+      "stableId": "python:Authentication:create_role",
+      "canonicalSlug": "Authentication-create_role",
+      "category": "Authentication"
+    },
+    "AsyncMilvusClient.create_user": {
+      "stableId": "python:Authentication:create_user",
+      "canonicalSlug": "Authentication-create_user",
+      "category": "Authentication"
+    },
+    "AsyncMilvusClient.drop_function_field": {
+      "stableId": "python:Function:drop_function_field",
+      "canonicalSlug": "Function-drop_function_field",
+      "category": "Function"
+    },
+    "AsyncMilvusClient.dump_messages": {
+      "stableId": "python:Management:dump_messages",
+      "canonicalSlug": "Management-dump_messages",
+      "category": "Management"
+    },
+    "AsyncMilvusClient.get_replicate_info": {
+      "stableId": "python:Management:get_replicate_info",
+      "canonicalSlug": "Management-get_replicate_info",
+      "category": "Management"
+    },
+    "AsyncMilvusClient.list_compaction_tasks": {
+      "stableId": "python:Management:list_compaction_tasks",
+      "canonicalSlug": "Management-list_compaction_tasks",
+      "category": "Management"
+    },
+    "AsyncMilvusClient.list_persistent_segments": {
+      "stableId": "python:Management:list_persistent_segments",
+      "canonicalSlug": "Management-list_persistent_segments",
+      "category": "Management"
+    },
+    "AsyncMilvusClient.list_segments": {
+      "stableId": "python:Management:list_segments",
+      "canonicalSlug": "Management-list_segments",
+      "category": "Management"
+    },
+    "AsyncMilvusClient.search": {
+      "stableId": "python:Vector:search",
+      "canonicalSlug": "Vector-search",
+      "category": "Vector"
+    },
+    "AsyncMilvusClient.update_password": {
+      "stableId": "python:Authentication:update_password",
+      "canonicalSlug": "Authentication-update_password",
+      "category": "Authentication"
+    },
+    "AsyncMilvusClient.update_user": {
+      "stableId": "python:Authentication:update_user",
+      "canonicalSlug": "Authentication-update_user",
+      "category": "Authentication"
+    },
+    "BATCH_SIZE": {
+      "stableId": "python:Internal:BATCH_SIZE",
+      "canonicalSlug": "Internal-BATCH_SIZE",
+      "category": "Internal"
+    },
+    "BloomFilterBuilder": {
+      "stableId": "python:Internal:BloomFilterBuilder",
+      "canonicalSlug": "Internal-BloomFilterBuilder",
+      "category": "Internal"
+    },
+    "CALC_DIST_BM25": {
+      "stableId": "python:Internal:CALC_DIST_BM25",
+      "canonicalSlug": "Internal-CALC_DIST_BM25",
+      "category": "Internal"
+    },
+    "CALC_DIST_COSINE": {
+      "stableId": "python:Internal:CALC_DIST_COSINE",
+      "canonicalSlug": "Internal-CALC_DIST_COSINE",
+      "category": "Internal"
+    },
+    "CALC_DIST_HAMMING": {
+      "stableId": "python:Internal:CALC_DIST_HAMMING",
+      "canonicalSlug": "Internal-CALC_DIST_HAMMING",
+      "category": "Internal"
+    },
+    "CALC_DIST_IP": {
+      "stableId": "python:Internal:CALC_DIST_IP",
+      "canonicalSlug": "Internal-CALC_DIST_IP",
+      "category": "Internal"
+    },
+    "CALC_DIST_JACCARD": {
+      "stableId": "python:Internal:CALC_DIST_JACCARD",
+      "canonicalSlug": "Internal-CALC_DIST_JACCARD",
+      "category": "Internal"
+    },
+    "CALC_DIST_L2": {
+      "stableId": "python:Internal:CALC_DIST_L2",
+      "canonicalSlug": "Internal-CALC_DIST_L2",
+      "category": "Internal"
+    },
+    "CALC_DIST_TANIMOTO": {
+      "stableId": "python:Internal:CALC_DIST_TANIMOTO",
+      "canonicalSlug": "Internal-CALC_DIST_TANIMOTO",
+      "category": "Internal"
+    },
+    "COLLECTION_ID": {
+      "stableId": "python:Internal:COLLECTION_ID",
+      "canonicalSlug": "Internal-COLLECTION_ID",
+      "category": "Internal"
+    },
+    "CollectionSchema.__init__": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
+    "CollectionSchema.auto_id": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
+    "CollectionSchema.enable_dynamic_field": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
+    "CollectionSchema.enable_namespace": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
+    "CollectionSchema.external_source": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
+    "CollectionSchema.external_spec": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
+    "ColumnRef": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "ColumnRef.to_proto": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "CompactionPlans.__init__": {
+      "stableId": "python:Management:get_compaction_plans",
+      "canonicalSlug": "Management-get_compaction_plans",
+      "category": "Management",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Management:get_compaction_plans",
+            "canonicalSlug": "Management-get_compaction_plans",
+            "category": "Management"
+          }
+        ]
+      }
+    },
+    "CompactionTaskState": {
+      "stableId": "python:Management:list_compaction_tasks",
+      "canonicalSlug": "Management-list_compaction_tasks",
+      "category": "Management",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Management:list_compaction_tasks",
+            "canonicalSlug": "Management-list_compaction_tasks",
+            "category": "Management"
+          }
+        ]
+      }
+    },
+    "CompactionType": {
+      "stableId": "python:Management:get_compaction_plans",
+      "canonicalSlug": "Management-get_compaction_plans",
+      "category": "Management",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Management:get_compaction_plans",
+            "canonicalSlug": "Management-get_compaction_plans",
+            "category": "Management"
+          }
+        ]
+      }
+    },
+    "DEFAULT_SEARCH_EXTENSION_RATE": {
+      "stableId": "python:Internal:DEFAULT_SEARCH_EXTENSION_RATE",
+      "canonicalSlug": "Internal-DEFAULT_SEARCH_EXTENSION_RATE",
+      "category": "Internal"
+    },
+    "DESCRIPTOR": {
+      "stableId": "python:Internal:DESCRIPTOR",
+      "canonicalSlug": "Internal-DESCRIPTOR",
+      "category": "Internal"
+    },
+    "EF": {
+      "stableId": "python:Internal:EF",
+      "canonicalSlug": "Internal-EF",
+      "category": "Internal"
+    },
+    "FIELDS": {
+      "stableId": "python:Internal:FIELDS",
+      "canonicalSlug": "Internal-FIELDS",
+      "category": "Internal"
+    },
     "FieldOp": {
       "stableId": "python:FieldOp:FieldOp",
       "canonicalSlug": "FieldOp-FieldOp",
-      "category": "FieldOp"
-    },
-    "FieldOp.replace": {
-      "stableId": "python:FieldOp:replace",
-      "canonicalSlug": "FieldOp-replace",
       "category": "FieldOp"
     },
     "FieldOp.array_append": {
@@ -35,6 +345,11 @@
       "canonicalSlug": "FieldOp-array_remove",
       "category": "FieldOp"
     },
+    "FieldOp.replace": {
+      "stableId": "python:FieldOp:replace",
+      "canonicalSlug": "FieldOp-replace",
+      "category": "FieldOp"
+    },
     "FieldOpType": {
       "stableId": "python:FieldOp:FieldOpType",
       "canonicalSlug": "FieldOp-FieldOpType",
@@ -45,17 +360,332 @@
       "canonicalSlug": "MilvusClient-FieldSchema",
       "category": "MilvusClient"
     },
-    "UserItem": {
-      "stableId": "python:Authentication:describe_user",
-      "canonicalSlug": "Authentication-describe_user",
+    "FunctionChain": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.__init__": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.limit": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.map": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.name": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.ops": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.sort": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.stage": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChain.to_proto": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain"
+    },
+    "FunctionChainExpr": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "FunctionChainExpr.to_proto": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "FunctionChainOp": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "FunctionChainOp.to_proto": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "FunctionChainStage": {
+      "stableId": "python:FunctionChain:FunctionChainStage",
+      "canonicalSlug": "FunctionChain-FunctionChainStage",
+      "category": "FunctionChain"
+    },
+    "GUARANTEE_TIMESTAMP": {
+      "stableId": "python:Internal:GUARANTEE_TIMESTAMP",
+      "canonicalSlug": "Internal-GUARANTEE_TIMESTAMP",
+      "category": "Internal"
+    },
+    "INT64_MAX": {
+      "stableId": "python:Internal:INT64_MAX",
+      "canonicalSlug": "Internal-INT64_MAX",
+      "category": "Internal"
+    },
+    "IS_PRIMARY": {
+      "stableId": "python:Internal:IS_PRIMARY",
+      "canonicalSlug": "Internal-IS_PRIMARY",
+      "category": "Internal"
+    },
+    "ITERATOR_FIELD": {
+      "stableId": "python:Internal:ITERATOR_FIELD",
+      "canonicalSlug": "Internal-ITERATOR_FIELD",
+      "category": "Internal"
+    },
+    "ITERATOR_SESSION_CP_FILE": {
+      "stableId": "python:Internal:ITERATOR_SESSION_CP_FILE",
+      "canonicalSlug": "Internal-ITERATOR_SESSION_CP_FILE",
+      "category": "Internal"
+    },
+    "ITERATOR_SESSION_TS_FIELD": {
+      "stableId": "python:Internal:ITERATOR_SESSION_TS_FIELD",
+      "canonicalSlug": "Internal-ITERATOR_SESSION_TS_FIELD",
+      "category": "Internal"
+    },
+    "MAX_BATCH_SIZE": {
+      "stableId": "python:Internal:MAX_BATCH_SIZE",
+      "canonicalSlug": "Internal-MAX_BATCH_SIZE",
+      "category": "Internal"
+    },
+    "MAX_FILTERED_IDS_COUNT_ITERATION": {
+      "stableId": "python:Internal:MAX_FILTERED_IDS_COUNT_ITERATION",
+      "canonicalSlug": "Internal-MAX_FILTERED_IDS_COUNT_ITERATION",
+      "category": "Internal"
+    },
+    "MAX_TRY_TIME": {
+      "stableId": "python:Internal:MAX_TRY_TIME",
+      "canonicalSlug": "Internal-MAX_TRY_TIME",
+      "category": "Internal"
+    },
+    "METRIC_TYPE": {
+      "stableId": "python:Internal:METRIC_TYPE",
+      "canonicalSlug": "Internal-METRIC_TYPE",
+      "category": "Internal"
+    },
+    "MILVUS_LIMIT": {
+      "stableId": "python:Internal:MILVUS_LIMIT",
+      "canonicalSlug": "Internal-MILVUS_LIMIT",
+      "category": "Internal"
+    },
+    "MilvusClient.add_collection_struct_field": {
+      "stableId": "python:Collections:add_collection_struct_field",
+      "canonicalSlug": "Collections-add_collection_struct_field",
+      "category": "Collections"
+    },
+    "MilvusClient.add_function_field": {
+      "stableId": "python:Function:add_function_field",
+      "canonicalSlug": "Function-add_function_field",
+      "category": "Function"
+    },
+    "MilvusClient.alter_role": {
+      "stableId": "python:Authentication:alter_role",
+      "canonicalSlug": "Authentication-alter_role",
       "category": "Authentication"
     },
-    "UserItem.description": {
-      "stableId": "python:Authentication:describe_user",
-      "canonicalSlug": "Authentication-describe_user",
+    "MilvusClient.create_role": {
+      "stableId": "python:Authentication:create_role",
+      "canonicalSlug": "Authentication-create_role",
       "category": "Authentication"
+    },
+    "MilvusClient.create_user": {
+      "stableId": "python:Authentication:create_user",
+      "canonicalSlug": "Authentication-create_user",
+      "category": "Authentication"
+    },
+    "MilvusClient.drop_function_field": {
+      "stableId": "python:Function:drop_function_field",
+      "canonicalSlug": "Function-drop_function_field",
+      "category": "Function"
+    },
+    "MilvusClient.dump_messages": {
+      "stableId": "python:Management:dump_messages",
+      "canonicalSlug": "Management-dump_messages",
+      "category": "Management"
+    },
+    "MilvusClient.get_replicate_info": {
+      "stableId": "python:Management:get_replicate_info",
+      "canonicalSlug": "Management-get_replicate_info",
+      "category": "Management"
+    },
+    "MilvusClient.list_compaction_tasks": {
+      "stableId": "python:Management:list_compaction_tasks",
+      "canonicalSlug": "Management-list_compaction_tasks",
+      "category": "Management"
+    },
+    "MilvusClient.list_persistent_segments": {
+      "stableId": "python:Management:list_persistent_segments",
+      "canonicalSlug": "Management-list_persistent_segments",
+      "category": "Management"
+    },
+    "MilvusClient.list_segments": {
+      "stableId": "python:Management:list_segments",
+      "canonicalSlug": "Management-list_segments",
+      "category": "Management"
+    },
+    "MilvusClient.search": {
+      "stableId": "python:Vector:search",
+      "canonicalSlug": "Vector-search",
+      "category": "Vector"
+    },
+    "MilvusClient.search_iterator": {
+      "stableId": "python:Vector:search_iterator",
+      "canonicalSlug": "Vector-search_iterator",
+      "category": "Vector"
+    },
+    "MilvusClient.update_password": {
+      "stableId": "python:Authentication:update_password",
+      "canonicalSlug": "Authentication-update_password",
+      "category": "Authentication"
+    },
+    "MilvusClient.update_user": {
+      "stableId": "python:Authentication:update_user",
+      "canonicalSlug": "Authentication-update_user",
+      "category": "Authentication"
+    },
+    "OFFSET": {
+      "stableId": "python:Internal:OFFSET",
+      "canonicalSlug": "Internal-OFFSET",
+      "category": "Internal"
+    },
+    "PARAMS": {
+      "stableId": "python:Internal:PARAMS",
+      "canonicalSlug": "Internal-PARAMS",
+      "category": "Internal"
+    },
+    "Plan.__init__": {
+      "stableId": "python:Management:get_compaction_plans",
+      "canonicalSlug": "Management-get_compaction_plans",
+      "category": "Management",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Management:get_compaction_plans",
+            "canonicalSlug": "Management-get_compaction_plans",
+            "category": "Management"
+          }
+        ]
+      }
+    },
+    "ProtobufSlot": {
+      "stableId": "python:Internal:ProtobufSlot",
+      "canonicalSlug": "Internal-ProtobufSlot",
+      "category": "Internal"
+    },
+    "QUERY_ITER_LAST_ELEMENT_OFFSET": {
+      "stableId": "python:Internal:QUERY_ITER_LAST_ELEMENT_OFFSET",
+      "canonicalSlug": "Internal-QUERY_ITER_LAST_ELEMENT_OFFSET",
+      "category": "Internal"
+    },
+    "QUERY_ITER_LAST_PK": {
+      "stableId": "python:Internal:QUERY_ITER_LAST_PK",
+      "canonicalSlug": "Internal-QUERY_ITER_LAST_PK",
+      "category": "Internal"
+    },
+    "QueryIterator.__init__": {
+      "stableId": "python:Vector:query_iterator",
+      "canonicalSlug": "Vector-query_iterator",
+      "category": "Vector",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Vector:query_iterator",
+            "canonicalSlug": "Vector-query_iterator",
+            "category": "Vector"
+          }
+        ]
+      }
+    },
+    "QueryIteratorHandler": {
+      "stableId": "python:Internal:QueryIteratorHandler",
+      "canonicalSlug": "Internal-QueryIteratorHandler",
+      "category": "Internal"
+    },
+    "RADIUS": {
+      "stableId": "python:Internal:RADIUS",
+      "canonicalSlug": "Internal-RADIUS",
+      "category": "Internal"
+    },
+    "RANGE_FILTER": {
+      "stableId": "python:Internal:RANGE_FILTER",
+      "canonicalSlug": "Internal-RANGE_FILTER",
+      "category": "Internal"
+    },
+    "REDUCE_STOP_FOR_BEST": {
+      "stableId": "python:Internal:REDUCE_STOP_FOR_BEST",
+      "canonicalSlug": "Internal-REDUCE_STOP_FOR_BEST",
+      "category": "Internal"
+    },
+    "RoaringBitmapBuilder": {
+      "stableId": "python:Internal:RoaringBitmapBuilder",
+      "canonicalSlug": "Internal-RoaringBitmapBuilder",
+      "category": "Internal"
     },
     "RoleItem": {
+      "stableId": "python:Authentication:describe_role",
+      "canonicalSlug": "Authentication-describe_role",
+      "category": "Authentication"
+    },
+    "RoleItem.__init__": {
       "stableId": "python:Authentication:describe_role",
       "canonicalSlug": "Authentication-describe_role",
       "category": "Authentication"
@@ -63,7 +693,327 @@
     "RoleItem.description": {
       "stableId": "python:Authentication:describe_role",
       "canonicalSlug": "Authentication-describe_role",
+      "category": "Authentication",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Authentication:describe_role",
+            "canonicalSlug": "Authentication-describe_role",
+            "category": "Authentication"
+          }
+        ]
+      }
+    },
+    "SEARCH_AGGREGATION": {
+      "stableId": "python:Vector:SearchAggregation",
+      "canonicalSlug": "Vector-SearchAggregation",
+      "category": "Vector",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Vector:SearchAggregation",
+            "canonicalSlug": "Vector-SearchAggregation",
+            "category": "Vector"
+          }
+        ]
+      }
+    },
+    "SearchAggregation": {
+      "stableId": "python:Vector:SearchAggregation",
+      "canonicalSlug": "Vector-SearchAggregation",
+      "category": "Vector"
+    },
+    "SearchAggregation.__init__": {
+      "stableId": "python:Vector:SearchAggregation",
+      "canonicalSlug": "Vector-SearchAggregation",
+      "category": "Vector"
+    },
+    "SearchAggregation.to_proto": {
+      "stableId": "python:Vector:SearchAggregation",
+      "canonicalSlug": "Vector-SearchAggregation",
+      "category": "Vector"
+    },
+    "SearchIterator.__init__": {
+      "stableId": "python:Vector:search_iterator",
+      "canonicalSlug": "Vector-search_iterator",
+      "category": "Vector",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Vector:search_iterator",
+            "canonicalSlug": "Vector-search_iterator",
+            "category": "Vector"
+          }
+        ]
+      }
+    },
+    "SearchIteratorHandler": {
+      "stableId": "python:Internal:SearchIteratorHandler",
+      "canonicalSlug": "Internal-SearchIteratorHandler",
+      "category": "Internal"
+    },
+    "SearchIteratorV2.__init__": {
+      "stableId": "python:Vector:search_iterator",
+      "canonicalSlug": "Vector-search_iterator",
+      "category": "Vector",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Vector:search_iterator",
+            "canonicalSlug": "Vector-search_iterator",
+            "category": "Vector"
+          }
+        ]
+      }
+    },
+    "SearchIteratorV2Handler": {
+      "stableId": "python:Internal:SearchIteratorV2Handler",
+      "canonicalSlug": "Internal-SearchIteratorV2Handler",
+      "category": "Internal"
+    },
+    "SegmentState": {
+      "stableId": "python:Management:list_segments",
+      "canonicalSlug": "Management-list_segments",
+      "category": "Management",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Management:list_segments",
+            "canonicalSlug": "Management-list_segments",
+            "category": "Management"
+          }
+        ]
+      }
+    },
+    "StructFieldSchema.__init__": {
+      "stableId": "python:MilvusClient:StructFieldSchema",
+      "canonicalSlug": "MilvusClient-StructFieldSchema",
+      "category": "MilvusClient"
+    },
+    "StructFieldSchema.nullable": {
+      "stableId": "python:MilvusClient:StructFieldSchema",
+      "canonicalSlug": "MilvusClient-StructFieldSchema",
+      "category": "MilvusClient",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:MilvusClient:StructFieldSchema",
+            "canonicalSlug": "MilvusClient-StructFieldSchema",
+            "category": "MilvusClient"
+          }
+        ]
+      }
+    },
+    "TopHits": {
+      "stableId": "python:Vector:TopHits",
+      "canonicalSlug": "Vector-TopHits",
+      "category": "Vector"
+    },
+    "TopHits.__init__": {
+      "stableId": "python:Vector:TopHits",
+      "canonicalSlug": "Vector-TopHits",
+      "category": "Vector"
+    },
+    "TopHits.size": {
+      "stableId": "python:Vector:TopHits",
+      "canonicalSlug": "Vector-TopHits",
+      "category": "Vector"
+    },
+    "TopHits.sort": {
+      "stableId": "python:Vector:TopHits",
+      "canonicalSlug": "Vector-TopHits",
+      "category": "Vector"
+    },
+    "TopHits.to_proto": {
+      "stableId": "python:Vector:TopHits",
+      "canonicalSlug": "Vector-TopHits",
+      "category": "Vector"
+    },
+    "TypeInfo": {
+      "stableId": "python:Internal:TypeInfo",
+      "canonicalSlug": "Internal-TypeInfo",
+      "category": "Internal"
+    },
+    "UNLIMITED": {
+      "stableId": "python:Internal:UNLIMITED",
+      "canonicalSlug": "Internal-UNLIMITED",
+      "category": "Internal"
+    },
+    "UploadPolicy": {
+      "stableId": "python:DataImport:VolumeBulkWriter",
+      "canonicalSlug": "DataImport-VolumeBulkWriter",
+      "category": "DataImport",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:DataImport:VolumeBulkWriter",
+            "canonicalSlug": "DataImport-VolumeBulkWriter",
+            "category": "DataImport"
+          }
+        ]
+      }
+    },
+    "UploadPolicy.should_skip": {
+      "stableId": "python:DataImport:VolumeBulkWriter",
+      "canonicalSlug": "DataImport-VolumeBulkWriter",
+      "category": "DataImport",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:DataImport:VolumeBulkWriter",
+            "canonicalSlug": "DataImport-VolumeBulkWriter",
+            "category": "DataImport"
+          }
+        ]
+      }
+    },
+    "UploadProgress": {
+      "stableId": "python:VolumeFileManager:upload_file_to_volume",
+      "canonicalSlug": "VolumeFileManager-upload_file_to_volume",
+      "category": "VolumeFileManager",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:VolumeFileManager:upload_file_to_volume",
+            "canonicalSlug": "VolumeFileManager-upload_file_to_volume",
+            "category": "VolumeFileManager"
+          }
+        ]
+      }
+    },
+    "UserItem": {
+      "stableId": "python:Authentication:describe_user",
+      "canonicalSlug": "Authentication-describe_user",
       "category": "Authentication"
+    },
+    "UserItem.__init__": {
+      "stableId": "python:Authentication:describe_user",
+      "canonicalSlug": "Authentication-describe_user",
+      "category": "Authentication"
+    },
+    "UserItem.description": {
+      "stableId": "python:Authentication:describe_user",
+      "canonicalSlug": "Authentication-describe_user",
+      "category": "Authentication",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:Authentication:describe_user",
+            "canonicalSlug": "Authentication-describe_user",
+            "category": "Authentication"
+          }
+        ]
+      }
+    },
+    "VolumeBulkWriter.__init__": {
+      "stableId": "python:DataImport:VolumeBulkWriter",
+      "canonicalSlug": "DataImport-VolumeBulkWriter",
+      "category": "DataImport"
+    },
+    "VolumeFileManager.upload_file_to_volume": {
+      "stableId": "python:VolumeFileManager:upload_file_to_volume",
+      "canonicalSlug": "VolumeFileManager-upload_file_to_volume",
+      "category": "VolumeFileManager"
+    },
+    "col": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "decay": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "num_combine": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "rerank_model": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "round_decimal": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
+    },
+    "xgboost": {
+      "stableId": "python:FunctionChain:FunctionChain",
+      "canonicalSlug": "FunctionChain-FunctionChain",
+      "category": "FunctionChain",
+      "documentationOwnership": {
+        "classification": "method_owned",
+        "owners": [
+          {
+            "stableId": "python:FunctionChain:FunctionChain",
+            "canonicalSlug": "FunctionChain-FunctionChain",
+            "category": "FunctionChain"
+          }
+        ]
+      }
     }
   }
 }

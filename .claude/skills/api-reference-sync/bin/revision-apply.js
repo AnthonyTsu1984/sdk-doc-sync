@@ -55,6 +55,7 @@ const {
 } = require('../src/sdk-doc-sync/pr-polish');
 const { verbatimContentDigest } = require('../src/sdk-doc-sync/verbatim-content');
 const { checkLayoutConformance, pageFactsFromBlocks } = require('../src/sdk-doc-sync/layout-conformance');
+const { blocksToMarkdown } = require('../src/sdk-doc-sync/blocks-to-markdown');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
@@ -105,8 +106,20 @@ function fetchRawContent(documentToken) {
 }
 
 function fetchBlocks(documentToken) {
-    const parsed = larkApi('GET', `/open-apis/docx/v1/documents/${documentToken}/blocks`, { page_size: 500 });
-    return (parsed.data && parsed.data.items) || [];
+    const items = [];
+    let pageToken = undefined;
+    // Pages may exceed one 500-block page: walk has_more to the end — a
+    // truncated block tree would silently drop structure from the map base.
+    for (;;) {
+        const params = pageToken ? { page_size: 500, page_token: pageToken } : { page_size: 500 };
+        const parsed = larkApi('GET', `/open-apis/docx/v1/documents/${documentToken}/blocks`, params);
+        items.push(...((parsed.data && parsed.data.items) || []));
+        if (parsed.data?.has_more && parsed.data?.page_token) {
+            pageToken = parsed.data.page_token;
+            continue;
+        }
+        return items;
+    }
 }
 
 function readJson(file) {
@@ -264,12 +277,16 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
 
     const documentToken = action.documentToken;
-    // raw_content always leads with the page title (compareVerbatimContent
-    // drops it unconditionally on the observed side): the full raw bytes go
-    // into the rollback capsule, the manifest baseline is the title-stripped
-    // body so it lines up with the authored fixed markdown.
+    // The semantic map base must be the AUTHORED form of the CURRENT page:
+    // raw_content strips code fences and bullet prefixes, so a raw-derived
+    // base sees zero items/code and would refuse the authored fixed content
+    // for "adding" structure the live page already carries. Reconstruct the
+    // authored base from the live block tree instead (blocksToMarkdown is
+    // proven canonical against raw_content by its fixture set). The raw
+    // bytes stay bound as the rollback capsule and the terminal comparator.
+    const priorBlocks = await fetchBlocksFn(documentToken);
+    const baseContent = blocksToMarkdown(priorBlocks);
     const priorRawContent = await fetchRawContentFn(documentToken);
-    const baseContent = priorRawContent.split('\n').slice(1).join('\n');
 
     const journalPath = args.journal
         || path.join(REPO_ROOT, 'tmp', 'api-reference-sync', `${batchDigest.replace(/:/g, '-')}.jsonl`);

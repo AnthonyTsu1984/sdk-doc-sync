@@ -80,6 +80,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/bitable-repository.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-writer.test.js',
     '.claude/skills/api-reference-sync/tests/block-registry.test.js',
+    '.claude/skills/api-reference-sync/tests/blocks-to-markdown.test.js',
     '.claude/skills/api-reference-sync/tests/build-revision-scope.test.js',
     '.claude/skills/api-reference-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/code-variants.test.js',

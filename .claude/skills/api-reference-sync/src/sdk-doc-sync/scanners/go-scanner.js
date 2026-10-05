@@ -137,6 +137,10 @@ const METHOD_CATEGORIES = {
     AddFileResource: 'FileResources',
     ListFileResources: 'FileResources',
     RemoveFileResource: 'FileResources',
+
+    // v3.0.0 additions surfaced by web-content PR intake (#1147/#1158)
+    RestoreExternalSnapshot: 'Snapshot',
+    AddCollectionStructField: 'Collections',
 };
 
 // Package-level exported constructors in client/milvusclient that are not
@@ -252,6 +256,12 @@ const ENTITY_DEFS = [
     { name: 'ListImportJobsResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Response listing bulk import jobs.' },
     { name: 'GetImportProgressOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for querying the progress of one bulk import job.' },
     { name: 'GetImportProgressResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Progress details of one bulk import job.' },
+
+    // v3.0.0 additions surfaced by web-content PR intake (#1147/#1158)
+    { name: 'ReplicaInfo', category: 'ResourceGroup', pkg: 'entity', file: 'resource_group.go', kind: 'struct', docstring: 'Represents one replica of a resource group, including its node distribution and state.' },
+    { name: 'AnalyzerResult', category: 'Vector', pkg: 'entity', file: 'analyzer.go', kind: 'struct', docstring: 'Represents one analyzer token result, including the token and its offsets.' },
+    { name: 'Reranker', category: 'Vector', pkg: 'milvusclient', file: 'reranker.go', kind: 'interface', docstring: 'Interface for reranking strategies that reorder hybrid search results.' },
+    { name: 'SearchAggregation', category: 'Vector', pkg: 'milvusclient', file: 'search_aggregation.go', kind: 'struct', docstring: 'Aggregation specification for grouping and reducing search results.' },
 ];
 
 class GoScanner extends BaseScanner {

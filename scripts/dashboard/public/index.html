@@ -874,19 +874,22 @@ function filesTable(detail) {
   const order = { 'pending-approval': 0, executing: 1, 'rolling-back': 2, queued: 3, accepted: 4, ungrouped: 5 };
   files.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
   if (!files.length) return '<div class="empty">无文件表（releaseScope 工件缺失或无单元）</div>';
+  const anyPrFile = files.some((f) => f.filePath);
   const rows = files.map((f) => `<tr>
-      <td class="fname" title="${esc(f.filePath ?? '')}">${esc(f.fileName ?? f.symbol ?? humanUnit(f.unitId))}${f.filePath ? '' : ' <span class="dim">（无 PR 文件，源码证据）</span>'}</td>
+      <td class="fname" title="${esc(f.filePath ?? '')}">${esc(f.fileName ?? f.symbol ?? humanUnit(f.unitId))}${(!f.filePath && anyPrFile) ? ' <span class="dim">（无 PR 文件，源码证据）</span>' : ''}</td>
       <td>${f.unitId ? `<span class="iconlink" title="${esc(f.unitId)}">${esc(humanUnit(f.unitId))}</span>` : '<span class="dim">—</span>'}</td>
       <td>${f.status === 'accepted' ? '<span class="badge finalized">已写入·验收</span>' : f.status === 'pending-approval' ? '<span class="badge gate">待批准写入</span>' : f.status === 'ungrouped' ? '<span class="badge">未入组</span>' : `<span class="badge active">${esc(UNIT_STATUS_LABEL[f.status] ?? f.status)}</span>`}</td>
       <td class="dim">${esc(f.reason ?? '—')}</td>
-      <td class="dim num">${f.sourcePr ? `PR #${f.sourcePr}` : (f.changeType ?? '—')}</td>
+      <td class="dim num" title="${esc(f.sourceLocator ?? '')}">${f.sourcePr ? `PR #${f.sourcePr}` : (f.sourceLocator ?? f.changeType ?? '—')}</td>
       <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}</td>
     </tr>`).join('');
   return `<table class="tbl">
     <thead><tr><th>文件</th><th>单元</th><th>状态</th><th>变更原因</th><th>来源</th><th>飞书</th></tr></thead>
     <tbody>${rows}</tbody>
   </table>
-  <div class="note" style="border:0">文件名取自 release-scope 的 web-content 路径；悬停看全路径。「飞书」列为该单元的文档/记录原始链接。</div>`;
+  <div class="note" style="border:0">${anyPrFile
+    ? '文件名取自 release-scope 的 web-content 路径；悬停看全路径。「飞书」列为该单元的文档/记录原始链接。'
+    : '本次范围为<b>源码证据驱动</b>（无 web-content PR 文件）：首列为方法/单元名，「来源」列为 SDK 源码定位（仓库 file:line）——变更证据来自 tag 间源码 diff，而非文档 PR。'}</div>`;
 }
 
 function fmtTokens(n) {

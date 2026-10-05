@@ -246,6 +246,7 @@ test('buildIntakeBrief is deterministic and fail-closed', (t) => {
   assert.match(good.text, /Vector\.get/);
   assert.match(good.text, /sdk-core\/src\/MilvusClientV2\.java/);
   assert.match(good.text, /停在 APPROVE_GROUPING 门/);
+  assert.match(good.text, /会话文件落位契约/);
   assert.match(good.text, /APPROVE_GROUPING sha256:<digest>/);
   assert.equal(good.meta.actionCount, 1);
 

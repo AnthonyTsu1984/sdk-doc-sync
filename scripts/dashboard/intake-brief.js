@@ -66,6 +66,7 @@ function buildIntakeBrief({ repoRoot, language, scoutPath, now = new Date() } = 
   lines.push('');
   lines.push('### 工作指令');
   lines.push('- 按治理流程对以上发现做**只读 intake**：证据核证 → 规划（dry-run）→ 建评审会话（--session-state）。');
+  lines.push('- 会话文件落位契约（发现面约定）：`tmp/sdk-doc-sync-runs/<language>-<track>/review-session.json` 或 `tmp/sdk-release-scout/<track>-session.json`——放别处看板与 session-start 钩子都看不见。');
   lines.push('- 产出分组方案后**停在 APPROVE_GROUPING 门**，把分组 digest 呈给操作员；未获批准前不进入任何写路径。');
   lines.push('- 操作员批准分组后才逐单元推进；每个写门（APPROVE_DOCUMENT / APPROVE_WRITES）照常停下等批。');
   lines.push('');

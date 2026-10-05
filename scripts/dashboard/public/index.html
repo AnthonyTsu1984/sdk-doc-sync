@@ -762,7 +762,16 @@ function oneClickApproveCard(c, detail) {
   }
   const workers = (c.workers || []).filter((w) => w.sessionId);
   if (!workers.length) {
-    return `<div class="approve"><div class="t">⛩ 界面批准</div><div class="hint">还没有看板派出的 worker。先用上方「一键派出执行会话」开工，它停在门禁后这里就能一键批准（操作员手开的会话走原流程：在会话里手打批准行）。</div></div>`;
+    const g0 = gateSummary(c);
+    const lineGate0 = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
+    const unit0 = c.nextGate?.reviewUnitId || '';
+    const pending0 = (c.pendingUnits || []).find((p) => !unit0 || p.reviewUnitId === unit0);
+    const line0 = pending0 ? `${lineGate0}${unit0 ? ' ' + unit0 : ''} ${pending0.executionJournalDigest}`.trim() : null;
+    return `<div class="approve"><div class="t">⛩ ${g0 ? esc(g0.title) : '界面批准'}</div>
+      ${line0 && APPROVE_LINE_RE.test(line0)
+        ? `<div class="frow"><code>${esc(line0)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line0).replace(/"/g, '&quot;')})">复制批准行</button></div>`
+        : `<div class="hint">当前门或 digest 尚不可自动组装（约 1 分钟刷新；或从呈门材料取精确行）。</div>`}
+      <div class="hint">无看板 worker：界面注入仅限看板派出的会话（防并发写）。手开的会话把上面的批准行原文粘进去即为批复；或用「一键派出执行会话」派一个可注入的 worker。</div></div>`;
   }
   const idle = workers.find((w) => w.status === 'idle');
   const g = gateSummary(c);
@@ -790,6 +799,11 @@ function oneClickApproveCard(c, detail) {
           ? `批准回滚 ${esc(unit || '（填单元 id）')}`
           : '批准终局验收';
   const line = `${lineGate}${unit ? ' ' + unit : ''} ${digest}`.trim();
+  const manualCopy = (reason) => `<div class="approve"><div class="t">⛩ ${esc(g.title)}</div><div class="sum">${summary}</div>
+    ${digest && APPROVE_LINE_RE.test(line)
+      ? `<div class="frow"><code>${esc(line)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line).replace(/"/g, '&quot;')})">复制批准行</button></div>`
+      : `<div class="hint">这一门的 digest 不能自动预填——从<a href="/api/file?path=${encodeURIComponent('tmp/api-reference-sync/gate-presentation/latest.html')}" target="_blank">呈门材料</a>复制精确行。</div>`}
+    <div class="hint">${esc(reason)}：界面注入仅限看板派出的会话（防并发写）；手开的会话把上面这行原文粘进去即为批复——语义与 digest 绑定仍由治理 CLI 执法。</div></div>`;
   if (!idle) {
     return `<div class="approve"><div class="t">⛩ ${esc(g.title)}</div><div class="sum">${summary}</div><div class="hint">worker 正在运行——等它停在门禁后再批准。</div></div>`;
   }

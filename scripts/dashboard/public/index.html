@@ -44,6 +44,18 @@
   .kv b { color: var(--dim); font-weight: 500; }
   .note { font-size: 12px; color: var(--dim); margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 7px; }
   .empty { color: var(--dim); padding: 18px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; background: var(--card); }
+  .matrix { display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 15px; }
+  .mrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .mlang { width: 64px; font-weight: 600; font-size: 13px; flex: none; }
+  .mtrack { cursor: pointer; padding: 3px 11px; border-radius: 8px; font-size: 12.5px; }
+  .mtrack.active { background: var(--blue-bg); color: var(--blue); }
+  .mtrack.awaiting-close { background: var(--amber-bg); color: var(--amber); }
+  .mtrack.zombie { background: var(--red-bg); color: var(--red); }
+  .mtrack.finalized { background: var(--green-bg); color: var(--green); }
+  .badge.gate { background: #f5edff; color: #6d28d9; }
+  .actions { margin-top: 9px; display: flex; gap: 8px; }
+  .act { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 3px 10px; font-size: 12px; color: var(--ink); }
+  .act:hover { border-color: var(--blue); color: var(--blue); }
   .feed { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-height: 320px; overflow-y: auto; }
   .feed .ev { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
   .feed .ev:last-child { border-bottom: 0; }
@@ -81,6 +93,8 @@
 <main>
   <h2>哨兵 · 每日自动扫描（只发现不处置）</h2>
   <div class="grid" id="sentinels"></div>
+  <h2>并行矩阵（语种 × 轨道）</h2>
+  <div id="matrix" class="matrix"></div>
   <h2>战役任务</h2>
   <div class="grid" id="campaigns"></div>
   <h2>活动流（会话动作事件，近 24–48h）</h2>
@@ -162,10 +176,38 @@ function renderSentinels(d) {
   }).join('');
 }
 
+function attachKey(c) { return c.scanState.key || c.sessionPath; }
+
+function renderMatrix(d) {
+  const host = document.getElementById('matrix');
+  const list = d.campaigns || [];
+  if (!list.length) { host.innerHTML = ''; return; }
+  const byLanguage = new Map();
+  list.forEach((c, i) => {
+    const lang = c.language || '?';
+    if (!byLanguage.has(lang)) byLanguage.set(lang, []);
+    byLanguage.get(lang).push([c, i]);
+  });
+  const rows = [...byLanguage.entries()].map(([lang, entries]) => {
+    const chips = entries.map(([c, i]) => `<span class="mtrack ${c.health}" title="${esc(c.sessionPath)}" onclick="openDrawer(${i})">${esc(c.track ?? '?')}${c.nextGate ? ' ⛩' : ''}${c.lastActivityAt ? ' ●' : ''}</span>`).join('');
+    return `<div class="mrow"><span class="mlang">${esc(lang)}</span>${chips}</div>`;
+  }).join('');
+  host.innerHTML = rows + '<div class="note" style="border:0;padding:0;margin-top:6px">⛩=有当前门 ●=近期有活动；点击轨道打开战役详情。新会话接管战役：粘贴 <code>/attach &lt;键&gt;</code>（键如 java-v30）。</div>';
+}
+
+async function spawnSession() {
+  try {
+    const r = await fetch('/api/spawn-session', { method: 'POST' });
+    const j = await r.json();
+    alert(j.note || j.error || JSON.stringify(j));
+  } catch (e) { alert('派会话失败: ' + e); }
+}
+
 function renderCampaigns(d) {
   const host = document.getElementById('campaigns');
   const list = d.campaigns || [];
   if (!list.length) { host.innerHTML = '<div class="empty">无战役会话（新战役从 dry-run + --session-state 开始）</div>'; return; }
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
   host.innerHTML = list.map((c, i) => {
     const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
     const flags = [
@@ -174,12 +216,16 @@ function renderCampaigns(d) {
       c.hasActiveRollback ? '回滚中' : '',
       c.rollbacks ? `回滚 ${c.rollbacks}` : '',
     ].filter(Boolean).join(' · ');
+    const gateChip = c.nextGate
+      ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">门 ${esc(c.nextGate.gate)}</span>`
+      : '';
     const zombieLine = c.health === 'zombie'
       ? `<div class="warnline">⚠ scan-state 已推进到 ${esc(c.scanState.lastScannedTag ?? '?')}（越过目标 ${esc(c.scanState.targetTag ?? '?')}）——close-session 收口，勿续跑</div>` : '';
+    const key = attachKey(c);
     return `<div class="card" data-i="${i}" onclick="openDrawer(${i})">
       <div class="row1">
         <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` · ${esc(c.acceptanceFlow)}` : ''}</span>
-        <span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span>
+        <span style="display:flex;gap:6px">${gateChip}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
       </div>
       <div class="sub">${esc(c.sessionId ? c.sessionId.split(':').slice(0, 4).join(':') : c.sessionPath)}</div>
       <div class="bar"><i style="width:${pct}%"></i></div>
@@ -191,6 +237,10 @@ function renderCampaigns(d) {
         ${flags ? `<span>${esc(flags)}</span>` : ''}
       </div>
       ${zombieLine}
+      <div class="actions" onclick="event.stopPropagation()">
+        <button class="act" onclick="copyText('/attach ${esc(key)}')">复制 /attach</button>
+        ${spawnOn ? '<button class="act" onclick="spawnSession()">派会话</button>' : ''}
+      </div>
     </div>`;
   }).join('');
 }
@@ -219,6 +269,7 @@ function render(d) {
   latest = d;
   renderHeader(d);
   renderSentinels(d);
+  renderMatrix(d);
   renderCampaigns(d);
   renderActivity(d);
   if (document.getElementById('drawer').classList.contains('open') && window._openIndex != null) {
@@ -262,7 +313,9 @@ function fillDrawer(i) {
     <div class="kv">
       <b>单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起执行 ${c.pending}</span>
       <b>执行/回滚</b><span>${c.hasActiveExecution ? '执行中 ' : ''}${c.hasActiveRollback ? '回滚中 ' : ''}${c.rollbacks ? `历史回滚 ${c.rollbacks}` : '无活动执行/回滚'}</span>
+      <b>当前门</b><span>${c.nextGate ? `<b style="color:#6d28d9">${esc(c.nextGate.gate)}</b>${c.nextGate.reviewUnitId ? ` · ${esc(c.nextGate.reviewUnitId)}` : ''}${c.nextGate.gate === 'CLOSE_SESSION' ? '（机械收口）' : ''}` : '—（由 sdk-review-session status 推导，稍候或无）'}</span>
     </div>
+    <div style="margin-top:8px"><button class="act" onclick="copyText('/attach ${esc(attachKey(c))}')">复制 /attach ${esc(attachKey(c))}</button></div>
     <h3>工件</h3>
     <ul>
       <li>releaseScope: ${viewLink(c.artifacts.releaseScope)}</li>

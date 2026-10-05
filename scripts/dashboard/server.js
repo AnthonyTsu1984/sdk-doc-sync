@@ -13,12 +13,18 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { exec } = require('node:child_process');
+const { exec, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
 
 const { buildLedger } = require('./ledger.js');
 
+const execFileAsync = promisify(execFile);
+
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
+const REVIEW_SESSION_CLI = path.join(REPO_ROOT, '.claude/skills/api-reference-sync/bin/sdk-review-session.js');
+const NEXT_GATE_TTL_MS = 3 * 60_000;
+const NEXT_GATE_MAX_SESSIONS = 8;
 
 // /api/file allowlist: repo-relative prefixes (plus one exact file). Anything
 // resolving outside these — or outside the repo via .. or symlinks — is 403.
@@ -41,7 +47,7 @@ const FINGERPRINT_TTL_MS = 5 * 60_000;
 const FILE_VIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 function parseArgs(argv) {
-  const options = { port: 8765, open: true };
+  const options = { port: 8765, open: true, allowSpawn: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--port') {
@@ -52,9 +58,76 @@ function parseArgs(argv) {
       }
     } else if (arg === '--no-open') {
       options.open = false;
+    } else if (arg === '--allow-spawn') {
+      options.allowSpawn = true;
     }
   }
   return options;
+}
+
+// ---------- next-gate enrichment (authoritative CLI, TTL-cached) ----------
+
+const nextGateCache = new Map(); // sessionPath -> { value, at }
+
+// Authoritative next-gate derivation lives in sdk-review-session.js; the
+// dashboard only caches and displays it. Failures degrade to no chip.
+async function fetchNextGate(sessionPath) {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [REVIEW_SESSION_CLI, 'status', '--session', path.join(REPO_ROOT, sessionPath)],
+    { timeout: 30_000, encoding: 'utf8' },
+  );
+  return parseStatusOutput(stdout);
+}
+
+function parseStatusOutput(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshNextGates() {
+  if (!currentPayload) return;
+  const targets = currentPayload.campaigns
+    .filter((card) => card.health !== 'finalized')
+    .slice(0, NEXT_GATE_MAX_SESSIONS);
+  let changed = false;
+  for (const card of targets) {
+    const cached = nextGateCache.get(card.sessionPath);
+    if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) continue;
+    let value = null;
+    try {
+      value = await fetchNextGate(card.sessionPath);
+    } catch {
+      value = null;
+    }
+    nextGateCache.set(card.sessionPath, { value, at: Date.now() });
+    changed = true;
+  }
+  if (changed) scheduleRecompute('next-gate');
+}
+
+function mergeNextGate(payload) {
+  for (const card of payload.campaigns) {
+    const cached = nextGateCache.get(card.sessionPath);
+    if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) {
+      card.nextGate = cached.value?.nextGate ?? null;
+    }
+  }
+  return payload;
+}
+
+// ---------- session spawn (opt-in, interactive only) ----------
+
+// Fixed command: open an interactive Terminal in the repo running zcode. No
+// request input ever reaches the shell. Headless/autonomous execution is
+// deliberately NOT offered — campaign gates require the operator.
+function buildSpawnCommand(repoRoot) {
+  const escaped = String(repoRoot).replace(/"/g, '\\"');
+  return ['osascript', ['-e', `tell application "Terminal" to do script "cd ${escaped} && zcode"`]];
 }
 
 // ---------- aggregation cache + push ----------
@@ -78,10 +151,12 @@ function fingerprintStatus(state) {
 
 function buildPayload() {
   const ledger = buildLedger({ repoRoot: REPO_ROOT });
-  return {
+  const payload = {
     ...ledger,
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
+    features: { spawnEnabled: spawnOptions.allowSpawn },
   };
+  return mergeNextGate(payload);
 }
 
 // generatedAt (and fingerprint computedAt) are volatile; everything else
@@ -148,6 +223,8 @@ function heartbeat() {
 // ---------- admission fingerprint (background, TTL-cached) ----------
 
 const fingerprintState = { computed: false, fingerprint: null, phase: null, recordedAt: null };
+
+let spawnOptions = { allowSpawn: false };
 
 function computeFingerprint() {
   try {
@@ -261,6 +338,25 @@ function serveFileView(req, res, query) {
 
 function handler(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${req.socket.localPort || 0}`);
+  if (url.pathname === '/api/spawn-session') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'POST required' });
+      return;
+    }
+    if (!spawnOptions.allowSpawn) {
+      sendJson(res, 404, { error: 'spawn disabled — restart the dashboard with --allow-spawn' });
+      return;
+    }
+    const [command, args] = buildSpawnCommand(REPO_ROOT);
+    execFile(command, args, { timeout: 15_000 }, (error) => {
+      if (error) {
+        sendJson(res, 500, { error: `spawn failed: ${error?.message}` });
+        return;
+      }
+      sendJson(res, 200, { ok: true, note: '已在 Terminal 打开 zcode——粘贴 /attach <键> 挂载战役（如 /attach java-v30）' });
+    });
+    return;
+  }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     sendJson(res, 405, { error: 'read-only server' });
     return;
@@ -306,10 +402,13 @@ function handler(req, res) {
 }
 
 function main() {
-  const { port, open } = parseArgs(process.argv);
+  const { port, open, allowSpawn } = parseArgs(process.argv);
+  spawnOptions = { allowSpawn };
   recompute('startup');
   computeFingerprint();
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
+  refreshNextGates().catch(() => {});
+  setInterval(() => refreshNextGates().catch(() => {}), 60_000).unref();
 
   for (const dir of WATCH_DIRS) {
     try {
@@ -324,9 +423,11 @@ function main() {
   const server = http.createServer(handler);
   server.listen(port, '127.0.0.1', () => {
     const address = `http://127.0.0.1:${server.address().port}`;
-    process.stdout.write(`[dashboard] serving ${address} (read-only; repo ${REPO_ROOT})\n`);
+    process.stdout.write(`[dashboard] serving ${address} (read-only${allowSpawn ? ' + opt-in spawn' : ''}; repo ${REPO_ROOT})\n`);
     if (open) exec(`open ${address}`);
   });
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { buildSpawnCommand, parseArgs, parseStatusOutput };

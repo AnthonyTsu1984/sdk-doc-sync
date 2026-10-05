@@ -16,7 +16,6 @@ const path = require('node:path');
 const DAILY_DIR_RELATIVE_PATH = 'tmp/sdk-release-scout/daily';
 // Exact daily-scout shape: date - language - track version . json
 const DAILY_SCOUT_RE = /^(\d{4}-\d{2}-\d{2})-([a-z]+)-v(\d+)\.json$/;
-const LOOKBACK_DAYS_DEFAULT = 14;
 
 function localDateStamp(date) {
   const pad = (n) => String(n).padStart(2, '0');
@@ -36,10 +35,14 @@ function toRepoRelative(repoRoot, absolutePath) {
   return relative && !relative.startsWith('..') && !path.isAbsolute(relative) ? relative : null;
 }
 
-// Latest scout date present on disk for the language (or any language when
-// null), within the lookback window. Older-than-window artifacts are stale
-// campaign residue, not actionable findings.
-function latestScoutFiles(repoRoot, { language = null, now = new Date(), lookbackDays = LOOKBACK_DAYS_DEFAULT } = {}) {
+// Today's scout artifacts for the language (or any language when null).
+// The daily scanner re-emits the same artifact every morning while findings
+// stay unprocessed, and stops emitting once the track's scan-state advances
+// past them — so an artifact that exists for TODAY is pending, and one that
+// only exists for earlier days is already-processed history (surfacing it as
+// actionable would be wrong). Absent-today therefore means no findings; the
+// sentinel card's same-day report conclusion remains the authority.
+function latestScoutFiles(repoRoot, { language = null, now = new Date() } = {}) {
   const dir = path.join(repoRoot, DAILY_DIR_RELATIVE_PATH);
   let names;
   try {
@@ -47,17 +50,15 @@ function latestScoutFiles(repoRoot, { language = null, now = new Date(), lookbac
   } catch {
     return { date: null, files: [] };
   }
-  const byDate = new Map();
-  const cutoff = `${localDateStamp(new Date(now.getTime() - lookbackDays * 24 * 60 * 60 * 1000))}`;
   const today = localDateStamp(now);
+  const files = [];
   for (const name of names) {
     const match = DAILY_SCOUT_RE.exec(name);
     if (!match) continue;
     const [, date, fileLanguage, versionDigits] = match;
+    if (date !== today) continue;
     if (language && fileLanguage !== language) continue;
-    if (date < cutoff || date > today) continue;
-    if (!byDate.has(date)) byDate.set(date, []);
-    byDate.get(date).push({
+    files.push({
       date,
       language: fileLanguage,
       trackKey: `${fileLanguage}-v${versionDigits}`,
@@ -65,9 +66,7 @@ function latestScoutFiles(repoRoot, { language = null, now = new Date(), lookbac
       absolute: path.join(dir, name),
     });
   }
-  if (byDate.size === 0) return { date: null, files: [] };
-  const date = [...byDate.keys()].sort().pop();
-  return { date, files: byDate.get(date).sort((a, b) => a.trackKey.localeCompare(b.trackKey)) };
+  return { date: files.length ? today : null, files: files.sort((a, b) => a.trackKey.localeCompare(b.trackKey)) };
 }
 
 function actionView(action) {
@@ -128,7 +127,6 @@ function allowedScoutPaths({ repoRoot, language, now = new Date() } = {}) {
 module.exports = {
   DAILY_DIR_RELATIVE_PATH,
   DAILY_SCOUT_RE,
-  LOOKBACK_DAYS_DEFAULT,
   allowedScoutPaths,
   buildScoutFindings,
   latestScoutFiles,

@@ -112,7 +112,7 @@ test('attribution from dashboard events joins sessionId → campaign path', (t) 
   });
   assert.equal(count, 1);
   const row = db.prepare('SELECT campaignPath, source FROM attribution WHERE sessionId = ?').get('sessX');
-  assert.equal(row.campaignPath, 'tmp/sdk-release-scout/java-v26-session.json');
+  assert.equal(row.campaignPath, 'main::tmp/sdk-release-scout/java-v26-session.json');
   assert.equal(row.source, 'events');
 });
 
@@ -126,11 +126,11 @@ test('approve-run boundary attributes a resume turn to its unit', (t) => {
 
   const db = openDb(root);
   usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T10:00:00Z') });
-  usage.upsertAttribution(db, 'sessW', 'tmp/sdk-release-scout/w-session.json', 'worker-registry', new Date('2026-10-05T10:00:00Z'));
+  usage.upsertAttribution(db, 'sessW', 'main::tmp/sdk-release-scout/w-session.json', 'worker-registry', new Date('2026-10-05T10:00:00Z'));
 
   const runId = usage.openApproveRun(db, {
     sessionId: 'sessW',
-    campaignPath: 'tmp/sdk-release-scout/w-session.json',
+    campaignPath: 'main::tmp/sdk-release-scout/w-session.json',
     unitId: 'review:java:v2-Vector:get',
   }, new Date('2026-10-05T10:01:00Z'));
 
@@ -141,7 +141,7 @@ test('approve-run boundary attributes a resume turn to its unit', (t) => {
   assert.equal(delta.deltaTurns, 1);
   assert.equal(delta.deltaTotal, 3800);
 
-  const view = usage.campaignUsage(db, 'tmp/sdk-release-scout/w-session.json');
+  const view = usage.campaignUsage(db, 'main::tmp/sdk-release-scout/w-session.json');
   assert.equal(view.totals.sessions, 1);
   assert.equal(view.totals.totalTokens, (1000 + 200) + (3000 + 800));
   assert.equal(view.perUnit.length, 1);
@@ -156,7 +156,7 @@ test('campaignUsage is honest when nothing is attributed yet', (t) => {
   const { root } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const db = openDb(root);
-  const view = usage.campaignUsage(db, 'tmp/sdk-release-scout/none.json');
+  const view = usage.campaignUsage(db, 'main::tmp/sdk-release-scout/none.json');
   assert.equal(view.totals.sessions, 0);
   assert.equal(view.totals.totalTokens, 0);
   assert.deepEqual(view.perUnit, []);

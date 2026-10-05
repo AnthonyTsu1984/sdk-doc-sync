@@ -399,14 +399,30 @@ function normalizeSessionRef(ref) {
   return index >= 0 ? ref.slice(index) : ref;
 }
 
+// Multi-checkout attribution key: sibling worktrees run campaigns of their
+// own, and a sessionRef pointing into a sibling must never match a main-
+// checkout card with the same relative path. `<checkoutId>::<relative>`.
+function attributeKeyFor(ref, checkouts) {
+  if (typeof ref !== 'string' || !ref) return null;
+  for (const checkout of checkouts || []) {
+    if (typeof checkout.root !== 'string') continue;
+    if (ref === checkout.root || ref.startsWith(`${checkout.root}/`)) {
+      const relative = ref === checkout.root ? '' : ref.slice(checkout.root.length + 1);
+      return relative ? `${checkout.id}::${relative}` : null;
+    }
+  }
+  const normalized = normalizeSessionRef(ref);
+  return normalized ? `main::${normalized}` : null;
+}
+
 // Attribute events to campaign cards via the session-file path embedded in
 // the tapped tool input, and stamp per-card activity stats in place.
-function attachActivity(campaigns, events) {
-  const byPath = new Map(campaigns.map((card) => [card.sessionPath, card]));
+function attachActivity(campaigns, events, checkouts) {
+  const byKey = new Map(campaigns.map((card) => [card.sessionKey ?? `main::${card.sessionPath}`, card]));
   const activity = [];
   for (const event of events) {
-    const ref = normalizeSessionRef(event.sessionRef);
-    const card = ref ? byPath.get(ref) : undefined;
+    const key = attributeKeyFor(event.sessionRef, checkouts);
+    const card = key ? byKey.get(key) : undefined;
     if (card) {
       card.activityCount += 1;
       if (!card.lastActivityAt || String(event.ts) > card.lastActivityAt) card.lastActivityAt = String(event.ts);
@@ -417,33 +433,131 @@ function attachActivity(campaigns, events) {
       tool: event.tool ?? null,
       summary: typeof event.summary === 'string' ? event.summary : '',
       sessionId: event.sessionId ?? null,
-      campaign: card ? card.sessionPath : null,
+      campaign: card ? (card.sessionKey ?? card.sessionPath) : null,
     });
   }
   return activity;
 }
 
-function buildLedger({ repoRoot, now = new Date() } = {}) {
+// Live-session rollup for the overview: which sessions are working right
+// now, in which checkout. Checkout is derived from absolute paths visible in
+// the tapped summaries (worktree-rooted tool calls) — no hook change needed.
+function deriveRunningSessions(activity, checkouts, now = Date.now(), windowMs = 30 * 60_000) {
+  const cutoff = now - windowMs;
+  const bySession = new Map();
+  for (const event of activity) {
+    const ts = new Date(event.ts).getTime();
+    if (!Number.isFinite(ts) || ts < cutoff || !event.sessionId) continue;
+    let entry = bySession.get(event.sessionId);
+    if (!entry) {
+      entry = { sessionId: event.sessionId, lastAt: event.ts, events: 0, tools: new Map(), checkoutHits: new Map(), campaign: null };
+      bySession.set(event.sessionId, entry);
+    }
+    entry.events += 1;
+    if (String(event.ts) > String(entry.lastAt)) entry.lastAt = event.ts;
+    if (event.tool) entry.tools.set(event.tool, (entry.tools.get(event.tool) || 0) + 1);
+    if (typeof event.summary === 'string') {
+      // Longest-root match only: the main root is usually a path PREFIX of
+      // sibling worktree roots, so naive substring counting would attribute
+      // worktree work to main.
+      const hit = (checkouts || [])
+        .filter((checkout) => typeof checkout.root === 'string' && event.summary.includes(checkout.root))
+        .sort((a, b) => b.root.length - a.root.length)[0];
+      if (hit) entry.checkoutHits.set(hit.id, (entry.checkoutHits.get(hit.id) || 0) + 1);
+    }
+    if (event.campaign) entry.campaign = event.campaign;
+  }
+  return [...bySession.values()]
+    .map((entry) => {
+      const [checkout] = [...entry.checkoutHits.entries()].sort((a, b) => b[1] - a[1])[0] ?? ['main'];
+      return {
+        sessionId: entry.sessionId,
+        lastAt: entry.lastAt,
+        events: entry.events,
+        tools: [...entry.tools.entries()].sort((a, b) => b[1] - a[1]).map(([tool, n]) => `${tool}×${n}`),
+        checkout,
+        campaign: entry.campaign,
+      };
+    })
+    .sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+}
+
+// Parse `git worktree list --porcelain` output into dashboard checkouts.
+// The main entry keeps id 'main'; siblings get id/label from their directory
+// basename. Bare entries and the admin worktree are not expected here.
+function parseWorktreeList(porcelain, repoRoot) {
+  const checkouts = [];
+  let current = null;
+  for (const line of String(porcelain || '').split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current = { root: line.slice('worktree '.length).trim() };
+      checkouts.push(current);
+    } else if (current && line.startsWith('bare')) {
+      checkouts.pop();
+      current = null;
+    }
+  }
+  return checkouts
+    .filter((entry) => typeof entry.root === 'string' && entry.root)
+    .map((entry) => {
+      if (entry.root === repoRoot) return { id: 'main', label: '主检出', root: repoRoot };
+      const base = path.basename(entry.root.replace(/\/+$/, ''));
+      return { id: base, label: base, root: entry.root };
+    });
+}
+
+// Resolve a board-facing campaign target (`<checkoutId>::<relative>` or a
+// plain main-checkout path) to its checkout + relative session path.
+// Fail-closed: unknown checkout ids and `..` are rejected.
+function resolveSessionTarget(requested, checkouts) {
+  const raw = String(requested || '').trim();
+  if (!raw) return { error: 'missing target' };
+  const separator = raw.indexOf('::');
+  if (separator === -1) {
+    const main = (checkouts || []).find((c) => c.id === 'main');
+    return main ? { checkout: main, relative: raw } : { error: 'no main checkout' };
+  }
+  const id = raw.slice(0, separator);
+  const relative = raw.slice(separator + 2);
+  const checkout = (checkouts || []).find((c) => c.id === id);
+  if (!checkout) return { error: `unknown checkout: ${id}` };
+  return { checkout, relative };
+}
+
+function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
   if (!repoRoot) throw new Error('buildLedger requires repoRoot');
-  const scanState = readJsonOrNull(path.join(repoRoot, SCAN_STATE_RELATIVE_PATH));
+  const effectiveCheckouts = (Array.isArray(checkouts) && checkouts.length > 0)
+    ? checkouts
+    : [{ id: 'main', label: '主检出', root: repoRoot }];
   const campaigns = [];
-  for (const relative of walkSessionFiles(repoRoot)) {
-    const session = readJsonOrNull(path.join(repoRoot, relative));
-    if (!session || !session.schemaVersion || typeof session.status !== 'string') continue;
-    campaigns.push(buildCampaignCard(repoRoot, relative, session, scanState));
+  for (const checkout of effectiveCheckouts) {
+    const scanState = readJsonOrNull(path.join(checkout.root, SCAN_STATE_RELATIVE_PATH));
+    for (const relative of walkSessionFiles(checkout.root)) {
+      const session = readJsonOrNull(path.join(checkout.root, relative));
+      if (!session || !session.schemaVersion || typeof session.status !== 'string') continue;
+      const card = buildCampaignCard(checkout.root, relative, session, scanState);
+      // Board-facing identity: checkout-qualified so sibling-worktree cards
+      // can never collide with main-checkout paths.
+      card.checkout = checkout.id;
+      card.checkoutLabel = checkout.label;
+      card.sessionKey = `${checkout.id}::${relative}`;
+      campaigns.push(card);
+    }
   }
   campaigns.sort((a, b) => (
     campaignOrder(a) - campaignOrder(b)
     || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
   ));
-  const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }));
+  const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }), effectiveCheckouts);
   return {
     generatedAt: now.toISOString(),
+    checkouts: effectiveCheckouts.map(({ id, label }) => ({ id, label })),
     campaigns,
     sentinels: SENTINELS.map((definition) => buildSentinelCard(repoRoot, definition, now)),
     skillTracks: buildSkillTracks(repoRoot, campaigns),
     admission: readAdmission(repoRoot),
     activity: activity.slice(-120),
+    runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
   };
 }
 
@@ -455,18 +569,22 @@ module.exports = {
   SENTINELS,
   SESSION_SCAN_ROOTS,
   attachActivity,
+  attributeKeyFor,
   buildCampaignCard,
   buildLedger,
   buildSentinelCard,
   buildSkillTracks,
   compareTags,
   computeNextDailyRun,
+  deriveRunningSessions,
   healthFor,
   localDateStamp,
   normalizeSessionRef,
+  parseWorktreeList,
   readDailyReport,
   readJsonOrNull,
   readRecentEvents,
+  resolveSessionTarget,
   scanStateKeyFor,
   trackScanStateKey,
   walkSessionFiles,

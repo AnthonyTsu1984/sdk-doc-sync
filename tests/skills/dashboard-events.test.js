@@ -123,7 +123,7 @@ test('readRecentEvents + buildLedger attribution stamps campaign activity', (t) 
   assert.equal(card.activityCount, 1, 'absolute sessionRef normalized onto the repo-relative card path');
   assert.equal(card.lastActivityAt, events[1].ts);
   assert.equal(ledger.activity.length, 3);
-  assert.equal(ledger.activity[1].campaign, 'tmp/sdk-release-scout/live-session.json');
+  assert.equal(ledger.activity[1].campaign, 'main::tmp/sdk-release-scout/live-session.json');
   assert.equal(ledger.activity[2].campaign, null, 'unattributed events stay unattributed');
 });
 

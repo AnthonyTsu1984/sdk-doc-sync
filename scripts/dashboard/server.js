@@ -50,6 +50,7 @@ const WATCH_DIRS = ['tmp', '.claude/skills/api-reference-sync'];
 const POLL_INTERVAL_MS = 30_000;
 const DEBOUNCE_MS = 400;
 const FINGERPRINT_TTL_MS = 5 * 60_000;
+const LIVE_STATS_TTL_MS = 10 * 60_000;
 const FILE_VIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 function parseArgs(argv) {
@@ -688,14 +689,16 @@ async function handler(req, res) {
       sendJson(res, 200, { ok: true, clients: sseClients.size });
       return;
     case '/api/live-stats': {
-      // Always answers; degraded statuses (failed/partial) are payload data,
-      // not HTTP errors — the board renders a fallback chip.
-      try {
-        const snapshot = await liveStats.get();
-        sendJson(res, 200, snapshot);
-      } catch (error) {
-        sendJson(res, 200, { status: 'failed', fetchedAt: null, error: String(error?.message || error), tracks: {} });
+      // Always answers immediately with the current snapshot — never awaits a
+      // refresh (a full sweep walks 17 tracks and can take tens of seconds).
+      // A stale/never-run snapshot triggers a background refresh; the page
+      // re-polls and picks it up.
+      const current = liveStats.snapshot();
+      const age = current.fetchedAt ? Date.now() - new Date(current.fetchedAt).getTime() : Infinity;
+      if (current.status === 'never-run' || age > LIVE_STATS_TTL_MS) {
+        liveStats.get().catch(() => {});
       }
+      sendJson(res, 200, current);
       return;
     }
     case '/api/scout': {

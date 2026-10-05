@@ -1130,11 +1130,48 @@ async function pageCampaign(d, path) {
   renderUsagePanel(c);
 }
 
+// ---------- UI state across re-renders ----------
+//
+// Card payloads push whenever tmp/ changes (active campaigns write
+// constantly), and each render replaces the page's innerHTML — expanded
+// details, select choices, typed inputs and scroll positions must survive.
+
+function snapshotUiState() {
+  const state = { details: new Set(), selects: {}, inputs: {}, scrollY: 0 };
+  document.querySelectorAll?.('details[open] > summary').forEach((sm) => {
+    const key = (sm.textContent || '').trim();
+    if (key) state.details.add(key);
+  });
+  document.querySelectorAll?.('select[id], input[id]').forEach((node) => {
+    if (node.tagName === 'SELECT') state.selects[node.id] = node.value;
+    else state.inputs[node.id] = node.value;
+  });
+  state.scrollY = typeof window.scrollY === 'number' ? window.scrollY : 0;
+  return state;
+}
+
+function restoreUiState(state) {
+  if (!state) return;
+  document.querySelectorAll?.('details > summary').forEach((sm) => {
+    if (state.details.has((sm.textContent || '').trim())) sm.parentElement.open = true;
+  });
+  for (const [id, value] of Object.entries(state.selects || {})) {
+    const node = document.getElementById(id);
+    if (node) node.value = value;
+  }
+  for (const [id, value] of Object.entries(state.inputs || {})) {
+    const node = document.getElementById(id);
+    if (node && document.activeElement !== node) node.value = value;
+  }
+  if (state.scrollY && typeof window.scrollTo === 'function') window.scrollTo(0, state.scrollY);
+}
+
 // ---------- router ----------
 
 function route() {
   if (!latest) return;
   maybeReloadOnUiVersion(latest);
+  const uiState = snapshotUiState();
   const r = parseHash();
   renderNav(r);
   renderHeader(latest);
@@ -1145,6 +1182,7 @@ function route() {
   else if (r.name === 'track') pageTrack(d, r.key);
   else if (r.name === 'campaign') pageCampaign(d, r.path);
   else if (r.name === 'skill') pageSkill(d, r.id);
+  restoreUiState(uiState);
 }
 window.route = route;
 window.addEventListener('hashchange', route);

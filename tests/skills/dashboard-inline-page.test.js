@@ -50,12 +50,12 @@ function loadPageScript() {
   const harness = new Function(
     'window', 'document', 'location', 'EventSource', 'fetch', 'confirm', 'alert', 'navigator', 'setTimeout', 'capture',
     `${source}
-     capture({ route, parseHash, cardKey, setPage: (p) => { latest = p; } });`,
+     capture({ route, parseHash, cardKey, snapshotUiState, restoreUiState, setPage: (p) => { latest = p; } });`,
   );
   harness(
     page.window, page.document, location, page.EventSource, page.fetch,
     page.confirm, page.alert, page.navigator, setTimeout,
-    (captured) => Object.assign(api, captured, { location }),
+    (captured) => Object.assign(api, captured, { location, document: page.document }),
   );
   return { api, elements };
 }
@@ -114,4 +114,29 @@ test('routing an unknown campaign path renders the honest not-found state', () =
   api.location.hash = `#/campaign/${encodeURIComponent('main::tmp/nope-session.json')}`;
   api.route();
   assert.ok(elements.page.innerHTML.includes('未找到'), 'not-found state renders instead of crashing');
+});
+
+
+test('ui state survives a re-render: open details, select values, typed inputs', () => {
+  const { api, elements } = loadPageScript();
+  api.setPage(revisionPayload());
+  const detailsEl = { textContent: ' 这块看板怎么用（流程与按钮说明） ', parentElement: { open: false } };
+  const selectEl = { id: 'tkCheckout', tagName: 'SELECT', value: 'main' };
+  const inputEl = { id: 'apDigest', tagName: 'INPUT', value: 'sha256:xyz' };
+  api.document.querySelectorAll = (selector) => {
+    if (selector.startsWith('details')) return [detailsEl];
+    if (selector.startsWith('select')) return [selectEl, inputEl]; // 'select[id], input[id]'
+    return [inputEl];
+  };
+  elements.tkCheckout = selectEl;
+  elements.apDigest = inputEl;
+  detailsEl.parentElement.open = true;
+  const state = api.snapshotUiState();
+  detailsEl.parentElement.open = false;
+  selectEl.value = '';
+  inputEl.value = '';
+  api.restoreUiState(state);
+  assert.ok(detailsEl.parentElement.open, 'expanded fold stays expanded');
+  assert.equal(selectEl.value, 'main', 'select choice restored');
+  assert.equal(inputEl.value, 'sha256:xyz', 'typed input restored');
 });

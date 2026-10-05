@@ -512,6 +512,88 @@ function buildRevisionCards(checkouts) {
   return [...byStem.values()].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
 }
 
+// ---------- intake grouping gates (batch 11) ----------
+//
+// The grouping gate is the campaign's FIRST durable artifact, and the phase
+// between its presentation and the review-session creation (dry-run, context
+// generation — potentially very long) left no trace the board could show:
+// the operator approved go's grouping and the board displayed nothing. Grouping
+// manifests are now first-class: presented → awaiting → approved (a session
+// built after the gate in the same checkout proves the approval).
+
+const INTAKE_MANIFEST_GLOBS = [
+  `${REVISION_DIR_RELATIVE_PATH}/gate-manifest-grouping-*.json`,
+  'tmp/sdk-release-scout/*grouping*manifest*.json',
+];
+const KNOWN_LANGUAGES = new Set(['cpp', 'go', 'java', 'python', 'node', 'rest', 'zilliz-cli']);
+
+function intakeLanguageOf(manifest) {
+  const text = `${manifest.title ?? ''} ${manifest.run ?? ''}`.toLowerCase();
+  for (const word of text.split(/[^a-z-]+/)) {
+    if (KNOWN_LANGUAGES.has(word)) return word;
+  }
+  return null;
+}
+
+function buildIntakeCards(checkouts, campaigns, revisions = [], now = new Date()) {
+  const cards = [];
+  for (const checkout of checkouts) {
+    const root = checkout.root || '';
+    for (const pattern of INTAKE_MANIFEST_GLOBS) {
+      const dir = path.join(root, path.dirname(pattern));
+      const re = new RegExp('^' + path.basename(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      let names;
+      try {
+        names = fs.readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (!re.test(name)) continue;
+        const absolute = path.join(dir, name);
+        const payload = readJsonOrNull(absolute);
+        if (!payload || !/GROUPING/i.test(String(payload.gate ?? ''))) continue;
+        if (typeof payload.digest !== 'string' || !payload.digest.startsWith('sha256:')) continue;
+        const stat = readStatsOrNull(absolute);
+        const presentedAt = stat ? new Date(stat.mtimeMs).toISOString() : null;
+        const language = intakeLanguageOf(payload);
+        // Approval evidence: a review session for the same language created
+        // in this checkout after the gate was presented (two-gate flows
+        // create the session only after APPROVE_GROUPING).
+        // Two-gate flows prove approval by a session built after the gate;
+        // revision flows prove it by any governed page written after it.
+        const approved = (campaigns || []).some((card) => card.checkout === checkout.id
+          && card.language === language
+          && card.createdAt && presentedAt
+          && new Date(card.createdAt).getTime() >= new Date(presentedAt).getTime() - 60_000)
+          || (revisions || []).some((rev) => rev.checkout === checkout.id
+            && rev.language === language
+            && rev.writtenPages > 0
+            && rev.written.some((w) => !presentedAt || !w.writtenAt
+              || new Date(w.writtenAt).getTime() >= new Date(presentedAt).getTime() - 60_000));
+        const relative = path.relative(root, absolute).split(path.sep).join('/');
+        cards.push({
+          kind: 'intake',
+          checkout: checkout.id,
+          checkoutLabel: checkout.label,
+          checkoutRoot: root,
+          manifestPath: relative,
+          title: payload.title ?? '分组门',
+          run: typeof payload.run === 'string' ? payload.run : null,
+          digest: payload.digest,
+          language,
+          presentedAt,
+          approved,
+          links: Array.isArray(payload.links)
+            ? payload.links.filter((l) => l && typeof l.url === 'string').map((l) => ({ label: l.label ?? l.url, url: l.url }))
+            : [],
+        });
+      }
+    }
+  }
+  return cards.sort((a, b) => String(b.presentedAt || '').localeCompare(String(a.presentedAt || '')));
+}
+
 // ---------- api-reference-skill language × track summary ----------
 
 // Track identity for the skill board: language + version come from the
@@ -746,6 +828,7 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     campaignOrder(a) - campaignOrder(b)
     || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
   ));
+  const revisionsCache = buildRevisionCards(effectiveCheckouts);
   const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }), effectiveCheckouts);
   return {
     generatedAt: now.toISOString(),
@@ -757,7 +840,8 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     gatePresentations: readGatePresentations(effectiveCheckouts),
     activity: activity.slice(-120),
     runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
-    revisions: buildRevisionCards(effectiveCheckouts),
+    revisions: revisionsCache,
+    intakes: buildIntakeCards(effectiveCheckouts, campaigns, revisionsCache, now),
   };
 }
 
@@ -774,6 +858,7 @@ module.exports = {
   attributeKeyFor,
   buildCampaignCard,
   buildLedger,
+  buildIntakeCards,
   buildRevisionCards,
   buildSentinelCard,
   buildSkillTracks,

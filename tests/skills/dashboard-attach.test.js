@@ -126,7 +126,7 @@ test('server helpers: spawn opt-in flag, fixed command, status parsing', () => {
 
   const [cmd, args] = buildSpawnCommand('/Users/x/repo');
   assert.equal(cmd, 'open');
-  assert.deepEqual(args, ['-a', 'Terminal', '/Users/x/repo']);
+  assert.deepEqual(args, ['zcode://workspace/open?path=%2FUsers%2Fx%2Frepo'], 'desktop URL scheme, path encoded');
 
   assert.equal(parseStatusOutput('{"nextGate":null}').nextGate, null);
   assert.equal(parseStatusOutput('not json'), null);

@@ -122,15 +122,15 @@ function mergeNextGate(payload) {
 
 // ---------- session spawn (opt-in, interactive only) ----------
 
-// Fixed command: open an interactive Terminal window at the repo root via
-// LaunchServices (`open -a Terminal <dir>` sets the new shell's cwd). No
-// request input ever reaches the shell, and no Apple Events permission is
-// needed (osascript 'do script' times out without Terminal automation
-// consent). The operator types zcode and pastes the copied /attach line.
-// Headless/autonomous execution is deliberately NOT offered — campaign gates
-// require the operator.
+// Fixed command: open this repo's workspace in ZCode Desktop via its URL
+// scheme (`zcode://workspace/open?path=…`, the only workspace route the app
+// registers besides oauth/callback). No terminal window, no Apple Events
+// permission, no request input reaches any shell. Headless spawn
+// (`zcode -p --surface desktop`) is the eventual one-click form but needs a
+// model provider config the CLI does not currently have — and autonomous
+// execution would still have to stop at operator gates.
 function buildSpawnCommand(repoRoot) {
-  return ['open', ['-a', 'Terminal', String(repoRoot)]];
+  return ['open', [`zcode://workspace/open?path=${encodeURIComponent(repoRoot)}`]];
 }
 
 // ---------- aggregation cache + push ----------
@@ -356,7 +356,7 @@ function handler(req, res) {
         sendJson(res, 500, { error: `spawn failed: ${error?.message}` });
         return;
       }
-      sendJson(res, 200, { ok: true, note: '已在 Terminal 打开仓库目录——输入 zcode 启动，再粘贴剪贴板里已复制的 /attach <键> 挂载战役' });
+      sendJson(res, 200, { ok: true, note: '已在 ZCode 桌面端打开本仓库工作区——新建会话后粘贴剪贴板里已复制的 /attach <键>，即完成挂载（全程无终端窗口）' });
     });
     return;
   }

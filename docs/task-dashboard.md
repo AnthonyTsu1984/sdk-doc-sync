@@ -59,7 +59,7 @@
 - **`/attach` 命令**（`.zcode/commands/attach.md` 薄路由，本机态）→ 引擎 `scripts/dashboard/attach-brief.js`（入库、CI 测试）：按 scan-state 键（`java-v30`）或会话路径定位战役（多活跃会话时消歧报错），从 durable 状态确定性生成简报——进度/当前门（调权威 `sdk-review-session status` 的 nextGate，绝不自行推导）/scan-state 对照/准入/最近归因活动/续接规则（门禁格式+铁律）。新会话粘贴 `/attach <键>` 即完成挂载，零聊天历史依赖。
 - **卡片当前门**：server 后台（60s 周期、TTL 3min、仅非 finalized、≤8 个）调 status CLI 富集 `nextGate`，UI 卡片与矩阵显示 `⛩ 门 <GATE>` 紫色 chip。
 - **并行矩阵**：语种×轨道 chip 矩阵（⛩=有门 ●=近期活动，健康档着色，点击直达卡片）。
-- **派会话**：`POST /api/spawn-session` **默认关闭**，须 `npm run dashboard -- --allow-spawn` 显式开启；实现为 `open -a Terminal <repo>`（LaunchServices 开交互式终端窗口、cwd=仓库根；Apple Events 的 osascript 方案在无 Terminal 自动化授权时超时，弃用；请求输入永不进 shell）。操作员敲 `zcode`、粘贴已复制的 `/attach <键>`。刻意**不提供 headless 自治执行**——战役门禁必须有人；自动并行执行属批 4 之后的独立讨论。卡片按钮：复制 `/attach <键>`（恒在）+ 派会话（开启时）。
+- **派会话**：`POST /api/spawn-session` **默认关闭**，须 `npm run dashboard -- --allow-spawn` 显式开启；实现为桌面端 URL scheme `open 'zcode://workspace/open?path=<repo>'`（app.asar 实测仅此一条工作区路由）——**无终端窗口**，桌面端打开本仓库工作区后新建会话、粘贴已复制的 `/attach <键>`。备选路线考察：osascript AppleEvent 无授权即超时（弃用）；`zcode -p --surface desktop` 是终极形态但本机 CLI 无模型 provider 配置（凭据在桌面端账户）且自治执行终须停在人工门——留待将来。卡片按钮：复制 `/attach <键>`（恒在）+ 派会话（开启时）。
 
 ## 5. 路线
 

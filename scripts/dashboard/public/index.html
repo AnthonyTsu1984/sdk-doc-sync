@@ -360,12 +360,109 @@ const USAGE_GUIDE = `
 <details class="fold"><summary>这块看板怎么用（流程与按钮说明）</summary>
   <div>
     <p><b>整体节奏</b>：每日哨兵扫描只发现变化 → 你决定立项后，战役按「分组批准 → 逐篇写入批准 → 验收 → 收口」推进；每个需要你决定的时刻都会出现在总览的「待你决定」里。</p>
+    <p><b>「开始处理」</b>（语种页·今日发现）：对当日扫描发现一键派出只读处理会话——它做证据核证与规划后<b>停在分组批准门</b>，你在界面批准分组方案后它才进入写作；写作的每个写门照常停下等你。</p>
     <p><b>「复制挂载命令」</b>：把 <code>/attach &lt;战役键&gt;</code> 放进剪贴板。粘到一个新开的 ZCode 会话里，该会话即接手这个战役（拿到确定性简报，不靠聊天记忆续接）。</p>
     <p><b>「一键派出执行会话」</b>：免终端——直接在 ZCode 桌面端生成一个带战役简报的新会话并自动开工；遇到任何 APPROVE_* 门禁会停下等你，不会先斩后奏。需要在启动看板时开启（<code>--allow-spawn</code>）。</p>
     <p><b>「批准并继续」</b>（战役详情页）：对看板派出的会话，把批准行原文注入它并继续执行；批准什么、绑定什么摘要，全部摊开在「技术详情」里，语义校验仍由治理 CLI 把关。需要 <code>--allow-approve</code>。</p>
     <p><b>数据从哪来</b>：看板只读盘上治理状态（评审会话、scan-state、准入台账、每日扫描工件），本页自身无任何写路径；删掉看板，治理毫发无损。</p>
   </div>
 </details>`;
+
+// ---------- live stats & scout findings (batch 6; client caches, TTL 5min) ----------
+
+let liveCache = { at: 0, data: null };
+let scoutCache = { at: 0, data: null };
+const CLIENT_CACHE_MS = 5 * 60_000;
+
+async function fetchLive() {
+  if (liveCache.data && Date.now() - liveCache.at < CLIENT_CACHE_MS) return liveCache.data;
+  try {
+    const j = await (await fetch('/api/live-stats')).json();
+    liveCache = { at: Date.now(), data: j };
+  } catch {
+    liveCache = { at: Date.now(), data: { status: 'failed', tracks: {} } };
+  }
+  return liveCache.data;
+}
+
+async function fetchScout() {
+  if (scoutCache.data && Date.now() - scoutCache.at < CLIENT_CACHE_MS) return scoutCache.data;
+  try {
+    const j = await (await fetch('/api/scout')).json();
+    scoutCache = { at: Date.now(), data: j };
+  } catch {
+    scoutCache = { at: Date.now(), data: { ok: false, languages: [] } };
+  }
+  return scoutCache.data;
+}
+
+function liveChipFor(live, language) {
+  if (!live || live.status === 'never-run') return '<span class="badge">live 统计拉取中…</span>';
+  const tracks = Object.values(live.tracks || {}).filter((t) => t.language === language);
+  if (live.status === 'failed' || !tracks.length) {
+    return `<span class="badge" title="${esc(live.error ?? '')}">live 拉取失败（registry 静态）</span>`;
+  }
+  const records = tracks.reduce((n, t) => n + (t.recordTotal ?? 0), 0);
+  const docs = tracks.reduce((n, t) => n + (t.docs ?? 0), 0);
+  const capped = tracks.some((t) => t.capped);
+  return `<span class="badge ${live.status === 'ok' ? 'finalized' : 'active'}" title="实时取自飞书${capped ? '（文档数已按上限截断）' : ''}">live 记录 ${records} · 文档 ${docs}${live.fetchedAt ? ` · ${rel(live.fetchedAt)}` : ''}</span>`;
+}
+
+function findingsBannerFor(scout, language) {
+  const entry = (scout?.languages || []).find((l) => l.language === language);
+  if (!entry) return '';
+  return `<a href="#/skill/api/lang/${esc(language)}#findings" class="badge gate" style="text-decoration:none" title="每日扫描发现，待你决定是否立项">⛩ 今日发现 ${entry.actionCount} 项待处理 →</a>`;
+}
+
+async function spawnIntake(language, scoutPath) {
+  if (!confirm(`派只读处理会话处理 ${language} 的当日发现？\n\n它会做证据核证与规划，然后停在分组批准门（APPROVE_GROUPING）等你；批准分组后才进入写作。`)) return;
+  try {
+    const r = await fetch('/api/spawn-intake', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ language, scoutPath }),
+    });
+    const j = await r.json();
+    alert(j.note || j.error || JSON.stringify(j));
+  } catch (e) { alert('派出失败: ' + e); }
+}
+
+function renderFindingsSection(d, language, scout) {
+  const entry = (scout?.languages || []).find((l) => l.language === language);
+  if (!entry) {
+    return `<div class="card" style="cursor:default"><div class="row1"><span class="title">今日发现</span><span class="badge finalized">无待处理发现</span></div>
+      <div class="note" style="border:0">哨兵当日无结构化发现工件（结论以总览哨兵卡的日报为准）。历史工件见 ${viewLink('tmp/sdk-release-scout/daily/', 'daily/ 目录')}。</div></div>`;
+  }
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
+  const items = entry.artifacts.flatMap((a) => a.actions.map((act) => `
+    <tr>
+      <td class="fname">${esc(act.symbol ?? act.slug ?? '?')}</td>
+      <td><span class="badge ${act.type === 'CREATE' ? 'active' : ''}">${esc(act.type ?? '?')}</span></td>
+      <td class="dim">${esc(act.reason ?? '—')}</td>
+      <td class="dim" style="font-size:12px">${esc(act.sourceLocator ?? act.sourceRepository ?? '—')}</td>
+      <td class="dim">${esc(a.trackKey)}</td>
+    </tr>`)).join('');
+  const artifactControls = entry.artifacts.map((a) => `
+    <span style="display:inline-flex;gap:6px;align-items:center">
+      ${viewLink(a.path, `${a.trackKey} · ${a.actionCount} 项`).replace('<a ', '<a class="badge" style="text-decoration:none" ')}
+      ${spawnOn
+        ? `<button class="act danger" title="派只读处理会话：停在分组批准门，批准分组后才写作" onclick="spawnIntake('${esc(language)}', ${JSON.stringify(a.path).replace(/"/g, '&quot;')})">开始处理</button>`
+        : ''}
+    </span>`).join(' ');
+  return `<a id="findings"></a>
+    <div class="card" style="cursor:default;margin-bottom:12px">
+      <div class="row1">
+        <span class="title">今日发现（${entry.actionCount} 项 · ${esc(scout.date ?? '')}）</span>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${artifactControls}${spawnOn ? '' : '<span class="badge">一键处理未开启（--allow-spawn）</span>'}</span>
+      </div>
+      <table class="tbl" style="margin-top:10px">
+        <thead><tr><th>方法</th><th>类型</th><th>原因</th><th>证据</th><th>轨道</th></tr></thead>
+        <tbody>${items}</tbody>
+      </table>
+      <div class="note">扫描器原文透传；「开始处理」= 派只读 intake 会话（每轨一个），分组门是开工门，未批准不写。</div>
+    </div>`;
+}
+
 
 function pageHome(d) {
   document.getElementById('page').innerHTML = `
@@ -381,17 +478,21 @@ function pageHome(d) {
 
 // ---------- api skill: language cards ----------
 
-function pageSkillApi(d) {
+async function pageSkillApi(d) {
+  const [live, scout] = await Promise.all([fetchLive(), fetchScout()]);
   const tracks = d.skillTracks || { languages: [] };
   const cards = tracks.languages.map((lang) => {
     const active = lang.tracks.reduce((n, t) => n + t.campaigns.active, 0);
     const total = lang.tracks.reduce((n, t) => n + t.campaigns.total, 0);
-    const gateTrack = lang.tracks.find((t) => t.campaigns.active > 0);
     const options = lang.tracks.map((t) => `<option value="${esc(t.key)}">${esc(t.version)}（战役 ${t.campaigns.active} 活跃 / ${t.campaigns.total} 累计）</option>`).join('');
     return `<div class="card langcard clickable" onclick="location.hash='#/skill/api/lang/${esc(lang.name)}'">
       <div class="row1">
         <span class="title">${esc(lang.name)} <span style="color:var(--dim);font-weight:400;font-size:12.5px">${esc(lang.sdkName ?? '')}</span></span>
         ${active > 0 ? `<span class="badge active">战役进行中 ${active}</span>` : '<span class="badge finalized">无进行中战役</span>'}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
+        ${liveChipFor(live, lang.name)}
+        ${findingsBannerFor(scout, lang.name)}
       </div>
       <div class="meta" style="margin-top:6px">
         <span>版本轨道 ${lang.tracks.length}</span><span>历史战役 ${total}</span>
@@ -457,22 +558,26 @@ function campaignTable(list, d, { empty = '无战役' } = {}) {
       : ''}`;
 }
 
-function pageLang(d, lang) {
+async function pageLang(d, lang) {
+  const scout = await fetchScout();
   const list = (d.campaigns || []).filter((c) => (c.language || '').toLowerCase() === lang.toLowerCase());
   const entry = (d.skillTracks?.languages || []).find((l) => l.name === lang);
   document.getElementById('page').innerHTML = `
     ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: `${lang} 战役清单`, href: `#/skill/api/lang/${lang}` }])}
+    ${renderFindingsSection(d, lang, scout)}
     <h2>${esc(lang)} 战役清单${entry?.sdkName ? ` <span style="color:var(--dim);font-weight:400">· ${esc(entry.sdkName)}</span>` : ''}</h2>
     ${campaignTable(list, d, { empty: '该语种暂无战役会话' })}
     ${entry ? `<div class="filters" style="margin-top:10px">${entry.tracks.map((t) => `<a class="f" href="#/skill/api/track/${esc(t.key)}">${esc(t.version)} 入口</a>`).join('')}</div>` : ''}`;
 }
 
-function pageTrack(d, key) {
+async function pageTrack(d, key) {
+  const live = await fetchLive();
   const list = (d.campaigns || []).filter((c) => c.scanState.key === key);
   const lang = key.replace(/-v\d+$/, '');
   const version = (list[0]?.track) || null;
   const scan = list[0]?.scanState || null;
   const baseline = scan?.lastScannedTag;
+  const liveEntry = Object.entries(live?.tracks || {}).find(([k]) => k === `${lang}:${version}`)?.[1];
   document.getElementById('page').innerHTML = `
     ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: lang, href: `#/skill/api/lang/${lang}` }, { label: `${key} 轨道`, href: `#/skill/api/track/${key}` }])}
     <h2>${esc(key)} 轨道${version ? `（${esc(version)}）` : ''}</h2>
@@ -480,6 +585,7 @@ function pageTrack(d, key) {
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
         <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）</span>
+        ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
       </div>
     </div>
     ${campaignTable(list, d, { empty: '该轨暂无战役会话' })}`;

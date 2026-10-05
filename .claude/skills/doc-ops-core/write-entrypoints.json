@@ -1,790 +1,790 @@
 {
- "schemaVersion": 1,
- "baseline": {
-  "recordedAt": "2026-09-23T00:00:00.000Z",
-  "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
-  "entrypointCount": 96,
-  "legacyLiveCount": 0
- },
- "entries": [
-  {
-   "path": ".claude/agent-team/bin/doc-agent-approval-consumer.js",
-   "skill": "localized-doc-sync",
-   "classification": "read-only",
-   "operation": "doc-agent-approval-consumer",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/agent-team/bin/doc-agent-dry-run.js",
-   "skill": "localized-doc-sync",
-   "classification": "read-only",
-   "operation": "doc-agent-dry-run",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/agent-team/bin/doc-agent-live-write.js",
-   "skill": "localized-doc-sync",
-   "classification": "canonical-governed",
-   "operation": "doc-agent-live-write",
-   "basis": "phase-6 wave 3: production localization live-write path, fully governed (WriterGovernance + run manifest + write-ahead ExecutionJournal through the shared localized executor; META_ONLY record mutations ride the governed BitableWriter); quarantine guard removed with the legacy-live classification",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "review-session-cas",
-   "tests": [
-    ".claude/agent-team/tests/digest-bound-live-write.test.js"
-   ]
-  },
-  {
-   "path": ".claude/agent-team/bin/doc-agent-scan.js",
-   "skill": "localized-doc-sync",
-   "classification": "read-only",
-   "operation": "doc-agent-scan",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/agent-team/bin/doc-agent-verify.js",
-   "skill": "localized-doc-sync",
-   "classification": "read-only",
-   "operation": "doc-agent-verify",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/agent-team/bin/doc-agent-webhook-consumer.js",
-   "skill": "localized-doc-sync",
-   "classification": "read-only",
-   "operation": "doc-agent-webhook-consumer",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/compare-scan-artifacts.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "compare-scan-artifacts",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/export-doc.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "export-doc",
-   "basis": "manual baseline override after source inspection"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/identity-reconcile.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "identity-reconcile",
-   "basis": "reads a Bitable snapshot and the identity map; writes deterministic local draft artifacts only when --emit-draft is passed"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/pr-polish-apply.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "pr-polish-apply",
-   "basis": "reviewed canonical entrypoint",
-   "approval": "executed-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/pr-polish-apply.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/pr-polish.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "pr-polish",
-   "basis": "validates polish manifests and writes deterministic local artifacts only; no Feishu I/O"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "rest-fragments",
-   "basis": "writes deterministic local artifacts only; no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/rest-source-scan.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "rest-source-scan",
-   "basis": "reads pinned Git objects and writes deterministic local evidence only"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/rest-track-review.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "rest-track-review",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/revision-apply.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "revision-apply",
-   "basis": "reviewed canonical entrypoint",
-   "approval": "executed-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/revision-campaign.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/revision-intake.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "revision-intake",
-   "basis": "persists the review session JSON through the sanctioned store CAS only; no Feishu I/O",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/revision-campaign.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "sync",
-   "basis": "reviewed canonical entrypoint",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/sdk-document-rollback.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "rollback",
-   "basis": "reviewed canonical entrypoint",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/sdk-document-rollback-cli.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/sdk-pr-scan.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "sdk-pr-scan",
-   "basis": "reads merged web-content PR data and writes deterministic local artifacts only"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "sdk-release-scout",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "sdk-review-session",
-   "basis": "reviewed canonical entrypoint",
-   "approval": "executed-journal-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js",
-    ".claude/skills/api-reference-sync/tests/two-gate-flow.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/zilliz-cli-handwritten-audit.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "zilliz-cli-handwritten-audit",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/bin/zilliz-cli-release-impact.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "zilliz-cli-release-impact",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/add-missing-cloud-v2.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "add-missing-cloud-v2",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "add-type-links",
-   "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "content-reconcile",
-   "tests": [
-    "tests/skills/post-actions-governed.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/apply-polish-context.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "apply-polish-context",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "audit-go-docs",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs2.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "audit-go-docs2",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/audit-go-todos.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "audit-go-todos",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/audit-sdk-type-ownership.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "audit-sdk-type-ownership",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/audit-track-topology.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "audit-track-topology",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/batch-create-cli-docs.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "batch-create-cli-docs",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "build-current-placement-audit",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "build-reviewed-release-context",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/build-revision-scope.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "build-revision-scope",
-   "basis": "no external mutation signature found; deterministic sweep-to-scope transform plus Bitable record enumeration",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/build-revision-scope.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/check-sdk-updates.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "check-sdk-updates",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/cli-fetch-and-diff.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "cli-fetch-and-diff",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/collect-page-blocks.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "collect-page-blocks",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/cpp-audit-util.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "cpp-audit-util",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/cpp-check-comments.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "cpp-check-comments",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/cpp-fetch-examples.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "cpp-fetch-examples",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/cpp-show-examples.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "cpp-show-examples",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/create-v14-subfolders.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "create-v14-subfolders",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/diff-node-v26.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "diff-node-v26",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v24.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "diff-pymilvus-v24",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v26.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "diff-pymilvus-v26",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v30.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "diff-pymilvus-v30",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/discover-java-v26.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "discover-java-v26",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/discover-node-folders.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "discover-node-folders",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/edit-openapi.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "edit-openapi",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "fix-leading-spaces",
-   "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "content-reconcile",
-   "tests": [
-    "tests/skills/post-actions-governed.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-cloud.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "fix-openapi-cloud",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-spec.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "fix-openapi-spec",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/gate-presentation.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "gate-presentation",
-   "basis": "no external mutation signature found (writes only the local gate-presentation index under tmp/, spawns open/pbcopy for the operator's own desktop)"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/generate-cli-docs.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "generate-cli-docs",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/inspect-go-blocks.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "inspect-go-blocks",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "intake-preflight",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/merge-openapi.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "merge-openapi",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/node-v30-response-templates.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "node-v30-response-templates",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/patch-openapi-external.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "patch-openapi-external",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "post-fix-links",
-   "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "content-reconcile",
-   "tests": [
-    "tests/skills/post-actions-governed.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/reconcile-content.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "reconcile-content",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "reconcile-tree-delta",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/render-grouping-inheritance-table.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "render-grouping-inheritance-table",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/review-artifact-digest.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "review-artifact-digest",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/scan-changes.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "scan-changes",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/scan-notes.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "scan-notes",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/scan-pymilvus.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "scan-pymilvus",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/split-openapi.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "split-openapi",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/verify-openapi-cloud.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "verify-openapi-cloud",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/verify-operational-harness.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "verify-operational-harness",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/build-manifest.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "build-manifest",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/dump-v13x-bitable.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "dump-v13x-bitable",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/inspect-v13x.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "inspect-v13x",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/inventory-v01x.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "inventory-v01x",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/verify-v14x.js",
-   "skill": "api-reference-sync",
-   "classification": "read-only",
-   "operation": "verify-v14x",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/doc-code-verify/scripts/scenario-shims.js",
-   "skill": "doc-code-verify",
-   "classification": "read-only",
-   "operation": "scenario-shims",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
-   "skill": "doc-code-verify",
-   "classification": "canonical-governed",
-   "operation": "verify",
-   "basis": "reviewed static verifier plus exact live runtime manifest, mutation approval, cleanup journal, and read-only remediation handoff",
-   "approval": "exact-runtime-manifest-digest",
-   "journal": "required-for-mutating-live-runtime",
-   "reconciliation": "cleanup-required",
-   "tests": [
-    "tests/skills/verifier-result-contract.test.js",
-    ".claude/skills/doc-code-verify/tests/runtime-integration.test.js",
-    ".claude/skills/doc-code-verify/tests/runtime-session.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/doc-ops-core/bin/build-action-batch.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "build-action-batch",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/doc-ops-core/bin/doc-ops-smoke.js",
-   "skill": "doc-ops-core",
-   "classification": "test-only",
-   "operation": "doc-ops-smoke",
-   "basis": "disposable smoke harness, not a production adapter",
-   "sandboxOnly": true,
-   "tests": [
-    ".claude/skills/doc-ops-core/tests/smoke-cli.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/doc-ops-core/bin/skill-feedback.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "skill-feedback",
-   "basis": "governed local feedback CLI; no tenant mutation"
-  },
-  {
-   "path": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
-   "skill": "localized-doc-sync",
-   "classification": "canonical-governed",
-   "operation": "sync",
-   "basis": "reviewed canonical full-scan planner and journaled executor",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/localized-doc-sync/tests/localized-doc-sync-cli.test.js",
-    ".claude/skills/localized-doc-sync/tests/executor.test.js",
-    ".claude/skills/localized-doc-sync/tests/review-session-store.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
-   "skill": "patch-code-blocks",
-   "classification": "read-only",
-   "operation": "patch-code-blocks",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
-   "skill": "procedure-code-sync",
-   "classification": "canonical-governed",
-   "operation": "patch",
-   "basis": "reviewed whole-document planner, journaled block executor, verifier handoff, acceptance, and rollback planner",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/procedure-code-sync/tests/procedure-code-sync-cli.test.js",
-    ".claude/skills/procedure-code-sync/tests/patch-executor.test.js"
-   ]
-  },
-  {
-   "path": ".claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js",
-   "skill": "verified-doc-authoring",
-   "classification": "canonical-governed",
-   "operation": "author",
-   "basis": "claim-bound authoring planner with exact approval, journaled refetch verification, acceptance, and corrective rollback",
-   "approval": "exact-batch-digest",
-   "journal": "required",
-   "reconciliation": "required",
-   "tests": [
-    ".claude/skills/verified-doc-authoring/tests/verified-doc-authoring-cli.test.js",
-    ".claude/skills/verified-doc-authoring/tests/patch-executor.test.js"
-   ]
-  },
-  {
-   "path": "scripts/check-invariant-coverage.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "check-invariant-coverage",
-   "basis": "git read-only admission diff gate; no external mutation signature found"
-  },
-  {
-   "path": "scripts/check-js-syntax.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "js-syntax-gate",
-   "basis": "node --check parse gate over the first-party tree; no writes"
-  },
-  {
-   "path": "scripts/invariant-coverage-report.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "invariant-coverage-report",
-   "basis": "stdout report over invariant registries; no external mutation signature found"
-  },
-  {
-   "path": "scripts/publish-admission-artifact.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "admission-artifact-publish",
-   "basis": "6.11 governance artifact assembly: reads admission results + ledger, writes only the operator-designated --output artifact file; no external mutation signature"
-  },
-  {
-   "path": "scripts/repair-java-topology.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "repair-java-topology",
-   "basis": "Docs-field text repair + drive folder/doc moves + folder create + Bitable record Type fills for the 2026-10-04 topology disposition; parts E/F add the Collections/Function anchor move and governed CONTENT writes (MarkdownToFeishu.push_markdown under WriterGovernance bound to the plan digest + run manifest, round-trip-verified with rollback); plan-digest + --approve-batch-digest approval gate + live per-action read-after-write verification + journal",
-   "journal": "required",
-   "reconciliation": "plan-digest-journal",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/repair-java-topology.test.js"
-   ],
-   "approval": "exact-batch-digest"
-  },
-  {
-   "path": "scripts/repair-same-name-placement.js",
-   "skill": "api-reference-sync",
-   "classification": "canonical-governed",
-   "operation": "repair-same-name-placement",
-   "basis": "drive move / folder create / category VirtualNode repoint for SAME_NAME_COPY_MISPLACED repair; plan-digest + --approve-batch-digest approval gate + live per-action verification + journal",
-   "journal": "required",
-   "reconciliation": "plan-digest-journal",
-   "tests": [
-    ".claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js"
-   ],
-   "approval": "exact-batch-digest"
-  },
-  {
-   "path": "scripts/run-focused-tests.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "focused-tests-gate",
-   "basis": "executes capabilities.json advertised focused suites; no writes"
-  },
-  {
-   "path": "scripts/run-skill-admission.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "run-skill-admission",
-   "basis": "local and CI admission orchestrator; runs tests and model evaluations without live mutation commands"
-  },
-  {
-   "path": "scripts/run-skill-model-evals.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "run-skill-model-evals",
-   "basis": "manual baseline override after source inspection"
-  },
-  {
-   "path": "scripts/run-tests.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "run-tests",
-   "basis": "no external mutation signature found"
-  },
-  {
-   "path": "scripts/validate-skills.js",
-   "skill": "doc-ops-core",
-   "classification": "read-only",
-   "operation": "validate-skills",
-   "basis": "no external mutation signature found"
-  }
- ]
+  "schemaVersion": 1,
+  "baseline": {
+    "recordedAt": "2026-09-23T00:00:00.000Z",
+    "runtimeBaseSha": "62efe112839cefb7d86d2add5704f0099620936a",
+    "entrypointCount": 85,
+    "legacyLiveCount": 0
+  },
+  "entries": [
+    {
+      "path": ".claude/agent-team/bin/doc-agent-approval-consumer.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-approval-consumer",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-dry-run.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-dry-run",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-live-write.js",
+      "skill": "localized-doc-sync",
+      "classification": "canonical-governed",
+      "operation": "doc-agent-live-write",
+      "basis": "phase-6 wave 3: production localization live-write path, fully governed (WriterGovernance + run manifest + write-ahead ExecutionJournal through the shared localized executor; META_ONLY record mutations ride the governed BitableWriter); quarantine guard removed with the legacy-live classification",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "review-session-cas",
+      "tests": [
+        ".claude/agent-team/tests/digest-bound-live-write.test.js"
+      ]
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-scan.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-scan",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-verify.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-verify",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/agent-team/bin/doc-agent-webhook-consumer.js",
+      "skill": "localized-doc-sync",
+      "classification": "read-only",
+      "operation": "doc-agent-webhook-consumer",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/compare-scan-artifacts.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "compare-scan-artifacts",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/export-doc.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "export-doc",
+      "basis": "manual baseline override after source inspection"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/identity-reconcile.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "identity-reconcile",
+      "basis": "reads a Bitable snapshot and the identity map; writes deterministic local draft artifacts only when --emit-draft is passed"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-fragments",
+      "basis": "writes deterministic local artifacts only; no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/rest-source-scan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-source-scan",
+      "basis": "reads pinned Git objects and writes deterministic local evidence only"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/rest-track-review.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "rest-track-review",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "sync",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/pr-polish-apply.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "pr-polish-apply",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "executed-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/pr-polish-apply.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-document-rollback.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "rollback",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/sdk-document-rollback-cli.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-pr-scan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "sdk-pr-scan",
+      "basis": "reads merged web-content PR data and writes deterministic local artifacts only"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/pr-polish.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "pr-polish",
+      "basis": "validates polish manifests and writes deterministic local artifacts only; no Feishu I/O"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "sdk-release-scout",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "sdk-review-session",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "executed-journal-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/sdk-review-session-cli.test.js",
+        ".claude/skills/api-reference-sync/tests/two-gate-flow.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/zilliz-cli-handwritten-audit.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "zilliz-cli-handwritten-audit",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/zilliz-cli-release-impact.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "zilliz-cli-release-impact",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/add-missing-cloud-v2.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "add-missing-cloud-v2",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/add-type-links.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "add-type-links",
+      "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "content-reconcile",
+      "tests": [
+        "tests/skills/post-actions-governed.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/apply-polish-context.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "apply-polish-context",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-go-docs",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-go-docs2.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-go-docs2",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-go-todos.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-go-todos",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-sdk-type-ownership.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-sdk-type-ownership",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/batch-create-cli-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "batch-create-cli-docs",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-current-placement-audit",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/collect-page-blocks.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "collect-page-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "intake-preflight",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-track-topology.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-track-topology",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/repair-java-topology.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "repair-java-topology",
+      "basis": "Docs-field text repair + drive folder/doc moves + folder create + Bitable record Type fills for the 2026-10-04 topology disposition; parts E/F add the Collections/Function anchor move and governed CONTENT writes (MarkdownToFeishu.push_markdown under WriterGovernance bound to the plan digest + run manifest, round-trip-verified with rollback); plan-digest + --approve-batch-digest approval gate + live per-action read-after-write verification + journal",
+      "journal": "required",
+      "reconciliation": "plan-digest-journal",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/repair-java-topology.test.js"
+      ],
+      "approval": "exact-batch-digest"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-reviewed-release-context",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/check-sdk-updates.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "check-sdk-updates",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cli-fetch-and-diff.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cli-fetch-and-diff",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-audit-util.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-audit-util",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-check-comments.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-check-comments",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-fetch-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-fetch-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/cpp-show-examples.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "cpp-show-examples",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/create-v14-subfolders.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "create-v14-subfolders",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-node-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-node-v26",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v24.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-pymilvus-v24",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-pymilvus-v26",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/diff-pymilvus-v30.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "diff-pymilvus-v30",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/discover-java-v26.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "discover-java-v26",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/discover-node-folders.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "discover-node-folders",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/edit-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "edit-openapi",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-leading-spaces.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "fix-leading-spaces",
+      "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "content-reconcile",
+      "tests": [
+        "tests/skills/post-actions-governed.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-cloud.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "fix-openapi-cloud",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/fix-openapi-spec.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "fix-openapi-spec",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/generate-cli-docs.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "generate-cli-docs",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/inspect-go-blocks.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inspect-go-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/merge-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "merge-openapi",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/node-v30-response-templates.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "node-v30-response-templates",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/patch-openapi-external.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "patch-openapi-external",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/post-fix-links.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "post-fix-links",
+      "basis": "phase-6 wave 2: two-phase post-action (plan -> operator --approve-batch-digest -> governed execution); mutations via DocxBlockWriter bound to the digest-approved batch, execution journal + run manifest persisted",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "content-reconcile",
+      "tests": [
+        "tests/skills/post-actions-governed.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/reconcile-content.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "reconcile-content",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/reconcile-tree-delta.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "reconcile-tree-delta",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/render-grouping-inheritance-table.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "render-grouping-inheritance-table",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/review-artifact-digest.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "review-artifact-digest",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/scan-changes.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "scan-changes",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/scan-notes.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "scan-notes",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/scan-pymilvus.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "scan-pymilvus",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/split-openapi.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "split-openapi",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/verify-openapi-cloud.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "verify-openapi-cloud",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/verify-operational-harness.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "verify-operational-harness",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/build-manifest.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-manifest",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/dump-v13x-bitable.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "dump-v13x-bitable",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/inspect-v13x.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inspect-v13x",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v13x/inventory-v01x.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inventory-v01x",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/zilliz-cli-v14x/verify-v14x.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "verify-v14x",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/doc-code-verify/scripts/scenario-shims.js",
+      "skill": "doc-code-verify",
+      "classification": "read-only",
+      "operation": "scenario-shims",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/doc-code-verify/scripts/verify-feishu-doc-code.js",
+      "skill": "doc-code-verify",
+      "classification": "canonical-governed",
+      "operation": "verify",
+      "basis": "reviewed static verifier plus exact live runtime manifest, mutation approval, cleanup journal, and read-only remediation handoff",
+      "approval": "exact-runtime-manifest-digest",
+      "journal": "required-for-mutating-live-runtime",
+      "reconciliation": "cleanup-required",
+      "tests": [
+        "tests/skills/verifier-result-contract.test.js",
+        ".claude/skills/doc-code-verify/tests/runtime-integration.test.js",
+        ".claude/skills/doc-code-verify/tests/runtime-session.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/doc-ops-core/bin/build-action-batch.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "build-action-batch",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/doc-ops-core/bin/doc-ops-smoke.js",
+      "skill": "doc-ops-core",
+      "classification": "test-only",
+      "operation": "doc-ops-smoke",
+      "basis": "disposable smoke harness, not a production adapter",
+      "sandboxOnly": true,
+      "tests": [
+        ".claude/skills/doc-ops-core/tests/smoke-cli.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "gate-presentation",
+      "basis": "no external mutation signature found (writes only the local gate-presentation index under tmp/, spawns open/pbcopy for the operator's own desktop)"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-revision-scope.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-revision-scope",
+      "basis": "no external mutation signature found; deterministic sweep-to-scope transform plus Bitable record enumeration",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/build-revision-scope.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/revision-intake.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "revision-intake",
+      "basis": "persists the review session JSON through the sanctioned store CAS only; no Feishu I/O",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/revision-campaign.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/revision-apply.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "revision-apply",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "executed-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/revision-campaign.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/doc-ops-core/bin/skill-feedback.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "skill-feedback",
+      "basis": "governed local feedback CLI; no tenant mutation"
+    },
+    {
+      "path": ".claude/skills/localized-doc-sync/bin/localized-doc-sync.js",
+      "skill": "localized-doc-sync",
+      "classification": "canonical-governed",
+      "operation": "sync",
+      "basis": "reviewed canonical full-scan planner and journaled executor",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/localized-doc-sync/tests/localized-doc-sync-cli.test.js",
+        ".claude/skills/localized-doc-sync/tests/executor.test.js",
+        ".claude/skills/localized-doc-sync/tests/review-session-store.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/patch-code-blocks/bin/patch-code-blocks.js",
+      "skill": "patch-code-blocks",
+      "classification": "read-only",
+      "operation": "patch-code-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/procedure-code-sync/bin/procedure-code-sync.js",
+      "skill": "procedure-code-sync",
+      "classification": "canonical-governed",
+      "operation": "patch",
+      "basis": "reviewed whole-document planner, journaled block executor, verifier handoff, acceptance, and rollback planner",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/procedure-code-sync/tests/procedure-code-sync-cli.test.js",
+        ".claude/skills/procedure-code-sync/tests/patch-executor.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/verified-doc-authoring/bin/verified-doc-authoring.js",
+      "skill": "verified-doc-authoring",
+      "classification": "canonical-governed",
+      "operation": "author",
+      "basis": "claim-bound authoring planner with exact approval, journaled refetch verification, acceptance, and corrective rollback",
+      "approval": "exact-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/verified-doc-authoring/tests/verified-doc-authoring-cli.test.js",
+        ".claude/skills/verified-doc-authoring/tests/patch-executor.test.js"
+      ]
+    },
+    {
+      "path": "scripts/check-invariant-coverage.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "check-invariant-coverage",
+      "basis": "git read-only admission diff gate; no external mutation signature found"
+    },
+    {
+      "path": "scripts/check-js-syntax.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "js-syntax-gate",
+      "basis": "node --check parse gate over the first-party tree; no writes"
+    },
+    {
+      "path": "scripts/invariant-coverage-report.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "invariant-coverage-report",
+      "basis": "stdout report over invariant registries; no external mutation signature found"
+    },
+    {
+      "path": "scripts/publish-admission-artifact.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "admission-artifact-publish",
+      "basis": "6.11 governance artifact assembly: reads admission results + ledger, writes only the operator-designated --output artifact file; no external mutation signature"
+    },
+    {
+      "path": "scripts/run-focused-tests.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "focused-tests-gate",
+      "basis": "executes capabilities.json advertised focused suites; no writes"
+    },
+    {
+      "path": "scripts/run-skill-admission.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-skill-admission",
+      "basis": "local and CI admission orchestrator; runs tests and model evaluations without live mutation commands"
+    },
+    {
+      "path": "scripts/run-skill-model-evals.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-skill-model-evals",
+      "basis": "manual baseline override after source inspection"
+    },
+    {
+      "path": "scripts/run-tests.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "run-tests",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/validate-skills.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "validate-skills",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": "scripts/repair-same-name-placement.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "repair-same-name-placement",
+      "basis": "drive move / folder create / category VirtualNode repoint for SAME_NAME_COPY_MISPLACED repair; plan-digest + --approve-batch-digest approval gate + live per-action verification + journal",
+      "journal": "required",
+      "reconciliation": "plan-digest-journal",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js"
+      ],
+      "approval": "exact-batch-digest"
+    }
+  ]
 }

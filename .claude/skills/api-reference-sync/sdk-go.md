@@ -169,6 +169,12 @@ Entity hierarchy: Index entity + 25 `New*Index` constructors in `Index/` subfold
 
 **Skip list:** GetService, OperatePrivilegeGroup, GrantV2, RevokeV2, all Replicate methods, NewRTreeIndexWithParams, NewRTreeIndexBuilder
 
+Per-page skip reasons (2026-10-06, evidence-backed at client/v3.0.0 after upstream documented these pages in web-content PR #1147/#1158 — divergence is recorded, not silently dropped):
+- **GetService** (`milvusclient/client.go`): one-line accessor returning the raw `milvuspb.MilvusServiceClient` gRPC stub. Transport plumbing, not a Milvus operation; documenting it would document gRPC internals.
+- **GrantV2 / RevokeV2** (`milvusclient/rbac_v2.go`): one-line aliases of `GrantPrivilegeV2` / `RevokePrivilegeV2` (RevokeV2 is marked `// Deprecated` in source). The KB documents the canonical V2 methods; an alias page would duplicate one capability under two identities.
+- **OperatePrivilegeGroup** (`milvusclient/rbac_v2.go`): a real distinct RPC (operation-enum style add/remove). Skipped as redundant coverage: the KB's typed pair `AddPrivilegesToGroup()` / `RemovePrivilegesFromGroup()` covers the same capability. Weakest of the skip reasons — revisit if the upstream page diverges functionally.
+- **all Replicate methods** (e.g. `CreateReplicateStream`, `replicate.go`): return raw gRPC stream handles the caller must drive manually; the documented CDC surface keeps the configuration-type methods only.
+
 **Duplicate symbol cleanup:** After greenfield, Class-type stubs may share a slug with their Method version (e.g., `SearchIterator` class vs `SearchIterator()` method). Keep the Method version; delete the Class doc + bitable record.
 
 ## Scripts

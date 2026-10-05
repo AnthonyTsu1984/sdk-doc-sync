@@ -13,12 +13,19 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { exec } = require('node:child_process');
+const { exec, execFile, spawn } = require('node:child_process');
+const { promisify } = require('node:util');
 
 const { buildLedger } = require('./ledger.js');
+const { buildBrief } = require('./attach-brief.js');
+
+const execFileAsync = promisify(execFile);
 
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INDEX_HTML = path.join(__dirname, 'public', 'index.html');
+const REVIEW_SESSION_CLI = path.join(REPO_ROOT, '.claude/skills/api-reference-sync/bin/sdk-review-session.js');
+const NEXT_GATE_TTL_MS = 3 * 60_000;
+const NEXT_GATE_MAX_SESSIONS = 8;
 
 // /api/file allowlist: repo-relative prefixes (plus one exact file). Anything
 // resolving outside these — or outside the repo via .. or symlinks — is 403.
@@ -41,7 +48,7 @@ const FINGERPRINT_TTL_MS = 5 * 60_000;
 const FILE_VIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 function parseArgs(argv) {
-  const options = { port: 8765, open: true };
+  const options = { port: 8765, open: true, allowSpawn: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--port') {
@@ -52,9 +59,87 @@ function parseArgs(argv) {
       }
     } else if (arg === '--no-open') {
       options.open = false;
+    } else if (arg === '--allow-spawn') {
+      options.allowSpawn = true;
     }
   }
   return options;
+}
+
+// ---------- next-gate enrichment (authoritative CLI, TTL-cached) ----------
+
+const nextGateCache = new Map(); // sessionPath -> { value, at }
+
+// Authoritative next-gate derivation lives in sdk-review-session.js; the
+// dashboard only caches and displays it. Failures degrade to no chip.
+async function fetchNextGate(sessionPath) {
+  const { stdout } = await execFileAsync(
+    process.execPath,
+    [REVIEW_SESSION_CLI, 'status', '--session', path.join(REPO_ROOT, sessionPath)],
+    { timeout: 30_000, encoding: 'utf8' },
+  );
+  return parseStatusOutput(stdout);
+}
+
+function parseStatusOutput(stdout) {
+  try {
+    const parsed = JSON.parse(stdout);
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function refreshNextGates() {
+  if (!currentPayload) return;
+  const targets = currentPayload.campaigns
+    .filter((card) => card.health !== 'finalized')
+    .slice(0, NEXT_GATE_MAX_SESSIONS);
+  let changed = false;
+  for (const card of targets) {
+    const cached = nextGateCache.get(card.sessionPath);
+    if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) continue;
+    let value = null;
+    try {
+      value = await fetchNextGate(card.sessionPath);
+    } catch {
+      value = null;
+    }
+    nextGateCache.set(card.sessionPath, { value, at: Date.now() });
+    changed = true;
+  }
+  if (changed) scheduleRecompute('next-gate');
+}
+
+function mergeNextGate(payload) {
+  for (const card of payload.campaigns) {
+    const cached = nextGateCache.get(card.sessionPath);
+    if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) {
+      card.nextGate = cached.value?.nextGate ?? null;
+    }
+  }
+  return payload;
+}
+
+// ---------- session spawn (opt-in, one-click headless → desktop surface) ----------
+
+// One-click dispatch: run a headless zcode prompt seeded with the campaign's
+// deterministic attach brief, presented on the desktop surface (the session
+// appears in ZCode Desktop; no terminal). argv-vector spawn, no shell, no
+// request input beyond the validated campaign target. The spawned worker
+// must stop at APPROVE_* gates — campaign governance (L1 gates + digest
+// approvals) remains the safety net, exactly as in operator sessions.
+function buildHeadlessPrompt(briefText) {
+  return [
+    '你是本战役的新执行会话（由任务看板一键派出）。下面是确定性生成的战役简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准，勿凭记忆续接。',
+    '按简报中的续接规则开始工作：只读侦察可立即进行；遇到 APPROVE_* 门禁必须停下，等待操作员以简报给出的精确 digest 行批准后再继续。',
+    '---',
+    briefText,
+  ].join('\n');
+}
+
+function buildHeadlessSpawnArgs(repoRoot, prompt) {
+  return ['--cwd', String(repoRoot), '--surface', 'desktop', '--prompt', prompt];
 }
 
 // ---------- aggregation cache + push ----------
@@ -78,10 +163,12 @@ function fingerprintStatus(state) {
 
 function buildPayload() {
   const ledger = buildLedger({ repoRoot: REPO_ROOT });
-  return {
+  const payload = {
     ...ledger,
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
+    features: { spawnEnabled: spawnOptions.allowSpawn },
   };
+  return mergeNextGate(payload);
 }
 
 // generatedAt (and fingerprint computedAt) are volatile; everything else
@@ -148,6 +235,8 @@ function heartbeat() {
 // ---------- admission fingerprint (background, TTL-cached) ----------
 
 const fingerprintState = { computed: false, fingerprint: null, phase: null, recordedAt: null };
+
+let spawnOptions = { allowSpawn: false };
 
 function computeFingerprint() {
   try {
@@ -261,6 +350,49 @@ function serveFileView(req, res, query) {
 
 function handler(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${req.socket.localPort || 0}`);
+  if (url.pathname === '/api/spawn-session') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'POST required' });
+      return;
+    }
+    if (!spawnOptions.allowSpawn) {
+      sendJson(res, 404, { error: 'spawn disabled — restart the dashboard with --allow-spawn' });
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 65_536) req.destroy();
+    });
+    req.on('end', () => {
+      let target = '';
+      try {
+        target = String(JSON.parse(body || '{}').target || '');
+      } catch {
+        // fall through to the missing-target rejection below
+      }
+      if (!target) {
+        sendJson(res, 400, { error: 'missing target (campaign sessionPath or scan-state key)' });
+        return;
+      }
+      const brief = buildBrief({ repoRoot: REPO_ROOT, requested: target });
+      if (!brief.ok) {
+        sendJson(res, 404, { error: brief.error, available: brief.available, candidates: brief.candidates });
+        return;
+      }
+      const child = spawn('zcode', buildHeadlessSpawnArgs(REPO_ROOT, buildHeadlessPrompt(brief.text)), {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      sendJson(res, 200, {
+        ok: true,
+        card: brief.card.sessionPath,
+        note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；桌面端会话列表中可继续`,
+      });
+    });
+    return;
+  }
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     sendJson(res, 405, { error: 'read-only server' });
     return;
@@ -306,10 +438,13 @@ function handler(req, res) {
 }
 
 function main() {
-  const { port, open } = parseArgs(process.argv);
+  const { port, open, allowSpawn } = parseArgs(process.argv);
+  spawnOptions = { allowSpawn };
   recompute('startup');
   computeFingerprint();
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
+  refreshNextGates().catch(() => {});
+  setInterval(() => refreshNextGates().catch(() => {}), 60_000).unref();
 
   for (const dir of WATCH_DIRS) {
     try {
@@ -324,9 +459,11 @@ function main() {
   const server = http.createServer(handler);
   server.listen(port, '127.0.0.1', () => {
     const address = `http://127.0.0.1:${server.address().port}`;
-    process.stdout.write(`[dashboard] serving ${address} (read-only; repo ${REPO_ROOT})\n`);
+    process.stdout.write(`[dashboard] serving ${address} (read-only${allowSpawn ? ' + opt-in spawn' : ''}; repo ${REPO_ROOT})\n`);
     if (open) exec(`open ${address}`);
   });
 }
 
-main();
+if (require.main === module) main();
+
+module.exports = { buildHeadlessPrompt, buildHeadlessSpawnArgs, parseArgs, parseStatusOutput };

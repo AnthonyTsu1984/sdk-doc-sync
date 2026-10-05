@@ -54,11 +54,18 @@
 
 **读侧（ledger + UI）**：`readRecentEvents` 读今天+昨天两份 JSONL（坏行跳过）；`attachActivity` 以 sessionRef 归因到战役卡（绝对路径归一化成 repo 相对路径精确匹配），卡片获得 `lastActivityAt`/`activityCount`；页面新增"活动流"面板（最近 50 条，Start/Bash/Write/Edit/Agent 着色，归因卡片标注）。cron 自动化会话天然被同一钩子覆盖——哨兵运行时间线自动进流，零额外接线。
 
+## 4b. 会话生命周期（批 3，已实施）
+
+- **`/attach` 命令**（`.zcode/commands/attach.md` 薄路由，本机态）→ 引擎 `scripts/dashboard/attach-brief.js`（入库、CI 测试）：按 scan-state 键（`java-v30`）或会话路径定位战役（多活跃会话时消歧报错），从 durable 状态确定性生成简报——进度/当前门（调权威 `sdk-review-session status` 的 nextGate，绝不自行推导）/scan-state 对照/准入/最近归因活动/续接规则（门禁格式+铁律）。新会话粘贴 `/attach <键>` 即完成挂载，零聊天历史依赖。
+- **卡片当前门**：server 后台（60s 周期、TTL 3min、仅非 finalized、≤8 个）调 status CLI 富集 `nextGate`，UI 卡片与矩阵显示 `⛩ 门 <GATE>` 紫色 chip。
+- **并行矩阵**：语种×轨道 chip 矩阵（⛩=有门 ●=近期活动，健康档着色，点击直达卡片）。
+- **派会话（真·一键）**：`POST /api/spawn-session {target}` **默认关闭**（`npm run dashboard -- --allow-spawn` 开启）——服务端用目标战役的确定性简报作 prompt，detached 派 `zcode --cwd <repo> --surface desktop --prompt <简报>`：**无终端，会话直接出现在 ZCode 桌面端**，简报即上下文、hooks 照常生效、首轮按简报工作并在 APPROVE_* 门禁停下等操作员。前提=CLI 已配模型 provider（本机已配 `provider.bigmodel` 指向 coding plan，见记忆 `zcode-cli-desktop-auth-model`）。argv 向量派生无 shell，target 先经战役解析 fail-closed。卡片按钮：复制 `/attach <键>`（恒在）+ 派会话（开启时，携带精确会话路径）。
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
-- **批 2（本 PR）**：事件流钩子（用户级注册）+ 活动流 UI + 卡片最近活动 + `/api/file` 目录列表（只读、单级、白名单内逐链接复核）。
-- **批 3**：会话生命周期——attach 命令、界面"派会话"按钮（`zcode -p --json --cwd` / agent-hub）、语言×轨道并行视图。
+- **批 2（PR #93）**：事件流钩子 + 活动流 UI + 卡片最近活动 + `/api/file` 目录列表。
+- **批 3（本 PR）**：attach 命令 + nextGate 富集 + 并行矩阵 + 选择性派会话（交互式、默认关）。
 - **批 4**：界面写操作——批准按钮仅转发 canonical CLI（APPROVE_* 精确行），UI 无独立写路径；server 自身受 R4 同款证据面保护审视。
 
 ## 6. 测试

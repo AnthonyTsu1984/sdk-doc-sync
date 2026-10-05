@@ -109,6 +109,13 @@
 - **动作跨检出**：`/api/campaign`、spawn、approve、`/api/usage`、usage 归因全部接受检出限定键；spawn/approve 以卡片所属检出为 `--cwd`；`/api/file` 白名单扩展到已知检出的同款 tmp/ 前缀（仍逐检出 fail-closed）。
 - 兼容：裸路径按主检出解析（老链接不断）；`main::` 前缀仅出现在新键。
 
+## 4h. 修订战役卡与交接（批 10，本 PR）
+
+修订战役（sweep 后修订轮）不走评审会话状态机——durable 状态=工作单（发现清单/裁定）+ 分组门 manifest + 每页一份 apply-review run-manifest。此前这类战役在看板上不可见，会话一结束就消失，交接只能翻记忆。
+
+- **修订卡**（`buildRevisionCards`，载荷 `revisions[]`）：逐检出扫 `tmp/api-reference-sync/*worklist*.json`；范围口径优先取分组门所链**活体 revision-scope**（新于工作单）；进度=apply-review run-manifest 逐页对账（revision / pr-polish 两流）；分组门 digest 展示；**同 stem 跨检出去重**——活的（进度更深/带门）胜出，主检出筹备期残留副本出局。API 参考页与语种页新增"修订战役"区，语种卡计数并入。
+- **交接=/attach 第三类目标**：`/attach <工作单 stem>`（如 `java-revision-worklist`，`rev:` 前缀/全键均可）→ 确定性简报=工作树指引（一切以该检出为准）+ 裁定原文 + 分组门 digest（提示确认已批）+ 已写页面逐条对账 + 待写页数 + 续接规则（governed writer 逐页 manifest/共享页 in-place/需决策即停）+ 铁律。`buildBrief` 在战役解析失败后自动尝试修订目标；CLI 与 spawn 派单同一入口（修订 worker 以工作树为 --cwd）。
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
@@ -126,4 +133,5 @@
 - `tests/skills/dashboard-detail.test.js`（批 5）：详情 join（单元↔release-scope 文件表：accepted/pending/queued/BACKFILL 无 PR 文件/未入组行、规模计数、回执 repo 相对化）、路径 fail-closed（越界/非扫描根/非 durable 会话）、哨兵今日报告结论透传（无变化/发现 N 项/缺报告）、registry 轨道聚合（计数归属、未登记战役不泄漏、缺 registry 容错）、trackScanStateKey 推导。
 - `tests/skills/dashboard-live.test.js`（批 6）：live-stats（注入 token/fetch 零网络——bitable 一页读 total、Drive BFS 计数与回边不死循环、collector ok/partial 逐轨降级/TTL 缓存不重拉/过期强刷/缺 registry 优雅失败）、scout-findings（精确日更模式识别、后缀制品排除、回看窗、字段透传）、intake-brief（确定性文本、战役后缀工件 fail-closed、目录外路径拒绝）。
 - `tests/skills/dashboard-checkouts.test.js`（批 8）：worktree 清单解析（bare 跳过/主检出标签）、跨检出发现与键防碰撞（同相对路径双检出+各自 scan-state 僵尸判定）、绝对 sessionRef 只归因本检出、运行会话推导（窗口/最长根匹配检出推断/战役滚动归因）、resolveSessionTarget 键解析。
+- `tests/skills/dashboard-revision.test.js`（批 10）：修订卡发现（活体 scope 优先/apply-review 逐页对账/无关 run-manifest 不计）、跨检出去重（进度深者活）、目标解析三种形态与简报确定性。
 - `tests/skills/dashboard-usage.test.js`（批 7）：解析（嵌套 snake/camelCase、无 usage 行不算回合、坏行容忍）、增量采集（追加快路径/书签跳过/轮转重建无幽灵行）、事件归因（绝对路径归一化 join）、approve 边界差分（resume 回合归到单元）、空态诚实呈现。

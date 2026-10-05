@@ -17,7 +17,7 @@ const { exec, execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 
 const { buildLedger, parseWorktreeList, resolveSessionTarget } = require('./ledger.js');
-const { buildBrief } = require('./attach-brief.js');
+const { buildBrief, buildRevisionBrief, resolveRevisionTarget } = require('./attach-brief.js');
 const { buildCampaignDetail, sessionPathAllowed } = require('./campaign-detail.js');
 const { createLiveStatsCollector } = require('./live-stats.js');
 const { buildScoutFindings } = require('./scout-findings.js');
@@ -522,17 +522,36 @@ async function handler(req, res) {
       const briefRoot = resolvedTarget.checkout.root;
       // resolveSessionTarget already stripped the checkout prefix; plain
       // main targets pass through unchanged (path or scan-state key).
-      const brief = buildBrief({ repoRoot: briefRoot, requested: resolvedTarget.relative });
-      if (!brief.ok) {
-        sendJson(res, 404, { error: brief.error, available: brief.available, candidates: brief.candidates });
-        return;
+      let brief = buildBrief({ repoRoot: briefRoot, requested: resolvedTarget.relative });
+      let workerKey;
+      let spawnRoot = briefRoot;
+      let spawnPrompt;
+      if (brief.ok && brief.card) {
+        workerKey = `${resolvedTarget.checkout.id}::${brief.card.sessionPath}`;
+        spawnPrompt = buildHeadlessPrompt(brief.text);
+      } else {
+        // Not a review-session campaign — a revision worklist hands off the
+        // same way: deterministic brief, worker lands in its own checkout.
+        const revision = resolveRevisionTarget(checkoutsState, target);
+        if (!revision.card) {
+          sendJson(res, 404, { error: brief.error || revision.error, available: brief.available, revisionAvailable: revision.available, candidates: brief.candidates });
+          return;
+        }
+        brief = buildRevisionBrief(revision.card);
+        workerKey = revision.card.sessionKey;
+        spawnRoot = revision.card.checkoutRoot;
+        spawnPrompt = [
+          '你是本修订战役的新执行会话（由治理看板一键派出）。下面是确定性生成的修订战役简报——它是你的初始任务上下文；一切以简报所指工作树的盘上状态为准，勿凭记忆续接。',
+          '按简报中的续接规则逐页推进 governed 写入；遇到需要操作员决策处（裁定变更/范围调整/异常回滚）必须停下等待。',
+          '---',
+          brief.text,
+        ].join('\n');
       }
-      const workerKey = `${resolvedTarget.checkout.id}::${brief.card.sessionPath}`;
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
       registerWorker(workerKey, worker);
       const child = spawn(
         'zcode',
-        [...buildHeadlessSpawnArgs(briefRoot, buildHeadlessPrompt(brief.text)), '--json'],
+        [...buildHeadlessSpawnArgs(spawnRoot, spawnPrompt), '--json'],
         { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
       );
       let stdout = '';
@@ -551,7 +570,9 @@ async function handler(req, res) {
       sendJson(res, 200, {
         ok: true,
         card: workerKey,
-        note: `会话已派出（${resolvedTarget.checkout.label} · ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+        note: brief.revision
+          ? `修订战役会话已派出（${brief.revision.checkoutLabel} · ZCode 桌面端呈现 · 已写 ${brief.revision.writtenPages}/${brief.revision.scope.pages} 页）——按简报逐页 governed 写入，需决策处停下`
+          : `会话已派出（${resolvedTarget.checkout.label} · ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
       });
     });
     return;

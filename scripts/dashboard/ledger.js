@@ -325,6 +325,161 @@ function campaignOrder(card) {
   return (card.health === 'finalized' ? 1 : 0);
 }
 
+// ---------- revision campaigns (worklist-driven, batch 10) ----------
+//
+// Revision campaigns run OUTSIDE the review-session state machine: their
+// durable state is a worklist of findings + a grouping-gate manifest + one
+// run-manifest per governed write. The board derives a card from exactly
+// those artifacts — no second truth, and the campaign stays visible after
+// the owning chat session ends (that is the handoff).
+
+const REVISION_DIR_RELATIVE_PATH = 'tmp/api-reference-sync';
+const REVISION_WORKLIST_RE = /worklist.*\.json$|^.*worklist\.json$/;
+const APPLY_REVIEW_MANIFEST_RE = /^run-manifest-(revision|pr-polish)-apply-review-(.+)\.json$/;
+const GROUPING_GATE_MANIFEST_RE = /^gate-manifest-grouping-.*\.json$/;
+// The live scope the grouping gate linked (newer than the worklist itself).
+const REVISION_SCOPE_RE = /^revision-scope-.*\.json$/;
+
+function stemOf(relativePath) {
+  const base = relativePath.split('/').pop();
+  return base.replace(/\.json$/, '');
+}
+
+function readStatsOrNull(absolutePath) {
+  try {
+    return fs.statSync(absolutePath);
+  } catch {
+    return null;
+  }
+}
+
+// Written units reconcile from governed-writer run manifests in the same
+// directory: one apply-review manifest per page, filename carries the unit.
+function reconcileWrittenUnits(dirAbsolute) {
+  let names;
+  try {
+    names = fs.readdirSync(dirAbsolute);
+  } catch {
+    return [];
+  }
+  const written = [];
+  for (const name of names) {
+    const match = APPLY_REVIEW_MANIFEST_RE.exec(name);
+    if (!match) continue;
+    const stat = readStatsOrNull(path.join(dirAbsolute, name));
+    written.push({
+      flow: match[1],
+      unit: match[2],
+      manifest: `${REVISION_DIR_RELATIVE_PATH}/${name}`,
+      writtenAt: stat ? new Date(stat.mtimeMs).toISOString() : null,
+    });
+  }
+  return written.sort((a, b) => String(a.writtenAt).localeCompare(String(b.writtenAt)));
+}
+
+function buildRevisionCards(checkouts) {
+  const cards = [];
+  for (const checkout of checkouts) {
+    const dir = path.join(checkout.root, REVISION_DIR_RELATIVE_PATH);
+    let names;
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (name.includes('dryrun') || name.includes('archive')) continue;
+      if (!REVISION_WORKLIST_RE.test(name)) continue;
+      const payload = readJsonOrNull(path.join(dir, name));
+      if (!payload || !payload.schemaVersion || !Array.isArray(payload.items)) continue;
+      const relative = `${REVISION_DIR_RELATIVE_PATH}/${name}`;
+
+      // Prefer the live revision-scope the grouping gate linked (it is
+      // re-scanned); the worklist remains the finding-level fallback.
+      let scopeSummary = payload.summary ?? null;
+      let scopePages = typeof payload.pagesInScope === 'number' ? payload.pagesInScope : null;
+      let ruling = typeof payload.ruling === 'string' ? payload.ruling : null;
+      let scopeGeneratedAt = payload.generatedAt ?? null;
+      let linkedScope = null;
+      let groupingGate = null;
+      for (const other of names) {
+        if (GROUPING_GATE_MANIFEST_RE.test(other)) {
+          const gate = readJsonOrNull(path.join(dir, other));
+          if (gate && typeof gate.digest === 'string') {
+            groupingGate = { digest: gate.digest, title: gate.title ?? null, manifest: `${REVISION_DIR_RELATIVE_PATH}/${other}` };
+            for (const link of gate.links || []) {
+              if (typeof link.url === 'string' && REVISION_SCOPE_RE.test(link.url.split('/').pop())) {
+                linkedScope = readJsonOrNull(path.join(checkout.root, link.url));
+              }
+            }
+          }
+        }
+      }
+      if (linkedScope && linkedScope.summary) {
+        scopeSummary = linkedScope.summary;
+        scopePages = linkedScope.summary.pages ?? scopePages;
+        ruling = typeof linkedScope.ruling === 'string' ? linkedScope.ruling : ruling;
+        scopeGeneratedAt = linkedScope.generatedAt ?? scopeGeneratedAt;
+      }
+      const pages = new Set(payload.items.map((item) => item.page).filter(Boolean));
+      const total = scopePages ?? pages.size;
+      const written = reconcileWrittenUnits(dir);
+      const languageMatch = /^([a-z]+)-/.exec(stemOf(relative));
+      const stat = readStatsOrNull(path.join(dir, name));
+      cards.push({
+        kind: 'revision',
+        checkout: checkout.id,
+        checkoutLabel: checkout.label,
+        checkoutRoot: checkout.root,
+        sessionKey: `${checkout.id}::${relative}`,
+        worklistPath: relative,
+        worklistStem: stemOf(relative),
+        language: payload.language ?? (languageMatch ? languageMatch[1] : null),
+        ruling,
+        scope: {
+          pages: total,
+          findings: payload.items.length,
+          uniquePages: pages.size,
+          summary: scopeSummary,
+          generatedAt: scopeGeneratedAt,
+        },
+        groupingGate,
+        written,
+        writtenPages: written.length,
+        remainingPages: Math.max(0, total - written.length),
+        status: written.length >= total && total > 0 ? 'finalized' : 'in_progress',
+        updatedAt: [stat?.mtimeMs, ...written.map((w) => new Date(w.writtenAt).getTime())]
+          .filter((t) => Number.isFinite(t)).reduce((a, b) => Math.max(a, b), 0)
+          ? new Date([stat?.mtimeMs, ...written.map((w) => new Date(w.writtenAt).getTime())]
+            .filter((t) => Number.isFinite(t)).reduce((a, b) => Math.max(a, b), 0)).toISOString()
+          : null,
+      });
+    }
+  }
+  // The same campaign may leave stale copies in earlier checkouts (setup
+  // started in main, moved to a dedicated worktree). One card per worklist
+  // stem: keep the freshest — the stale copy is residue, not a second truth.
+  const byStem = new Map();
+  for (const card of cards) {
+    const existing = byStem.get(card.worklistStem);
+    if (!existing) {
+      byStem.set(card.worklistStem, card);
+      continue;
+    }
+    // Which copy is live? The one further along — stale copies freeze while
+    // the live campaign keeps writing and carries its grouping gate.
+    const rank = (c) => [c.writtenPages, c.groupingGate ? 1 : 0, String(c.updatedAt || '')];
+    const newer = rank(card) > rank(existing);
+    if (newer) {
+      existing.supersededBy = card.checkout;
+      byStem.set(card.worklistStem, card);
+    } else {
+      card.supersededBy = existing.checkout;
+    }
+  }
+  return [...byStem.values()].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
 // ---------- api-reference-skill language × track summary ----------
 
 // Track identity for the skill board: language + version come from the
@@ -569,11 +724,14 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     admission: readAdmission(repoRoot),
     activity: activity.slice(-120),
     runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
+    revisions: buildRevisionCards(effectiveCheckouts),
   };
 }
 
 module.exports = {
   ADMISSION_LEDGER_RELATIVE_PATH,
+  APPLY_REVIEW_MANIFEST_RE,
+  REVISION_DIR_RELATIVE_PATH,
   GATE_PRESENTATION_RELATIVE_PATH,
   RELEASE_TRACKS_RELATIVE_PATH,
   SCAN_STATE_RELATIVE_PATH,
@@ -583,6 +741,7 @@ module.exports = {
   attributeKeyFor,
   buildCampaignCard,
   buildLedger,
+  buildRevisionCards,
   buildSentinelCard,
   buildSkillTracks,
   compareTags,

@@ -12,7 +12,7 @@
 
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
-const { buildLedger } = require('./ledger.js');
+const { buildLedger, buildRevisionCards, parseWorktreeList } = require('./ledger.js');
 
 const REVIEW_SESSION_CLI = path.join('.claude', 'skills', 'api-reference-sync', 'bin', 'sdk-review-session.js');
 
@@ -67,11 +67,81 @@ function gateLine(nextGate) {
   return `- 当前门: **${nextGate.gate}**${unit} ${hint}`;
 }
 
+// ---------- revision-campaign handoff (batch 10) ----------
+//
+// Revision campaigns have no review session; their durable state is the
+// worklist + grouping-gate manifest + per-page apply-review run-manifests.
+// The attach brief reconciles exactly those artifacts so a fresh chat takes
+// over without chat history — same "换工人不换工单" contract.
+
+function revisionCheckoutsFor(repoRoot) {
+  try {
+    const porcelain = execFileSync('git', ['worktree', 'list', '--porcelain'], {
+      cwd: repoRoot, encoding: 'utf8', timeout: 10_000,
+    });
+    const parsed = parseWorktreeList(porcelain, repoRoot);
+    if (parsed.length > 0) return parsed;
+  } catch {
+    // git unavailable — main only
+  }
+  return [{ id: 'main', label: '主检出', root: repoRoot }];
+}
+
+function resolveRevisionTarget(checkouts, requested) {
+  const raw = String(requested || '').trim();
+  const cards = buildRevisionCards(checkouts);
+  if (!raw) {
+    return { error: '缺少目标', available: cards.map((c) => c.worklistStem) };
+  }
+  const normalized = raw.replace(/^rev:/, '');
+  const matched = cards.filter((c) => c.worklistStem === normalized
+    || c.sessionKey === normalized
+    || c.sessionKey === raw);
+  if (matched.length === 0) {
+    return { error: `没有修订工作单匹配 "${raw}"`, available: cards.map((c) => c.worklistStem) };
+  }
+  return { card: matched[0] };
+}
+
+function buildRevisionBrief(card, now = new Date()) {
+  const lines = [];
+  const language = card.language ?? '?';
+  lines.push(`## 修订战役简报 · ${language} · ${card.worklistStem}`);
+  lines.push('');
+  lines.push(`- 工作树: ${card.checkoutLabel}（\`${card.checkoutRoot}\`）——一切以该检出盘上状态为准，勿在主检出操作。`);
+  lines.push(`- 工作单: \`${card.worklistPath}\`（${card.scope.findings} 项发现 / 唯一页 ${card.scope.uniquePages}；活体 scope 口径 ${card.scope.pages} 页，生成于 ${card.scope.generatedAt ?? '—'}）`);
+  if (card.ruling) lines.push(`- 裁定: ${card.ruling}`);
+  if (card.groupingGate) {
+    lines.push(`- 分组门: 已呈门（digest \`${card.groupingGate.digest}\`${card.groupingGate.title ? ` · ${card.groupingGate.title}` : ''}）——续接前先向操作员确认该 digest 已获批准。`);
+  }
+  lines.push(`- 已写页面（run-manifest 对账，${card.writtenPages}/${card.scope.pages}）:`);
+  if (card.written.length === 0) {
+    lines.push('  - （尚无——从头开始，先做首篇样例并落 manifest）');
+  } else {
+    for (const unit of card.written) {
+      lines.push(`  - ${unit.unit}（${unit.flow}，${unit.writtenAt ?? '—'}，\`${unit.manifest}\`）`);
+    }
+  }
+  lines.push(`- 待写: 约 ${card.remainingPages} 页`);
+  lines.push('');
+  lines.push('### 续接规则');
+  lines.push('- 写路径只走该检出的 governed writer：每页一个 apply-review run-manifest（含源指纹与摘要链），写前核对 documentToken，写后终态逐行复验。');
+  lines.push('- 逐页推进；发现清单以工作单与活体 scope 为准，勿凭记忆；共享页按裁定 in-place 修复。');
+  lines.push('- 遇到需要操作员决策处（裁定变更/范围调整/异常回滚）停下等操作员，不自行扩大范围。');
+  lines.push(...IRON_RULES);
+  return { ok: true, text: lines.join('\n'), revision: card, generatedAt: now.toISOString() };
+}
+
 function buildBrief({ repoRoot, requested, now = new Date(), runStatus = defaultRunStatus } = {}) {
   if (!repoRoot) throw new Error('buildBrief requires repoRoot');
-  const ledger = buildLedger({ repoRoot, now });
+  const ledger = buildLedger({ repoRoot, checkouts: revisionCheckoutsFor(repoRoot), now });
   const resolved = resolveTarget(ledger.campaigns, requested);
-  if (resolved.error) return { ok: false, ...resolved };
+  if (resolved.error) {
+    // Not a review-session campaign — try a revision worklist before giving up.
+    const revision = resolveRevisionTarget(revisionCheckoutsFor(repoRoot), requested);
+    if (revision.card) return buildRevisionBrief(revision.card, now);
+    return { ok: false, error: resolved.error, available: resolved.available, revisionAvailable: revision.available };
+  }
 
   const card = resolved.card;
   const lines = [];
@@ -126,4 +196,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { buildBrief, gateLine, resolveTarget, uniqueKeys };
+module.exports = { buildBrief, buildRevisionBrief, gateLine, resolveRevisionTarget, resolveTarget, revisionCheckoutsFor, uniqueKeys };

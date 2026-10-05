@@ -1,0 +1,919 @@
+{
+  "schemaVersion": 1,
+  "language": "go",
+  "track": "v3.0.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "Vector.NewAutoAnnParam": {
+      "stableId": "go:Vector:NewAutoAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewAutoAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewCustomAnnParam": {
+      "stableId": "go:Vector:NewCustomAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewCustomAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewDiskAnnParam": {
+      "stableId": "go:Vector:NewDiskAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewDiskAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewHNSWAnnParam": {
+      "stableId": "go:Vector:NewHNSWAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewHNSWAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewIvfAnnParam": {
+      "stableId": "go:Vector:NewIvfAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewIvfAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewIvfRabitQAnnParam": {
+      "stableId": "go:Vector:NewIvfRabitQAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewIvfRabitQAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewMinHashLSHAnnParam": {
+      "stableId": "go:Vector:NewMinHashLSHAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewMinHashLSHAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewSCANNAnnParam": {
+      "stableId": "go:Vector:NewSCANNAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewSCANNAnnParam",
+      "category": "Vector"
+    },
+    "Vector.NewSparseAnnParam": {
+      "stableId": "go:Vector:NewSparseAnnParam",
+      "canonicalSlug": "v2-AnnParam-NewSparseAnnParam",
+      "category": "Vector"
+    },
+    "Authentication.AddPrivilegesToGroup": {
+      "stableId": "go:Authentication:AddPrivilegesToGroup",
+      "canonicalSlug": "v2-Authentication-AddPrivilegesToGroup",
+      "category": "Authentication"
+    },
+    "Authentication.BackupRBAC": {
+      "stableId": "go:Authentication:BackupRBAC",
+      "canonicalSlug": "v2-Authentication-BackupRBAC",
+      "category": "Authentication"
+    },
+    "Authentication.CreatePrivilegeGroup": {
+      "stableId": "go:Authentication:CreatePrivilegeGroup",
+      "canonicalSlug": "v2-Authentication-CreatePrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.CreateRole": {
+      "stableId": "go:Authentication:CreateRole",
+      "canonicalSlug": "v2-Authentication-CreateRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreateUser": {
+      "stableId": "go:Authentication:CreateUser",
+      "canonicalSlug": "v2-Authentication-CreateUser",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeRole": {
+      "stableId": "go:Authentication:DescribeRole",
+      "canonicalSlug": "v2-Authentication-DescribeRole",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeUser": {
+      "stableId": "go:Authentication:DescribeUser",
+      "canonicalSlug": "v2-Authentication-DescribeUser",
+      "category": "Authentication"
+    },
+    "Authentication.DropPrivilegeGroup": {
+      "stableId": "go:Authentication:DropPrivilegeGroup",
+      "canonicalSlug": "v2-Authentication-DropPrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.DropRole": {
+      "stableId": "go:Authentication:DropRole",
+      "canonicalSlug": "v2-Authentication-DropRole",
+      "category": "Authentication"
+    },
+    "Authentication.DropUser": {
+      "stableId": "go:Authentication:DropUser",
+      "canonicalSlug": "v2-Authentication-DropUser",
+      "category": "Authentication"
+    },
+    "Authentication.GrantPrivilege": {
+      "stableId": "go:Authentication:GrantPrivilege",
+      "canonicalSlug": "v2-Authentication-GrantPrivilege",
+      "category": "Authentication"
+    },
+    "Authentication.GrantPrivilegeV2": {
+      "stableId": "go:Authentication:GrantPrivilegeV2",
+      "canonicalSlug": "v2-Authentication-GrantPrivilegeV2",
+      "category": "Authentication"
+    },
+    "Authentication.GrantRole": {
+      "stableId": "go:Authentication:GrantRole",
+      "canonicalSlug": "v2-Authentication-GrantRole",
+      "category": "Authentication"
+    },
+    "Authentication.ListPrivilegeGroups": {
+      "stableId": "go:Authentication:ListPrivilegeGroups",
+      "canonicalSlug": "v2-Authentication-ListPrivilegeGroups",
+      "category": "Authentication"
+    },
+    "Authentication.ListRoles": {
+      "stableId": "go:Authentication:ListRoles",
+      "canonicalSlug": "v2-Authentication-ListRoles",
+      "category": "Authentication"
+    },
+    "Authentication.ListUsers": {
+      "stableId": "go:Authentication:ListUsers",
+      "canonicalSlug": "v2-Authentication-ListUsers",
+      "category": "Authentication"
+    },
+    "Authentication.PrivilegeGroup": {
+      "stableId": "go:Authentication:PrivilegeGroup",
+      "canonicalSlug": "v2-Authentication-PrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.RBACMeta": {
+      "stableId": "go:Authentication:RBACMeta",
+      "canonicalSlug": "v2-Authentication-RBACMeta",
+      "category": "Authentication"
+    },
+    "Authentication.RemovePrivilegesFromGroup": {
+      "stableId": "go:Authentication:RemovePrivilegesFromGroup",
+      "canonicalSlug": "v2-Authentication-RemovePrivilegesFromGroup",
+      "category": "Authentication"
+    },
+    "Authentication.RestoreRBAC": {
+      "stableId": "go:Authentication:RestoreRBAC",
+      "canonicalSlug": "v2-Authentication-RestoreRBAC",
+      "category": "Authentication"
+    },
+    "Authentication.RevokePrivilege": {
+      "stableId": "go:Authentication:RevokePrivilege",
+      "canonicalSlug": "v2-Authentication-RevokePrivilege",
+      "category": "Authentication"
+    },
+    "Authentication.RevokePrivilegeV2": {
+      "stableId": "go:Authentication:RevokePrivilegeV2",
+      "canonicalSlug": "v2-Authentication-RevokePrivilegeV2",
+      "category": "Authentication"
+    },
+    "Authentication.RevokeRole": {
+      "stableId": "go:Authentication:RevokeRole",
+      "canonicalSlug": "v2-Authentication-RevokeRole",
+      "category": "Authentication"
+    },
+    "Authentication.Role": {
+      "stableId": "go:Authentication:Role",
+      "canonicalSlug": "v2-Authentication-Role",
+      "category": "Authentication"
+    },
+    "Authentication.UpdatePassword": {
+      "stableId": "go:Authentication:UpdatePassword",
+      "canonicalSlug": "v2-Authentication-UpdatePassword",
+      "category": "Authentication"
+    },
+    "Authentication.User": {
+      "stableId": "go:Authentication:User",
+      "canonicalSlug": "v2-Authentication-User",
+      "category": "Authentication"
+    },
+    "Client.ClientConfig": {
+      "stableId": "go:Client:ClientConfig",
+      "canonicalSlug": "v2-Client-ClientConfig",
+      "category": "Client"
+    },
+    "Client.Close": {
+      "stableId": "go:Client:Close",
+      "canonicalSlug": "v2-Client-Close",
+      "category": "Client"
+    },
+    "Client.GetServerVersion": {
+      "stableId": "go:Client:GetServerVersion",
+      "canonicalSlug": "v2-Client-GetServerVersion",
+      "category": "Client"
+    },
+    "Client.GetTelemetry": {
+      "stableId": "go:Client:GetTelemetry",
+      "canonicalSlug": "v2-Client-GetTelemetry",
+      "category": "Client"
+    },
+    "Client.New": {
+      "stableId": "go:Client:New",
+      "canonicalSlug": "v2-Client-New",
+      "category": "Client"
+    },
+    "Collections.Collection": {
+      "stableId": "go:Collections:Collection",
+      "canonicalSlug": "v2-Collection",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionField": {
+      "stableId": "go:Collections:AddCollectionField",
+      "canonicalSlug": "v2-Collection-AddCollectionField",
+      "category": "Collections"
+    },
+    "Collections.Alias": {
+      "stableId": "go:Collections:Alias",
+      "canonicalSlug": "v2-Collection-Alias",
+      "category": "Collections"
+    },
+    "Collections.AlterAlias": {
+      "stableId": "go:Collections:AlterAlias",
+      "canonicalSlug": "v2-Collection-AlterAlias",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionFieldProperty": {
+      "stableId": "go:Collections:AlterCollectionFieldProperty",
+      "canonicalSlug": "v2-Collection-AlterCollectionFieldProperty",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionProperties": {
+      "stableId": "go:Collections:AlterCollectionProperties",
+      "canonicalSlug": "v2-Collection-AlterCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.ConsistencyLevel": {
+      "stableId": "go:Collections:ConsistencyLevel",
+      "canonicalSlug": "v2-Collection-ConsistencyLevel",
+      "category": "Collections"
+    },
+    "Collections.CreateAlias": {
+      "stableId": "go:Collections:CreateAlias",
+      "canonicalSlug": "v2-Collection-CreateAlias",
+      "category": "Collections"
+    },
+    "Collections.CreateCollection": {
+      "stableId": "go:Collections:CreateCollection",
+      "canonicalSlug": "v2-Collection-CreateCollection",
+      "category": "Collections"
+    },
+    "Collections.DescribeAlias": {
+      "stableId": "go:Collections:DescribeAlias",
+      "canonicalSlug": "v2-Collection-DescribeAlias",
+      "category": "Collections"
+    },
+    "Collections.DescribeCollection": {
+      "stableId": "go:Collections:DescribeCollection",
+      "canonicalSlug": "v2-Collection-DescribeCollection",
+      "category": "Collections"
+    },
+    "Collections.DropAlias": {
+      "stableId": "go:Collections:DropAlias",
+      "canonicalSlug": "v2-Collection-DropAlias",
+      "category": "Collections"
+    },
+    "Collections.DropCollection": {
+      "stableId": "go:Collections:DropCollection",
+      "canonicalSlug": "v2-Collection-DropCollection",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionProperties": {
+      "stableId": "go:Collections:DropCollectionProperties",
+      "canonicalSlug": "v2-Collection-DropCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.Field": {
+      "stableId": "go:Collections:Field",
+      "canonicalSlug": "v2-Collection-Field",
+      "category": "Collections"
+    },
+    "Collections.FieldType": {
+      "stableId": "go:Collections:FieldType",
+      "canonicalSlug": "v2-Collection-FieldType",
+      "category": "Collections"
+    },
+    "Collections.Function": {
+      "stableId": "go:Collections:Function",
+      "canonicalSlug": "v2-Collection-Function",
+      "category": "Collections"
+    },
+    "Collections.GetCollectionStats": {
+      "stableId": "go:Collections:GetCollectionStats",
+      "canonicalSlug": "v2-Collection-GetCollectionStats",
+      "category": "Collections"
+    },
+    "Collections.GetRefreshExternalCollectionProgress": {
+      "stableId": "go:Collections:GetRefreshExternalCollectionProgress",
+      "canonicalSlug": "v2-Collection-GetRefreshExternalCollectionProgress",
+      "category": "Collections"
+    },
+    "Collections.HasCollection": {
+      "stableId": "go:Collections:HasCollection",
+      "canonicalSlug": "v2-Collection-HasCollection",
+      "category": "Collections"
+    },
+    "Collections.ListAliases": {
+      "stableId": "go:Collections:ListAliases",
+      "canonicalSlug": "v2-Collection-ListAliases",
+      "category": "Collections"
+    },
+    "Collections.ListCollections": {
+      "stableId": "go:Collections:ListCollections",
+      "canonicalSlug": "v2-Collection-ListCollections",
+      "category": "Collections"
+    },
+    "Collections.ListRefreshExternalCollectionJobs": {
+      "stableId": "go:Collections:ListRefreshExternalCollectionJobs",
+      "canonicalSlug": "v2-Collection-ListRefreshExternalCollectionJobs",
+      "category": "Collections"
+    },
+    "Collections.RefreshExternalCollection": {
+      "stableId": "go:Collections:RefreshExternalCollection",
+      "canonicalSlug": "v2-Collection-RefreshExternalCollection",
+      "category": "Collections"
+    },
+    "Collections.RefreshExternalCollectionJobInfo": {
+      "stableId": "go:Collections:RefreshExternalCollectionJobInfo",
+      "canonicalSlug": "v2-Collection-RefreshExternalCollectionJobInfo",
+      "category": "Collections"
+    },
+    "Collections.RefreshExternalCollectionState": {
+      "stableId": "go:Collections:RefreshExternalCollectionState",
+      "canonicalSlug": "v2-Collection-RefreshExternalCollectionState",
+      "category": "Collections"
+    },
+    "Collections.RenameCollection": {
+      "stableId": "go:Collections:RenameCollection",
+      "canonicalSlug": "v2-Collection-RenameCollection",
+      "category": "Collections"
+    },
+    "Collections.Schema": {
+      "stableId": "go:Collections:Schema",
+      "canonicalSlug": "v2-Collection-Schema",
+      "category": "Collections"
+    },
+    "Collections.StructSchema": {
+      "stableId": "go:Collections:StructSchema",
+      "canonicalSlug": "v2-Collection-StructSchema",
+      "category": "Collections"
+    },
+    "Collections.TruncateCollection": {
+      "stableId": "go:Collections:TruncateCollection",
+      "canonicalSlug": "v2-Collection-TruncateCollection",
+      "category": "Collections"
+    },
+    "Database.Database": {
+      "stableId": "go:Database:Database",
+      "canonicalSlug": "v2-Database",
+      "category": "Database"
+    },
+    "Database.AlterDatabaseProperties": {
+      "stableId": "go:Database:AlterDatabaseProperties",
+      "canonicalSlug": "v2-Database-AlterDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.CreateDatabase": {
+      "stableId": "go:Database:CreateDatabase",
+      "canonicalSlug": "v2-Database-CreateDatabase",
+      "category": "Database"
+    },
+    "Database.DescribeDatabase": {
+      "stableId": "go:Database:DescribeDatabase",
+      "canonicalSlug": "v2-Database-DescribeDatabase",
+      "category": "Database"
+    },
+    "Database.DropDatabase": {
+      "stableId": "go:Database:DropDatabase",
+      "canonicalSlug": "v2-Database-DropDatabase",
+      "category": "Database"
+    },
+    "Database.DropDatabaseProperties": {
+      "stableId": "go:Database:DropDatabaseProperties",
+      "canonicalSlug": "v2-Database-DropDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.ListDatabase": {
+      "stableId": "go:Database:ListDatabase",
+      "canonicalSlug": "v2-Database-ListDatabase",
+      "category": "Database"
+    },
+    "Database.UseDatabase": {
+      "stableId": "go:Database:UseDatabase",
+      "canonicalSlug": "v2-Database-UseDatabase",
+      "category": "Database"
+    },
+    "DataImport.BulkImport": {
+      "stableId": "go:DataImport:BulkImport",
+      "canonicalSlug": "v2-DataImport-BulkImport",
+      "category": "DataImport"
+    },
+    "DataImport.BulkImportOption": {
+      "stableId": "go:DataImport:BulkImportOption",
+      "canonicalSlug": "v2-DataImport-BulkImportOption",
+      "category": "DataImport"
+    },
+    "DataImport.BulkImportResponse": {
+      "stableId": "go:DataImport:BulkImportResponse",
+      "canonicalSlug": "v2-DataImport-BulkImportResponse",
+      "category": "DataImport"
+    },
+    "DataImport.GetImportProgress": {
+      "stableId": "go:DataImport:GetImportProgress",
+      "canonicalSlug": "v2-DataImport-GetImportProgress",
+      "category": "DataImport"
+    },
+    "DataImport.GetImportProgressOption": {
+      "stableId": "go:DataImport:GetImportProgressOption",
+      "canonicalSlug": "v2-DataImport-GetImportProgressOption",
+      "category": "DataImport"
+    },
+    "DataImport.GetImportProgressResponse": {
+      "stableId": "go:DataImport:GetImportProgressResponse",
+      "canonicalSlug": "v2-DataImport-GetImportProgressResponse",
+      "category": "DataImport"
+    },
+    "DataImport.ListImportJobs": {
+      "stableId": "go:DataImport:ListImportJobs",
+      "canonicalSlug": "v2-DataImport-ListImportJobs",
+      "category": "DataImport"
+    },
+    "DataImport.ListImportJobsOption": {
+      "stableId": "go:DataImport:ListImportJobsOption",
+      "canonicalSlug": "v2-DataImport-ListImportJobsOption",
+      "category": "DataImport"
+    },
+    "DataImport.ListImportJobsResponse": {
+      "stableId": "go:DataImport:ListImportJobsResponse",
+      "canonicalSlug": "v2-DataImport-ListImportJobsResponse",
+      "category": "DataImport"
+    },
+    "Management.NewAutoIndex": {
+      "stableId": "go:Management:NewAutoIndex",
+      "canonicalSlug": "v2-Index-NewAutoIndex",
+      "category": "Management"
+    },
+    "Management.NewBinFlatIndex": {
+      "stableId": "go:Management:NewBinFlatIndex",
+      "canonicalSlug": "v2-Index-NewBinFlatIndex",
+      "category": "Management"
+    },
+    "Management.NewBinIvfFlatIndex": {
+      "stableId": "go:Management:NewBinIvfFlatIndex",
+      "canonicalSlug": "v2-Index-NewBinIvfFlatIndex",
+      "category": "Management"
+    },
+    "Management.NewBitmapIndex": {
+      "stableId": "go:Management:NewBitmapIndex",
+      "canonicalSlug": "v2-Index-NewBitmapIndex",
+      "category": "Management"
+    },
+    "Management.NewDiskANNIndex": {
+      "stableId": "go:Management:NewDiskANNIndex",
+      "canonicalSlug": "v2-Index-NewDiskANNIndex",
+      "category": "Management"
+    },
+    "Management.NewFlatIndex": {
+      "stableId": "go:Management:NewFlatIndex",
+      "canonicalSlug": "v2-Index-NewFlatIndex",
+      "category": "Management"
+    },
+    "Management.NewGenericIndex": {
+      "stableId": "go:Management:NewGenericIndex",
+      "canonicalSlug": "v2-Index-NewGenericIndex",
+      "category": "Management"
+    },
+    "Management.NewGPUBruteForceIndex": {
+      "stableId": "go:Management:NewGPUBruteForceIndex",
+      "canonicalSlug": "v2-Index-NewGPUBruteForceIndex",
+      "category": "Management"
+    },
+    "Management.NewGPUCagraIndex": {
+      "stableId": "go:Management:NewGPUCagraIndex",
+      "canonicalSlug": "v2-Index-NewGPUCagraIndex",
+      "category": "Management"
+    },
+    "Management.NewGPUIVPFlatIndex": {
+      "stableId": "go:Management:NewGPUIVPFlatIndex",
+      "canonicalSlug": "v2-Index-NewGPUIVPFlatIndex",
+      "category": "Management"
+    },
+    "Management.NewGPUIVPPQIndex": {
+      "stableId": "go:Management:NewGPUIVPPQIndex",
+      "canonicalSlug": "v2-Index-NewGPUIVPPQIndex",
+      "category": "Management"
+    },
+    "Management.NewHNSWIndex": {
+      "stableId": "go:Management:NewHNSWIndex",
+      "canonicalSlug": "v2-Index-NewHNSWIndex",
+      "category": "Management"
+    },
+    "Management.NewInvertedIndex": {
+      "stableId": "go:Management:NewInvertedIndex",
+      "canonicalSlug": "v2-Index-NewInvertedIndex",
+      "category": "Management"
+    },
+    "Management.NewIvfFlatIndex": {
+      "stableId": "go:Management:NewIvfFlatIndex",
+      "canonicalSlug": "v2-Index-NewIvfFlatIndex",
+      "category": "Management"
+    },
+    "Management.NewIvfPQIndex": {
+      "stableId": "go:Management:NewIvfPQIndex",
+      "canonicalSlug": "v2-Index-NewIvfPQIndex",
+      "category": "Management"
+    },
+    "Management.NewIvfRabitQIndex": {
+      "stableId": "go:Management:NewIvfRabitQIndex",
+      "canonicalSlug": "v2-Index-NewIvfRabitQIndex",
+      "category": "Management"
+    },
+    "Management.NewIvfSQ8Index": {
+      "stableId": "go:Management:NewIvfSQ8Index",
+      "canonicalSlug": "v2-Index-NewIvfSQ8Index",
+      "category": "Management"
+    },
+    "Management.NewJSONPathIndex": {
+      "stableId": "go:Management:NewJSONPathIndex",
+      "canonicalSlug": "v2-Index-NewJSONPathIndex",
+      "category": "Management"
+    },
+    "Management.NewMinHashLSHIndex": {
+      "stableId": "go:Management:NewMinHashLSHIndex",
+      "canonicalSlug": "v2-Index-NewMinHashLSHIndex",
+      "category": "Management"
+    },
+    "Management.NewRTreeIndex": {
+      "stableId": "go:Management:NewRTreeIndex",
+      "canonicalSlug": "v2-Index-NewRTreeIndex",
+      "category": "Management"
+    },
+    "Management.NewSCANNIndex": {
+      "stableId": "go:Management:NewSCANNIndex",
+      "canonicalSlug": "v2-Index-NewSCANNIndex",
+      "category": "Management"
+    },
+    "Management.NewSortedIndex": {
+      "stableId": "go:Management:NewSortedIndex",
+      "canonicalSlug": "v2-Index-NewSortedIndex",
+      "category": "Management"
+    },
+    "Management.NewSparseInvertedIndex": {
+      "stableId": "go:Management:NewSparseInvertedIndex",
+      "canonicalSlug": "v2-Index-NewSparseInvertedIndex",
+      "category": "Management"
+    },
+    "Management.NewSparseWANDIndex": {
+      "stableId": "go:Management:NewSparseWANDIndex",
+      "canonicalSlug": "v2-Index-NewSparseWANDIndex",
+      "category": "Management"
+    },
+    "Management.NewTrieIndex": {
+      "stableId": "go:Management:NewTrieIndex",
+      "canonicalSlug": "v2-Index-NewTrieIndex",
+      "category": "Management"
+    },
+    "Management.AlterIndexProperties": {
+      "stableId": "go:Management:AlterIndexProperties",
+      "canonicalSlug": "v2-Management-AlterIndexProperties",
+      "category": "Management"
+    },
+    "Management.Compact": {
+      "stableId": "go:Management:Compact",
+      "canonicalSlug": "v2-Management-Compact",
+      "category": "Management"
+    },
+    "Management.CompactionState": {
+      "stableId": "go:Management:CompactionState",
+      "canonicalSlug": "v2-Management-CompactionState",
+      "category": "Management"
+    },
+    "Management.CreateIndex": {
+      "stableId": "go:Management:CreateIndex",
+      "canonicalSlug": "v2-Management-CreateIndex",
+      "category": "Management"
+    },
+    "Management.CreateIndexTask": {
+      "stableId": "go:Management:CreateIndexTask",
+      "canonicalSlug": "v2-Management-CreateIndexTask",
+      "category": "Management"
+    },
+    "Management.DescribeIndex": {
+      "stableId": "go:Management:DescribeIndex",
+      "canonicalSlug": "v2-Management-DescribeIndex",
+      "category": "Management"
+    },
+    "Management.DropIndex": {
+      "stableId": "go:Management:DropIndex",
+      "canonicalSlug": "v2-Management-DropIndex",
+      "category": "Management"
+    },
+    "Management.DropIndexProperties": {
+      "stableId": "go:Management:DropIndexProperties",
+      "canonicalSlug": "v2-Management-DropIndexProperties",
+      "category": "Management"
+    },
+    "Management.Flush": {
+      "stableId": "go:Management:Flush",
+      "canonicalSlug": "v2-Management-Flush",
+      "category": "Management"
+    },
+    "Management.FlushTask": {
+      "stableId": "go:Management:FlushTask",
+      "canonicalSlug": "v2-Management-FlushTask",
+      "category": "Management"
+    },
+    "Management.GetCompactionState": {
+      "stableId": "go:Management:GetCompactionState",
+      "canonicalSlug": "v2-Management-GetCompactionState",
+      "category": "Management"
+    },
+    "Management.GetLoadState": {
+      "stableId": "go:Management:GetLoadState",
+      "canonicalSlug": "v2-Management-GetLoadState",
+      "category": "Management"
+    },
+    "Management.GetPersistentSegmentInfo": {
+      "stableId": "go:Management:GetPersistentSegmentInfo",
+      "canonicalSlug": "v2-Management-GetPersistentSegmentInfo",
+      "category": "Management"
+    },
+    "Management.Index": {
+      "stableId": "go:Management:Index",
+      "canonicalSlug": "v2-Management-Index",
+      "category": "Management"
+    },
+    "Management.IndexDescription": {
+      "stableId": "go:Management:IndexDescription",
+      "canonicalSlug": "v2-Management-IndexDescription",
+      "category": "Management"
+    },
+    "Management.IndexType": {
+      "stableId": "go:Management:IndexType",
+      "canonicalSlug": "v2-Management-IndexType",
+      "category": "Management"
+    },
+    "Management.ListIndexes": {
+      "stableId": "go:Management:ListIndexes",
+      "canonicalSlug": "v2-Management-ListIndexes",
+      "category": "Management"
+    },
+    "Management.LoadCollection": {
+      "stableId": "go:Management:LoadCollection",
+      "canonicalSlug": "v2-Management-LoadCollection",
+      "category": "Management"
+    },
+    "Management.LoadPartitions": {
+      "stableId": "go:Management:LoadPartitions",
+      "canonicalSlug": "v2-Management-LoadPartitions",
+      "category": "Management"
+    },
+    "Management.LoadState": {
+      "stableId": "go:Management:LoadState",
+      "canonicalSlug": "v2-Management-LoadState",
+      "category": "Management"
+    },
+    "Management.LoadTask": {
+      "stableId": "go:Management:LoadTask",
+      "canonicalSlug": "v2-Management-LoadTask",
+      "category": "Management"
+    },
+    "Management.MetricType": {
+      "stableId": "go:Management:MetricType",
+      "canonicalSlug": "v2-Management-MetricType",
+      "category": "Management"
+    },
+    "Management.RefreshLoad": {
+      "stableId": "go:Management:RefreshLoad",
+      "canonicalSlug": "v2-Management-RefreshLoad",
+      "category": "Management"
+    },
+    "Management.ReleaseCollection": {
+      "stableId": "go:Management:ReleaseCollection",
+      "canonicalSlug": "v2-Management-ReleaseCollection",
+      "category": "Management"
+    },
+    "Management.ReleasePartitions": {
+      "stableId": "go:Management:ReleasePartitions",
+      "canonicalSlug": "v2-Management-ReleasePartitions",
+      "category": "Management"
+    },
+    "Management.Segment": {
+      "stableId": "go:Management:Segment",
+      "canonicalSlug": "v2-Management-Segment",
+      "category": "Management"
+    },
+    "Partitions.CreatePartition": {
+      "stableId": "go:Partitions:CreatePartition",
+      "canonicalSlug": "v2-Partition-CreatePartition",
+      "category": "Partitions"
+    },
+    "Partitions.DropPartition": {
+      "stableId": "go:Partitions:DropPartition",
+      "canonicalSlug": "v2-Partition-DropPartition",
+      "category": "Partitions"
+    },
+    "Partitions.GetPartitionStats": {
+      "stableId": "go:Partitions:GetPartitionStats",
+      "canonicalSlug": "v2-Partition-GetPartitionStats",
+      "category": "Partitions"
+    },
+    "Partitions.HasPartition": {
+      "stableId": "go:Partitions:HasPartition",
+      "canonicalSlug": "v2-Partition-HasPartition",
+      "category": "Partitions"
+    },
+    "Partitions.ListPartitions": {
+      "stableId": "go:Partitions:ListPartitions",
+      "canonicalSlug": "v2-Partition-ListPartitions",
+      "category": "Partitions"
+    },
+    "ResourceGroup.ResourceGroup": {
+      "stableId": "go:ResourceGroup:ResourceGroup",
+      "canonicalSlug": "v2-ResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.CreateResourceGroup": {
+      "stableId": "go:ResourceGroup:CreateResourceGroup",
+      "canonicalSlug": "v2-ResourceGroup-CreateResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DescribeReplica": {
+      "stableId": "go:ResourceGroup:DescribeReplica",
+      "canonicalSlug": "v2-ResourceGroup-DescribeReplica",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DescribeResourceGroup": {
+      "stableId": "go:ResourceGroup:DescribeResourceGroup",
+      "canonicalSlug": "v2-ResourceGroup-DescribeResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DropResourceGroup": {
+      "stableId": "go:ResourceGroup:DropResourceGroup",
+      "canonicalSlug": "v2-ResourceGroup-DropResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ListResourceGroups": {
+      "stableId": "go:ResourceGroup:ListResourceGroups",
+      "canonicalSlug": "v2-ResourceGroup-ListResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ResourceGroupConfig": {
+      "stableId": "go:ResourceGroup:ResourceGroupConfig",
+      "canonicalSlug": "v2-ResourceGroup-ResourceGroupConfig",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.TransferReplica": {
+      "stableId": "go:ResourceGroup:TransferReplica",
+      "canonicalSlug": "v2-ResourceGroup-TransferReplica",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.UpdateResourceGroup": {
+      "stableId": "go:ResourceGroup:UpdateResourceGroup",
+      "canonicalSlug": "v2-ResourceGroup-UpdateResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "Snapshot.CreateSnapshot": {
+      "stableId": "go:Snapshot:CreateSnapshot",
+      "canonicalSlug": "v2-Snapshot-CreateSnapshot",
+      "category": "Snapshot"
+    },
+    "Snapshot.DescribeSnapshot": {
+      "stableId": "go:Snapshot:DescribeSnapshot",
+      "canonicalSlug": "v2-Snapshot-DescribeSnapshot",
+      "category": "Snapshot"
+    },
+    "Snapshot.DropSnapshot": {
+      "stableId": "go:Snapshot:DropSnapshot",
+      "canonicalSlug": "v2-Snapshot-DropSnapshot",
+      "category": "Snapshot"
+    },
+    "Snapshot.GetRestoreSnapshotState": {
+      "stableId": "go:Snapshot:GetRestoreSnapshotState",
+      "canonicalSlug": "v2-Snapshot-GetRestoreSnapshotState",
+      "category": "Snapshot"
+    },
+    "Snapshot.ListRestoreSnapshotJobs": {
+      "stableId": "go:Snapshot:ListRestoreSnapshotJobs",
+      "canonicalSlug": "v2-Snapshot-ListRestoreSnapshotJobs",
+      "category": "Snapshot"
+    },
+    "Snapshot.ListSnapshots": {
+      "stableId": "go:Snapshot:ListSnapshots",
+      "canonicalSlug": "v2-Snapshot-ListSnapshots",
+      "category": "Snapshot"
+    },
+    "Snapshot.PinSnapshotData": {
+      "stableId": "go:Snapshot:PinSnapshotData",
+      "canonicalSlug": "v2-Snapshot-PinSnapshotData",
+      "category": "Snapshot"
+    },
+    "Snapshot.RestoreSnapshot": {
+      "stableId": "go:Snapshot:RestoreSnapshot",
+      "canonicalSlug": "v2-Snapshot-RestoreSnapshot",
+      "category": "Snapshot"
+    },
+    "Snapshot.UnpinSnapshotData": {
+      "stableId": "go:Snapshot:UnpinSnapshotData",
+      "canonicalSlug": "v2-Snapshot-UnpinSnapshotData",
+      "category": "Snapshot"
+    },
+    "Vector.Vector": {
+      "stableId": "go:Vector:Vector",
+      "canonicalSlug": "v2-Vector",
+      "category": "Vector"
+    },
+    "Vector.AnnParam": {
+      "stableId": "go:Vector:AnnParam",
+      "canonicalSlug": "v2-Vector-AnnParam",
+      "category": "Vector"
+    },
+    "Vector.ColumnBFloat16VectorArray": {
+      "stableId": "go:Vector:ColumnBFloat16VectorArray",
+      "canonicalSlug": "v2-Vector-ColumnBFloat16VectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnBinaryVectorArray": {
+      "stableId": "go:Vector:ColumnBinaryVectorArray",
+      "canonicalSlug": "v2-Vector-ColumnBinaryVectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnFloat16VectorArray": {
+      "stableId": "go:Vector:ColumnFloat16VectorArray",
+      "canonicalSlug": "v2-Vector-ColumnFloat16VectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnFloatVectorArray": {
+      "stableId": "go:Vector:ColumnFloatVectorArray",
+      "canonicalSlug": "v2-Vector-ColumnFloatVectorArray",
+      "category": "Vector"
+    },
+    "Vector.ColumnInt8VectorArray": {
+      "stableId": "go:Vector:ColumnInt8VectorArray",
+      "canonicalSlug": "v2-Vector-ColumnInt8VectorArray",
+      "category": "Vector"
+    },
+    "Vector.Delete": {
+      "stableId": "go:Vector:Delete",
+      "canonicalSlug": "v2-Vector-Delete",
+      "category": "Vector"
+    },
+    "Vector.DeleteResult": {
+      "stableId": "go:Vector:DeleteResult",
+      "canonicalSlug": "v2-Vector-DeleteResult",
+      "category": "Vector"
+    },
+    "Vector.Get": {
+      "stableId": "go:Vector:Get",
+      "canonicalSlug": "v2-Vector-Get",
+      "category": "Vector"
+    },
+    "Vector.HybridSearch": {
+      "stableId": "go:Vector:HybridSearch",
+      "canonicalSlug": "v2-Vector-HybridSearch",
+      "category": "Vector"
+    },
+    "Vector.Insert": {
+      "stableId": "go:Vector:Insert",
+      "canonicalSlug": "v2-Vector-Insert",
+      "category": "Vector"
+    },
+    "Vector.InsertResult": {
+      "stableId": "go:Vector:InsertResult",
+      "canonicalSlug": "v2-Vector-InsertResult",
+      "category": "Vector"
+    },
+    "Vector.Query": {
+      "stableId": "go:Vector:Query",
+      "canonicalSlug": "v2-Vector-Query",
+      "category": "Vector"
+    },
+    "Vector.QueryIterator": {
+      "stableId": "go:Vector:QueryIterator",
+      "canonicalSlug": "v2-Vector-QueryIterator",
+      "category": "Vector"
+    },
+    "Vector.ResultSet": {
+      "stableId": "go:Vector:ResultSet",
+      "canonicalSlug": "v2-Vector-ResultSet",
+      "category": "Vector"
+    },
+    "Vector.RunAnalyzer": {
+      "stableId": "go:Vector:RunAnalyzer",
+      "canonicalSlug": "v2-Vector-RunAnalyzer",
+      "category": "Vector"
+    },
+    "Vector.Search": {
+      "stableId": "go:Vector:Search",
+      "canonicalSlug": "v2-Vector-Search",
+      "category": "Vector"
+    },
+    "Vector.SearchIterator": {
+      "stableId": "go:Vector:SearchIterator",
+      "canonicalSlug": "v2-Vector-SearchIterator",
+      "category": "Vector"
+    },
+    "Vector.Upsert": {
+      "stableId": "go:Vector:Upsert",
+      "canonicalSlug": "v2-Vector-Upsert",
+      "category": "Vector"
+    },
+    "Vector.UpsertResult": {
+      "stableId": "go:Vector:UpsertResult",
+      "canonicalSlug": "v2-Vector-UpsertResult",
+      "category": "Vector"
+    }
+  }
+}

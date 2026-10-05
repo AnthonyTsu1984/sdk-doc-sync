@@ -9,6 +9,7 @@ const METHOD_CATEGORIES = {
     New: 'Client',
     Close: 'Client',
     GetServerVersion: 'Client',
+    GetTelemetry: 'Client',
 
     // Collections (16)
     CreateCollection: 'Collections',
@@ -21,7 +22,14 @@ const METHOD_CATEGORIES = {
     DropCollectionProperties: 'Collections',
     AlterCollectionFieldProperty: 'Collections',
     GetCollectionStats: 'Collections',
+    TruncateCollection: 'Collections',
     AddCollectionField: 'Collections',
+    AddFunctionField: 'Collections',
+    DropFunctionField: 'Collections',
+    DropCollectionField: 'Collections',
+    RefreshExternalCollection: 'Collections',
+    GetRefreshExternalCollectionProgress: 'Collections',
+    ListRefreshExternalCollectionJobs: 'Collections',
     CreateAlias: 'Collections',
     DescribeAlias: 'Collections',
     DropAlias: 'Collections',
@@ -111,6 +119,24 @@ const METHOD_CATEGORIES = {
     UpdateResourceGroup: 'ResourceGroup',
     TransferReplica: 'ResourceGroup',
     DescribeReplica: 'ResourceGroup',
+
+    // Snapshot (v3.0.x KB group + v3.0.0 additions)
+    CreateSnapshot: 'Snapshot',
+    ListSnapshots: 'Snapshot',
+    DescribeSnapshot: 'Snapshot',
+    DropSnapshot: 'Snapshot',
+    PinSnapshotData: 'Snapshot',
+    UnpinSnapshotData: 'Snapshot',
+    RestoreSnapshot: 'Snapshot',
+    GetRestoreSnapshotState: 'Snapshot',
+    ListRestoreSnapshotJobs: 'Snapshot',
+    ExportSnapshot: 'Snapshot',
+    GetExportSnapshotState: 'Snapshot',
+
+    // File resources (v3.0.0; new KB group, VirtualNode created at write time)
+    AddFileResource: 'FileResources',
+    ListFileResources: 'FileResources',
+    RemoveFileResource: 'FileResources',
 };
 
 // Methods to skip
@@ -120,6 +146,7 @@ const SKIP_METHODS = new Set([
     'GrantV2',
     'RevokeV2',
     'MetadataUnaryInterceptor',
+    'MetadataStreamInterceptor',
     'CreateReplicateStream',
     // Internal/private methods
     'dialOptions',
@@ -183,6 +210,12 @@ const ENTITY_DEFS = [
     { name: 'ColumnBFloat16VectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector bfloat16-vector data in struct array fields.' },
     { name: 'ColumnBinaryVectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector binary-vector data in struct array fields.' },
     { name: 'ColumnInt8VectorArray', category: 'Vector', pkg: 'column', file: 'vector_array.go', kind: 'struct', docstring: 'Column type for ArrayOfVector int8-vector data in struct array fields.' },
+    { name: 'ColumnText', category: 'Vector', pkg: 'column', file: 'scalar.go', kind: 'struct', docstring: 'Column type for TEXT field data, holding string values for insertion, upsert, and query output.' },
+
+    // FileResources (v3.0.0)
+    { name: 'FileResource', category: 'FileResources', pkg: 'entity', file: 'file_resource.go', kind: 'struct', docstring: 'Represents a file resource registered with a Milvus cluster, including its name and path.' },
+    { name: 'BloomFilterBlob', category: 'FileResources', pkg: 'milvusclient', file: 'bloom_filter.go', kind: 'struct', docstring: 'Serialized stable Bloom filter blob used with membership_match filter expressions.' },
+    { name: 'RoaringBitmapBlob', category: 'FileResources', pkg: 'milvusclient', file: 'roaring_filter.go', kind: 'struct', docstring: 'Serialized roaring bitmap blob used with membership_match filter expressions.' },
 
     // Authentication
     { name: 'User', category: 'Authentication', pkg: 'entity', file: 'rbac.go', kind: 'struct', docstring: 'Represents a user with their assigned roles, returned by DescribeUser.' },
@@ -196,6 +229,21 @@ const ENTITY_DEFS = [
 
     // CDC
     { name: 'ReplicateConfigurationBuilder', category: 'CDC', pkg: 'milvusclient', file: 'replicate_builder.go', kind: 'interface', docstring: 'Builder for replicate configuration update requests.' },
+
+    // Collections (v3.0.0)
+    { name: 'FunctionScore', category: 'Collections', pkg: 'entity', file: 'function.go', kind: 'struct', docstring: 'A scored collection of functions applied during search or hybrid search via WithFunctionScore.' },
+
+    // Collections (external source refresh)
+    { name: 'RefreshExternalCollectionJobInfo', category: 'Collections', pkg: 'entity', file: 'external_table.go', kind: 'struct', docstring: 'Describes one external-source refresh job, including its state and progress.' },
+    { name: 'RefreshExternalCollectionState', category: 'Collections', pkg: 'entity', file: 'external_table.go', kind: 'enum', docstring: 'Enumerates the states an external-source refresh job can be in.' },
+
+    // DataImport (bulkwriter package)
+    { name: 'BulkImportOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for a bulk import job, including files, backend, and data mappings.' },
+    { name: 'BulkImportResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Response of a bulk import submission, including the job identifier.' },
+    { name: 'ListImportJobsOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for listing bulk import jobs, including pagination.' },
+    { name: 'ListImportJobsResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Response listing bulk import jobs.' },
+    { name: 'GetImportProgressOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for querying the progress of one bulk import job.' },
+    { name: 'GetImportProgressResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Progress details of one bulk import job.' },
 ];
 
 class GoScanner extends BaseScanner {
@@ -684,6 +732,7 @@ class GoScanner extends BaseScanner {
             entity: path.join(this.rootDir, 'client', 'entity'),
             index: path.join(this.rootDir, 'client', 'index'),
             milvusclient: this._milvusClientDir,
+            bulkwriter: path.join(this.rootDir, 'client', 'bulkwriter'),
         };
         return path.join(pkgDirs[def.pkg], def.file);
     }
@@ -1000,6 +1049,18 @@ class GoScanner extends BaseScanner {
             NewSCANNAnnParam: 'Vector',
             NewSparseAnnParam: 'Vector',
             NewMinHashLSHAnnParam: 'Vector',
+            NewAISAQAnnParam: 'Vector',
+            NewHNSWPQAnnParam: 'Vector',
+            NewHNSWPRQAnnParam: 'Vector',
+            NewHNSWSQAnnParam: 'Vector',
+
+            // v3.0.0 index constructors → Management
+            NewAISAQIndex: 'Management',
+            NewFMIndex: 'Management',
+            NewNgramIndex: 'Management',
+            NewHNSWPQIndex: 'Management',
+            NewHNSWPRQIndex: 'Management',
+            NewHNSWSQIndex: 'Management',
         };
 
         const symbols = [];

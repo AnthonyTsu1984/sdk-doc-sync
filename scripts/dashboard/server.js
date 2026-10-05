@@ -19,6 +19,9 @@ const { promisify } = require('node:util');
 const { buildLedger } = require('./ledger.js');
 const { buildBrief } = require('./attach-brief.js');
 const { buildCampaignDetail } = require('./campaign-detail.js');
+const { createLiveStatsCollector } = require('./live-stats.js');
+const { buildScoutFindings } = require('./scout-findings.js');
+const { buildIntakeBrief } = require('./intake-brief.js');
 
 const execFileAsync = promisify(execFile);
 
@@ -144,6 +147,22 @@ function buildHeadlessPrompt(briefText) {
 function buildHeadlessSpawnArgs(repoRoot, prompt) {
   return ['--cwd', String(repoRoot), '--surface', 'desktop', '--prompt', prompt];
 }
+
+// Intake variant (batch 6): the worker is seeded with the daily-scout
+// findings and must stop at the grouping gate — the operator-approved
+// boundary where "开始处理" ends and governed writing (still gated) begins.
+function buildIntakeWorkerPrompt(briefText) {
+  return [
+    '你是本次每日扫描发现物的处理会话（由治理看板一键派出）。下面是确定性生成的处理简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准。',
+    '按简报中的工作指令执行：只读 intake（证据核证 → 规划 dry-run → 建评审会话）可立即进行；产出分组方案后必须停在 APPROVE_GROUPING 门，等待操作员批准，未获批准前不进入任何写路径。',
+    '---',
+    briefText,
+  ].join('\n');
+}
+
+// ---------- live Feishu stats (batch 6; TTL-cached, degrade-graceful) ----------
+
+const liveStats = createLiveStatsCollector({ repoRoot: REPO_ROOT });
 
 // ---------- aggregation cache + push ----------
 
@@ -393,7 +412,7 @@ function serveFileView(req, res, query) {
   });
 }
 
-function handler(req, res) {
+async function handler(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${req.socket.localPort || 0}`);
   if (url.pathname === '/api/spawn-session') {
     if (req.method !== 'POST') {
@@ -446,6 +465,65 @@ function handler(req, res) {
         ok: true,
         card: brief.card.sessionPath,
         note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+      });
+    });
+    return;
+  }
+  if (url.pathname === '/api/spawn-intake') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'POST required' });
+      return;
+    }
+    if (!spawnOptions.allowSpawn) {
+      sendJson(res, 404, { error: 'spawn disabled — restart the dashboard with --allow-spawn' });
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 65_536) req.destroy();
+    });
+    req.on('end', () => {
+      let request = null;
+      try {
+        request = JSON.parse(body || '{}');
+      } catch {
+        // fall through to validation below
+      }
+      const { language, scoutPath } = request || {};
+      if (!language || !scoutPath) {
+        sendJson(res, 400, { error: 'missing language/scoutPath' });
+        return;
+      }
+      const brief = buildIntakeBrief({ repoRoot: REPO_ROOT, language, scoutPath });
+      if (!brief.ok) {
+        sendJson(res, 404, { error: brief.error });
+        return;
+      }
+      // Workers for intake dispatches key on the scout artifact; once intake
+      // builds a review session, that session's card carries its own workers.
+      const workerKey = `scout:${brief.meta.scoutPath}`;
+      const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
+      registerWorker(workerKey, worker);
+      const child = spawn(
+        'zcode',
+        [...buildHeadlessSpawnArgs(REPO_ROOT, buildIntakeWorkerPrompt(brief.text)), '--json'],
+        { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      let stdout = '';
+      child.stdout.on('data', (chunk) => {
+        if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
+      });
+      child.on('exit', () => {
+        worker.sessionId = parseSpawnSessionId(stdout);
+        worker.status = 'idle';
+        scheduleRecompute('intake-worker-exit');
+      });
+      child.unref();
+      sendJson(res, 200, {
+        ok: true,
+        scout: brief.meta.scoutPath,
+        note: `处理会话已派出（ZCode 桌面端呈现 · ${language} · ${brief.meta.actionCount} 项发现）——只读侦察后停在分组批准门（APPROVE_GROUPING），批准分组后才进入写作`,
       });
     });
     return;
@@ -559,6 +637,23 @@ function handler(req, res) {
     case '/api/healthz':
       sendJson(res, 200, { ok: true, clients: sseClients.size });
       return;
+    case '/api/live-stats': {
+      // Always answers; degraded statuses (failed/partial) are payload data,
+      // not HTTP errors — the board renders a fallback chip.
+      try {
+        const snapshot = await liveStats.get();
+        sendJson(res, 200, snapshot);
+      } catch (error) {
+        sendJson(res, 200, { status: 'failed', fetchedAt: null, error: String(error?.message || error), tracks: {} });
+      }
+      return;
+    }
+    case '/api/scout': {
+      const language = url.searchParams.get('language');
+      const findings = buildScoutFindings({ repoRoot: REPO_ROOT, language });
+      sendJson(res, 200, findings);
+      return;
+    }
     case '/api/file':
       serveFileView(req, res, url.searchParams);
       return;
@@ -589,6 +684,10 @@ function main() {
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
   refreshNextGates().catch(() => {});
   setInterval(() => refreshNextGates().catch(() => {}), 60_000).unref();
+  // Live Feishu stats: warm the cache in the background; failures degrade to
+  // a fallback chip, never a server error.
+  liveStats.get().catch(() => {});
+  setInterval(() => liveStats.get({ force: true }).catch(() => {}), 10 * 60_000).unref();
 
   for (const dir of WATCH_DIRS) {
     try {

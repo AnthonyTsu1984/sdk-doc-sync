@@ -13,6 +13,7 @@ const path = require('node:path');
 
 const SESSION_SCAN_ROOTS = ['tmp/sdk-release-scout', 'tmp/sdk-doc-sync-runs'];
 const SCAN_STATE_RELATIVE_PATH = '.claude/skills/api-reference-sync/scan-state.json';
+const RELEASE_TRACKS_RELATIVE_PATH = '.claude/skills/api-reference-sync/config/release-tracks.json';
 const ADMISSION_LEDGER_RELATIVE_PATH = 'tmp/skill-feedback-rollout/admitted-fingerprints.jsonl';
 const GATE_PRESENTATION_RELATIVE_PATH = 'tmp/api-reference-sync/gate-presentation/latest.html';
 const EVENTS_DIR_RELATIVE_PATH = 'tmp/dashboard-events';
@@ -29,8 +30,11 @@ const SENTINELS = [
     schedule: '每天 09:00',
     hour: 9,
     minute: 0,
+    language: 'cpp',
     cursorFile: 'tmp/sdk-release-scout/daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
+    // Daily report file name inside artifactsDir, {date} = YYYY-MM-DD.
+    reportName: '{date}.md',
   },
   {
     id: 'java-daily-scan',
@@ -38,8 +42,10 @@ const SENTINELS = [
     schedule: '每天 09:30',
     hour: 9,
     minute: 30,
+    language: 'java',
     cursorFile: 'tmp/sdk-release-scout/java-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'java-{date}.md',
   },
 ];
 
@@ -215,6 +221,33 @@ function computeNextDailyRun(hour, minute, now) {
   return next.toISOString();
 }
 
+// Today's report conclusion — pass-through of the cron session's own words
+// (the report is operator-facing prose, not a structured contract). Numbers
+// are only extracted when the conclusion itself states one; never counted
+// from bullets. "无变化" is the scanner's settled no-findings wording.
+function readDailyReport(repoRoot, definition, now) {
+  const relative = `${definition.artifactsDir}/${definition.reportName.replace('{date}', localDateStamp(now))}`;
+  const text = (() => {
+    try {
+      return fs.readFileSync(path.join(repoRoot, relative), 'utf8');
+    } catch {
+      return null;
+    }
+  })();
+  if (text === null) return { present: false, path: relative, conclusion: null, findingsCount: null, hasFindings: null };
+  const match = /\*\*结论[:：]\s*([^*]+)\*\*/.exec(text);
+  const conclusion = match ? match[1].trim() : null;
+  const settled = Boolean(conclusion && conclusion.includes('无变化'));
+  const counted = conclusion ? (/发现\s*(\d+)\s*项/.exec(conclusion) || [])[1] : null;
+  return {
+    present: true,
+    path: relative,
+    conclusion,
+    findingsCount: counted ? Number(counted) : null,
+    hasFindings: conclusion ? !settled : null,
+  };
+}
+
 function buildSentinelCard(repoRoot, definition, now) {
   const cursorAbsolute = path.join(repoRoot, definition.cursorFile);
   let cursor = null;
@@ -241,10 +274,12 @@ function buildSentinelCard(repoRoot, definition, now) {
     id: definition.id,
     title: definition.title,
     schedule: definition.schedule,
+    language: definition.language || null,
     lastRunAt,
     nextRunAt: computeNextDailyRun(definition.hour, definition.minute, now),
     status: lastRunAt ? (stale ? 'stale' : 'ok') : 'never-run',
     cursor: cursor ? { lastPrNumber: cursor.lastPrNumber ?? null, lastTags: cursor.lastTags ?? null } : null,
+    report: readDailyReport(repoRoot, definition, now),
     artifactsDir: definition.artifactsDir,
     artifactsPresent,
   };
@@ -277,6 +312,47 @@ function readAdmission(repoRoot) {
 // Active work first (most recently touched on top), finalized history last.
 function campaignOrder(card) {
   return (card.health === 'finalized' ? 1 : 0);
+}
+
+// ---------- api-reference-skill language × track summary ----------
+
+// Track identity for the skill board: language + version come from the
+// release-track registry (the governed list — a new version track must be
+// registered to be governed at all), campaign membership from scan-state keys.
+function trackScanStateKey(language, version) {
+  const match = /^v(\d+)\.(\d+)\./.exec(String(version || ''));
+  return match ? `${language}-v${match[1]}${match[2]}` : language;
+}
+
+function buildSkillTracks(repoRoot, campaigns) {
+  const registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH));
+  const languages = [];
+  const byKey = new Map();
+  if (registry && registry.languages && typeof registry.languages === 'object') {
+    for (const [name, entry] of Object.entries(registry.languages)) {
+      const tracks = (Array.isArray(entry.tracks) ? entry.tracks : []).map((track) => {
+        const key = trackScanStateKey(name, track.version);
+        const summary = {
+          version: track.version,
+          key,
+          campaigns: { total: 0, active: 0, finalized: 0, sessionPaths: [] },
+        };
+        byKey.set(key, summary);
+        return summary;
+      });
+      languages.push({ name, sdkName: entry.sdkName || null, tracks });
+    }
+  }
+  for (const card of campaigns) {
+    const key = card.scanState.key;
+    const summary = key ? byKey.get(key) : null;
+    if (!summary) continue; // session outside the registry (legacy/unregistered track)
+    summary.campaigns.total += 1;
+    summary.campaigns.sessionPaths.push(card.sessionPath);
+    if (card.health === 'finalized') summary.campaigns.finalized += 1;
+    else summary.campaigns.active += 1;
+  }
+  return { registryPresent: Boolean(registry), languages };
 }
 
 // ---------- event stream (batch 2 taps; read side) ----------
@@ -365,6 +441,7 @@ function buildLedger({ repoRoot, now = new Date() } = {}) {
     generatedAt: now.toISOString(),
     campaigns,
     sentinels: SENTINELS.map((definition) => buildSentinelCard(repoRoot, definition, now)),
+    skillTracks: buildSkillTracks(repoRoot, campaigns),
     admission: readAdmission(repoRoot),
     activity: activity.slice(-120),
   };
@@ -373,18 +450,24 @@ function buildLedger({ repoRoot, now = new Date() } = {}) {
 module.exports = {
   ADMISSION_LEDGER_RELATIVE_PATH,
   GATE_PRESENTATION_RELATIVE_PATH,
+  RELEASE_TRACKS_RELATIVE_PATH,
   SCAN_STATE_RELATIVE_PATH,
   SENTINELS,
   SESSION_SCAN_ROOTS,
   attachActivity,
+  buildCampaignCard,
   buildLedger,
   buildSentinelCard,
+  buildSkillTracks,
   compareTags,
   computeNextDailyRun,
   healthFor,
   localDateStamp,
   normalizeSessionRef,
+  readDailyReport,
+  readJsonOrNull,
   readRecentEvents,
   scanStateKeyFor,
+  trackScanStateKey,
   walkSessionFiles,
 };

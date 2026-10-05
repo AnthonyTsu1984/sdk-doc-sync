@@ -146,3 +146,55 @@ test('resolveRevisionTarget + buildRevisionBrief determinism and content', (t) =
   const [fresh] = buildRevisionCards([{ id: 'main', label: '主检出', root: empty.root }]);
   assert.equal(fresh.groupingApproved, false, 'nothing written yet → grouping still pending');
 });
+
+
+// ---------- intake grouping gates (batch 11) ----------
+
+test('intake cards surface grouping manifests with approval transitions', (t) => {
+  const main = makeFixtureTree('dash-intake-main-');
+  const sib = makeFixtureTree('dash-intake-sib-');
+  t.after(() => {
+    fs.rmSync(main.root, { recursive: true, force: true });
+    fs.rmSync(sib.root, { recursive: true, force: true });
+  });
+  // api-reference-sync style (revision flow) — approved via written pages.
+  main.write('tmp/api-reference-sync/gate-manifest-grouping-java-rev.json', {
+    gate: 'GROUPING', digest: 'sha256:' + '1'.repeat(64),
+    title: 'java v3.0.x 修订战役 — 范围工件', run: 'run line',
+    links: [{ label: 'scope', url: `file://${main.root}/tmp/api-reference-sync/x.json` }],
+  });
+  main.write('tmp/api-reference-sync/java-revision-worklist.json', worklistFixture({ language: 'java' }));
+  main.write('tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-Alpha.json', { schemaVersion: 1 });
+  // sdk-release-scout style (go flow) — awaiting, no session yet.
+  sib.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+    gate: 'APPROVE_GROUPING', digest: 'sha256:' + '2'.repeat(64),
+    title: 'go v3.0.0 分组门 v2', run: 'go intake run',
+  });
+
+  const { buildIntakeCards, buildLedger } = require('../../scripts/dashboard/ledger.js');
+  const checkouts = [
+    { id: 'main', label: '主检出', root: main.root },
+    { id: 'sib', label: 'sib', root: sib.root },
+  ];
+  // No campaigns, no revisions yet → both awaiting.
+  let cards = buildIntakeCards(checkouts, [], []);
+  assert.equal(cards.length, 2);
+  const goCard = cards.find((c) => c.language === 'go');
+  assert.equal(goCard.approved, false);
+  assert.equal(goCard.digest, 'sha256:' + '2'.repeat(64));
+
+  // Full ledger: the java revision card (1 page written) proves its gate approved.
+  const ledger = buildLedger({ repoRoot: main.root, checkouts });
+  const jv = ledger.intakes.find((c) => c.language === 'java');
+  assert.equal(jv.approved, true, 'revision pages written after the gate prove approval');
+  assert.equal(ledger.intakes.find((c) => c.language === 'go').approved, false);
+
+  // Two-gate proof: a session created after the gate in the same checkout.
+  sib.write('tmp/sdk-release-scout/go-v30-session.json', {
+    schemaVersion: 1, status: 'in_progress', language: 'go', track: 'v3.0.x',
+    reviewUnitManifest: { units: [{ reviewUnitId: 'u1' }] }, acceptedReviewUnits: [],
+    pendingExecutions: [], artifacts: {}, createdAt: '2026-10-06T10:00:00.000Z', updatedAt: '2026-10-06T10:00:00.000Z',
+  });
+  const ledger2 = buildLedger({ repoRoot: main.root, checkouts });
+  assert.equal(ledger2.intakes.find((c) => c.language === 'go').approved, true, 'session built after the gate proves approval');
+});

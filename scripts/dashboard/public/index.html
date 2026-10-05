@@ -310,6 +310,15 @@ function renderInbox(d) {
       });
     }
   }
+  for (const i of (d.intakes || []).filter((x) => !x.approved)) {
+    items.push({
+      t: `分组门待批：${i.title}`,
+      d2: `${i.checkoutLabel} · ${rel(i.presentedAt)} 呈门 · digest ${i.digest.slice(7, 19)}…——批准后战役进入筹备（dry-run/建会话）`,
+      href: (i.links || []).map((l) => intakeLinkHref(l, d)).find(Boolean) || '#/skill/api',
+      external: Boolean((i.links || []).map((l) => intakeLinkHref(l, d)).find(Boolean)),
+      go: '打开分组材料',
+    });
+  }
   for (const g of (d.gatePresentations || []).filter((x) => x.present)) {
     items.push({
       t: `呈门材料待审${(d.gatePresentations || []).filter((x) => x.present).length > 1 ? `（${g.label}）` : ''}`,
@@ -560,6 +569,43 @@ function renderRevisions(d, list) {
   return `<div class="grid" style="margin-top:2px">${cards}</div>`;
 }
 
+function intakeLinkHref(link, d) {
+  if (/^https?:/.test(link.url)) return link.url;
+  const m = /^file:\/\/(.+)$/.exec(link.url);
+  if (!m) return null;
+  const abs = m[1];
+  const checkout = (d.checkouts || []).find((c) => abs.startsWith(c.root + '/'));
+  if (!checkout || !abs.includes('/tmp/')) return null;
+  return `/api/file?path=${encodeURIComponent(abs)}`;
+}
+
+function renderIntakes(d, list) {
+  if (!list || !list.length) return '';
+  const cards = list.map((i) => `<div class="card" style="cursor:default">
+    <div class="row1" style="flex-wrap:wrap;gap:8px">
+      <span class="title">${esc(i.title)}</span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap">
+        ${i.approved
+          ? '<span class="badge finalized" title="批准凭证已落盘（会话已建/已有 governed 写入）——筹备期长任务（dry-run/context 生成）仍在进行属正常">分组已批 · 筹备中</span>'
+          : `<span class="badge gate" title="待你批准：${esc(i.digest)}">分组门待批</span>`}
+        ${checkoutChip(i)}
+      </span>
+    </div>
+    <div class="meta" style="margin-top:6px">
+      <span>呈门 ${rel(i.presentedAt)}</span>
+      ${i.language ? `<span>语种 ${esc(i.language)}</span>` : ''}
+      <span class="dim" title="${esc(i.digest)}">digest ${esc(i.digest.slice(7, 19))}…</span>
+    </div>
+    ${i.run ? `<div class="sub" title="${esc(i.run)}">${esc(i.run)}</div>` : ''}
+    ${i.links.length ? `<div style="margin-top:6px;font-size:12.5px">${i.links.map((l) => {
+      const href = intakeLinkHref(l, d);
+      return href ? `<a class="badge" style="text-decoration:none" href="${esc(href)}" target="_blank">${esc(l.label)}</a>` : `<span class="badge" title="${esc(l.url)}">${esc(l.label)}</span>`;
+    }).join(' ')}</div>` : ''}
+    <div class="note">批准后（或已批筹备中）的下一持久化事件=评审会话落盘，卡片随即出现在上方战役表——dry-run/context 生成等长筹备阶段由此卡承接。</div>
+  </div>`).join('');
+  return `<div class="grid">${cards}</div>`;
+}
+
 async function pageSkillApi(d) {
   const [live, scout] = await Promise.all([fetchLive(), fetchScout()]);
   const tracks = d.skillTracks || { languages: [] };
@@ -596,6 +642,7 @@ async function pageSkillApi(d) {
     <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理；战役发现覆盖主检出与各工作树，非主检出的战役带工作树标签）</h2>
     <div class="grid">${cards || '<div class="empty">release-tracks.json 未读到</div>'}</div>
     ${outsideNote}
+    ${(d.intakes || []).length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, d.intakes)}` : ''}
     <h2>进行中的战役（评审会话流 + 修订流共用此表）</h2>
     ${campaignTable([
       ...(d.campaigns || []).filter((c) => c.health !== 'finalized'),

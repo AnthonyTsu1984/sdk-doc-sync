@@ -183,6 +183,8 @@ const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)
 
 function copyText(t) { navigator.clipboard?.writeText(t); }
 function attachKey(c) { return c.scanState.key || c.sessionPath; }
+function cardKey(c) { return c.sessionKey ?? `main::${c.sessionPath}`; }
+function checkoutChip(c) { return c.checkout && c.checkout !== 'main' ? `<span class="badge" title="${esc(c.checkoutLabel ?? c.checkout)} 工作树">${esc(c.checkoutLabel ?? c.checkout)}</span>` : ''; }
 function humanUnit(unitId) { return String(unitId || '').replace(/^review:/, '').replace(/^[a-z]+:/, '').replace(/:/g, '.'); }
 
 // ---------- skills & routes ----------
@@ -229,7 +231,7 @@ function crumbs(parts) {
     : `<a href="${esc(p.href)}">${esc(p.label)}</a> <span>›</span> `)).join('')}</div>`;
 }
 
-function campaignHref(c) { return `#/campaign/${encodeURIComponent(c.sessionPath)}`; }
+function campaignHref(c) { return `#/campaign/${encodeURIComponent(cardKey(c))}`; }
 
 // ---------- header ----------
 
@@ -340,7 +342,7 @@ function renderSentinels(d) {
 function renderActivity(d) {
   const events = (d.activity || []).slice(-50).reverse();
   if (!events.length) return '<div class="empty">暂无事件——新开的会话动作会实时出现在这里（钩子配置在会话启动时快照，需新会话生效）。</div>';
-  const cardTitle = new Map((d.campaigns || []).map((c) => [c.sessionPath, `${c.language} · ${c.track}`]));
+  const cardTitle = new Map((d.campaigns || []).map((c) => [cardKey(c), `${c.language} · ${c.track}${c.checkout && c.checkout !== 'main' ? ` · ${c.checkoutLabel ?? c.checkout}` : ''}`]));
   return events.map((e) => {
     const time = new Date(e.ts);
     const hh = String(time.getHours()).padStart(2, '0');
@@ -468,10 +470,29 @@ function renderFindingsSection(d, language, scout) {
 }
 
 
+function renderRunningSessions(d) {
+  const list = d.runningSessions || [];
+  if (!list.length) return '<div class="empty">近 30 分钟无会话活动</div>';
+  const checkoutName = new Map((d.checkouts || []).map((c) => [c.id, c.label]));
+  const rows = list.map((s) => {
+    const campaignCard = s.campaign ? (d.campaigns || []).find((c) => cardKey(c) === s.campaign) : null;
+    return `<div class="item">
+      <div class="what">
+        <div class="t">${esc(String(s.sessionId).slice(0, 22))}… <span class="dim" style="font-weight:400">在 ${esc(checkoutName.get(s.checkout) ?? s.checkout)}</span></div>
+        <div class="d">${s.tools.slice(0, 4).map(esc).join(' · ')}${s.tools.length > 4 ? ' …' : ''}${campaignCard ? ` → 战役 ${esc(campaignCard.language)} ${esc(campaignCard.track)}` : ''}</div>
+      </div>
+      <span class="chip" style="white-space:nowrap">${rel(s.lastAt)} · ${s.events} 步</span>
+    </div>`;
+  }).join('');
+  return `<div class="inbox">${rows}</div>`;
+}
+
 function pageHome(d) {
   document.getElementById('page').innerHTML = `
     <h2>待你决定</h2>
     ${renderInbox(d)}
+    <h2>正在运行的会话（近 30 分钟，覆盖主检出与各工作树——战役建到评审会话阶段才会出现在下方卡片里）</h2>
+    ${renderRunningSessions(d)}
     <h2>每日哨兵（自动扫描，只发现不处置）</h2>
     <div class="grid">${renderSentinels(d)}</div>
     ${USAGE_GUIDE}
@@ -514,7 +535,7 @@ async function pageSkillApi(d) {
     : '';
   document.getElementById('page').innerHTML = `
     ${crumbs([{ label: 'API 参考（api-reference-sync）', href: '#/skill/api' }])}
-    <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理）</h2>
+    <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理；战役发现覆盖主检出与各工作树，非主检出的战役带工作树标签）</h2>
     <div class="grid">${cards || '<div class="empty">release-tracks.json 未读到</div>'}</div>
     ${outsideNote}
     <h2>进行中的战役</h2>
@@ -530,7 +551,7 @@ function campaignRows(list, d) {
     const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
     const g = gateSummary(c);
     return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
-      <td><span class="fname">${esc(c.track ?? '?')}</span>${c.acceptanceFlow ? ` <span class="dim">${esc(c.acceptanceFlow)}</span>` : ''}</td>
+      <td><span class="fname">${esc(c.track ?? '?')}</span>${c.acceptanceFlow ? ` <span class="dim">${esc(c.acceptanceFlow)}</span>` : ''} ${checkoutChip(c)}</td>
       <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
       <td class="num">${c.accepted}/${c.units}</td>
       <td><div class="bar" style="margin:0"><i style="width:${pct}%"></i></div></td>
@@ -626,12 +647,12 @@ function detailSignature(c) {
 
 async function fetchDetail(c) {
   const sig = detailSignature(c);
-  if (detailCache.path === c.sessionPath && detailCache.sig === sig && detailCache.detail) return detailCache.detail;
+  if (detailCache.path === cardKey(c) && detailCache.sig === sig && detailCache.detail) return detailCache.detail;
   try {
-    const r = await fetch(`/api/campaign?path=${encodeURIComponent(c.sessionPath)}`);
+    const r = await fetch(`/api/campaign?path=${encodeURIComponent(cardKey(c))}`);
     const j = await r.json();
     if (!j.ok) return null;
-    detailCache = { path: c.sessionPath, sig, detail: j };
+    detailCache = { path: cardKey(c), sig, detail: j };
     return j;
   } catch {
     return null;
@@ -706,7 +727,7 @@ function advancedApproveForm(c) {
 }
 
 function submitApproveFromForm() {
-  const c = latest.campaigns.find((x) => x.sessionPath === window._detailPath);
+  const c = latest.campaigns.find((x) => cardKey(x) === window._detailPath || x.sessionPath === window._detailPath);
   const worker = document.getElementById('apWorker').value;
   submitApprove(window._detailPath, worker, document.getElementById('apPreview').textContent);
 }
@@ -756,7 +777,7 @@ function oneClickApproveCard(c, detail) {
     <div class="t">⛩ ${esc(g.title)} — 等你一句话</div>
     <div class="sum">${summary}</div>
     <details class="fold" style="margin:6px 0"><summary>技术详情（批准行与绑定摘要）</summary><code>${esc(line)}</code><div class="hint">worker：${esc(idle.sessionId)} · 注入方式 --resume 原文转发，语义校验在治理 CLI。</div></details>
-    <button class="act primary" onclick="submitApprove(${JSON.stringify(c.sessionPath).replace(/"/g, '&quot;')}, ${JSON.stringify(idle.sessionId).replace(/"/g, '&quot;')}, ${JSON.stringify(line).replace(/"/g, '&quot;')})">批准并继续</button>
+    <button class="act primary" onclick="submitApprove(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(idle.sessionId).replace(/"/g, '&quot;')}, ${JSON.stringify(line).replace(/"/g, '&quot;')})">批准并继续</button>
   </div>`;
 }
 
@@ -806,7 +827,7 @@ async function renderUsagePanel(c) {
   const host = document.getElementById('usageHost');
   if (!host) return;
   try {
-    const u = await (await fetch(`/api/usage?path=${encodeURIComponent(c.sessionPath)}`)).json();
+    const u = await (await fetch(`/api/usage?path=${encodeURIComponent(cardKey(c))}`)).json();
     if (!u.available) {
       host.innerHTML = `<div class="empty">token 采集不可用（${esc(u.reason ?? '')}）</div>`;
       return;
@@ -858,9 +879,9 @@ async function renderUsagePanel(c) {
 }
 
 async function pageCampaign(d, path) {
-  const c = (d.campaigns || []).find((x) => x.sessionPath === path);
+  const c = (d.campaigns || []).find((x) => cardKey(x) === path || x.sessionPath === path);
   const host = document.getElementById('page');
-  window._detailPath = path;
+  window._detailPath = cardKey(c);
   if (!c) {
     host.innerHTML = `${crumbs([{ label: '战役', href: '#/home' }, { label: '未找到' }])}<div class="empty">没有战役会话匹配该路径。<a href="#/home">回总览</a></div>`;
     return;
@@ -881,7 +902,7 @@ async function pageCampaign(d, path) {
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1">
         <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` <span class="dim" style="font-weight:400">· ${esc(c.acceptanceFlow)}</span>` : ''}</span>
-        <span style="display:flex;gap:6px">${c.nextGate && c.nextGate.gate !== 'CLOSE_SESSION' ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">${esc(gateSummary(c)?.title ?? '')}</span>` : ''}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
+        <span style="display:flex;gap:6px">${c.nextGate && c.nextGate.gate !== 'CLOSE_SESSION' ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">${esc(gateSummary(c)?.title ?? '')}</span>` : ''}${checkoutChip(c)}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
       </div>
       <div class="sub">${esc(c.sessionId ?? c.sessionPath)} <button class="copy" onclick="copyText(${JSON.stringify(c.sessionPath).replace(/"/g, '&quot;')})">复制会话路径</button></div>
       ${stepChips(c)}
@@ -896,7 +917,7 @@ async function pageCampaign(d, path) {
       ${c.health === 'zombie' ? `<div class="warnline">⚠ 僵尸会话：scan-state 已推进到 ${esc(c.scanState.lastScannedTag ?? '?')}（越过目标 ${esc(c.scanState.targetTag ?? '?')}）——close-session 收口，勿续跑。</div>` : ''}
       <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="act" title="把 /attach 战役键放进剪贴板；粘到新 ZCode 会话即接手本战役" onclick="copyText('/attach ${esc(attachKey(c))}')">复制挂载命令</button>
-        ${spawnOn ? `<button class="act" title="免终端：在 ZCode 桌面端生成带简报的新会话并自动开工，遇门禁停下等你" onclick="spawnSession(${JSON.stringify(c.sessionPath).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
+        ${spawnOn ? `<button class="act" title="免终端：在 ZCode 桌面端生成带简报的新会话并自动开工，遇门禁停下等你" onclick="spawnSession(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
       </div>
     </div>
     ${oneClickApproveCard(c, null)}

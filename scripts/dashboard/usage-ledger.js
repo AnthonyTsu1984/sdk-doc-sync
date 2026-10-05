@@ -21,7 +21,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { localDateStamp, normalizeSessionRef } = require('./ledger.js');
+const { attributeKeyFor, localDateStamp } = require('./ledger.js');
 
 // Host naming: model-io-<sessionId>.jsonl where sessionId keeps its own
 // prefix (sess_<uuid>, sess_subagent_agent_<uuid>, …) — capture it whole so
@@ -272,10 +272,12 @@ function upsertAttribution(db, sessionId, campaignPath, source, now = new Date()
   ).run(sessionId, campaignPath, source, now.toISOString(), now.toISOString());
 }
 
-// Join dashboard events (sessionId + sessionRef) to campaign paths. Reads
+// Join dashboard events (sessionId + sessionRef) to campaign keys. Reads
 // the recent event files directly — the ledger's activity view drops
-// sessionRef, which is exactly the join key we need here.
-function attributeFromEvents(db, { repoRoot, eventsDir = DEFAULT_EVENTS_DIR_RELATIVE_PATH, now = new Date(), lookbackDays = ATTRIBUTION_LOOKBACK_DAYS } = {}) {
+// sessionRef, which is exactly the join key we need here. Keys are
+// checkout-qualified (`<checkoutId>::<relative>`) so worktree campaigns
+// never collide with main-checkout paths.
+function attributeFromEvents(db, { repoRoot, checkouts, eventsDir = DEFAULT_EVENTS_DIR_RELATIVE_PATH, now = new Date(), lookbackDays = ATTRIBUTION_LOOKBACK_DAYS } = {}) {
   const seen = new Map();
   for (let offset = lookbackDays; offset >= 0; offset -= 1) {
     const day = new Date(now.getTime() - offset * 24 * 60 * 60 * 1000);
@@ -291,7 +293,7 @@ function attributeFromEvents(db, { repoRoot, eventsDir = DEFAULT_EVENTS_DIR_RELA
       try {
         const event = JSON.parse(line);
         if (!event?.sessionId || !event?.sessionRef) continue;
-        const campaign = normalizeSessionRef(event.sessionRef);
+        const campaign = attributeKeyFor(event.sessionRef, checkouts || [{ id: 'main', label: '主检出', root: repoRoot }]);
         if (campaign) seen.set(event.sessionId, campaign);
       } catch {
         // malformed tap line: skip

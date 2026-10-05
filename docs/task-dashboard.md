@@ -99,6 +99,15 @@
 - 战役详情页"token 消耗"面板如实标注边界：采集自看板批 7 上线起（历史战役无数据）；人工会话回合计入战役级、无法精确到单篇；不做估算。
 - 转录文件名形如 `model-io-sess_<id>`（下划线），正则捕获完整 sessionId 保证与事件归因键一致；文件回缩（宿主轮转）时行集重建不残留幽灵行。
 
+## 4g. 多检出感知（批 8，本 PR）
+
+操作员报告：活动流里会话事件一直在跑、目录都是进行中的战役，但 API 页各 SDK 显示无进行中战役。根因=两个作用域不一致——事件钩子用户级注册、所有会话（含兄弟 worktree 里干活的）事件都汇入主检出事件流；而战役发现只扫主检出 tmp/。兄弟 worktree 是本仓常态工作方式（go-v30 入库已在 worktree 干跑、java-v30 修订管线在另一 worktree），不扩展则 worktree 战役永远不可见。
+
+- **多检出战役发现**：server 经 `git worktree list --porcelain` 维护检出注册表（main=主检出；兄弟按目录名命名；10 分钟刷新）；ledger 逐检出走同一发现契约（各自 tmp/ 扫描根 + 各自 scan-state 做僵尸判定），卡片带 `checkout/checkoutLabel`，身份键升级为 `<checkoutId>::<relative>`（同相对路径跨检出永不碰撞）。skillTracks 计数天然跨检出——语种卡片"战役进行中"如实覆盖 worktree 战役。
+- **正在运行的会话面板**（总览）：从事件流按 sessionId 聚合近 30 分钟活跃会话——每会话显示在哪个检出（由摘要中的绝对路径最长根匹配推断，主检出根是兄弟路径前缀的陷阱已修）、工具分布、归因战役。未建评审会话的管线工作（如 pr-polish 修订、入库 dry-run）不再只能从原始事件流里猜。
+- **动作跨检出**：`/api/campaign`、spawn、approve、`/api/usage`、usage 归因全部接受检出限定键；spawn/approve 以卡片所属检出为 `--cwd`；`/api/file` 白名单扩展到已知检出的同款 tmp/ 前缀（仍逐检出 fail-closed）。
+- 兼容：裸路径按主检出解析（老链接不断）；`main::` 前缀仅出现在新键。
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
@@ -115,4 +124,5 @@
 - `tests/skills/dashboard-events.test.js`（批 2）：钩子子进程端到端（fixture 根重定向；exit 0/空 stdout/事件落盘带 sessionRef 与 summary）、仓外 no-op、坏 stdin 容错、跨日文件合并/坏行跳过/绝对路径归因/卡片活动盖章、normalizeSessionRef。
 - `tests/skills/dashboard-detail.test.js`（批 5）：详情 join（单元↔release-scope 文件表：accepted/pending/queued/BACKFILL 无 PR 文件/未入组行、规模计数、回执 repo 相对化）、路径 fail-closed（越界/非扫描根/非 durable 会话）、哨兵今日报告结论透传（无变化/发现 N 项/缺报告）、registry 轨道聚合（计数归属、未登记战役不泄漏、缺 registry 容错）、trackScanStateKey 推导。
 - `tests/skills/dashboard-live.test.js`（批 6）：live-stats（注入 token/fetch 零网络——bitable 一页读 total、Drive BFS 计数与回边不死循环、collector ok/partial 逐轨降级/TTL 缓存不重拉/过期强刷/缺 registry 优雅失败）、scout-findings（精确日更模式识别、后缀制品排除、回看窗、字段透传）、intake-brief（确定性文本、战役后缀工件 fail-closed、目录外路径拒绝）。
+- `tests/skills/dashboard-checkouts.test.js`（批 8）：worktree 清单解析（bare 跳过/主检出标签）、跨检出发现与键防碰撞（同相对路径双检出+各自 scan-state 僵尸判定）、绝对 sessionRef 只归因本检出、运行会话推导（窗口/最长根匹配检出推断/战役滚动归因）、resolveSessionTarget 键解析。
 - `tests/skills/dashboard-usage.test.js`（批 7）：解析（嵌套 snake/camelCase、无 usage 行不算回合、坏行容忍）、增量采集（追加快路径/书签跳过/轮转重建无幽灵行）、事件归因（绝对路径归一化 join）、approve 边界差分（resume 回合归到单元）、空态诚实呈现。

@@ -16,9 +16,9 @@ const path = require('node:path');
 const { exec, execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 
-const { buildLedger } = require('./ledger.js');
+const { buildLedger, parseWorktreeList, resolveSessionTarget } = require('./ledger.js');
 const { buildBrief } = require('./attach-brief.js');
-const { buildCampaignDetail } = require('./campaign-detail.js');
+const { buildCampaignDetail, sessionPathAllowed } = require('./campaign-detail.js');
 const { createLiveStatsCollector } = require('./live-stats.js');
 const { buildScoutFindings } = require('./scout-findings.js');
 const { buildIntakeBrief } = require('./intake-brief.js');
@@ -181,7 +181,7 @@ function harvestUsage() {
   if (!usageDb) return;
   try {
     usage.harvestRolloutDir(usageDb);
-    usage.attributeFromEvents(usageDb, { repoRoot: REPO_ROOT });
+    usage.attributeFromEvents(usageDb, { repoRoot: REPO_ROOT, checkouts: checkoutsState });
   } catch (error) {
     process.stderr.write(`[dashboard] usage harvest failed: ${error?.message || error}\n`);
   }
@@ -215,13 +215,32 @@ function fingerprintStatus(state) {
 
 function mergeWorkers(payload) {
   for (const card of payload.campaigns) {
-    card.workers = spawnedWorkers.get(card.sessionPath) || [];
+    card.workers = spawnedWorkers.get(card.sessionKey ?? `main::${card.sessionPath}`) || [];
   }
   return payload;
 }
 
+// ---------- checkouts (main + sibling worktrees; batch 8) ----------
+// Campaigns legitimately run inside sibling worktrees (each with its own
+// tmp/ and scan-state); the board discovers them all. The registry is
+// runtime state refreshed from `git worktree list` — never a second truth.
+let checkoutsState = [{ id: 'main', label: '主检出', root: REPO_ROOT }];
+
+async function refreshCheckouts() {
+  try {
+    const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 });
+    const parsed = parseWorktreeList(stdout, REPO_ROOT);
+    if (parsed.some((c) => c.id === 'main') && parsed.length > 0) {
+      checkoutsState = parsed;
+      scheduleRecompute('checkouts');
+    }
+  } catch {
+    // git unavailable or not a worktree host — main-only stays in force
+  }
+}
+
 function buildPayload() {
-  const ledger = buildLedger({ repoRoot: REPO_ROOT });
+  const ledger = buildLedger({ repoRoot: REPO_ROOT, checkouts: checkoutsState });
   const payload = {
     ...ledger,
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
@@ -404,7 +423,17 @@ function serveFileView(req, res, query) {
     return;
   }
   const resolved = path.resolve(REPO_ROOT, requested);
-  const relative = path.relative(REPO_ROOT, resolved);
+  // Sibling-checkout files (worktree campaign artifacts) are viewable when
+  // the path falls inside a known checkout AND matches the same tmp/ prefix
+  // allowlist, repo-relative to that checkout.
+  let baseRoot = REPO_ROOT;
+  for (const checkout of checkoutsState) {
+    if (checkout.root !== REPO_ROOT && (resolved === checkout.root || resolved.startsWith(`${checkout.root}/`))) {
+      baseRoot = checkout.root;
+      break;
+    }
+  }
+  const relative = path.relative(baseRoot, resolved);
   const normalizedRelative = relative.split(path.sep).join('/');
   if (relative.startsWith('..') || path.isAbsolute(relative) || !fileViewAllowed(normalizedRelative)) {
     sendJson(res, 403, { error: 'path outside dashboard view allowlist' });
@@ -469,16 +498,27 @@ async function handler(req, res) {
         sendJson(res, 400, { error: 'missing target (campaign sessionPath or scan-state key)' });
         return;
       }
-      const brief = buildBrief({ repoRoot: REPO_ROOT, requested: target });
+      // Checkout-qualified keys dispatch inside their own worktree; plain
+      // paths/keys resolve against the main checkout as before.
+      const resolvedTarget = resolveSessionTarget(target, checkoutsState);
+      if (resolvedTarget.error) {
+        sendJson(res, 404, { error: resolvedTarget.error });
+        return;
+      }
+      const briefRoot = resolvedTarget.checkout.root;
+      // resolveSessionTarget already stripped the checkout prefix; plain
+      // main targets pass through unchanged (path or scan-state key).
+      const brief = buildBrief({ repoRoot: briefRoot, requested: resolvedTarget.relative });
       if (!brief.ok) {
         sendJson(res, 404, { error: brief.error, available: brief.available, candidates: brief.candidates });
         return;
       }
+      const workerKey = `${resolvedTarget.checkout.id}::${brief.card.sessionPath}`;
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
-      registerWorker(brief.card.sessionPath, worker);
+      registerWorker(workerKey, worker);
       const child = spawn(
         'zcode',
-        [...buildHeadlessSpawnArgs(REPO_ROOT, buildHeadlessPrompt(brief.text)), '--json'],
+        [...buildHeadlessSpawnArgs(briefRoot, buildHeadlessPrompt(brief.text)), '--json'],
         { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
       );
       let stdout = '';
@@ -489,15 +529,15 @@ async function handler(req, res) {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
         if (usageDb && worker.sessionId) {
-          usage.upsertAttribution(usageDb, worker.sessionId, brief.card.sessionPath, 'worker-registry');
+          usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
         }
         scheduleRecompute('worker-exit');
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
-        card: brief.card.sessionPath,
-        note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+        card: workerKey,
+        note: `会话已派出（${resolvedTarget.checkout.label} · ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
       });
     });
     return;
@@ -596,11 +636,13 @@ async function handler(req, res) {
         sendJson(res, 400, { error: '批准行格式无效（须为 APPROVE_* [id] sha256:<64 位摘要> 精确行）' });
         return;
       }
-      const card = currentPayload?.campaigns.find((c) => c.sessionPath === target);
+      const card = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === target || c.sessionPath === target);
       if (!card) {
         sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
         return;
       }
+      const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
+      const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
       const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
       if (!worker) {
         sendJson(res, 404, { error: '该会话不是看板派出的 worker（界面批准仅限 dashboard 派出的会话）' });
@@ -611,18 +653,18 @@ async function handler(req, res) {
         return;
       }
       const next = { sessionId: worker.sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
-      registerWorker(card.sessionPath, next);
+      registerWorker(cardKey, next);
       // Approve-run boundary: snapshot the worker's usage before the resume
       // dispatch; on exit the delta is attributed to the approved unit.
       const approveRunId = usageDb
         ? usage.openApproveRun(usageDb, {
           sessionId: worker.sessionId,
-          campaignPath: card.sessionPath,
+          campaignPath: cardKey,
           unitId: unitIdFromApproveLine(line),
         })
         : null;
-      if (usageDb) usage.upsertAttribution(usageDb, worker.sessionId, card.sessionPath, 'worker-registry');
-      const child = spawn('zcode', buildResumeArgs(REPO_ROOT, worker.sessionId, line), {
+      if (usageDb) usage.upsertAttribution(usageDb, worker.sessionId, cardKey, 'worker-registry');
+      const child = spawn('zcode', buildResumeArgs(cardRoot, worker.sessionId, line), {
         detached: true,
         stdio: 'ignore',
       });
@@ -636,7 +678,7 @@ async function handler(req, res) {
       child.unref();
       sendJson(res, 200, {
         ok: true,
-        card: card.sessionPath,
+        card: cardKey,
         sessionId: worker.sessionId,
         note: '批准行已注入 worker 会话（--resume）——它将继续执行到下一门或完成，桌面端可围观',
       });
@@ -664,23 +706,33 @@ async function handler(req, res) {
       return;
     case '/api/campaign': {
       // On-demand campaign detail (file table + scale). Read-only, derived,
-      // fail-closed on undiscoverable paths.
+      // fail-closed on undiscoverable paths. Target may be a checkout-
+      // qualified session key (`<checkoutId>::<relative>`) or a plain
+      // main-checkout path (legacy).
       const requested = url.searchParams.get('path');
       if (!requested) {
         sendJson(res, 400, { error: 'missing ?path=' });
         return;
       }
-      const detail = buildCampaignDetail({ repoRoot: REPO_ROOT, sessionPath: requested });
+      const resolved = resolveSessionTarget(requested, checkoutsState);
+      if (resolved.error || !sessionPathAllowed(resolved.checkout.root, resolved.relative)) {
+        sendJson(res, 404, { error: `session path not discoverable: ${requested}` });
+        return;
+      }
+      const detail = buildCampaignDetail({ repoRoot: resolved.checkout.root, sessionPath: resolved.relative });
       if (!detail.ok) {
         sendJson(res, 404, { error: detail.error });
         return;
       }
       // nextGate/workers are server-side enrichments (CLI cache + worker
       // registry) already stamped on the cards payload — reuse, never re-derive.
-      const liveCard = (currentPayload?.campaigns || []).find((c) => c.sessionPath === detail.card.sessionPath);
+      const liveCard = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === (detail.card.sessionKey ?? `main::${detail.card.sessionPath}`));
       if (liveCard) {
         detail.card.nextGate = liveCard.nextGate ?? null;
         detail.card.workers = liveCard.workers || [];
+        detail.card.checkout = liveCard.checkout;
+        detail.card.checkoutLabel = liveCard.checkoutLabel;
+        detail.card.sessionKey = liveCard.sessionKey;
       }
       sendJson(res, 200, detail);
       return;
@@ -757,6 +809,9 @@ function main() {
   // a fallback chip, never a server error.
   liveStats.get().catch(() => {});
   setInterval(() => liveStats.get({ force: true }).catch(() => {}), 10 * 60_000).unref();
+  // Checkout registry: sibling worktrees come and go with campaigns.
+  refreshCheckouts().catch(() => {});
+  setInterval(() => refreshCheckouts().catch(() => {}), 10 * 60_000).unref();
   // Token telemetry: harvest rollout transcripts + event attribution every
   // 2 minutes (the host prunes rollout files, so prompt harvesting matters).
   harvestUsage();

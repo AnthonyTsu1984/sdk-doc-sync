@@ -58,6 +58,18 @@ test('bitableRecordTotal reads the table total from one page', async () => {
   assert.equal(counter.calls, 2);
 });
 
+test('every Feishu call carries an abort-timeout signal (wedged calls fail, not hang)', async () => {
+  const seen = [];
+  const fetchImpl = async (url, options) => {
+    seen.push(options?.signal);
+    if (!(options?.signal instanceof AbortSignal)) throw new Error('missing AbortSignal');
+    return { json: async () => ({ code: 0, data: { files: [] } }) };
+  };
+  const { driveTreeCounts } = require('../../scripts/dashboard/live-stats.js');
+  await driveTreeCounts(tokenFetcher, 'ROOT', fetchImpl);
+  assert.ok(seen.length >= 1, 'each request carries its own signal');
+});
+
 test('driveTreeCounts walks folders breadth-first and caps runaway trees', async () => {
   // root → 2 folders, each → 2 docs (one folder looped back to root).
   const counter = { calls: 0 };

@@ -22,6 +22,7 @@ const { buildCampaignDetail } = require('./campaign-detail.js');
 const { createLiveStatsCollector } = require('./live-stats.js');
 const { buildScoutFindings } = require('./scout-findings.js');
 const { buildIntakeBrief } = require('./intake-brief.js');
+const usage = require('./usage-ledger.js');
 
 const execFileAsync = promisify(execFile);
 
@@ -163,6 +164,34 @@ function buildIntakeWorkerPrompt(briefText) {
 // ---------- live Feishu stats (batch 6; TTL-cached, degrade-graceful) ----------
 
 const liveStats = createLiveStatsCollector({ repoRoot: REPO_ROOT });
+
+// ---------- token-usage telemetry (batch 7; derived, deletable) ----------
+
+// Opens lazily and may be null (node:sqlite unavailable) — every consumer
+// degrades to "usage unavailable" instead of failing the server.
+let usageDb = null;
+try {
+  usageDb = usage.openUsageDb(path.join(REPO_ROOT, usage.USAGE_DB_RELATIVE_PATH));
+} catch (error) {
+  process.stderr.write(`[dashboard] usage ledger unavailable: ${error?.message || error}\n`);
+}
+
+function harvestUsage() {
+  if (!usageDb) return;
+  try {
+    usage.harvestRolloutDir(usageDb);
+    usage.attributeFromEvents(usageDb, { repoRoot: REPO_ROOT });
+  } catch (error) {
+    process.stderr.write(`[dashboard] usage harvest failed: ${error?.message || error}\n`);
+  }
+}
+
+// The unit an APPROVE line targets is its optional second token
+// (APPROVE_DOCUMENT <review-unit-id> sha256:…).
+function unitIdFromApproveLine(line) {
+  const match = /^APPROVE_\S+(?: (\S+))? sha256:/.exec(String(line || '').trim());
+  return match?.[1] ?? null;
+}
 
 // ---------- aggregation cache + push ----------
 
@@ -458,6 +487,9 @@ async function handler(req, res) {
       child.on('exit', () => {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
+        if (usageDb && worker.sessionId) {
+          usage.upsertAttribution(usageDb, worker.sessionId, brief.card.sessionPath, 'worker-registry');
+        }
         scheduleRecompute('worker-exit');
       });
       child.unref();
@@ -517,6 +549,11 @@ async function handler(req, res) {
       child.on('exit', () => {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
+        if (usageDb && worker.sessionId) {
+          // Intake workers attribute to the scout artifact; once intake
+          // builds a review session, event-based attribution takes over.
+          usage.upsertAttribution(usageDb, worker.sessionId, `scout:${brief.meta.scoutPath}`, 'worker-registry');
+        }
         scheduleRecompute('intake-worker-exit');
       });
       child.unref();
@@ -574,12 +611,25 @@ async function handler(req, res) {
       }
       const next = { sessionId: worker.sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
       registerWorker(card.sessionPath, next);
+      // Approve-run boundary: snapshot the worker's usage before the resume
+      // dispatch; on exit the delta is attributed to the approved unit.
+      const approveRunId = usageDb
+        ? usage.openApproveRun(usageDb, {
+          sessionId: worker.sessionId,
+          campaignPath: card.sessionPath,
+          unitId: unitIdFromApproveLine(line),
+        })
+        : null;
+      if (usageDb) usage.upsertAttribution(usageDb, worker.sessionId, card.sessionPath, 'worker-registry');
       const child = spawn('zcode', buildResumeArgs(REPO_ROOT, worker.sessionId, line), {
         detached: true,
         stdio: 'ignore',
       });
       child.on('exit', () => {
         next.status = 'idle';
+        if (usageDb && approveRunId != null) {
+          try { usage.closeApproveRun(usageDb, approveRunId); } catch { /* telemetry only */ }
+        }
         scheduleRecompute('approve-turn-exit');
       });
       child.unref();
@@ -654,6 +704,22 @@ async function handler(req, res) {
       sendJson(res, 200, findings);
       return;
     }
+    case '/api/usage': {
+      const target = url.searchParams.get('path');
+      if (!target) {
+        sendJson(res, 400, { error: 'missing ?path=' });
+        return;
+      }
+      if (!usageDb) {
+        sendJson(res, 200, { available: false, reason: 'usage store unavailable (node:sqlite)' });
+        return;
+      }
+      harvestUsage();
+      const view = usage.campaignUsage(usageDb, target);
+      view.available = true;
+      sendJson(res, 200, view);
+      return;
+    }
     case '/api/file':
       serveFileView(req, res, url.searchParams);
       return;
@@ -688,6 +754,10 @@ function main() {
   // a fallback chip, never a server error.
   liveStats.get().catch(() => {});
   setInterval(() => liveStats.get({ force: true }).catch(() => {}), 10 * 60_000).unref();
+  // Token telemetry: harvest rollout transcripts + event attribution every
+  // 2 minutes (the host prunes rollout files, so prompt harvesting matters).
+  harvestUsage();
+  setInterval(harvestUsage, 2 * 60_000).unref();
 
   for (const dir of WATCH_DIRS) {
     try {

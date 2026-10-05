@@ -91,6 +91,14 @@
 - **每日发现**（`scout-findings.js` + `GET /api/scout?language=`）：只认精确日更工件 `daily/<date>-<lang>-v<N>.json`（带额外后缀的战役制品如 `-grantpriv`/`-reviewed` 一律不算），14 天回看窗内取最新日期；`actions[]` 人话字段（symbol/type/reason/证据定位）原样透传，绝不重推导。语种卡片黄牌"今日发现 N 项待处理"→ 语种页发现表（方法/类型/原因/证据/轨道）。
 - **一键开始处理**（`intake-brief.js` + `POST /api/spawn-intake`，需 `--allow-spawn`）：以发现工件为种生成确定性处理简报（发现清单原文 + 工作指令：只读 intake→停在分组门 + 门禁格式/铁律），`scout:<工件路径>` 登记 worker；工件路径 fail-closed（必须是该语种当日允许集内成员）。UI 按钮文案"开始处理"并注明"先分组审批"。
 
+## 4f. token 消耗（批 7，本 PR）
+
+数据源=宿主 CLI 逐回合转录 `~/.zcode/cli/rollout/model-io-<sessionId>.jsonl`（usage 嵌于 `response.providerMetadata.*`，snake/camelCase 双形兼容解析）。宿主会清理这些文件，故看板每 2 分钟增量采集进 `tmp/dashboard-events/dashboard.db`（**node:sqlite，零依赖**；store 是派生遥测——删库无损治理，只丢历史数字）。采集三路归因：dashboard 事件（sessionId+sessionRef→战役）、worker 注册表（spawn/派单 exit 捕获 sessionId）、**approve 回合边界**（`/api/approve` 派发前快照 turns/totals，worker exit 后收割并差分→归到被批准单元=逐篇消耗）。
+
+- `GET /api/usage?path=<战役>`：总计（输入/输出/缓存读/缓存写/合计）+ 分会话表（归因来源/回合/最近活动）+ 逐篇表（看板批准回合）。
+- 战役详情页"token 消耗"面板如实标注边界：采集自看板批 7 上线起（历史战役无数据）；人工会话回合计入战役级、无法精确到单篇；不做估算。
+- 转录文件名形如 `model-io-sess_<id>`（下划线），正则捕获完整 sessionId 保证与事件归因键一致；文件回缩（宿主轮转）时行集重建不残留幽灵行。
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
@@ -107,3 +115,4 @@
 - `tests/skills/dashboard-events.test.js`（批 2）：钩子子进程端到端（fixture 根重定向；exit 0/空 stdout/事件落盘带 sessionRef 与 summary）、仓外 no-op、坏 stdin 容错、跨日文件合并/坏行跳过/绝对路径归因/卡片活动盖章、normalizeSessionRef。
 - `tests/skills/dashboard-detail.test.js`（批 5）：详情 join（单元↔release-scope 文件表：accepted/pending/queued/BACKFILL 无 PR 文件/未入组行、规模计数、回执 repo 相对化）、路径 fail-closed（越界/非扫描根/非 durable 会话）、哨兵今日报告结论透传（无变化/发现 N 项/缺报告）、registry 轨道聚合（计数归属、未登记战役不泄漏、缺 registry 容错）、trackScanStateKey 推导。
 - `tests/skills/dashboard-live.test.js`（批 6）：live-stats（注入 token/fetch 零网络——bitable 一页读 total、Drive BFS 计数与回边不死循环、collector ok/partial 逐轨降级/TTL 缓存不重拉/过期强刷/缺 registry 优雅失败）、scout-findings（精确日更模式识别、后缀制品排除、回看窗、字段透传）、intake-brief（确定性文本、战役后缀工件 fail-closed、目录外路径拒绝）。
+- `tests/skills/dashboard-usage.test.js`（批 7）：解析（嵌套 snake/camelCase、无 usage 行不算回合、坏行容忍）、增量采集（追加快路径/书签跳过/轮转重建无幽灵行）、事件归因（绝对路径归一化 join）、approve 边界差分（resume 回合归到单元）、空态诚实呈现。

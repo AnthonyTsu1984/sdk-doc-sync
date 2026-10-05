@@ -791,6 +791,68 @@ function filesTable(detail) {
   <div class="note" style="border:0">文件名取自 release-scope 的 web-content 路径；悬停看全路径。「飞书」列为该单元的文档/记录原始链接。</div>`;
 }
 
+function fmtTokens(n) {
+  if (n == null) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+async function renderUsagePanel(c) {
+  const host = document.getElementById('usageHost');
+  if (!host) return;
+  try {
+    const u = await (await fetch(`/api/usage?path=${encodeURIComponent(c.sessionPath)}`)).json();
+    if (!u.available) {
+      host.innerHTML = `<div class="empty">token 采集不可用（${esc(u.reason ?? '')}）</div>`;
+      return;
+    }
+    const t = u.totals;
+    if (!t.sessions) {
+      host.innerHTML = '<div class="empty">尚无本战役的 token 采集（采集自看板批 7 上线起；历史战役无数据）</div>';
+      return;
+    }
+    const sessRows = u.sessions.map((s) => `<tr>
+        <td class="fname" title="${esc(s.sessionId)}">${esc(String(s.sessionId).slice(0, 20))}…</td>
+        <td class="dim">${esc(s.source ?? '—')}</td>
+        <td class="num">${s.turns ?? '—'}</td>
+        <td class="num">${fmtTokens(s.inputTokens)}</td>
+        <td class="num">${fmtTokens(s.outputTokens)}</td>
+        <td class="num">${fmtTokens(s.totalTokens)}</td>
+        <td class="dim">${rel(s.lastTs ?? s.lastSeenAt)}</td>
+      </tr>`).join('');
+    const unitRows = u.perUnit.length
+      ? u.perUnit.map((p) => `<tr>
+          <td class="fname">${esc(humanUnit(p.unitId))}</td>
+          <td class="num">${p.runs}</td>
+          <td class="num">${fmtTokens(p.input)}</td>
+          <td class="num">${fmtTokens(p.output)}</td>
+          <td class="num">${fmtTokens(p.total)}</td>
+          <td class="dim">${p.lastAt ? rel(p.lastAt) : '—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="dim" style="text-align:center;padding:12px">暂无看板批准回合的逐篇归因（经界面批准的回合才会记到单篇）</td></tr>';
+    host.innerHTML = `
+      <div class="card" style="cursor:default;margin-bottom:12px">
+        <div class="row1">
+          <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(t.totalTokens)}</span> tokens</span>
+          <span class="meta"><span>输入 ${fmtTokens(t.inputTokens)}</span><span>输出 ${fmtTokens(t.outputTokens)}</span><span>缓存读 ${fmtTokens(t.cacheRead)}</span><span>缓存写 ${fmtTokens(t.cacheWrite)}</span><span>会话 ${t.sessions}</span></span>
+        </div>
+        <div class="note" style="border:0">采集${u.collectedSince ? `始于 ${fmt(u.collectedSince)}` : '中'}；宿主会清理原始转录，看板每 2 分钟增量落库。人工会话回合计入战役级、无法精确到单篇（如实呈现，不做估算）。</div>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>会话</th><th>归因来源</th><th>回合</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
+        <tbody>${sessRows}</tbody>
+      </table>
+      <h2>逐篇写作消耗（看板批准回合）</h2>
+      <table class="tbl">
+        <thead><tr><th>单元</th><th>回合数</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
+        <tbody>${unitRows}</tbody>
+      </table>`;
+  } catch {
+    host.innerHTML = '<div class="empty">token 数据载入失败</div>';
+  }
+}
+
 async function pageCampaign(d, path) {
   const c = (d.campaigns || []).find((x) => x.sessionPath === path);
   const host = document.getElementById('page');
@@ -842,6 +904,8 @@ async function pageCampaign(d, path) {
     </div></div>
     <h2>文件清单（按单元分组，文件名为主）</h2>
     <div id="filesHost"><div class="empty">载入中…</div></div>
+    <h2>token 消耗</h2>
+    <div id="usageHost"><div class="empty">载入中…</div></div>
     <details class="fold"><summary>工件与执行 journal（治理原始材料）</summary>
       <ul style="margin:6px 0;padding-left:18px">
         <li>releaseScope: ${viewLink(c.artifacts.releaseScope)}</li>
@@ -863,6 +927,7 @@ async function pageCampaign(d, path) {
   if (filesHost) filesHost.innerHTML = filesTable(detail);
   const approveHost = document.querySelector('.approve');
   if (approveHost) approveHost.outerHTML = oneClickApproveCard(c, detail);
+  renderUsagePanel(c);
 }
 
 // ---------- router ----------

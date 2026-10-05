@@ -13,10 +13,11 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { exec, execFile } = require('node:child_process');
+const { exec, execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 
 const { buildLedger } = require('./ledger.js');
+const { buildBrief } = require('./attach-brief.js');
 
 const execFileAsync = promisify(execFile);
 
@@ -120,17 +121,25 @@ function mergeNextGate(payload) {
   return payload;
 }
 
-// ---------- session spawn (opt-in, interactive only) ----------
+// ---------- session spawn (opt-in, one-click headless → desktop surface) ----------
 
-// Fixed command: open this repo's workspace in ZCode Desktop via its URL
-// scheme (`zcode://workspace/open?path=…`, the only workspace route the app
-// registers besides oauth/callback). No terminal window, no Apple Events
-// permission, no request input reaches any shell. Headless spawn
-// (`zcode -p --surface desktop`) is the eventual one-click form but needs a
-// model provider config the CLI does not currently have — and autonomous
-// execution would still have to stop at operator gates.
-function buildSpawnCommand(repoRoot) {
-  return ['open', [`zcode://workspace/open?path=${encodeURIComponent(repoRoot)}`]];
+// One-click dispatch: run a headless zcode prompt seeded with the campaign's
+// deterministic attach brief, presented on the desktop surface (the session
+// appears in ZCode Desktop; no terminal). argv-vector spawn, no shell, no
+// request input beyond the validated campaign target. The spawned worker
+// must stop at APPROVE_* gates — campaign governance (L1 gates + digest
+// approvals) remains the safety net, exactly as in operator sessions.
+function buildHeadlessPrompt(briefText) {
+  return [
+    '你是本战役的新执行会话（由任务看板一键派出）。下面是确定性生成的战役简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准，勿凭记忆续接。',
+    '按简报中的续接规则开始工作：只读侦察可立即进行；遇到 APPROVE_* 门禁必须停下，等待操作员以简报给出的精确 digest 行批准后再继续。',
+    '---',
+    briefText,
+  ].join('\n');
+}
+
+function buildHeadlessSpawnArgs(repoRoot, prompt) {
+  return ['--cwd', String(repoRoot), '--surface', 'desktop', '--prompt', prompt];
 }
 
 // ---------- aggregation cache + push ----------
@@ -350,13 +359,37 @@ function handler(req, res) {
       sendJson(res, 404, { error: 'spawn disabled — restart the dashboard with --allow-spawn' });
       return;
     }
-    const [command, args] = buildSpawnCommand(REPO_ROOT);
-    execFile(command, args, { timeout: 15_000 }, (error) => {
-      if (error) {
-        sendJson(res, 500, { error: `spawn failed: ${error?.message}` });
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 65_536) req.destroy();
+    });
+    req.on('end', () => {
+      let target = '';
+      try {
+        target = String(JSON.parse(body || '{}').target || '');
+      } catch {
+        // fall through to the missing-target rejection below
+      }
+      if (!target) {
+        sendJson(res, 400, { error: 'missing target (campaign sessionPath or scan-state key)' });
         return;
       }
-      sendJson(res, 200, { ok: true, note: '已在 ZCode 桌面端打开本仓库工作区——新建会话后粘贴剪贴板里已复制的 /attach <键>，即完成挂载（全程无终端窗口）' });
+      const brief = buildBrief({ repoRoot: REPO_ROOT, requested: target });
+      if (!brief.ok) {
+        sendJson(res, 404, { error: brief.error, available: brief.available, candidates: brief.candidates });
+        return;
+      }
+      const child = spawn('zcode', buildHeadlessSpawnArgs(REPO_ROOT, buildHeadlessPrompt(brief.text)), {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.unref();
+      sendJson(res, 200, {
+        ok: true,
+        card: brief.card.sessionPath,
+        note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；桌面端会话列表中可继续`,
+      });
     });
     return;
   }
@@ -433,4 +466,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { buildSpawnCommand, parseArgs, parseStatusOutput };
+module.exports = { buildHeadlessPrompt, buildHeadlessSpawnArgs, parseArgs, parseStatusOutput };

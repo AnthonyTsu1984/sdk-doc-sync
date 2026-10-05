@@ -59,7 +59,7 @@
 - **`/attach` 命令**（`.zcode/commands/attach.md` 薄路由，本机态）→ 引擎 `scripts/dashboard/attach-brief.js`（入库、CI 测试）：按 scan-state 键（`java-v30`）或会话路径定位战役（多活跃会话时消歧报错），从 durable 状态确定性生成简报——进度/当前门（调权威 `sdk-review-session status` 的 nextGate，绝不自行推导）/scan-state 对照/准入/最近归因活动/续接规则（门禁格式+铁律）。新会话粘贴 `/attach <键>` 即完成挂载，零聊天历史依赖。
 - **卡片当前门**：server 后台（60s 周期、TTL 3min、仅非 finalized、≤8 个）调 status CLI 富集 `nextGate`，UI 卡片与矩阵显示 `⛩ 门 <GATE>` 紫色 chip。
 - **并行矩阵**：语种×轨道 chip 矩阵（⛩=有门 ●=近期活动，健康档着色，点击直达卡片）。
-- **派会话**：`POST /api/spawn-session` **默认关闭**，须 `npm run dashboard -- --allow-spawn` 显式开启；实现为桌面端 URL scheme `open 'zcode://workspace/open?path=<repo>'`（app.asar 实测仅此一条工作区路由）——**无终端窗口**，桌面端打开本仓库工作区后新建会话、粘贴已复制的 `/attach <键>`。备选路线考察：osascript AppleEvent 无授权即超时（弃用）；`zcode -p --surface desktop` 是终极形态但本机 CLI 无模型 provider 配置（凭据在桌面端账户）且自治执行终须停在人工门——留待将来。卡片按钮：复制 `/attach <键>`（恒在）+ 派会话（开启时）。
+- **派会话（真·一键）**：`POST /api/spawn-session {target}` **默认关闭**（`npm run dashboard -- --allow-spawn` 开启）——服务端用目标战役的确定性简报作 prompt，detached 派 `zcode --cwd <repo> --surface desktop --prompt <简报>`：**无终端，会话直接出现在 ZCode 桌面端**，简报即上下文、hooks 照常生效、首轮按简报工作并在 APPROVE_* 门禁停下等操作员。前提=CLI 已配模型 provider（本机已配 `provider.bigmodel` 指向 coding plan，见记忆 `zcode-cli-desktop-auth-model`）。argv 向量派生无 shell，target 先经战役解析 fail-closed。卡片按钮：复制 `/attach <键>`（恒在）+ 派会话（开启时，携带精确会话路径）。
 
 ## 5. 路线
 

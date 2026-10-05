@@ -11,7 +11,12 @@ const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
 const { buildBrief, gateLine, resolveTarget } = require('../../scripts/dashboard/attach-brief.js');
-const { buildSpawnCommand, parseArgs, parseStatusOutput } = require('../../scripts/dashboard/server.js');
+const {
+  buildHeadlessPrompt,
+  buildHeadlessSpawnArgs,
+  parseArgs,
+  parseStatusOutput,
+} = require('../../scripts/dashboard/server.js');
 
 function makeFixtureTree() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dash-attach-')));
@@ -120,13 +125,19 @@ test('gateLine covers null, close, and rollback wedges', () => {
   assert.ok(gateLine({ gate: 'RESOLVE_ROLLBACK', reviewUnitId: 'review:x' }).includes('回滚 lease'));
 });
 
-test('server helpers: spawn opt-in flag, fixed command, status parsing', () => {
+test('server helpers: spawn opt-in flag, headless args, prompt wrapper, status parsing', () => {
   assert.equal(parseArgs(['node', 'x']).allowSpawn, false, 'spawn disabled by default');
   assert.equal(parseArgs(['node', 'x', '--allow-spawn']).allowSpawn, true);
 
-  const [cmd, args] = buildSpawnCommand('/Users/x/repo');
-  assert.equal(cmd, 'open');
-  assert.deepEqual(args, ['zcode://workspace/open?path=%2FUsers%2Fx%2Frepo'], 'desktop URL scheme, path encoded');
+  const args = buildHeadlessSpawnArgs('/Users/x/repo', '简报正文');
+  assert.deepEqual(args.slice(0, 4), ['--cwd', '/Users/x/repo', '--surface', 'desktop']);
+  assert.equal(args[4], '--prompt');
+  assert.equal(args[5], '简报正文');
+
+  const prompt = buildHeadlessPrompt('简报正文');
+  assert.ok(prompt.includes('简报正文'));
+  assert.ok(prompt.includes('精确 digest 行'));
+  assert.ok(prompt.includes('APPROVE_* 门禁必须停'));
 
   assert.equal(parseStatusOutput('{"nextGate":null}').nextGate, null);
   assert.equal(parseStatusOutput('not json'), null);

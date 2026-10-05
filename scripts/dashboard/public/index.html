@@ -195,9 +195,13 @@ function renderMatrix(d) {
   host.innerHTML = rows + '<div class="note" style="border:0;padding:0;margin-top:6px">⛩=有当前门 ●=近期有活动；点击轨道打开战役详情。新会话接管战役：粘贴 <code>/attach &lt;键&gt;</code>（键如 java-v30）。</div>';
 }
 
-async function spawnSession() {
+async function spawnSession(target) {
   try {
-    const r = await fetch('/api/spawn-session', { method: 'POST' });
+    const r = await fetch('/api/spawn-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target }),
+    });
     const j = await r.json();
     alert(j.note || j.error || JSON.stringify(j));
   } catch (e) { alert('派会话失败: ' + e); }
@@ -239,7 +243,7 @@ function renderCampaigns(d) {
       ${zombieLine}
       <div class="actions" onclick="event.stopPropagation()">
         <button class="act" onclick="copyText('/attach ${esc(key)}')">复制 /attach</button>
-        ${spawnOn ? '<button class="act" onclick="spawnSession()">派会话</button>' : ''}
+        ${spawnOn ? `<button class="act" onclick="spawnSession('${esc(c.sessionPath)}')">派会话</button>` : ''}
       </div>
     </div>`;
   }).join('');

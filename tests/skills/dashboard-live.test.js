@@ -19,7 +19,7 @@ const {
   buildScoutFindings,
   latestScoutFiles,
 } = require('../../scripts/dashboard/scout-findings.js');
-const { buildIntakeBrief } = require('../../scripts/dashboard/intake-brief.js');
+const { buildIntakeBrief, buildTrackIntakeBrief } = require('../../scripts/dashboard/intake-brief.js');
 
 function makeFixtureTree() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'dash-live-')));
@@ -275,4 +275,46 @@ test('buildIntakeBrief is deterministic and fail-closed', (t) => {
     now,
   });
   assert.equal(outside.ok, false);
+});
+
+
+// ---------- track-start brief (batch 9) ----------
+
+test('buildTrackIntakeBrief: registered track → deterministic brief; unregistered → fail-closed', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    languages: { go: { sdkName: 'milvus-sdk-go', tracks: [{ version: 'v3.0.x', bitable: { baseToken: 'GOBASE' }, drive: { releaseRoot: { token: 'GOROOT' } } }] } },
+  });
+  write('.claude/skills/api-reference-sync/scan-state.json', { 'go-v30': { lastScannedTag: 'v3.0.0-beta' } });
+
+  const brief = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v30' });
+  assert.equal(brief.ok, true);
+  assert.match(brief.text, /## 轨道工作简报 · go · go-v30（v3\.0\.x）/);
+  assert.match(brief.text, /scan-state 基线: v3\.0\.0-beta/);
+  assert.match(brief.text, /GOBASE/);
+  assert.match(brief.text, /停在 APPROVE_GROUPING 门/);
+  assert.match(brief.text, /无发现 → 明确报告"无待处理变更"并结束/);
+  assert.equal(brief.meta.mode, 'track');
+
+  const again = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v30' });
+  assert.equal(again.text, brief.text, 'same tree in, same brief out');
+
+  const unknown = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v99' });
+  assert.equal(unknown.ok, false);
+  assert.match(unknown.error, /未登记/);
+
+  const missing = buildTrackIntakeBrief({ repoRoot: root, language: 'rest', trackKey: 'rest' });
+  assert.equal(missing.ok, false);
+});
+
+test('buildTrackIntakeBrief: absent baseline is stated, not faked', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    languages: { node: { sdkName: 'milvus2-sdk-node', tracks: [{ version: 'v2.4.x' }] } },
+  });
+  const brief = buildTrackIntakeBrief({ repoRoot: root, language: 'node', trackKey: 'node-v24' });
+  assert.equal(brief.ok, true);
+  assert.match(brief.text, /无推进记录（首次覆盖）/);
 });

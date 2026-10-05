@@ -56,6 +56,7 @@ test('walkSessionFiles + card derivation across both roots', (t) => {
     sessionId: 'sdk-doc-sync:go:milvus-sdk-go:v3.x:sha256:1',
     language: 'go', track: 'v3.x', sdkName: 'milvus-sdk-go',
     acceptedReviewUnits: [{ reviewUnitId: 'u1', executionJournalPath: path.join(root, 'tmp/api-reference-sync/j1.jsonl') }],
+    pendingExecutions: [{ reviewUnitId: 'u9', executionJournalDigest: 'sha256:' + 'c'.repeat(64) }],
   }));
   write('tmp/sdk-doc-sync-runs/java-v30/run-7/session.json', sessionFixture({
     sessionId: 'sdk-doc-sync:java:milvus-sdk-java:v3.0.x:sha256:2',
@@ -81,6 +82,11 @@ test('walkSessionFiles + card derivation across both roots', (t) => {
     'accepted-unit journal paths resolve repo-relative',
   );
   assert.equal(java.health, 'awaiting-close', 'all units accepted + nothing pending → awaiting operator close-session');
+  assert.deepEqual(
+    go.pendingUnits,
+    [{ reviewUnitId: 'u9', executionJournalDigest: 'sha256:' + 'c'.repeat(64) }],
+    'pending executions pass through verbatim for the approve-form prefill',
+  );
 });
 
 test('zombie detection when scan-state advanced past the session target tag', (t) => {

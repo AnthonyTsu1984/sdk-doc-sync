@@ -14,8 +14,11 @@ const { buildBrief, gateLine, resolveTarget } = require('../../scripts/dashboard
 const {
   buildHeadlessPrompt,
   buildHeadlessSpawnArgs,
+  buildResumeArgs,
   parseArgs,
+  parseSpawnSessionId,
   parseStatusOutput,
+  validateApproveLine,
 } = require('../../scripts/dashboard/server.js');
 
 function makeFixtureTree() {
@@ -128,6 +131,8 @@ test('gateLine covers null, close, and rollback wedges', () => {
 test('server helpers: spawn opt-in flag, headless args, prompt wrapper, status parsing', () => {
   assert.equal(parseArgs(['node', 'x']).allowSpawn, false, 'spawn disabled by default');
   assert.equal(parseArgs(['node', 'x', '--allow-spawn']).allowSpawn, true);
+  assert.equal(parseArgs(['node', 'x']).allowApprove, false, 'approve disabled by default');
+  assert.equal(parseArgs(['node', 'x', '--allow-approve']).allowApprove, true);
 
   const args = buildHeadlessSpawnArgs('/Users/x/repo', '简报正文');
   assert.deepEqual(args.slice(0, 4), ['--cwd', '/Users/x/repo', '--surface', 'desktop']);
@@ -142,4 +147,22 @@ test('server helpers: spawn opt-in flag, headless args, prompt wrapper, status p
   assert.equal(parseStatusOutput('{"nextGate":null}').nextGate, null);
   assert.equal(parseStatusOutput('not json'), null);
   assert.equal(parseStatusOutput('null'), null);
+});
+
+test('approve forwarding: exact-line validation, worker-id capture, resume args', () => {
+  const goodDigest = `sha256:${'a'.repeat(64)}`;
+  assert.equal(validateApproveLine(`APPROVE_WRITES ${goodDigest}`), true);
+  assert.equal(validateApproveLine(`APPROVE_DOCUMENT review:java:v2-Vector:get ${goodDigest}`), true);
+  assert.equal(validateApproveLine(`APPROVE_WRITES sha256:ABC`), false, 'uppercase/short digest rejected');
+  assert.equal(validateApproveLine('APPROVE_WRITES'), false);
+  assert.equal(validateApproveLine('approve_writes ' + goodDigest), false, 'case-sensitive gate names');
+  assert.equal(validateApproveLine(`APPROVE_WRITES ${goodDigest} extra`), false, 'trailing tokens rejected');
+  assert.equal(validateApproveLine(null), false);
+
+  const stdout = JSON.stringify({ sessionId: 'sess_4adaa505-6b62-428f-aa4c-8e0cbacc88a3', response: 'OK' });
+  assert.equal(parseSpawnSessionId(stdout), 'sess_4adaa505-6b62-428f-aa4c-8e0cbacc88a3');
+  assert.equal(parseSpawnSessionId('no json here'), null);
+
+  const resume = buildResumeArgs('/Users/x/repo', 'sess_1', 'APPROVE_WRITES ' + goodDigest);
+  assert.deepEqual(resume, ['--cwd', '/Users/x/repo', '--surface', 'desktop', '--resume', 'sess_1', '--prompt', 'APPROVE_WRITES ' + goodDigest]);
 });

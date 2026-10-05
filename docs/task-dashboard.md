@@ -61,12 +61,21 @@
 - **并行矩阵**：语种×轨道 chip 矩阵（⛩=有门 ●=近期活动，健康档着色，点击直达卡片）。
 - **派会话（真·一键）**：`POST /api/spawn-session {target}` **默认关闭**（`npm run dashboard -- --allow-spawn` 开启）——服务端用目标战役的确定性简报作 prompt，detached 派 `zcode --cwd <repo> --surface desktop --prompt <简报>`：**无终端，会话直接出现在 ZCode 桌面端**，简报即上下文、hooks 照常生效、首轮按简报工作并在 APPROVE_* 门禁停下等操作员。前提=CLI 已配模型 provider（本机已配 `provider.bigmodel` 指向 coding plan，见记忆 `zcode-cli-desktop-auth-model`）。argv 向量派生无 shell，target 先经战役解析 fail-closed。卡片按钮：复制 `/attach <键>`（恒在）+ 派会话（开启时，携带精确会话路径）。
 
+## 4c. 界面批准转发（批 4，已实施）
+
+**红线不变**：UI 无独立写路径、不造第二真相——"批准"只是把操作员确认过的 `APPROVE_* [id] sha256:<digest>` **精确行原文注入看板派出的 worker 会话**（`zcode --resume <sessId> --prompt <行> --surface desktop`），语义与 digest 绑定仍由 canonical CLI 的 L1 门禁执法，UserPromptSubmit 钩子照常软校验格式。
+
+- **worker 注册表**（server 内存运行态，非 durable 真相）：派会话时以 `--json` 运行并在进程退出时捕获 `sessionId` → `card.workers [{sessionId, spawnedAt, status}]`；`idle`（进程已退、会话持久化）才允许注入，运行中 409 拒绝。
+- **`POST /api/approve {target, sessionId, line}`**：`--allow-approve` 显式开启（默认关，与 `--allow-spawn` 相互独立）；行格式服务端硬校验（`^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)( \S+)? sha256:[a-f0-9]{64}$`）；sessionId 必须属于该战役的看板 worker（fail-closed，操作员手开的会话不接受界面注入）；argv 向量派发无 shell。
+- **UI 批准表单**（卡片 ⛩ 批准按钮 → 抽屉）：门类型按 nextGate 预填、review-unit-id 预填、**APPROVE_DOCUMENT 的 journal digest 从 `pendingExecutions[].executionJournalDigest` 原样预填**（ledger 只透传不推导），其余门从呈门材料粘贴；实时行预览 + 前端正则与确认弹窗。
+- 已知边界：仅看板派出的 headless worker 可注入（防并发写同一会话）；操作员在桌面端手开的会话走原流程（手打批准行）。
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
 - **批 2（PR #93）**：事件流钩子 + 活动流 UI + 卡片最近活动 + `/api/file` 目录列表。
-- **批 3（本 PR）**：attach 命令 + nextGate 富集 + 并行矩阵 + 选择性派会话（交互式、默认关）。
-- **批 4**：界面写操作——批准按钮仅转发 canonical CLI（APPROVE_* 精确行），UI 无独立写路径；server 自身受 R4 同款证据面保护审视。
+- **批 3（PR #94）**：attach 命令 + nextGate 富集 + 并行矩阵 + 一键派会话（headless → desktop surface，官方 CLI）。
+- **批 4（本 PR）**：界面批准转发（如上 §4c）——原四批路线收官。
 
 ## 6. 测试
 

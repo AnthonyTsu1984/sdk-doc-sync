@@ -48,7 +48,7 @@ const FINGERPRINT_TTL_MS = 5 * 60_000;
 const FILE_VIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 function parseArgs(argv) {
-  const options = { port: 8765, open: true, allowSpawn: false };
+  const options = { port: 8765, open: true, allowSpawn: false, allowApprove: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--port') {
@@ -61,6 +61,8 @@ function parseArgs(argv) {
       options.open = false;
     } else if (arg === '--allow-spawn') {
       options.allowSpawn = true;
+    } else if (arg === '--allow-approve') {
+      options.allowApprove = true;
     }
   }
   return options;
@@ -161,14 +163,21 @@ function fingerprintStatus(state) {
   };
 }
 
+function mergeWorkers(payload) {
+  for (const card of payload.campaigns) {
+    card.workers = spawnedWorkers.get(card.sessionPath) || [];
+  }
+  return payload;
+}
+
 function buildPayload() {
   const ledger = buildLedger({ repoRoot: REPO_ROOT });
   const payload = {
     ...ledger,
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
-    features: { spawnEnabled: spawnOptions.allowSpawn },
+    features: { spawnEnabled: spawnOptions.allowSpawn, approveEnabled: spawnOptions.allowApprove },
   };
-  return mergeNextGate(payload);
+  return mergeWorkers(mergeNextGate(payload));
 }
 
 // generatedAt (and fingerprint computedAt) are volatile; everything else
@@ -236,7 +245,42 @@ function heartbeat() {
 
 const fingerprintState = { computed: false, fingerprint: null, phase: null, recordedAt: null };
 
-let spawnOptions = { allowSpawn: false };
+let spawnOptions = { allowSpawn: false, allowApprove: false };
+
+
+
+// ---------- worker registry (dashboard-spawned headless sessions) ----------
+
+// card sessionPath -> [{sessionId, spawnedAt, status: running|idle}].
+// Runtime-only view state (not durable truth): session ids are captured from
+// the spawned `--json` run's final stdout; `idle` = process exited, so the
+// session is safe to --resume with an approval line.
+const spawnedWorkers = new Map();
+
+const SPAWN_STDOUT_CAP = 2 * 1024 * 1024;
+
+function registerWorker(sessionPath, entry) {
+  const list = spawnedWorkers.get(sessionPath) || [];
+  list.push(entry);
+  spawnedWorkers.set(sessionPath, list.slice(-6));
+}
+
+function parseSpawnSessionId(stdout) {
+  const match = /"sessionId"\s*:\s*"(sess_[a-zA-Z0-9-]+)"/.exec(String(stdout || ''));
+  return match ? match[1] : null;
+}
+
+// The exact approval grammar the campaign gates accept; L1 still enforces
+// semantics and digest binding downstream — this is shape-only pre-validation.
+const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)(?: [^\s]+)? sha256:[a-f0-9]{64}$/;
+
+function validateApproveLine(line) {
+  return APPROVE_LINE_RE.test(String(line || '').trim());
+}
+
+function buildResumeArgs(repoRoot, sessionId, prompt) {
+  return ['--cwd', String(repoRoot), '--surface', 'desktop', '--resume', String(sessionId), '--prompt', String(prompt)];
+}
 
 function computeFingerprint() {
   try {
@@ -380,15 +424,91 @@ function handler(req, res) {
         sendJson(res, 404, { error: brief.error, available: brief.available, candidates: brief.candidates });
         return;
       }
-      const child = spawn('zcode', buildHeadlessSpawnArgs(REPO_ROOT, buildHeadlessPrompt(brief.text)), {
-        detached: true,
-        stdio: 'ignore',
+      const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
+      registerWorker(brief.card.sessionPath, worker);
+      const child = spawn(
+        'zcode',
+        [...buildHeadlessSpawnArgs(REPO_ROOT, buildHeadlessPrompt(brief.text)), '--json'],
+        { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      let stdout = '';
+      child.stdout.on('data', (chunk) => {
+        if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
+      });
+      child.on('exit', () => {
+        worker.sessionId = parseSpawnSessionId(stdout);
+        worker.status = 'idle';
+        scheduleRecompute('worker-exit');
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
         card: brief.card.sessionPath,
-        note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；桌面端会话列表中可继续`,
+        note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+      });
+    });
+    return;
+  }
+  if (url.pathname === '/api/approve') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'POST required' });
+      return;
+    }
+    if (!spawnOptions.allowApprove) {
+      sendJson(res, 404, { error: 'approve disabled — restart the dashboard with --allow-approve' });
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 65_536) req.destroy();
+    });
+    req.on('end', () => {
+      let request = null;
+      try {
+        request = JSON.parse(body || '{}');
+      } catch {
+        // fall through to validation below
+      }
+      const { target, sessionId, line } = request || {};
+      if (!target || !sessionId || !line) {
+        sendJson(res, 400, { error: 'missing target/sessionId/line' });
+        return;
+      }
+      if (!validateApproveLine(line)) {
+        sendJson(res, 400, { error: '批准行格式无效（须为 APPROVE_* [id] sha256:<64 位摘要> 精确行）' });
+        return;
+      }
+      const card = currentPayload?.campaigns.find((c) => c.sessionPath === target);
+      if (!card) {
+        sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
+        return;
+      }
+      const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
+      if (!worker) {
+        sendJson(res, 404, { error: '该会话不是看板派出的 worker（界面批准仅限 dashboard 派出的会话）' });
+        return;
+      }
+      if (worker.status !== 'idle') {
+        sendJson(res, 409, { error: 'worker 仍在首轮运行中——等它停在门禁后再批准' });
+        return;
+      }
+      const next = { sessionId: worker.sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
+      registerWorker(card.sessionPath, next);
+      const child = spawn('zcode', buildResumeArgs(REPO_ROOT, worker.sessionId, line), {
+        detached: true,
+        stdio: 'ignore',
+      });
+      child.on('exit', () => {
+        next.status = 'idle';
+        scheduleRecompute('approve-turn-exit');
+      });
+      child.unref();
+      sendJson(res, 200, {
+        ok: true,
+        card: card.sessionPath,
+        sessionId: worker.sessionId,
+        note: '批准行已注入 worker 会话（--resume）——它将继续执行到下一门或完成，桌面端可围观',
       });
     });
     return;
@@ -438,8 +558,8 @@ function handler(req, res) {
 }
 
 function main() {
-  const { port, open, allowSpawn } = parseArgs(process.argv);
-  spawnOptions = { allowSpawn };
+  const { port, open, allowSpawn, allowApprove } = parseArgs(process.argv);
+  spawnOptions = { allowSpawn, allowApprove };
   recompute('startup');
   computeFingerprint();
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
@@ -459,11 +579,19 @@ function main() {
   const server = http.createServer(handler);
   server.listen(port, '127.0.0.1', () => {
     const address = `http://127.0.0.1:${server.address().port}`;
-    process.stdout.write(`[dashboard] serving ${address} (read-only${allowSpawn ? ' + opt-in spawn' : ''}; repo ${REPO_ROOT})\n`);
+    process.stdout.write(`[dashboard] serving ${address} (read-only${allowSpawn ? ' + spawn' : ''}${allowApprove ? ' + approve-forwarding' : ''}; repo ${REPO_ROOT})\n`);
     if (open) exec(`open ${address}`);
   });
 }
 
 if (require.main === module) main();
 
-module.exports = { buildHeadlessPrompt, buildHeadlessSpawnArgs, parseArgs, parseStatusOutput };
+module.exports = {
+  buildHeadlessPrompt,
+  buildHeadlessSpawnArgs,
+  buildResumeArgs,
+  parseArgs,
+  parseSpawnSessionId,
+  parseStatusOutput,
+  validateApproveLine,
+};

@@ -74,6 +74,7 @@ test('revision card: live scope wins, progress reconciles apply-review manifests
   assert.equal(card.ruling, '2026-10-05 live-scan ruling');
   assert.equal(card.groupingGate.digest, 'sha256:' + '7'.repeat(64));
   assert.equal(card.writtenPages, 2);
+  assert.equal(card.groupingApproved, true, 'pages written → grouping necessarily approved');
   assert.equal(card.remainingPages, 202);
   assert.deepEqual(
     card.pages.map((p) => `${p.page}:${p.codes.length}`),
@@ -137,4 +138,11 @@ test('resolveRevisionTarget + buildRevisionBrief determinism and content', (t) =
   assert.match(brief.text, /铁律/);
   const again = buildRevisionBrief(byStem.card, new Date('2026-10-05T15:00:00Z'));
   assert.equal(again.text, brief.text, 'same tree in, same brief out');
+
+  // Zero pages written → grouping still pending (honest gate state).
+  const empty = makeFixtureTree('dash-rev-empty-');
+  t.after(() => fs.rmSync(empty.root, { recursive: true, force: true }));
+  empty.write('tmp/api-reference-sync/fresh-revision-worklist.json', worklistFixture({ language: 'go' }));
+  const [fresh] = buildRevisionCards([{ id: 'main', label: '主检出', root: empty.root }]);
+  assert.equal(fresh.groupingApproved, false, 'nothing written yet → grouping still pending');
 });

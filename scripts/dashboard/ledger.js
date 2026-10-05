@@ -464,6 +464,10 @@ function buildRevisionCards(checkouts) {
           generatedAt: scopeGeneratedAt,
         },
         groupingGate,
+        // Grouping was necessarily approved once any page is written (the
+        // governed executor refuses writes before the grouping approval) —
+        // the honest gate-state derivation, no extra artifact needed.
+        groupingApproved: written.length > 0,
         pages: [...pages].sort().map((page) => {
           const items = payload.items.filter((item) => item.page === page);
           return {

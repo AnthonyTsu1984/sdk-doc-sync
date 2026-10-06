@@ -153,6 +153,51 @@ test('rejects an API patch when live top-level block preconditions drift', async
   );
 });
 
+test('get_document_blocks retries a children-omitting page read and recovers', async () => {
+  // Feishu occasionally returns code 0 with the page block's children field
+  // omitted; the read layer retries that exact transient signature instead of
+  // surfacing it downstream as PAGE_STRUCTURE_INVALID.
+  process.env.FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  m2f.tokenFetcher = { token: async () => 'test-token' };
+  const responses = [
+    { code: 0, data: { items: [{ block_id: 'page', block_type: 1 }] } },
+    { code: 0, data: { items: [{ block_id: 'page', block_type: 1, children: ['b1'] }, { block_id: 'b1', parent_id: 'page', block_type: 2, text: { elements: [] } }] } },
+  ];
+  let calls = 0;
+  m2f.__fetch_feishu_json = async () => responses[Math.min(calls++, responses.length - 1)];
+  const blocks = await m2f.get_document_blocks('doc-1');
+  assert.equal(calls, 2, 'the transient read was retried once');
+  assert.deepEqual(blocks.find(b => b.block_type === 1).children, ['b1']);
+});
+
+test('get_document_blocks returns the last read when the transient signature persists', async () => {
+  process.env.FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  m2f.tokenFetcher = { token: async () => 'test-token' };
+  let calls = 0;
+  m2f.__fetch_feishu_json = async () => {
+    calls += 1;
+    return { code: 0, data: { items: [{ block_id: 'page', block_type: 1 }] } };
+  };
+  const blocks = await m2f.get_document_blocks('doc-1');
+  assert.equal(calls, 3, 'all transient attempts are spent');
+  assert.equal(blocks.length, 1, 'the last read is returned, not masked as success of a healthy read');
+});
+
+test('get_document_blocks throws immediately on an API error without retrying', async () => {
+  process.env.FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  m2f.tokenFetcher = { token: async () => 'test-token' };
+  let calls = 0;
+  m2f.__fetch_feishu_json = async () => {
+    calls += 1;
+    return { code: 131006, msg: 'permission denied' };
+  };
+  await assert.rejects(() => m2f.get_document_blocks('doc-1'), /Failed to get document blocks/);
+  assert.equal(calls, 1, 'hard API errors are not retried');
+});
+
 test('rebinds approved source block IDs to an equivalent freshly copied document', async () => {
   const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];

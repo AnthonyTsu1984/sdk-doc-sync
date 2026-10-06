@@ -1928,19 +1928,35 @@ class MarkdownToFeishu {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${token}`
         };
-        const items = [];
-        let pageToken = null;
-        do {
-            const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks`
-                + `?page_size=500${pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''}`;
-            const data = await this.__fetch_feishu_json(url, { method: 'GET', headers }, { retryNetworkErrors: true });
-            if (data.code !== 0) {
-                throw new Error(`Failed to get document blocks: ${data.msg}`);
+        // Feishu occasionally returns code 0 with the page block's `children`
+        // field omitted — a server-side consistency artifact on stable pages.
+        // Downstream that surfaces as PAGE_STRUCTURE_INVALID and (with a
+        // review session bound) shrinks the derived manifest enough to fail
+        // resume validation. Retry the whole read when that exact signature
+        // shows; after the attempts are spent, return the last read so
+        // downstream still fails with its own typed error, never a masked one.
+        const TRANSIENT_PAGE_ATTEMPTS = 3;
+        for (let attempt = 1; attempt <= TRANSIENT_PAGE_ATTEMPTS; attempt += 1) {
+            const items = [];
+            let pageToken = null;
+            do {
+                const url = `${process.env.FEISHU_HOST}/open-apis/docx/v1/documents/${document_id}/blocks`
+                    + `?page_size=500${pageToken ? `&page_token=${encodeURIComponent(pageToken)}` : ''}`;
+                const data = await this.__fetch_feishu_json(url, { method: 'GET', headers }, { retryNetworkErrors: true });
+                if (data.code !== 0) {
+                    throw new Error(`Failed to get document blocks: ${data.msg}`);
+                }
+                items.push(...(data.data?.items || []));
+                pageToken = data.data?.has_more ? data.data.page_token : null;
+            } while (pageToken);
+            const pageBlock = items.find(block => block.block_type === 1);
+            const transientStructure = pageBlock && !Array.isArray(pageBlock.children);
+            if (!transientStructure || attempt === TRANSIENT_PAGE_ATTEMPTS) {
+                return items;
             }
-            items.push(...(data.data?.items || []));
-            pageToken = data.data?.has_more ? data.data.page_token : null;
-        } while (pageToken);
-        return items;
+            await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+        }
+        throw new Error('unreachable: retry loop must return or throw');
     }
 
     __remove_children_recursively(blocks) {

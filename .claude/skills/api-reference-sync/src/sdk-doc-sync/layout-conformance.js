@@ -282,7 +282,11 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
     if (contentRules.returnsResponseFieldsRequired) {
         const returnsIndex = entries.findIndex((entry) => isLabel(entry.text, 'returns'));
         if (returnsIndex !== -1) {
-            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex && isLabel(entry.text, 'parameters'));
+            // 2026-10-06 Volume ruling: the response-fields list may be a
+            // PARAMETERS list (data fields) or a METHODS list (methods of the
+            // returned instance) — either satisfies the depth rule.
+            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex
+                && (isLabel(entry.text, 'parameters') || isLabel(entry.text, 'methods')));
             let fieldBullets = 0;
             if (parametersIndex !== -1) {
                 for (let index = parametersIndex + 1; index < entries.length; index += 1) {
@@ -292,8 +296,8 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
             }
             if (fieldBullets === 0) {
                 report('RETURNS_MIN_DEPTH', parametersIndex === -1
-                    ? 'RETURNS section carries no response-fields PARAMETERS list'
-                    : 'response-fields PARAMETERS list carries no field bullets');
+                    ? 'RETURNS section carries no response-fields list'
+                    : 'response-fields list carries no field bullets');
             }
         }
     }

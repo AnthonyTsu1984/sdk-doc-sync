@@ -56,6 +56,8 @@ function createField({
   appliesWhen = null,
   evidence = [],
   allowRequiredDefault = false,
+  resultFieldKind = null,
+  links = null,
 } = {}) {
   return immutable({
     name,
@@ -70,6 +72,11 @@ function createField({
     appliesWhen,
     evidence,
     allowRequiredDefault,
+    // 2026-10-06 Volume ruling: result fields that are METHODS of the
+    // returned instance carry kind 'method' (METHODS label in RETURNS) and
+    // may carry links ({ text, url }) resolved to page citations.
+    ...(resultFieldKind !== null ? { resultFieldKind } : {}),
+    ...(links !== null ? { links } : {}),
   });
 }
 

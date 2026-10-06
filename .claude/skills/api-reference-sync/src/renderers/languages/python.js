@@ -14,6 +14,9 @@ module.exports = createSdkRenderer({
   parametersLabel: 'PARAMETERS:',
   primaryInputs: (document) => document.signatures[0]?.inputs || [],
   resultTypeLabel: 'RETURN TYPE:',
+  // 2026-10-06 Volume ruling: result fields that are methods of the returned
+  // instance take the METHODS label (upstream LocalBulkWriter/ template).
+  resultMethodsLabel: 'METHODS:',
   returnsLabel: 'RETURNS:',
   errorsLabel: 'EXCEPTIONS:',
   exampleHeading: 'Examples',

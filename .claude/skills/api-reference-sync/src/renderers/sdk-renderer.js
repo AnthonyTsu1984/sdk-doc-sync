@@ -81,7 +81,12 @@ function typeInlines(type, context, { italic = true } = {}) {
 
 function fieldHeader(field, context, role = 'parameters-list') {
   const nameMarks = role === 'member-fields' ? ['inlineCode'] : ['bold'];
-  const children = [text(field.name, nameMarks)];
+  // 2026-10-06 Volume ruling: a result field with a page link renders its
+  // name as a citation to that page (method pages linked from METHODS).
+  const link = Array.isArray(field.links) && field.links[0] && isSafeUrl(field.links[0].url)
+    ? field.links[0]
+    : null;
+  const children = [link ? ir.citation(field.name, link.url) : text(field.name, nameMarks)];
   const renderedType = role === 'member-fields' ? [] : typeInlines(field.type, context);
   if (renderedType.length > 0) children.push(text(' ('), ...renderedType, text(')'));
   children.push(text(' -'));
@@ -317,12 +322,22 @@ function renderReturns(document, policy, context) {
   blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
   if (Array.isArray(result.fields) && result.fields.length > 0) {
     // describeReplicas baseline (2026-10-03 strong-form ruling): response
-    // fields render as a labeled PARAMETERS bullet list after the RETURNS
-    // prose, mirroring the request-side parameter list.
-    if (policy.parametersLabel) {
-      blocks.push(label(policy.parametersLabel, semantic('result-fields-label')));
+    // fields render as a labeled bullet list after the RETURNS prose,
+    // mirroring the request-side parameter list. 2026-10-06 Volume ruling:
+    // fields that are METHODS of the returned instance take the METHODS
+    // label (policy.resultMethodsLabel) instead of PARAMETERS.
+    const methodFields = result.fields.filter((field) => field?.resultFieldKind === 'method');
+    const dataFields = result.fields.filter((field) => field?.resultFieldKind !== 'method');
+    if (methodFields.length > 0 && policy.resultMethodsLabel) {
+      blocks.push(label(policy.resultMethodsLabel, semantic('result-methods-label')));
+      blocks.push(...renderFieldBlocks(methodFields, context, 'result-fields'));
     }
-    blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
+    if (dataFields.length > 0) {
+      if (policy.parametersLabel) {
+        blocks.push(label(policy.parametersLabel, semantic('result-fields-label')));
+      }
+      blocks.push(...renderFieldBlocks(dataFields, context, 'result-fields'));
+    }
   }
   return blocks;
 }

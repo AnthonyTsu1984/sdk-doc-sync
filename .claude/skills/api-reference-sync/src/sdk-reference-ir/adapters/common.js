@@ -115,6 +115,12 @@ function normalizeField(field = {}, evidence = [], overrides = {}, options = {})
     appliesWhen: field.appliesWhen ?? field.requiredWhen ?? null,
     evidence: nodeEvidence,
     allowRequiredDefault: field.allowRequiredDefault === true,
+    // 2026-10-06 Volume ruling: result fields carry their member kind
+    // ('method' -> METHODS label) and optional { text, url } links.
+    ...(field.resultFieldKind !== undefined && field.resultFieldKind !== null
+      ? { resultFieldKind: field.resultFieldKind }
+      : {}),
+    ...(Array.isArray(field.links) && field.links.length > 0 ? { links: field.links.map((link) => ({ text: String(link.text), url: String(link.url) })) } : {}),
   });
 }
 

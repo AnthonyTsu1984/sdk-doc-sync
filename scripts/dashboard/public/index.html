@@ -1166,7 +1166,7 @@ async function pageCampaign(d, path) {
     <div class="card" style="cursor:default"><div class="kv" id="scaleKv" style="margin-top:0">
       <b>写作单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起 ${c.pending}</span>
       <b>scan-state</b><span>${esc(c.scanState.key ?? '—')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}（会话目标 ${esc(c.scanState.targetTag ?? '—')}）</span>
-      ${c.groupingApproval ? `<b>分组绑定</b><span class="badge finalized" title="提案 ${esc(c.groupingApproval.proposalDigest)} · 已批 scope ${esc(c.groupingApproval.scopeDigest ?? '—')} · 批准于 ${esc(c.groupingApproval.approvedAt ?? '—')}——入口 release-scope 漂移即拒（GROUPING_STALE）">APPROVE_GROUPING 已绑 · ${esc(c.groupingApproval.proposalDigest.slice(7, 19))}…</span>` : '<b>分组绑定</b><span class="dim">未绑定（旧流程会话或分组门未走回执）</span>'}
+      ${c.groupingApproval?.proposalDigest ? `<b>分组绑定</b><span class="badge finalized" title="提案 ${esc(c.groupingApproval.proposalDigest)} · 已批 scope ${esc(c.groupingApproval.scopeDigest ?? '—')} · 批准于 ${esc(c.groupingApproval.approvedAt ?? '—')}——入口 release-scope 漂移即拒（GROUPING_STALE）">APPROVE_GROUPING 已绑 · ${esc(c.groupingApproval.proposalDigest.slice(7, 19))}…</span>` : '<b>分组绑定</b><span class="dim">未绑定（旧流程会话或分组门未走回执）</span>'}
     </div></div>
     <h2>文件清单（按单元分组，文件名为主）</h2>
     <div id="filesHost"><div class="empty">载入中…</div></div>

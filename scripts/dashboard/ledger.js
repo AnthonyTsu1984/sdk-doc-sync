@@ -223,7 +223,9 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
     // Grouping write binding (grouping-governance flow): the durable
     // APPROVE_GROUPING receipt baked into the session — from here every
     // sdk-doc-sync entry chains its release scope against the approved one.
-    groupingApproval: session.groupingApproval
+    // Gate-checked passthrough: display-only evidence that still names its
+    // own kind (the write boundary re-validates regardless).
+    groupingApproval: session.groupingApproval && session.groupingApproval.gate === 'APPROVE_GROUPING'
       ? {
         proposalDigest: session.groupingApproval.proposalDigest ?? null,
         releaseRange: session.groupingApproval.releaseRange ?? null,

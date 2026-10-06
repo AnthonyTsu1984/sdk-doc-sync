@@ -241,6 +241,42 @@ test('intake cards take the durable receipt keyed by the gate digest as direct a
   assert.equal(ledger.intakes[0].approvalEvidence, 'receipt');
 });
 
+test('a receipt is checkout-scoped: main\'s receipt never approves a sibling\'s same-digest gate', (t) => {
+  const main = makeFixtureTree('dash-receipt-a-');
+  const sib = makeFixtureTree('dash-receipt-b-');
+  t.after(() => {
+    fs.rmSync(main.root, { recursive: true, force: true });
+    fs.rmSync(sib.root, { recursive: true, force: true });
+  });
+  const digest = 'sha256:' + '9'.repeat(64);
+  for (const tree of [main, sib]) {
+    tree.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+      gate: 'APPROVE_GROUPING', digest, title: 'same digest, two checkouts', run: 'r',
+    });
+  }
+  // Receipt recorded in MAIN only.
+  main.write(`tmp/api-reference-sync/grouping-approvals/${digest}.json`, {
+    schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: digest,
+    approvalCommand: `APPROVE_GROUPING ${digest}`,
+    language: 'go', sdkName: 'milvus', track: 'v3.0.x', releaseRange: 'r',
+    lineage: { scopeDigest: 'sha256:' + '8'.repeat(64) }, approvedAt: '2026-10-06T10:00:00.000Z',
+  });
+
+  const { buildIntakeCards, readGroupingReceipts } = require('../../scripts/dashboard/ledger.js');
+  const checkouts = [
+    { id: 'main', label: '主检出', root: main.root },
+    { id: 'sib', label: 'sib', root: sib.root },
+  ];
+  const receipts = readGroupingReceipts(checkouts);
+  assert.equal(receipts.length, 1);
+  assert.equal(receipts[0].checkout, 'main');
+  const cards = buildIntakeCards(checkouts, [], [], receipts);
+  assert.equal(cards.find((c) => c.checkout === 'main').approved, true);
+  const sibling = cards.find((c) => c.checkout === 'sib');
+  assert.equal(sibling.approved, false, 'a sibling worktree presenting the same digest stays pending until its own receipt exists');
+  assert.equal(sibling.receipt, null);
+});
+
 test('a session bound to the proposal digest is approval evidence even when created before the gate page', (t) => {
   const main = makeFixtureTree('dash-bind-');
   t.after(() => fs.rmSync(main.root, { recursive: true, force: true }));

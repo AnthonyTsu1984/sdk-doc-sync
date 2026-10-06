@@ -664,6 +664,10 @@ test('runReleaseScout maps Node v2.6 request type changes to canonical docs', as
     ['UPDATE', 'node:Vector:upsert', 'v2-Vector-upsert', 'milvus/grpc/Data.ts'],
   ]);
   assert.deepEqual(scope.scannerDiagnostics, [{
+    level: 'info',
+    code: 'IDENTITY_MAP_COVERAGE',
+    message: 'Identity map resolves 2/2 action symbol(s) explicitly; 0 use derived fallback identities; no ambiguous ownership (no identity-map blocker on approvalGrade).',
+  }, {
     level: 'warn',
     code: 'FULL_SCAN_DIAGNOSTIC_ONLY',
     message: 'Full scanner output is not approval-grade for node v2.6.x.',

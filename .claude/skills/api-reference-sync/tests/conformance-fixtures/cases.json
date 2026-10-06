@@ -580,5 +580,20 @@
       "receiptRecorded": true,
       "receiptRefusedCode": "GROUPING_APPROVAL_INVALID"
     }
+  },
+  {
+    "id": "grouping-proposal-staleness",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "grouping-proposal-staleness"
+    },
+    "assertions": {
+      "chainOk": true,
+      "staleCode": "GROUPING_STALE",
+      "sessionBound": true,
+      "conflictCode": "GROUPING_APPROVAL_ALREADY_BOUND",
+      "cliBound": true,
+      "cliConflictRefused": true
+    }
   }
 ]

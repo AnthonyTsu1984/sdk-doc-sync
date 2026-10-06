@@ -38,6 +38,10 @@ const {
     recordDocumentExecution,
     saveReviewSession,
 } = require('../src/sdk-doc-sync/review-session-store');
+const {
+    checkGroupingScopeChain,
+    validateGroupingApprovalReceipt,
+} = require('../src/sdk-doc-sync/grouping-proposal');
 
 const adapters = Object.freeze({
     python: require('../src/sdk-reference-ir/adapters/python'),
@@ -109,6 +113,8 @@ function parseArgs(argv) {
             args.sessionState = argv[++i];
         } else if (arg === '--resume-session' && argv[i + 1]) {
             args.resumeSession = argv[++i];
+        } else if (arg === '--grouping-approval' && argv[i + 1]) {
+            args.groupingApproval = argv[++i];
         } else if (arg === '--finalize-acceptance' && argv[i + 1]) {
             args.finalizeAcceptance = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
@@ -147,6 +153,7 @@ Options:
   --batch-continue                 Verified batch mode: permit planning and recording executions while sibling units await review (only a unit's OWN unaccepted execution blocks its re-selection). The operator's batch write approval binds the unit list; without this flag the per-unit strict gate is unchanged
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
+  --grouping-approval <file>       Bind the durable APPROVE_GROUPING receipt into the created session; a bound session refuses any entry whose --release-scope digest is not the approved scope (GROUPING_STALE)
   --finalize-acceptance <file>     Finalize acceptance from a receipt bound (by acceptanceManifestDigest) to the canonical --session-state session
   --help, -h                       Show this help
 
@@ -634,6 +641,53 @@ async function runCli({
             return null;
         }
     }
+    // Grouping write binding (api.grouping-proposal-staleness,
+    // runtime-enforced): a bound campaign executes only the release scope its
+    // grouping approval covers. Binding activates from either side —
+    // --grouping-approval at session creation, or a resumed session that
+    // already carries groupingApproval — and once active the scope digest
+    // must chain at EVERY entry (dry-run, resume, live write), so a
+    // re-scoped or hand-swapped scope refuses typed instead of executing
+    // unapproved material.
+    let groupingApprovalBinding = null;
+    if (args.groupingApproval) {
+        let groupingReceipt;
+        try {
+            groupingReceipt = JSON.parse(readFile(path.resolve(args.groupingApproval)));
+        } catch (error) {
+            err(`Error: GROUPING_APPROVAL_CHAIN_INVALID: cannot read --grouping-approval: ${error.message}`);
+            exit(1);
+            return null;
+        }
+        const receiptValidation = validateGroupingApprovalReceipt(groupingReceipt);
+        if (!receiptValidation.valid) {
+            err(`Error: GROUPING_APPROVAL_CHAIN_INVALID: ${receiptValidation.errors.map((item) => item.message).join('; ')}`);
+            exit(1);
+            return null;
+        }
+        if (reviewSession?.groupingApproval && reviewSession.groupingApproval.proposalDigest !== groupingReceipt.proposalDigest) {
+            err(`Error: GROUPING_APPROVAL_CHAIN_INVALID: --grouping-approval (${groupingReceipt.proposalDigest}) disagrees with the session's bound approval (${reviewSession.groupingApproval.proposalDigest})`);
+            exit(1);
+            return null;
+        }
+        groupingApprovalBinding = groupingReceipt;
+    } else if (reviewSession?.groupingApproval) {
+        groupingApprovalBinding = reviewSession.groupingApproval;
+    }
+    if (groupingApprovalBinding) {
+        if (!releaseScope) {
+            err('Error: GROUPING_APPROVAL_CHAIN_INVALID: a grouping approval is bound (flag or session) but no --release-scope was presented to chain against');
+            exit(1);
+            return null;
+        }
+        try {
+            checkGroupingScopeChain({ approval: groupingApprovalBinding, scope: releaseScope });
+        } catch (error) {
+            err(`Error: ${error.code}: ${error.message}`);
+            exit(1);
+            return null;
+        }
+    }
     if (args.changedOnly && !releaseScope) {
         err('Error: --changed-only requires --release-scope');
         exit(1);
@@ -886,6 +940,10 @@ async function runCli({
             // no campaign-level acceptance gate.
             acceptanceFlow: 'two-gate',
             placementWalk: capturedPlacementWalk,
+            // Grouping write binding: the validated --grouping-approval
+            // receipt, frozen into the session at creation — every later
+            // entry chains its --release-scope digest against it.
+            groupingApproval: args.groupingApproval ? groupingApprovalBinding : null,
             artifacts: {
                 releaseScope: args.releaseScope ? path.resolve(args.releaseScope) : null,
                 referenceContext: args.referenceContext ? path.resolve(args.referenceContext) : null,

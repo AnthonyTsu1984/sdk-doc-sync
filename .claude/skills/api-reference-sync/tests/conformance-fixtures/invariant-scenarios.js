@@ -2107,4 +2107,129 @@ scenarios['grouping-proposal-governance'] = async () => {
   };
 };
 
+// Grouping write binding (2026-10-06): a bound campaign executes only the
+// release scope its grouping approval covers. Proves the chain kernel
+// (ok + GROUPING_STALE), the session one-shot bind (idempotent +
+// GROUPING_APPROVAL_ALREADY_BOUND), and the production session CLI.
+scenarios['grouping-proposal-staleness'] = async () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const { spawnSync } = require('node:child_process');
+  const { createReleaseScope } = require('../../src/sdk-doc-sync/release-scope/schema');
+  const {
+    createGroupingProposal,
+    buildGroupingApprovalReceipt,
+    checkGroupingScopeChain,
+    groupingProposalDigest,
+    stableGroupingProposalJson,
+  } = require('../../src/sdk-doc-sync/grouping-proposal');
+  const {
+    createReviewSession,
+    loadReviewSessionState,
+    recordGroupingApproval,
+    saveReviewSession,
+  } = require('../../src/sdk-doc-sync/review-session-store');
+
+  const action = (stableId, symbol) => ({
+    type: 'UPDATE',
+    stableId,
+    symbol,
+    reason: 'changed in release range',
+    source: { file: 'client/example.go', line: 1 },
+  });
+  const scope = createReleaseScope({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    baselineTag: 'client/v3.0.0',
+    targetTag: 'client/v3.0.1',
+    targetCommit: '0123456789abcdef0123456789abcdef01234567',
+    targetDate: '2026-10-05',
+    actions: [action('go:Client:search', 'Client.search'), action('go:Client:flush', 'Client.flush')],
+    approvalGrade: true,
+  });
+  const identityMap = { schemaVersion: 1, language: 'go', track: 'v3.0.x', defaultCategory: 'Client', symbols: {} };
+  const units = [{ id: 'u1', sourceStableId: 'go:Client:search', actionIntent: 'UPDATE', decision: {} }];
+  const exclusions = [{ sourceStableId: 'go:Client:flush', reason: 'internal helper' }];
+
+  const proposal = createGroupingProposal({ scope, identityMap, units, exclusions });
+  const receipt = buildGroupingApprovalReceipt({ proposal });
+  const chainOk = checkGroupingScopeChain({ approval: receipt, scope }).scopeDigest === receipt.lineage.scopeDigest;
+
+  const staleScope = createReleaseScope({
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    baselineTag: 'client/v3.0.0',
+    targetTag: 'client/v3.0.1',
+    targetCommit: '0123456789abcdef0123456789abcdef01234567',
+    targetDate: '2026-10-05',
+    actions: [action('go:Client:search', 'Client.search'), action('go:Client:other', 'Client.other')],
+    approvalGrade: true,
+  });
+  let staleCode = null;
+  try {
+    checkGroupingScopeChain({ approval: receipt, scope: staleScope });
+  } catch (error) {
+    staleCode = error.code || null;
+  }
+
+  // Session one-shot bind (kernel): idempotent same digest, typed conflict
+  // for a different proposal over the same scope.
+  const session = createReviewSession({
+    sessionId: 'scenario:go:milvus:v3.0.x:binding',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: `sha256:${'7'.repeat(64)}`, units: [] },
+  });
+  const bound = recordGroupingApproval(session, receipt);
+  const sessionBound = bound.groupingApproval.proposalDigest === groupingProposalDigest(proposal)
+    && recordGroupingApproval(bound, receipt) === bound;
+  const rePartitioned = createGroupingProposal({
+    scope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:flush', actionIntent: 'BACKFILL', decision: {} }],
+    exclusions: [{ sourceStableId: 'go:Client:search', reason: 're-partitioned' }],
+  });
+  let conflictCode = null;
+  try {
+    recordGroupingApproval(bound, buildGroupingApprovalReceipt({ proposal: rePartitioned }));
+  } catch (error) {
+    conflictCode = error.code || null;
+  }
+
+  // Production CLI over a real persisted session.
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'grouping-staleness-'));
+  const proposalFile = path.join(temp, 'proposal.json');
+  fs.writeFileSync(proposalFile, stableGroupingProposalJson(proposal));
+  const sessionPath = path.join(temp, 'session.json');
+  saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
+  const approvalsDir = path.join(temp, 'approvals');
+  const cli = path.join(__dirname, '..', '..', 'bin', 'sdk-review-session.js');
+  const bindRun = spawnSync(process.execPath, [
+    cli, 'approve-grouping', '--session', sessionPath, '--proposal', proposalFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  const cliBound = bindRun.status === 0
+    && loadReviewSessionState(sessionPath).session.groupingApproval.proposalDigest === groupingProposalDigest(proposal)
+    && fs.existsSync(path.join(approvalsDir, `${groupingProposalDigest(proposal)}.json`));
+
+  const conflictedFile = path.join(temp, 'repartitioned.json');
+  fs.writeFileSync(conflictedFile, stableGroupingProposalJson(rePartitioned));
+  const conflictRun = spawnSync(process.execPath, [
+    cli, 'approve-grouping', '--session', sessionPath, '--proposal', conflictedFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  const cliConflictRefused = conflictRun.status === 1 && /GROUPING_APPROVAL_ALREADY_BOUND/.test(conflictRun.stderr || '');
+
+  return {
+    chainOk,
+    staleCode,
+    sessionBound,
+    conflictCode,
+    cliBound,
+    cliConflictRefused,
+  };
+};
+
 module.exports = { scenarios };

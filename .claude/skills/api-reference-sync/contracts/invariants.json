@@ -97,14 +97,46 @@
     },
     {
       "id": "api.grouping-proposal-staleness",
-      "version": 1,
+      "version": 2,
       "risk": "planning-safety",
       "scope": "all-versioned-sdk-tracks",
-      "status": "declared",
+      "status": "runtime-enforced",
       "enforcement": [
-        "plan"
+        "pre-write"
       ],
-      "statementDigest": "sha256:d8764ab4e4b1a08e8e572ba5f62b8c2c56fa19fc35f48072bc743495855b333e"
+      "statementDigest": "sha256:15ec72e61bfa531f9cf1ece542da11a9eb9d5139861057a2317693025c11dc10",
+      "fixtureIds": [
+        "grouping-proposal-staleness"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/grouping-proposal.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID",
+            "GROUPING_APPROVAL_ALREADY_BOUND"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID",
+            "GROUPING_APPROVAL_ALREADY_BOUND"
+          ]
+        }
+      ],
+      "notes": "Upgraded to runtime-enforced (2026-10-06, grouping write binding): the durable APPROVE_GROUPING receipt (digest-keyed, carries the proposal lineage) binds into the campaign session at creation (--grouping-approval) or via sdk-review-session.js approve-grouping (one-shot; a different proposal refuses GROUPING_APPROVAL_ALREADY_BOUND). From that point every sdk-doc-sync entry — dry-run, resume, or live write — chains its --release-scope semantic digest against the approved scope and refuses typed on drift (GROUPING_STALE) or a missing/malformed binding (GROUPING_APPROVAL_CHAIN_INVALID, also at session load for corrupted receipts). The pre-2026-10-06 form was declared-only prose: the 2026-10 go/java intakes hand-rolled grouping proposals whose staleness nothing checked. Review round 1 fixes (2026-10-06): --finalize-acceptance refuses the --grouping-approval combination outright (finalization chains through acceptance receipts, never a fresh grouping receipt — the 'every entry' wording narrows to every SYNC entry: dry-run, resume, live write); the flag-vs-session disagreement refusal has a direct test; approve-grouping persists the session BEFORE the receipt file (the receiptless half-state is the safe one and converges idempotently on re-run); receipt creation is O_EXCL; the receipt builder runs once per command. Trust boundary (disclosed): the receipt file itself carries no issuance signature — within the single-operator threat model the durable record and the chain checks prevent drift and accident, not a determined local forger; approve-grouping (which rebuilds the receipt from the proposal artifact) is the hardened path."
     },
     {
       "id": "api.grouping-proposal-governance",

@@ -13,6 +13,7 @@ const {
   loadReviewSessionState,
   migrateSessionToTwoGate,
   recordFinalTargets,
+  recordGroupingApproval,
   recordLearningSuppression,
   TARGETS_FINAL,
   prepareDocumentAcceptance,
@@ -25,6 +26,12 @@ const {
   unitStatusOf,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const {
+  buildGroupingApprovalReceipt,
+  checkGroupingScopeChain,
+  validateGroupingProposal,
+  writeGroupingApprovalReceipt,
+} = require('../src/sdk-doc-sync/grouping-proposal');
 const { DecisionLedger } = require('../../doc-ops-core/src/decision-ledger');
 const { candidateFilePath } = require('../../doc-ops-core/src/process-learning');
 const { normalizedTargetsValue } = require('../src/sdk-doc-sync/record-state');
@@ -67,6 +74,8 @@ const ARG_SPECS = Object.freeze([
   { flag: '--scope-hint', key: 'scopeHint', kind: 'json-object' },
   { flag: '--durable-rule-requested', key: 'durableRuleRequested', kind: 'boolean' },
   { flag: '--event-key', key: 'eventKey', kind: 'value' },
+  { flag: '--proposal', key: 'proposal', kind: 'value' },
+  { flag: '--approvals-dir', key: 'approvalsDir', kind: 'value' },
   { flag: '--json', key: 'json', kind: 'boolean' },
 ]);
 const ARG_BY_FLAG = new Map(ARG_SPECS.map((spec) => [spec.flag, spec]));
@@ -113,6 +122,7 @@ const COMMAND_REQUIREMENTS = Object.freeze({
   'close-session': ['scanStateKey', 'scanStateEntry'],
   'record-decision': ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest'],
   'record-learning-suppression': ['eventKey', 'rationale'],
+  'approve-grouping': ['proposal'],
 });
 
 function requireCommandArgs(args) {
@@ -812,8 +822,69 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     });
     saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
     out(`Learning suppression recorded: ${args.eventKey}`);
+  } else if (args.command === 'approve-grouping') {
+    // Grouping write binding (api.grouping-proposal-staleness): the durable
+    // APPROVE_GROUPING receipt becomes part of the session, and from that
+    // point every sdk-doc-sync SYNC entry against this session chains its
+    // --release-scope digest against the approved scope. Digests are read
+    // ONLY programmatically and in full from the artifact files — never
+    // typed back from a display.
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: approve-grouping
+    const proposalPath = path.resolve(args.proposal);
+    let proposal;
+    try {
+      proposal = JSON.parse(fs.readFileSync(proposalPath, 'utf8'));
+    } catch (error) {
+      throw new Error(`GROUPING_APPROVAL_INVALID: cannot read proposal at ${args.proposal}: ${error.message}`);
+    }
+    const proposalValidation = validateGroupingProposal(proposal);
+    if (!proposalValidation.valid) {
+      throw new Error(`GROUPING_APPROVAL_INVALID: proposal fails schema validation: ${JSON.stringify(proposalValidation.errors.slice(0, 5))}`);
+    }
+    if (proposal.language !== session.language || proposal.sdkName !== session.sdkName || proposal.track !== session.track) {
+      throw new Error(`GROUPING_APPROVAL_CHAIN_INVALID: proposal identity (${proposal.language}/${proposal.sdkName}/${proposal.track}) does not match the session (${session.language}/${session.sdkName}/${session.track})`);
+    }
+    // One receipt object for both the bind-time chain check and persistence —
+    // two builds would carry two approvedAt timestamps (review finding).
+    const receipt = buildGroupingApprovalReceipt({ proposal, proposalPath });
+    // When the session recorded its scope artifact, chain against it now —
+    // binding a proposal to a scope the campaign is not running refuses
+    // here instead of at the first execution.
+    const scopeArtifact = session.artifacts?.releaseScope;
+    if (scopeArtifact) {
+      if (!fs.existsSync(scopeArtifact)) {
+        throw new Error(`GROUPING_APPROVAL_CHAIN_INVALID: the session's recorded release scope is missing at ${scopeArtifact}; present it or re-run the campaign dry-run`);
+      }
+      let scope;
+      try {
+        scope = JSON.parse(fs.readFileSync(scopeArtifact, 'utf8'));
+      } catch (error) {
+        throw new Error(`GROUPING_APPROVAL_CHAIN_INVALID: cannot read the session's recorded release scope at ${scopeArtifact}: ${error.message}`);
+      }
+      try {
+        checkGroupingScopeChain({ approval: receipt, scope });
+      } catch (error) {
+        throw new Error(`${error.code}: ${error.message}`);
+      }
+    }
+    try {
+      session = recordGroupingApproval(session, receipt);
+    } catch (error) {
+      throw new Error(`${error.code ? `${error.code}: ` : ''}${error.message}`);
+    }
+    // Persist the session BEFORE the receipt file: a crash between the two
+    // writes then leaves a bound-but-receiptless state, which is the SAFE
+    // half-state — the session still fail-closed enforces the chain, and
+    // re-running this command converges idempotently (review finding F4).
+    saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+    const approvalsDir = args.approvalsDir
+      ? path.resolve(args.approvalsDir)
+      : require('../scripts/record-grouping-approval').DEFAULT_APPROVALS_DIR;
+    const { receiptPath, created } = writeGroupingApprovalReceipt({ receipt, approvalsDir });
+    out(`Grouping approval bound to session ${session.sessionId}: ${receipt.proposalDigest}`);
+    out(created ? `Durable receipt: ${receiptPath}` : `Durable receipt already recorded: ${receiptPath} (approvedAt ${JSON.parse(fs.readFileSync(receiptPath, 'utf8')).approvedAt})`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, list-learning-events, record-learning-suppression, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, approve-grouping, list-learning-events, record-learning-suppression, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

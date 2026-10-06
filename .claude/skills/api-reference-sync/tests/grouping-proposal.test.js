@@ -15,10 +15,20 @@ const {
   groupingCoverage,
   groupingProposalDigest,
   stableGroupingProposalJson,
+  buildGroupingApprovalReceipt,
+  validateGroupingApprovalReceipt,
+  checkGroupingScopeChain,
   GroupingProposalError,
 } = require('../src/sdk-doc-sync/grouping-proposal');
+const {
+  createReviewSession,
+  loadReviewSessionState,
+  recordGroupingApproval,
+  saveReviewSession,
+} = require('../src/sdk-doc-sync/review-session-store');
 const { ScoutIdentityMapError, loadIdentityMap } = require('../src/sdk-doc-sync/release-scope/identity-normalizer');
 const { formatFatal } = require('../bin/sdk-release-scout');
+const { runCli: runDocSyncCli } = require('../bin/sdk-doc-sync');
 
 function makeAction(stableId, symbol, overrides = {}) {
   return {
@@ -361,6 +371,292 @@ test('record-grouping-approval writes a digest-keyed durable receipt, idempotent
   ], { encoding: 'utf8' });
   assert.equal(refused.status, 1);
   assert.match(refused.stderr, /GROUPING_APPROVAL_INVALID/);
+});
+
+test('buildGroupingApprovalReceipt embeds lineage and refuses invalid proposals', () => {
+  const scope = makeScope(scopeActions);
+  const identityMap = makeIdentityMap();
+  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
+
+  const receipt = buildGroupingApprovalReceipt({ proposal, proposalPath: '/tmp/proposal.json', approvedAt: '2026-10-06T00:00:00.000Z' });
+  assert.equal(receipt.gate, 'APPROVE_GROUPING');
+  assert.equal(receipt.proposalDigest, groupingProposalDigest(proposal));
+  assert.equal(receipt.approvalCommand, `APPROVE_GROUPING ${receipt.proposalDigest}`);
+  assert.equal(receipt.lineage.scopeDigest, digestSemantic(scope));
+  assert.equal(receipt.lineage.identityMapDigest, digestSemantic(identityMap));
+  assert.equal(validateGroupingApprovalReceipt(receipt).valid, true);
+
+  // Tampering any binding field invalidates the receipt.
+  const tamperedCommand = structuredClone(receipt);
+  tamperedCommand.approvalCommand = 'APPROVE_GROUPING sha256:deadbeef';
+  assert.equal(validateGroupingApprovalReceipt(tamperedCommand).valid, false);
+  const noLineage = structuredClone(receipt);
+  delete noLineage.lineage;
+  assert.equal(validateGroupingApprovalReceipt(noLineage).valid, false);
+
+  assert.throws(() => buildGroupingApprovalReceipt({ proposal: { schemaVersion: 1, units: [] } }),
+    (error) => error instanceof GroupingProposalError && error.code === 'GROUPING_PROPOSAL_INVALID');
+});
+
+test('checkGroupingScopeChain refuses stale scopes and identity drift', () => {
+  const scope = makeScope(scopeActions);
+  const identityMap = makeIdentityMap();
+  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
+  const receipt = buildGroupingApprovalReceipt({ proposal });
+
+  assert.deepEqual(
+    checkGroupingScopeChain({ approval: receipt, scope }),
+    { proposalDigest: receipt.proposalDigest, scopeDigest: digestSemantic(scope) },
+  );
+
+  const stale = makeScope([makeAction('go:Client:search', 'Client.search'), makeAction('go:Client:other', 'Client.other')]);
+  assert.throws(() => checkGroupingScopeChain({ approval: receipt, scope: stale }),
+    (error) => error.code === 'GROUPING_STALE');
+
+  // Identity drift alone cannot pass the digest check (the digest covers the
+  // identity fields), so the second guard is proven with a hand-corrupted
+  // receipt: scopeDigest re-pointed at a foreign-track scope while the
+  // approval identity still names the original track.
+  const foreignTrack = structuredClone(scope);
+  foreignTrack.track = 'v2.6.x';
+  const corrupted = structuredClone(receipt);
+  corrupted.lineage.scopeDigest = digestSemantic(foreignTrack);
+  assert.throws(() => checkGroupingScopeChain({ approval: corrupted, scope: foreignTrack }),
+    (error) => error.code === 'GROUPING_APPROVAL_CHAIN_INVALID');
+
+  assert.throws(() => checkGroupingScopeChain({ approval: receipt, scope: null }),
+    (error) => error.code === 'GROUPING_APPROVAL_CHAIN_INVALID');
+  assert.throws(() => checkGroupingScopeChain({ approval: { gate: 'APPROVE_WRITES' }, scope }),
+    (error) => error.code === 'GROUPING_APPROVAL_CHAIN_INVALID');
+});
+
+test('recordGroupingApproval binds one-shot and refuses conflicting re-binds', () => {
+  const scope = makeScope(scopeActions);
+  const identityMap = makeIdentityMap();
+  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
+  const receipt = buildGroupingApprovalReceipt({ proposal });
+
+  const session = createReviewSession({
+    sessionId: 'test:go:milvus:v3.0.x:abc',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: 'sha256:' + '1'.repeat(64), units: [] },
+  });
+  const bound = recordGroupingApproval(session, receipt);
+  assert.equal(bound.groupingApproval.proposalDigest, receipt.proposalDigest);
+  // Same digest: idempotent.
+  assert.equal(recordGroupingApproval(bound, receipt), bound);
+  // Different proposal: one-shot refusal.
+  const otherScope = makeScope([makeAction('go:Client:search', 'Client.search'), makeAction('go:Client:x', 'Client.x')]);
+  const otherProposal = createGroupingProposal({
+    scope: otherScope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:search', actionIntent: 'UPDATE', decision: {} }],
+    exclusions: [{ sourceStableId: 'go:Client:x', reason: 'internal' }],
+  });
+  assert.throws(() => recordGroupingApproval(bound, buildGroupingApprovalReceipt({ proposal: otherProposal })),
+    (error) => error.code === 'GROUPING_APPROVAL_ALREADY_BOUND');
+
+  // A malformed receipt never binds, and a persisted session carrying one
+  // refuses at load.
+  assert.throws(() => recordGroupingApproval(session, { gate: 'APPROVE_GROUPING' }),
+    (error) => error.code === 'GROUPING_APPROVAL_CHAIN_INVALID');
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'grouping-session-'));
+  const sessionPath = path.join(temp, 'session.json');
+  const corrupt = { ...bound, groupingApproval: { gate: 'APPROVE_GROUPING', proposalDigest: 'nope' } };
+  saveReviewSession(sessionPath, corrupt, { expectedPreviousDigest: null });
+  assert.throws(() => loadReviewSessionState(sessionPath), /groupingApproval/);
+});
+
+test('sdk-review-session approve-grouping binds the receipt and enforces the scope chain', () => {
+  const cli = path.join(__dirname, '..', 'bin', 'sdk-review-session.js');
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'approve-grouping-'));
+  const scope = makeScope(scopeActions);
+  const identityMap = makeIdentityMap();
+  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
+  const proposalFile = path.join(temp, 'proposal.json');
+  fs.writeFileSync(proposalFile, stableGroupingProposalJson(proposal));
+
+  const scopeFile = path.join(temp, 'scope.json');
+  fs.writeFileSync(scopeFile, JSON.stringify(scope));
+  const session = createReviewSession({
+    sessionId: 'test:go:milvus:v3.0.x:def',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: 'sha256:' + '2'.repeat(64), units: [] },
+    artifacts: { releaseScope: scopeFile },
+  });
+  const sessionPath = path.join(temp, 'session.json');
+  saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
+  const approvalsDir = path.join(temp, 'approvals');
+
+  const bound = spawnSync(process.execPath, [
+    cli, 'approve-grouping', '--session', sessionPath, '--proposal', proposalFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  assert.equal(bound.status, 0, `approve-grouping failed: ${bound.stderr}`);
+  const persisted = loadReviewSessionState(sessionPath).session;
+  const digest = groupingProposalDigest(proposal);
+  assert.equal(persisted.groupingApproval.proposalDigest, digest);
+  assert.ok(fs.existsSync(path.join(approvalsDir, `${digest}.json`)));
+
+  // Same proposal again: idempotent.
+  const again = spawnSync(process.execPath, [
+    cli, 'approve-grouping', '--session', sessionPath, '--proposal', proposalFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  assert.equal(again.status, 0);
+
+  // A different proposal against the same session: one-shot refusal. The
+  // proposal covers the SAME scope with a different partition, so the bind-
+  // time chain check passes and the one-shot guard fires.
+  const otherProposal = createGroupingProposal({
+    scope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:flush', actionIntent: 'BACKFILL', decision: {} }],
+    exclusions: [{ sourceStableId: 'go:Client:search', reason: 're-partitioned' }],
+  });
+  const otherFile = path.join(temp, 'other.json');
+  fs.writeFileSync(otherFile, stableGroupingProposalJson(otherProposal));
+  const conflicted = spawnSync(process.execPath, [
+    cli, 'approve-grouping', '--session', sessionPath, '--proposal', otherFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  assert.equal(conflicted.status, 1);
+  assert.match(conflicted.stderr, /GROUPING_APPROVAL_ALREADY_BOUND/);
+
+  // Chain check at bind time: a proposal for a DIFFERENT scope than the
+  // session's recorded scope artifact refuses GROUPING_STALE.
+  const foreignScope = makeScope([makeAction('go:Client:search', 'Client.search'), makeAction('go:Client:y', 'Client.y')]);
+  const foreignProposal = createGroupingProposal({
+    scope: foreignScope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:search', actionIntent: 'UPDATE', decision: {} }],
+    exclusions: [{ sourceStableId: 'go:Client:y', reason: 'internal' }],
+  });
+  const foreignFile = path.join(temp, 'foreign.json');
+  fs.writeFileSync(foreignFile, stableGroupingProposalJson(foreignProposal));
+  const session2Path = path.join(temp, 'session2.json');
+  saveReviewSession(session2Path, createReviewSession({
+    sessionId: 'test:go:milvus:v3.0.x:ghi',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: 'sha256:' + '3'.repeat(64), units: [] },
+    artifacts: { releaseScope: scopeFile },
+  }), { expectedPreviousDigest: null });
+  const stale = spawnSync(process.execPath, [
+    cli, 'approve-grouping', '--session', session2Path, '--proposal', foreignFile, '--approvals-dir', approvalsDir,
+  ], { encoding: 'utf8' });
+  assert.equal(stale.status, 1);
+  assert.match(stale.stderr, /GROUPING_STALE/);
+});
+
+test('sdk-doc-sync refuses unchained grouping approvals at every entry', async () => {
+  const scope = makeScope(scopeActions);
+  const identityMap = makeIdentityMap();
+  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
+  const receipt = buildGroupingApprovalReceipt({ proposal });
+  const staleScope = makeScope([makeAction('go:Client:search', 'Client.search'), makeAction('go:Client:z', 'Client.z')]);
+
+  const run = async ({ releaseScope, groupingApproval, resumeSession, finalizeAcceptance }) => {
+    const stderr = [];
+    let exitCode = 0;
+    const result = await runDocSyncCli({
+      argv: [
+        'node', 'sdk-doc-sync',
+        '--sdk-dir', '/fixtures/sdk',
+        '--language', 'go',
+        '--sdk-name', 'milvus',
+        '--sdk-version', 'v3.0.x',
+        '--dry-run',
+        ...(releaseScope ? ['--release-scope', releaseScope] : []),
+        ...(groupingApproval ? ['--grouping-approval', groupingApproval] : []),
+        ...(resumeSession ? ['--resume-session', resumeSession] : []),
+        ...(finalizeAcceptance ? ['--finalize-acceptance', finalizeAcceptance] : []),
+      ],
+      env: {},
+      dependencies: {
+        loadEnv: false,
+        onStderr: (line) => stderr.push(line),
+        exit: (code) => { exitCode = code; },
+      },
+    });
+    return { result, stderr: stderr.join('\n'), exitCode };
+  };
+
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'docsync-chain-'));
+  const scopeFile = path.join(temp, 'scope.json');
+  fs.writeFileSync(scopeFile, JSON.stringify(scope));
+  const staleFile = path.join(temp, 'stale.json');
+  fs.writeFileSync(staleFile, JSON.stringify(staleScope));
+  const receiptFile = path.join(temp, 'receipt.json');
+  fs.writeFileSync(receiptFile, JSON.stringify(receipt));
+
+  // Stale scope against the bound receipt.
+  const staleRun = await run({ releaseScope: staleFile, groupingApproval: receiptFile });
+  assert.equal(staleRun.result, null);
+  assert.equal(staleRun.exitCode, 1);
+  assert.match(staleRun.stderr, /GROUPING_STALE/);
+
+  // Bound but no scope presented.
+  const noScope = await run({ groupingApproval: receiptFile });
+  assert.equal(noScope.exitCode, 1);
+  assert.match(noScope.stderr, /GROUPING_APPROVAL_CHAIN_INVALID/);
+
+  // Matching chain passes the grouping gate (the run then stops at the
+  // ordinary BASE_TOKEN precondition, proving the binding did not fire).
+  // ORDER MATTERS: this indirect proof relies on the grouping chain check
+  // running BEFORE the BASE_TOKEN precondition in bin/sdk-doc-sync.js — if
+  // that ordering ever changes, this assertion greens vacuously (review F8).
+  const chained = await run({ releaseScope: scopeFile, groupingApproval: receiptFile });
+  assert.match(chained.stderr, /BASE_TOKEN/);
+  assert.doesNotMatch(chained.stderr, /GROUPING/);
+
+  // A flag receipt that disagrees with the session's bound approval refuses
+  // (review F3 — this refusal path had no direct test).
+  const sessionBindPath = path.join(temp, 'bound-session.json');
+  saveReviewSession(sessionBindPath, createReviewSession({
+    sessionId: 'test:go:milvus:v3.0.x:mno',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: 'sha256:' + '5'.repeat(64), units: [] },
+    groupingApproval: receipt,
+  }), { expectedPreviousDigest: null });
+  const otherReceipt = buildGroupingApprovalReceipt({ proposal: createGroupingProposal({
+    scope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:flush', actionIntent: 'BACKFILL', decision: {} }],
+    exclusions: [{ sourceStableId: 'go:Client:search', reason: 're-partitioned' }],
+  }) });
+  const otherReceiptFile = path.join(temp, 'other-receipt.json');
+  fs.writeFileSync(otherReceiptFile, JSON.stringify(otherReceipt));
+  const disagree = await run({ releaseScope: scopeFile, groupingApproval: otherReceiptFile, resumeSession: sessionBindPath });
+  assert.equal(disagree.exitCode, 1);
+  assert.match(disagree.stderr, /GROUPING_APPROVAL_CHAIN_INVALID.*disagrees/);
+
+  // Finalization refuses the grouping flag outright instead of ignoring it
+  // (review F1).
+  const finalizeCombo = await run({ groupingApproval: receiptFile, finalizeAcceptance: 'unused.json' });
+  assert.equal(finalizeCombo.exitCode, 1);
+  assert.match(finalizeCombo.stderr, /cannot be combined with --finalize-acceptance/);
+
+  // A resumed session carrying groupingApproval enforces the same chain.
+  const sessionPath = path.join(temp, 'session.json');
+  saveReviewSession(sessionPath, createReviewSession({
+    sessionId: 'test:go:milvus:v3.0.x:jkl',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: 'sha256:' + '4'.repeat(64), units: [] },
+    groupingApproval: receipt,
+  }), { expectedPreviousDigest: null });
+  const resumedStale = await run({ releaseScope: staleFile, resumeSession: sessionPath });
+  assert.equal(resumedStale.exitCode, 1);
+  assert.match(resumedStale.stderr, /GROUPING_STALE/);
+  const resumedOk = await run({ releaseScope: scopeFile, resumeSession: sessionPath });
+  assert.match(resumedOk.stderr, /BASE_TOKEN|REVIEW_SESSION_REFERENCE_CONTEXT_REQUIRED|review session/);
+  assert.doesNotMatch(resumedOk.stderr, /GROUPING_STALE/);
 });
 
 test('build-grouping-proposal CLI builds, refuses, and writes nothing on refusal', () => {

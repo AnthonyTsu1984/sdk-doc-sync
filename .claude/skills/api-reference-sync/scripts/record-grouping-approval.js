@@ -7,25 +7,29 @@
 // execution gates can read). The receipt is a SEPARATE file keyed by the
 // proposal digest: appending approval fields to the proposal artifact itself
 // would change its semantic digest and break the very binding the
-// APPROVE_GROUPING sha256:<digest> reply expresses.
+// APPROVE_GROUPING sha256:<digest> reply expresses. The receipt embeds the
+// proposal's lineage digests so the sdk-doc-sync write boundary can verify
+// the approval→scope chain without the proposal file.
 //
 // Usage:
 //   node scripts/record-grouping-approval.js --proposal <proposal.json> \
 //     [--approvals-dir <dir>]   default tmp/api-reference-sync/grouping-approvals
 //
-// Writes <approvals-dir>/<proposal-digest>.json:
-//   { schemaVersion, gate, proposalDigest, approvalCommand, proposalPath,
-//     language, sdkName, track, releaseRange, approvedAt }
-// First-write-wins: re-running against the same digest keeps the original
-// approvedAt and reports it (the first approval time is the truth). The
-// proposal must pass validateGroupingProposal — a schema-invalid or
-// hand-assembled artifact without lineage cannot receive a receipt.
+// Writes <approvals-dir>/<proposal-digest>.json. First-write-wins: re-running
+// against the same digest keeps the original approvedAt and reports it (the
+// first approval time is the truth). The proposal must pass
+// validateGroupingProposal — a schema-invalid or hand-assembled artifact
+// without lineage cannot receive a receipt.
+//
+// To bind the approval into a review session (write-boundary enforcement),
+// run: sdk-review-session.js approve-grouping --session <file> --proposal <file>
 
 const fs = require('node:fs');
 const path = require('node:path');
 const {
   validateGroupingProposal,
-  groupingProposalDigest,
+  buildGroupingApprovalReceipt,
+  writeGroupingApprovalReceipt,
 } = require('../src/sdk-doc-sync/grouping-proposal');
 
 const DEFAULT_APPROVALS_DIR = path.resolve(
@@ -94,41 +98,15 @@ function main(argv = process.argv) {
     }
   }
 
-  const digest = groupingProposalDigest(proposal);
+  const receipt = buildGroupingApprovalReceipt({ proposal, proposalPath });
   const approvalsDir = args.approvalsDir ? path.resolve(args.approvalsDir) : DEFAULT_APPROVALS_DIR;
-  const receiptPath = path.join(approvalsDir, `${digest}.json`);
-
-  if (fs.existsSync(receiptPath)) {
+  const { receiptPath, created } = writeGroupingApprovalReceipt({ receipt, approvalsDir });
+  if (!created) {
     const existing = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
     console.log(`Grouping approval already recorded at ${receiptPath} (approvedAt ${existing.approvedAt})`);
     return 0;
   }
-
-  const receipt = {
-    schemaVersion: 1,
-    gate: 'APPROVE_GROUPING',
-    proposalDigest: digest,
-    approvalCommand: `APPROVE_GROUPING ${digest}`,
-    proposalPath,
-    language: proposal.language,
-    sdkName: proposal.sdkName,
-    track: proposal.track,
-    releaseRange: proposal.releaseRange,
-    approvedAt: new Date().toISOString(),
-  };
-  fs.mkdirSync(approvalsDir, { recursive: true });
-  // O_EXCL create: first-write-wins is atomic against concurrent recorders
-  // (existsSync above is only the fast path for the friendly message — the
-  // 'wx' flag is the actual gate; review finding).
-  try {
-    fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
-  } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    const existing = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
-    console.log(`Grouping approval already recorded at ${receiptPath} (approvedAt ${existing.approvedAt})`);
-    return 0;
-  }
-  console.log(`Grouping approval recorded: ${receiptPath} (${digest})`);
+  console.log(`Grouping approval recorded: ${receiptPath} (${receipt.proposalDigest})`);
   return 0;
 }
 

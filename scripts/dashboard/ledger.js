@@ -220,6 +220,17 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
     recordLinks,
     journalPaths: [...journalPaths],
     pendingUnits,
+    // Grouping write binding (grouping-governance flow): the durable
+    // APPROVE_GROUPING receipt baked into the session — from here every
+    // sdk-doc-sync entry chains its release scope against the approved one.
+    groupingApproval: session.groupingApproval
+      ? {
+        proposalDigest: session.groupingApproval.proposalDigest ?? null,
+        releaseRange: session.groupingApproval.releaseRange ?? null,
+        approvedAt: session.groupingApproval.approvedAt ?? null,
+        scopeDigest: session.groupingApproval.lineage?.scopeDigest ?? null,
+      }
+      : null,
     lastActivityAt: null,
     activityCount: 0,
   };
@@ -526,6 +537,44 @@ const INTAKE_MANIFEST_GLOBS = [
   'tmp/sdk-release-scout/*grouping*manifest*.json',
 ];
 const KNOWN_LANGUAGES = new Set(['cpp', 'go', 'java', 'python', 'node', 'rest', 'zilliz-cli']);
+const GROUPING_APPROVALS_DIR_RELATIVE_PATH = `${REVISION_DIR_RELATIVE_PATH}/grouping-approvals`;
+
+// Durable APPROVE_GROUPING receipts (grouping-governance flow): the on-disk
+// credential an operator approval becomes, keyed by proposal digest. The
+// board reads them as first-class approval evidence; the session-after-gate
+// heuristics stay as fallbacks for gates that predate the receipt flow.
+function readGroupingReceipts(checkouts) {
+  const receipts = [];
+  for (const checkout of checkouts || []) {
+    const dir = path.join(checkout.root || '', GROUPING_APPROVALS_DIR_RELATIVE_PATH);
+    let names;
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue; // no receipts in this checkout
+    }
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue;
+      const payload = readJsonOrNull(path.join(dir, name));
+      if (!payload || payload.gate !== 'APPROVE_GROUPING') continue;
+      if (typeof payload.proposalDigest !== 'string' || !payload.proposalDigest.startsWith('sha256:')) continue;
+      const stat = readStatsOrNull(path.join(dir, name));
+      receipts.push({
+        checkout: checkout.id,
+        checkoutRoot: checkout.root,
+        path: `${GROUPING_APPROVALS_DIR_RELATIVE_PATH}/${name}`,
+        proposalDigest: payload.proposalDigest,
+        language: typeof payload.language === 'string' ? payload.language : null,
+        track: typeof payload.track === 'string' ? payload.track : null,
+        releaseRange: typeof payload.releaseRange === 'string' ? payload.releaseRange : null,
+        scopeDigest: payload.lineage && typeof payload.lineage.scopeDigest === 'string' ? payload.lineage.scopeDigest : null,
+        approvedAt: typeof payload.approvedAt === 'string' ? payload.approvedAt
+          : (stat ? new Date(stat.mtimeMs).toISOString() : null),
+      });
+    }
+  }
+  return receipts;
+}
 
 function intakeLanguageOf(manifest) {
   const text = `${manifest.title ?? ''} ${manifest.run ?? ''}`.toLowerCase();
@@ -535,7 +584,7 @@ function intakeLanguageOf(manifest) {
   return null;
 }
 
-function buildIntakeCards(checkouts, campaigns, revisions = [], now = new Date()) {
+function buildIntakeCards(checkouts, campaigns, revisions = [], receipts = [], now = new Date()) {
   const cards = [];
   for (const checkout of checkouts) {
     const root = checkout.root || '';
@@ -557,20 +606,27 @@ function buildIntakeCards(checkouts, campaigns, revisions = [], now = new Date()
         const stat = readStatsOrNull(absolute);
         const presentedAt = stat ? new Date(stat.mtimeMs).toISOString() : null;
         const language = intakeLanguageOf(payload);
-        // Approval evidence: a review session for the same language created
-        // in this checkout after the gate was presented (two-gate flows
-        // create the session only after APPROVE_GROUPING).
-        // Two-gate flows prove approval by a session built after the gate;
-        // revision flows prove it by any governed page written after it.
-        const approved = (campaigns || []).some((card) => card.checkout === checkout.id
+        // Approval evidence, strongest first: the durable receipt keyed by
+        // this gate's digest (the governed flow's on-disk credential), then
+        // a campaign session bound to the same proposal digest, then the
+        // batch-11 heuristics for gates that predate receipts.
+        const receipt = (receipts || []).find((r) => r.checkout === checkout.id && r.proposalDigest === payload.digest) || null;
+        const sessionBound = (campaigns || []).some((card) => card.checkout === checkout.id
+          && card.groupingApproval
+          && card.groupingApproval.proposalDigest === payload.digest) || null;
+        const approvedBySession = (campaigns || []).some((card) => card.checkout === checkout.id
           && card.language === language
           && card.createdAt && presentedAt
-          && new Date(card.createdAt).getTime() >= new Date(presentedAt).getTime() - 60_000)
-          || (revisions || []).some((rev) => rev.checkout === checkout.id
-            && rev.language === language
-            && rev.writtenPages > 0
-            && rev.written.some((w) => !presentedAt || !w.writtenAt
-              || new Date(w.writtenAt).getTime() >= new Date(presentedAt).getTime() - 60_000));
+          && new Date(card.createdAt).getTime() >= new Date(presentedAt).getTime() - 60_000);
+        const approvedByWritten = (revisions || []).some((rev) => rev.checkout === checkout.id
+          && rev.language === language
+          && rev.writtenPages > 0
+          && rev.written.some((w) => !presentedAt || !w.writtenAt
+            || new Date(w.writtenAt).getTime() >= new Date(presentedAt).getTime() - 60_000));
+        const approvalEvidence = receipt ? 'receipt'
+          : sessionBound ? 'session-binding'
+            : approvedBySession ? 'session'
+              : approvedByWritten ? 'written' : null;
         const relative = path.relative(root, absolute).split(path.sep).join('/');
         cards.push({
           kind: 'intake',
@@ -583,7 +639,9 @@ function buildIntakeCards(checkouts, campaigns, revisions = [], now = new Date()
           digest: payload.digest,
           language,
           presentedAt,
-          approved,
+          approved: approvalEvidence !== null,
+          approvalEvidence,
+          receipt,
           links: Array.isArray(payload.links)
             ? payload.links.filter((l) => l && typeof l.url === 'string').map((l) => ({ label: l.label ?? l.url, url: l.url }))
             : [],
@@ -829,6 +887,7 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
   ));
   const revisionsCache = buildRevisionCards(effectiveCheckouts);
+  const groupingReceipts = readGroupingReceipts(effectiveCheckouts);
   const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }), effectiveCheckouts);
   return {
     generatedAt: now.toISOString(),
@@ -841,7 +900,8 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     activity: activity.slice(-120),
     runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
     revisions: revisionsCache,
-    intakes: buildIntakeCards(effectiveCheckouts, campaigns, revisionsCache, now),
+    intakes: buildIntakeCards(effectiveCheckouts, campaigns, revisionsCache, groupingReceipts, now),
+    groupingReceipts,
   };
 }
 
@@ -850,6 +910,7 @@ module.exports = {
   APPLY_REVIEW_MANIFEST_RE,
   REVISION_DIR_RELATIVE_PATH,
   GATE_PRESENTATION_RELATIVE_PATH,
+  GROUPING_APPROVALS_DIR_RELATIVE_PATH,
   RELEASE_TRACKS_RELATIVE_PATH,
   SCAN_STATE_RELATIVE_PATH,
   SENTINELS,
@@ -866,6 +927,7 @@ module.exports = {
   computeNextDailyRun,
   deriveRunningSessions,
   readGatePresentations,
+  readGroupingReceipts,
   healthFor,
   localDateStamp,
   normalizeSessionRef,

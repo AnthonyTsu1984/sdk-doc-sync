@@ -198,3 +198,74 @@ test('intake cards surface grouping manifests with approval transitions', (t) =>
   const ledger2 = buildLedger({ repoRoot: main.root, checkouts });
   assert.equal(ledger2.intakes.find((c) => c.language === 'go').approved, true, 'session built after the gate proves approval');
 });
+
+// ---------- durable grouping receipts (grouping-governance flow) ----------
+
+test('intake cards take the durable receipt keyed by the gate digest as direct approval evidence', (t) => {
+  const main = makeFixtureTree('dash-receipt-');
+  t.after(() => fs.rmSync(main.root, { recursive: true, force: true }));
+  const digest = 'sha256:' + 'a'.repeat(64);
+  main.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+    gate: 'APPROVE_GROUPING', digest, title: 'go v3.0.0 分组门 v3', run: 'go run',
+  });
+  main.write(`tmp/api-reference-sync/grouping-approvals/${digest}.json`, {
+    schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: digest,
+    approvalCommand: `APPROVE_GROUPING ${digest}`,
+    language: 'go', sdkName: 'milvus', track: 'v3.0.x',
+    releaseRange: 'client/v3.0.0-beta..client/v3.0.0',
+    lineage: { scopeDigest: 'sha256:' + 'b'.repeat(64), identityMapDigest: 'sha256:' + 'c'.repeat(64) },
+    approvedAt: '2026-10-06T09:00:00.000Z',
+  });
+  // A decoy receipt for a different digest must not approve anything.
+  const other = 'sha256:' + 'f'.repeat(64);
+  main.write(`tmp/api-reference-sync/grouping-approvals/${other}.json`, {
+    schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: other,
+    approvalCommand: `APPROVE_GROUPING ${other}`,
+    language: 'java', sdkName: 'milvus', track: 'v3.0.x', releaseRange: 'r',
+    lineage: { scopeDigest: 'sha256:' + 'e'.repeat(64) }, approvedAt: '2026-10-06T09:00:00.000Z',
+  });
+
+  const { buildIntakeCards, buildLedger, readGroupingReceipts } = require('../../scripts/dashboard/ledger.js');
+  const checkouts = [{ id: 'main', label: '主检出', root: main.root }];
+  const receipts = readGroupingReceipts(checkouts);
+  assert.equal(receipts.length, 2, 'receipts from every checkout are enumerated');
+  const [card] = buildIntakeCards(checkouts, [], [], receipts);
+  assert.equal(card.approved, true, 'the receipt keyed by the gate digest proves approval directly');
+  assert.equal(card.approvalEvidence, 'receipt');
+  assert.equal(card.receipt.path, `tmp/api-reference-sync/grouping-approvals/${digest}.json`);
+  assert.equal(card.receipt.scopeDigest, 'sha256:' + 'b'.repeat(64));
+
+  const ledger = buildLedger({ repoRoot: main.root, checkouts });
+  assert.equal(ledger.groupingReceipts.length, 2);
+  assert.equal(ledger.intakes[0].approved, true);
+  assert.equal(ledger.intakes[0].approvalEvidence, 'receipt');
+});
+
+test('a session bound to the proposal digest is approval evidence even when created before the gate page', (t) => {
+  const main = makeFixtureTree('dash-bind-');
+  t.after(() => fs.rmSync(main.root, { recursive: true, force: true }));
+  const digest = 'sha256:' + 'd'.repeat(64);
+  main.write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', {
+    gate: 'APPROVE_GROUPING', digest, title: 'go 分组门', run: 'r',
+  });
+  // Created BEFORE the manifest's mtime (the legacy heuristic must miss),
+  // but its groupingApproval binding names the gate's exact digest.
+  main.write('tmp/sdk-release-scout/go-v30-session.json', {
+    schemaVersion: 1, status: 'in_progress', language: 'go', track: 'v3.0.x',
+    groupingApproval: {
+      schemaVersion: 1, gate: 'APPROVE_GROUPING', proposalDigest: digest,
+      approvalCommand: `APPROVE_GROUPING ${digest}`,
+      language: 'go', sdkName: 'milvus', track: 'v3.0.x', releaseRange: 'r',
+      lineage: { scopeDigest: 'sha256:' + 'e'.repeat(64) }, approvedAt: '2026-10-06T09:30:00.000Z',
+    },
+    reviewUnitManifest: { units: [] }, acceptedReviewUnits: [], pendingExecutions: [],
+    artifacts: {}, createdAt: '2026-10-05T08:00:00.000Z', updatedAt: '2026-10-05T08:00:00.000Z',
+  });
+
+  const { buildLedger } = require('../../scripts/dashboard/ledger.js');
+  const checkouts = [{ id: 'main', label: '主检出', root: main.root }];
+  const ledger = buildLedger({ repoRoot: main.root, checkouts });
+  assert.equal(ledger.campaigns[0].groupingApproval.proposalDigest, digest, 'campaign card carries the binding');
+  assert.equal(ledger.intakes[0].approved, true);
+  assert.equal(ledger.intakes[0].approvalEvidence, 'session-binding');
+});

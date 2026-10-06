@@ -25,6 +25,11 @@ const GATE_FORMAT_LINES = [
   '- 门禁回复格式（缺 sha256 摘要的批准无效）: `APPROVE_GROUPING sha256:<digest>` / `APPROVE_WRITES sha256:<batch-digest>` / `APPROVE_DOCUMENT <review-unit-id> sha256:<journal-digest>` / `APPROVE_ROLLBACK <id> sha256:<digest>` / `APPROVE_ACCEPTANCE sha256:<digest>`',
   '- 批准绑定精确 digest: 任何重规划/重扫都会使旧 digest 作废，必须重新走门。',
 ];
+const GROUPING_FLOW_LINES = [
+  '- 分组方案是治理工件，只能由 canonical builder 产出: `node .claude/skills/api-reference-sync/scripts/build-grouping-proposal.js --scope <scope.json> --identity-map <identity-map.json> --decisions <decisions.json>`（可选 `--snapshot`）。手写/tmp builder 产物无 lineage，铸不了回执、过不了门。',
+  '- 呈门走 `node .claude/skills/api-reference-sync/scripts/gate-presentation.js`，把生成的 latest.html 呈给操作员；停在 APPROVE_GROUPING 门等批准。',
+  '- 操作员批准后，批准只有落成回执才生效: `node .claude/skills/api-reference-sync/scripts/record-grouping-approval.js --proposal <proposal.json> --scope <scope.json> --identity-map <map.json>`；再绑进战役会话——建会话时 `bin/sdk-doc-sync.js --grouping-approval <receipt.json>`，或既有会话 `bin/sdk-review-session.js approve-grouping --session <session.json> --proposal <proposal.json>`。绑定后每次入口的 `--release-scope` 摘要都会对照已批 scope 校验，漂移即拒（GROUPING_STALE）。',
+];
 const IRON_RULES = [
   '- 铁律: 执行中绝不删除 journal 重放；写路径只走 canonical CLI；scan-state 只由 close-session/finalize 推进。',
   '- 本简报由盘上 durable 状态确定性生成；一切以盘上状态与 canonical CLI 输出为准，勿凭记忆。',
@@ -68,6 +73,7 @@ function buildIntakeBrief({ repoRoot, language, scoutPath, now = new Date() } = 
   lines.push('- 按治理流程对以上发现做**只读 intake**：证据核证 → 规划（dry-run）→ 建评审会话（--session-state）。');
   lines.push('- 会话文件落位契约（发现面约定）：`tmp/sdk-doc-sync-runs/<language>-<track>/review-session.json` 或 `tmp/sdk-release-scout/<track>-session.json`——放别处看板与 session-start 钩子都看不见。');
   lines.push('- 产出分组方案后**停在 APPROVE_GROUPING 门**，把分组 digest 呈给操作员；未获批准前不进入任何写路径。');
+  lines.push(...GROUPING_FLOW_LINES);
   lines.push('- 操作员批准分组后才逐单元推进；每个写门（APPROVE_DOCUMENT / APPROVE_WRITES）照常停下等批。');
   lines.push('');
   lines.push('### 规则');
@@ -110,6 +116,7 @@ function buildTrackIntakeBrief({ repoRoot, language, trackKey } = {}) {
   lines.push('- 对该轨道做**只读侦察**：远端最新 release tag 与基线对照、web-content 该 SDK 目录的已合并 PR、SDK 源码变更；产出发现清单与 release scope。');
   lines.push('- 有发现 → 按治理流程做 intake（证据核证 → 规划 dry-run → 建评审会话 --session-state）；无发现 → 明确报告"无待处理变更"并结束，**不建会话**。');
   lines.push('- 产出分组方案后**停在 APPROVE_GROUPING 门**等待操作员批准；未获批准前不进入任何写路径。');
+  lines.push(...GROUPING_FLOW_LINES);
   lines.push('- 操作员批准分组后才逐单元推进；每个写门（APPROVE_DOCUMENT / APPROVE_WRITES）照常停下等批。');
   lines.push('');
   lines.push('### 规则');
@@ -121,4 +128,4 @@ function buildTrackIntakeBrief({ repoRoot, language, trackKey } = {}) {
   };
 }
 
-module.exports = { buildIntakeBrief, buildTrackIntakeBrief, GATE_FORMAT_LINES, IRON_RULES };
+module.exports = { buildIntakeBrief, buildTrackIntakeBrief, GATE_FORMAT_LINES, GROUPING_FLOW_LINES, IRON_RULES };

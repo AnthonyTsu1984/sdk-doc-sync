@@ -180,7 +180,26 @@ function toReferenceDocument(symbol, context = {}) {
     : null;
   const errors = callable ? common.makeErrors(context.exceptions || symbol.exceptions, evidence) : [];
   const notes = [...(Array.isArray(context.notes) ? context.notes : [])];
-  if (!callable && symbol.signature) notes.push(symbol.signature);
+  // Signature lines render as a note for top-level functions and for
+  // constants (assignment form, e.g. 'DEFAULT_TIMEOUT = 30' — pinned
+  // behavior). Class-form kinds (enum/class) expose their members through
+  // the members channel instead; a 'class X(IntEnum):' note line would only
+  // leak a bare Notes section.
+  if (!callable && (kind === 'function' || symbol.kind === 'constant') && symbol.signature) {
+    notes.push(symbol.signature);
+  }
+  // 2026-10-06 Volume ruling: enums expose their values and classes their
+  // methods through reviewed context.members (kind 'member' | 'method').
+  const callableMembers = Array.isArray(context.members)
+    ? context.members.map((member) => common.makeCallableMember(
+      member.kind === 'method' ? 'method' : 'member',
+      member,
+      evidence,
+      member.signature || member.name,
+      [],
+      { symbol, context },
+    ))
+    : [];
   return common.buildReferenceDocument({
     symbol,
     context,
@@ -188,6 +207,7 @@ function toReferenceDocument(symbol, context = {}) {
     kind,
     signatures,
     requestVariants,
+    callableMembers,
     result,
     errors,
     notes,

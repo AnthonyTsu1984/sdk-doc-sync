@@ -11,7 +11,9 @@ const DOCUMENT_KINDS = Object.freeze([
   'rest-operation',
 ]);
 const LANGUAGES = Object.freeze(['python', 'java', 'node', 'go', 'cpp', 'zilliz-cli', 'rest']);
-const MEMBER_KINDS = Object.freeze(['builder', 'option', 'request', 'implementation']);
+// 'method' (python class methods, 2026-10-06 Volume ruling) and 'member'
+// (python enum values) ride the same callableMembers channel.
+const MEMBER_KINDS = Object.freeze(['builder', 'option', 'request', 'implementation', 'method', 'member']);
 const EVIDENCE_KINDS = Object.freeze(['source', 'openapi', 'existing-doc', 'curated', 'pr']);
 const CONFIDENCE_LEVELS = Object.freeze(['direct', 'derived', 'reviewed']);
 

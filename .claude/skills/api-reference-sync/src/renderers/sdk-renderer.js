@@ -381,7 +381,8 @@ function renderPrimaryInputs(document, policy, context) {
 
 function renderCallableMembers(document, policy, context) {
   if (!policy.memberKind) return [];
-  const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
+  const memberKinds = Array.isArray(policy.memberKind) ? policy.memberKind : [policy.memberKind];
+  const members = (document.callableMembers || []).filter((member) => memberKinds.includes(member.kind));
   if (members.length === 0) return [];
   const membersLabel = typeof policy.membersLabel === 'function'
     ? policy.membersLabel(document)

@@ -166,8 +166,17 @@ function toReferenceDocument(symbol, context = {}) {
       inputs: params,
     }, evidence, { symbol, context })];
   }
-  const result = callable && (context.result || symbol.result || symbol.returnType)
-    ? common.makeResult(context.result || symbol.result || { type: symbol.returnType }, evidence, { symbol, context })
+  // House baseline (java 'void 无段' + 2026-10-03 five rules): a void return
+  // renders no result section at all — folded result-class __init__ symbols
+  // carry '-> None' annotations that would otherwise draw a RETURNS label
+  // and trip RETURNS_MIN_DEPTH (response fields are for real payloads).
+  const voidOnlyReturn = typeof symbol.returnType === 'string'
+    && /^(none|void|nonetype)$/i.test(symbol.returnType.trim());
+  const resultSource = context.result
+    || symbol.result
+    || (symbol.returnType && !voidOnlyReturn ? { type: symbol.returnType } : null);
+  const result = callable && resultSource
+    ? common.makeResult(resultSource, evidence, { symbol, context })
     : null;
   const errors = callable ? common.makeErrors(context.exceptions || symbol.exceptions, evidence) : [];
   const notes = [...(Array.isArray(context.notes) ? context.notes : [])];

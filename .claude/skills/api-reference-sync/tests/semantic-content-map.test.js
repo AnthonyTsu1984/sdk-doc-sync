@@ -223,9 +223,31 @@ test('a void page may retire its bare RETURNS stub entirely (2026-10-05 ruling)'
     assert.equal(mixedDropped.ok, false);
     assert.ok(mixedDropped.diffs.some((diff) => diff.kind === 'RETURNS_PROSE_MISSING'));
 
-    // And a void page WITH a RETURN TYPE section cannot drop that section.
-    const withType = voidPage.replace('**RETURNS:**', '**RETURN TYPE:**\nvoid\n\n**RETURNS:**');
-    const typeDropped = compareSemanticContent({ upstreamContent: withType, canonicalContent: retired });
-    assert.equal(typeDropped.ok, false);
-    assert.ok(typeDropped.diffs.some((diff) => diff.kind === 'RETURN_TYPE_MISSING'));
+    // Widened 2026-10-07 (java:v2-LocalBulkWriter-commit): a live RETURN TYPE
+    // section carrying only the void token retires with the stub (2026-10-05
+    // ruling taken literally — void carries no return sections).
+    const withVoidType = [
+        '# commit()',
+        '',
+        'This operation commits pending rows.',
+        '',
+        '**RETURN TYPE:**',
+        '',
+        '*void*',
+        '',
+    ].join('\n');
+    const voidTypeRetired = [
+        '# commit()',
+        '',
+        'This operation commits pending rows.',
+        '',
+    ].join('\n');
+    const voidTypeDropped = compareSemanticContent({ upstreamContent: withVoidType, canonicalContent: voidTypeRetired });
+    assert.equal(voidTypeDropped.ok, true, JSON.stringify(voidTypeDropped.diffs));
+
+    // A NON-void RETURN TYPE still cannot be dropped — real type information.
+    const withRealType = voidPage.replace('**RETURNS:**', '**RETURN TYPE:**\nDescribeReplicasResp\n\n**RETURNS:**');
+    const realTypeDropped = compareSemanticContent({ upstreamContent: withRealType, canonicalContent: retired });
+    assert.equal(realTypeDropped.ok, false);
+    assert.ok(realTypeDropped.diffs.some((diff) => diff.kind === 'RETURN_TYPE_MISSING'));
 });

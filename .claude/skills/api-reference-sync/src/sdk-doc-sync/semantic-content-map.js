@@ -266,7 +266,16 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     }
 
     if (upstream.returnType !== null) {
-        if (canonical.returnType === null) diffs.push({ kind: 'RETURN_TYPE_MISSING', detail: upstream.returnType });
+        if (canonical.returnType === null) {
+            // Widened 2026-10-07 (campaign page java:v2-LocalBulkWriter-commit):
+            // a live page may carry a RETURN TYPE section whose only content is
+            // the void token — retiring it is the 2026-10-05 void ruling taken
+            // literally ("void carries no return sections", RETURN TYPE
+            // included). A non-void RETURN TYPE still cannot be dropped.
+            if (!/^\*{0,2}void\*{0,2}[.:]?$/i.test(String(upstream.returnType).trim())) {
+                diffs.push({ kind: 'RETURN_TYPE_MISSING', detail: upstream.returnType });
+            }
+        }
         else if (canonical.returnType !== upstream.returnType) {
             diffs.push({ kind: 'RETURN_TYPE_ALTERED', detail: `${upstream.returnType} -> ${canonical.returnType}` });
         }
@@ -278,14 +287,18 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     // stubs render TWO prose lines — the void token (often italic, "*void*")
     // plus an explicit "This operation does not return a value." sentence —
     // which is void-equivalent with zero information beyond the signature.
+    // Widened again 2026-10-07 (page java:v2-LocalBulkWriter-commit): a live
+    // RETURN TYPE section carrying only the void token may retire too, so
+    // the exemption accepts upstream returnType being null OR void-like.
     // The exemption therefore accepts a RETURNS section ALL of whose prose
     // lines are stub lines: a bare void token or an explicit no-value
-    // sentence. Still bound to: no upstream RETURN TYPE section, canonical
-    // deletes the section. RETURNS prose carrying real content (what a
-    // non-void method returns) stays a loss.
+    // sentence. RETURNS prose carrying real content (what a non-void method
+    // returns) and non-void RETURN TYPE sections stay losses.
     const upstreamRet = upstream.returnsProse || [];
     const voidEquivalentStubLine = (line) => /^(?:\*{0,2}void\*{0,2}[.:]?|this operation (?:does not return|returns) (?:a value|nothing)[.!]?)$/i.test(String(line || '').trim());
-    const voidReturnsRetirement = upstream.returnType === null
+    const upstreamReturnTypeVoidLike = upstream.returnType === null
+        || /^\*{0,2}void\*{0,2}[.:]?$/i.test(String(upstream.returnType).trim());
+    const voidReturnsRetirement = upstreamReturnTypeVoidLike
         && upstreamRet.length >= 1
         && upstreamRet.every(voidEquivalentStubLine)
         && canonical.returnsProse.length === 0;

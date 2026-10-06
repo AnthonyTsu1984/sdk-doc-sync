@@ -201,6 +201,33 @@ test('rollback planner reverses original dependencies so documents and records p
   assert.equal(result.rollbackManifest.scanStateUpdated, false);
 });
 
+test('rollback planner anchors the newest change request when a unit was redone multiple times', () => {
+  // A redo cycle appends another changeRequests entry; the live artifacts
+  // belong to the NEWEST execution. The array itself is sorted by
+  // reviewUnitId, so requestedAt — not array position — must decide.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-redo-'));
+  const older = writeJournal(directory, 'older', [{ actionId: 'action:0', action: 'CREATE', recordId: 'rec-old', createdDocument: { token: 'doc-old', folderToken: 'folder-v30' }, postRecord: { recordId: 'rec-old', writableFields: { Progress: 'WIP' } } }]);
+  const newer = writeJournal(directory, 'newer', [{ actionId: 'action:0', action: 'CREATE', recordId: 'rec-new', createdDocument: { token: 'doc-new', folderToken: 'folder-v30' }, postRecord: { recordId: 'rec-new', writableFields: { Progress: 'WIP' } } }]);
+  const reviewUnitId = 'review:action:0';
+  const session = sessionFor(older, unit(['action:0']), {
+    activeExecution: null,
+    pendingExecutions: [],
+    changeRequests: [
+      { reviewUnitId, executionJournalPath: newer.filePath, executionJournalDigest: newer.digest, requestedAt: '2026-10-07T11:00:00.000Z' },
+      { reviewUnitId, executionJournalPath: older.filePath, executionJournalDigest: older.digest, requestedAt: '2026-10-07T10:00:00.000Z' },
+    ],
+  });
+
+  const result = buildRollbackManifest({ session, reviewUnitId });
+  assert.equal(result.status, 'READY');
+  assert.equal(
+    result.rollbackManifest.executionJournalDigest,
+    newer.digest,
+    'the newest execution is the one whose artifacts are live',
+  );
+  assert.equal(validateRollbackManifest(result.rollbackManifest), true);
+});
+
 test('rollback planner fails closed for finalized sessions and incomplete or drifted original evidence', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-invalid-'));
   const action = { actionId: 'node:Vector:search', action: 'CREATE', recordId: 'rec-search', createdDocument: { token: 'doc-search' } };

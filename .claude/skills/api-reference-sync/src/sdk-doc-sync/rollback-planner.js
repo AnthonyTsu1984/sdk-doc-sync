@@ -92,8 +92,18 @@ function executionRefFor(session, reviewUnitId) {
   // release tenant. The change-request transition deliberately keeps the
   // execution journal on disk "for audit and potential rollback" and anchors
   // it in changeRequests[] — honor that anchor so the rebuild path (CREATE
-  // units demand record absence) can roll the artifacts back first.
-  const changeRequest = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  // units demand record absence) can roll the artifacts back first. A unit
+  // can accumulate MULTIPLE change requests across redo cycles: the live
+  // artifacts belong to the NEWEST execution, so anchor the latest entry
+  // (requestedAt order — the array itself is sorted by reviewUnitId, not
+  // time); an earlier entry's artifacts were already rolled back with it.
+  const changeRequest = (session.changeRequests || [])
+    .filter((item) => item.reviewUnitId === reviewUnitId)
+    .sort((left, right) => (
+      String(left.requestedAt || '') < String(right.requestedAt || '') ? -1
+        : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
+    ))
+    .pop();
   if (changeRequest) {
     return {
       reviewUnitId,

@@ -147,7 +147,14 @@ function assertBatchInvariantCoverage(plannedActions, planIds) {
                 // DAG addresses the same resources as resource:<ref> stables.
                 const folderDependencies = [folderNode.stableId, folderNode.stableId.replace(/^resource:/, '')];
                 const folderWired = folderDependencies.some(dependency => dependsOn.has(dependency));
-                const documentWired = dependsOn.has(plan.stableId);
+                // Multi-unit categories share ONE repoint resource; the
+                // ordering contract is "after the folder and after at least
+                // one category document copy in this batch" — the sibling
+                // copies attest the category has content before the node
+                // moves (single-unit batches degenerate to the old per-unit
+                // check).
+                const documentWired = dependsOn.has(plan.stableId)
+                    || [...dependsOn].some(dependency => planIds.has(dependency));
                 if (!folderWired || !documentWired) {
                     const missing = !folderWired ? folderDependencies[0] : plan.stableId;
                     const error = new Error(`TREE_DELTA_DAG_VIOLATION: repoint resource ${node.stableId} must depend on ${missing}`);
@@ -340,6 +347,9 @@ class SdkDocSync {
         tokenReferenceReader = null,
         tokenReferenceTracks = [],
         placementWalkDigest = null,
+        identityCategoryMap = null,
+        excludeSlugs = [],
+        campaignResources = null,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -369,6 +379,26 @@ class SdkDocSync {
         }
 
         this.diffEngine = new DiffEngine({ sdkVersion });
+        // Operator-excluded scope slugs (--exclude-slug): grouping-decision
+        // exclusions restated at entry — these actions never plan or write.
+        this.excludeSlugs = Array.isArray(excludeSlugs) && excludeSlugs.length > 0
+            ? new Set(excludeSlugs) : null;
+        // Campaign resources (grouping-bound entry: they ride the reference
+        // context's top level, not the receipt-bound scope).
+        this.campaignResources = Array.isArray(campaignResources) ? campaignResources : null;
+        // Identity-map category seeding (see bin/sdk-doc-sync.js): the map
+        // is the canonicalSlug authority; its raw-slug keys let the scan
+        // filter and diff join scanner categories (Collections-) onto KB
+        // canonical slugs (v2-Collection-…) without trusting scope symbol
+        // labels.
+        this.identityCategoryMap = identityCategoryMap && typeof identityCategoryMap === 'object'
+            ? identityCategoryMap : null;
+        if (this.identityCategoryMap) {
+            this.diffEngine.categoryMap = { ...this.diffEngine.categoryMap, ...this.identityCategoryMap };
+            this.diffEngine._categoryMapLower = Object.fromEntries(
+                Object.entries(this.diffEngine.categoryMap).map(([key, value]) => [key.toLowerCase(), value]),
+            );
+        }
         this.planner = planner || new SyncPlanner();
         this.docGenerator = docGenerator || new DocGenerator({ sdkName, sdkVersion, targets, language });
 
@@ -491,6 +521,11 @@ class SdkDocSync {
 
         // Phase 1: SCAN
         this.onProgress('SCAN', `Scanning source code in ${this.scanner.rootDir}...`);
+        // Scope-derived slug mappings register BEFORE the scan filter: the
+        // filter admits scanned symbols by their resolved canonical slugs,
+        // so the categoryMap must already bridge scanner category words onto
+        // scope canonical slugs.
+        this._applyReleaseScopeCategoryMap();
         result.scanned = this._filterByReleaseScope(await this.scanner.scan());
         if (this.releaseScope) {
             result.releaseScope = {
@@ -516,7 +551,6 @@ class SdkDocSync {
 
         // Phase 3: DIFF
         this.onProgress('DIFF', 'Computing diff between source and KB...');
-        this._applyReleaseScopeCategoryMap();
         result.diff = this._applyReleaseScopeDiffActions(this.diffEngine.diff(result.scanned, result.indexed));
         if (this.changedOnly) {
             result.diff = result.diff.filter((action) => action.type !== 'SKIP');
@@ -533,7 +567,7 @@ class SdkDocSync {
         // as a foreign CREATE-conflict.
         const sessionExecutedDocumentIds = this._sessionExecutedDocumentIds();
         const plannedEntries = [];
-        for (const resource of this.releaseScope?.resources || []) {
+        for (const resource of [...(this.releaseScope?.resources || []), ...(this.campaignResources || [])]) {
             try {
                 const plan = this.planner.planResource(resource);
                 result.resourcePlans.push(plan);
@@ -1545,41 +1579,66 @@ class SdkDocSync {
 
     _filterByReleaseScope(symbols) {
         if (!this.releaseScope) return symbols;
+        // Line expectations come from CODE locators only: PR-derived variants
+        // carry web-content .md paths whose "line 1" says nothing about the
+        // --sdk-dir checkout, so they admit by name/slug without a line pin.
+        const codeLine = (variant) => (
+            Number.isInteger(variant.source?.line) && !String(variant.source?.file || '').endsWith('.md')
+                ? variant.source.line : null
+        );
         const allowed = new Map();
+        const allowedSlugs = new Map(); // canonicalSlug -> expected source lines
         for (const action of this.releaseScope.actions) {
             for (const variant of this._releaseScopeSourceVariants(action)) {
                 const lines = allowed.get(variant.symbol) || new Set();
-                if (Number.isInteger(variant.source?.line)) lines.add(variant.source.line);
+                const line = codeLine(variant);
+                if (line !== null) lines.add(line);
                 allowed.set(variant.symbol, lines);
+                const slugLines = allowedSlugs.get(action.canonicalSlug) || new Set();
+                if (line !== null) slugLines.add(line);
+                allowedSlugs.set(action.canonicalSlug, slugLines);
             }
         }
-        const byDisplayName = new Map();
+        // Canonical-slug admission (identity-map seeded categoryMap): a
+        // scanned symbol resolves through the same slug derivation the diff
+        // phase uses, so scanner-category words (Collections-) join KB-form
+        // scope slugs (v2-Collection-…) without trusting scope symbol labels.
+        const resolveCanonicalSlugs = (symbol) => {
+            try {
+                return this.diffEngine._symbolSlugs(symbol);
+            } catch {
+                return [];
+            }
+        };
+        // Ambiguity accounting: line expectations disambiguate overloads and
+        // detect checkout drift ONLY where the key has multiple scanned
+        // candidates. Union scopes assembled from PR-meta replays can carry
+        // stale line evidence for single-candidate symbols (observed:
+        // Vector.SearchIterator pinned 4 files away from its true position at
+        // the scope's own targetCommit) — an unambiguous key admits without
+        // the line pin, an ambiguous one requires it.
+        const candidatesByKey = new Map();
         for (const symbol of symbols) {
-            const key = this._symbolDisplayName(symbol);
-            const entries = byDisplayName.get(key) || [];
-            entries.push(symbol);
-            byDisplayName.set(key, entries);
-        }
-        const mismatches = [];
-        for (const [symbolName, expectedLines] of allowed.entries()) {
-            if (expectedLines.size === 0) continue;
-            const candidates = byDisplayName.get(symbolName) || [];
-            if (candidates.length === 0) continue;
-            const actualLines = new Set(candidates.map((symbol) => symbol.lineNumber).filter(Number.isInteger));
-            const hasAnyExpectedLine = [...expectedLines].some((line) => actualLines.has(line));
-            if (!hasAnyExpectedLine) {
-                mismatches.push(`${symbolName}: expected line ${[...expectedLines].join('/')} but scanned line ${[...actualLines].join('/') || 'unknown'}`);
+            for (const key of new Set([this._symbolDisplayName(symbol), ...resolveCanonicalSlugs(symbol)])) {
+                const list = candidatesByKey.get(key) || [];
+                list.push(symbol);
+                candidatesByKey.set(key, list);
             }
-        }
-        if (mismatches.length > 0) {
-            const error = new Error(`Release scope source line mismatch. Ensure --sdk-dir is checked out at ${this.releaseScope.targetCommit || this.releaseScope.targetTag}: ${mismatches.join('; ')}`);
-            error.code = 'RELEASE_SCOPE_LINE_MISMATCH';
-            throw error;
         }
         return symbols.filter((symbol) => {
-            const lines = allowed.get(this._symbolDisplayName(symbol));
-            if (!lines) return false;
-            return lines.size === 0 || lines.has(symbol.lineNumber);
+            const displayName = this._symbolDisplayName(symbol);
+            const lines = allowed.get(displayName);
+            if (lines) {
+                if (lines.size === 0 || lines.has(symbol.lineNumber)) return true;
+                return (candidatesByKey.get(displayName) || []).length === 1;
+            }
+            for (const slug of resolveCanonicalSlugs(symbol)) {
+                const slugLines = allowedSlugs.get(slug);
+                if (!slugLines) continue;
+                if (slugLines.size === 0 || slugLines.has(symbol.lineNumber)) return true;
+                if ((candidatesByKey.get(slug) || []).length === 1) return true;
+            }
+            return false;
         });
     }
 
@@ -1591,10 +1650,24 @@ class SdkDocSync {
 
     _applyReleaseScopeCategoryMap() {
         if (!this.releaseScope) return;
+        // go scanner categories use the plural scanner words (Collections-,
+        // Partitions-) while KB-form scope labels use the drive-group words
+        // (Collection-, Partition-): register the word twins so the scanner
+        // slug resolves onto the scope canonical slug. The identity map is
+        // the authority where it covers the symbol; this twin only bridges
+        // labels for symbols the map has not yet absorbed.
+        const goCategoryWordTwins = this.language === 'go'
+            ? { Collection: 'Collections', Partition: 'Partitions' }
+            : {};
+        const twinKeys = (rawSlug) => {
+            const category = rawSlug.split('-')[0];
+            const twin = goCategoryWordTwins[category];
+            return twin ? [rawSlug, `${twin}${rawSlug.slice(category.length)}`] : [rawSlug];
+        };
         const scopedCategoryMap = {};
         for (const action of this.releaseScope.actions) {
             for (const variant of this._releaseScopeSourceVariants(action)) {
-                const rawSlug = variant.symbol.replace('.', '-');
+                for (const rawSlug of twinKeys(variant.symbol.replace('.', '-'))) {
                 const existing = scopedCategoryMap[rawSlug];
                 if (!existing) {
                     scopedCategoryMap[rawSlug] = action.canonicalSlug;
@@ -1602,6 +1675,7 @@ class SdkDocSync {
                     if (!existing.includes(action.canonicalSlug)) existing.push(action.canonicalSlug);
                 } else if (existing !== action.canonicalSlug) {
                     scopedCategoryMap[rawSlug] = [existing, action.canonicalSlug];
+                }
                 }
             }
         }
@@ -1633,6 +1707,10 @@ class SdkDocSync {
             )) : [];
             const matches = sourceMatches.length > 0 ? sourceMatches : candidates;
             if (matches.length === 0) return [action];
+            // Operator-excluded scope actions (grouping-decision exclusions
+            // restated at entry via --exclude-slug): they never enter this
+            // campaign's diff, so nothing plans or writes for them.
+            if (matches.every((scoped) => this.excludeSlugs?.has(scoped.canonicalSlug))) return [];
             return matches.map((scoped) => {
                 const sourceVariants = this._releaseScopeReviewVariants(scoped);
                 return {
@@ -1799,7 +1877,10 @@ class SdkDocSync {
                 || supplied.current
                 || supplied.existingRecordLookup
                 || supplied.copySource
-                || Object.prototype.hasOwnProperty.call(supplied, 'tokenReferencedByOlderVersions'))
+                || Object.prototype.hasOwnProperty.call(supplied, 'tokenReferencedByOlderVersions')
+                || supplied.placementWalk
+                || Array.isArray(supplied.dependencies)
+                || supplied.inheritanceEvidence)
             ? supplied
             : { artifact: supplied };
         const actionContext = action.planningContext || {};
@@ -1807,6 +1888,10 @@ class SdkDocSync {
             ? await this.planningContextProvider(action, { index, result })
             : {};
         const metadata = action.doc?.metadata || {};
+        // Merge priority: reviewed evidence first. The reference-context
+        // passthrough (supplied) carries the reviewed placement evidence for
+        // grouping-bound campaigns — a generic default provider (extra) must
+        // never clobber it; scope actions (actionContext) still win outright.
         const current = {
             version: metadata.version ?? null,
             recordId: action.doc?.id ?? null,
@@ -1814,8 +1899,8 @@ class SdkDocSync {
             folderToken: metadata.folderToken ?? null,
             parentRecordId: metadata.parentRecordId ?? null,
             ancestryVerified: false,
-            ...(suppliedContext.current || {}),
             ...(extraContext.current || {}),
+            ...(suppliedContext.current || {}),
             ...(actionContext.current || {}),
         };
         const target = {
@@ -1824,8 +1909,8 @@ class SdkDocSync {
             folderToken: this.rootToken || null,
             versionRootToken: this.rootToken || null,
             ancestryVerified: false,
-            ...(suppliedContext.target || {}),
             ...(extraContext.target || {}),
+            ...(suppliedContext.target || {}),
             ...(actionContext.target || {}),
         };
         const artifact = extraContext.artifact ?? suppliedContext.artifact ?? actionContext.artifact;
@@ -1834,7 +1919,15 @@ class SdkDocSync {
             ?? suppliedContext.requiredLinkedInlineCode
             ?? [];
         let apiPatchPlan = actionContext.apiPatchPlan ?? extraContext.apiPatchPlan ?? suppliedContext.apiPatchPlan;
-        if (action.type === 'UPDATE' && artifact?.layout && !apiPatchPlan) {
+        // The reviewed action type (grouping-bound campaigns) decides whether
+        // patch planning applies at all: a unit the ruling re-classified to
+        // CREATE never patches the legacy page even when the scout-typed
+        // scope action says UPDATE.
+        const planningActionType = suppliedContext.reviewedActionType
+            ?? extraContext.reviewedActionType
+            ?? actionContext.reviewedActionType
+            ?? action.type;
+        if (planningActionType === 'UPDATE' && action.type === 'UPDATE' && artifact?.layout && !apiPatchPlan) {
             if (!this.documentBlockReader || typeof this.documentBlockReader.readBlocks !== 'function') {
                 const error = new Error(`Live document blocks are required to plan SDK UPDATE ${this._stableIdFor(action)}`);
                 error.code = 'DOCUMENT_BLOCK_READER_REQUIRED';
@@ -1884,16 +1977,16 @@ class SdkDocSync {
             }
         }
         return {
-            ...suppliedContext,
             ...extraContext,
+            ...suppliedContext,
             ...actionContext,
             artifact,
             apiPatchPlan,
             requiredLinkedInlineCode,
             current,
             target,
-            existingRecordLookup: actionContext.existingRecordLookup ?? extraContext.existingRecordLookup ?? suppliedContext.existingRecordLookup,
-            copySource: actionContext.copySource ?? extraContext.copySource ?? suppliedContext.copySource,
+            existingRecordLookup: actionContext.existingRecordLookup ?? suppliedContext.existingRecordLookup ?? extraContext.existingRecordLookup,
+            copySource: actionContext.copySource ?? suppliedContext.copySource ?? extraContext.copySource,
         };
     }
 

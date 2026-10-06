@@ -628,6 +628,60 @@ test('Go keeps constructor inputs and option method full signatures', () => {
   assert.equal(doc.result.type.display, 'error');
 });
 
+test('Go reviewed context overrides builder members and type-page result fields', () => {
+  // Web-content method pages curate BUILDER METHODS descriptions the Go
+  // doc-comment scan cannot recover, and type pages carry curated FIELDS —
+  // the reviewed context wins over the bare scanner shape.
+  const methodDoc = goAdapter.toReferenceDocument(
+    fixture('go-create-collection.json'),
+    context('go', 'Collections', {
+      callableMembers: [{
+        kind: 'option',
+        name: 'WithMetricType',
+        signature: 'WithMetricType(metricType entity.MetricType)',
+        description: 'Sets the metric type used to measure vector similarity.',
+      }],
+    }),
+  );
+  assert.equal(methodDoc.callableMembers.length, 1);
+  assert.equal(methodDoc.callableMembers[0].description,
+    'Sets the metric type used to measure vector similarity.');
+
+  const structDoc = goAdapter.toReferenceDocument(
+    fixture('go-collection-struct.json'),
+    context('go', 'Collections', {
+      summary: 'Describes a Milvus collection.',
+      examples: [],
+      result: {
+        type: 'Collection',
+        description: 'Represents a collection with its schema.',
+        fields: [{ name: 'Name', type: 'string', description: 'The collection name.' }],
+      },
+    }),
+  );
+  assert.equal(structDoc.result.fields.length, 1);
+  assert.equal(structDoc.result.fields[0].description, 'The collection name.');
+  assert.equal(validateReferenceDocument(structDoc, { production: true }).valid, true);
+
+  const enumDoc = goAdapter.toReferenceDocument(
+    fixture('go-consistency-level-enum.json'),
+    context('go', 'Collections', {
+      summary: 'Lists Go consistency levels.',
+      examples: [],
+      result: {
+        type: 'ConsistencyLevel',
+        description: 'Consistency levels for reads.',
+        fields: [
+          { name: 'ClStrong', type: 'ConsistencyLevel', defaultValue: '0', description: 'The strongest consistency.' },
+        ],
+      },
+    }),
+  );
+  assert.equal(enumDoc.result.fields.length, 1);
+  assert.equal(enumDoc.result.fields[0].description, 'The strongest consistency.');
+  assert.equal(validateReferenceDocument(enumDoc, { production: true }).valid, true);
+});
+
 test('Go normalizes real struct fields recursively without inventing option members', () => {
   const symbol = fixture('go-collection-struct.json');
   symbol.fields[1].children = [{ name: 'Fields', type: '[]*Field', description: 'Schema fields.' }];

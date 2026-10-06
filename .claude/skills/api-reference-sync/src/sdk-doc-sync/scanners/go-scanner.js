@@ -141,6 +141,17 @@ const METHOD_CATEGORIES = {
     // v3.0.0 additions surfaced by web-content PR intake (#1147/#1158)
     RestoreExternalSnapshot: 'Snapshot',
     AddCollectionStructField: 'Collections',
+
+    // v3.0.0 RBAC additions (operator 2026-10-06 ruling: the alias/obsolete
+    // trio lands as deprecation-leading pages instead of staying skipped)
+    AlterRole: 'Authentication',
+    GrantV2: 'Authentication',
+    RevokeV2: 'Authentication',
+    OperatePrivilegeGroup: 'Authentication',
+
+    // v3.0.0 CDC additions
+    DumpMessages: 'CDC',
+    CreateReplicateStream: 'CDC',
 };
 
 // Package-level exported constructors in client/milvusclient that are not
@@ -150,15 +161,25 @@ const PACKAGE_FUNC_CATEGORIES = {
     NewRoaringBitmapBlob: 'FileResources',
 };
 
+// Package-level exported functions in client/bulkwriter (the import REST
+// facade is package-level, not Client methods).
+const BULKWRITER_FUNC_CATEGORIES = {
+    BulkImport: 'DataImport',
+    ListImportJobs: 'DataImport',
+    GetImportProgress: 'DataImport',
+    CommitImport: 'DataImport',
+    AbortImport: 'DataImport',
+};
+
 // Methods to skip
 const SKIP_METHODS = new Set([
+    // House skip list (sdk-go.md): raw gRPC stub transport plumbing, not a
+    // Milvus operation. The 2026-10-06 ruling cleared the rest of the old
+    // skip entries — GrantV2/RevokeV2/OperatePrivilegeGroup/
+    // CreateReplicateStream now land as deprecation-leading pages.
     'GetService',
-    'OperatePrivilegeGroup',
-    'GrantV2',
-    'RevokeV2',
     'MetadataUnaryInterceptor',
     'MetadataStreamInterceptor',
-    'CreateReplicateStream',
     // Internal/private methods
     'dialOptions',
     'parseAuthentication',
@@ -256,6 +277,10 @@ const ENTITY_DEFS = [
     { name: 'ListImportJobsResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Response listing bulk import jobs.' },
     { name: 'GetImportProgressOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for querying the progress of one bulk import job.' },
     { name: 'GetImportProgressResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Progress details of one bulk import job.' },
+    { name: 'CommitImportOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for committing the files of one bulk import job.' },
+    { name: 'CommitImportResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Response of a bulk import commit.' },
+    { name: 'AbortImportOption', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Options for aborting one bulk import job.' },
+    { name: 'AbortImportResponse', category: 'DataImport', pkg: 'bulkwriter', file: 'bulk_import.go', kind: 'struct', docstring: 'Response of a bulk import abort.' },
 
     // v3.0.0 additions surfaced by web-content PR intake (#1147/#1158)
     { name: 'ReplicaInfo', category: 'ResourceGroup', pkg: 'entity', file: 'resource_group.go', kind: 'struct', docstring: 'Represents one replica of a resource group, including its node distribution and state.' },
@@ -306,7 +331,55 @@ class GoScanner extends BaseScanner {
         // Phase 5: Extract index/AnnParam constructor functions from client/index/
         const indexCtors = this._extractIndexConstructors();
 
-        return [...methods, ...entities, ...indexCtors];
+        // Phase 6: Extract bulkwriter package-level import functions
+        const bulkwriterFuncs = this._extractBulkwriterFuncs();
+
+        return [...methods, ...entities, ...indexCtors, ...bulkwriterFuncs];
+    }
+
+    // ── Phase 6: bulkwriter package functions ────────────────────────
+
+    _extractBulkwriterFuncs() {
+        const symbols = [];
+        const dir = path.join(this.rootDir, 'client', 'bulkwriter');
+        let files = [];
+        try {
+            files = fs.readdirSync(dir)
+                .filter((name) => name.endsWith('.go') && !name.endsWith('_test.go'));
+        } catch {
+            return symbols;
+        }
+        const seen = new Set();
+        for (const file of files) {
+            const filePath = path.join(dir, file);
+            const lines = fs.readFileSync(filePath, 'utf-8').split('\n');
+            for (let i = 0; i < lines.length; i++) {
+                const match = lines[i].match(/^func\s+([A-Z]\w*)\s*\(/);
+                if (!match) continue;
+                const name = match[1];
+                const category = BULKWRITER_FUNC_CATEGORIES[name];
+                if (!category || seen.has(name)) continue;
+                seen.add(name);
+                const sigLine = lines[i].replace(/\s*\{.*$/, '').trim();
+                symbols.push({
+                    name,
+                    kind: 'method',
+                    category,
+                    parentClass: category,
+                    signature: sigLine,
+                    docstring: this._extractGoDoc(lines, i),
+                    params: [],
+                    optionMethods: [],
+                    altConstructors: [],
+                    optionType: this._extractOptionType(sigLine),
+                    returnType: this._extractReturnType(sigLine),
+                    filePath: path.relative(this.rootDir, filePath),
+                    lineNumber: i + 1,
+                    bodyHash: null,
+                });
+            }
+        }
+        return symbols;
     }
 
     // ── Phase 1: Method extraction ──────────────────────────────────

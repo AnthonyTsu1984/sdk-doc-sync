@@ -383,6 +383,28 @@ class SyncPlanner {
     }
     assertDocumentationOwnership(action, stableId);
 
+    // Reviewed action-type override (grouping-bound campaigns): the entry
+    // scope is the receipt-bound union scope whose scout action types can
+    // disagree with the operator's reviewed intent (e.g. CDC pages the scout
+    // typed UPDATE over records the ruling re-classified as CREATE — the
+    // records predate the v3.0.x KB view). The reviewed reference context
+    // carries the grouping-approved intent; it wins here, exactly as
+    // spec.actionIntent wins in build-reviewed-release-context.
+    const reviewedActionType = context.reviewedActionType;
+    if (reviewedActionType !== undefined) {
+      if (!KNOWN_ACTIONS.has(reviewedActionType)) {
+        throw new SyncPlanningError(
+          'UNKNOWN_ACTION',
+          `Reviewed action type ${reviewedActionType} is not a plannable action for ${stableId}`,
+          { action: reviewedActionType },
+        );
+      }
+      if (reviewedActionType !== diffAction) {
+        effectiveDiffAction = reviewedActionType;
+        autoRoutedFromAction = diffAction;
+      }
+    }
+
     const source = sourceFrom(action, context);
     const target = targetFrom(context);
     const dependencies = dependenciesFrom(context);
@@ -441,10 +463,16 @@ class SyncPlanner {
       || (nonEmptyString(target.folderRef) && dependencies.includes(target.folderRef));
     const hasParentTarget = nonEmptyString(target.parentRecordId)
       || (nonEmptyString(target.parentRecordRef) && dependencies.includes(target.parentRecordRef));
+    // Root-level class/virtual-node pages (the per-category records: v2-
+    // Collection, v2-Database, …) legitimately carry no parent record —
+    // their container is the drive folder (same carve-out as
+    // build-reviewed-release-context).
+    const rootLevelClassPage = ['Class', 'VirtualNode'].includes(source.recordType)
+      && !nonEmptyString(source.parentRecordId);
     if (!nonEmptyString(target.version)
       || (WRITE_ACTIONS.has(diffAction) && (
         !hasFolderTarget
-        || !hasParentTarget
+        || (!hasParentTarget && !rootLevelClassPage)
         || !nonEmptyString(target.versionRootToken)
         || targetProof.ancestryVerified !== true
       ))) {
@@ -472,7 +500,7 @@ class SyncPlanner {
           `A validated artifact is required for ${diffAction} ${stableId}`,
         );
       }
-      if (diffAction === 'UPDATE' && reviewedArtifact.layout
+      if (effectiveDiffAction === 'UPDATE' && reviewedArtifact.layout
         && (!context.apiPatchPlan || context.apiPatchPlan.validation?.valid !== true)) {
         throw new SyncPlanningError(
           'API_PATCH_PLAN_REQUIRED',
@@ -608,18 +636,18 @@ class SyncPlanner {
         || !lookup.criteria) {
         throw new SyncPlanningError(
           'CREATE_LOOKUP_REQUIRED',
-          `${diffAction} ${stableId} requires explicit absent existingRecordLookup evidence`,
+          `${effectiveDiffAction} ${stableId} requires explicit absent existingRecordLookup evidence`,
         );
       }
     }
-    if (diffAction === 'UPDATE' && (!nonEmptyString(currentProof.recordId) || !nonEmptyString(currentProof.documentToken))) {
+    if (effectiveDiffAction === 'UPDATE' && (!nonEmptyString(currentProof.recordId) || !nonEmptyString(currentProof.documentToken))) {
       throw new SyncPlanningError(
         'UPDATE_SOURCE_REQUIRED',
         `UPDATE ${stableId} requires existing release record and document token evidence`,
         { recordId: currentProof.recordId || null, documentToken: currentProof.documentToken || null },
       );
     }
-    if (diffAction === 'UPDATE' && (
+    if (effectiveDiffAction === 'UPDATE' && (
       !nonEmptyString(source.version)
       || !nonEmptyString(source.folderToken)
       || currentProof.placementVerified !== true
@@ -639,7 +667,7 @@ class SyncPlanner {
     // pre-write shared-token revalidation still requires the evidence, and a
     // shared token under REBUILD needs the same classified shape as an
     // in-place patch — whole-body replacement affects every referencing track.
-    if (diffAction === 'UPDATE' || effectiveDiffAction === 'REBUILD') {
+    if (effectiveDiffAction === 'UPDATE' || effectiveDiffAction === 'REBUILD') {
       const validation = validateInheritanceEvidence(context.inheritanceEvidence, {
         stableId,
         current: {
@@ -671,7 +699,7 @@ class SyncPlanner {
     // are unchanged, so a shared token needs the same classified shape a
     // shared in-place patch needs — whole-body replacement affects every
     // referencing track just the same.
-    if (diffAction === 'UPDATE' || effectiveDiffAction === 'REBUILD') {
+    if (effectiveDiffAction === 'UPDATE' || effectiveDiffAction === 'REBUILD') {
       const treeDelta = evaluateVersionedTreeDelta({
         operation: 'UPDATE',
         stableId,
@@ -708,9 +736,9 @@ class SyncPlanner {
       }
       invariantAttestations = [treeDelta.attestation];
       treeDecision = treeDelta.decision;
-    } else if (CREATE_LIKE_ACTIONS.has(diffAction)) {
+    } else if (CREATE_LIKE_ACTIONS.has(effectiveDiffAction)) {
       const treeDelta = evaluateVersionedTreeDelta({
-        operation: diffAction,
+        operation: effectiveDiffAction,
         stableId,
         existingRecordLookup: context.existingRecordLookup,
         target,

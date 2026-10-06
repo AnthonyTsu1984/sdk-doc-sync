@@ -34,11 +34,16 @@ function toReferenceDocument(symbol, context = {}) {
         { symbol, context },
       ))
       : [];
-    const result = common.makeResult({
-      type: symbol.name,
-      description: symbol.docstring || '',
-      fields: symbol.fields || [],
-    }, evidence, { symbol, context });
+    // Reviewed upstream FIELDS: the web-content type pages carry curated
+    // field descriptions; prefer the reviewed context result over the bare
+    // scanner shape when one is supplied.
+    const result = context.result
+      ? common.makeResult(context.result, evidence, { symbol, context })
+      : common.makeResult({
+        type: symbol.name,
+        description: symbol.docstring || '',
+        fields: symbol.fields || [],
+      }, evidence, { symbol, context });
     return common.buildReferenceDocument({
       symbol,
       context,
@@ -59,11 +64,13 @@ function toReferenceDocument(symbol, context = {}) {
       defaultValue: value.value,
       description: value.description || '',
     }));
-    const result = common.makeResult({
-      type: symbol.name,
-      description: symbol.docstring || '',
-      fields,
-    }, evidence, { symbol, context });
+    const result = context.result
+      ? common.makeResult(context.result, evidence, { symbol, context })
+      : common.makeResult({
+        type: symbol.name,
+        description: symbol.docstring || '',
+        fields,
+      }, evidence, { symbol, context });
     return common.buildReferenceDocument({
       symbol,
       context,
@@ -112,14 +119,27 @@ function toReferenceDocument(symbol, context = {}) {
       inputs: request.inputs || symbol.params,
     }, evidence, { symbol, context })];
   }
-  const callableMembers = (symbol.optionMethods || []).map((member) => common.makeCallableMember(
-    'option',
-    member,
-    evidence,
-    member.fullSignature || '',
-    [],
-    { symbol, context },
-  ));
+  // Reviewed upstream BUILDER METHODS: web-content method pages curate the
+  // builder/option member descriptions; prefer the reviewed context members
+  // over the scanner shape (Go doc comments are frequently empty) when a
+  // non-empty list is supplied.
+  const callableMembers = Array.isArray(context.callableMembers) && context.callableMembers.length > 0
+    ? context.callableMembers.map((member) => common.makeCallableMember(
+      member.kind || 'option',
+      member,
+      evidence,
+      member.signature || member.fullSignature || '',
+      member.inputs || [],
+      { symbol, context },
+    ))
+    : (symbol.optionMethods || []).map((member) => common.makeCallableMember(
+      'option',
+      member,
+      evidence,
+      member.fullSignature || '',
+      [],
+      { symbol, context },
+    ));
   const result = context.result || symbol.result || symbol.returnType
     ? common.makeResult(context.result || symbol.result || { type: symbol.returnType }, evidence, { symbol, context })
     : null;

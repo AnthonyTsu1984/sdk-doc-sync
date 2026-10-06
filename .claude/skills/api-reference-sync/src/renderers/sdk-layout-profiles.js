@@ -98,10 +98,14 @@ const profiles = Object.freeze({
     layoutRules: GLOBAL_LAYOUT_RULES,
   }),
   go: freezeProfile({
-    id: 'go', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
-    order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
+    // v2: 'result-parameters' slot — the strong-form RETURNS response-fields
+    // PARAMETERS list renders after RETURNS as its own section (the section
+    // model roles it distinctly instead of flagging a duplicate/out-of-order
+    // 'parameters' section).
+    id: 'go', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'result-parameters', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'Go', 'request-signature': 'Go', 'example-code': 'Go' },
-    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
+    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1], 'result-parameters': [0, 1] },
     layoutRules: Object.freeze({
       ...GLOBAL_LAYOUT_RULES,
       // Vowel-initial type pages read "An Xxx instance is …" (go v3.0.x has

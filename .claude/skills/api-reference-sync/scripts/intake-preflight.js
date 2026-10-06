@@ -48,14 +48,32 @@ const CONTEXT_KEYS = [
 // Keys the pipeline itself consumes when present (adapter inputs for
 // request/callable entries, reviewed type URLs) — expected on the entries
 // that carry them, never flagged as UNEXPECTED.
-const OPTIONAL_CONTEXT_KEYS = ['params', 'result', 'signature', 'typeUrls', 'requestSyntax', 'requiredFields', 'styleMirrors'];
+const OPTIONAL_CONTEXT_KEYS = ['params', 'result', 'signature', 'typeUrls', 'requestSyntax', 'requiredFields', 'styleMirrors',
+    'summaryCallouts', 'requestVariants', 'callableMembers', 'inheritanceReview', 'reviewedActionType', 'treeDelta'];
+// Structured-route entries (go v3.0.0 campaign shape: the reviewed context
+// carries the parsed upstream structure, not solidified verbatim bytes) and
+// grouping-bound planning evidence that rides the reference context when the
+// entry scope is the receipt-bound unfiltered scope.
+const STRUCTURED_ROUTE_KEYS = [
+    'current', 'target', 'existingRecordLookup', 'copySource', 'dependencies',
+    'placementWalk', 'inheritanceEvidence', 'sharedUpdateReviews',
+    'tokenReferencedByOlderVersions',
+];
+// Keys required by the verbatim route only (merged-PR pages solidified as
+// verbatimContent; kind/pr ride the entry): a structured-route entry replaces
+// them with the adapter-consumed structure keys.
+const VERBATIM_ROUTE_KEYS = ['kind', 'pr', 'verbatimContent'];
 
-function parseArgs(argv) {
-    const options = { language: 'java', json: false, strict: false };
+function parseArgs(argv = process.argv) {
+    const options = { language: 'java', json: false, strict: false, route: 'verbatim' };
     for (let index = 2; index < argv.length; index += 1) {
         const arg = argv[index];
         if (arg === '--contexts') options.contexts = path.resolve(argv[++index]);
         else if (arg === '--language') options.language = argv[++index];
+        else if (arg === '--route') {
+            options.route = argv[++index];
+            if (!['verbatim', 'structured'].includes(options.route)) throw new Error(`--route must be verbatim or structured (got ${options.route})`);
+        }
         else if (arg === '--mirror-allowlist') options.mirrorAllowlist = path.resolve(argv[++index]);
         else if (arg === '--json') options.json = true;
         else if (arg === '--strict') options.strict = true;
@@ -126,13 +144,18 @@ function main(argv = process.argv) {
             continue;
         }
         const keys = Object.keys(entry).sort();
-        const missing = CONTEXT_KEYS.filter((key) => !(key in entry));
-        const unexpected = keys.filter((key) => !CONTEXT_KEYS.includes(key) && !OPTIONAL_CONTEXT_KEYS.includes(key));
+        const structuredRoute = options.route === 'structured';
+        const requiredKeys = CONTEXT_KEYS.filter((key) => !structuredRoute || !VERBATIM_ROUTE_KEYS.includes(key));
+        const allowedKeys = [...CONTEXT_KEYS, ...OPTIONAL_CONTEXT_KEYS, ...(structuredRoute ? [...STRUCTURED_ROUTE_KEYS, ...VERBATIM_ROUTE_KEYS] : [])];
+        const missing = requiredKeys.filter((key) => !(key in entry));
+        const unexpected = keys.filter((key) => !allowedKeys.includes(key));
         if (missing.length > 0) report('error', 'INTAKE_CONTEXT_KEYS_MISSING', identity, `missing ${missing.join(', ')}`);
         if (unexpected.length > 0) report('error', 'INTAKE_CONTEXT_KEYS_UNEXPECTED', identity, `unexpected ${unexpected.join(', ')}`);
 
         if (typeof entry.verbatimContent !== 'string' || entry.verbatimContent.trim() === '') {
-            if (!options.allowMissingVerbatim) report('error', 'INTAKE_VERBATIM_EMPTY', identity, 'verbatimContent is empty');
+            // Structured-route entries carry the parsed upstream structure
+            // instead of solidified bytes; verbatimContent stays optional.
+            if (!options.allowMissingVerbatim && !structuredRoute) report('error', 'INTAKE_VERBATIM_EMPTY', identity, 'verbatimContent is empty');
         } else {
             const bareNotes = entry.verbatimContent.split(/\r?\n/).find((line) => /^#{0,3}\s*notes:?$/i.test(line.trim()));
             if (bareNotes) report('error', 'INTAKE_VERBATIM_BARE_NOTES', identity, `bare Notes line in verbatimContent: ${bareNotes.trim()}`);

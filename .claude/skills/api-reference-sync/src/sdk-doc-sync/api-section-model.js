@@ -34,7 +34,14 @@ function labelSection(block, profile, currentRole) {
   if (block?.block_type !== 2) return null;
   const label = normalizedLabel(block);
   if (label === 'PARAMETERS') {
-    return profile.id === 'node' && currentRole === 'request' ? null : 'parameters';
+    if (profile.id === 'node' && currentRole === 'request') return null;
+    // Strong-form RETURNS (2026-10-03 global ruling): response fields render
+    // as a PARAMETERS bullet list after RETURNS. Profiles that declare the
+    // 'result-parameters' slot in their order role that second list
+    // distinctly, so the section model does not flag it as a duplicate or
+    // out-of-order 'parameters' section.
+    if (currentRole === 'returns' && profile.order.includes('result-parameters')) return 'result-parameters';
+    return 'parameters';
   }
   if (['BUILDER METHODS', 'OPTION METHODS', 'REQUEST METHODS', 'METHODS'].includes(label)) return 'members';
   if (label === 'RETURN TYPE') return 'result-type';

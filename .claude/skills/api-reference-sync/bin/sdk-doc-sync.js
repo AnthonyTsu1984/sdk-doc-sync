@@ -107,6 +107,10 @@ function parseArgs(argv) {
             args.placementWalkDigest = argv[++i];
         } else if (arg === '--review-unit-id' && argv[i + 1]) {
             args.reviewUnitId = argv[++i];
+        } else if (arg === '--exclude-slug' && argv[i + 1]) {
+            // Grouping-decision exclusions restated at entry (repeatable):
+            // these scope actions never plan or write in this campaign.
+            (args.excludeSlugs = args.excludeSlugs || []).push(argv[++i]);
         } else if (arg === '--batch-continue') {
             args.batchContinue = true;
         } else if (arg === '--session-state' && argv[i + 1]) {
@@ -480,7 +484,19 @@ function createSchemaFirstArtifactProvider({
                     source: 'schema-first',
                 },
             };
-            if (context?.target || context?.current || context?.existingRecordLookup || context?.copySource || Object.prototype.hasOwnProperty.call(context || {}, 'tokenReferencedByOlderVersions')) {
+            // Grouping-bound campaigns enter with the approved (unfiltered)
+            // release scope — its actions carry no reviewed planningContext,
+            // so the planning evidence rides the reference-context entries.
+            // The placement walk + dependency DAG + inheritance evidence are
+            // as load-bearing as target/current: without the passthrough the
+            // plans would carry no placementWalkDigest (PLACEMENT_WALK_
+            // UNBOUND at execution) and the kernel would classify UPDATEs
+            // without evidence.
+            if (context?.target || context?.current || context?.existingRecordLookup || context?.copySource
+                || Object.prototype.hasOwnProperty.call(context || {}, 'tokenReferencedByOlderVersions')
+                || context?.placementWalk || Array.isArray(context?.dependencies)
+                || context?.inheritanceEvidence || Array.isArray(context?.sharedUpdateReviews)
+                || typeof context?.reviewedActionType === 'string' || context?.treeDelta) {
                 return {
                     artifact,
                     target: context.target,
@@ -488,6 +504,12 @@ function createSchemaFirstArtifactProvider({
                     existingRecordLookup: context.existingRecordLookup,
                     copySource: context.copySource,
                     tokenReferencedByOlderVersions: context.tokenReferencedByOlderVersions,
+                    placementWalk: context.placementWalk,
+                    dependencies: context.dependencies,
+                    inheritanceEvidence: context.inheritanceEvidence,
+                    sharedUpdateReviews: context.sharedUpdateReviews,
+                    reviewedActionType: context.reviewedActionType,
+                    treeDelta: context.treeDelta,
                 };
             }
             return artifact;
@@ -719,20 +741,36 @@ async function runCli({
         return null;
     }
 
-    const fileContextProvider = createReferenceContextProvider(args.referenceContext, { language });
-    const artifactProvider = dependencies.artifactProvider || createSchemaFirstArtifactProvider({
-        language,
-        referenceContextProvider: dependencies.referenceContextProvider || fileContextProvider,
-    });
-    const innerPlanningContextProvider = dependencies.planningContextProvider
-        || createDefaultPlanningContextProvider({ rootToken: rootToken || 'dummy', sdkVersion: args.sdkVersion });
     // T3 placement-live binding: capture the placement walk the planning
     // contexts actually derive from — the session records it at creation and
     // resumed executions cross-check their --placement-walk-digest against it.
+    // Grouping-bound campaigns carry the walk on reference-context entries
+    // (the entry scope is the receipt-bound unfiltered scope, whose actions
+    // have no planningContext), so the reference-context side is captured as
+    // well; --placement-walk-digest remains the explicit fallback for
+    // sessions created without either source.
     let capturedPlacementWalk = null;
+    const capturePlacementWalk = (walk) => {
+        if (capturedPlacementWalk === null && walk?.digest) capturedPlacementWalk = walk;
+    };
+    const rawReferenceContextProvider = dependencies.referenceContextProvider
+        || createReferenceContextProvider(args.referenceContext, { language });
+    const referenceContextProviderWithCapture = rawReferenceContextProvider
+        ? async (action, scope) => {
+            const context = await rawReferenceContextProvider(action, scope);
+            capturePlacementWalk(context?.placementWalk);
+            return context;
+        }
+        : null;
+    const artifactProvider = dependencies.artifactProvider || createSchemaFirstArtifactProvider({
+        language,
+        referenceContextProvider: referenceContextProviderWithCapture,
+    });
+    const innerPlanningContextProvider = dependencies.planningContextProvider
+        || createDefaultPlanningContextProvider({ rootToken: rootToken || 'dummy', sdkVersion: args.sdkVersion });
     const planningContextProvider = async (action) => {
         const context = await innerPlanningContextProvider(action);
-        if (capturedPlacementWalk === null && context?.placementWalk) capturedPlacementWalk = context.placementWalk;
+        capturePlacementWalk(context?.placementWalk);
         return context;
     };
     const typeIndexReader = dependencies.typeIndexReader || (
@@ -772,6 +810,53 @@ async function runCli({
         }
     }
 
+    // Identity-map category seeding: the scanner's raw slugs use scanner
+    // category words (Collections-, Partitions-…) while release-scope
+    // actions carry KB-form symbols (Collection.X, Partition.X). The
+    // identity map is the canonicalSlug authority (sdk-pr-sync.md) — seed
+    // the diff engine's categoryMap from it so scope-bound scans join on
+    // canonical slugs instead of trusting scope symbol labels.
+    // Campaign resources ride the reference context's top level for
+    // grouping-bound campaigns: the entry scope is receipt-bound and cannot
+    // carry them (mutating it would re-key the chained digest). The context
+    // file is the reviewed input carrier — build-reviewed-release-context
+    // mirrors the candidate spec's target.resources into it.
+    let campaignResources = null;
+    if (args.referenceContext) {
+        try {
+            const contextDocument = JSON.parse(readFile(path.resolve(args.referenceContext)));
+            campaignResources = Array.isArray(contextDocument?.resources) && contextDocument.resources.length > 0
+                ? contextDocument.resources : null;
+        } catch (error) {
+            err(`Error: cannot read --reference-context: ${error.message}`);
+            exit(1);
+            return null;
+        }
+    }
+
+    let identityCategoryMap = null;
+    if (releaseScope) {
+        const trackMinor = String(args.sdkVersion || '').replace(/^v(\d+)\.(\d+)\.x$/, '$1$2');
+        const mapPath = path.join(__dirname, '..', 'references', 'identity', `${language}-v${trackMinor}.json`);
+        if (fs.existsSync(mapPath)) {
+            try {
+                const map = JSON.parse(readFile(mapPath));
+                const symbols = map && typeof map === 'object' && map.symbols && typeof map.symbols === 'object'
+                    ? Object.values(map.symbols) : [];
+                identityCategoryMap = {};
+                for (const symbol of symbols) {
+                    if (!symbol?.stableId || !symbol.canonicalSlug) continue;
+                    const parts = String(symbol.stableId).split(':');
+                    if (parts.length < 3) continue;
+                    const rawSlug = `${parts[1]}-${parts.slice(2).join('-')}`;
+                    identityCategoryMap[rawSlug] = symbol.canonicalSlug;
+                }
+            } catch (error) {
+                err(`Warning: identity map ${mapPath} unreadable (${error.message}); scanner↔scope slug joins rely on scope symbol labels only`);
+            }
+        }
+    }
+
     const syncOptions = {
         scanner: dependencies.scanner || null,
         indexReader: dependencies.indexReader || null,
@@ -788,7 +873,10 @@ async function runCli({
         dryRun: args.dryRun || false,
         changedOnly: args.changedOnly || false,
         releaseScope,
+        identityCategoryMap,
+        campaignResources,
         exclude: args.exclude || [],
+        excludeSlugs: args.excludeSlugs || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
         executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest, args.approveBatchDigest),
         artifactProvider,

@@ -1730,6 +1730,54 @@ test('release-scope consolidation preserves helper planning context in either li
   }
 });
 
+test('2026-10-06: consolidation prefers the scope-named primary symbol over folded helpers that scan earlier', () => {
+  const scopedAction = {
+    type: 'UPDATE',
+    stableId: 'python:DataImport:VolumeBulkWriter',
+    canonicalSlug: 'DataImport-VolumeBulkWriter',
+    symbol: 'VolumeBulkWriter.__init__',
+    documentationOwnership: { classification: 'standalone' },
+    sourceVariants: [
+      { stableId: 'python:DataImport:VolumeBulkWriter', canonicalSlug: 'DataImport-VolumeBulkWriter', symbol: 'VolumeBulkWriter.__init__' },
+      { stableId: 'python:DataImport:VolumeBulkWriter', canonicalSlug: 'DataImport-VolumeBulkWriter', symbol: 'UploadPolicy' },
+    ],
+  };
+  // Scan order: the folded helper (UploadPolicy enum) scans before the
+  // named primary (VolumeBulkWriter.__init__).
+  const diffActions = [
+    {
+      type: 'UPDATE',
+      slug: 'DataImport-VolumeBulkWriter',
+      symbol: { name: 'UploadPolicy', parentClass: null, lineNumber: 6, kind: 'enum', signature: 'class UploadPolicy(str, Enum):' },
+      reason: 'helper changed',
+    },
+    {
+      type: 'UPDATE',
+      slug: 'DataImport-VolumeBulkWriter',
+      symbol: { name: '__init__', parentClass: 'VolumeBulkWriter', lineNumber: 15, kind: 'method' },
+      reason: 'primary changed',
+    },
+  ];
+  const sync = new SdkDocSync({
+    scanner: { rootDir: '/fixtures/sdk', scan: async () => [] },
+    indexReader: async () => [],
+    rootToken: 'root-v30',
+    baseToken: 'base-v30',
+    sdkName: 'pymilvus',
+    sdkVersion: 'v3.0.x',
+    releaseScope: { actions: [scopedAction] },
+    changedOnly: true,
+    dryRun: true,
+  });
+  const [consolidated] = sync._applyReleaseScopeDiffActions(diffActions);
+  assert.equal(consolidated.symbol.name, '__init__');
+  assert.equal(consolidated.symbol.parentClass, 'VolumeBulkWriter');
+  assert.deepEqual(consolidated.sourceVariants.map((variant) => variant.symbol).sort(), [
+    'UploadPolicy',
+    'VolumeBulkWriter.__init__',
+  ]);
+});
+
 test('release-scope consolidation normalizes equivalent planning contexts deterministically', () => {
   const sync = new SdkDocSync({
     scanner: { rootDir: '/fixtures/sdk', scan: async () => [] },

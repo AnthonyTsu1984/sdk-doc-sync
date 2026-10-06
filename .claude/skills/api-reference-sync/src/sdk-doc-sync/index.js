@@ -1687,8 +1687,21 @@ class SdkDocSync {
     }
 
     _consolidateReleaseScopeDiffActions(actions) {
+        // The scope action names its primary scanned symbol (action.symbol,
+        // e.g. 'VolumeBulkWriter.__init__'); folded helper symbols
+        // (method_owned, e.g. the UploadPolicy enum) map to the same slug and
+        // otherwise win by scan order, feeding the artifact the wrong
+        // signature/kind. The named primary sorts first per slug.
+        const rankOf = (action) => {
+            const named = action.releaseScopeAction?.symbol;
+            if (!named || !action.symbol) return 1;
+            const qualified = (action.symbol.parentClass ? `${action.symbol.parentClass}.` : '')
+                + action.symbol.name;
+            return qualified === named ? 0 : 1;
+        };
+        const ordered = [...actions].sort((a, b) => rankOf(a) - rankOf(b));
         const consolidated = new Map();
-        for (const action of actions) {
+        for (const action of ordered) {
             const existing = consolidated.get(action.slug);
             if (!existing) {
                 const primary = {

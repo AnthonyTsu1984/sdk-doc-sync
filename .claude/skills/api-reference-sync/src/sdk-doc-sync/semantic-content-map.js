@@ -273,14 +273,21 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     }
     // 2026-10-05 operator ruling (java v3.0.x revision round): a void page's
     // bare "RETURNS:\nvoid" stub may retire entirely — the v2.6 format
-    // baseline is "void carries no return sections". The exemption is bound
-    // to exactly that shape: no upstream RETURN TYPE section and a RETURNS
-    // section whose only prose is the void token. Any other RETURNS prose
-    // drop stays a loss.
+    // baseline is "void carries no return sections". Widened 2026-10-06 on
+    // campaign data (page java:v2-Collections-dropFunctionField): several
+    // stubs render TWO prose lines — the void token (often italic, "*void*")
+    // plus an explicit "This operation does not return a value." sentence —
+    // which is void-equivalent with zero information beyond the signature.
+    // The exemption therefore accepts a RETURNS section ALL of whose prose
+    // lines are stub lines: a bare void token or an explicit no-value
+    // sentence. Still bound to: no upstream RETURN TYPE section, canonical
+    // deletes the section. RETURNS prose carrying real content (what a
+    // non-void method returns) stays a loss.
     const upstreamRet = upstream.returnsProse || [];
+    const voidEquivalentStubLine = (line) => /^(?:\*{0,2}void\*{0,2}[.:]?|this operation (?:does not return|returns) (?:a value|nothing)[.!]?)$/i.test(String(line || '').trim());
     const voidReturnsRetirement = upstream.returnType === null
-        && upstreamRet.length === 1
-        && /^void\.?$/i.test(String(upstreamRet[0] || '').trim())
+        && upstreamRet.length >= 1
+        && upstreamRet.every(voidEquivalentStubLine)
         && canonical.returnsProse.length === 0;
     if (upstream.returnsProse.length > 0 && canonical.returnsProse.length === 0 && !voidReturnsRetirement) {
         diffs.push({ kind: 'RETURNS_PROSE_MISSING', detail: 'RETURNS section lost its prose' });

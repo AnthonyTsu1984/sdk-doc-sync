@@ -201,11 +201,27 @@ test('a void page may retire its bare RETURNS stub entirely (2026-10-05 ruling)'
     const comparison = compareSemanticContent({ upstreamContent: voidPage, canonicalContent: retired });
     assert.equal(comparison.ok, true, JSON.stringify(comparison.diffs));
 
-    // The exemption is bounded: non-void RETURNS prose still cannot be dropped.
-    const prosePage = voidPage.replace('void', 'This operation returns nothing.');
+    // Widened 2026-10-06 (campaign page java:v2-Collections-dropFunctionField):
+    // a void-equivalent stub — the void token (bare or italic) optionally plus
+    // an explicit no-value sentence — may retire as one unit.
+    const twoLineStub = voidPage.replace('void', '*void*\nThis operation does not return a value.');
+    const twoLineRetired = compareSemanticContent({ upstreamContent: twoLineStub, canonicalContent: retired });
+    assert.equal(twoLineRetired.ok, true, JSON.stringify(twoLineRetired.diffs));
+    const sentenceOnlyStub = voidPage.replace('void', 'This operation returns nothing.');
+    const sentenceRetired = compareSemanticContent({ upstreamContent: sentenceOnlyStub, canonicalContent: retired });
+    assert.equal(sentenceRetired.ok, true, JSON.stringify(sentenceRetired.diffs));
+
+    // The exemption stays bounded: RETURNS prose carrying real content cannot be dropped.
+    const prosePage = voidPage.replace('void', 'Returns the number of deleted entities.');
     const dropped = compareSemanticContent({ upstreamContent: prosePage, canonicalContent: retired });
     assert.equal(dropped.ok, false);
     assert.ok(dropped.diffs.some((diff) => diff.kind === 'RETURNS_PROSE_MISSING'));
+
+    // Nor a MIXED stub: a no-value sentence next to real content is not stub-shaped.
+    const mixedStub = voidPage.replace('void', 'This operation returns nothing.\nReturns the collection id.');
+    const mixedDropped = compareSemanticContent({ upstreamContent: mixedStub, canonicalContent: retired });
+    assert.equal(mixedDropped.ok, false);
+    assert.ok(mixedDropped.diffs.some((diff) => diff.kind === 'RETURNS_PROSE_MISSING'));
 
     // And a void page WITH a RETURN TYPE section cannot drop that section.
     const withType = voidPage.replace('**RETURNS:**', '**RETURN TYPE:**\nvoid\n\n**RETURNS:**');

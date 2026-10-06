@@ -18,6 +18,7 @@ const {
   recordDocumentExecution,
   recordDocumentRollback,
   recordRollbackIntent,
+  loadReviewSessionState,
   saveReviewSession,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -724,6 +725,14 @@ test('a second redo cycle rolls back the newest execution alongside the earlier 
     rollbackJournalPath: secondRollback.filePath,
   });
   assert.equal(leased3.activeRollback.originalExecutionJournalDigest, third.digest);
+
+  // The load invariant coexists lease+receipt per ORIGINAL journal: an
+  // earlier execution's receipt on file must not refuse a newer lease.
+  const sessionPath = path.join(directory, 'redo-session.json');
+  saveReviewSession(sessionPath, leased3, { expectedPreviousDigest: null });
+  const reloaded = loadReviewSessionState(sessionPath).session;
+  assert.equal(reloaded.activeRollback.originalExecutionJournalDigest, third.digest);
+  assert.equal(reloaded.rollbackReceipts.length, 2);
 });
 
 test('completing one unit\u2019s reconcile preserves another unit\u2019s in-flight rollback lease (P2)', () => {

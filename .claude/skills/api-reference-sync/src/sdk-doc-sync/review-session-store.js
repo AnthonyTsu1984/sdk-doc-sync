@@ -1404,14 +1404,21 @@ function loadReviewSessionState(filePath) {
     throw new Error(`Review session is invalid: ${resolved}`);
   }
   // Cross-field invariant the transition table maintains implicitly: no unit
-  // holds a rollback receipt and the lease at once — the apply patch clears
-  // lease(U) in the same atomic patch that appends receipt(U), and
-  // recordRollbackIntent refuses receipt-bearing units before touching the
-  // lease. A file violating this never came from those transitions, so
-  // refuse it at load instead of letting the stray lease wedge silently.
+  // holds a rollback receipt and the lease AT THE SAME ORIGINAL EXECUTION —
+  // the apply patch clears lease(U) in the same atomic patch that appends
+  // receipt(U), and recordRollbackIntent refuses to lease an execution a
+  // receipt already pins. A redo cycle legitimately leaves an EARLIER
+  // execution's receipt on file while a NEWER execution's lease is in
+  // flight; only same-journal coexistence (one execution both reversed and
+  // being reversed) is impossible from those transitions, so refuse that at
+  // load instead of letting the stray lease wedge silently.
   const activeRollback = loaded.state.activeRollback || null;
   if (activeRollback
-      && (loaded.state.rollbackReceipts || []).some((item) => item.reviewUnitId === activeRollback.reviewUnitId)) {
+      && (loaded.state.rollbackReceipts || []).some((item) => (
+        item.reviewUnitId === activeRollback.reviewUnitId
+          && (!activeRollback.originalExecutionJournalDigest
+            || item.originalExecutionJournalDigest === activeRollback.originalExecutionJournalDigest)
+      ))) {
     throw new Error(
       `Review session is inconsistent: rollback lease and receipt coexist for ${activeRollback.reviewUnitId}: ${resolved}`,
     );

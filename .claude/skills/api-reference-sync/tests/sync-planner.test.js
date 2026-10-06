@@ -1434,6 +1434,7 @@ test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
     ref: 'parent:cpp:v26:CDC',
     title: 'CDC',
     folderRef: 'folder:cpp:v26:CDC',
+    parentRecordId: 'rec-cpp-root-vn',
     baseToken: 'base-v26',
     tableId: 'table-v26',
     version: 'v2.6.x',

@@ -339,6 +339,12 @@ class SyncPlanner {
         || !nonEmptyString(lookup.criteria?.canonicalSlug)) {
         throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires folder dependency, explicit structural metadata, and absent Bitable lookup evidence`);
       }
+      if (!nonEmptyString(resource.parentRecordId)) {
+        // The Slug duplex field derives from the parent-record chain: a VN
+        // record parented under its category VirtualNode carries the
+        // prefixed slug (MilvusClient-FunctionChain) without writing it.
+        throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires parentRecordId (the category VirtualNode record) — the Slug derives from the parent-record chain`);
+      }
       action = 'CREATE_VIRTUAL_NODE';
       postconditions = [
         { type: 'RESOURCE_RESOLVED', ref, value: 'NEW_RECORD_ID' },

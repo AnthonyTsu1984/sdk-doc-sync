@@ -472,7 +472,7 @@ test('SyncExecutor rejects a repoint whose VirtualNode drifted from the approved
   assert.equal(result.failedStep, 'verifyVirtualNodePrecondition');
 });
 
-test('SyncExecutor creates a VirtualNode from its resolved folder writing the approved slug', async () => {
+test('SyncExecutor creates a VirtualNode parented under its category VirtualNode (Slug derives from the parent chain)', async () => {
   const calls = [];
   const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-files`;
   const bitableWriter = {
@@ -511,6 +511,7 @@ test('SyncExecutor creates a VirtualNode from its resolved folder writing the ap
     targets: ['Milvus', 'Zilliz'],
     progress: 'Draft',
     dependsOn: ['folder:node:v30:FileResources'],
+    parentRecordId: 'rec-category-vn',
     existingLookup: {
       checked: true,
       absent: true,
@@ -529,10 +530,11 @@ test('SyncExecutor creates a VirtualNode from its resolved folder writing the ap
 
   assert.equal(result.status, 'success');
   assert.equal(result.resolvedResource.recordId, 'rec-files');
-  // 2026-10-06: the executor writes the approved criteria slug (the
-  // category-prefixed KB convention) — Feishu auto-population derives only
-  // the folder name.
-  assert.equal(calls[1][1].slug, 'FileResources');
+  // 2026-10-06 operator ruling: the Slug derives from the parent-record
+  // chain — the creation parents the VN under its category VirtualNode and
+  // never writes Slug directly.
+  assert.equal(calls[1][1].parentRecordId, 'rec-category-vn');
+  assert.equal(calls[1][1].slug, undefined);
   assert.deepEqual(calls[1][1], {
     title: 'File Resources',
     link: expectedLink,
@@ -540,7 +542,7 @@ test('SyncExecutor creates a VirtualNode from its resolved folder writing the ap
     addedSince: 'v3.0.x',
     targets: ['Milvus', 'Zilliz'],
     progress: 'Draft',
-    slug: 'FileResources',
+    parentRecordId: 'rec-category-vn',
   });
 });
 

@@ -535,15 +535,16 @@ class SdkDocSync {
         const plannedEntries = [];
         for (const resource of this.releaseScope?.resources || []) {
             try {
-                const plan = this.planner.planResource(resource);
+                let plan = this.planner.planResource(resource);
                 // T3 walk binding: resource lookups in this scope were
                 // derived from the same placement audit walk as the document
                 // plans (the intake's existingLookup evidence cites it). A
                 // bound run must not strand them walk-less — verifyPlacement
-                // WalkBinding refuses the mixed batch outright.
+                // WalkBinding refuses the mixed batch outright. planResource
+                // returns a frozen plan, so the stamp rides a shallow clone.
                 if (typeof this.placementWalkDigest === 'string' && this.placementWalkDigest.length > 0
                     && plan && !(typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0)) {
-                    plan.placementWalkDigest = this.placementWalkDigest;
+                    plan = { ...plan, placementWalkDigest: this.placementWalkDigest };
                 }
                 result.resourcePlans.push(plan);
                 plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });

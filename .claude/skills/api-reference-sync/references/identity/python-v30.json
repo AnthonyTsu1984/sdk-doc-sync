@@ -1014,6 +1014,22 @@
           }
         ]
       }
+    },
+    "VolumeBulkWriter.append_row": {
+      "stableId": "python:DataImport:DataImport-VolumeBulkWriter-append_row",
+      "canonicalSlug": "DataImport-VolumeBulkWriter-append_row",
+      "category": "DataImport",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
+    },
+    "VolumeBulkWriter.commit": {
+      "stableId": "python:DataImport:DataImport-VolumeBulkWriter-commit",
+      "canonicalSlug": "DataImport-VolumeBulkWriter-commit",
+      "category": "DataImport",
+      "documentationOwnership": {
+        "classification": "standalone"
+      }
     }
   }
 }

@@ -210,6 +210,10 @@ test('a void page may retire its bare RETURNS stub entirely (2026-10-05 ruling)'
     const sentenceOnlyStub = voidPage.replace('void', 'This operation returns nothing.');
     const sentenceRetired = compareSemanticContent({ upstreamContent: sentenceOnlyStub, canonicalContent: retired });
     assert.equal(sentenceRetired.ok, true, JSON.stringify(sentenceRetired.diffs));
+    // 2026-10-07: 'no value' variant (campaign page java:v2-Authentication-alterRole).
+    const noValueStub = voidPage.replace('void', 'This operation returns no value.');
+    const noValueRetired = compareSemanticContent({ upstreamContent: noValueStub, canonicalContent: retired });
+    assert.equal(noValueRetired.ok, true, JSON.stringify(noValueRetired.diffs));
 
     // The exemption stays bounded: RETURNS prose carrying real content cannot be dropped.
     const prosePage = voidPage.replace('void', 'Returns the number of deleted entities.');

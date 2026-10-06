@@ -23,12 +23,14 @@ test('sdk-doc-sync planning helper scripts exist', () => {
   for (const script of [
     'audit-sdk-type-ownership.js',
     'build-current-placement-audit.js',
+    'build-grouping-proposal.js',
     'build-reviewed-release-context.js',
     'collect-page-blocks.js',
     'audit-track-topology.js',
     'gate-presentation.js',
     'intake-preflight.js',
     'reconcile-content.js',
+    'record-grouping-approval.js',
     'render-grouping-inheritance-table.js',
   ]) {
     assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);
@@ -96,6 +98,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',
     '.claude/skills/api-reference-sync/tests/finalize-acceptance-cli.test.js',
     '.claude/skills/api-reference-sync/tests/gate-presentation.test.js',
+    '.claude/skills/api-reference-sync/tests/grouping-proposal.test.js',
     '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',
     '.claude/skills/api-reference-sync/tests/inheritance-evidence.test.js',
     '.claude/skills/api-reference-sync/tests/intake-preflight.test.js',

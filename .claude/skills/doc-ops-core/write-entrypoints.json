@@ -77,6 +77,26 @@
       "basis": "reads a Bitable snapshot and the identity map; writes deterministic local draft artifacts only when --emit-draft is passed"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/pr-polish-apply.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "pr-polish-apply",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "executed-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/pr-polish-apply.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/pr-polish.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "pr-polish",
+      "basis": "validates polish manifests and writes deterministic local artifacts only; no Feishu I/O"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/rest-fragments.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -111,19 +131,6 @@
       ]
     },
     {
-      "path": ".claude/skills/api-reference-sync/bin/pr-polish-apply.js",
-      "skill": "api-reference-sync",
-      "classification": "canonical-governed",
-      "operation": "pr-polish-apply",
-      "basis": "reviewed canonical entrypoint",
-      "approval": "executed-batch-digest",
-      "journal": "required",
-      "reconciliation": "required",
-      "tests": [
-        ".claude/skills/api-reference-sync/tests/pr-polish-apply.test.js"
-      ]
-    },
-    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-document-rollback.js",
       "skill": "api-reference-sync",
       "classification": "canonical-governed",
@@ -142,13 +149,6 @@
       "classification": "read-only",
       "operation": "sdk-pr-scan",
       "basis": "reads merged web-content PR data and writes deterministic local artifacts only"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/bin/pr-polish.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "pr-polish",
-      "basis": "validates polish manifests and writes deterministic local artifacts only; no Feishu I/O"
     },
     {
       "path": ".claude/skills/api-reference-sync/bin/sdk-release-scout.js",
@@ -241,6 +241,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/audit-track-topology.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "audit-track-topology",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/batch-create-cli-docs.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -255,38 +262,11 @@
       "basis": "no external mutation signature found"
     },
     {
-      "path": ".claude/skills/api-reference-sync/scripts/collect-page-blocks.js",
+      "path": ".claude/skills/api-reference-sync/scripts/build-grouping-proposal.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
-      "operation": "collect-page-blocks",
-      "basis": "no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "intake-preflight",
-      "basis": "no external mutation signature found"
-    },
-    {
-      "path": ".claude/skills/api-reference-sync/scripts/audit-track-topology.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "audit-track-topology",
-      "basis": "no external mutation signature found"
-    },
-    {
-      "path": "scripts/repair-java-topology.js",
-      "skill": "api-reference-sync",
-      "classification": "canonical-governed",
-      "operation": "repair-java-topology",
-      "basis": "Docs-field text repair + drive folder/doc moves + folder create + Bitable record Type fills for the 2026-10-04 topology disposition; parts E/F add the Collections/Function anchor move and governed CONTENT writes (MarkdownToFeishu.push_markdown under WriterGovernance bound to the plan digest + run manifest, round-trip-verified with rollback); plan-digest + --approve-batch-digest approval gate + live per-action read-after-write verification + journal",
-      "journal": "required",
-      "reconciliation": "plan-digest-journal",
-      "tests": [
-        ".claude/skills/api-reference-sync/tests/repair-java-topology.test.js"
-      ],
-      "approval": "exact-batch-digest"
+      "operation": "grouping-proposal",
+      "basis": "no external mutation signature found (writes only the canonical grouping-proposal artifact to the operator-requested output path)"
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",
@@ -307,6 +287,13 @@
       "skill": "api-reference-sync",
       "classification": "read-only",
       "operation": "cli-fetch-and-diff",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/collect-page-blocks.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "collect-page-blocks",
       "basis": "no external mutation signature found"
     },
     {
@@ -421,6 +408,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "gate-presentation",
+      "basis": "no external mutation signature found (writes only the local gate-presentation index under tmp/, spawns open/pbcopy for the operator's own desktop)"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/generate-cli-docs.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -432,6 +426,13 @@
       "skill": "api-reference-sync",
       "classification": "read-only",
       "operation": "inspect-go-blocks",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "intake-preflight",
       "basis": "no external mutation signature found"
     },
     {
@@ -481,6 +482,13 @@
       "classification": "read-only",
       "operation": "reconcile-tree-delta",
       "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/record-grouping-approval.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "grouping-proposal",
+      "basis": "no external mutation signature found (writes only the digest-keyed local approval receipt under tmp/api-reference-sync/grouping-approvals/)"
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/render-grouping-inheritance-table.js",
@@ -614,13 +622,6 @@
       ]
     },
     {
-      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation.js",
-      "skill": "api-reference-sync",
-      "classification": "read-only",
-      "operation": "gate-presentation",
-      "basis": "no external mutation signature found (writes only the local gate-presentation index under tmp/, spawns open/pbcopy for the operator's own desktop)"
-    },
-    {
       "path": ".claude/skills/doc-ops-core/bin/skill-feedback.js",
       "skill": "doc-ops-core",
       "classification": "read-only",
@@ -706,6 +707,32 @@
       "basis": "6.11 governance artifact assembly: reads admission results + ledger, writes only the operator-designated --output artifact file; no external mutation signature"
     },
     {
+      "path": "scripts/repair-java-topology.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "repair-java-topology",
+      "basis": "Docs-field text repair + drive folder/doc moves + folder create + Bitable record Type fills for the 2026-10-04 topology disposition; parts E/F add the Collections/Function anchor move and governed CONTENT writes (MarkdownToFeishu.push_markdown under WriterGovernance bound to the plan digest + run manifest, round-trip-verified with rollback); plan-digest + --approve-batch-digest approval gate + live per-action read-after-write verification + journal",
+      "journal": "required",
+      "reconciliation": "plan-digest-journal",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/repair-java-topology.test.js"
+      ],
+      "approval": "exact-batch-digest"
+    },
+    {
+      "path": "scripts/repair-same-name-placement.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "repair-same-name-placement",
+      "basis": "drive move / folder create / category VirtualNode repoint for SAME_NAME_COPY_MISPLACED repair; plan-digest + --approve-batch-digest approval gate + live per-action verification + journal",
+      "journal": "required",
+      "reconciliation": "plan-digest-journal",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js"
+      ],
+      "approval": "exact-batch-digest"
+    },
+    {
       "path": "scripts/run-focused-tests.js",
       "skill": "doc-ops-core",
       "classification": "read-only",
@@ -739,19 +766,6 @@
       "classification": "read-only",
       "operation": "validate-skills",
       "basis": "no external mutation signature found"
-    },
-    {
-      "path": "scripts/repair-same-name-placement.js",
-      "skill": "api-reference-sync",
-      "classification": "canonical-governed",
-      "operation": "repair-same-name-placement",
-      "basis": "drive move / folder create / category VirtualNode repoint for SAME_NAME_COPY_MISPLACED repair; plan-digest + --approve-batch-digest approval gate + live per-action verification + journal",
-      "journal": "required",
-      "reconciliation": "plan-digest-journal",
-      "tests": [
-        ".claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js"
-      ],
-      "approval": "exact-batch-digest"
     }
   ]
 }

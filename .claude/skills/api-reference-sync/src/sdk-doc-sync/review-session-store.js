@@ -20,6 +20,7 @@ const { loadState, saveState } = require('../../../doc-ops-core/src/session-stor
 const { buildAcceptanceManifest } = require('./review-units');
 const { executionTargetsBaseline, normalizedTargetsValue } = require('./record-state');
 const { deriveUnitEvidence } = require('./unit-evidence');
+const { validateGroupingApprovalReceipt } = require('./grouping-proposal');
 
 // The lifecycle this store hardens (PR #22's five review rounds), now
 // expressed through the shared machine every skill adopts (6.6): transitions
@@ -56,6 +57,11 @@ const REVIEW_MACHINE = defineSessionMachine({
     // still open, it is the explicit "why this rejection is not a rule"
     // rationale that lets the close skip one learning event's capture.
     recordLearningSuppression: { from: ['in_progress'], to: SAME_STATE },
+    // Grouping write binding (api.grouping-proposal-staleness): binds the
+    // durable APPROVE_GROUPING receipt into the session — from that point
+    // every sdk-doc-sync entry against this session chains its --release-scope
+    // digest against the approved scope (GROUPING_STALE otherwise).
+    recordGroupingApproval: { from: ['in_progress'], to: SAME_STATE },
   },
 });
 
@@ -153,6 +159,7 @@ function createReviewSession({
   artifacts = {},
   acceptanceFlow = 'legacy',
   placementWalk = null,
+  groupingApproval = null,
   createdAt = new Date().toISOString(),
 }) {
   if (!nonEmptyString(sessionId)) throw new TypeError('sessionId is required');
@@ -172,6 +179,12 @@ function createReviewSession({
       throw new TypeError('placementWalk requires { digest, collectedAt } from the placement audit product');
     }
   }
+  // Grouping write binding: the durable APPROVE_GROUPING receipt baked in at
+  // session creation (sdk-doc-sync --grouping-approval) — validated shape,
+  // frozen copy. Sessions without one carry null and stay unbound (legacy).
+  if (groupingApproval !== null) {
+    assertValidGroupingApproval(groupingApproval);
+  }
   return Object.freeze({
     schemaVersion: 1,
     sessionId,
@@ -183,6 +196,7 @@ function createReviewSession({
     reviewUnitManifest: clone(reviewUnitManifest),
     reviewUnitManifestDigest: reviewUnitManifest.manifestDigest,
     placementWalk: placementWalk === null ? null : clone(placementWalk),
+    groupingApproval: groupingApproval === null ? null : clone(groupingApproval),
     artifacts: clone(artifacts),
     acceptedReviewUnits: [],
     pendingExecutions: [],
@@ -195,6 +209,39 @@ function createReviewSession({
     scanStateUpdated: false,
     createdAt,
     updatedAt: createdAt,
+  });
+}
+
+// The grouping-approval receipt shape as stored in a session (same shape the
+// record-grouping-approval CLI writes to disk).
+function assertValidGroupingApproval(approval) {
+  const validation = validateGroupingApprovalReceipt(approval);
+  if (!validation.valid) {
+    throw Object.assign(
+      new TypeError(`groupingApproval receipt is invalid: ${validation.errors.map((error) => error.message).join('; ')}`),
+      { code: 'GROUPING_APPROVAL_CHAIN_INVALID' },
+    );
+  }
+}
+
+// Binds the durable APPROVE_GROUPING receipt into the session (one-shot:
+// the same proposal digest is idempotent, a different one refuses — a
+// re-scoped campaign re-runs the grouping gate and starts a new session).
+function recordGroupingApproval(session, receipt) {
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('Review session is required');
+  assertValidGroupingApproval(receipt);
+  if (session.groupingApproval) {
+    if (session.groupingApproval.proposalDigest === receipt.proposalDigest) return session;
+    throw Object.assign(
+      new Error(
+        `Review session is already bound to grouping proposal ${session.groupingApproval.proposalDigest}; a different proposal (${receipt.proposalDigest}) requires a fresh grouping gate and a new session`,
+      ),
+      { code: 'GROUPING_APPROVAL_ALREADY_BOUND' },
+    );
+  }
+  REVIEW_MACHINE.assertTransition('recordGroupingApproval', session);
+  return REVIEW_MACHINE.apply('recordGroupingApproval', session, {
+    groupingApproval: clone(receipt),
   });
 }
 
@@ -1343,6 +1390,16 @@ function loadReviewSessionState(filePath) {
       `Review session is inconsistent: rollback lease and receipt coexist for ${activeRollback.reviewUnitId}: ${resolved}`,
     );
   }
+  // A bound grouping approval is load-bearing at the write boundary — a
+  // hand-edited or corrupted receipt must refuse at load, not at the first
+  // execution that happens to present a scope.
+  if (loaded.state.groupingApproval !== undefined && loaded.state.groupingApproval !== null) {
+    try {
+      assertValidGroupingApproval(loaded.state.groupingApproval);
+    } catch (error) {
+      throw new Error(`Review session is invalid (groupingApproval): ${error.message}: ${resolved}`);
+    }
+  }
   return { session: loaded.state, sessionDigest: loaded.stateDigest };
 }
 
@@ -1449,6 +1506,7 @@ module.exports = {
   recordDocumentExecution,
   recordDocumentChangesRequested,
   recordDocumentRollback,
+  recordGroupingApproval,
   recordReviewDecision,
   recordRollbackIntent,
   prepareDocumentAcceptance,

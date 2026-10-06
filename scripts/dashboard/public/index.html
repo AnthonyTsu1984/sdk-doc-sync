@@ -3,17 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>任务看板 · feishu-markdown-bridge</title>
+<title>治理看板 · feishu-markdown-bridge</title>
 <style>
   :root {
     --bg: #f4f5f7; --card: #ffffff; --ink: #1c1e21; --dim: #6b7280;
     --line: #e4e6ea; --blue: #2563eb; --amber: #b45309; --red: #b91c1c; --green: #15803d;
-    --blue-bg: #eff4ff; --amber-bg: #fdf3e3; --red-bg: #fdeaea; --green-bg: #e9f7ee; --dim-bg: #eef0f3;
+    --violet: #6d28d9;
+    --blue-bg: #eff4ff; --amber-bg: #fdf3e3; --red-bg: #fdeaea; --green-bg: #e9f7ee; --dim-bg: #eef0f3; --violet-bg: #f5edff;
   }
   * { box-sizing: border-box; }
   body { margin: 0; font: 14px/1.5 -apple-system, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: var(--bg); color: var(--ink); }
-  header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px 22px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
-  header h1 { font-size: 16px; margin: 0 8px 0 0; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 22px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 15px; margin: 0 6px 0 0; white-space: nowrap; }
+  nav { display: flex; flex-wrap: wrap; gap: 2px; }
+  nav a { padding: 4px 12px; border-radius: 8px; color: var(--dim); font-size: 13.5px; text-decoration: none; }
+  nav a:hover { background: var(--dim-bg); color: var(--ink); }
+  nav a.on { background: var(--blue-bg); color: var(--blue); font-weight: 600; }
+  .hspace { flex: 1; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--dim-bg); color: var(--dim); font-size: 12.5px; }
   .chip.ok { background: var(--green-bg); color: var(--green); }
   .chip.warn { background: var(--amber-bg); color: var(--amber); }
@@ -22,11 +28,17 @@
   .dot { width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; display: inline-block; }
   .dot.live { background: var(--green); }
   .dot.dead { background: var(--red); }
-  main { padding: 18px 22px 60px; max-width: 1280px; margin: 0 auto; }
-  h2 { font-size: 13px; color: var(--dim); text-transform: none; margin: 20px 0 10px; font-weight: 600; letter-spacing: .02em; }
+  main { padding: 16px 22px 60px; max-width: 1280px; margin: 0 auto; }
+  .crumbs { font-size: 12.5px; color: var(--dim); margin: 2px 0 10px; }
+  .crumbs a { color: var(--dim); }
+  .crumbs a:hover { color: var(--blue); }
+  .crumbs b { color: var(--ink); font-weight: 600; }
+  h2 { font-size: 13px; color: var(--dim); margin: 20px 0 10px; font-weight: 600; letter-spacing: .02em; }
+  h2:first-child, .crumbs + h2 { margin-top: 6px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 12px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; cursor: pointer; transition: box-shadow .12s; }
-  .card:hover { box-shadow: 0 2px 10px rgba(16,24,40,.08); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 13px 15px; transition: box-shadow .12s; }
+  .card.clickable { cursor: pointer; }
+  .card.clickable:hover { box-shadow: 0 2px 10px rgba(16,24,40,.08); }
   .card .row1 { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .card .title { font-weight: 600; font-size: 14.5px; }
   .card .sub { color: var(--dim); font-size: 12.5px; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -35,34 +47,60 @@
   .badge.awaiting-close { background: var(--amber-bg); color: var(--amber); }
   .badge.zombie { background: var(--red-bg); color: var(--red); }
   .badge.finalized { background: var(--green-bg); color: var(--green); }
+  .badge.gate { background: var(--violet-bg); color: var(--violet); cursor: pointer; }
   .bar { height: 6px; border-radius: 4px; background: var(--dim-bg); margin: 10px 0 6px; overflow: hidden; }
   .bar i { display: block; height: 100%; background: var(--blue); border-radius: 4px; }
   .meta { display: flex; flex-wrap: wrap; gap: 4px 14px; color: var(--dim); font-size: 12.5px; }
-  .sentinel { cursor: default; }
-  .sentinel .sched { font-size: 12.5px; color: var(--dim); }
   .kv { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; font-size: 12.5px; margin-top: 8px; }
   .kv b { color: var(--dim); font-weight: 500; }
   .note { font-size: 12px; color: var(--dim); margin-top: 8px; border-top: 1px dashed var(--line); padding-top: 7px; }
   .empty { color: var(--dim); padding: 18px; text-align: center; border: 1px dashed var(--line); border-radius: 10px; background: var(--card); }
-  .matrix { display: flex; flex-direction: column; gap: 6px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 15px; }
-  .mrow { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .mlang { width: 64px; font-weight: 600; font-size: 13px; flex: none; }
-  .mtrack { cursor: pointer; padding: 3px 11px; border-radius: 8px; font-size: 12.5px; }
-  .mtrack.active { background: var(--blue-bg); color: var(--blue); }
-  .mtrack.awaiting-close { background: var(--amber-bg); color: var(--amber); }
-  .mtrack.zombie { background: var(--red-bg); color: var(--red); }
-  .mtrack.finalized { background: var(--green-bg); color: var(--green); }
-  .badge.gate { background: #f5edff; color: #6d28d9; }
-  .actions { margin-top: 9px; display: flex; gap: 8px; }
+  .sentinel { cursor: default; }
+  .sentinel .sched { font-size: 12.5px; color: var(--dim); }
+  .inbox { background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .inbox .item { display: flex; align-items: center; gap: 12px; padding: 10px 15px; border-bottom: 1px solid var(--line); }
+  .inbox .item:last-child { border-bottom: 0; }
+  .inbox .what { flex: 1; min-width: 0; }
+  .inbox .what .t { font-weight: 600; font-size: 13.5px; }
+  .inbox .what .d { color: var(--dim); font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .inbox .go { cursor: pointer; border: 0; background: var(--blue); color: #fff; border-radius: 8px; padding: 6px 14px; font-size: 13px; white-space: nowrap; }
+  .inbox .go.ghost { background: var(--card); color: var(--blue); border: 1px solid var(--blue); }
+  .inbox .go.ghost:hover { background: var(--blue-bg); }
+  table.tbl { width: 100%; border-collapse: collapse; background: var(--card); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; font-size: 13px; }
+  .tbl th { text-align: left; font-size: 12px; color: var(--dim); font-weight: 600; padding: 8px 12px; border-bottom: 1px solid var(--line); background: #fafbfc; white-space: nowrap; }
+  .tbl td { padding: 7px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  .tbl tr:last-child td { border-bottom: 0; }
+  .tbl tbody tr.rowlink { cursor: pointer; }
+  .tbl tbody tr.rowlink:hover { background: #f7f9fc; }
+  .tbl .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .tbl .dim { color: var(--dim); }
+  .tbl .fname { font-weight: 500; }
+  .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 10px; }
+  .filters .f { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 3px 12px; font-size: 12.5px; color: var(--dim); }
+  .filters .f.on { background: var(--blue-bg); color: var(--blue); border-color: #c7d7fb; }
   .act { cursor: pointer; border: 1px solid var(--line); background: var(--card); border-radius: 8px; padding: 3px 10px; font-size: 12px; color: var(--ink); }
   .act:hover { border-color: var(--blue); color: var(--blue); }
-  .act.danger { border-color: #ddd0f7; color: #6d28d9; }
-  .apform { margin-top: 8px; border: 1px solid #e6dcfa; background: #faf7ff; border-radius: 8px; padding: 10px 12px; font-size: 12.5px; }
-  .apform .frow { display: flex; gap: 8px; margin: 5px 0; flex-wrap: wrap; }
-  .apform select, .apform input { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
-  .apform input { flex: 1; min-width: 160px; }
-  .apform code { display: block; background: #fff; border: 1px dashed #d8cbf2; border-radius: 6px; padding: 5px 8px; margin: 7px 0; word-break: break-all; font-size: 12px; }
-  .apform .hint { color: var(--dim); font-size: 11.5px; }
+  .act.primary { background: var(--violet); border-color: var(--violet); color: #fff; font-size: 13px; padding: 6px 16px; }
+  .act.primary:hover { opacity: .9; color: #fff; }
+  .act.primary:disabled { opacity: .45; cursor: not-allowed; }
+  .act.danger { border-color: #ddd0f7; color: var(--violet); }
+  .langcard select { width: 100%; margin-top: 9px; font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; background: var(--card); color: var(--ink); }
+  .steps { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0; }
+  .steps .st { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 999px; font-size: 12.5px; background: var(--dim-bg); color: var(--dim); }
+  .steps .st.done { background: var(--green-bg); color: var(--green); }
+  .steps .st.cur { background: var(--blue-bg); color: var(--blue); font-weight: 600; box-shadow: inset 0 0 0 1px #c7d7fb; }
+  .steps .arr { color: var(--dim); font-size: 11px; }
+  .approve { margin: 10px 0; border: 1px solid #e6dcfa; background: #faf7ff; border-radius: 10px; padding: 12px 14px; }
+  .approve .t { font-weight: 600; color: var(--violet); }
+  .approve .sum { margin: 6px 0; font-size: 13.5px; }
+  .approve .frow { display: flex; gap: 8px; margin: 6px 0; flex-wrap: wrap; align-items: center; }
+  .approve select, .approve input { font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; }
+  .approve input { flex: 1; min-width: 160px; }
+  .approve code { display: block; background: #fff; border: 1px dashed #d8cbf2; border-radius: 6px; padding: 5px 8px; margin: 7px 0; word-break: break-all; font-size: 12px; }
+  .approve .hint { color: var(--dim); font-size: 12px; }
+  details.fold { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; margin: 10px 0; }
+  details.fold summary { cursor: pointer; color: var(--dim); font-size: 12.5px; user-select: none; }
+  details.fold[open] summary { color: var(--ink); margin-bottom: 6px; }
   .feed { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 8px 14px; max-height: 320px; overflow-y: auto; }
   .feed .ev { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px dashed var(--line); font-size: 12.5px; }
   .feed .ev:last-child { border-bottom: 0; }
@@ -73,50 +111,45 @@
   .feed .k.Agent, .feed .k.Task { background: var(--amber-bg); color: var(--amber); }
   .feed .s { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .feed .c { white-space: nowrap; color: var(--dim); font-size: 11.5px; }
-  #drawer { position: fixed; top: 0; right: -560px; width: 540px; max-width: 92vw; height: 100vh; background: var(--card); border-left: 1px solid var(--line); box-shadow: -6px 0 24px rgba(16,24,40,.12); transition: right .18s ease; z-index: 20; display: flex; flex-direction: column; }
-  #drawer.open { right: 0; }
-  #drawer .head { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--line); }
-  #drawer .head .t { font-weight: 600; }
-  #drawer .body { padding: 14px 18px 40px; overflow-y: auto; }
-  #drawer h3 { font-size: 12.5px; color: var(--dim); margin: 16px 0 6px; font-weight: 600; }
-  #drawer ul { margin: 4px 0; padding-left: 18px; }
-  #drawer li { margin: 3px 0; word-break: break-all; }
-  .x { cursor: pointer; border: 0; background: var(--dim-bg); color: var(--dim); border-radius: 8px; padding: 4px 10px; font-size: 13px; }
   .copy { cursor: pointer; border: 0; background: none; color: var(--blue); padding: 0; font-size: 12px; }
   a { color: var(--blue); text-decoration: none; }
   a:hover { text-decoration: underline; }
   .warnline { color: var(--red); font-size: 12.5px; margin: 6px 0; }
+  .iconlink { font-size: 12px; white-space: nowrap; }
   footer { color: var(--dim); font-size: 12px; margin-top: 26px; }
+  .skcard { max-width: 720px; }
+  .skcard .lede { color: var(--dim); font-size: 13px; margin: 4px 0 8px; }
 </style>
 </head>
 <body>
 <header>
-  <h1>任务看板</h1>
+  <h1>治理看板</h1>
+  <nav id="nav"></nav>
+  <span class="hspace"></span>
   <span class="chip" id="admission">准入 …</span>
   <span class="chip" id="gate">呈门 …</span>
   <span class="chip" id="conn"><span class="dot" id="connDot"></span><span id="connText">连接 …</span></span>
   <span class="chip" id="generated">—</span>
 </header>
-<main>
-  <h2>哨兵 · 每日自动扫描（只发现不处置）</h2>
-  <div class="grid" id="sentinels"></div>
-  <h2>并行矩阵（语种 × 轨道）</h2>
-  <div id="matrix" class="matrix"></div>
-  <h2>战役任务</h2>
-  <div class="grid" id="campaigns"></div>
-  <h2>活动流（会话动作事件，近 24–48h）</h2>
-  <div id="activity" class="feed"></div>
-  <footer>只读看板：全部字段派生自盘上治理状态，本页无任何写路径。文件材料经 /api/file 白名单查看。</footer>
-</main>
-
-<div id="drawer">
-  <div class="head"><span class="t" id="dTitle"></span><button class="x" onclick="closeDrawer()">关闭</button></div>
-  <div class="body" id="dBody"></div>
-</div>
+<main id="page"></main>
 
 <script>
 'use strict';
 let latest = null;
+let uiVersionSeen = null;
+
+// The SPA is a static page: an open tab keeps running old code after a
+// dashboard update. The server stamps the payload with the index.html
+// mtime; when it changes we reload once so the board never lies with a
+// stale UI.
+function maybeReloadOnUiVersion(d) {
+  const v = d?.uiVersion;
+  if (!v) return;
+  if (uiVersionSeen === null) { uiVersionSeen = v; return; }
+  if (v !== uiVersionSeen) location.reload();
+}
+
+// ---------- shared helpers ----------
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const rel = (iso) => {
@@ -134,7 +167,85 @@ const fmt = (iso) => (iso ? new Date(iso).toLocaleString('zh-CN', { hour12: fals
 const viewLink = (p, label) => p
   ? `<a href="/api/file?path=${encodeURIComponent(p)}" target="_blank">${esc(label ?? p)}</a>`
   : '<span style="color:var(--dim)">无</span>';
-const HEALTH_LABEL = { active: '进行中', 'awaiting-close': '◐ 待收口', zombie: '⚠ 僵尸会话', finalized: '已收官' };
+const HEALTH_LABEL = { active: '进行中', 'awaiting-close': '待收口', zombie: '僵尸会话', finalized: '已收官' };
+const UNIT_STATUS_LABEL = {
+  accepted: '已写入·验收',
+  'pending-approval': '待批准写入',
+  executing: '写入中',
+  'rolling-back': '回滚中',
+  queued: '排队中',
+  ungrouped: '未入组',
+};
+const GATE_LABEL = {
+  APPROVE_GROUPING: '批准分组方案',
+  APPROVE_WRITES: '批准批次写入',
+  APPROVE_DOCUMENT: '批准单篇写入',
+  APPROVE_ROLLBACK: '批准回滚',
+  APPROVE_ACCEPTANCE: '批准终局验收',
+  CLOSE_SESSION: '收口（机械）',
+};
+const GATE_TO_LINE = {
+  APPROVE_WRITE: 'APPROVE_WRITES',
+  APPROVE_DOCUMENT: 'APPROVE_DOCUMENT',
+  APPROVE_ROLLBACK: 'APPROVE_ROLLBACK',
+  APPROVE_ACCEPTANCE: 'APPROVE_ACCEPTANCE',
+  APPROVE_GROUPING: 'APPROVE_GROUPING',
+};
+const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)(?: \S+)? sha256:[a-f0-9]{64}$/;
+
+function copyText(t) { navigator.clipboard?.writeText(t); }
+function attachKey(c) { return c.scanState.key || c.sessionPath; }
+function cardKey(c) { return c.sessionKey ?? `main::${c.sessionPath}`; }
+function checkoutChip(c) { return c.checkout && c.checkout !== 'main' ? `<span class="badge" title="${esc(c.checkoutLabel ?? c.checkout)} 工作树">${esc(c.checkoutLabel ?? c.checkout)}</span>` : ''; }
+function humanUnit(unitId) { return String(unitId || '').replace(/^review:/, '').replace(/^[a-z]+:/, '').replace(/:/g, '.'); }
+
+// ---------- skills & routes ----------
+
+const SKILLS = [
+  { id: 'api', short: 'API 参考', name: 'api-reference-sync', lede: 'SDK / CLI / REST 版本化 API 参考记录同步（本看板主力技能）', hasBoard: true },
+  { id: 'localized-doc-sync', short: '本地化对齐', name: 'localized-doc-sync', lede: '源文档与 zh-CN 本地化文档的对齐：记录差异、翻译创建/更新、元数据与父映射同步。' },
+  { id: 'procedure-code-sync', short: '示例补齐', name: 'procedure-code-sync', lede: '给 Python 主导的步骤文档补齐 Java / Go / Node / REST / CLI / C++ 等语言代码块（源码核证后插入）。' },
+  { id: 'doc-code-verify', short: '代码验证', name: 'doc-code-verify', lede: '对文档中的代码样例做只读验证：语法检查、lint、编译、场景与门控运行；修复另行立项。' },
+  { id: 'verified-doc-authoring', short: '验证式起草', name: 'verified-doc-authoring', lede: '从混合参考资料起草或大幅修订文档，主张先对源码验证，未决主张保持可见。' },
+];
+
+function parseHash() {
+  const h = decodeURIComponent(location.hash.replace(/^#/, '')) || '/home';
+  const parts = h.split('/').filter(Boolean);
+  if (parts[0] === 'home' || parts.length === 0) return { name: 'home' };
+  if (parts[0] === 'skill' && parts[1] === 'api' && parts[2] === 'lang' && parts[3]) return { name: 'lang', lang: parts[3] };
+  if (parts[0] === 'skill' && parts[1] === 'api' && parts[2] === 'track' && parts[3]) return { name: 'track', key: parts[3] };
+  if (parts[0] === 'skill' && parts[1] === 'api') return { name: 'skill-api' };
+  if (parts[0] === 'skill' && parts[1]) return { name: 'skill', id: parts.slice(1).join('/') };
+  if (parts[0] === 'campaign' && parts[1]) return { name: 'campaign', path: parts.slice(1).join('/') };
+  return { name: 'home' };
+}
+
+function navActive(route) {
+  if (route.name === 'home') return 'home';
+  if (route.name === 'skill-api' || route.name === 'lang' || route.name === 'track') return 'api';
+  if (route.name === 'skill') return route.id;
+  return '';
+}
+
+function renderNav(route) {
+  const on = navActive(route);
+  const links = [`<a href="#/home" class="${on === 'home' ? 'on' : ''}">总览</a>`]
+    .concat(SKILLS.map((s) => s.hasBoard
+      ? `<a href="#/skill/api" class="${on === 'api' ? 'on' : ''}" title="${esc(s.name)}">${esc(s.short)}</a>`
+      : `<a href="#/skill/${esc(s.id)}" class="${on === s.id ? 'on' : ''}" title="${esc(s.name)}">${esc(s.short)}</a>`));
+  document.getElementById('nav').innerHTML = links.join('');
+}
+
+function crumbs(parts) {
+  return `<div class="crumbs">${parts.map((p, i) => (i === parts.length - 1
+    ? `<b>${esc(p.label)}</b>`
+    : `<a href="${esc(p.href)}">${esc(p.label)}</a> <span>›</span> `)).join('')}</div>`;
+}
+
+function campaignHref(c) { return `#/campaign/${encodeURIComponent(cardKey(c))}`; }
+
+// ---------- header ----------
 
 function renderHeader(d) {
   const fp = d.admission && d.admission.fingerprint;
@@ -151,147 +262,111 @@ function renderHeader(d) {
     adm.className = 'chip'; adm.textContent = `准入 台账 ${d.admission?.ledgerEntryCount ?? 0} 条（无指纹比对）`;
   }
   const gate = document.getElementById('gate');
-  const g = d.admission && d.admission.gatePresentation;
-  if (g && g.present) {
+  const present = (d.gatePresentations || []).filter((g) => g.present);
+  if (present.length === 1) {
     gate.className = 'chip warn';
-    gate.innerHTML = `<a href="/api/file?path=${encodeURIComponent(g.path)}" target="_blank">呈门材料待审 →</a>`;
+    gate.innerHTML = `<a href="/api/file?path=${encodeURIComponent(present[0].path)}" target="_blank">呈门材料待审（${esc(present[0].label)}）→</a>`;
+  } else if (present.length > 1) {
+    gate.className = 'chip warn';
+    gate.innerHTML = `<a href="/api/file?path=${encodeURIComponent(present[0].path)}" target="_blank">呈门材料待审 ×${present.length} →</a>`;
   } else {
     gate.className = 'chip'; gate.textContent = '呈门 无待审';
   }
   document.getElementById('generated').textContent = '生成于 ' + fmt(d.generatedAt);
 }
 
+// ---------- home ----------
+
+function gateSummary(c) {
+  const gate = c.nextGate?.gate;
+  if (!gate) return null;
+  if (gate === 'CLOSE_SESSION') return { title: '待收口', detail: '全部单元已接受，差机械收口（close-session）' };
+  const label = GATE_LABEL[GATE_TO_LINE[gate] || gate] || gate;
+  const unit = c.nextGate?.reviewUnitId;
+  return { title: label, detail: unit ? `《${humanUnit(unit)}》` : (c.pending ? `${c.pending} 篇挂起` : '') };
+}
+
+function renderInbox(d) {
+  const items = [];
+  for (const c of d.campaigns || []) {
+    if (c.health === 'finalized') continue;
+    const g = gateSummary(c);
+    if (!g) continue;
+    items.push({
+      t: `${c.language ?? '?'} ${c.track ?? ''} 战役 · ${g.title}`,
+      d2: `${g.detail} · 进度 ${c.accepted}/${c.units}`,
+      href: campaignHref(c),
+      go: '去处理',
+    });
+  }
+  for (const s of d.sentinels || []) {
+    if (s.report?.present && s.report.hasFindings) {
+      items.push({
+        t: `${s.title}：今日有发现`,
+        d2: `结论原文「${s.report.conclusion ?? '见报告'}」——待你决定是否立项处理`,
+        href: `/api/file?path=${encodeURIComponent(s.report.path)}`,
+        external: true,
+        go: '看报告',
+      });
+    }
+  }
+  for (const i of (d.intakes || []).filter((x) => !x.approved)) {
+    items.push({
+      t: `分组门待批：${i.title}`,
+      d2: `${i.checkoutLabel} · ${rel(i.presentedAt)} 呈门 · digest ${i.digest.slice(7, 19)}…——批准后战役进入筹备（dry-run/建会话）`,
+      href: (i.links || []).map((l) => intakeLinkHref(l, d)).find(Boolean) || '#/skill/api',
+      external: Boolean((i.links || []).map((l) => intakeLinkHref(l, d)).find(Boolean)),
+      go: '打开分组材料',
+    });
+  }
+  for (const g of (d.gatePresentations || []).filter((x) => x.present)) {
+    items.push({
+      t: `呈门材料待审${(d.gatePresentations || []).filter((x) => x.present).length > 1 ? `（${g.label}）` : ''}`,
+      d2: `${g.label} 的战役把审批材料整理成了索引页（写审批预览、live 页、记录链接）`,
+      href: `/api/file?path=${encodeURIComponent(g.path)}`,
+      external: true,
+      go: '打开材料',
+    });
+  }
+  if (!items.length) return '<div class="empty">无待决事项 ✓</div>';
+  return `<div class="inbox">${items.map((it) => `
+    <div class="item">
+      <div class="what"><div class="t">${esc(it.t)}</div><div class="d" title="${esc(it.d2)}">${esc(it.d2)}</div></div>
+      ${it.external
+        ? `<a class="go ghost" style="text-decoration:none" href="${esc(it.href)}" target="_blank">${esc(it.go)}</a>`
+        : `<button class="go" onclick="location.hash='${esc(it.href.replace(/'/g, ''))}'">${esc(it.go)}</button>`}
+    </div>`).join('')}</div>`;
+}
+
 function renderSentinels(d) {
-  const host = document.getElementById('sentinels');
-  if (!d.sentinels || !d.sentinels.length) { host.innerHTML = '<div class="empty">无自动化任务</div>'; return; }
-  host.innerHTML = d.sentinels.map((s) => {
+  if (!d.sentinels || !d.sentinels.length) return '<div class="empty">无自动化任务</div>';
+  return d.sentinels.map((s) => {
     const badge = s.status === 'ok' ? '<span class="badge active">正常</span>'
       : s.status === 'stale' ? '<span class="badge zombie">⚠ 超 25h 未运行</span>'
-      : '<span class="badge finalized">从未运行</span>';
-    const cursor = s.cursor
-      ? `PR 游标 #${s.cursor.lastPrNumber ?? '?'} · 待跟进 tag ${Object.keys(s.cursor.lastTags || {}).length ? esc(JSON.stringify(s.cursor.lastTags)) : '无'}`
-      : '游标未落盘';
+        : '<span class="badge finalized">从未运行</span>';
+    const rep = s.report || {};
+    const today = rep.present
+      ? (rep.hasFindings === false
+        ? '<span class="badge finalized">今日无变化</span>'
+        : `<span class="badge zombie">今日有发现</span>`)
+      : '<span class="badge">今日报告未落盘</span>';
     return `<div class="card sentinel">
-      <div class="row1"><span class="title">${esc(s.title)}</span>${badge}</div>
+      <div class="row1"><span class="title">${esc(s.title)}</span><span style="display:flex;gap:6px">${today}${badge}</span></div>
       <div class="sched">${esc(s.schedule)} · 上次 ${rel(s.lastRunAt)} · 下次 ${fmt(s.nextRunAt)}</div>
       <div class="kv">
-        <b>游标</b><span>${cursor}</span>
+        <b>今日结论</b><span>${rep.present ? `${esc(rep.conclusion ?? '见报告')} · ${viewLink(rep.path, '打开日报')}` : '—'}</span>
         <b>工件</b><span>${s.artifactsPresent ? viewLink(s.artifactsDir + '/', 'tmp/sdk-release-scout/daily/') : '无'}</span>
       </div>
-      <div class="note">红线：只发现不处置——推进 scan-state / 写 Feishu / dry-run 一律走人工门。</div>
-    </div>`;
-  }).join('');
-}
-
-function attachKey(c) { return c.scanState.key || c.sessionPath; }
-
-function renderMatrix(d) {
-  const host = document.getElementById('matrix');
-  const list = d.campaigns || [];
-  if (!list.length) { host.innerHTML = ''; return; }
-  const byLanguage = new Map();
-  list.forEach((c, i) => {
-    const lang = c.language || '?';
-    if (!byLanguage.has(lang)) byLanguage.set(lang, []);
-    byLanguage.get(lang).push([c, i]);
-  });
-  const rows = [...byLanguage.entries()].map(([lang, entries]) => {
-    const chips = entries.map(([c, i]) => `<span class="mtrack ${c.health}" title="${esc(c.sessionPath)}" onclick="openDrawer(${i})">${esc(c.track ?? '?')}${c.nextGate ? ' ⛩' : ''}${c.lastActivityAt ? ' ●' : ''}</span>`).join('');
-    return `<div class="mrow"><span class="mlang">${esc(lang)}</span>${chips}</div>`;
-  }).join('');
-  host.innerHTML = rows + '<div class="note" style="border:0;padding:0;margin-top:6px">⛩=有当前门 ●=近期有活动；点击轨道打开战役详情。新会话接管战役：粘贴 <code>/attach &lt;键&gt;</code>（键如 java-v30）。</div>';
-}
-
-async function spawnSession(target) {
-  try {
-    const r = await fetch('/api/spawn-session', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ target }),
-    });
-    const j = await r.json();
-    alert(j.note || j.error || JSON.stringify(j));
-  } catch (e) { alert('派会话失败: ' + e); }
-}
-
-let approveCtx = null; // { sessionPath, sessionId }
-
-function approveLinePreview() {
-  const gate = document.getElementById('apGate').value;
-  const unit = document.getElementById('apUnit').value.trim();
-  const digest = document.getElementById('apDigest').value.trim();
-  const line = `${gate}${unit ? ' ' + unit : ''} ${digest || 'sha256:<digest>'}`;
-  document.getElementById('apPreview').textContent = line;
-  document.getElementById('apSubmit').disabled = !/^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)( \S+)? sha256:[a-f0-9]{64}$/.test(line);
-}
-
-async function submitApprove() {
-  if (!approveCtx || !confirm('确认把这条批准行注入 worker 会话？\n\n' + document.getElementById('apPreview').textContent)) return;
-  try {
-    const r = await fetch('/api/approve', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        target: approveCtx.sessionPath,
-        sessionId: approveCtx.sessionId,
-        line: document.getElementById('apPreview').textContent,
-      }),
-    });
-    const j = await r.json();
-    alert(j.note || j.error || JSON.stringify(j));
-    fetch('/api/cards').then((x) => x.json()).then(render).catch(() => {});
-  } catch (e) { alert('批准失败: ' + e); }
-}
-
-function renderCampaigns(d) {
-  const host = document.getElementById('campaigns');
-  const list = d.campaigns || [];
-  if (!list.length) { host.innerHTML = '<div class="empty">无战役会话（新战役从 dry-run + --session-state 开始）</div>'; return; }
-  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
-  host.innerHTML = list.map((c, i) => {
-    const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
-    const flags = [
-      c.pending ? `挂起执行 ${c.pending}` : '',
-      c.hasActiveExecution ? '执行中' : '',
-      c.hasActiveRollback ? '回滚中' : '',
-      c.rollbacks ? `回滚 ${c.rollbacks}` : '',
-    ].filter(Boolean).join(' · ');
-    const gateChip = c.nextGate
-      ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">门 ${esc(c.nextGate.gate)}</span>`
-      : '';
-    const zombieLine = c.health === 'zombie'
-      ? `<div class="warnline">⚠ scan-state 已推进到 ${esc(c.scanState.lastScannedTag ?? '?')}（越过目标 ${esc(c.scanState.targetTag ?? '?')}）——close-session 收口，勿续跑</div>` : '';
-    const key = attachKey(c);
-    return `<div class="card" data-i="${i}" onclick="openDrawer(${i})">
-      <div class="row1">
-        <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` · ${esc(c.acceptanceFlow)}` : ''}</span>
-        <span style="display:flex;gap:6px">${gateChip}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
-      </div>
-      <div class="sub">${esc(c.sessionId ? c.sessionId.split(':').slice(0, 4).join(':') : c.sessionPath)}</div>
-      <div class="bar"><i style="width:${pct}%"></i></div>
-      <div class="meta">
-        <span>单元 ${c.accepted}/${c.units}</span>
-        <span>更新 ${rel(c.updatedAt)}</span>
-        <span>${esc(c.scanState.key ?? '')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}</span>
-        ${c.lastActivityAt ? `<span style="color:var(--green)">活动 ${rel(c.lastActivityAt)}${c.activityCount ? ` · ${c.activityCount} 步` : ''}</span>` : ''}
-        ${flags ? `<span>${esc(flags)}</span>` : ''}
-      </div>
-      ${zombieLine}
-      <div class="actions" onclick="event.stopPropagation()">
-        <button class="act" onclick="copyText('/attach ${esc(key)}')">复制 /attach</button>
-        ${spawnOn ? `<button class="act" onclick="spawnSession('${esc(c.sessionPath)}')">派会话</button>` : ''}
-        ${spawnOn && d.features && d.features.approveEnabled && c.nextGate && (c.workers || []).some((w) => w.status === 'idle') ? `<button class="act danger" onclick="openDrawer(${i})">⛩ 批准…</button>` : ''}
-      </div>
+      <div class="note">水位：web-content PR #${s.cursor?.lastPrNumber ?? '?'}（C++/Java 扫描器共用同一上游仓库的 PR 水位，两卡同值属正常）· 红线：扫描只发现不处置，立项处理是人工动作。</div>
     </div>`;
   }).join('');
 }
 
 function renderActivity(d) {
-  const host = document.getElementById('activity');
   const events = (d.activity || []).slice(-50).reverse();
-  if (!events.length) { host.innerHTML = '<div class="empty">暂无事件——批 2 钩子注册后，新开的会话动作会实时出现在这里（当前会话的钩子配置在启动时快照，需新会话生效）。</div>'; return; }
-  const cardTitle = new Map((d.campaigns || []).map((c) => [c.sessionPath, `${c.language} · ${c.track}`]));
-  host.innerHTML = events.map((e) => {
+  if (!events.length) return '<div class="empty">暂无事件——新开的会话动作会实时出现在这里（钩子配置在会话启动时快照，需新会话生效）。</div>';
+  const cardTitle = new Map((d.campaigns || []).map((c) => [cardKey(c), `${c.language} · ${c.track}${c.checkout && c.checkout !== 'main' ? ` · ${c.checkoutLabel ?? c.checkout}` : ''}`]));
+  return events.map((e) => {
     const time = new Date(e.ts);
     const hh = String(time.getHours()).padStart(2, '0');
     const mm = String(time.getMinutes()).padStart(2, '0');
@@ -306,113 +381,866 @@ function renderActivity(d) {
   }).join('');
 }
 
-function render(d) {
-  latest = d;
-  renderHeader(d);
-  renderSentinels(d);
-  renderMatrix(d);
-  renderCampaigns(d);
-  renderActivity(d);
-  if (document.getElementById('drawer').classList.contains('open') && window._openIndex != null) {
-    fillDrawer(window._openIndex);
+const USAGE_GUIDE = `
+<details class="fold"><summary>这块看板怎么用（流程与按钮说明）</summary>
+  <div>
+    <p><b>整体节奏</b>：每日哨兵扫描只发现变化 → 你决定立项后，战役按「分组批准 → 逐篇写入批准 → 验收 → 收口」推进；每个需要你决定的时刻都会出现在总览的「待你决定」里。</p>
+    <p><b>「开始处理」</b>（语种页·今日发现）：对当日扫描发现一键派出只读处理会话——它做证据核证与规划后<b>停在分组批准门</b>，你在界面批准分组方案后它才进入写作；写作的每个写门照常停下等你。</p>
+    <p><b>「复制挂载命令」</b>：把 <code>/attach &lt;战役键&gt;</code> 放进剪贴板。粘到一个新开的 ZCode 会话里，该会话即接手这个战役（拿到确定性简报，不靠聊天记忆续接）。</p>
+    <p><b>「一键派出执行会话」</b>：免终端——直接在 ZCode 桌面端生成一个带战役简报的新会话并自动开工；遇到任何 APPROVE_* 门禁会停下等你，不会先斩后奏。需要在启动看板时开启（<code>--allow-spawn</code>）。</p>
+    <p><b>「批准并继续」</b>（战役详情页）：对看板派出的会话，把批准行原文注入它并继续执行；批准什么、绑定什么摘要，全部摊开在「技术详情」里，语义校验仍由治理 CLI 把关。需要 <code>--allow-approve</code>。</p>
+    <p><b>数据从哪来</b>：看板只读盘上治理状态（评审会话、scan-state、准入台账、每日扫描工件），本页自身无任何写路径；删掉看板，治理毫发无损。</p>
+  </div>
+</details>`;
+
+// ---------- live stats & scout findings (batch 6; client caches, TTL 5min) ----------
+
+let liveCache = { at: 0, data: null };
+let scoutCache = { at: 0, data: null };
+const CLIENT_CACHE_MS = 5 * 60_000;
+
+async function fetchLive() {
+  // A warming snapshot (first sweep still running server-side) caches only
+  // briefly so the chip retries and fills in.
+  const warming = liveCache.data && liveCache.data.status === 'never-run';
+  const ttl = warming ? 15_000 : CLIENT_CACHE_MS;
+  if (liveCache.data && Date.now() - liveCache.at < ttl) return liveCache.data;
+  try {
+    const j = await (await fetch('/api/live-stats')).json();
+    liveCache = { at: Date.now(), data: j };
+  } catch {
+    liveCache = { at: Date.now(), data: { status: 'failed', tracks: {} } };
+  }
+  return liveCache.data;
+}
+
+async function fetchScout() {
+  if (scoutCache.data && Date.now() - scoutCache.at < CLIENT_CACHE_MS) return scoutCache.data;
+  try {
+    const j = await (await fetch('/api/scout')).json();
+    scoutCache = { at: Date.now(), data: j };
+  } catch {
+    scoutCache = { at: Date.now(), data: { ok: false, languages: [] } };
+  }
+  return scoutCache.data;
+}
+
+function liveChipFor(live, language) {
+  if (!live || live.status === 'never-run') return '<span class="badge">live 统计拉取中…</span>';
+  const tracks = Object.values(live.tracks || {}).filter((t) => t.language === language);
+  if (live.status === 'failed' || !tracks.length) {
+    return `<span class="badge" title="${esc(live.error ?? '')}">live 拉取失败（registry 静态）</span>`;
+  }
+  const records = tracks.reduce((n, t) => n + (t.recordTotal ?? 0), 0);
+  const docs = tracks.reduce((n, t) => n + (t.docs ?? 0), 0);
+  const capped = tracks.some((t) => t.capped);
+  return `<span class="badge ${live.status === 'ok' ? 'finalized' : 'active'}" title="实时取自飞书${capped ? '（文档数已按上限截断）' : ''}">live 记录 ${records} · 文档 ${docs}${live.fetchedAt ? ` · ${rel(live.fetchedAt)}` : ''}</span>`;
+}
+
+function findingsBannerFor(scout, language) {
+  const entry = (scout?.languages || []).find((l) => l.language === language);
+  if (!entry) return '';
+  return `<a href="#/skill/api/lang/${esc(language)}#findings" class="badge gate" style="text-decoration:none" title="每日扫描发现，待你决定是否立项">⛩ 今日发现 ${entry.actionCount} 项待处理 →</a>`;
+}
+
+async function spawnIntake(language, scoutPath) {
+  if (!confirm(`派只读处理会话处理 ${language} 的当日发现？\n\n它会做证据核证与规划，然后停在分组批准门（APPROVE_GROUPING）等你；批准分组后才进入写作。`)) return;
+  await postSpawnIntake({ language, scoutPath });
+}
+
+async function spawnTrackIntake(language, trackKey) {
+  const checkoutSel = document.getElementById('tkCheckout');
+  const checkout = checkoutSel ? checkoutSel.value : 'main';
+  if (!confirm(`启动 ${trackKey} 轨道工作（在 ${checkout === 'main' ? '主检出' : checkout} 检出）？\n\n派出只读侦察会话：对照最新版本/tag 找变更——有发现则建评审会话并停在分组批准门（APPROVE_GROUPING）等你；无发现则明确报告后结束。`)) return;
+  await postSpawnIntake({ mode: 'track', language, trackKey, checkout });
+}
+
+async function postSpawnIntake(payload) {
+  try {
+    const r = await fetch('/api/spawn-intake', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const j = await r.json();
+    alert(j.note || j.error || JSON.stringify(j));
+  } catch (e) { alert('派出失败: ' + e); }
+}
+
+function renderFindingsSection(d, language, scout) {
+  const entry = (scout?.languages || []).find((l) => l.language === language);
+  if (!entry) {
+    return `<div class="card" style="cursor:default"><div class="row1"><span class="title">今日发现</span><span class="badge finalized">无待处理发现</span></div>
+      <div class="note" style="border:0">哨兵当日无结构化发现工件（结论以总览哨兵卡的日报为准）。历史工件见 ${viewLink('tmp/sdk-release-scout/daily/', 'daily/ 目录')}。</div></div>`;
+  }
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
+  const items = entry.artifacts.flatMap((a) => a.actions.map((act) => `
+    <tr>
+      <td class="fname">${esc(act.symbol ?? act.slug ?? '?')}</td>
+      <td><span class="badge ${act.type === 'CREATE' ? 'active' : ''}">${esc(act.type ?? '?')}</span></td>
+      <td class="dim">${esc(act.reason ?? '—')}</td>
+      <td class="dim" style="font-size:12px">${esc(act.sourceLocator ?? act.sourceRepository ?? '—')}</td>
+      <td class="dim">${esc(a.trackKey)}</td>
+    </tr>`)).join('');
+  const artifactControls = entry.artifacts.map((a) => `
+    <span style="display:inline-flex;gap:6px;align-items:center">
+      ${viewLink(a.path, `${a.trackKey} · ${a.actionCount} 项`).replace('<a ', '<a class="badge" style="text-decoration:none" ')}
+      ${spawnOn
+        ? `<button class="act danger" title="派只读处理会话：停在分组批准门，批准分组后才写作" onclick="spawnIntake('${esc(language)}', ${JSON.stringify(a.path).replace(/"/g, '&quot;')})">开始处理</button>`
+        : ''}
+    </span>`).join(' ');
+  return `<a id="findings"></a>
+    <div class="card" style="cursor:default;margin-bottom:12px">
+      <div class="row1">
+        <span class="title">今日发现（${entry.actionCount} 项 · ${esc(scout.date ?? '')}）</span>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">${artifactControls}${spawnOn ? '' : '<span class="badge">一键处理未开启（--allow-spawn）</span>'}</span>
+      </div>
+      <table class="tbl" style="margin-top:10px">
+        <thead><tr><th>方法</th><th>类型</th><th>原因</th><th>证据</th><th>轨道</th></tr></thead>
+        <tbody>${items}</tbody>
+      </table>
+      <div class="note">扫描器原文透传；「开始处理」= 派只读 intake 会话（每轨一个），分组门是开工门，未批准不写。</div>
+    </div>`;
+}
+
+
+function renderRunningSessions(d) {
+  const list = d.runningSessions || [];
+  if (!list.length) return '<div class="empty">近 30 分钟无会话活动</div>';
+  const checkoutName = new Map((d.checkouts || []).map((c) => [c.id, c.label]));
+  const rows = list.map((s) => {
+    const campaignCard = s.campaign ? (d.campaigns || []).find((c) => cardKey(c) === s.campaign) : null;
+    return `<div class="item">
+      <div class="what">
+        <div class="t">${esc(String(s.sessionId).slice(0, 22))}… <span class="dim" style="font-weight:400">在 ${esc(checkoutName.get(s.checkout) ?? s.checkout)}</span></div>
+        <div class="d">${s.tools.slice(0, 4).map(esc).join(' · ')}${s.tools.length > 4 ? ' …' : ''}${campaignCard ? ` → 战役 ${esc(campaignCard.language)} ${esc(campaignCard.track)}` : ''}</div>
+      </div>
+      <span class="chip" style="white-space:nowrap">${rel(s.lastAt)} · ${s.events} 步</span>
+    </div>`;
+  }).join('');
+  return `<div class="inbox">${rows}</div>`;
+}
+
+function pageHome(d) {
+  document.getElementById('page').innerHTML = `
+    <h2>待你决定</h2>
+    ${renderInbox(d)}
+    <h2>正在运行的会话（近 30 分钟，覆盖主检出与各工作树——战役建到评审会话阶段才会出现在下方卡片里）</h2>
+    ${renderRunningSessions(d)}
+    <h2>每日哨兵（自动扫描，只发现不处置）</h2>
+    <div class="grid">${renderSentinels(d)}</div>
+    ${USAGE_GUIDE}
+    <h2>活动流（会话动作事件，近 24–48h）</h2>
+    <div class="feed">${renderActivity(d)}</div>
+    <footer>只读看板：全部字段派生自盘上治理状态，本页无任何写路径。文件材料经 /api/file 白名单查看。</footer>`;
+}
+
+// ---------- api skill: language cards ----------
+
+
+function revisionAttachKey(r) { return r.worklistStem; }
+
+function renderRevisions(d, list) {
+  if (!list || !list.length) return '';
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
+  const cards = list.map((r) => {
+    const pct = r.scope.pages ? Math.round((r.writtenPages / r.scope.pages) * 100) : 0;
+    const writtenList = r.written.map((w) => `<li>${esc(w.unit)}（${esc(w.flow)}）· ${viewLink(w.manifest, 'manifest')}</li>`).join('');
+    return `<div class="card" style="cursor:default">
+      <div class="row1" style="flex-wrap:wrap;gap:8px">
+        <span class="title">${esc(r.language ?? '?')} 修订战役 <span class="dim" style="font-weight:400">· ${esc(r.worklistStem)}</span></span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap">${r.status === 'finalized' ? '<span class="badge finalized">已收官</span>' : '<span class="badge active">进行中</span>'}${checkoutChip(r)}${r.groupingGate ? `<span class="badge gate" title="${esc(r.groupingGate.digest)}">分组门已呈</span>` : '<span class="badge">未见分组门</span>'}</span>
+      </div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="meta">
+        <span>已写 ${r.writtenPages}/${r.scope.pages} 页（剩约 ${r.remainingPages}）</span>
+        <span>发现 ${r.scope.findings} 项</span>
+        <span>更新 ${rel(r.updatedAt)}</span>
+      </div>
+      ${r.ruling ? `<div class="sub" title="${esc(r.ruling)}" style="white-space:normal;color:var(--dim);font-size:12.5px;margin-top:4px">裁定：${esc(r.ruling.length > 120 ? r.ruling.slice(0, 120) + '…' : r.ruling)}</div>` : ''}
+      <div class="actions" style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役（拿到对账简报）" onclick="copyText('/attach ${esc(revisionAttachKey(r))}')">复制挂载命令</button>
+        ${spawnOn ? `<button class="act" title="在该工作树派带简报的新会话，逐页 governed 写入" onclick="spawnSession(${JSON.stringify('rev:' + r.worklistStem).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
+      </div>
+      ${writtenList ? `<details class="fold" style="margin:8px 0 0"><summary>已写页面（run-manifest 对账，${r.writtenPages}）</summary><ul style="margin:4px 0;padding-left:18px">${writtenList}</ul></details>` : ''}
+      <div class="note">数据派生自该工作树的工作单/分组门/apply-review manifest——修订流不走评审会话，交接以 /attach 简报为准。</div>
+    </div>`;
+  }).join('');
+  return `<div class="grid" style="margin-top:2px">${cards}</div>`;
+}
+
+function intakeLinkHref(link, d) {
+  if (/^https?:/.test(link.url)) return link.url;
+  const m = /^file:\/\/(.+)$/.exec(link.url);
+  if (!m) return null;
+  const abs = m[1];
+  const checkout = (d.checkouts || []).find((c) => abs.startsWith(c.root + '/'));
+  if (!checkout || !abs.includes('/tmp/')) return null;
+  return `/api/file?path=${encodeURIComponent(abs)}`;
+}
+
+function renderIntakes(d, list) {
+  if (!list || !list.length) return '';
+  const cards = list.map((i) => `<div class="card" style="cursor:default">
+    <div class="row1" style="flex-wrap:wrap;gap:8px">
+      <span class="title">${esc(i.title)}</span>
+      <span style="display:flex;gap:6px;flex-wrap:wrap">
+        ${i.approved
+          ? '<span class="badge finalized" title="批准凭证已落盘（会话已建/已有 governed 写入）——筹备期长任务（dry-run/context 生成）仍在进行属正常">分组已批 · 筹备中</span>'
+          : `<span class="badge gate" title="待你批准：${esc(i.digest)}">分组门待批</span>`}
+        ${checkoutChip(i)}
+      </span>
+    </div>
+    <div class="meta" style="margin-top:6px">
+      <span>呈门 ${rel(i.presentedAt)}</span>
+      ${i.language ? `<span>语种 ${esc(i.language)}</span>` : ''}
+      <span class="dim" title="${esc(i.digest)}">digest ${esc(i.digest.slice(7, 19))}…</span>
+    </div>
+    ${i.run ? `<div class="sub" title="${esc(i.run)}">${esc(i.run)}</div>` : ''}
+    ${i.links.length ? `<div style="margin-top:6px;font-size:12.5px">${i.links.map((l) => {
+      const href = intakeLinkHref(l, d);
+      return href ? `<a class="badge" style="text-decoration:none" href="${esc(href)}" target="_blank">${esc(l.label)}</a>` : `<span class="badge" title="${esc(l.url)}">${esc(l.label)}</span>`;
+    }).join(' ')}</div>` : ''}
+    <div class="note">批准后（或已批筹备中）的下一持久化事件=评审会话落盘，卡片随即出现在上方战役表——dry-run/context 生成等长筹备阶段由此卡承接。</div>
+  </div>`).join('');
+  return `<div class="grid">${cards}</div>`;
+}
+
+async function pageSkillApi(d) {
+  const [live, scout] = await Promise.all([fetchLive(), fetchScout()]);
+  const tracks = d.skillTracks || { languages: [] };
+  const cards = tracks.languages.map((lang) => {
+    const active = lang.tracks.reduce((n, t) => n + t.campaigns.active, 0)
+      + (d.revisions || []).filter((r) => r.language === lang.name && r.status !== 'finalized').length;
+    const total = lang.tracks.reduce((n, t) => n + t.campaigns.total, 0);
+    const options = lang.tracks.map((t) => `<option value="${esc(t.key)}">${esc(t.version)}（战役 ${t.campaigns.active} 活跃 / ${t.campaigns.total} 累计）</option>`).join('');
+    return `<div class="card langcard clickable" onclick="location.hash='#/skill/api/lang/${esc(lang.name)}'">
+      <div class="row1">
+        <span class="title">${esc(lang.name)} <span style="color:var(--dim);font-weight:400;font-size:12.5px">${esc(lang.sdkName ?? '')}</span></span>
+        ${active > 0 ? `<span class="badge active">战役进行中 ${active}</span>` : '<span class="badge finalized">无进行中战役</span>'}
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
+        ${liveChipFor(live, lang.name)}
+        ${findingsBannerFor(scout, lang.name)}
+      </div>
+      <div class="meta" style="margin-top:6px">
+        <span>版本轨道 ${lang.tracks.length}</span><span>历史战役 ${total}</span>
+      </div>
+      <select onclick="event.stopPropagation()" onchange="if(this.value) location.hash='#/skill/api/track/'+this.value">
+        <option value="">版本入口…</option>${options}
+      </select>
+    </div>`;
+  }).join('');
+  const registeredKeys = new Set();
+  tracks.languages.forEach((l) => l.tracks.forEach((t) => registeredKeys.add(t.key)));
+  const outside = (d.campaigns || []).filter((c) => c.scanState.key && !registeredKeys.has(c.scanState.key));
+  const outsideNote = outside.length
+    ? `<div class="note" style="border:0;padding:0;margin-top:10px">另有 ${outside.length} 个战役的轨道未登记在 release-tracks（${outside.map((c) => esc(c.language + ' ' + (c.scanState.key ?? ''))).join('、 ')}）——从 <a href="#/home">总览</a> 的战役入口处理。</div>`
+    : '';
+  document.getElementById('page').innerHTML = `
+    ${crumbs([{ label: 'API 参考（api-reference-sync）', href: '#/skill/api' }])}
+    <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理；战役发现覆盖主检出与各工作树，非主检出的战役带工作树标签）</h2>
+    <div class="grid">${cards || '<div class="empty">release-tracks.json 未读到</div>'}</div>
+    ${outsideNote}
+    ${(d.intakes || []).length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, d.intakes)}` : ''}
+    <h2>进行中的战役（评审会话流 + 修订流共用此表）</h2>
+    ${campaignTable([
+      ...(d.campaigns || []).filter((c) => c.health !== 'finalized'),
+      ...(d.revisions || []).filter((r) => r.status !== 'finalized'),
+    ], d, { empty: '无进行中战役（新战役从 dry-run + --session-state 开始，或轨道页「启动该轨道工作」）' })}`;
+}
+
+// ---------- campaign table (language page / track page / skill page) ----------
+
+let tableShowFinalized = false;
+
+function campaignRows(list, d) {
+  return list.map((c) => {
+    if (c.kind === 'revision') return revisionRow(c);
+    const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
+    const g = gateSummary(c);
+    return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
+      <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}</td>
+      <td><span class="badge ${c.acceptanceFlow === 'two-gate' ? 'active' : ''}">${esc(c.acceptanceFlow ?? 'legacy')}</span></td>
+      <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
+      <td class="num" style="min-width:90px">${c.accepted}/${c.units}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
+      <td>${g ? `<span class="badge gate" title="${esc(c.nextGate?.reviewUnitId || '')}">${esc(g.title)}</span>` : '<span class="dim">—</span>'}</td>
+      <td class="dim">${rel(c.updatedAt)}</td>
+      <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 战役键放进剪贴板；粘到新 ZCode 会话即接手本战役" onclick="copyText('/attach ${esc(attachKey(c))}')">复制挂载命令</button></td>
+    </tr>`;
+  }).join('');
+}
+
+// Revision campaigns share the campaign table: same columns, adapted cells.
+function revisionRow(r) {
+  const pct = r.scope.pages ? Math.round((r.writtenPages / r.scope.pages) * 100) : 0;
+  const writtenSet = r.written.map((w) => w.unit);
+  const writtenHit = (page) => writtenSet.some((u) => u.includes('-' + page));
+  return `<tr class="rowlink" onclick="location.hash='${campaignHref(r).replace(/'/g, '')}'">
+    <td><span class="fname">${esc(r.language ?? '?')}</span> ${checkoutChip(r)}</td>
+    <td><span class="badge gate">revision</span></td>
+    <td><span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></td>
+    <td class="num" style="min-width:90px">${r.writtenPages}/${r.scope.pages}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
+    <td>${r.status === 'finalized'
+      ? '<span class="dim">—</span>'
+      : r.groupingApproved
+        ? `<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）；与 two-gate 的 APPROVE_WRITES 同一批准形态">批准批次写入</span>`
+        : r.groupingGate
+          ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>`
+          : '<span class="dim">—</span>'}</td>
+    <td class="dim">${rel(r.updatedAt)}</td>
+    <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役" onclick="copyText('/attach ${esc(r.worklistStem)}')">复制挂载命令</button></td>
+  </tr>`;
+}
+
+function campaignTable(list, d, { empty = '无战役' } = {}) {
+  if (!list.length) return `<div class="empty">${esc(empty)}</div>`;
+  const finalized = list.filter((c) => c.health === 'finalized');
+  const live = list.filter((c) => c.health !== 'finalized');
+  const showFinal = tableShowFinalized;
+  return `
+    <table class="tbl">
+      <thead><tr><th>轨道</th><th>类型</th><th>状态</th><th>进度</th><th>当前门</th><th>更新</th><th>操作</th></tr></thead>
+      <tbody>
+        ${campaignRows(live, d)}
+        ${showFinal ? campaignRows(finalized, d) : ''}
+      </tbody>
+    </table>
+    ${finalized.length && !showFinal
+      ? `<div class="filters" style="margin-top:8px"><span class="f" onclick="tableShowFinalized=true;route()">显示已收官（${finalized.length}）</span></div>`
+      : ''}
+    ${showFinal && finalized.length
+      ? `<div class="filters" style="margin-top:8px"><span class="f" onclick="tableShowFinalized=false;route()">收起已收官</span></div>`
+      : ''}`;
+}
+
+async function pageLang(d, lang) {
+  const scout = await fetchScout();
+  const list = (d.campaigns || []).filter((c) => (c.language || '').toLowerCase() === lang.toLowerCase());
+  const entry = (d.skillTracks?.languages || []).find((l) => l.name === lang);
+  document.getElementById('page').innerHTML = `
+    ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: `${lang} 战役清单`, href: `#/skill/api/lang/${lang}` }])}
+    ${renderFindingsSection(d, lang, scout)}
+    <h2>${esc(lang)} 战役清单${entry?.sdkName ? ` <span style="color:var(--dim);font-weight:400">· ${esc(entry.sdkName)}</span>` : ''}</h2>
+    ${campaignTable([
+      ...list,
+      ...(d.revisions || []).filter((r) => r.language === lang),
+    ], d, { empty: '该语种暂无战役会话' })}
+    ${entry ? `<div class="filters" style="margin-top:10px">${entry.tracks.map((t) => `<a class="f" href="#/skill/api/track/${esc(t.key)}">${esc(t.version)} 入口</a>`).join('')}</div>` : ''}`;
+}
+
+async function pageTrack(d, key) {
+  const live = await fetchLive();
+  const list = (d.campaigns || []).filter((c) => c.scanState.key === key);
+  const lang = key.replace(/-v\d+$/, '');
+  const version = (list[0]?.track) || null;
+  const scan = list[0]?.scanState || null;
+  const baseline = scan?.lastScannedTag;
+  const liveEntry = Object.entries(live?.tracks || {}).find(([k]) => k === `${lang}:${version}`)?.[1];
+  document.getElementById('page').innerHTML = `
+    ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: lang, href: `#/skill/api/lang/${lang}` }, { label: `${key} 轨道`, href: `#/skill/api/track/${key}` }])}
+    <h2>${esc(key)} 轨道${version ? `（${esc(version)}）` : ''}</h2>
+    <div class="card" style="margin-bottom:12px;cursor:default;border-color:#c7d7fb">
+      <div class="row1" style="flex-wrap:wrap;gap:8px">
+        <span class="title">启动该轨道工作</span>
+        <span style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${(d.checkouts || []).length > 1 ? `<select id="tkCheckout" style="font:inherit;font-size:12.5px;border:1px solid var(--line);border-radius:8px;padding:3px 8px">${(d.checkouts || []).map((c) => `<option value="${esc(c.id)}">${esc(c.label)}</option>`).join('')}</select>` : ''}
+          ${d.features && d.features.spawnEnabled
+            ? `<button class="act primary" title="派只读侦察会话：对照最新版本/tag 找变更；有发现停在分组批准门，无发现明确报告后结束" onclick="spawnTrackIntake('${esc(lang)}', '${esc(key)}')">启动工作（先侦察后分组审批）</button>`
+            : '<span class="badge">一键启动未开启（--allow-spawn）——也可在会话里 /api-reference-sync 手动发起</span>'}
+        </span>
+      </div>
+      <div class="note" style="border:0">不依赖当日扫描工件：侦察由会话现场完成（tag 对照/web-content PR/源码变更）；发现为空则如实报告，不建会话。分组批准=开工门。</div>
+    </div>
+    <div class="card" style="margin-bottom:12px;cursor:default">
+      <div class="kv" style="margin-top:0">
+        <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
+        <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）</span>
+        ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
+      </div>
+    </div>
+    ${campaignTable(list, d, { empty: '该轨暂无战役会话' })}`;
+}
+
+// ---------- other-skill placeholders ----------
+
+function pageSkill(d, id) {
+  const s = SKILLS.find((x) => x.id === id);
+  if (!s) {
+    document.getElementById('page').innerHTML = `${crumbs([{ label: '技能', href: '#/home' }, { label: '未知名额' }])}<div class="empty">没有叫 ${esc(id)} 的技能看板。</div>`;
+    return;
+  }
+  document.getElementById('page').innerHTML = `
+    ${crumbs([{ label: s.short, href: `#/skill/${esc(s.id)}` }])}
+    <div class="card skcard">
+      <div class="row1"><span class="title">${esc(s.short)}</span><span class="badge">${esc(s.name)}</span></div>
+      <div class="lede">${esc(s.lede)}</div>
+      <div class="kv">
+        <b>技能定义</b><span><code>.claude/skills/${esc(s.name)}/SKILL.md</code></span>
+        <b>会话入口</b><span>在 ZCode 会话里输入 <code>/${esc(s.name)}</code>（workspace command 薄路由）</span>
+      </div>
+      <div class="note">这个技能的看板数据源还没定型——按你的节奏逐个讨论后再接入（比如本地化对齐的记录差异表、代码验证的验证报告流）。</div>
+    </div>`;
+}
+
+// ---------- campaign detail ----------
+
+let detailCache = { path: null, sig: '', detail: null };
+
+function detailSignature(c) {
+  return JSON.stringify([c?.updatedAt, c?.accepted, c?.pending, c?.nextGate?.gate ?? null, (c?.workers || []).map((w) => w.status).join(',')]);
+}
+
+async function fetchDetail(c) {
+  const sig = detailSignature(c);
+  if (detailCache.path === cardKey(c) && detailCache.sig === sig && detailCache.detail) return detailCache.detail;
+  try {
+    const r = await fetch(`/api/campaign?path=${encodeURIComponent(cardKey(c))}`);
+    const j = await r.json();
+    if (!j.ok) return null;
+    detailCache = { path: cardKey(c), sig, detail: j };
+    return j;
+  } catch {
+    return null;
   }
 }
 
-function copyText(t) { navigator.clipboard?.writeText(t); }
+async function spawnSession(target) {
+  try {
+    const r = await fetch('/api/spawn-session', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target }),
+    });
+    const j = await r.json();
+    alert(j.note || j.error || JSON.stringify(j));
+  } catch (e) { alert('派出会话失败: ' + e); }
+}
 
-function renderApproveForm(c) {
+async function submitApprove(target, sessionId, line) {
+  if (!confirm('确认把这条批准行注入 worker 会话？\n\n' + line)) return;
+  try {
+    const r = await fetch('/api/approve', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target, sessionId, line }),
+    });
+    const j = await r.json();
+    alert(j.note || j.error || JSON.stringify(j));
+    refreshDetail();
+  } catch (e) { alert('批准失败: ' + e); }
+}
+
+function refreshDetail() {
+  fetch('/api/cards').then((x) => x.json()).then((d) => { latest = d; route(); }).catch(() => {});
+}
+
+function approveLinePreview() {
+  const gateEl = document.getElementById('apGate');
+  if (!gateEl) return;
+  const gate = gateEl.value;
+  const unit = document.getElementById('apUnit').value.trim();
+  const digest = document.getElementById('apDigest').value.trim();
+  const line = `${gate}${unit ? ' ' + unit : ''} ${digest || 'sha256:<digest>'}`;
+  document.getElementById('apPreview').textContent = line;
+  document.getElementById('apSubmit').disabled = !APPROVE_LINE_RE.test(line);
+}
+
+function advancedApproveForm(c) {
   const enabled = Boolean(latest && latest.features && latest.features.approveEnabled);
   const workers = (c.workers || []).filter((w) => w.sessionId);
   if (!enabled || !workers.length) return '';
-  const idle = workers.some((w) => w.status === 'idle');
-  const gateMap = {
-    APPROVE_WRITE: 'APPROVE_WRITES',
-    APPROVE_DOCUMENT: 'APPROVE_DOCUMENT',
-    APPROVE_ROLLBACK: 'APPROVE_ROLLBACK',
-    APPROVE_ACCEPTANCE: 'APPROVE_ACCEPTANCE',
-    APPROVE_GROUPING: 'APPROVE_GROUPING',
-  };
-  const gate = gateMap[c.nextGate?.gate] || 'APPROVE_WRITES';
+  const gate = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
   const unit = c.nextGate?.reviewUnitId || '';
   const pending = (c.pendingUnits || []).find((p) => !unit || p.reviewUnitId === unit);
   const digest = pending?.executionJournalDigest || '';
   const workerSel = workers.map((w) => `<option value="${esc(w.sessionId)}" ${w.status === 'idle' ? 'selected' : 'disabled'}>${esc(w.sessionId.slice(0, 18))}…（${w.status === 'idle' ? '可注入' : '运行中'}）</option>`).join('');
-  return `<div class="apform">
-    <b style="color:#6d28d9">⛩ 界面批准（转发精确行给 worker 会话）</b>
-    <div class="frow">
-      <select id="apGate" onchange="approveLinePreview()">
-        ${['APPROVE_GROUPING', 'APPROVE_WRITES', 'APPROVE_DOCUMENT', 'APPROVE_ROLLBACK', 'APPROVE_ACCEPTANCE'].map((g) => `<option ${g === gate ? 'selected' : ''}>${g}</option>`).join('')}
-      </select>
-      <select id="apWorker" onchange="approveCtx&&(approveCtx.sessionId=this.value)">
-        ${workerSel}
-      </select>
+  return `<details class="fold"><summary>高级表单：手组批准行（其余门的 digest 从呈门材料复制）</summary>
+    <div class="approve">
+      <div class="frow">
+        <select id="apGate" onchange="approveLinePreview()">
+          ${['APPROVE_GROUPING', 'APPROVE_WRITES', 'APPROVE_DOCUMENT', 'APPROVE_ROLLBACK', 'APPROVE_ACCEPTANCE'].map((g) => `<option ${g === gate ? 'selected' : ''}>${g}</option>`).join('')}
+        </select>
+        <select id="apWorker">${workerSel}</select>
+      </div>
+      <div class="frow"><input id="apUnit" placeholder="review-unit-id（DOCUMENT/ROLLBACK 需要）" value="${esc(unit)}" oninput="approveLinePreview()"></div>
+      <div class="frow"><input id="apDigest" placeholder="sha256:<digest>（从呈门材料复制；DOCUMENT 有预填）" value="${esc(digest)}" oninput="approveLinePreview()"></div>
+      <code id="apPreview"></code>
+      <button class="act danger" id="apSubmit" onclick="submitApproveFromForm()">注入批准行</button>
+      <div class="hint">语义与 digest 绑定由 canonical CLI 的 L1 门禁执法；worker 运行中时不可注入。</div>
     </div>
-    <div class="frow"><input id="apUnit" placeholder="review-unit-id（DOCUMENT/ROLLBACK 需要）" value="${esc(unit)}" oninput="approveLinePreview()"></div>
-    <div class="frow"><input id="apDigest" placeholder="sha256:<digest>（从呈门材料复制；DOCUMENT 有预填）" value="${esc(digest)}" oninput="approveLinePreview()"></div>
-    <code id="apPreview"></code>
-    <button class="act danger" id="apSubmit" onclick="submitApprove()" ${idle ? '' : 'disabled'}>注入批准行</button>
-    <div class="hint">此操作只把上面这行原文注入看板派出的会话（--resume）；语义与 digest 绑定仍由 canonical CLI 的 L1 门禁执法。worker 运行中时不可注入。</div>
+  </details>`;
+}
+
+function submitApproveFromForm() {
+  const c = latest.campaigns.find((x) => cardKey(x) === window._detailPath || x.sessionPath === window._detailPath);
+  const worker = document.getElementById('apWorker').value;
+  submitApprove(window._detailPath, worker, document.getElementById('apPreview').textContent);
+}
+
+function oneClickApproveCard(c, detail) {
+  const feats = latest?.features || {};
+  if (!feats.approveEnabled) {
+    return `<div class="approve"><div class="t">⛩ 界面批准未开启</div><div class="hint">启动看板时加 <code>--allow-approve</code> 后，这里可以一键批准看板派出的会话。</div></div>`;
+  }
+  const workers = (c.workers || []).filter((w) => w.sessionId);
+  if (!workers.length) {
+    const g0 = gateSummary(c);
+    const lineGate0 = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
+    const unit0 = c.nextGate?.reviewUnitId || '';
+    const pending0 = (c.pendingUnits || []).find((p) => !unit0 || p.reviewUnitId === unit0);
+    const line0 = pending0 ? `${lineGate0}${unit0 ? ' ' + unit0 : ''} ${pending0.executionJournalDigest}`.trim() : null;
+    return `<div class="approve"><div class="t">⛩ ${g0 ? esc(g0.title) : '界面批准'}</div>
+      ${line0 && APPROVE_LINE_RE.test(line0)
+        ? `<div class="frow"><code>${esc(line0)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line0).replace(/"/g, '&quot;')})">复制批准行</button></div>`
+        : `<div class="hint">当前门或 digest 尚不可自动组装（约 1 分钟刷新；或从呈门材料取精确行）。</div>`}
+      <div class="hint">无看板 worker：界面注入仅限看板派出的会话（防并发写）。手开的会话把上面的批准行原文粘进去即为批复；或用「一键派出执行会话」派一个可注入的 worker。</div></div>`;
+  }
+  const idle = workers.find((w) => w.status === 'idle');
+  const g = gateSummary(c);
+  if (!g || !c.nextGate) {
+    return `<div class="approve"><div class="t">⛩ 当前无待批准的门</div><div class="hint">下一门由治理 CLI 推导（约 1 分钟刷新）；机械收口 CLOSE_SESSION 在会话里跑 close-session 命令。</div></div>`;
+  }
+  const gate = c.nextGate.gate;
+  if (gate === 'CLOSE_SESSION') {
+    return `<div class="approve"><div class="t">⛩ 收口</div><div class="sum">全部单元已接受——在会话里执行 <code>close-session</code> 机械收口（不属批准行）。</div></div>`;
+  }
+  const lineGate = GATE_TO_LINE[gate] || gate;
+  const unit = c.nextGate.reviewUnitId || '';
+  const pending = (c.pendingUnits || []).find((p) => !unit || p.reviewUnitId === unit);
+  const digest = pending?.executionJournalDigest || '';
+  const fileRow = unit && detail
+    ? (detail.files || []).find((f) => f.unitId === unit || f.unitId === `review:${unit}` || f.stableId === unit)
+    : null;
+  const summary = lineGate === 'APPROVE_DOCUMENT'
+    ? `批准《${humanUnit(unit)}》写入落盘${fileRow?.fileName ? `（${esc(fileRow.fileName)}）` : ''}`
+    : lineGate === 'APPROVE_WRITES'
+      ? `批准批次写入（挂起 ${c.pending} 篇）`
+      : lineGate === 'APPROVE_GROUPING'
+        ? `批准分组方案（共 ${c.units} 个写作单元）`
+        : lineGate === 'APPROVE_ROLLBACK'
+          ? `批准回滚 ${esc(unit || '（填单元 id）')}`
+          : '批准终局验收';
+  const line = `${lineGate}${unit ? ' ' + unit : ''} ${digest}`.trim();
+  const manualCopy = (reason) => `<div class="approve"><div class="t">⛩ ${esc(g.title)}</div><div class="sum">${summary}</div>
+    ${digest && APPROVE_LINE_RE.test(line)
+      ? `<div class="frow"><code>${esc(line)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line).replace(/"/g, '&quot;')})">复制批准行</button></div>`
+      : `<div class="hint">这一门的 digest 不能自动预填——从<a href="/api/file?path=${encodeURIComponent('tmp/api-reference-sync/gate-presentation/latest.html')}" target="_blank">呈门材料</a>复制精确行。</div>`}
+    <div class="hint">${esc(reason)}：界面注入仅限看板派出的会话（防并发写）；手开的会话把上面这行原文粘进去即为批复——语义与 digest 绑定仍由治理 CLI 执法。</div></div>`;
+  if (!idle) {
+    return `<div class="approve"><div class="t">⛩ ${esc(g.title)}</div><div class="sum">${summary}</div><div class="hint">worker 正在运行——等它停在门禁后再批准。</div></div>`;
+  }
+  if (!digest || !APPROVE_LINE_RE.test(line)) {
+    return `<div class="approve"><div class="t">⛩ ${esc(g.title)}</div><div class="sum">${summary}</div><div class="hint">这一门的 digest 不能自动预填——从<a href="/api/file?path=${encodeURIComponent('tmp/api-reference-sync/gate-presentation/latest.html')}" target="_blank">呈门材料</a>复制后，用下方高级表单注入。</div></div>`;
+  }
+  return `<div class="approve">
+    <div class="t">⛩ ${esc(g.title)} — 等你一句话</div>
+    <div class="sum">${summary}</div>
+    <details class="fold" style="margin:6px 0"><summary>技术详情（批准行与绑定摘要）</summary><code>${esc(line)}</code><div class="hint">worker：${esc(idle.sessionId)} · 注入方式 --resume 原文转发，语义校验在治理 CLI。</div></details>
+    <button class="act primary" onclick="submitApprove(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(idle.sessionId).replace(/"/g, '&quot;')}, ${JSON.stringify(line).replace(/"/g, '&quot;')})">批准并继续</button>
   </div>`;
 }
 
-function fillDrawer(i) {
-  const c = latest.campaigns[i];
-  if (!c) return;
-  const idleWorker = (c.workers || []).find((w) => w.status === 'idle') || (c.workers || [])[0];
-  approveCtx = idleWorker?.sessionId ? { sessionPath: c.sessionPath, sessionId: idleWorker.sessionId } : null;
-  document.getElementById('dTitle').innerHTML = `${esc(c.language)} · ${esc(c.track)} <span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span>`;
-  const docs = c.documentLinks.length
-    ? c.documentLinks.map((l) => `<li><a href="${esc(l)}" target="_blank">${esc(l)}</a></li>`).join('')
-    : '<li>无</li>';
-  const records = c.recordLinks.length
-    ? c.recordLinks.map((l) => `<li><a href="${esc(l)}" target="_blank">${esc(l)}</a></li>`).join('')
-    : '<li>无</li>';
-  const journals = c.journalPaths.length
-    ? c.journalPaths.map((p) => `<li>${viewLink(p)}</li>`).join('')
-    : '<li>无</li>';
-  document.getElementById('dBody').innerHTML = `
-    <h3>会话文件</h3>
-    <div>${viewLink(c.sessionPath, c.sessionPath)} <button class="copy" onclick='copyText(${JSON.stringify(c.sessionPath).replace(/'/g, "&#39;")})'>复制路径</button></div>
-    <div class="kv" style="margin-top:6px">
-      <b>sessionId</b><span style="word-break:break-all">${esc(c.sessionId ?? '—')}</span>
-      <b>SDK</b><span>${esc(c.sdkName ?? '—')}</span>
-      <b>状态机</b><span>${esc(c.status)}</span>
-      <b>创建 / 更新</b><span>${fmt(c.createdAt)} / ${fmt(c.updatedAt)}</span>
-      ${c.closedAt ? `<b>收口</b><span>${fmt(c.closedAt)}</span>` : ''}
-    </div>
-    <h3>scan-state 对照</h3>
-    <div class="kv">
-      <b>键</b><span>${esc(c.scanState.key ?? '—')}</span>
-      <b>已推进</b><span>${esc(c.scanState.lastScannedTag ?? '—')}</span>
-      <b>会话目标</b><span>${esc(c.scanState.targetTag ?? '—')}</span>
-    </div>
-    ${c.scanState.advancedPast === true ? '<div class="warnline">⚠ 僵尸会话：该轨已收官未终态化，close-session 收口，不要续跑。</div>' : ''}
-    <h3>进度</h3>
-    <div class="kv">
-      <b>单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起执行 ${c.pending}</span>
-      <b>执行/回滚</b><span>${c.hasActiveExecution ? '执行中 ' : ''}${c.hasActiveRollback ? '回滚中 ' : ''}${c.rollbacks ? `历史回滚 ${c.rollbacks}` : '无活动执行/回滚'}</span>
-      <b>当前门</b><span>${c.nextGate ? `<b style="color:#6d28d9">${esc(c.nextGate.gate)}</b>${c.nextGate.reviewUnitId ? ` · ${esc(c.nextGate.reviewUnitId)}` : ''}${c.nextGate.gate === 'CLOSE_SESSION' ? '（机械收口）' : ''}` : '—（由 sdk-review-session status 推导，稍候或无）'}</span>
-    </div>
-    <div style="margin-top:8px"><button class="act" onclick="copyText('/attach ${esc(attachKey(c))}')">复制 /attach ${esc(attachKey(c))}</button></div>
-    ${renderApproveForm(c)}
-    <h3>工件</h3>
-    <ul>
-      <li>releaseScope: ${viewLink(c.artifacts.releaseScope)}</li>
-      <li>referenceContext: ${viewLink(c.artifacts.referenceContext)}</li>
-      <li>summaryJson: ${viewLink(c.artifacts.summaryJson)}</li>
-    </ul>
-    <h3>执行 journal</h3>
-    <ul>${journals}</ul>
-    <h3>文档（已接受单元）</h3>
-    <ul>${docs}</ul>
-    <h3>记录</h3>
-    <ul>${records}</ul>`;
-  approveLinePreview();
+function stepChips(c) {
+  const total = c.units || 0;
+  const done = c.health === 'finalized';
+  const steps = [
+    { label: '发现', state: 'done' },
+    { label: '分组', state: total > 0 ? 'done' : 'cur' },
+    {
+      label: `写入·验收 ${c.accepted}/${total}`,
+      state: done || (total > 0 && c.accepted >= total) ? 'done' : (c.accepted > 0 ? 'cur' : 'todo'),
+    },
+    { label: '收口', state: done ? 'done' : (total > 0 && c.accepted >= total ? 'cur' : 'todo') },
+  ];
+  return `<div class="steps">${steps.map((s, i) => `${i ? '<span class="arr">›</span>' : ''}<span class="st ${s.state}">${s.state === 'done' ? '✓ ' : ''}${esc(s.label)}</span>`).join('')}</div>`;
 }
 
-function openDrawer(i) { window._openIndex = i; fillDrawer(i); document.getElementById('drawer').classList.add('open'); }
-function closeDrawer() { document.getElementById('drawer').classList.remove('open'); window._openIndex = null; }
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer(); });
+function filesTable(detail) {
+  const files = (detail?.files || []).slice();
+  const order = { 'pending-approval': 0, executing: 1, 'rolling-back': 2, queued: 3, accepted: 4, ungrouped: 5 };
+  files.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
+  if (!files.length) return '<div class="empty">无文件表（releaseScope 工件缺失或无单元）</div>';
+  const anyPrFile = files.some((f) => f.filePath);
+  const rows = files.map((f) => `<tr>
+      <td class="fname" title="${esc(f.filePath ?? '')}">${esc(f.fileName ?? f.symbol ?? humanUnit(f.unitId))}${(!f.filePath && anyPrFile) ? ' <span class="dim">（无 PR 文件，源码证据）</span>' : ''}</td>
+      <td>${f.unitId ? `<span class="iconlink" title="${esc(f.unitId)}">${esc(humanUnit(f.unitId))}</span>` : '<span class="dim">—</span>'}</td>
+      <td>${f.status === 'accepted' ? '<span class="badge finalized">已写入·验收</span>' : f.status === 'pending-approval' ? '<span class="badge gate">待批准写入</span>' : f.status === 'ungrouped' ? '<span class="badge">未入组</span>' : `<span class="badge active">${esc(UNIT_STATUS_LABEL[f.status] ?? f.status)}</span>`}</td>
+      <td class="dim">${esc(f.reason ?? '—')}</td>
+      <td class="dim num" title="${esc(f.sourceLocator ?? '')}">${f.sourcePr ? `PR #${f.sourcePr}` : (f.sourceLocator ?? f.changeType ?? '—')}</td>
+      <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}${(f.documentLinks?.length || f.recordLinks?.length) ? '' : (f.status === 'accepted' || f.status === 'ungrouped' ? '<span class="dim">—</span>' : '<span class="dim" title="文档/记录链接由该单元的验收回执携带">待写入后生成</span>')}</td>
+    </tr>`).join('');
+  return `<table class="tbl">
+    <thead><tr><th>文件</th><th>单元</th><th>状态</th><th>变更原因</th><th>来源</th><th>飞书</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="note" style="border:0">${anyPrFile
+    ? '文件名取自 release-scope 的 web-content 路径；悬停看全路径。「飞书」列链接由<b>已写入·验收单元的回执</b>携带——未写入的单元显示"待写入后生成"。'
+    : '本次范围为<b>源码证据驱动</b>（无 web-content PR 文件）：首列为方法/单元名，「来源」列为 SDK 源码定位（仓库 file:line）。「飞书」列链接由已写入·验收单元的回执携带。'}</div>`;
+}
+
+function fmtTokens(n) {
+  if (n == null) return '—';
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
+  return String(n);
+}
+
+async function renderUsagePanel(c) {
+  const host = document.getElementById('usageHost');
+  if (!host) return;
+  try {
+    const u = await (await fetch(`/api/usage?path=${encodeURIComponent(cardKey(c))}`)).json();
+    if (!u.available) {
+      host.innerHTML = `<div class="empty">token 采集不可用（${esc(u.reason ?? '')}）</div>`;
+      return;
+    }
+    const t = u.totals;
+    if (!t.sessions) {
+      host.innerHTML = '<div class="empty">尚无本战役的 token 采集（采集自看板批 7 上线起；历史战役无数据）</div>';
+      return;
+    }
+    const sessRows = u.sessions.map((s) => `<tr>
+        <td class="fname" title="${esc(s.sessionId)}">${esc(String(s.sessionId).slice(0, 20))}…</td>
+        <td class="dim">${esc(s.source ?? '—')}</td>
+        <td class="num">${s.turns ?? '—'}</td>
+        <td class="num">${fmtTokens(s.inputTokens)}</td>
+        <td class="num">${fmtTokens(s.outputTokens)}</td>
+        <td class="num">${fmtTokens(s.totalTokens)}</td>
+        <td class="dim">${rel(s.lastTs ?? s.lastSeenAt)}</td>
+      </tr>`).join('');
+    const unitRows = u.perUnit.length
+      ? u.perUnit.map((p) => `<tr>
+          <td class="fname">${esc(humanUnit(p.unitId))}</td>
+          <td class="num">${p.runs}</td>
+          <td class="num">${fmtTokens(p.input)}</td>
+          <td class="num">${fmtTokens(p.output)}</td>
+          <td class="num">${fmtTokens(p.total)}</td>
+          <td class="dim">${p.lastAt ? rel(p.lastAt) : '—'}</td>
+        </tr>`).join('')
+      : '<tr><td colspan="6" class="dim" style="text-align:center;padding:12px">暂无看板批准回合的逐篇归因（经界面批准的回合才会记到单篇）</td></tr>';
+    host.innerHTML = `
+      <div class="card" style="cursor:default;margin-bottom:12px">
+        <div class="row1">
+          <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(t.totalTokens)}</span> tokens</span>
+          <span class="meta"><span>输入 ${fmtTokens(t.inputTokens)}</span><span>输出 ${fmtTokens(t.outputTokens)}</span><span>缓存读 ${fmtTokens(t.cacheRead)}</span><span>缓存写 ${fmtTokens(t.cacheWrite)}</span><span>会话 ${t.sessions}</span></span>
+        </div>
+        <div class="note" style="border:0">采集${u.collectedSince ? `始于 ${fmt(u.collectedSince)}` : '中'}；宿主会清理原始转录，看板每 2 分钟增量落库。人工会话回合计入战役级、无法精确到单篇（如实呈现，不做估算）。</div>
+      </div>
+      <table class="tbl">
+        <thead><tr><th>会话</th><th>归因来源</th><th>回合</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
+        <tbody>${sessRows}</tbody>
+      </table>
+      <h2>逐篇写作消耗（看板批准回合）</h2>
+      <table class="tbl">
+        <thead><tr><th>单元</th><th>回合数</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
+        <tbody>${unitRows}</tbody>
+      </table>`;
+  } catch {
+    host.innerHTML = '<div class="empty">token 数据载入失败</div>';
+  }
+}
+
+function pageRevisionDetail(d, r) {
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
+  const pct = r.scope.pages ? Math.round((r.writtenPages / r.scope.pages) * 100) : 0;
+  const writtenSet = r.written.map((w) => w.unit);
+  const pageRows = (r.pages || []).map((p) => {
+    const hit = writtenSet.some((u) => u.includes('-' + p.page));
+    return `<tr>
+      <td class="fname">${esc(p.page)}</td>
+      <td>${p.codes.map((c) => `<span class="badge active" style="margin-right:4px">${esc(c)}</span>`).join('')}</td>
+      <td>${hit ? '<span class="badge finalized">已写</span>' : '<span class="badge">待写</span>'}</td>
+      <td class="iconlink">${p.documentToken ? `<a href="https://zilliverse.feishu.cn/docx/${esc(p.documentToken)}" target="_blank" title="${esc(p.documentToken)}">文档</a>` : '<span class="dim">—</span>'}</td>
+    </tr>`;
+  }).join('');
+  const writtenList = r.written.map((w) => `<tr>
+      <td class="fname">${esc(w.unit)}</td>
+      <td><span class="badge">${esc(w.flow === 'revision' ? '修订' : 'polish')}</span></td>
+      <td class="dim">${w.writtenAt ? rel(w.writtenAt) : '—'}</td>
+      <td>${viewLink(w.manifest, 'manifest')}</td>
+    </tr>`).join('');
+  document.getElementById('page').innerHTML = `
+    ${crumbs([
+      { label: 'API 参考', href: '#/skill/api' },
+      { label: r.language ?? '?', href: '#/skill/api/lang/' + esc(r.language ?? '') },
+      { label: '修订战役', href: campaignHref(r) },
+    ])}
+    <div class="card" style="cursor:default;margin-bottom:12px">
+      <div class="row1">
+        <span class="title">${esc(r.language ?? '?')} · 修订战役 <span class="dim" style="font-weight:400">· ${esc(r.worklistStem)}</span></span>
+        <span style="display:flex;gap:6px">${r.status !== 'finalized' && r.groupingApproved ? '<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）">批准批次写入</span>' : ''}${r.groupingGate && !r.groupingApproved ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>` : ''}${checkoutChip(r)}<span class="badge ${r.status === 'finalized' ? 'finalized' : 'active'}">${r.status === 'finalized' ? '已收官' : '进行中'}</span></span>
+      </div>
+      <div class="bar"><i style="width:${pct}%"></i></div>
+      <div class="meta">
+        <span>已写 ${r.writtenPages}/${r.scope.pages} 页（剩约 ${r.remainingPages}）</span>
+        <span>发现 ${r.scope.findings} 项</span>
+        <span>更新 ${rel(r.updatedAt)}</span>
+      </div>
+      ${r.ruling ? `<div class="note" style="border:0">裁定：${esc(r.ruling)}</div>` : ''}
+      <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="act" title="把 /attach 工作单键放进剪贴板；粘到新 ZCode 会话即接手本修订战役" onclick="copyText('/attach ${esc(r.worklistStem)}')">复制挂载命令</button>
+        ${spawnOn ? `<button class="act" title="在该工作树派带简报的新会话，逐页 governed 写入" onclick="spawnSession(${JSON.stringify('rev:' + r.worklistStem).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
+      </div>
+    </div>
+    <h2>规模</h2>
+    <div class="card" style="cursor:default"><div class="kv" style="margin-top:0">
+      <b>范围</b><span>发现 ${r.scope.findings} 项 · 唯一页 ${r.scope.uniquePages} · 活体 scope ${r.scope.pages} 页（生成 ${fmt(r.scope.generatedAt)}）</span>
+      <b>分组门</b><span>${r.groupingGate ? esc(r.groupingGate.digest) + (r.groupingGate.title ? ' · ' + esc(r.groupingGate.title) : '') : '未见分组门 manifest'}</span>
+    </div></div>
+    <h2>页面清单（按页分组）</h2>
+    <table class="tbl">
+      <thead><tr><th>页面</th><th>发现</th><th>状态</th><th>飞书</th></tr></thead>
+      <tbody>${pageRows || '<tr><td colspan="4" class="dim" style="text-align:center;padding:12px">工作单无页数据</td></tr>'}</tbody>
+    </table>
+    <div class="note" style="border:0;margin-top:6px">已写状态按 run-manifest 单元名与页名对账（java-v3-&lt;页&gt; / java-v2-&lt;页&gt;-&lt;方法&gt;，其中 <b>v2/v3 为版本族缩写：v2=v2.6.x，v3=v3.0.x</b>）。</div>
+    <h2>已写回执（governed manifest 对账）</h2>
+    <table class="tbl">
+      <thead><tr><th>单元</th><th>流</th><th>时间</th><th>回执</th></tr></thead>
+      <tbody>${writtenList || '<tr><td colspan="4" class="dim" style="text-align:center;padding:12px">尚无——首篇写入后此处逐条累计</td></tr>'}</tbody>
+    </table>
+    <h2>token 消耗</h2>
+    <div id="usageHost"><div class="empty">载入中…</div></div>`;
+  renderUsagePanel({ sessionPath: r.worklistPath, sessionKey: cardKey(r), language: r.language, updatedAt: r.updatedAt });
+}
+
+async function pageCampaign(d, path) {
+  const c = (d.campaigns || []).find((x) => cardKey(x) === path || x.sessionPath === path);
+  const host = document.getElementById('page');
+  // Revision targets have no campaign card yet — keep the raw path so the
+  // fallback below can match them by cardKey before rendering.
+  window._detailPath = c ? cardKey(c) : path;
+  if (!c) {
+    const r = (d.revisions || []).find((x) => cardKey(x) === path);
+    if (r) { pageRevisionDetail(d, r); return; }
+    host.innerHTML = `${crumbs([{ label: '战役', href: '#/home' }, { label: '未找到' }])}<div class="empty">没有战役会话匹配该路径。<a href="#/home">回总览</a></div>`;
+    return;
+  }
+  const spawnOn = Boolean(d.features && d.features.spawnEnabled);
+  const flags = [
+    c.pending ? `挂起执行 ${c.pending}` : '',
+    c.hasActiveExecution ? '执行中' : '',
+    c.hasActiveRollback ? '回滚中' : '',
+    c.rollbacks ? `历史回滚 ${c.rollbacks}` : '',
+  ].filter(Boolean).join(' · ');
+  host.innerHTML = `
+    ${crumbs([
+      { label: 'API 参考', href: '#/skill/api' },
+      { label: c.language ?? '?', href: `#/skill/api/lang/${esc(c.language ?? '')}` },
+      { label: `${c.track ?? '?'} 战役`, href: campaignHref(c) },
+    ])}
+    <div class="card" style="cursor:default;margin-bottom:12px">
+      <div class="row1">
+        <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` <span class="dim" style="font-weight:400">· ${esc(c.acceptanceFlow)}</span>` : ''}</span>
+        <span style="display:flex;gap:6px">${c.nextGate && c.nextGate.gate !== 'CLOSE_SESSION' ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">${esc(gateSummary(c)?.title ?? '')}</span>` : ''}${checkoutChip(c)}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
+      </div>
+      <div class="sub">${esc(c.sessionId ?? c.sessionPath)} <button class="copy" onclick="copyText(${JSON.stringify(c.sessionPath).replace(/"/g, '&quot;')})">复制会话路径</button></div>
+      ${stepChips(c)}
+      <div class="bar"><i style="width:${c.units ? Math.round((c.accepted / c.units) * 100) : 0}%"></i></div>
+      <div class="meta">
+        <span>单元 ${c.accepted}/${c.units}</span>
+        <span>创建 ${rel(c.createdAt)}</span><span>更新 ${rel(c.updatedAt)}</span>
+        ${c.closedAt ? `<span>收口 ${fmt(c.closedAt)}</span>` : ''}
+        ${c.lastActivityAt ? `<span style="color:var(--green)">活动 ${rel(c.lastActivityAt)}${c.activityCount ? ` · ${c.activityCount} 步` : ''}</span>` : ''}
+        ${flags ? `<span>${esc(flags)}</span>` : ''}
+      </div>
+      ${c.health === 'zombie' ? `<div class="warnline">⚠ 僵尸会话：scan-state 已推进到 ${esc(c.scanState.lastScannedTag ?? '?')}（越过目标 ${esc(c.scanState.targetTag ?? '?')}）——close-session 收口，勿续跑。</div>` : ''}
+      <div class="actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="act" title="把 /attach 战役键放进剪贴板；粘到新 ZCode 会话即接手本战役" onclick="copyText('/attach ${esc(attachKey(c))}')">复制挂载命令</button>
+        ${spawnOn ? `<button class="act" title="免终端：在 ZCode 桌面端生成带简报的新会话并自动开工，遇门禁停下等你" onclick="spawnSession(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')})">一键派出执行会话</button>` : ''}
+      </div>
+    </div>
+    ${oneClickApproveCard(c, null)}
+    ${advancedApproveForm(c)}
+    <h2>规模</h2>
+    <div class="card" style="cursor:default"><div class="kv" id="scaleKv" style="margin-top:0">
+      <b>写作单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起 ${c.pending}</span>
+      <b>scan-state</b><span>${esc(c.scanState.key ?? '—')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}（会话目标 ${esc(c.scanState.targetTag ?? '—')}）</span>
+    </div></div>
+    <h2>文件清单（按单元分组，文件名为主）</h2>
+    <div id="filesHost"><div class="empty">载入中…</div></div>
+    <h2>token 消耗</h2>
+    <div id="usageHost"><div class="empty">载入中…</div></div>
+    <details class="fold"><summary>工件与执行 journal（治理原始材料）</summary>
+      <ul style="margin:6px 0;padding-left:18px">
+        <li>releaseScope: ${viewLink(c.artifacts.releaseScope)}</li>
+        <li>referenceContext: ${viewLink(c.artifacts.referenceContext)}</li>
+        <li>summaryJson: ${viewLink(c.artifacts.summaryJson)}</li>
+        ${c.journalPaths.map((p) => `<li>journal: ${viewLink(p)}</li>`).join('')}
+        <li>会话文件: ${viewLink(c.sessionPath, c.sessionPath)}</li>
+      </ul>
+    </details>`;
+  approveLinePreview();
+  const detail = await fetchDetail(c);
+  const scaleKv = document.getElementById('scaleKv');
+  if (scaleKv && detail?.ok) {
+    scaleKv.insertAdjacentHTML('beforeend', `
+      <b>变更动作</b><span>${detail.scale.actions ?? '—'} 个 · PR 文件 ${detail.scale.prFiles ?? '—'} 个${detail.scale.changedSdkFiles != null ? ` · SDK 源码变更 ${detail.scale.changedSdkFiles} 个` : ''}</span>
+      <b>版本区间</b><span>${esc(detail.scale.baselineTag ?? '—')} → ${esc(detail.scale.targetTag ?? '—')}</span>`);
+  }
+  const filesHost = document.getElementById('filesHost');
+  if (filesHost) filesHost.innerHTML = filesTable(detail);
+  const approveHost = document.querySelector('.approve');
+  if (approveHost) approveHost.outerHTML = oneClickApproveCard(c, detail);
+  renderUsagePanel(c);
+}
+
+// ---------- UI state across re-renders ----------
+//
+// Card payloads push whenever tmp/ changes (active campaigns write
+// constantly), and each render replaces the page's innerHTML — expanded
+// details, select choices, typed inputs and scroll positions must survive.
+
+function snapshotUiState() {
+  const state = { details: new Set(), selects: {}, inputs: {}, scrollY: 0 };
+  document.querySelectorAll?.('details[open] > summary').forEach((sm) => {
+    const key = (sm.textContent || '').trim();
+    if (key) state.details.add(key);
+  });
+  document.querySelectorAll?.('select[id], input[id]').forEach((node) => {
+    if (node.tagName === 'SELECT') state.selects[node.id] = node.value;
+    else state.inputs[node.id] = node.value;
+  });
+  state.scrollY = typeof window.scrollY === 'number' ? window.scrollY : 0;
+  return state;
+}
+
+function restoreUiState(state) {
+  if (!state) return;
+  document.querySelectorAll?.('details > summary').forEach((sm) => {
+    if (state.details.has((sm.textContent || '').trim())) sm.parentElement.open = true;
+  });
+  for (const [id, value] of Object.entries(state.selects || {})) {
+    const node = document.getElementById(id);
+    if (node) node.value = value;
+  }
+  for (const [id, value] of Object.entries(state.inputs || {})) {
+    const node = document.getElementById(id);
+    if (node && document.activeElement !== node) node.value = value;
+  }
+  if (state.scrollY && typeof window.scrollTo === 'function') window.scrollTo(0, state.scrollY);
+}
+
+// ---------- router ----------
+
+function route() {
+  if (!latest) return;
+  maybeReloadOnUiVersion(latest);
+  const uiState = snapshotUiState();
+  const r = parseHash();
+  renderNav(r);
+  renderHeader(latest);
+  const d = latest;
+  if (r.name === 'home') pageHome(d);
+  else if (r.name === 'skill-api') pageSkillApi(d);
+  else if (r.name === 'lang') pageLang(d, r.lang);
+  else if (r.name === 'track') pageTrack(d, r.key);
+  else if (r.name === 'campaign') pageCampaign(d, r.path);
+  else if (r.name === 'skill') pageSkill(d, r.id);
+  restoreUiState(uiState);
+}
+window.route = route;
+window.addEventListener('hashchange', route);
 
 function connect() {
   const dot = document.getElementById('connDot');
@@ -420,16 +1248,16 @@ function connect() {
   const es = new EventSource('/api/events');
   es.addEventListener('cards', (e) => {
     dot.className = 'dot live'; text.textContent = '实时';
-    try { render(JSON.parse(e.data)); } catch {}
+    try { latest = JSON.parse(e.data); route(); } catch {}
   });
   es.onopen = () => { dot.className = 'dot live'; text.textContent = '实时'; };
   es.onerror = () => { dot.className = 'dot dead'; text.textContent = '断开（轮询兜底）'; };
 }
 connect();
 setInterval(async () => {
-  try { render(await (await fetch('/api/cards')).json()); } catch {}
+  try { latest = await (await fetch('/api/cards')).json(); route(); } catch {}
 }, 30000);
-fetch('/api/cards').then((r) => r.json()).then(render).catch(() => {});
+fetch('/api/cards').then((r) => r.json()).then((d) => { latest = d; route(); }).catch(() => {});
 </script>
 </body>
 </html>

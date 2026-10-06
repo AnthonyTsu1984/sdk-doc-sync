@@ -97,14 +97,112 @@
     },
     {
       "id": "api.grouping-proposal-staleness",
+      "version": 2,
+      "risk": "planning-safety",
+      "scope": "all-versioned-sdk-tracks",
+      "status": "runtime-enforced",
+      "enforcement": [
+        "pre-write"
+      ],
+      "statementDigest": "sha256:15ec72e61bfa531f9cf1ece542da11a9eb9d5139861057a2317693025c11dc10",
+      "fixtureIds": [
+        "grouping-proposal-staleness"
+      ],
+      "enforcers": [
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/grouping-proposal.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID",
+            "GROUPING_APPROVAL_ALREADY_BOUND"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-review-session.js",
+          "codes": [
+            "GROUPING_STALE",
+            "GROUPING_APPROVAL_CHAIN_INVALID",
+            "GROUPING_APPROVAL_ALREADY_BOUND"
+          ]
+        }
+      ],
+      "notes": "Upgraded to runtime-enforced (2026-10-06, grouping write binding): the durable APPROVE_GROUPING receipt (digest-keyed, carries the proposal lineage) binds into the campaign session at creation (--grouping-approval) or via sdk-review-session.js approve-grouping (one-shot; a different proposal refuses GROUPING_APPROVAL_ALREADY_BOUND). From that point every sdk-doc-sync entry — dry-run, resume, or live write — chains its --release-scope semantic digest against the approved scope and refuses typed on drift (GROUPING_STALE) or a missing/malformed binding (GROUPING_APPROVAL_CHAIN_INVALID, also at session load for corrupted receipts). The pre-2026-10-06 form was declared-only prose: the 2026-10 go/java intakes hand-rolled grouping proposals whose staleness nothing checked. Review round 1 fixes (2026-10-06): --finalize-acceptance refuses the --grouping-approval combination outright (finalization chains through acceptance receipts, never a fresh grouping receipt — the 'every entry' wording narrows to every SYNC entry: dry-run, resume, live write); the flag-vs-session disagreement refusal has a direct test; approve-grouping persists the session BEFORE the receipt file (the receiptless half-state is the safe one and converges idempotently on re-run); receipt creation is O_EXCL; the receipt builder runs once per command. Trust boundary (disclosed): the receipt file itself carries no issuance signature — within the single-operator threat model the durable record and the chain checks prevent drift and accident, not a determined local forger; approve-grouping (which rebuilds the receipt from the proposal artifact) is the hardened path."
+    },
+    {
+      "id": "api.grouping-proposal-governance",
       "version": 1,
       "risk": "planning-safety",
       "scope": "all-versioned-sdk-tracks",
-      "status": "declared",
+      "status": "runtime-enforced",
       "enforcement": [
+        "evidence",
         "plan"
       ],
-      "statementDigest": "sha256:d8764ab4e4b1a08e8e572ba5f62b8c2c56fa19fc35f48072bc743495855b333e"
+      "statementDigest": "sha256:7a00cf581eea34f47614b60cdf52503d6144d68a7e8d47701d7b2ef08d596b10",
+      "fixtureIds": [
+        "grouping-proposal-governance"
+      ],
+      "enforcers": [
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/release-scope/identity-normalizer.js",
+          "codes": [
+            "SCOUT_IDENTITY_MAP_MISSING",
+            "SCOUT_IDENTITY_MAP_INVALID"
+          ]
+        },
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/src/sdk-doc-sync/grouping-proposal.js",
+          "codes": [
+            "GROUPING_PROPOSAL_INVALID",
+            "GROUPING_PARTITION_INCOMPLETE",
+            "GROUPING_PARTITION_FOREIGN",
+            "GROUPING_PARTITION_DUPLICATE",
+            "GROUPING_LINEAGE_UNBOUND",
+            "GROUPING_SCOPE_NOT_APPROVAL_GRADE",
+            "GROUPING_AMBIGUOUS_OWNERSHIP"
+          ]
+        },
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/scripts/build-grouping-proposal.js",
+          "codes": [
+            "GROUPING_PROPOSAL_INVALID",
+            "GROUPING_PARTITION_INCOMPLETE",
+            "GROUPING_PARTITION_FOREIGN",
+            "GROUPING_PARTITION_DUPLICATE",
+            "GROUPING_LINEAGE_UNBOUND",
+            "GROUPING_SCOPE_NOT_APPROVAL_GRADE",
+            "GROUPING_AMBIGUOUS_OWNERSHIP"
+          ]
+        },
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/scripts/record-grouping-approval.js",
+          "codes": [
+            "GROUPING_APPROVAL_INVALID",
+            "GROUPING_PROPOSAL_INVALID",
+            "GROUPING_PARTITION_INCOMPLETE",
+            "GROUPING_PARTITION_FOREIGN",
+            "GROUPING_PARTITION_DUPLICATE",
+            "GROUPING_LINEAGE_UNBOUND",
+            "GROUPING_SCOPE_NOT_APPROVAL_GRADE",
+            "GROUPING_AMBIGUOUS_OWNERSHIP"
+          ]
+        }
+      ],
+      "notes": "Campaign-control hardening (2026-10-06): the 2026-10 go/java intakes hand-rolled grouping proposals in tmp scripts with no schema and no lineage, and the go v3.0.x scout crashed raw on a missing identity map. The grouping gate now has durable materials: the canonical builder binds scope/identity-map/snapshot as semantic digests and enforces the exact-partition contract (units + exclusions == scope actions — the 163=144+19 accounting as a machine check), the approval receipt CLI makes an APPROVE_GROUPING durable and refuses artifacts without valid lineage, and scout identity-map failures are typed blockers pointing at the identity-reconcile draft workflow. Execution-side binding (session receipt cross-check at the write boundary) is the next batch. Review round 1 fixes (2026-10-06): identity-map loader types null/EISDIR roots too; the IDENTITY_MAP_COVERAGE parenthetical is conditional (zero ambiguous = no map blocker on approvalGrade); validateGroupingProposal re-derives the identity accounting from the bound scope+map (hand-edited coverage counts are a schema violation); the recorder accepts optional --scope/--identity-map for issuance-time lineage cross-check; the builder self-verifies its output against the same inputs; receipt creation is O_EXCL."
     },
     {
       "id": "api.literal-include-preserved",

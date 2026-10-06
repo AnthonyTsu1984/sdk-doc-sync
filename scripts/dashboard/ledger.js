@@ -13,6 +13,7 @@ const path = require('node:path');
 
 const SESSION_SCAN_ROOTS = ['tmp/sdk-release-scout', 'tmp/sdk-doc-sync-runs'];
 const SCAN_STATE_RELATIVE_PATH = '.claude/skills/api-reference-sync/scan-state.json';
+const RELEASE_TRACKS_RELATIVE_PATH = '.claude/skills/api-reference-sync/config/release-tracks.json';
 const ADMISSION_LEDGER_RELATIVE_PATH = 'tmp/skill-feedback-rollout/admitted-fingerprints.jsonl';
 const GATE_PRESENTATION_RELATIVE_PATH = 'tmp/api-reference-sync/gate-presentation/latest.html';
 const EVENTS_DIR_RELATIVE_PATH = 'tmp/dashboard-events';
@@ -29,8 +30,22 @@ const SENTINELS = [
     schedule: '每天 09:00',
     hour: 9,
     minute: 0,
+    language: 'cpp',
     cursorFile: 'tmp/sdk-release-scout/daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
+    // Daily report file name inside artifactsDir, {date} = YYYY-MM-DD.
+    reportName: '{date}.md',
+  },
+  {
+    id: 'go-daily-scan',
+    title: 'Go SDK 每日扫描',
+    schedule: '每天 09:15',
+    hour: 9,
+    minute: 15,
+    language: 'go',
+    cursorFile: 'tmp/sdk-release-scout/go-daily-scan-state.json',
+    artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'go-{date}.md',
   },
   {
     id: 'java-daily-scan',
@@ -38,8 +53,10 @@ const SENTINELS = [
     schedule: '每天 09:30',
     hour: 9,
     minute: 30,
+    language: 'java',
     cursorFile: 'tmp/sdk-release-scout/java-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'java-{date}.md',
   },
 ];
 
@@ -215,6 +232,33 @@ function computeNextDailyRun(hour, minute, now) {
   return next.toISOString();
 }
 
+// Today's report conclusion — pass-through of the cron session's own words
+// (the report is operator-facing prose, not a structured contract). Numbers
+// are only extracted when the conclusion itself states one; never counted
+// from bullets. "无变化" is the scanner's settled no-findings wording.
+function readDailyReport(repoRoot, definition, now) {
+  const relative = `${definition.artifactsDir}/${definition.reportName.replace('{date}', localDateStamp(now))}`;
+  const text = (() => {
+    try {
+      return fs.readFileSync(path.join(repoRoot, relative), 'utf8');
+    } catch {
+      return null;
+    }
+  })();
+  if (text === null) return { present: false, path: relative, conclusion: null, findingsCount: null, hasFindings: null };
+  const match = /\*\*结论[:：]\s*([^*]+)\*\*/.exec(text);
+  const conclusion = match ? match[1].trim() : null;
+  const settled = Boolean(conclusion && conclusion.includes('无变化'));
+  const counted = conclusion ? (/发现\s*(\d+)\s*项/.exec(conclusion) || [])[1] : null;
+  return {
+    present: true,
+    path: relative,
+    conclusion,
+    findingsCount: counted ? Number(counted) : null,
+    hasFindings: conclusion ? !settled : null,
+  };
+}
+
 function buildSentinelCard(repoRoot, definition, now) {
   const cursorAbsolute = path.join(repoRoot, definition.cursorFile);
   let cursor = null;
@@ -241,10 +285,12 @@ function buildSentinelCard(repoRoot, definition, now) {
     id: definition.id,
     title: definition.title,
     schedule: definition.schedule,
+    language: definition.language || null,
     lastRunAt,
     nextRunAt: computeNextDailyRun(definition.hour, definition.minute, now),
     status: lastRunAt ? (stale ? 'stale' : 'ok') : 'never-run',
     cursor: cursor ? { lastPrNumber: cursor.lastPrNumber ?? null, lastTags: cursor.lastTags ?? null } : null,
+    report: readDailyReport(repoRoot, definition, now),
     artifactsDir: definition.artifactsDir,
     artifactsPresent,
   };
@@ -274,9 +320,319 @@ function readAdmission(repoRoot) {
   };
 }
 
+// Gate-presentation presence per checkout: campaigns running in sibling
+// worktrees present gates into THEIR OWN tmp/api-reference-sync/. The
+// header chip and the decide-first inbox must see every checkout's
+// materials, not just main's.
+function readGatePresentations(checkouts) {
+  return (checkouts || [{ id: 'main', label: '主检出', root: null }]).map((checkout) => {
+    const root = checkout.root || '';
+    const relative = GATE_PRESENTATION_RELATIVE_PATH;
+    let present = false;
+    try {
+      present = fs.statSync(path.join(root, relative)).isFile();
+    } catch {
+      // no materials in this checkout
+    }
+    // Non-main links must be absolute: /api/file resolves relative paths
+    // against the main checkout, which would point at the wrong file.
+    return { checkout: checkout.id, label: checkout.label, path: root ? path.join(root, relative) : relative, present };
+  });
+}
+
 // Active work first (most recently touched on top), finalized history last.
 function campaignOrder(card) {
   return (card.health === 'finalized' ? 1 : 0);
+}
+
+// ---------- revision campaigns (worklist-driven, batch 10) ----------
+//
+// Revision campaigns run OUTSIDE the review-session state machine: their
+// durable state is a worklist of findings + a grouping-gate manifest + one
+// run-manifest per governed write. The board derives a card from exactly
+// those artifacts — no second truth, and the campaign stays visible after
+// the owning chat session ends (that is the handoff).
+
+const REVISION_DIR_RELATIVE_PATH = 'tmp/api-reference-sync';
+const REVISION_WORKLIST_RE = /worklist.*\.json$|^.*worklist\.json$/;
+const APPLY_REVIEW_MANIFEST_RE = /^run-manifest-(revision|pr-polish)-apply-review-(.+)\.json$/;
+const GROUPING_GATE_MANIFEST_RE = /^gate-manifest-grouping-.*\.json$/;
+// The live scope the grouping gate linked (newer than the worklist itself).
+const REVISION_SCOPE_RE = /^revision-scope-.*\.json$/;
+
+function stemOf(relativePath) {
+  const base = relativePath.split('/').pop();
+  return base.replace(/\.json$/, '');
+}
+
+function readStatsOrNull(absolutePath) {
+  try {
+    return fs.statSync(absolutePath);
+  } catch {
+    return null;
+  }
+}
+
+// Written units reconcile from governed-writer run manifests in the same
+// directory: one apply-review manifest per page, filename carries the unit.
+function reconcileWrittenUnits(dirAbsolute) {
+  let names;
+  try {
+    names = fs.readdirSync(dirAbsolute);
+  } catch {
+    return [];
+  }
+  const written = [];
+  for (const name of names) {
+    const match = APPLY_REVIEW_MANIFEST_RE.exec(name);
+    if (!match) continue;
+    const stat = readStatsOrNull(path.join(dirAbsolute, name));
+    written.push({
+      flow: match[1],
+      unit: match[2],
+      manifest: `${REVISION_DIR_RELATIVE_PATH}/${name}`,
+      writtenAt: stat ? new Date(stat.mtimeMs).toISOString() : null,
+    });
+  }
+  return written.sort((a, b) => String(a.writtenAt).localeCompare(String(b.writtenAt)));
+}
+
+function buildRevisionCards(checkouts) {
+  const cards = [];
+  for (const checkout of checkouts) {
+    const dir = path.join(checkout.root, REVISION_DIR_RELATIVE_PATH);
+    let names;
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (name.includes('dryrun') || name.includes('archive')) continue;
+      if (!REVISION_WORKLIST_RE.test(name)) continue;
+      const payload = readJsonOrNull(path.join(dir, name));
+      if (!payload || !payload.schemaVersion || !Array.isArray(payload.items)) continue;
+      const relative = `${REVISION_DIR_RELATIVE_PATH}/${name}`;
+
+      // Prefer the live revision-scope the grouping gate linked (it is
+      // re-scanned); the worklist remains the finding-level fallback.
+      let scopeSummary = payload.summary ?? null;
+      let scopePages = typeof payload.pagesInScope === 'number' ? payload.pagesInScope : null;
+      let ruling = typeof payload.ruling === 'string' ? payload.ruling : null;
+      let scopeGeneratedAt = payload.generatedAt ?? null;
+      let linkedScope = null;
+      let groupingGate = null;
+      for (const other of names) {
+        if (GROUPING_GATE_MANIFEST_RE.test(other)) {
+          const gate = readJsonOrNull(path.join(dir, other));
+          if (gate && typeof gate.digest === 'string') {
+            groupingGate = { digest: gate.digest, title: gate.title ?? null, manifest: `${REVISION_DIR_RELATIVE_PATH}/${other}` };
+            for (const link of gate.links || []) {
+              if (typeof link.url === 'string' && REVISION_SCOPE_RE.test(link.url.split('/').pop())) {
+                linkedScope = readJsonOrNull(path.join(checkout.root, link.url));
+              }
+            }
+          }
+        }
+      }
+      if (linkedScope && linkedScope.summary) {
+        scopeSummary = linkedScope.summary;
+        scopePages = linkedScope.summary.pages ?? scopePages;
+        ruling = typeof linkedScope.ruling === 'string' ? linkedScope.ruling : ruling;
+        scopeGeneratedAt = linkedScope.generatedAt ?? scopeGeneratedAt;
+      }
+      const pages = new Set(payload.items.map((item) => item.page).filter(Boolean));
+      const total = scopePages ?? pages.size;
+      const written = reconcileWrittenUnits(dir);
+      const languageMatch = /^([a-z]+)-/.exec(stemOf(relative));
+      const stat = readStatsOrNull(path.join(dir, name));
+      cards.push({
+        kind: 'revision',
+        checkout: checkout.id,
+        checkoutLabel: checkout.label,
+        checkoutRoot: checkout.root,
+        sessionKey: `${checkout.id}::${relative}`,
+        worklistPath: relative,
+        worklistStem: stemOf(relative),
+        language: payload.language ?? (languageMatch ? languageMatch[1] : null),
+        ruling,
+        scope: {
+          pages: total,
+          findings: payload.items.length,
+          uniquePages: pages.size,
+          summary: scopeSummary,
+          generatedAt: scopeGeneratedAt,
+        },
+        groupingGate,
+        // Grouping was necessarily approved once any page is written (the
+        // governed executor refuses writes before the grouping approval) —
+        // the honest gate-state derivation, no extra artifact needed.
+        groupingApproved: written.length > 0,
+        pages: [...pages].sort().map((page) => {
+          const items = payload.items.filter((item) => item.page === page);
+          return {
+            page,
+            documentToken: items[0]?.documentToken ?? null,
+            codes: [...new Set(items.map((item) => item.code))],
+          };
+        }),
+        written,
+        writtenPages: written.length,
+        remainingPages: Math.max(0, total - written.length),
+        status: written.length >= total && total > 0 ? 'finalized' : 'in_progress',
+        updatedAt: [stat?.mtimeMs, ...written.map((w) => new Date(w.writtenAt).getTime())]
+          .filter((t) => Number.isFinite(t)).reduce((a, b) => Math.max(a, b), 0)
+          ? new Date([stat?.mtimeMs, ...written.map((w) => new Date(w.writtenAt).getTime())]
+            .filter((t) => Number.isFinite(t)).reduce((a, b) => Math.max(a, b), 0)).toISOString()
+          : null,
+      });
+    }
+  }
+  // The same campaign may leave stale copies in earlier checkouts (setup
+  // started in main, moved to a dedicated worktree). One card per worklist
+  // stem: keep the freshest — the stale copy is residue, not a second truth.
+  const byStem = new Map();
+  for (const card of cards) {
+    const existing = byStem.get(card.worklistStem);
+    if (!existing) {
+      byStem.set(card.worklistStem, card);
+      continue;
+    }
+    // Which copy is live? The one further along — stale copies freeze while
+    // the live campaign keeps writing and carries its grouping gate.
+    const rank = (c) => [c.writtenPages, c.groupingGate ? 1 : 0, String(c.updatedAt || '')];
+    const newer = rank(card) > rank(existing);
+    if (newer) {
+      existing.supersededBy = card.checkout;
+      byStem.set(card.worklistStem, card);
+    } else {
+      card.supersededBy = existing.checkout;
+    }
+  }
+  return [...byStem.values()].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+// ---------- intake grouping gates (batch 11) ----------
+//
+// The grouping gate is the campaign's FIRST durable artifact, and the phase
+// between its presentation and the review-session creation (dry-run, context
+// generation — potentially very long) left no trace the board could show:
+// the operator approved go's grouping and the board displayed nothing. Grouping
+// manifests are now first-class: presented → awaiting → approved (a session
+// built after the gate in the same checkout proves the approval).
+
+const INTAKE_MANIFEST_GLOBS = [
+  `${REVISION_DIR_RELATIVE_PATH}/gate-manifest-grouping-*.json`,
+  'tmp/sdk-release-scout/*grouping*manifest*.json',
+];
+const KNOWN_LANGUAGES = new Set(['cpp', 'go', 'java', 'python', 'node', 'rest', 'zilliz-cli']);
+
+function intakeLanguageOf(manifest) {
+  const text = `${manifest.title ?? ''} ${manifest.run ?? ''}`.toLowerCase();
+  for (const word of text.split(/[^a-z-]+/)) {
+    if (KNOWN_LANGUAGES.has(word)) return word;
+  }
+  return null;
+}
+
+function buildIntakeCards(checkouts, campaigns, revisions = [], now = new Date()) {
+  const cards = [];
+  for (const checkout of checkouts) {
+    const root = checkout.root || '';
+    for (const pattern of INTAKE_MANIFEST_GLOBS) {
+      const dir = path.join(root, path.dirname(pattern));
+      const re = new RegExp('^' + path.basename(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      let names;
+      try {
+        names = fs.readdirSync(dir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (!re.test(name)) continue;
+        const absolute = path.join(dir, name);
+        const payload = readJsonOrNull(absolute);
+        if (!payload || !/GROUPING/i.test(String(payload.gate ?? ''))) continue;
+        if (typeof payload.digest !== 'string' || !payload.digest.startsWith('sha256:')) continue;
+        const stat = readStatsOrNull(absolute);
+        const presentedAt = stat ? new Date(stat.mtimeMs).toISOString() : null;
+        const language = intakeLanguageOf(payload);
+        // Approval evidence: a review session for the same language created
+        // in this checkout after the gate was presented (two-gate flows
+        // create the session only after APPROVE_GROUPING).
+        // Two-gate flows prove approval by a session built after the gate;
+        // revision flows prove it by any governed page written after it.
+        const approved = (campaigns || []).some((card) => card.checkout === checkout.id
+          && card.language === language
+          && card.createdAt && presentedAt
+          && new Date(card.createdAt).getTime() >= new Date(presentedAt).getTime() - 60_000)
+          || (revisions || []).some((rev) => rev.checkout === checkout.id
+            && rev.language === language
+            && rev.writtenPages > 0
+            && rev.written.some((w) => !presentedAt || !w.writtenAt
+              || new Date(w.writtenAt).getTime() >= new Date(presentedAt).getTime() - 60_000));
+        const relative = path.relative(root, absolute).split(path.sep).join('/');
+        cards.push({
+          kind: 'intake',
+          checkout: checkout.id,
+          checkoutLabel: checkout.label,
+          checkoutRoot: root,
+          manifestPath: relative,
+          title: payload.title ?? '分组门',
+          run: typeof payload.run === 'string' ? payload.run : null,
+          digest: payload.digest,
+          language,
+          presentedAt,
+          approved,
+          links: Array.isArray(payload.links)
+            ? payload.links.filter((l) => l && typeof l.url === 'string').map((l) => ({ label: l.label ?? l.url, url: l.url }))
+            : [],
+        });
+      }
+    }
+  }
+  return cards.sort((a, b) => String(b.presentedAt || '').localeCompare(String(a.presentedAt || '')));
+}
+
+// ---------- api-reference-skill language × track summary ----------
+
+// Track identity for the skill board: language + version come from the
+// release-track registry (the governed list — a new version track must be
+// registered to be governed at all), campaign membership from scan-state keys.
+function trackScanStateKey(language, version) {
+  const match = /^v(\d+)\.(\d+)\./.exec(String(version || ''));
+  return match ? `${language}-v${match[1]}${match[2]}` : language;
+}
+
+function buildSkillTracks(repoRoot, campaigns) {
+  const registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH));
+  const languages = [];
+  const byKey = new Map();
+  if (registry && registry.languages && typeof registry.languages === 'object') {
+    for (const [name, entry] of Object.entries(registry.languages)) {
+      const tracks = (Array.isArray(entry.tracks) ? entry.tracks : []).map((track) => {
+        const key = trackScanStateKey(name, track.version);
+        const summary = {
+          version: track.version,
+          key,
+          campaigns: { total: 0, active: 0, finalized: 0, sessionPaths: [] },
+        };
+        byKey.set(key, summary);
+        return summary;
+      });
+      languages.push({ name, sdkName: entry.sdkName || null, tracks });
+    }
+  }
+  for (const card of campaigns) {
+    const key = card.scanState.key;
+    const summary = key ? byKey.get(key) : null;
+    if (!summary) continue; // session outside the registry (legacy/unregistered track)
+    summary.campaigns.total += 1;
+    summary.campaigns.sessionPaths.push(card.sessionPath);
+    if (card.health === 'finalized') summary.campaigns.finalized += 1;
+    else summary.campaigns.active += 1;
+  }
+  return { registryPresent: Boolean(registry), languages };
 }
 
 // ---------- event stream (batch 2 taps; read side) ----------
@@ -323,14 +679,30 @@ function normalizeSessionRef(ref) {
   return index >= 0 ? ref.slice(index) : ref;
 }
 
+// Multi-checkout attribution key: sibling worktrees run campaigns of their
+// own, and a sessionRef pointing into a sibling must never match a main-
+// checkout card with the same relative path. `<checkoutId>::<relative>`.
+function attributeKeyFor(ref, checkouts) {
+  if (typeof ref !== 'string' || !ref) return null;
+  for (const checkout of checkouts || []) {
+    if (typeof checkout.root !== 'string') continue;
+    if (ref === checkout.root || ref.startsWith(`${checkout.root}/`)) {
+      const relative = ref === checkout.root ? '' : ref.slice(checkout.root.length + 1);
+      return relative ? `${checkout.id}::${relative}` : null;
+    }
+  }
+  const normalized = normalizeSessionRef(ref);
+  return normalized ? `main::${normalized}` : null;
+}
+
 // Attribute events to campaign cards via the session-file path embedded in
 // the tapped tool input, and stamp per-card activity stats in place.
-function attachActivity(campaigns, events) {
-  const byPath = new Map(campaigns.map((card) => [card.sessionPath, card]));
+function attachActivity(campaigns, events, checkouts) {
+  const byKey = new Map(campaigns.map((card) => [card.sessionKey ?? `main::${card.sessionPath}`, card]));
   const activity = [];
   for (const event of events) {
-    const ref = normalizeSessionRef(event.sessionRef);
-    const card = ref ? byPath.get(ref) : undefined;
+    const key = attributeKeyFor(event.sessionRef, checkouts);
+    const card = key ? byKey.get(key) : undefined;
     if (card) {
       card.activityCount += 1;
       if (!card.lastActivityAt || String(event.ts) > card.lastActivityAt) card.lastActivityAt = String(event.ts);
@@ -341,50 +713,168 @@ function attachActivity(campaigns, events) {
       tool: event.tool ?? null,
       summary: typeof event.summary === 'string' ? event.summary : '',
       sessionId: event.sessionId ?? null,
-      campaign: card ? card.sessionPath : null,
+      campaign: card ? (card.sessionKey ?? card.sessionPath) : null,
     });
   }
   return activity;
 }
 
-function buildLedger({ repoRoot, now = new Date() } = {}) {
+// Live-session rollup for the overview: which sessions are working right
+// now, in which checkout. Checkout is derived from absolute paths visible in
+// the tapped summaries (worktree-rooted tool calls) — no hook change needed.
+function deriveRunningSessions(activity, checkouts, now = Date.now(), windowMs = 30 * 60_000) {
+  const cutoff = now - windowMs;
+  const bySession = new Map();
+  for (const event of activity) {
+    const ts = new Date(event.ts).getTime();
+    if (!Number.isFinite(ts) || ts < cutoff || !event.sessionId) continue;
+    let entry = bySession.get(event.sessionId);
+    if (!entry) {
+      entry = { sessionId: event.sessionId, lastAt: event.ts, events: 0, tools: new Map(), checkoutHits: new Map(), campaign: null };
+      bySession.set(event.sessionId, entry);
+    }
+    entry.events += 1;
+    if (String(event.ts) > String(entry.lastAt)) entry.lastAt = event.ts;
+    if (event.tool) entry.tools.set(event.tool, (entry.tools.get(event.tool) || 0) + 1);
+    if (typeof event.summary === 'string') {
+      // Longest-root match only: the main root is usually a path PREFIX of
+      // sibling worktree roots, so naive substring counting would attribute
+      // worktree work to main.
+      const hit = (checkouts || [])
+        .filter((checkout) => typeof checkout.root === 'string' && event.summary.includes(checkout.root))
+        .sort((a, b) => b.root.length - a.root.length)[0];
+      if (hit) entry.checkoutHits.set(hit.id, (entry.checkoutHits.get(hit.id) || 0) + 1);
+    }
+    if (event.campaign) entry.campaign = event.campaign;
+  }
+  return [...bySession.values()]
+    .map((entry) => {
+      const [checkout] = [...entry.checkoutHits.entries()].sort((a, b) => b[1] - a[1])[0] ?? ['main'];
+      return {
+        sessionId: entry.sessionId,
+        lastAt: entry.lastAt,
+        events: entry.events,
+        tools: [...entry.tools.entries()].sort((a, b) => b[1] - a[1]).map(([tool, n]) => `${tool}×${n}`),
+        checkout,
+        campaign: entry.campaign,
+      };
+    })
+    .sort((a, b) => String(b.lastAt).localeCompare(String(a.lastAt)));
+}
+
+// Parse `git worktree list --porcelain` output into dashboard checkouts.
+// The main entry keeps id 'main'; siblings get id/label from their directory
+// basename. Bare entries and the admin worktree are not expected here.
+function parseWorktreeList(porcelain, repoRoot) {
+  const checkouts = [];
+  let current = null;
+  for (const line of String(porcelain || '').split('\n')) {
+    if (line.startsWith('worktree ')) {
+      current = { root: line.slice('worktree '.length).trim() };
+      checkouts.push(current);
+    } else if (current && line.startsWith('bare')) {
+      checkouts.pop();
+      current = null;
+    }
+  }
+  return checkouts
+    .filter((entry) => typeof entry.root === 'string' && entry.root)
+    .map((entry) => {
+      if (entry.root === repoRoot) return { id: 'main', label: '主检出', root: repoRoot };
+      const base = path.basename(entry.root.replace(/\/+$/, ''));
+      return { id: base, label: base, root: entry.root };
+    });
+}
+
+// Resolve a board-facing campaign target (`<checkoutId>::<relative>` or a
+// plain main-checkout path) to its checkout + relative session path.
+// Fail-closed: unknown checkout ids and `..` are rejected.
+function resolveSessionTarget(requested, checkouts) {
+  const raw = String(requested || '').trim();
+  if (!raw) return { error: 'missing target' };
+  const separator = raw.indexOf('::');
+  if (separator === -1) {
+    const main = (checkouts || []).find((c) => c.id === 'main');
+    return main ? { checkout: main, relative: raw } : { error: 'no main checkout' };
+  }
+  const id = raw.slice(0, separator);
+  const relative = raw.slice(separator + 2);
+  const checkout = (checkouts || []).find((c) => c.id === id);
+  if (!checkout) return { error: `unknown checkout: ${id}` };
+  return { checkout, relative };
+}
+
+function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
   if (!repoRoot) throw new Error('buildLedger requires repoRoot');
-  const scanState = readJsonOrNull(path.join(repoRoot, SCAN_STATE_RELATIVE_PATH));
+  const effectiveCheckouts = (Array.isArray(checkouts) && checkouts.length > 0)
+    ? checkouts
+    : [{ id: 'main', label: '主检出', root: repoRoot }];
   const campaigns = [];
-  for (const relative of walkSessionFiles(repoRoot)) {
-    const session = readJsonOrNull(path.join(repoRoot, relative));
-    if (!session || !session.schemaVersion || typeof session.status !== 'string') continue;
-    campaigns.push(buildCampaignCard(repoRoot, relative, session, scanState));
+  for (const checkout of effectiveCheckouts) {
+    const scanState = readJsonOrNull(path.join(checkout.root, SCAN_STATE_RELATIVE_PATH));
+    for (const relative of walkSessionFiles(checkout.root)) {
+      const session = readJsonOrNull(path.join(checkout.root, relative));
+      if (!session || !session.schemaVersion || typeof session.status !== 'string') continue;
+      const card = buildCampaignCard(checkout.root, relative, session, scanState);
+      // Board-facing identity: checkout-qualified so sibling-worktree cards
+      // can never collide with main-checkout paths.
+      card.checkout = checkout.id;
+      card.checkoutLabel = checkout.label;
+      card.sessionKey = `${checkout.id}::${relative}`;
+      campaigns.push(card);
+    }
   }
   campaigns.sort((a, b) => (
     campaignOrder(a) - campaignOrder(b)
     || String(b.updatedAt || '').localeCompare(String(a.updatedAt || ''))
   ));
-  const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }));
+  const revisionsCache = buildRevisionCards(effectiveCheckouts);
+  const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }), effectiveCheckouts);
   return {
     generatedAt: now.toISOString(),
+    checkouts: effectiveCheckouts.map(({ id, label }) => ({ id, label })),
     campaigns,
     sentinels: SENTINELS.map((definition) => buildSentinelCard(repoRoot, definition, now)),
+    skillTracks: buildSkillTracks(repoRoot, campaigns),
     admission: readAdmission(repoRoot),
+    gatePresentations: readGatePresentations(effectiveCheckouts),
     activity: activity.slice(-120),
+    runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
+    revisions: revisionsCache,
+    intakes: buildIntakeCards(effectiveCheckouts, campaigns, revisionsCache, now),
   };
 }
 
 module.exports = {
   ADMISSION_LEDGER_RELATIVE_PATH,
+  APPLY_REVIEW_MANIFEST_RE,
+  REVISION_DIR_RELATIVE_PATH,
   GATE_PRESENTATION_RELATIVE_PATH,
+  RELEASE_TRACKS_RELATIVE_PATH,
   SCAN_STATE_RELATIVE_PATH,
   SENTINELS,
   SESSION_SCAN_ROOTS,
   attachActivity,
+  attributeKeyFor,
+  buildCampaignCard,
   buildLedger,
+  buildIntakeCards,
+  buildRevisionCards,
   buildSentinelCard,
+  buildSkillTracks,
   compareTags,
   computeNextDailyRun,
+  deriveRunningSessions,
+  readGatePresentations,
   healthFor,
   localDateStamp,
   normalizeSessionRef,
+  parseWorktreeList,
+  readDailyReport,
+  readJsonOrNull,
   readRecentEvents,
+  resolveSessionTarget,
   scanStateKeyFor,
+  trackScanStateKey,
   walkSessionFiles,
 };

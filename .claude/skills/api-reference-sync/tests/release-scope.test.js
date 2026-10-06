@@ -62,7 +62,8 @@ test('release-scope schema accepts historical v1 actions without documentation o
 test('skill instructions forbid synthetic merge proposals from stale grouping artifacts', () => {
   const skillText = fs.readFileSync(path.join(__dirname, '..', 'SKILL.md'), 'utf8');
   assert.equal(skillText.includes('merge into one doc action'), false);
-  assert.match(skillText, /Treat a grouping proposal as stale if a newer candidate spec, reviewed context, scoped dry-run, approval TSV, or execution artifact exists/);
+  assert.match(skillText, /A grouping approval binds the campaign to the exact release scope it covers/);
+  assert.match(skillText, /any newer candidate spec, reviewed context, scoped dry-run, or execution artifact requires a fresh grouping gate/);
 });
 
 test('SDK ownership guidance embeds method-owned helpers and removes C++ sibling-type direction', () => {

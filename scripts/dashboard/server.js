@@ -16,8 +16,13 @@ const path = require('node:path');
 const { exec, execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 
-const { buildLedger } = require('./ledger.js');
-const { buildBrief } = require('./attach-brief.js');
+const { buildLedger, parseWorktreeList, resolveSessionTarget } = require('./ledger.js');
+const { buildBrief, buildRevisionBrief, resolveRevisionTarget } = require('./attach-brief.js');
+const { buildCampaignDetail, sessionPathAllowed } = require('./campaign-detail.js');
+const { createLiveStatsCollector } = require('./live-stats.js');
+const { buildScoutFindings } = require('./scout-findings.js');
+const { buildIntakeBrief, buildTrackIntakeBrief } = require('./intake-brief.js');
+const usage = require('./usage-ledger.js');
 
 const execFileAsync = promisify(execFile);
 
@@ -45,6 +50,7 @@ const WATCH_DIRS = ['tmp', '.claude/skills/api-reference-sync'];
 const POLL_INTERVAL_MS = 30_000;
 const DEBOUNCE_MS = 400;
 const FINGERPRINT_TTL_MS = 5 * 60_000;
+const LIVE_STATS_TTL_MS = 10 * 60_000;
 const FILE_VIEW_MAX_BYTES = 2 * 1024 * 1024;
 
 function parseArgs(argv) {
@@ -74,10 +80,12 @@ const nextGateCache = new Map(); // sessionPath -> { value, at }
 
 // Authoritative next-gate derivation lives in sdk-review-session.js; the
 // dashboard only caches and displays it. Failures degrade to no chip.
-async function fetchNextGate(sessionPath) {
+async function fetchNextGate(checkoutRoot, sessionPath) {
   const { stdout } = await execFileAsync(
     process.execPath,
-    [REVIEW_SESSION_CLI, 'status', '--session', path.join(REPO_ROOT, sessionPath)],
+    // The authoritative status CLI lives in the main checkout but must be
+    // pointed at the session file inside ITS checkout (worktree campaigns).
+    [REVIEW_SESSION_CLI, 'status', '--session', path.join(checkoutRoot, sessionPath)],
     { timeout: 30_000, encoding: 'utf8' },
   );
   return parseStatusOutput(stdout);
@@ -92,6 +100,16 @@ function parseStatusOutput(stdout) {
   }
 }
 
+// Pure resolution of a card → (status-CLI checkout root, relative session
+// path). Worktree cards must be probed inside their own checkout — probing
+// the main root silently drops their gate chip.
+function resolveStatusTarget(card, checkouts) {
+  const checkout = (checkouts || []).find((c) => c.id === card.checkout)
+    || (checkouts || [])[0]
+    || { root: REPO_ROOT };
+  return { root: checkout.root, sessionPath: card.sessionPath };
+}
+
 async function refreshNextGates() {
   if (!currentPayload) return;
   const targets = currentPayload.campaigns
@@ -99,15 +117,17 @@ async function refreshNextGates() {
     .slice(0, NEXT_GATE_MAX_SESSIONS);
   let changed = false;
   for (const card of targets) {
-    const cached = nextGateCache.get(card.sessionPath);
+    const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
+    const cached = nextGateCache.get(cardKey);
     if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) continue;
+    const target = resolveStatusTarget(card, checkoutsState);
     let value = null;
     try {
-      value = await fetchNextGate(card.sessionPath);
+      value = await fetchNextGate(target.root, target.sessionPath);
     } catch {
       value = null;
     }
-    nextGateCache.set(card.sessionPath, { value, at: Date.now() });
+    nextGateCache.set(cardKey, { value, at: Date.now() });
     changed = true;
   }
   if (changed) scheduleRecompute('next-gate');
@@ -115,7 +135,7 @@ async function refreshNextGates() {
 
 function mergeNextGate(payload) {
   for (const card of payload.campaigns) {
-    const cached = nextGateCache.get(card.sessionPath);
+    const cached = nextGateCache.get(card.sessionKey ?? `main::${card.sessionPath}`);
     if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) {
       card.nextGate = cached.value?.nextGate ?? null;
     }
@@ -144,6 +164,50 @@ function buildHeadlessSpawnArgs(repoRoot, prompt) {
   return ['--cwd', String(repoRoot), '--surface', 'desktop', '--prompt', prompt];
 }
 
+// Intake variant (batch 6): the worker is seeded with the daily-scout
+// findings and must stop at the grouping gate — the operator-approved
+// boundary where "开始处理" ends and governed writing (still gated) begins.
+function buildIntakeWorkerPrompt(briefText) {
+  return [
+    '你是本次每日扫描发现物的处理会话（由治理看板一键派出）。下面是确定性生成的处理简报——它是你的初始任务上下文；一切以盘上 durable 状态与 canonical CLI 输出为准。',
+    '按简报中的工作指令执行：只读 intake（证据核证 → 规划 dry-run → 建评审会话）可立即进行；产出分组方案后必须停在 APPROVE_GROUPING 门，等待操作员批准，未获批准前不进入任何写路径。',
+    '---',
+    briefText,
+  ].join('\n');
+}
+
+// ---------- live Feishu stats (batch 6; TTL-cached, degrade-graceful) ----------
+
+const liveStats = createLiveStatsCollector({ repoRoot: REPO_ROOT });
+
+// ---------- token-usage telemetry (batch 7; derived, deletable) ----------
+
+// Opens lazily and may be null (node:sqlite unavailable) — every consumer
+// degrades to "usage unavailable" instead of failing the server.
+let usageDb = null;
+try {
+  usageDb = usage.openUsageDb(path.join(REPO_ROOT, usage.USAGE_DB_RELATIVE_PATH));
+} catch (error) {
+  process.stderr.write(`[dashboard] usage ledger unavailable: ${error?.message || error}\n`);
+}
+
+function harvestUsage() {
+  if (!usageDb) return;
+  try {
+    usage.harvestRolloutDir(usageDb);
+    usage.attributeFromEvents(usageDb, { repoRoot: REPO_ROOT, checkouts: checkoutsState });
+  } catch (error) {
+    process.stderr.write(`[dashboard] usage harvest failed: ${error?.message || error}\n`);
+  }
+}
+
+// The unit an APPROVE line targets is its optional second token
+// (APPROVE_DOCUMENT <review-unit-id> sha256:…).
+function unitIdFromApproveLine(line) {
+  const match = /^APPROVE_\S+(?: (\S+))? sha256:/.exec(String(line || '').trim());
+  return match?.[1] ?? null;
+}
+
 // ---------- aggregation cache + push ----------
 
 let currentPayload = null;
@@ -165,15 +229,43 @@ function fingerprintStatus(state) {
 
 function mergeWorkers(payload) {
   for (const card of payload.campaigns) {
-    card.workers = spawnedWorkers.get(card.sessionPath) || [];
+    card.workers = spawnedWorkers.get(card.sessionKey ?? `main::${card.sessionPath}`) || [];
   }
   return payload;
 }
 
+// ---------- checkouts (main + sibling worktrees; batch 8) ----------
+// Campaigns legitimately run inside sibling worktrees (each with its own
+// tmp/ and scan-state); the board discovers them all. The registry is
+// runtime state refreshed from `git worktree list` — never a second truth.
+let checkoutsState = [{ id: 'main', label: '主检出', root: REPO_ROOT }];
+
+async function refreshCheckouts() {
+  try {
+    const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8', timeout: 10_000 });
+    const parsed = parseWorktreeList(stdout, REPO_ROOT);
+    if (parsed.some((c) => c.id === 'main') && parsed.length > 0) {
+      checkoutsState = parsed;
+      scheduleRecompute('checkouts');
+    }
+  } catch {
+    // git unavailable or not a worktree host — main-only stays in force
+  }
+}
+
+function indexHtmlVersion() {
+  try {
+    return String(fs.statSync(INDEX_HTML).mtimeMs);
+  } catch {
+    return null;
+  }
+}
+
 function buildPayload() {
-  const ledger = buildLedger({ repoRoot: REPO_ROOT });
+  const ledger = buildLedger({ repoRoot: REPO_ROOT, checkouts: checkoutsState });
   const payload = {
     ...ledger,
+    uiVersion: indexHtmlVersion(),
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
     features: { spawnEnabled: spawnOptions.allowSpawn, approveEnabled: spawnOptions.allowApprove },
   };
@@ -186,6 +278,7 @@ function signatureOf(payload) {
   const clone = {
     ...payload,
     generatedAt: undefined,
+    uiVersion: undefined,
     admission: payload.admission
       ? { ...payload.admission, fingerprint: payload.admission.fingerprint
         ? { ...payload.admission.fingerprint, fingerprint: payload.admission.fingerprint.fingerprint?.slice(0, 19) }
@@ -354,7 +447,17 @@ function serveFileView(req, res, query) {
     return;
   }
   const resolved = path.resolve(REPO_ROOT, requested);
-  const relative = path.relative(REPO_ROOT, resolved);
+  // Sibling-checkout files (worktree campaign artifacts) are viewable when
+  // the path falls inside a known checkout AND matches the same tmp/ prefix
+  // allowlist, repo-relative to that checkout.
+  let baseRoot = REPO_ROOT;
+  for (const checkout of checkoutsState) {
+    if (checkout.root !== REPO_ROOT && (resolved === checkout.root || resolved.startsWith(`${checkout.root}/`))) {
+      baseRoot = checkout.root;
+      break;
+    }
+  }
+  const relative = path.relative(baseRoot, resolved);
   const normalizedRelative = relative.split(path.sep).join('/');
   if (relative.startsWith('..') || path.isAbsolute(relative) || !fileViewAllowed(normalizedRelative)) {
     sendJson(res, 403, { error: 'path outside dashboard view allowlist' });
@@ -392,7 +495,7 @@ function serveFileView(req, res, query) {
   });
 }
 
-function handler(req, res) {
+async function handler(req, res) {
   const url = new URL(req.url, `http://127.0.0.1:${req.socket.localPort || 0}`);
   if (url.pathname === '/api/spawn-session') {
     if (req.method !== 'POST') {
@@ -419,16 +522,46 @@ function handler(req, res) {
         sendJson(res, 400, { error: 'missing target (campaign sessionPath or scan-state key)' });
         return;
       }
-      const brief = buildBrief({ repoRoot: REPO_ROOT, requested: target });
-      if (!brief.ok) {
-        sendJson(res, 404, { error: brief.error, available: brief.available, candidates: brief.candidates });
+      // Checkout-qualified keys dispatch inside their own worktree; plain
+      // paths/keys resolve against the main checkout as before.
+      const resolvedTarget = resolveSessionTarget(target, checkoutsState);
+      if (resolvedTarget.error) {
+        sendJson(res, 404, { error: resolvedTarget.error });
         return;
       }
+      const briefRoot = resolvedTarget.checkout.root;
+      // resolveSessionTarget already stripped the checkout prefix; plain
+      // main targets pass through unchanged (path or scan-state key).
+      let brief = buildBrief({ repoRoot: briefRoot, requested: resolvedTarget.relative });
+      let workerKey;
+      let spawnRoot = briefRoot;
+      let spawnPrompt;
+      if (brief.ok && brief.card) {
+        workerKey = `${resolvedTarget.checkout.id}::${brief.card.sessionPath}`;
+        spawnPrompt = buildHeadlessPrompt(brief.text);
+      } else {
+        // Not a review-session campaign — a revision worklist hands off the
+        // same way: deterministic brief, worker lands in its own checkout.
+        const revision = resolveRevisionTarget(checkoutsState, target);
+        if (!revision.card) {
+          sendJson(res, 404, { error: brief.error || revision.error, available: brief.available, revisionAvailable: revision.available, candidates: brief.candidates });
+          return;
+        }
+        brief = buildRevisionBrief(revision.card);
+        workerKey = revision.card.sessionKey;
+        spawnRoot = revision.card.checkoutRoot;
+        spawnPrompt = [
+          '你是本修订战役的新执行会话（由治理看板一键派出）。下面是确定性生成的修订战役简报——它是你的初始任务上下文；一切以简报所指工作树的盘上状态为准，勿凭记忆续接。',
+          '按简报中的续接规则逐页推进 governed 写入；遇到需要操作员决策处（裁定变更/范围调整/异常回滚）必须停下等待。',
+          '---',
+          brief.text,
+        ].join('\n');
+      }
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
-      registerWorker(brief.card.sessionPath, worker);
+      registerWorker(workerKey, worker);
       const child = spawn(
         'zcode',
-        [...buildHeadlessSpawnArgs(REPO_ROOT, buildHeadlessPrompt(brief.text)), '--json'],
+        [...buildHeadlessSpawnArgs(spawnRoot, spawnPrompt), '--json'],
         { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
       );
       let stdout = '';
@@ -438,13 +571,93 @@ function handler(req, res) {
       child.on('exit', () => {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
+        if (usageDb && worker.sessionId) {
+          usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
+        }
         scheduleRecompute('worker-exit');
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
-        card: brief.card.sessionPath,
-        note: `会话已派出（ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+        card: workerKey,
+        note: brief.revision
+          ? `修订战役会话已派出（${brief.revision.checkoutLabel} · ZCode 桌面端呈现 · 已写 ${brief.revision.writtenPages}/${brief.revision.scope.pages} 页）——按简报逐页 governed 写入，需决策处停下`
+          : `会话已派出（${resolvedTarget.checkout.label} · ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+      });
+    });
+    return;
+  }
+  if (url.pathname === '/api/spawn-intake') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'POST required' });
+      return;
+    }
+    if (!spawnOptions.allowSpawn) {
+      sendJson(res, 404, { error: 'spawn disabled — restart the dashboard with --allow-spawn' });
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 65_536) req.destroy();
+    });
+    req.on('end', () => {
+      // Malformed bodies degrade to {} and fail mode validation below.
+      let request = null;
+      try {
+        request = JSON.parse(body || '{}') || {};
+      } catch {
+        request = {};
+      }
+      // Two dispatch modes: an allowed daily-scout artifact (findings already
+      // enumerated) or a registered track (worker runs reconnaissance itself).
+      const briefRoot = (() => {
+        const checkout = (request.checkout && checkoutsState.find((c) => c.id === request.checkout)) || checkoutsState[0];
+        return checkout.root;
+      })();
+      let brief;
+      let workerKey;
+      if (request.mode === 'track') {
+        brief = buildTrackIntakeBrief({ repoRoot: briefRoot, language: request.language, trackKey: request.trackKey });
+        if (brief.ok) workerKey = `track:${request.checkout || 'main'}:${brief.meta.trackKey}`;
+      } else {
+        // Artifact mode is validated against the MAIN checkout's daily set
+        // (that is where the sentinels write).
+        brief = buildIntakeBrief({ repoRoot: REPO_ROOT, language: request.language, scoutPath: request.scoutPath });
+        if (brief.ok) workerKey = `scout:${brief.meta.scoutPath}`;
+      }
+      if (!brief || !brief.ok) {
+        sendJson(res, 404, { error: brief?.error || 'missing language/scoutPath' });
+        return;
+      }
+      const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
+      registerWorker(workerKey, worker);
+      const child = spawn(
+        'zcode',
+        [...buildHeadlessSpawnArgs(briefRoot, buildIntakeWorkerPrompt(brief.text)), '--json'],
+        { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      let stdout = '';
+      child.stdout.on('data', (chunk) => {
+        if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
+      });
+      child.on('exit', () => {
+        worker.sessionId = parseSpawnSessionId(stdout);
+        worker.status = 'idle';
+        if (usageDb && worker.sessionId) {
+          // Intake workers attribute to their dispatch key; once intake
+          // builds a review session, event-based attribution takes over.
+          usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
+        }
+        scheduleRecompute('intake-worker-exit');
+      });
+      child.unref();
+      sendJson(res, 200, {
+        ok: true,
+        workerKey,
+        note: brief.meta.mode === 'track'
+          ? `轨道工作会话已派出（ZCode 桌面端呈现 · ${brief.meta.language} ${brief.meta.trackKey}）——只读侦察后：有发现停在分组批准门（APPROVE_GROUPING），无发现则明确报告后结束`
+          : `处理会话已派出（ZCode 桌面端呈现 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——只读侦察后停在分组批准门（APPROVE_GROUPING），批准分组后才进入写作`,
       });
     });
     return;
@@ -479,11 +692,13 @@ function handler(req, res) {
         sendJson(res, 400, { error: '批准行格式无效（须为 APPROVE_* [id] sha256:<64 位摘要> 精确行）' });
         return;
       }
-      const card = currentPayload?.campaigns.find((c) => c.sessionPath === target);
+      const card = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === target || c.sessionPath === target);
       if (!card) {
         sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
         return;
       }
+      const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
+      const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
       const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
       if (!worker) {
         sendJson(res, 404, { error: '该会话不是看板派出的 worker（界面批准仅限 dashboard 派出的会话）' });
@@ -494,19 +709,32 @@ function handler(req, res) {
         return;
       }
       const next = { sessionId: worker.sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
-      registerWorker(card.sessionPath, next);
-      const child = spawn('zcode', buildResumeArgs(REPO_ROOT, worker.sessionId, line), {
+      registerWorker(cardKey, next);
+      // Approve-run boundary: snapshot the worker's usage before the resume
+      // dispatch; on exit the delta is attributed to the approved unit.
+      const approveRunId = usageDb
+        ? usage.openApproveRun(usageDb, {
+          sessionId: worker.sessionId,
+          campaignPath: cardKey,
+          unitId: unitIdFromApproveLine(line),
+        })
+        : null;
+      if (usageDb) usage.upsertAttribution(usageDb, worker.sessionId, cardKey, 'worker-registry');
+      const child = spawn('zcode', buildResumeArgs(cardRoot, worker.sessionId, line), {
         detached: true,
         stdio: 'ignore',
       });
       child.on('exit', () => {
         next.status = 'idle';
+        if (usageDb && approveRunId != null) {
+          try { usage.closeApproveRun(usageDb, approveRunId); } catch { /* telemetry only */ }
+        }
         scheduleRecompute('approve-turn-exit');
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
-        card: card.sessionPath,
+        card: cardKey,
         sessionId: worker.sessionId,
         note: '批准行已注入 worker 会话（--resume）——它将继续执行到下一门或完成，桌面端可围观',
       });
@@ -532,9 +760,77 @@ function handler(req, res) {
       if (!currentPayload) recompute('api-cold-start');
       sendJson(res, 200, currentPayload ?? { error: 'not ready' });
       return;
+    case '/api/campaign': {
+      // On-demand campaign detail (file table + scale). Read-only, derived,
+      // fail-closed on undiscoverable paths. Target may be a checkout-
+      // qualified session key (`<checkoutId>::<relative>`) or a plain
+      // main-checkout path (legacy).
+      const requested = url.searchParams.get('path');
+      if (!requested) {
+        sendJson(res, 400, { error: 'missing ?path=' });
+        return;
+      }
+      const resolved = resolveSessionTarget(requested, checkoutsState);
+      if (resolved.error || !sessionPathAllowed(resolved.checkout.root, resolved.relative)) {
+        sendJson(res, 404, { error: `session path not discoverable: ${requested}` });
+        return;
+      }
+      const detail = buildCampaignDetail({ repoRoot: resolved.checkout.root, sessionPath: resolved.relative });
+      if (!detail.ok) {
+        sendJson(res, 404, { error: detail.error });
+        return;
+      }
+      // nextGate/workers are server-side enrichments (CLI cache + worker
+      // registry) already stamped on the cards payload — reuse, never re-derive.
+      const liveCard = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === (detail.card.sessionKey ?? `main::${detail.card.sessionPath}`));
+      if (liveCard) {
+        detail.card.nextGate = liveCard.nextGate ?? null;
+        detail.card.workers = liveCard.workers || [];
+        detail.card.checkout = liveCard.checkout;
+        detail.card.checkoutLabel = liveCard.checkoutLabel;
+        detail.card.sessionKey = liveCard.sessionKey;
+      }
+      sendJson(res, 200, detail);
+      return;
+    }
     case '/api/healthz':
       sendJson(res, 200, { ok: true, clients: sseClients.size });
       return;
+    case '/api/live-stats': {
+      // Always answers immediately with the current snapshot — never awaits a
+      // refresh (a full sweep walks 17 tracks and can take tens of seconds).
+      // A stale/never-run snapshot triggers a background refresh; the page
+      // re-polls and picks it up.
+      const current = liveStats.snapshot();
+      const age = current.fetchedAt ? Date.now() - new Date(current.fetchedAt).getTime() : Infinity;
+      if (current.status === 'never-run' || age > LIVE_STATS_TTL_MS) {
+        liveStats.get().catch(() => {});
+      }
+      sendJson(res, 200, current);
+      return;
+    }
+    case '/api/scout': {
+      const language = url.searchParams.get('language');
+      const findings = buildScoutFindings({ repoRoot: REPO_ROOT, language });
+      sendJson(res, 200, findings);
+      return;
+    }
+    case '/api/usage': {
+      const target = url.searchParams.get('path');
+      if (!target) {
+        sendJson(res, 400, { error: 'missing ?path=' });
+        return;
+      }
+      if (!usageDb) {
+        sendJson(res, 200, { available: false, reason: 'usage store unavailable (node:sqlite)' });
+        return;
+      }
+      harvestUsage();
+      const view = usage.campaignUsage(usageDb, target);
+      view.available = true;
+      sendJson(res, 200, view);
+      return;
+    }
     case '/api/file':
       serveFileView(req, res, url.searchParams);
       return;
@@ -565,6 +861,17 @@ function main() {
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
   refreshNextGates().catch(() => {});
   setInterval(() => refreshNextGates().catch(() => {}), 60_000).unref();
+  // Live Feishu stats: warm the cache in the background; failures degrade to
+  // a fallback chip, never a server error.
+  liveStats.get().catch(() => {});
+  setInterval(() => liveStats.get({ force: true }).catch(() => {}), 10 * 60_000).unref();
+  // Checkout registry: sibling worktrees come and go with campaigns.
+  refreshCheckouts().catch(() => {});
+  setInterval(() => refreshCheckouts().catch(() => {}), 10 * 60_000).unref();
+  // Token telemetry: harvest rollout transcripts + event attribution every
+  // 2 minutes (the host prunes rollout files, so prompt harvesting matters).
+  harvestUsage();
+  setInterval(harvestUsage, 2 * 60_000).unref();
 
   for (const dir of WATCH_DIRS) {
     try {
@@ -588,6 +895,7 @@ if (require.main === module) main();
 
 module.exports = {
   buildHeadlessPrompt,
+  resolveStatusTarget,
   buildHeadlessSpawnArgs,
   buildResumeArgs,
   parseArgs,

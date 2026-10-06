@@ -225,6 +225,13 @@
         "productionEntrypoint": ".claude/skills/api-reference-sync/scripts/build-current-placement-audit.js",
         "focusedTest": ".claude/skills/api-reference-sync/tests/reference-multiset.test.js",
         "journalRequiredForWrites": false
+      },
+      {
+        "operation": "grouping-proposal",
+        "status": "adopted",
+        "productionEntrypoint": ".claude/skills/api-reference-sync/scripts/build-grouping-proposal.js",
+        "focusedTest": ".claude/skills/api-reference-sync/tests/grouping-proposal.test.js",
+        "journalRequiredForWrites": false
       }
     ]
   }

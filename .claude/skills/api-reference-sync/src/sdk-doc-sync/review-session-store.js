@@ -1133,8 +1133,16 @@ function recordRollbackIntent(session, {
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
   // A change-requested unit keeps its journal anchored in changeRequests[]
   // ("for audit and potential rollback") — its executed artifacts are still
-  // live and the rebuild path needs the rollback to run first.
-  const changeRequested = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  // live and the rebuild path needs the rollback to run first. A redo cycle
+  // appends further entries: the live artifacts belong to the NEWEST, so
+  // anchor by requestedAt (the array is sorted by reviewUnitId, not time).
+  const changeRequested = (session.changeRequests || [])
+    .filter((item) => item.reviewUnitId === reviewUnitId)
+    .sort((left, right) => (
+      String(left.requestedAt || '') < String(right.requestedAt || '') ? -1
+        : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
+    ))
+    .pop();
   const anchor = pending || accepted || (changeRequested ? {
     executionJournalPath: changeRequested.executionJournalPath,
     executionJournalDigest: changeRequested.executionJournalDigest,

@@ -701,6 +701,29 @@ test('a second redo cycle rolls back the newest execution alongside the earlier 
     }),
     /already rolled back/,
   );
+
+  // Third cycle: TWO changeRequests now exist for the unit — the intent must
+  // anchor the NEWEST (requestedAt), not the array-first (reviewUnitId sort).
+  const thirdEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:batch-c', actionId: 'node:Collections:a' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-c', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-c', status: 'executed', completionSentinel: true },
+  ];
+  const thirdPath = path.join(directory, 'third-execution.jsonl');
+  fs.writeFileSync(thirdPath, `${thirdEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const third = { filePath: thirdPath, digest: digestSemantic(thirdEntries) };
+  const redone3 = recordDocumentExecution(rolled2, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: third.filePath,
+    executionJournalDigest: third.digest,
+  });
+  const requested3 = recordDocumentChangesRequested(redone3, { reviewUnitId: 'review:node:Collections:a', reason: 'third ruling' });
+  const leased3 = recordRollbackIntent(requested3, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-4',
+    rollbackJournalPath: secondRollback.filePath,
+  });
+  assert.equal(leased3.activeRollback.originalExecutionJournalDigest, third.digest);
 });
 
 test('completing one unit\u2019s reconcile preserves another unit\u2019s in-flight rollback lease (P2)', () => {

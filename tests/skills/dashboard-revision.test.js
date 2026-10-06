@@ -190,10 +190,15 @@ test('intake cards surface grouping manifests with approval transitions', (t) =>
   assert.equal(ledger.intakes.find((c) => c.language === 'go').approved, false);
 
   // Two-gate proof: a session created after the gate in the same checkout.
+  // createdAt must land after the gate manifest's mtime — the ledger allows
+  // a 60s skew, but a hardcoded clock time turns the test into a time bomb
+  // once real time passes it. Anchor to the gate file's mtime instead.
+  const gateMtime = fs.statSync(path.join(sib.root, 'tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json')).mtimeMs;
+  const sessionAt = new Date(gateMtime + 5_000).toISOString();
   sib.write('tmp/sdk-release-scout/go-v30-session.json', {
     schemaVersion: 1, status: 'in_progress', language: 'go', track: 'v3.0.x',
     reviewUnitManifest: { units: [{ reviewUnitId: 'u1' }] }, acceptedReviewUnits: [],
-    pendingExecutions: [], artifacts: {}, createdAt: '2026-10-06T10:00:00.000Z', updatedAt: '2026-10-06T10:00:00.000Z',
+    pendingExecutions: [], artifacts: {}, createdAt: sessionAt, updatedAt: sessionAt,
   });
   const ledger2 = buildLedger({ repoRoot: main.root, checkouts });
   assert.equal(ledger2.intakes.find((c) => c.language === 'go').approved, true, 'session built after the gate proves approval');

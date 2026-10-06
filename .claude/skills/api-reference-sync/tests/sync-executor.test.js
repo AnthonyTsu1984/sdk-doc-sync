@@ -472,7 +472,7 @@ test('SyncExecutor rejects a repoint whose VirtualNode drifted from the approved
   assert.equal(result.failedStep, 'verifyVirtualNodePrecondition');
 });
 
-test('SyncExecutor creates a VirtualNode from its resolved folder without writing Slug', async () => {
+test('SyncExecutor creates a VirtualNode from its resolved folder writing the approved slug', async () => {
   const calls = [];
   const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-files`;
   const bitableWriter = {
@@ -529,7 +529,10 @@ test('SyncExecutor creates a VirtualNode from its resolved folder without writin
 
   assert.equal(result.status, 'success');
   assert.equal(result.resolvedResource.recordId, 'rec-files');
-  assert.equal(calls[1][1].slug, undefined);
+  // 2026-10-06: the executor writes the approved criteria slug (the
+  // category-prefixed KB convention) — Feishu auto-population derives only
+  // the folder name.
+  assert.equal(calls[1][1].slug, 'FileResources');
   assert.deepEqual(calls[1][1], {
     title: 'File Resources',
     link: expectedLink,
@@ -537,6 +540,7 @@ test('SyncExecutor creates a VirtualNode from its resolved folder without writin
     addedSince: 'v3.0.x',
     targets: ['Milvus', 'Zilliz'],
     progress: 'Draft',
+    slug: 'FileResources',
   });
 });
 

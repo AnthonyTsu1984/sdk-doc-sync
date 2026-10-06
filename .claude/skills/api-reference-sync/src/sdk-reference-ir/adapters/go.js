@@ -100,7 +100,33 @@ function toReferenceDocument(symbol, context = {}) {
       notes: [...(Array.isArray(context.notes) ? context.notes : []), ...methodNotes],
     });
   }
-  const signatures = [common.makeSignature(symbol.signature || '', symbol.params, evidence, { symbol, context })];
+  // Reviewed upstream prose: the PARAMETERS section renders the canonical
+  // signature inputs (scanner-derived — names, types, kind metadata, no
+  // descriptions). The PR pages curate human descriptions per parameter;
+  // merge them in so the section carries prose. Equal-length lists merge by
+  // position: the PR PARAMETERS describe the builder's arguments in order,
+  // which absorbs upstream naming drift (privileges vs privilegeNames).
+  // Otherwise fall back to name matching. Scanner-side descriptions win.
+  const reviewedInputs = (Array.isArray(context.requestVariants) ? context.requestVariants : [])
+    .flatMap((variant) => (Array.isArray(variant?.inputs) ? variant.inputs : []))
+    .filter((input) => input && String(input.name || '').trim() !== ''
+      && String(input.description || '').trim() !== '');
+  const withReviewedDescriptions = (params) => {
+    if (!Array.isArray(params) || reviewedInputs.length === 0) return params;
+    const described = (param) => param.description && String(param.description).trim() !== '';
+    if (reviewedInputs.length === params.length) {
+      return params.map((param, index) => (described(param) ? param : {
+        ...param,
+        description: String(reviewedInputs[index].description),
+      }));
+    }
+    const byName = new Map(reviewedInputs.map((input) => [String(input.name), String(input.description)]));
+    return params.map((param) => (!described(param) && byName.has(String(param.name)) ? {
+      ...param,
+      description: byName.get(String(param.name)),
+    } : param));
+  };
+  const signatures = [common.makeSignature(symbol.signature || '', withReviewedDescriptions(symbol.params), evidence, { symbol, context })];
   let requestVariants = [];
   if (Array.isArray(context.requestVariants)) {
     requestVariants = context.requestVariants.map((variant) => common.makeRequestVariant({

@@ -76,7 +76,14 @@ function typeOf(value) {
 
 function normalizeField(field = {}, evidence = [], overrides = {}, options = {}) {
   const constraints = Array.isArray(field.constraints) ? Array.from(field.constraints) : [];
-  if (field.kind && field.kind !== 'separator') constraints.push(`kind: ${field.kind}`);
+  // `kind: required` is required-ness, already expressed by the derived
+  // `required` boolean (rendered as the [REQUIRED] qualifier) — pushing it
+  // into constraints double-encodes it and leaked the machine phrase
+  // "Constraints: kind: required." onto go pages (operator ruling
+  // 2026-10-06). Call-shape kinds (positional/keyword/…) still land here.
+  if (field.kind && field.kind !== 'separator' && field.kind !== 'required') {
+    constraints.push(`kind: ${field.kind}`);
+  }
   if (Array.isArray(field.choices) && field.choices.length > 0) {
     constraints.push(`choices: ${field.choices.join(', ')}`);
   }

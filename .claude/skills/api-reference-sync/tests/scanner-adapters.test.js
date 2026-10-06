@@ -209,6 +209,52 @@ test('Go struct adapter accepts reviewed constructor syntax and public methods',
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
+test('Go method adapter merges reviewed parameter prose; kind:required never reaches constraints', () => {
+  // Operator ruling 2026-10-06: the PARAMETERS section renders the canonical
+  // signature inputs (scanner-derived). The reviewed PR prose must merge in,
+  // and required-ness renders as [REQUIRED] — the machine phrase
+  // "Constraints: kind: required." must not leak onto the page.
+  const symbol = {
+    name: 'AddPrivilegesToGroup',
+    kind: 'method',
+    signature: 'func (c *Client) AddPrivilegesToGroup(ctx context.Context, option AddPrivilegeToGroupOption, callOptions ...grpc.CallOption) error',
+    docstring: 'This operation adds one or more privileges to an existing privilege group.',
+    params: [
+      { name: 'groupName', type: 'string', kind: 'required' },
+      { name: 'privileges', type: '...string', kind: 'required' },
+    ],
+    filePath: 'client/milvusclient/rbac_v2.go',
+    lineNumber: 71,
+    parentClass: 'Authentication',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Authentication', {
+    title: 'AddPrivilegesToGroup',
+    requestVariants: [{
+      id: 'NewAddPrivilegesToGroupOption',
+      signature: 'option := milvusclient.NewAddPrivilegesToGroupOption(groupName, privilegeNames...)',
+      description: 'Creates the request for AddPrivilegesToGroup().',
+      inputs: [
+        { name: 'groupName', type: 'string', description: 'The name of the privilege group.' },
+        // Upstream naming drift: the PR list says privilegeNames where the
+        // builder signature says privileges — equal-length merge is by position.
+        { name: 'privilegeNames', type: '...string', description: 'The names of the privileges to add to the group.' },
+      ],
+    }],
+  }));
+
+  assert.equal(doc.signatures[0].inputs[0].description, 'The name of the privilege group.');
+  assert.equal(doc.signatures[0].inputs[1].description, 'The names of the privileges to add to the group.');
+  for (const input of doc.signatures[0].inputs) {
+    assert.equal(input.required, true, 'required-ness stays expressed as the boolean');
+    assert.equal(
+      (input.constraints || []).some((value) => /kind:\s*required/i.test(String(value))),
+      false,
+      'kind: required is not double-encoded into constraints',
+    );
+  }
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
 test('Python preserves direct parameter semantics, return type, and supplied exceptions', () => {
   const doc = pythonAdapter.toReferenceDocument(
     fixture('python-search.json'),

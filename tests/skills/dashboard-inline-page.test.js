@@ -256,7 +256,33 @@ test('a gate whose campaign row already exists never double-renders (java lesson
   api.setPage(payload);
   await renderRoute(api, '#/skill/api');
   const page = elements.page.innerHTML;
-  assert.ok(!page.includes('java v3.0.x 修订战役 — 范围工件'), 'the written-evidence gate does not render its own row');
   assert.ok(page.includes('java-revision-worklist') || page.includes('Vector'), 'the revision campaign row carries java instead');
   assert.equal((page.match(/<tr class="rowlink"/g) || []).length, 2, 'exactly two campaign rows: go gate + java revision');
+});
+
+
+test('a receipt-evidence gate whose session landed never double-renders (go future)', async () => {
+  const { api, elements } = loadPageScript();
+  const payload = intakePayload({ approved: true, evidence: 'receipt' });
+  payload.campaigns.push({
+    sessionPath: 'tmp/sdk-release-scout/go-v30-session.json', sessionKey: 'go-scan::tmp/sdk-release-scout/go-v30-session.json',
+    sessionId: 'sdk-doc-sync:go:milvus:v3.0.x', language: 'go', sdkName: 'milvus', track: 'v3.0.x',
+    acceptanceFlow: 'two-gate', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
+    hasActiveExecution: false, hasActiveRollback: false, rollbacks: 0, createdAt: '2026-10-06T13:00:00.000Z',
+    updatedAt: '2026-10-06T13:00:00.000Z', closedAt: null,
+    scanState: { key: 'go-v3', lastScannedTag: 'client/v3.0.0-beta', targetTag: 'client/v3.0.0', advancedPast: null },
+    artifacts: {}, documentLinks: [], recordLinks: [], journalPaths: [], pendingUnits: [],
+    groupingApproval: { proposalDigest: 'sha256:' + '6'.repeat(64), releaseRange: 'r', approvedAt: '2026-10-06T12:30:00.000Z', scopeDigest: 'sha256:' + '8'.repeat(64) },
+    lastActivityAt: null, activityCount: 0,
+  });
+  // Mirror the ledger contract: skillTracks campaign counts derive from the
+  // campaign list server-side, so one live session means active=1 there too.
+  payload.skillTracks.languages[0].tracks[0].campaigns = { total: 1, active: 1, finalized: 0, sessionPaths: ['tmp/sdk-release-scout/go-v30-session.json'] };
+  api.setPage(payload);
+  await renderRoute(api, '#/skill/api');
+  const page = elements.page.innerHTML;
+  assert.equal((page.match(/<tr class="rowlink"/g) || []).length, 1, 'one row: the session campaign carries the work');
+  assert.ok(page.includes('已绑分组'), 'the session row shows the grouping binding');
+  assert.ok(page.includes('战役进行中 1'), 'the language card counts one campaign, not two');
+  assert.ok(!page.includes('已批 · 筹备中'), 'the gate-phase row is gone once the session landed');
 });

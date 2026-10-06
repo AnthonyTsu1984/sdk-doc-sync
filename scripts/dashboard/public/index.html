@@ -593,7 +593,7 @@ async function pageSkillApi(d) {
     // evidence is already inside the session/revision counts.
     const langIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.name.toLowerCase());
     const pendingGates = langIntakes.filter((i) => !i.approved).length;
-    const gatePhase = langIntakes.filter((i) => !i.approved || i.approvalEvidence === 'receipt').length;
+    const gatePhase = gatePhaseIntakes(langIntakes, d).length;
     const active = lang.tracks.reduce((n, t) => n + t.campaigns.active, 0)
       + (d.revisions || []).filter((r) => r.language === lang.name && r.status !== 'finalized').length
       + gatePhase;
@@ -630,7 +630,7 @@ async function pageSkillApi(d) {
     ${outsideNote}
     <h2>进行中的战役（三门：分组门 → 写门 → 验收门；分组门阶段即战役，筹备/修订/会话流共用此表）</h2>
     ${campaignTable([
-      ...gatePhaseIntakes(d.intakes),
+      ...gatePhaseIntakes(d.intakes, d),
       ...(d.campaigns || []).filter((c) => c.health !== 'finalized'),
       ...(d.revisions || []).filter((r) => r.status !== 'finalized'),
     ], d, { empty: '无进行中战役（新战役从扫描请求起算：先侦察后分组门，或轨道页「启动该轨道工作」）' })}`;
@@ -642,12 +642,23 @@ let tableShowFinalized = false;
 
 // Gate-phase campaigns enter the table (three-gate ruling, 2026-10-06): a
 // campaign counts from the operator's scan request, and the grouping gate is
-// its first gate. Only gates whose work is NOT yet carried by a session /
-// revision card render here — approved gates with session-binding / session /
-// written evidence are already that campaign's row (java taught us this: one
-// campaign must never occupy two rows).
-function gatePhaseIntakes(intakes) {
-  return (intakes || []).filter((i) => !i.approved || i.approvalEvidence === 'receipt');
+// its first gate.
+// A gate leaves the gate phase the moment its work is carried by another
+// card — decided by DIGEST, not evidence kind: a session campaign bound to
+// the proposal (groupingApproval.proposalDigest) or a revision campaign
+// linked to the gate manifest (groupingGate.digest) supersedes the gate row.
+// Receipts are durable, so evidence alone ('receipt' survives session
+// binding forever) would double-render the standard governed flow.
+function gatePhaseIntakes(intakes, d) {
+  const carried = new Set();
+  for (const c of (d?.campaigns || [])) {
+    if (c.groupingApproval?.proposalDigest) carried.add(c.groupingApproval.proposalDigest);
+  }
+  for (const r of (d?.revisions || [])) {
+    if (r.groupingGate?.digest) carried.add(r.groupingGate.digest);
+  }
+  return (intakes || []).filter((i) => !i.approved
+    || (i.approvalEvidence === 'receipt' && !carried.has(i.digest)));
 }
 
 function flowBadge(c) {
@@ -707,7 +718,7 @@ function revisionRow(r) {
     <td>${r.status === 'finalized'
       ? '<span class="dim">—</span>'
       : r.groupingApproved
-        ? `<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）；与 two-gate 的 APPROVE_WRITES 同一批准形态">批准批次写入</span>`
+        ? `<span class="badge gate" title="逐页写门由执行会话内呈（digest 见会话/呈门材料）；与三门流程的 APPROVE_WRITES 同一批准形态">批准批次写入</span>`
         : r.groupingGate
           ? `<span class="badge gate" title="待你批准：${esc(r.groupingGate.digest)}">分组门待批</span>`
           : '<span class="dim">—</span>'}</td>
@@ -747,7 +758,7 @@ async function pageLang(d, lang) {
     ${renderFindingsSection(d, lang, scout)}
     <h2>${esc(lang)} 战役清单${entry?.sdkName ? ` <span style="color:var(--dim);font-weight:400">· ${esc(entry.sdkName)}</span>` : ''}</h2>
     ${campaignTable([
-      ...gatePhaseIntakes(langIntakes),
+      ...gatePhaseIntakes(langIntakes, d),
       ...list,
       ...(d.revisions || []).filter((r) => r.language === lang),
     ], d, { empty: '该语种暂无战役' })}
@@ -759,7 +770,7 @@ async function pageTrack(d, key) {
   const list = (d.campaigns || []).filter((c) => c.scanState.key === key);
   const lang = key.replace(/-v\d+$/, '');
   const trackIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.toLowerCase());
-  const preparingGates = trackIntakes.filter((i) => !i.approved || i.approvalEvidence === 'receipt').length;
+  const preparingGates = gatePhaseIntakes(trackIntakes, d).length;
   const version = (list[0]?.track) || null;
   const scan = list[0]?.scanState || null;
   const baseline = scan?.lastScannedTag;
@@ -787,8 +798,9 @@ async function pageTrack(d, key) {
       </div>
     </div>
     ${campaignTable([
-      ...gatePhaseIntakes(trackIntakes),
+      ...gatePhaseIntakes(trackIntakes, d),
       ...list,
+      ...(d.revisions || []).filter((r) => (r.language || '').toLowerCase() === lang.toLowerCase()),
     ], d, { empty: '该轨暂无战役' })}`;
 }
 
@@ -1218,7 +1230,7 @@ async function pageCampaign(d, path) {
     ])}
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1">
-        <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` <span class="dim" style="font-weight:400">· ${esc(c.acceptanceFlow)}</span>` : ''}</span>
+        <span class="title">${esc(c.language ?? '?')} · ${esc(c.track ?? '?')}${c.acceptanceFlow ? ` <span class="dim" style="font-weight:400">· ${esc(c.acceptanceFlow === 'two-gate' ? 'three-gate' : c.acceptanceFlow)}</span>` : ''}</span>
         <span style="display:flex;gap:6px">${c.nextGate && c.nextGate.gate !== 'CLOSE_SESSION' ? `<span class="badge gate" title="${esc(c.nextGate.reviewUnitId || '')}">${esc(gateSummary(c)?.title ?? '')}</span>` : ''}${checkoutChip(c)}<span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></span>
       </div>
       <div class="sub">${esc(c.sessionId ?? c.sessionPath)} <button class="copy" onclick="copyText(${JSON.stringify(c.sessionPath).replace(/"/g, '&quot;')})">复制会话路径</button></div>

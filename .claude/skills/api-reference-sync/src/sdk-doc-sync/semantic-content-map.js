@@ -295,7 +295,7 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     // sentence. RETURNS prose carrying real content (what a non-void method
     // returns) and non-void RETURN TYPE sections stay losses.
     const upstreamRet = upstream.returnsProse || [];
-    const voidEquivalentStubLine = (line) => /^(?:\*{0,2}void\*{0,2}[.:]?|this operation (?:does not return|returns) (?:a value|no value|anything|nothing)[.!]?)$/i.test(String(line || '').trim());
+    const voidEquivalentStubLine = (line) => /^(?:\*{0,2}void\*{0,2}[.:]?|none|null[.:?!]?|this operation (?:does not return|returns) (?:a value|no value|anything|nothing)[.!]?)$/i.test(String(line || '').trim());
     const upstreamReturnTypeVoidLike = upstream.returnType === null
         || /^\*{0,2}void\*{0,2}[.:]?$/i.test(String(upstream.returnType).trim());
     const voidReturnsRetirement = upstreamReturnTypeVoidLike

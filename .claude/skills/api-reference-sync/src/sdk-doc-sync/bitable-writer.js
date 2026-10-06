@@ -246,7 +246,12 @@ class BitableWriter {
             throw new TypeError('Docs link is required when writing a Docs title');
         }
 
-        // Slug is a DuplexLink auto-populated by Feishu — never set it
+        // Slug is a DuplexLink auto-populated by Feishu for document records
+        // — never set it there. VirtualNode records are the exception
+        // (2026-10-06 FunctionChain): auto-population derives the folder name
+        // only, while the KB convention carries the category prefix
+        // (MilvusClient-Management et al.) — the caller sets it explicitly.
+        if (fields.slug !== undefined) formatted['Slug'] = [{ text: fields.slug, type: 'text' }];
         if (fields.progress !== undefined) formatted['Progress'] = fields.progress;
         if (fields.addedSince !== undefined) formatted['Added Since'] = fields.addedSince;
         if (fields.deprecateSince !== undefined) formatted['Deprecate Since'] = fields.deprecateSince;

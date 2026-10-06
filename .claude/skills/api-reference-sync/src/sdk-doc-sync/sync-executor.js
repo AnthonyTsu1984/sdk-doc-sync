@@ -708,6 +708,10 @@ class SyncExecutor {
       addedSince: resource.version,
       targets: resource.targets,
       progress: resource.progress,
+      // The approved slug (postcondition VIRTUAL_NODE_METADATA) is the
+      // category-prefixed KB convention; Feishu's auto-population derives
+      // only the folder name.
+      slug: resource.existingLookup.criteria.canonicalSlug,
     });
     const createdRecordId = recordId(created);
     if (!nonEmptyString(createdRecordId)) {

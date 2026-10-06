@@ -53,6 +53,52 @@ test('readBlocks resolves wiki tokens and fully paginates document blocks', asyn
   }]);
 });
 
+test('readBlocks retries a children-omitting page read and recovers', async () => {
+  // Feishu intermittently returns code 0 with the page block's children
+  // field omitted; the read layer retries that exact transient signature
+  // instead of surfacing it downstream as PAGE_STRUCTURE_INVALID.
+  const responses = [
+    [{ block_id: 'page', block_type: 1 }],
+    [{ block_id: 'page', block_type: 1, children: ['b1'] }, { block_id: 'b1', parent_id: 'page', block_type: 2 }],
+  ];
+  let calls = 0;
+  const reader = new DocxReader({
+    client: {
+      async request() { throw new Error('drive source never resolves wiki tokens'); },
+      async paginate() {
+        const response = responses[Math.min(calls, responses.length - 1)];
+        calls += 1;
+        return response;
+      },
+    },
+    sourceType: 'drive',
+  });
+
+  const blocks = await reader.readBlocks('doc-token');
+
+  assert.equal(calls, 2, 'the transient read was retried once');
+  assert.deepEqual(blocks.find(b => b.block_type === 1).children, ['b1']);
+});
+
+test('readBlocks returns the last read when the transient signature persists', async () => {
+  let calls = 0;
+  const reader = new DocxReader({
+    client: {
+      async request() { throw new Error('drive source never resolves wiki tokens'); },
+      async paginate() {
+        calls += 1;
+        return [{ block_id: 'page', block_type: 1 }];
+      },
+    },
+    sourceType: 'drive',
+  });
+
+  const blocks = await reader.readBlocks('doc-token');
+
+  assert.equal(calls, 3, 'all transient attempts are spent');
+  assert.deepEqual(blocks, [{ block_id: 'page', block_type: 1 }]);
+});
+
 test('reference source_document_id is read directly as a Docx document token', async () => {
   const paths = [];
   const reader = new DocxReader({

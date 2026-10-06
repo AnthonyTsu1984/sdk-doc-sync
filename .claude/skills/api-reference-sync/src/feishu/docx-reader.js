@@ -38,7 +38,25 @@ class DocxReader {
 
   async readBlocks(documentToken) {
     const resolvedToken = await this.resolveWikiToken(documentToken);
-    return this._readDocumentBlocks(resolvedToken);
+    // Feishu intermittently returns code 0 with the page block's `children`
+    // field omitted — a server-side consistency artifact on stable pages (the
+    // same transient the MarkdownToFeishu.get_document_blocks retry covers).
+    // Downstream it surfaces as PAGE_STRUCTURE_INVALID and, with a review
+    // session bound, shrinks the derived manifest enough to fail resume
+    // validation. Retry that exact signature; after the attempts are spent,
+    // return the last read so downstream still fails with its own typed
+    // error, never a masked one.
+    const TRANSIENT_PAGE_ATTEMPTS = 3;
+    for (let attempt = 1; attempt <= TRANSIENT_PAGE_ATTEMPTS; attempt += 1) {
+      const blocks = await this._readDocumentBlocks(resolvedToken);
+      const pageBlock = (Array.isArray(blocks) ? blocks : []).find(block => block?.block_type === 1);
+      const transientStructure = pageBlock && !Array.isArray(pageBlock.children);
+      if (!transientStructure || attempt === TRANSIENT_PAGE_ATTEMPTS) {
+        return blocks;
+      }
+      await new Promise(resolve => setTimeout(resolve, 500 * attempt));
+    }
+    throw new Error('unreachable: retry loop must return or throw');
   }
 
   async _readDocumentBlocks(documentToken) {

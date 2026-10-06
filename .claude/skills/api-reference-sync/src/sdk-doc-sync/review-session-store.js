@@ -1257,7 +1257,16 @@ function recordDocumentRollback(session, receipt) {
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
   const activeMatches = pending !== undefined;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const changeRequested = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  // Newest change request wins: redo cycles append entries and the live
+  // artifacts belong to the latest execution (requestedAt order — the array
+  // is sorted by reviewUnitId, not time).
+  const changeRequested = (session.changeRequests || [])
+    .filter((item) => item.reviewUnitId === reviewUnitId)
+    .sort((left, right) => (
+      String(left.requestedAt || '') < String(right.requestedAt || '') ? -1
+        : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
+    ))
+    .pop();
   let originalExecution = pending || accepted || (changeRequested ? {
     executionJournalPath: changeRequested.executionJournalPath,
     executionJournalDigest: changeRequested.executionJournalDigest,

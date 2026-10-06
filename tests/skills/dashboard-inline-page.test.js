@@ -163,7 +163,7 @@ function intakePayload({ approved = false } = {}) {
       presentedAt: '2026-10-06T11:00:00.000Z',
       approved,
       approvalEvidence: approved ? 'receipt' : null,
-      receipt: approved ? { path: 'tmp/api-reference-sync/grouping-approvals/x.json', proposalDigest: 'sha256:' + '6'.repeat(64), approvedAt: '2026-10-06T12:00:00.000Z' } : null,
+      receipt: approved ? { checkoutRoot: '/x/go-scan', path: 'tmp/api-reference-sync/grouping-approvals/x.json', proposalDigest: 'sha256:' + '6'.repeat(64), approvedAt: '2026-10-06T12:00:00.000Z' } : null,
       links: [],
     }],
     groupingReceipts: approved ? [{ checkout: 'go-scan', path: 'tmp/api-reference-sync/grouping-approvals/x.json' }] : [],
@@ -214,4 +214,19 @@ test('an approved-but-preparing gate shows 筹备中 instead of the idle badge',
   assert.ok(page.includes('筹备中 1'), 'approved gate reads as preparing, not idle');
   assert.ok(!page.includes('<span class="badge finalized">无进行中战役</span>'), 'no idle badge while preparation is in flight');
   assert.ok(page.includes('分组已批'), 'the approved intake card keeps its approved badge');
+});
+
+
+test('a session-bound gate is not double-counted as 筹备中', async () => {
+  const { api, elements } = loadPageScript();
+  const payload = intakePayload({ approved: true });
+  payload.intakes[0].approvalEvidence = 'session-binding';
+  payload.groupingReceipts = [];
+  api.setPage(payload);
+  api.location.hash = '#/skill/api';
+  api.route();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const page = elements.page.innerHTML;
+  assert.ok(!page.includes('筹备中 1'), 'session-bound gate is already inside the campaign count');
+  assert.ok(page.includes('分组已批 · 已绑会话'), 'the card still shows the approved state');
 });

@@ -625,9 +625,11 @@ async function pageSkillApi(d) {
     // Preparation phase: a presented grouping gate (or an approved one whose
     // session/dry-run/context build is still running) is real campaign work
     // that the session-only active count must not hide behind "无进行中战役".
-    const langIntakes = (d.intakes || []).filter((i) => i.language === lang.name);
+    // Only receipt-evidence approvals are still preparing — session-binding/
+    // session/written evidence means the work is already counted in `active`.
+    const langIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.name.toLowerCase());
     const pendingGates = langIntakes.filter((i) => !i.approved).length;
-    const preparing = langIntakes.filter((i) => i.approved).length;
+    const preparing = langIntakes.filter((i) => i.approved && i.approvalEvidence === 'receipt').length;
     const total = lang.tracks.reduce((n, t) => n + t.campaigns.total, 0);
     const options = lang.tracks.map((t) => `<option value="${esc(t.key)}">${esc(t.version)}（战役 ${t.campaigns.active} 活跃 / ${t.campaigns.total} 累计）</option>`).join('');
     return `<div class="card langcard clickable" onclick="location.hash='#/skill/api/lang/${esc(lang.name)}'">
@@ -755,6 +757,10 @@ async function pageTrack(d, key) {
   const list = (d.campaigns || []).filter((c) => c.scanState.key === key);
   const lang = key.replace(/-v\d+$/, '');
   const trackIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.toLowerCase());
+  // Gates still in the preparation phase: awaiting approval, or approved
+  // with receipt evidence only (session not yet created). Session-bound /
+  // written gates are already counted by the campaign rows below.
+  const preparingGates = trackIntakes.filter((i) => !i.approved || i.approvalEvidence === 'receipt').length;
   const version = (list[0]?.track) || null;
   const scan = list[0]?.scanState || null;
   const baseline = scan?.lastScannedTag;
@@ -777,7 +783,7 @@ async function pageTrack(d, key) {
     <div class="card" style="margin-bottom:12px;cursor:default">
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
-        <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）${trackIntakes.length ? ` · 筹备 ${trackIntakes.length}（分组门阶段）` : ''}</span>
+        <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）${preparingGates > 0 ? ` · 筹备 ${preparingGates}（分组门阶段）` : ''}</span>
         ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
       </div>
     </div>

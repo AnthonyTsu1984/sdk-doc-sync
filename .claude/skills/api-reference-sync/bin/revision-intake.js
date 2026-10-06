@@ -195,7 +195,7 @@ module.exports = { buildRevisionUnits, intakeRevisionSession, main };
 
 if (require.main === module) {
     try {
-        main(process.argv.slice(2));
+        main(process.argv);
     } catch (error) {
         process.stderr.write(`${error.message}\n`);
         process.exitCode = 1;

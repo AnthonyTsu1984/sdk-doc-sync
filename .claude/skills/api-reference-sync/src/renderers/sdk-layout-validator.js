@@ -22,6 +22,7 @@ const ROLE_GROUPS = Object.freeze({
   'returns-label': 'returns',
   'returns-type-value': 'returns',
   'returns-description': 'returns',
+  'returns-schema': 'returns',
   'result-fields-label': 'returns',
   'result-fields': 'returns',
   'exceptions-label': 'exceptions',

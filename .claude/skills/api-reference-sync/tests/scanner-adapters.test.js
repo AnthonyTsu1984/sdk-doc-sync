@@ -255,6 +255,48 @@ test('Go method adapter merges reviewed parameter prose; kind:required never rea
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
+test('go result schemaCode renders a go block between RETURNS prose and response fields', () => {
+  // Ruling 2026-10-07: multi-value returns expand the result value — a go
+  // schema code block between the RETURNS prose and the response-field
+  // PARAMETERS list, and the error part never appears in the fields.
+  const symbol = {
+    name: 'BackupRBAC',
+    kind: 'method',
+    signature: 'func (c *Client) BackupRBAC(ctx context.Context, option BackupRBACOption, callOptions ...grpc.CallOption) (*entity.RBACMeta, error)',
+    docstring: 'This operation creates a full backup of RBAC metadata.',
+    params: [{ name: 'option', type: 'BackupRBACOption', kind: 'required' }],
+    filePath: 'client/milvusclient/rbac_v2.go',
+    lineNumber: 21,
+    parentClass: 'Authentication',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Authentication', {
+    title: 'BackupRBAC',
+    requestVariants: [{
+      id: 'NewBackupRBACOption',
+      signature: 'option := milvusclient.NewBackupRBACOption()\n\nbackup, err := client.BackupRBAC(ctx, option)',
+      description: 'Creates the request for BackupRBAC().',
+      inputs: [],
+    }],
+    result: {
+      type: '*entity.RBACMeta, error',
+      description: 'The full RBAC metadata snapshot including users, roles, grants, and privilege groups.',
+      schemaCode: 'type RBACMeta struct {\n    Users []*UserInfo\n    Roles []*Role\n}',
+      fields: [
+        { name: 'Users', type: '[]*UserInfo', description: 'The users.' },
+        { name: 'Roles', type: '[]*Role', description: 'The list of assigned roles.' },
+      ],
+    },
+    exceptions: [{ name: 'error', condition: 'The operation fails.', description: 'Check the returned error for failure details.' }],
+  }));
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+  assert.equal(doc.result.schemaCode.includes('type RBACMeta struct'), true);
+  assert.equal(
+    doc.result.fields.some((field) => /^error$/i.test(field.name)),
+    false,
+    'the error part never renders in the response fields',
+  );
+});
+
 test('Python preserves direct parameter semantics, return type, and supplied exceptions', () => {
   const doc = pythonAdapter.toReferenceDocument(
     fixture('python-search.json'),

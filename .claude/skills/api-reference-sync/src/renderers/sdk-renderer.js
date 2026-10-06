@@ -315,6 +315,11 @@ function renderReturns(document, policy, context) {
     blocks.push(ir.paragraph(typeInlines(result.type, context), semantic('returns-type-value')));
   }
   blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
+  if (result.schemaCode) {
+    // Ruling 2026-10-07 (go): expand a struct result as its go schema code
+    // block between the RETURNS prose and the response-field PARAMETERS.
+    blocks.push(ir.codeBlock(String(result.schemaCode), policy.canonicalFence || 'Go', semantic('returns-schema')));
+  }
   if (Array.isArray(result.fields) && result.fields.length > 0) {
     // describeReplicas baseline (2026-10-03 strong-form ruling): response
     // fields render as a labeled PARAMETERS bullet list after the RETURNS

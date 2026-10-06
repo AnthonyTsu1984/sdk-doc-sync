@@ -186,6 +186,10 @@ function makeResult(result, evidence, options = {}) {
     type: typeOf(result.type || result.returnType),
     description: String(result.description || ''),
     fields: normalizeFields(result.fields, evidence, options),
+    // Ruling 2026-10-07 (go): multi-value returns expand the result value as
+    // a go schema code block between the RETURNS prose and the response-field
+    // PARAMETERS list.
+    schemaCode: String(result.schemaCode || ''),
     evidence,
   });
 }

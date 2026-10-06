@@ -586,7 +586,11 @@ function renderIntakes(d, list) {
       <span class="title">${esc(i.title)}</span>
       <span style="display:flex;gap:6px;flex-wrap:wrap">
         ${i.approved
-          ? '<span class="badge finalized" title="批准凭证已落盘（会话已建/已有 governed 写入）——筹备期长任务（dry-run/context 生成）仍在进行属正常">分组已批 · 筹备中</span>'
+          ? (i.approvalEvidence === 'receipt'
+            ? `<span class="badge finalized" title="回执 ${esc(i.receipt.path)} · 批准于 ${esc(i.receipt.approvedAt ?? '—')}——批准已落成持久凭证">分组已批 · 回执在册</span>`
+            : i.approvalEvidence === 'session-binding'
+              ? '<span class="badge finalized" title="战役会话已绑定该提案的 APPROVE_GROUPING 回执——入口 scope 漂移即拒（GROUPING_STALE）">分组已批 · 已绑会话</span>'
+              : '<span class="badge finalized" title="批准凭证已落盘（会话已建/已有 governed 写入）——筹备期长任务（dry-run/context 生成）仍在进行属正常">分组已批 · 筹备中</span>')
           : `<span class="badge gate" title="待你批准：${esc(i.digest)}">分组门待批</span>`}
         ${checkoutChip(i)}
       </span>
@@ -595,6 +599,7 @@ function renderIntakes(d, list) {
       <span>呈门 ${rel(i.presentedAt)}</span>
       ${i.language ? `<span>语种 ${esc(i.language)}</span>` : ''}
       <span class="dim" title="${esc(i.digest)}">digest ${esc(i.digest.slice(7, 19))}…</span>
+      ${i.receipt ? `<span title="回执文件（点不开说明该检出不在本机）">${receiptLink(d, i.receipt)}</span>` : ''}
     </div>
     ${i.run ? `<div class="sub" title="${esc(i.run)}">${esc(i.run)}</div>` : ''}
     ${i.links.length ? `<div style="margin-top:6px;font-size:12.5px">${i.links.map((l) => {
@@ -604,6 +609,11 @@ function renderIntakes(d, list) {
     <div class="note">批准后（或已批筹备中）的下一持久化事件=评审会话落盘，卡片随即出现在上方战役表——dry-run/context 生成等长筹备阶段由此卡承接。</div>
   </div>`).join('');
   return `<div class="grid">${cards}</div>`;
+}
+
+function receiptLink(d, receipt) {
+  const abs = `${receipt.checkoutRoot}/${receipt.path}`;
+  return `<a class="badge" style="text-decoration:none" href="/api/file?path=${encodeURIComponent(abs)}" target="_blank" title="${esc(abs)}">回执 ${esc(receipt.proposalDigest.slice(7, 19))}…</a>`;
 }
 
 async function pageSkillApi(d) {
@@ -660,7 +670,7 @@ function campaignRows(list, d) {
     const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
     const g = gateSummary(c);
     return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
-      <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}</td>
+      <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}${c.groupingApproval ? `<span class="badge" title="APPROVE_GROUPING 已绑入会话（${esc(c.groupingApproval.proposalDigest)}）——此后入口 release-scope 摘要对照已批 scope 校验，漂移即拒">已绑分组</span>` : ''}</td>
       <td><span class="badge ${c.acceptanceFlow === 'two-gate' ? 'active' : ''}">${esc(c.acceptanceFlow ?? 'legacy')}</span></td>
       <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
       <td class="num" style="min-width:90px">${c.accepted}/${c.units}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
@@ -1156,6 +1166,7 @@ async function pageCampaign(d, path) {
     <div class="card" style="cursor:default"><div class="kv" id="scaleKv" style="margin-top:0">
       <b>写作单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起 ${c.pending}</span>
       <b>scan-state</b><span>${esc(c.scanState.key ?? '—')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}（会话目标 ${esc(c.scanState.targetTag ?? '—')}）</span>
+      ${c.groupingApproval?.proposalDigest ? `<b>分组绑定</b><span class="badge finalized" title="提案 ${esc(c.groupingApproval.proposalDigest)} · 已批 scope ${esc(c.groupingApproval.scopeDigest ?? '—')} · 批准于 ${esc(c.groupingApproval.approvedAt ?? '—')}——入口 release-scope 漂移即拒（GROUPING_STALE）">APPROVE_GROUPING 已绑 · ${esc(c.groupingApproval.proposalDigest.slice(7, 19))}…</span>` : '<b>分组绑定</b><span class="dim">未绑定（旧流程会话或分组门未走回执）</span>'}
     </div></div>
     <h2>文件清单（按单元分组，文件名为主）</h2>
     <div id="filesHost"><div class="empty">载入中…</div></div>

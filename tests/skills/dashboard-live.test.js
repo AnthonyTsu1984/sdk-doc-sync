@@ -248,6 +248,11 @@ test('buildIntakeBrief is deterministic and fail-closed', (t) => {
   assert.match(good.text, /停在 APPROVE_GROUPING 门/);
   assert.match(good.text, /会话文件落位契约/);
   assert.match(good.text, /APPROVE_GROUPING sha256:<digest>/);
+  // Canonical grouping flow (grouping-governance): builder, receipt, binding.
+  assert.match(good.text, /build-grouping-proposal\.js/);
+  assert.match(good.text, /record-grouping-approval\.js --proposal/);
+  assert.match(good.text, /approve-grouping --session/);
+  assert.match(good.text, /GROUPING_STALE/);
   assert.equal(good.meta.actionCount, 1);
 
   // Same inputs → same brief.
@@ -296,6 +301,8 @@ test('buildTrackIntakeBrief: registered track → deterministic brief; unregiste
   assert.match(brief.text, /GOBASE/);
   assert.match(brief.text, /停在 APPROVE_GROUPING 门/);
   assert.match(brief.text, /无发现 → 明确报告"无待处理变更"并结束/);
+  assert.match(brief.text, /build-grouping-proposal\.js/);
+  assert.match(brief.text, /record-grouping-approval\.js/);
   assert.equal(brief.meta.mode, 'track');
 
   const again = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v30' });

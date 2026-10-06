@@ -529,6 +529,15 @@ class SyncPlanner {
     if (createLikeOverExisting && context.reviewSessionExecuted === true) {
       effectiveDiffAction = 'REBUILD';
       autoRoutedFromAction = diffAction;
+      // The auto-routed redo (changes-requested) reuses the reviewed
+      // generated artifact as the whole-body replacement: a generated
+      // artifact declares no strategy, so bind it to rebuild at the routing
+      // that defines it. An explicitly declared surgical strategy
+      // ('smart'/'replace') still refuses below — that artifact is the
+      // reviewer-chosen UPDATE shape, never a redo payload.
+      if (context.artifact && context.artifact.layout && context.artifact.patchStrategy === undefined) {
+        context.artifact.patchStrategy = 'rebuild';
+      }
     }
     if (effectiveDiffAction === 'REBUILD' && context.reviewSessionExecuted !== true) {
       // Explicit REBUILD over a record this campaign did not execute is a

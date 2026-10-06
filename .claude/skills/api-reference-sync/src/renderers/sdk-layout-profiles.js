@@ -114,6 +114,13 @@ const profiles = Object.freeze({
       contentQuality: Object.freeze({
         ...GLOBAL_LAYOUT_RULES.contentQuality,
         firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b']),
+        // Language-differentiated data (operator ruling 2026-10-06): a Go
+        // function whose sole return is `error` renders RETURNS prose only —
+        // the response-fields PARAMETERS list is the multi-value-return
+        // shape ("(int64, error)", structs). checkContentRules skips
+        // RETURNS_MIN_DEPTH when the RETURN TYPE value matches one of these
+        // tokens.
+        returnsResponseFieldsExemptTypes: Object.freeze(['error']),
       }),
     }),
   }),

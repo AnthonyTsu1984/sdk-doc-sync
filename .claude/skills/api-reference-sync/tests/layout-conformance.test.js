@@ -231,6 +231,44 @@ test('the five 2026-10-03 global content rules flag their failure modes and pass
     assert.deepEqual(clean.violations, []);
 });
 
+test('returnsResponseFieldsExemptTypes: declared data exempts single-error RETURNS from RETURNS_MIN_DEPTH', () => {
+    // Operator ruling 2026-10-06 (go): a sole `error` return is the void
+    // equivalent — RETURNS renders prose only, no response-fields list.
+    const bareErrorLines = [
+        'This operation adds one or more privileges to an existing privilege group.',
+        'RETURN TYPE:', '*error*',
+        'RETURNS:', 'Returns nil on success, or an error describing what went wrong.',
+    ];
+    // go declares the exemption; the bare-error page conforms.
+    assert.deepEqual(
+        checkLayoutConformance(sdkLayoutProfiles.go, { headings: [], lines: bareErrorLines, callouts: [] }).violations,
+        [],
+        'go exempts its declared single-error return type',
+    );
+    // A multi-value return stays bound: no PARAMETERS list still fails go.
+    const multiValue = checkLayoutConformance(sdkLayoutProfiles.go, {
+        headings: [],
+        lines: [
+            'This operation describes a role.',
+            'RETURN TYPE:', '*entity.Role, error*',
+            'RETURNS:', 'The role description including the role name, description, and privileges.',
+        ],
+        callouts: [],
+    });
+    assert.equal(
+        multiValue.violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'the exemption covers exactly the declared tokens, not every go page',
+    );
+    // Profiles without the declaration stay bound for the same page shape.
+    assert.equal(
+        checkLayoutConformance(sdkLayoutProfiles.java, { headings: [], lines: bareErrorLines, callouts: [] })
+            .violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'java has not declared the exemption',
+    );
+});
+
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)

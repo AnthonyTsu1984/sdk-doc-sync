@@ -291,9 +291,31 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
                 }
             }
             if (fieldBullets === 0) {
-                report('RETURNS_MIN_DEPTH', parametersIndex === -1
-                    ? 'RETURNS section carries no response-fields PARAMETERS list'
-                    : 'response-fields PARAMETERS list carries no field bullets');
+                // Data-declared exemption (language diff → layoutRules data):
+                // a profile may declare return-type tokens whose strong-form
+                // response-fields list is intentionally absent — go renders a
+                // single `error` return as RETURNS prose only (the Go void
+                // equivalent; operator ruling 2026-10-06). The value read is
+                // the entry after the RETURN TYPE label immediately above the
+                // RETURNS section; pages without RETURN TYPE stay bound.
+                const exemptTypes = (contentRules.returnsResponseFieldsExemptTypes || [])
+                    .map((token) => normalizeTypeToken(token).toLowerCase())
+                    .filter(nonEmptyString);
+                let exempt = false;
+                if (exemptTypes.length > 0) {
+                    for (let index = returnsIndex - 1; index >= 0; index -= 1) {
+                        if (!isLabel(entries[index].text, 'return type')) continue;
+                        const value = entries[index + 1];
+                        exempt = Boolean(value)
+                            && exemptTypes.includes(normalizeTypeToken(value.text).toLowerCase());
+                        break;
+                    }
+                }
+                if (!exempt) {
+                    report('RETURNS_MIN_DEPTH', parametersIndex === -1
+                        ? 'RETURNS section carries no response-fields PARAMETERS list'
+                        : 'response-fields PARAMETERS list carries no field bullets');
+                }
             }
         }
     }

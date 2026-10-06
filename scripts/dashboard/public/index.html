@@ -195,7 +195,10 @@ const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)
 
 function copyText(t) { navigator.clipboard?.writeText(t); }
 function attachKey(c) { return c.scanState.key || c.sessionPath; }
-function cardKey(c) { return c.sessionKey ?? `main::${c.sessionPath}`; }
+function cardKey(c) {
+  return c.sessionKey
+    ?? (c.kind === 'intake' ? `${c.checkout}::${c.manifestPath}` : `main::${c.sessionPath}`);
+}
 function checkoutChip(c) { return c.checkout && c.checkout !== 'main' ? `<span class="badge" title="${esc(c.checkoutLabel ?? c.checkout)} 工作树">${esc(c.checkoutLabel ?? c.checkout)}</span>` : ''; }
 function humanUnit(unitId) { return String(unitId || '').replace(/^review:/, '').replace(/^[a-z]+:/, '').replace(/:/g, '.'); }
 
@@ -579,66 +582,28 @@ function intakeLinkHref(link, d) {
   return `/api/file?path=${encodeURIComponent(abs)}`;
 }
 
-function renderIntakes(d, list) {
-  if (!list || !list.length) return '';
-  const cards = list.map((i) => `<div class="card" style="cursor:default">
-    <div class="row1" style="flex-wrap:wrap;gap:8px">
-      <span class="title">${esc(i.title)}</span>
-      <span style="display:flex;gap:6px;flex-wrap:wrap">
-        ${i.approved
-          ? (i.approvalEvidence === 'receipt'
-            ? `<span class="badge finalized" title="回执 ${esc(i.receipt?.path ?? '—')} · 批准于 ${esc(i.receipt?.approvedAt ?? '—')}——批准已落成持久凭证">分组已批 · 回执在册</span>`
-            : i.approvalEvidence === 'session-binding'
-              ? '<span class="badge finalized" title="战役会话已绑定该提案的 APPROVE_GROUPING 回执——入口 scope 漂移即拒（GROUPING_STALE）">分组已批 · 已绑会话</span>'
-              : '<span class="badge finalized" title="批准凭证已落盘（会话已建/已有 governed 写入）——筹备期长任务（dry-run/context 生成）仍在进行属正常">分组已批 · 筹备中</span>')
-          : `<span class="badge gate" title="待你批准：${esc(i.digest)}">分组门待批</span>`}
-        ${checkoutChip(i)}
-      </span>
-    </div>
-    <div class="meta" style="margin-top:6px">
-      <span>呈门 ${rel(i.presentedAt)}</span>
-      ${i.language ? `<span>语种 ${esc(i.language)}</span>` : ''}
-      <span class="dim" title="${esc(i.digest)}">digest ${esc(i.digest.slice(7, 19))}…</span>
-      ${i.receipt ? `<span title="回执文件（点不开说明该检出不在本机）">${receiptLink(d, i.receipt)}</span>` : ''}
-    </div>
-    ${i.run ? `<div class="sub" title="${esc(i.run)}">${esc(i.run)}</div>` : ''}
-    ${i.links.length ? `<div style="margin-top:6px;font-size:12.5px">${i.links.map((l) => {
-      const href = intakeLinkHref(l, d);
-      return href ? `<a class="badge" style="text-decoration:none" href="${esc(href)}" target="_blank">${esc(l.label)}</a>` : `<span class="badge" title="${esc(l.url)}">${esc(l.label)}</span>`;
-    }).join(' ')}</div>` : ''}
-    <div class="note">批准后（或已批筹备中）的下一持久化事件=评审会话落盘，卡片随即出现在上方战役表——dry-run/context 生成等长筹备阶段由此卡承接。</div>
-  </div>`).join('');
-  return `<div class="grid">${cards}</div>`;
-}
-
-function receiptLink(d, receipt) {
-  const abs = `${receipt.checkoutRoot}/${receipt.path}`;
-  return `<a class="badge" style="text-decoration:none" href="/api/file?path=${encodeURIComponent(abs)}" target="_blank" title="${esc(abs)}">回执 ${esc(receipt.proposalDigest.slice(7, 19))}…</a>`;
-}
-
 async function pageSkillApi(d) {
   const [live, scout] = await Promise.all([fetchLive(), fetchScout()]);
   const tracks = d.skillTracks || { languages: [] };
   const cards = tracks.languages.map((lang) => {
-    const active = lang.tracks.reduce((n, t) => n + t.campaigns.active, 0)
-      + (d.revisions || []).filter((r) => r.language === lang.name && r.status !== 'finalized').length;
-    // Preparation phase: a presented grouping gate (or an approved one whose
-    // session/dry-run/context build is still running) is real campaign work
-    // that the session-only active count must not hide behind "无进行中战役".
-    // Only receipt-evidence approvals are still preparing — session-binding/
-    // session/written evidence means the work is already counted in `active`.
+    // Three-gate ruling (2026-10-06): a campaign counts from the operator's
+    // scan request — gate-phase work (grouping pending, or approved with
+    // receipt evidence while the session/context build runs) is campaign
+    // activity, not a separate preparation list. Session-bound/written
+    // evidence is already inside the session/revision counts.
     const langIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.name.toLowerCase());
     const pendingGates = langIntakes.filter((i) => !i.approved).length;
-    const preparing = langIntakes.filter((i) => i.approved && i.approvalEvidence === 'receipt').length;
+    const gatePhase = langIntakes.filter((i) => !i.approved || i.approvalEvidence === 'receipt').length;
+    const active = lang.tracks.reduce((n, t) => n + t.campaigns.active, 0)
+      + (d.revisions || []).filter((r) => r.language === lang.name && r.status !== 'finalized').length
+      + gatePhase;
     const total = lang.tracks.reduce((n, t) => n + t.campaigns.total, 0);
     const options = lang.tracks.map((t) => `<option value="${esc(t.key)}">${esc(t.version)}（战役 ${t.campaigns.active} 活跃 / ${t.campaigns.total} 累计）</option>`).join('');
     return `<div class="card langcard clickable" onclick="location.hash='#/skill/api/lang/${esc(lang.name)}'">
       <div class="row1">
         <span class="title">${esc(lang.name)} <span style="color:var(--dim);font-weight:400;font-size:12.5px">${esc(lang.sdkName ?? '')}</span></span>
-        ${active > 0 ? `<span class="badge active">战役进行中 ${active}</span>` : ''}
+        ${active > 0 ? `<span class="badge active" title="${gatePhase > 0 ? `含分组门阶段 ${gatePhase}` : ''}">战役进行中 ${active}</span>` : '<span class="badge finalized">无进行中战役</span>'}
         ${pendingGates > 0 ? `<span class="badge gate">分组门待批 ${pendingGates}</span>` : ''}
-        ${preparing > 0 ? `<span class="badge" title="分组已批，会话/dry-run/context 生成等筹备长任务进行中——下一持久化事件=评审会话落盘">筹备中 ${preparing}</span>` : ''}
-        ${active === 0 && langIntakes.length === 0 ? '<span class="badge finalized">无进行中战役</span>' : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
         ${liveChipFor(live, lang.name)}
@@ -663,26 +628,63 @@ async function pageSkillApi(d) {
     <h2>语种 × 版本（版本轨道来自受治注册表；新版本需登记后纳入治理；战役发现覆盖主检出与各工作树，非主检出的战役带工作树标签）</h2>
     <div class="grid">${cards || '<div class="empty">release-tracks.json 未读到</div>'}</div>
     ${outsideNote}
-    ${(d.intakes || []).length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, d.intakes)}` : ''}
-    <h2>进行中的战役（评审会话流 + 修订流共用此表）</h2>
+    <h2>进行中的战役（三门：分组门 → 写门 → 验收门；分组门阶段即战役，筹备/修订/会话流共用此表）</h2>
     ${campaignTable([
+      ...gatePhaseIntakes(d.intakes),
       ...(d.campaigns || []).filter((c) => c.health !== 'finalized'),
       ...(d.revisions || []).filter((r) => r.status !== 'finalized'),
-    ], d, { empty: '无进行中战役（新战役从 dry-run + --session-state 开始，或轨道页「启动该轨道工作」）' })}`;
+    ], d, { empty: '无进行中战役（新战役从扫描请求起算：先侦察后分组门，或轨道页「启动该轨道工作」）' })}`;
 }
 
 // ---------- campaign table (language page / track page / skill page) ----------
 
 let tableShowFinalized = false;
 
+// Gate-phase campaigns enter the table (three-gate ruling, 2026-10-06): a
+// campaign counts from the operator's scan request, and the grouping gate is
+// its first gate. Only gates whose work is NOT yet carried by a session /
+// revision card render here — approved gates with session-binding / session /
+// written evidence are already that campaign's row (java taught us this: one
+// campaign must never occupy two rows).
+function gatePhaseIntakes(intakes) {
+  return (intakes || []).filter((i) => !i.approved || i.approvalEvidence === 'receipt');
+}
+
+function flowBadge(c) {
+  // Stored acceptanceFlow keeps its historical value; the board speaks the
+  // three-gate vocabulary — grouping → write → accept.
+  const flow = c.acceptanceFlow === 'two-gate' ? 'three-gate' : c.acceptanceFlow;
+  return `<span class="badge ${c.acceptanceFlow === 'two-gate' ? 'active' : ''}" title="三门：分组门 → 写门 → 验收门${c.kind === 'intake' ? '；当前处于分组门阶段' : '；分组门已过，写门/验收门在会话内'}">${esc(flow ?? '?')}</span>`;
+}
+
+function intakeRow(i) {
+  const statusBadge = !i.approved
+    ? `<span class="badge gate" title="待你批准：${esc(i.digest)}">分组门待批</span>`
+    : '<span class="badge active" title="批准已铸回执——会话/dry-run/context 生成中，下一持久化事件=评审会话落盘">已批 · 筹备中</span>';
+  return `<tr class="rowlink" onclick="location.hash='${campaignHref(i).replace(/'/g, '')}'">
+    <td><span class="fname">${esc(i.language ?? '?')}</span> ${checkoutChip(i)}</td>
+    <td>${flowBadge({ ...i, acceptanceFlow: 'two-gate', kind: 'intake' })}</td>
+    <td>${statusBadge}</td>
+    <td class="num" style="min-width:90px"><span class="dim">分组阶段</span></td>
+    <td>${!i.approved
+      ? `<span class="badge gate" title="${esc(i.digest)}">APPROVE_GROUPING</span>`
+      : '<span class="dim">写门/验收门在会话内呈</span>'}</td>
+    <td class="dim">${rel(i.presentedAt)}</td>
+    <td onclick="event.stopPropagation()">${!i.approved
+      ? `<button class="act" title="把 APPROVE_GROUPING 批准行放进剪贴板；粘到战役会话即为批复（digest 绑定由治理 CLI 执法）" onclick="copyText(${JSON.stringify(`APPROVE_GROUPING ${i.digest}`).replace(/"/g, '&quot;')})">复制批准行</button>`
+      : `<button class="act" title="查看呈门材料索引" onclick="location.hash='${campaignHref(i).replace(/'/g, '')}'">详情</button>`}</td>
+  </tr>`;
+}
+
 function campaignRows(list, d) {
   return list.map((c) => {
+    if (c.kind === 'intake') return intakeRow(c);
     if (c.kind === 'revision') return revisionRow(c);
     const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
     const g = gateSummary(c);
     return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
       <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}${c.groupingApproval ? `<span class="badge" title="APPROVE_GROUPING 已绑入会话（${esc(c.groupingApproval.proposalDigest)}）——此后入口 release-scope 摘要对照已批 scope 校验，漂移即拒">已绑分组</span>` : ''}</td>
-      <td><span class="badge ${c.acceptanceFlow === 'two-gate' ? 'active' : ''}">${esc(c.acceptanceFlow ?? 'legacy')}</span></td>
+      <td>${flowBadge(c)}</td>
       <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
       <td class="num" style="min-width:90px">${c.accepted}/${c.units}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
       <td>${g ? `<span class="badge gate" title="${esc(c.nextGate?.reviewUnitId || '')}">${esc(g.title)}</span>` : '<span class="dim">—</span>'}</td>
@@ -744,11 +746,11 @@ async function pageLang(d, lang) {
     ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: `${lang} 战役清单`, href: `#/skill/api/lang/${lang}` }])}
     ${renderFindingsSection(d, lang, scout)}
     <h2>${esc(lang)} 战役清单${entry?.sdkName ? ` <span style="color:var(--dim);font-weight:400">· ${esc(entry.sdkName)}</span>` : ''}</h2>
-    ${langIntakes.length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, langIntakes)}` : ''}
     ${campaignTable([
+      ...gatePhaseIntakes(langIntakes),
       ...list,
       ...(d.revisions || []).filter((r) => r.language === lang),
-    ], d, { empty: '该语种暂无战役会话' })}
+    ], d, { empty: '该语种暂无战役' })}
     ${entry ? `<div class="filters" style="margin-top:10px">${entry.tracks.map((t) => `<a class="f" href="#/skill/api/track/${esc(t.key)}">${esc(t.version)} 入口</a>`).join('')}</div>` : ''}`;
 }
 
@@ -757,9 +759,6 @@ async function pageTrack(d, key) {
   const list = (d.campaigns || []).filter((c) => c.scanState.key === key);
   const lang = key.replace(/-v\d+$/, '');
   const trackIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.toLowerCase());
-  // Gates still in the preparation phase: awaiting approval, or approved
-  // with receipt evidence only (session not yet created). Session-bound /
-  // written gates are already counted by the campaign rows below.
   const preparingGates = trackIntakes.filter((i) => !i.approved || i.approvalEvidence === 'receipt').length;
   const version = (list[0]?.track) || null;
   const scan = list[0]?.scanState || null;
@@ -783,12 +782,14 @@ async function pageTrack(d, key) {
     <div class="card" style="margin-bottom:12px;cursor:default">
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
-        <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）${preparingGates > 0 ? ` · 筹备 ${preparingGates}（分组门阶段）` : ''}</span>
+        <b>战役</b><span>${list.length + preparingGates} 个（${list.filter((c) => c.health !== 'finalized').length + preparingGates} 进行中，含分组门阶段 ${preparingGates}）</span>
         ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
       </div>
     </div>
-    ${trackIntakes.length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, trackIntakes)}` : ''}
-    ${campaignTable(list, d, { empty: '该轨暂无战役会话' })}`;
+    ${campaignTable([
+      ...gatePhaseIntakes(trackIntakes),
+      ...list,
+    ], d, { empty: '该轨暂无战役' })}`;
 }
 
 // ---------- other-skill placeholders ----------
@@ -1133,6 +1134,61 @@ function pageRevisionDetail(d, r) {
   renderUsagePanel({ sessionPath: r.worklistPath, sessionKey: cardKey(r), language: r.language, updatedAt: r.updatedAt });
 }
 
+// Gate-phase campaign detail (three-gate ruling): the grouping gate IS the
+// campaign's first gate — this page carries the exact approval line, the
+// receipt state once approved, and the gate materials. The write/accept
+// gates move into the review-session campaign card once the session lands.
+function pageIntakeDetail(d, i) {
+  const host = document.getElementById('page');
+  const line = `APPROVE_GROUPING ${i.digest}`;
+  const statusBadge = !i.approved
+    ? '<span class="badge gate">分组门待批</span>'
+    : i.approvalEvidence === 'receipt'
+      ? '<span class="badge active">已批 · 筹备中（回执在册，会话/dry-run/context 生成中）</span>'
+      : i.approvalEvidence === 'session-binding'
+        ? '<span class="badge finalized">已批 · 已绑会话（写门/验收门见该战役会话卡）</span>'
+        : '<span class="badge finalized">已批</span>';
+  const links = (i.links || []).map((l) => {
+    const href = intakeLinkHref(l, d);
+    return href
+      ? `<li><a href="${esc(href)}" target="_blank">${esc(l.label)}</a></li>`
+      : `<li>${esc(l.label)} <span class="dim" title="${esc(l.url)}">${esc(l.url)}</span></li>`;
+  }).join('');
+  host.innerHTML = `
+    ${crumbs([
+      { label: 'API 参考', href: '#/skill/api' },
+      { label: i.language ?? '?', href: `#/skill/api/lang/${esc(i.language ?? '')}` },
+      { label: '分组门战役', href: campaignHref(i) },
+    ])}
+    <div class="card" style="cursor:default;margin-bottom:12px">
+      <div class="row1" style="flex-wrap:wrap;gap:8px">
+        <span class="title">${esc(i.title ?? '分组门')}</span>
+        <span style="display:flex;gap:6px;flex-wrap:wrap">${statusBadge}${checkoutChip(i)}</span>
+      </div>
+      ${i.run ? `<div class="sub">${esc(i.run)}</div>` : ''}
+      <div class="meta" style="margin-top:6px">
+        <span>呈门 ${rel(i.presentedAt)}</span>
+        <span class="dim" title="${esc(i.digest)}">digest ${esc(i.digest.slice(7, 19))}…</span>
+        ${i.receipt ? `<span><a href="/api/file?path=${encodeURIComponent(`${i.receipt.checkoutRoot}/${i.receipt.path}`)}" target="_blank" title="${esc(i.receipt.path)}">回执文件</a> · 批准于 ${rel(i.receipt.approvedAt)}</span>` : ''}
+      </div>
+      <div class="kv" style="margin-top:8px">
+        <b>三门</b><span>① 分组门 ${i.approved ? '已过' : '<b style="color:var(--red)">待批</b>'} → ② 写门（APPROVE_WRITES/APPROVE_DOCUMENT，会话内逐单元呈）→ ③ 验收门（APPROVE_ACCEPTANCE）</span>
+        <b>提案 digest</b><span style="word-break:break-all">${esc(i.digest)} <button class="copy" onclick="copyText(${JSON.stringify(i.digest).replace(/"/g, '&quot;')})">复制</button></span>
+      </div>
+      ${!i.approved ? `
+      <div class="approve" style="margin-top:10px">
+        <div class="t">⛩ 分组门 — 等你一句话</div>
+        <div class="sum">批准分组方案后由战役会话铸回执（record-grouping-approval）并绑定，随后进入写门。</div>
+        <div class="frow"><code>${esc(line)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line).replace(/"/g, '&quot;')})">复制批准行</button></div>
+        <div class="hint">把批准行原文回复给战役会话（或看板注入）即为批复——digest 绑定与 GROUPING_STALE 链校验由治理 CLI 执法。</div>
+      </div>` : `
+      <div class="note" style="border:0;padding:0;margin-top:10px">分组已批。写门与验收门由评审会话战役卡承接——会话落盘后此表上方会出现对应战役行（其详情页可见各单元写门）。</div>`}
+    </div>
+    ${links ? `<h2>呈门材料</h2><div class="card" style="cursor:default"><ul style="margin:6px 0;padding-left:18px">${links}</ul>
+      <div class="note" style="border:0;padding:0">本机索引页：<a href="/api/file?path=${encodeURIComponent('/tmp/api-reference-sync/gate-presentation/latest.html')}" target="_blank">gate-presentation/latest.html</a>（每检出各自维护）。</div></div>` : ''}
+  `;
+}
+
 async function pageCampaign(d, path) {
   const c = (d.campaigns || []).find((x) => cardKey(x) === path || x.sessionPath === path);
   const host = document.getElementById('page');
@@ -1140,6 +1196,8 @@ async function pageCampaign(d, path) {
   // fallback below can match them by cardKey before rendering.
   window._detailPath = c ? cardKey(c) : path;
   if (!c) {
+    const gate = (d.intakes || []).find((x) => cardKey(x) === path);
+    if (gate) { pageIntakeDetail(d, gate); return; }
     const r = (d.revisions || []).find((x) => cardKey(x) === path);
     if (r) { pageRevisionDetail(d, r); return; }
     host.innerHTML = `${crumbs([{ label: '战役', href: '#/home' }, { label: '未找到' }])}<div class="empty">没有战役会话匹配该路径。<a href="#/home">回总览</a></div>`;

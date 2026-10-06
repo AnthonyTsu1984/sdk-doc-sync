@@ -265,6 +265,7 @@ test('a receipt-evidence gate whose session landed never double-renders (go futu
   const { api, elements } = loadPageScript();
   const payload = intakePayload({ approved: true, evidence: 'receipt' });
   payload.campaigns.push({
+    checkout: 'go-scan', checkoutLabel: 'go-scan',
     sessionPath: 'tmp/sdk-release-scout/go-v30-session.json', sessionKey: 'go-scan::tmp/sdk-release-scout/go-v30-session.json',
     sessionId: 'sdk-doc-sync:go:milvus:v3.0.x', language: 'go', sdkName: 'milvus', track: 'v3.0.x',
     acceptanceFlow: 'two-gate', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
@@ -285,4 +286,56 @@ test('a receipt-evidence gate whose session landed never double-renders (go futu
   assert.ok(page.includes('已绑分组'), 'the session row shows the grouping binding');
   assert.ok(page.includes('战役进行中 1'), 'the language card counts one campaign, not two');
   assert.ok(!page.includes('已批 · 筹备中'), 'the gate-phase row is gone once the session landed');
+});
+
+
+test('checkout scoping: a sibling checkout presenting the same digest keeps its row', async () => {
+  const { api, elements } = loadPageScript();
+  const payload = intakePayload({ approved: true, evidence: 'receipt' });
+  // Session bound in go-scan; the sibling presents the same digest.
+  payload.campaigns.push({
+    checkout: 'go-scan', checkoutLabel: 'go-scan',
+    sessionPath: 'tmp/sdk-release-scout/go-v30-session.json', sessionKey: 'go-scan::tmp/sdk-release-scout/go-v30-session.json',
+    sessionId: 'sdk-doc-sync:go:milvus:v3.0.x', language: 'go', sdkName: 'milvus', track: 'v3.0.x',
+    acceptanceFlow: 'two-gate', status: 'in_progress', health: 'active', units: 167, accepted: 0, pending: 0,
+    hasActiveExecution: false, hasActiveRollback: false, rollbacks: 0, createdAt: '2026-10-06T13:00:00.000Z',
+    updatedAt: '2026-10-06T13:00:00.000Z', closedAt: null,
+    scanState: { key: 'go-v3', lastScannedTag: 'client/v3.0.0-beta', targetTag: 'client/v3.0.0', advancedPast: null },
+    artifacts: {}, documentLinks: [], recordLinks: [], journalPaths: [], pendingUnits: [],
+    groupingApproval: { proposalDigest: 'sha256:' + '6'.repeat(64), releaseRange: 'r', approvedAt: '2026-10-06T12:30:00.000Z', scopeDigest: 'sha256:' + '8'.repeat(64) },
+    lastActivityAt: null, activityCount: 0,
+  });
+  payload.skillTracks.languages[0].tracks[0].campaigns = { total: 1, active: 1, finalized: 0, sessionPaths: ['tmp/sdk-release-scout/go-v30-session.json'] };
+  const sibling = { ...payload.intakes[0], checkout: 'go-scan-sib', checkoutLabel: 'go-scan-sib' };
+  payload.intakes.push(sibling);
+  payload.checkouts.push({ id: 'go-scan-sib', label: 'go-scan-sib' });
+  api.setPage(payload);
+  await renderRoute(api, '#/skill/api');
+  const rows = (elements.page.innerHTML.match(/<tr class="rowlink"/g) || []).length;
+  assert.equal(rows, 2, 'session row + the sibling checkout\'s own gate row (same digest, different checkout)');
+});
+
+test('an unapproved gate already carried by a revision renders once', async () => {
+  const { api, elements } = loadPageScript();
+  // Pre-first-write shape: gate has no receipt evidence yet (approved=false),
+  // but the revision worklist already links the gate digest.
+  const payload = intakePayload({ withJavaRevision: true });
+  payload.intakes[0].digest = 'sha256:' + '7'.repeat(64);
+  payload.intakes[0].approved = false;
+  payload.intakes[0].approvalEvidence = null;
+  payload.revisions.push({
+    kind: 'revision', checkout: 'go-scan', checkoutLabel: 'go-scan', checkoutRoot: '/x/go-scan',
+    sessionKey: 'go-scan::tmp/api-reference-sync/go-revision-worklist.json',
+    worklistPath: 'tmp/api-reference-sync/go-revision-worklist.json', worklistStem: 'go-revision-worklist',
+    language: 'go', ruling: 'r', scope: { pages: 10, findings: 1, uniquePages: 1, summary: {}, generatedAt: null },
+    groupingGate: { digest: 'sha256:' + '7'.repeat(64), title: 't', manifest: 'm' },
+    pages: [{ page: 'Vector', documentToken: 'T', codes: ['X'] }],
+    written: [], writtenPages: 0, remainingPages: 10, status: 'in_progress', updatedAt: '2026-10-06T10:00:00.000Z',
+  });
+  api.setPage(payload);
+  await renderRoute(api, '#/skill/api');
+  // The go gate is carried by the go revision (digest match, pre-first-write);
+  // the java gate is written-evidence with no row of its own — only the go
+  // revision row survives.
+  assert.equal((elements.page.innerHTML.match(/<tr class="rowlink"/g) || []).length, 1, 'one row: the go revision carries the unapproved gate');
 });

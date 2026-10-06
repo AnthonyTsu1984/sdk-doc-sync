@@ -650,15 +650,19 @@ let tableShowFinalized = false;
 // Receipts are durable, so evidence alone ('receipt' survives session
 // binding forever) would double-render the standard governed flow.
 function gatePhaseIntakes(intakes, d) {
+  // Checkout-scoped like the ledger's own evidence derivation: a sibling
+  // worktree presenting the same digest is a different campaign and must
+  // keep its row. Carried gates leave regardless of approval state — one
+  // campaign, one row, full stop (closes the pre-first-write window too).
   const carried = new Set();
   for (const c of (d?.campaigns || [])) {
-    if (c.groupingApproval?.proposalDigest) carried.add(c.groupingApproval.proposalDigest);
+    if (c.groupingApproval?.proposalDigest) carried.add(`${c.checkout}::${c.groupingApproval.proposalDigest}`);
   }
   for (const r of (d?.revisions || [])) {
-    if (r.groupingGate?.digest) carried.add(r.groupingGate.digest);
+    if (r.groupingGate?.digest) carried.add(`${r.checkout}::${r.groupingGate.digest}`);
   }
-  return (intakes || []).filter((i) => !i.approved
-    || (i.approvalEvidence === 'receipt' && !carried.has(i.digest)));
+  return (intakes || []).filter((i) => !carried.has(`${i.checkout}::${i.digest}`)
+    && (!i.approved || i.approvalEvidence === 'receipt'));
 }
 
 function flowBadge(c) {
@@ -771,6 +775,7 @@ async function pageTrack(d, key) {
   const lang = key.replace(/-v\d+$/, '');
   const trackIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.toLowerCase());
   const preparingGates = gatePhaseIntakes(trackIntakes, d).length;
+  const trackRevisions = (d.revisions || []).filter((r) => (r.language || '').toLowerCase() === lang.toLowerCase());
   const version = (list[0]?.track) || null;
   const scan = list[0]?.scanState || null;
   const baseline = scan?.lastScannedTag;
@@ -793,14 +798,14 @@ async function pageTrack(d, key) {
     <div class="card" style="margin-bottom:12px;cursor:default">
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
-        <b>战役</b><span>${list.length + preparingGates} 个（${list.filter((c) => c.health !== 'finalized').length + preparingGates} 进行中，含分组门阶段 ${preparingGates}）</span>
+        <b>战役</b><span>${list.length + preparingGates + trackRevisions.length} 个（${list.filter((c) => c.health !== 'finalized').length + preparingGates + trackRevisions.filter((r) => r.status !== 'finalized').length} 进行中，含分组门阶段 ${preparingGates}）</span>
         ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
       </div>
     </div>
     ${campaignTable([
       ...gatePhaseIntakes(trackIntakes, d),
       ...list,
-      ...(d.revisions || []).filter((r) => (r.language || '').toLowerCase() === lang.toLowerCase()),
+      ...trackRevisions,
     ], d, { empty: '该轨暂无战役' })}`;
 }
 

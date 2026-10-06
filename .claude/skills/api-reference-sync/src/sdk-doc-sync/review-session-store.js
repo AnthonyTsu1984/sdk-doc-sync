@@ -1128,9 +1128,6 @@ function recordRollbackIntent(session, {
   if (!session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
     throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
   }
-  if ((session.rollbackReceipts || []).some((item) => item.reviewUnitId === reviewUnitId)) {
-    throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
-  }
   const pendings = pendingList(session);
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
@@ -1142,6 +1139,18 @@ function recordRollbackIntent(session, {
     executionJournalPath: changeRequested.executionJournalPath,
     executionJournalDigest: changeRequested.executionJournalDigest,
   } : null);
+  // Redo cycles legitimately produce a SECOND rollback for a unit — the
+  // prior receipt pins an OLDER journal whose artifacts were already
+  // reversed with that execution. Only re-rolling an execution a receipt
+  // already pins is refused (that would double-reverse it); a rollback whose
+  // anchor carries a different digest stays recordable.
+  const priorReceipt = (session.rollbackReceipts || []).some((item) => (
+    item.reviewUnitId === reviewUnitId
+      && (!anchor || item.originalExecutionJournalDigest === anchor.executionJournalDigest)
+  ));
+  if (priorReceipt) {
+    throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
+  }
   const existing = session.activeRollback;
   if (existing) {
     const identical = existing.reviewUnitId === reviewUnitId
@@ -1209,7 +1218,16 @@ function recordDocumentRollback(session, receipt) {
     throw new Error('Rollback journal is bound to a different review unit');
   }
 
-  const existingRollback = (session.rollbackReceipts || []).find((item) => item.reviewUnitId === reviewUnitId);
+  // Receipts pin ORIGINAL execution journals by digest: a redo cycle gives
+  // the unit a second, DIFFERENT original journal, whose rollback lands as
+  // its own receipt (the earlier receipt's artifacts were reversed with its
+  // execution). Only an identical re-record of the same receipt is a no-op;
+  // a different-digest receipt for the same unit is appended, and re-rolling
+  // a journal a receipt already pins is refused.
+  const existingRollback = (session.rollbackReceipts || []).find((item) => (
+    item.reviewUnitId === reviewUnitId
+      && item.originalExecutionJournalDigest === validated.originalExecutionJournalDigest
+  ));
   if (existingRollback) {
     if (path.resolve(existingRollback.rollbackJournalPath || '') === validated.journalPath
         && existingRollback.rollbackJournalDigest === receipt.rollbackJournalDigest
@@ -1217,7 +1235,7 @@ function recordDocumentRollback(session, receipt) {
         && existingRollback.originalExecutionJournalDigest === validated.originalExecutionJournalDigest) {
       return session;
     }
-    throw new Error(`Review unit already has a different rollback receipt: ${reviewUnitId}`);
+    throw new Error(`Review unit already has a different rollback receipt for this execution: ${reviewUnitId}`);
   }
 
   REVIEW_MACHINE.assertTransition('recordDocumentRollback', session);

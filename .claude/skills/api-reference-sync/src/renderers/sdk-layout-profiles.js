@@ -102,7 +102,16 @@ const profiles = Object.freeze({
     order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'Go', 'request-signature': 'Go', 'example-code': 'Go' },
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
-    layoutRules: GLOBAL_LAYOUT_RULES,
+    layoutRules: Object.freeze({
+      ...GLOBAL_LAYOUT_RULES,
+      // Vowel-initial type pages read "An Xxx instance is …" (go v3.0.x has
+      // several: An AbortImportOption instance, An AnalyzerResult instance) —
+      // the shared 'A Xxx instance' form does not match those.
+      contentQuality: Object.freeze({
+        ...GLOBAL_LAYOUT_RULES.contentQuality,
+        firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b']),
+      }),
+    }),
   }),
   cpp: freezeProfile({
     id: 'cpp', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',

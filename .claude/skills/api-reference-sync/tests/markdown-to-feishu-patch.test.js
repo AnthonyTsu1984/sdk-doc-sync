@@ -290,6 +290,55 @@ test('rejects a copied document when nested block content differs from the live 
   );
 });
 
+test('rebinds a copy whose page-block title differs from the source page title', async () => {
+  // A drive copy names the document from the copy request, so the copy's
+  // page-block content (the `page` field carrying the title elements) is the
+  // requested title, never the source's title text (real pages carry
+  // "Method()" while the record/artifact title is "Method"). The rebind
+  // precheck must not fail on that — patch operations never touch the page
+  // block itself.
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
+  const calls = [];
+  const sourceBlocks = [
+    { block_id: 'source-page', block_type: 1, children: ['source-summary', 'source-parameters'], page: { elements: [{ text_run: { content: 'AddPrivilegesToGroup()', text_element_style: { bold: false, inline_code: false, italic: false, strikethrough: false, underline: false } } }], style: { align: 1 } } },
+    { block_id: 'source-summary', parent_id: 'source-page', block_type: 2, text: { elements: [{ text_run: { content: 'Summary' } }] } },
+    { block_id: 'source-parameters', parent_id: 'source-page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:' } }] } },
+  ];
+  const copiedBlocks = [
+    { block_id: 'copy-page', block_type: 1, children: ['copy-summary', 'copy-parameters'], page: { elements: [{ text_run: { content: 'AddPrivilegesToGroup', text_element_style: { bold: false, inline_code: false, italic: false, strikethrough: false, underline: false } } }], style: { align: 1 } } },
+    { block_id: 'copy-summary', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'Summary' } }] } },
+    { block_id: 'copy-parameters', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:' } }] } },
+  ];
+  m2f.get_document_blocks = async (documentId) => documentId === 'source-doc' ? sourceBlocks : copiedBlocks;
+  m2f.__delete_child_blocks_by_id = async (input) => {
+    calls.push(['delete', input.childBlockIds]);
+    return input.childBlockIds.length;
+  };
+  m2f.create_blocks = async (input) => {
+    calls.push(['create', input.startIndex, input.blocks]);
+    return { created: input.blocks.length };
+  };
+
+  const result = await m2f.apply_api_patch({
+    document_id: 'copy-doc',
+    source_document_id: 'source-doc',
+    patchPlan: {
+      strategy: 'targeted-semantic-patch',
+      currentModel: { pageBlockId: 'source-page', topLevelBlockIds: [...sourceBlocks[0].children] },
+      preservedBlockIds: [],
+      operations: [{
+        type: 'replace-section', role: 'parameters', insertAt: 1,
+        deleteBlockIds: ['source-parameters'], preserveBlockIds: [],
+        blocks: [{ block_id: 'desired-parameters', parent_id: 'source-page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS (v3):' } }] } }],
+      }],
+      validation: { valid: true, errors: [] },
+    },
+  });
+
+  assert.deepEqual(calls[0], ['delete', ['copy-parameters']]);
+  assert.deepEqual(result, { updated: 0, created: 1, deleted: 1, unchanged: 1, operations: 1 });
+});
+
 test('orders delete-only sections by their approved live position before lower replacements', async () => {
   const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];

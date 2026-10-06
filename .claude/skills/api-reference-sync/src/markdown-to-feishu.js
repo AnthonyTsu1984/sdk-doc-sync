@@ -2474,9 +2474,20 @@ class MarkdownToFeishu {
     __api_patch_blocks_equivalent(sourceBlocks, copyBlocks, idMap) {
         const sourceById = new Map(sourceBlocks.map(block => [block.block_id, block]));
         const copyById = new Map(copyBlocks.map(block => [block.block_id, block]));
+        // The drive copy names the document from the copy request, so the
+        // copy's page-block content (the `page` field carrying the title
+        // elements) is the requested title, never the source's. Patch
+        // operations only ever target the page's children, so the page pair
+        // compares without its own content field — structure and every child
+        // block still compare exactly.
+        const comparable = (block, pairIdMap) => {
+            const stripped = block && block.block_type === 1 && block.page !== undefined
+                ? (({ page, ...rest }) => rest)(block)
+                : block;
+            return JSON.stringify(this.__api_patch_comparable_block(stripped, pairIdMap));
+        };
         return [...idMap].every(([sourceId, copyId]) => (
-            JSON.stringify(this.__api_patch_comparable_block(sourceById.get(sourceId), idMap))
-            === JSON.stringify(this.__api_patch_comparable_block(copyById.get(copyId)))
+            comparable(sourceById.get(sourceId), idMap) === comparable(copyById.get(copyId))
         ));
     }
 

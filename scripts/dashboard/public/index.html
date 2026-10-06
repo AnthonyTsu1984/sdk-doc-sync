@@ -587,7 +587,7 @@ function renderIntakes(d, list) {
       <span style="display:flex;gap:6px;flex-wrap:wrap">
         ${i.approved
           ? (i.approvalEvidence === 'receipt'
-            ? `<span class="badge finalized" title="回执 ${esc(i.receipt.path)} · 批准于 ${esc(i.receipt.approvedAt ?? '—')}——批准已落成持久凭证">分组已批 · 回执在册</span>`
+            ? `<span class="badge finalized" title="回执 ${esc(i.receipt?.path ?? '—')} · 批准于 ${esc(i.receipt?.approvedAt ?? '—')}——批准已落成持久凭证">分组已批 · 回执在册</span>`
             : i.approvalEvidence === 'session-binding'
               ? '<span class="badge finalized" title="战役会话已绑定该提案的 APPROVE_GROUPING 回执——入口 scope 漂移即拒（GROUPING_STALE）">分组已批 · 已绑会话</span>'
               : '<span class="badge finalized" title="批准凭证已落盘（会话已建/已有 governed 写入）——筹备期长任务（dry-run/context 生成）仍在进行属正常">分组已批 · 筹备中</span>')
@@ -622,12 +622,21 @@ async function pageSkillApi(d) {
   const cards = tracks.languages.map((lang) => {
     const active = lang.tracks.reduce((n, t) => n + t.campaigns.active, 0)
       + (d.revisions || []).filter((r) => r.language === lang.name && r.status !== 'finalized').length;
+    // Preparation phase: a presented grouping gate (or an approved one whose
+    // session/dry-run/context build is still running) is real campaign work
+    // that the session-only active count must not hide behind "无进行中战役".
+    const langIntakes = (d.intakes || []).filter((i) => i.language === lang.name);
+    const pendingGates = langIntakes.filter((i) => !i.approved).length;
+    const preparing = langIntakes.filter((i) => i.approved).length;
     const total = lang.tracks.reduce((n, t) => n + t.campaigns.total, 0);
     const options = lang.tracks.map((t) => `<option value="${esc(t.key)}">${esc(t.version)}（战役 ${t.campaigns.active} 活跃 / ${t.campaigns.total} 累计）</option>`).join('');
     return `<div class="card langcard clickable" onclick="location.hash='#/skill/api/lang/${esc(lang.name)}'">
       <div class="row1">
         <span class="title">${esc(lang.name)} <span style="color:var(--dim);font-weight:400;font-size:12.5px">${esc(lang.sdkName ?? '')}</span></span>
-        ${active > 0 ? `<span class="badge active">战役进行中 ${active}</span>` : '<span class="badge finalized">无进行中战役</span>'}
+        ${active > 0 ? `<span class="badge active">战役进行中 ${active}</span>` : ''}
+        ${pendingGates > 0 ? `<span class="badge gate">分组门待批 ${pendingGates}</span>` : ''}
+        ${preparing > 0 ? `<span class="badge" title="分组已批，会话/dry-run/context 生成等筹备长任务进行中——下一持久化事件=评审会话落盘">筹备中 ${preparing}</span>` : ''}
+        ${active === 0 && langIntakes.length === 0 ? '<span class="badge finalized">无进行中战役</span>' : ''}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">
         ${liveChipFor(live, lang.name)}
@@ -728,10 +737,12 @@ async function pageLang(d, lang) {
   const scout = await fetchScout();
   const list = (d.campaigns || []).filter((c) => (c.language || '').toLowerCase() === lang.toLowerCase());
   const entry = (d.skillTracks?.languages || []).find((l) => l.name === lang);
+  const langIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.toLowerCase());
   document.getElementById('page').innerHTML = `
     ${crumbs([{ label: 'API 参考', href: '#/skill/api' }, { label: `${lang} 战役清单`, href: `#/skill/api/lang/${lang}` }])}
     ${renderFindingsSection(d, lang, scout)}
     <h2>${esc(lang)} 战役清单${entry?.sdkName ? ` <span style="color:var(--dim);font-weight:400">· ${esc(entry.sdkName)}</span>` : ''}</h2>
+    ${langIntakes.length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, langIntakes)}` : ''}
     ${campaignTable([
       ...list,
       ...(d.revisions || []).filter((r) => r.language === lang),
@@ -743,6 +754,7 @@ async function pageTrack(d, key) {
   const live = await fetchLive();
   const list = (d.campaigns || []).filter((c) => c.scanState.key === key);
   const lang = key.replace(/-v\d+$/, '');
+  const trackIntakes = (d.intakes || []).filter((i) => (i.language || '').toLowerCase() === lang.toLowerCase());
   const version = (list[0]?.track) || null;
   const scan = list[0]?.scanState || null;
   const baseline = scan?.lastScannedTag;
@@ -765,10 +777,11 @@ async function pageTrack(d, key) {
     <div class="card" style="margin-bottom:12px;cursor:default">
       <div class="kv" style="margin-top:0">
         <b>scan-state 基线</b><span>${baseline ? `已扫描到 ${esc(baseline)}` : '<span style="color:var(--dim)">该轨尚无推进记录</span>'}</span>
-        <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）</span>
+        <b>战役</b><span>${list.length} 个（${list.filter((c) => c.health !== 'finalized').length} 进行中）${trackIntakes.length ? ` · 筹备 ${trackIntakes.length}（分组门阶段）` : ''}</span>
         ${liveEntry ? `<b>飞书实时</b><span>记录 ${liveEntry.recordTotal ?? '—'} 行${liveEntry.docs != null ? ` · 文档 ${liveEntry.docs}${liveEntry.folders != null ? ` · 目录 ${liveEntry.folders}` : ''}` : ''}${liveEntry.error ? ` · <span style="color:var(--red)">${esc(liveEntry.error)}</span>` : ''}</span>` : ''}
       </div>
     </div>
+    ${trackIntakes.length ? `<h2>战役筹备（分组门呈门）</h2>${renderIntakes(d, trackIntakes)}` : ''}
     ${campaignTable(list, d, { empty: '该轨暂无战役会话' })}`;
 }
 

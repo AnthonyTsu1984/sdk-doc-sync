@@ -140,3 +140,78 @@ test('ui state survives a re-render: open details, select values, typed inputs',
   assert.equal(selectEl.value, 'main', 'select choice restored');
   assert.equal(inputEl.value, 'sha256:xyz', 'typed input restored');
 });
+
+
+// ---------- preparation phase visible on every surface (intake gates) ----------
+
+function intakePayload({ approved = false } = {}) {
+  return {
+    uiVersion: 'v1',
+    generatedAt: '2026-10-06T12:00:00.000Z',
+    campaigns: [],
+    revisions: [],
+    intakes: [{
+      kind: 'intake',
+      checkout: 'go-scan',
+      checkoutLabel: 'go-scan',
+      checkoutRoot: '/x/go-scan',
+      manifestPath: 'tmp/sdk-release-scout/go-v30-grouping-gate-manifest-v3.json',
+      title: 'go v3.0.0 分组门 v3-r2',
+      run: 'go run',
+      digest: 'sha256:' + '6'.repeat(64),
+      language: 'go',
+      presentedAt: '2026-10-06T11:00:00.000Z',
+      approved,
+      approvalEvidence: approved ? 'receipt' : null,
+      receipt: approved ? { path: 'tmp/api-reference-sync/grouping-approvals/x.json', proposalDigest: 'sha256:' + '6'.repeat(64), approvedAt: '2026-10-06T12:00:00.000Z' } : null,
+      links: [],
+    }],
+    groupingReceipts: approved ? [{ checkout: 'go-scan', path: 'tmp/api-reference-sync/grouping-approvals/x.json' }] : [],
+    admission: {}, activity: [], sentinels: [],
+    skillTracks: { languages: [{ name: 'go', sdkName: 'milvus-sdk-go', tracks: [{ version: 'v3.0.x', key: 'go-v30', campaigns: { total: 0, active: 0, finalized: 0, sessionPaths: [] } }] }] },
+    checkouts: [{ id: 'main', label: '主检出' }],
+    features: {},
+  };
+}
+
+test('a presented grouping gate replaces 无进行中战役 on the language card', async () => {
+  const { api, elements } = loadPageScript();
+  api.setPage(intakePayload());
+  api.location.hash = '#/skill/api';
+  api.route();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const page = elements.page.innerHTML;
+  assert.ok(page.includes('分组门待批 1'), 'language card counts the pending gate');
+  assert.ok(!page.includes('<span class="badge finalized">无进行中战役</span>'), 'the idle badge is gone while a gate is pending');
+  assert.ok(page.includes('战役筹备'), 'the api page keeps its intake section');
+});
+
+test('language page and track page surface the preparation-phase gate', async () => {
+  const { api, elements } = loadPageScript();
+  api.setPage(intakePayload());
+  api.location.hash = '#/skill/api/lang/go';
+  api.route();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.ok(elements.page.innerHTML.includes('战役筹备'), 'language page renders the intake section');
+  assert.ok(elements.page.innerHTML.includes('go v3.0.0 分组门 v3-r2'), 'gate card visible on the language page');
+
+  api.setPage(intakePayload());
+  api.location.hash = '#/skill/api/track/go-v30';
+  api.route();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const trackPage = elements.page.innerHTML;
+  assert.ok(trackPage.includes('战役筹备'), 'track page renders the intake section');
+  assert.ok(trackPage.includes('筹备 1（分组门阶段）'), 'track kv row counts the preparation entry');
+});
+
+test('an approved-but-preparing gate shows 筹备中 instead of the idle badge', async () => {
+  const { api, elements } = loadPageScript();
+  api.setPage(intakePayload({ approved: true }));
+  api.location.hash = '#/skill/api';
+  api.route();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  const page = elements.page.innerHTML;
+  assert.ok(page.includes('筹备中 1'), 'approved gate reads as preparing, not idle');
+  assert.ok(!page.includes('<span class="badge finalized">无进行中战役</span>'), 'no idle badge while preparation is in flight');
+  assert.ok(page.includes('分组已批'), 'the approved intake card keeps its approved badge');
+});

@@ -544,7 +544,7 @@ class SdkDocSync {
                 // returns a frozen plan, so the stamp rides a shallow clone.
                 if (typeof this.placementWalkDigest === 'string' && this.placementWalkDigest.length > 0
                     && plan && !(typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0)) {
-                    plan = { ...plan, placementWalkDigest: this.placementWalkDigest };
+                    plan = Object.freeze({ ...plan, placementWalkDigest: this.placementWalkDigest });
                 }
                 result.resourcePlans.push(plan);
                 plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });

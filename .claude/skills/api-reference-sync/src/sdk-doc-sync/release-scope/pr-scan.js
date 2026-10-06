@@ -104,7 +104,12 @@ function lexicalApiInventory({ repoDir, ref, publicRoots, spawn }) {
   // Builder-style method names (cpp/go With*/Add*/Set* builders) plus java
   // field declarations: java param classes expose Lombok-generated builders
   // that exist only as source fields, so type-page verification matches the
-  // field names those builders derive from.
+  // field names those builders derive from. Go package-level exported
+  // constructors (New*Option, Simple*Options…) are declared as plain `func`
+  // declarations and match none of the With/Add/Set or builder patterns —
+  // without their own pattern the go v3.0.x PR pages' declared request
+  // builders unverifiable (41 false PR_CONTENT_UNVERIFIED on the 2026-10
+  // intake, every one a real constructor in client/milvusclient/*_options.go).
   const output = [
     runGrepTolerant({
       repoDir,
@@ -126,10 +131,22 @@ function lexicalApiInventory({ repoDir, ref, publicRoots, spawn }) {
       args: ['grep', '-hoE', '[Bb]uilder[[:space:]]+[a-z][A-Za-z0-9_]*[[:space:]]*\\(', ref, '--', ...publicRoots],
       spawn,
     }),
+    runGrepTolerant({
+      // Go package-level exported constructors: `func NewXxxOption(` /
+      // `func SimpleCreateCollectionOptions(`. The `func ` prefix keeps this
+      // Go-only — C++/java declarations never match it. Test files are
+      // excluded: the lexical set is the public API surface ("pinned
+      // headers"), not test helpers.
+      repoDir,
+      args: ['grep', '-hoE', 'func[[:space:]]+[A-Z][A-Za-z0-9]*[[:space:]]*\\(', ref, '--', ...publicRoots, ':(exclude)*_test.go'],
+      spawn,
+    }),
   ].join('\n');
   const names = new Set();
   for (const line of output.split('\n')) {
     const trimmed = line.trim();
+    const goFuncMatch = /^func\s+([A-Z][A-Za-z0-9]*)\s*\($/.exec(trimmed);
+    if (goFuncMatch) { names.add(goFuncMatch[1]); continue; }
     const builderMatch = /(With|Add|Set)[A-Z][A-Za-z0-9]*/.exec(trimmed);
     if (builderMatch) { names.add(builderMatch[0]); continue; }
     const builderMethodMatch = /[Bb]uilder\s+([a-z][A-Za-z0-9_]*)\s*\(/.exec(trimmed);

@@ -448,12 +448,19 @@ function checkGroupingScopeChain({ approval, scope } = {}) {
 }
 
 // First-write-wins receipt persistence (the first approval time is the
-// truth). Returns whether this call created the file.
+// truth). Returns whether this call created the file. O_EXCL is the actual
+// gate (atomic against concurrent recorders); existsSync is only the fast
+// path for the friendly message — review finding.
 function writeGroupingApprovalReceipt({ receipt, approvalsDir }) {
   const receiptPath = path.join(approvalsDir, `${receipt.proposalDigest}.json`);
   if (fs.existsSync(receiptPath)) return { receiptPath, created: false };
   fs.mkdirSync(approvalsDir, { recursive: true });
-  fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  try {
+    fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
+  } catch (error) {
+    if (error.code === 'EEXIST') return { receiptPath, created: false };
+    throw error;
+  }
   return { receiptPath, created: true };
 }
 

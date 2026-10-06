@@ -537,6 +537,15 @@ async function runCli({
     const writeFile = dependencies.writeFile || ((file, content) => fs.writeFileSync(file, content));
 
     if (args.finalizeAcceptance) {
+        // Finalization is NOT a sync entry: it chains through the session's
+        // acceptance-manifest-bound receipts, never a fresh grouping receipt —
+        // refuse the combination loudly instead of silently ignoring the flag
+        // (review finding F1).
+        if (args.groupingApproval) {
+            err('Error: GROUPING_APPROVAL_CHAIN_INVALID: --grouping-approval cannot be combined with --finalize-acceptance; finalization chains through the session\'s bound receipts, not a new grouping approval');
+            exit(1);
+            return null;
+        }
         return await finalizeAcceptance({
             receiptPath: args.finalizeAcceptance,
             sessionPath: args.sessionState,
@@ -646,9 +655,10 @@ async function runCli({
     // grouping approval covers. Binding activates from either side —
     // --grouping-approval at session creation, or a resumed session that
     // already carries groupingApproval — and once active the scope digest
-    // must chain at EVERY entry (dry-run, resume, live write), so a
-    // re-scoped or hand-swapped scope refuses typed instead of executing
-    // unapproved material.
+    // must chain at every SYNC entry (dry-run, resume, live write;
+    // --finalize-acceptance refuses the flag outright — finalization chains
+    // through acceptance receipts), so a re-scoped or hand-swapped scope
+    // refuses typed instead of executing unapproved material.
     let groupingApprovalBinding = null;
     if (args.groupingApproval) {
         let groupingReceipt;

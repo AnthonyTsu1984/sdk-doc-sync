@@ -558,7 +558,7 @@ test('sdk-doc-sync refuses unchained grouping approvals at every entry', async (
   const receipt = buildGroupingApprovalReceipt({ proposal });
   const staleScope = makeScope([makeAction('go:Client:search', 'Client.search'), makeAction('go:Client:z', 'Client.z')]);
 
-  const run = async ({ releaseScope, groupingApproval, resumeSession }) => {
+  const run = async ({ releaseScope, groupingApproval, resumeSession, finalizeAcceptance }) => {
     const stderr = [];
     let exitCode = 0;
     const result = await runDocSyncCli({
@@ -572,6 +572,7 @@ test('sdk-doc-sync refuses unchained grouping approvals at every entry', async (
         ...(releaseScope ? ['--release-scope', releaseScope] : []),
         ...(groupingApproval ? ['--grouping-approval', groupingApproval] : []),
         ...(resumeSession ? ['--resume-session', resumeSession] : []),
+        ...(finalizeAcceptance ? ['--finalize-acceptance', finalizeAcceptance] : []),
       ],
       env: {},
       dependencies: {
@@ -604,9 +605,41 @@ test('sdk-doc-sync refuses unchained grouping approvals at every entry', async (
 
   // Matching chain passes the grouping gate (the run then stops at the
   // ordinary BASE_TOKEN precondition, proving the binding did not fire).
+  // ORDER MATTERS: this indirect proof relies on the grouping chain check
+  // running BEFORE the BASE_TOKEN precondition in bin/sdk-doc-sync.js — if
+  // that ordering ever changes, this assertion greens vacuously (review F8).
   const chained = await run({ releaseScope: scopeFile, groupingApproval: receiptFile });
   assert.match(chained.stderr, /BASE_TOKEN/);
   assert.doesNotMatch(chained.stderr, /GROUPING/);
+
+  // A flag receipt that disagrees with the session's bound approval refuses
+  // (review F3 — this refusal path had no direct test).
+  const sessionBindPath = path.join(temp, 'bound-session.json');
+  saveReviewSession(sessionBindPath, createReviewSession({
+    sessionId: 'test:go:milvus:v3.0.x:mno',
+    language: 'go',
+    sdkName: 'milvus',
+    track: 'v3.0.x',
+    reviewUnitManifest: { manifestDigest: 'sha256:' + '5'.repeat(64), units: [] },
+    groupingApproval: receipt,
+  }), { expectedPreviousDigest: null });
+  const otherReceipt = buildGroupingApprovalReceipt({ proposal: createGroupingProposal({
+    scope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:flush', actionIntent: 'BACKFILL', decision: {} }],
+    exclusions: [{ sourceStableId: 'go:Client:search', reason: 're-partitioned' }],
+  }) });
+  const otherReceiptFile = path.join(temp, 'other-receipt.json');
+  fs.writeFileSync(otherReceiptFile, JSON.stringify(otherReceipt));
+  const disagree = await run({ releaseScope: scopeFile, groupingApproval: otherReceiptFile, resumeSession: sessionBindPath });
+  assert.equal(disagree.exitCode, 1);
+  assert.match(disagree.stderr, /GROUPING_APPROVAL_CHAIN_INVALID.*disagrees/);
+
+  // Finalization refuses the grouping flag outright instead of ignoring it
+  // (review F1).
+  const finalizeCombo = await run({ groupingApproval: receiptFile, finalizeAcceptance: 'unused.json' });
+  assert.equal(finalizeCombo.exitCode, 1);
+  assert.match(finalizeCombo.stderr, /cannot be combined with --finalize-acceptance/);
 
   // A resumed session carrying groupingApproval enforces the same chain.
   const sessionPath = path.join(temp, 'session.json');

@@ -78,7 +78,9 @@ function groupingCoverage({ scope, identityMap } = {}) {
   };
   for (const action of (scope?.actions || [])) {
     coverage.actions += 1;
-    if (symbols[action.symbol]) coverage.identityMapped += 1;
+    // Own-property only: a symbol named e.g. "constructor" must not count as
+    // mapped through the prototype chain (review finding).
+    if (Object.prototype.hasOwnProperty.call(symbols, action.symbol)) coverage.identityMapped += 1;
     else coverage.identityFallback += 1;
     const classification = action.documentationOwnership?.classification || 'standalone';
     if (classification === 'method_owned') coverage.ownership.methodOwned += 1;
@@ -218,7 +220,11 @@ function createGroupingProposal({ scope, identityMap, units = [], exclusions = [
   }
   const partitionErrors = checkPartition({ scope, units, exclusions });
   if (partitionErrors.length > 0) {
-    const first = partitionErrors[0];
+    // Partition codes outrank generic shape faults for triage: when both
+    // kinds are present the typed code names the partition defect, not
+    // GROUPING_PROPOSAL_INVALID (review finding — messages stay joined).
+    const partitionFirst = (code) => (code.startsWith('GROUPING_PARTITION_') ? 0 : 1);
+    const first = [...partitionErrors].sort((a, b) => partitionFirst(a.code) - partitionFirst(b.code))[0];
     throw new GroupingProposalError(
       first.code,
       partitionErrors.map((error) => error.message).join('; '),
@@ -316,6 +322,21 @@ function validateGroupingProposal(proposal, { scope = null, identityMap = null, 
     const ambiguous = (scope.actions || []).filter((action) => action.documentationOwnership?.classification === 'ambiguous');
     if (ambiguous.length > 0) {
       report(GROUPING_AMBIGUOUS_OWNERSHIP, '$', `${ambiguous.length} bound-scope action(s) carry ambiguous documentation ownership`);
+    }
+    // The identity counts are re-derived, never trusted: a hand-edited
+    // coverage block that disagrees with the bound scope and identity map is
+    // a schema violation (review finding — the counts were write-only).
+    if (identityMap && isObject(proposal.coverage)) {
+      const recomputed = groupingCoverage({ scope, identityMap });
+      if (proposal.coverage.actions !== recomputed.actions
+        || proposal.coverage.identityMapped !== recomputed.identityMapped
+        || proposal.coverage.identityFallback !== recomputed.identityFallback
+        || !isObject(proposal.coverage.ownership)
+        || proposal.coverage.ownership.standalone !== recomputed.ownership.standalone
+        || proposal.coverage.ownership.methodOwned !== recomputed.ownership.methodOwned
+        || proposal.coverage.ownership.ambiguous !== recomputed.ownership.ambiguous) {
+        report(GROUPING_PROPOSAL_INVALID, '$.coverage', 'identity accounting does not match the bound scope and identity map');
+      }
     }
   }
   if (identityMap && isObject(proposal.lineage) && typeof proposal.lineage.identityMapDigest === 'string'

@@ -28,6 +28,9 @@ function loadIdentityMap(filePath) {
         `no identity map at ${filePath} — a track without an identity map cannot produce approval-grade scout actions; draft entries with bin/identity-reconcile.js --emit-draft and merge them as a master-compared edit before scouting this track`,
       );
     }
+    if (error.code === 'EISDIR') {
+      throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `identity map at ${filePath} is a directory, not a JSON file`);
+    }
     throw error;
   }
   let map;
@@ -35,6 +38,12 @@ function loadIdentityMap(filePath) {
     map = JSON.parse(raw);
   } catch (error) {
     throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `identity map at ${filePath} is not valid JSON: ${error.message}`);
+  }
+  // A JSON null/scalar/array root would otherwise surface as a raw TypeError
+  // on property access — the exact crash class this typed blocker exists to
+  // replace (review finding: null map probe).
+  if (map === null || typeof map !== 'object' || Array.isArray(map)) {
+    throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `identity map at ${filePath} must be a JSON object`);
   }
   if (map.schemaVersion !== 1) throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `Unsupported identity map schema: ${filePath}`);
   if (!map.language || !map.track || !map.symbols) throw new ScoutIdentityMapError('SCOUT_IDENTITY_MAP_INVALID', `Invalid identity map: ${filePath}`);

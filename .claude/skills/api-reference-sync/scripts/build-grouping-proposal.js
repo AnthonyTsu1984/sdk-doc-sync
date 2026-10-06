@@ -32,9 +32,11 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const {
+  GroupingProposalError,
   createGroupingProposal,
   groupingProposalDigest,
   stableGroupingProposalJson,
+  validateGroupingProposal,
 } = require('../src/sdk-doc-sync/grouping-proposal');
 
 function parseArgs(argv) {
@@ -96,6 +98,17 @@ function main(argv = process.argv) {
       exclusions: Array.isArray(decisions.exclusions) ? decisions.exclusions : [],
       snapshot,
     });
+    // Self-verify the emitted artifact against the same upstream inputs:
+    // the builder's registered enforcer codes (including
+    // GROUPING_LINEAGE_UNBOUND) are then reachable by construction, not just
+    // by relay (review finding).
+    const selfCheck = validateGroupingProposal(proposal, { scope, identityMap, snapshot });
+    if (!selfCheck.valid) {
+      throw new GroupingProposalError(
+        selfCheck.errors[0].code,
+        `self-verification of the built proposal failed: ${selfCheck.errors.map((item) => item.message).join('; ')}`,
+      );
+    }
   } catch (error) {
     console.error(`${error.code || 'GROUPING_PROPOSAL_INVALID'}: ${error.message}`);
     return 1;
@@ -103,7 +116,14 @@ function main(argv = process.argv) {
 
   const json = stableGroupingProposalJson(proposal);
   const digest = groupingProposalDigest(proposal);
-  if (args.output) fs.writeFileSync(path.resolve(args.output), json);
+  if (args.output) {
+    try {
+      fs.writeFileSync(path.resolve(args.output), json);
+    } catch (error) {
+      console.error(`GROUPING_PROPOSAL_INVALID: cannot write --output ${args.output}: ${error.message}`);
+      return 1;
+    }
+  }
   if (args.json) {
     process.stdout.write(json);
   } else {
@@ -116,7 +136,12 @@ function main(argv = process.argv) {
 }
 
 if (require.main === module) {
-  process.exit(main());
+  try {
+    process.exit(main());
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 module.exports = { parseArgs, main };

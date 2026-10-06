@@ -666,7 +666,7 @@ test('runReleaseScout maps Node v2.6 request type changes to canonical docs', as
   assert.deepEqual(scope.scannerDiagnostics, [{
     level: 'info',
     code: 'IDENTITY_MAP_COVERAGE',
-    message: 'Identity map resolves 2/2 action symbol(s) explicitly; 0 use derived fallback identities; 0 ambiguous (approvalGrade stays false until the map extends).',
+    message: 'Identity map resolves 2/2 action symbol(s) explicitly; 0 use derived fallback identities; no ambiguous ownership (no identity-map blocker on approvalGrade).',
   }, {
     level: 'warn',
     code: 'FULL_SCAN_DIAGNOSTIC_ONLY',

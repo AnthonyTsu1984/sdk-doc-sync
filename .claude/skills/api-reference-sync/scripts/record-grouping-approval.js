@@ -38,6 +38,8 @@ function parseArgs(argv) {
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--proposal') args.proposal = argv[++i];
+    else if (arg === '--identity-map') args.identityMap = argv[++i];
+    else if (arg === '--scope') args.scope = argv[++i];
     else if (arg === '--approvals-dir') args.approvalsDir = argv[++i];
     else if (arg === '--help' || arg === '-h') args.help = true;
     else throw new Error(`Unknown argument: ${arg}`);
@@ -46,7 +48,7 @@ function parseArgs(argv) {
 }
 
 function printUsage(out = console.log) {
-  out('Usage: record-grouping-approval --proposal <proposal.json> [--approvals-dir <dir>]');
+  out('Usage: record-grouping-approval --proposal <proposal.json> [--scope <release-scope.json> --identity-map <map.json>] [--approvals-dir <dir>]');
 }
 
 function main(argv = process.argv) {
@@ -72,6 +74,25 @@ function main(argv = process.argv) {
     console.error(`GROUPING_APPROVAL_INVALID: proposal fails schema validation: ${JSON.stringify(validation.errors.slice(0, 5))}`);
     return 1;
   }
+  // Optional but recommended issuance hardening (review finding): with the
+  // upstream artifacts the recorder refuses a schema-valid proposal whose
+  // lineage digests do not actually bind to them — without this the issuance
+  // gate is schema-only and a hand-crafted lineage receives a receipt.
+  if (args.scope || args.identityMap) {
+    if (!args.scope || !args.identityMap) {
+      console.error('Error: the lineage cross-check requires both --scope and --identity-map');
+      return 1;
+    }
+    const crossCheck = validateGroupingProposal(proposal, {
+      scope: readJsonOrExit(args.scope, 'release scope'),
+      identityMap: readJsonOrExit(args.identityMap, 'identity map'),
+    });
+    if (!crossCheck.valid) {
+      const first = crossCheck.errors[0];
+      console.error(`${first.code}: proposal does not bind to the provided artifacts: ${first.message}`);
+      return 1;
+    }
+  }
 
   const digest = groupingProposalDigest(proposal);
   const approvalsDir = args.approvalsDir ? path.resolve(args.approvalsDir) : DEFAULT_APPROVALS_DIR;
@@ -96,13 +117,37 @@ function main(argv = process.argv) {
     approvedAt: new Date().toISOString(),
   };
   fs.mkdirSync(approvalsDir, { recursive: true });
-  fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`);
+  // O_EXCL create: first-write-wins is atomic against concurrent recorders
+  // (existsSync above is only the fast path for the friendly message — the
+  // 'wx' flag is the actual gate; review finding).
+  try {
+    fs.writeFileSync(receiptPath, `${JSON.stringify(receipt, null, 2)}\n`, { flag: 'wx' });
+  } catch (error) {
+    if (error.code !== 'EEXIST') throw error;
+    const existing = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
+    console.log(`Grouping approval already recorded at ${receiptPath} (approvedAt ${existing.approvedAt})`);
+    return 0;
+  }
   console.log(`Grouping approval recorded: ${receiptPath} (${digest})`);
   return 0;
 }
 
+function readJsonOrExit(file, label) {
+  try {
+    return JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
+  } catch (error) {
+    console.error(`GROUPING_APPROVAL_INVALID: cannot read ${label} at ${file}: ${error.message}`);
+    process.exit(1);
+  }
+}
+
 if (require.main === module) {
-  process.exit(main());
+  try {
+    process.exit(main());
+  } catch (error) {
+    console.error(`Error: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 module.exports = { parseArgs, main, DEFAULT_APPROVALS_DIR };

@@ -279,9 +279,43 @@ test('loadIdentityMap fails with typed scout blockers', () => {
   fs.writeFileSync(wrongSchema, JSON.stringify({ schemaVersion: 2, language: 'go', track: 'v3.0.x', symbols: {} }));
   assert.throws(() => loadIdentityMap(wrongSchema), (error) => error.code === 'SCOUT_IDENTITY_MAP_INVALID');
 
+  // Review round 1: non-object roots and directory paths type too — the raw
+  // TypeError crash class this blocker replaces.
+  const nullRoot = path.join(temp, 'null.json');
+  fs.writeFileSync(nullRoot, 'null');
+  assert.throws(() => loadIdentityMap(nullRoot), (error) => error instanceof ScoutIdentityMapError
+    && error.code === 'SCOUT_IDENTITY_MAP_INVALID');
+  assert.throws(() => loadIdentityMap(temp), (error) => error.code === 'SCOUT_IDENTITY_MAP_INVALID'
+    && /directory/.test(error.message));
+
   const valid = path.join(temp, 'valid.json');
   fs.writeFileSync(valid, JSON.stringify(makeIdentityMap()));
   assert.equal(loadIdentityMap(valid).track, 'v3.0.x');
+});
+
+test('coverage accounting is re-derived at validation and immune to prototype-chain lookups', () => {
+  const scope = makeScope(scopeActions);
+  const identityMap = makeIdentityMap();
+  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
+
+  // Hand-edited identity counts refuse even with the artifacts provided.
+  const drifted = structuredClone(proposal);
+  drifted.coverage.identityMapped = 2;
+  drifted.coverage.identityFallback = 0;
+  const validation = validateGroupingProposal(drifted, { scope, identityMap });
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => error.code === 'GROUPING_PROPOSAL_INVALID' && error.path === '$.coverage'));
+
+  // A symbol named "constructor" does not count as mapped on an empty map.
+  const protoScope = makeScope([makeAction('go:Client:constructor', 'Client.constructor')]);
+  const protoProposal = createGroupingProposal({
+    scope: protoScope,
+    identityMap,
+    units: [{ id: 'u1', sourceStableId: 'go:Client:constructor', actionIntent: 'UPDATE', decision: {} }],
+    exclusions: [],
+  });
+  assert.equal(protoProposal.coverage.identityMapped, 0);
+  assert.equal(protoProposal.coverage.identityFallback, 1);
 });
 
 test('formatFatal prefixes typed codes and falls back for plain errors', () => {

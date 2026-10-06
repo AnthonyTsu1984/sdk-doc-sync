@@ -313,11 +313,15 @@ async function runReleaseScout({
   // degrades unmapped class/interface symbols to kind-based classification,
   // where they turn ambiguous and force approvalGrade=false — the operator
   // saw only "blocked" with no counts. Surface the split as a diagnostic.
+  // The parenthetical is conditional: with zero ambiguous actions the map is
+  // NOT what holds approvalGrade back (review finding — the unconditional
+  // form asserted a false blocker).
   const identitySymbols = map.symbols && typeof map.symbols === 'object' ? map.symbols : {};
+  const hasSymbol = (symbol) => Object.prototype.hasOwnProperty.call(identitySymbols, symbol);
   let identityMapped = 0;
   let identityAmbiguous = 0;
   for (const action of actions) {
-    if (identitySymbols[action.symbol]) identityMapped += 1;
+    if (hasSymbol(action.symbol)) identityMapped += 1;
     if (action.documentationOwnership?.classification === 'ambiguous') identityAmbiguous += 1;
   }
   const scannerDiagnostics = [
@@ -327,7 +331,10 @@ async function runReleaseScout({
     {
       level: identityAmbiguous > 0 ? 'warn' : 'info',
       code: 'IDENTITY_MAP_COVERAGE',
-      message: `Identity map resolves ${identityMapped}/${actions.length} action symbol(s) explicitly; ${actions.length - identityMapped} use derived fallback identities; ${identityAmbiguous} ambiguous (approvalGrade stays false until the map extends).`,
+      message: `Identity map resolves ${identityMapped}/${actions.length} action symbol(s) explicitly; ${actions.length - identityMapped} use derived fallback identities; `
+        + (identityAmbiguous > 0
+          ? `${identityAmbiguous} ambiguous (approvalGrade stays false until the map extends).`
+          : 'no ambiguous ownership (no identity-map blocker on approvalGrade).'),
     },
   ];
   const scope = createReleaseScope({

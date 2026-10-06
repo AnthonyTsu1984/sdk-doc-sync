@@ -116,7 +116,7 @@
         "evidence",
         "plan"
       ],
-      "statementDigest": "sha256:acb045410296bfbdd5881f339ef51a6d88d4519f4224218047950b84e6328161",
+      "statementDigest": "sha256:7a00cf581eea34f47614b60cdf52503d6144d68a7e8d47701d7b2ef08d596b10",
       "fixtureIds": [
         "grouping-proposal-governance"
       ],
@@ -159,11 +159,18 @@
           "stage": "plan",
           "module": ".claude/skills/api-reference-sync/scripts/record-grouping-approval.js",
           "codes": [
-            "GROUPING_APPROVAL_INVALID"
+            "GROUPING_APPROVAL_INVALID",
+            "GROUPING_PROPOSAL_INVALID",
+            "GROUPING_PARTITION_INCOMPLETE",
+            "GROUPING_PARTITION_FOREIGN",
+            "GROUPING_PARTITION_DUPLICATE",
+            "GROUPING_LINEAGE_UNBOUND",
+            "GROUPING_SCOPE_NOT_APPROVAL_GRADE",
+            "GROUPING_AMBIGUOUS_OWNERSHIP"
           ]
         }
       ],
-      "notes": "Campaign-control hardening (2026-10-06): the 2026-10 go/java intakes hand-rolled grouping proposals in tmp scripts with no schema and no lineage, and the go v3.0.x scout crashed raw on a missing identity map. The grouping gate now has durable materials: the canonical builder binds scope/identity-map/snapshot as semantic digests and enforces the exact-partition contract (units + exclusions == scope actions — the 163=144+19 accounting as a machine check), the approval receipt CLI makes an APPROVE_GROUPING durable and refuses artifacts without valid lineage, and scout identity-map failures are typed blockers pointing at the identity-reconcile draft workflow. Execution-side binding (session receipt cross-check at the write boundary) is the next batch."
+      "notes": "Campaign-control hardening (2026-10-06): the 2026-10 go/java intakes hand-rolled grouping proposals in tmp scripts with no schema and no lineage, and the go v3.0.x scout crashed raw on a missing identity map. The grouping gate now has durable materials: the canonical builder binds scope/identity-map/snapshot as semantic digests and enforces the exact-partition contract (units + exclusions == scope actions — the 163=144+19 accounting as a machine check), the approval receipt CLI makes an APPROVE_GROUPING durable and refuses artifacts without valid lineage, and scout identity-map failures are typed blockers pointing at the identity-reconcile draft workflow. Execution-side binding (session receipt cross-check at the write boundary) is the next batch. Review round 1 fixes (2026-10-06): identity-map loader types null/EISDIR roots too; the IDENTITY_MAP_COVERAGE parenthetical is conditional (zero ambiguous = no map blocker on approvalGrade); validateGroupingProposal re-derives the identity accounting from the bound scope+map (hand-edited coverage counts are a schema violation); the recorder accepts optional --scope/--identity-map for issuance-time lineage cross-check; the builder self-verifies its output against the same inputs; receipt creation is O_EXCL."
     },
     {
       "id": "api.literal-include-preserved",

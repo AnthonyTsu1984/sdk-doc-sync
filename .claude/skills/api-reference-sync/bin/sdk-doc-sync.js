@@ -821,16 +821,17 @@ async function runCli({
     // carry them (mutating it would re-key the chained digest). The context
     // file is the reviewed input carrier — build-reviewed-release-context
     // mirrors the candidate spec's target.resources into it.
+    // Best-effort: an unreadable path here stays null — the per-action
+    // reference-context provider and the session's own fail-closed guards
+    // own the typed refusal for a missing reviewed context.
     let campaignResources = null;
     if (args.referenceContext) {
         try {
             const contextDocument = JSON.parse(readFile(path.resolve(args.referenceContext)));
             campaignResources = Array.isArray(contextDocument?.resources) && contextDocument.resources.length > 0
                 ? contextDocument.resources : null;
-        } catch (error) {
-            err(`Error: cannot read --reference-context: ${error.message}`);
-            exit(1);
-            return null;
+        } catch {
+            campaignResources = null;
         }
     }
 

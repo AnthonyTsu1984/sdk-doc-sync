@@ -1610,13 +1610,15 @@ class SdkDocSync {
                 return [];
             }
         };
-        // Ambiguity accounting: line expectations disambiguate overloads and
-        // detect checkout drift ONLY where the key has multiple scanned
-        // candidates. Union scopes assembled from PR-meta replays can carry
-        // stale line evidence for single-candidate symbols (observed:
-        // Vector.SearchIterator pinned 4 files away from its true position at
-        // the scope's own targetCommit) — an unambiguous key admits without
-        // the line pin, an ambiguous one requires it.
+        // Line evidence semantics (checkout-drift vs stale-scope evidence):
+        // a code-line pin that matches proves the checkout; when EVERY pinned
+        // symbol mismatches, the checkout itself is wrong (RELEASE_SCOPE_LINE_
+        // MISMATCH). Union scopes assembled from PR-meta replays can carry
+        // stale line pins for individual symbols (observed: Vector.
+        // SearchIterator pinned 4 files away from its true position at the
+        // scope's own targetCommit) — with other pinned symbols matching,
+        // isolated mismatches are scope-side staleness: the symbol admits by
+        // its unambiguous key (ambiguity still requires the pin).
         const candidatesByKey = new Map();
         for (const symbol of symbols) {
             for (const key of new Set([this._symbolDisplayName(symbol), ...resolveCanonicalSlugs(symbol)])) {
@@ -1625,18 +1627,45 @@ class SdkDocSync {
                 candidatesByKey.set(key, list);
             }
         }
+        let pinnedMatched = 0;
+        let pinnedMismatched = 0;
+        const lineMatches = new Map(); // symbol identity -> boolean
+        for (const symbol of symbols) {
+            const displayName = this._symbolDisplayName(symbol);
+            const keys = [displayName, ...resolveCanonicalSlugs(symbol)];
+            let verdict = null;
+            for (const key of keys) {
+                const lines = allowed.get(key) || allowedSlugs.get(key);
+                if (!lines || lines.size === 0) continue;
+                if (lines.has(symbol.lineNumber)) { verdict = true; break; }
+                verdict = false;
+            }
+            if (verdict === null) continue;
+            lineMatches.set(symbol, verdict);
+            if (verdict) pinnedMatched += 1; else pinnedMismatched += 1;
+        }
+        if (pinnedMatched === 0 && pinnedMismatched > 0) {
+            const names = [...lineMatches.entries()]
+                .filter(([, matched]) => matched === false)
+                .map(([symbol]) => this._symbolDisplayName(symbol))
+                .slice(0, 5)
+                .join(', ');
+            const error = new Error(`Release scope source line mismatch. Ensure --sdk-dir is checked out at ${this.releaseScope.targetCommit || this.releaseScope.targetTag}: ${names}`);
+            error.code = 'RELEASE_SCOPE_LINE_MISMATCH';
+            throw error;
+        }
         return symbols.filter((symbol) => {
             const displayName = this._symbolDisplayName(symbol);
             const lines = allowed.get(displayName);
             if (lines) {
                 if (lines.size === 0 || lines.has(symbol.lineNumber)) return true;
-                return (candidatesByKey.get(displayName) || []).length === 1;
+                return lineMatches.get(symbol) === false;
             }
             for (const slug of resolveCanonicalSlugs(symbol)) {
                 const slugLines = allowedSlugs.get(slug);
                 if (!slugLines) continue;
                 if (slugLines.size === 0 || slugLines.has(symbol.lineNumber)) return true;
-                if ((candidatesByKey.get(slug) || []).length === 1) return true;
+                if (lineMatches.get(symbol) === false) return true;
             }
             return false;
         });

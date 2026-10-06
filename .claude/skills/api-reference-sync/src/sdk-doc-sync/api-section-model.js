@@ -34,6 +34,10 @@ function labelSection(block, profile, currentRole) {
   if (block?.block_type !== 2) return null;
   const label = normalizedLabel(block);
   if (label === 'PARAMETERS') {
+    // Response-fields list inside RETURNS (describeReplicas strong-form
+    // baseline, 2026-10-03): the second PARAMETERS label belongs to the
+    // returns section, not a duplicate request-side section.
+    if (currentRole === 'returns') return null;
     return profile.id === 'node' && currentRole === 'request' ? null : 'parameters';
   }
   if (['BUILDER METHODS', 'OPTION METHODS', 'REQUEST METHODS', 'METHODS'].includes(label)) return 'members';

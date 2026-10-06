@@ -244,13 +244,21 @@ class FeishuToMarkdown extends larkDocWriter {
             }
 
             return blocks;
-        } else if (status == 429) {
+        } else if (status == 429 || response.code === 99991400) {
+            // Flow control: back off and retry (99991400 rides HTTP 200).
             const reset = Number(headers?.get?.('x-ogw-ratelimit-reset'))
             const timeout = Number.isFinite(reset) && reset >= 0 ? reset * 1000 : 1000
             await this.__wait(timeout)
             return await this.__fetch_doc_blocks(document_id, page_token, blocks)
         } else {
-            return null;
+            // 2026-10-06: a failed read used to return null, which consumers
+            // masked as an empty page (PAGE_STRUCTURE_INVALID) and dropped
+            // units from the review-unit manifest mid-batch. Fail loud with
+            // the API's own code and message instead.
+            const error = new Error(`fetch doc blocks failed for ${document_id}: code=${response.code} msg=${response.msg}`)
+            error.code = 'DOC_BLOCKS_FETCH_FAILED'
+            error.apiCode = response.code
+            throw error
         }
     }
 

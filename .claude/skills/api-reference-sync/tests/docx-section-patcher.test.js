@@ -299,3 +299,24 @@ test('blocks planning when the live page structure cannot be modeled', () => {
   assert.equal(patch.validation.valid, false);
   assert.ok(patch.validation.errors.some((error) => error.code === 'PATCH_PLANNING_BLOCKED'));
 });
+
+test('2026-10-06: a missing live block array fails loud as DOC_BLOCKS_UNAVAILABLE, not a page-shape verdict', () => {
+    assert.throws(
+        () => planApiReferencePatch({
+            currentBlocks: null,
+            desiredBlocks: pythonDoc(),
+            profile: profiles.python,
+        }),
+        (error) => error.code === 'DOC_BLOCKS_UNAVAILABLE'
+            && /requires live document blocks as an array/.test(error.message),
+    );
+    assert.throws(
+        () => planApiReferencePatch({
+            currentBlocks: undefined,
+            desiredBlocks: pythonDoc(),
+            profile: profiles.python,
+        }),
+        (error) => error.code === 'DOC_BLOCKS_UNAVAILABLE',
+    );
+});
+

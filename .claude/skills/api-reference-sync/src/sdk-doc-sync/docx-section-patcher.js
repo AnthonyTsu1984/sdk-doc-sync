@@ -145,8 +145,17 @@ function planApiReferencePatch({
   preservedBlockPlacements = [],
 } = {}) {
   if (!profile?.id) throw new TypeError('planApiReferencePatch requires a layout profile');
+  // A missing block array is an infrastructure failure (the live reader
+  // failed), not a page-shape verdict — masking it as an empty page produced
+  // a misleading PAGE_STRUCTURE_INVALID that dropped units out of the
+  // review-unit manifest mid-batch. Fail loud instead.
+  if (!Array.isArray(currentBlocks)) {
+    const error = new TypeError('planApiReferencePatch requires live document blocks as an array');
+    error.code = 'DOC_BLOCKS_UNAVAILABLE';
+    throw error;
+  }
   desiredBlocks = normalizeDesiredDocument(desiredBlocks);
-  const currentModel = buildApiSectionModel(currentBlocks || [], profile);
+  const currentModel = buildApiSectionModel(currentBlocks, profile);
   const desiredModel = buildApiSectionModel(desiredBlocks || [], profile);
 
   if (desiredModel.errors.length > 0) {

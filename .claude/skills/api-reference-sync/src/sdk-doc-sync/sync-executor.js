@@ -634,6 +634,25 @@ class SyncExecutor {
     const before = await this._getRecord(resource.recordId);
     const beforeDocs = docsField(before);
     const beforeNodeFields = virtualNodeFields(before);
+    // Replay-after-partial tolerance: a sibling unit's repoint may already
+    // have landed the approved end state (the VN link at the NEW folder with
+    // the approved structural metadata) — resolve it instead of failing.
+    const resolvedFolderLink = `/drive/folder/${folderToken}`;
+    if (beforeDocs.link?.endsWith(resolvedFolderLink)
+      && beforeNodeFields.slug === expectedFields.slug
+      && sameNormalizedTargets(beforeNodeFields.targets, expectedFields.targets)
+      && beforeNodeFields.progress === expectedFields.progress) {
+      result.record = before;
+      result.completedSteps.push('verifyResourcePresent');
+      result.resolvedResource = {
+        ref: resource.ref,
+        kind: 'virtual_node_repoint',
+        value: resource.recordId,
+        recordId: resource.recordId,
+      };
+      result.verification = { ok: true, errors: [] };
+      return;
+    }
     const errors = [];
     if (!beforeDocs.link?.endsWith(`/drive/folder/${resource.currentFolderToken}`)) {
       errors.push({ code: 'VIRTUAL_NODE_CURRENT_LINK_MISMATCH', actual: beforeDocs.link });

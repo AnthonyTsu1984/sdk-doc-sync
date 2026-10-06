@@ -29,6 +29,20 @@ const GLOBAL_LAYOUT_RULES = Object.freeze({
   }),
 });
 
+// 2026-10-06 python ruling (operator doc review, py-v30 unit 1): request
+// payloads render one parameter per line in the bare call form; parameter
+// types are italic only; templated example intros ("Shows a typical …") are
+// forbidden. Deterministic page facts enforced with the five global rules.
+const PYTHON_LAYOUT_RULES = Object.freeze({
+  ...GLOBAL_LAYOUT_RULES,
+  contentQuality: Object.freeze({
+    ...GLOBAL_LAYOUT_RULES.contentQuality,
+    requestSignatureOneParamPerLine: true,
+    parameterTypeEmphasisForbidden: true,
+    templatedExampleIntroForbidden: true,
+  }),
+});
+
 const CPP_LAYOUT_RULES = Object.freeze({
   ...GLOBAL_LAYOUT_RULES,
   builderSignature: Object.freeze({ prefixForbidden: Object.freeze(['Request& (With|Add)']) }),
@@ -81,7 +95,7 @@ const profiles = Object.freeze({
     order: ['summary', 'audience', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'request-signature': 'Python', 'example-code': 'Python' },
     cardinality: { 'canonical-signature': [0, 0], 'request-signature': [0, 1] },
-    layoutRules: GLOBAL_LAYOUT_RULES,
+    layoutRules: PYTHON_LAYOUT_RULES,
   }),
   java: freezeProfile({
     id: 'java', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',

@@ -657,7 +657,10 @@ function exampleFor(action, spec, evidence) {
   }
   return examples.map((example) => ({
     title: example.title || `${action.symbol} example`,
-    description: example.description || `Shows a typical ${action.symbol} call for the ${spec.version || 'target'} API.`,
+    // 2026-10-06 ruling: never synthesize an example intro — templated
+    // "Shows a typical …" descriptions (with version echoes) are forbidden;
+    // an example without a reviewed description renders code-only.
+    description: example.description || '',
     audience: example.audience || 'shared',
     language: example.language || spec.language || 'python',
     code: required(example.code, `Candidate ${action.canonicalSlug} example is missing code`),

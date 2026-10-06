@@ -7,7 +7,13 @@ Available to Milvus users.
 ## Request Syntax{#request-syntax}
 
 ```python
-def search(self, collection_name: str, data: list[list[float]], *, limit: int = 10, **kwargs: Any) -> list[SearchResult]:
+search(
+    collection_name: str,
+    data: list[list[float]],
+    *,
+    limit: int = 10,
+    **kwargs: Any
+) -> list[SearchResult]
 ```
 
 **PARAMETERS:**

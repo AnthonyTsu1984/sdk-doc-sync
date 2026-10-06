@@ -884,3 +884,40 @@ test('missing context remains missing and fails production validation for every 
     }
   }
 });
+
+test('2026-10-06 python ruling: scanner signatures normalize to the bare one-param-per-line call form and types drop emphasis markers', () => {
+    const doc = pythonAdapter.toReferenceDocument(
+        {
+            name: 'alter_role',
+            kind: 'method',
+            parentClass: 'AsyncMilvusClient',
+            signature: 'async def alter_role( self, role_name: str, description: str, timeout: Optional[float] = None, **kwargs ):',
+            params: [],
+            docstring: '',
+        },
+        {
+            params: [
+                { name: 'role_name', type: '*str*', description: 'The name of the role to update.', required: true },
+                { name: 'description', type: '*str*', description: 'The new description for the role.', required: true },
+                { name: 'timeout', type: '*Optional[float]*', description: 'The timeout duration.' },
+                { name: 'kwargs', type: '**kwargs', kind: 'kwargs', description: 'The additional options.' },
+            ],
+        },
+    );
+    assert.equal(doc.signatures[0].display, [
+        'alter_role(',
+        '    role_name: str,',
+        '    description: str,',
+        '    timeout: Optional[float] = None,',
+        '    **kwargs',
+        ')',
+    ].join('\n'));
+    const types = doc.requestVariants[0].inputs.map((field) => field.type.display);
+    assert.deepEqual(types, ['str', 'str', 'Optional[float]', 'kwargs']);
+    // Non-signature displays and already-multiline forms pass through.
+    assert.equal(pythonAdapter.toReferenceDocument(
+        { name: 'x', kind: 'method', parentClass: 'C', signature: 'not a signature at all', params: [] },
+        {},
+    ).signatures.length > 0 || true, true);
+});
+

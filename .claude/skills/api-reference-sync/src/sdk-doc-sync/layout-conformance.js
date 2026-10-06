@@ -340,6 +340,29 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
             report('INTERNAL_NOTE_LEAK', `"Notes" line outside a governed callout: ${bareNote.text}`);
         }
     }
+
+    // 2026-10-06 python ruling: templated example intros ("Shows a typical
+    // … call for the vX.Y API.") are banned — an example without a reviewed
+    // description renders code-only.
+    if (contentRules.templatedExampleIntroForbidden) {
+        const templated = entries.find((entry) => entry.kind === 'text'
+            && /^shows a typical\b/i.test(entry.text.trim()));
+        if (templated) {
+            report('TEMPLATED_EXAMPLE_INTRO', `templated example intro is forbidden: ${templated.text}`);
+        }
+    }
+
+    // 2026-10-06 python ruling: parameter types are italic ((*type*)) —
+    // emphasis markers inside the parenthesized type group (bold ** or
+    // escaped \*) are forbidden. Prose-path shape only; block facts carry
+    // styles structurally and never trip it.
+    if (contentRules.parameterTypeEmphasisForbidden) {
+        const emphasized = entries.find((entry) => entry.kind === 'bullet'
+            && /\([^)]*?(?:\\\*|\*\*)[^)]*?\)/.test(entry.text));
+        if (emphasized) {
+            report('PARAMETER_TYPE_EMBRASIS', `parameter type must be italic without emphasis markers: ${emphasized.text}`);
+        }
+    }
 }
 
 // Markdown-preview path (campaign-control hardening §3.7): the same five
@@ -357,6 +380,10 @@ function checkMarkdownContentQuality(markdown, profile) {
     const entries = [];
     let insideFence = false;
     let insideAdmonition = false;
+    let currentHeading = null;
+    let fenceSection = null;
+    const requestFenceLines = [];
+    const fenceRule = rules.contentQuality.requestSignatureOneParamPerLine === true;
     for (const rawLine of markdown.split(/\r?\n/)) {
         const trimmed = rawLine.trim();
         // Governed callouts render as <Admonition> blocks whose interior
@@ -366,10 +393,23 @@ function checkMarkdownContentQuality(markdown, profile) {
         if (/^<\/Admonition>/i.test(trimmed)) { insideAdmonition = false; continue; }
         if (insideAdmonition) continue;
         if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+            if (!insideFence) fenceSection = currentHeading;
+            else fenceSection = null;
             insideFence = !insideFence;
             continue;
         }
-        if (insideFence || trimmed === '') continue;
+        if (insideFence) {
+            // 2026-10-06 python ruling: the request-signature fence is page
+            // content with rules of its own — prose rules still never see
+            // fenced code.
+            if (fenceRule && fenceSection && /^request syntax/i.test(fenceSection)) {
+                requestFenceLines.push(trimmed);
+            }
+            continue;
+        }
+        if (trimmed === '') continue;
+        const headingMatch = trimmed.match(/^#{1,6}\s+(.*)$/);
+        if (headingMatch) currentHeading = headingMatch[1].trim();
         let kind = 'text';
         let line = trimmed;
         if (/^[-•*]\s+/.test(line)) {
@@ -381,6 +421,16 @@ function checkMarkdownContentQuality(markdown, profile) {
         entries.push({ kind, text: line });
     }
     checkContentRules(rules.contentQuality, entries, [], report);
+    // 2026-10-06 python ruling: the request payload is one parameter per
+    // line in the bare call form — a signature opening line carrying a
+    // top-level comma collapsed all inputs onto one line.
+    if (fenceRule) {
+        const collapsed = requestFenceLines.find((line) =>
+            /^\s*(?:async\s+)?(?:def\s+)?[A-Za-z_]\w*\s*\([^()]*,/.test(line));
+        if (collapsed) {
+            report('REQUEST_SIGNATURE_ONE_PARAM_PER_LINE', `request payload must be one parameter per line: ${collapsed.trim()}`);
+        }
+    }
     return { invariantId: LAYOUT_INVARIANT_ID, violations };
 }
 

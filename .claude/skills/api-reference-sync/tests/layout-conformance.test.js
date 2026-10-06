@@ -275,6 +275,80 @@ test('checkMarkdownContentQuality runs the five rules over preview markdown, ski
     assert.deepEqual(checkMarkdownContentQuality('Deletes entities.', bare).violations, []);
 });
 
+test('2026-10-06 python ruling: bare multiline payload, italic types, no templated example intro', () => {
+    const profile = sdkLayoutProfiles.python;
+    const codes = (markdown) => checkMarkdownContentQuality(markdown, profile).violations.map((v) => v.code);
+
+    // Old-style preview: collapsed payload line, emphasized type group,
+    // templated intro — all three refuse the presentation.
+    assert.deepEqual(codes([
+        'This operation changes the description of an existing role.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'async def alter_role( self, role_name: str, description: str ):',
+        '```',
+        '',
+        '**PARAMETERS:**',
+        '- **role\\_name** (*\\*str\\**) -',
+        '  The name of the role to update.',
+        '',
+        '## Examples',
+        '',
+        'Shows a typical AsyncMilvusClient.alter\\_role call for the v3.0.x API.',
+        '',
+        '```python',
+        'client.alter_role(role_name="reader", description="desc")',
+        '```',
+    ].join('\n')), [
+        'TEMPLATED_EXAMPLE_INTRO',
+        'PARAMETER_TYPE_EMBRASIS',
+        'REQUEST_SIGNATURE_ONE_PARAM_PER_LINE',
+    ]);
+
+    // House style (upstream mirror baseline): bare call, one param per line,
+    // italic type group, code-only examples — no violations. Example-code
+    // fences stay prose-exempt even with same-line call commas.
+    assert.deepEqual(codes([
+        'This operation changes the description of an existing role.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'alter_role(',
+        '    role_name: str,',
+        '    description: str,',
+        ')',
+        '```',
+        '',
+        '**PARAMETERS:**',
+        '- **role\\_name** (*str*) -',
+        '  The name of the role to update.',
+        '',
+        '## Examples',
+        '',
+        '```python',
+        'client.alter_role(role_name="reader", description="desc")',
+        '```',
+    ].join('\n')), []);
+
+    // The three flags stay python-only: the same old-style markdown under
+    // the java profile reports none of them.
+    const javaCodes = checkMarkdownContentQuality([
+        '## Request Syntax',
+        '',
+        '```java',
+        'void alterRole( String roleName, String description )',
+        '```',
+        '',
+        'Shows a typical call for the v3.0.x API.',
+    ].join('\n'), sdkLayoutProfiles.java).violations.map((v) => v.code);
+    assert.ok(!javaCodes.includes('TEMPLATED_EXAMPLE_INTRO'));
+    assert.ok(!javaCodes.includes('REQUEST_SIGNATURE_ONE_PARAM_PER_LINE'));
+    assert.ok(!javaCodes.includes('PARAMETER_TYPE_EMBRASIS'));
+});
+
 test('2026-10-04 adjudication: operation and class registers are both accepted; getter/instance phrasings are not', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (lines, name) => checkLayoutConformance(profile, { headings: [], lines, callouts: [] })

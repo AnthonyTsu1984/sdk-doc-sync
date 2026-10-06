@@ -2,12 +2,20 @@
 
 const common = require('./common');
 
+// 2026-10-06 python style ruling: parameter types render italic via the
+// renderer's (*type*) wrap — reviewed contexts must not carry literal
+// emphasis markers, or the wrap double-nests them into (*\*type\**).
+function stripEmphasisMarkers(type) {
+  if (typeof type !== 'string') return type;
+  return type.replace(/^\*+|\*+$/g, '').trim();
+}
+
 function normalizePythonParam(param) {
   if (!param || typeof param !== 'object') return param;
   if ((param.kind === 'kwargs' || param.kind === 'varargs') && !param.type) {
     return { ...param, type: 'Any' };
   }
-  return param;
+  return { ...param, type: stripEmphasisMarkers(param.type) };
 }
 
 function normalizePythonSymbol(symbol) {
@@ -62,6 +70,58 @@ function requestVariantInputs(params, names) {
   });
 }
 
+// 2026-10-06 python style ruling: the request payload renders one parameter
+// per line in the bare call form (upstream mirror baseline, e.g. alter_role /
+// create_role): no `async def`/`def` prefix, no `self`/`cls` input. Scanner
+// signatures arrive flattened to one line; anything already multiline or not
+// signature-shaped passes through unchanged.
+function splitTopLevelParams(payload) {
+  const parts = [];
+  let depth = 0;
+  let quote = null;
+  let current = '';
+  for (const character of payload) {
+    if (quote) {
+      current += character;
+      if (character === quote && !current.endsWith(`\\${quote}`)) quote = null;
+      continue;
+    }
+    if (character === '\'' || character === '"') {
+      quote = character;
+      current += character;
+      continue;
+    }
+    if (character === '(' || character === '[' || character === '{') depth += 1;
+    if (character === ')' || character === ']' || character === '}') depth -= 1;
+    if (character === ',' && depth === 0) {
+      parts.push(current);
+      current = '';
+      continue;
+    }
+    current += character;
+  }
+  if (current.trim() !== '') parts.push(current);
+  return parts.map((part) => part.trim()).filter((part) => part !== '');
+}
+
+function rebuildBareCallSignature(name, payload, returnType) {
+  const params = splitTopLevelParams(payload)
+    .filter((param) => !/^(self|cls)(\s*:\s*[A-Za-z_][\w.[\]]*)?$/.test(param));
+  if (params.length === 0) {
+    return returnType ? `${name}() -> ${returnType}` : `${name}()`;
+  }
+  const suffix = returnType ? `) -> ${returnType}` : ')';
+  return `${name}(\n${params.map((param) => `    ${param}`).join(',\n')}\n${suffix}`;
+}
+
+function formatPythonSignatureDisplay(display) {
+  if (typeof display !== 'string' || display.includes('\n')) return display;
+  const match = display
+    .match(/^(?:(?:async\s+)?def\s+)?([A-Za-z_]\w*)\s*\((.*)\)(?:\s*->\s*([^:]*))?:?$/);
+  if (!match) return display;
+  return rebuildBareCallSignature(match[1], match[2], match[3] ? match[3].trim() : null);
+}
+
 function toReferenceDocument(symbol, context = {}) {
   symbol = normalizePythonSymbol(symbol);
   const kindMap = {
@@ -78,7 +138,7 @@ function toReferenceDocument(symbol, context = {}) {
     ? context.params.map(normalizePythonParam)
     : null;
   const params = applyDocstringParamDescriptions(reviewedParams || symbol.params, symbol.docstring);
-  const signature = context.signature ?? symbol.signature ?? '';
+  const signature = formatPythonSignatureDisplay(context.signature ?? symbol.signature ?? '');
   const callable = ['method', 'function'].includes(kind)
     || (['class'].includes(kind) && (reviewedParams !== null || context.signature !== undefined));
   const inputs = callable

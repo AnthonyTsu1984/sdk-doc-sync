@@ -963,7 +963,31 @@ class SdkDocSync {
         const approvedById = new Map(approvedPlans.map(entry => [entry.plan.stableId, entry]));
         const executionStatus = new Map();
         const resourceResolutions = new Map();
-        for (const batchAction of result.executionBatch.actions) {
+        // DAG order: plannedEntries are built resources-first, but a
+        // category-create batch's downstream repoint DEPENDS on its document
+        // actions — dependencies must execute before their dependents
+        // (folder → documents → repoint). Stable Kahn ordering over in-batch
+        // dependsOn; a cycle falls back to the original relative order for
+        // the dependency check to refuse.
+        const batchActions = [...result.executionBatch.actions];
+        const orderedBatchActions = [];
+        const orderedIds = new Set();
+        let progressed = true;
+        while (orderedIds.size < batchActions.length && progressed) {
+            progressed = false;
+            for (const batchAction of batchActions) {
+                if (orderedIds.has(batchAction.actionId)) continue;
+                if (batchAction.dependsOn.every(dep => orderedIds.has(dep) || !batchActions.some(candidate => candidate.actionId === dep))) {
+                    orderedBatchActions.push(batchAction);
+                    orderedIds.add(batchAction.actionId);
+                    progressed = true;
+                }
+            }
+        }
+        for (const batchAction of batchActions) {
+            if (!orderedIds.has(batchAction.actionId)) orderedBatchActions.push(batchAction);
+        }
+        for (const batchAction of orderedBatchActions) {
             const planned = approvedById.get(batchAction.actionId);
             const action = planned?.action;
             try {

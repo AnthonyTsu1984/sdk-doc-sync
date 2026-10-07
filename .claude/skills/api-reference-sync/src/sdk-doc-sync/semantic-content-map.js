@@ -335,10 +335,17 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     // ATOMIC marker granularity: every <include…</include> unit present
     // upstream has to survive verbatim into the canonical content.
     const INCLUDE_UNIT = /<include\s+target=[^>]*>[\s\S]*?<\/include>/gi;
+    // Markdown links inside include units do not round-trip verbatim: the
+    // converter renders authored [text](url) as a real hyperlink run (URL
+    // preserved in the element), while the block-tree reconstruction reads
+    // back the display text only. Compare survival at the normalized-form
+    // level (link text; URL persistence is the converter's+terminal check's
+    // contract), so an executed page re-verifies against its own baseline.
+    const normalizeIncludeUnit = (unit) => String(unit).replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
     const atomicMarkers = (tokens) => {
         const units = [];
         for (const token of tokens) {
-            for (const match of String(token).match(INCLUDE_UNIT) || []) units.push(match.trim());
+            for (const match of String(token).match(INCLUDE_UNIT) || []) units.push(normalizeIncludeUnit(match));
         }
         return units;
     };

@@ -199,6 +199,23 @@ test('plain external reference may be upgraded into dual-target includes (2026-1
     });
     assert.equal(dropped.ok, false);
     assert.ok(dropped.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
+
+    // 2026-10-07 round-trip: the converter renders authored [text](url)
+    // inside includes as real hyperlink runs, while the block-tree
+    // reconstruction reads back display text only — an executed page's
+    // baseline carries the bare-text form. Survival comparison normalizes
+    // both sides to link text, so the executed page re-verifies against its
+    // own baseline; an actually-dropped marker still fires.
+    const baselineBare = wrappedPage.replace(
+        '<include target="milvus">[Users and Roles](https://milvus.io/docs/users_and_roles.md)</include><include target="zilliz">[Manage Cluster Roles(SDK)](https://docs.zilliz.com/docs/cluster-roles-sdk)</include>',
+        '<include target="milvus">Users and Roles</include><include target="zilliz">Manage Cluster Roles(SDK)</include>',
+    );
+    const roundTrip = compareSemanticContent({ upstreamContent: baselineBare, canonicalContent: wrappedPage });
+    assert.equal(roundTrip.ok, true, JSON.stringify(roundTrip.diffs));
+    const baselineDropped = baselineBare.replace('<include target="milvus">Users and Roles</include>', '');
+    const droppedAfterExec = compareSemanticContent({ upstreamContent: baselineBare, canonicalContent: baselineDropped });
+    assert.equal(droppedAfterExec.ok, false);
+    assert.ok(droppedAfterExec.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
 });
 
 test('matchOrdered enforces strictly increasing ordered containment', () => {

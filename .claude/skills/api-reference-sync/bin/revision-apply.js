@@ -414,7 +414,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 
     // Post-write verification on the LIVE state before the journal may
     // complete: layout conformance on the live block tree, then a
-    // line-for-line raw_content comparison against the recomputed bytes.
+    // line-for-line comparison of the reconstructed block-tree text against
+    // the recomputed bytes. The comparison source is the BLOCK TREE
+    // (blocksToMarkdown), not raw_content: raw_content's serialization of
+    // nested bullet children is unreliable (observed 2026-10-07 on
+    // updateUser — child sub-blocks emitted twice while the block tree held
+    // them once), so a raw projection can disagree with a correct page.
     let liveBlocks;
     try {
         liveBlocks = await fetchBlocksFn(documentToken);
@@ -423,10 +428,15 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         failJournal(error.code ? `${error.code}: ${error.message}` : error.message);
         throw error;
     }
-    const rawContent = await fetchRawContentFn(documentToken);
-    const comparison = comparePolishedContent({ polishedContent, rawContent });
+    // dropLeadingTitle unconditionally consumes the first observed line —
+    // designed for raw_content (which leads with the page title). The
+    // block-tree reconstruction carries no title line, so prepend a
+    // PLACEHOLDER title line to the observed side for the comparator to
+    // drop — otherwise the first body line would be consumed.
+    const rebuiltContent = '__REVISION_PAGE_TITLE__\n' + blocksToMarkdown(liveBlocks);
+    const comparison = comparePolishedContent({ polishedContent, rawContent: rebuiltContent });
     if (!comparison.ok) {
-        failJournal(`terminal raw_content comparison failed: ${JSON.stringify(comparison.diffs).slice(0, 240)}`);
+        failJournal(`terminal block-tree comparison failed: ${JSON.stringify(comparison.diffs).slice(0, 240)}`);
         const error = new Error(`Revision terminal verification failed for ${documentToken}: ${JSON.stringify(comparison.diffs).slice(0, 300)}`);
         error.code = 'PR_POLISH_CONTENT_VERIFICATION_FAILED';
         throw error;
@@ -435,7 +445,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // Post-write tree-delta outcome (api.versioned-tree-delta): a revision
     // rebuild is an in-place whole-body transition — same documentToken, same
     // recordId, no placement change. ok:true is earned by the two verifications
-    // above (live layout conformance + line-for-line raw comparison), which
+    // above (live layout conformance + line-for-line block-tree comparison), which
     // prove the landed body is the approved content; the unit-evidence
     // acceptance contract requires this journaled outcome to exist.
     journalLines.push({
@@ -448,7 +458,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         documentToken,
         recordId: action.recordId,
         priorBodyContentDigest: verbatimContentDigest(baseContent),
-        newBodyContentDigest: verbatimContentDigest(rawContent),
+        newBodyContentDigest: verbatimContentDigest(rebuiltContent),
         rebuildBlocks,
         placementUnchanged: true,
         ok: true,

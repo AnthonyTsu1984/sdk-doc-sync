@@ -125,6 +125,7 @@ function createSessionFixture(directory, scope) {
 const CONFORMANT_BLOCKS = [
     { block_id: 'blk-1', block_type: 2, text: { elements: [{ text_run: { content: 'A LexicalHighlighter instance highlights query terms in search results.' } }] } },
     { block_id: 'blk-2', block_type: 2, text: { elements: [{ text_run: { content: 'It collects matched segments so callers can render them.' } }] } },
+    { block_id: 'blk-3', block_type: 2, text: { elements: [{ text_run: { content: 'The highlighted segments preserve the original term order.' } }] } },
 ];
 
 test('revision-intake builds a two-gate session bound to the scope actions', () => {
@@ -248,7 +249,9 @@ test('revision-apply executes the approved batch, journals incrementally, and re
     });
 
     assert.equal(result.status, 'EXECUTED');
-    assert.equal(rawContentCalls, 2);
+    // Terminal comparison now reads the live BLOCK TREE (blocksToMarkdown),
+    // not raw_content — base capture is the only raw_content call.
+    assert.equal(rawContentCalls, 1);
 
     const entries = fs.readFileSync(path.join(directory, 'execution.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
     assert.equal(entries[0].type, 'content-fidelity');

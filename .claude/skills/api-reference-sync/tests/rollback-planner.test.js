@@ -417,3 +417,139 @@ test('rollback planner blocks deletion of a resource used by another executed re
     dependentReviewUnitIds: ['review:node:Vector:query'],
   }]);
 });
+
+test('operator-anchored rollback inverts exactly the landed resource actions of a failed resource-first batch', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-landed-'));
+  // Resource-first batch: folder landed, VirtualNode landed but failed its
+  // post-write verification (record exists), document action blocked by the
+  // failed dependency and never mutated anything (no rollback evidence).
+  const folderCapsule = {
+    schemaVersion: 1,
+    action: 'CREATE_FOLDER',
+    actionId: 'resource:res:folder-CDC',
+    dependsOn: [],
+    beforeRecord: null,
+    documentRollback: null,
+    source: null,
+    target: null,
+    resource: { kind: 'folder', ref: 'res:folder-CDC', name: 'CDC' },
+  };
+  const folderEvidence = {
+    schemaVersion: 1,
+    action: 'CREATE_FOLDER',
+    actionId: 'resource:res:folder-CDC',
+    completedSteps: ['verifyResourceAbsent', 'createFolder', 'verifyFolder'],
+    createdDocument: null,
+    createdFolder: { token: 'folder-cdc-token', name: 'CDC' },
+    patchedDocumentToken: null,
+    recordId: null,
+    postRecord: null,
+    resolvedResource: { ref: 'res:folder-CDC', kind: 'folder', value: 'folder-cdc-token' },
+  };
+  const vnCapsule = {
+    schemaVersion: 1,
+    action: 'CREATE_VIRTUAL_NODE',
+    actionId: 'resource:res:vn-CDC',
+    dependsOn: ['res:folder-CDC'],
+    beforeRecord: null,
+    documentRollback: null,
+    source: null,
+    target: null,
+    resource: { kind: 'virtual_node', ref: 'res:vn-CDC', title: 'CDC' },
+  };
+  const vnEvidence = {
+    schemaVersion: 1,
+    action: 'CREATE_VIRTUAL_NODE',
+    actionId: 'resource:res:vn-CDC',
+    completedSteps: ['verifyResourceAbsent', 'createVirtualNode'],
+    createdDocument: null,
+    createdFolder: null,
+    patchedDocumentToken: null,
+    recordId: null,
+    postRecord: {
+      recordId: 'rec-cdc-vn',
+      rawFields: { Type: 'VirtualNode', Slug: [{ text: 'v2-CDC', type: 'text' }] },
+      writableFields: {},
+    },
+    resolvedResource: null,
+  };
+  const docPrepared = {
+    schemaVersion: 1,
+    batchDigest: 'sha256:original-batch',
+    type: 'prepared',
+    actionId: 'go:CDC:CreateReplicateStream',
+    dependsOn: ['res:folder-CDC', 'res:vn-CDC'],
+    rollbackCapsule: {
+      schemaVersion: 1,
+      action: 'CREATE',
+      actionId: 'go:CDC:CreateReplicateStream',
+      dependsOn: ['res:folder-CDC', 'res:vn-CDC'],
+      beforeRecord: null,
+      documentRollback: null,
+      source: null,
+      target: null,
+      resource: null,
+    },
+  };
+  const entries = [
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'prepared', actionId: 'resource:res:folder-CDC', dependsOn: [], rollbackCapsule: folderCapsule },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'observed', actionId: 'resource:res:folder-CDC', status: 'success', verified: true, observedDigest: digestSemantic(folderEvidence), rollbackEvidence: folderEvidence },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'prepared', actionId: 'resource:res:vn-CDC', dependsOn: ['res:folder-CDC'], rollbackCapsule: vnCapsule },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'observed', actionId: 'resource:res:vn-CDC', status: 'failure', verified: false, observedDigest: digestSemantic(vnEvidence), rollbackEvidence: vnEvidence },
+    docPrepared,
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'observed', actionId: 'go:CDC:CreateReplicateStream', status: 'failure', verified: false, observedDigest: digestSemantic({ diagnostics: [{ code: 'DEPENDENCY_EXECUTION_FAILED' }] }), diagnostics: [{ code: 'DEPENDENCY_EXECUTION_FAILED' }] },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  const filePath = path.join(directory, 'sha256-landed-batch.jsonl');
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:go:v3.0.x:rollback-test',
+    status: 'in_progress',
+    scanStateUpdated: false,
+    reviewUnitManifestDigest: 'sha256:review-units',
+    reviewUnitManifest: {
+      schemaVersion: 1,
+      manifestDigest: 'sha256:review-units',
+      units: [{
+        schemaVersion: 1,
+        reviewUnitId: 'review:go:CDC:CreateReplicateStream',
+        documentStableId: 'go:CDC:CreateReplicateStream',
+        prerequisiteReviewUnitIds: [],
+      }],
+      unassignedResourceActionIds: [],
+    },
+    activeExecution: null,
+    pendingExecutions: [],
+    acceptedReviewUnits: [],
+    rollbackReceipts: [],
+    acceptanceManifest: null,
+    acceptanceManifestDigest: null,
+  };
+
+  // Without the operator anchor the failed journal is invisible to the
+  // session and the rollback refuses.
+  assert.throws(
+    () => buildRollbackManifest({ session, reviewUnitId: 'review:go:CDC:CreateReplicateStream' }),
+    /ROLLBACK_EXECUTION_NOT_FOUND/,
+  );
+
+  const result = buildRollbackManifest({
+    session,
+    reviewUnitId: 'review:go:CDC:CreateReplicateStream',
+    executionJournalPath: filePath,
+  });
+  assert.equal(result.status, 'READY');
+  const actions = result.rollbackManifest.actions;
+  assert.deepEqual(actions.map((action) => action.inverse), [
+    'DELETE_CREATED_RECORD',
+    'DELETE_CREATED_FOLDER',
+  ]);
+  assert.equal(actions[0].createdRecord.recordId, 'rec-cdc-vn');
+  assert.equal(actions[1].createdFolder.token, 'folder-cdc-token');
+  // The dependency-blocked document action never mutated anything: it must
+  // not appear in the manifest.
+  assert.equal(actions.some((action) => action.originalActionId === 'go:CDC:CreateReplicateStream'), false);
+  validateRollbackManifest(result.rollbackManifest);
+});

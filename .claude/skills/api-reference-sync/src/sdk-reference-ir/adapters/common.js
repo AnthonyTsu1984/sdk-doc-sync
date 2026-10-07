@@ -122,6 +122,7 @@ function normalizeField(field = {}, evidence = [], overrides = {}, options = {})
     appliesWhen: field.appliesWhen ?? field.requiredWhen ?? null,
     evidence: nodeEvidence,
     allowRequiredDefault: field.allowRequiredDefault === true,
+    resultFieldKind: field.resultFieldKind === 'method' ? 'method' : null,
   });
 }
 

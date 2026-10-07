@@ -327,8 +327,17 @@ function renderReturns(document, policy, context) {
     // describeReplicas baseline (2026-10-03 strong-form ruling): response
     // fields render as a labeled PARAMETERS bullet list after the RETURNS
     // prose, mirroring the request-side parameter list.
-    if (policy.parametersLabel) {
-      blocks.push(label(policy.parametersLabel, semantic('result-fields-label')));
+    // Operator ruling 2026-10-07 (GetTelemetry, go): when the response
+    // surface is a set of methods (opaque manager handle — resultFieldKind
+    // 'method'), the list is titled METHODS via the profile's
+    // resultMethodsLabel; private internals and schema blocks stay off the
+    // page.
+    const methodSurfaced = result.fields.some((field) => field.resultFieldKind === 'method');
+    const resultFieldsLabel = methodSurfaced && policy.resultMethodsLabel
+      ? policy.resultMethodsLabel
+      : policy.parametersLabel;
+    if (resultFieldsLabel) {
+      blocks.push(label(resultFieldsLabel, semantic('result-fields-label')));
     }
     blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
   }

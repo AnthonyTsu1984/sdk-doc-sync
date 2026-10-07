@@ -18,6 +18,7 @@ module.exports = createSdkRenderer({
     : 'BUILDER METHODS:',
   resultTypeLabel: 'RETURN TYPE:',
   returnsLabel: 'RETURNS:',
+  resultMethodsLabel: 'METHODS:',
   errorsLabel: 'ERROR HANDLING:',
   exampleHeading: 'Example{#example}',
 });

@@ -56,6 +56,7 @@ function createField({
   appliesWhen = null,
   evidence = [],
   allowRequiredDefault = false,
+  resultFieldKind = null,
 } = {}) {
   return immutable({
     name,
@@ -70,6 +71,7 @@ function createField({
     appliesWhen,
     evidence,
     allowRequiredDefault,
+    resultFieldKind,
   });
 }
 

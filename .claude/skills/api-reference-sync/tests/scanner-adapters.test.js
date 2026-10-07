@@ -297,6 +297,13 @@ test('go adapter merges reviewed struct-param children; field runs never glue in
         { name: 'opts', type: '...grpc.CallOption', description: 'Optional gRPC call options.' },
       ],
     }],
+    result: {
+      type: 'milvuspb.MilvusService_DumpMessagesClient, error',
+      description: 'A server-streaming client.',
+      fields: [
+        { name: 'GetClientID', type: 'string', description: 'Returns the unique client ID.', resultFieldKind: 'method' },
+      ],
+    },
   }));
 
   const req = doc.signatures[0].inputs[0];
@@ -306,6 +313,7 @@ test('go adapter merges reviewed struct-param children; field runs never glue in
     children,
   );
   assert.equal(doc.signatures[0].inputs[1].children.length, 0, 'params without reviewed children stay flat');
+  assert.equal(doc.result.fields[0].resultFieldKind, 'method', 'method-kind result fields survive normalization');
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 
   const markdown = renderMarkdown(goRenderer.render(doc));
@@ -318,6 +326,18 @@ test('go adapter merges reviewed struct-param children; field runs never glue in
     markdown.includes('with the following fields:\n  - **Pchannel** (*string*) -'),
     true,
     'struct member fields render as nested sub-bullets under the parameter',
+  );
+  // Operator ruling 2026-10-07 (GetTelemetry): a method-surfaced response
+  // (opaque manager handle) is titled METHODS, not PARAMETERS.
+  assert.equal(
+    markdown.includes('**METHODS:**\n\n- **GetClientID**'),
+    true,
+    'method-kind result fields render under the METHODS label',
+  );
+  assert.equal(
+    /\*\*PARAMETERS:\*\*/.test(markdown.split('**METHODS:**')[1] || ''),
+    false,
+    'the method surface must not double-label as PARAMETERS',
   );
 });
 

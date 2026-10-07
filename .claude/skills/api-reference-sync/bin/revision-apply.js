@@ -74,6 +74,7 @@ function parseArgs(argv) {
         else if (arg === '--journal') args.journal = path.resolve(argv[++index]);
         else if (arg === '--base-token') args.baseToken = argv[++index];
         else if (arg === '--table-id') args.tableId = argv[++index];
+        else if (arg === '--batch-continue') args.batchContinue = true;
         else if (arg === '--json') args.json = true;
         else throw new Error(`Unknown argument: ${arg}`);
     }
@@ -496,7 +497,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         reviewUnitId: args.reviewUnitId,
         executionJournalPath: journalPath,
         executionJournalDigest: journalDigest,
-    });
+    }, { batchContinue: args.batchContinue === true });
     saveReviewSession(path.resolve(args.session), nextSession, { expectedPreviousDigest: sessionDigest });
 
     const result = {

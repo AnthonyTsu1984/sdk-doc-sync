@@ -87,7 +87,8 @@ test('revision card: live scope wins, progress reconciles apply-review manifests
   assert.ok(card.written.every((w) => w.manifest.startsWith('tmp/api-reference-sync/run-manifest-')));
 });
 
-test('revision dedupe: stale copies in earlier checkouts lose to the live one', (t) => {  const stale = makeFixtureTree('dash-rev-stale-');
+test('revision dedupe: stale copies in earlier checkouts lose to the live one', (t) => {
+  const stale = makeFixtureTree('dash-rev-stale-');
   const live = makeFixtureTree('dash-rev-live-');
   t.after(() => {
     fs.rmSync(stale.root, { recursive: true, force: true });
@@ -340,8 +341,8 @@ function revisionSessionFixture({ root, accepted = 1, pending = 0, withScope = t
   };
 }
 
-function writeRevisionArtifacts(tree) {
-  tree.write('tmp/api-reference-sync/java-revision-worklist.json', worklistFixture({ pagesInScope: 204 }));
+function writeRevisionArtifacts(tree, worklistName = 'java-revision-worklist.json') {
+  tree.write(`tmp/api-reference-sync/${worklistName}`, worklistFixture({ pagesInScope: 204 }));
   tree.write('tmp/api-reference-sync/revision-scope-java-v30.json', {
     schemaVersion: 1, generatedAt: '2026-10-05T12:00:00.000Z',
     summary: { pages: 204, byCode: { RETURNS_MIN_DEPTH: 178 } },
@@ -387,9 +388,10 @@ test('a session without revision-scope evidence never merges; sibling checkouts 
   // session — the sibling's revision row must stay standalone (checkout-
   // scoped), while main's own pair merges into one row. The sibling's
   // worklist carries its own stem: one card per stem is the batch-10
-  // cross-checkout dedupe, not a same-campaign signal.
-  for (const tree of [main, sib]) writeRevisionArtifacts(tree);
-  sib.write('tmp/api-reference-sync/java-revision-worklist-sib.json', worklistFixture({ pagesInScope: 204 }));
+  // cross-checkout dedupe, and letting both copies share a stem would hand
+  // the merge decision to an mtime tiebreak (a coin flip, not an invariant).
+  writeRevisionArtifacts(main);
+  writeRevisionArtifacts(sib, 'java-revision-worklist-sib.json');
   main.write('tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json', revisionSessionFixture({ root: main.root }));
   solo.write('tmp/api-reference-sync/java-revision-worklist.json', worklistFixture({ pagesInScope: 204 }));
   solo.write('tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json', revisionSessionFixture({ root: solo.root, withScope: false }));

@@ -562,9 +562,19 @@ function touchedRecordsFromJournal(entries) {
   return [...byAction.values()].sort((left, right) => left.recordId.localeCompare(right.recordId));
 }
 
-// Gate manifests label links `<unit> — 页面` and `<unit> — 记录页`; the same
-// durable presentation the operator reviewed is the link source of record.
+// Durable link contract for review gate manifests: structured
+// `units: [{ reviewUnitId, documentLinks, recordLinks }]` wins; the display
+// label form (`<unit> — 页面` / `<unit> — 记录页`) stays as the fallback for
+// manifests authored before the contract. Either way the links come from the
+// manifest the operator was shown — never from executor transcription.
 function linksFromGateManifest(manifest, reviewUnitId) {
+  for (const unit of Array.isArray(manifest?.units) ? manifest.units : []) {
+    if (unit?.reviewUnitId !== reviewUnitId) continue;
+    return {
+      documentLinks: (Array.isArray(unit.documentLinks) ? unit.documentLinks : []).filter(nonEmptyText),
+      recordLinks: (Array.isArray(unit.recordLinks) ? unit.recordLinks : []).filter(nonEmptyText),
+    };
+  }
   const documentLinks = [];
   const recordLinks = [];
   for (const link of Array.isArray(manifest?.links) ? manifest.links : []) {
@@ -629,7 +639,15 @@ async function runBatchReviewResolver({ session, sessionPath, sessionDigest, arg
     if (pending.executionJournalDigest !== decision.digest) {
       throw new Error(`REPLY_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) — session pending journal is ${pending.executionJournalDigest}, reply binds ${decision.digest} — nothing applied`);
     }
-    const touched = touchedRecordsFromJournal(readJournalEntries(pending.executionJournalPath));
+    const entries = readJournalEntries(pending.executionJournalPath);
+    // Re-derive the journal's hash in pass 1: a journal modified after
+    // execution must refuse the WHOLE reply here, not kill apply pass 2
+    // after earlier units already landed.
+    const derivedDigest = digestSemantic(entries);
+    if (derivedDigest !== decision.digest) {
+      throw new Error(`REPLY_JOURNAL_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) — journal ${pending.executionJournalPath} hashes to ${derivedDigest}, reply binds ${decision.digest} — nothing applied`);
+    }
+    const touched = touchedRecordsFromJournal(entries);
     if (touched.length === 0) {
       throw new Error(`REPLY_JOURNAL_UNUSABLE: ${decision.reviewUnitId} journal ${pending.executionJournalPath} yields no prepared (actionId, recordId) entries — nothing applied`);
     }
@@ -642,10 +660,26 @@ async function runBatchReviewResolver({ session, sessionPath, sessionDigest, arg
     plan.push({ decision, pending, touched, ...links });
   }
   for (const decision of requests) {
-    if (!pendings.has(decision.reviewUnitId)) {
-      throw new Error(`REPLY_UNIT_NOT_PENDING: ${decision.reviewUnitId} (line ${decision.lineNo}) — a change request reverts a pending (executed, unaccepted) unit — nothing applied`);
+    if (pendings.has(decision.reviewUnitId)) {
+      plan.push({ decision });
+      continue;
     }
-    plan.push({ decision });
+    // Rerun convergence: the unit left pending review since this reply was
+    // first applied. Skip when the durable record explains it — a change
+    // request already on record, or a LATER acceptance (the operator approved
+    // it afterwards; the request line is superseded). A unit with NO durable
+    // history still refuses: a typo'd id must never silently no-op.
+    if (acceptedByUnit.has(decision.reviewUnitId)) {
+      plan.push({ decision, skip: 'accepted-since' });
+      continue;
+    }
+    const alreadyRequested = (session.changeRequests || [])
+      .some((entry) => entry?.reviewUnitId === decision.reviewUnitId);
+    if (alreadyRequested) {
+      plan.push({ decision, skip: 'already-requested' });
+      continue;
+    }
+    throw new Error(`REPLY_UNIT_NOT_PENDING: ${decision.reviewUnitId} (line ${decision.lineNo}) is neither pending review nor accepted — nothing applied`);
   }
   const writesNeeded = plan.some((item) => item.decision.kind === 'approve' && !item.skip);
   if (writesNeeded && !args.dryRun && !args.baseToken && !io.bitableWriter) {
@@ -657,13 +691,15 @@ async function runBatchReviewResolver({ session, sessionPath, sessionDigest, arg
     schemaVersion: 1,
     command: 'resolve-batch-review',
     replySource: args.reply,
+    gateManifest: args.gateManifest ?? null,
     parsed: { approvals: approvals.length, requests: requests.length },
     accepted: [],
     alreadyAccepted: [],
     requested: [],
+    requestSkipped: [],
     leftPending: [...pendings.keys()].filter((unitId) => !addressed.has(unitId)),
   };
-  const describe = () => `approve ${report.parsed.approvals} / request ${report.parsed.requests}; accepted ${report.accepted.length}, already accepted ${report.alreadyAccepted.length}, requested ${report.requested.length}, left pending ${report.leftPending.length}`;
+  const describe = () => `approve ${report.parsed.approvals} / request ${report.parsed.requests}; accepted ${report.accepted.length}, already accepted ${report.alreadyAccepted.length}, requested ${report.requested.length}, request skipped ${report.requestSkipped.length}, left pending ${report.leftPending.length}`;
   if (args.dryRun) {
     for (const item of plan) {
       out(`- ${item.decision.kind === 'approve' ? 'APPROVE' : 'REQUEST'} ${item.decision.reviewUnitId}${item.skip ? ' (already accepted — will skip)' : ''}`);
@@ -677,6 +713,11 @@ async function runBatchReviewResolver({ session, sessionPath, sessionDigest, arg
   // next CAS carries the digest the previous save produced.
   for (const item of plan) {
     if (item.decision.kind === 'request') {
+      if (item.skip) {
+        report.requestSkipped.push({ reviewUnitId: item.decision.reviewUnitId, why: item.skip });
+        out(`Request already on record, skipped: ${item.decision.reviewUnitId} (${item.skip})`);
+        continue;
+      }
       session = recordDocumentChangesRequested(session, {
         reviewUnitId: item.decision.reviewUnitId,
         reason: item.decision.reason,

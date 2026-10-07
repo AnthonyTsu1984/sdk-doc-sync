@@ -439,3 +439,53 @@ test('resolve-batch-review fails closed: unparsed lines, digest mismatch, unknow
   }).catch((error) => error.message);
   assert.match(String(legacy), /two-gate sessions/);
 });
+
+test('resolve-batch-review replays converge on requests and structured unit links bind without labels', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-review-replay-'));
+  // Structured units[] contract — no display labels anywhere.
+  const manifestPath = path.join(directory, 'gate-manifest.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ schemaVersion: 1, gate: 'DOCUMENT_REVIEW', digest: 'sha256:' + '7'.repeat(64), units: [
+    { reviewUnitId: 'review:node:Collections:a', documentLinks: ['https://example.feishu.cn/docx/doc-a'], recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'] },
+    { reviewUnitId: 'review:node:Collections:b', documentLinks: ['https://example.feishu.cn/docx/doc-b'], recordLinks: ['https://example.feishu.cn/base/base?record=rec-b'] },
+  ] }));
+  const { sessionPath, journals } = twoGateSessionWithPendings(directory);
+  const stdout = [];
+  const io = { bitableWriter: fakeWriterFixture() };
+  const { runCli } = require('../bin/sdk-review-session');
+  const run = (replyFile) => runCli({
+    argv: ['node', 'sdk-review-session', 'resolve-batch-review',
+      '--session', sessionPath, '--gate-manifest', manifestPath, '--reply', replyFile, '--json'],
+    dependencies: { onStdout: (line) => stdout.push(line), io },
+  }).catch((error) => error.message);
+
+  const requestFile = path.join(directory, 'reply-request.txt');
+  fs.writeFileSync(requestFile, 'REQUEST_DOCUMENT review:node:Collections:a stale targets baseline\n');
+  await run(requestFile);
+  const afterFirst = fs.readFileSync(sessionPath, 'utf8');
+  assert.equal(JSON.parse(afterFirst).changeRequests.length, 1);
+
+  // Replay the identical reply: the request skips (already on record), the
+  // untouched pending stays pending, and no second CR entry appears.
+  stdout.length = 0;
+  await run(requestFile);
+  const afterReplay = fs.readFileSync(sessionPath, 'utf8');
+  assert.equal(JSON.parse(afterReplay).changeRequests.length, 1, 'replay never duplicates a change request');
+  assert.match(stdout.join('\n'), /request skipped 1/);
+
+  // A REQUEST line with no durable history still refuses (typo'd unit id).
+  const unknownFile = path.join(directory, 'reply-unknown.txt');
+  fs.writeFileSync(unknownFile, 'REQUEST_DOCUMENT review:node:Collections:zzz typo\n');
+  const refused = await run(unknownFile);
+  assert.match(String(refused), /REPLY_UNIT_NOT_PENDING/);
+  assert.equal(fs.readFileSync(sessionPath, 'utf8'), afterReplay, 'unknown unit refuses without mutation');
+
+  // A journal tampered on disk refuses the whole reply in pass 1.
+  fs.appendFileSync(path.join(directory, 'execution-b.jsonl'), `${JSON.stringify({ type: 'observed', actionId: 'injected', status: 'success', verified: true })}\n`);
+  const tamperFile = path.join(directory, 'reply-tamper.txt');
+  fs.writeFileSync(tamperFile, [
+    `APPROVE_DOCUMENT review:node:Collections:b sha256:${journals.b.digest.replace('sha256:', '')}`,
+  ].join('\n'));
+  const tampered = await run(tamperFile);
+  assert.match(String(tampered), /REPLY_JOURNAL_DIGEST_MISMATCH/);
+  assert.equal(fs.readFileSync(sessionPath, 'utf8'), afterReplay, 'tampered journal refuses before any write');
+});

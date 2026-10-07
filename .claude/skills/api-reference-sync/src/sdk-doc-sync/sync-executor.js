@@ -718,15 +718,29 @@ class SyncExecutor {
     result.record = created;
     result.completedSteps.push('createVirtualNode');
 
-    const observed = await this._getRecordWithRetry(createdRecordId);
-    const docs = docsField(observed);
-    const actualFields = virtualNodeFields(observed);
-    const errors = [];
-    if (docs.title !== resource.title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
-    if (actualFields.type !== 'VirtualNode') errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-    if (!sameNormalizedTargets(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
-    if (actualFields.progress !== resource.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
-    if (actualFields.slug !== resource.existingLookup.criteria.canonicalSlug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
+    // Bitable read-after-write is eventually consistent: a record refetched
+    // immediately after creation can transiently miss fields (observed live:
+    // Slug returned empty on the first read, correct seconds later). The
+    // approved-state verification still must hold, so sample the read a
+    // bounded number of times before refusing — never weakening the checks.
+    const verifySamples = 3;
+    let observed = null;
+    let errors = [];
+    for (let sample = 1; sample <= verifySamples; sample += 1) {
+      observed = await this._getRecordWithRetry(createdRecordId);
+      const docs = docsField(observed);
+      const actualFields = virtualNodeFields(observed);
+      errors = [];
+      if (docs.title !== resource.title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
+      if (actualFields.type !== 'VirtualNode') errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+      if (!sameNormalizedTargets(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+      if (actualFields.progress !== resource.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
+      if (actualFields.slug !== resource.existingLookup.criteria.canonicalSlug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
+      if (errors.length === 0) break;
+      if (sample < verifySamples) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * sample));
+      }
+    }
     if (errors.length > 0) {
       const error = new SyncExecutionError(
         'RESOURCE_VERIFICATION_FAILED',

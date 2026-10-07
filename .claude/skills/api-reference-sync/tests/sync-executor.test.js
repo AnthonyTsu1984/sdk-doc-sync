@@ -540,6 +540,118 @@ test('SyncExecutor creates a VirtualNode from its resolved folder without writin
   });
 });
 
+test('SyncExecutor re-samples the read-after-write window before refusing a fresh VirtualNode', async () => {
+  // Bitable is eventually consistent: a record refetched immediately after
+  // creation transiently missed Slug in a live run (VIRTUAL_NODE_SLUG_MISMATCH
+  // while the stored value was correct seconds later). The executor must
+  // re-sample the bounded window before refusing — the approved-state checks
+  // themselves never weaken.
+  const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-cdc`;
+  let reads = 0;
+  const bitableWriter = {
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    async listRecords() {
+      return [];
+    },
+    async createRecord(fields) {
+      return { record_id: 'rec-cdc', fields };
+    },
+    async getRecord(recordIdValue) {
+      reads += 1;
+      if (reads === 1) {
+        // First read inside the consistency window: Slug not yet materialized.
+        return {
+          record_id: recordIdValue,
+          fields: {
+            Docs: { text: 'CDC', link: expectedLink },
+            Type: 'VirtualNode',
+            Progress: 'Draft',
+            Targets: ['Milvus', 'Zilliz'],
+            Slug: [],
+          },
+        };
+      }
+      return {
+        record_id: recordIdValue,
+        fields: {
+          Docs: { text: 'CDC', link: expectedLink },
+          Type: 'VirtualNode',
+          Progress: 'Draft',
+          Targets: ['Milvus', 'Zilliz'],
+          Slug: [{ text: 'v2-CDC', type: 'text' }],
+        },
+      };
+    },
+  };
+  const resourcePlan = new SyncPlanner().planResource({
+    kind: 'virtual_node',
+    ref: 'virtual-node:node:v30:CDC',
+    title: 'CDC',
+    folderRef: 'folder:node:v30:CDC',
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    version: 'v3.0.x',
+    targets: ['Milvus', 'Zilliz'],
+    progress: 'Draft',
+    dependsOn: ['folder:node:v30:CDC'],
+    existingLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      criteria: { canonicalSlug: 'v2-CDC', title: 'CDC', type: 'VirtualNode' },
+    },
+  });
+  const result = await new SyncExecutor({ documentWriter: {}, bitableWriter }).execute(resourcePlan, {
+    approval: { approved: true },
+    resourceResolutions: new Map([[
+      'folder:node:v30:CDC',
+      { ref: 'folder:node:v30:CDC', kind: 'folder', value: 'folder-cdc' },
+    ]]),
+  });
+  assert.equal(result.status, 'success');
+  assert.equal(result.resolvedResource.recordId, 'rec-cdc');
+  assert.ok(reads >= 2, `expected the verification to re-sample after the stale first read, reads=${reads}`);
+
+  // A record that never converges still refuses after the bounded window.
+  let staleReads = 0;
+  const staleWriter = {
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    async listRecords() {
+      return [];
+    },
+    async createRecord(fields) {
+      return { record_id: 'rec-stale', fields };
+    },
+    async getRecord(recordIdValue) {
+      staleReads += 1;
+      return {
+        record_id: recordIdValue,
+        fields: {
+          Docs: { text: 'CDC', link: expectedLink },
+          Type: 'VirtualNode',
+          Progress: 'Draft',
+          Targets: ['Milvus', 'Zilliz'],
+          Slug: [{ text: 'permanently-wrong', type: 'text' }],
+        },
+      };
+    },
+  };
+  const staleResult = await new SyncExecutor({ documentWriter: {}, bitableWriter: staleWriter }).execute(resourcePlan, {
+    approval: { approved: true },
+    resourceResolutions: new Map([[
+      'folder:node:v30:CDC',
+      { ref: 'folder:node:v30:CDC', kind: 'folder', value: 'folder-cdc' },
+    ]]),
+  });
+  assert.equal(staleResult.status, 'error');
+  assert.equal(staleResult.error.code, 'RESOURCE_VERIFICATION_FAILED');
+  assert.equal(staleResult.error.details.errors[0].code, 'VIRTUAL_NODE_SLUG_MISMATCH');
+  assert.equal(staleReads, 3, 'verification must stop at the bounded sample count');
+});
+
 test('SyncExecutor resolves approved folder and parent refs only at document execution time', async () => {
   const calls = [];
   const context = planningContext({

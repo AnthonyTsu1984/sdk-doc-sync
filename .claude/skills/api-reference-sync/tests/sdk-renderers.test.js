@@ -1147,3 +1147,30 @@ test('Java builder members render embedded helper fields beneath the owning meth
   assert.match(markdown, /  - `fieldName\(String fieldName\)` -[\s\S]*The field to update\./);
   assert.match(markdown, /  - `opType\(OpType opType\)` -[\s\S]*Defaults to \*\*REPLACE\*\*\./);
 });
+
+test('python description prose resolves backticked SDK class mentions against typeUrls (2026-10-07 operator ruling)', () => {
+  const item = cases[0];
+  const symbol = enrich('python', fixture(item.fixture));
+  const adapterContext = context('python');
+  const tweakedContext = {
+    ...adapterContext,
+    result: {
+      ...adapterContext.result,
+      description: 'Returns a `SearchResult` page holding the matching entities ordered by similarity.',
+    },
+  };
+  const reference = item.adapter.toReferenceDocument(symbol, tweakedContext);
+
+  // Resolved alias: the mention renders as a citation link.
+  const linked = renderMarkdown(item.renderer.render(reference, {
+    typeUrls: { SearchResult: '/reference/python/search-result' },
+  }));
+  assert.match(linked, /\[SearchResult\]\(\/reference\/python\/search-result\)/);
+  assert.doesNotMatch(linked, /`SearchResult`/);
+
+  // Unresolved alias: the mention stays inline code (layout-conformance's
+  // descriptionTypeLinksRequired rule refuses the preview).
+  const unlinked = renderMarkdown(item.renderer.render(reference, { typeUrls: {} }));
+  assert.match(unlinked, /`SearchResult`/);
+  assert.doesNotMatch(unlinked, /\[SearchResult\]\(/);
+});

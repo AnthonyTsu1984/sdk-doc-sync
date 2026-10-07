@@ -345,6 +345,31 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
         }
     }
 
+    // 2026-10-07 operator ruling (py-v30 CollectionSchema review, durable
+    // rule request): every SDK-defined class mention inside parameter/method
+    // description prose must render as a jump link. The renderer resolves
+    // `Alias` inline code against the KB type-url index and emits a citation,
+    // so the linked form carries NO backticks while an unresolved mention
+    // keeps them — a backticked class-like token outside a code fence is the
+    // deterministic byte fact this rule judges. Non-class tokens (language
+    // primitives, vendor names) stay exempt through the declared denylist.
+    if (contentRules.descriptionTypeLinksRequired) {
+        const denylist = new Set((contentRules.descriptionTypeLinkDenylist || []).map((token) => String(token).toLowerCase()));
+        const codeTokenPattern = /`([A-Z][A-Za-z0-9]*)`/g;
+        const offending = [];
+        for (const entry of entries) {
+            if (entry.kind === 'code') continue;
+            const text = String(entry.text || '');
+            for (const match of text.matchAll(codeTokenPattern)) {
+                if (denylist.has(match[1].toLowerCase())) continue;
+                offending.push(match[1]);
+            }
+        }
+        if (offending.length > 0) {
+            report('DESCRIPTION_TYPE_CODE_UNLINKED', `${offending.length} backticked SDK class mention(s) render without a jump link: ${[...new Set(offending)].join(', ')}`);
+        }
+    }
+
     // 2026-10-06 python ruling: templated example intros ("Shows a typical
     // … call for the vX.Y API.") are banned — an example without a reviewed
     // description renders code-only.

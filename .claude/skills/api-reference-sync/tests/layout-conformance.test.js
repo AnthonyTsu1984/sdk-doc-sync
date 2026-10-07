@@ -275,6 +275,35 @@ test('checkMarkdownContentQuality runs the five rules over preview markdown, ski
     assert.deepEqual(checkMarkdownContentQuality('Deletes entities.', bare).violations, []);
 });
 
+test('2026-10-07 operator ruling: description prose links SDK class mentions (descriptionTypeLinksRequired)', () => {
+    const profile = sdkLayoutProfiles.python;
+    const violations = (markdown) => checkMarkdownContentQuality(markdown, profile).violations;
+
+    // Unresolved `FieldSchema` keeps its backticks (the renderer only emits a
+    // citation when the type-url index resolves the alias) — the preview
+    // fails with the offending token named.
+    assert.deepEqual(violations([
+        'This operation lists schemas.',
+        '**PARAMETERS:**',
+        '- **fields** (*list*) - A list of `FieldSchema` objects that define the collection fields.',
+    ].join('\n')), [{
+        code: 'DESCRIPTION_TYPE_CODE_UNLINKED',
+        detail: '1 backticked SDK class mention(s) render without a jump link: FieldSchema',
+    }]);
+
+    // Linked citations carry no backticks; denylisted primitives (language
+    // primitives and vendor proper nouns) and fenced example code are exempt.
+    assert.deepEqual(violations([
+        'This operation lists schemas.',
+        '**PARAMETERS:**',
+        '- **fields** (*list*) - A list of [FieldSchema](https://zilliverse.feishu.cn/docx/ABC) objects that define the collection fields.',
+        '- **mode** (*string*) - Serialized as `JSON` inside `AWS` buckets.',
+        '```Python',
+        'client = MilvusClient()',
+        '```',
+    ].join('\n')), []);
+});
+
 test('2026-10-06 python ruling: bare multiline payload, italic types, no templated example intro', () => {
     const profile = sdkLayoutProfiles.python;
     const codes = (markdown) => checkMarkdownContentQuality(markdown, profile).violations.map((v) => v.code);

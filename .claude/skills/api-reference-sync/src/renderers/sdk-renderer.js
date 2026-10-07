@@ -39,7 +39,21 @@ function proseInlines(value, baseMarks = [], links = []) {
 }
 
 function paragraph(value, marks = [], options = {}) {
-  return ir.paragraph(proseInlines(value, marks), options);
+  const { links, ...nodeOptions } = options || {};
+  return ir.paragraph(proseInlines(value, marks, links), nodeOptions);
+}
+
+// 2026-10-07 operator ruling (py-v30 CollectionSchema review): every mention
+// of an SDK-defined class inside parameter/method description prose carries a
+// jump link. Description authors mark the mention as `Alias` inline code; the
+// renderer resolves it against the KB type-url index and emits a citation —
+// an unresolved alias stays plain inline code (layout-conformance's
+// descriptionTypeLinksRequired rule fails the preview instead).
+function typeLinks(context) {
+  const typeUrls = context?.typeUrls && typeof context.typeUrls === 'object' ? context.typeUrls : {};
+  return Object.entries(typeUrls)
+    .filter(([, url]) => isSafeUrl(url))
+    .map(([text, url]) => ({ text, url }));
 }
 
 function heading(level, value, options = {}) {
@@ -125,7 +139,7 @@ function renderFieldItem(field, context, role = 'parameters-list', key = null) {
   for (const entry of audience.descriptionEntries(field)) {
     const description = sentence(entry.description);
     if (!description) continue;
-    const descriptionBlock = paragraph(description);
+    const descriptionBlock = paragraph(description, [], { links: typeLinks(context) });
     if (audience.normalizeAudience(field.audience) === 'shared' && entry.audience !== 'shared') {
       children.push(ir.audienceRegion('include', entry.audience, [descriptionBlock]));
     } else {
@@ -177,7 +191,7 @@ function renderMembers(members, context, options = {}) {
   return ir.unorderedList(members.map((member) => {
     const children = [ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])])];
     const description = sentence(member.description);
-    if (description) children.push(paragraph(description));
+    if (description) children.push(paragraph(description, [], { links: typeLinks(context) }));
     if (Array.isArray(member.fields) && member.fields.length > 0) {
       children.push(renderFields(member.fields, context, 'member-fields', member.name));
     }
@@ -319,7 +333,7 @@ function renderReturns(document, policy, context) {
   if (!policy.resultTypeLabel) {
     blocks.push(ir.paragraph(typeInlines(result.type, context), semantic('returns-type-value')));
   }
-  blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
+  blocks.push(paragraph(sentence(result.description), [], { ...semantic('returns-description'), links: typeLinks(context) }));
   if (Array.isArray(result.fields) && result.fields.length > 0) {
     // describeReplicas baseline (2026-10-03 strong-form ruling): response
     // fields render as a labeled bullet list after the RETURNS prose,

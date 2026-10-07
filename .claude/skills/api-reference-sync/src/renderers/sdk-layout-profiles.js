@@ -8,7 +8,7 @@
 // its own version so the renderer-shape version above (pinned by artifacts
 // and contracts) stays untouched.
 const GLOBAL_LAYOUT_RULES = Object.freeze({
-  version: 2,
+  version: 4,
   requestH3: 'multi-only',
   requestHeadingPattern: 'Request$',
   exampleHeading: false,
@@ -26,6 +26,17 @@ const GLOBAL_LAYOUT_RULES = Object.freeze({
     returnsResponseFieldsRequired: true,
     paramDescRequired: true,
     bareNotesSectionForbidden: true,
+    // 2026-10-07 operator ruling (py-v30 CollectionSchema review, durable
+    // rule request): SDK-defined class mentions inside parameter/method
+    // description prose must render as jump links. The renderer resolves
+    // `Alias` inline code against the KB type-url index; this rule fails the
+    // preview while an alias stays unresolved. Tokens that are language
+    // primitives or vendor proper nouns — not SDK classes — are exempt here.
+    descriptionTypeLinksRequired: true,
+    descriptionTypeLinkDenylist: Object.freeze([
+      'True', 'False', 'None', 'Python', 'Milvus', 'Zilliz', 'MilvusClient',
+      'AWS', 'IAM', 'S3', 'ARN', 'URI', 'URL', 'JSON', 'SDK', 'HTTP', 'HTTPS', 'API', 'ID',
+    ]),
   }),
 });
 
@@ -56,7 +67,7 @@ const CPP_LAYOUT_RULES = Object.freeze({
 // until other tracks adopt it with their repolish batches.
 const JAVA_LAYOUT_RULES = Object.freeze({
   ...GLOBAL_LAYOUT_RULES,
-  version: 3,
+  version: 4,
   returnSections: Object.freeze({ split: true }),
   returnsProseRequired: true,
 });

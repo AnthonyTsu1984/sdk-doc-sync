@@ -171,6 +171,36 @@ test('include markers must survive exactly', () => {
     assert.ok(comparison.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
 });
 
+test('plain external reference may be upgraded into dual-target includes (2026-10-07 ruling)', () => {
+    const plainPage = [
+        '# grant()',
+        '',
+        'This operation grants a privilege to a role.',
+        '',
+        'For details, refer to [Users and Roles](https://milvus.io/docs/users_and_roles.md).',
+    ].join('\n');
+    const wrappedPage = [
+        '# grant()',
+        '',
+        'This operation grants a privilege to a role.',
+        '',
+        'For details, refer to <include target="milvus">[Users and Roles](https://milvus.io/docs/users_and_roles.md)</include><include target="zilliz">[Manage Cluster Roles(SDK)](https://docs.zilliz.com/docs/cluster-roles-sdk)</include>.',
+    ].join('\n');
+    const upgraded = compareSemanticContent({ upstreamContent: plainPage, canonicalContent: wrappedPage });
+    assert.equal(upgraded.ok, true, JSON.stringify(upgraded.diffs));
+
+    // The bound stays: an EXISTING include marker must survive verbatim.
+    const withMarker = PAGE.replace('<include target="milvus">Milvus docs [m-url]</include>', '<include target="milvus">Milvus docs [m-url]</include><include target="zilliz">Z docs [z-url]</include>');
+    const added = compareSemanticContent({ upstreamContent: PAGE, canonicalContent: withMarker });
+    assert.equal(added.ok, true, JSON.stringify(added.diffs));
+    const dropped = compareSemanticContent({
+        upstreamContent: PAGE,
+        canonicalContent: PAGE.replace('<include target="milvus">Milvus docs [m-url]</include>', ''),
+    });
+    assert.equal(dropped.ok, false);
+    assert.ok(dropped.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
+});
+
 test('matchOrdered enforces strictly increasing ordered containment', () => {
     assert.deepEqual(matchOrdered(['a', 'b', 'c'], ['x', 'a', 'y', 'b', 'z', 'c']), [1, 3, 5]);
     // Greedy forward matching: 'a' takes the later slot, 'b' finds nothing after it.

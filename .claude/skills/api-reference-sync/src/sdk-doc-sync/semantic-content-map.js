@@ -319,8 +319,27 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
 
     const upstreamIncludes = [...upstream.includeMarkers].sort();
     const canonicalIncludes = [...canonical.includeMarkers].sort();
-    if (JSON.stringify(upstreamIncludes) !== JSON.stringify(canonicalIncludes)) {
-        diffs.push({ kind: 'INCLUDE_MARKER_CHANGED', detail: `upstream ${upstreamIncludes.length}, canonical ${canonicalIncludes.length}` });
+    // 2026-10-07 widening (java revision campaign, operator global rule): a
+    // plain external reference sentence may be upgraded into dual-target
+    // include markers (milvus.io + docs.zilliz.com pair), so canonical may
+    // carry MORE markers than upstream. What must never happen is an
+    // upstream marker silently disappearing. includeMarkers tokens are
+    // line-granular (adjacent markers on one line coalesce), so compare at
+    // ATOMIC marker granularity: every <include…</include> unit present
+    // upstream has to survive verbatim into the canonical content.
+    const INCLUDE_UNIT = /<include\s+target=[^>]*>[\s\S]*?<\/include>/gi;
+    const atomicMarkers = (tokens) => {
+        const units = [];
+        for (const token of tokens) {
+            for (const match of String(token).match(INCLUDE_UNIT) || []) units.push(match.trim());
+        }
+        return units;
+    };
+    const upstreamUnits = atomicMarkers(upstreamIncludes);
+    const canonicalUnits = atomicMarkers(canonicalIncludes);
+    const droppedUnits = upstreamUnits.filter((unit) => !canonicalUnits.includes(unit));
+    if (droppedUnits.length > 0) {
+        diffs.push({ kind: 'INCLUDE_MARKER_CHANGED', detail: `upstream marker(s) dropped: ${droppedUnits.slice(0, 2).join(' | ').slice(0, 200)}` });
     }
 
     return {

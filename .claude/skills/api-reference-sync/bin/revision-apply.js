@@ -54,7 +54,7 @@ const {
     assertPolishPreconditions,
     comparePolishedContent,
 } = require('../src/sdk-doc-sync/pr-polish');
-const { verbatimContentDigest } = require('../src/sdk-doc-sync/verbatim-content');
+const { verbatimContentDigest, normalizeVerbatimContent } = require('../src/sdk-doc-sync/verbatim-content');
 const { checkLayoutConformance, pageFactsFromBlocks } = require('../src/sdk-doc-sync/layout-conformance');
 const { blocksToMarkdown } = require('../src/sdk-doc-sync/blocks-to-markdown');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
@@ -432,8 +432,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // designed for raw_content (which leads with the page title). The
     // block-tree reconstruction carries no title line, so prepend a
     // PLACEHOLDER title line to the observed side for the comparator to
-    // drop — otherwise the first body line would be consumed.
-    const rebuiltContent = '__REVISION_PAGE_TITLE__\n' + blocksToMarkdown(liveBlocks);
+    // drop — otherwise the first body line would be consumed. The
+    // reconstruction also goes through the same normalizeVerbatimContent
+    // the expected side gets: it strips the trailing web-content metadata
+    // comment the expected side is normalized without, keeping the two
+    // sides symmetric.
+    const rebuiltContent = normalizeVerbatimContent('__REVISION_PAGE_TITLE__\n' + blocksToMarkdown(liveBlocks));
     const comparison = comparePolishedContent({ polishedContent, rawContent: rebuiltContent });
     if (!comparison.ok) {
         failJournal(`terminal block-tree comparison failed: ${JSON.stringify(comparison.diffs).slice(0, 240)}`);

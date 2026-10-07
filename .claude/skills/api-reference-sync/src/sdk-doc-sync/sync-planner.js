@@ -230,7 +230,7 @@ class SyncPlanner {
     return deepFreeze(plans);
   }
 
-  planResource(resource) {
+  planResource(resource, { placementWalkDigest = null } = {}) {
     if (!resource || typeof resource !== 'object') {
       throw new SyncPlanningError('RESOURCE_REQUIRED', 'A resource definition is required');
     }
@@ -362,6 +362,13 @@ class SyncPlanner {
       dependencies,
       preconditions,
       postconditions,
+      // T3 placement-live binding: resource placement derives from the same
+      // audit walk as the document plans it precedes — a walk-bound run
+      // refuses batches where resource plans ride their siblings' binding
+      // without carrying it themselves (PLACEMENT_WALK_UNBOUND). Legacy
+      // callers stay byte-compatible: the field only appears when a walk is
+      // actually bound.
+      ...(nonEmptyString(placementWalkDigest) ? { placementWalkDigest } : {}),
       metadata: { diffAction: action, artifactKind: 'dependent-resource' },
     }));
   }

@@ -569,7 +569,7 @@ class SdkDocSync {
         const plannedEntries = [];
         for (const resource of [...(this.releaseScope?.resources || []), ...(this.campaignResources || [])]) {
             try {
-                const plan = this.planner.planResource(resource);
+                const plan = this.planner.planResource(resource, { placementWalkDigest: this.placementWalkDigest });
                 result.resourcePlans.push(plan);
                 plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });
             } catch (error) {

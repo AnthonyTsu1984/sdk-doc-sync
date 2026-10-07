@@ -1112,6 +1112,37 @@ test('execution batch includes resource plans and normalizes raw resource refs i
   assert.ok(batch.sideEffects.includes('feishu.drive.create_folder'));
 });
 
+test('resource plans carry the bound placement walk digest; legacy callers stay unbound', () => {
+  const resource = {
+    kind: 'folder',
+    ref: 'folder:node:v30:CDC',
+    name: 'CDC',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'CDC',
+    },
+  };
+  const walk = 'sha256:'.padEnd(71, '0');
+  const bound = new SyncPlanner().planResource(resource, { placementWalkDigest: walk });
+  assert.equal(bound.placementWalkDigest, walk);
+  const legacy = new SyncPlanner().planResource(resource);
+  assert.equal('placementWalkDigest' in legacy, false);
+  // The stamped digest is what verifyPlacementWalkBinding needs so a
+  // walk-bound run accepts the batch instead of refusing resource plans as
+  // legacy (PLACEMENT_WALK_UNBOUND).
+  const { verifyPlacementWalkBinding } = require('../src/sdk-doc-sync/versioned-tree-policy');
+  const documentPlan = { placementWalkDigest: walk };
+  const result = verifyPlacementWalkBinding({
+    plans: [bound, documentPlan],
+    boundWalkDigest: walk,
+  });
+  assert.deepEqual(result.errors, []);
+});
+
 test('review-unit manifest creates one deterministic document batch with its required resources', () => {
   const resource = {
     kind: 'resource',

@@ -75,8 +75,23 @@ function pageFactsFromBlocks(blocks = []) {
     const callouts = [];
     const stream = [];
     const bullets = [];
+    // Flat fetch format (lark-cli get-all-blocks): the array is flat and a
+    // block's children are ID strings. Walking that array as top-level
+    // re-scans callout interiors as body text, so a governed callout's
+    // "Notes" title reads as a bare note (INTERNAL_NOTE_LEAK false
+    // positive). When the payload anchors a page block, walk the real
+    // hierarchy through the id → block map instead; embedded-children
+    // payloads and section lists keep the legacy path.
+    const flatBlocks = Array.isArray(blocks) ? blocks : [blocks];
+    const pageBlock = flatBlocks.find(b => b && b.block_type === 1);
+    const byId = new Map(flatBlocks.filter(b => b && b.block_id).map(b => [b.block_id, b]));
+    const flatHierarchy = pageBlock && Array.isArray(pageBlock.children)
+        && pageBlock.children.length > 0
+        && pageBlock.children.every(c => typeof c === 'string' && byId.has(c));
+    const resolve = (block) => (typeof block === 'string' ? byId.get(block) : block) ?? null;
     const walk = (list, insideCallout) => {
-        for (const block of list || []) {
+        for (const entry of list || []) {
+            const block = flatHierarchy ? resolve(entry) : entry;
             if (!block || typeof block !== 'object') continue;
             if (block.block_type >= HEADING_LEVEL_BASE + 1 && block.block_type <= HEADING_LEVEL_MAX) {
                 const text = (block[`heading${block.block_type - HEADING_LEVEL_BASE}`]?.elements || [])
@@ -115,7 +130,7 @@ function pageFactsFromBlocks(blocks = []) {
                     bullets.push(text);
                     stream.push({ kind: 'bullet', text, boldName });
                 }
-                if (Array.isArray(block.children)) walk(block.children, insideCallout);
+                if (Array.isArray(block.children)) walk(block.children.map(resolve).filter(Boolean), insideCallout);
                 continue;
             }
             if (block.block_type === CALLOUT_BLOCK_TYPE) {
@@ -127,13 +142,17 @@ function pageFactsFromBlocks(blocks = []) {
                     if (child?.block_type === TEXT_BLOCK_TYPE) childLines.push(text);
                 }
                 callouts.push({ lines: childLines });
-                walk(block.children, true);
+                walk((block.children ?? []).map(resolve).filter(Boolean), true);
                 continue;
             }
-            if (Array.isArray(block.children)) walk(block.children, insideCallout);
+            if (Array.isArray(block.children)) walk(block.children.map(resolve).filter(Boolean), insideCallout);
         }
     };
-    walk(Array.isArray(blocks) ? blocks : [blocks], false);
+    if (flatHierarchy) {
+        walk((pageBlock.children ?? []).map(resolve).filter(Boolean), false);
+    } else {
+        walk(flatBlocks, false);
+    }
     const nonEmpty = (text) => String(text).trim() !== '';
     return {
         headings,

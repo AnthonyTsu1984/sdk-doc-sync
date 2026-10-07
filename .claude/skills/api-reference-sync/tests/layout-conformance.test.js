@@ -452,3 +452,33 @@ test('markdown governed Admonition interiors are exempt from the Notes-leak rule
     const bare = checkMarkdownContentQuality('This operation deletes entities.\nNotes\n', profile).violations;
     assert.equal(bare.find((violation) => violation.code === 'INTERNAL_NOTE_LEAK')?.code, 'INTERNAL_NOTE_LEAK');
 });
+
+test('pageFactsFromBlocks walks the flat fetch format through the page block: callout interiors stay governed', () => {
+    // Flat fetch format (lark-cli get-all-blocks): children are ID strings and
+    // the payload anchors a page block. Regression for the INTERNAL_NOTE_LEAK
+    // false positive where walking the flat array as top-level re-scanned a
+    // governed callout's "Notes" title as body text.
+    const facts = pageFactsFromBlocks([
+        {
+            block_id: 'page',
+            block_type: 1,
+            children: ['h', 'callout', 'b'],
+        },
+        { block_id: 'h', block_type: 3, parent_id: 'page', heading1: { elements: [{ text_run: { content: 'Search()' } }] } },
+        {
+            block_id: 'callout',
+            block_type: 19,
+            parent_id: 'page',
+            children: ['c1', 'c2'],
+        },
+        { block_id: 'c1', block_type: 2, parent_id: 'callout', text: { elements: [{ text_run: { content: 'Notes' } }] } },
+        { block_id: 'c2', block_type: 2, parent_id: 'callout', text: { elements: [{ text_run: { content: 'When search_aggregation is specified, do not explicitly set limit.' } }] } },
+        { block_id: 'b', block_type: 12, parent_id: 'page', bullet: { elements: [{ text_run: { content: '**limit** (*int*) - The total number of entities to return.' } }] } },
+    ]);
+    assert.deepEqual(facts.lines, ['Search()']);
+    // flat format: the callout census collects child LINES from embedded children only;
+    // id-string children resolve through the hierarchy walk (stream scoping), not the census.
+    assert.deepEqual(facts.callouts, [{ lines: [] }]);
+    const bareNote = facts.stream.find((entry) => /^notes:?$/i.test(entry.text.trim()));
+    assert.equal(bareNote, undefined);
+});

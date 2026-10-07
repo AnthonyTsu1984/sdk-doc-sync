@@ -307,7 +307,14 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
     if (contentRules.returnsResponseFieldsRequired) {
         const returnsIndex = entries.findIndex((entry) => isLabel(entry.text, 'returns'));
         if (returnsIndex !== -1) {
-            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex && isLabel(entry.text, 'parameters'));
+            // Operator ruling 2026-10-07 (go GetTelemetry): a method-surfaced
+            // response (opaque manager handle) titles its list METHODS — the
+            // methods label after RETURNS carries the response surface the
+            // same way a PARAMETERS list does. Type-page members sections sit
+            // before RETURN TYPE, so a post-RETURNS METHODS label is
+            // unambiguous.
+            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex
+                && (isLabel(entry.text, 'parameters') || isLabel(entry.text, 'methods')));
             let fieldBullets = 0;
             if (parametersIndex !== -1) {
                 for (let index = parametersIndex + 1; index < entries.length; index += 1) {

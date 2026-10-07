@@ -149,7 +149,7 @@ function extractSemanticMap(markdown) {
         if (Array.isArray(tableRows) && tableRows.length > 0) map.tables.push(tableRows);
         tableRows = null;
     };
-    for (const raw of lines) {
+    for (let raw of lines) {
         if (fence !== null) {
             if (/^\s*`{3,}|^\s*~{3,}/.test(raw)) {
                 map.codeBlocks.push({ lang: fence, lines: fenceLines });
@@ -188,9 +188,16 @@ function extractSemanticMap(markdown) {
             continue;
         }
         if (INCLUDE_MARKER.test(raw)) {
-            currentItem = null;
+            // 2026-10-07 (java revision campaign, operator dual-include rule):
+            // include markers are conditional-rendering wrappers whose INNER
+            // text is real page content (it renders literally). Record the
+            // line token for survival checking, then process the
+            // marker-stripped remainder through the normal pipeline so
+            // wrapped parameter bullets and reference descriptions keep
+            // counting exactly as their unwrapped upstream counterparts do.
             map.includeMarkers.push(raw.trim());
-            continue;
+            raw = raw.replace(/<include\s+target=[^>]*>/gi, '').replace(/<\/include>/gi, '');
+            if (normalizeSemanticText(raw) === '') continue;
         }
         if (BULLET_LINE.test(raw)) {
             currentItem = {

@@ -474,6 +474,8 @@ test('restructure manifests are refused on the prose path and validated on their
         'public GetResp get(GetReq request)',
         '```',
         '',
+        '<include target="zilliz">Z docs [z]</include><include target="milvus">M docs [m]</include>',
+        '',
         '**RETURN TYPE:**',
         '',
         '*GetResp*',
@@ -481,8 +483,6 @@ test('restructure manifests are refused on the prose path and validated on their
         '**RETURNS:**',
         '',
         'A **GetResp** object representing one or more queried entities.',
-        '',
-        '<include target="zilliz">Z docs [z]</include><include target="milvus">M docs [m]</include>',
     ].join('\n');
     const table = [
         '**RESPONSE SHAPE:**',
@@ -521,7 +521,7 @@ test('restructure manifests are refused on the prose path and validated on their
 
     assert.equal(errorCode({ baseContentDigest: verbatimContentDigest(`${base}\nother`) }), 'PR_POLISH_BASE_DIGEST_MISMATCH');
     assert.equal(
-        errorCode({ replacementContent: base.replace('A **GetResp** object representing one or more queried entities.\n\n', '') }),
+        errorCode({ replacementContent: base.replace('\n\nA **GetResp** object representing one or more queried entities.', '') }),
         'PR_POLISH_SEMANTIC_CONTENT_LOST',
         'losing the RETURNS prose is a semantic failure',
     );

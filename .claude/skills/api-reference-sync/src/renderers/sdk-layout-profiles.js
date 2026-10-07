@@ -36,6 +36,10 @@ const GLOBAL_LAYOUT_RULES = Object.freeze({
     descriptionTypeLinkDenylist: Object.freeze([
       'True', 'False', 'None', 'Python', 'Milvus', 'Zilliz', 'MilvusClient',
       'AWS', 'IAM', 'S3', 'ARN', 'URI', 'URL', 'JSON', 'SDK', 'HTTP', 'HTTPS', 'API', 'ID',
+      // 2026-10-07 operator ruling (py-v30 search_iterator surgical plan):
+      // metric-type literals rendered code-styled on operator-authored pages
+      // are index-algorithm names, not SDK classes.
+      'L2', 'IP', 'COSINE',
     ]),
   }),
 });

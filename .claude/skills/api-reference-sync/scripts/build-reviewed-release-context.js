@@ -998,6 +998,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       kind: spec.kind,
       title: spec.title || titleFor({ ...planningAction, symbol: identity.symbol }),
       summary: required(spec.summary, `Candidate ${action.canonicalSlug} is missing summary`),
+      summaryCallouts: clone(spec.summaryCallouts),
       signature: clone(spec.signature),
       params: clone(spec.params),
       requestVariants: clone(spec.requestVariants),

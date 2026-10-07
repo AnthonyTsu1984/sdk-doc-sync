@@ -936,7 +936,7 @@ test('parameter qualifiers render on their own line before the description', () 
   ]);
   assert.equal(withDefault.children[2].children[0].value, 'The maximum number of matches to return.');
   assert.ok(markdown.includes(
-    '- **collection\\_name** ([str](/reference/python/str)) -\n'
+    '- **collection\\_name** (*[str](/reference/python/str)*) -\n'
       + '  **\\[REQUIRED\\]**\n'
       + '  The name of the target collection.',
   ));

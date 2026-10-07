@@ -89,7 +89,9 @@ function typeInlines(type, context, { italic = true } = {}) {
   const display = String(type?.display || '');
   if (!display) return [];
   const url = typeUrl(type, context);
-  if (url) return [ir.citation(display, url)];
+  // 2026-10-07 operator ruling: a linked parameter type keeps the italic
+  // type style — the citation carries the same marks the unlinked form has.
+  if (url) return [ir.citation(display, url, { marks: italic ? ['italic'] : [] })];
   return [text(display, italic ? ['italic'] : [])];
 }
 

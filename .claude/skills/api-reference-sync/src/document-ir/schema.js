@@ -85,7 +85,10 @@ function audienceRegion(mode, target, children = [], options = {}) {
 }
 
 function citation(title, url, options = {}) {
-  return withSource('citation', { title, url }, options);
+  // Marks ride the node (default empty) so linked inline runs can carry the
+  // same emphasis as unlinked text — 2026-10-07 operator ruling: a linked
+  // parameter type keeps the italic type style.
+  return withSource('citation', { title, url, marks: Array.from(options.marks || []) }, options);
 }
 
 function documentReference(title, url, options = {}) {

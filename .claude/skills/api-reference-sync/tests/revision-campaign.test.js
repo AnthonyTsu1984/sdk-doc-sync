@@ -228,10 +228,14 @@ test('revision-apply executes the approved batch, journals incrementally, and re
             '--scope', scopePath,
             '--contexts', contextsPath,
             '--approve-digest', batch.batchDigest,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
             '--journal', path.join(directory, 'execution.jsonl'),
             '--json',
         ],
         dependencies: {
+            fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+            reopenRecord: async () => 'reopened',
             // raw_content always leads with the page title (the comparator
             // drops it unconditionally on the observed side).
             fetchRawContent: async () => {
@@ -250,9 +254,19 @@ test('revision-apply executes the approved batch, journals incrementally, and re
     assert.equal(entries[0].type, 'content-fidelity');
     assert.equal(entries[1].type, 'prepared');
     assert.ok(entries[1].rollbackCapsule.priorRawContent.includes('highlights query terms'));
+    // Record re-open (2026-10-07): the acceptance WIP→Draft transition needs
+    // the record back at WIP, and the Targets baseline derives from the
+    // capsule's beforeRecord.
+    assert.ok(entries[1].rollbackCapsule.beforeRecord, 'prepared entry must carry the pre-mutation record state');
+    assert.equal(entries[1].rollbackCapsule.beforeRecord.rawFields.Progress, 'Draft');
+    const treeDelta = entries.find((entry) => entry.type === 'tree-delta');
+    assert.equal(treeDelta.invariantId, 'api.versioned-tree-delta');
+    assert.equal(treeDelta.ok, true);
     const observed = entries.find((entry) => entry.type === 'observed' && entry.status === 'success');
     assert.equal(observed.actionId, STABLE_ID);
     assert.equal(observed.verified, true);
+    assert.equal(observed.recordReopen.beforeProgress, 'Draft');
+    assert.equal(observed.recordReopen.afterProgress, 'WIP');
     const completion = entries[entries.length - 1];
     assert.equal(completion.status, 'executed');
     assert.equal(completion.completionSentinel, true);
@@ -286,8 +300,10 @@ test('revision-apply refuses a digest that does not match the approved batch', a
                 '--scope', scopePath,
                 '--contexts', contextsPath,
                 '--approve-digest', 'sha256:wrong-batch',
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
             ],
-            dependencies: { fetchRawContent: async () => BASE_CONTENT, fetchBlocks: async () => CONFORMANT_BLOCKS, rebuildPage: async () => 1 },
+            dependencies: { fetchRawContent: async () => BASE_CONTENT, fetchBlocks: async () => CONFORMANT_BLOCKS, rebuildPage: async () => 1, fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }), reopenRecord: async () => 'reopened' },
         }),
         (error) => error.code === 'REVISION_APPROVAL_DIGEST_MISMATCH',
     );
@@ -319,9 +335,13 @@ test('revision-apply persists a failed journal and refuses the session when live
                 '--scope', scopePath,
                 '--contexts', contextsPath,
                 '--approve-digest', batch.batchDigest,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
                 '--journal', journalPath,
             ],
             dependencies: {
+                fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+                reopenRecord: async () => 'reopened',
                 fetchRawContent: async () => `# LexicalHighlighter\n${BASE_CONTENT}`,
                 fetchBlocks: async () => ([
                     { block_id: 'blk-1', block_type: 2, text: { elements: [{ text_run: { content: 'A LexicalHighlighter instance highlights query terms in search results.' } }] } },
@@ -370,9 +390,11 @@ test('revision-apply refuses an existing execution journal', async () => {
                 '--scope', scopePath,
                 '--contexts', contextsPath,
                 '--approve-digest', batch.batchDigest,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
                 '--journal', journalPath,
             ],
-            dependencies: { fetchRawContent: async () => BASE_CONTENT, fetchBlocks: async () => CONFORMANT_BLOCKS, rebuildPage: async () => 1 },
+            dependencies: { fetchRawContent: async () => BASE_CONTENT, fetchBlocks: async () => CONFORMANT_BLOCKS, rebuildPage: async () => 1, fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }), reopenRecord: async () => 'reopened' },
         }),
         (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
     );

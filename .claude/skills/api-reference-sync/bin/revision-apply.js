@@ -48,6 +48,7 @@ const {
 } = require('../../doc-ops-core/src/writer-governance');
 const { createActionBatch } = require('../../doc-ops-core/src/action-batch');
 const { loadReviewSessionState, recordDocumentExecution, saveReviewSession } = require('../src/sdk-doc-sync/review-session-store');
+const { captureRecordState } = require('../src/sdk-doc-sync/record-state');
 const {
     applyPolishManifest,
     assertPolishPreconditions,
@@ -71,10 +72,12 @@ function parseArgs(argv) {
         else if (arg === '--contexts') args.contexts = path.resolve(argv[++index]);
         else if (arg === '--approve-digest') args.approveDigest = argv[++index];
         else if (arg === '--journal') args.journal = path.resolve(argv[++index]);
+        else if (arg === '--base-token') args.baseToken = argv[++index];
+        else if (arg === '--table-id') args.tableId = argv[++index];
         else if (arg === '--json') args.json = true;
         else throw new Error(`Unknown argument: ${arg}`);
     }
-    for (const required of ['session', 'reviewUnitId', 'scope', 'contexts', 'approveDigest']) {
+    for (const required of ['session', 'reviewUnitId', 'scope', 'contexts', 'approveDigest', 'baseToken', 'tableId']) {
         if (!args[required]) {
             throw new Error(`Missing required argument: --${required.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`);
         }
@@ -103,6 +106,21 @@ function larkApi(method, pathname, params, data) {
 function fetchRawContent(documentToken) {
     const parsed = larkApi('GET', `/open-apis/docx/v1/documents/${documentToken}/raw_content`);
     return (parsed.data && parsed.data.content) || '';
+}
+
+function fetchRecordState(baseToken, tableId, recordId) {
+    const parsed = larkApi('GET', `/open-apis/bitable/v1/apps/${baseToken}/tables/${tableId}/records/${recordId}`);
+    return (parsed.data && parsed.data.record) || null;
+}
+
+// Governed record re-open: revision rounds re-open records finalized by the
+// previous campaign (Progress Draft → WIP) so the two-gate acceptance
+// WIP→Draft transition is legal again. Goes through the same BitableWriter
+// governance the acceptance writes use.
+function reopenRecordWip({ baseToken, tableId, recordId }, governance) {
+    const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
+    const writer = new BitableWriter({ baseToken, tableId, governance });
+    return writer.updateRecord(recordId, { progress: 'WIP' });
 }
 
 function fetchBlocks(documentToken) {
@@ -166,7 +184,11 @@ function buildRevisionBatch({ stableId, reviewUnitId, documentToken, recordId, f
             actionId: stableId,
             target: reviewUnitId,
             dependsOn: [],
-            sideEffects: ['feishu.docx.patch'],
+            // The record re-open (Progress → WIP) is part of the unit's
+            // execution: revision rounds re-open records finalized by the
+            // previous campaign so the acceptance WIP→Draft transition is
+            // legal again.
+            sideEffects: ['feishu.docx.patch', 'bitable.update'],
             planDigest,
         }],
     });
@@ -208,6 +230,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const args = parseArgs(argv);
     const fetchRawContentFn = dependencies.fetchRawContent || fetchRawContent;
     const fetchBlocksFn = dependencies.fetchBlocks || fetchBlocks;
+    const fetchRecordStateFn = dependencies.fetchRecordState || fetchRecordState;
+    const reopenRecordFn = dependencies.reopenRecord
+        || ((recordId) => reopenRecordWip({ baseToken: args.baseToken, tableId: args.tableId, recordId }, governance));
 
     const { session, sessionDigest } = loadReviewSessionState(path.resolve(args.session));
     if (session.scanStateUpdated === true) {
@@ -251,15 +276,15 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     governance.bindApproval({
         batchDigest,
         actionCount: 1,
-        targets: [args.reviewUnitId],
-        sideEffects: ['feishu.docx.patch'],
+        targets: [args.reviewUnitId, action.recordId],
+        sideEffects: ['feishu.docx.patch', 'bitable.update'],
         approval: createApprovalEnvelope({
             skill: 'api-reference-sync',
             operation: 'revision-apply',
             batchDigest,
             actionCount: 1,
-            targets: [args.reviewUnitId],
-            sideEffects: ['feishu.docx.patch'],
+            targets: [args.reviewUnitId, action.recordId],
+            sideEffects: ['feishu.docx.patch', 'bitable.update'],
             decision: 'approved',
         }),
         invariantAttestations: [],
@@ -287,6 +312,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const priorBlocks = await fetchBlocksFn(documentToken);
     const baseContent = blocksToMarkdown(priorBlocks);
     const priorRawContent = await fetchRawContentFn(documentToken);
+    // Record state capture (BEFORE any mutation): the acceptance contract
+    // derives the Targets baseline from the prepared entry's rollback capsule
+    // beforeRecord, and the re-open below needs the pre-mutation Progress.
+    const recordBefore = captureRecordState(await fetchRecordStateFn(args.baseToken, args.tableId, action.recordId));
 
     const journalPath = args.journal
         || path.join(REPO_ROOT, 'tmp', 'api-reference-sync', `${batchDigest.replace(/:/g, '-')}.jsonl`);
@@ -365,6 +394,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
             priorRawContent,
             priorRawContentDigest: verbatimContentDigest(priorRawContent),
             priorBodyContentDigest: verbatimContentDigest(baseContent),
+            beforeRecord: recordBefore,
         },
     });
     // Durable BEFORE the mutation: a crash after the rebuild must leave the
@@ -421,6 +451,16 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         placementUnchanged: true,
         ok: true,
     });
+    // Record re-open (governed): the record was finalized to Draft by the
+    // previous campaign; the two-gate acceptance transition (WIP→Draft +
+    // Targets final value) requires it back at WIP. The full pre-mutation
+    // state rides the rollback capsule above.
+    try {
+        await reopenRecordFn(action.recordId);
+    } catch (error) {
+        failJournal(`record re-open to WIP failed: ${String(error.message).slice(0, 200)}`);
+        throw error;
+    }
     journalLines.push({
         schemaVersion: 1,
         type: 'observed',
@@ -433,6 +473,11 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         verified: true,
         rebuild: true,
         rebuildBlocks,
+        recordReopen: {
+            recordId: action.recordId,
+            beforeProgress: recordBefore.rawFields.Progress || '(blank)',
+            afterProgress: 'WIP',
+        },
         polishedContentDigest: sha256Digest(polishedContent),
         sourcesDigest: provenance.sourcesDigest || null,
     });

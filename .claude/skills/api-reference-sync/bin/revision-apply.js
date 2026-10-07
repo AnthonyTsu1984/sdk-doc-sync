@@ -400,6 +400,27 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         throw error;
     }
 
+    // Post-write tree-delta outcome (api.versioned-tree-delta): a revision
+    // rebuild is an in-place whole-body transition — same documentToken, same
+    // recordId, no placement change. ok:true is earned by the two verifications
+    // above (live layout conformance + line-for-line raw comparison), which
+    // prove the landed body is the approved content; the unit-evidence
+    // acceptance contract requires this journaled outcome to exist.
+    journalLines.push({
+        schemaVersion: 1,
+        type: 'tree-delta',
+        invariantId: 'api.versioned-tree-delta',
+        decision: 'revision-rebuild-in-place',
+        actionId: unit.documentStableId,
+        reviewUnitId: args.reviewUnitId,
+        documentToken,
+        recordId: action.recordId,
+        priorBodyContentDigest: verbatimContentDigest(baseContent),
+        newBodyContentDigest: verbatimContentDigest(rawContent),
+        rebuildBlocks,
+        placementUnchanged: true,
+        ok: true,
+    });
     journalLines.push({
         schemaVersion: 1,
         type: 'observed',

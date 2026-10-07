@@ -76,6 +76,9 @@ const ARG_SPECS = Object.freeze([
   { flag: '--event-key', key: 'eventKey', kind: 'value' },
   { flag: '--proposal', key: 'proposal', kind: 'value' },
   { flag: '--approvals-dir', key: 'approvalsDir', kind: 'value' },
+  { flag: '--reply', key: 'reply', kind: 'value' },
+  { flag: '--gate-manifest', key: 'gateManifest', kind: 'value' },
+  { flag: '--dry-run', key: 'dryRun', kind: 'boolean' },
   { flag: '--json', key: 'json', kind: 'boolean' },
 ]);
 const ARG_BY_FLAG = new Map(ARG_SPECS.map((spec) => [spec.flag, spec]));
@@ -119,6 +122,7 @@ const COMMAND_REQUIREMENTS = Object.freeze({
   // lists carry only their own flags.
   'accept-document': ['reviewUnitId', 'executionJournal', 'executionJournalDigest', 'touchedRecords'],
   'request-document-changes': ['reviewUnitId'],
+  'resolve-batch-review': ['reply'],
   'close-session': ['scanStateKey', 'scanStateEntry'],
   'record-decision': ['decisionLedger', 'decisionId', 'gate', 'outcome', 'proposalDigest'],
   'record-learning-suppression': ['eventKey', 'rationale'],
@@ -494,6 +498,258 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   return nextSession;
 }
 
+// ---------- batch review resolver (R16 lesson, 2026-10-07) ----------
+//
+// The executor (执达员) used to interpret the operator's multi-line gate
+// reply itself — summarizing, reordering, re-classifying — and one unstable
+// interpretation re-classified nineteen executed APPROVE_DOCUMENT lines as
+// change requests: executions and journals stayed intact on disk while the
+// acceptance receipts never landed. The executor's job is now RELAY ONLY:
+// it hands the raw reply text to `resolve-batch-review`, which parses the
+// strict grammar, binds every line to the session's own pending executions
+// by digest, and applies. Anything it cannot parse or bind fails closed
+// BEFORE any state changes — a partially understood reply mutates nothing.
+
+const APPROVE_DOCUMENT_LINE_RE = /^APPROVE_DOCUMENT\s+(\S+)\s+sha256:([0-9a-f]{64})$/;
+const REQUEST_DOCUMENT_LINE_RE = /^REQUEST_DOCUMENT\s+(\S+)\s+(.+)$/;
+
+function nonEmptyText(value) {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+function parseBatchReply(text) {
+  const approvals = [];
+  const requests = [];
+  const errors = [];
+  const seen = new Map();
+  for (const [index, raw] of String(text ?? '').split('\n').entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const lineNo = index + 1;
+    const approve = APPROVE_DOCUMENT_LINE_RE.exec(line);
+    const request = approve ? null : REQUEST_DOCUMENT_LINE_RE.exec(line);
+    if (!approve && !request) {
+      errors.push({ line, lineNo, error: 'not an APPROVE_DOCUMENT or REQUEST_DOCUMENT line' });
+      continue;
+    }
+    const reviewUnitId = (approve || request)[1];
+    if (seen.has(reviewUnitId)) {
+      errors.push({ line, lineNo, error: `${reviewUnitId} already decided on line ${seen.get(reviewUnitId)}` });
+      continue;
+    }
+    seen.set(reviewUnitId, lineNo);
+    if (approve) approvals.push({ kind: 'approve', reviewUnitId, digest: `sha256:${approve[2]}`, line, lineNo });
+    else requests.push({ kind: 'request', reviewUnitId, reason: request[2].trim(), line, lineNo });
+  }
+  return { approvals, requests, errors };
+}
+
+// touchedRecords derived from the digest-verified journal itself — the
+// prepared entries carry the exact (actionId, recordId, documentToken) the
+// acceptance transition re-validates. The executor never transcribes them.
+function touchedRecordsFromJournal(entries) {
+  const byAction = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry?.type !== 'prepared' || !nonEmptyText(entry.actionId) || !nonEmptyText(entry.recordId)) continue;
+    if (!byAction.has(entry.actionId)) {
+      byAction.set(entry.actionId, {
+        actionId: entry.actionId,
+        recordId: entry.recordId,
+        documentToken: entry.documentToken || null,
+      });
+    }
+  }
+  return [...byAction.values()].sort((left, right) => left.recordId.localeCompare(right.recordId));
+}
+
+// Durable link contract for review gate manifests: structured
+// `units: [{ reviewUnitId, documentLinks, recordLinks }]` wins; the display
+// label form (`<unit> — 页面` / `<unit> — 记录页`) stays as the fallback for
+// manifests authored before the contract. Either way the links come from the
+// manifest the operator was shown — never from executor transcription.
+function linksFromGateManifest(manifest, reviewUnitId) {
+  for (const unit of Array.isArray(manifest?.units) ? manifest.units : []) {
+    if (unit?.reviewUnitId !== reviewUnitId) continue;
+    return {
+      documentLinks: (Array.isArray(unit.documentLinks) ? unit.documentLinks : []).filter(nonEmptyText),
+      recordLinks: (Array.isArray(unit.recordLinks) ? unit.recordLinks : []).filter(nonEmptyText),
+    };
+  }
+  const documentLinks = [];
+  const recordLinks = [];
+  for (const link of Array.isArray(manifest?.links) ? manifest.links : []) {
+    if (typeof link?.url !== 'string' || typeof link?.label !== 'string') continue;
+    if (link.label === `${reviewUnitId} — 页面`) documentLinks.push(link.url);
+    else if (link.label === `${reviewUnitId} — 记录页`) recordLinks.push(link.url);
+  }
+  return { documentLinks, recordLinks };
+}
+
+function readJournalEntries(journalPath) {
+  return fs.readFileSync(journalPath, 'utf8').trim().split('\n').filter(Boolean)
+    .map((line) => JSON.parse(line));
+}
+
+async function runBatchReviewResolver({ session, sessionPath, sessionDigest, args, io, out }) {
+  if ((session.acceptanceFlow || 'legacy') !== 'two-gate') {
+    throw new Error('resolve-batch-review applies to two-gate sessions; legacy sessions keep the per-unit accept-document / request-document-changes commands');
+  }
+  if (session.status === 'finalized') throw new Error('Session is finalized; no review reply applies');
+  const replyText = args.reply === '-'
+    ? fs.readFileSync(0, 'utf8')
+    : fs.readFileSync(path.resolve(args.reply), 'utf8');
+  const { approvals, requests, errors } = parseBatchReply(replyText);
+  if (errors.length > 0) {
+    throw new Error(`REPLY_NOT_FULLY_PARSED: ${errors.length} unparsed line(s), nothing applied — ${errors
+      .map((error) => `line ${error.lineNo}: ${error.error} (${error.line.slice(0, 80)})`)
+      .join(' | ')}`);
+  }
+  if (approvals.length === 0 && requests.length === 0) {
+    throw new Error('REPLY_EMPTY: no APPROVE_DOCUMENT or REQUEST_DOCUMENT line found — nothing applied');
+  }
+
+  // Pass 1 — validate the WHOLE reply against durable state before any
+  // mutation. Digest binding is the point: a reply line never re-derives or
+  // re-interprets the journal identity, it must match the pending entry the
+  // gate presented.
+  const pendings = new Map();
+  for (const item of (Array.isArray(session.pendingExecutions) && session.pendingExecutions.length
+    ? session.pendingExecutions
+    : (session.activeExecution ? [session.activeExecution] : []))) {
+    pendings.set(item.reviewUnitId, item);
+  }
+  const acceptedByUnit = new Map((session.acceptedReviewUnits || []).map((unit) => [unit.reviewUnitId, unit]));
+  const gateManifest = args.gateManifest
+    ? JSON.parse(fs.readFileSync(path.resolve(args.gateManifest), 'utf8'))
+    : null;
+  const plan = [];
+  for (const decision of approvals) {
+    const accepted = acceptedByUnit.get(decision.reviewUnitId);
+    if (accepted) {
+      if (accepted.executionJournalDigest !== decision.digest) {
+        throw new Error(`REPLY_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) is already accepted with journal ${accepted.executionJournalDigest}, reply binds ${decision.digest} — nothing applied`);
+      }
+      plan.push({ decision, skip: 'already-accepted' }); // rerun convergence
+      continue;
+    }
+    const pending = pendings.get(decision.reviewUnitId);
+    if (!pending) {
+      throw new Error(`REPLY_UNIT_NOT_PENDING: ${decision.reviewUnitId} (line ${decision.lineNo}) is neither pending review nor accepted — nothing applied`);
+    }
+    if (pending.executionJournalDigest !== decision.digest) {
+      throw new Error(`REPLY_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) — session pending journal is ${pending.executionJournalDigest}, reply binds ${decision.digest} — nothing applied`);
+    }
+    const entries = readJournalEntries(pending.executionJournalPath);
+    // Re-derive the journal's hash in pass 1: a journal modified after
+    // execution must refuse the WHOLE reply here, not kill apply pass 2
+    // after earlier units already landed.
+    const derivedDigest = digestSemantic(entries);
+    if (derivedDigest !== decision.digest) {
+      throw new Error(`REPLY_JOURNAL_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) — journal ${pending.executionJournalPath} hashes to ${derivedDigest}, reply binds ${decision.digest} — nothing applied`);
+    }
+    const touched = touchedRecordsFromJournal(entries);
+    if (touched.length === 0) {
+      throw new Error(`REPLY_JOURNAL_UNUSABLE: ${decision.reviewUnitId} journal ${pending.executionJournalPath} yields no prepared (actionId, recordId) entries — nothing applied`);
+    }
+    const links = gateManifest
+      ? linksFromGateManifest(gateManifest, decision.reviewUnitId)
+      : { documentLinks: [], recordLinks: [] };
+    if (links.documentLinks.length === 0 || links.recordLinks.length === 0) {
+      throw new Error(`REPLY_LINKS_MISSING: ${decision.reviewUnitId} needs documentLinks and recordLinks — pass --gate-manifest whose links label “${decision.reviewUnitId} — 页面 / — 记录页” — nothing applied`);
+    }
+    plan.push({ decision, pending, touched, ...links });
+  }
+  for (const decision of requests) {
+    if (pendings.has(decision.reviewUnitId)) {
+      plan.push({ decision });
+      continue;
+    }
+    // Rerun convergence: the unit left pending review since this reply was
+    // first applied. Skip when the durable record explains it — a change
+    // request already on record, or a LATER acceptance (the operator approved
+    // it afterwards; the request line is superseded). A unit with NO durable
+    // history still refuses: a typo'd id must never silently no-op.
+    if (acceptedByUnit.has(decision.reviewUnitId)) {
+      plan.push({ decision, skip: 'accepted-since' });
+      continue;
+    }
+    const alreadyRequested = (session.changeRequests || [])
+      .some((entry) => entry?.reviewUnitId === decision.reviewUnitId);
+    if (alreadyRequested) {
+      plan.push({ decision, skip: 'already-requested' });
+      continue;
+    }
+    throw new Error(`REPLY_UNIT_NOT_PENDING: ${decision.reviewUnitId} (line ${decision.lineNo}) is neither pending review nor accepted — nothing applied`);
+  }
+  const writesNeeded = plan.some((item) => item.decision.kind === 'approve' && !item.skip);
+  if (writesNeeded && !args.dryRun && !args.baseToken && !io.bitableWriter) {
+    throw new Error('--base-token is required (with optional --table-id): two-gate acceptance writes the WIP→Draft transitions');
+  }
+
+  const addressed = new Set([...approvals, ...requests].map((decision) => decision.reviewUnitId));
+  const report = {
+    schemaVersion: 1,
+    command: 'resolve-batch-review',
+    replySource: args.reply,
+    gateManifest: args.gateManifest ?? null,
+    parsed: { approvals: approvals.length, requests: requests.length },
+    accepted: [],
+    alreadyAccepted: [],
+    requested: [],
+    requestSkipped: [],
+    leftPending: [...pendings.keys()].filter((unitId) => !addressed.has(unitId)),
+  };
+  const describe = () => `approve ${report.parsed.approvals} / request ${report.parsed.requests}; accepted ${report.accepted.length}, already accepted ${report.alreadyAccepted.length}, requested ${report.requested.length}, request skipped ${report.requestSkipped.length}, left pending ${report.leftPending.length}`;
+  if (args.dryRun) {
+    for (const item of plan) {
+      out(`- ${item.decision.kind === 'approve' ? 'APPROVE' : 'REQUEST'} ${item.decision.reviewUnitId}${item.skip ? ` (${item.skip} — will skip)` : ''}`);
+    }
+    out(`Dry run: ${describe()}; nothing written.`);
+    report.dryRun = true;
+    return { report, dryRun: true };
+  }
+
+  // Pass 2 — apply in reply order; reload after every persisted save so the
+  // next CAS carries the digest the previous save produced.
+  for (const item of plan) {
+    if (item.decision.kind === 'request') {
+      if (item.skip) {
+        report.requestSkipped.push({ reviewUnitId: item.decision.reviewUnitId, why: item.skip });
+        out(`Request already on record, skipped: ${item.decision.reviewUnitId} (${item.skip})`);
+        continue;
+      }
+      session = recordDocumentChangesRequested(session, {
+        reviewUnitId: item.decision.reviewUnitId,
+        reason: item.decision.reason,
+      });
+      saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
+      ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
+      report.requested.push({ reviewUnitId: item.decision.reviewUnitId, reason: item.decision.reason });
+      out(`Change request recorded: ${item.decision.reviewUnitId}`);
+      continue;
+    }
+    if (item.skip) {
+      report.alreadyAccepted.push(item.decision.reviewUnitId);
+      out(`Already accepted, skipped: ${item.decision.reviewUnitId}`);
+      continue;
+    }
+    const receipt = {
+      reviewUnitId: item.decision.reviewUnitId,
+      executionJournalPath: path.resolve(item.pending.executionJournalPath),
+      executionJournalDigest: item.decision.digest,
+      touchedRecords: item.touched,
+      documentLinks: item.documentLinks,
+      recordLinks: item.recordLinks,
+      commentsResolved: true,
+    };
+    session = await acceptDocumentTwoGate({ session, sessionPath, sessionDigest, receipt, args, io, out });
+    ({ session, sessionDigest } = loadReviewSessionState(sessionPath));
+    report.accepted.push(item.decision.reviewUnitId);
+  }
+  out(`Batch reply resolved: ${describe()}`);
+  return { report, session };
+}
+
 // Cross-chat rotation hint (2026-10-01 ruling: one campaign = one canonical
 // session file; chats rotate at ~42% context). Derives the gate a FRESH chat
 // should present next from durable session state alone — no conversation
@@ -665,6 +921,16 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const summary = status(nextSession, sessionPath);
     if (args.json) out(JSON.stringify(summary, null, 2));
     return { session: nextSession, summary };
+  }
+
+  if (args.command === 'resolve-batch-review') {
+    requireCommandArgs(args); // COMMAND_REQUIREMENTS: resolve-batch-review
+    const result = await runBatchReviewResolver({ session, sessionPath, sessionDigest, args, io: dependencies.io || {}, out });
+    if (result.dryRun) return { session, summary: status(session, sessionPath) };
+    session = result.session;
+    const summary = status(session, sessionPath);
+    if (args.json) out(JSON.stringify({ ...result.report, nextGate: summary.nextGate }, null, 2));
+    return { session, summary };
   }
 
   if (args.command === 'request-document-changes') {
@@ -884,7 +1150,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     out(`Grouping approval bound to session ${session.sessionId}: ${receipt.proposalDigest}`);
     out(created ? `Durable receipt: ${receiptPath}` : `Durable receipt already recorded: ${receiptPath} (approvedAt ${JSON.parse(fs.readFileSync(receiptPath, 'utf8')).approvedAt})`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, approve-grouping, list-learning-events, record-learning-suppression, build-acceptance, record-decision, status, or record-finalization');
+    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, resolve-batch-review, approve-grouping, list-learning-events, record-learning-suppression, build-acceptance, record-decision, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);
@@ -927,4 +1193,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, runCli, status };
+module.exports = { parseArgs, parseBatchReply, runCli, status };

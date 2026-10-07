@@ -657,6 +657,8 @@ function gatePhaseIntakes(intakes, d) {
   const carried = new Set();
   for (const c of (d?.campaigns || [])) {
     if (c.groupingApproval?.proposalDigest) carried.add(`${c.checkout}::${c.groupingApproval.proposalDigest}`);
+    // Merged revision flows carry their gate inside the campaign card.
+    if (c.revisionFlow?.groupingGate?.digest) carried.add(`${c.checkout}::${c.revisionFlow.groupingGate.digest}`);
   }
   for (const r of (d?.revisions || [])) {
     if (r.groupingGate?.digest) carried.add(`${r.checkout}::${r.groupingGate.digest}`);
@@ -697,12 +699,31 @@ function campaignRows(list, d) {
     if (c.kind === 'revision') return revisionRow(c);
     const pct = c.units ? Math.round((c.accepted / c.units) * 100) : 0;
     const g = gateSummary(c);
+    // Merged revision flow (one campaign, one row): written-page evidence
+    // rides under the acceptance bar, and a write-ahead-of-acceptance gap
+    // with nothing in flight is the receipt-never-landed alarm — surface it,
+    // never bury it in a second row.
+    const rf = c.revisionFlow || null;
+    const inflight = c.pending > 0 || c.hasActiveExecution;
+    const gapBadge = rf && rf.receiptGap > 0
+      ? ` <span class="badge ${inflight ? '' : 'gate'}" title="${inflight
+        ? `已写页数领先已收单元 ${rf.receiptGap} 个——执行/挂起进行中，属写门先行；收单元后应归零`
+        : `已写页数领先已收单元 ${rf.receiptGap} 个且无执行/挂起——疑似回执未落（执行完好、accept 回执缺失），先对账再推进`}">写收差 ${rf.receiptGap}</span>`
+      : '';
+    const progressCell = `${c.accepted}/${c.units}${gapBadge}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div>${rf
+      ? `<div class="dim" style="font-size:11.5px">写门对账：已写 ${rf.writtenPages} 页 · ${esc(rf.worklistStem)}</div>`
+      : ''}`;
+    const gateCell = g
+      ? `<span class="badge gate" title="${esc(c.nextGate?.reviewUnitId || '')}">${esc(g.title)}</span>`
+      : rf && rf.groupingGate
+        ? `<span class="badge gate" title="${esc(rf.groupingGate.digest)}">分组门已呈（修订流）</span>`
+        : '<span class="dim">—</span>';
     return `<tr class="rowlink" onclick="location.hash='${campaignHref(c).replace(/'/g, '')}'">
       <td><span class="fname">${esc(c.track ?? '?')}</span> ${checkoutChip(c)}${c.groupingApproval ? `<span class="badge" title="APPROVE_GROUPING 已绑入会话（${esc(c.groupingApproval.proposalDigest)}）——此后入口 release-scope 摘要对照已批 scope 校验，漂移即拒">已绑分组</span>` : ''}</td>
       <td>${flowBadge(c)}</td>
       <td><span class="badge ${c.health}">${HEALTH_LABEL[c.health] ?? esc(c.status)}</span></td>
-      <td class="num" style="min-width:90px">${c.accepted}/${c.units}<div class="bar" style="margin:2px 0 0"><i style="width:${pct}%"></i></div></td>
-      <td>${g ? `<span class="badge gate" title="${esc(c.nextGate?.reviewUnitId || '')}">${esc(g.title)}</span>` : '<span class="dim">—</span>'}</td>
+      <td class="num" style="min-width:120px">${progressCell}</td>
+      <td>${gateCell}</td>
       <td class="dim">${rel(c.updatedAt)}</td>
       <td onclick="event.stopPropagation()"><button class="act" title="把 /attach 战役键放进剪贴板；粘到新 ZCode 会话即接手本战役" onclick="copyText('/attach ${esc(attachKey(c))}')">复制挂载命令</button></td>
     </tr>`;
@@ -1258,10 +1279,18 @@ async function pageCampaign(d, path) {
     ${advancedApproveForm(c)}
     <h2>规模</h2>
     <div class="card" style="cursor:default"><div class="kv" id="scaleKv" style="margin-top:0">
-      <b>写作单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起 ${c.pending}</span>
+      <b>写作单元</b><span>${c.accepted}/${c.units} 已接受 · 挂起 ${c.pending}${c.changeRequests?.entries ? ` · 打回记录 ${c.changeRequests.entries} 条（未收 ${c.changeRequests.units} 单元）` : ''}</span>
       <b>scan-state</b><span>${esc(c.scanState.key ?? '—')}${c.scanState.lastScannedTag ? ` @ ${esc(c.scanState.lastScannedTag)}` : ''}（会话目标 ${esc(c.scanState.targetTag ?? '—')}）</span>
       ${c.groupingApproval?.proposalDigest ? `<b>分组绑定</b><span class="badge finalized" title="提案 ${esc(c.groupingApproval.proposalDigest)} · 已批 scope ${esc(c.groupingApproval.scopeDigest ?? '—')} · 批准于 ${esc(c.groupingApproval.approvedAt ?? '—')}——入口 release-scope 漂移即拒（GROUPING_STALE）">APPROVE_GROUPING 已绑 · ${esc(c.groupingApproval.proposalDigest.slice(7, 19))}…</span>` : '<b>分组绑定</b><span class="dim">未绑定（旧流程会话或分组门未走回执）</span>'}
     </div></div>
+    ${c.revisionFlow ? `<h2>修订流（同一战役的写门对账）</h2>
+    <div class="card" style="cursor:default"><div class="kv" style="margin-top:0">
+      <b>工作单</b><span>${viewLink(c.revisionFlow.worklistPath, c.revisionFlow.worklistPath)}（${esc(c.revisionFlow.scope.findings)} 项发现 / 唯一页 ${c.revisionFlow.scope.uniquePages}）</span>
+      <b>范围</b><span>${c.revisionFlow.scope.pages} 页 · scope 工件 ${c.revisionFlow.scopePath ? viewLink(c.revisionFlow.scopePath, c.revisionFlow.scopePath.split('/').pop()) : '未链接'}</span>
+      <b>已写</b><span>${c.revisionFlow.writtenPages} 页 · 剩约 ${c.revisionFlow.remainingPages}${c.revisionFlow.receiptGap > 0 ? ` · <span class="badge gate" title="已写页数领先已收单元 ${c.revisionFlow.receiptGap} 个——执行/挂起为零时即回执未落，先对账">写收差 ${c.revisionFlow.receiptGap}</span>` : ''}</span>
+      <b>分组门</b><span>${c.revisionFlow.groupingGate ? `${esc(c.revisionFlow.groupingGate.digest)} · ${viewLink(c.revisionFlow.groupingGate.manifest, 'manifest')}` : '未见分组门 manifest'}</span>
+      ${c.revisionFlow.written.length ? `<details class="fold" style="grid-column:1/-1"><summary>已写页面（run-manifest 对账，${c.revisionFlow.writtenPages}）</summary><ul style="margin:4px 0;padding-left:18px">${c.revisionFlow.written.map((w) => `<li>${esc(w.unit)}（${esc(w.flow)}）· ${viewLink(w.manifest, 'manifest')}</li>`).join('')}</ul></details>` : ''}
+    </div></div>` : ''}
     <h2>文件清单（按单元分组，文件名为主）</h2>
     <div id="filesHost"><div class="empty">载入中…</div></div>
     <h2>token 消耗</h2>

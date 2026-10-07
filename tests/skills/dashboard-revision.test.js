@@ -190,6 +190,11 @@ test('intake cards surface grouping manifests with approval transitions', (t) =>
   assert.equal(ledger.intakes.find((c) => c.language === 'go').approved, false);
 
   // Two-gate proof: a session created after the gate in the same checkout.
+  // The gate manifest's mtime is pinned to a fixed past instant — a wall-clock
+  // mtime here made this test a time bomb that started failing the moment the
+  // fixture's fixed createdAt (2026-10-06T10:00Z) slipped into the past.
+  fs.utimesSync(path.join(sib.root, 'tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json'),
+    new Date('2026-10-06T09:00:00.000Z'), new Date('2026-10-06T09:00:00.000Z'));
   sib.write('tmp/sdk-release-scout/go-v30-session.json', {
     schemaVersion: 1, status: 'in_progress', language: 'go', track: 'v3.0.x',
     reviewUnitManifest: { units: [{ reviewUnitId: 'u1' }] }, acceptedReviewUnits: [],
@@ -304,4 +309,108 @@ test('a session bound to the proposal digest is approval evidence even when crea
   assert.equal(ledger.campaigns[0].groupingApproval.proposalDigest, digest, 'campaign card carries the binding');
   assert.equal(ledger.intakes[0].approved, true);
   assert.equal(ledger.intakes[0].approvalEvidence, 'session-binding');
+});
+
+// ---------- one campaign, one row (R16 lesson) ----------
+
+function revisionSessionFixture({ root, accepted = 1, pending = 0, withScope = true }) {
+  return {
+    schemaVersion: 1,
+    status: 'in_progress',
+    language: 'java',
+    track: 'v3.0.x',
+    reviewUnitManifest: { units: [
+      { reviewUnitId: 'review:java:v3-Vector' },
+      { reviewUnitId: 'review:java:v3-Client' },
+      { reviewUnitId: 'review:java:v3-Highlighter' },
+    ] },
+    acceptedReviewUnits: accepted
+      ? [{ reviewUnitId: 'review:java:v3-Vector', executionJournalPath: `${root}/tmp/api-reference-sync/revision-journals/r1.jsonl` }]
+      : [],
+    pendingExecutions: pending ? [{ reviewUnitId: 'review:java:v3-Client', executionJournalDigest: 'sha256:' + '1'.repeat(64) }] : [],
+    changeRequests: [
+      { reviewUnitId: 'review:java:v3-Client', reason: 'mis-parse' },
+      { reviewUnitId: 'review:java:v3-Client', reason: 'mis-parse again' },
+      { reviewUnitId: 'review:java:v3-Vector', reason: 'early rebuild' },
+    ],
+    artifacts: withScope
+      ? { revisionScope: { path: `${root}/tmp/api-reference-sync/revision-scope-java-v30.json`, digest: 'sha256:' + '2'.repeat(64) } }
+      : {},
+    createdAt: '2026-10-06T22:46:43.165Z',
+    updatedAt: '2026-10-07T04:15:52.016Z',
+  };
+}
+
+function writeRevisionArtifacts(tree, worklistName = 'java-revision-worklist.json') {
+  tree.write(`tmp/api-reference-sync/${worklistName}`, worklistFixture({ pagesInScope: 204 }));
+  tree.write('tmp/api-reference-sync/revision-scope-java-v30.json', {
+    schemaVersion: 1, generatedAt: '2026-10-05T12:00:00.000Z',
+    summary: { pages: 204, byCode: { RETURNS_MIN_DEPTH: 178 } },
+  });
+  tree.write('tmp/api-reference-sync/gate-manifest-grouping-java-v30-revision.json', {
+    gate: 'GROUPING', digest: 'sha256:' + '3'.repeat(64), title: '范围工件',
+    links: [{ label: 'scope', url: 'tmp/api-reference-sync/revision-scope-java-v30.json' }],
+  });
+  tree.write('tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-Client.json', { schemaVersion: 1 });
+  tree.write('tmp/api-reference-sync/run-manifest-revision-apply-review-java-v3-Highlighter.json', { schemaVersion: 1 });
+}
+
+test('a revision campaign with its own review session renders as ONE merged row', (t) => {
+  const { root, write } = makeFixtureTree('dash-merge-');
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  writeRevisionArtifacts({ write });
+  write('tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json', revisionSessionFixture({ root }));
+
+  const { buildLedger } = require('../../scripts/dashboard/ledger.js');
+  const ledger = buildLedger({ repoRoot: root, checkouts: [{ id: 'main', label: '主检出', root }] });
+  assert.equal(ledger.campaigns.length, 1, 'the session card is the only row');
+  const card = ledger.campaigns[0];
+  assert.equal(card.revisionScope.path, 'tmp/api-reference-sync/revision-scope-java-v30.json');
+  assert.equal(card.revisionFlow.worklistStem, 'java-revision-worklist');
+  assert.equal(card.revisionFlow.writtenPages, 2, 'apply-review manifests reconcile under the merged card');
+  assert.equal(card.revisionFlow.receiptGap, 1, 'written 2 − accepted 1');
+  assert.equal(card.revisionFlow.groupingGate.digest, 'sha256:' + '3'.repeat(64));
+  assert.equal(ledger.revisions.length, 0, 'no standalone revision row remains');
+  assert.equal(card.changeRequests.entries, 3, 'append-only entry count');
+  assert.deepEqual(card.changeRequests.openUnits, ['review:java:v3-Client'], 'already-accepted units leave the open set');
+});
+
+test('a session without revision-scope evidence never merges; sibling checkouts never merge', (t) => {
+  const solo = makeFixtureTree('dash-merge-solo-');
+  const main = makeFixtureTree('dash-merge-main-');
+  const sib = makeFixtureTree('dash-merge-sib-');
+  t.after(() => {
+    fs.rmSync(solo.root, { recursive: true, force: true });
+    fs.rmSync(main.root, { recursive: true, force: true });
+    fs.rmSync(sib.root, { recursive: true, force: true });
+  });
+  // Same relative scope path in BOTH checkouts, but only main has the
+  // session — the sibling's revision row must stay standalone (checkout-
+  // scoped), while main's own pair merges into one row. The sibling's
+  // worklist carries its own stem: one card per stem is the batch-10
+  // cross-checkout dedupe, and letting both copies share a stem would hand
+  // the merge decision to an mtime tiebreak (a coin flip, not an invariant).
+  writeRevisionArtifacts(main);
+  writeRevisionArtifacts(sib, 'java-revision-worklist-sib.json');
+  main.write('tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json', revisionSessionFixture({ root: main.root }));
+  solo.write('tmp/api-reference-sync/java-revision-worklist.json', worklistFixture({ pagesInScope: 204 }));
+  solo.write('tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json', revisionSessionFixture({ root: solo.root, withScope: false }));
+
+  const { buildLedger } = require('../../scripts/dashboard/ledger.js');
+  const soloLedger = buildLedger({ repoRoot: solo.root, checkouts: [{ id: 'main', label: '主检出', root: solo.root }] });
+  assert.equal(soloLedger.campaigns.length, 1);
+  assert.equal(soloLedger.campaigns[0].revisionFlow, undefined, 'no scope evidence → no merge');
+  assert.equal(soloLedger.revisions.length, 1, 'the revision keeps its own row');
+
+  const split = buildLedger({
+    repoRoot: main.root,
+    checkouts: [
+      { id: 'main', label: '主检出', root: main.root },
+      { id: 'sib', label: 'sib', root: sib.root },
+    ],
+  });
+  assert.equal(split.campaigns.length, 1, 'only main has a session');
+  assert.equal(split.campaigns[0].revisionFlow.writtenPages, 2, 'main merges its own pair');
+  assert.equal(split.revisions.length, 1);
+  assert.equal(split.revisions[0].checkout, 'sib', 'the sibling revision stays standalone');
 });

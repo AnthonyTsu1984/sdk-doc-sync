@@ -152,6 +152,20 @@ function healthFor(session, scanContext) {
   return 'active';
 }
 
+// Change requests are append-only history: one unit may appear several times
+// (re-queued, redone, accepted later). The board reports both the raw entry
+// count and the set that still matters — unique units with no acceptance on
+// record (the R16 signature: executed units whose receipts never landed).
+function summarizeChangeRequests(session) {
+  const entries = Array.isArray(session.changeRequests) ? session.changeRequests : [];
+  if (entries.length === 0) return { entries: 0, units: 0, openUnits: [] };
+  const accepted = new Set((Array.isArray(session.acceptedReviewUnits) ? session.acceptedReviewUnits : [])
+    .map((unit) => unit.reviewUnitId));
+  const open = [...new Set(entries.map((entry) => entry?.reviewUnitId).filter(Boolean))]
+    .filter((unitId) => !accepted.has(unitId));
+  return { entries: entries.length, units: open.length, openUnits: open };
+}
+
 function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
   const units = (session.reviewUnitManifest?.units?.length) || 0;
   const acceptedUnits = Array.isArray(session.acceptedReviewUnits) ? session.acceptedReviewUnits : [];
@@ -166,6 +180,14 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
   const lastScannedTag = key ? scanState?.[key]?.lastScannedTag ?? null : null;
   const advancedPast = targetTag && lastScannedTag
     ? !Number.isNaN(compareTags(lastScannedTag, targetTag)) && compareTags(lastScannedTag, targetTag) >= 0
+    : null;
+
+  // Revision-flow binding: a revision campaign that grew a review session
+  // pins the same revision-scope artifact the grouping gate linked. This is
+  // the durable join key that collapses the board's two rows into one.
+  const revisionScopeRaw = session.artifacts?.revisionScope;
+  const revisionScope = revisionScopeRaw && typeof revisionScopeRaw.path === 'string'
+    ? { path: toRepoRelative(repoRoot, revisionScopeRaw.path), digest: revisionScopeRaw.digest ?? null }
     : null;
 
   const documentLinks = [];
@@ -207,6 +229,8 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
     updatedAt: session.updatedAt || null,
     closedAt: session.closedAt || null,
     scanState: { key, lastScannedTag, targetTag, advancedPast },
+    revisionScope,
+    changeRequests: summarizeChangeRequests(session),
     artifacts: {
       releaseScope: releaseScopeRelative,
       referenceContext: session.artifacts?.referenceContext
@@ -434,6 +458,7 @@ function buildRevisionCards(checkouts) {
       let ruling = typeof payload.ruling === 'string' ? payload.ruling : null;
       let scopeGeneratedAt = payload.generatedAt ?? null;
       let linkedScope = null;
+      let linkedScopePath = null;
       let groupingGate = null;
       for (const other of names) {
         if (GROUPING_GATE_MANIFEST_RE.test(other)) {
@@ -442,7 +467,11 @@ function buildRevisionCards(checkouts) {
             groupingGate = { digest: gate.digest, title: gate.title ?? null, manifest: `${REVISION_DIR_RELATIVE_PATH}/${other}` };
             for (const link of gate.links || []) {
               if (typeof link.url === 'string' && REVISION_SCOPE_RE.test(link.url.split('/').pop())) {
-                linkedScope = readJsonOrNull(path.join(checkout.root, link.url));
+                // Gate links may be repo-relative or file:// absolute; both
+                // must normalize to the same repo-relative join key.
+                const scopeUrl = link.url.startsWith('file://') ? link.url.slice('file://'.length) : link.url;
+                linkedScope = readJsonOrNull(path.join(checkout.root, scopeUrl));
+                linkedScopePath = toRepoRelative(checkout.root, scopeUrl);
               }
             }
           }
@@ -476,6 +505,7 @@ function buildRevisionCards(checkouts) {
           summary: scopeSummary,
           generatedAt: scopeGeneratedAt,
         },
+        scopePath: linkedScopePath,
         groupingGate,
         // Grouping was necessarily approved once any page is written (the
         // governed executor refuses writes before the grouping approval) —
@@ -523,6 +553,51 @@ function buildRevisionCards(checkouts) {
     }
   }
   return [...byStem.values()].sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')));
+}
+
+// ---------- one campaign, one row (R16 lesson) ----------
+//
+// A revision campaign that later grew a review session used to render as two
+// unrelated rows with divergent counters (written pages vs accepted units) —
+// the board showed "4/204" and "20/204" for the same campaign and buried the
+// write-ahead-of-acceptance alarm inside the noise. Bind the two cards by the
+// durable revision-scope artifact the session itself pins
+// (session.artifacts.revisionScope.path — the exact file the grouping gate
+// linked, checkout-scoped), fold the revision evidence into the session card
+// as `revisionFlow`, and drop the standalone revision row. Revision campaigns
+// without a session keep their row unchanged.
+function mergeRevisionFlows(campaigns, revisions) {
+  const standalone = [];
+  for (const revision of revisions) {
+    const host = revision.scopePath
+      ? campaigns.find((card) => card.checkout === revision.checkout
+        && card.revisionScope
+        && card.revisionScope.path === revision.scopePath)
+      : null;
+    if (!host) {
+      standalone.push(revision);
+      continue;
+    }
+    host.revisionFlow = {
+      worklistPath: revision.worklistPath,
+      worklistStem: revision.worklistStem,
+      scopePath: revision.scopePath,
+      scope: revision.scope,
+      groupingGate: revision.groupingGate,
+      groupingApproved: revision.groupingApproved,
+      writtenPages: revision.writtenPages,
+      written: revision.written,
+      remainingPages: revision.remainingPages,
+      status: revision.status,
+      updatedAt: revision.updatedAt,
+      // Written pages lead accepted units by this many. In-flight executions
+      // explain a small gap; a gap that persists with nothing pending is the
+      // executed-but-receipt-never-landed signature and must be visible.
+      receiptGap: Math.max(0, revision.writtenPages - host.accepted),
+    };
+    revision.mergedInto = host.sessionKey;
+  }
+  return standalone;
 }
 
 // ---------- intake grouping gates (batch 11) ----------
@@ -891,6 +966,10 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
   const revisionsCache = buildRevisionCards(effectiveCheckouts);
   const groupingReceipts = readGroupingReceipts(effectiveCheckouts);
   const activity = attachActivity(campaigns, readRecentEvents(repoRoot, { now }), effectiveCheckouts);
+  const intakes = buildIntakeCards(effectiveCheckouts, campaigns, revisionsCache, groupingReceipts, now);
+  // Fold session-backed revision cards into their campaign rows BEFORE the
+  // payload ships — intake evidence above already consumed the raw list.
+  const revisions = mergeRevisionFlows(campaigns, revisionsCache);
   return {
     generatedAt: now.toISOString(),
     checkouts: effectiveCheckouts.map(({ id, label }) => ({ id, label })),
@@ -901,8 +980,8 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     gatePresentations: readGatePresentations(effectiveCheckouts),
     activity: activity.slice(-120),
     runningSessions: deriveRunningSessions(activity, effectiveCheckouts, now.getTime()),
-    revisions: revisionsCache,
-    intakes: buildIntakeCards(effectiveCheckouts, campaigns, revisionsCache, groupingReceipts, now),
+    revisions,
+    intakes,
     groupingReceipts,
   };
 }
@@ -932,6 +1011,7 @@ module.exports = {
   readGroupingReceipts,
   healthFor,
   localDateStamp,
+  mergeRevisionFlows,
   normalizeSessionRef,
   parseWorktreeList,
   readDailyReport,

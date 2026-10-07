@@ -253,6 +253,9 @@ test('revision-apply executes the approved batch, journals incrementally, and re
     const entries = fs.readFileSync(path.join(directory, 'execution.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
     assert.equal(entries[0].type, 'content-fidelity');
     assert.equal(entries[1].type, 'prepared');
+    // The acceptance contract keys the Targets baseline by prepared.actionId —
+    // a prepared entry without it silently baselines to [] and accept refuses.
+    assert.equal(entries[1].actionId, STABLE_ID);
     assert.ok(entries[1].rollbackCapsule.priorRawContent.includes('highlights query terms'));
     // Record re-open (2026-10-07): the acceptance WIP→Draft transition needs
     // the record back at WIP, and the Targets baseline derives from the

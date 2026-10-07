@@ -380,6 +380,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         schemaVersion: 1,
         type: 'prepared',
         operation: 'revision-apply',
+        actionId: unit.documentStableId,
         reviewUnitId: args.reviewUnitId,
         documentToken,
         recordId: action.recordId,

@@ -103,6 +103,9 @@ function readManifest(filePath) {
         digest: document.digest || null,
         session: document.session || null,
         links,
+        previews: Array.isArray(document.previews)
+            ? document.previews.filter((preview) => preview && typeof preview.markdownPreview === 'string' && preview.markdownPreview.trim() !== '')
+            : [],
     };
 }
 
@@ -118,12 +121,26 @@ function manifestFromDryrun(filePath) {
         throw invalid('dry-run JSON carries no writeApprovalPresentation entries — nothing to present (run the dry-run first)');
     }
     const links = [];
+    const previews = [];
     for (const entry of presentation) {
+        // For COPY_PATCH_AND_REPOINT plans the document link is the PRE-COPY
+        // source page — labeling it "page preview" sent operators to the old
+        // page (which legitimately lacks synthesized sections like BUILDER
+        // METHODS) and hid the actual write content. The verbatim markdown
+        // preview rides the presentation entry, so embed it inline in the
+        // index (§3.7: "the preview is the page verbatim") and label the
+        // link neutrally.
         if (typeof entry?.documentLink === 'string' && entry.documentLink !== '') {
-            links.push({ label: `${entry.title || entry.stableId} — page preview`, url: entry.documentLink });
+            links.push({ label: `${entry.title || entry.stableId} — document link (for copy actions: the pre-copy source)`, url: entry.documentLink });
         }
         if (typeof entry?.recordLink === 'string' && entry.recordLink !== '') {
             links.push({ label: `${entry.title || entry.stableId} — Bitable record`, url: entry.recordLink });
+        }
+        if (typeof entry?.markdownPreview === 'string' && entry.markdownPreview.trim() !== '') {
+            previews.push({
+                title: entry.title || entry.stableId,
+                markdownPreview: entry.markdownPreview,
+            });
         }
     }
     if (links.length === 0) {
@@ -144,6 +161,7 @@ function manifestFromDryrun(filePath) {
         digest: batchDigest,
         session: null,
         links,
+        previews,
     };
 }
 
@@ -173,6 +191,10 @@ function renderIndexHtml(manifest) {
         lines.push(`<li><a href="${escapeHtml(link.url)}">${escapeHtml(link.label)}</a></li>`);
     });
     lines.push('</ol>');
+    (manifest.previews || []).forEach((preview) => {
+        lines.push(`<h2>${escapeHtml(preview.title)} — the page this approval writes (verbatim markdown preview)</h2>`);
+        lines.push(`<pre style="white-space: pre-wrap; border: 1px solid #ccc; padding: 12px; background: #f7f7f7;">${escapeHtml(preview.markdownPreview)}</pre>`);
+    });
     lines.push('</body></html>');
     return lines.join('\n');
 }

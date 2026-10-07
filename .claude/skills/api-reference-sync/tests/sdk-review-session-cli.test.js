@@ -489,3 +489,39 @@ test('resolve-batch-review replays converge on requests and structured unit link
   assert.match(String(tampered), /REPLY_JOURNAL_DIGEST_MISMATCH/);
   assert.equal(fs.readFileSync(sessionPath, 'utf8'), afterReplay, 'tampered journal refuses before any write');
 });
+
+test('resolve-batch-review lands an acceptance through the structured units[] link contract', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'batch-review-structured-'));
+  const manifestPath = path.join(directory, 'gate-manifest.json');
+  fs.writeFileSync(manifestPath, JSON.stringify({ schemaVersion: 1, gate: 'DOCUMENT_REVIEW', digest: 'sha256:' + '7'.repeat(64), units: [
+    { reviewUnitId: 'review:node:Collections:a', documentLinks: ['https://example.feishu.cn/docx/doc-a'], recordLinks: ['https://example.feishu.cn/base/base?record=rec-a'] },
+  ] }));
+  const { sessionPath, journals } = twoGateSessionWithPendings(directory, { units: ['a'] });
+  const replyPath = path.join(directory, 'reply.txt');
+  fs.writeFileSync(replyPath, `APPROVE_DOCUMENT review:node:Collections:a sha256:${journals.a.digest.replace('sha256:', '')}\n`);
+  const io = {
+    bitableWriter: fakeWriterFixture(),
+    writeUnitReceipt: (file, content) => {
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.writeFileSync(file, content);
+    },
+  };
+  const { runCli } = require('../bin/sdk-review-session');
+  await runCli({
+    argv: ['node', 'sdk-review-session', 'resolve-batch-review',
+      '--session', sessionPath, '--gate-manifest', manifestPath, '--reply', replyPath, '--json'],
+    dependencies: { onStdout: () => {}, io },
+  });
+  const persisted = JSON.parse(fs.readFileSync(sessionPath, 'utf8'));
+  assert.equal(persisted.acceptedReviewUnits.length, 1, 'structured links carry the acceptance end to end');
+  assert.deepEqual(persisted.acceptedReviewUnits[0].recordLinks, ['https://example.feishu.cn/base/base?record=rec-a']);
+
+  // Dry-run names the skip reason instead of a hardcoded label.
+  const stdout = [];
+  await runCli({
+    argv: ['node', 'sdk-review-session', 'resolve-batch-review',
+      '--session', sessionPath, '--gate-manifest', manifestPath, '--reply', replyPath, '--dry-run'],
+    dependencies: { onStdout: (line) => stdout.push(line), io },
+  });
+  assert.match(stdout.join('\n'), /already-accepted — will skip/);
+});

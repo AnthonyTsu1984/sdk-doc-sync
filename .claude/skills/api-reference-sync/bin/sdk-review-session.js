@@ -629,7 +629,7 @@ async function runBatchReviewResolver({ session, sessionPath, sessionDigest, arg
       if (accepted.executionJournalDigest !== decision.digest) {
         throw new Error(`REPLY_DIGEST_MISMATCH: ${decision.reviewUnitId} (line ${decision.lineNo}) is already accepted with journal ${accepted.executionJournalDigest}, reply binds ${decision.digest} — nothing applied`);
       }
-      plan.push({ decision, skip: true }); // rerun convergence
+      plan.push({ decision, skip: 'already-accepted' }); // rerun convergence
       continue;
     }
     const pending = pendings.get(decision.reviewUnitId);
@@ -702,7 +702,7 @@ async function runBatchReviewResolver({ session, sessionPath, sessionDigest, arg
   const describe = () => `approve ${report.parsed.approvals} / request ${report.parsed.requests}; accepted ${report.accepted.length}, already accepted ${report.alreadyAccepted.length}, requested ${report.requested.length}, request skipped ${report.requestSkipped.length}, left pending ${report.leftPending.length}`;
   if (args.dryRun) {
     for (const item of plan) {
-      out(`- ${item.decision.kind === 'approve' ? 'APPROVE' : 'REQUEST'} ${item.decision.reviewUnitId}${item.skip ? ' (already accepted — will skip)' : ''}`);
+      out(`- ${item.decision.kind === 'approve' ? 'APPROVE' : 'REQUEST'} ${item.decision.reviewUnitId}${item.skip ? ` (${item.skip} — will skip)` : ''}`);
     }
     out(`Dry run: ${describe()}; nothing written.`);
     report.dryRun = true;

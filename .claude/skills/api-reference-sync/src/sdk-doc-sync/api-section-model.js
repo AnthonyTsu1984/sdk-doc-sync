@@ -43,6 +43,11 @@ function labelSection(block, profile, currentRole) {
     if (currentRole === 'returns' && profile.order.includes('result-parameters')) return 'result-parameters';
     return 'parameters';
   }
+  // Operator ruling 2026-10-07 (go GetTelemetry): an opaque manager handle
+  // surfaces its public METHODS after RETURNS — profiles declaring the
+  // 'result-methods' slot role that list as the return's method surface, not
+  // as the type's 'members' section (which orders before RETURN TYPE).
+  if (label === 'METHODS' && currentRole === 'returns' && profile.order.includes('result-methods')) return 'result-methods';
   if (['BUILDER METHODS', 'OPTION METHODS', 'REQUEST METHODS', 'METHODS'].includes(label)) return 'members';
   if (label === 'RETURN TYPE') return 'result-type';
   if (label === 'RETURNS') return 'returns';

@@ -337,9 +337,9 @@ function renderReturns(document, policy, context) {
       ? policy.resultMethodsLabel
       : policy.parametersLabel;
     if (resultFieldsLabel) {
-      blocks.push(label(resultFieldsLabel, semantic('result-fields-label')));
+      blocks.push(label(resultFieldsLabel, semantic(methodSurfaced ? 'result-methods-label' : 'result-fields-label')));
     }
-    blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
+    blocks.push(...renderFieldBlocks(result.fields, context, methodSurfaced ? 'result-methods-list' : 'result-fields'));
   }
   return blocks;
 }

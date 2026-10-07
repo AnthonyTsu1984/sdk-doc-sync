@@ -255,6 +255,40 @@ test('Go method adapter merges reviewed parameter prose; kind:required never rea
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
+test('go adapter adopts reviewed inputs when the scanner extracts no params (chained builder RS)', () => {
+  // Operator finding 2026-10-07 (DropRole): chained builder forms like
+  // NewDropRoleOption("x").WithForce(true) leave scanner params empty, so
+  // the PARAMETERS section vanished while upstream documents the option
+  // parameter. The reviewed request-variant inputs are the canonical list.
+  const symbol = {
+    name: 'DropRole',
+    kind: 'method',
+    signature: 'func (c *Client) DropRole(ctx context.Context, opt DropRoleOption, callOpts ...grpc.CallOption) error',
+    docstring: 'This operation drops a role from the system.',
+    params: [],
+    filePath: 'client/milvusclient/role.go',
+    lineNumber: 88,
+    parentClass: 'Authentication',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Authentication', {
+    title: 'DropRole',
+    requestVariants: [{
+      id: 'WithForce',
+      signature: 'option := milvusclient.NewDropRoleOption("my_role").\n    WithForce(true)',
+      description: 'Creates the request for DropRole().',
+      inputs: [
+        { name: 'opt', type: 'DropRoleOption', description: 'The options for dropping the role.' },
+      ],
+    }],
+  }));
+
+  assert.equal(doc.signatures[0].inputs.length, 1);
+  assert.equal(doc.signatures[0].inputs[0].name, 'opt');
+  assert.equal(doc.signatures[0].inputs[0].type.display, 'DropRoleOption');
+  assert.equal(doc.signatures[0].inputs[0].description, 'The options for dropping the role.');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
 test('go result schemaCode renders a go block between RETURNS prose and response fields', () => {
   // Ruling 2026-10-07: multi-value returns expand the result value — a go
   // schema code block between the RETURNS prose and the response-field

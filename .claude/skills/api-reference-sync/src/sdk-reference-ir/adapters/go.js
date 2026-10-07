@@ -126,7 +126,16 @@ function toReferenceDocument(symbol, context = {}) {
       description: byName.get(String(param.name)),
     } : param));
   };
-  const signatures = [common.makeSignature(symbol.signature || '', withReviewedDescriptions(symbol.params), evidence, { symbol, context })];
+  // Ruling 2026-10-07 (DropRole): chained builder RS forms
+  // ("NewDropRoleOption(\"x\").WithForce(true)") yield NO scanner params, so
+  // the canonical PARAMETERS section vanished while upstream documents the
+  // option parameter. When the scanner extracted nothing, the reviewed
+  // request-variant inputs ARE the parameter list (name/type/description
+  // verbatim from the PR bullets).
+  const canonicalInputs = (Array.isArray(symbol.params) && symbol.params.length > 0)
+    ? withReviewedDescriptions(symbol.params)
+    : reviewedInputs;
+  const signatures = [common.makeSignature(symbol.signature || '', canonicalInputs, evidence, { symbol, context })];
   let requestVariants = [];
   if (Array.isArray(context.requestVariants)) {
     requestVariants = context.requestVariants.map((variant) => common.makeRequestVariant({

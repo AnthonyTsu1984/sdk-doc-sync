@@ -53,7 +53,10 @@ function label(value, options = {}) {
 function sentence(value) {
   const normalized = String(value || '').trim();
   if (!normalized) return '';
-  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+  // A colon is a lead-in terminator, not sentence-ending punctuation —
+  // parameter intros ("…with the following fields:") introduce the child
+  // field list and must not gain a stray period ("fields:.").
+  return /[.!?:]$/.test(normalized) ? normalized : `${normalized}.`;
 }
 
 function typeUrl(type, context) {

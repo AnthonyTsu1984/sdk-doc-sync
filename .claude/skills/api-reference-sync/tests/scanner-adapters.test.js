@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
+const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
+const goRenderer = require('../src/renderers/languages/go');
 const pythonAdapter = require('../src/sdk-reference-ir/adapters/python');
 const javaAdapter = require('../src/sdk-reference-ir/adapters/java');
 const nodeAdapter = require('../src/sdk-reference-ir/adapters/node');
@@ -253,6 +255,70 @@ test('Go method adapter merges reviewed parameter prose; kind:required never rea
     );
   }
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('go adapter merges reviewed struct-param children; field runs never glue into one description (DumpMessages)', () => {
+  // Operator rejection 2026-10-07 (DumpMessages): raw request-struct params
+  // (req *milvuspb.DumpMessagesRequest) carry their member fields as a
+  // structured children array in the reviewed inputs — the renderer emits
+  // field.children as nested bullets (upstream sub-list shape). The merge
+  // must carry children through; gluing "- field (type) - desc" runs into a
+  // single description string collapses the sub-fields into one text block.
+  const symbol = {
+    name: 'DumpMessages',
+    kind: 'method',
+    signature: 'func (c *Client) DumpMessages(ctx context.Context, req *milvuspb.DumpMessagesRequest, opts ...grpc.CallOption) (milvuspb.MilvusService_DumpMessagesClient, error)',
+    docstring: 'This operation streams messages from a WAL range for data salvage.',
+    params: [
+      { name: 'req', type: '*milvuspb.DumpMessagesRequest', kind: 'required' },
+      { name: 'opts', type: '...grpc.CallOption', kind: 'variadic' },
+    ],
+    filePath: 'client/milvusclient/wal.go',
+    lineNumber: 46,
+    parentClass: 'CDC',
+  };
+  const children = [
+    { name: 'Pchannel', type: 'string', description: 'The physical channel whose messages to dump.' },
+    { name: 'StartMessageId', type: '[]byte', description: 'The message ID from which the dump starts.' },
+  ];
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'CDC', {
+    title: 'DumpMessages',
+    requestVariants: [{
+      id: 'DumpMessages',
+      signature: 'stream, err := cli.DumpMessages(ctx, &milvuspb.DumpMessagesRequest{...})',
+      description: 'Streams messages from a WAL range.',
+      inputs: [
+        {
+          name: 'req',
+          type: '*milvuspb.DumpMessagesRequest',
+          description: 'The dump-messages request, with the following fields:',
+          children,
+        },
+        { name: 'opts', type: '...grpc.CallOption', description: 'Optional gRPC call options.' },
+      ],
+    }],
+  }));
+
+  const req = doc.signatures[0].inputs[0];
+  assert.equal(req.description, 'The dump-messages request, with the following fields:');
+  assert.deepEqual(
+    req.children.map((child) => ({ name: child.name, type: child.type.display, description: child.description })),
+    children,
+  );
+  assert.equal(doc.signatures[0].inputs[1].children.length, 0, 'params without reviewed children stay flat');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+
+  const markdown = renderMarkdown(goRenderer.render(doc));
+  assert.equal(
+    /with the following fields:\n/.test(markdown),
+    true,
+    'a colon lead-in must not gain a stray sentence period',
+  );
+  assert.equal(
+    markdown.includes('with the following fields:\n  - **Pchannel** (*string*) -'),
+    true,
+    'struct member fields render as nested sub-bullets under the parameter',
+  );
 });
 
 test('go adapter adopts reviewed inputs when the scanner extracts no params (chained builder RS)', () => {

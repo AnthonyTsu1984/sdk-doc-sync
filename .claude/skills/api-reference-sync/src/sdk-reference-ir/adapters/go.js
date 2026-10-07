@@ -107,6 +107,12 @@ function toReferenceDocument(symbol, context = {}) {
   // position: the PR PARAMETERS describe the builder's arguments in order,
   // which absorbs upstream naming drift (privileges vs privilegeNames).
   // Otherwise fall back to name matching. Scanner-side descriptions win.
+  // Struct parameters (raw request structs — DumpMessages.req) carry their
+  // member fields as a structured `children` array, not as field runs glued
+  // into the description string: the renderer emits field.children as nested
+  // bullets (upstream sub-list shape), so the merge must carry them through
+  // or the sub-fields collapse into one text block (operator rejection
+  // 2026-10-07, DumpMessages).
   const reviewedInputs = (Array.isArray(context.requestVariants) ? context.requestVariants : [])
     .flatMap((variant) => (Array.isArray(variant?.inputs) ? variant.inputs : []))
     .filter((input) => input && String(input.name || '').trim() !== ''
@@ -114,16 +120,21 @@ function toReferenceDocument(symbol, context = {}) {
   const withReviewedDescriptions = (params) => {
     if (!Array.isArray(params) || reviewedInputs.length === 0) return params;
     const described = (param) => param.description && String(param.description).trim() !== '';
+    const reviewedChildren = (input) => (Array.isArray(input.children) && input.children.length > 0
+      ? { children: input.children }
+      : {});
     if (reviewedInputs.length === params.length) {
       return params.map((param, index) => (described(param) ? param : {
         ...param,
         description: String(reviewedInputs[index].description),
+        ...reviewedChildren(reviewedInputs[index]),
       }));
     }
-    const byName = new Map(reviewedInputs.map((input) => [String(input.name), String(input.description)]));
+    const byName = new Map(reviewedInputs.map((input) => [String(input.name), input]));
     return params.map((param) => (!described(param) && byName.has(String(param.name)) ? {
       ...param,
-      description: byName.get(String(param.name)),
+      description: String(byName.get(String(param.name)).description),
+      ...reviewedChildren(byName.get(String(param.name))),
     } : param));
   };
   // Ruling 2026-10-07 (DropRole): chained builder RS forms

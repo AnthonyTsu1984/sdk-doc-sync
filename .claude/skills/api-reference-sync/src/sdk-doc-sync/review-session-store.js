@@ -1117,8 +1117,9 @@ function recordRollbackIntent(session, {
   rollbackManifestDigest,
   rollbackJournalPath,
   supersedeStaleLease = false,
+  executionJournal = null,
 }) {
-  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('Review session is required');
   if (session.scanStateUpdated === true) {
     throw new Error('Review session is finalized and cannot be rolled back in place');
   }
@@ -1143,10 +1144,33 @@ function recordRollbackIntent(session, {
         : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
     ))
     .pop();
-  const anchor = pending || accepted || (changeRequested ? {
+  let operatorAnchored = false;
+  let anchor = pending || accepted || (changeRequested ? {
     executionJournalPath: changeRequested.executionJournalPath,
     executionJournalDigest: changeRequested.executionJournalDigest,
   } : null);
+  // Operator-anchored recovery: a resource-first batch that fails before its
+  // document action cannot record its journal into the session (failed
+  // actions refuse recording), so no session anchor can ever exist. The
+  // operator points at the durable execution journal; the lease anchors to
+  // its on-disk content digest after verifying the completion sentinel.
+  if (!anchor && nonEmptyString(executionJournal)) {
+    const operatorJournalPath = path.resolve(executionJournal);
+    const entries = readExecutionJournal(operatorJournalPath);
+    const completion = entries.find((entry) => entry.type === 'completion');
+    if (!completion?.completionSentinel || completion.status !== 'executed') {
+      throw new Error('Operator-anchored rollback journal lacks a completion sentinel');
+    }
+    // The digest is verified against the on-disk bytes here; the strict
+    // journal validation below is skipped deliberately — the operator anchor
+    // carries FAILED actions by definition (that is why the session could
+    // never record it), and tolerating them is the point of this recovery.
+    operatorAnchored = true;
+    anchor = {
+      executionJournalPath: operatorJournalPath,
+      executionJournalDigest: digestSemantic(entries),
+    };
+  }
   // Redo cycles legitimately produce a SECOND rollback for a unit — the
   // prior receipt pins an OLDER journal whose artifacts were already
   // reversed with that execution. Only re-rolling an execution a receipt
@@ -1184,7 +1208,9 @@ function recordRollbackIntent(session, {
     }
   }
   if (!anchor) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
-  validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
+  if (!operatorAnchored) {
+    validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
+  }
   const startedAt = new Date().toISOString();
   if (acceptanceFlowOf(session) === 'two-gate') {
     // A finalized unit (accepted under the two-gate flow) is terminal: the
@@ -1284,10 +1310,16 @@ function recordDocumentRollback(session, receipt) {
   if (validated.originalExecutionJournalDigest !== originalExecution.executionJournalDigest) {
     throw new Error('Rollback journal is bound to a different original execution');
   }
-  validateExecutionJournal(
-    path.resolve(originalExecution.executionJournalPath || ''),
-    originalExecution.executionJournalDigest,
-  );
+  // The intent is the pre-side-effect anchor and its digest already binds
+  // the journal identity; the strict failed-action validation is skipped
+  // when the anchor came from the operator recovery path — tolerating the
+  // landed-but-failed actions is exactly what this rollback is for.
+  if (!(intent && intent.originalExecutionJournalPath === path.resolve(originalExecution.executionJournalPath || ''))) {
+    validateExecutionJournal(
+      path.resolve(originalExecution.executionJournalPath || ''),
+      originalExecution.executionJournalDigest,
+    );
+  }
 
   const rolledBackAt = receipt.rolledBackAt || new Date().toISOString();
   const remainingPendings = pendings.filter((item) => item.reviewUnitId !== reviewUnitId);

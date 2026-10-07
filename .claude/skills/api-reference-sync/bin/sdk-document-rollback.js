@@ -334,6 +334,7 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
         rollbackManifestDigest: manifest.rollbackManifestDigest,
         rollbackJournalPath: journalPath,
         supersedeStaleLease: args.supersedeStaleLease === true,
+        executionJournal: args.executionJournal || null,
       });
       const saved = saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
       sessionDigest = saved.stateDigest;

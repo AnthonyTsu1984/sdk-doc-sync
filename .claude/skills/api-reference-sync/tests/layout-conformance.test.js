@@ -36,6 +36,26 @@ test('pageFactsFromBlocks separates headings, body lines, callout child lines, a
     ]);
 });
 
+test('pageFactsFromBlocks resolves callout children from the flat list-blocks payload', () => {
+    // The live /documents/{id}/blocks payload is flat: `children` holds
+    // block-ID strings and every block sits at top level. The callout child
+    // lines must still read as callout content — a governed deprecation
+    // callout's "Notes" line must never leak into the page-level line scan.
+    const flat = [
+        { block_id: 'root', block_type: 1, parent_id: '', page: {}, children: ['c', 'n', 'p'] },
+        { block_id: 'c', block_type: 19, parent_id: 'root', callout: { emoji_id: 'blue_book' }, children: ['n', 'p'] },
+        { block_id: 'n', block_type: 2, parent_id: 'c', text: { elements: [{ text_run: { content: 'Notes' } }] } },
+        { block_id: 'p', block_type: 2, parent_id: 'c', text: { elements: [{ text_run: { content: 'This interface is deprecated, use GrantPrivilegeV2() instead.' } }] } },
+        { block_id: 't', block_type: 2, parent_id: 'root', text: { elements: [{ text_run: { content: 'This operation grants a privilege to a role.' } }] } },
+    ];
+    const facts = pageFactsFromBlocks(flat);
+    assert.deepEqual(facts.callouts, [{ lines: ['Notes', 'This interface is deprecated, use GrantPrivilegeV2() instead.'] }]);
+    assert.deepEqual(facts.lines, ['This operation grants a privilege to a role.']);
+    assert.equal(facts.stream.some((entry) => /^notes:?$/i.test(entry.text)), false);
+    const { violations } = checkLayoutConformance(sdkLayoutProfiles.go, facts);
+    assert.equal(violations.some((violation) => violation.code === 'INTERNAL_NOTE_LEAK'), false);
+});
+
 test('cpp profile flags the forbidden builder prefix; a register-compliant body line stays clean', () => {
     const facts = { headings: [], lines: ['AlterAliasRequest& WithCollectionName(const std::string& name)'], callouts: [] };
     const cpp = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);

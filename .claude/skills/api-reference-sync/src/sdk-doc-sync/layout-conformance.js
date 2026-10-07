@@ -75,9 +75,28 @@ function pageFactsFromBlocks(blocks = []) {
     const callouts = [];
     const stream = [];
     const bullets = [];
+    const list = Array.isArray(blocks) ? blocks : [blocks];
+    // The Feishu list-blocks payload is flat: `children` holds block-ID
+    // strings and every block sits at top level. Callout child lines must
+    // read as callout content — the governed-callout exemptions in the
+    // content rules (bare "Notes" line, deprecation prose) depend on that
+    // boundary — so resolve string children through the id map and keep the
+    // walk from counting them as page-level prose.
+    const blockById = new Map();
+    for (const block of list) {
+        if (block && typeof block === 'object' && block.block_id) blockById.set(block.block_id, block);
+    }
+    const calloutChildIds = new Set();
+    for (const block of list) {
+        if (!block || typeof block !== 'object' || block.block_type !== CALLOUT_BLOCK_TYPE) continue;
+        for (const child of block.children || []) {
+            if (typeof child === 'string' && blockById.has(child)) calloutChildIds.add(child);
+        }
+    }
     const walk = (list, insideCallout) => {
         for (const block of list || []) {
             if (!block || typeof block !== 'object') continue;
+            if (!insideCallout && calloutChildIds.has(block.block_id)) continue;
             if (block.block_type >= HEADING_LEVEL_BASE + 1 && block.block_type <= HEADING_LEVEL_MAX) {
                 const text = (block[`heading${block.block_type - HEADING_LEVEL_BASE}`]?.elements || [])
                     .map((element) => element?.text_run?.content || '')
@@ -120,14 +139,20 @@ function pageFactsFromBlocks(blocks = []) {
             }
             if (block.block_type === CALLOUT_BLOCK_TYPE) {
                 const childLines = [];
+                const objectChildren = [];
                 for (const child of block.children || []) {
-                    const text = (child?.text?.elements || [])
-                        .map((element) => element?.text_run?.content || '')
-                        .join('');
-                    if (child?.block_type === TEXT_BLOCK_TYPE) childLines.push(text);
+                    const resolved = typeof child === 'string' ? blockById.get(child) : child;
+                    if (!resolved || typeof resolved !== 'object') continue;
+                    objectChildren.push(resolved);
+                    if (resolved.block_type === TEXT_BLOCK_TYPE) {
+                        const text = (resolved.text?.elements || [])
+                            .map((element) => element?.text_run?.content || '')
+                            .join('');
+                        childLines.push(text);
+                    }
                 }
                 callouts.push({ lines: childLines });
-                walk(block.children, true);
+                if (objectChildren.length > 0) walk(objectChildren, true);
                 continue;
             }
             if (Array.isArray(block.children)) walk(block.children, insideCallout);

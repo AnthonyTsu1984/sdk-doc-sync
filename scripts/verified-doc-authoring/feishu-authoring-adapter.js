@@ -191,7 +191,7 @@ function blockText(block) {
 // whole-page strategies cannot guarantee (smart matching deletes unmatched
 // preserve-only blocks). Foreign blocks are snapshot before and asserted
 // present after the mutation.
-const PRESERVE_ONLY_TYPES = [43, 26, 30, 49]; // board, iframe, sheet, source_synced
+const PRESERVE_ONLY_TYPES = [43, 26, 30, 49, 50]; // board, iframe, sheet, source_synced, reference_synced
 
 async function patchSurgical(m2f, documentId, anchors) {
   const existing = await m2f.get_document_blocks(documentId);

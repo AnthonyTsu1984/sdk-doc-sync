@@ -3278,11 +3278,13 @@ class MarkdownToFeishu {
          * - iframe (26): Figma embeds
          * - sheet (30): Embedded spreadsheets
          * - source_synced (49): Synced content blocks
+         * - reference_synced (50): Synced content blocks (v2 block-type alias,
+         *   observed live on python KB pages — 2026-10-07 operator ruling)
          * - bitable (18): Live database embeds
          * - grid (24): User column layouts
          * - add_ons (40): Third-party widgets
          */
-        const PRESERVE_ONLY_TYPES = [43, 26, 30, 49, 18, 24, 40];
+        const PRESERVE_ONLY_TYPES = [43, 26, 30, 49, 50, 18, 24, 40];
         return PRESERVE_ONLY_TYPES.includes(existingBlock.block_type);
     }
 

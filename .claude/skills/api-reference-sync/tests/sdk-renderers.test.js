@@ -102,6 +102,24 @@ function context(language) {
         'Promise<CreateCollectionResponse>': '/reference/node/create-collection-response',
       },
     },
+    'go-collection-type': {
+      repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
+      summary: 'A Collection instance represents collection metadata in Milvus, including the collection schema and consistency settings. Returned by `DescribeCollection()`.',
+      examples: [{
+        title: 'Inspect a collection', description: 'Reads collection metadata after a describe call.', language: 'go',
+        code: 'collection, err := cli.DescribeCollection(ctx, milvusclient.NewDescribeCollectionOption("books"))\nif err != nil {\n    // handle error\n}\nfmt.Println(collection.Name, collection.ConsistencyLevel)',
+      }],
+      typeUrls: { 'entity.Schema': '/reference/go/schema', ConsistencyLevel: '/reference/go/consistency-level' },
+    },
+    'go-consistency-values': {
+      repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
+      summary: 'A ConsistencyLevel instance specifies the consistency guarantee level for read operations on a collection.',
+      examples: [{
+        title: 'Set a consistency level', description: 'Passes a consistency level to a search request.', language: 'go',
+        code: 'results, err := cli.Search(ctx, milvusclient.NewSearchOption("my_collection", 10, []entity.Vector{entity.FloatVector(queryVector)}).WithConsistencyLevel(entity.ClStrong))',
+      }],
+      typeUrls: {},
+    },
     go: {
       repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
       summary: 'Creates a collection through the Go client.',
@@ -174,13 +192,13 @@ function enrich(language, symbol) {
     symbol.requestVariants[0].inputs[1].constraints = ['Must be positive.'];
   }
   if (language === 'go') {
-    symbol.params = symbol.params.map((field) => ({
+    symbol.params = (symbol.params || []).map((field) => ({
       ...field,
       description: field.name === 'collectionName'
         ? 'The name of the collection to create.'
         : 'The vector field dimension.',
     }));
-    symbol.optionMethods = symbol.optionMethods.map((member) => ({
+    symbol.optionMethods = (symbol.optionMethods || []).map((member) => ({
       ...member,
       description: member.description.replace(/^Sets/, 'This sets'),
     }));
@@ -212,12 +230,14 @@ const cases = [
   { language: 'java', fixture: 'java-create-collection.json', adapter: javaAdapter, renderer: javaRenderer, golden: 'java-create-collection.md' },
   { language: 'node', fixture: 'node-create-collection.json', adapter: nodeAdapter, renderer: nodeRenderer, golden: 'node-create-collection.md' },
   { language: 'go', fixture: 'go-create-collection.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-create-collection.md' },
+  { language: 'go', fixture: 'go-collection-type.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-collection-type.md', contextKey: 'go-collection-type' },
+  { language: 'go', fixture: 'go-consistency-values.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-consistency-values.md', contextKey: 'go-consistency-values' },
   { language: 'cpp', fixture: 'cpp-create-collection.json', adapter: cppAdapter, renderer: cppRenderer, golden: 'cpp-create-collection.md' },
 ];
 
 function renderCase(item) {
   const symbol = enrich(item.language, fixture(item.fixture));
-  const adapterContext = context(item.language);
+  const adapterContext = context(item.contextKey || item.language);
   const reference = item.adapter.toReferenceDocument(symbol, adapterContext);
   const referenceValidation = validateReferenceDocument(reference, { production: true });
   assert.equal(referenceValidation.valid, true, `${item.language}: ${JSON.stringify(referenceValidation.errors)}`);
@@ -255,6 +275,30 @@ test('scanner fixtures render through production Reference IR and lossless Docum
     assert.ok(ir.children.some((node) => node.type === 'audience'), `${item.language} audience missing`);
     assert.doesNotMatch(markdown, /\b(?:TODO|TBD)\b|Brief description|Usage example/i, item.language);
     assert.doesNotMatch(markdown, /reviews\/|pymilvus\/milvus_client\/milvus_client\.py:372/, item.language);
+  }
+});
+
+test('go type pages render the type-page channel: no method sections, FIELDS/VALUES labels, enum constants in headers', () => {
+  for (const item of cases.filter((entry) => entry.contextKey)) {
+    const { ir, markdown } = renderCase(item);
+    const roles = topLevelRoles(ir);
+    const isEnum = item.contextKey === 'go-consistency-values';
+    // The method-shaped sections must never appear on a type page — the
+    // result channel carries its fields, and rendering it as a return value
+    // invented RT/RETURNS content (2026-10-08 regression).
+    for (const absent of ['request-signature', 'parameters-label', 'result-type-label', 'returns-label', 'exceptions-label']) {
+      assert.equal(roles.includes(absent), false, `${item.fixture}: unexpected ${absent}`);
+    }
+    assert.ok(roles.includes('canonical-signature'), `${item.fixture}: type definition missing`);
+    assert.ok(roles.includes(isEnum ? 'type-values-label' : 'type-fields-label'), `${item.fixture}: type members label missing`);
+    assert.match(markdown, isEnum ? /\*\*VALUES:\*\*/ : /\*\*FIELDS:\*\*/);
+    if (isEnum) {
+      // The constant rides the member header, and an empty constant must
+      // never render the bare `Default: `` ` qualifier.
+      assert.doesNotMatch(markdown, /Default: ` `/);
+      assert.match(markdown, /\*\*ClStrong\*\* = ConsistencyLevel\(commonpb\.ConsistencyLevel\\_Strong\)/);
+    }
+    assert.ok(validateSdkLayout(ir, goRenderer.profile).valid, `${item.fixture}: layout invalid`);
   }
 });
 
@@ -544,16 +588,16 @@ test('Node reviewed context renders concrete implementations inside an interface
 });
 
 test('language policies control exact sections, fences, and conditional request rendering', () => {
-  const rendered = Object.fromEntries(cases.map((item) => [item.language, renderCase(item).markdown]));
+  const rendered = Object.fromEntries(cases.map((item) => [item.fixture, renderCase(item).markdown]));
 
-  assert.match(rendered.python, /## Request Syntax\{#request-syntax\}/);
-  assert.match(rendered.python, /\*\*PARAMETERS:\*\*/);
-  assert.match(rendered.python, /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
-  assert.match(rendered.python, /## Examples\n/);
-  assert.doesNotMatch(rendered.python, /### Search a collection/);
-  assert.doesNotMatch(rendered.python, /kind: (?:positional|keyword|kwargs|varargs)/);
-  assert.match(rendered.python, /Constraints: Must be positive; choices: 10, 20\./);
-  assert.match(rendered.python, /\[str\]\(\/reference\/python\/str\)/);
+  assert.match(rendered['python-search.json'], /## Request Syntax\{#request-syntax\}/);
+  assert.match(rendered['python-search.json'], /\*\*PARAMETERS:\*\*/);
+  assert.match(rendered['python-search.json'], /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
+  assert.match(rendered['python-search.json'], /## Examples\n/);
+  assert.doesNotMatch(rendered['python-search.json'], /### Search a collection/);
+  assert.doesNotMatch(rendered['python-search.json'], /kind: (?:positional|keyword|kwargs|varargs)/);
+  assert.match(rendered['python-search.json'], /Constraints: Must be positive; choices: 10, 20\./);
+  assert.match(rendered['python-search.json'], /\[str\]\(\/reference\/python\/str\)/);
 
   const pythonContext = context('python');
   const pythonReference = pythonAdapter.toReferenceDocument(
@@ -566,37 +610,37 @@ test('language policies control exact sections, fences, and conditional request 
   assert.doesNotMatch(unsafeTypeMarkdown, /unsafe\.example\.test/);
   assert.match(unsafeTypeMarkdown, /\(\*str\*\)/);
 
-  assert.match(rendered.java, /```java\npublic void createCollection/);
-  assert.match(rendered.java, /## Request Syntax\{#request-syntax\}/);
-  assert.match(rendered.java, /\*\*BUILDER METHODS:\*\*/);
-  assert.match(rendered.java, /## Example\{#example\}/);
-  assert.doesNotMatch(rendered.java, /### Create a collection/);
+  assert.match(rendered['java-create-collection.json'], /```java\npublic void createCollection/);
+  assert.match(rendered['java-create-collection.json'], /## Request Syntax\{#request-syntax\}/);
+  assert.match(rendered['java-create-collection.json'], /\*\*BUILDER METHODS:\*\*/);
+  assert.match(rendered['java-create-collection.json'], /## Example\{#example\}/);
+  assert.doesNotMatch(rendered['java-create-collection.json'], /### Create a collection/);
 
-  assert.match(rendered.go, /```go\n/);
-  assert.match(rendered.go, /\*\*PARAMETERS:\*\*/);
-  assert.match(rendered.go, /\*\*BUILDER METHODS:\*\*/);
-  assert.match(rendered.go, /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
-  assert.match(rendered.go, /\*\*ERROR HANDLING:\*\*/);
-  assert.doesNotMatch(rendered.go, /\*\*EXCEPTIONS:\*\*/);
-  assert.match(rendered.go, /SimpleCreateCollectionOptions\("docs", 128\)[\s\S]*client\.CreateCollection\(ctx, option\)/);
+  assert.match(rendered['go-create-collection.json'], /```go\n/);
+  assert.match(rendered['go-create-collection.json'], /\*\*PARAMETERS:\*\*/);
+  assert.match(rendered['go-create-collection.json'], /\*\*BUILDER METHODS:\*\*/);
+  assert.match(rendered['go-create-collection.json'], /\*\*RETURN TYPE:\*\*[\s\S]*\*\*RETURNS:\*\*/);
+  assert.match(rendered['go-create-collection.json'], /\*\*ERROR HANDLING:\*\*/);
+  assert.doesNotMatch(rendered['go-create-collection.json'], /\*\*EXCEPTIONS:\*\*/);
+  assert.match(rendered['go-create-collection.json'], /SimpleCreateCollectionOptions\("docs", 128\)[\s\S]*client\.CreateCollection\(ctx, option\)/);
 
-  assert.match(rendered.node, /```typescript\nclient\.createCollection/);
-  assert.match(rendered.node, /```javascript\nawait client\.createCollection/);
-  assert.match(rendered.node, /```typescript\nconst request: SimpleCreateCollectionReq/);
-  assert.match(rendered.node, /### Simple collection[\s\S]*### Custom schema/);
-  assert.doesNotMatch(rendered.node, /```python|def createCollection|BUILDER METHODS/);
+  assert.match(rendered['node-create-collection.json'], /```typescript\nclient\.createCollection/);
+  assert.match(rendered['node-create-collection.json'], /```javascript\nawait client\.createCollection/);
+  assert.match(rendered['node-create-collection.json'], /```typescript\nconst request: SimpleCreateCollectionReq/);
+  assert.match(rendered['node-create-collection.json'], /### Simple collection[\s\S]*### Custom schema/);
+  assert.doesNotMatch(rendered['node-create-collection.json'], /```python|def createCollection|BUILDER METHODS/);
 
-  assert.match(rendered.cpp, /```c\+\+\n/);
-  assert.match(rendered.cpp, /## Request Syntax\{#request-syntax\}[\s\S]*\*\*REQUEST METHODS:\*\*/);
-  assert.doesNotMatch(rendered.cpp, /### CreateCollectionRequest/);
-  assert.match(rendered.cpp, /\*\*REQUEST METHODS:\*\*/);
-  assert.match(rendered.cpp, /\.EnableDynamicField\(\)/);
-  assert.match(rendered.cpp, /\.AddExtraParam\(key, value\)/);
-  assert.match(rendered.cpp, /\.WithMetadata\(values, limit\);/);
-  assert.match(rendered.cpp, /\*\*ERROR HANDLING:\*\*/);
-  assert.doesNotMatch(rendered.cpp, /\*\*EXCEPTIONS:\*\*/);
-  assert.match(rendered.cpp, /status code and message/);
-  assert.doesNotMatch(rendered.cpp, /The CreateCollectionRequest request shape/);
+  assert.match(rendered['cpp-create-collection.json'], /```c\+\+\n/);
+  assert.match(rendered['cpp-create-collection.json'], /## Request Syntax\{#request-syntax\}[\s\S]*\*\*REQUEST METHODS:\*\*/);
+  assert.doesNotMatch(rendered['cpp-create-collection.json'], /### CreateCollectionRequest/);
+  assert.match(rendered['cpp-create-collection.json'], /\*\*REQUEST METHODS:\*\*/);
+  assert.match(rendered['cpp-create-collection.json'], /\.EnableDynamicField\(\)/);
+  assert.match(rendered['cpp-create-collection.json'], /\.AddExtraParam\(key, value\)/);
+  assert.match(rendered['cpp-create-collection.json'], /\.WithMetadata\(values, limit\);/);
+  assert.match(rendered['cpp-create-collection.json'], /\*\*ERROR HANDLING:\*\*/);
+  assert.doesNotMatch(rendered['cpp-create-collection.json'], /\*\*EXCEPTIONS:\*\*/);
+  assert.match(rendered['cpp-create-collection.json'], /status code and message/);
+  assert.doesNotMatch(rendered['cpp-create-collection.json'], /The CreateCollectionRequest request shape/);
 
   const direct = fixture('java-create-collection.json');
   direct.requestClass = null;
@@ -1087,6 +1131,7 @@ test('parameter, member, result, and error lists keep signature and description 
       if (!node || typeof node !== 'object') return;
       if (node.type === 'unorderedList' && [
         'parameters-list', 'members-list', 'result-fields', 'exceptions-list',
+        'type-fields-list', 'type-values-list',
       ].includes(node.metadata?.role)) {
         lists.push(node);
       }

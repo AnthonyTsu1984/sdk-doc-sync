@@ -921,6 +921,30 @@ test('Go normalizes real enum values without callable members', () => {
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
+test('Go enum adapter splits glued "= constant prose" descriptions and trusts explicit constants', () => {
+  const glued = goAdapter.toReferenceDocument(
+    fixture('go-consistency-values.json'),
+    context('go', 'Collections', { summary: 'Lists Go consistency levels.', examples: [] }),
+  );
+  assert.deepEqual(
+    glued.result.fields.map((field) => field.defaultValue),
+    [
+      'ConsistencyLevel(commonpb.ConsistencyLevel_Strong)',
+      'ConsistencyLevel(commonpb.ConsistencyLevel_Bounded)',
+      'ConsistencyLevel(commonpb.ConsistencyLevel_Session)',
+    ],
+  );
+  assert.equal(glued.result.fields[0].description, 'Strong consistency. All operations are immediately visible.');
+
+  // An explicit scanner constant wins over the description prefix.
+  const explicit = goAdapter.toReferenceDocument(
+    fixture('go-consistency-level-enum.json'),
+    context('go', 'Collections', { summary: 'Lists Go consistency levels.', examples: [] }),
+  );
+  assert.deepEqual(explicit.result.fields.map((field) => field.defaultValue), ['0', '2']);
+  assert.equal(explicit.result.fields[0].description, 'Strong consistency.');
+});
+
 test('Go preserves real interface method signatures with derived evidence', () => {
   const doc = goAdapter.toReferenceDocument(
     fixture('go-index-interface.json'),

@@ -507,6 +507,54 @@ function renderRelatedSection(document) {
   return related ? [heading(2, 'Related', semantic('related-section')), related] : [];
 }
 
+const TYPE_PAGE_KINDS = Object.freeze(['struct', 'class', 'enum']);
+
+function isTypeLikeDocument(document) {
+  return TYPE_PAGE_KINDS.includes(document.identity?.kind);
+}
+
+// Enum member entries read "- **Name** = ConstantExpression" (upstream
+// type-page shape); the constant rides the field's defaultValue — a member's
+// constant IS its default value. An empty constant renders as the bare name.
+function renderTypeValueItems(fields) {
+  return ir.unorderedList(fields.map((field) => {
+    const header = [text(field.name, ['bold'])];
+    const constant = String(field.defaultValue ?? '').trim();
+    if (constant) header.push(text(` = ${constant}`));
+    const children = [ir.paragraph(header)];
+    for (const entry of audience.descriptionEntries(field)) {
+      const description = sentence(entry.description);
+      if (!description) continue;
+      const descriptionBlock = paragraph(description);
+      if (audience.normalizeAudience(field.audience) === 'shared' && entry.audience !== 'shared') {
+        children.push(ir.audienceRegion('include', entry.audience, [descriptionBlock]));
+      } else {
+        children.push(descriptionBlock);
+      }
+    }
+    return ir.listItem(children);
+  }), semantic('type-values-list'));
+}
+
+// A type page surfaces its fields/values through ONE labeled section —
+// FIELDS: for structs, VALUES: for enums — instead of the method-shaped
+// request/parameters/result sections.
+function renderTypeMembersSection(document, policy, context) {
+  const fields = Array.isArray(document.result?.fields) ? document.result.fields : [];
+  if (fields.length === 0) return [];
+  const isEnum = document.identity.kind === 'enum';
+  const labelPolicy = isEnum ? policy.typeValuesLabel : policy.typeFieldsLabel;
+  const labelValue = (typeof labelPolicy === 'function' ? labelPolicy(document) : labelPolicy)
+    || (isEnum ? 'VALUES:' : 'FIELDS:');
+  const labelBlock = isEnum
+    ? label(labelValue, semantic('type-values-label'))
+    : label(labelValue, semantic('type-fields-label'));
+  const list = isEnum
+    ? [renderTypeValueItems(fields)]
+    : renderFieldBlocks(fields, context, 'type-fields-list');
+  return [labelBlock, ...list];
+}
+
 function createSdkRenderer(policy) {
   if (!policy?.profile) throw new TypeError('SDK renderer policy requires a layout profile');
   const frozenPolicy = Object.freeze({ ...policy });
@@ -529,6 +577,21 @@ function createSdkRenderer(policy) {
       notes: renderNotes(document),
       related: renderRelatedSection(document),
     };
+    if (isTypeLikeDocument(document)) {
+      // Type pages (struct/class/enum) land summary + the type definition +
+      // one FIELDS/VALUES section + example. The method-shaped request/
+      // parameters/result-type/returns/exceptions sections are meaningless
+      // for them — the result channel on a type page carries its fields, and
+      // rendering it as a return value invents RT/RETURNS content.
+      Object.assign(sections, {
+        request: [],
+        parameters: [],
+        members: renderTypeMembersSection(document, frozenPolicy, context),
+        'result-type': [],
+        returns: [],
+        exceptions: [],
+      });
+    }
     const blocks = frozenPolicy.profile.order.flatMap((name) => sections[name] || []);
     return ir.document(blocks, {
       metadata: {

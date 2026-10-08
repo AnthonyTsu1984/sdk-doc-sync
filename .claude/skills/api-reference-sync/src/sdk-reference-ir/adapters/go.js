@@ -57,15 +57,43 @@ function toReferenceDocument(symbol, context = {}) {
   }
   if (kind === 'enum') {
     const baseType = String(symbol.signature || '').match(/^type\s+\w+\s+(.+)$/)?.[1] || '';
-    const fields = (symbol.values || []).map((value) => ({
-      name: value.name,
-      type: baseType,
-      required: false,
-      defaultValue: value.value,
-      description: value.description || '',
-    }));
-    const result = context.result
-      ? common.makeResult(context.result, evidence, { symbol, context })
+    const signatures = symbol.signature
+      ? [common.makeSignature(symbol.signature, [], evidence, { symbol, context })]
+      : [];
+    // Upstream enum member lines read "- **Name** = ValueExpression" with
+    // the prose as a separate paragraph; the scanner (and the reviewed
+    // context results built from those pages) either carry the constant in
+    // value.value/defaultValue or glue "= expression prose" into the
+    // description. An explicit constant wins; otherwise split the leading
+    // "= expression " so the constant renders in the member header. An
+    // empty constant must stay empty — a blank one previously rendered as
+    // a literal `Default: `` ` qualifier on the page.
+    const splitEnumConstant = (field) => {
+      const constant = String(field.defaultValue ?? field.value ?? '').trim();
+      const raw = String(field.description || '');
+      const match = raw.match(/^\s*=\s*(\S+(?:\([^()]*\))?)\s+(.+)$/s);
+      return {
+        ...field,
+        defaultValue: constant || (match ? match[1] : ''),
+        description: match ? match[2] : raw,
+      };
+    };
+    const reviewedResult = context.result
+      ? { ...context.result, fields: (context.result.fields || []).map(splitEnumConstant) }
+      : null;
+    const fields = (symbol.values || []).map((value) => {
+      const raw = String(value.description || '');
+      const match = raw.match(/^\s*=\s*(\S+(?:\([^()]*\))?)\s+(.+)$/s);
+      return {
+        name: value.name,
+        type: baseType,
+        required: false,
+        defaultValue: String(value.value ?? '').trim() || (match ? match[1] : ''),
+        description: match ? match[2] : raw,
+      };
+    });
+    const result = reviewedResult
+      ? common.makeResult(reviewedResult, evidence, { symbol, context })
       : common.makeResult({
         type: symbol.name,
         description: symbol.docstring || '',
@@ -76,7 +104,7 @@ function toReferenceDocument(symbol, context = {}) {
       context,
       language: 'go',
       kind,
-      signatures: [],
+      signatures,
       callableMembers: [],
       result,
     });

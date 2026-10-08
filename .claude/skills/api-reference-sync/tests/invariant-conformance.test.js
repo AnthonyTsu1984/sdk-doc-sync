@@ -94,5 +94,6 @@ test('invariant registry statements stay digest-bound to SKILL.md', () => {
     'api.track-topology-audit',
     'api.style-mirror-allowlist',
     'api.process-learning-capture',
+    'api.operator-authored-surgical-patch',
   ]);
 });

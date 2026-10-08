@@ -941,7 +941,42 @@ class SyncPlanner {
   }
 }
 
+// py-v30 wall rule (rule-candidate:api-reference-sync:dryrun-live-folder-chain,
+// harnessed 2026-10-08): a scope target chain transcribed at intake goes stale
+// the moment live tree surgery creates, moves, or mirror-builds a folder —
+// dry-run passed with zero errors while the write gate blew
+// (PLACEMENT_TARGET_UNRESOLVED), and every occurrence cost a full re-approval
+// cycle. When the run binds a placement walk PRODUCT (--placement-walk, the
+// audit artifact carrying folderChains), reconcile every write plan's target
+// chain against the walk's recorded live chain at PLAN time, so the stale
+// chain fails planning instead of the write boundary. Document plans carry
+// target.folderToken/folderAncestry; resource plans carry
+// parentFolderToken/parentAncestry — same reconciliation, same shape (token
+// arrays byte-compared, exactly like the executor's live re-derivation).
+function reconcilePlanTargetChain(plan, placementWalkProduct) {
+  if (!placementWalkProduct || !plan) return;
+  const leafToken = plan.target?.folderToken ?? plan.parentFolderToken ?? null;
+  const chain = plan.target?.folderAncestry ?? plan.parentAncestry ?? null;
+  if (!nonEmptyString(leafToken) || !Array.isArray(chain) || chain.length === 0) return;
+  const walkedChain = placementWalkProduct.folderChains?.[leafToken];
+  if (!Array.isArray(walkedChain)) {
+    throw new SyncPlanningError(
+      'PLACEMENT_TARGET_CHAIN_STALE',
+      `target folder ${leafToken} is absent from the bound placement walk product — the walk predates the folder `
+      + `(re-run the placement audit and replan ${plan.stableId || '(unstableIded plan)'})`,
+    );
+  }
+  if (JSON.stringify(walkedChain) !== JSON.stringify(chain)) {
+    throw new SyncPlanningError(
+      'PLACEMENT_TARGET_CHAIN_STALE',
+      `scope target chain for ${plan.stableId || leafToken} disagrees with the bound walk product's live chain `
+      + `— refresh the scope target (folderAncestry) from a fresh walk and replan`,
+    );
+  }
+}
+
 SyncPlanner.SyncPlanningError = SyncPlanningError;
 SyncPlanner.stableSerialize = stableSerialize;
+SyncPlanner.reconcilePlanTargetChain = reconcilePlanTargetChain;
 
 module.exports = SyncPlanner;

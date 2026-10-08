@@ -340,6 +340,7 @@ class SdkDocSync {
         tokenReferenceReader = null,
         tokenReferenceTracks = [],
         placementWalkDigest = null,
+        placementWalkProduct = null,
     }) {
         this.rootToken = rootToken;
         this.baseToken = baseToken;
@@ -401,6 +402,22 @@ class SdkDocSync {
         // T3 placement-live binding: the placement audit walk this execution is
         // named to (from the session's placementWalk / --placement-walk-digest).
         this.placementWalkDigest = placementWalkDigest;
+        // py-v30 wall rule (PLACEMENT_TARGET_CHAIN_STALE): the walk PRODUCT
+        // (--placement-walk) lets planning reconcile scope target chains
+        // against the walk's live folder chains, instead of discovering a
+        // stale chain at the write boundary.
+        if (placementWalkProduct !== null && placementWalkProduct !== undefined) {
+            if (!placementWalkProduct || typeof placementWalkProduct !== 'object'
+                || typeof placementWalkProduct.walkDigest !== 'string' || placementWalkProduct.walkDigest.length === 0
+                || !placementWalkProduct.folderChains || typeof placementWalkProduct.folderChains !== 'object') {
+                throw new TypeError('placementWalkProduct requires { walkDigest, folderChains } from the placement audit product');
+            }
+            if (typeof this.placementWalkDigest === 'string' && this.placementWalkDigest.length > 0
+                && placementWalkProduct.walkDigest !== this.placementWalkDigest) {
+                throw new Error(`PLACEMENT_SOURCE_STALE: --placement-walk product digest ${placementWalkProduct.walkDigest} does not match --placement-walk-digest ${this.placementWalkDigest}`);
+            }
+        }
+        this.placementWalkProduct = placementWalkProduct || null;
 
         if (!dryRun) {
             // Writers refuse every mutation until this governance is bound to
@@ -546,6 +563,7 @@ class SdkDocSync {
                     && plan && !(typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0)) {
                     plan = Object.freeze({ ...plan, placementWalkDigest: this.placementWalkDigest });
                 }
+                SyncPlanner.reconcilePlanTargetChain(plan, this.placementWalkProduct);
                 result.resourcePlans.push(plan);
                 plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });
             } catch (error) {
@@ -591,6 +609,7 @@ class SdkDocSync {
                     if (lineage.length > 0) context.reviewSessionRebuildLineage = lineage;
                 }
                 const plan = this.planner.planAction(plannableAction, context);
+                SyncPlanner.reconcilePlanTargetChain(plan, this.placementWalkProduct);
                 result.plans.push(plan);
                 plannedEntries.push({ kind: 'document', action: plannableAction, plan, context });
                 this._planningContexts.set(plannableAction, context);

@@ -105,6 +105,8 @@ function parseArgs(argv) {
             args.approveBatchDigest = argv[++i];
         } else if (arg === '--placement-walk-digest' && argv[i + 1]) {
             args.placementWalkDigest = argv[++i];
+        } else if (arg === '--placement-walk' && argv[i + 1]) {
+            args.placementWalk = argv[++i];
         } else if (arg === '--review-unit-id' && argv[i + 1]) {
             args.reviewUnitId = argv[++i];
         } else if (arg === '--batch-continue') {
@@ -149,6 +151,7 @@ Options:
   --approve-plan-digest <id=hash>  Require an exact stable ID and artifact digest (repeatable)
   --approve-batch-digest <hash>    Approve exactly one generated execution batch digest
   --placement-walk-digest <hash>   Bind execution to the placement audit walk digest (session placementWalk / audit walkDigest); plans carrying a different walk are refused (PLACEMENT_SOURCE_STALE); a named walk over walk-less plans is PLACEMENT_WALK_UNBOUND
+  --placement-walk <file>          Load the walk PRODUCT (the audit artifact with folderChains) so planning reconciles every write plan's target chain against the walk's live chains at plan time — a stale scope chain fails planning (PLACEMENT_TARGET_CHAIN_STALE) instead of the write gate
   --review-unit-id <id>            Select exactly one document and its required resource operations
   --batch-continue                 Verified batch mode: permit planning and recording executions while sibling units await review (only a unit's OWN unaccepted execution blocks its re-selection). The operator's batch write approval binds the unit list; without this flag the per-unit strict gate is unchanged
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
@@ -809,6 +812,9 @@ async function runCli({
         tokenReferenceReader: dependencies.tokenReferenceReader || null,
         tokenReferenceTracks,
         placementWalkDigest: args.placementWalkDigest || null,
+        placementWalkProduct: args.placementWalk
+            ? JSON.parse(fs.readFileSync(path.resolve(args.placementWalk), 'utf8'))
+            : null,
     };
     const sync = dependencies.syncFactory ? dependencies.syncFactory(syncOptions) : new SdkDocSync(syncOptions);
 

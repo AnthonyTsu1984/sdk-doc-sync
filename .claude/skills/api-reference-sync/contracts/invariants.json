@@ -891,6 +891,36 @@
         }
       ],
       "notes": "Campaign-control hardening batch 2c, T1+T4 (2026-10-04): the governed Drive/docx write boundary enforces the same-name gate on every folder create (MarkdownToFeishu.createFolder lists the parent and refuses a same-named FOLDER sibling — the executor step machine and the plan-governed repair tools keep their own gates; the writer is the capability backstop), reads back the expected post-state of every duplicate-prone mutation, and reconciles-by-name on a lost write response through ONE shared policy helper (__writeWithReconcile) — never a blind retry. deleteFile is exempt by documented policy. Codes are thrown as typed errors (error.code) with reconciledAfterFailure surfacing adoptions to the caller (executor journal persistence is follow-up wiring). Adoptions exclude a pre-write snapshot of the target folder, so a foreign same-titled page is never adopted; post-checks and reconcile probes retry with backoff (Drive listing is eventually consistent right after a write). The pre-list and the create are not atomic — a concurrent same-name create is caught by the detect-only topology patrol, not this gate."
+    },
+    {
+      "id": "api.operator-authored-surgical-patch",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-sdk-document-writes",
+      "status": "declared",
+      "enforcement": [
+        "plan",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:a926c840255ba16fa49cd1ea3aee51e735c1cb834b160739e16e5bb90654dd4d",
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+          "codes": [
+            "API_PATCH_PLAN_REQUIRED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "API_PATCH_PRECONDITION_FAILED",
+            "INVALID_API_PATCH_PLAN"
+          ]
+        }
+      ],
+      "notes": "2026-10-07 operator-directed consolidation (py-v30 batch-4, search_iterator/search five-attempt iteration): pages whose live content the schema-first regeneration cannot reproduce faithfully (operator-authored include structures, callouts inside parameter bullets, audience-wrapped parameter groups) land through a hand-authored surgical apiPatchPlan whose desired blocks are the live blocks plus the reviewed delta. Authoring program and pitfalls: references/surgical-patch.md; narrative: docs/sdk-doc-sync-surgical-patch.md. The executor enforces the shape (apply_api_patch live precondition; REBUILD_STRATEGY_REQUIRED keeps whole-body replacement off this path); the local ordered-execution simulation before the gate is the process discipline this declared invariant codifies."
     }
   ]
 }

@@ -83,9 +83,20 @@ function typeInlines(type, context, { italic = true } = {}) {
 }
 
 function fieldHeader(field, context, role = 'parameters-list') {
-  const nameMarks = role === 'member-fields' ? ['inlineCode'] : ['bold'];
+  // Member sub-fields come in two shapes. Embedded method entries (java
+  // builder helpers carry their full signature as the field NAME, e.g.
+  // "fieldName(String fieldName)", with no type) stay code-styled — that is
+  // the java pages' accepted shape. Data fields (a clean name plus a type —
+  // go option sub-fields) use the same bold-name + parenthesized-type shape
+  // as every other nested field list: the type is semantic content and the
+  // upstream PR pages render it (operator rejection 2026-10-08,
+  // WithExternalSpec).
+  const signatureEntry = role === 'member-fields'
+    && !String(typeof field.type === 'string' ? field.type : field.type?.display ?? '').trim()
+    && String(field.name || '').includes('(');
+  const nameMarks = signatureEntry ? ['inlineCode'] : ['bold'];
   const children = [text(field.name, nameMarks)];
-  const renderedType = role === 'member-fields' ? [] : typeInlines(field.type, context);
+  const renderedType = signatureEntry ? [] : typeInlines(field.type, context);
   if (renderedType.length > 0) children.push(text(' ('), ...renderedType, text(')'));
   children.push(text(' -'));
   return ir.paragraph(children);

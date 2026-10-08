@@ -17,7 +17,10 @@
 
 const { normalizeRefetchedMarkdown } = require('./verbatim-content');
 
-const SEMANTIC_MAP_VERSION = 2;
+// semantic-content-map v3 (2026-10-08): code-fence include lines normalize to
+// the operator magic-tag form (// include-start/nextline/end) on both sides
+// of the comparison — see normalizeCodeIncludeLine.
+const SEMANTIC_MAP_VERSION = 3;
 
 const FENCE_LINE = /^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)\s*$/;
 const HEADING_LINE = /^#{1,9}\s+/;
@@ -125,6 +128,53 @@ function matchOrdered(needles, haystack) {
     return indices;
 }
 
+// 2026-10-08 (java revision campaign, operator magic-tag ruling): literal
+// <include> tags cannot survive the markdown→blocks converter inside code
+// fences — the renderer's JSX scan replaces a column-0 include block with a
+// placeholder, silently dropping the wrapped code lines. The authored
+// canonical form therefore represents code-fence includes as comment magic
+// tags, and both sides of the code-block comparison normalize to that form:
+//
+//   <include target="X">        ⇄   // include-start X
+//       …wrapped code lines…        …wrapped code lines…
+//   </include>                  ⇄   // include-end X
+//
+//   <include target="X">line</include>   ⇄   // include-nextline X
+//                                             line
+//
+// Content lines keep their own bytes; only marker lines are rewritten, so
+// pages without code-fence includes compare exactly as before.
+function normalizeCodeIncludeLine(line, pendingTargets) {
+    const trimmed = String(line).trim();
+    const open = trimmed.match(/^<include\s+target="([^"]+)"\s*>$/i);
+    if (open) {
+        pendingTargets.push(open[1]);
+        return `// include-start ${open[1]}`;
+    }
+    const single = trimmed.match(/^<include\s+target="([^"]+)"\s*>(.+)<\/include>$/i);
+    if (single) {
+        pendingTargets.push(single[1]);
+        return [`// include-nextline ${single[1]}`, single[2]];
+    }
+    if (/^<\/include>$/i.test(trimmed)) {
+        const target = pendingTargets.pop();
+        return `// include-end ${target || ''}`.trimEnd();
+    }
+    const magicStart = trimmed.match(/^\/\/\s*include-start\s+(\S+)\s*$/);
+    if (magicStart) {
+        pendingTargets.push(magicStart[1]);
+        return `// include-start ${magicStart[1]}`;
+    }
+    const magicNext = trimmed.match(/^\/\/\s*include-nextline\s+(\S+)\s*$/);
+    if (magicNext) return `// include-nextline ${magicNext[1]}`;
+    const magicEnd = trimmed.match(/^\/\/\s*include-end(?:\s+(\S+))?\s*$/);
+    if (magicEnd) {
+        const target = magicEnd[1] || pendingTargets.pop() || '';
+        return `// include-end ${target}`.trimEnd();
+    }
+    return line.replace(/\s+$/, '');
+}
+
 // Fence-aware extraction of the semantic inventory. Items carry their
 // normalized text and description line count; description WORDING is
 // deliberately not retained — it is the human-reviewed surface.
@@ -142,6 +192,7 @@ function extractSemanticMap(markdown) {
     const lines = String(markdown ?? '').split('\n');
     let fence = null;
     let fenceLines = null;
+    const pendingIncludeTargets = [];
     let label = null;
     let currentItem = null;
     let tableRows = null;
@@ -156,7 +207,9 @@ function extractSemanticMap(markdown) {
                 fence = null;
                 fenceLines = null;
             } else {
-                fenceLines.push(raw.replace(/\s+$/, ''));
+                const normalized = normalizeCodeIncludeLine(raw, pendingIncludeTargets);
+                if (Array.isArray(normalized)) fenceLines.push(...normalized);
+                else fenceLines.push(normalized);
             }
             continue;
         }

@@ -306,3 +306,63 @@ test('a void page may retire its bare RETURNS stub entirely (2026-10-05 ruling)'
     assert.equal(realTypeDropped.ok, false);
     assert.ok(realTypeDropped.diffs.some((diff) => diff.kind === 'RETURN_TYPE_MISSING'));
 });
+
+test('code-fence includes normalize to operator magic tags on both sides (2026-10-08 ruling)', () => {
+    // Upstream (live page): literal <include> tags wrap code lines inside the
+    // fence at their original indentation. Canonical (authored): the operator
+    // magic-tag form. The code block must compare equal.
+    const upstream = [
+        '# createSchema()',
+        '',
+        'This operation creates a schema.',
+        '',
+        '```java',
+        'CreateCollectionReq.CollectionSchema.builder()',
+        '    .name(String name)',
+        '<include target="milvus">',
+        '    .elementType(DataType elementType)',
+        '    .maxCapacity(Integer maxCapacity)',
+        '</include>',
+        '    .isNullable(Boolean isNullable)',
+        '    .build();',
+        '```',
+        '',
+        '**EXCEPTIONS:**',
+        '',
+        '- **MilvusClientException**',
+        'This exception is raised when any error occurs.',
+        '',
+    ].join('\n');
+    const canonical = upstream
+        .replace('<include target="milvus">', '// include-start milvus')
+        .replace('</include>', '// include-end milvus');
+    const blockForm = compareSemanticContent({ upstreamContent: upstream, canonicalContent: canonical });
+    assert.equal(blockForm.ok, true, JSON.stringify(blockForm.diffs));
+
+    // The magic-tag form is self-consistent (idempotent) — an executed page
+    // re-verifies against its own baseline.
+    const idempotent = compareSemanticContent({ upstreamContent: canonical, canonicalContent: canonical });
+    assert.equal(idempotent.ok, true, JSON.stringify(idempotent.diffs));
+
+    // Whole-line single include ⇄ // include-nextline form.
+    const upstreamNextline = upstream.replace(
+        '    .isNullable(Boolean isNullable)',
+        '<include target="zilliz">    .isNullable(Boolean isNullable)</include>'
+    );
+    const canonicalNextline = upstream.replace(
+        '    .isNullable(Boolean isNullable)',
+        '// include-nextline zilliz\n    .isNullable(Boolean isNullable)'
+    );
+    const nextline = compareSemanticContent({ upstreamContent: upstreamNextline, canonicalContent: canonicalNextline });
+    assert.equal(nextline.ok, true, JSON.stringify(nextline.diffs));
+
+    // A genuinely altered code line inside the wrap still fails.
+    const altered = canonical.replace('.maxCapacity(Integer maxCapacity)', '.maxCapacity(Integer capacity)');
+    const alteredResult = compareSemanticContent({ upstreamContent: upstream, canonicalContent: altered });
+    assert.equal(alteredResult.ok, false);
+    assert.ok(alteredResult.diffs.some((diff) => diff.kind === 'CODE_BLOCK_ALTERED'));
+
+    // Behavior is unchanged for pages without code-fence includes.
+    const plain = compareSemanticContent({ upstreamContent: PAGE, canonicalContent: PAGE });
+    assert.equal(plain.ok, true, JSON.stringify(plain.diffs));
+});

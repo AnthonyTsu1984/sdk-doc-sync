@@ -318,3 +318,35 @@ test('buildSkillTracks counts a campaign on its overridden (real) scan-state key
   // session still carrying python-v30 stays uncounted (the UI footer lists
   // it as 未登记) instead of being silently misattributed.
 });
+
+test('buildCampaignDetail keys the session through the caller (host) registry', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  // Session's own checkout has NO registry at all (or one predating the
+  // overrides); the server passes the host registry so the detail card and
+  // the board card can never disagree on track identity.
+  const session = detailSessionFixture();
+  session.language = 'go';
+  session.sdkName = 'milvus-sdk-go';
+  session.track = 'v3.0.x';
+  session.scanStateKey = undefined; // unstamped intake-phase session
+  write('tmp/sdk-release-scout/go-v30-session.json', session);
+  write('.claude/skills/api-reference-sync/scan-state.json', {
+    'go-v3': { lastScannedTag: 'client/v3.0.0-beta' },
+  });
+
+  const hostRegistry = { languages: { go: { tracks: [{ version: 'v3.0.x', scanStateKey: 'go-v3' }] } } };
+  const detail = buildCampaignDetail({
+    repoRoot: root,
+    sessionPath: 'tmp/sdk-release-scout/go-v30-session.json',
+    registry: hostRegistry,
+  });
+  assert.equal(detail.ok, true);
+  assert.equal(detail.card.scanState.key, 'go-v3', 'host registry governs the detail card');
+  assert.equal(detail.card.scanState.lastScannedTag, 'client/v3.0.0-beta');
+
+  // Without the param the checkout-local default applies (legacy behavior).
+  const local = buildCampaignDetail({ repoRoot: root, sessionPath: 'tmp/sdk-release-scout/go-v30-session.json' });
+  assert.equal(local.card.scanState.key, 'go-v30', 'no checkout registry → derivation fallback');
+});

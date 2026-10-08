@@ -16,7 +16,7 @@ const path = require('node:path');
 const { exec, execFile, spawn } = require('node:child_process');
 const { promisify } = require('node:util');
 
-const { buildLedger, parseWorktreeList, resolveSessionTarget } = require('./ledger.js');
+const { buildLedger, parseWorktreeList, readJsonOrNull, RELEASE_TRACKS_RELATIVE_PATH, resolveSessionTarget } = require('./ledger.js');
 const { buildBrief, buildRevisionBrief, resolveRevisionTarget } = require('./attach-brief.js');
 const { buildCampaignDetail, sessionPathAllowed } = require('./campaign-detail.js');
 const { createLiveStatsCollector } = require('./live-stats.js');
@@ -775,7 +775,11 @@ async function handler(req, res) {
         sendJson(res, 404, { error: `session path not discoverable: ${requested}` });
         return;
       }
-      const detail = buildCampaignDetail({ repoRoot: resolved.checkout.root, sessionPath: resolved.relative });
+      // Host registry governs track identity on the board; the detail view of
+      // a sibling-checkout session must key through the same registry, not the
+      // sibling's (possibly older) one.
+      const hostRegistry = readJsonOrNull(path.join(REPO_ROOT, RELEASE_TRACKS_RELATIVE_PATH));
+      const detail = buildCampaignDetail({ repoRoot: resolved.checkout.root, sessionPath: resolved.relative, registry: hostRegistry });
       if (!detail.ok) {
         sendJson(res, 404, { error: detail.error });
         return;

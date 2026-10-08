@@ -20,8 +20,8 @@ const EVENTS_DIR_RELATIVE_PATH = 'tmp/dashboard-events';
 
 // Sentinel (cron automation) definitions. nextRun derives from an explicit
 // daily wall-clock time instead of cron parsing: host-side automation state
-// (CronList) is not on disk, and both automations are fixed daily schedules.
-// Adding a third automation = one entry here (batch-2 event taps will attach
+// (CronList) is not on disk, and the automations are fixed daily schedules.
+// Adding an automation = one entry here (batch-2 event taps will attach
 // run timelines to the same card ids without further wiring).
 const SENTINELS = [
   {
@@ -57,6 +57,17 @@ const SENTINELS = [
     cursorFile: 'tmp/sdk-release-scout/java-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'java-{date}.md',
+  },
+  {
+    id: 'python-daily-scan',
+    title: 'Python SDK 每日扫描',
+    schedule: '每天 09:45',
+    hour: 9,
+    minute: 45,
+    language: 'python',
+    cursorFile: 'tmp/sdk-release-scout/python-daily-scan-state.json',
+    artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'python-{date}.md',
   },
 ];
 

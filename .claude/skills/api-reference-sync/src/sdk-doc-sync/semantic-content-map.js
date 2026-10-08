@@ -313,10 +313,24 @@ function compareSemanticContent({ upstreamContent, canonicalContent, options } =
     const canonical = extractSemanticMap(canonicalContent);
     const diffs = [];
 
+    // 2026-10-08 (java revision campaign, operator consistency ruling): a
+    // manifest-bound list of exact item-label edits the operator ordered —
+    // e.g. MilvusClientExceptions → MilvusClientException to align a page
+    // with the campaign's accepted form. Only listed from→to pairs count as
+    // preserved; any other label change still fails as an item drop, and an
+    // edit whose target text is absent from the canonical fails closed too
+    // (matchOrdered leaves it unmatched).
+    const sanctionedEdits = new Map(
+        (options?.sanctionedItemEdits || []).map((edit) => [String(edit.from), String(edit.to)]),
+    );
+
     for (const kind of ['PARAM', 'MEMBER', 'EXCEPTION']) {
         const upstreamItems = upstream.items.filter((item) => item.section === kind);
         const canonicalItems = canonical.items.filter((item) => item.section === kind);
-        const indices = matchOrdered(upstreamItems.map((item) => item.text), canonicalItems.map((item) => item.text));
+        const indices = matchOrdered(
+            upstreamItems.map((item) => sanctionedEdits.get(item.text) ?? item.text),
+            canonicalItems.map((item) => item.text),
+        );
         upstreamItems.forEach((item, index) => {
             if (indices[index] === -1) {
                 diffs.push({ kind: `${kind}_ITEM_DROPPED`, detail: item.text });

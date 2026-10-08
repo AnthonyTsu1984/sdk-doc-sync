@@ -349,11 +349,26 @@ function validateRestructureManifest({ manifest, baseContent } = {}) {
             return { errors };
         }
     }
+    if (manifest.sanctionedItemEdits !== undefined) {
+        if (!Array.isArray(manifest.sanctionedItemEdits)
+            || manifest.sanctionedItemEdits.some((edit) => !edit
+                || typeof edit.from !== 'string' || edit.from.trim() === ''
+                || typeof edit.to !== 'string' || edit.to.trim() === '')) {
+            errors.push(polishError(
+                'PR_POLISH_SANCTIONED_ITEM_EDITS_INVALID',
+                'sanctionedItemEdits must be an array of {from, to} non-empty strings when present',
+            ));
+            return { errors };
+        }
+    }
 
     const comparison = compareSemanticContent({
         upstreamContent: content,
         canonicalContent: manifest.replacementContent,
-        options: { sanctionedIncludeRemovals: manifest.sanctionedIncludeRemovals },
+        options: {
+            sanctionedIncludeRemovals: manifest.sanctionedIncludeRemovals,
+            sanctionedItemEdits: manifest.sanctionedItemEdits,
+        },
     });
     if (!comparison.ok) {
         errors.push(polishError(

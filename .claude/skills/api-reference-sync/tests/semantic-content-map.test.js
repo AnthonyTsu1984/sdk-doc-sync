@@ -442,3 +442,35 @@ test('sanctioned include removals are operator-bound; code marker lines are not 
     assert.equal(mixed.ok, false);
     assert.ok(mixed.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
 });
+
+// 2026-10-08 (java revision campaign, operator consistency ruling):
+// sanctionedItemEdits — a manifest-bound {from, to} list of exact item-label
+// edits. The PAGE fixture's EXCEPTIONS bullet is the plural form; the
+// canonical rewrites it to the campaign's accepted singular.
+test('sanctionedItemEdits: listed label edits pass, unlisted or absent-target edits fail', () => {
+    const canonical = PAGE.replace('- **MilvusClientExceptions**', '- **MilvusClientException**');
+    const EDIT = { from: 'MilvusClientExceptions', to: 'MilvusClientException' };
+
+    // Without sanction: the label edit reads as an upstream item drop.
+    const unsanctioned = compareSemanticContent({ upstreamContent: PAGE, canonicalContent: canonical });
+    assert.equal(unsanctioned.ok, false);
+    assert.ok(unsanctioned.diffs.some((diff) => diff.kind === 'EXCEPTION_ITEM_DROPPED' && diff.detail === 'MilvusClientExceptions'));
+
+    // With the operator-sanctioned edit: the rewrite passes (description preserved).
+    const sanctioned = compareSemanticContent({
+        upstreamContent: PAGE,
+        canonicalContent: canonical,
+        options: { sanctionedItemEdits: [EDIT] },
+    });
+    assert.equal(sanctioned.ok, true, JSON.stringify(sanctioned.diffs));
+
+    // Fail-closed: an edit whose target text is absent from the canonical
+    // still reports the drop — the sanction cannot smuggle a disappearance.
+    const missingTarget = compareSemanticContent({
+        upstreamContent: PAGE,
+        canonicalContent: canonical.replace('- **MilvusClientException**\nThis exception will be raised when any error occurs during this operation.\n', ''),
+        options: { sanctionedItemEdits: [EDIT] },
+    });
+    assert.equal(missingTarget.ok, false);
+    assert.ok(missingTarget.diffs.some((diff) => diff.kind === 'EXCEPTION_ITEM_DROPPED'));
+});

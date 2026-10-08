@@ -411,6 +411,12 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         ...(Array.isArray(entry.sanctionedIncludeRemovals)
             ? { sanctionedIncludeRemovals: entry.sanctionedIncludeRemovals }
             : {}),
+        // Operator-sanctioned item-label edits (2026-10-08 java revision
+        // consistency ruling): same trust shape — declared on the entry,
+        // validated by the polish manifest gate, digest-bound here.
+        ...(Array.isArray(entry.sanctionedItemEdits)
+            ? { sanctionedItemEdits: entry.sanctionedItemEdits }
+            : {}),
     };
     const { polishedContent, provenance } = applyPolishManifest({ manifest, baseContent });
 

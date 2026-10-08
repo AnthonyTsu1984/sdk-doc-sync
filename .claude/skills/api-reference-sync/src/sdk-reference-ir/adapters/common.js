@@ -62,6 +62,27 @@ function evidenceForNode(node, symbol, context = {}, role = 'field', key = node?
   return [];
 }
 
+// Upstream PR pages encode HTML entities in type prose (&ast; for *,
+// &lt;/&gt; for generics); left unescaped they reach the rendered page as
+// literal "&ast;" text — and the renderer's own escaping then doubles it to
+// "&amp;ast;". Unescape once, at the type-display choke point (&amp; last).
+const HTML_ENTITY_UNESCAPES = [
+  [/&ast;/g, '*'],
+  [/&lt;/g, '<'],
+  [/&gt;/g, '>'],
+  [/&quot;/g, '"'],
+  [/&#39;/g, "'"],
+  [/&nbsp;/g, ' '],
+  [/&amp;/g, '&'],
+];
+
+function unescapeEntities(value) {
+  return HTML_ENTITY_UNESCAPES.reduce(
+    (text, [pattern, replacement]) => text.replace(pattern, replacement),
+    value,
+  );
+}
+
 function typeOf(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const references = Array.isArray(value.references)
@@ -69,9 +90,9 @@ function typeOf(value) {
         ? schema.createTypeReference({ id: reference })
         : schema.createTypeReference(reference))
       : [];
-    return { display: String(value.display || ''), references };
+    return { display: unescapeEntities(String(value.display || '')), references };
   }
-  return { display: value == null ? '' : String(value), references: [] };
+  return { display: value == null ? '' : unescapeEntities(String(value)), references: [] };
 }
 
 function normalizeField(field = {}, evidence = [], overrides = {}, options = {}) {

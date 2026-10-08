@@ -19,6 +19,16 @@ function nonEmptyString(value) {
   return typeof value === 'string' && value.length > 0;
 }
 
+// Effective scan-state key of a registered track: the explicit scanStateKey
+// override wins, else <language>-v<major><minor> derivation. Must stay in
+// lockstep with scripts/dashboard/ledger.js registryTrackKey — the dashboard
+// keys campaign counts by this value, so two tracks resolving to the same
+// key would silently drop one track's counts.
+function trackScanStateKey(language, version) {
+  const match = /^v(\d+)\.(\d+)\./.exec(String(version || ''));
+  return match ? `${language}-v${match[1]}${match[2]}` : language;
+}
+
 // Identity values are literals or { env: 'VAR' } references resolved lazily so
 // a registry can stay committable while a deployment overrides tokens.
 function resolveIdentity(value, env = process.env) {
@@ -38,6 +48,7 @@ function validateReleaseTrackRegistry(registry) {
   if (!registry.languages || typeof registry.languages !== 'object' || Object.keys(registry.languages).length === 0) {
     errors.push({ code: 'TRACK_REGISTRY_LANGUAGES_REQUIRED', path: '$.languages' });
   }
+  const seenKeys = new Map(); // effective scan-state key → track path (global: dashboard byKey is cross-language)
   for (const [language, entry] of Object.entries(registry.languages || {})) {
     if (!Array.isArray(entry?.tracks) || entry.tracks.length === 0) {
       errors.push({ code: 'TRACK_REGISTRY_TRACKS_REQUIRED', path: `$.languages.${language}.tracks` });
@@ -52,6 +63,23 @@ function validateReleaseTrackRegistry(registry) {
         errors.push({ code: 'TRACK_REGISTRY_VERSION_DUPLICATE', path: `${trackPath}.version` });
       } else {
         seen.add(track.version);
+      }
+      if (track?.scanStateKey !== undefined && !nonEmptyString(track.scanStateKey)) {
+        errors.push({ code: 'TRACK_REGISTRY_SCANSTATEKEY_INVALID', path: `${trackPath}.scanStateKey` });
+      }
+      const effectiveKey = nonEmptyString(track?.scanStateKey)
+        ? track.scanStateKey
+        : trackScanStateKey(language, track?.version);
+      if (nonEmptyString(track?.version)) {
+        if (seenKeys.has(effectiveKey)) {
+          errors.push({
+            code: 'TRACK_REGISTRY_SCANSTATEKEY_DUPLICATE',
+            path: `${trackPath}.scanStateKey`,
+            details: { key: effectiveKey, firstSeen: seenKeys.get(effectiveKey) },
+          });
+        } else {
+          seenKeys.set(effectiveKey, trackPath);
+        }
       }
       if (!nonEmptyString(resolveIdentity(track?.bitable?.baseToken))) {
         errors.push({ code: 'TRACK_REGISTRY_BASE_TOKEN_REQUIRED', path: `${trackPath}.bitable.baseToken` });
@@ -155,6 +183,7 @@ module.exports = {
   resolveIdentity,
   trackBaseToken,
   trackReleaseRootToken,
+  trackScanStateKey,
   trackTableId,
   validateReleaseTrackRegistry,
 };

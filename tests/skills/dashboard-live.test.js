@@ -316,6 +316,27 @@ test('buildTrackIntakeBrief: registered track → deterministic brief; unregiste
   assert.equal(missing.ok, false);
 });
 
+test('buildTrackIntakeBrief: explicit scanStateKey override resolves the real key; the derived key no longer matches', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    languages: { go: { sdkName: 'milvus-sdk-go', tracks: [{ version: 'v3.0.x', scanStateKey: 'go-v3' }] } },
+  });
+  write('.claude/skills/api-reference-sync/scan-state.json', { 'go-v3': { lastScannedTag: 'client/v3.0.0-beta' } });
+
+  const brief = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v3' });
+  assert.equal(brief.ok, true);
+  assert.match(brief.text, /## 轨道工作简报 · go · go-v3（v3\.0\.x）/);
+  assert.match(brief.text, /client\/v3\.0\.0-beta/);
+
+  // Once the override pins the track to the durable scan-state key, the
+  // derived <language>-v<major><minor> form matches nothing — fail-closed
+  // with the unregistered-track error instead of resolving the wrong track.
+  const derived = buildTrackIntakeBrief({ repoRoot: root, language: 'go', trackKey: 'go-v30' });
+  assert.equal(derived.ok, false);
+  assert.match(derived.error, /未登记/);
+});
+
 test('buildTrackIntakeBrief: absent baseline is stated, not faked', (t) => {
   const { root, write } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

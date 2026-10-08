@@ -739,6 +739,18 @@ function trackScanStateKey(language, version) {
   return match ? `${language}-v${match[1]}${match[2]}` : language;
 }
 
+// Registry-side key: an explicit per-track `scanStateKey` override wins. The
+// derivation assumes <language>-v<major><minor>, but the durable scan-state
+// keys of several tracks are bare-major or language-only (python-v3, go,
+// node-v26) — the override pins the registry to the key scan-state actually
+// owns instead of inventing a second one no session will ever carry.
+function registryTrackKey(language, track) {
+  if (track && typeof track.scanStateKey === 'string' && track.scanStateKey) {
+    return track.scanStateKey;
+  }
+  return trackScanStateKey(language, track ? track.version : null);
+}
+
 function buildSkillTracks(repoRoot, campaigns) {
   const registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH));
   const languages = [];
@@ -746,7 +758,7 @@ function buildSkillTracks(repoRoot, campaigns) {
   if (registry && registry.languages && typeof registry.languages === 'object') {
     for (const [name, entry] of Object.entries(registry.languages)) {
       const tracks = (Array.isArray(entry.tracks) ? entry.tracks : []).map((track) => {
-        const key = trackScanStateKey(name, track.version);
+        const key = registryTrackKey(name, track);
         const summary = {
           version: track.version,
           key,
@@ -1020,5 +1032,6 @@ module.exports = {
   resolveSessionTarget,
   scanStateKeyFor,
   trackScanStateKey,
+  registryTrackKey,
   walkSessionFiles,
 };

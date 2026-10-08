@@ -14,7 +14,7 @@ const {
   RELEASE_TRACKS_RELATIVE_PATH,
   readJsonOrNull,
   SCAN_STATE_RELATIVE_PATH,
-  trackScanStateKey,
+  registryTrackKey,
 } = require('./ledger.js');
 const {
   DAILY_DIR_RELATIVE_PATH,
@@ -97,7 +97,7 @@ function buildTrackIntakeBrief({ repoRoot, language, trackKey } = {}) {
   }
   const registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH));
   const entry = registry?.languages?.[language];
-  const track = (entry?.tracks || []).find((t) => trackScanStateKey(language, t.version) === trackKey);
+  const track = (entry?.tracks || []).find((t) => registryTrackKey(language, t) === trackKey);
   if (!track) {
     return { ok: false, error: `轨道未登记: ${language}/${trackKey}（新版本轨道须先入 release-tracks 注册表）` };
   }

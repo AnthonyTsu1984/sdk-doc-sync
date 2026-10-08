@@ -121,6 +121,74 @@ test('registry validation rejects missing bases, duplicate versions, and bad roo
   );
 });
 
+test('scanStateKey overrides are typed, unique, and pin the real durable keys', () => {
+  // The committed registry's six overrides point at keys scan-state.json
+  // actually owns (bare-major / language-only forms) and collide with nothing.
+  const registry = loadReleaseTrackRegistry();
+  assert.deepEqual(validateReleaseTrackRegistry(registry), { valid: true, errors: [] });
+  const overrides = [];
+  for (const [language, entry] of Object.entries(registry.languages)) {
+    entry.tracks.forEach((track) => {
+      if (track.scanStateKey) overrides.push(`${language} ${track.version} → ${track.scanStateKey}`);
+    });
+  }
+  assert.deepEqual(overrides.sort(), [
+    'go v2.6.x → go',
+    'go v3.0.x → go-v3',
+    'node v2.6.x → node-v26',
+    'node v3.0.x → node',
+    'python v2.6.x → python',
+    'python v3.0.x → python-v3',
+  ]);
+
+  // Same effective key twice (explicit × explicit, cross-language included —
+  // the dashboard keys counts globally) fails closed instead of silently
+  // dropping one track's campaigns.
+  const dup = {
+    schemaVersion: 1,
+    languages: {
+      go: {
+        tracks: [
+          { version: 'v2.6.x', scanStateKey: 'go', bitable: { baseToken: 'base-a' } },
+          { version: 'v3.0.x', scanStateKey: 'go', bitable: { baseToken: 'base-b' } },
+        ],
+      },
+    },
+  };
+  const dupValidation = validateReleaseTrackRegistry(dup);
+  assert.equal(dupValidation.valid, false);
+  const duplicate = dupValidation.errors.find((error) => error.code === 'TRACK_REGISTRY_SCANSTATEKEY_DUPLICATE');
+  assert.ok(duplicate, 'duplicate effective key rejected');
+  assert.equal(duplicate.details.key, 'go');
+  assert.equal(duplicate.details.firstSeen, '$.languages.go.tracks[0]');
+
+  // An explicit override can also shadow another track's derived key.
+  const shadow = {
+    schemaVersion: 1,
+    languages: {
+      cpp: { tracks: [{ version: 'v3.0.x', scanStateKey: 'java-v30', bitable: { baseToken: 'base-a' } }] },
+      java: { tracks: [{ version: 'v3.0.x', bitable: { baseToken: 'base-b' } }] },
+    },
+  };
+  const shadowValidation = validateReleaseTrackRegistry(shadow);
+  assert.ok(shadowValidation.errors.some((error) => error.code === 'TRACK_REGISTRY_SCANSTATEKEY_DUPLICATE'));
+
+  // Empty/non-string overrides are invalid, not silently ignored.
+  const badType = {
+    schemaVersion: 1,
+    languages: {
+      go: {
+        tracks: [
+          { version: 'v2.6.x', scanStateKey: '', bitable: { baseToken: 'base-a' } },
+          { version: 'v3.0.x', scanStateKey: 3, bitable: { baseToken: 'base-b' } },
+        ],
+      },
+    },
+  };
+  const typeValidation = validateReleaseTrackRegistry(badType);
+  assert.equal(typeValidation.errors.filter((error) => error.code === 'TRACK_REGISTRY_SCANSTATEKEY_INVALID').length, 2);
+});
+
 test('the default registry path points at the committed config file', () => {
   assert.equal(
     DEFAULT_REGISTRY_PATH,

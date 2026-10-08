@@ -1090,10 +1090,12 @@ class SyncExecutor {
   async _executeRebuild(plan, artifact, action, result, rollbackCapsule = null) {
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
-    // Mirrors the planner gate exactly (layout + non-rebuild strategy is the
-    // surgical shape), plus the hand-patched apiPatchPlan form — both are the
-    // UPDATE path and never land as whole-body bytes (review r1 P3-1).
-    if ((artifact.layout && artifact.patchStrategy !== 'rebuild')
+    // Mirrors the planner gate exactly (layout + explicit non-rebuild strategy,
+    // or a hand-patched apiPatchPlan, is the surgical shape) — both are the
+    // UPDATE path and never land as whole-body bytes (review r1 P3-1). A
+    // schema-first artifact has a layout but no patch strategy and no patch
+    // plan: whole-body content, normalized to 'rebuild' below (2026-10-08).
+    if ((artifact.layout && artifact.patchStrategy != null && artifact.patchStrategy !== 'rebuild')
       || (artifact.layout && plan.apiPatchPlan)) {
       const error = new SyncExecutionError(
         'REBUILD_STRATEGY_REQUIRED',

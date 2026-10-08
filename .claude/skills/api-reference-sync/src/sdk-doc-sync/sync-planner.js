@@ -604,11 +604,16 @@ class SyncPlanner {
         },
       );
     }
-    // Whole-body replacement only: a surgical artifact (layout + apiPatchPlan)
-    // is the UPDATE path — REBUILD must land exact bytes, so it demands a
-    // content artifact with the rebuild strategy (or plain content).
+    // Whole-body replacement only: a surgical artifact (layout + apiPatchPlan,
+    // or an explicit non-rebuild patch strategy) is the UPDATE path — REBUILD
+    // must land exact bytes. A schema-first artifact carries a layout but no
+    // patch strategy and no patch plan; it is whole-body content, the same
+    // shape the executor normalizes to 'rebuild' (review 2026-10-08: J6's
+    // session-executed REBUILD route dead-ended here for schema-first units).
     if (effectiveDiffAction === 'REBUILD' && context.artifact
-      && context.artifact.layout && context.artifact.patchStrategy !== 'rebuild') {
+      && context.artifact.layout
+      && ((context.artifact.patchStrategy != null && context.artifact.patchStrategy !== 'rebuild')
+        || context.apiPatchPlan)) {
       throw new SyncPlanningError(
         'REBUILD_STRATEGY_REQUIRED',
         `REBUILD ${stableId} requires a whole-body replacement artifact (patchStrategy 'rebuild'); a surgical apiPatchPlan artifact is the UPDATE path`,

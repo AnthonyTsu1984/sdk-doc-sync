@@ -159,6 +159,30 @@ test('REBUILD demands whole-body artifacts: surgical layout artifacts are refuse
   assert.equal(plan.action, 'REBUILD');
 });
 
+test('session-executed schema-first CREATE units re-plan as REBUILD (J6 × schema-first, 2026-10-08)', () => {
+  // A schema-first artifact carries the layout but neither a patch strategy
+  // nor a patch plan: whole-body content, the shape the executor normalizes
+  // to 'rebuild'. The gate must not dead-end the J6 route for it.
+  const createOverExisting = { ...rebuildAction(), type: 'CREATE' };
+  const schemaFirst = {
+    ...rebuildContext().artifact,
+    layout: { profileId: 'go', profileVersion: 3 },
+  };
+  delete schemaFirst.patchStrategy;
+  const plan = new SyncPlanner().planAction(createOverExisting, rebuildContext({
+    artifact: schemaFirst,
+  }));
+  assert.equal(plan.action, 'REBUILD');
+  assert.equal(plan.metadata.autoRoutedFrom, 'CREATE');
+  // An explicit surgical strategy on the same layout artifact stays refused
+  assert.throws(
+    () => new SyncPlanner().planAction(createOverExisting, rebuildContext({
+      artifact: { ...schemaFirst, patchStrategy: 'smart' },
+    })),
+    (error) => error.code === 'REBUILD_STRATEGY_REQUIRED' && /UPDATE path/.test(error.message),
+  );
+});
+
 test('REBUILD requires the campaign record/document tokens and verified placement', () => {
   const planner = new SyncPlanner();
   const missingTokens = rebuildContext();
@@ -276,6 +300,38 @@ test('executor REBUILD refuses surgical artifacts before any write (defense in d
     assert.equal(result.error.code, 'REBUILD_STRATEGY_REQUIRED', name);
     assert.deepEqual(calls, [], name);
   }
+});
+
+test('executor REBUILD normalizes a schema-first whole-body artifact to the rebuild strategy (2026-10-08)', async () => {
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  const schemaFirst = {
+    ...rebuildContext().artifact,
+    layout: { profileId: 'go', profileVersion: 3 },
+  };
+  delete schemaFirst.patchStrategy;
+  const plan = new SyncPlanner().planAction(rebuildAction(), rebuildContext({
+    artifact: schemaFirst,
+  }));
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-campaign' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: schemaFirst,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.deepEqual(calls.map((entry) => entry[0]), ['patchDocument', 'renameDocument', 'updateRecord']);
+  assert.equal(calls[0][1].content, 'This operation gets asynchronously.\n');
+  assert.ok(!calls.some((entry) => entry[0] === 'createDocument' || entry[0] === 'createRecord'));
 });
 
 test('a classified shared-token REBUILD plans reviews and executes against the shared document (review r2 nit)', async () => {

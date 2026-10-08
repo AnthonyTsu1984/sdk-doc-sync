@@ -166,6 +166,71 @@ function healthFor(session, scanContext) {
   return 'active';
 }
 
+// R16 receipt-never-landed alarm, derived from the session itself (works for
+// every two-gate campaign — no filesystem tallies): a unit recorded as
+// executed (pendingExecutions) whose journal already carries the completion
+// sentinel, while the session has been written AFTER that execution (the
+// receipt path demonstrably works — other state advanced) and nothing is in
+// flight. The earlier revision-flow variant (written-manifest count minus
+// accepted) decayed with admission archiving and masked itself behind
+// `pending > 0`, because a never-landed receipt is precisely what keeps a
+// unit inside pendingExecutions.
+//
+// Both staleness conditions must hold: the age floor bounds noise for units
+// still awaiting their operator turn, and "session advanced past the
+// execution" is the load-bearing half — this unit watched other writes land
+// and never transitioned. A journal that is missing or unreadable proves
+// nothing (admission archiving moves old run-manifests), so it never alarms.
+const STALE_RECEIPT_AFTER_MS = 24 * 60 * 60 * 1000;
+
+function journalCompletedSentinel(repoRoot, journalRelative) {
+  let content;
+  try {
+    content = fs.readFileSync(path.join(repoRoot, journalRelative), 'utf8');
+  } catch {
+    return false;
+  }
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    let entry;
+    try {
+      entry = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (entry?.type === 'completion' && entry.completionSentinel === true && entry.status === 'executed') {
+      return true;
+    }
+  }
+  return false;
+}
+
+function staleReceiptsFor(session, repoRoot, now = Date.now()) {
+  const pendings = Array.isArray(session.pendingExecutions) ? session.pendingExecutions : [];
+  if (pendings.length === 0 || session.activeExecution || session.activeRollback) {
+    return { count: 0, units: [] };
+  }
+  const updatedAt = Date.parse(session.updatedAt || '') || 0;
+  const stale = [];
+  for (const pending of pendings) {
+    const executedAt = Date.parse(pending?.executedAt || '') || 0;
+    if (!executedAt) continue;
+    if (updatedAt && updatedAt <= executedAt) continue;
+    if (now - executedAt < STALE_RECEIPT_AFTER_MS) continue;
+    const journalRelative = pending.executionJournalPath
+      ? toRepoRelative(repoRoot, pending.executionJournalPath)
+      : null;
+    if (!journalRelative) continue;
+    if (!journalCompletedSentinel(repoRoot, journalRelative)) continue;
+    stale.push({
+      reviewUnitId: pending.reviewUnitId ?? null,
+      executedAt: pending.executedAt,
+      journalPath: journalRelative,
+    });
+  }
+  return { count: stale.length, units: stale };
+}
+
 // Change requests are append-only history: one unit may appear several times
 // (re-queued, redone, accepted later). The board reports both the raw entry
 // count and the set that still matters — unique units with no acceptance on
@@ -181,7 +246,8 @@ function summarizeChangeRequests(session) {
 }
 
 function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState,
-  registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH))) {
+  registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH)),
+  now = Date.now()) {
   const units = (session.reviewUnitManifest?.units?.length) || 0;
   const acceptedUnits = Array.isArray(session.acceptedReviewUnits) ? session.acceptedReviewUnits : [];
   let targetTag = null;
@@ -236,6 +302,7 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState,
     health: healthFor(session, { advancedPast }),
     units,
     accepted: acceptedUnits.length,
+    staleReceipts: staleReceiptsFor(session, repoRoot, now),
     pending: (Array.isArray(session.pendingExecutions) && session.pendingExecutions.length) || 0,
     hasActiveExecution: Boolean(session.activeExecution),
     hasActiveRollback: Boolean(session.activeRollback),
@@ -605,10 +672,6 @@ function mergeRevisionFlows(campaigns, revisions) {
       remainingPages: revision.remainingPages,
       status: revision.status,
       updatedAt: revision.updatedAt,
-      // Written pages lead accepted units by this many. In-flight executions
-      // explain a small gap; a gap that persists with nothing pending is the
-      // executed-but-receipt-never-landed signature and must be visible.
-      receiptGap: Math.max(0, revision.writtenPages - host.accepted),
     };
     revision.mergedInto = host.sessionKey;
   }
@@ -982,7 +1045,7 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     for (const relative of walkSessionFiles(checkout.root)) {
       const session = readJsonOrNull(path.join(checkout.root, relative));
       if (!session || !session.schemaVersion || typeof session.status !== 'string') continue;
-      const card = buildCampaignCard(checkout.root, relative, session, scanState, hostRegistry);
+      const card = buildCampaignCard(checkout.root, relative, session, scanState, hostRegistry, now.getTime());
       // Board-facing identity: checkout-qualified so sibling-worktree cards
       // can never collide with main-checkout paths.
       card.checkout = checkout.id;

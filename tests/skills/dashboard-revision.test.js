@@ -368,7 +368,7 @@ test('a revision campaign with its own review session renders as ONE merged row'
   assert.equal(card.revisionScope.path, 'tmp/api-reference-sync/revision-scope-java-v30.json');
   assert.equal(card.revisionFlow.worklistStem, 'java-revision-worklist');
   assert.equal(card.revisionFlow.writtenPages, 2, 'apply-review manifests reconcile under the merged card');
-  assert.equal(card.revisionFlow.receiptGap, 1, 'written 2 − accepted 1');
+  assert.equal(card.revisionFlow.receiptGap, undefined, 'manifest-count gap retired — the alarm derives session-side (staleReceipts)');
   assert.equal(card.revisionFlow.groupingGate.digest, 'sha256:' + '3'.repeat(64));
   assert.equal(ledger.revisions.length, 0, 'no standalone revision row remains');
   assert.equal(card.changeRequests.entries, 3, 'append-only entry count');

@@ -121,10 +121,10 @@
             "tableId": null
           },
           "drive": {
-            "configuredRootToken": null,
+            "configuredRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
             "releaseRoot": {
-              "resolution": "unresolved",
-              "token": null
+              "resolution": "configured-root",
+              "token": "Z1SFf89zYlGHXvdo6dxcR6gXntc"
             }
           }
         },

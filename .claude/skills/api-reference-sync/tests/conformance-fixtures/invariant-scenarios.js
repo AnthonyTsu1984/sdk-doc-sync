@@ -1801,6 +1801,7 @@ const {
   recordReviewDecision,
   captureSessionLearnings,
   closeSession,
+  learningEventsOf,
 } = require('../../src/sdk-doc-sync/review-session-store');
 
 const fs = require('node:fs');
@@ -1990,6 +1991,70 @@ scenarios['process-learning-suppression-recorded'] = () => {
     capturedCandidateCount: report.captured.length,
     suppressedEventKeys: closed.processLearning.suppressedEventKeys,
     closedStatus: closed.status,
+  };
+};
+
+// Execution-wall capture (打回即铸 extended 2026-10-08, py-v30 retrospective):
+// a WRITE_APPROVAL decision whose batch journal carries a failed observed
+// action is a learning event even though the review surface never saw it —
+// the close captures it exactly like a rejection.
+scenarios['process-learning-execution-wall-captured'] = () => {
+  const directory = plTempDir('pl-wall-');
+  let session = createReviewSession({
+    sessionId: 'sdk-doc-sync:test:process-learning-wall',
+    language: 'node',
+    sdkName: 'sdk',
+    track: 'v1',
+    reviewUnitManifest: plManifest(),
+    acceptanceFlow: 'two-gate',
+  });
+  session = plFinalizeUnit(session, directory, PL_UNIT_A, 'a');
+  session = plFinalizeUnit(session, directory, PL_UNIT_B, 'b');
+  const repoRoot = plTempDir('pl-wall-repo-');
+  const journalsDir = path.join(repoRoot, 'tmp', 'api-reference-sync');
+  fs.mkdirSync(journalsDir, { recursive: true });
+  const batchHex = 'b'.repeat(64);
+  const batchDigest = `sha256:${batchHex}`;
+  const wallEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest, actionId: 'resource:folder:Demo' },
+    { schemaVersion: 1, type: 'observed', batchDigest, actionId: 'resource:folder:Demo', status: 'success' },
+    { schemaVersion: 1, type: 'prepared', batchDigest, actionId: 'node:Collections:pl-a' },
+    { schemaVersion: 1, type: 'observed', batchDigest, actionId: 'node:Collections:pl-a', status: 'failure' },
+    { schemaVersion: 1, type: 'completion', batchDigest, status: 'executed', completionSentinel: true },
+  ];
+  fs.writeFileSync(
+    path.join(journalsDir, `sha256-${batchHex}.jsonl`),
+    wallEntries.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+  );
+  const decisionLedgerPath = path.join(directory, 'decisions.jsonl');
+  recordReviewDecision(session, {
+    decisionLedgerPath,
+    decisionId: 'decision-pl-execution-wall',
+    gate: 'WRITE_APPROVAL',
+    outcome: 'approved',
+    proposalDigest: batchDigest,
+    rationale: 'v1 batch executed but failed pre-write: stale scope target chain (PLACEMENT_TARGET_UNRESOLVED), zero live side effects',
+  });
+  const { DecisionLedger } = require('../../../doc-ops-core/src/decision-ledger');
+  const decisions = new DecisionLedger({ filePath: decisionLedgerPath }).entries;
+  const wallEvents = learningEventsOf(session, { decisions, journalsDir })
+    .filter((event) => event.source === 'execution-wall');
+  const report = captureSessionLearnings(session, { repoRoot, decisions });
+  const candidate = JSON.parse(fs.readFileSync(report.captured[0].path, 'utf8'));
+  const closed = closeSession(session, {
+    scanStateKey: 'node',
+    scanStateEntry: { lastScannedTag: 'v1' },
+    learning: { decisions, captureReport: report, repoRoot },
+  });
+  return {
+    wallEventCount: wallEvents.length,
+    candidateDerivedFrom: candidate.applicableWhen.derivedFrom,
+    candidateRuleClass: candidate.ruleClass,
+    statementMentionsWall: candidate.statement.includes('PLACEMENT_TARGET_UNRESOLVED'),
+    failedActionsCarried: Array.isArray(candidate.applicableWhen.failedActions)
+      && candidate.applicableWhen.failedActions.includes('node:Collections:pl-a'),
+    closedStatus: closed.status,
+    stampedCapturedCount: closed.processLearning.capturedCandidateIds.length,
   };
 };
 

@@ -61,6 +61,26 @@ test('an event without recorded text still becomes a non-promotable triage candi
     assert.match(candidate.statement, /no reason recorded/);
 });
 
+test('an execution-wall event without a rationale names the failed actions in its fallback statement', () => {
+    const wall = event({
+        source: 'execution-wall',
+        statement: null,
+        gate: 'WRITE_APPROVAL',
+        wall: { failedActionIds: ['resource:folder:Demo', 'node:Collections:pl-a'] },
+    });
+    const candidate = learningCandidateForEvent({ skill: 'api-reference-sync', event: wall });
+    assert.equal(candidate.ruleClass, 'one-off-exception');
+    assert.match(candidate.statement, /fail-closed wall on unit-a/);
+    assert.match(candidate.statement, /failed actions: resource:folder:Demo, node:Collections:pl-a/);
+    assert.deepEqual(candidate.applicableWhen.failedActions, ['resource:folder:Demo', 'node:Collections:pl-a']);
+    const rationale = learningCandidateForEvent({
+        skill: 'api-reference-sync',
+        event: { ...wall, statement: 'stale scope target chain (PLACEMENT_TARGET_UNRESOLVED)' },
+    });
+    assert.equal(rationale.ruleClass, 'deterministic-procedure');
+    assert.match(rationale.statement, /PLACEMENT_TARGET_UNRESOLVED/);
+});
+
 test('capture writes each candidate once, idempotently, under the skill feedback tree', () => {
     const root = tempRoot();
     const report = captureLearningCandidates({

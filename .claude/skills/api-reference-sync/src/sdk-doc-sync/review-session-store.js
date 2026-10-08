@@ -813,12 +813,46 @@ function recordFinalTargets(session, { units, stampedAt = new Date().toISOString
   }, { timestamp: stampedAt });
 }
 
+// A write-gate journal records one `observed` entry per action; a wall is any
+// observed action that ended `failure` — including attempts later replayed to
+// success, because the wall happened and over-capture is safe (triage or an
+// explicit suppression disposes of the event). The journal completion entry is
+// NOT a wall signal: it reads status "executed" for every batch that ran to an
+// outcome. Returns null when the file is absent, unreadable, or wall-free.
+function journalWallSummary(journalPath) {
+    let raw;
+    try {
+        raw = fs.readFileSync(journalPath, 'utf8');
+    } catch {
+        return null;
+    }
+    const failedActionIds = [];
+    for (const line of raw.split('\n')) {
+        if (!line.trim()) continue;
+        let entry;
+        try {
+            entry = JSON.parse(line);
+        } catch {
+            continue;
+        }
+        if (entry?.type === 'observed' && entry.status === 'failure' && nonEmptyString(entry.actionId)) {
+            failedActionIds.push(entry.actionId);
+        }
+    }
+    return failedActionIds.length > 0
+        ? { failedActionIds: [...new Set(failedActionIds)].sort() }
+        : null;
+}
+
 // Process-learning events (打回即铸, campaign-control §3.5): the operator
 // rejections this session accumulated — every change request recorded in the
 // session plus every changes_requested/rejected decision in the skill's
-// decision ledger bound to this session. Keys are stable so capture, replay,
-// and suppression all address the same event.
-function learningEventsOf(session, { decisions = [] } = {}) {
+// decision ledger bound to this session. Extended 2026-10-08 (py-v30
+// retrospective) with execution-wall events: every session-bound WRITE_APPROVAL
+// decision whose named batch journal carries failed action observations is a
+// wall the review-rejection surface never saw. Keys are stable so capture,
+// replay, and suppression all address the same event.
+function learningEventsOf(session, { decisions = [], journalsDir = null } = {}) {
     if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
     const events = [];
     for (const entry of session?.changeRequests || []) {
@@ -852,6 +886,31 @@ function learningEventsOf(session, { decisions = [] } = {}) {
             taskId: decision.taskId || null,
         });
     }
+    if (journalsDir) {
+        for (const decision of decisions) {
+            if (!decision || decision.sessionId !== session.sessionId) continue;
+            if (decision.gate !== 'WRITE_APPROVAL' || !nonEmptyString(decision.proposalDigest)) continue;
+            const journalPath = path.join(
+                journalsDir,
+                `sha256-${decision.proposalDigest.replace(/^sha256:/, '')}.jsonl`,
+            );
+            const wall = journalWallSummary(journalPath);
+            if (!wall) continue;
+            events.push({
+                key: `execution-wall:${session.sessionId}:${decision.decisionId}`,
+                source: 'execution-wall',
+                sessionId: session.sessionId,
+                reviewUnitId: decision.reviewUnitId || null,
+                gate: decision.gate || null,
+                statement: nonEmptyString(decision.rationale) ? decision.rationale : null,
+                eventAt: null,
+                decisionDigest: decision.decisionDigest || null,
+                durableRuleRequested: decision.durableRuleRequested === true,
+                taskId: decision.taskId || null,
+                wall,
+            });
+        }
+    }
     return events.sort((left, right) => (
         left.key < right.key ? -1 : (left.key > right.key ? 1 : 0)
     ));
@@ -861,13 +920,18 @@ function learningEventsOf(session, { decisions = [] } = {}) {
 // the session's learning events, writes one rule-candidate draft per event
 // (idempotent) into tmp/skill-feedback/<skill>/candidates/, and returns the
 // report closeSession validates. Suppressions recorded on the session skip
-// their events by key.
+// their events by key. Execution-wall events derive from the skill's journal
+// directory (repoRoot/tmp/api-reference-sync), the fixed layout the write path
+// has always used.
 function captureSessionLearnings(session, { repoRoot, decisions = [], capturedAt = null } = {}) {
     if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
     return captureLearningCandidates({
         repoRoot,
         skill: 'api-reference-sync',
-        events: learningEventsOf(session, { decisions }),
+        events: learningEventsOf(session, {
+            decisions,
+            journalsDir: path.join(repoRoot, 'tmp', 'api-reference-sync'),
+        }),
         suppressions: session.learningSuppressions || [],
         capturedAt,
     });
@@ -937,7 +1001,10 @@ function closeSession(session, {
     // the report's deterministic candidate ids and, through the mandatory
     // repoRoot, that every captured candidate is actually on disk. Capture is
     // done before the close so a failure leaves the session open.
-    const learningEvents = learningEventsOf(session, { decisions: learning?.decisions || [] });
+    const learningEvents = learningEventsOf(session, {
+        decisions: learning?.decisions || [],
+        journalsDir: learning?.repoRoot ? path.join(learning.repoRoot, 'tmp', 'api-reference-sync') : null,
+    });
     assertSuppressionsKnown(session.learningSuppressions || [], learningEvents);
     if (learningEvents.length > 0 && !nonEmptyString(learning?.repoRoot)) {
         throw Object.assign(

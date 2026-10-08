@@ -10,6 +10,7 @@ const { DecisionLedger } = require('../src/decision-ledger');
 const {
   buildRuleCandidate,
   selectCandidateNotifications,
+  transitionRuleCandidate,
 } = require('../src/rule-candidate');
 const {
   buildRulePromotion,
@@ -33,6 +34,12 @@ function parseArgs(argv) {
 
 function requireValue(args, name) {
   if (!args[name]) throw new Error(`--${name.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)} is required`);
+}
+
+// Candidate ids carry colons (rule-candidate:skill:slug); output artifact
+// names must not.
+function safeFileStem(candidateId) {
+  return String(candidateId).replace(/[^A-Za-z0-9._-]+/g, '-');
 }
 
 function readJson(filePath) {
@@ -81,6 +88,48 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       heldOutResults: readJson(args.heldOut),
     });
     writeJsonAtomic(args.output, result);
+  } else if (args.command === 'promote-rule') {
+    // The promotion consumer (py-v30 close, 2026-10-08): drives one candidate
+    // through the full reviewed state machine — candidate→shadow→proposed,
+    // scored against a target plus held-out cases, promoted to active with the
+    // binding promotionDigest. Fails loud (exit 1, RULE_PROMOTION_BLOCKED) on
+    // any scoring refusal and persists the score for triage when --output is
+    // given; the candidate file is only rewritten when promotion succeeds.
+    requireValue(args, 'candidate');
+    requireValue(args, 'heldOut');
+    requireValue(args, 'target');
+    const candidate = readJson(args.candidate);
+    if (candidate?.state !== 'candidate') {
+      throw new Error(`promote-rule requires a candidate in state candidate (got ${candidate?.state || '(missing)'})`);
+    }
+    const proposed = transitionRuleCandidate(transitionRuleCandidate(candidate, 'shadow'), 'proposed');
+    const heldOutResults = readJson(args.heldOut);
+    const score = scoreRuleCandidate(proposed, { target: args.target, heldOutResults });
+    if (!score.promotionReady) {
+      if (args.output) {
+        writeJsonAtomic(path.join(args.output, `score.${safeFileStem(candidate.candidateId)}.json`), { candidateId: candidate.candidateId, promoted: false, score });
+      }
+      throw new Error(`RULE_PROMOTION_BLOCKED: ${score.reasons.join(', ')}`);
+    }
+    const promotion = buildRulePromotion(proposed, { target: args.target, heldOutResults });
+    const active = transitionRuleCandidate(proposed, 'active', {
+      reviewedPromotionDigest: promotion.promotionDigest,
+    });
+    writeJsonAtomic(args.candidate, active);
+    if (args.output) {
+      const stem = safeFileStem(candidate.candidateId);
+      writeJsonAtomic(path.join(args.output, `promotion.${stem}.json`), promotion);
+      writeJsonAtomic(path.join(args.output, `score.${stem}.json`), score);
+      writeJsonAtomic(path.join(args.output, `held-out.${stem}.json`), heldOutResults);
+    }
+    result = {
+      candidateId: candidate.candidateId,
+      state: active.state,
+      target: args.target,
+      heldOutCases: heldOutResults.length,
+      promotionDigest: promotion.promotionDigest,
+      artifactsDir: args.output || null,
+    };
   } else if (args.command === 'status') {
     requireValue(args, 'input');
     const input = readJson(args.input);

@@ -505,11 +505,12 @@
       "enforcement": [
         "reconcile"
       ],
-      "statementDigest": "sha256:b4c4cb72a7f5d52725ae0f664a0a76bf1156b2687344ea2a66f7730f617104a1",
+      "statementDigest": "sha256:9557b9a24dd600dab5ff13506f5e87be10dbe8e5094c50bd95d15e0976cc71a6",
       "fixtureIds": [
         "process-learning-close-refused-uncaptured",
         "process-learning-change-request-captured",
-        "process-learning-suppression-recorded"
+        "process-learning-suppression-recorded",
+        "process-learning-execution-wall-captured"
       ],
       "enforcers": [
         {

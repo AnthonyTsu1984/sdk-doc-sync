@@ -80,6 +80,11 @@ Keep Python examples readable without horizontal scrolling. When a constructor o
 
 Keep the core release-independent. Do not add method names, record IDs, release lookup tables, or exact one-run wording to adapters, renderers, or validators. Store release classifications, reviewed prose, migrations, previews, approval manifests, and receipts under the ignored run root `tmp/sdk-doc-sync-runs/<language>-<track>/<run-id>/`. Stable code must run with that directory absent.
 
+## Sync rulings (py-v30 campaign, 2026-10)
+
+- **Byte-identical documented surface means REUSE, not UPDATE.** A scan's `signature changed` flag alone is never write evidence: before planning an update, run the full-signature `git diff` across the release range for the flagged symbol. If the page-visible surface (the method signature and its documented contract) is byte-identical from the older tag to the newer one, the flag came from an internal refactor (constructor rewrites, kwargs plumbing, file moves) that never reaches the page — the record keeps pointing at the inherited shared document (REUSE_INHERITED_DOCUMENT) and the action leaves scope through GROUPING_REVIEW. The same two-tag diff is mandatory before declaring any interface unchanged: a HEAD-only signature check missed the `_check_fields` error-message change that justified StructFieldSchema's v3.0.x mirror directory.
+- **The operator-maintained synced-source block is the authoritative structure for platform content.** When a live page carries a synced block that separates milvus and zilliz (parameters wrapped in `<include target="milvus">` are milvus-only; intentionally excluded groups are not shared), fetched external content must not be duplicated into the generated prose, and the milvus/zilliz split must follow the synced block's regions — fetch the synced block before generating, and converge by carrying only what the synced block does not already own (py-v30 CollectionSchema ruling, 2026-10-07).
+
 **v3.0.x specific notes:**
 
 - **Tag + commit tracking:** v3.0.x now has tag `v3.0.0`. Track both `lastScannedTag` and `lastScannedCommit` in `scan-state.json` under `python-v3`.

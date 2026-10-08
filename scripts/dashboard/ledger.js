@@ -130,11 +130,22 @@ function compareTags(a, b) {
   return 0;
 }
 
-// scan-state key for a session: `<language>-v<major><minor>` for versioned
-// tracks, else the bare language. Mirrors session-start.cjs derivation; the
-// session's own scanStateKey wins when present.
-function scanStateKeyFor(session) {
+// scan-state key for a session: the session's own scanStateKey stamp wins;
+// else the registry's explicit per-track override for (language, track);
+// else `<language>-v<major><minor>` derivation, else the bare language.
+// The registry consult matters for intake-phase sessions that carry no stamp
+// yet live on tracks whose durable keys are bare-major or language-only
+// (python-v3, go-v3, node-v26) — the derivation would invent go-v30, a key
+// scan-state has never owned, and the campaign would drop off its track.
+function scanStateKeyFor(session, registry = null) {
   if (typeof session.scanStateKey === 'string' && session.scanStateKey) return session.scanStateKey;
+  if (registry && typeof session.track === 'string') {
+    const track = (registry?.languages?.[session.language]?.tracks || [])
+      .find((candidate) => candidate && candidate.version === session.track);
+    if (track && typeof track.scanStateKey === 'string' && track.scanStateKey) {
+      return track.scanStateKey;
+    }
+  }
   const match = /^v(\d+)\.(\d+)\./.exec(String(session.track || ''));
   if (match) return `${session.language}-v${match[1]}${match[2]}`;
   return session.language || null;
@@ -176,7 +187,7 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
   if (releaseScopeRelative) {
     targetTag = readJsonOrNull(path.join(repoRoot, releaseScopeRelative))?.targetTag ?? null;
   }
-  const key = scanStateKeyFor(session);
+  const key = scanStateKeyFor(session, readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH)));
   const lastScannedTag = key ? scanState?.[key]?.lastScannedTag ?? null : null;
   const advancedPast = targetTag && lastScannedTag
     ? !Number.isNaN(compareTags(lastScannedTag, targetTag)) && compareTags(lastScannedTag, targetTag) >= 0

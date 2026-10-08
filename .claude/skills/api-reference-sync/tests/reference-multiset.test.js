@@ -172,3 +172,29 @@ test('roundtrip drift detection: a lost reference (not a dedup artifact) fails e
     // track's clone is the one that disappeared
     assert.equal(referenceMultisetsEqual(removeOneOccurrence(live, 'rec-clone'), ['rec-clone', 'rec-v30']), true);
 });
+
+test('py-v30 wall rule: re-minting from an already-minted evidence object fails loud (INHERITANCE_EVIDENCE_REMINT_FORBIDDEN)', () => {
+    const minted = createInheritanceEvidence({
+        stableId: 'python:MilvusClient:list_persistent_segments',
+        current: {
+            recordId: 'rec-a', documentToken: 'doc-a', version: 'v2.6.x',
+            folderToken: 'fld-a', versionRootToken: 'root-a',
+            ancestryVerified: true, placementVerified: true,
+        },
+        target: { version: 'v3.0.x', folderToken: 'fld-b', versionRootToken: 'root-b', ancestryVerified: true },
+        sharedTokenStatus: 'shared',
+        referencedRecordIds: ['rec-a', 'rec-a'],
+    });
+    // The named-argument form keeps working and carries the shared status.
+    assert.equal(minted.sharedToken.status, 'shared');
+    // Passing the minted object back used to silently drop sharedTokenStatus
+    // (status defaulted to "unknown"); it is now a typed refusal.
+    assert.throws(
+        () => createInheritanceEvidence(minted),
+        /INHERITANCE_EVIDENCE_REMINT_FORBIDDEN/,
+    );
+    assert.throws(
+        () => createInheritanceEvidence({ ...minted, sharedToken: undefined }),
+        /INHERITANCE_EVIDENCE_REMINT_FORBIDDEN/,
+    );
+});

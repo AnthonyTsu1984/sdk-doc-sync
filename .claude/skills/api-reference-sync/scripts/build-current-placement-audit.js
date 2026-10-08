@@ -401,6 +401,21 @@ async function buildPlacementAudit({
   const sharedTokenSummary = { shared: 0, unshared: 0, unknown: 0 };
   for (const entry of entries) sharedTokenSummary[entry.sharedToken.status] += 1;
 
+  // py-v30 wall rule (rule-candidate:api-reference-sync:dryrun-live-folder-chain,
+  // harnessed 2026-10-08): record the live chain of every folder under the
+  // target version root so the sync entry can reconcile plan targets against
+  // the walk at PLAN time (--placement-walk) — a scope chain transcribed at
+  // intake goes stale the moment tree surgery builds or moves a folder, and
+  // the mismatch now fails planning (PLACEMENT_TARGET_CHAIN_STALE) instead of
+  // the write gate. Token arrays, the same shape the executor's live
+  // re-derivation (deriveFolderAncestry) produces and byte-compares. Rides
+  // outside the walkDigest, which covers the per-entry placement content.
+  const folderChains = {};
+  for (const node of targetIndex.values()) {
+    if (node.type !== 'folder' || !nonEmptyString(node.token)) continue;
+    folderChains[node.token] = [...(node.ancestors || []), node.token];
+  }
+
   // T3 placement-live binding (campaign-control batch 2c): the machine
   // fingerprint of THIS walk. Sessions bind it (session.placementWalk) and
   // executions must name it (--placement-walk-digest) — placement decisions
@@ -436,6 +451,7 @@ async function buildPlacementAudit({
     },
     trackInventoryDigests,
     sharedTokenSummary,
+    folderChains,
     entries,
     blocked: entries.filter((entry) => !entry.placement.verified),
     evidenceBlocked: entries

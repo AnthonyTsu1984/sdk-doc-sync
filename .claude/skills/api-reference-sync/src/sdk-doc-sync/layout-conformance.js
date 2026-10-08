@@ -478,6 +478,20 @@ function checkMarkdownContentQuality(markdown, profile) {
         if (collapsed) {
             report('REQUEST_SIGNATURE_ONE_PARAM_PER_LINE', `request payload must be one parameter per line: ${collapsed.trim()}`);
         }
+        // 2026-10-08 py-v30 ruling (rule-candidate:api-reference-sync:
+        // request-syntax-callable-form): the Request Syntax block presents the
+        // callable signature of the documented operation. The raw class
+        // header is the class-symbol degeneration (the scan captured the
+        // class itself instead of __init__), and a fence without a single
+        // "(" is not a signature either — the cure is an explicit one-field
+        // context.signature in the bare call form.
+        const classHeader = requestFenceLines.find((line) =>
+            /^\s*(?:async\s+)?class\s+[A-Za-z_]\w*\s*[:(]/.test(line));
+        if (classHeader) {
+            report('REQUEST_SIGNATURE_NOT_CALLABLE', `request syntax must be a callable signature, not a class header: ${classHeader.trim()}`);
+        } else if (requestFenceLines.length > 0 && !requestFenceLines.some((line) => line.includes('('))) {
+            report('REQUEST_SIGNATURE_NOT_CALLABLE', 'request syntax must be a callable signature (no "(" found in the block)');
+        }
     }
     return { invariantId: LAYOUT_INVARIANT_ID, violations };
 }

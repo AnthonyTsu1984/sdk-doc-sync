@@ -482,3 +482,43 @@ test('pageFactsFromBlocks walks the flat fetch format through the page block: ca
     const bareNote = facts.stream.find((entry) => /^notes:?$/i.test(entry.text.trim()));
     assert.equal(bareNote, undefined);
 });
+
+test('2026-10-08 py-v30 ruling: request syntax must be a callable signature, never a class header', () => {
+    const profile = sdkLayoutProfiles.python;
+    const codes = (markdown) => checkMarkdownContentQuality(markdown, profile).violations.map((v) => v.code);
+
+    // The class-symbol degeneration: the scan captured the class itself
+    // instead of __init__, so the fence carries the raw class header.
+    assert.deepEqual(codes([
+        'This operation manages aggregation buckets.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'class SearchAggregation:',
+        '```',
+    ].join('\n')), ['REQUEST_SIGNATURE_NOT_CALLABLE']);
+
+    // A fence with no parenthesis anywhere is not a signature either.
+    assert.deepEqual(codes([
+        'This operation manages aggregation buckets.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'search_aggregation placeholder',
+        '```',
+    ].join('\n')), ['REQUEST_SIGNATURE_NOT_CALLABLE']);
+
+    // The bare call form passes both new branches.
+    assert.deepEqual(codes([
+        'This operation manages aggregation buckets.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'milvus_client.search_aggregation(',
+        '    collection_name: str,',
+        '```',
+    ].join('\n')), []);
+});

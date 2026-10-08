@@ -2485,3 +2485,55 @@ test('per-unit mode blocks on any pending execution; --batch-continue blocks onl
   assert.equal(explicitErrors.length, 1);
   assert.match(explicitErrors[0].message, /has an unaccepted execution/);
 });
+
+test('py-v30 wall rule: plan-time target chain reconciliation against the bound walk product', () => {
+  const { reconcilePlanTargetChain } = SyncPlanner;
+  const walkProduct = {
+    walkDigest: 'sha256:' + 'c'.repeat(64),
+    folderChains: {
+      'fld-live': ['root-token', 'MilvusClient', 'fld-live'],
+    },
+  };
+
+  // No product bound → reconciliation is a no-op (the executor still guards
+  // the write boundary live).
+  reconcilePlanTargetChain({ stableId: 'doc', target: { folderToken: 'fld-gone', folderAncestry: ['root'] } }, null);
+
+  // The py-v30 wall: the walk predates the folder the scope names (the folder
+  // was mirror-built after intake) — fails planning, not the write gate.
+  assert.throws(
+    () => reconcilePlanTargetChain(
+      { stableId: 'python:Management:list_compaction_tasks', target: { folderToken: 'fld-gone', folderAncestry: ['root-token', 'fld-gone'] } },
+      walkProduct,
+    ),
+    (error) => error.code === 'PLACEMENT_TARGET_CHAIN_STALE' && /predates the folder/.test(error.message),
+  );
+
+  // A chain transcribed from an older walk disagrees with the live one.
+  assert.throws(
+    () => reconcilePlanTargetChain(
+      { stableId: 'python:Management:list_segments', target: { folderToken: 'fld-live', folderAncestry: ['root-token', 'old-parent', 'fld-live'] } },
+      walkProduct,
+    ),
+    (error) => error.code === 'PLACEMENT_TARGET_CHAIN_STALE' && /disagrees with the bound walk product/.test(error.message),
+  );
+
+  // The chain byte-matches the walk's live chain → planning proceeds.
+  reconcilePlanTargetChain(
+    { stableId: 'python:Management:list_persistent_segments', target: { folderToken: 'fld-live', folderAncestry: ['root-token', 'MilvusClient', 'fld-live'] } },
+    walkProduct,
+  );
+
+  // Resource plans reconcile the same way through their parent chain fields.
+  assert.throws(
+    () => reconcilePlanTargetChain(
+      { stableId: 'resource:folder:Management', parentFolderToken: 'fld-gone', parentAncestry: ['root-token', 'fld-gone'] },
+      walkProduct,
+    ),
+    (error) => error.code === 'PLACEMENT_TARGET_CHAIN_STALE',
+  );
+
+  // Plans without a write target (or without a chain) stay legacy-tolerant.
+  reconcilePlanTargetChain({ stableId: 'noop', target: {} }, walkProduct);
+  reconcilePlanTargetChain({ stableId: 'update', target: { folderToken: 'fld-live' } }, walkProduct);
+});

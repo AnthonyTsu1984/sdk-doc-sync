@@ -108,6 +108,55 @@ test('buildLedger discovers sibling-worktree campaigns with collision-free keys'
   assert.equal(go.tracks[0].campaigns.active, 1);
 });
 
+test('unstamped session in a pre-override sibling worktree counts on the host-registry track', (t) => {
+  // The #124 incident shape: the host (main) carries the #122 scanStateKey
+  // overrides; the sibling worktree's branch predates them, so its own
+  // registry has none — the session's track key must still resolve through
+  // the HOST registry, or the campaign drops off its track and the language
+  // card flips to 无进行中战役.
+  const main = makeFixtureTree('dash-co-key-main-');
+  const sibling = makeFixtureTree('dash-co-key-sib-');
+  t.after(() => {
+    fs.rmSync(main.root, { recursive: true, force: true });
+    fs.rmSync(sibling.root, { recursive: true, force: true });
+  });
+
+  main.write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    languages: { go: { sdkName: 'milvus-sdk-go', tracks: [
+      { version: 'v2.6.x', scanStateKey: 'go' },
+      { version: 'v3.0.x', scanStateKey: 'go-v3' },
+    ] } },
+  });
+  // Sibling registry predates the overrides (real feat/go-v30-intake shape).
+  sibling.write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    languages: { go: { sdkName: 'milvus-sdk-go', tracks: [
+      { version: 'v2.6.x' },
+      { version: 'v3.0.x' },
+    ] } },
+  });
+  sibling.write('.claude/skills/api-reference-sync/scan-state.json', {
+    'go-v3': { lastScannedTag: 'client/v3.0.0-beta' },
+  });
+  // Unstamped in-flight intake session, no scanStateKey field at all.
+  const { scanStateKey, ...unstamped } = sessionFixture();
+  sibling.write('tmp/sdk-release-scout/go-v30-session.json', unstamped);
+
+  const ledger = buildLedger({
+    repoRoot: main.root,
+    checkouts: [
+      { id: 'main', label: '主检出', root: main.root },
+      { id: 'sib', label: 'sib', root: sibling.root },
+    ],
+    now: new Date('2026-10-08T12:00:00Z'),
+  });
+  const card = ledger.campaigns.find((c) => c.checkout === 'sib');
+  assert.equal(card.scanState.key, 'go-v3', 'host registry governs track identity');
+  const go = ledger.skillTracks.languages.find((l) => l.name === 'go');
+  const v30 = go.tracks.find((tr) => tr.version === 'v3.0.x');
+  assert.equal(v30.key, 'go-v3');
+  assert.equal(v30.campaigns.active, 1, 'the sibling intake campaign counts on go-v3');
+});
+
 test('attribution: absolute sessionRef resolves inside its own checkout only', (t) => {
   const main = makeFixtureTree('dash-attr-main-');
   const sibling = makeFixtureTree('dash-attr-sib-');

@@ -212,6 +212,18 @@ test('scanStateKeyFor consults the registry override before deriving', () => {
   assert.equal(scanStateKeyFor({ language: 'go', track: 'v2.4.x' }, registry), 'go-v24');
   assert.equal(scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, { languages: { go: { tracks: [{ version: 'v3.0.x' }] } } }), 'go-v30');
   assert.equal(scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, null), 'go-v30');
+  // Malformed-but-parseable registry degrades to derivation, never throws
+  // (fail-open contract of the ledger build).
+  assert.equal(
+    scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, { languages: { go: { tracks: { 'v3.0.x': { scanStateKey: 'go-v3' } } } } }),
+    'go-v30',
+    'non-array tracks falls back to derivation',
+  );
+  assert.equal(
+    scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, { languages: null }),
+    'go-v30',
+    'null languages object falls back safely',
+  );
 });
 
 test('an unstamped intake session counts on its registry-pinned track', (t) => {

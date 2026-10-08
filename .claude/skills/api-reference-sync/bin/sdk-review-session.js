@@ -996,7 +996,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       out(`Decision ledger not found at ${ledger.path} — decision-side learning events not derived; pass --decision-ledger if rejections were recorded elsewhere.`);
     }
     const decisions = ledger.entries;
-    const learningEvents = learningEventsOf(session, { decisions });
+    const learningEvents = learningEventsOf(session, {
+      decisions,
+      journalsDir: path.join(repoRoot, 'tmp', 'api-reference-sync'),
+    });
     // Capture only once the close is actually reachable: an unfinalized unit
     // refuses inside closeSession (ahead of the learning gate) without any
     // candidate drafts being written for a session that cannot close yet.
@@ -1067,10 +1070,13 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     if (!ledger.found) {
       out(`Decision ledger not found at ${ledger.path} — decision-side learning events not derived; pass --decision-ledger if rejections were recorded elsewhere.`);
     }
-    const events = learningEventsOf(session, { decisions: ledger.entries });
+    const events = learningEventsOf(session, {
+      decisions: ledger.entries,
+      journalsDir: path.join(repoRoot, 'tmp', 'api-reference-sync'),
+    });
     const suppressedKeys = new Set((session.learningSuppressions || []).map((entry) => entry.eventKey));
     if (events.length === 0) {
-      out('No learning events: no change requests and no changes_requested/rejected decisions bound to this session.');
+      out('No learning events: no change requests, no changes_requested/rejected decisions, and no wall journals bound to this session.');
     }
     for (const event of events) {
       const captured = fs.existsSync(candidateFilePath(repoRoot, 'api-reference-sync', event));

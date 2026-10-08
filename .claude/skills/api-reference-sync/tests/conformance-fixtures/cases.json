@@ -595,5 +595,21 @@
       "cliBound": true,
       "cliConflictRefused": true
     }
+  },
+  {
+    "id": "process-learning-execution-wall-captured",
+    "assertions": {
+      "wallEventCount": 1,
+      "candidateDerivedFrom": "execution-wall",
+      "candidateRuleClass": "deterministic-procedure",
+      "statementMentionsWall": true,
+      "failedActionsCarried": true,
+      "closedStatus": "finalized",
+      "stampedCapturedCount": 1
+    },
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "process-learning-execution-wall-captured"
+    }
   }
 ]

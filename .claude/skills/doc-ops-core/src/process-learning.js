@@ -3,9 +3,12 @@
 // Process-learning capture (campaign-control-hardening §3.5 "打回即铸" /
 // 铁律一, landed 2026-10-04): every operator rejection a session accumulates
 // is mechanically converted into a rule-candidate draft at close time — or
-// explicitly suppressed with a recorded rationale. A learning event may never
-// evaporate silently: the capture step is deterministic, idempotent, and its
-// failure blocks the session close (fail-closed).
+// explicitly suppressed with a recorded rationale. Extended 2026-10-08: the
+// session's execution-wall journals (write-gate batches whose observed
+// actions ended `failure`) are captured the same way, so a wall the review
+// surface never saw still leaves a candidate behind. A learning event may
+// never evaporate silently: the capture step is deterministic, idempotent,
+// and its failure blocks the session close (fail-closed).
 //
 // Layering: this module is the shared, session-shape-agnostic machinery
 // (candidate derivation, idempotent capture IO, report validation). Skills
@@ -71,10 +74,16 @@ function learningCandidateForEvent({ skill, event }) {
     validateLearningEvent(event);
     const text = nonEmptyString(event.statement) ? event.statement.trim() : null;
     const ruleClass = text ? 'deterministic-procedure' : 'one-off-exception';
+    const wallActions = Array.isArray(event.wall?.failedActionIds) ? event.wall.failedActionIds : [];
     const statement = text || (
-        `Operator ${event.source === 'decision' ? 'rejected a proposal' : 'requested changes'}`
-        + `${event.reviewUnitId ? ` on ${event.reviewUnitId}` : ''} at ${event.eventAt || '(unknown time)'}`
-        + ' — no reason recorded; triage required'
+        event.source === 'execution-wall'
+            ? 'Execution hit a fail-closed wall'
+                + `${event.reviewUnitId ? ` on ${event.reviewUnitId}` : ''}`
+                + `${wallActions.length ? ` (failed actions: ${wallActions.slice(0, 3).join(', ')})` : ''}`
+                + ` at ${event.eventAt || '(unknown time)'} — no reason recorded; triage required`
+            : `Operator ${event.source === 'decision' ? 'rejected a proposal' : 'requested changes'}`
+                + `${event.reviewUnitId ? ` on ${event.reviewUnitId}` : ''} at ${event.eventAt || '(unknown time)'}`
+                + ' — no reason recorded; triage required'
     );
     const supportingDecisions = nonEmptyString(event.decisionDigest)
         ? [{
@@ -97,6 +106,7 @@ function learningCandidateForEvent({ skill, event }) {
             derivedFrom: event.source,
             eventKey: event.key,
             eventAt: event.eventAt || null,
+            failedActions: wallActions.length > 0 ? wallActions : null,
         },
         supportingDecisions,
         explicitDurableInstruction: event.durableRuleRequested === true,

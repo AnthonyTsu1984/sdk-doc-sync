@@ -111,6 +111,27 @@ function context(language) {
       }],
       typeUrls: { 'entity.Schema': '/reference/go/schema', ConsistencyLevel: '/reference/go/consistency-level' },
     },
+    'go-field-struct': {
+      repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
+      summary: 'A Field instance defines a field in a collection schema, including its data type and constraints.',
+      callableMembers: [
+        { kind: 'option', name: 'WithName', signature: 'WithName(name string)', description: 'Sets the name of the field.' },
+        { kind: 'option', name: 'WithDataType', signature: 'WithDataType(dataType FieldType)', description: 'Sets the data type of the field.' },
+      ],
+      result: {
+        type: 'Field',
+        description: 'Defines a field in a collection schema.',
+        fields: [
+          { name: 'Name', type: 'string', required: false, description: 'The field name.' },
+          { name: 'DataType', type: 'FieldType', required: false, description: 'The data type of the field.' },
+        ],
+      },
+      examples: [{
+        title: 'Define a field', description: 'Builds a primary-key field for a schema.', language: 'go',
+        code: 'pkField := entity.NewField().\n    WithName("id").\n    WithDataType(entity.FieldTypeInt64).\n    WithIsPrimaryKey(true)',
+      }],
+      typeUrls: { FieldType: '/reference/go/field-type' },
+    },
     'go-consistency-values': {
       repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
       summary: 'A ConsistencyLevel instance specifies the consistency guarantee level for read operations on a collection.',
@@ -231,6 +252,7 @@ const cases = [
   { language: 'node', fixture: 'node-create-collection.json', adapter: nodeAdapter, renderer: nodeRenderer, golden: 'node-create-collection.md' },
   { language: 'go', fixture: 'go-create-collection.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-create-collection.md' },
   { language: 'go', fixture: 'go-collection-type.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-collection-type.md', contextKey: 'go-collection-type' },
+  { language: 'go', fixture: 'go-field-struct.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-field-struct.md', contextKey: 'go-field-struct' },
   { language: 'go', fixture: 'go-consistency-values.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-consistency-values.md', contextKey: 'go-consistency-values' },
   { language: 'cpp', fixture: 'cpp-create-collection.json', adapter: cppAdapter, renderer: cppRenderer, golden: 'cpp-create-collection.md' },
 ];
@@ -300,6 +322,32 @@ test('go type pages render the type-page channel: no method sections, FIELDS/VAL
     }
     assert.ok(validateSdkLayout(ir, goRenderer.profile).valid, `${item.fixture}: layout invalid`);
   }
+});
+
+test('go struct pages with builders and methods keep both member sections on the type-page channel', () => {
+  const item = cases.find((entry) => entry.contextKey === 'go-field-struct');
+  const { reference, ir, markdown } = renderCase(item);
+  // Builder options land under BUILDER METHODS:, real methods under METHODS:
+  // (upstream Field shape: 27 With* + GetDim — dropping either loses content
+  // the shared page already had).
+  const builderIndex = markdown.indexOf('**BUILDER METHODS:**');
+  const methodsIndex = markdown.indexOf('**METHODS:**');
+  const fieldsIndex = markdown.indexOf('**FIELDS:**');
+  assert.ok(fieldsIndex >= 0, 'FIELDS: section missing');
+  assert.ok(builderIndex > fieldsIndex, 'BUILDER METHODS: must follow FIELDS:');
+  assert.ok(methodsIndex > builderIndex, 'METHODS: must follow BUILDER METHODS:');
+  assert.match(markdown, /- `WithName\(name string\)`/);
+  assert.match(markdown, /- `func \(f Field\) GetDim\(\) \(int64, error\)`/);
+  // The method-shaped suppression is untouched.
+  const roles = topLevelRoles(ir);
+  for (const absent of ['request-signature', 'parameters-label', 'result-type-label', 'returns-label', 'exceptions-label']) {
+    assert.equal(roles.includes(absent), false, `unexpected ${absent}`);
+  }
+  // The callableMembers channel never leaks non-option/method kinds onto a
+  // type page (the type-page channel only vouches for those two shapes).
+  const adapterMethods = reference.callableMembers.map((member) => member.kind);
+  assert.deepEqual([...new Set(adapterMethods)].sort(), ['implementation', 'option']);
+  assert.ok(validateSdkLayout(ir, goRenderer.profile).valid, 'layout invalid');
 });
 
 test('Node reviewed context overrides scanner request variants for release parameters', () => {

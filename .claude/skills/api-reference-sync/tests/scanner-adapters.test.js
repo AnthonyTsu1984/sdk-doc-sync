@@ -903,7 +903,12 @@ test('Go normalizes real struct fields recursively without inventing option memb
   assert.deepEqual(doc.result.fields.map((field) => field.name), ['Name', 'Schema']);
   assert.equal(doc.result.fields[1].children[0].name, 'Fields');
   assert.equal(doc.result.fields[0].evidence[0].confidence, 'derived');
-  assert.deepEqual(doc.callableMembers, []);
+  // Scanner methods carry through as implementation members with a
+  // Go-syntax display assembled from name/params/returnType.
+  assert.equal(doc.callableMembers.length, 1);
+  assert.equal(doc.callableMembers[0].kind, 'implementation');
+  assert.equal(doc.callableMembers[0].name, 'GetColumn');
+  assert.equal(doc.callableMembers[0].signature.display, 'GetColumn(fieldName string) Column');
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
@@ -943,6 +948,28 @@ test('Go enum adapter splits glued "= constant prose" descriptions and trusts ex
   );
   assert.deepEqual(explicit.result.fields.map((field) => field.defaultValue), ['0', '2']);
   assert.equal(explicit.result.fields[0].description, 'Strong consistency.');
+});
+
+test('Go struct adapter carries scanner methods as implementation-kind callable members', () => {
+  const doc = goAdapter.toReferenceDocument(
+    fixture('go-field-struct.json'),
+    context('go', 'Collections', {
+      summary: 'A Field instance defines a field in a collection schema.',
+      examples: [],
+      callableMembers: [
+        { kind: 'option', name: 'WithName', signature: 'WithName(name string)', description: 'Sets the name of the field.' },
+      ],
+    }),
+  );
+  assert.equal(doc.identity.kind, 'struct');
+  const byKind = Object.groupBy(doc.callableMembers, (member) => member.kind);
+  assert.equal(byKind.option.length, 1);
+  assert.equal(byKind.option[0].name, 'WithName');
+  assert.equal(byKind.implementation.length, 1);
+  assert.equal(byKind.implementation[0].name, 'GetDim');
+  assert.match(byKind.implementation[0].signature.display, /GetDim\(\) \(int64, error\)/);
+  assert.equal(byKind.implementation[0].description, 'Returns the vector dimension of the field.');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
 test('Go preserves real interface method signatures with derived evidence', () => {

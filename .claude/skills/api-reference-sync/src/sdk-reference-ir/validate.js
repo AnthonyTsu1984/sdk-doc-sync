@@ -18,10 +18,12 @@ const NAMED_PLACEHOLDER = /Brief description|Usage example|List relevant excepti
 const TODO_WORKFLOW = /\btodo\s+(?:later|fix|pending|replace|add|update|review|implement|document|describe|example)\b/i;
 const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp']);
 const MEMBER_KIND_BY_LANGUAGE = new Map([
-  ['java', 'builder'],
-  ['node', 'implementation'],
-  ['go', 'option'],
-  ['cpp', 'request'],
+  ['java', ['builder']],
+  ['node', ['implementation']],
+  // Go struct pages carry real methods (Field.GetDim) beside their builder
+  // options — both render on the type-page channel under separate labels.
+  ['go', ['option', 'implementation']],
+  ['cpp', ['request']],
 ]);
 const SIGNATURE_REQUIRED = new Set(['method', 'function', 'command', 'rest-operation']);
 const EXAMPLE_REQUIRED = new Set(['method', 'function', 'class', 'command', 'rest-operation']);
@@ -933,11 +935,11 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       const allowedMemberKind = MEMBER_KIND_BY_LANGUAGE.get(language);
       doc.callableMembers.forEach((member, index) => {
         if (!isObject(member) || !MEMBER_KINDS.includes(member.kind)) return;
-        if (member.kind !== allowedMemberKind) {
+        if (!allowedMemberKind || !allowedMemberKind.includes(member.kind)) {
           error(
             `$.callableMembers[${index}].kind`,
             allowedMemberKind
-              ? `${language} callable members must use kind ${allowedMemberKind}`
+              ? `${language} callable members must use kind ${allowedMemberKind.join('|')}`
               : `${language} documents must not define callable members`,
             'INCOMPATIBLE_MEMBER_KIND',
           );

@@ -34,6 +34,35 @@ function toReferenceDocument(symbol, context = {}) {
         { symbol, context },
       ))
       : [];
+    // Struct pages carry real methods too (upstream **METHODS:** sections —
+    // Field.GetDim): the scanner extracts them, and dropping them lost
+    // content the shared page already had. They ride the same
+    // callableMembers channel under the existing 'implementation' kind so
+    // the renderer can label the two groups separately (BUILDER METHODS:
+    // vs METHODS:) without extending the IR kind set. Scanner method
+    // entries carry name/params/returnType rather than a full signature —
+    // assemble the display in Go syntax, and skip methods the reviewed
+    // context already provides under any kind.
+    const methodSignatureDisplay = (method) => {
+      if (method.fullSignature || method.signature) return method.fullSignature || method.signature;
+      const params = String(method.params || '').trim();
+      const returnType = String(method.returnType || '').trim();
+      const returns = returnType
+        ? (returnType.includes(',') ? ` (${returnType})` : ` ${returnType}`)
+        : '';
+      return `${method.name}(${params})${returns}`;
+    };
+    const structMethods = (Array.isArray(symbol.methods) ? symbol.methods : [])
+      .filter((method) => method && String(method.name || '').trim() !== '')
+      .filter((method) => !callableMembers.some((member) => member.name === method.name))
+      .map((method) => common.makeCallableMember(
+        'implementation',
+        method,
+        evidence,
+        methodSignatureDisplay(method),
+        [],
+        { symbol, context },
+      ));
     // Reviewed upstream FIELDS: the web-content type pages carry curated
     // field descriptions; prefer the reviewed context result over the bare
     // scanner shape when one is supplied.
@@ -51,7 +80,7 @@ function toReferenceDocument(symbol, context = {}) {
       kind,
       signatures,
       requestVariants,
-      callableMembers,
+      callableMembers: [...callableMembers, ...structMethods],
       result,
     });
   }

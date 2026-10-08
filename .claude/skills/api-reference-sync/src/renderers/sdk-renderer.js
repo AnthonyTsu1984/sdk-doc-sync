@@ -381,13 +381,15 @@ function renderPrimaryInputs(document, policy, context) {
   ];
 }
 
-function renderCallableMembers(document, policy, context) {
-  if (!policy.memberKind) return [];
-  const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
+function renderCallableMembers(document, policy, context, { kind, labelOverride } = {}) {
+  const memberFilter = kind ?? policy.memberKind;
+  if (!memberFilter) return [];
+  const members = (document.callableMembers || []).filter((member) => member.kind === memberFilter);
   if (members.length === 0) return [];
-  const membersLabel = typeof policy.membersLabel === 'function'
-    ? policy.membersLabel(document)
-    : policy.membersLabel;
+  const labelPolicy = labelOverride ?? policy.membersLabel;
+  const membersLabel = typeof labelPolicy === 'function'
+    ? labelPolicy(document)
+    : labelPolicy;
   const membersHeading = typeof policy.membersHeading === 'function'
     ? policy.membersHeading(document, members)
     : policy.membersHeading;
@@ -583,10 +585,22 @@ function createSdkRenderer(policy) {
       // parameters/result-type/returns/exceptions sections are meaningless
       // for them — the result channel on a type page carries its fields, and
       // rendering it as a return value invents RT/RETURNS content.
+      // Builder options and real methods ride the callableMembers channel
+      // under separate labels when the page carries them (upstream Field:
+      // **BUILDER METHODS:** + **METHODS:**; dropping them loses content the
+      // shared page already had). Members with other kinds stay suppressed —
+      // the type-page channel only vouches for option/method shapes.
       Object.assign(sections, {
         request: [],
         parameters: [],
-        members: renderTypeMembersSection(document, frozenPolicy, context),
+        members: [
+          ...renderTypeMembersSection(document, frozenPolicy, context),
+          ...renderCallableMembers(document, frozenPolicy, context),
+          ...renderCallableMembers(document, frozenPolicy, context, {
+            kind: 'implementation',
+            labelOverride: frozenPolicy.typeMethodsLabel || 'METHODS:',
+          }),
+        ],
         'result-type': [],
         returns: [],
         exceptions: [],

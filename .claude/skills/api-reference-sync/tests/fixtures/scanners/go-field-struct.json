@@ -1,0 +1,32 @@
+{
+  "name": "Field",
+  "kind": "struct",
+  "parentClass": "Collections",
+  "signature": "type Field struct {\n    Name string\n    DataType FieldType\n}",
+  "docstring": "A Field instance defines a field in a collection schema, including its data type and constraints.",
+  "fields": [
+    {
+      "name": "Name",
+      "type": "string",
+      "description": "The field name."
+    },
+    {
+      "name": "DataType",
+      "type": "FieldType",
+      "description": "The data type of the field."
+    }
+  ],
+  "params": [],
+  "optionMethods": [],
+  "methods": [
+    {
+      "name": "GetDim",
+      "fullSignature": "func (f Field) GetDim() (int64, error)",
+      "description": "Returns the vector dimension of the field."
+    }
+  ],
+  "filePath": "client/entity/field.go",
+  "lineNumber": 12,
+  "pkg": "entity",
+  "example": null
+}

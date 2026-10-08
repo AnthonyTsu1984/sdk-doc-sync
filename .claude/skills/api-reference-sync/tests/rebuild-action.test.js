@@ -269,6 +269,64 @@ test('executor REBUILD reuses recordId+documentToken and lands whole-body replac
   assert.ok(!calls.some((entry) => entry[0] === 'createDocument' || entry[0] === 'createRecord'));
 });
 
+test('executor drops the parent-record link when the record is its own parent (structural type page)', async () => {
+  // Collection-style unit: the record IS the category group node, so
+  // plan.target.parentRecordId equals plan.source.recordId — writing the
+  // self-link fails (Feishu LinkFieldConvFail). The payload must omit the
+  // field while the rest of the update lands.
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  const plan = new SyncPlanner().planAction(rebuildAction({
+    doc: {
+      id: 'rec-group',
+      metadata: {
+        token: 'doc-campaign',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'rec-group',
+      },
+    },
+  }), rebuildContext({
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-group',
+      documentToken: 'doc-campaign',
+      folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
+      parentRecordId: 'rec-group',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: {
+      version: 'v2.6.x',
+      parentRecordId: 'rec-group',
+      folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'collections-v26'],
+      ancestryVerified: true,
+    },
+  }));
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-group' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: rebuildContext().artifact,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success');
+  const updateCall = calls.find((entry) => entry[0] === 'updateRecord');
+  assert.ok(updateCall, 'updateRecord must still land');
+  assert.equal(updateCall[2].parentRecordId, undefined, 'self-link must be dropped');
+});
+
 test('executor REBUILD refuses surgical artifacts before any write (defense in depth, both shapes)', async () => {
   const basePlan = new SyncPlanner().planAction(rebuildAction(), rebuildContext());
   for (const [name, plan, artifact] of [

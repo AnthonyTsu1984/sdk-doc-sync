@@ -45,6 +45,19 @@ function editedRecordMetadata() {
   return { progress: 'WIP' };
 }
 
+// A category group node doubling as the type page's record is its own
+// parent: writing the parent-record link would point the record at itself
+// (Feishu LinkFieldConvFail) and is meaningless — the record already sits
+// in its parent. Drop the field for that shape, keep the rest of the
+// payload (2026-10-08, Collection type page).
+function recordUpdatePayload(plan, payload) {
+  if (payload.parentRecordId && payload.parentRecordId === plan.source?.recordId) {
+    const { parentRecordId, ...rest } = payload;
+    return rest;
+  }
+  return payload;
+}
+
 function containsLegacyTodo(content) {
   return typeof content === 'string' && /<!--\s*TODO:/i.test(content);
 }
@@ -1136,7 +1149,7 @@ class SyncExecutor {
         link: docxLink(plan.source.documentToken),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
     } catch (error) {
@@ -1182,7 +1195,7 @@ class SyncExecutor {
         link: docxLink(plan.source.documentToken),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
     } catch (error) {
@@ -1196,7 +1209,7 @@ class SyncExecutor {
     const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
     try {
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...editedRecordMetadata(),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
@@ -1221,7 +1234,7 @@ class SyncExecutor {
         link: linkFromCreated(created),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
       });
       result.completedSteps.push('updateRecord');
     } catch (error) {
@@ -1258,7 +1271,7 @@ class SyncExecutor {
         link: linkFromCreated(copied),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
       result.completedSteps.push('updateRecord');
@@ -1418,7 +1431,7 @@ class SyncExecutor {
       // Record type rides the plan's target (injected by the placement
       // resolver); the artifact metadata rarely carries it for CREATE.
       type: reviewedRecordType || plan.target?.recordType || metadata.type,
-      parentRecordId: plan.target.parentRecordId,
+      ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
     });
   }
 

@@ -159,3 +159,91 @@ test('skill feedback CLI builds a promotion proposal but never an active rule', 
   assert.equal(persisted.activationAuthorized, false);
   assert.equal(Object.hasOwn(persisted, 'activeRule'), false);
 });
+
+test('promote-rule drives a ready candidate to active and rewrites the file with the promotion digest', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-feedback-promote-'));
+  const outputDir = path.join(directory, 'artifacts');
+  const candidatePath = path.join(directory, 'candidate.json');
+  const heldOutPath = path.join(directory, 'held-out.json');
+  fs.writeFileSync(candidatePath, `${JSON.stringify(candidate())}\n`);
+  fs.writeFileSync(heldOutPath, `${JSON.stringify(heldOutResults())}\n`);
+
+  const result = await runCli({
+    argv: [
+      'node', 'skill-feedback', 'promote-rule',
+      '--candidate', candidatePath,
+      '--held-out', heldOutPath,
+      '--target', 'learned-rules',
+      '--output', outputDir,
+      '--json',
+    ],
+    dependencies: { onStdout: () => {} },
+  });
+
+  assert.equal(result.state, 'active');
+  assert.match(result.promotionDigest, /^sha256:[a-f0-9]{64}$/);
+  const onDisk = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
+  assert.equal(onDisk.state, 'active');
+  assert.equal(onDisk.reviewedPromotionDigest, result.promotionDigest);
+  const promotion = JSON.parse(
+    fs.readFileSync(path.join(outputDir, 'promotion.rule-candidate-api-reference-sync-node-ownership.json'), 'utf8'),
+  );
+  assert.equal(promotion.promotionDigest, result.promotionDigest);
+  const score = JSON.parse(
+    fs.readFileSync(path.join(outputDir, 'score.rule-candidate-api-reference-sync-node-ownership.json'), 'utf8'),
+  );
+  assert.equal(score.promotionReady, true);
+});
+
+test('promote-rule refuses a blocked candidate, persists the score, and leaves the file untouched', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-feedback-promote-blocked-'));
+  const outputDir = path.join(directory, 'artifacts');
+  const candidatePath = path.join(directory, 'candidate.json');
+  const heldOutPath = path.join(directory, 'held-out.json');
+  fs.writeFileSync(candidatePath, `${JSON.stringify(candidate({ supportingDecisions: supportingDecisions(1) }))}\n`);
+  fs.writeFileSync(heldOutPath, `${JSON.stringify(heldOutResults())}\n`);
+
+  await assert.rejects(() => runCli({
+    argv: [
+      'node', 'skill-feedback', 'promote-rule',
+      '--candidate', candidatePath,
+      '--held-out', heldOutPath,
+      '--target', 'learned-rules',
+      '--output', outputDir,
+      '--json',
+    ],
+    dependencies: { onStdout: () => {} },
+  }), /RULE_PROMOTION_BLOCKED.*INDEPENDENT_SUPPORT_INSUFFICIENT/);
+
+  const onDisk = JSON.parse(fs.readFileSync(candidatePath, 'utf8'));
+  assert.equal(onDisk.state, 'candidate');
+  const persisted = JSON.parse(
+    fs.readFileSync(path.join(outputDir, 'score.rule-candidate-api-reference-sync-node-ownership.json'), 'utf8'),
+  );
+  assert.equal(persisted.promoted, false);
+  assert.deepEqual(persisted.score.reasons, ['INDEPENDENT_SUPPORT_INSUFFICIENT']);
+});
+
+test('promote-rule refuses a candidate that already left the candidate state', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-feedback-promote-state-'));
+  const active = transitionRuleCandidate(
+    transitionRuleCandidate(transitionRuleCandidate(candidate(), 'shadow'), 'proposed'),
+    'active',
+    { reviewedPromotionDigest: digest('a') },
+  );
+  const candidatePath = path.join(directory, 'candidate.json');
+  const heldOutPath = path.join(directory, 'held-out.json');
+  fs.writeFileSync(candidatePath, `${JSON.stringify(active)}\n`);
+  fs.writeFileSync(heldOutPath, `${JSON.stringify(heldOutResults())}\n`);
+
+  await assert.rejects(() => runCli({
+    argv: [
+      'node', 'skill-feedback', 'promote-rule',
+      '--candidate', candidatePath,
+      '--held-out', heldOutPath,
+      '--target', 'learned-rules',
+      '--json',
+    ],
+    dependencies: { onStdout: () => {} },
+  }), /requires a candidate in state candidate/);
+});

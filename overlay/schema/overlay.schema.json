@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "overlay-tree-v1",
+  "description": "Declarative mirror of the closed-vocabulary overlay contract (rust-overlay-pilot §2.2). The executable authority is src/sdk-doc-sync/derive/overlay-schema.js; this file and the fixtures under overlay/schema/fixtures/ document the same contract and must change in the same PR.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "language", "track", "rules", "patches", "targets", "pages"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "language": { "type": "string" },
+    "track": { "type": "string", "pattern": "^v\\d+\\.\\d+\\.x$" },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "urlRewrites": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "type": "string" }
+            }
+          }
+        },
+        "terminology": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["from", "to"],
+            "properties": {
+              "from": { "type": "string", "minLength": 1 },
+              "to": { "type": "string" },
+              "scope": { "enum": ["prose", "all"] }
+            }
+          }
+        }
+      }
+    },
+    "patches": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["page", "entries"],
+        "properties": {
+          "page": { "$ref": "#/definitions/pageIdentity" },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "expect", "anchor", "action"],
+              "properties": {
+                "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$", "minLength": 3 },
+                "expect": { "$ref": "#/definitions/pageKind" },
+                "anchor": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["kind"],
+                  "properties": {
+                    "kind": { "enum": ["requestField", "parameter", "variant", "method", "section", "prose"] },
+                    "key": { "type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$" },
+                    "match": { "type": "string", "minLength": 8 },
+                    "section": {
+                      "enum": ["request-syntax", "request-fields", "returns", "example", "parameters", "methods", "variants", "constructor", "runtime-configuration", "method-index"]
+                    }
+                  }
+                },
+                "action": { "enum": ["insert-before", "insert-after", "replace", "remove", "wrap-note"] },
+                "content": { "type": "string" },
+                "targets": { "type": "array", "items": { "enum": ["zilliz", "milvus"] }, "minItems": 1 },
+                "upstream-candidate": { "type": "boolean" },
+                "note": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "targets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["symbol", "kind", "targets"],
+        "properties": {
+          "symbol": { "type": "string", "minLength": 1 },
+          "page": { "type": "string" },
+          "kind": { "enum": ["param", "page", "variant"] },
+          "targets": { "enum": ["shared", "zilliz-only", "milvus-only"] },
+          "evidence": { "type": "string" },
+          "decidedAt": { "type": "string" }
+        }
+      }
+    },
+    "pages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["identity", "origin"],
+        "properties": {
+          "identity": { "$ref": "#/definitions/pageIdentity" },
+          "origin": { "const": "overlay" },
+          "source": { "type": "string" },
+          "verifiedAgainst": { "type": "string" }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "pageKind": { "enum": ["method", "struct", "enum", "container", "module", "overview"] },
+    "pageIdentity": { "type": "string", "pattern": "^[A-Za-z][\\w]*(\\.[A-Za-z][\\w]*)*$" }
+  },
+  "anchorByPageKind": {
+    "method": ["requestField", "section", "prose"],
+    "struct": ["parameter", "method", "section", "prose"],
+    "enum": ["variant", "section", "prose"],
+    "container": ["section", "prose"],
+    "module": ["parameter", "method", "section", "prose"],
+    "overview": ["section", "prose"]
+  }
+}

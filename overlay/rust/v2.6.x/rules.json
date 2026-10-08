@@ -1,0 +1,6 @@
+{
+  "urlRewrites": [
+    { "from": "https://milvus.io/docs/", "to": "https://docs.zilliz.com/docs/" }
+  ],
+  "terminology": []
+}

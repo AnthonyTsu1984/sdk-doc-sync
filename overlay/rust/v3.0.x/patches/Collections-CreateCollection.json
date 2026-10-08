@@ -1,0 +1,14 @@
+{
+  "page": "Collections.CreateCollection",
+  "entries": [
+    {
+      "id": "cc-drill-1",
+      "expect": "method",
+      "anchor": { "kind": "requestField", "key": "num_partitions" },
+      "action": "insert-after",
+      "content": "- `quota_note: Option<String>`\n\n    Drill entry for acceptance demo three (OVERLAY_ANCHOR_MISS). Remove after the pilot write phase.",
+      "targets": ["zilliz"],
+      "note": "drill only — acceptance demo three"
+    }
+  ]
+}

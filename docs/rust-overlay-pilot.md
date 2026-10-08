@@ -116,6 +116,8 @@ anchor × pageKind 合法矩阵（schema 强制，矩阵外组合 = 非法）：
 
 `rules.yaml` 同样封闭：`urlRewrites[]`（from/to 前缀）、`terminology[]`（from/to + scope）。`targets.json` 条目：`{ symbol, page, kind: param|page|variant, targets: shared|zilliz-only|milvus-only, evidence, decidedAt }`。
 
+> **实现注记（2026-10-08 落地时裁定）**：overlay 数据文件落成 **JSON**（`rules.json` / `patches/*.json` / `targets.json` / `manifest.json`）而非 yaml——本仓零 yaml 依赖，不为此新增依赖；JSON 解析更严格，符合封闭词汇表精神。schema 不变。
+
 ### 2.3 写作 harness：schema 即门禁
 
 1. `src/sdk-doc-sync/derive/overlay-schema.js`：纯脚本校验器，加载即验；未知字段、非法 anchor×pageKind 组合 → `OVERLAY_SCHEMA_VIOLATION` fail-closed，绝不静默忽略；

@@ -41,19 +41,19 @@ await client.createCollection({ collection_name, schema })
 - **collection\_name** (*string*) -
   **\[REQUIRED\]**
   Collection name.
-- **schema** ([FieldType\[\]](/reference/node/field-type)) -
+- **schema** (*[FieldType\[\]](/reference/node/field-type)*) -
   **\[REQUIRED\]**
   Collection fields.
   - **name** (*string*) -
     **\[REQUIRED\]**
     Field name.
-  - **data\_type** ([DataType](/reference/node/data-type)) -
+  - **data\_type** (*[DataType](/reference/node/data-type)*) -
     **\[REQUIRED\]**
     Field data type.
 
 **RETURNS:**
 
-[Promise&lt;CreateCollectionResponse&gt;](/reference/node/create-collection-response)
+*[Promise&lt;CreateCollectionResponse&gt;](/reference/node/create-collection-response)*
 
 Resolves after the collection is created.
 

@@ -275,6 +275,109 @@ test('checkMarkdownContentQuality runs the five rules over preview markdown, ski
     assert.deepEqual(checkMarkdownContentQuality('Deletes entities.', bare).violations, []);
 });
 
+test('2026-10-07 operator ruling: description prose links SDK class mentions (descriptionTypeLinksRequired)', () => {
+    const profile = sdkLayoutProfiles.python;
+    const violations = (markdown) => checkMarkdownContentQuality(markdown, profile).violations;
+
+    // Unresolved `FieldSchema` keeps its backticks (the renderer only emits a
+    // citation when the type-url index resolves the alias) — the preview
+    // fails with the offending token named.
+    assert.deepEqual(violations([
+        'This operation lists schemas.',
+        '**PARAMETERS:**',
+        '- **fields** (*list*) - A list of `FieldSchema` objects that define the collection fields.',
+    ].join('\n')), [{
+        code: 'DESCRIPTION_TYPE_CODE_UNLINKED',
+        detail: '1 backticked SDK class mention(s) render without a jump link: FieldSchema',
+    }]);
+
+    // Linked citations carry no backticks; denylisted primitives (language
+    // primitives and vendor proper nouns) and fenced example code are exempt.
+    assert.deepEqual(violations([
+        'This operation lists schemas.',
+        '**PARAMETERS:**',
+        '- **fields** (*list*) - A list of [FieldSchema](https://zilliverse.feishu.cn/docx/ABC) objects that define the collection fields.',
+        '- **mode** (*string*) - Serialized as `JSON` inside `AWS` buckets.',
+        '```Python',
+        'client = MilvusClient()',
+        '```',
+    ].join('\n')), []);
+});
+
+test('2026-10-06 python ruling: bare multiline payload, italic types, no templated example intro', () => {
+    const profile = sdkLayoutProfiles.python;
+    const codes = (markdown) => checkMarkdownContentQuality(markdown, profile).violations.map((v) => v.code);
+
+    // Old-style preview: collapsed payload line, emphasized type group,
+    // templated intro — all three refuse the presentation.
+    assert.deepEqual(codes([
+        'This operation changes the description of an existing role.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'async def alter_role( self, role_name: str, description: str ):',
+        '```',
+        '',
+        '**PARAMETERS:**',
+        '- **role\\_name** (*\\*str\\**) -',
+        '  The name of the role to update.',
+        '',
+        '## Examples',
+        '',
+        'Shows a typical AsyncMilvusClient.alter\\_role call for the v3.0.x API.',
+        '',
+        '```python',
+        'client.alter_role(role_name="reader", description="desc")',
+        '```',
+    ].join('\n')), [
+        'TEMPLATED_EXAMPLE_INTRO',
+        'PARAMETER_TYPE_EMBRASIS',
+        'REQUEST_SIGNATURE_ONE_PARAM_PER_LINE',
+    ]);
+
+    // House style (upstream mirror baseline): bare call, one param per line,
+    // italic type group, code-only examples — no violations. Example-code
+    // fences stay prose-exempt even with same-line call commas.
+    assert.deepEqual(codes([
+        'This operation changes the description of an existing role.',
+        '',
+        '## Request Syntax{#request-syntax}',
+        '',
+        '```python',
+        'alter_role(',
+        '    role_name: str,',
+        '    description: str,',
+        ')',
+        '```',
+        '',
+        '**PARAMETERS:**',
+        '- **role\\_name** (*str*) -',
+        '  The name of the role to update.',
+        '',
+        '## Examples',
+        '',
+        '```python',
+        'client.alter_role(role_name="reader", description="desc")',
+        '```',
+    ].join('\n')), []);
+
+    // The three flags stay python-only: the same old-style markdown under
+    // the java profile reports none of them.
+    const javaCodes = checkMarkdownContentQuality([
+        '## Request Syntax',
+        '',
+        '```java',
+        'void alterRole( String roleName, String description )',
+        '```',
+        '',
+        'Shows a typical call for the v3.0.x API.',
+    ].join('\n'), sdkLayoutProfiles.java).violations.map((v) => v.code);
+    assert.ok(!javaCodes.includes('TEMPLATED_EXAMPLE_INTRO'));
+    assert.ok(!javaCodes.includes('REQUEST_SIGNATURE_ONE_PARAM_PER_LINE'));
+    assert.ok(!javaCodes.includes('PARAMETER_TYPE_EMBRASIS'));
+});
+
 test('2026-10-04 adjudication: operation and class registers are both accepted; getter/instance phrasings are not', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (lines, name) => checkLayoutConformance(profile, { headings: [], lines, callouts: [] })
@@ -348,4 +451,34 @@ test('markdown governed Admonition interiors are exempt from the Notes-leak rule
     ].join('\n'), profile).violations, []);
     const bare = checkMarkdownContentQuality('This operation deletes entities.\nNotes\n', profile).violations;
     assert.equal(bare.find((violation) => violation.code === 'INTERNAL_NOTE_LEAK')?.code, 'INTERNAL_NOTE_LEAK');
+});
+
+test('pageFactsFromBlocks walks the flat fetch format through the page block: callout interiors stay governed', () => {
+    // Flat fetch format (lark-cli get-all-blocks): children are ID strings and
+    // the payload anchors a page block. Regression for the INTERNAL_NOTE_LEAK
+    // false positive where walking the flat array as top-level re-scanned a
+    // governed callout's "Notes" title as body text.
+    const facts = pageFactsFromBlocks([
+        {
+            block_id: 'page',
+            block_type: 1,
+            children: ['h', 'callout', 'b'],
+        },
+        { block_id: 'h', block_type: 3, parent_id: 'page', heading1: { elements: [{ text_run: { content: 'Search()' } }] } },
+        {
+            block_id: 'callout',
+            block_type: 19,
+            parent_id: 'page',
+            children: ['c1', 'c2'],
+        },
+        { block_id: 'c1', block_type: 2, parent_id: 'callout', text: { elements: [{ text_run: { content: 'Notes' } }] } },
+        { block_id: 'c2', block_type: 2, parent_id: 'callout', text: { elements: [{ text_run: { content: 'When search_aggregation is specified, do not explicitly set limit.' } }] } },
+        { block_id: 'b', block_type: 12, parent_id: 'page', bullet: { elements: [{ text_run: { content: '**limit** (*int*) - The total number of entities to return.' } }] } },
+    ]);
+    assert.deepEqual(facts.lines, ['Search()']);
+    // flat format: the callout census collects child LINES from embedded children only;
+    // id-string children resolve through the hierarchy walk (stream scoping), not the census.
+    assert.deepEqual(facts.callouts, [{ lines: [] }]);
+    const bareNote = facts.stream.find((entry) => /^notes:?$/i.test(entry.text.trim()));
+    assert.equal(bareNote, undefined);
 });

@@ -4,9 +4,8 @@
     "lastScanDate": "2026-07-22"
   },
   "python-v3": {
-    "lastScannedTag": "v3.0.0",
-    "lastScannedCommit": "f63a1aa2816205c165f04d33e658b06e9b1cee11",
-    "lastScanDate": "2026-05-09"
+    "lastScannedTag": "v3.0.2",
+    "lastScanDate": "2026-10-08"
   },
   "java": {
     "lastScannedTag": "origin/master",

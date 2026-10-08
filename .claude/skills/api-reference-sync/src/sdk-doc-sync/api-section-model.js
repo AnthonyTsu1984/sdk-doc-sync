@@ -34,9 +34,19 @@ function labelSection(block, profile, currentRole) {
   if (block?.block_type !== 2) return null;
   const label = normalizedLabel(block);
   if (label === 'PARAMETERS') {
+    // Response-fields list inside RETURNS (describeReplicas strong-form
+    // baseline, 2026-10-03): the second PARAMETERS label belongs to the
+    // returns section, not a duplicate request-side section.
+    if (currentRole === 'returns') return null;
     return profile.id === 'node' && currentRole === 'request' ? null : 'parameters';
   }
-  if (['BUILDER METHODS', 'OPTION METHODS', 'REQUEST METHODS', 'METHODS'].includes(label)) return 'members';
+  if (['BUILDER METHODS', 'OPTION METHODS', 'REQUEST METHODS', 'METHODS'].includes(label)) {
+    // 2026-10-06 Volume ruling: a METHODS label inside RETURNS introduces the
+    // returned instance's method list — it stays in the returns section, not
+    // a duplicate members section.
+    if (currentRole === 'returns') return null;
+    return 'members';
+  }
   if (label === 'RETURN TYPE') return 'result-type';
   if (label === 'RETURNS') return 'returns';
   if (['EXCEPTIONS', 'ERROR HANDLING'].includes(label)) return 'exceptions';

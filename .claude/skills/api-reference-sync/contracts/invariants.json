@@ -714,7 +714,7 @@
           ]
         }
       ],
-      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). v2 adds the return-section rules (split RETURN TYPE/RETURNS sections, RETURNS prose, no duplicated type row), declared so far only by the java profile (2026-10-01 semantic ruling; other tracks adopt with their stock repolish batches). v3 adds the five byte-judgeable content rules of the 2026-10-03 global ruling (user-adjudicated, all tracks): CONTENT_CJK_MIXING, FIRST_SENTENCE_REGISTER (registers are a declared set per profile — 2026-10-04 adjudication, revised same day: “This operation …” for operation and getter pages, “A Xxx instance is …” for class/type pages), RETURNS_MIN_DEPTH in the strong describeReplicas form (any rendered RETURNS section carries a response-fields PARAMETERS bullet list), PARAM_DESC_REQUIRED, and INTERNAL_NOTE_LEAK (Notes lines live only inside governed callouts) — declared through GLOBAL_LAYOUT_RULES.contentQuality so every track enforces them at write-verify and reconcile; open-ended wording quality stays with the governed polish phase and model evals, and verbatim pages are not exempt (the ruling: pr-verbatim protects semantics, not non-compliant style or notes — remediation goes through the governed polish pipeline with the semantic content map guarding completeness)."
+      "notes": "Phase 4 step 5: one language-neutral checker (layout-conformance.js) evaluates the DECLARED structural layout rules; every language difference lives as versioned data in profile.layoutRules (renderers/sdk-layout-profiles.js) — requestH3 multi-only, exampleHeading false, and deprecation callout shape are declared by all tracks, builderSignature.prefixForbidden is cpp-only. Absence of a rule in a profile is a reviewed decision in the data file. Wired into the operational verify step (feishu-operational-verifier, typed semantic errors) and into content reconciliation (reconcilePageLayout). v2 adds the return-section rules (split RETURN TYPE/RETURNS sections, RETURNS prose, no duplicated type row), declared so far only by the java profile (2026-10-01 semantic ruling; other tracks adopt with their stock repolish batches). v3 adds the five byte-judgeable content rules of the 2026-10-03 global ruling (user-adjudicated, all tracks): CONTENT_CJK_MIXING, FIRST_SENTENCE_REGISTER (registers are a declared set per profile — 2026-10-04 adjudication, revised same day: “This operation …” for operation and getter pages, “A Xxx instance is …” for class/type pages), RETURNS_MIN_DEPTH in the strong describeReplicas form (any rendered RETURNS section carries a response-fields PARAMETERS bullet list), PARAM_DESC_REQUIRED, and INTERNAL_NOTE_LEAK (Notes lines live only inside governed callouts) — declared through GLOBAL_LAYOUT_RULES.contentQuality so every track enforces them at write-verify and reconcile; open-ended wording quality stays with the governed polish phase and model evals, and verbatim pages are not exempt (the ruling: pr-verbatim protects semantics, not non-compliant style or notes — remediation goes through the governed polish pipeline with the semantic content map guarding completeness). v4 adds DESCRIPTION_TYPE_CODE_UNLINKED of the 2026-10-07 operator ruling (py-v30 CollectionSchema review, durable rule request): every SDK-defined class mention inside parameter/method description prose renders as a jump link — the renderer resolves `Alias` inline code against the KB type-url index into a citation, and layout-conformance fails the preview while a backticked class-like token stays unresolved; language primitives and vendor proper nouns are exempt through the declared descriptionTypeLinkDenylist, all tracks declare the rule through GLOBAL_LAYOUT_RULES.contentQuality."
     },
     {
       "id": "api.sparse-version-delta-model",
@@ -989,6 +989,36 @@
         }
       ],
       "notes": "Campaign-control hardening batch 2c, T1+T4 (2026-10-04): the governed Drive/docx write boundary enforces the same-name gate on every folder create (MarkdownToFeishu.createFolder lists the parent and refuses a same-named FOLDER sibling — the executor step machine and the plan-governed repair tools keep their own gates; the writer is the capability backstop), reads back the expected post-state of every duplicate-prone mutation, and reconciles-by-name on a lost write response through ONE shared policy helper (__writeWithReconcile) — never a blind retry. deleteFile is exempt by documented policy. Codes are thrown as typed errors (error.code) with reconciledAfterFailure surfacing adoptions to the caller (executor journal persistence is follow-up wiring). Adoptions exclude a pre-write snapshot of the target folder, so a foreign same-titled page is never adopted; post-checks and reconcile probes retry with backoff (Drive listing is eventually consistent right after a write). The pre-list and the create are not atomic — a concurrent same-name create is caught by the detect-only topology patrol, not this gate."
+    },
+    {
+      "id": "api.operator-authored-surgical-patch",
+      "version": 1,
+      "risk": "content-fidelity",
+      "scope": "all-sdk-document-writes",
+      "status": "declared",
+      "enforcement": [
+        "plan",
+        "pre-write"
+      ],
+      "statementDigest": "sha256:a926c840255ba16fa49cd1ea3aee51e735c1cb834b160739e16e5bb90654dd4d",
+      "enforcers": [
+        {
+          "stage": "plan",
+          "module": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
+          "codes": [
+            "API_PATCH_PLAN_REQUIRED"
+          ]
+        },
+        {
+          "stage": "pre-write",
+          "module": ".claude/skills/api-reference-sync/src/markdown-to-feishu.js",
+          "codes": [
+            "API_PATCH_PRECONDITION_FAILED",
+            "INVALID_API_PATCH_PLAN"
+          ]
+        }
+      ],
+      "notes": "2026-10-07 operator-directed consolidation (py-v30 batch-4, search_iterator/search five-attempt iteration): pages whose live content the schema-first regeneration cannot reproduce faithfully (operator-authored include structures, callouts inside parameter bullets, audience-wrapped parameter groups) land through a hand-authored surgical apiPatchPlan whose desired blocks are the live blocks plus the reviewed delta. Authoring program and pitfalls: references/surgical-patch.md; narrative: docs/sdk-doc-sync-surgical-patch.md. The executor enforces the shape (apply_api_patch live precondition; REBUILD_STRATEGY_REQUIRED keeps whole-body replacement off this path); the local ordered-execution simulation before the gate is the process discipline this declared invariant codifies."
     }
   ]
 }

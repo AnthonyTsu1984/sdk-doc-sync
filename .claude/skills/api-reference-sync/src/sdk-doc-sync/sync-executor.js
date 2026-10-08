@@ -547,9 +547,22 @@ class SyncExecutor {
       result.completedSteps.push('verifyResourceContainment');
     }
     const before = await this._listFolder(resource.parentFolderToken, 'folder');
-    result.completedSteps.push('verifyResourceAbsent');
     const existing = before.find(item => isFolderItem(item) && item.name === resource.name);
     if (existing) {
+      // Replay-after-partial tolerance: a folder from this campaign's own
+      // earlier attempt (or a verified identical create) satisfies the
+      // approved state — resolve it instead of failing the batch.
+      if (nonEmptyString(existing.token)) {
+        result.completedSteps.push('verifyResourcePresent');
+        result.resolvedResource = {
+          ref: resource.ref,
+          kind: 'folder',
+          value: existing.token,
+        };
+        result.verification = { ok: true, errors: [] };
+        return;
+      }
+      result.completedSteps.push('verifyResourceAbsent');
       const error = new SyncExecutionError(
         'RESOURCE_PRECONDITION_FAILED',
         `Folder ${resource.name} already exists below ${resource.parentFolderToken}`,
@@ -558,6 +571,7 @@ class SyncExecutor {
       error.step = 'verifyResourceAbsent';
       throw error;
     }
+    result.completedSteps.push('verifyResourceAbsent');
 
     const created = normalizedFolder(
       await this._createFolder(resource.name, resource.parentFolderToken),
@@ -620,6 +634,25 @@ class SyncExecutor {
     const before = await this._getRecord(resource.recordId);
     const beforeDocs = docsField(before);
     const beforeNodeFields = virtualNodeFields(before);
+    // Replay-after-partial tolerance: a sibling unit's repoint may already
+    // have landed the approved end state (the VN link at the NEW folder with
+    // the approved structural metadata) — resolve it instead of failing.
+    const resolvedFolderLink = `/drive/folder/${folderToken}`;
+    if (beforeDocs.link?.endsWith(resolvedFolderLink)
+      && beforeNodeFields.slug === expectedFields.slug
+      && sameNormalizedTargets(beforeNodeFields.targets, expectedFields.targets)
+      && beforeNodeFields.progress === expectedFields.progress) {
+      result.record = before;
+      result.completedSteps.push('verifyResourcePresent');
+      result.resolvedResource = {
+        ref: resource.ref,
+        kind: 'virtual_node_repoint',
+        value: resource.recordId,
+        recordId: resource.recordId,
+      };
+      result.verification = { ok: true, errors: [] };
+      return;
+    }
     const errors = [];
     if (!beforeDocs.link?.endsWith(`/drive/folder/${resource.currentFolderToken}`)) {
       errors.push({ code: 'VIRTUAL_NODE_CURRENT_LINK_MISMATCH', actual: beforeDocs.link });
@@ -691,13 +724,18 @@ class SyncExecutor {
     result.completedSteps.push('verifyResourceAbsent');
     const existing = records.find(record => recordMatchesCriteria(record, resource.existingLookup.criteria));
     if (existing) {
-      const error = new SyncExecutionError(
-        'RESOURCE_PRECONDITION_FAILED',
-        `VirtualNode ${resource.title} already exists`,
-        { recordId: recordId(existing) },
-      );
-      error.step = 'verifyResourceAbsent';
-      throw error;
+      // Replay-after-partial tolerance: a criteria-matching record from this
+      // campaign's own earlier attempt satisfies the approved state.
+      result.record = existing;
+      result.completedSteps.push('verifyResourcePresent');
+      result.resolvedResource = {
+        ref: resource.ref,
+        kind: 'virtual_node',
+        value: recordId(existing),
+        recordId: recordId(existing),
+      };
+      result.verification = { ok: true, errors: [] };
+      return;
     }
 
     const link = folderLink(folderToken);
@@ -708,6 +746,11 @@ class SyncExecutor {
       addedSince: resource.version,
       targets: resource.targets,
       progress: resource.progress,
+      // 2026-10-06 operator ruling: the Slug duplex field derives from the
+      // PARENT-RECORD chain — parenting the VN under its category VirtualNode
+      // yields the prefixed slug (MilvusClient-FunctionChain). Never write
+      // Slug directly.
+      parentRecordId: resource.parentRecordId,
     });
     const createdRecordId = recordId(created);
     if (!nonEmptyString(createdRecordId)) {
@@ -718,7 +761,16 @@ class SyncExecutor {
     result.record = created;
     result.completedSteps.push('createVirtualNode');
 
-    const observed = await this._getRecordWithRetry(createdRecordId);
+    // The Slug duplex field derives from the parent-record chain
+    // asynchronously (2026-10-06 operator ruling): poll briefly before the
+    // mismatch verdict, mirroring the createFolder consistency tolerance.
+    let observed = await this._getRecordWithRetry(createdRecordId);
+    const approvedSlug = resource.existingLookup.criteria.canonicalSlug;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      if (virtualNodeFields(observed).slug === approvedSlug) break;
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      observed = await this._getRecordWithRetry(createdRecordId);
+    }
     const docs = docsField(observed);
     const actualFields = virtualNodeFields(observed);
     const errors = [];

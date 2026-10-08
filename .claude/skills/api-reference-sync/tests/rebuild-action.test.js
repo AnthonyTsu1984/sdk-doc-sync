@@ -136,6 +136,27 @@ test('a CREATE-like action over an existing record auto-routes to REBUILD only i
   );
 });
 
+test('an auto-routed redo binds a generated layout artifact to the rebuild strategy (J6 changes-requested redo)', () => {
+  const createOverExisting = {
+    ...rebuildAction(),
+    type: 'CREATE',
+  };
+  // The generated (schema-first) artifact carries a layout profile and NO
+  // declared strategy — the auto-route stamps it rebuild so the executor's
+  // mirrored whole-body gate accepts the redo payload.
+  const context = rebuildContext({
+    artifact: {
+      ...rebuildContext().artifact,
+      layout: { profileId: 'java', profileVersion: 3 },
+    },
+  });
+  assert.equal(context.artifact.patchStrategy, undefined);
+  const plan = new SyncPlanner().planAction(createOverExisting, context);
+  assert.equal(plan.action, 'REBUILD');
+  assert.equal(plan.metadata.autoRoutedFrom, 'CREATE');
+  assert.equal(context.artifact.patchStrategy, 'rebuild');
+});
+
 test('REBUILD demands whole-body artifacts: surgical layout artifacts are refused', () => {
   assert.throws(
     () => new SyncPlanner().planAction(rebuildAction(), rebuildContext({

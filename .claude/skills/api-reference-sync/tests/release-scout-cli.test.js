@@ -104,11 +104,56 @@ test('Python v3.0.x has a default canonical identity map', () => {
     stableId: 'python:Authentication:describe_user',
     canonicalSlug: 'Authentication-describe_user',
     category: 'Authentication',
+    documentationOwnership: {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'python:Authentication:describe_user',
+          canonicalSlug: 'Authentication-describe_user',
+          category: 'Authentication',
+        },
+      ],
+    },
   });
   assert.deepEqual(map.symbols['RoleItem.description'], {
     stableId: 'python:Authentication:describe_role',
     canonicalSlug: 'Authentication-describe_role',
     category: 'Authentication',
+    documentationOwnership: {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'python:Authentication:describe_role',
+          canonicalSlug: 'Authentication-describe_role',
+          category: 'Authentication',
+        },
+      ],
+    },
+  });
+  assert.deepEqual(map.symbols['SearchAggregation'], {
+    stableId: 'python:Vector:SearchAggregation',
+    canonicalSlug: 'Vector-SearchAggregation',
+    category: 'Vector',
+  });
+  assert.deepEqual(map.symbols['FunctionChain'], {
+    stableId: 'python:FunctionChain:FunctionChain',
+    canonicalSlug: 'FunctionChain-FunctionChain',
+    category: 'FunctionChain',
+  });
+  assert.deepEqual(map.symbols['CompactionTaskState'], {
+    stableId: 'python:Management:list_compaction_tasks',
+    canonicalSlug: 'Management-list_compaction_tasks',
+    category: 'Management',
+    documentationOwnership: {
+      classification: 'method_owned',
+      owners: [
+        {
+          stableId: 'python:Management:list_compaction_tasks',
+          canonicalSlug: 'Management-list_compaction_tasks',
+          category: 'Management',
+        },
+      ],
+    },
   });
 });
 

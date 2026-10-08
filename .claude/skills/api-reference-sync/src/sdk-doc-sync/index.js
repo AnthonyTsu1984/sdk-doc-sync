@@ -535,7 +535,17 @@ class SdkDocSync {
         const plannedEntries = [];
         for (const resource of this.releaseScope?.resources || []) {
             try {
-                const plan = this.planner.planResource(resource);
+                let plan = this.planner.planResource(resource);
+                // T3 walk binding: resource lookups in this scope were
+                // derived from the same placement audit walk as the document
+                // plans (the intake's existingLookup evidence cites it). A
+                // bound run must not strand them walk-less — verifyPlacement
+                // WalkBinding refuses the mixed batch outright. planResource
+                // returns a frozen plan, so the stamp rides a shallow clone.
+                if (typeof this.placementWalkDigest === 'string' && this.placementWalkDigest.length > 0
+                    && plan && !(typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0)) {
+                    plan = Object.freeze({ ...plan, placementWalkDigest: this.placementWalkDigest });
+                }
                 result.resourcePlans.push(plan);
                 plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });
             } catch (error) {
@@ -953,7 +963,31 @@ class SdkDocSync {
         const approvedById = new Map(approvedPlans.map(entry => [entry.plan.stableId, entry]));
         const executionStatus = new Map();
         const resourceResolutions = new Map();
-        for (const batchAction of result.executionBatch.actions) {
+        // DAG order: plannedEntries are built resources-first, but a
+        // category-create batch's downstream repoint DEPENDS on its document
+        // actions — dependencies must execute before their dependents
+        // (folder → documents → repoint). Stable Kahn ordering over in-batch
+        // dependsOn; a cycle falls back to the original relative order for
+        // the dependency check to refuse.
+        const batchActions = [...result.executionBatch.actions];
+        const orderedBatchActions = [];
+        const orderedIds = new Set();
+        let progressed = true;
+        while (orderedIds.size < batchActions.length && progressed) {
+            progressed = false;
+            for (const batchAction of batchActions) {
+                if (orderedIds.has(batchAction.actionId)) continue;
+                if (batchAction.dependsOn.every(dep => orderedIds.has(dep) || !batchActions.some(candidate => candidate.actionId === dep))) {
+                    orderedBatchActions.push(batchAction);
+                    orderedIds.add(batchAction.actionId);
+                    progressed = true;
+                }
+            }
+        }
+        for (const batchAction of batchActions) {
+            if (!orderedIds.has(batchAction.actionId)) orderedBatchActions.push(batchAction);
+        }
+        for (const batchAction of orderedBatchActions) {
             const planned = approvedById.get(batchAction.actionId);
             const action = planned?.action;
             try {
@@ -1687,8 +1721,21 @@ class SdkDocSync {
     }
 
     _consolidateReleaseScopeDiffActions(actions) {
+        // The scope action names its primary scanned symbol (action.symbol,
+        // e.g. 'VolumeBulkWriter.__init__'); folded helper symbols
+        // (method_owned, e.g. the UploadPolicy enum) map to the same slug and
+        // otherwise win by scan order, feeding the artifact the wrong
+        // signature/kind. The named primary sorts first per slug.
+        const rankOf = (action) => {
+            const named = action.releaseScopeAction?.symbol;
+            if (!named || !action.symbol) return 1;
+            const qualified = (action.symbol.parentClass ? `${action.symbol.parentClass}.` : '')
+                + action.symbol.name;
+            return qualified === named ? 0 : 1;
+        };
+        const ordered = [...actions].sort((a, b) => rankOf(a) - rankOf(b));
         const consolidated = new Map();
-        for (const action of actions) {
+        for (const action of ordered) {
             const existing = consolidated.get(action.slug);
             if (!existing) {
                 const primary = {

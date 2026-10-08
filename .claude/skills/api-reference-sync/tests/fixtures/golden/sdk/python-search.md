@@ -7,12 +7,18 @@ Available to Milvus users.
 ## Request Syntax{#request-syntax}
 
 ```python
-def search(self, collection_name: str, data: list[list[float]], *, limit: int = 10, **kwargs: Any) -> list[SearchResult]:
+search(
+    collection_name: str,
+    data: list[list[float]],
+    *,
+    limit: int = 10,
+    **kwargs: Any
+) -> list[SearchResult]
 ```
 
 **PARAMETERS:**
 
-- **collection\_name** ([str](/reference/python/str)) -
+- **collection\_name** (*[str](/reference/python/str)*) -
   **\[REQUIRED\]**
   The name of the target collection.
 - **data** (*list\[list\[float\]\]*) -
@@ -27,7 +33,7 @@ def search(self, collection_name: str, data: list[list[float]], *, limit: int = 
 
 **RETURN TYPE:**
 
-[list\[SearchResult\]](/reference/python/search-result)
+*[list\[SearchResult\]](/reference/python/search-result)*
 
 **RETURNS:**
 
@@ -35,7 +41,7 @@ Returns the matching entities ordered by similarity.
 
 **PARAMETERS:**
 
-- **items** ([SearchResult\[\]](/reference/python/search-result)) -
+- **items** (*[SearchResult\[\]](/reference/python/search-result)*) -
   **\[REQUIRED\]**
   The matching entities.
   - **score** (*float*) -

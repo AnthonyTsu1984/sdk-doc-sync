@@ -22,6 +22,9 @@ const MEMBER_KIND_BY_LANGUAGE = new Map([
   ['node', 'implementation'],
   ['go', 'option'],
   ['cpp', 'request'],
+  // 2026-10-06 Volume ruling: python classes expose methods, enums expose
+  // values — both through the callableMembers channel.
+  ['python', ['method', 'member']],
 ]);
 const SIGNATURE_REQUIRED = new Set(['method', 'function', 'command', 'rest-operation']);
 const EXAMPLE_REQUIRED = new Set(['method', 'function', 'class', 'command', 'rest-operation']);
@@ -931,13 +934,14 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
     }
     if (Array.isArray(doc.callableMembers)) {
       const allowedMemberKind = MEMBER_KIND_BY_LANGUAGE.get(language);
+      const allowedKinds = Array.isArray(allowedMemberKind) ? allowedMemberKind : (allowedMemberKind ? [allowedMemberKind] : []);
       doc.callableMembers.forEach((member, index) => {
         if (!isObject(member) || !MEMBER_KINDS.includes(member.kind)) return;
-        if (member.kind !== allowedMemberKind) {
+        if (!allowedKinds.includes(member.kind)) {
           error(
             `$.callableMembers[${index}].kind`,
-            allowedMemberKind
-              ? `${language} callable members must use kind ${allowedMemberKind}`
+            allowedKinds.length > 0
+              ? `${language} callable members must use kind ${allowedKinds.join(' or ')}`
               : `${language} documents must not define callable members`,
             'INCOMPATIBLE_MEMBER_KIND',
           );
@@ -971,7 +975,10 @@ function validateReferenceDocument(doc, { production = false, knownTypeIds = [] 
       if (Array.isArray(doc.requestVariants) && doc.requestVariants.length > 0) {
         error('$.requestVariants', 'enum documents must not define request variants', 'ENUM_FORBIDDEN_VARIANTS');
       }
-      if (Array.isArray(doc.callableMembers) && doc.callableMembers.length > 0) {
+      // 2026-10-06 Volume ruling: enum VALUES ride the members channel
+      // (kind 'member'); enum pages still must not carry callable methods.
+      if (Array.isArray(doc.callableMembers)
+        && doc.callableMembers.some((member) => member.kind !== 'member')) {
         error('$.callableMembers', 'enum documents must not define callable members', 'ENUM_FORBIDDEN_MEMBERS');
       }
     }

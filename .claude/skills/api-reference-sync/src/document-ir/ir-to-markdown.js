@@ -35,7 +35,15 @@ function escapeAttribute(value) {
 
 function renderInline(node) {
   if (node.type === 'citation' || node.type === 'documentReference') {
-    return `[${escapeText(node.title)}](${safeUrl(node.url)})`;
+    let link = `[${escapeText(node.title)}](${safeUrl(node.url)})`;
+    // Marks ride citation nodes (2026-10-07 ruling: a linked parameter type
+    // keeps the italic type style); the markdown→feishu converter overlays
+    // the emphasis onto the linked text_run.
+    if (node.marks?.includes('bold')) link = `**${link}**`;
+    if (node.marks?.includes('italic')) link = `*${link}*`;
+    if (node.marks?.includes('strikethrough')) link = `~~${link}~~`;
+    if (node.marks?.includes('underline')) link = `<u>${link}</u>`;
+    return link;
   }
   let value;
   if (node.marks.includes('inlineCode')) {

@@ -39,7 +39,21 @@ function proseInlines(value, baseMarks = [], links = []) {
 }
 
 function paragraph(value, marks = [], options = {}) {
-  return ir.paragraph(proseInlines(value, marks), options);
+  const { links, ...nodeOptions } = options || {};
+  return ir.paragraph(proseInlines(value, marks, links), nodeOptions);
+}
+
+// 2026-10-07 operator ruling (py-v30 CollectionSchema review): every mention
+// of an SDK-defined class inside parameter/method description prose carries a
+// jump link. Description authors mark the mention as `Alias` inline code; the
+// renderer resolves it against the KB type-url index and emits a citation —
+// an unresolved alias stays plain inline code (layout-conformance's
+// descriptionTypeLinksRequired rule fails the preview instead).
+function typeLinks(context) {
+  const typeUrls = context?.typeUrls && typeof context.typeUrls === 'object' ? context.typeUrls : {};
+  return Object.entries(typeUrls)
+    .filter(([, url]) => isSafeUrl(url))
+    .map(([text, url]) => ({ text, url }));
 }
 
 function heading(level, value, options = {}) {
@@ -75,13 +89,20 @@ function typeInlines(type, context, { italic = true } = {}) {
   const display = String(type?.display || '');
   if (!display) return [];
   const url = typeUrl(type, context);
-  if (url) return [ir.citation(display, url)];
+  // 2026-10-07 operator ruling: a linked parameter type keeps the italic
+  // type style — the citation carries the same marks the unlinked form has.
+  if (url) return [ir.citation(display, url, { marks: italic ? ['italic'] : [] })];
   return [text(display, italic ? ['italic'] : [])];
 }
 
 function fieldHeader(field, context, role = 'parameters-list') {
   const nameMarks = role === 'member-fields' ? ['inlineCode'] : ['bold'];
-  const children = [text(field.name, nameMarks)];
+  // 2026-10-06 Volume ruling: a result field with a page link renders its
+  // name as a citation to that page (method pages linked from METHODS).
+  const link = Array.isArray(field.links) && field.links[0] && isSafeUrl(field.links[0].url)
+    ? field.links[0]
+    : null;
+  const children = [link ? ir.citation(field.name, link.url) : text(field.name, nameMarks)];
   const renderedType = role === 'member-fields' ? [] : typeInlines(field.type, context);
   if (renderedType.length > 0) children.push(text(' ('), ...renderedType, text(')'));
   children.push(text(' -'));
@@ -120,7 +141,7 @@ function renderFieldItem(field, context, role = 'parameters-list', key = null) {
   for (const entry of audience.descriptionEntries(field)) {
     const description = sentence(entry.description);
     if (!description) continue;
-    const descriptionBlock = paragraph(description);
+    const descriptionBlock = paragraph(description, [], { links: typeLinks(context) });
     if (audience.normalizeAudience(field.audience) === 'shared' && entry.audience !== 'shared') {
       children.push(ir.audienceRegion('include', entry.audience, [descriptionBlock]));
     } else {
@@ -172,7 +193,7 @@ function renderMembers(members, context, options = {}) {
   return ir.unorderedList(members.map((member) => {
     const children = [ir.paragraph([text(member.signature.display || member.name, ['inlineCode'])])];
     const description = sentence(member.description);
-    if (description) children.push(paragraph(description));
+    if (description) children.push(paragraph(description, [], { links: typeLinks(context) }));
     if (Array.isArray(member.fields) && member.fields.length > 0) {
       children.push(renderFields(member.fields, context, 'member-fields', member.name));
     }
@@ -314,15 +335,25 @@ function renderReturns(document, policy, context) {
   if (!policy.resultTypeLabel) {
     blocks.push(ir.paragraph(typeInlines(result.type, context), semantic('returns-type-value')));
   }
-  blocks.push(paragraph(sentence(result.description), [], semantic('returns-description')));
+  blocks.push(paragraph(sentence(result.description), [], { ...semantic('returns-description'), links: typeLinks(context) }));
   if (Array.isArray(result.fields) && result.fields.length > 0) {
     // describeReplicas baseline (2026-10-03 strong-form ruling): response
-    // fields render as a labeled PARAMETERS bullet list after the RETURNS
-    // prose, mirroring the request-side parameter list.
-    if (policy.parametersLabel) {
-      blocks.push(label(policy.parametersLabel, semantic('result-fields-label')));
+    // fields render as a labeled bullet list after the RETURNS prose,
+    // mirroring the request-side parameter list. 2026-10-06 Volume ruling:
+    // fields that are METHODS of the returned instance take the METHODS
+    // label (policy.resultMethodsLabel) instead of PARAMETERS.
+    const methodFields = result.fields.filter((field) => field?.resultFieldKind === 'method');
+    const dataFields = result.fields.filter((field) => field?.resultFieldKind !== 'method');
+    if (methodFields.length > 0 && policy.resultMethodsLabel) {
+      blocks.push(label(policy.resultMethodsLabel, semantic('result-methods-label')));
+      blocks.push(...renderFieldBlocks(methodFields, context, 'result-fields'));
     }
-    blocks.push(...renderFieldBlocks(result.fields, context, 'result-fields'));
+    if (dataFields.length > 0) {
+      if (policy.parametersLabel) {
+        blocks.push(label(policy.parametersLabel, semantic('result-fields-label')));
+      }
+      blocks.push(...renderFieldBlocks(dataFields, context, 'result-fields'));
+    }
   }
   return blocks;
 }
@@ -366,7 +397,8 @@ function renderPrimaryInputs(document, policy, context) {
 
 function renderCallableMembers(document, policy, context) {
   if (!policy.memberKind) return [];
-  const members = (document.callableMembers || []).filter((member) => member.kind === policy.memberKind);
+  const memberKinds = Array.isArray(policy.memberKind) ? policy.memberKind : [policy.memberKind];
+  const members = (document.callableMembers || []).filter((member) => memberKinds.includes(member.kind));
   if (members.length === 0) return [];
   const membersLabel = typeof policy.membersLabel === 'function'
     ? policy.membersLabel(document)

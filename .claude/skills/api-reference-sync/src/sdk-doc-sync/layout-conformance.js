@@ -75,8 +75,23 @@ function pageFactsFromBlocks(blocks = []) {
     const callouts = [];
     const stream = [];
     const bullets = [];
+    // Flat fetch format (lark-cli get-all-blocks): the array is flat and a
+    // block's children are ID strings. Walking that array as top-level
+    // re-scans callout interiors as body text, so a governed callout's
+    // "Notes" title reads as a bare note (INTERNAL_NOTE_LEAK false
+    // positive). When the payload anchors a page block, walk the real
+    // hierarchy through the id → block map instead; embedded-children
+    // payloads and section lists keep the legacy path.
+    const flatBlocks = Array.isArray(blocks) ? blocks : [blocks];
+    const pageBlock = flatBlocks.find(b => b && b.block_type === 1);
+    const byId = new Map(flatBlocks.filter(b => b && b.block_id).map(b => [b.block_id, b]));
+    const flatHierarchy = pageBlock && Array.isArray(pageBlock.children)
+        && pageBlock.children.length > 0
+        && pageBlock.children.every(c => typeof c === 'string' && byId.has(c));
+    const resolve = (block) => (typeof block === 'string' ? byId.get(block) : block) ?? null;
     const walk = (list, insideCallout) => {
-        for (const block of list || []) {
+        for (const entry of list || []) {
+            const block = flatHierarchy ? resolve(entry) : entry;
             if (!block || typeof block !== 'object') continue;
             if (block.block_type >= HEADING_LEVEL_BASE + 1 && block.block_type <= HEADING_LEVEL_MAX) {
                 const text = (block[`heading${block.block_type - HEADING_LEVEL_BASE}`]?.elements || [])
@@ -115,7 +130,7 @@ function pageFactsFromBlocks(blocks = []) {
                     bullets.push(text);
                     stream.push({ kind: 'bullet', text, boldName });
                 }
-                if (Array.isArray(block.children)) walk(block.children, insideCallout);
+                if (Array.isArray(block.children)) walk(block.children.map(resolve).filter(Boolean), insideCallout);
                 continue;
             }
             if (block.block_type === CALLOUT_BLOCK_TYPE) {
@@ -127,13 +142,17 @@ function pageFactsFromBlocks(blocks = []) {
                     if (child?.block_type === TEXT_BLOCK_TYPE) childLines.push(text);
                 }
                 callouts.push({ lines: childLines });
-                walk(block.children, true);
+                walk((block.children ?? []).map(resolve).filter(Boolean), true);
                 continue;
             }
-            if (Array.isArray(block.children)) walk(block.children, insideCallout);
+            if (Array.isArray(block.children)) walk(block.children.map(resolve).filter(Boolean), insideCallout);
         }
     };
-    walk(Array.isArray(blocks) ? blocks : [blocks], false);
+    if (flatHierarchy) {
+        walk((pageBlock.children ?? []).map(resolve).filter(Boolean), false);
+    } else {
+        walk(flatBlocks, false);
+    }
     const nonEmpty = (text) => String(text).trim() !== '';
     return {
         headings,
@@ -282,7 +301,11 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
     if (contentRules.returnsResponseFieldsRequired) {
         const returnsIndex = entries.findIndex((entry) => isLabel(entry.text, 'returns'));
         if (returnsIndex !== -1) {
-            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex && isLabel(entry.text, 'parameters'));
+            // 2026-10-06 Volume ruling: the response-fields list may be a
+            // PARAMETERS list (data fields) or a METHODS list (methods of the
+            // returned instance) — either satisfies the depth rule.
+            const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex
+                && (isLabel(entry.text, 'parameters') || isLabel(entry.text, 'methods')));
             let fieldBullets = 0;
             if (parametersIndex !== -1) {
                 for (let index = parametersIndex + 1; index < entries.length; index += 1) {
@@ -292,8 +315,8 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
             }
             if (fieldBullets === 0) {
                 report('RETURNS_MIN_DEPTH', parametersIndex === -1
-                    ? 'RETURNS section carries no response-fields PARAMETERS list'
-                    : 'response-fields PARAMETERS list carries no field bullets');
+                    ? 'RETURNS section carries no response-fields list'
+                    : 'response-fields list carries no field bullets');
             }
         }
     }
@@ -340,6 +363,54 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
             report('INTERNAL_NOTE_LEAK', `"Notes" line outside a governed callout: ${bareNote.text}`);
         }
     }
+
+    // 2026-10-07 operator ruling (py-v30 CollectionSchema review, durable
+    // rule request): every SDK-defined class mention inside parameter/method
+    // description prose must render as a jump link. The renderer resolves
+    // `Alias` inline code against the KB type-url index and emits a citation,
+    // so the linked form carries NO backticks while an unresolved mention
+    // keeps them — a backticked class-like token outside a code fence is the
+    // deterministic byte fact this rule judges. Non-class tokens (language
+    // primitives, vendor names) stay exempt through the declared denylist.
+    if (contentRules.descriptionTypeLinksRequired) {
+        const denylist = new Set((contentRules.descriptionTypeLinkDenylist || []).map((token) => String(token).toLowerCase()));
+        const codeTokenPattern = /`([A-Z][A-Za-z0-9]*)`/g;
+        const offending = [];
+        for (const entry of entries) {
+            if (entry.kind === 'code') continue;
+            const text = String(entry.text || '');
+            for (const match of text.matchAll(codeTokenPattern)) {
+                if (denylist.has(match[1].toLowerCase())) continue;
+                offending.push(match[1]);
+            }
+        }
+        if (offending.length > 0) {
+            report('DESCRIPTION_TYPE_CODE_UNLINKED', `${offending.length} backticked SDK class mention(s) render without a jump link: ${[...new Set(offending)].join(', ')}`);
+        }
+    }
+
+    // 2026-10-06 python ruling: templated example intros ("Shows a typical
+    // … call for the vX.Y API.") are banned — an example without a reviewed
+    // description renders code-only.
+    if (contentRules.templatedExampleIntroForbidden) {
+        const templated = entries.find((entry) => entry.kind === 'text'
+            && /^shows a typical\b/i.test(entry.text.trim()));
+        if (templated) {
+            report('TEMPLATED_EXAMPLE_INTRO', `templated example intro is forbidden: ${templated.text}`);
+        }
+    }
+
+    // 2026-10-06 python ruling: parameter types are italic ((*type*)) —
+    // emphasis markers inside the parenthesized type group (bold ** or
+    // escaped \*) are forbidden. Prose-path shape only; block facts carry
+    // styles structurally and never trip it.
+    if (contentRules.parameterTypeEmphasisForbidden) {
+        const emphasized = entries.find((entry) => entry.kind === 'bullet'
+            && /\([^)]*?(?:\\\*|\*\*)[^)]*?\)/.test(entry.text));
+        if (emphasized) {
+            report('PARAMETER_TYPE_EMBRASIS', `parameter type must be italic without emphasis markers: ${emphasized.text}`);
+        }
+    }
 }
 
 // Markdown-preview path (campaign-control hardening §3.7): the same five
@@ -357,6 +428,10 @@ function checkMarkdownContentQuality(markdown, profile) {
     const entries = [];
     let insideFence = false;
     let insideAdmonition = false;
+    let currentHeading = null;
+    let fenceSection = null;
+    const requestFenceLines = [];
+    const fenceRule = rules.contentQuality.requestSignatureOneParamPerLine === true;
     for (const rawLine of markdown.split(/\r?\n/)) {
         const trimmed = rawLine.trim();
         // Governed callouts render as <Admonition> blocks whose interior
@@ -366,10 +441,23 @@ function checkMarkdownContentQuality(markdown, profile) {
         if (/^<\/Admonition>/i.test(trimmed)) { insideAdmonition = false; continue; }
         if (insideAdmonition) continue;
         if (trimmed.startsWith('```') || trimmed.startsWith('~~~')) {
+            if (!insideFence) fenceSection = currentHeading;
+            else fenceSection = null;
             insideFence = !insideFence;
             continue;
         }
-        if (insideFence || trimmed === '') continue;
+        if (insideFence) {
+            // 2026-10-06 python ruling: the request-signature fence is page
+            // content with rules of its own — prose rules still never see
+            // fenced code.
+            if (fenceRule && fenceSection && /^request syntax/i.test(fenceSection)) {
+                requestFenceLines.push(trimmed);
+            }
+            continue;
+        }
+        if (trimmed === '') continue;
+        const headingMatch = trimmed.match(/^#{1,6}\s+(.*)$/);
+        if (headingMatch) currentHeading = headingMatch[1].trim();
         let kind = 'text';
         let line = trimmed;
         if (/^[-•*]\s+/.test(line)) {
@@ -381,6 +469,16 @@ function checkMarkdownContentQuality(markdown, profile) {
         entries.push({ kind, text: line });
     }
     checkContentRules(rules.contentQuality, entries, [], report);
+    // 2026-10-06 python ruling: the request payload is one parameter per
+    // line in the bare call form — a signature opening line carrying a
+    // top-level comma collapsed all inputs onto one line.
+    if (fenceRule) {
+        const collapsed = requestFenceLines.find((line) =>
+            /^\s*(?:async\s+)?(?:def\s+)?[A-Za-z_]\w*\s*\([^()]*,/.test(line));
+        if (collapsed) {
+            report('REQUEST_SIGNATURE_ONE_PARAM_PER_LINE', `request payload must be one parameter per line: ${collapsed.trim()}`);
+        }
+    }
     return { invariantId: LAYOUT_INVARIANT_ID, violations };
 }
 

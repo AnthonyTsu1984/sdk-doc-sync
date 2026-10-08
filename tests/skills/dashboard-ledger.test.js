@@ -111,6 +111,78 @@ test('zombie detection when scan-state advanced past the session target tag', (t
   assert.equal(card.scanState.advancedPast, true);
 });
 
+// ---------- R16 receipt-never-landed alarm (staleReceipts) ----------
+
+function writeExecutionJournal(write, relative, { completed = true } = {}) {
+  const lines = [
+    JSON.stringify({ type: 'observed', actionId: 'a1', status: 'success', verified: true }),
+    completed
+      ? JSON.stringify({ type: 'completion', completionSentinel: true, status: 'executed' })
+      : JSON.stringify({ type: 'progress', note: 'mid-flight crash' }),
+  ];
+  write(relative, `${lines.join('\n')}\n`);
+}
+
+test('staleReceipts alarms on an executed unit whose receipt never landed', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  // Executed 2026-10-01T12:00Z; the session was written again on 10-02 (the
+  // receipt path demonstrably works) yet this unit never transitioned.
+  writeExecutionJournal(write, 'tmp/api-reference-sync/j-stale.jsonl', { completed: true });
+  write('tmp/sdk-release-scout/stale-session.json', sessionFixture({
+    pendingExecutions: [{
+      reviewUnitId: 'u1',
+      executionJournalPath: path.join(root, 'tmp/api-reference-sync/j-stale.jsonl'),
+      executionJournalDigest: 'sha256:' + 'c'.repeat(64),
+      executedAt: '2026-10-01T12:00:00.000Z',
+    }],
+  }));
+
+  const ledger = buildLedger({ repoRoot: root, now: new Date('2026-10-03T00:00:00Z') });
+  const card = ledger.campaigns.find((c) => c.sessionPath.includes('stale-session'));
+  assert.equal(card.staleReceipts.count, 1, 'completed journal + session advanced + no in-flight → alarm');
+  assert.equal(card.staleReceipts.units[0].reviewUnitId, 'u1');
+  assert.equal(card.staleReceipts.units[0].journalPath, 'tmp/api-reference-sync/j-stale.jsonl');
+});
+
+test('staleReceipts stays silent for normal awaiting-acceptance and unprovable cases', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  writeExecutionJournal(write, 'tmp/api-reference-sync/j-fresh.jsonl', { completed: true });
+  writeExecutionJournal(write, 'tmp/api-reference-sync/j-nosentinel.jsonl', { completed: false });
+  const pending = (reviewUnitId, journal, executedAt) => ({
+    reviewUnitId, executionJournalPath: path.join(root, journal), executedAt,
+  });
+  write('tmp/sdk-release-scout/mixed-session.json', sessionFixture({
+    pendingExecutions: [
+      // Fresh: under the age floor — the operator may simply not have turned
+      // to this unit yet.
+      pending('u1', 'tmp/api-reference-sync/j-fresh.jsonl', '2026-10-02T20:00:00.000Z'),
+      // Session never advanced past the execution: updatedAt == executedAt.
+      pending('u2', 'tmp/api-reference-sync/j-fresh.jsonl', '2026-10-02T00:00:00.000Z'),
+      // Journal mid-flight (no completion sentinel) or missing entirely:
+      // nothing provable, no alarm.
+      pending('u3', 'tmp/api-reference-sync/j-nosentinel.jsonl', '2026-10-01T00:00:00.000Z'),
+      pending('u4', 'tmp/api-reference-sync/j-missing.jsonl', '2026-10-01T00:00:00.000Z'),
+    ],
+  }));
+  // updatedAt 2026-10-02T00:00Z advanced past u1/u3/u4's executions only.
+  const ledger = buildLedger({ repoRoot: root, now: new Date('2026-10-05T00:00:00Z') });
+  const card = ledger.campaigns.find((c) => c.sessionPath.includes('mixed-session'));
+  assert.deepEqual(card.staleReceipts, { count: 0, units: [] });
+
+  // An active execution/rollback means work IS in flight — nothing is stale.
+  write('tmp/sdk-release-scout/inflight-session.json', sessionFixture({
+    activeExecution: { reviewUnitId: 'u1', executionJournalDigest: 'sha256:' + 'c'.repeat(64) },
+    pendingExecutions: [pending('u1', 'tmp/api-reference-sync/j-fresh.jsonl', '2026-10-01T00:00:00.000Z')],
+  }));
+  const inflight = buildLedger({ repoRoot: root, now: new Date('2026-10-05T00:00:00Z') });
+  const inflightCard = inflight.campaigns.find((c) => c.sessionPath.includes('inflight-session'));
+  assert.equal(inflightCard.staleReceipts.count, 0, 'in-flight execution suppresses the alarm');
+});
+
 test('finalized sessions sort after active work; session scanStateKey wins', (t) => {
   const { root, write } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

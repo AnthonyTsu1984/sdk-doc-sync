@@ -16,6 +16,7 @@ const {
   readDailyReport,
   SENTINELS,
   trackScanStateKey,
+  registryTrackKey,
 } = require('../../scripts/dashboard/ledger.js');
 const {
   buildCampaignDetail,
@@ -270,4 +271,50 @@ test('trackScanStateKey derivation', () => {
   assert.equal(trackScanStateKey('cpp', 'v2.6.x'), 'cpp-v26');
   assert.equal(trackScanStateKey('python', null), 'python');
   assert.equal(trackScanStateKey('node', 'v2.4.9'), 'node-v24');
+});
+
+test('registryTrackKey: explicit scanStateKey override wins over derivation', () => {
+  assert.equal(registryTrackKey('go', { version: 'v3.0.x', scanStateKey: 'go-v3' }), 'go-v3');
+  assert.equal(registryTrackKey('python', { version: 'v2.6.x' }), 'python-v26');
+  assert.equal(registryTrackKey('node', { version: 'v2.4.x', scanStateKey: '' }), 'node-v24');
+  assert.equal(registryTrackKey('rest', null), 'rest');
+});
+
+test('buildSkillTracks counts a campaign on its overridden (real) scan-state key', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    schemaVersion: 1,
+    languages: {
+      python: {
+        sdkName: 'pymilvus',
+        tracks: [
+          { version: 'v2.6.x', scanStateKey: 'python' },
+          { version: 'v3.0.x', scanStateKey: 'python-v3' },
+        ],
+      },
+    },
+  });
+
+  // Real-world shape: sessions carry the durable key scan-state owns —
+  // bare-major (python-v3) or language-only (python), never the derived
+  // <language>-v<major><minor> form.
+  const campaigns = [
+    { sessionPath: 'py-final.json', scanState: { key: 'python-v3' }, health: 'finalized' },
+    { sessionPath: 'py-active.json', scanState: { key: 'python' }, health: 'active' },
+    { sessionPath: 'py-legacy.json', scanState: { key: 'python-v30' }, health: 'active' },
+  ];
+  const tracks = buildSkillTracks(root, campaigns);
+  const python = tracks.languages.find((l) => l.name === 'python');
+  const v26 = python.tracks.find((tr) => tr.version === 'v2.6.x');
+  const v30 = python.tracks.find((tr) => tr.version === 'v3.0.x');
+  assert.equal(v26.key, 'python');
+  assert.equal(v26.campaigns.total, 1);
+  assert.equal(v30.key, 'python-v3');
+  assert.equal(v30.campaigns.total, 1);
+  assert.equal(v30.campaigns.finalized, 1);
+  // The derived key matches nothing once the override pins the real one: a
+  // session still carrying python-v30 stays uncounted (the UI footer lists
+  // it as 未登记) instead of being silently misattributed.
 });

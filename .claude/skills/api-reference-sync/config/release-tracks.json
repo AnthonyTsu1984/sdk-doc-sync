@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-06",
-  "comment": "Machine-readable release-track registry: per-track Bitable bases, Drive release roots, and track order (oldest first). Identities mirror the published tables in sdk-*.md; adjacency is implicit in track order. drive.releaseRoot.resolution: 'configured-root' = the configured Drive root is the release root; 'explicit-child' = the configured root is a multi-version container and the release root is an explicit child folder; 'unresolved' = no verified release root on file.",
+  "updatedAt": "2026-10-08",
+  "comment": "Machine-readable release-track registry: per-track Bitable bases, Drive release roots, and track order (oldest first). Identities mirror the published tables in sdk-*.md; adjacency is implicit in track order. drive.releaseRoot.resolution: 'configured-root' = the configured Drive root is the release root; 'explicit-child' = the configured root is a multi-version container and the release root is an explicit child folder; 'unresolved' = no verified release root on file. track.scanStateKey: optional explicit override of the derived <language>-v<major><minor> key, pinning the track to the durable key scan-state.json actually owns (bare-major or language-only keys: python-v3, go, go-v3, node, node-v26).",
   "languages": {
     "cpp": {
       "sdkName": "milvus-sdk-cpp",
@@ -69,6 +69,7 @@
         },
         {
           "version": "v2.6.x",
+          "scanStateKey": "node-v26",
           "bitable": {
             "baseToken": "R9i8bww4faNsR6smwQwcAtHGnkb",
             "tableId": null
@@ -83,6 +84,7 @@
         },
         {
           "version": "v3.0.x",
+          "scanStateKey": "node",
           "bitable": {
             "baseToken": "LlrPbysPZau2dGsSVuicHmvCn0e",
             "tableId": null
@@ -130,6 +132,7 @@
         },
         {
           "version": "v2.6.x",
+          "scanStateKey": "python",
           "bitable": {
             "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc",
             "tableId": null
@@ -144,6 +147,7 @@
         },
         {
           "version": "v3.0.x",
+          "scanStateKey": "python-v3",
           "bitable": {
             "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a",
             "tableId": null
@@ -238,6 +242,7 @@
       "tracks": [
         {
           "version": "v2.6.x",
+          "scanStateKey": "go",
           "bitable": {
             "baseToken": "Yc7gbtmgSal2ewsdqlhcLWVanbh",
             "tableId": null
@@ -252,6 +257,7 @@
         },
         {
           "version": "v3.0.x",
+          "scanStateKey": "go-v3",
           "bitable": {
             "baseToken": "KQT5bV62QaioKisKZT0crwZDnke",
             "tableId": null

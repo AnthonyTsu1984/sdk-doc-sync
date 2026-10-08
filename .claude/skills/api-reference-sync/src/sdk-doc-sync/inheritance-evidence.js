@@ -52,15 +52,35 @@ function digestInheritanceEvidence(value) {
   return sha256Digest(Buffer.from(canonicalStringify(canonicalEvidence(value)), 'utf8'));
 }
 
-function createInheritanceEvidence({
-  stableId,
-  current,
-  target,
-  sharedTokenStatus,
-  referencedRecordIds = [],
-  trackInventoryDigests = {},
-  collectedAt = '1970-01-01T00:00:00.000Z',
-} = {}) {
+// py-v30 wall rule (rule-candidate:api-reference-sync:inheritance-evidence-named-args,
+// harnessed 2026-10-08): this is strictly a named-argument factory. Passing an
+// ALREADY-MINTED evidence object silently loses sharedTokenStatus (the minted
+// shape carries a `sharedToken` object, not the named `sharedTokenStatus`
+// string), so the re-mint lands with status "unknown" and only surfaces
+// downstream as SHARED_TOKEN_EVIDENCE_UNKNOWN — and re-minting from corrupted
+// evidence cements the damage. Fail loud at the call site instead.
+function createInheritanceEvidence(args = {}) {
+  if (args && typeof args === 'object' && !Array.isArray(args)
+    && (Object.hasOwn(args, 'sharedToken') || Object.hasOwn(args, 'evidenceDigest'))) {
+    throw Object.assign(
+      new Error(
+        'INHERITANCE_EVIDENCE_REMINT_FORBIDDEN: createInheritanceEvidence takes named arguments '
+        + '(stableId/current/target/sharedTokenStatus/referencedRecordIds/trackInventoryDigests/collectedAt); '
+        + 'the argument carries a minted evidence object (sharedToken/evidenceDigest), and re-minting '
+        + 'from it silently drops sharedTokenStatus. Rebuild the evidence from the original live enumeration.',
+      ),
+      { code: 'INHERITANCE_EVIDENCE_REMINT_FORBIDDEN' },
+    );
+  }
+  const {
+    stableId,
+    current,
+    target,
+    sharedTokenStatus,
+    referencedRecordIds = [],
+    trackInventoryDigests = {},
+    collectedAt = '1970-01-01T00:00:00.000Z',
+  } = args || {};
   const evidence = {
     schemaVersion: 1,
     stableId: stableId || null,

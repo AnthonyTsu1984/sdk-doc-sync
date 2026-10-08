@@ -130,11 +130,25 @@ function compareTags(a, b) {
   return 0;
 }
 
-// scan-state key for a session: `<language>-v<major><minor>` for versioned
-// tracks, else the bare language. Mirrors session-start.cjs derivation; the
-// session's own scanStateKey wins when present.
-function scanStateKeyFor(session) {
+// scan-state key for a session: the session's own scanStateKey stamp wins;
+// else the registry's explicit per-track override for (language, track);
+// else `<language>-v<major><minor>` derivation, else the bare language.
+// The registry consult matters for intake-phase sessions that carry no stamp
+// yet live on tracks whose durable keys are bare-major or language-only
+// (python-v3, go-v3, node-v26) — the derivation would invent go-v30, a key
+// scan-state has never owned, and the campaign would drop off its track.
+function scanStateKeyFor(session, registry = null) {
   if (typeof session.scanStateKey === 'string' && session.scanStateKey) return session.scanStateKey;
+  if (registry && typeof session.track === 'string') {
+    // Array.isArray guard: a malformed-but-parseable registry must degrade to
+    // derivation like every other bad file here, never fail the ledger build.
+    const tracks = registry?.languages?.[session.language]?.tracks;
+    const track = (Array.isArray(tracks) ? tracks : [])
+      .find((candidate) => candidate && candidate.version === session.track);
+    if (track && typeof track.scanStateKey === 'string' && track.scanStateKey) {
+      return track.scanStateKey;
+    }
+  }
   const match = /^v(\d+)\.(\d+)\./.exec(String(session.track || ''));
   if (match) return `${session.language}-v${match[1]}${match[2]}`;
   return session.language || null;
@@ -166,7 +180,8 @@ function summarizeChangeRequests(session) {
   return { entries: entries.length, units: open.length, openUnits: open };
 }
 
-function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
+function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState,
+  registry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH))) {
   const units = (session.reviewUnitManifest?.units?.length) || 0;
   const acceptedUnits = Array.isArray(session.acceptedReviewUnits) ? session.acceptedReviewUnits : [];
   let targetTag = null;
@@ -176,7 +191,7 @@ function buildCampaignCard(repoRoot, sessionRelativePath, session, scanState) {
   if (releaseScopeRelative) {
     targetTag = readJsonOrNull(path.join(repoRoot, releaseScopeRelative))?.targetTag ?? null;
   }
-  const key = scanStateKeyFor(session);
+  const key = scanStateKeyFor(session, registry);
   const lastScannedTag = key ? scanState?.[key]?.lastScannedTag ?? null : null;
   const advancedPast = targetTag && lastScannedTag
     ? !Number.isNaN(compareTags(lastScannedTag, targetTag)) && compareTags(lastScannedTag, targetTag) >= 0
@@ -957,12 +972,17 @@ function buildLedger({ repoRoot, checkouts, now = new Date() } = {}) {
     ? checkouts
     : [{ id: 'main', label: '主检出', root: repoRoot }];
   const campaigns = [];
+  // Track identity is governed by the HOST registry (the one admission pins
+  // and buildSkillTracks keys tracks by) — NOT the session's own checkout
+  // registry, which on a sibling worktree can predate the overrides and
+  // re-derive keys scan-state never owned (the #124 incident shape).
+  const hostRegistry = readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH));
   for (const checkout of effectiveCheckouts) {
     const scanState = readJsonOrNull(path.join(checkout.root, SCAN_STATE_RELATIVE_PATH));
     for (const relative of walkSessionFiles(checkout.root)) {
       const session = readJsonOrNull(path.join(checkout.root, relative));
       if (!session || !session.schemaVersion || typeof session.status !== 'string') continue;
-      const card = buildCampaignCard(checkout.root, relative, session, scanState);
+      const card = buildCampaignCard(checkout.root, relative, session, scanState, hostRegistry);
       // Board-facing identity: checkout-qualified so sibling-worktree cards
       // can never collide with main-checkout paths.
       card.checkout = checkout.id;

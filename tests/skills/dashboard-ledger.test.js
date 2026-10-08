@@ -194,3 +194,66 @@ test('computeNextDailyRun and scanStateKeyFor unit behavior', () => {
   assert.equal(scanStateKeyFor({ language: 'rest', track: null }), 'rest');
   assert.equal(scanStateKeyFor({ language: 'java', track: 'v3.0.x', scanStateKey: 'explicit' }), 'explicit');
 });
+
+test('scanStateKeyFor consults the registry override before deriving', () => {
+  const registry = { languages: { go: { tracks: [
+    { version: 'v2.6.x', scanStateKey: 'go' },
+    { version: 'v3.0.x', scanStateKey: 'go-v3' },
+  ] } } };
+
+  // Intake-phase sessions carry no stamp — the registry pins their track to
+  // the durable key scan-state owns instead of deriving go-v30 (nonexistent).
+  assert.equal(scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, registry), 'go-v3');
+  assert.equal(scanStateKeyFor({ language: 'go', track: 'v2.6.x' }, registry), 'go');
+  // The session's own stamp always wins over the registry override.
+  assert.equal(scanStateKeyFor({ language: 'go', track: 'v3.0.x', scanStateKey: 'stamped' }, registry), 'stamped');
+  // No matching track in the registry, registry without overrides, or no
+  // registry at all → derivation is the fallback (legacy behavior).
+  assert.equal(scanStateKeyFor({ language: 'go', track: 'v2.4.x' }, registry), 'go-v24');
+  assert.equal(scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, { languages: { go: { tracks: [{ version: 'v3.0.x' }] } } }), 'go-v30');
+  assert.equal(scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, null), 'go-v30');
+  // Malformed-but-parseable registry degrades to derivation, never throws
+  // (fail-open contract of the ledger build).
+  assert.equal(
+    scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, { languages: { go: { tracks: { 'v3.0.x': { scanStateKey: 'go-v3' } } } } }),
+    'go-v30',
+    'non-array tracks falls back to derivation',
+  );
+  assert.equal(
+    scanStateKeyFor({ language: 'go', track: 'v3.0.x' }, { languages: null }),
+    'go-v30',
+    'null languages object falls back safely',
+  );
+});
+
+test('an unstamped intake session counts on its registry-pinned track', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  write('.claude/skills/api-reference-sync/config/release-tracks.json', {
+    schemaVersion: 1,
+    languages: {
+      go: { sdkName: 'milvus-sdk-go', tracks: [
+        { version: 'v2.6.x', scanStateKey: 'go' },
+        { version: 'v3.0.x', scanStateKey: 'go-v3' },
+      ] },
+    },
+  });
+  // Real-world shape of the go intake session: no scanStateKey stamp, track
+  // v3.0.x — derivation alone would yield go-v30 and drop off the track.
+  write('tmp/sdk-release-scout/go-v30-session.json', sessionFixture({
+    sessionId: 'sdk-doc-sync:go:milvus-sdk-go:v3.0.x:sha256:1',
+    language: 'go', sdkName: 'milvus-sdk-go', track: 'v3.0.x', status: 'in_progress',
+  }));
+  write('.claude/skills/api-reference-sync/scan-state.json', {
+    'go-v3': { lastScannedTag: 'client/v3.0.0-beta' },
+  });
+
+  const ledger = buildLedger({ repoRoot: root });
+  const card = ledger.campaigns.find((c) => c.sessionPath === 'tmp/sdk-release-scout/go-v30-session.json');
+  assert.equal(card.scanState.key, 'go-v3');
+  const go = ledger.skillTracks.languages.find((l) => l.name === 'go');
+  const v30 = go.tracks.find((tr) => tr.version === 'v3.0.x');
+  assert.equal(v30.key, 'go-v3');
+  assert.equal(v30.campaigns.active, 1, 'unstamped go intake session counts as active on go-v3');
+});

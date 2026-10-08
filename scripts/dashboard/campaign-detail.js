@@ -12,6 +12,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const {
+  RELEASE_TRACKS_RELATIVE_PATH,
   SCAN_STATE_RELATIVE_PATH,
   SESSION_SCAN_ROOTS,
   buildCampaignCard,
@@ -103,7 +104,7 @@ function buildFileRows(session, releaseScope) {
   return rows;
 }
 
-function buildCampaignDetail({ repoRoot, sessionPath }) {
+function buildCampaignDetail({ repoRoot, sessionPath, registry }) {
   if (!repoRoot) throw new Error('buildCampaignDetail requires repoRoot');
   const normalized = typeof sessionPath === 'string' ? sessionPath.split(path.sep).join('/') : sessionPath;
   if (!normalized || !sessionPathAllowed(repoRoot, normalized)) {
@@ -114,7 +115,18 @@ function buildCampaignDetail({ repoRoot, sessionPath }) {
     return { ok: false, error: `not a durable review session: ${normalized}` };
   }
   const scanState = readJsonOrNull(path.join(repoRoot, SCAN_STATE_RELATIVE_PATH));
-  const card = buildCampaignCard(repoRoot, normalized, session, scanState);
+  // Track identity follows the caller's (host) registry when provided — the
+  // board keys cards by the host registry, and a detail view resolved from a
+  // sibling checkout's older registry must not disagree with the board.
+  const card = buildCampaignCard(
+    repoRoot,
+    normalized,
+    session,
+    scanState,
+    registry === undefined
+      ? readJsonOrNull(path.join(repoRoot, RELEASE_TRACKS_RELATIVE_PATH))
+      : registry,
+  );
 
   const releaseScopeRelative = card.artifacts.releaseScope
     ? card.artifacts.releaseScope

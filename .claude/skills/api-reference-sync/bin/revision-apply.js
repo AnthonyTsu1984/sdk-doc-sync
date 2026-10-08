@@ -145,6 +145,36 @@ function readJson(file) {
     return JSON.parse(fs.readFileSync(path.resolve(file), 'utf8'));
 }
 
+// The docx list endpoint returns a flat array whose `children` fields are
+// block-id strings, but every verification consumer here (pageFactsFromBlocks,
+// blocksToMarkdown) is tree-shaped: a callout's child lines must be read at
+// their nested position or a governed "Notes" title reads as a top-level
+// internal-note leak and the callout body vanishes from the compared text.
+// Rebuild the hierarchy from the page block before verification.
+function assembleBlockTree(flatItems) {
+    const byId = new Map(flatItems.map((block) => [block.block_id, block]));
+    const attach = (block) => {
+        if (Array.isArray(block.children)) {
+            block.children = block.children
+                .map((child) => {
+                    // Idempotent: an already-assembled object passes through —
+                    // a second assembly over shared state must not silently
+                    // drop children (Map.get on an object id returns nothing).
+                    if (typeof child === 'object' && child !== null) return child;
+                    return byId.get(child);
+                })
+                .filter(Boolean)
+                .map(attach);
+        }
+        return block;
+    };
+    const page = flatItems.find((block) => block.block_type === 1);
+    const roots = page && Array.isArray(page.children)
+        ? page.children.map((childId) => byId.get(childId)).filter(Boolean)
+        : flatItems;
+    return roots.map(attach);
+}
+
 function loadContextEntries(filePath) {
     const raw = readJson(filePath);
     const container = raw.contexts || raw.byStableId || raw.bySlug || null;
@@ -310,7 +340,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // authored base from the live block tree instead (blocksToMarkdown is
     // proven canonical against raw_content by its fixture set). The raw
     // bytes stay bound as the rollback capsule and the terminal comparator.
-    const priorBlocks = await fetchBlocksFn(documentToken);
+    const priorBlocks = assembleBlockTree(await fetchBlocksFn(documentToken));
     const baseContent = blocksToMarkdown(priorBlocks);
     const priorRawContent = await fetchRawContentFn(documentToken);
     // Record state capture (BEFORE any mutation): the acceptance contract
@@ -429,7 +459,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // them once), so a raw projection can disagree with a correct page.
     let liveBlocks;
     try {
-        liveBlocks = await fetchBlocksFn(documentToken);
+        liveBlocks = assembleBlockTree(await fetchBlocksFn(documentToken));
         assertLiveLayoutConformance(documentToken, liveBlocks);
     } catch (error) {
         failJournal(error.code ? `${error.code}: ${error.message}` : error.message);
@@ -537,6 +567,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 }
 
 module.exports = {
+    assembleBlockTree,
     buildRevisionBatch,
     rebuildPage,
     runCli,

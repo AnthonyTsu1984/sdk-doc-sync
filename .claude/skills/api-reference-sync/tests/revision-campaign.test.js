@@ -13,7 +13,9 @@ const {
     loadReviewSessionState,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { intakeRevisionSession, main: intakeMain } = require('../bin/revision-intake');
-const { buildRevisionBatch, runCli: applyRunCli } = require('../bin/revision-apply');
+const { assembleBlockTree, buildRevisionBatch, runCli: applyRunCli } = require('../bin/revision-apply');
+const { checkLayoutConformance, pageFactsFromBlocks } = require('../src/sdk-doc-sync/layout-conformance');
+const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
 const STABLE_ID = 'java:v3-LexicalHighlighter';
 const UNIT_ID = `review:${STABLE_ID}`;
@@ -404,4 +406,99 @@ test('revision-apply refuses an existing execution journal', async () => {
         }),
         (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
     );
+});
+
+// The docx list endpoint returns a flat array whose `children` are block-id
+// strings. Incident 2026-10-08 (StructFieldSchema): feeding that flat list to
+// the verification consumers read the callout's governed "Notes" title as a
+// top-level internal-note leak and REVISION_LAYOUT_VERIFY_FAILED refused a
+// correctly landed page. The executor must assemble the tree first.
+const CALLOUT_FLAT_BLOCKS = [
+    { block_id: 'page-1', block_type: 1, children: ['blk-a', 'blk-c', 'blk-e'] },
+    { block_id: 'blk-a', block_type: 2, text: { elements: [{ text_run: { content: 'A LexicalHighlighter instance highlights query terms in search results.' } }] } },
+    { block_id: 'blk-c', block_type: 19, callout: { background_color: 2, border_color: 2, emoji_id: 'blue_book' }, children: ['blk-c1', 'blk-c2'] },
+    { block_id: 'blk-c1', block_type: 2, text: { elements: [{ text_run: { content: 'Notes' } }] } },
+    { block_id: 'blk-c2', block_type: 2, text: { elements: [{ text_run: { content: 'This class cannot be explicitly instantiated. You need to describe a collection with an Array of Structs field to view its instances.' } }] } },
+    { block_id: 'blk-e', block_type: 2, text: { elements: [{ text_run: { content: 'The highlighted segments preserve the original term order.' } }] } },
+];
+
+test('flat docx lists read callout children as a note leak until assembled into a tree', () => {
+    const flatFacts = pageFactsFromBlocks(CALLOUT_FLAT_BLOCKS);
+    const flatViolations = checkLayoutConformance(sdkLayoutProfiles.java, flatFacts).violations;
+    assert.ok(
+        flatViolations.some((violation) => violation.code === 'INTERNAL_NOTE_LEAK'),
+        'pre-condition: the raw flat list must reproduce the incident',
+    );
+
+    const tree = assembleBlockTree(CALLOUT_FLAT_BLOCKS);
+    const callout = tree.find((block) => block.block_type === 19);
+    assert.equal(callout.children.length, 2);
+    assert.equal(callout.children[0].text.elements[0].text_run.content, 'Notes');
+    const treeViolations = checkLayoutConformance(sdkLayoutProfiles.java, pageFactsFromBlocks(tree)).violations;
+    assert.equal(
+        treeViolations.filter((violation) => violation.code === 'INTERNAL_NOTE_LEAK').length,
+        0,
+    );
+});
+
+test('revision-apply verifies a landed callout page when the live fetch returns the flat list', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-apply-callout-'));
+    const scope = scopeFixture();
+    const scopePath = writeJson(directory, 'scope.json', scope);
+    const alertFixedContent = [
+        'A LexicalHighlighter instance highlights query terms in search results.',
+        '',
+        '<div class="alert note">',
+        '',
+        'This class cannot be explicitly instantiated. You need to describe a collection with an Array of Structs field to view its instances.',
+        '',
+        '</div>',
+        '',
+        'The highlighted segments preserve the original term order.',
+        '',
+    ].join('\n');
+    const contexts = contextsFixture();
+    contexts.contexts[STABLE_ID].verbatimContent = alertFixedContent;
+    const contextsPath = writeJson(directory, 'contexts.json', contexts);
+    const sessionPath = createSessionFixture(directory, scope);
+
+    const batch = buildRevisionBatch({
+        stableId: STABLE_ID,
+        reviewUnitId: UNIT_ID,
+        documentToken: 'tokA',
+        recordId: 'recA',
+        fixedContent: alertFixedContent,
+        sources: [],
+    });
+
+    const runManifestPath = path.resolve('tmp', 'api-reference-sync', `run-manifest-revision-apply-${UNIT_ID.replace(/[^A-Za-z0-9-]/g, '-')}.json`);
+    if (fs.existsSync(runManifestPath)) fs.rmSync(runManifestPath);
+
+    const result = await applyRunCli({
+        argv: [
+            'node', 'revision-apply',
+            '--session', sessionPath,
+            '--review-unit-id', UNIT_ID,
+            '--scope', scopePath,
+            '--contexts', contextsPath,
+            '--approve-digest', batch.batchDigest,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
+            '--journal', path.join(directory, 'execution.jsonl'),
+            '--json',
+        ],
+        dependencies: {
+            fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+            reopenRecord: async () => 'reopened',
+            fetchRawContent: async () => `# LexicalHighlighter\n${BASE_CONTENT}`,
+            fetchBlocks: async () => CALLOUT_FLAT_BLOCKS,
+            rebuildPage: async () => 4,
+        },
+    });
+
+    assert.equal(result.status, 'EXECUTED');
+    const completion = JSON.parse(fs.readFileSync(path.join(directory, 'execution.jsonl'), 'utf8').trim().split('\n').pop());
+    assert.equal(completion.status, 'executed');
+    assert.equal(completion.completionSentinel, true);
+    fs.rmSync(runManifestPath, { force: true });
 });

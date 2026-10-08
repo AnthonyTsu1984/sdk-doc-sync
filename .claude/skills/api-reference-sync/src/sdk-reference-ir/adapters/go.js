@@ -15,6 +15,23 @@ function toReferenceDocument(symbol, context = {}) {
   if (!kind) throw new TypeError(`Unsupported Go scanner kind: ${symbol.kind}`);
   const evidence = common.collectEvidence(symbol, context);
   if (kind === 'struct' || kind === 'class') {
+    // Go doc comments conventionally open with the member name ("Clone
+    // returns …"); house style is verb-first without the echo. Strip the
+    // prefix only when it is followed by a lowercase verb word — a noun
+    // phrase ("Name of the field") stays untouched.
+    const stripGoDocPrefix = (member) => {
+      const raw = String(member.description || '');
+      const echo = member.name ? `${member.name} ` : '';
+      if (echo && raw.startsWith(echo)) {
+        const rest = raw.slice(echo.length);
+        const next = /^([a-z]+)/.exec(rest);
+        const nounStarters = new Set(['is', 'are', 'was', 'of', 'the', 'a', 'an', 'to', 'for', 'field', 'fields']);
+        if (next && !nounStarters.has(next[1])) {
+          return { ...member, description: rest[0].toUpperCase() + rest.slice(1) };
+        }
+      }
+      return member;
+    };
     const signatures = symbol.signature
       ? [common.makeSignature(symbol.signature, [], evidence, { symbol, context })]
       : [];
@@ -25,14 +42,17 @@ function toReferenceDocument(symbol, context = {}) {
       }, evidence, { symbol, context }))
       : [];
     const callableMembers = Array.isArray(context.callableMembers)
-      ? context.callableMembers.map((member) => common.makeCallableMember(
-        member.kind || 'option',
-        member,
-        evidence,
-        member.signature || member.fullSignature || '',
-        member.inputs || [],
-        { symbol, context },
-      ))
+      ? context.callableMembers.map((member) => {
+        const resolvedKind = member.kind || 'option';
+        return common.makeCallableMember(
+          resolvedKind,
+          resolvedKind === 'implementation' ? stripGoDocPrefix(member) : member,
+          evidence,
+          member.signature || member.fullSignature || '',
+          member.inputs || [],
+          { symbol, context },
+        );
+      })
       : [];
     // Struct pages carry real methods too (upstream **METHODS:** sections —
     // Field.GetDim): the scanner extracts them, and dropping them lost
@@ -57,22 +77,31 @@ function toReferenceDocument(symbol, context = {}) {
       .filter((method) => !callableMembers.some((member) => member.name === method.name))
       .map((method) => common.makeCallableMember(
         'implementation',
-        method,
+        stripGoDocPrefix(method),
         evidence,
         methodSignatureDisplay(method),
         [],
         { symbol, context },
       ));
-    // Reviewed upstream FIELDS: the web-content type pages carry curated
-    // field descriptions; prefer the reviewed context result over the bare
-    // scanner shape when one is supplied.
-    const result = context.result
-      ? common.makeResult(context.result, evidence, { symbol, context })
+    // Struct fields without prose (Go field declarations carry no doc
+    // comments) get the deterministic value-oriented sentence the result
+    // channel already uses — the ⑨ content rule requires non-empty
+    // descriptions on every rendered entry.
+    const fieldSentence = (field) => ({
+      ...field,
+      description: field.description && String(field.description).trim() !== ''
+        ? field.description
+        : `The ${field.name} of the ${symbol.name}.`,
+    });
+    const resultFields = ((context.result ? context.result.fields : (symbol.fields || [])) || [])
+      .map(fieldSentence);
+    const result = (context.result
+      ? common.makeResult({ ...context.result, fields: resultFields }, evidence, { symbol, context })
       : common.makeResult({
         type: symbol.name,
         description: symbol.docstring || '',
-        fields: symbol.fields || [],
-      }, evidence, { symbol, context });
+        fields: resultFields,
+      }, evidence, { symbol, context }));
     return common.buildReferenceDocument({
       symbol,
       context,

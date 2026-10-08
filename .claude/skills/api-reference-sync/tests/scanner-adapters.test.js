@@ -970,6 +970,29 @@ test('Go struct adapter carries scanner methods as implementation-kind callable 
   assert.match(byKind.implementation[0].signature.display, /GetDim\(\) \(int64, error\)/);
   assert.equal(byKind.implementation[0].description, 'Returns the vector dimension of the field.');
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+
+  // Struct fields without prose get the deterministic value-oriented
+  // sentence (⑨: no empty descriptions), and Go doc name echoes ("Clone
+  // returns …") strip to verb-first house style — noun phrases stay.
+  const bare = goAdapter.toReferenceDocument({
+    name: 'Conn',
+    kind: 'struct',
+    signature: 'type Conn struct {\n    Addr string\n}',
+    fields: [{ name: 'Addr', type: 'string' }],
+    params: [],
+    methods: [
+      { name: 'Clone', params: '', returnType: '*Conn', description: 'Clone returns a deep copy of the connection.' },
+      { name: 'Name', params: '', returnType: 'string', description: 'Name of the connection.' },
+    ],
+    filePath: 'client/entity/conn.go',
+    lineNumber: 8,
+    pkg: 'entity',
+  }, context('go', 'Collections', { summary: 'A Conn instance wraps a connection.', examples: [] }));
+  assert.equal(bare.result.fields[0].description, 'The Addr of the Conn.');
+  const byName = new Map(bare.callableMembers.map((member) => [member.name, member]));
+  assert.equal(byName.get('Clone').description, 'Returns a deep copy of the connection.');
+  assert.equal(byName.get('Name').description, 'Name of the connection.');
+  assert.equal(validateReferenceDocument(bare, { production: true }).valid, true);
 });
 
 test('Go preserves real interface method signatures with derived evidence', () => {

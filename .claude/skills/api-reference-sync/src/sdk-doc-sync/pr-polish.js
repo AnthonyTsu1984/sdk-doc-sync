@@ -339,8 +339,22 @@ function validateRestructureManifest({ manifest, baseContent } = {}) {
         errors.push(polishError('PR_POLISH_SOURCE_CITATION_REQUIRED', 'sources must be an array when present'));
         return { errors };
     }
+    if (manifest.sanctionedIncludeRemovals !== undefined) {
+        if (!Array.isArray(manifest.sanctionedIncludeRemovals)
+            || manifest.sanctionedIncludeRemovals.some((token) => typeof token !== 'string' || token.trim() === '')) {
+            errors.push(polishError(
+                'PR_POLISH_SANCTIONED_REMOVALS_INVALID',
+                'sanctionedIncludeRemovals must be an array of non-empty include-unit tokens when present',
+            ));
+            return { errors };
+        }
+    }
 
-    const comparison = compareSemanticContent({ upstreamContent: content, canonicalContent: manifest.replacementContent });
+    const comparison = compareSemanticContent({
+        upstreamContent: content,
+        canonicalContent: manifest.replacementContent,
+        options: { sanctionedIncludeRemovals: manifest.sanctionedIncludeRemovals },
+    });
     if (!comparison.ok) {
         errors.push(polishError(
             'PR_POLISH_SEMANTIC_CONTENT_LOST',

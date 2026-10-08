@@ -281,7 +281,20 @@ function extractSemanticMap(markdown) {
 }
 
 function codeBlockKey(block) {
-    return JSON.stringify([block.lang, block.lines]);
+    // 2026-10-08 widening (operator magic-tag ruling, second half): include
+    // MARKER lines inside code fences are representation, not payload — the
+    // same conditional wrap may be authored as literal <include> tags (live),
+    // magic comments (authored), or removed outright when the operator
+    // retires the condition (FieldSchema: Zilliz Cloud now supports
+    // elementType/maxCapacity). The key therefore compares content lines
+    // only; wrapped-line bytes remain fully compared.
+    const lines = block.lines.filter((line) => {
+        const trimmed = String(line).trim();
+        if (/^\/\/\s*include-(start|nextline|end)\b/.test(trimmed)) return false;
+        if (/^<include\s+target=/i.test(trimmed) || /^<\/include>$/i.test(trimmed)) return false;
+        return true;
+    });
+    return JSON.stringify([block.lang, lines]);
 }
 
 // Semantic equivalence: the canonical content preserves every upstream
@@ -289,7 +302,13 @@ function codeBlockKey(block) {
 // exact presence for the return type, RETURNS prose, and include markers.
 // Additions are format/source-driven and are governed at the polish manifest
 // (citations), not here — except code, which polish may never add or alter.
-function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
+//
+// options.sanctionedIncludeRemovals (2026-10-08, FieldSchema ruling): an
+// explicit, manifest-bound list of include units the operator ordered
+// removed (stale platform-availability conditions). Sanctioned units are
+// exempt from the survival check; ANY OTHER upstream unit still cannot
+// disappear silently.
+function compareSemanticContent({ upstreamContent, canonicalContent, options } = {}) {
     const upstream = extractSemanticMap(upstreamContent);
     const canonical = extractSemanticMap(canonicalContent);
     const diffs = [];
@@ -313,9 +332,13 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     const upstreamCode = upstream.codeBlocks.map(codeBlockKey);
     const canonicalCode = canonical.codeBlocks.map(codeBlockKey);
     const codeIndices = matchOrdered(upstreamCode, canonicalCode);
+    // The ALTERED-vs-DROPPED split must classify on the same filtered lines
+    // the key compares — raw counts would misread a marker-form change as a
+    // whole-block drop.
+    const filteredLineCount = (block) => JSON.parse(codeBlockKey(block))[1].length;
     upstream.codeBlocks.forEach((block, index) => {
         if (codeIndices[index] !== -1) return;
-        const partial = canonical.codeBlocks.some((candidate) => candidate.lang === block.lang && candidate.lines.length === block.lines.length);
+        const partial = canonical.codeBlocks.some((candidate) => candidate.lang === block.lang && filteredLineCount(candidate) === filteredLineCount(block));
         diffs.push({
             kind: partial ? 'CODE_BLOCK_ALTERED' : 'CODE_BLOCK_DROPPED',
             detail: block.lines.slice(0, 3).join(' / ') || block.lang,
@@ -404,7 +427,9 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     };
     const upstreamUnits = atomicMarkers(upstreamIncludes);
     const canonicalUnits = atomicMarkers(canonicalIncludes);
-    const droppedUnits = upstreamUnits.filter((unit) => !canonicalUnits.includes(unit));
+    const sanctioned = new Set((options && Array.isArray(options.sanctionedIncludeRemovals)
+        ? options.sanctionedIncludeRemovals : []).map((token) => String(token).trim()));
+    const droppedUnits = upstreamUnits.filter((unit) => !canonicalUnits.includes(unit) && !sanctioned.has(unit));
     if (droppedUnits.length > 0) {
         diffs.push({ kind: 'INCLUDE_MARKER_CHANGED', detail: `upstream marker(s) dropped: ${droppedUnits.slice(0, 2).join(' | ').slice(0, 200)}` });
     }

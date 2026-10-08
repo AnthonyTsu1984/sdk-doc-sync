@@ -374,6 +374,13 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         rationale: action.reason,
         replacementContent: entry.verbatimContent,
         sources,
+        // Operator-sanctioned include removals (2026-10-08 FieldSchema
+        // ruling): declared on the reviewed context entry, validated and
+        // honored by the semantic gate, bound into manifestDigest so the
+        // write-gate approval covers exactly these removals.
+        ...(Array.isArray(entry.sanctionedIncludeRemovals)
+            ? { sanctionedIncludeRemovals: entry.sanctionedIncludeRemovals }
+            : {}),
     };
     const { polishedContent, provenance } = applyPolishManifest({ manifest, baseContent });
 

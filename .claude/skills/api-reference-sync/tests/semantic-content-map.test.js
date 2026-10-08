@@ -366,3 +366,79 @@ test('code-fence includes normalize to operator magic tags on both sides (2026-1
     const plain = compareSemanticContent({ upstreamContent: PAGE, canonicalContent: PAGE });
     assert.equal(plain.ok, true, JSON.stringify(plain.diffs));
 });
+
+test('sanctioned include removals are operator-bound; code marker lines are not payload (2026-10-08 FieldSchema ruling)', () => {
+    const STALE = '<include target="milvus">Available only in self-hosted Milvus.</include>';
+    const upstream = [
+        '# createSchema()',
+        '',
+        'This operation creates a schema.',
+        '',
+        '```java',
+        'CreateCollectionReq.CollectionSchema.builder()',
+        '    .name(String name)',
+        '<include target="milvus">',
+        '    .elementType(DataType elementType)',
+        '</include>',
+        '    .isNullable(Boolean isNullable)',
+        '    .build();',
+        '```',
+        '',
+        '- `elementType(DataType elementType)`',
+        'The data type of elements in array fields. ' + STALE,
+        '',
+    ].join('\n');
+    // Canonical: fence unwrapped (markers removed), prose note removed.
+    const canonical = [
+        '# createSchema()',
+        '',
+        'This operation creates a schema.',
+        '',
+        '```java',
+        'CreateCollectionReq.CollectionSchema.builder()',
+        '    .name(String name)',
+        '    .elementType(DataType elementType)',
+        '    .isNullable(Boolean isNullable)',
+        '    .build();',
+        '```',
+        '',
+        '- `elementType(DataType elementType)`',
+        'The data type of elements in array fields.',
+        '',
+    ].join('\n');
+
+    // Without sanction: both the prose unit drop and the code marker change fail.
+    const unsanctioned = compareSemanticContent({ upstreamContent: upstream, canonicalContent: canonical });
+    assert.equal(unsanctioned.ok, false);
+    assert.ok(unsanctioned.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
+
+    // With the operator-sanctioned unit: the removal passes…
+    const sanctioned = compareSemanticContent({
+        upstreamContent: upstream,
+        canonicalContent: canonical,
+        options: { sanctionedIncludeRemovals: [STALE] },
+    });
+    assert.equal(sanctioned.ok, true, JSON.stringify(sanctioned.diffs));
+
+    // …but the wrapped CODE lines are still fully compared.
+    const contentAltered = compareSemanticContent({
+        upstreamContent: upstream,
+        canonicalContent: canonical.replace('.elementType(DataType elementType)', '.elementType(DataType type)'),
+        options: { sanctionedIncludeRemovals: [STALE] },
+    });
+    assert.equal(contentAltered.ok, false);
+    assert.ok(contentAltered.diffs.some((diff) => diff.kind === 'CODE_BLOCK_ALTERED'));
+
+    // An UNSANCTIONED prose unit elsewhere still cannot disappear.
+    const otherStale = upstream.replace(
+        'This operation creates a schema.',
+        'This operation creates a schema. <include target="zilliz">Legacy note.</include>'
+    );
+    const mixed = compareSemanticContent({
+        upstreamContent: otherStale,
+        canonicalContent: canonical,
+        options: { sanctionedIncludeRemovals: [STALE] },
+    });
+    assert.equal(mixed.ok, false);
+    assert.ok(mixed.diffs.some((diff) => diff.kind === 'INCLUDE_MARKER_CHANGED'));
+});

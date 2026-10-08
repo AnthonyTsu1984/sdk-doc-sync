@@ -65,6 +65,24 @@ test('registry identities match the published sdk reference tables', () => {
   }
 });
 
+test('rust registry identities match the published sdk-rust.md table', () => {
+  const registry = loadReleaseTrackRegistry();
+  const rustDoc = fs.readFileSync(
+    path.join(__dirname, '..', 'sdk-rust.md'),
+    'utf8',
+  );
+  for (const track of listLanguageTracks(registry, 'rust')) {
+    assert.ok(
+      rustDoc.includes(trackBaseToken(track)),
+      `rust ${track.version} base token must stay in sync with sdk-rust.md`,
+    );
+    assert.ok(
+      rustDoc.includes(trackReleaseRootToken(track)),
+      `rust ${track.version} release root must stay in sync with sdk-rust.md`,
+    );
+  }
+});
+
 test('registry resolution supports env references and rejects unresolved identities', () => {
   assert.equal(resolveIdentity({ env: 'TRACK_BASE' }, { TRACK_BASE: 'base-from-env' }), 'base-from-env');
   assert.equal(resolveIdentity({ env: 'TRACK_BASE' }, {}), null);

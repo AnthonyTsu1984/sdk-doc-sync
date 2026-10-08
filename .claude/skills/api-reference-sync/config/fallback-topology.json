@@ -30,10 +30,35 @@
   ],
   "sameNameInOneDirectory": "always-a-defect",
   "languages": {
-    "java": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
-    "cpp": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
-    "python": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
-    "node": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] },
-    "go": { "audit": true, "pageExemptions": [], "sameNameExemptions": [] }
+    "java": {
+      "audit": true,
+      "pageExemptions": [],
+      "sameNameExemptions": []
+    },
+    "cpp": {
+      "audit": true,
+      "pageExemptions": [],
+      "sameNameExemptions": []
+    },
+    "python": {
+      "audit": true,
+      "pageExemptions": [],
+      "sameNameExemptions": []
+    },
+    "node": {
+      "audit": true,
+      "pageExemptions": [],
+      "sameNameExemptions": []
+    },
+    "go": {
+      "audit": true,
+      "pageExemptions": [],
+      "sameNameExemptions": []
+    },
+    "rust": {
+      "audit": true,
+      "pageExemptions": [],
+      "sameNameExemptions": []
+    }
   }
 }

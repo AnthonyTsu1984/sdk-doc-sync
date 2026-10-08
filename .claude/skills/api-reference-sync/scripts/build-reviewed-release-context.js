@@ -20,6 +20,7 @@ const SDK_REFERENCE_BY_LANGUAGE = {
   java: 'sdk-java.md',
   node: 'sdk-node.md',
   python: 'sdk-python.md',
+  rust: 'sdk-rust.md',
   rest: 'sdk-rest.md',
   zilliz_cli: 'sdk-zilliz-cli.md',
   'zilliz-cli': 'sdk-zilliz-cli.md',

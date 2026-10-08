@@ -150,6 +150,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/review-session-store.test.js',
     '.claude/skills/api-reference-sync/tests/rollback-executor.test.js',
     '.claude/skills/api-reference-sync/tests/rollback-planner.test.js',
+    '.claude/skills/api-reference-sync/tests/rust-scanner.test.js',
     '.claude/skills/api-reference-sync/tests/scanner-adapters.test.js',
     '.claude/skills/api-reference-sync/tests/script-paths.test.js',
     '.claude/skills/api-reference-sync/tests/sdk-doc-sync-cli.test.js',

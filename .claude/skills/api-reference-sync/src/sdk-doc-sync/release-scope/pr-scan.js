@@ -19,6 +19,7 @@ const SDK_LANGUAGES = new Map([
   ['milvus-sdk-node', 'node'],
   ['milvus-sdk-go', 'go'],
   ['milvus-sdk-cpp', 'cpp'],
+  ['milvus-sdk-rust', 'rust'],
 ]);
 
 const API_PAGE_PATH = /^API_Reference\/([^/]+)\/(v[^/]+?\.x)\/(.+)\/([^/]+)\.md$/;
@@ -44,7 +45,7 @@ function defaultRunGh(args) {
  */
 function parseApiReferencePage(markdown) {
   const lines = (markdown || '').split('\n');
-  const page = { signature: null, requestMethods: [], values: [], footer: null };
+  const page = { signature: null, requestMethods: [], requestFields: [], values: [], footer: null };
   const footerMatch = markdown.match(FOOTER_META);
   if (footerMatch) {
     page.footer = { category: footerMatch[1], action: footerMatch[2], addedSince: footerMatch[3] };
@@ -53,12 +54,15 @@ function parseApiReferencePage(markdown) {
   let sawFirstFence = false;
   let section = null;
   for (const line of lines) {
-    if (line.trim() === '```cpp' || line.trim() === '```java') { inSignatureFence = true; continue; }
+    if (line.trim() === '```cpp' || line.trim() === '```java' || line.trim() === '```rust') { inSignatureFence = true; continue; }
     if (inSignatureFence) {
       if (line.trim() === '```') { inSignatureFence = false; sawFirstFence = true; continue; }
       if (!page.signature && !sawFirstFence && line.trim()) {
         const candidate = line.trim();
-        if (/\)\s*$/.test(candidate) || /^(?:enum\s+class|class|struct|public\s+(?:final\s+)?(?:class|enum))\s+\w+/.test(candidate)) {
+        if (/\)\s*$/.test(candidate) || /^(?:enum\s+class|class|struct|public\s+(?:final\s+)?(?:class|enum))\s+\w+/.test(candidate)
+          || /^(?:pub\s+)?(?:async\s+)?fn\s+\w+/.test(candidate)
+          || /^(?:pub\s+)?enum\s+\w+/.test(candidate)
+          || /^pub\s+struct\s+\w+/.test(candidate)) {
           page.signature = candidate;
         }
       }
@@ -71,10 +75,15 @@ function parseApiReferencePage(markdown) {
     // Java pages list request builders under BUILDER METHODS; cpp/go under
     // REQUEST METHODS. Both feed the same verification set.
     if (bullet && (section === 'REQUEST METHODS' || section === 'BUILDER METHODS')) page.requestMethods.push(bullet[1]);
+    // Rust/go anatomy declares request fields as `- `name: Type`` bullets
+    // under REQUEST FIELDS; they verify against the scanned request struct.
+    const fieldBullet = line.match(/^\s*-\s+`([A-Za-z_]\w*)\s*:/);
+    if (fieldBullet && section === 'REQUEST FIELDS') page.requestFields.push(fieldBullet[1]);
     const valueBullet = line.match(/^\s*-\s+`?([A-Za-z_]\w*)`?\s*$/);
-    if (valueBullet && section === 'VALUES') page.values.push(valueBullet[1]);
+    if (valueBullet && (section === 'VALUES' || section === 'VARIANTS')) page.values.push(valueBullet[1]);
   }
   page.requestMethods = [...new Set(page.requestMethods)];
+  page.requestFields = [...new Set(page.requestFields)];
   page.values = [...new Set(page.values)];
   return page;
 }
@@ -275,6 +284,11 @@ function verifyPageAgainstScan({ page, symbol, pageName, lexical, pageNameFound 
     for (const declaredMethod of page.requestMethods) {
       if (!available.has(declaredMethod) && !lexicalNames.has(declaredMethod)) {
         failures.push(`request method ${declaredMethod} not found on ${symbol.name} or in the pinned headers`);
+      }
+    }
+    for (const declaredField of page.requestFields) {
+      if (!available.has(declaredField) && !lexicalNames.has(declaredField)) {
+        failures.push(`request field ${declaredField} not found on ${symbol.name} at the pinned revision`);
       }
     }
     return { tier: 'method', failures };
@@ -521,15 +535,19 @@ async function runPrScan({
   // Secondary index for category-identified pages: java client methods and
   // type pages carry `category` on the scan symbol while their public
   // identity is the owning class (MilvusClientV2.query vs page Vector.query).
-  const targetByCategoryName = new Map(
-    resolvedTargetSymbols
-      .filter((symbol) => symbol.category)
-      .map((symbol) => [`${symbol.category}.${symbol.name}`, symbol]),
-  );
+  const targetByCategoryName = new Map();
   const scanSymbolsByName = new Map();
   for (const symbol of resolvedTargetSymbols) {
-    if (!scanSymbolsByName.has(symbol.name)) scanSymbolsByName.set(symbol.name, []);
-    scanSymbolsByName.get(symbol.name).push(symbol);
+    // Rust method names are snake_case while page titles are PascalCase;
+    // symbols may carry the evidence-derived `pageName` for that bridge.
+    const names = new Set([symbol.name, symbol.pageName].filter(Boolean));
+    if (symbol.category) {
+      for (const name of names) targetByCategoryName.set(`${symbol.category}.${name}`, symbol);
+    }
+    for (const name of names) {
+      if (!scanSymbolsByName.has(name)) scanSymbolsByName.set(name, []);
+      scanSymbolsByName.get(name).push(symbol);
+    }
   }
 
   const liveRecordBySlug = feishuRows

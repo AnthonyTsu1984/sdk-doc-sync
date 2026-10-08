@@ -10,6 +10,7 @@ const NodeScanner = require('../scanners/node-scanner');
 const GoScanner = require('../scanners/go-scanner');
 const CppScanner = require('../scanners/cpp-scanner');
 const ZillizCliScanner = require('../scanners/zilliz-cli-scanner');
+const RustScanner = require('../scanners/rust-scanner');
 const { createReleaseScope, validateReleaseScope } = require('./schema');
 const { defaultRunGit, resolveReleaseRange, changedFilesInRange } = require('./git-range');
 const { classifySymbolDeltas, filterSymbolsByChangedFiles, publicIdentity } = require('./symbol-inventory');
@@ -62,6 +63,7 @@ function scannerFor(language, sdkDir) {
   if (language === 'go') return new GoScanner({ rootDir: sdkDir, publicOnly: true });
   if (language === 'cpp') return new CppScanner({ rootDir: sdkDir, publicOnly: true });
   if (language === 'zilliz-cli') return new ZillizCliScanner({ rootDir: sdkDir, publicOnly: true });
+  if (language === 'rust') return new RustScanner({ rootDir: sdkDir, publicOnly: true });
   throw new Error(`Release scout scanner is not configured for ${language}`);
 }
 
@@ -592,6 +594,12 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
   }
   if (language === 'zilliz-cli' && track === 'v1.4.x') {
     return path.join(skillRoot, 'references', 'identity', 'zilliz-cli-v14.json');
+  }
+  if (language === 'rust' && track === 'v2.6.x') {
+    return path.join(skillRoot, 'references', 'identity', 'rust-v26.json');
+  }
+  if (language === 'rust' && track === 'v3.0.x') {
+    return path.join(skillRoot, 'references', 'identity', 'rust-v30.json');
   }
   throw new Error(`No default identity map for ${language} ${track}`);
 }

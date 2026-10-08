@@ -44,7 +44,7 @@ function runCli({ argv = process.argv } = {}) {
     const report = reconcileIdentityCoverage({ records, identityMap });
 
     if (args.emitDraft && report.missing.length > 0) {
-        const { entries, evidence } = identityEntryDrafts({ records, missing: report.missing });
+        const { entries, evidence } = identityEntryDrafts({ records, missing: report.missing, language: identityMap.language });
         const draft = {
             schemaVersion: 1,
             note: 'Evidence-backed identity-map entry drafts derived from governed records. Merge manually after comparing against the map on master.',

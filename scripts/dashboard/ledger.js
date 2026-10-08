@@ -69,6 +69,17 @@ const SENTINELS = [
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'python-{date}.md',
   },
+  {
+    id: 'rust-daily-scan',
+    title: 'Rust SDK 每日扫描',
+    schedule: '每天 10:00',
+    hour: 10,
+    minute: 0,
+    language: 'rust',
+    cursorFile: 'tmp/sdk-release-scout/rust-daily-scan-state.json',
+    artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'rust-{date}.md',
+  },
 ];
 
 function readJsonOrNull(absolutePath) {

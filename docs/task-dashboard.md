@@ -41,7 +41,7 @@
 - **战役卡**（两个扫描根：`tmp/sdk-release-scout`、`tmp/sdk-doc-sync-runs/<track>/`；发现契约与 `.zcode/hooks/session-start.cjs` 一致：`schemaVersion` + 字符串 `status`，跳过 archive/dryrun/superseded）：
   - 健康档位：`active`（进行中）/ `awaiting-close`（◐ 全单元已接受、无挂起，只差 close-session）/ `zombie`（⚠ scan-state 已越过会话目标 tag，收官未终态化，勿续跑）/ `finalized`（已收官，排后）。
   - 字段：language/track/flow、sessionId、单元进度、挂起执行、活动执行/回滚、scan-state 对照（key/lastScannedTag/targetTag/advancedPast）、工件与 journal（repo 相对路径）、已接受单元的文档/记录链接（飞书真实链接，可点）。
-- **哨兵卡**（cron 自动化 = 定时触发的会话）：下次运行由固定墙钟时刻推导（不解析 cron、不读宿主内部状态）；上次运行取游标文件 mtime（与 CronList 的 lastRunAt 秒级吻合）；>25h 未动游标 → `stale`。新增自动化 = `ledger.js` 的 `SENTINELS` 表加一行（现登记：C++ 09:00 / Go 09:15（automation-758e7bed，2026-10-05 加入）/ Java 09:30 / Python 09:45（pymilvus，2026-10-08 加入））。
+- **哨兵卡**（cron 自动化 = 定时触发的会话）：下次运行由固定墙钟时刻推导（不解析 cron、不读宿主内部状态）；上次运行取游标文件 mtime（与 CronList 的 lastRunAt 秒级吻合）；>25h 未动游标 → `stale`。新增自动化 = `ledger.js` 的 `SENTINELS` 表加一行（现登记：C++ 09:00 / Go 09:15（automation-758e7bed，2026-10-05 加入）/ Java 09:30 / Python 09:45（pymilvus，2026-10-08 加入）/ Rust 10:00（milvus-sdk-rust，2026-10-08 加入））。
 - **准入 chip**：台账最新记录 vs 当前树指纹（后台计算），ADMITTED / 未匹配 / 计算中三态；**呈门 chip**：`gate-presentation/latest.html` 在位即黄牌可点。
 
 ## 4. 事件流（批 2，已实施）

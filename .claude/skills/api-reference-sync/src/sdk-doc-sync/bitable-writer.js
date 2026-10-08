@@ -256,7 +256,10 @@ class BitableWriter {
         if (fields.targets !== undefined) formatted['Targets'] = Array.isArray(fields.targets) ? fields.targets : [fields.targets];
         if (fields.labels !== undefined) formatted['Labels'] = fields.labels;
         if (fields.lastModified !== undefined) formatted['Last Modified At'] = fields.lastModified;
-        if (fields.parentRecordId !== undefined) {
+        // Truthy guard: a null/empty parentRecordId must not serialize as
+        // 父记录: [null] — the SingleLink write API rejects it with
+        // LinkFieldConvFail (2026-10-08, Collection type page).
+        if (fields.parentRecordId) {
             formatted['父记录'] = [fields.parentRecordId];
         }
 

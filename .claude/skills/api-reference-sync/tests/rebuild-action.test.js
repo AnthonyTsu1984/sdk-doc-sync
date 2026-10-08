@@ -269,6 +269,57 @@ test('executor REBUILD reuses recordId+documentToken and lands whole-body replac
   assert.ok(!calls.some((entry) => entry[0] === 'createDocument' || entry[0] === 'createRecord'));
 });
 
+test('executor omits 父记录 entirely when the plan carries no parent repoint (null TARGET_PARENT)', async () => {
+  // UPDATE postconditions may deliberately carry TARGET_PARENT: null (no
+  // parent repoint). Serializing null produced 父记录: [null] and the write
+  // API rejected it with LinkFieldConvFail (2026-10-08, Collection).
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  // Root-level Class page shape (the per-category records: v2-Collection,
+  // v2-Database, …): recordType Class, no source parent, no target parent.
+  const plan = new SyncPlanner().planAction(rebuildAction({
+    doc: {
+      id: 'rec-group',
+      metadata: {
+        token: 'doc-campaign',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        type: 'Class',
+      },
+    },
+  }), rebuildContext({
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-group',
+      documentToken: 'doc-campaign',
+      folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: { ...rebuildContext().target, parentRecordId: null },
+  }));
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-group' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: rebuildContext().artifact,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success', JSON.stringify(result.error));
+  const updateCall = calls.find((entry) => entry[0] === 'updateRecord');
+  assert.ok(updateCall, 'updateRecord must still land');
+  assert.equal(updateCall[2].parentRecordId, undefined, 'null parent must be omitted, never serialized');
+});
+
 test('executor drops the parent-record link when the record is its own parent (structural type page)', async () => {
   // Collection-style unit: the record IS the category group node, so
   // plan.target.parentRecordId equals plan.source.recordId — writing the

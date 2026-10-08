@@ -51,8 +51,13 @@ function editedRecordMetadata() {
 // in its parent. Drop the field for that shape, keep the rest of the
 // payload (2026-10-08, Collection type page).
 function recordUpdatePayload(plan, payload) {
-  if (payload.parentRecordId && payload.parentRecordId === plan.source?.recordId) {
-    const { parentRecordId, ...rest } = payload;
+  const { parentRecordId } = payload;
+  // Null is the planner's deliberate "no parent repoint" (UPDATE postcondition
+  // TARGET_PARENT: null) — serializing it would write 父记录: [null] into the
+  // SingleLink field and the write API rejects that with LinkFieldConvFail.
+  if (!parentRecordId || parentRecordId === plan.source?.recordId) {
+    const rest = { ...payload };
+    delete rest.parentRecordId;
     return rest;
   }
   return payload;

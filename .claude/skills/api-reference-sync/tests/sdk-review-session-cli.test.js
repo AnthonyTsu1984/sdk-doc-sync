@@ -226,3 +226,29 @@ test('parseFinalTargets: subset override, KB default, and fail-closed parsing', 
   assert.throws(() => parseFinalTargets('Milvus,Upstash'), /subset of/);
   assert.throws(() => parseFinalTargets('milvus'), /subset of/);
 });
+
+// 2026-10-09 stock-correction widening: backfill-targets --records accepts an
+// inline JSON array or a file path of recordIds; garbage fails closed.
+test('backfill-targets --records parsing: inline array ok, garbage fails', () => {
+  const run = (records) => {
+    try {
+      require('node:child_process').execFileSync(process.execPath, [
+        '.claude/skills/api-reference-sync/bin/sdk-review-session.js', 'backfill-targets',
+        '--session', 'tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json',
+        '--base-token', 'AOFDbSmwma9XrNsLa8KcQgt9ngc', '--table-id', 'tbl63oNrbGDCXorc',
+        '--records', records,
+      ], { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
+      return { ok: true };
+    } catch (error) {
+      return { ok: false, message: String(error.stderr || error.message) };
+    }
+  };
+  // non-live record id: must fail closed at the live-record check (after
+  // parsing succeeds), proving the array parsed and was validated
+  const missing = run('["rec-does-not-exist"]');
+  assert.equal(missing.ok, false);
+  assert.match(missing.message, /not a live record/);
+  // garbage: parse shape rejection
+  const garbage = run('not-json');
+  assert.equal(garbage.ok, false);
+});

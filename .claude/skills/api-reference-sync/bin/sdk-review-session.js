@@ -44,6 +44,7 @@ const ARG_SPECS = Object.freeze([
   { flag: '--execution-journal-digest', key: 'executionJournalDigest', kind: 'value' },
   { flag: '--touched-records', key: 'touchedRecords', kind: 'value' },
   { flag: '--final-targets', key: 'finalTargets', kind: 'value' },
+  { flag: '--records', key: 'records', kind: 'value' },
   { flag: '--document-link', key: 'documentLinks', kind: 'multi' },
   { flag: '--record-link', key: 'recordLinks', kind: 'multi' },
   { flag: '--comments-resolved', key: 'commentsResolved', kind: 'boolean' },
@@ -594,9 +595,15 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const io0 = {};
     // One-time stock pass: accepted two-gate units whose records sit at
     // Draft with empty Targets get the KB-wide final value under one gate.
+    // 2026-10-09 widening (stock corrections): --records selects an explicit
+    // operator-provided record list (e.g. retargeting CDC to [Milvus] after
+    // the open-source-only ruling) and --final-targets overrides the written
+    // value; both ride the plan digest, so the gate binds exactly the
+    // selected records and the value they receive.
     requireValue(args, 'session');
     if (!args.baseToken && !io0.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
     const writer = bitableWriterFor(args, io0, 'backfill-targets');
+    const unitTargets = parseFinalTargets(args.finalTargets);
     const records = await writer.listRecords({ pageSize: 500 });
     const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
     const emptyTargets = {};
@@ -609,9 +616,28 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         if (value.length === 0) emptyTargets[touched.recordId] = unit.reviewUnitId;
       }
     }
-    const plan = Object.entries(emptyTargets).map(([recordId, reviewUnitId]) => ({ recordId, reviewUnitId }))
-      .sort((left, right) => left.recordId.localeCompare(right.recordId));
-    const planDigest = digestSemantic({ schemaVersion: 1, kind: 'backfill-targets', sessionId: session.sessionId, records: plan, targets: TARGETS_FINAL });
+    let plan;
+    if (args.records !== undefined) {
+      const listed = JSON.parse(String(args.records).startsWith('/') || String(args.records).startsWith('.')
+        ? fs.readFileSync(path.resolve(args.records), 'utf8')
+        : args.records);
+      if (!Array.isArray(listed) || listed.length === 0 || listed.some((id) => typeof id !== 'string' || id.trim() === '')) {
+        throw new Error('--records must be a JSON array of non-empty recordIds (inline or a file path)');
+      }
+      for (const recordId of listed) {
+        if (!recordMap.get(recordId)) throw new Error(`--records entry is not a live record: ${recordId}`);
+      }
+      const unitByRecord = new Map();
+      for (const unit of session.acceptedReviewUnits || []) {
+        for (const touched of unit.touchedRecords || []) unitByRecord.set(touched.recordId, unit.reviewUnitId);
+      }
+      plan = listed.map((recordId) => ({ recordId, reviewUnitId: unitByRecord.get(recordId) || null }))
+        .sort((left, right) => left.recordId.localeCompare(right.recordId));
+    } else {
+      plan = Object.entries(emptyTargets).map(([recordId, reviewUnitId]) => ({ recordId, reviewUnitId }))
+        .sort((left, right) => left.recordId.localeCompare(right.recordId));
+    }
+    const planDigest = digestSemantic({ schemaVersion: 1, kind: 'backfill-targets', sessionId: session.sessionId, records: plan, targets: unitTargets });
     if (plan.length === 0) {
       out('No Draft records with empty Targets among this session\'s accepted units.');
       return { session, summary: status(session, sessionPath) };
@@ -619,7 +645,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     if (!args.approveDigest) {
       for (const entry of plan) out(`- ${entry.recordId} (${entry.reviewUnitId})`);
       out(`Plan digest: ${planDigest}`);
-      out(`Rerun with --approve-digest ${planDigest} to write Targets=[${TARGETS_FINAL.join(', ')}].`);
+      out(`Rerun with --approve-digest ${planDigest} to write Targets=[${unitTargets.join(', ')}].`);
       return { session, summary: status(session, sessionPath) };
     }
     if (args.approveDigest !== planDigest) {
@@ -664,9 +690,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', 'run-manifest-backfill-targets.json') });
     const stampsByUnit = new Map();
     for (const entry of plan) {
-      await writer.updateRecord(entry.recordId, { targets: [...TARGETS_FINAL] });
+      await writer.updateRecord(entry.recordId, { targets: [...unitTargets] });
       const stamp = stampsByUnit.get(entry.reviewUnitId) || {};
-      stamp[entry.recordId] = [...TARGETS_FINAL];
+      stamp[entry.recordId] = [...unitTargets];
       stampsByUnit.set(entry.reviewUnitId, stamp);
       out(`Backfilled: ${entry.recordId} (${entry.reviewUnitId})`);
     }

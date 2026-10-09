@@ -118,6 +118,29 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/revision-apply.js",
+      "skill": "api-reference-sync",
+      "classification": "canonical-governed",
+      "operation": "revision-apply",
+      "basis": "reviewed canonical entrypoint",
+      "approval": "executed-batch-digest",
+      "journal": "required",
+      "reconciliation": "required",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/revision-campaign.test.js"
+      ]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/bin/revision-intake.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "revision-intake",
+      "basis": "persists the review session JSON through the sanctioned store CAS only; no Feishu I/O",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/revision-campaign.test.js"
+      ]
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-derive.js",
       "skill": "api-reference-sync",
       "classification": "read-only",
@@ -277,6 +300,16 @@
       "classification": "read-only",
       "operation": "grouping-proposal",
       "basis": "no external mutation signature found (writes only the canonical grouping-proposal artifact to the operator-requested output path)"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-revision-scope.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-revision-scope",
+      "basis": "no external mutation signature found; deterministic sweep-to-scope transform plus Bitable record enumeration",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/build-revision-scope.test.js"
+      ]
     },
     {
       "path": ".claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js",

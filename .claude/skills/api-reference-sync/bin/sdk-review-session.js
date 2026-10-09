@@ -50,6 +50,8 @@ const ARG_SPECS = Object.freeze([
   { flag: '--execution-journal', key: 'executionJournal', kind: 'value' },
   { flag: '--execution-journal-digest', key: 'executionJournalDigest', kind: 'value' },
   { flag: '--touched-records', key: 'touchedRecords', kind: 'value' },
+  { flag: '--final-targets', key: 'finalTargets', kind: 'value' },
+  { flag: '--records', key: 'records', kind: 'value' },
   { flag: '--document-link', key: 'documentLinks', kind: 'multi' },
   { flag: '--record-link', key: 'recordLinks', kind: 'multi' },
   { flag: '--comments-resolved', key: 'commentsResolved', kind: 'boolean' },
@@ -371,6 +373,24 @@ async function runTransfer({ session, sessionPath, sessionDigest, args, io, out 
 // every step: a refusal before the writes leaves nothing mutated; a refusal
 // after them is recovered by replaying the acceptance from the on-disk
 // receipt (the store re-validates everything; nothing is trusted on sight).
+// Parse the per-unit final Targets override (2026-10-09 operator ruling).
+// Accepts a comma-separated subset of the known target names; empty/unknown
+// tokens fail closed. No flag = KB-wide default [Milvus, Zilliz].
+function parseFinalTargets(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return [...TARGETS_FINAL];
+  const known = new Set(TARGETS_FINAL);
+  const seen = new Set();
+  for (const token of String(raw).split(',')) {
+    const value = token.trim();
+    if (!known.has(value)) {
+      throw new Error(`--final-targets must be a comma-separated subset of [${TARGETS_FINAL.join(', ')}]; got: ${JSON.stringify(String(raw))}`);
+    }
+    seen.add(value);
+  }
+  if (seen.size === 0) return [...TARGETS_FINAL];
+  return TARGETS_FINAL.filter((value) => seen.has(value));
+}
+
 async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, receipt, args, io, out }) {
   const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
   const { WriterGovernance, createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
@@ -436,13 +456,17 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     }
   }
 
-  // One governed write per record: the Draft transition carries the KB-wide
-  // final Targets value (2026-10-01 ruling — Targets 终值 lands in the
-  // document gate; the campaign finalize that used to write it is retired).
+  // One governed write per record: the Draft transition carries the final
+  // Targets value (2026-10-01 ruling — Targets 终值 lands in the document
+  // gate). Default is the KB-wide value; 2026-10-09 operator ruling adds a
+  // per-unit override for open-source-only capabilities (e.g. ResourceGroup)
+  // whose Targets must be [Milvus] alone — explicit, subset-validated, and
+  // recorded as written in the unit receipt.
+  const unitFinalTargets = parseFinalTargets(args.finalTargets);
   const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
-    finalTargets[touched.recordId] = [...TARGETS_FINAL];
-    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...TARGETS_FINAL] });
+    finalTargets[touched.recordId] = [...unitFinalTargets];
+    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...unitFinalTargets] });
   }
   const afterRecords = await writer.listRecords({ pageSize: 500 });
   const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
@@ -453,8 +477,8 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       throw new Error(`Draft transition for record ${touched.recordId} did not verify`);
     }
     const actualTargets = normalizedTargetsValue(after?.fields?.Targets);
-    if (JSON.stringify(actualTargets) !== JSON.stringify(TARGETS_FINAL)) {
-      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}])`);
+    if (JSON.stringify(actualTargets) !== JSON.stringify(unitFinalTargets)) {
+      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}], expected [${unitFinalTargets.join(', ')}])`);
     }
     draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
   }
@@ -837,9 +861,15 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     const io0 = {};
     // One-time stock pass: accepted two-gate units whose records sit at
     // Draft with empty Targets get the KB-wide final value under one gate.
+    // 2026-10-09 widening (stock corrections): --records selects an explicit
+    // operator-provided record list (e.g. retargeting CDC to [Milvus] after
+    // the open-source-only ruling) and --final-targets overrides the written
+    // value; both ride the plan digest, so the gate binds exactly the
+    // selected records and the value they receive.
     requireValue(args, 'session');
     if (!args.baseToken && !io0.bitableWriter) throw new Error('--base-token is required (with optional --table-id)');
     const writer = bitableWriterFor(args, io0, 'backfill-targets');
+    const unitTargets = parseFinalTargets(args.finalTargets);
     const records = await writer.listRecords({ pageSize: 500 });
     const recordMap = new Map((records || []).map((record) => [record.record_id, record]));
     const emptyTargets = {};
@@ -852,9 +882,28 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         if (value.length === 0) emptyTargets[touched.recordId] = unit.reviewUnitId;
       }
     }
-    const plan = Object.entries(emptyTargets).map(([recordId, reviewUnitId]) => ({ recordId, reviewUnitId }))
-      .sort((left, right) => left.recordId.localeCompare(right.recordId));
-    const planDigest = digestSemantic({ schemaVersion: 1, kind: 'backfill-targets', sessionId: session.sessionId, records: plan, targets: TARGETS_FINAL });
+    let plan;
+    if (args.records !== undefined) {
+      const listed = JSON.parse(String(args.records).startsWith('/') || String(args.records).startsWith('.')
+        ? fs.readFileSync(path.resolve(args.records), 'utf8')
+        : args.records);
+      if (!Array.isArray(listed) || listed.length === 0 || listed.some((id) => typeof id !== 'string' || id.trim() === '')) {
+        throw new Error('--records must be a JSON array of non-empty recordIds (inline or a file path)');
+      }
+      for (const recordId of listed) {
+        if (!recordMap.get(recordId)) throw new Error(`--records entry is not a live record: ${recordId}`);
+      }
+      const unitByRecord = new Map();
+      for (const unit of session.acceptedReviewUnits || []) {
+        for (const touched of unit.touchedRecords || []) unitByRecord.set(touched.recordId, unit.reviewUnitId);
+      }
+      plan = listed.map((recordId) => ({ recordId, reviewUnitId: unitByRecord.get(recordId) || null }))
+        .sort((left, right) => left.recordId.localeCompare(right.recordId));
+    } else {
+      plan = Object.entries(emptyTargets).map(([recordId, reviewUnitId]) => ({ recordId, reviewUnitId }))
+        .sort((left, right) => left.recordId.localeCompare(right.recordId));
+    }
+    const planDigest = digestSemantic({ schemaVersion: 1, kind: 'backfill-targets', sessionId: session.sessionId, records: plan, targets: unitTargets });
     if (plan.length === 0) {
       out('No Draft records with empty Targets among this session\'s accepted units.');
       return { session, summary: status(session, sessionPath) };
@@ -862,7 +911,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     if (!args.approveDigest) {
       for (const entry of plan) out(`- ${entry.recordId} (${entry.reviewUnitId})`);
       out(`Plan digest: ${planDigest}`);
-      out(`Rerun with --approve-digest ${planDigest} to write Targets=[${TARGETS_FINAL.join(', ')}].`);
+      out(`Rerun with --approve-digest ${planDigest} to write Targets=[${unitTargets.join(', ')}].`);
       return { session, summary: status(session, sessionPath) };
     }
     if (args.approveDigest !== planDigest) {
@@ -907,9 +956,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', 'run-manifest-backfill-targets.json') });
     const stampsByUnit = new Map();
     for (const entry of plan) {
-      await writer.updateRecord(entry.recordId, { targets: [...TARGETS_FINAL] });
+      await writer.updateRecord(entry.recordId, { targets: [...unitTargets] });
       const stamp = stampsByUnit.get(entry.reviewUnitId) || {};
-      stamp[entry.recordId] = [...TARGETS_FINAL];
+      stamp[entry.recordId] = [...unitTargets];
       stampsByUnit.set(entry.reviewUnitId, stamp);
       out(`Backfilled: ${entry.recordId} (${entry.reviewUnitId})`);
     }
@@ -1199,4 +1248,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, parseBatchReply, runCli, status };
+module.exports = { parseArgs, parseBatchReply, parseFinalTargets, runCli, status };

@@ -339,8 +339,52 @@ function validateRestructureManifest({ manifest, baseContent } = {}) {
         errors.push(polishError('PR_POLISH_SOURCE_CITATION_REQUIRED', 'sources must be an array when present'));
         return { errors };
     }
+    if (manifest.sanctionedIncludeRemovals !== undefined) {
+        if (!Array.isArray(manifest.sanctionedIncludeRemovals)
+            || manifest.sanctionedIncludeRemovals.some((token) => typeof token !== 'string' || token.trim() === '')) {
+            errors.push(polishError(
+                'PR_POLISH_SANCTIONED_REMOVALS_INVALID',
+                'sanctionedIncludeRemovals must be an array of non-empty include-unit tokens when present',
+            ));
+            return { errors };
+        }
+    }
+    if (manifest.sanctionedItemEdits !== undefined) {
+        if (!Array.isArray(manifest.sanctionedItemEdits)
+            || manifest.sanctionedItemEdits.some((edit) => !edit
+                || typeof edit.from !== 'string' || edit.from.trim() === ''
+                || typeof edit.to !== 'string' || edit.to.trim() === '')) {
+            errors.push(polishError(
+                'PR_POLISH_SANCTIONED_ITEM_EDITS_INVALID',
+                'sanctionedItemEdits must be an array of {from, to} non-empty strings when present',
+            ));
+            return { errors };
+        }
+    }
+    if (manifest.sanctionedCodeEdits !== undefined) {
+        if (!Array.isArray(manifest.sanctionedCodeEdits)
+            || manifest.sanctionedCodeEdits.some((edit) => !edit
+                || typeof edit.lang !== 'string' || edit.lang.trim() === ''
+                || !Array.isArray(edit.before) || edit.before.some((line) => typeof line !== 'string')
+                || !Array.isArray(edit.after) || edit.after.length === 0
+                || edit.after.some((line) => typeof line !== 'string'))) {
+            errors.push(polishError(
+                'PR_POLISH_SANCTIONED_CODE_EDITS_INVALID',
+                'sanctionedCodeEdits must be an array of {lang, before: string[], after: non-empty string[]} when present',
+            ));
+            return { errors };
+        }
+    }
 
-    const comparison = compareSemanticContent({ upstreamContent: content, canonicalContent: manifest.replacementContent });
+    const comparison = compareSemanticContent({
+        upstreamContent: content,
+        canonicalContent: manifest.replacementContent,
+        options: {
+            sanctionedIncludeRemovals: manifest.sanctionedIncludeRemovals,
+            sanctionedItemEdits: manifest.sanctionedItemEdits,
+            sanctionedCodeEdits: manifest.sanctionedCodeEdits,
+        },
+    });
     if (!comparison.ok) {
         errors.push(polishError(
             'PR_POLISH_SEMANTIC_CONTENT_LOST',

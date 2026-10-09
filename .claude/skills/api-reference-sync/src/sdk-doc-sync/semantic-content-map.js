@@ -17,7 +17,10 @@
 
 const { normalizeRefetchedMarkdown } = require('./verbatim-content');
 
-const SEMANTIC_MAP_VERSION = 1;
+// semantic-content-map v3 (2026-10-08): code-fence include lines normalize to
+// the operator magic-tag form (// include-start/nextline/end) on both sides
+// of the comparison — see normalizeCodeIncludeLine.
+const SEMANTIC_MAP_VERSION = 3;
 
 const FENCE_LINE = /^\s*(`{3,}|~{3,})\s*([A-Za-z0-9_+-]*)\s*$/;
 const HEADING_LINE = /^#{1,9}\s+/;
@@ -125,6 +128,53 @@ function matchOrdered(needles, haystack) {
     return indices;
 }
 
+// 2026-10-08 (java revision campaign, operator magic-tag ruling): literal
+// <include> tags cannot survive the markdown→blocks converter inside code
+// fences — the renderer's JSX scan replaces a column-0 include block with a
+// placeholder, silently dropping the wrapped code lines. The authored
+// canonical form therefore represents code-fence includes as comment magic
+// tags, and both sides of the code-block comparison normalize to that form:
+//
+//   <include target="X">        ⇄   // include-start X
+//       …wrapped code lines…        …wrapped code lines…
+//   </include>                  ⇄   // include-end X
+//
+//   <include target="X">line</include>   ⇄   // include-nextline X
+//                                             line
+//
+// Content lines keep their own bytes; only marker lines are rewritten, so
+// pages without code-fence includes compare exactly as before.
+function normalizeCodeIncludeLine(line, pendingTargets) {
+    const trimmed = String(line).trim();
+    const open = trimmed.match(/^<include\s+target="([^"]+)"\s*>$/i);
+    if (open) {
+        pendingTargets.push(open[1]);
+        return `// include-start ${open[1]}`;
+    }
+    const single = trimmed.match(/^<include\s+target="([^"]+)"\s*>(.+)<\/include>$/i);
+    if (single) {
+        pendingTargets.push(single[1]);
+        return [`// include-nextline ${single[1]}`, single[2]];
+    }
+    if (/^<\/include>$/i.test(trimmed)) {
+        const target = pendingTargets.pop();
+        return `// include-end ${target || ''}`.trimEnd();
+    }
+    const magicStart = trimmed.match(/^\/\/\s*include-start\s+(\S+)\s*$/);
+    if (magicStart) {
+        pendingTargets.push(magicStart[1]);
+        return `// include-start ${magicStart[1]}`;
+    }
+    const magicNext = trimmed.match(/^\/\/\s*include-nextline\s+(\S+)\s*$/);
+    if (magicNext) return `// include-nextline ${magicNext[1]}`;
+    const magicEnd = trimmed.match(/^\/\/\s*include-end(?:\s+(\S+))?\s*$/);
+    if (magicEnd) {
+        const target = magicEnd[1] || pendingTargets.pop() || '';
+        return `// include-end ${target}`.trimEnd();
+    }
+    return line.replace(/\s+$/, '');
+}
+
 // Fence-aware extraction of the semantic inventory. Items carry their
 // normalized text and description line count; description WORDING is
 // deliberately not retained — it is the human-reviewed surface.
@@ -135,12 +185,14 @@ function extractSemanticMap(markdown) {
         codeBlocks: [],
         returnType: null,
         returnsProseLines: 0,
+        returnsProse: [],
         tables: [],
         includeMarkers: [],
     };
     const lines = String(markdown ?? '').split('\n');
     let fence = null;
     let fenceLines = null;
+    const pendingIncludeTargets = [];
     let label = null;
     let currentItem = null;
     let tableRows = null;
@@ -148,14 +200,16 @@ function extractSemanticMap(markdown) {
         if (Array.isArray(tableRows) && tableRows.length > 0) map.tables.push(tableRows);
         tableRows = null;
     };
-    for (const raw of lines) {
+    for (let raw of lines) {
         if (fence !== null) {
             if (/^\s*`{3,}|^\s*~{3,}/.test(raw)) {
                 map.codeBlocks.push({ lang: fence, lines: fenceLines });
                 fence = null;
                 fenceLines = null;
             } else {
-                fenceLines.push(raw.replace(/\s+$/, ''));
+                const normalized = normalizeCodeIncludeLine(raw, pendingIncludeTargets);
+                if (Array.isArray(normalized)) fenceLines.push(...normalized);
+                else fenceLines.push(normalized);
             }
             continue;
         }
@@ -187,9 +241,16 @@ function extractSemanticMap(markdown) {
             continue;
         }
         if (INCLUDE_MARKER.test(raw)) {
-            currentItem = null;
+            // 2026-10-07 (java revision campaign, operator dual-include rule):
+            // include markers are conditional-rendering wrappers whose INNER
+            // text is real page content (it renders literally). Record the
+            // line token for survival checking, then process the
+            // marker-stripped remainder through the normal pipeline so
+            // wrapped parameter bullets and reference descriptions keep
+            // counting exactly as their unwrapped upstream counterparts do.
             map.includeMarkers.push(raw.trim());
-            continue;
+            raw = raw.replace(/<include\s+target=[^>]*>/gi, '').replace(/<\/include>/gi, '');
+            if (normalizeSemanticText(raw) === '') continue;
         }
         if (BULLET_LINE.test(raw)) {
             currentItem = {
@@ -212,6 +273,7 @@ function extractSemanticMap(markdown) {
         }
         if (label === 'RETURNS') {
             map.returnsProseLines += 1;
+            map.returnsProse.push(text);
         }
     }
     flushTable();
@@ -219,7 +281,20 @@ function extractSemanticMap(markdown) {
 }
 
 function codeBlockKey(block) {
-    return JSON.stringify([block.lang, block.lines]);
+    // 2026-10-08 widening (operator magic-tag ruling, second half): include
+    // MARKER lines inside code fences are representation, not payload — the
+    // same conditional wrap may be authored as literal <include> tags (live),
+    // magic comments (authored), or removed outright when the operator
+    // retires the condition (FieldSchema: Zilliz Cloud now supports
+    // elementType/maxCapacity). The key therefore compares content lines
+    // only; wrapped-line bytes remain fully compared.
+    const lines = block.lines.filter((line) => {
+        const trimmed = String(line).trim();
+        if (/^\/\/\s*include-(start|nextline|end)\b/.test(trimmed)) return false;
+        if (/^<include\s+target=/i.test(trimmed) || /^<\/include>$/i.test(trimmed)) return false;
+        return true;
+    });
+    return JSON.stringify([block.lang, lines]);
 }
 
 // Semantic equivalence: the canonical content preserves every upstream
@@ -227,15 +302,35 @@ function codeBlockKey(block) {
 // exact presence for the return type, RETURNS prose, and include markers.
 // Additions are format/source-driven and are governed at the polish manifest
 // (citations), not here — except code, which polish may never add or alter.
-function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
+//
+// options.sanctionedIncludeRemovals (2026-10-08, FieldSchema ruling): an
+// explicit, manifest-bound list of include units the operator ordered
+// removed (stale platform-availability conditions). Sanctioned units are
+// exempt from the survival check; ANY OTHER upstream unit still cannot
+// disappear silently.
+function compareSemanticContent({ upstreamContent, canonicalContent, options } = {}) {
     const upstream = extractSemanticMap(upstreamContent);
     const canonical = extractSemanticMap(canonicalContent);
     const diffs = [];
 
+    // 2026-10-08 (java revision campaign, operator consistency ruling): a
+    // manifest-bound list of exact item-label edits the operator ordered —
+    // e.g. MilvusClientExceptions → MilvusClientException to align a page
+    // with the campaign's accepted form. Only listed from→to pairs count as
+    // preserved; any other label change still fails as an item drop, and an
+    // edit whose target text is absent from the canonical fails closed too
+    // (matchOrdered leaves it unmatched).
+    const sanctionedEdits = new Map(
+        (options?.sanctionedItemEdits || []).map((edit) => [String(edit.from), String(edit.to)]),
+    );
+
     for (const kind of ['PARAM', 'MEMBER', 'EXCEPTION']) {
         const upstreamItems = upstream.items.filter((item) => item.section === kind);
         const canonicalItems = canonical.items.filter((item) => item.section === kind);
-        const indices = matchOrdered(upstreamItems.map((item) => item.text), canonicalItems.map((item) => item.text));
+        const indices = matchOrdered(
+            upstreamItems.map((item) => sanctionedEdits.get(item.text) ?? item.text),
+            canonicalItems.map((item) => item.text),
+        );
         upstreamItems.forEach((item, index) => {
             if (indices[index] === -1) {
                 diffs.push({ kind: `${kind}_ITEM_DROPPED`, detail: item.text });
@@ -251,9 +346,28 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     const upstreamCode = upstream.codeBlocks.map(codeBlockKey);
     const canonicalCode = canonical.codeBlocks.map(codeBlockKey);
     const codeIndices = matchOrdered(upstreamCode, canonicalCode);
+    // The ALTERED-vs-DROPPED split must classify on the same filtered lines
+    // the key compares — raw counts would misread a marker-form change as a
+    // whole-block drop.
+    const filteredLineCount = (block) => JSON.parse(codeBlockKey(block))[1].length;
+    // 2026-10-09 (java revision campaign, operator example ruling): a
+    // manifest-bound list of exact code-block replacements the operator
+    // ordered — e.g. filling a page's EMPTY Example fence (transferNode
+    // class; three such pages remain in the campaign). Only a declared
+    // before→after pair whose after block is present VERBATIM counts as
+    // preserved; every other code change still fails — polish may never
+    // add or alter code otherwise.
+    const sanctionedCodeKeys = new Map(
+        (options?.sanctionedCodeEdits || []).map((edit) => [
+            codeBlockKey({ lang: edit.lang, lines: edit.before }),
+            codeBlockKey({ lang: edit.lang, lines: edit.after }),
+        ]),
+    );
     upstream.codeBlocks.forEach((block, index) => {
         if (codeIndices[index] !== -1) return;
-        const partial = canonical.codeBlocks.some((candidate) => candidate.lang === block.lang && candidate.lines.length === block.lines.length);
+        const replacement = sanctionedCodeKeys.get(codeBlockKey(block));
+        if (replacement !== undefined && canonicalCode.includes(replacement)) return;
+        const partial = canonical.codeBlocks.some((candidate) => candidate.lang === block.lang && filteredLineCount(candidate) === filteredLineCount(block));
         diffs.push({
             kind: partial ? 'CODE_BLOCK_ALTERED' : 'CODE_BLOCK_DROPPED',
             detail: block.lines.slice(0, 3).join(' / ') || block.lang,
@@ -264,12 +378,43 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
     }
 
     if (upstream.returnType !== null) {
-        if (canonical.returnType === null) diffs.push({ kind: 'RETURN_TYPE_MISSING', detail: upstream.returnType });
+        if (canonical.returnType === null) {
+            // Widened 2026-10-07 (campaign page java:v2-LocalBulkWriter-commit):
+            // a live page may carry a RETURN TYPE section whose only content is
+            // the void token — retiring it is the 2026-10-05 void ruling taken
+            // literally ("void carries no return sections", RETURN TYPE
+            // included). A non-void RETURN TYPE still cannot be dropped.
+            if (!/^\*{0,2}void\*{0,2}[.:]?$/i.test(String(upstream.returnType).trim())) {
+                diffs.push({ kind: 'RETURN_TYPE_MISSING', detail: upstream.returnType });
+            }
+        }
         else if (canonical.returnType !== upstream.returnType) {
             diffs.push({ kind: 'RETURN_TYPE_ALTERED', detail: `${upstream.returnType} -> ${canonical.returnType}` });
         }
     }
-    if (upstream.returnsProseLines > 0 && canonical.returnsProseLines === 0) {
+    // 2026-10-05 operator ruling (java v3.0.x revision round): a void page's
+    // bare "RETURNS:\nvoid" stub may retire entirely — the v2.6 format
+    // baseline is "void carries no return sections". Widened 2026-10-06 on
+    // campaign data (page java:v2-Collections-dropFunctionField): several
+    // stubs render TWO prose lines — the void token (often italic, "*void*")
+    // plus an explicit "This operation does not return a value." sentence —
+    // which is void-equivalent with zero information beyond the signature.
+    // Widened again 2026-10-07 (page java:v2-LocalBulkWriter-commit): a live
+    // RETURN TYPE section carrying only the void token may retire too, so
+    // the exemption accepts upstream returnType being null OR void-like.
+    // The exemption therefore accepts a RETURNS section ALL of whose prose
+    // lines are stub lines: a bare void token or an explicit no-value
+    // sentence. RETURNS prose carrying real content (what a non-void method
+    // returns) and non-void RETURN TYPE sections stay losses.
+    const upstreamRet = upstream.returnsProse || [];
+    const voidEquivalentStubLine = (line) => /^(?:\*{0,2}void\*{0,2}[.:]?|none|null[.:?!]?|this operation (?:does not return|returns) (?:a value|no value|anything|nothing)[.!]?)$/i.test(String(line || '').trim());
+    const upstreamReturnTypeVoidLike = upstream.returnType === null
+        || /^\*{0,2}void\*{0,2}[.:]?$/i.test(String(upstream.returnType).trim());
+    const voidReturnsRetirement = upstreamReturnTypeVoidLike
+        && upstreamRet.length >= 1
+        && upstreamRet.every(voidEquivalentStubLine)
+        && canonical.returnsProse.length === 0;
+    if (upstream.returnsProse.length > 0 && canonical.returnsProse.length === 0 && !voidReturnsRetirement) {
         diffs.push({ kind: 'RETURNS_PROSE_MISSING', detail: 'RETURNS section lost its prose' });
     }
 
@@ -286,8 +431,36 @@ function compareSemanticContent({ upstreamContent, canonicalContent } = {}) {
 
     const upstreamIncludes = [...upstream.includeMarkers].sort();
     const canonicalIncludes = [...canonical.includeMarkers].sort();
-    if (JSON.stringify(upstreamIncludes) !== JSON.stringify(canonicalIncludes)) {
-        diffs.push({ kind: 'INCLUDE_MARKER_CHANGED', detail: `upstream ${upstreamIncludes.length}, canonical ${canonicalIncludes.length}` });
+    // 2026-10-07 widening (java revision campaign, operator global rule): a
+    // plain external reference sentence may be upgraded into dual-target
+    // include markers (milvus.io + docs.zilliz.com pair), so canonical may
+    // carry MORE markers than upstream. What must never happen is an
+    // upstream marker silently disappearing. includeMarkers tokens are
+    // line-granular (adjacent markers on one line coalesce), so compare at
+    // ATOMIC marker granularity: every <include…</include> unit present
+    // upstream has to survive verbatim into the canonical content.
+    const INCLUDE_UNIT = /<include\s+target=[^>]*>[\s\S]*?<\/include>/gi;
+    // Markdown links inside include units do not round-trip verbatim: the
+    // converter renders authored [text](url) as a real hyperlink run (URL
+    // preserved in the element), while the block-tree reconstruction reads
+    // back the display text only. Compare survival at the normalized-form
+    // level (link text; URL persistence is the converter's+terminal check's
+    // contract), so an executed page re-verifies against its own baseline.
+    const normalizeIncludeUnit = (unit) => String(unit).replace(/\[([^\]]*)\]\([^)]*\)/g, '$1').trim();
+    const atomicMarkers = (tokens) => {
+        const units = [];
+        for (const token of tokens) {
+            for (const match of String(token).match(INCLUDE_UNIT) || []) units.push(normalizeIncludeUnit(match));
+        }
+        return units;
+    };
+    const upstreamUnits = atomicMarkers(upstreamIncludes);
+    const canonicalUnits = atomicMarkers(canonicalIncludes);
+    const sanctioned = new Set((options && Array.isArray(options.sanctionedIncludeRemovals)
+        ? options.sanctionedIncludeRemovals : []).map((token) => String(token).trim()));
+    const droppedUnits = upstreamUnits.filter((unit) => !canonicalUnits.includes(unit) && !sanctioned.has(unit));
+    if (droppedUnits.length > 0) {
+        diffs.push({ kind: 'INCLUDE_MARKER_CHANGED', detail: `upstream marker(s) dropped: ${droppedUnits.slice(0, 2).join(' | ').slice(0, 200)}` });
     }
 
     return {

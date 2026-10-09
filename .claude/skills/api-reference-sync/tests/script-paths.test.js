@@ -89,6 +89,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/content-fidelity-guards.test.js',
     '.claude/skills/api-reference-sync/tests/content-reconciliation.test.js',
     '.claude/skills/api-reference-sync/tests/cpp-scanner-coverage.test.js',
+    '.claude/skills/api-reference-sync/tests/create-shell-collision.test.js',
     '.claude/skills/api-reference-sync/tests/decision-capture.test.js',
     '.claude/skills/api-reference-sync/tests/derive-overlay.test.js',
     '.claude/skills/api-reference-sync/tests/document-ir.test.js',

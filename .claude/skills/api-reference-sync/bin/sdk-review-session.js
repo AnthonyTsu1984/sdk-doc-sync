@@ -16,6 +16,7 @@ const {
   recordGroupingApproval,
   recordLearningSuppression,
   TARGETS_FINAL,
+  targetsFinalForReviewUnit,
   prepareDocumentAcceptance,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
@@ -432,13 +433,15 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     }
   }
 
-  // One governed write per record: the Draft transition carries the KB-wide
-  // final Targets value (2026-10-01 ruling — Targets 终值 lands in the
-  // document gate; the campaign finalize that used to write it is retired).
+  // One governed write per record: the Draft transition carries the final
+  // Targets value — the KB-wide pair by default, per-category overrides where
+  // a feature is platform-bound (2026-10-01 ruling — Targets 终值 lands in the
+  // document gate; 2026-10-09 ruling — ResourceGroup is Milvus-only).
+  const unitTargetsFinal = targetsFinalForReviewUnit(receipt.reviewUnitId);
   const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
-    finalTargets[touched.recordId] = [...TARGETS_FINAL];
-    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...TARGETS_FINAL] });
+    finalTargets[touched.recordId] = [...unitTargetsFinal];
+    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...unitTargetsFinal] });
   }
   const afterRecords = await writer.listRecords({ pageSize: 500 });
   const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
@@ -449,7 +452,7 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       throw new Error(`Draft transition for record ${touched.recordId} did not verify`);
     }
     const actualTargets = normalizedTargetsValue(after?.fields?.Targets);
-    if (JSON.stringify(actualTargets) !== JSON.stringify(TARGETS_FINAL)) {
+    if (JSON.stringify(actualTargets) !== JSON.stringify(unitTargetsFinal)) {
       throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}])`);
     }
     draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });

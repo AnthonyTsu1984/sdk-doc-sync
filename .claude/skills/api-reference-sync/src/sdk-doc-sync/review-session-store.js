@@ -69,6 +69,22 @@ const REVIEW_MACHINE = defineSessionMachine({
 // of truth for accept-document, the stock backfill, and resume validation.
 const TARGETS_FINAL = Object.freeze(['Milvus', 'Zilliz']);
 
+// Per-category overrides of the KB-wide final Targets value, written by the
+// document gate instead of TARGETS_FINAL (2026-10-09 operator ruling: the
+// Resource Group feature is Milvus-only, so its records carry Targets=[Milvus]
+// and must never be stamped with the Zilliz-wide pair). Categories are the
+// middle segment of the reviewUnitId ('review:go:<Category>:<Symbol>').
+const CATEGORY_TARGETS_FINAL = new Map([
+  ['ResourceGroup', ['Milvus']],
+]);
+
+function targetsFinalForReviewUnit(reviewUnitId) {
+  const category = typeof reviewUnitId === 'string' && reviewUnitId.split(':').length >= 3
+    ? reviewUnitId.split(':')[2]
+    : null;
+  return [...(CATEGORY_TARGETS_FINAL.get(category) || TARGETS_FINAL)];
+}
+
 // Unit-level machine (two-gate acceptance flow): the session machine governs
 // the campaign, this one governs each document unit. Unit state is DERIVED
 // from the session arrays — pendingExecutions = executed, acceptedReviewUnits
@@ -1562,6 +1578,7 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 }
 
 module.exports = {
+  targetsFinalForReviewUnit,
   executedUnitIdsOf,
   rebuildLineageFor,
   REVIEW_MACHINE,

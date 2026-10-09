@@ -163,6 +163,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/style-mirror-policy.test.js',
     '.claude/skills/api-reference-sync/tests/sync-executor.test.js',
     '.claude/skills/api-reference-sync/tests/sync-planner.test.js',
+    '.claude/skills/api-reference-sync/tests/targets-final.test.js',
     '.claude/skills/api-reference-sync/tests/token-reference-reader.test.js',
     '.claude/skills/api-reference-sync/tests/track-topology.test.js',
     '.claude/skills/api-reference-sync/tests/two-gate-flow.test.js',

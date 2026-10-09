@@ -1313,18 +1313,23 @@ function recordDocumentRollback(session, receipt) {
         : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
     ))
     .pop();
-  let originalExecution = pending || accepted || (changeRequested ? {
-    executionJournalPath: changeRequested.executionJournalPath,
-    executionJournalDigest: changeRequested.executionJournalDigest,
-  } : null);
-  if (!originalExecution && intent) {
-    // The intent is the pre-side-effect anchor: even when a concurrent
-    // writer moved the unit out of active/accepted, the durable lease
-    // recorded what this rollback was bound to before any mutation ran.
+  let originalExecution = null;
+  if (intent) {
+    // The lease is the pre-side-effect anchor naming the EXACT original
+    // execution this rollback inverts (the operator-anchored recovery path
+    // included): a pending/accepted/change-request anchor for a DIFFERENT —
+    // older — execution must not override the lease being completed. The
+    // journal-vs-intent digest check above already refused any journal that
+    // does not match the lease.
     originalExecution = {
       executionJournalPath: intent.originalExecutionJournalPath,
       executionJournalDigest: intent.originalExecutionJournalDigest,
     };
+  } else {
+    originalExecution = pending || accepted || (changeRequested ? {
+      executionJournalPath: changeRequested.executionJournalPath,
+      executionJournalDigest: changeRequested.executionJournalDigest,
+    } : null);
   }
   if (!originalExecution) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
   if (validated.originalExecutionJournalDigest !== originalExecution.executionJournalDigest) {

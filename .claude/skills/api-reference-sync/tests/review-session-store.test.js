@@ -1333,6 +1333,18 @@ test('an operator-supplied rollback journal overrides the session change-request
   assert.equal(leased.activeRollback.originalExecutionJournalDigest, failedDigest);
   assert.notEqual(leased.activeRollback.originalExecutionJournalDigest, anchored.digest);
 
+  // Completion records against the LEASE anchor: a change-request anchor for
+  // the OLDER execution must not refuse the receipt (the exact refusal that
+  // stranded the go-v30 b35r2 rollback after its side effects landed).
+  const completed = recordDocumentRollback(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.equal(completed.rollbackReceipts.length, 1);
+  assert.equal(completed.rollbackReceipts[0].originalExecutionJournalDigest, failedDigest);
+  assert.equal(completed.activeRollback, null);
+
   // Without the operator journal the change-request anchor still decides.
   const anchoredLease = recordRollbackIntent(requested, {
     reviewUnitId: 'review:node:Collections:a',

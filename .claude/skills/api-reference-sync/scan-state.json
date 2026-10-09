@@ -73,6 +73,7 @@
   "java-v30": {
     "lastScannedTag": "v3.0.10",
     "lastScannedCommit": "134addaaaf7394272694b9153a903f3c6d36ccd8",
-    "lastScanDate": "2026-10-02"
+    "lastScanDate": "2026-10-09",
+    "revisionCampaign": "java-v30-revision finalized 204/204 (2026-10-09); style baseline enforced, standing rulings applied: exception label singularized, two-line method signatures, examples filled, OS-only [Milvus] / Zilliz-only [Zilliz] targets"
   }
 }

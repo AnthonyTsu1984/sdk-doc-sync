@@ -623,7 +623,11 @@ class SyncExecutor {
   async _executeRepointVirtualNode(plan, resolutions, result) {
     const resource = plan.resource;
     this._assertBitableTarget(resource);
-    const folderToken = resourceValue(resolutions, resource.folderRef);
+    // A concrete folderToken (existing-folder form) needs no in-batch
+    // resolution; the folderRef form resolves from the batch CREATE_FOLDER.
+    const folderToken = nonEmptyString(resource.folderToken)
+      ? resource.folderToken
+      : resourceValue(resolutions, resource.folderRef);
     if (!nonEmptyString(folderToken)) {
       const error = new SyncExecutionError(
         'RESOURCE_RESOLUTION_REQUIRED',

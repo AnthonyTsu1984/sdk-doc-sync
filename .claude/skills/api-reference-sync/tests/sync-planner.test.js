@@ -1457,8 +1457,100 @@ test('SyncPlanner creates a dependent VirtualNode repoint resource that follows 
       currentFolderToken: 'folder-auth-old',
     },
   }), /requires the folder and document dependencies/);
-});
-
+  });
+  
+  test('SyncPlanner plans a post-creation VirtualNode repoint against a concrete folderToken', () => {
+    const plan = new SyncPlanner().planResource({
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      title: 'DataImport',
+      folderToken: 'folder-dataimport-new',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: ['go:DataImport:SomeInterface'],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    });
+  
+    assert.equal(plan.action, 'REPOINT_CATEGORY_VIRTUAL_NODE');
+    assert.deepEqual(plan.dependencies, ['go:DataImport:SomeInterface']);
+    assert.deepEqual(plan.postconditions[1], {
+      type: 'VIRTUAL_NODE_LINK',
+      recordId: 'rec-dataimport',
+      folderToken: 'folder-dataimport-new',
+      preservedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+    });
+  });
+  
+  test('SyncPlanner rejects a post-creation VirtualNode repoint without a document dependency', () => {
+    assert.throws(() => new SyncPlanner().planResource({
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      folderToken: 'folder-dataimport-new',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: [],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    }), /requires the folder and document dependencies/);
+  });
+  
+  test('SyncPlanner requires exactly one repoint destination form (folderRef XOR folderToken)', () => {
+    const base = {
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: ['folder:go:v30:DataImport', 'go:DataImport:SomeInterface'],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    };
+    assert.throws(() => new SyncPlanner().planResource({ ...base, folderRef: 'folder:go:v30:DataImport', folderToken: 'folder-dataimport-new' }), /requires exactly one of folderRef/);
+    const neither = { ...base };
+    assert.throws(() => new SyncPlanner().planResource(neither), /requires exactly one of folderRef/);
+  });
+  
 test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
   const plan = new SyncPlanner().planResource({
     kind: 'virtual_node',

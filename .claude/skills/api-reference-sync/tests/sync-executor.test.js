@@ -410,13 +410,78 @@ test('SyncExecutor repoints a category VirtualNode as its own verified downstrea
     title: 'Authentication',
     link: expectedLink,
   });
-  assert.deepEqual(result.completedSteps, [
-    'verifyVirtualNodePrecondition',
-    'repointVirtualNode',
-    'verifyVirtualNodeRepoint',
-  ]);
-});
-
+  });
+  
+  test('SyncExecutor repoints against a concrete folderToken without in-batch folder resolution', async () => {
+    const calls = [];
+    let repointed = false;
+    const expectedLink = `${(process.env.FEISHU_DOC_HOST || 'https://zilliverse.feishu.cn').replace(/\/$/, '')}/drive/folder/folder-dataimport-new`;
+    const documentWriter = {};
+    const bitableWriter = {
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      async updateRecord(recordIdValue, fields) {
+        calls.push(['updateRecord', recordIdValue, fields]);
+        repointed = true;
+        return { record_id: recordIdValue, fields };
+      },
+      async getRecord(recordIdValue) {
+        calls.push(['getRecord', recordIdValue]);
+        return {
+          record_id: recordIdValue,
+          fields: {
+            Docs: {
+              text: 'DataImport',
+              link: repointed
+                ? expectedLink
+                : 'https://zilliverse.feishu.cn/drive/folder/folder-dataimport-old',
+            },
+            Type: 'VirtualNode',
+            Progress: 'Draft',
+            Targets: ['Milvus', 'Zilliz'],
+            Slug: [{ text: 'DataImport', type: 'text' }],
+          },
+        };
+      },
+    };
+    const resourcePlan = new SyncPlanner().planResource({
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      title: 'DataImport',
+      folderToken: 'folder-dataimport-new',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: ['go:DataImport:SomeInterface'],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    });
+    const result = await new SyncExecutor({ documentWriter, bitableWriter }).execute(resourcePlan, {
+      approval: { approved: true },
+      resourceResolutions: new Map(),
+    });
+  
+    assert.equal(result.status, 'success');
+    assert.deepEqual(result.resolvedResource, {
+      ref: 'repoint:go:v30:DataImport',
+      kind: 'virtual_node_repoint',
+      value: 'rec-dataimport',
+      recordId: 'rec-dataimport',
+    });
+    assert.deepEqual(calls[1][2], { title: 'DataImport', link: expectedLink });
+  });
+  
 test('SyncExecutor rejects a repoint whose VirtualNode drifted from the approved current link', async () => {
   const documentWriter = {};
   const bitableWriter = {

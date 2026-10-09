@@ -278,12 +278,23 @@ class SyncPlanner {
       ];
     } else if (resource.kind === 'virtual_node_repoint') {
       const expectedFields = resource.expectedFields || {};
+      // Exactly one destination form: folderRef resolved from a CREATE_FOLDER
+      // resource planned in the same batch (pre-creation), or a concrete
+      // folderToken for a version folder that already exists (post-creation
+      // adoption — no folder resource is planned anymore).
+      const hasFolderRef = nonEmptyString(resource.folderRef);
+      const hasFolderToken = nonEmptyString(resource.folderToken);
+      if (hasFolderRef === hasFolderToken) {
+        throw new SyncPlanningError(
+          'VIRTUAL_NODE_REPOINT_RESOURCE_INVALID',
+          `VirtualNode repoint resource ${ref} requires exactly one of folderRef (in-batch CREATE_FOLDER) or folderToken (existing folder)`,
+        );
+      }
       const documentDependencies = dependencies.filter((dependency) => dependency !== resource.folderRef);
       if (!nonEmptyString(resource.recordId)
-        || !nonEmptyString(resource.folderRef)
         || !nonEmptyString(resource.baseToken)
         || !nonEmptyString(resource.tableId)
-        || !dependencies.includes(resource.folderRef)
+        || (hasFolderRef && !dependencies.includes(resource.folderRef))
         || documentDependencies.length === 0
         || !nonEmptyString(resource.currentFolderToken)
         || expectedFields.type !== 'VirtualNode'
@@ -303,7 +314,7 @@ class SyncPlanner {
         {
           type: 'VIRTUAL_NODE_LINK',
           recordId: resource.recordId,
-          folderRef: resource.folderRef,
+          ...(hasFolderRef ? { folderRef: resource.folderRef } : { folderToken: resource.folderToken }),
           preservedFields: deepClone(expectedFields),
         },
       ];

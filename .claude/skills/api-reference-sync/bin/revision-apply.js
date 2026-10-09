@@ -417,6 +417,13 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         ...(Array.isArray(entry.sanctionedItemEdits)
             ? { sanctionedItemEdits: entry.sanctionedItemEdits }
             : {}),
+        // Operator-sanctioned code-block replacements (2026-10-09 example
+        // ruling, transferNode class): filling an EMPTY Example fence under
+        // an explicit before→after declaration; the after block must be
+        // present verbatim or the semantic gate fails closed.
+        ...(Array.isArray(entry.sanctionedCodeEdits)
+            ? { sanctionedCodeEdits: entry.sanctionedCodeEdits }
+            : {}),
     };
     const { polishedContent, provenance } = applyPolishManifest({ manifest, baseContent });
 

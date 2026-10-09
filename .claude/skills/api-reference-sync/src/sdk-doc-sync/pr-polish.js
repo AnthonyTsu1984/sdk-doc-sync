@@ -361,6 +361,20 @@ function validateRestructureManifest({ manifest, baseContent } = {}) {
             return { errors };
         }
     }
+    if (manifest.sanctionedCodeEdits !== undefined) {
+        if (!Array.isArray(manifest.sanctionedCodeEdits)
+            || manifest.sanctionedCodeEdits.some((edit) => !edit
+                || typeof edit.lang !== 'string' || edit.lang.trim() === ''
+                || !Array.isArray(edit.before) || edit.before.some((line) => typeof line !== 'string')
+                || !Array.isArray(edit.after) || edit.after.length === 0
+                || edit.after.some((line) => typeof line !== 'string'))) {
+            errors.push(polishError(
+                'PR_POLISH_SANCTIONED_CODE_EDITS_INVALID',
+                'sanctionedCodeEdits must be an array of {lang, before: string[], after: non-empty string[]} when present',
+            ));
+            return { errors };
+        }
+    }
 
     const comparison = compareSemanticContent({
         upstreamContent: content,
@@ -368,6 +382,7 @@ function validateRestructureManifest({ manifest, baseContent } = {}) {
         options: {
             sanctionedIncludeRemovals: manifest.sanctionedIncludeRemovals,
             sanctionedItemEdits: manifest.sanctionedItemEdits,
+            sanctionedCodeEdits: manifest.sanctionedCodeEdits,
         },
     });
     if (!comparison.ok) {

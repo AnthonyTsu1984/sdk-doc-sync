@@ -474,3 +474,42 @@ test('sanctionedItemEdits: listed label edits pass, unlisted or absent-target ed
     assert.equal(missingTarget.ok, false);
     assert.ok(missingTarget.diffs.some((diff) => diff.kind === 'EXCEPTION_ITEM_DROPPED'));
 });
+
+// 2026-10-09 (java revision campaign, operator example ruling):
+// sanctionedCodeEdits — a manifest-bound {lang, before, after} list of exact
+// code-block replacements (transferNode class: filling an EMPTY Example
+// fence). The PAGE fixture's single Java block is emptied, then filled.
+test('sanctionedCodeEdits: declared block replacement passes, undeclared or drifted fails', () => {
+    const emptyExample = PAGE.replace('public GetResp get(GetReq request)', '');
+    const filledLines = [
+        'import io.milvus.v2.client.ConnectConfig;',
+        'MilvusClientV2 client = new MilvusClientV2(ConnectConfig.builder()',
+        '    .uri("http://localhost:19530")',
+        '    .build());',
+        'client.get(GetReq.builder().build());',
+    ];
+    const canonical = emptyExample.replace('```Java\n\n```', '```Java\n' + filledLines.join('\n') + '\n```');
+
+    // Without sanction: filling the empty fence reads as a code change.
+    const unsanctioned = compareSemanticContent({ upstreamContent: emptyExample, canonicalContent: canonical });
+    assert.equal(unsanctioned.ok, false);
+    assert.ok(unsanctioned.diffs.some((diff) => diff.kind === 'CODE_BLOCK_ALTERED' || diff.kind === 'CODE_BLOCK_DROPPED'));
+
+    // With the operator-sanctioned replacement: the fill passes.
+    const sanctioned = compareSemanticContent({
+        upstreamContent: emptyExample,
+        canonicalContent: canonical,
+        options: { sanctionedCodeEdits: [{ lang: 'Java', before: [''], after: filledLines }] },
+    });
+    assert.equal(sanctioned.ok, true, JSON.stringify(sanctioned.diffs));
+
+    // Fail-closed: the declared after block must be present verbatim — a
+    // drifted fill still reports the change.
+    const drifted = emptyExample.replace('```Java\n\n```', '```Java\n' + filledLines.join('\n').replace('19530', '19531') + '\n```');
+    const driftedResult = compareSemanticContent({
+        upstreamContent: emptyExample,
+        canonicalContent: drifted,
+        options: { sanctionedCodeEdits: [{ lang: 'Java', before: [''], after: filledLines }] },
+    });
+    assert.equal(driftedResult.ok, false);
+});

@@ -350,8 +350,23 @@ function compareSemanticContent({ upstreamContent, canonicalContent, options } =
     // the key compares — raw counts would misread a marker-form change as a
     // whole-block drop.
     const filteredLineCount = (block) => JSON.parse(codeBlockKey(block))[1].length;
+    // 2026-10-09 (java revision campaign, operator example ruling): a
+    // manifest-bound list of exact code-block replacements the operator
+    // ordered — e.g. filling a page's EMPTY Example fence (transferNode
+    // class; three such pages remain in the campaign). Only a declared
+    // before→after pair whose after block is present VERBATIM counts as
+    // preserved; every other code change still fails — polish may never
+    // add or alter code otherwise.
+    const sanctionedCodeKeys = new Map(
+        (options?.sanctionedCodeEdits || []).map((edit) => [
+            codeBlockKey({ lang: edit.lang, lines: edit.before }),
+            codeBlockKey({ lang: edit.lang, lines: edit.after }),
+        ]),
+    );
     upstream.codeBlocks.forEach((block, index) => {
         if (codeIndices[index] !== -1) return;
+        const replacement = sanctionedCodeKeys.get(codeBlockKey(block));
+        if (replacement !== undefined && canonicalCode.includes(replacement)) return;
         const partial = canonical.codeBlocks.some((candidate) => candidate.lang === block.lang && filteredLineCount(candidate) === filteredLineCount(block));
         diffs.push({
             kind: partial ? 'CODE_BLOCK_ALTERED' : 'CODE_BLOCK_DROPPED',

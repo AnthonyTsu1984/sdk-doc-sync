@@ -91,7 +91,7 @@ function reconcileIdentityCoverage({ records, identityMap } = {}) {
 // Evidence-backed identity-map entry drafts for the missing slugs. Each draft
 // is derived from an existing governed record; merging stays a manual,
 // master-compared map edit.
-function identityEntryDrafts({ records, missing }) {
+function identityEntryDrafts({ records, missing, language = 'cpp' }) {
     const bySlug = new Map();
     for (const record of Array.isArray(records) ? records : []) {
         const slug = recordSlug(record);
@@ -111,7 +111,7 @@ function identityEntryDrafts({ records, missing }) {
         entries.push({
             key,
             entry: {
-                stableId: `cpp:${category}:${name}`,
+                stableId: `${language}:${category}:${name}`,
                 canonicalSlug: slug,
                 category,
             },

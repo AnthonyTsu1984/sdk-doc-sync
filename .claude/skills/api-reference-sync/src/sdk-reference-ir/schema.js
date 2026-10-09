@@ -10,7 +10,7 @@ const DOCUMENT_KINDS = Object.freeze([
   'command',
   'rest-operation',
 ]);
-const LANGUAGES = Object.freeze(['python', 'java', 'node', 'go', 'cpp', 'zilliz-cli', 'rest']);
+const LANGUAGES = Object.freeze(['python', 'java', 'node', 'go', 'cpp', 'rust', 'zilliz-cli', 'rest']);
 // 'method' (python class methods, 2026-10-06 Volume ruling) and 'member'
 // (python enum values) ride the same callableMembers channel.
 const MEMBER_KINDS = Object.freeze(['builder', 'option', 'request', 'implementation', 'method', 'member']);

@@ -16,7 +16,7 @@ const EXAMPLE_FENCE = /^[A-Za-z][A-Za-z0-9+.#_-]{0,31}$/;
 const AUDIENCE_VALUE = /^[a-z0-9][a-z0-9.-]*$/;
 const NAMED_PLACEHOLDER = /Brief description|Usage example|List relevant exceptions/i;
 const TODO_WORKFLOW = /\btodo\s+(?:later|fix|pending|replace|add|update|review|implement|document|describe|example)\b/i;
-const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp']);
+const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp', 'rust']);
 const MEMBER_KIND_BY_LANGUAGE = new Map([
   ['java', 'builder'],
   ['node', 'implementation'],
@@ -25,6 +25,9 @@ const MEMBER_KIND_BY_LANGUAGE = new Map([
   // 2026-10-06 Volume ruling: python classes expose methods, enums expose
   // values — both through the callableMembers channel.
   ['python', ['method', 'member']],
+  // Rust request builder options ride the option channel; enum variants
+  // ride the member channel (rust overlay pilot, 2026-10-08).
+  ['rust', ['option', 'member']],
 ]);
 const SIGNATURE_REQUIRED = new Set(['method', 'function', 'command', 'rest-operation']);
 const EXAMPLE_REQUIRED = new Set(['method', 'function', 'class', 'command', 'rest-operation']);

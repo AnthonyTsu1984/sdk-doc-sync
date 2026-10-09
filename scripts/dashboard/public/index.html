@@ -348,17 +348,27 @@ function renderSentinels(d) {
       : s.status === 'stale' ? '<span class="badge zombie">⚠ 超 25h 未运行</span>'
         : '<span class="badge finalized">从未运行</span>';
     const rep = s.report || {};
+    const r = s.readiness || {};
+    const readyBadge = r.awaitingFirstCampaign ? '<span class="badge">已就绪 · 待首战</span>'
+      : r.ready ? '<span class="badge active">已就绪</span>'
+        : '<span class="badge zombie">前提缺失</span>';
+    const readyDetail = [
+      r.sdkClone ? null : 'SDK 克隆缺失',
+      (r.identityMaps && r.identityMaps.missing && r.identityMaps.missing.length) ? `缺地图 ${r.identityMaps.missing.join(' ')}` : null,
+      (r.scanState && r.scanState.missing && r.scanState.missing.length) ? `待首战基线 ${r.scanState.missing.join(' ')}` : null,
+    ].filter(Boolean).join(' · ') || (r.ready ? '全部就绪' : (r.awaitingFirstCampaign ? '能力就绪，scan-state 基线待首战播种' : ''));
     const today = rep.present
       ? (rep.hasFindings === false
         ? '<span class="badge finalized">今日无变化</span>'
         : `<span class="badge zombie">今日有发现</span>`)
       : '<span class="badge">今日报告未落盘</span>';
     return `<div class="card sentinel">
-      <div class="row1"><span class="title">${esc(s.title)}</span><span style="display:flex;gap:6px">${today}${badge}</span></div>
+      <div class="row1"><span class="title">${esc(s.title)}</span><span style="display:flex;gap:6px">${readyBadge}${today}${badge}</span></div>
       <div class="sched">${esc(s.schedule)} · 上次 ${rel(s.lastRunAt)} · 下次 ${fmt(s.nextRunAt)}</div>
       <div class="kv">
         <b>今日结论</b><span>${rep.present ? `${esc(rep.conclusion ?? '见报告')} · ${viewLink(rep.path, '打开日报')}` : '—'}</span>
         <b>工件</b><span>${s.artifactsPresent ? viewLink(s.artifactsDir + '/', 'tmp/sdk-release-scout/daily/') : '无'}</span>
+        <b>就绪</b><span>${esc(readyDetail || '—')}</span>
       </div>
       <div class="note">水位：web-content PR #${s.cursor?.lastPrNumber ?? '?'}（C++/Java 扫描器共用同一上游仓库的 PR 水位，两卡同值属正常）· 红线：扫描只发现不处置，立项处理是人工动作。</div>
     </div>`;

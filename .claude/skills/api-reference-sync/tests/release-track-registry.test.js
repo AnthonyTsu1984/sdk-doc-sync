@@ -65,6 +65,24 @@ test('registry identities match the published sdk reference tables', () => {
   }
 });
 
+test('rust registry identities match the published sdk-rust.md table', () => {
+  const registry = loadReleaseTrackRegistry();
+  const rustDoc = fs.readFileSync(
+    path.join(__dirname, '..', 'sdk-rust.md'),
+    'utf8',
+  );
+  for (const track of listLanguageTracks(registry, 'rust')) {
+    assert.ok(
+      rustDoc.includes(trackBaseToken(track)),
+      `rust ${track.version} base token must stay in sync with sdk-rust.md`,
+    );
+    assert.ok(
+      rustDoc.includes(trackReleaseRootToken(track)),
+      `rust ${track.version} release root must stay in sync with sdk-rust.md`,
+    );
+  }
+});
+
 test('registry resolution supports env references and rejects unresolved identities', () => {
   assert.equal(resolveIdentity({ env: 'TRACK_BASE' }, { TRACK_BASE: 'base-from-env' }), 'base-from-env');
   assert.equal(resolveIdentity({ env: 'TRACK_BASE' }, {}), null);
@@ -85,9 +103,33 @@ test('registry resolution supports env references and rejects unresolved identit
     () => requireTrack(registry, 'cpp', 'v9.9.x'),
     (error) => error.code === 'TRACK_REGISTRY_TRACK_NOT_REGISTERED',
   );
+});
+
+test('the committed registry loads rust dual-track with derived scan-state keys', () => {
+  const registry = loadReleaseTrackRegistry();
+
+  const rustTracks = listLanguageTracks(registry, 'rust').map((track) => track.version);
+  assert.deepEqual(rustTracks, ['v2.6.x', 'v3.0.x']);
+
+  // Both release roots are explicit children of the RUST container folder
+  // (verified via drive/v1/files enumeration 2026-10-08); scan-state keys
+  // derive as rust-v26 / rust-v30 with no override pinned.
+  const v26 = requireTrack(registry, 'rust', 'v2.6.x');
+  assert.equal(v26.scanStateKey ?? 'rust-v26', 'rust-v26');
+  assert.equal(trackBaseToken(v26), 'HmCmbiQEcawJzxszPj1cBH7Gnwd');
+  assert.equal(trackReleaseRootToken(v26), 'NnYMfAqtJlzJ8zdwpiNcJOuGnF9');
+  assert.equal(v26.drive.releaseRoot.resolution, 'explicit-child');
+  assert.equal(v26.drive.configuredRootToken, 'PeN4ftfCglBs4AdS8CTcjtdOnPJ');
+
+  const v30 = requireTrack(registry, 'rust', 'v3.0.x');
+  assert.equal(v30.scanStateKey ?? 'rust-v30', 'rust-v30');
+  assert.equal(trackBaseToken(v30), 'ONBTbsAdha3UNvsfnG5cEISvnBZ');
+  assert.equal(trackReleaseRootToken(v30), 'XiM3fDXSBldV2IdN0r9cXCe6nqw');
+  assert.equal(v30.drive.releaseRoot.resolution, 'explicit-child');
+
   assert.throws(
-    () => listLanguageTracks(registry, 'rust'),
-    (error) => error.code === 'TRACK_REGISTRY_LANGUAGE_NOT_REGISTERED',
+    () => requireTrack(registry, 'rust', 'v9.9.x'),
+    (error) => error.code === 'TRACK_REGISTRY_TRACK_NOT_REGISTERED',
   );
 });
 

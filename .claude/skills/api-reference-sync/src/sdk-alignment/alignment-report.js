@@ -24,6 +24,7 @@ const DEFAULT_ROOTS = {
     node: 'repos/milvus-sdk-node',
     cpp: 'repos/milvus-sdk-cpp',
     go: 'repos/milvus-sdk-go',
+    rust: 'repos/milvus-sdk-rust',
 };
 
 class AlignmentReport {

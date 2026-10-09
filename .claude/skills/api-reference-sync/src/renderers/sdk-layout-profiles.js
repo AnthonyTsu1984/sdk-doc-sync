@@ -76,6 +76,19 @@ const JAVA_LAYOUT_RULES = Object.freeze({
   returnsProseRequired: true,
 });
 
+// Rust adopts the java 2026-10-01 return-section family (the source comment
+// above predicted per-track adoption at repolish time — rust overlay pilot
+// is the first) plus the cpp bare-signature slot; the five global content
+// rules come with the GLOBAL base. The builder prefix regex baseline derives
+// from real rust pages (CreateCollectionRequest::builder() chains).
+const RUST_LAYOUT_RULES = Object.freeze({
+  ...GLOBAL_LAYOUT_RULES,
+  version: 4,
+  builderSignature: Object.freeze({ prefixForbidden: Object.freeze([]) }),
+  returnSections: Object.freeze({ split: true }),
+  returnsProseRequired: true,
+});
+
 function freezeLayoutRules(rules) {
   if (!rules) return undefined;
   return Object.freeze({
@@ -139,6 +152,13 @@ const profiles = Object.freeze({
     fences: { 'canonical-signature': 'C++', 'request-signature': 'C++', 'example-code': 'C++' },
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
     layoutRules: CPP_LAYOUT_RULES,
+  }),
+  rust: freezeProfile({
+    id: 'rust', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
+    fences: { 'canonical-signature': 'Rust', 'request-signature': 'Rust', 'example-code': 'Rust' },
+    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
+    layoutRules: RUST_LAYOUT_RULES,
   }),
 });
 

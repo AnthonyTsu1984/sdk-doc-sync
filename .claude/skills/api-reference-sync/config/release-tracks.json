@@ -271,6 +271,41 @@
           }
         }
       ]
+    },
+    "rust": {
+      "sdkName": "milvus-sdk-rust",
+      "tracks": [
+        {
+          "version": "v2.6.x",
+          "bitable": {
+            "baseToken": "HmCmbiQEcawJzxszPj1cBH7Gnwd",
+            "tableId": null
+          },
+          "drive": {
+            "configuredRootToken": "PeN4ftfCglBs4AdS8CTcjtdOnPJ",
+            "releaseRoot": {
+              "resolution": "explicit-child",
+              "token": "NnYMfAqtJlzJ8zdwpiNcJOuGnF9",
+              "note": "verified: drive/v1/files enumeration of the RUST container 2026-10-08 (folder v2.6.x)"
+            }
+          }
+        },
+        {
+          "version": "v3.0.x",
+          "bitable": {
+            "baseToken": "ONBTbsAdha3UNvsfnG5cEISvnBZ",
+            "tableId": null
+          },
+          "drive": {
+            "configuredRootToken": "PeN4ftfCglBs4AdS8CTcjtdOnPJ",
+            "releaseRoot": {
+              "resolution": "explicit-child",
+              "token": "XiM3fDXSBldV2IdN0r9cXCe6nqw",
+              "note": "verified: drive/v1/files enumeration of the RUST container 2026-10-08 (folder v3.0.x)"
+            }
+          }
+        }
+      ]
     }
   }
 }

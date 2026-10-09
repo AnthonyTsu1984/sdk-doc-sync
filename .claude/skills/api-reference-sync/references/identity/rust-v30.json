@@ -1,0 +1,739 @@
+{
+  "schemaVersion": 1,
+  "language": "rust",
+  "track": "v3.0.x",
+  "defaultCategory": "Client",
+  "packagePrefix": "",
+  "symbols": {
+    "Authentication.AddPrivilegesToGroup": {
+      "stableId": "rust:Authentication:AddPrivilegesToGroup",
+      "canonicalSlug": "Authentication-AddPrivilegesToGroup",
+      "category": "Authentication"
+    },
+    "Authentication.AlterRole": {
+      "stableId": "rust:Authentication:AlterRole",
+      "canonicalSlug": "Authentication-AlterRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreatePrivilegeGroup": {
+      "stableId": "rust:Authentication:CreatePrivilegeGroup",
+      "canonicalSlug": "Authentication-CreatePrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.CreateRole": {
+      "stableId": "rust:Authentication:CreateRole",
+      "canonicalSlug": "Authentication-CreateRole",
+      "category": "Authentication"
+    },
+    "Authentication.CreateUser": {
+      "stableId": "rust:Authentication:CreateUser",
+      "canonicalSlug": "Authentication-CreateUser",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeRole": {
+      "stableId": "rust:Authentication:DescribeRole",
+      "canonicalSlug": "Authentication-DescribeRole",
+      "category": "Authentication"
+    },
+    "Authentication.DescribeUser": {
+      "stableId": "rust:Authentication:DescribeUser",
+      "canonicalSlug": "Authentication-DescribeUser",
+      "category": "Authentication"
+    },
+    "Authentication.DropPrivilegeGroup": {
+      "stableId": "rust:Authentication:DropPrivilegeGroup",
+      "canonicalSlug": "Authentication-DropPrivilegeGroup",
+      "category": "Authentication"
+    },
+    "Authentication.DropRole": {
+      "stableId": "rust:Authentication:DropRole",
+      "canonicalSlug": "Authentication-DropRole",
+      "category": "Authentication"
+    },
+    "Authentication.DropUser": {
+      "stableId": "rust:Authentication:DropUser",
+      "canonicalSlug": "Authentication-DropUser",
+      "category": "Authentication"
+    },
+    "Authentication.GrantPrivilege": {
+      "stableId": "rust:Authentication:GrantPrivilege",
+      "canonicalSlug": "Authentication-GrantPrivilege",
+      "category": "Authentication"
+    },
+    "Authentication.GrantRole": {
+      "stableId": "rust:Authentication:GrantRole",
+      "canonicalSlug": "Authentication-GrantRole",
+      "category": "Authentication"
+    },
+    "Authentication.ListPrivilegeGroups": {
+      "stableId": "rust:Authentication:ListPrivilegeGroups",
+      "canonicalSlug": "Authentication-ListPrivilegeGroups",
+      "category": "Authentication"
+    },
+    "Authentication.ListRoles": {
+      "stableId": "rust:Authentication:ListRoles",
+      "canonicalSlug": "Authentication-ListRoles",
+      "category": "Authentication"
+    },
+    "Authentication.ListUsers": {
+      "stableId": "rust:Authentication:ListUsers",
+      "canonicalSlug": "Authentication-ListUsers",
+      "category": "Authentication"
+    },
+    "Authentication.RemovePrivilegesFromGroup": {
+      "stableId": "rust:Authentication:RemovePrivilegesFromGroup",
+      "canonicalSlug": "Authentication-RemovePrivilegesFromGroup",
+      "category": "Authentication"
+    },
+    "Authentication.RevokePrivilege": {
+      "stableId": "rust:Authentication:RevokePrivilege",
+      "canonicalSlug": "Authentication-RevokePrivilege",
+      "category": "Authentication"
+    },
+    "Authentication.RevokeRole": {
+      "stableId": "rust:Authentication:RevokeRole",
+      "canonicalSlug": "Authentication-RevokeRole",
+      "category": "Authentication"
+    },
+    "Authentication.UpdatePassword": {
+      "stableId": "rust:Authentication:UpdatePassword",
+      "canonicalSlug": "Authentication-UpdatePassword",
+      "category": "Authentication"
+    },
+    "Authentication.UpdateUser": {
+      "stableId": "rust:Authentication:UpdateUser",
+      "canonicalSlug": "Authentication-UpdateUser",
+      "category": "Authentication"
+    },
+    "CDC.DumpMessages": {
+      "stableId": "rust:CDC:DumpMessages",
+      "canonicalSlug": "CDC-DumpMessages",
+      "category": "CDC"
+    },
+    "CDC.GetReplicateConfiguration": {
+      "stableId": "rust:CDC:GetReplicateConfiguration",
+      "canonicalSlug": "CDC-GetReplicateConfiguration",
+      "category": "CDC"
+    },
+    "CDC.GetReplicateInfo": {
+      "stableId": "rust:CDC:GetReplicateInfo",
+      "canonicalSlug": "CDC-GetReplicateInfo",
+      "category": "CDC"
+    },
+    "CDC.UpdateReplicateConfiguration": {
+      "stableId": "rust:CDC:UpdateReplicateConfiguration",
+      "canonicalSlug": "CDC-UpdateReplicateConfiguration",
+      "category": "CDC"
+    },
+    "Client.ClientTelemetry": {
+      "stableId": "rust:Client:ClientTelemetry",
+      "canonicalSlug": "Client-ClientTelemetry",
+      "category": "Client"
+    },
+    "Client.ConnectConfig": {
+      "stableId": "rust:Client:ConnectConfig",
+      "canonicalSlug": "Client-ConnectConfig",
+      "category": "Client"
+    },
+    "Client.MilvusClientV2": {
+      "stableId": "rust:Client:MilvusClientV2",
+      "canonicalSlug": "Client-MilvusClientV2",
+      "category": "Client"
+    },
+    "Client.MilvusClientV2Session": {
+      "stableId": "rust:Client:MilvusClientV2Session",
+      "canonicalSlug": "Client-MilvusClientV2Session",
+      "category": "Client"
+    },
+    "Client.RetryConfig": {
+      "stableId": "rust:Client:RetryConfig",
+      "canonicalSlug": "Client-RetryConfig",
+      "category": "Client"
+    },
+    "Client.TelemetryConfig": {
+      "stableId": "rust:Client:TelemetryConfig",
+      "canonicalSlug": "Client-TelemetryConfig",
+      "category": "Client"
+    },
+    "Collections.AddCollectionField": {
+      "stableId": "rust:Collections:AddCollectionField",
+      "canonicalSlug": "Collections-AddCollectionField",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionFunction": {
+      "stableId": "rust:Collections:AddCollectionFunction",
+      "canonicalSlug": "Collections-AddCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.AddCollectionStructField": {
+      "stableId": "rust:Collections:AddCollectionStructField",
+      "canonicalSlug": "Collections-AddCollectionStructField",
+      "category": "Collections"
+    },
+    "Collections.AddFunctionField": {
+      "stableId": "rust:Collections:AddFunctionField",
+      "canonicalSlug": "Collections-AddFunctionField",
+      "category": "Collections"
+    },
+    "Collections.AlterAlias": {
+      "stableId": "rust:Collections:AlterAlias",
+      "canonicalSlug": "Collections-AlterAlias",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionFieldProperties": {
+      "stableId": "rust:Collections:AlterCollectionFieldProperties",
+      "canonicalSlug": "Collections-AlterCollectionFieldProperties",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionFunction": {
+      "stableId": "rust:Collections:AlterCollectionFunction",
+      "canonicalSlug": "Collections-AlterCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.AlterCollectionProperties": {
+      "stableId": "rust:Collections:AlterCollectionProperties",
+      "canonicalSlug": "Collections-AlterCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.BatchDescribeCollections": {
+      "stableId": "rust:Collections:BatchDescribeCollections",
+      "canonicalSlug": "Collections-BatchDescribeCollections",
+      "category": "Collections"
+    },
+    "Collections.CreateAlias": {
+      "stableId": "rust:Collections:CreateAlias",
+      "canonicalSlug": "Collections-CreateAlias",
+      "category": "Collections"
+    },
+    "Collections.CreateCollection": {
+      "stableId": "rust:Collections:CreateCollection",
+      "canonicalSlug": "Collections-CreateCollection",
+      "category": "Collections"
+    },
+    "Collections.CreateSimpleCollection": {
+      "stableId": "rust:Collections:CreateSimpleCollection",
+      "canonicalSlug": "Collections-CreateSimpleCollection",
+      "category": "Collections"
+    },
+    "Collections.DataType": {
+      "stableId": "rust:Collections:DataType",
+      "canonicalSlug": "Collections-DataType",
+      "category": "Collections"
+    },
+    "Collections.DescribeAlias": {
+      "stableId": "rust:Collections:DescribeAlias",
+      "canonicalSlug": "Collections-DescribeAlias",
+      "category": "Collections"
+    },
+    "Collections.DescribeCollection": {
+      "stableId": "rust:Collections:DescribeCollection",
+      "canonicalSlug": "Collections-DescribeCollection",
+      "category": "Collections"
+    },
+    "Collections.DropAlias": {
+      "stableId": "rust:Collections:DropAlias",
+      "canonicalSlug": "Collections-DropAlias",
+      "category": "Collections"
+    },
+    "Collections.DropCollection": {
+      "stableId": "rust:Collections:DropCollection",
+      "canonicalSlug": "Collections-DropCollection",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionField": {
+      "stableId": "rust:Collections:DropCollectionField",
+      "canonicalSlug": "Collections-DropCollectionField",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionFieldProperties": {
+      "stableId": "rust:Collections:DropCollectionFieldProperties",
+      "canonicalSlug": "Collections-DropCollectionFieldProperties",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionFunction": {
+      "stableId": "rust:Collections:DropCollectionFunction",
+      "canonicalSlug": "Collections-DropCollectionFunction",
+      "category": "Collections"
+    },
+    "Collections.DropCollectionProperties": {
+      "stableId": "rust:Collections:DropCollectionProperties",
+      "canonicalSlug": "Collections-DropCollectionProperties",
+      "category": "Collections"
+    },
+    "Collections.DropFunctionField": {
+      "stableId": "rust:Collections:DropFunctionField",
+      "canonicalSlug": "Collections-DropFunctionField",
+      "category": "Collections"
+    },
+    "Collections.GetCollectionStats": {
+      "stableId": "rust:Collections:GetCollectionStats",
+      "canonicalSlug": "Collections-GetCollectionStats",
+      "category": "Collections"
+    },
+    "Collections.GetLoadState": {
+      "stableId": "rust:Collections:GetLoadState",
+      "canonicalSlug": "Collections-GetLoadState",
+      "category": "Collections"
+    },
+    "Collections.HasCollection": {
+      "stableId": "rust:Collections:HasCollection",
+      "canonicalSlug": "Collections-HasCollection",
+      "category": "Collections"
+    },
+    "Collections.ListAliases": {
+      "stableId": "rust:Collections:ListAliases",
+      "canonicalSlug": "Collections-ListAliases",
+      "category": "Collections"
+    },
+    "Collections.ListCollections": {
+      "stableId": "rust:Collections:ListCollections",
+      "canonicalSlug": "Collections-ListCollections",
+      "category": "Collections"
+    },
+    "Collections.LoadCollection": {
+      "stableId": "rust:Collections:LoadCollection",
+      "canonicalSlug": "Collections-LoadCollection",
+      "category": "Collections"
+    },
+    "Collections.RefreshLoad": {
+      "stableId": "rust:Collections:RefreshLoad",
+      "canonicalSlug": "Collections-RefreshLoad",
+      "category": "Collections"
+    },
+    "Collections.ReleaseCollection": {
+      "stableId": "rust:Collections:ReleaseCollection",
+      "canonicalSlug": "Collections-ReleaseCollection",
+      "category": "Collections"
+    },
+    "Collections.RenameCollection": {
+      "stableId": "rust:Collections:RenameCollection",
+      "canonicalSlug": "Collections-RenameCollection",
+      "category": "Collections"
+    },
+    "Collections.TruncateCollection": {
+      "stableId": "rust:Collections:TruncateCollection",
+      "canonicalSlug": "Collections-TruncateCollection",
+      "category": "Collections"
+    },
+    "DataImport.BulkImport": {
+      "stableId": "rust:DataImport:BulkImport",
+      "canonicalSlug": "DataImport-BulkImport",
+      "category": "DataImport"
+    },
+    "DataImport.GetImportProgress": {
+      "stableId": "rust:DataImport:GetImportProgress",
+      "canonicalSlug": "DataImport-GetImportProgress",
+      "category": "DataImport"
+    },
+    "DataImport.ListImportJobs": {
+      "stableId": "rust:DataImport:ListImportJobs",
+      "canonicalSlug": "DataImport-ListImportJobs",
+      "category": "DataImport"
+    },
+    "Database.AlterDatabaseProperties": {
+      "stableId": "rust:Database:AlterDatabaseProperties",
+      "canonicalSlug": "Database-AlterDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.CreateDatabase": {
+      "stableId": "rust:Database:CreateDatabase",
+      "canonicalSlug": "Database-CreateDatabase",
+      "category": "Database"
+    },
+    "Database.DescribeDatabase": {
+      "stableId": "rust:Database:DescribeDatabase",
+      "canonicalSlug": "Database-DescribeDatabase",
+      "category": "Database"
+    },
+    "Database.DropDatabase": {
+      "stableId": "rust:Database:DropDatabase",
+      "canonicalSlug": "Database-DropDatabase",
+      "category": "Database"
+    },
+    "Database.DropDatabaseProperties": {
+      "stableId": "rust:Database:DropDatabaseProperties",
+      "canonicalSlug": "Database-DropDatabaseProperties",
+      "category": "Database"
+    },
+    "Database.ListDatabases": {
+      "stableId": "rust:Database:ListDatabases",
+      "canonicalSlug": "Database-ListDatabases",
+      "category": "Database"
+    },
+    "Database.UseDatabase": {
+      "stableId": "rust:Database:UseDatabase",
+      "canonicalSlug": "Database-UseDatabase",
+      "category": "Database"
+    },
+    "FileResources.AddFileResource": {
+      "stableId": "rust:FileResources:AddFileResource",
+      "canonicalSlug": "FileResources-AddFileResource",
+      "category": "FileResources"
+    },
+    "FileResources.ListFileResources": {
+      "stableId": "rust:FileResources:ListFileResources",
+      "canonicalSlug": "FileResources-ListFileResources",
+      "category": "FileResources"
+    },
+    "FileResources.RemoveFileResource": {
+      "stableId": "rust:FileResources:RemoveFileResource",
+      "canonicalSlug": "FileResources-RemoveFileResource",
+      "category": "FileResources"
+    },
+    "Management.AlterIndexProperties": {
+      "stableId": "rust:Management:AlterIndexProperties",
+      "canonicalSlug": "Management-AlterIndexProperties",
+      "category": "Management"
+    },
+    "Management.CheckHealth": {
+      "stableId": "rust:Management:CheckHealth",
+      "canonicalSlug": "Management-CheckHealth",
+      "category": "Management"
+    },
+    "Management.Compact": {
+      "stableId": "rust:Management:Compact",
+      "canonicalSlug": "Management-Compact",
+      "category": "Management"
+    },
+    "Management.CreateIndex": {
+      "stableId": "rust:Management:CreateIndex",
+      "canonicalSlug": "Management-CreateIndex",
+      "category": "Management"
+    },
+    "Management.DescribeIndex": {
+      "stableId": "rust:Management:DescribeIndex",
+      "canonicalSlug": "Management-DescribeIndex",
+      "category": "Management"
+    },
+    "Management.DropIndex": {
+      "stableId": "rust:Management:DropIndex",
+      "canonicalSlug": "Management-DropIndex",
+      "category": "Management"
+    },
+    "Management.DropIndexProperties": {
+      "stableId": "rust:Management:DropIndexProperties",
+      "canonicalSlug": "Management-DropIndexProperties",
+      "category": "Management"
+    },
+    "Management.Flush": {
+      "stableId": "rust:Management:Flush",
+      "canonicalSlug": "Management-Flush",
+      "category": "Management"
+    },
+    "Management.FlushAll": {
+      "stableId": "rust:Management:FlushAll",
+      "canonicalSlug": "Management-FlushAll",
+      "category": "Management"
+    },
+    "Management.GetCompactionPlans": {
+      "stableId": "rust:Management:GetCompactionPlans",
+      "canonicalSlug": "Management-GetCompactionPlans",
+      "category": "Management"
+    },
+    "Management.GetCompactionState": {
+      "stableId": "rust:Management:GetCompactionState",
+      "canonicalSlug": "Management-GetCompactionState",
+      "category": "Management"
+    },
+    "Management.GetFlushAllState": {
+      "stableId": "rust:Management:GetFlushAllState",
+      "canonicalSlug": "Management-GetFlushAllState",
+      "category": "Management"
+    },
+    "Management.GetRefreshExternalCollectionProgress": {
+      "stableId": "rust:Management:GetRefreshExternalCollectionProgress",
+      "canonicalSlug": "Management-GetRefreshExternalCollectionProgress",
+      "category": "Management"
+    },
+    "Management.GetServerVersion": {
+      "stableId": "rust:Management:GetServerVersion",
+      "canonicalSlug": "Management-GetServerVersion",
+      "category": "Management"
+    },
+    "Management.IndexType": {
+      "stableId": "rust:Management:IndexType",
+      "canonicalSlug": "Management-IndexType",
+      "category": "Management"
+    },
+    "Management.ListIndexes": {
+      "stableId": "rust:Management:ListIndexes",
+      "canonicalSlug": "Management-ListIndexes",
+      "category": "Management"
+    },
+    "Management.ListPersistentSegments": {
+      "stableId": "rust:Management:ListPersistentSegments",
+      "canonicalSlug": "Management-ListPersistentSegments",
+      "category": "Management"
+    },
+    "Management.ListQuerySegments": {
+      "stableId": "rust:Management:ListQuerySegments",
+      "canonicalSlug": "Management-ListQuerySegments",
+      "category": "Management"
+    },
+    "Management.ListRefreshExternalCollectionJobs": {
+      "stableId": "rust:Management:ListRefreshExternalCollectionJobs",
+      "canonicalSlug": "Management-ListRefreshExternalCollectionJobs",
+      "category": "Management"
+    },
+    "Management.MetricType": {
+      "stableId": "rust:Management:MetricType",
+      "canonicalSlug": "Management-MetricType",
+      "category": "Management"
+    },
+    "Management.Optimize": {
+      "stableId": "rust:Management:Optimize",
+      "canonicalSlug": "Management-Optimize",
+      "category": "Management"
+    },
+    "Management.RefreshExternalCollection": {
+      "stableId": "rust:Management:RefreshExternalCollection",
+      "canonicalSlug": "Management-RefreshExternalCollection",
+      "category": "Management"
+    },
+    "Management.SDKVersion": {
+      "stableId": "rust:Management:SDKVersion",
+      "canonicalSlug": "Management-SDKVersion",
+      "category": "Management"
+    },
+    "Partitions.CreatePartition": {
+      "stableId": "rust:Partitions:CreatePartition",
+      "canonicalSlug": "Partitions-CreatePartition",
+      "category": "Partitions"
+    },
+    "Partitions.DropPartition": {
+      "stableId": "rust:Partitions:DropPartition",
+      "canonicalSlug": "Partitions-DropPartition",
+      "category": "Partitions"
+    },
+    "Partitions.GetPartitionStats": {
+      "stableId": "rust:Partitions:GetPartitionStats",
+      "canonicalSlug": "Partitions-GetPartitionStats",
+      "category": "Partitions"
+    },
+    "Partitions.HasPartition": {
+      "stableId": "rust:Partitions:HasPartition",
+      "canonicalSlug": "Partitions-HasPartition",
+      "category": "Partitions"
+    },
+    "Partitions.ListPartitions": {
+      "stableId": "rust:Partitions:ListPartitions",
+      "canonicalSlug": "Partitions-ListPartitions",
+      "category": "Partitions"
+    },
+    "Partitions.LoadPartitions": {
+      "stableId": "rust:Partitions:LoadPartitions",
+      "canonicalSlug": "Partitions-LoadPartitions",
+      "category": "Partitions"
+    },
+    "Partitions.ReleasePartitions": {
+      "stableId": "rust:Partitions:ReleasePartitions",
+      "canonicalSlug": "Partitions-ReleasePartitions",
+      "category": "Partitions"
+    },
+    "ResourceGroup.CreateResourceGroup": {
+      "stableId": "rust:ResourceGroup:CreateResourceGroup",
+      "canonicalSlug": "ResourceGroup-CreateResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DescribeReplicas": {
+      "stableId": "rust:ResourceGroup:DescribeReplicas",
+      "canonicalSlug": "ResourceGroup-DescribeReplicas",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DescribeResourceGroup": {
+      "stableId": "rust:ResourceGroup:DescribeResourceGroup",
+      "canonicalSlug": "ResourceGroup-DescribeResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.DropResourceGroup": {
+      "stableId": "rust:ResourceGroup:DropResourceGroup",
+      "canonicalSlug": "ResourceGroup-DropResourceGroup",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.ListResourceGroups": {
+      "stableId": "rust:ResourceGroup:ListResourceGroups",
+      "canonicalSlug": "ResourceGroup-ListResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.TransferNode": {
+      "stableId": "rust:ResourceGroup:TransferNode",
+      "canonicalSlug": "ResourceGroup-TransferNode",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.TransferReplica": {
+      "stableId": "rust:ResourceGroup:TransferReplica",
+      "canonicalSlug": "ResourceGroup-TransferReplica",
+      "category": "ResourceGroup"
+    },
+    "ResourceGroup.UpdateResourceGroups": {
+      "stableId": "rust:ResourceGroup:UpdateResourceGroups",
+      "canonicalSlug": "ResourceGroup-UpdateResourceGroups",
+      "category": "ResourceGroup"
+    },
+    "Snapshots.CreateSnapshot": {
+      "stableId": "rust:Snapshots:CreateSnapshot",
+      "canonicalSlug": "Snapshots-CreateSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.DescribeSnapshot": {
+      "stableId": "rust:Snapshots:DescribeSnapshot",
+      "canonicalSlug": "Snapshots-DescribeSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.DropSnapshot": {
+      "stableId": "rust:Snapshots:DropSnapshot",
+      "canonicalSlug": "Snapshots-DropSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.GetRestoreSnapshotState": {
+      "stableId": "rust:Snapshots:GetRestoreSnapshotState",
+      "canonicalSlug": "Snapshots-GetRestoreSnapshotState",
+      "category": "Snapshots"
+    },
+    "Snapshots.ListRestoreSnapshotJobs": {
+      "stableId": "rust:Snapshots:ListRestoreSnapshotJobs",
+      "canonicalSlug": "Snapshots-ListRestoreSnapshotJobs",
+      "category": "Snapshots"
+    },
+    "Snapshots.ListSnapshots": {
+      "stableId": "rust:Snapshots:ListSnapshots",
+      "canonicalSlug": "Snapshots-ListSnapshots",
+      "category": "Snapshots"
+    },
+    "Snapshots.PinSnapshotData": {
+      "stableId": "rust:Snapshots:PinSnapshotData",
+      "canonicalSlug": "Snapshots-PinSnapshotData",
+      "category": "Snapshots"
+    },
+    "Snapshots.RestoreSnapshot": {
+      "stableId": "rust:Snapshots:RestoreSnapshot",
+      "canonicalSlug": "Snapshots-RestoreSnapshot",
+      "category": "Snapshots"
+    },
+    "Snapshots.UnpinSnapshotData": {
+      "stableId": "rust:Snapshots:UnpinSnapshotData",
+      "canonicalSlug": "Snapshots-UnpinSnapshotData",
+      "category": "Snapshots"
+    },
+    "Vector.Delete": {
+      "stableId": "rust:Vector:Delete",
+      "canonicalSlug": "Vector-Delete",
+      "category": "Vector"
+    },
+    "Vector.Get": {
+      "stableId": "rust:Vector:Get",
+      "canonicalSlug": "Vector-Get",
+      "category": "Vector"
+    },
+    "Vector.HybridSearch": {
+      "stableId": "rust:Vector:HybridSearch",
+      "canonicalSlug": "Vector-HybridSearch",
+      "category": "Vector"
+    },
+    "Vector.Insert": {
+      "stableId": "rust:Vector:Insert",
+      "canonicalSlug": "Vector-Insert",
+      "category": "Vector"
+    },
+    "Vector.Query": {
+      "stableId": "rust:Vector:Query",
+      "canonicalSlug": "Vector-Query",
+      "category": "Vector"
+    },
+    "Vector.QueryIterator": {
+      "stableId": "rust:Vector:QueryIterator",
+      "canonicalSlug": "Vector-QueryIterator",
+      "category": "Vector"
+    },
+    "Vector.RunAnalyzer": {
+      "stableId": "rust:Vector:RunAnalyzer",
+      "canonicalSlug": "Vector-RunAnalyzer",
+      "category": "Vector"
+    },
+    "Vector.Search": {
+      "stableId": "rust:Vector:Search",
+      "canonicalSlug": "Vector-Search",
+      "category": "Vector"
+    },
+    "Vector.SearchIterator": {
+      "stableId": "rust:Vector:SearchIterator",
+      "canonicalSlug": "Vector-SearchIterator",
+      "category": "Vector"
+    },
+    "Vector.Upsert": {
+      "stableId": "rust:Vector:Upsert",
+      "canonicalSlug": "Vector-Upsert",
+      "category": "Vector"
+    },
+    "types.AggregationMetricValue": {
+      "stableId": "rust:types:AggregationMetricValue",
+      "canonicalSlug": "types-AggregationMetricValue",
+      "category": "types"
+    },
+    "types.CollectionDesc": {
+      "stableId": "rust:types:CollectionDesc",
+      "canonicalSlug": "types-CollectionDesc",
+      "category": "types"
+    },
+    "types.ConsistencyLevel": {
+      "stableId": "rust:types:ConsistencyLevel",
+      "canonicalSlug": "types-ConsistencyLevel",
+      "category": "types"
+    },
+    "types.EntityRow": {
+      "stableId": "rust:types:EntityRow",
+      "canonicalSlug": "types-EntityRow",
+      "category": "types"
+    },
+    "types.FieldPartialUpdateOp": {
+      "stableId": "rust:types:FieldPartialUpdateOp",
+      "canonicalSlug": "types-FieldPartialUpdateOp",
+      "category": "types"
+    },
+    "types.FilterTemplateValue": {
+      "stableId": "rust:types:FilterTemplateValue",
+      "canonicalSlug": "types-FilterTemplateValue",
+      "category": "types"
+    },
+    "types.FunctionChain": {
+      "stableId": "rust:types:FunctionChain",
+      "canonicalSlug": "types-FunctionChain",
+      "category": "types"
+    },
+    "types.FunctionScore": {
+      "stableId": "rust:types:FunctionScore",
+      "canonicalSlug": "types-FunctionScore",
+      "category": "types"
+    },
+    "types.Highlighter": {
+      "stableId": "rust:types:Highlighter",
+      "canonicalSlug": "types-Highlighter",
+      "category": "types"
+    },
+    "types.IndexDesc": {
+      "stableId": "rust:types:IndexDesc",
+      "canonicalSlug": "types-IndexDesc",
+      "category": "types"
+    },
+    "types.IndexParam": {
+      "stableId": "rust:types:IndexParam",
+      "canonicalSlug": "types-IndexParam",
+      "category": "types"
+    },
+    "types.OrderByField": {
+      "stableId": "rust:types:OrderByField",
+      "canonicalSlug": "types-OrderByField",
+      "category": "types"
+    },
+    "types.SearchAggregation": {
+      "stableId": "rust:types:SearchAggregation",
+      "canonicalSlug": "types-SearchAggregation",
+      "category": "types"
+    },
+    "types.SearchVectors": {
+      "stableId": "rust:types:SearchVectors",
+      "canonicalSlug": "types-SearchVectors",
+      "category": "types"
+    }
+  }
+}

@@ -6,7 +6,7 @@
  */
 
 const ALL_LANGUAGES = ['python', 'java', 'node', 'cpp', 'go'];
-const LANG_HEADERS = { python: 'Py', java: 'Java', node: 'Node', cpp: 'C++', go: 'Go' };
+const LANG_HEADERS = { python: 'Py', java: 'Java', node: 'Node', cpp: 'C++', go: 'Go', rust: 'Rust' };
 
 // Feishu API rejects tables with row_size >= 10; keep 1 header + up to 8 data rows
 const MAX_ROWS = 8;

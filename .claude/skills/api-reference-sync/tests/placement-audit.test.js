@@ -101,7 +101,23 @@ test('registry context fails closed for unregistered tracks', () => {
     (error) => error.code === 'TRACK_REGISTRY_TRACK_NOT_REGISTERED',
   );
   assert.throws(
-    () => resolveRegistryContext({ args: { language: 'rust' }, version: 'v1.0.x' }),
-    (error) => error.code === 'TRACK_REGISTRY_LANGUAGE_NOT_REGISTERED',
+    () => resolveRegistryContext({ args: { language: 'rust' }, version: 'v9.9.x' }),
+    (error) => error.code === 'TRACK_REGISTRY_TRACK_NOT_REGISTERED',
   );
+});
+
+test('registry context resolves rust dual-track from the committed registry', () => {
+  const resolved = resolveRegistryContext({ args: { language: 'rust' }, version: 'v3.0.x' });
+  assert.equal(resolved.targetRoot, 'XiM3fDXSBldV2IdN0r9cXCe6nqw');
+  // The v2.6.x tree is the inheritance source root and the adjacent Bitable.
+  assert.deepEqual(resolved.sourceVersionRoots, [{
+    version: 'v2.6.x',
+    rootToken: 'NnYMfAqtJlzJ8zdwpiNcJOuGnF9',
+  }]);
+  assert.deepEqual(resolved.adjacentBitables, [{
+    version: 'v2.6.x',
+    baseToken: 'HmCmbiQEcawJzxszPj1cBH7Gnwd',
+    tableId: null,
+  }]);
+  assert.deepEqual(resolved.requiredTrackVersions, ['v2.6.x', 'v3.0.x']);
 });

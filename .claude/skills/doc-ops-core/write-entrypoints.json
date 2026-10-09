@@ -118,6 +118,16 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/sdk-derive.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "sdk-derive",
+      "basis": "reads pinned web-content git objects and the overlay tree; writes deterministic local artifacts only; never writes Feishu (derive output feeds the canonical sdk-doc-sync pipeline)",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/derive-overlay.test.js"
+      ]
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/sdk-doc-sync.js",
       "skill": "api-reference-sync",
       "classification": "canonical-governed",

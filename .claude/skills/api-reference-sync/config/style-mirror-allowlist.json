@@ -23,6 +23,10 @@
     "go": {
       "allowlist": [],
       "notes": "No designated exemplar yet; nominate one when the next go repolish campaign lands."
+    },
+    "rust": {
+      "allowlist": [],
+      "notes": "rust track established 2026-10-08 (overlay pilot); no style mirrors designated yet — first mirrors are an operator decision after the first campaign's format baseline lands."
     }
   }
 }

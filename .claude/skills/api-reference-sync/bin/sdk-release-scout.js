@@ -96,6 +96,16 @@ function defaultsFor(args) {
       ],
     };
   }
+  if (args.language === 'rust') {
+    return {
+      sdkDir: args.sdkDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-rust'),
+      repoDir: args.repoDir || path.join(PROJECT_ROOT, 'repos', 'milvus-sdk-rust'),
+      publicRoots: [
+        'src/v2/',
+        'Cargo.toml',
+      ],
+    };
+  }
   if (args.language === 'zilliz-cli') {
     const implementationRepoDir = args.implementationRepoDir || path.join(PROJECT_ROOT, 'repos', 'zilliz-cloud');
     return {

@@ -39,7 +39,7 @@ Content-level reconciliation is deliberately NOT done at intake: the downstream 
 
 ## Languages Without a Track
 
-`milvus-sdk-csharp` (and any future `rust` SDK) has no scanner, identity map, or Feishu Bitable in this skill. PR intake still parses and inventories such PRs but emits `NO_FEISHU_TRACK` (error) with zero write actions and `approvalGrade: false`. When a track is established later, the same PR scan becomes actionable without changes.
+`milvus-sdk-csharp` has no scanner, identity map, or Feishu Bitable in this skill. PR intake still parses and inventories such PRs but emits `NO_FEISHU_TRACK` (error) with zero write actions and `approvalGrade: false`. When a track is established later, the same PR scan becomes actionable without changes. `milvus-sdk-rust` is tracked (2026-10-08): scanner, `rust-v26`/`rust-v30` identity maps, dual-track Feishu container, and the `rust` PR language mapping are registered.
 
 ## Post-Verbatim Polish (api.pr-polish-governed)
 

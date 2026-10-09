@@ -520,7 +520,7 @@ function renderRelatedSection(document) {
   return related ? [heading(2, 'Related', semantic('related-section')), related] : [];
 }
 
-const TYPE_PAGE_KINDS = Object.freeze(['struct', 'class', 'enum']);
+const TYPE_PAGE_KINDS = Object.freeze(['struct', 'class', 'enum', 'interface']);
 
 function isTypeLikeDocument(document) {
   return TYPE_PAGE_KINDS.includes(document.identity?.kind);

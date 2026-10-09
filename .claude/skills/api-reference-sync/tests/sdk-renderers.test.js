@@ -132,6 +132,28 @@ function context(language) {
       }],
       typeUrls: { FieldType: '/reference/go/field-type' },
     },
+    'go-reranker-interface': {
+      repository: 'milvus-io/milvus-sdk-go', category: 'Vector',
+      summary: 'A Reranker instance combines and ranks the results of multiple ANN sub-requests for `HybridSearch()`. Use `NewRRFReranker()` or `NewWeightedReranker()` to create instances.',
+      callableMembers: [
+        { kind: 'option', name: 'NewRRFReranker', signature: 'NewRRFReranker()', description: 'Creates a Reciprocal Rank Fusion (RRF) reranker. The default `k` is 60.' },
+        { kind: 'option', name: 'NewWeightedReranker', signature: 'NewWeightedReranker(weights []float64)', description: 'Creates a weighted reranker with one weight per ANN sub-request.' },
+        { kind: 'implementation', name: 'GetParams', signature: 'GetParams() []*commonpb.KeyValuePair', description: 'Returns the rerank strategy and parameters as key-value pairs.' },
+        { kind: 'implementation', name: 'WithK', signature: 'WithK(k float64)', description: 'Sets the RRF `k` smoothing factor.' },
+        { kind: 'implementation', name: 'WithWeights', signature: 'WithWeights(weights []float64)', description: 'Sets optional reciprocal-rank coefficients in ANN request order. The server requires a non-empty slice, one value in [0, 1] per ANN request; nil and empty slices are serialized so the server can reject them.' },
+      ],
+      result: {
+        type: 'Reranker',
+        description: 'A Reranker instance combines and ranks the results of multiple ANN sub-requests for `HybridSearch()`.',
+        schemaCode: 'type Reranker interface {\n    GetParams() []*commonpb.KeyValuePair\n}',
+        fields: [],
+      },
+      examples: [{
+        title: 'Hybrid search with an RRF reranker', description: 'Merges two ANN requests with RRF.', language: 'go',
+        code: 'resultSets, err := cli.HybridSearch(ctx, milvusclient.NewHybridSearchOption(\n\t"quick_setup", 10, denseReq, sparseReq,\n).WithReranker(milvusclient.NewRRFReranker()))',
+      }],
+      typeUrls: {},
+    },
     'go-consistency-values': {
       repository: 'milvus-io/milvus-sdk-go', category: 'Collections',
       summary: 'A ConsistencyLevel instance specifies the consistency guarantee level for read operations on a collection.',
@@ -254,6 +276,7 @@ const cases = [
   { language: 'go', fixture: 'go-collection-type.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-collection-type.md', contextKey: 'go-collection-type' },
   { language: 'go', fixture: 'go-field-struct.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-field-struct.md', contextKey: 'go-field-struct' },
   { language: 'go', fixture: 'go-consistency-values.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-consistency-values.md', contextKey: 'go-consistency-values' },
+  { language: 'go', fixture: 'go-reranker-interface.json', adapter: goAdapter, renderer: goRenderer, golden: 'go-reranker-interface.md', contextKey: 'go-reranker-interface' },
   { language: 'cpp', fixture: 'cpp-create-collection.json', adapter: cppAdapter, renderer: cppRenderer, golden: 'cpp-create-collection.md' },
 ];
 
@@ -312,6 +335,17 @@ test('go type pages render the type-page channel: no method sections, FIELDS/VAL
       assert.equal(roles.includes(absent), false, `${item.fixture}: unexpected ${absent}`);
     }
     assert.ok(roles.includes('canonical-signature'), `${item.fixture}: type definition missing`);
+    const isInterface = item.contextKey === 'go-reranker-interface';
+    if (isInterface) {
+      // Interface pages carry the interface fence plus constructors
+      // (BUILDER METHODS:) and interface methods (METHODS:) — no FIELDS.
+      assert.equal(roles.filter((role) => role === 'members-label').length >= 2, true, `${item.fixture}: member sections missing`);
+      assert.match(markdown, /\*\*BUILDER METHODS:\*\*/);
+      assert.match(markdown, /\*\*METHODS:\*\*/);
+      assert.match(markdown, /type Reranker interface \{/);
+      assert.ok(validateSdkLayout(ir, goRenderer.profile).valid, `${item.fixture}: layout invalid`);
+      continue;
+    }
     assert.ok(roles.includes(isEnum ? 'type-values-label' : 'type-fields-label'), `${item.fixture}: type members label missing`);
     assert.match(markdown, isEnum ? /\*\*VALUES:\*\*/ : /\*\*FIELDS:\*\*/);
     if (isEnum) {

@@ -2,6 +2,24 @@
 
 const common = require('./common');
 
+// Go doc comments conventionally open with the member name ("Clone
+// returns …"); house style is verb-first without the echo. Strip the
+// prefix only when it is followed by a lowercase verb word — a noun
+// phrase ("Name of the field") stays untouched.
+const stripGoDocPrefix = (member) => {
+  const raw = String(member.description || '');
+  const echo = member.name ? `${member.name} ` : '';
+  if (echo && raw.startsWith(echo)) {
+    const rest = raw.slice(echo.length);
+    const next = /^([a-z]+)/.exec(rest);
+    const nounStarters = new Set(['is', 'are', 'was', 'of', 'the', 'a', 'an', 'to', 'for', 'field', 'fields']);
+    if (next && !nounStarters.has(next[1])) {
+      return { ...member, description: rest[0].toUpperCase() + rest.slice(1) };
+    }
+  }
+  return member;
+};
+
 function toReferenceDocument(symbol, context = {}) {
   const kindMap = {
     method: 'method',
@@ -15,23 +33,6 @@ function toReferenceDocument(symbol, context = {}) {
   if (!kind) throw new TypeError(`Unsupported Go scanner kind: ${symbol.kind}`);
   const evidence = common.collectEvidence(symbol, context);
   if (kind === 'struct' || kind === 'class') {
-    // Go doc comments conventionally open with the member name ("Clone
-    // returns …"); house style is verb-first without the echo. Strip the
-    // prefix only when it is followed by a lowercase verb word — a noun
-    // phrase ("Name of the field") stays untouched.
-    const stripGoDocPrefix = (member) => {
-      const raw = String(member.description || '');
-      const echo = member.name ? `${member.name} ` : '';
-      if (echo && raw.startsWith(echo)) {
-        const rest = raw.slice(echo.length);
-        const next = /^([a-z]+)/.exec(rest);
-        const nounStarters = new Set(['is', 'are', 'was', 'of', 'the', 'a', 'an', 'to', 'for', 'field', 'fields']);
-        if (next && !nounStarters.has(next[1])) {
-          return { ...member, description: rest[0].toUpperCase() + rest.slice(1) };
-        }
-      }
-      return member;
-    };
     const signatures = symbol.signature
       ? [common.makeSignature(symbol.signature, [], evidence, { symbol, context })]
       : [];
@@ -168,12 +169,39 @@ function toReferenceDocument(symbol, context = {}) {
     });
   }
   if (kind === 'interface') {
-    const signatures = (symbol.methods || []).map((method) => {
-      const methodEvidence = common.evidenceForNode(method, symbol, context, 'member', method.name);
-      return common.makeSignature(method.fullSignature || '', [], methodEvidence);
-    });
+    // The interface declaration fence (context.result.schemaCode, e.g.
+    // "type Reranker interface { … }") is the page's type shape; scanner
+    // method signatures are the fallback when no reviewed fence exists.
+    const reviewedFence = context.result && String(context.result.schemaCode || '').trim();
+    const signatures = reviewedFence
+      ? [common.makeSignature(reviewedFence, [], evidence)]
+      : (symbol.methods || []).map((method) => {
+        const methodEvidence = common.evidenceForNode(method, symbol, context, 'member', method.name);
+        return common.makeSignature(method.fullSignature || '', [], methodEvidence);
+      });
+    // Reviewed interface pages carry the full member set (constructors as
+    // kind option, interface/implementation methods as kind implementation)
+    // plus the interface fence in result.schemaCode — the type-page channel
+    // renders both (2026-10-09 operator ruling: Reranker must present its
+    // interface shape, constructors, and methods). Scanner methods absent
+    // from the reviewed members still land in notes for traceability.
+    const callableMembers = Array.isArray(context.callableMembers)
+      ? context.callableMembers.map((member) => {
+        const resolvedKind = member.kind || 'option';
+        return common.makeCallableMember(
+          resolvedKind,
+          resolvedKind === 'implementation' ? stripGoDocPrefix(member) : member,
+          evidence,
+          member.signature || member.fullSignature || '',
+          member.inputs || [],
+          { symbol, context },
+        );
+      })
+      : [];
+    const reviewed = context.result ? common.makeResult(context.result, evidence, { symbol, context }) : null;
+    const memberNames = new Set(callableMembers.map((member) => member.name));
     const methodNotes = (symbol.methods || [])
-      .filter((method) => method.description)
+      .filter((method) => method.description && !memberNames.has(method.name))
       .map((method) => `${method.fullSignature} — ${method.description}`);
     return common.buildReferenceDocument({
       symbol,
@@ -181,8 +209,8 @@ function toReferenceDocument(symbol, context = {}) {
       language: 'go',
       kind,
       signatures,
-      callableMembers: [],
-      result: null,
+      callableMembers,
+      result: reviewed,
       notes: [...(Array.isArray(context.notes) ? context.notes : []), ...methodNotes],
     });
   }

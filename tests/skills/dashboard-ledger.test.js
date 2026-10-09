@@ -222,6 +222,51 @@ test('sentinels derive lastRun from cursor mtime and schedule from wall clock', 
   assert.equal(java.lastRunAt, null);
 });
 
+test('sentinel readiness reports capability vs baseline-seeded honestly', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const now = new Date('2026-10-08T12:00:00');
+  // cpp: fully ready — clone + both maps + both scan-state keys + a cursor.
+  write('repos/milvus-sdk-cpp/.keep', '');
+  write('.claude/skills/api-reference-sync/references/identity/cpp-v26.json', { schemaVersion: 1 });
+  write('.claude/skills/api-reference-sync/references/identity/cpp-v30.json', { schemaVersion: 1 });
+  write('.claude/skills/api-reference-sync/scan-state.json', { 'cpp-v26': {}, 'cpp-v30': {} });
+  const cursorPath = write('tmp/sdk-release-scout/daily-scan-state.json', { lastPrNumber: 1 });
+  fs.utimesSync(cursorPath, now, now);
+
+  // rust: clone + maps + cursor, but no scan-state keys → capability armed,
+  // baseline missing — the honest 待首战 state (no cursor-file needed for the
+  // map/clone checks, but capabilityReady includes a run; give it one).
+  write('repos/milvus-sdk-rust/.keep', '');
+  write('.claude/skills/api-reference-sync/references/identity/rust-v26.json', { schemaVersion: 1 });
+  write('.claude/skills/api-reference-sync/references/identity/rust-v30.json', { schemaVersion: 1 });
+  const rustCursor = write('tmp/sdk-release-scout/rust-daily-scan-state.json', { lastPrNumber: 1 });
+  fs.utimesSync(rustCursor, now, now);
+
+  // go: clone + cursor but a missing identity map → 前提缺失, not 待首战.
+  write('repos/milvus-sdk-go/.keep', '');
+  write('.claude/skills/api-reference-sync/references/identity/go-v26.json', { schemaVersion: 1 });
+  const goCursor = write('tmp/sdk-release-scout/go-daily-scan-state.json', { lastPrNumber: 1 });
+  fs.utimesSync(goCursor, now, now);
+
+  const ledger = buildLedger({ repoRoot: root, now });
+  const cpp = ledger.sentinels.find((s) => s.id === 'cpp-daily-scan');
+  const rust = ledger.sentinels.find((s) => s.id === 'rust-daily-scan');
+  const go = ledger.sentinels.find((s) => s.id === 'go-daily-scan');
+  assert.ok(cpp && rust && go);
+  assert.equal(cpp.readiness.ready, true);
+  assert.equal(cpp.readiness.awaitingFirstCampaign, false);
+  assert.deepEqual(cpp.readiness.scanState.missing, []);
+  assert.equal(rust.readiness.ready, false);
+  assert.equal(rust.readiness.capabilityReady, true);
+  assert.equal(rust.readiness.awaitingFirstCampaign, true);
+  assert.deepEqual(rust.readiness.scanState.missing, ['rust-v26', 'rust-v30']);
+  assert.equal(go.readiness.capabilityReady, false);
+  assert.equal(go.readiness.awaitingFirstCampaign, false);
+  assert.deepEqual(go.readiness.identityMaps.missing, ['go-v30.json']);
+});
+
 test('stale sentinel flagged after 25h without a cursor update', (t) => {
   const { root, write } = makeFixtureTree();
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

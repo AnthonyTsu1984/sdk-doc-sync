@@ -31,6 +31,9 @@ const SENTINELS = [
     hour: 9,
     minute: 0,
     language: 'cpp',
+    sdkDir: 'repos/milvus-sdk-cpp',
+    identityMaps: ['cpp-v26.json', 'cpp-v30.json'],
+    scanStateKeys: ['cpp-v26', 'cpp-v30'],
     cursorFile: 'tmp/sdk-release-scout/daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
     // Daily report file name inside artifactsDir, {date} = YYYY-MM-DD.
@@ -43,6 +46,9 @@ const SENTINELS = [
     hour: 9,
     minute: 15,
     language: 'go',
+    sdkDir: 'repos/milvus-sdk-go',
+    identityMaps: ['go-v26.json', 'go-v30.json'],
+    scanStateKeys: ['go', 'go-v3'],
     cursorFile: 'tmp/sdk-release-scout/go-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'go-{date}.md',
@@ -54,6 +60,9 @@ const SENTINELS = [
     hour: 9,
     minute: 30,
     language: 'java',
+    sdkDir: 'repos/milvus-sdk-java',
+    identityMaps: ['java-v26.json', 'java-v30.json'],
+    scanStateKeys: ['java-v26', 'java-v30'],
     cursorFile: 'tmp/sdk-release-scout/java-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'java-{date}.md',
@@ -65,6 +74,9 @@ const SENTINELS = [
     hour: 9,
     minute: 45,
     language: 'python',
+    sdkDir: 'repos/pymilvus',
+    identityMaps: ['python-v26.json', 'python-v30.json'],
+    scanStateKeys: ['python', 'python-v3'],
     cursorFile: 'tmp/sdk-release-scout/python-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'python-{date}.md',
@@ -76,6 +88,9 @@ const SENTINELS = [
     hour: 10,
     minute: 0,
     language: 'rust',
+    sdkDir: 'repos/milvus-sdk-rust',
+    identityMaps: ['rust-v26.json', 'rust-v30.json'],
+    scanStateKeys: ['rust-v26', 'rust-v30'],
     cursorFile: 'tmp/sdk-release-scout/rust-daily-scan-state.json',
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'rust-{date}.md',
@@ -422,6 +437,29 @@ function buildSentinelCard(repoRoot, definition, now) {
   } catch {
     // artifacts dir absent
   }
+  // Readiness prerequisites, all deterministic filesystem checks: the scan
+  // task is "armed" when its capability inputs exist (clone + identity maps +
+  // at least one run) and "fully ready" once every scan-state baseline key is
+  // seeded; capability-ready-without-baseline is the honest 待首战 state.
+  const identityDir = path.join(repoRoot, '.claude', 'skills', 'api-reference-sync', 'references', 'identity');
+  const maps = definition.identityMaps || [];
+  const identityPresent = maps.filter((name) => fs.existsSync(path.join(identityDir, name)));
+  const scanState = readJsonOrNull(path.join(repoRoot, '.claude', 'skills', 'api-reference-sync', 'scan-state.json')) || {};
+  const scanKeys = definition.scanStateKeys || [];
+  const seeded = scanKeys.filter((key) => scanState[key] !== undefined);
+  const capabilityReady = Boolean(lastRunAt)
+    && (!definition.sdkDir || fs.existsSync(path.join(repoRoot, definition.sdkDir)))
+    && identityPresent.length === maps.length;
+  const readiness = {
+    cursor: Boolean(lastRunAt),
+    sdkClone: !definition.sdkDir || fs.existsSync(path.join(repoRoot, definition.sdkDir)),
+    identityMaps: { present: identityPresent, missing: maps.filter((name) => !identityPresent.includes(name)) },
+    scanState: { seeded, missing: scanKeys.filter((key) => !seeded.includes(key)) },
+    capabilityReady,
+    baselineSeeded: scanKeys.length > 0 && seeded.length === scanKeys.length,
+    awaitingFirstCampaign: capabilityReady && seeded.length < scanKeys.length,
+    ready: capabilityReady && scanKeys.length > 0 && seeded.length === scanKeys.length,
+  };
   return {
     id: definition.id,
     title: definition.title,
@@ -434,6 +472,7 @@ function buildSentinelCard(repoRoot, definition, now) {
     report: readDailyReport(repoRoot, definition, now),
     artifactsDir: definition.artifactsDir,
     artifactsPresent,
+    readiness,
   };
 }
 

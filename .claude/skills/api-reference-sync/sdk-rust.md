@@ -37,4 +37,4 @@ Inherits GLOBAL_LAYOUT_RULES v4 (five content rules, deprecation two-line callou
 - v2.6.x web-content lacks the DataImport category and `CreateSimpleCollection` (source superset — R&D doc gap).
 - No `<!-- category/action/addedSince -->` footers on rust pages; derive change detection is pin-SHA git diff.
 - 37 relative `.md` links — overlay rules must keep covering same-directory relative links (pre-first-campaign blocker, blueprint §6½ P1-2).
-- Cross-struct page flattening is mapped in the scanner: `REQUEST_FIELD_UNIONS` (HybridSearch ↔ SubSearchRequest) and `TYPE_FIELD_UNIONS` (BulkImport module page ↔ BulkImportRequest/BulkImportConfig/constructor param) — evidence tables, extend rather than special-case (review r1 P0-2).
+- Cross-struct page flattening is mapped in the scanner: `REQUEST_FIELD_UNIONS` (HybridSearch ↔ SubSearchRequest) and `TYPE_FIELD_UNIONS` (BulkImport module page ↔ BulkImportRequest + constructor param; the BulkImportConfig section is PARAMETERS, outside the verified REQUEST FIELDS surface) — evidence tables, extend rather than special-case (review r1 P0-2).

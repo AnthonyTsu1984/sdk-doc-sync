@@ -249,7 +249,7 @@ anchor × pageKind 合法矩阵（schema 强制，矩阵外组合 = 非法）：
 
 ## 6½. 评审遗留（PR #126 r1 request-changes，2026-10-09 修复与立账）
 
-r1 两项 P0 已修并实证闭环：P0-1 补丁页身份失配 → `OVERLAY_PAGE_MISS` fail-closed（+测试）；P0-2 rust intake 8 页误报 → 枚举 `params=values` 约定、私有 builder 字段回退索引、`REQUEST_FIELD_UNIONS`（HybridSearch↔SubSearchRequest）与 `TYPE_FIELD_UNIONS`（BulkImport 模块页平铺 Request/Config/构造器参数）——**真 pin 全树 146/146 零失败**；P1-1 `upstream-candidate` 键名修正。
+r1 两项 P0 已修并实证闭环：P0-1 补丁页身份失配 → `OVERLAY_PAGE_MISS` fail-closed（+测试）；P0-2 rust intake 8 页误报 → 枚举 `params=values` 约定、私有 builder 字段回退索引、`REQUEST_FIELD_UNIONS`（HybridSearch↔SubSearchRequest）与 `TYPE_FIELD_UNIONS`（BulkImport 模块页平铺 BulkImportRequest + 构造器参数；BulkImportConfig 段是 PARAMETERS 不在校验面，不进联合表）——**真 pin 全树 146/146 零失败**；P1-1 `upstream-candidate` 键名修正。
 
 合并前必办（首战 blocker）：
 

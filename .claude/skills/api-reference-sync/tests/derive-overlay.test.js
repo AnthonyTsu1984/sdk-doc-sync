@@ -265,6 +265,23 @@ test('a patch file whose page identity matches nothing fails loudly (review r1 P
     fs.writeFileSync(patchFile, JSON.stringify(patch, null, 2));
     const withFlag = compile({ base, overlayDir });
     assert.equal(withFlag.ok, true);
+
+    // A non-boolean upstream-candidate is rejected (r2 N3 negative path).
+    patch.entries[0]['upstream-candidate'] = 'yes';
+    fs.writeFileSync(patchFile, JSON.stringify(patch, null, 2));
+    const badFlag = compile({ base, overlayDir });
+    assert.equal(badFlag.ok, false);
+    assert.equal(badFlag.kind, 'schema');
+
+    // A patch aimed at an overlay-owned page is a layering mistake and fails
+    // the same way (r2 N1) — overlay pages are hand-authored, never patched.
+    patch.entries[0]['upstream-candidate'] = true;
+    patch.page = 'volume.ListVolumes';
+    fs.writeFileSync(patchFile, JSON.stringify(patch, null, 2));
+    const overlayPatch = compile({ base, overlayDir });
+    assert.equal(overlayPatch.ok, false);
+    assert.equal(overlayPatch.error.code, 'OVERLAY_PAGE_MISS');
+    assert.equal(overlayPatch.error.page, 'volume.ListVolumes');
   } finally {
     fs.rmSync(base.dir, { recursive: true, force: true });
     fs.rmSync(overlayDir, { recursive: true, force: true });

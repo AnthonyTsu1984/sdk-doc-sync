@@ -210,3 +210,19 @@ test('review-session CLI persists a journal-derived receipt and builds final acc
   assert.deepEqual(presentation.units[0].recordLinks, ['https://example.feishu.cn/base/base?record=rec-a']);
   assert.deepEqual(presentation.units[0].touchedRecords, [{ recordId: 'rec-a', documentToken: 'doc-a' }]);
 });
+
+// 2026-10-09 operator ruling (open-source-only capabilities, e.g.
+// ResourceGroup): accept-document accepts a per-unit final Targets override.
+test('parseFinalTargets: subset override, KB default, and fail-closed parsing', () => {
+  const { parseFinalTargets } = require('../bin/sdk-review-session.js');
+  // default: no flag = KB-wide value, order canonical
+  assert.deepEqual(parseFinalTargets(undefined), ['Milvus', 'Zilliz']);
+  assert.deepEqual(parseFinalTargets(''), ['Milvus', 'Zilliz']);
+  // explicit subsets, whitespace tolerated, order normalized to canonical
+  assert.deepEqual(parseFinalTargets('Milvus'), ['Milvus']);
+  assert.deepEqual(parseFinalTargets(' Zilliz, Milvus '), ['Milvus', 'Zilliz']);
+  assert.deepEqual(parseFinalTargets('Milvus,Milvus'), ['Milvus']);
+  // unknown tokens / garbage fail closed
+  assert.throws(() => parseFinalTargets('Milvus,Upstash'), /subset of/);
+  assert.throws(() => parseFinalTargets('milvus'), /subset of/);
+});

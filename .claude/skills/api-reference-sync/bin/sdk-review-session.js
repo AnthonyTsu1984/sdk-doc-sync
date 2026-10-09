@@ -43,6 +43,7 @@ const ARG_SPECS = Object.freeze([
   { flag: '--execution-journal', key: 'executionJournal', kind: 'value' },
   { flag: '--execution-journal-digest', key: 'executionJournalDigest', kind: 'value' },
   { flag: '--touched-records', key: 'touchedRecords', kind: 'value' },
+  { flag: '--final-targets', key: 'finalTargets', kind: 'value' },
   { flag: '--document-link', key: 'documentLinks', kind: 'multi' },
   { flag: '--record-link', key: 'recordLinks', kind: 'multi' },
   { flag: '--comments-resolved', key: 'commentsResolved', kind: 'boolean' },
@@ -357,6 +358,24 @@ async function runTransfer({ session, sessionPath, sessionDigest, args, io, out 
 // every step: a refusal before the writes leaves nothing mutated; a refusal
 // after them is recovered by replaying the acceptance from the on-disk
 // receipt (the store re-validates everything; nothing is trusted on sight).
+// Parse the per-unit final Targets override (2026-10-09 operator ruling).
+// Accepts a comma-separated subset of the known target names; empty/unknown
+// tokens fail closed. No flag = KB-wide default [Milvus, Zilliz].
+function parseFinalTargets(raw) {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return [...TARGETS_FINAL];
+  const known = new Set(TARGETS_FINAL);
+  const seen = new Set();
+  for (const token of String(raw).split(',')) {
+    const value = token.trim();
+    if (!known.has(value)) {
+      throw new Error(`--final-targets must be a comma-separated subset of [${TARGETS_FINAL.join(', ')}]; got: ${JSON.stringify(String(raw))}`);
+    }
+    seen.add(value);
+  }
+  if (seen.size === 0) return [...TARGETS_FINAL];
+  return TARGETS_FINAL.filter((value) => seen.has(value));
+}
+
 async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, receipt, args, io, out }) {
   const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
   const { WriterGovernance, createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
@@ -422,13 +441,17 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     }
   }
 
-  // One governed write per record: the Draft transition carries the KB-wide
-  // final Targets value (2026-10-01 ruling — Targets 终值 lands in the
-  // document gate; the campaign finalize that used to write it is retired).
+  // One governed write per record: the Draft transition carries the final
+  // Targets value (2026-10-01 ruling — Targets 终值 lands in the document
+  // gate). Default is the KB-wide value; 2026-10-09 operator ruling adds a
+  // per-unit override for open-source-only capabilities (e.g. ResourceGroup)
+  // whose Targets must be [Milvus] alone — explicit, subset-validated, and
+  // recorded as written in the unit receipt.
+  const unitFinalTargets = parseFinalTargets(args.finalTargets);
   const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
-    finalTargets[touched.recordId] = [...TARGETS_FINAL];
-    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...TARGETS_FINAL] });
+    finalTargets[touched.recordId] = [...unitFinalTargets];
+    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...unitFinalTargets] });
   }
   const afterRecords = await writer.listRecords({ pageSize: 500 });
   const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
@@ -439,8 +462,8 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       throw new Error(`Draft transition for record ${touched.recordId} did not verify`);
     }
     const actualTargets = normalizedTargetsValue(after?.fields?.Targets);
-    if (JSON.stringify(actualTargets) !== JSON.stringify(TARGETS_FINAL)) {
-      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}])`);
+    if (JSON.stringify(actualTargets) !== JSON.stringify(unitFinalTargets)) {
+      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}], expected [${unitFinalTargets.join(', ')}])`);
     }
     draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
   }
@@ -856,4 +879,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, runCli, status };
+module.exports = { parseArgs, parseFinalTargets, runCli, status };

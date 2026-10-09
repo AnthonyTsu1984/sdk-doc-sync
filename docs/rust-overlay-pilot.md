@@ -247,6 +247,18 @@ anchor × pageKind 合法矩阵（schema 强制，矩阵外组合 = 非法）：
 - **新认的税**：上游页面解剖变化 → 编译器/profile 维护 → 异常队列（演示二会量化其频率，预期很低）。
 - **冲突预警**：`feat/go-v30-intake`（未合并）同改 `release-tracks.json`——rust 落 master 后该分支回主树小冲突可解。
 
+## 6½. 评审遗留（PR #126 r1 request-changes，2026-10-09 修复与立账）
+
+r1 两项 P0 已修并实证闭环：P0-1 补丁页身份失配 → `OVERLAY_PAGE_MISS` fail-closed（+测试）；P0-2 rust intake 8 页误报 → 枚举 `params=values` 约定、私有 builder 字段回退索引、`REQUEST_FIELD_UNIONS`（HybridSearch↔SubSearchRequest）与 `TYPE_FIELD_UNIONS`（BulkImport 模块页平铺 Request/Config/构造器参数）——**真 pin 全树 146/146 零失败**；P1-1 `upstream-candidate` 键名修正。
+
+合并前必办（首战 blocker）：
+
+- **P1-2 相对 `.md` 链接改写**：rules-applier 目前只有绝对 URL 前缀改写；base 37 处同目录相对链接需走 identity 解析（path → page id → 目标），否则首战编译产物带死链。
+- **P1-3 manifest 精确清点**：未打补丁页的 pageKind 期望不在 manifest，换型不触发 DRIFT——首战前生成全页 manifest（pageKind census）。
+- **P1-4 `overlay/schema/fixtures/` 目录**：pageKind×anchor×action 合法/非法样例落盘（derive-overlay.test.js 内联样例为过渡替代）。
+
+立账不阻断：P2 批（localeCompare→码点序、section 歧义检查、prose 多行软换行截断、插入 bullet 空行风格、嵌套泛型上界、isAsync 窗口、schema.json↔js 交叉断言、targetByCategoryName 首写胜断言）随首战 polish 批处理；go 哨兵"前提缺失（缺 go-v30 地图）"为故意诚实展示。
+
 ## 7. 完成后
 
 - 记忆更新：rust 轨接入档案 + overlay 模式试点结论 + 每日扫描时刻表 10:00。

@@ -211,6 +211,23 @@ const RUST_METHOD_PAGE_NAME_EXCEPTIONS = {
     sdk_version: 'SDKVersion',
 };
 
+// Module pages that document their struct plus flattened request builder
+// fields (web-content evidence: DataImport/BulkImport's REQUEST FIELDS list
+// BulkImportRequest's fields). The page symbol's params carry the union plus
+// the constructor's positional params; BulkImportConfig's own section is not
+// part of the verified REQUEST FIELDS surface.
+const TYPE_FIELD_UNIONS = {
+    BulkImport: ['BulkImportRequest'],
+};
+
+// Pages that flatten a sub-request's builder fields into the parent's
+// REQUEST FIELDS (web-content evidence 2026-10-09 review: HybridSearch lists
+// SubSearchRequest's vector_field/vectors/... at top level). The method's
+// params carry the union so page verification covers every declared field.
+const REQUEST_FIELD_UNIONS = {
+    HybridSearchRequest: ['SubSearchRequest'],
+};
+
 // Convenience request structs that own a method-style page documenting the
 // builder + fields (dispatched through another client method via From).
 const REQUEST_TYPE_PAGES = {
@@ -267,17 +284,51 @@ class RustScanner extends BaseScanner {
         const requestIndex = this._indexRequestStructs(allFiles);
         for (const method of methods) {
             if (method.requestClass) {
-                const request = requestIndex.get(method.requestClass);
-                if (request) {
-                    method.params = request.fields.map((field) => ({ name: field.name, type: field.type }));
-                    method.requestSourcePath = request.filePath;
+                const unionNames = [method.requestClass, ...(REQUEST_FIELD_UNIONS[method.requestClass] || [])];
+                const fields = [];
+                const seen = new Set();
+                for (const name of unionNames) {
+                    const request = requestIndex.get(name);
+                    if (!request) continue;
+                    method.requestSourcePath = method.requestSourcePath || request.filePath;
+                    for (const field of request.fields) {
+                        if (seen.has(field.name)) continue;
+                        seen.add(field.name);
+                        fields.push(field);
+                    }
                 }
+                if (fields.length > 0) method.params = fields.map((field) => ({ name: field.name, type: field.type }));
             }
         }
 
         // Phase 3: type/enum symbols that own a page, with categories, plus
         // page-owning convenience request types (params = builder fields).
         const types = this._extractTypeSymbols(allFiles);
+        for (const type of types) {
+            const unionSources = TYPE_FIELD_UNIONS[type.name];
+            if (!unionSources) continue;
+            const seen = new Set((type.params || []).map((field) => field.name));
+            const extra = [];
+            for (const source of unionSources) {
+                const request = requestIndex.get(source);
+                if (!request) continue;
+                for (const field of request.fields) {
+                    if (seen.has(field.name)) continue;
+                    seen.add(field.name);
+                    extra.push({ name: field.name, type: field.type });
+                }
+            }
+            const constructor = methods.find((method) => method.parentClass === type.name && method.name === 'new');
+            if (constructor) {
+                for (const param of constructor.params || []) {
+                    if (seen.has(param.name)) continue;
+                    seen.add(param.name);
+                    extra.push(param);
+                }
+            }
+            type.params = [...(type.params || []), ...extra];
+            type.fields = [...(type.fields || []), ...extra];
+        }
         for (const [requestName, category] of Object.entries(REQUEST_TYPE_PAGES)) {
             const request = requestIndex.get(requestName);
             if (!request) continue;
@@ -418,7 +469,12 @@ class RustScanner extends BaseScanner {
     _indexRequestStructs(files) {
         const index = new Map();
         const structRegex = /pub\s+struct\s+(\w+Request)\s*\{/g;
-        const fieldRegex = /pub(?:\(crate\))?\s+(\w+)\s*:\s*([^,\n]+),/g;
+        // Fields anchor at line start with pub optional: bulk-import request
+        // structs keep fields private behind a builder (their builder surface
+        // is the documented REQUEST FIELDS), while client request structs use
+        // pub/pub(crate). Struct blocks contain only field lines, doc
+        // comments and attributes, so the anchor stays precise.
+        const fieldRegex = /^[ \t]*(?:pub(?:\(crate\))?\s+)?([a-z_]\w*)\s*:\s*([^,\n]+),/gm;
         for (const file of files) {
             const relPath = path.relative(this.rootDir, file);
             if (!/^src\/v2\//.test(relPath)) continue;
@@ -465,8 +521,12 @@ class RustScanner extends BaseScanner {
                 };
                 if (kind === 'enum') {
                     symbol.values = [...block.body.matchAll(/^ {4}([A-Z]\w*)\s*(?:\([^)]*\))?\s*,?\s*$/gm)].map((m) => m[1]);
+                    // cpp-scanner convention: enum pages verify their declared
+                    // values through the params set (pr-scan builds `available`
+                    // from symbol.params for every kind).
+                    symbol.params = symbol.values.map((name) => ({ name, type: 'variant' }));
                 } else {
-                    symbol.fields = [...block.body.matchAll(/pub(?:\(crate\))?\s+(\w+)\s*:\s*([^,\n]+),/g)]
+                    symbol.fields = [...block.body.matchAll(/^[ \t]*(?:pub(?:\(crate\))?\s+)?([a-z_]\w*)\s*:\s*([^,\n]+),/gm)]
                         .map((m) => ({ name: m[1], type: m[2].trim() }));
                     symbol.params = symbol.fields.map((field) => ({ name: field.name, type: field.type }));
                 }

@@ -35,6 +35,19 @@ function compileTrack({ webContentDir, sdkName, track, baseSha, overlayDir, prev
     patchIndex.set(patch.page, [...(patchIndex.get(patch.page) || []), patch]);
   }
 
+  // A patch file whose page identity matches nothing (typo, renamed page,
+  // track mismatch) must fail loudly: without this check every entry in the
+  // file silently never applies (review r1 P0-1).
+  const knownIdentities = new Set([
+    ...basePages.map((page) => page.identity),
+    ...tree.pages.map((page) => page.identity),
+  ]);
+  for (const page of patchIndex.keys()) {
+    if (!knownIdentities.has(page)) {
+      return { ok: false, kind: 'anchor', error: { code: 'OVERLAY_PAGE_MISS', page, baseSha } };
+    }
+  }
+
   const pages = [];
   const diagnostics = [];
   for (const basePage of basePages) {

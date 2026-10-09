@@ -246,6 +246,31 @@ test('demo two: an upstream change to one page leaves every other digest untouch
   }
 });
 
+test('a patch file whose page identity matches nothing fails loudly (review r1 P0-1)', () => {
+  const base = buildBaseRepo();
+  const overlayDir = buildOverlayDir();
+  try {
+    const patchFile = path.join(overlayDir, 'patches', 'Collections-CreateCollection.json');
+    const patch = JSON.parse(fs.readFileSync(patchFile, 'utf8'));
+    patch.page = 'Collections.CreateCollecton'; // one-letter page typo
+    fs.writeFileSync(patchFile, JSON.stringify(patch, null, 2));
+    const broken = compile({ base, overlayDir });
+    assert.equal(broken.ok, false);
+    assert.equal(broken.error.code, 'OVERLAY_PAGE_MISS');
+    assert.equal(broken.error.page, 'Collections.CreateCollecton');
+
+    // upstream-candidate must pass validation as a kebab-case boolean (r1 P1-1)
+    patch.page = 'Collections.CreateCollection';
+    patch.entries[0]['upstream-candidate'] = true;
+    fs.writeFileSync(patchFile, JSON.stringify(patch, null, 2));
+    const withFlag = compile({ base, overlayDir });
+    assert.equal(withFlag.ok, true);
+  } finally {
+    fs.rmSync(base.dir, { recursive: true, force: true });
+    fs.rmSync(overlayDir, { recursive: true, force: true });
+  }
+});
+
 test('demo three: renaming the anchored parameter fails loudly with the entry id, and a one-line key fix recovers', () => {
   const base = buildBaseRepo();
   const overlayDir = buildOverlayDir();

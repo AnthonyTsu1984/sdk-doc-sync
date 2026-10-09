@@ -52,6 +52,49 @@ pub struct CreateCollectionRequest {
     pub(crate) num_partitions: i64,
     pub(crate) schema: Option<CollectionSchema>,
 }
+
+pub struct SubSearchRequest {
+    vector_field: String,
+    vectors: SearchVectors,
+}
+
+pub struct HybridSearchRequest {
+    pub(crate) collection_name: String,
+    pub(crate) sub_requests: Vec<SubSearchRequest>,
+}
+`);
+
+  fs.writeFileSync(path.join(clientDir, 'dql.rs'), `\
+impl ClientV2 {
+    pub async fn hybrid_search(
+        &self,
+        request: impl Into<request::collection::HybridSearchRequest>,
+    ) -> Result<SearchResponse> {
+        todo!()
+    }
+}
+`);
+
+  const bulkFile = path.join(root, 'src', 'v2', 'bulk_import.rs');
+  fs.writeFileSync(bulkFile, `\
+pub struct BulkImport {
+    client: Client,
+}
+
+impl BulkImport {
+    pub fn new(config: &BulkImportConfig) -> Result<Self> {
+        todo!()
+    }
+}
+
+pub struct BulkImportRequest {
+    collection_name: String,
+    files: Vec<String>,
+}
+
+pub struct BulkImportConfig {
+    url: String,
+}
 `);
 
   fs.writeFileSync(path.join(typesDir, 'common.rs'), `\
@@ -78,7 +121,7 @@ test('rust scanner extracts client methods, request fields, and page-owning type
 
     const methods = symbols.filter((symbol) => symbol.kind === 'method');
     assert.deepEqual(methods.map((method) => method.name).sort(),
-      ['create_collection', 'current_database', 'list_compaction_tasks', 'server_version']);
+      ['create_collection', 'current_database', 'hybrid_search', 'list_compaction_tasks', 'new', 'server_version']);
 
     const create = methods.find((method) => method.name === 'create_collection');
     assert.equal(create.parentClass, 'ClientV2');
@@ -89,6 +132,7 @@ test('rust scanner extracts client methods, request fields, and page-owning type
       { name: 'num_partitions', type: 'i64' },
       { name: 'schema', type: 'Option<CollectionSchema>' },
     ]);
+    // Private builder-encapsulated fields index too (bulk-import shape).
     assert.match(create.signature, /^pub async fn create_collection\(/);
     assert.match(create.signature, /-> Result<\(\)>/);
     assert.equal(create.filePath, 'src/v2/client/collection.rs');
@@ -104,6 +148,23 @@ test('rust scanner extracts client methods, request fields, and page-owning type
     assert.equal(consistency.kind, 'enum');
     assert.equal(consistency.category, 'types');
     assert.deepEqual(consistency.values, ['Strong', 'Bounded', 'Customized']);
+    // Enum pages verify declared values through the params set (cpp
+    // convention; review r1 P0-2).
+    assert.deepEqual(consistency.params.map((param) => param.name), ['Strong', 'Bounded', 'Customized']);
+
+    // HybridSearch flattens SubSearchRequest builder fields into the page's
+    // REQUEST FIELDS — the method's params carry the union (review r1 P0-2).
+    const hybrid = methods.find((method) => method.name === 'hybrid_search');
+    assert.equal(hybrid.category, 'Vector');
+    assert.deepEqual(hybrid.params.map((param) => param.name),
+      ['collection_name', 'sub_requests', 'vector_field', 'vectors']);
+
+    // Module page symbol carries the flattened request/config builder fields
+    // plus the constructor param (review r1 P0-2, DataImport/BulkImport).
+    const bulk = symbols.find((symbol) => symbol.name === 'BulkImport');
+    assert.equal(bulk.category, 'DataImport');
+    assert.ok(bulk.params.map((param) => param.name).includes('collection_name'));
+    assert.ok(bulk.params.map((param) => param.name).includes('config'), 'constructor param joins the union');
 
     // Uncatalogued types are not emitted (java TYPE_CATEGORIES precedent).
     assert.equal(symbols.find((symbol) => symbol.name === 'NotADocumentedType'), undefined);

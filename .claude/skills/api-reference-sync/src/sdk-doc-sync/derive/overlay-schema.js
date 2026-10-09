@@ -158,7 +158,7 @@ function validatePatchEntries(doc, where, errors) {
         violation(errors, `${entryWhere}.targets`, 'targets must be a non-empty array of "zilliz"/"milvus"');
       }
     }
-    if ('upstream-candidate' in entry && typeof entry.upstreamCandidate !== 'boolean') {
+    if ('upstream-candidate' in entry && typeof entry['upstream-candidate'] !== 'boolean') {
       violation(errors, `${entryWhere}.upstream-candidate`, 'must be a boolean');
     }
   });

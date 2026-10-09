@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('node:fs');
 const path = require('node:path');
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
@@ -92,8 +93,18 @@ function executionRefFor(session, reviewUnitId) {
   // release tenant. The change-request transition deliberately keeps the
   // execution journal on disk "for audit and potential rollback" and anchors
   // it in changeRequests[] — honor that anchor so the rebuild path (CREATE
-  // units demand record absence) can roll the artifacts back first.
-  const changeRequest = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
+  // units demand record absence) can roll the artifacts back first. A unit
+  // can accumulate MULTIPLE change requests across redo cycles: the live
+  // artifacts belong to the NEWEST execution, so anchor the latest entry
+  // (requestedAt order — the array itself is sorted by reviewUnitId, not
+  // time); an earlier entry's artifacts were already rolled back with it.
+  const changeRequest = (session.changeRequests || [])
+    .filter((item) => item.reviewUnitId === reviewUnitId)
+    .sort((left, right) => (
+      String(left.requestedAt || '') < String(right.requestedAt || '') ? -1
+        : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
+    ))
+    .pop();
   if (changeRequest) {
     return {
       reviewUnitId,
@@ -132,6 +143,39 @@ function loadExecution(ref) {
   return { ...validated, journalPath };
 }
 
+// Operator-anchored execution journals carry FAILED actions by definition —
+// a resource-first batch can land its folder/VN actions and then fail before
+// the document action, and the session recording refuses journals with failed
+// actions, so such a journal can never anchor in pendingExecutions. The
+// durable journal IS the recovery evidence: verify the digest and the
+// completion sentinel (the run finished and journaled its outcomes), tolerate
+// the failed actions the rollback is about to invert.
+function loadLandedExecutionJournal(ref) {
+  if (!nonEmptyString(ref?.executionJournalPath)) {
+    throw new RollbackPlanningError(
+      'ROLLBACK_EXECUTION_PATH_REQUIRED',
+      `Operator-anchored rollback requires --execution-journal for ${ref?.reviewUnitId || '(unknown review unit)'}`,
+    );
+  }
+  const journalPath = path.resolve(ref.executionJournalPath);
+  const entries = JSON.parse(`[${fs.readFileSync(journalPath, 'utf8').trim().split('\n').join(',')}]`);
+  const actualDigest = digestSemantic(entries);
+  if (nonEmptyString(ref.executionJournalDigest) && actualDigest !== ref.executionJournalDigest) {
+    throw new RollbackPlanningError(
+      'ROLLBACK_EVIDENCE_DIGEST_MISMATCH',
+      `Execution journal digest mismatch: expected ${ref.executionJournalDigest}, got ${actualDigest}`,
+    );
+  }
+  const completion = entries.find((entry) => entry.type === 'completion');
+  if (!completion?.completionSentinel || completion.status !== 'executed') {
+    throw new RollbackPlanningError(
+      'ROLLBACK_EVIDENCE_MISSING',
+      `Execution journal lacks a completion sentinel: ${journalPath}`,
+    );
+  }
+  return { entries, journalPath };
+}
+
 function pairedJournalActions(entries, unit) {
   const preparedById = new Map();
   const observedById = new Map();
@@ -153,11 +197,19 @@ function pairedJournalActions(entries, unit) {
   // Digest-stable review-unit manifests are deliberately slim (no actionIds):
   // for those, the unit's action set derives from the execution journal, which
   // activeExecution already binds to the unit by path and digest.
+  // A dependency-blocked action observes a failure WITHOUT rollback evidence:
+  // nothing was mutated, so there is nothing to invert — exclude it from the
+  // invertible set instead of demanding evidence that cannot exist. An action
+  // that mutated before failing always carries its rollback evidence (the
+  // executor journals it from the durable result), and stays invertible.
+  const invertibleObserved = new Map([...observedById].filter(([, entry]) => (
+    !(entry.status === 'failure' && !entry.rollbackEvidence)
+  )));
   const unitActionIds = Array.isArray(unit.actionIds) && unit.actionIds.length > 0
-    ? unit.actionIds
-    : [...observedById.keys()].sort();
+    ? unit.actionIds.filter((actionId) => invertibleObserved.has(actionId))
+    : [...invertibleObserved.keys()].sort();
   const expected = new Set(unitActionIds);
-  const actual = new Set([...observedById.keys()]);
+  const actual = new Set([...invertibleObserved.keys()]);
   const missing = [...expected].filter((actionId) => !actual.has(actionId)).sort();
   const extra = [...actual].filter((actionId) => !expected.has(actionId)).sort();
   if (missing.length > 0 || extra.length > 0) {
@@ -416,7 +468,7 @@ function sharedResourceBlockers(session, targetReviewUnitId, createdResourceIds)
     .sort((left, right) => left.resourceActionId.localeCompare(right.resourceActionId));
 }
 
-function buildRollbackManifest({ session, reviewUnitId }) {
+function buildRollbackManifest({ session, reviewUnitId, executionJournalPath = null }) {
   if (!session?.reviewUnitManifest?.units || !nonEmptyString(reviewUnitId)) {
     throw new RollbackPlanningError('ROLLBACK_SESSION_REQUIRED', 'Review session and reviewUnitId are required');
   }
@@ -428,11 +480,23 @@ function buildRollbackManifest({ session, reviewUnitId }) {
   }
   const unit = session.reviewUnitManifest.units.find((item) => item.reviewUnitId === reviewUnitId);
   if (!unit) throw new RollbackPlanningError('ROLLBACK_REVIEW_UNIT_UNKNOWN', `Unknown review unit: ${reviewUnitId}`);
-  const executionRef = executionRefFor(session, reviewUnitId);
-  if (!executionRef) {
+  // An operator-supplied --execution-journal OVERRIDES the session anchors:
+  // a failed-but-mutating run leaves the newest live artifacts behind while
+  // the session can only anchor older recorded executions (a pending entry, a
+  // change request, an acceptance receipt), so those anchors are the default
+  // exactly when no journal is named. Inverting the anchored-older execution
+  // against live state would fail its own preflight (ROLLBACK_TARGET_DRIFT)
+  // and orphan the newer run's artifacts.
+  const hasOperatorJournal = nonEmptyString(executionJournalPath);
+  const executionRef = hasOperatorJournal ? null : executionRefFor(session, reviewUnitId);
+  let execution = null;
+  if (hasOperatorJournal) {
+    execution = loadLandedExecutionJournal({ reviewUnitId, executionJournalPath });
+  } else if (executionRef) {
+    execution = loadExecution({ reviewUnitId, ...executionRef });
+  } else {
     throw new RollbackPlanningError('ROLLBACK_EXECUTION_NOT_FOUND', `Review unit has no executed document to roll back: ${reviewUnitId}`);
   }
-  const execution = loadExecution({ reviewUnitId, ...executionRef });
   const pairs = pairedJournalActions(execution.entries, unit);
   const manifestActionIds = Array.isArray(unit.actionIds) && unit.actionIds.length > 0
     ? unit.actionIds
@@ -461,7 +525,11 @@ function buildRollbackManifest({ session, reviewUnitId }) {
     reviewUnitId,
     reviewUnitManifestDigest: session.reviewUnitManifestDigest,
     executionJournalPath: execution.journalPath,
-    executionJournalDigest: executionRef.executionJournalDigest,
+    // The receipt pins the journal by CONTENT digest — the same semantic
+    // _archiveRolledBackJournal uses to free the canonical slot, so the
+    // rolled-back journal is always the one the receipt names regardless of
+    // which anchor (session or operator path) produced the manifest.
+    executionJournalDigest: digestSemantic(execution.entries),
     actions,
     sideEffects: sideEffectsFor(actions),
     scanStateUpdated: false,

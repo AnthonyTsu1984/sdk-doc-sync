@@ -34,12 +34,23 @@ function labelSection(block, profile, currentRole) {
   if (block?.block_type !== 2) return null;
   const label = normalizedLabel(block);
   if (label === 'PARAMETERS') {
-    // Response-fields list inside RETURNS (describeReplicas strong-form
-    // baseline, 2026-10-03): the second PARAMETERS label belongs to the
-    // returns section, not a duplicate request-side section.
-    if (currentRole === 'returns') return null;
+    if (currentRole === 'returns') {
+      // Strong-form RETURNS (2026-10-03 global ruling): response fields render
+      // as a PARAMETERS bullet list after RETURNS. Profiles that declare the
+      // 'result-parameters' slot in their order role that second list
+      // distinctly; profiles without the slot treat it as part of the returns
+      // section, not a duplicate request-side section (describeReplicas
+      // baseline).
+      if (profile.order.includes('result-parameters')) return 'result-parameters';
+      return null;
+    }
     return profile.id === 'node' && currentRole === 'request' ? null : 'parameters';
   }
+  // Operator ruling 2026-10-07 (go GetTelemetry): an opaque manager handle
+  // surfaces its public METHODS after RETURNS — profiles declaring the
+  // 'result-methods' slot role that list as the return's method surface, not
+  // as the type's 'members' section (which orders before RETURN TYPE).
+  if (label === 'METHODS' && currentRole === 'returns' && profile.order.includes('result-methods')) return 'result-methods';
   if (['BUILDER METHODS', 'OPTION METHODS', 'REQUEST METHODS', 'METHODS'].includes(label)) {
     // 2026-10-06 Volume ruling: a METHODS label inside RETURNS introduces the
     // returned instance's method list — it stays in the returns section, not

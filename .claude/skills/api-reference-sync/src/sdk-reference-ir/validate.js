@@ -18,10 +18,12 @@ const NAMED_PLACEHOLDER = /Brief description|Usage example|List relevant excepti
 const TODO_WORKFLOW = /\btodo\s+(?:later|fix|pending|replace|add|update|review|implement|document|describe|example)\b/i;
 const SDK_LANGUAGES = new Set(['python', 'java', 'node', 'go', 'cpp', 'rust']);
 const MEMBER_KIND_BY_LANGUAGE = new Map([
-  ['java', 'builder'],
-  ['node', 'implementation'],
-  ['go', 'option'],
-  ['cpp', 'request'],
+  ['java', ['builder']],
+  ['node', ['implementation']],
+  // Go struct pages carry real methods (Field.GetDim) beside their builder
+  // options — both render on the type-page channel under separate labels.
+  ['go', ['option', 'implementation']],
+  ['cpp', ['request']],
   // 2026-10-06 Volume ruling: python classes expose methods, enums expose
   // values — both through the callableMembers channel.
   ['python', ['method', 'member']],

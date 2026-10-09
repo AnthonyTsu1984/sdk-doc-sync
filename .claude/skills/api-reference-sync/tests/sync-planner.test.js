@@ -1112,6 +1112,37 @@ test('execution batch includes resource plans and normalizes raw resource refs i
   assert.ok(batch.sideEffects.includes('feishu.drive.create_folder'));
 });
 
+test('resource plans carry the bound placement walk digest; legacy callers stay unbound', () => {
+  const resource = {
+    kind: 'folder',
+    ref: 'folder:node:v30:CDC',
+    name: 'CDC',
+    parentFolderToken: 'root-v30',
+    versionRootToken: 'root-v30',
+    existingLookup: {
+      checked: true,
+      absent: true,
+      parentFolderToken: 'root-v30',
+      name: 'CDC',
+    },
+  };
+  const walk = 'sha256:'.padEnd(71, '0');
+  const bound = new SyncPlanner().planResource(resource, { placementWalkDigest: walk });
+  assert.equal(bound.placementWalkDigest, walk);
+  const legacy = new SyncPlanner().planResource(resource);
+  assert.equal('placementWalkDigest' in legacy, false);
+  // The stamped digest is what verifyPlacementWalkBinding needs so a
+  // walk-bound run accepts the batch instead of refusing resource plans as
+  // legacy (PLACEMENT_WALK_UNBOUND).
+  const { verifyPlacementWalkBinding } = require('../src/sdk-doc-sync/versioned-tree-policy');
+  const documentPlan = { placementWalkDigest: walk };
+  const result = verifyPlacementWalkBinding({
+    plans: [bound, documentPlan],
+    boundWalkDigest: walk,
+  });
+  assert.deepEqual(result.errors, []);
+});
+
 test('review-unit manifest creates one deterministic document batch with its required resources', () => {
   const resource = {
     kind: 'resource',
@@ -1426,8 +1457,100 @@ test('SyncPlanner creates a dependent VirtualNode repoint resource that follows 
       currentFolderToken: 'folder-auth-old',
     },
   }), /requires the folder and document dependencies/);
-});
-
+  });
+  
+  test('SyncPlanner plans a post-creation VirtualNode repoint against a concrete folderToken', () => {
+    const plan = new SyncPlanner().planResource({
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      title: 'DataImport',
+      folderToken: 'folder-dataimport-new',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: ['go:DataImport:SomeInterface'],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    });
+  
+    assert.equal(plan.action, 'REPOINT_CATEGORY_VIRTUAL_NODE');
+    assert.deepEqual(plan.dependencies, ['go:DataImport:SomeInterface']);
+    assert.deepEqual(plan.postconditions[1], {
+      type: 'VIRTUAL_NODE_LINK',
+      recordId: 'rec-dataimport',
+      folderToken: 'folder-dataimport-new',
+      preservedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+    });
+  });
+  
+  test('SyncPlanner rejects a post-creation VirtualNode repoint without a document dependency', () => {
+    assert.throws(() => new SyncPlanner().planResource({
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      folderToken: 'folder-dataimport-new',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: [],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    }), /requires the folder and document dependencies/);
+  });
+  
+  test('SyncPlanner requires exactly one repoint destination form (folderRef XOR folderToken)', () => {
+    const base = {
+      kind: 'virtual_node_repoint',
+      ref: 'repoint:go:v30:DataImport',
+      recordId: 'rec-dataimport',
+      currentFolderToken: 'folder-dataimport-old',
+      expectedFields: {
+        type: 'VirtualNode',
+        targets: ['Milvus', 'Zilliz'],
+        progress: 'Draft',
+        slug: 'DataImport',
+      },
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      dependsOn: ['folder:go:v30:DataImport', 'go:DataImport:SomeInterface'],
+      existingLookup: {
+        checked: true,
+        matched: true,
+        recordId: 'rec-dataimport',
+        currentFolderToken: 'folder-dataimport-old',
+      },
+    };
+    assert.throws(() => new SyncPlanner().planResource({ ...base, folderRef: 'folder:go:v30:DataImport', folderToken: 'folder-dataimport-new' }), /requires exactly one of folderRef/);
+    const neither = { ...base };
+    assert.throws(() => new SyncPlanner().planResource(neither), /requires exactly one of folderRef/);
+  });
+  
 test('SyncPlanner creates a dependent VirtualNode resource plan', () => {
   const plan = new SyncPlanner().planResource({
     kind: 'virtual_node',

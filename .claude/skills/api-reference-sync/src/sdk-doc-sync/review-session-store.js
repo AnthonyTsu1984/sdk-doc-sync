@@ -69,6 +69,22 @@ const REVIEW_MACHINE = defineSessionMachine({
 // of truth for accept-document, the stock backfill, and resume validation.
 const TARGETS_FINAL = Object.freeze(['Milvus', 'Zilliz']);
 
+// Per-category overrides of the KB-wide final Targets value, written by the
+// document gate instead of TARGETS_FINAL (2026-10-09 operator ruling: the
+// Resource Group feature is Milvus-only, so its records carry Targets=[Milvus]
+// and must never be stamped with the Zilliz-wide pair). Categories are the
+// middle segment of the reviewUnitId ('review:go:<Category>:<Symbol>').
+const CATEGORY_TARGETS_FINAL = new Map([
+  ['ResourceGroup', ['Milvus']],
+]);
+
+function targetsFinalForReviewUnit(reviewUnitId) {
+  const category = typeof reviewUnitId === 'string' && reviewUnitId.split(':').length >= 3
+    ? reviewUnitId.split(':')[2]
+    : null;
+  return [...(CATEGORY_TARGETS_FINAL.get(category) || TARGETS_FINAL)];
+}
+
 // Unit-level machine (two-gate acceptance flow): the session machine governs
 // the campaign, this one governs each document unit. Unit state is DERIVED
 // from the session arrays — pendingExecutions = executed, acceptedReviewUnits
@@ -1184,8 +1200,9 @@ function recordRollbackIntent(session, {
   rollbackManifestDigest,
   rollbackJournalPath,
   supersedeStaleLease = false,
+  executionJournal = null,
 }) {
-  if (!session?.reviewUnitManifest?.units) throw new TypeError('review session is required');
+  if (!session?.reviewUnitManifest?.units) throw new TypeError('Review session is required');
   if (session.scanStateUpdated === true) {
     throw new Error('Review session is finalized and cannot be rolled back in place');
   }
@@ -1195,20 +1212,64 @@ function recordRollbackIntent(session, {
   if (!session.reviewUnitManifest.units.some((unit) => unit.reviewUnitId === reviewUnitId)) {
     throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
   }
-  if ((session.rollbackReceipts || []).some((item) => item.reviewUnitId === reviewUnitId)) {
-    throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
-  }
   const pendings = pendingList(session);
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
   // A change-requested unit keeps its journal anchored in changeRequests[]
   // ("for audit and potential rollback") — its executed artifacts are still
-  // live and the rebuild path needs the rollback to run first.
-  const changeRequested = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
-  const anchor = pending || accepted || (changeRequested ? {
-    executionJournalPath: changeRequested.executionJournalPath,
-    executionJournalDigest: changeRequested.executionJournalDigest,
-  } : null);
+  // live and the rebuild path needs the rollback to run first. A redo cycle
+  // appends further entries: the live artifacts belong to the NEWEST, so
+  // anchor by requestedAt (the array is sorted by reviewUnitId, not time).
+  const changeRequested = (session.changeRequests || [])
+    .filter((item) => item.reviewUnitId === reviewUnitId)
+    .sort((left, right) => (
+      String(left.requestedAt || '') < String(right.requestedAt || '') ? -1
+        : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
+    ))
+    .pop();
+  let operatorAnchored = false;
+  // Operator-anchored recovery: the operator names the execution whose
+  // artifacts are live NOW, and that choice takes PRECEDENCE over the
+  // session anchors — a failed-but-mutating run cannot record its journal
+  // (failed actions refuse recording), so the newest live artifacts are
+  // invisible to pending/change-request/accepted anchors, which stay the
+  // default exactly when no journal is supplied. The lease anchors to the
+  // on-disk content digest after verifying the completion sentinel.
+  let anchor = null;
+  if (nonEmptyString(executionJournal)) {
+    const operatorJournalPath = path.resolve(executionJournal);
+    const entries = readExecutionJournal(operatorJournalPath);
+    const completion = entries.find((entry) => entry.type === 'completion');
+    if (!completion?.completionSentinel || completion.status !== 'executed') {
+      throw new Error('Operator-anchored rollback journal lacks a completion sentinel');
+    }
+    // The digest is verified against the on-disk bytes here; the strict
+    // journal validation below is skipped deliberately — the operator anchor
+    // carries FAILED actions by definition (that is why the session could
+    // never record it), and tolerating them is the point of this recovery.
+    operatorAnchored = true;
+    anchor = {
+      executionJournalPath: operatorJournalPath,
+      executionJournalDigest: digestSemantic(entries),
+    };
+  } else {
+    anchor = pending || accepted || (changeRequested ? {
+      executionJournalPath: changeRequested.executionJournalPath,
+      executionJournalDigest: changeRequested.executionJournalDigest,
+    } : null);
+  }
+  // Redo cycles legitimately produce a SECOND rollback for a unit — the
+  // prior receipt pins an OLDER journal whose artifacts were already
+  // reversed with that execution. Only re-rolling an execution a receipt
+  // already pins is refused (that would double-reverse it); a rollback whose
+  // anchor carries a different digest stays recordable.
+  const priorReceipt = (session.rollbackReceipts || []).some((item) => (
+    item.reviewUnitId === reviewUnitId
+      && (!anchor || item.originalExecutionJournalDigest === anchor.executionJournalDigest)
+  ));
+  if (priorReceipt) {
+    throw new Error(`Review unit is already rolled back: ${reviewUnitId}`);
+  }
   const existing = session.activeRollback;
   if (existing) {
     const identical = existing.reviewUnitId === reviewUnitId
@@ -1234,7 +1295,9 @@ function recordRollbackIntent(session, {
     }
   }
   if (!anchor) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
-  validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
+  if (!operatorAnchored) {
+    validateExecutionJournal(path.resolve(anchor.executionJournalPath || ''), anchor.executionJournalDigest);
+  }
   const startedAt = new Date().toISOString();
   if (acceptanceFlowOf(session) === 'two-gate') {
     // A finalized unit (accepted under the two-gate flow) is terminal: the
@@ -1276,7 +1339,16 @@ function recordDocumentRollback(session, receipt) {
     throw new Error('Rollback journal is bound to a different review unit');
   }
 
-  const existingRollback = (session.rollbackReceipts || []).find((item) => item.reviewUnitId === reviewUnitId);
+  // Receipts pin ORIGINAL execution journals by digest: a redo cycle gives
+  // the unit a second, DIFFERENT original journal, whose rollback lands as
+  // its own receipt (the earlier receipt's artifacts were reversed with its
+  // execution). Only an identical re-record of the same receipt is a no-op;
+  // a different-digest receipt for the same unit is appended, and re-rolling
+  // a journal a receipt already pins is refused.
+  const existingRollback = (session.rollbackReceipts || []).find((item) => (
+    item.reviewUnitId === reviewUnitId
+      && item.originalExecutionJournalDigest === validated.originalExecutionJournalDigest
+  ));
   if (existingRollback) {
     if (path.resolve(existingRollback.rollbackJournalPath || '') === validated.journalPath
         && existingRollback.rollbackJournalDigest === receipt.rollbackJournalDigest
@@ -1284,7 +1356,7 @@ function recordDocumentRollback(session, receipt) {
         && existingRollback.originalExecutionJournalDigest === validated.originalExecutionJournalDigest) {
       return session;
     }
-    throw new Error(`Review unit already has a different rollback receipt: ${reviewUnitId}`);
+    throw new Error(`Review unit already has a different rollback receipt for this execution: ${reviewUnitId}`);
   }
 
   REVIEW_MACHINE.assertTransition('recordDocumentRollback', session);
@@ -1298,28 +1370,48 @@ function recordDocumentRollback(session, receipt) {
   const pending = pendings.find((item) => item.reviewUnitId === reviewUnitId);
   const activeMatches = pending !== undefined;
   const accepted = (session.acceptedReviewUnits || []).find((unit) => unit.reviewUnitId === reviewUnitId);
-  const changeRequested = (session.changeRequests || []).find((item) => item.reviewUnitId === reviewUnitId);
-  let originalExecution = pending || accepted || (changeRequested ? {
-    executionJournalPath: changeRequested.executionJournalPath,
-    executionJournalDigest: changeRequested.executionJournalDigest,
-  } : null);
-  if (!originalExecution && intent) {
-    // The intent is the pre-side-effect anchor: even when a concurrent
-    // writer moved the unit out of active/accepted, the durable lease
-    // recorded what this rollback was bound to before any mutation ran.
+  // Newest change request wins: redo cycles append entries and the live
+  // artifacts belong to the latest execution (requestedAt order — the array
+  // is sorted by reviewUnitId, not time).
+  const changeRequested = (session.changeRequests || [])
+    .filter((item) => item.reviewUnitId === reviewUnitId)
+    .sort((left, right) => (
+      String(left.requestedAt || '') < String(right.requestedAt || '') ? -1
+        : (String(left.requestedAt || '') > String(right.requestedAt || '') ? 1 : 0)
+    ))
+    .pop();
+  let originalExecution = null;
+  if (intent) {
+    // The lease is the pre-side-effect anchor naming the EXACT original
+    // execution this rollback inverts (the operator-anchored recovery path
+    // included): a pending/accepted/change-request anchor for a DIFFERENT —
+    // older — execution must not override the lease being completed. The
+    // journal-vs-intent digest check above already refused any journal that
+    // does not match the lease.
     originalExecution = {
       executionJournalPath: intent.originalExecutionJournalPath,
       executionJournalDigest: intent.originalExecutionJournalDigest,
     };
+  } else {
+    originalExecution = pending || accepted || (changeRequested ? {
+      executionJournalPath: changeRequested.executionJournalPath,
+      executionJournalDigest: changeRequested.executionJournalDigest,
+    } : null);
   }
   if (!originalExecution) throw new Error(`Review unit has no executed document to roll back: ${reviewUnitId}`);
   if (validated.originalExecutionJournalDigest !== originalExecution.executionJournalDigest) {
     throw new Error('Rollback journal is bound to a different original execution');
   }
-  validateExecutionJournal(
-    path.resolve(originalExecution.executionJournalPath || ''),
-    originalExecution.executionJournalDigest,
-  );
+  // The intent is the pre-side-effect anchor and its digest already binds
+  // the journal identity; the strict failed-action validation is skipped
+  // when the anchor came from the operator recovery path — tolerating the
+  // landed-but-failed actions is exactly what this rollback is for.
+  if (!(intent && intent.originalExecutionJournalPath === path.resolve(originalExecution.executionJournalPath || ''))) {
+    validateExecutionJournal(
+      path.resolve(originalExecution.executionJournalPath || ''),
+      originalExecution.executionJournalDigest,
+    );
+  }
 
   const rolledBackAt = receipt.rolledBackAt || new Date().toISOString();
   const remainingPendings = pendings.filter((item) => item.reviewUnitId !== reviewUnitId);
@@ -1445,14 +1537,21 @@ function loadReviewSessionState(filePath) {
     throw new Error(`Review session is invalid: ${resolved}`);
   }
   // Cross-field invariant the transition table maintains implicitly: no unit
-  // holds a rollback receipt and the lease at once — the apply patch clears
-  // lease(U) in the same atomic patch that appends receipt(U), and
-  // recordRollbackIntent refuses receipt-bearing units before touching the
-  // lease. A file violating this never came from those transitions, so
-  // refuse it at load instead of letting the stray lease wedge silently.
+  // holds a rollback receipt and the lease AT THE SAME ORIGINAL EXECUTION —
+  // the apply patch clears lease(U) in the same atomic patch that appends
+  // receipt(U), and recordRollbackIntent refuses to lease an execution a
+  // receipt already pins. A redo cycle legitimately leaves an EARLIER
+  // execution's receipt on file while a NEWER execution's lease is in
+  // flight; only same-journal coexistence (one execution both reversed and
+  // being reversed) is impossible from those transitions, so refuse that at
+  // load instead of letting the stray lease wedge silently.
   const activeRollback = loaded.state.activeRollback || null;
   if (activeRollback
-      && (loaded.state.rollbackReceipts || []).some((item) => item.reviewUnitId === activeRollback.reviewUnitId)) {
+      && (loaded.state.rollbackReceipts || []).some((item) => (
+        item.reviewUnitId === activeRollback.reviewUnitId
+          && (!activeRollback.originalExecutionJournalDigest
+            || item.originalExecutionJournalDigest === activeRollback.originalExecutionJournalDigest)
+      ))) {
     throw new Error(
       `Review session is inconsistent: rollback lease and receipt coexist for ${activeRollback.reviewUnitId}: ${resolved}`,
     );
@@ -1555,6 +1654,7 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 }
 
 module.exports = {
+  targetsFinalForReviewUnit,
   executedUnitIdsOf,
   rebuildLineageFor,
   REVIEW_MACHINE,

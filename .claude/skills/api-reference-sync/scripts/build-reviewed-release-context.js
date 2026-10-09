@@ -302,7 +302,7 @@ function assertActionDocumentationOwnership(action) {
   }
 }
 
-function assertCandidateIdentity({ action, spec, category }) {
+function assertCandidateIdentity({ action, spec, category, language }) {
   const docIdentity = spec.docIdentity || {};
   const effectiveStableId = docIdentity.stableId || spec.stableId || action.stableId;
   const effectiveCanonicalSlug = docIdentity.canonicalSlug || spec.canonicalSlug || action.canonicalSlug;
@@ -314,9 +314,13 @@ function assertCandidateIdentity({ action, spec, category }) {
     );
   }
   if (effectiveCanonicalSlug.includes('-')) {
-    const hasCategoryPrefix = effectiveCanonicalSlug === category
-      || effectiveCanonicalSlug.startsWith(`${category}-`)
-      || new RegExp(`^v\\d+-${category.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}-`).test(effectiveCanonicalSlug);
+    // The versioned class-page form (v2-Collection for the Collection class
+    // record itself, category Collections) is the KB's own slug shape: the
+    // versioned prefix may carry the category alias with nothing after it.
+    const hasCategoryPrefix = slugPrefixAliases(language, category)
+      .some((alias) => effectiveCanonicalSlug === alias
+        || effectiveCanonicalSlug.startsWith(`${alias}-`)
+        || new RegExp(`^v\\d+-${alias.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}($|-)`).test(effectiveCanonicalSlug));
     if (!hasCategoryPrefix) {
       throw new Error(
         `Candidate ${action.canonicalSlug} category ${category} does not match canonical slug ${effectiveCanonicalSlug}. ` +
@@ -346,7 +350,16 @@ function assertCandidateIdentity({ action, spec, category }) {
 function assertExistingRecordEvidence({ action, spec, identity }) {
   if (action.type !== 'UPDATE') return null;
   const existing = spec.existingRecord || null;
-  if (!existing || !existing.recordId || !existing.documentToken || !existing.parentRecordId) {
+  if (!existing || !existing.recordId || !existing.documentToken) {
+    throw new Error(`Candidate ${action.canonicalSlug} existingRecord evidence is required for UPDATE ${identity.stableId}`);
+  }
+  // Root-level class/virtual-node records (the per-category pages: v2-
+  // Collection, v2-Database, …) legitimately have no parent record — their
+  // container is the drive folder, not another record. Every other record
+  // class must carry its parent evidence.
+  const rootLevelRecord = ['Class', 'VirtualNode'].includes(existing.recordType)
+    && Array.isArray(existing.parentRecordIds) && existing.parentRecordIds.length === 0;
+  if (!existing.parentRecordId && !rootLevelRecord) {
     throw new Error(`Candidate ${action.canonicalSlug} existingRecord evidence is required for UPDATE ${identity.stableId}`);
   }
   if (!existing.placement
@@ -358,7 +371,9 @@ function assertExistingRecordEvidence({ action, spec, identity }) {
   return {
     recordId: existing.recordId,
     documentToken: existing.documentToken,
+    recordType: existing.recordType || null,
     parentRecordId: existing.parentRecordId,
+    parentRecordIds: Array.isArray(existing.parentRecordIds) ? [...existing.parentRecordIds] : (existing.parentRecordId ? [existing.parentRecordId] : []),
     version: existing.placement.version,
     folderToken: existing.placement.folderToken,
     ancestryVerified: true,
@@ -554,6 +569,27 @@ function joinSharedUpdateReviews({ identity, evidence, inheritanceReview }) {
 }
 
 const REVIEWED_ACTION_TYPES = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL']);
+
+// Scanner categories whose KB slugs use a different drive-group word, or whose
+// pages live in a nested sub-group folder (go nests Index under Management and
+// AnnParam under Vector). The identity map remains the authority for
+// canonicalSlug (sdk-pr-sync.md); this table only lets the slug-prefix sanity
+// check accept the go KB conventions, mirroring go-v26.json. Slug prefixes
+// outside this table still must match the category.
+const GO_CATEGORY_SLUG_ALIASES = {
+  Collections: ['Collection'],
+  Partitions: ['Partition'],
+  Management: ['Management', 'Index'],
+  Vector: ['Vector', 'AnnParam'],
+};
+
+function slugPrefixAliases(language, category) {
+  const aliases = [category];
+  if (language === 'go' && GO_CATEGORY_SLUG_ALIASES[category]) {
+    aliases.push(...GO_CATEGORY_SLUG_ALIASES[category]);
+  }
+  return aliases;
+}
 
 function actionForPlanning(action, spec) {
   const reviewedType = spec.actionIntent || spec.reviewedActionType || action.type;
@@ -788,7 +824,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     selectedSlugs.add(action.canonicalSlug);
 
     const category = required(spec.category, `Candidate ${planningAction.canonicalSlug} is missing category`);
-    const identity = assertCandidateIdentity({ action: planningAction, spec, category });
+    const identity = assertCandidateIdentity({ action: planningAction, spec, category, language: releaseScope.language });
     const releasePlanningContext = assertCompatibleReviewedActions(sourceActions, identity);
     if (planningAction.documentationOwnership?.classification === 'method_owned'
       && identity.stableId !== planningAction.documentationOwnership.selectedOwnerStableId) {
@@ -852,7 +888,12 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       || spec.parentRecordRef
       || existingRecordLookup?.parentRecordRef
       || null;
-    if (!parentRecordId && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
+    // Root-level class/virtual-node pages carry no parent on either side —
+    // their container is the drive folder (see assertExistingRecordEvidence).
+    const rootLevelClassPage = existingRecord
+      && ['Class', 'VirtualNode'].includes(existingRecord.recordType)
+      && Array.isArray(existingRecord.parentRecordIds) && existingRecord.parentRecordIds.length === 0;
+    if (!parentRecordId && !rootLevelClassPage && (!parentRecordRef || !dependencies.includes(parentRecordRef))) {
       throw new Error(`Candidate ${action.canonicalSlug} has no parent record or approved parent resource`);
     }
     // T3 creation-side gate supply: the target folder's containment chain
@@ -961,6 +1002,7 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       kind: spec.kind,
       title: spec.title || titleFor({ ...planningAction, symbol: identity.symbol }),
       summary: required(spec.summary, `Candidate ${action.canonicalSlug} is missing summary`),
+      summaryCallouts: clone(spec.summaryCallouts),
       signature: clone(spec.signature),
       params: clone(spec.params),
       requestVariants: clone(spec.requestVariants),
@@ -976,6 +1018,31 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       organization: clone(organization),
       organizationInventory: clone(organizationInventory),
       notes: spec.notes || candidateSpec.notes || [],
+      // Planning context mirror (grouping write binding): a grouping-bound
+      // campaign enters with the APPROVED unfiltered release scope, whose
+      // actions cannot carry the reviewed planningContext (touching them
+      // would re-key the bound scope digest). The per-candidate planning
+      // evidence therefore also rides the reference context — the schema-first
+      // artifact provider passes these fields through to the planner. Keep
+      // this object in lockstep with selectedAction.planningContext above.
+      current: existingRecord || undefined,
+      target: planningTarget,
+      existingRecordLookup: existingRecordLookup || undefined,
+      copySource,
+      // Reviewed intent: the grouping-approved action type rides the entry so
+      // grouping-bound campaigns (union-scope entry) plan the reviewed type
+      // even where the scout-typed scope action disagrees.
+      reviewedActionType: planningAction.type,
+      treeDelta: clone(spec.treeDelta || null) || undefined,
+      dependencies,
+      placementWalk: { digest: placementWalk.digest, collectedAt: placementWalk.collectedAt },
+      inheritanceEvidence,
+      sharedUpdateReviews: joinSharedUpdateReviews({
+        identity,
+        evidence: inheritanceEvidence,
+        inheritanceReview,
+      }),
+      tokenReferencedByOlderVersions: inheritanceEvidence?.sharedToken.status === 'shared',
     };
   }
 
@@ -1024,6 +1091,11 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       schemaVersion: 1,
       releaseRange: releaseScope.releaseRange,
       targetTag: releaseScope.targetTag,
+      // Grouping-bound campaigns enter with the receipt-bound unfiltered
+      // scope, which cannot carry campaign resources without re-keying the
+      // chained digest — the reviewed resources ride here instead and the
+      // CLI merges them into resource planning (sdk-doc-sync campaignResources).
+      resources,
       contexts,
     },
     selectedCount: selected.length,

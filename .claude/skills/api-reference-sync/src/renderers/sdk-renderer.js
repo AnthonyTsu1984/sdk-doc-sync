@@ -67,7 +67,10 @@ function label(value, options = {}) {
 function sentence(value) {
   const normalized = String(value || '').trim();
   if (!normalized) return '';
-  return /[.!?]$/.test(normalized) ? normalized : `${normalized}.`;
+  // A colon is a lead-in terminator, not sentence-ending punctuation —
+  // parameter intros ("…with the following fields:") introduce the child
+  // field list and must not gain a stray period ("fields:.").
+  return /[.!?:]$/.test(normalized) ? normalized : `${normalized}.`;
 }
 
 function typeUrl(type, context) {
@@ -96,14 +99,25 @@ function typeInlines(type, context, { italic = true } = {}) {
 }
 
 function fieldHeader(field, context, role = 'parameters-list') {
-  const nameMarks = role === 'member-fields' ? ['inlineCode'] : ['bold'];
+  // Member sub-fields come in two shapes. Embedded method entries (java
+  // builder helpers carry their full signature as the field NAME, e.g.
+  // "fieldName(String fieldName)", with no type) stay code-styled — that is
+  // the java pages' accepted shape. Data fields (a clean name plus a type —
+  // go option sub-fields) use the same bold-name + parenthesized-type shape
+  // as every other nested field list: the type is semantic content and the
+  // upstream PR pages render it (operator rejection 2026-10-08,
+  // WithExternalSpec).
+  const signatureEntry = role === 'member-fields'
+    && !String(typeof field.type === 'string' ? field.type : field.type?.display ?? '').trim()
+    && String(field.name || '').includes('(');
+  const nameMarks = signatureEntry ? ['inlineCode'] : ['bold'];
   // 2026-10-06 Volume ruling: a result field with a page link renders its
   // name as a citation to that page (method pages linked from METHODS).
   const link = Array.isArray(field.links) && field.links[0] && isSafeUrl(field.links[0].url)
     ? field.links[0]
     : null;
   const children = [link ? ir.citation(field.name, link.url) : text(field.name, nameMarks)];
-  const renderedType = role === 'member-fields' ? [] : typeInlines(field.type, context);
+  const renderedType = signatureEntry ? [] : typeInlines(field.type, context);
   if (renderedType.length > 0) children.push(text(' ('), ...renderedType, text(')'));
   children.push(text(' -'));
   return ir.paragraph(children);
@@ -336,17 +350,25 @@ function renderReturns(document, policy, context) {
     blocks.push(ir.paragraph(typeInlines(result.type, context), semantic('returns-type-value')));
   }
   blocks.push(paragraph(sentence(result.description), [], { ...semantic('returns-description'), links: typeLinks(context) }));
+  if (result.schemaCode) {
+    // Ruling 2026-10-07 (go): expand a struct result as its go schema code
+    // block between the RETURNS prose and the response-field PARAMETERS.
+    blocks.push(ir.codeBlock(String(result.schemaCode), policy.canonicalFence || 'Go', semantic('returns-schema')));
+  }
   if (Array.isArray(result.fields) && result.fields.length > 0) {
     // describeReplicas baseline (2026-10-03 strong-form ruling): response
     // fields render as a labeled bullet list after the RETURNS prose,
     // mirroring the request-side parameter list. 2026-10-06 Volume ruling:
     // fields that are METHODS of the returned instance take the METHODS
-    // label (policy.resultMethodsLabel) instead of PARAMETERS.
+    // label (policy.resultMethodsLabel) instead of PARAMETERS — and when the
+    // whole response surface is methods (opaque manager handle, GetTelemetry
+    // ruling 2026-10-07) that single list carries the methods-list role.
     const methodFields = result.fields.filter((field) => field?.resultFieldKind === 'method');
     const dataFields = result.fields.filter((field) => field?.resultFieldKind !== 'method');
+    const methodSurfaced = methodFields.length > 0 && dataFields.length === 0;
     if (methodFields.length > 0 && policy.resultMethodsLabel) {
       blocks.push(label(policy.resultMethodsLabel, semantic('result-methods-label')));
-      blocks.push(...renderFieldBlocks(methodFields, context, 'result-fields'));
+      blocks.push(...renderFieldBlocks(methodFields, context, methodSurfaced ? 'result-methods-list' : 'result-fields'));
     }
     if (dataFields.length > 0) {
       if (policy.parametersLabel) {
@@ -395,14 +417,16 @@ function renderPrimaryInputs(document, policy, context) {
   ];
 }
 
-function renderCallableMembers(document, policy, context) {
-  if (!policy.memberKind) return [];
-  const memberKinds = Array.isArray(policy.memberKind) ? policy.memberKind : [policy.memberKind];
+function renderCallableMembers(document, policy, context, { kind, labelOverride } = {}) {
+  const memberFilter = kind ?? policy.memberKind;
+  if (!memberFilter) return [];
+  const memberKinds = Array.isArray(memberFilter) ? memberFilter : [memberFilter];
   const members = (document.callableMembers || []).filter((member) => memberKinds.includes(member.kind));
   if (members.length === 0) return [];
-  const membersLabel = typeof policy.membersLabel === 'function'
-    ? policy.membersLabel(document)
-    : policy.membersLabel;
+  const labelPolicy = labelOverride ?? policy.membersLabel;
+  const membersLabel = typeof labelPolicy === 'function'
+    ? labelPolicy(document)
+    : labelPolicy;
   const membersHeading = typeof policy.membersHeading === 'function'
     ? policy.membersHeading(document, members)
     : policy.membersHeading;
@@ -522,6 +546,54 @@ function renderRelatedSection(document) {
   return related ? [heading(2, 'Related', semantic('related-section')), related] : [];
 }
 
+const TYPE_PAGE_KINDS = Object.freeze(['struct', 'class', 'enum', 'interface']);
+
+function isTypeLikeDocument(document) {
+  return TYPE_PAGE_KINDS.includes(document.identity?.kind);
+}
+
+// Enum member entries read "- **Name** = ConstantExpression" (upstream
+// type-page shape); the constant rides the field's defaultValue — a member's
+// constant IS its default value. An empty constant renders as the bare name.
+function renderTypeValueItems(fields) {
+  return ir.unorderedList(fields.map((field) => {
+    const header = [text(field.name, ['bold'])];
+    const constant = String(field.defaultValue ?? '').trim();
+    if (constant) header.push(text(` = ${constant}`));
+    const children = [ir.paragraph(header)];
+    for (const entry of audience.descriptionEntries(field)) {
+      const description = sentence(entry.description);
+      if (!description) continue;
+      const descriptionBlock = paragraph(description);
+      if (audience.normalizeAudience(field.audience) === 'shared' && entry.audience !== 'shared') {
+        children.push(ir.audienceRegion('include', entry.audience, [descriptionBlock]));
+      } else {
+        children.push(descriptionBlock);
+      }
+    }
+    return ir.listItem(children);
+  }), semantic('type-values-list'));
+}
+
+// A type page surfaces its fields/values through ONE labeled section —
+// FIELDS: for structs, VALUES: for enums — instead of the method-shaped
+// request/parameters/result sections.
+function renderTypeMembersSection(document, policy, context) {
+  const fields = Array.isArray(document.result?.fields) ? document.result.fields : [];
+  if (fields.length === 0) return [];
+  const isEnum = document.identity.kind === 'enum';
+  const labelPolicy = isEnum ? policy.typeValuesLabel : policy.typeFieldsLabel;
+  const labelValue = (typeof labelPolicy === 'function' ? labelPolicy(document) : labelPolicy)
+    || (isEnum ? 'VALUES:' : 'FIELDS:');
+  const labelBlock = isEnum
+    ? label(labelValue, semantic('type-values-label'))
+    : label(labelValue, semantic('type-fields-label'));
+  const list = isEnum
+    ? [renderTypeValueItems(fields)]
+    : renderFieldBlocks(fields, context, 'type-fields-list');
+  return [labelBlock, ...list];
+}
+
 function createSdkRenderer(policy) {
   if (!policy?.profile) throw new TypeError('SDK renderer policy requires a layout profile');
   const frozenPolicy = Object.freeze({ ...policy });
@@ -544,6 +616,33 @@ function createSdkRenderer(policy) {
       notes: renderNotes(document),
       related: renderRelatedSection(document),
     };
+    if (isTypeLikeDocument(document)) {
+      // Type pages (struct/class/enum) land summary + the type definition +
+      // one FIELDS/VALUES section + example. The method-shaped request/
+      // parameters/result-type/returns/exceptions sections are meaningless
+      // for them — the result channel on a type page carries its fields, and
+      // rendering it as a return value invents RT/RETURNS content.
+      // Builder options and real methods ride the callableMembers channel
+      // under separate labels when the page carries them (upstream Field:
+      // **BUILDER METHODS:** + **METHODS:**; dropping them loses content the
+      // shared page already had). Members with other kinds stay suppressed —
+      // the type-page channel only vouches for option/method shapes.
+      Object.assign(sections, {
+        request: [],
+        parameters: [],
+        members: [
+          ...renderTypeMembersSection(document, frozenPolicy, context),
+          ...renderCallableMembers(document, frozenPolicy, context),
+          ...renderCallableMembers(document, frozenPolicy, context, {
+            kind: 'implementation',
+            labelOverride: frozenPolicy.typeMethodsLabel || 'METHODS:',
+          }),
+        ],
+        'result-type': [],
+        returns: [],
+        exceptions: [],
+      });
+    }
     const blocks = frozenPolicy.profile.order.flatMap((name) => sections[name] || []);
     return ir.document(blocks, {
       metadata: {

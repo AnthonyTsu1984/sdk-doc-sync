@@ -62,6 +62,27 @@ function evidenceForNode(node, symbol, context = {}, role = 'field', key = node?
   return [];
 }
 
+// Upstream PR pages encode HTML entities in type prose (&ast; for *,
+// &lt;/&gt; for generics); left unescaped they reach the rendered page as
+// literal "&ast;" text — and the renderer's own escaping then doubles it to
+// "&amp;ast;". Unescape once, at the type-display choke point (&amp; last).
+const HTML_ENTITY_UNESCAPES = [
+  [/&ast;/g, '*'],
+  [/&lt;/g, '<'],
+  [/&gt;/g, '>'],
+  [/&quot;/g, '"'],
+  [/&#39;/g, "'"],
+  [/&nbsp;/g, ' '],
+  [/&amp;/g, '&'],
+];
+
+function unescapeEntities(value) {
+  return HTML_ENTITY_UNESCAPES.reduce(
+    (text, [pattern, replacement]) => text.replace(pattern, replacement),
+    value,
+  );
+}
+
 function typeOf(value) {
   if (value && typeof value === 'object' && !Array.isArray(value)) {
     const references = Array.isArray(value.references)
@@ -69,14 +90,21 @@ function typeOf(value) {
         ? schema.createTypeReference({ id: reference })
         : schema.createTypeReference(reference))
       : [];
-    return { display: String(value.display || ''), references };
+    return { display: unescapeEntities(String(value.display || '')), references };
   }
-  return { display: value == null ? '' : String(value), references: [] };
+  return { display: value == null ? '' : unescapeEntities(String(value)), references: [] };
 }
 
 function normalizeField(field = {}, evidence = [], overrides = {}, options = {}) {
   const constraints = Array.isArray(field.constraints) ? Array.from(field.constraints) : [];
-  if (field.kind && field.kind !== 'separator') constraints.push(`kind: ${field.kind}`);
+  // `kind: required` is required-ness, already expressed by the derived
+  // `required` boolean (rendered as the [REQUIRED] qualifier) — pushing it
+  // into constraints double-encodes it and leaked the machine phrase
+  // "Constraints: kind: required." onto go pages (operator ruling
+  // 2026-10-06). Call-shape kinds (positional/keyword/…) still land here.
+  if (field.kind && field.kind !== 'separator' && field.kind !== 'required') {
+    constraints.push(`kind: ${field.kind}`);
+  }
   if (Array.isArray(field.choices) && field.choices.length > 0) {
     constraints.push(`choices: ${field.choices.join(', ')}`);
   }
@@ -185,6 +213,10 @@ function makeResult(result, evidence, options = {}) {
     type: typeOf(result.type || result.returnType),
     description: String(result.description || ''),
     fields: normalizeFields(result.fields, evidence, options),
+    // Ruling 2026-10-07 (go): multi-value returns expand the result value as
+    // a go schema code block between the RETURNS prose and the response-field
+    // PARAMETERS list.
+    schemaCode: String(result.schemaCode || ''),
     evidence,
   });
 }

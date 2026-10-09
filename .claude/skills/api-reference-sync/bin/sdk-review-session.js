@@ -16,6 +16,7 @@ const {
   recordGroupingApproval,
   recordLearningSuppression,
   TARGETS_FINAL,
+  targetsFinalForReviewUnit,
   prepareDocumentAcceptance,
   recordAcceptanceFinalization,
   recordDocumentAcceptance,
@@ -457,16 +458,18 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   }
 
   // One governed write per record: the Draft transition carries the final
-  // Targets value (2026-10-01 ruling — Targets 终值 lands in the document
-  // gate). Default is the KB-wide value; 2026-10-09 operator ruling adds a
-  // per-unit override for open-source-only capabilities (e.g. ResourceGroup)
-  // whose Targets must be [Milvus] alone — explicit, subset-validated, and
-  // recorded as written in the unit receipt.
-  const unitFinalTargets = parseFinalTargets(args.finalTargets);
+  // Targets value — the KB-wide pair by default, per-category data-driven
+  // overrides where a feature is platform-bound (2026-10-01 ruling — Targets
+  // 终值 lands in the document gate; 2026-10-09 ruling — ResourceGroup is
+  // Milvus-only), and an explicit --final-targets subset overriding both
+  // when the operator names one (validated against the KB pair).
+  const unitTargetsFinal = args.finalTargets !== undefined && String(args.finalTargets).trim() !== ''
+    ? parseFinalTargets(args.finalTargets)
+    : targetsFinalForReviewUnit(receipt.reviewUnitId);
   const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
-    finalTargets[touched.recordId] = [...unitFinalTargets];
-    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...unitFinalTargets] });
+    finalTargets[touched.recordId] = [...unitTargetsFinal];
+    await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...unitTargetsFinal] });
   }
   const afterRecords = await writer.listRecords({ pageSize: 500 });
   const afterMap = new Map((afterRecords || []).map((record) => [record.record_id, record]));
@@ -477,8 +480,8 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       throw new Error(`Draft transition for record ${touched.recordId} did not verify`);
     }
     const actualTargets = normalizedTargetsValue(after?.fields?.Targets);
-    if (JSON.stringify(actualTargets) !== JSON.stringify(unitFinalTargets)) {
-      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}], expected [${unitFinalTargets.join(', ')}])`);
+    if (JSON.stringify(actualTargets) !== JSON.stringify(unitTargetsFinal)) {
+      throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}], expected [${unitTargetsFinal.join(', ')}])`);
     }
     draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
   }

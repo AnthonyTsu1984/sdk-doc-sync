@@ -18,6 +18,7 @@ const {
   recordDocumentExecution,
   recordDocumentRollback,
   recordRollbackIntent,
+  loadReviewSessionState,
   saveReviewSession,
   validateResumeSession,
 } = require('../src/sdk-doc-sync/review-session-store');
@@ -634,6 +635,106 @@ test('a rollback intent bound before side effects survives a concurrent writer a
   );
 });
 
+test('a second redo cycle rolls back the newest execution alongside the earlier receipt', () => {
+  // Redo cycles append changeRequests entries and prior rollback receipts
+  // pin OLDER journals — the intent and the receipt ledger must key on the
+  // original journal digest, not on "one rollback per unit".
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-redo-'));
+  const first = executionJournal(directory);
+  const session = withExecution(createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-redo',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), first);
+
+  const firstRollback = rollbackJournal(directory, { originalExecutionJournalDigest: first.digest, name: 'first-rollback.jsonl' });
+  const leased1 = recordRollbackIntent(session, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: firstRollback.filePath,
+  });
+  const rolled1 = recordDocumentRollback(leased1, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: firstRollback.filePath,
+    rollbackJournalDigest: firstRollback.digest,
+  });
+  assert.equal(rolled1.rollbackReceipts.length, 1);
+
+  // Redo: a genuinely new execution (different batch, so a different
+  // semantic digest), change-requested again.
+  const secondEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:batch-b', actionId: 'node:Collections:a' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-b', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-b', status: 'executed', completionSentinel: true },
+  ];
+  const secondPath = path.join(directory, 'second-execution.jsonl');
+  fs.writeFileSync(secondPath, `${secondEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const second = { filePath: secondPath, digest: digestSemantic(secondEntries) };
+  const redone = recordDocumentExecution(rolled1, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: second.filePath,
+    executionJournalDigest: second.digest,
+  });
+  const requested = recordDocumentChangesRequested(redone, { reviewUnitId: 'review:node:Collections:a', reason: 'second ruling' });
+
+  const secondRollback = rollbackJournal(directory, { originalExecutionJournalDigest: second.digest, rollbackManifestDigest: 'sha256:rollback-manifest-2', name: 'second-rollback.jsonl' });
+  const leased2 = recordRollbackIntent(requested, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-2',
+    rollbackJournalPath: secondRollback.filePath,
+  });
+  assert.equal(leased2.activeRollback.originalExecutionJournalDigest, second.digest);
+  const rolled2 = recordDocumentRollback(leased2, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: secondRollback.filePath,
+    rollbackJournalDigest: secondRollback.digest,
+  });
+  assert.equal(rolled2.rollbackReceipts.length, 2);
+
+  // Re-rolling an execution a receipt already pins stays refused.
+  assert.throws(
+    () => recordRollbackIntent(rolled2, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackManifestDigest: 'sha256:rollback-manifest-3',
+      rollbackJournalPath: secondRollback.filePath,
+    }),
+    /already rolled back/,
+  );
+
+  // Third cycle: TWO changeRequests now exist for the unit — the intent must
+  // anchor the NEWEST (requestedAt), not the array-first (reviewUnitId sort).
+  const thirdEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:batch-c', actionId: 'node:Collections:a' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:batch-c', actionId: 'node:Collections:a', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:batch-c', status: 'executed', completionSentinel: true },
+  ];
+  const thirdPath = path.join(directory, 'third-execution.jsonl');
+  fs.writeFileSync(thirdPath, `${thirdEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const third = { filePath: thirdPath, digest: digestSemantic(thirdEntries) };
+  const redone3 = recordDocumentExecution(rolled2, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: third.filePath,
+    executionJournalDigest: third.digest,
+  });
+  const requested3 = recordDocumentChangesRequested(redone3, { reviewUnitId: 'review:node:Collections:a', reason: 'third ruling' });
+  const leased3 = recordRollbackIntent(requested3, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest-4',
+    rollbackJournalPath: secondRollback.filePath,
+  });
+  assert.equal(leased3.activeRollback.originalExecutionJournalDigest, third.digest);
+
+  // The load invariant coexists lease+receipt per ORIGINAL journal: an
+  // earlier execution's receipt on file must not refuse a newer lease.
+  const sessionPath = path.join(directory, 'redo-session.json');
+  saveReviewSession(sessionPath, leased3, { expectedPreviousDigest: null });
+  const reloaded = loadReviewSessionState(sessionPath).session;
+  assert.equal(reloaded.activeRollback.originalExecutionJournalDigest, third.digest);
+  assert.equal(reloaded.rollbackReceipts.length, 2);
+});
+
 test('completing one unit\u2019s reconcile preserves another unit\u2019s in-flight rollback lease (P2)', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-lease-owner-'));
   const executionA = executionJournal(directory, 'node:Collections:a', 'execution-a.jsonl');
@@ -1123,4 +1224,132 @@ test('a change-requested unit keeps its rollback anchor through changeRequests',
   });
   assert.deepEqual(rolled.rollbackReceipts.map((item) => item.reviewUnitId), ['review:node:Collections:a']);
   assert.equal(rolled.changeRequests.length, 1);
+});
+
+test('a rollback intent anchors on the operator-supplied journal when the session has no anchor', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-operator-'));
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-operator',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  // The unit has NO session anchor (no pending execution, no acceptance, no
+  // change request): a resource-first batch failed before its document
+  // action, and the session recording refuses journals with failed actions.
+  // The durable journal IS the recovery evidence.
+  const landedEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:landed-batch', actionId: 'resource:res:folder' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:landed-batch', actionId: 'resource:res:folder', status: 'success', verified: true },
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:landed-batch', actionId: 'node:Collections:a' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:landed-batch', actionId: 'node:Collections:a', status: 'failure', verified: false },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:landed-batch', status: 'executed', completionSentinel: true },
+  ];
+  const landedPath = path.join(directory, 'landed.jsonl');
+  fs.writeFileSync(landedPath, `${landedEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const landedDigest = digestSemantic(landedEntries);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: landedDigest, name: 'operator-rollback.jsonl' });
+
+  // Without the operator journal the lease refuses exactly as before.
+  assert.throws(
+    () => recordRollbackIntent(initial, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackManifestDigest: 'sha256:rollback-manifest',
+      rollbackJournalPath: rollback.filePath,
+    }),
+    /no executed document to roll back/,
+  );
+
+  const leased = recordRollbackIntent(initial, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+    executionJournal: landedPath,
+  });
+  assert.equal(leased.activeRollback.originalExecutionJournalPath, path.resolve(landedPath));
+  assert.equal(leased.activeRollback.originalExecutionJournalDigest, landedDigest);
+  assert.equal(leased.status, 'in_progress');
+
+  // The receipt completes through the intent anchor and pins the operator
+  // journal by the same content digest the slot archival matches on.
+  const completed = recordDocumentRollback(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.equal(completed.rollbackReceipts.length, 1);
+  assert.equal(completed.rollbackReceipts[0].originalExecutionJournalDigest, landedDigest);
+  assert.equal(completed.activeRollback, null);
+
+  // Re-rolling the same journal is refused (a receipt already pins it).
+  assert.throws(
+    () => recordRollbackIntent(completed, {
+      reviewUnitId: 'review:node:Collections:a',
+      rollbackManifestDigest: 'sha256:rollback-manifest',
+      rollbackJournalPath: rollback.filePath,
+      executionJournal: landedPath,
+    }),
+    /already rolled back/,
+  );
+});
+
+test('an operator-supplied rollback journal overrides the session change-request anchor', () => {
+  // go-v30 b35r2 shape: the change request anchors the last SUCCESSFUL
+  // execution, but a later run mutated live state and failed its post-write
+  // verification — its journal (failed observed action) can never be recorded,
+  // so the session anchor names STALE artifacts. The operator journal wins.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-operator-override-'));
+  const anchored = executionJournal(directory, 'node:Collections:a', 'anchored-execution.jsonl');
+  const session = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-operator-override',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  const requested = recordDocumentChangesRequested(withExecution(session, anchored), {
+    reviewUnitId: 'review:node:Collections:a',
+    reason: 'redo ruling',
+  });
+
+  const failedEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:failed-batch', actionId: 'node:Collections:a' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:failed-batch', actionId: 'node:Collections:a', status: 'failure', verified: false },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:failed-batch', status: 'executed', completionSentinel: true },
+  ];
+  const failedPath = path.join(directory, 'failed-newer.jsonl');
+  fs.writeFileSync(failedPath, `${failedEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const failedDigest = digestSemantic(failedEntries);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: failedDigest, name: 'override-rollback.jsonl' });
+
+  const leased = recordRollbackIntent(requested, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+    executionJournal: failedPath,
+  });
+  assert.equal(leased.activeRollback.originalExecutionJournalPath, path.resolve(failedPath));
+  assert.equal(leased.activeRollback.originalExecutionJournalDigest, failedDigest);
+  assert.notEqual(leased.activeRollback.originalExecutionJournalDigest, anchored.digest);
+
+  // Completion records against the LEASE anchor: a change-request anchor for
+  // the OLDER execution must not refuse the receipt (the exact refusal that
+  // stranded the go-v30 b35r2 rollback after its side effects landed).
+  const completed = recordDocumentRollback(leased, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: rollback.filePath,
+    rollbackJournalDigest: rollback.digest,
+  });
+  assert.equal(completed.rollbackReceipts.length, 1);
+  assert.equal(completed.rollbackReceipts[0].originalExecutionJournalDigest, failedDigest);
+  assert.equal(completed.activeRollback, null);
+
+  // Without the operator journal the change-request anchor still decides.
+  const anchoredLease = recordRollbackIntent(requested, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  assert.equal(anchoredLease.activeRollback.originalExecutionJournalDigest, anchored.digest);
 });

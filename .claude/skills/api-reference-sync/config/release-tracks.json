@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-10-08",
+  "updatedAt": "2026-10-10",
   "comment": "Machine-readable release-track registry: per-track Bitable bases, Drive release roots, and track order (oldest first). Identities mirror the published tables in sdk-*.md; adjacency is implicit in track order. drive.releaseRoot.resolution: 'configured-root' = the configured Drive root is the release root; 'explicit-child' = the configured root is a multi-version container and the release root is an explicit child folder; 'unresolved' = no verified release root on file. track.scanStateKey: optional explicit override of the derived <language>-v<major><minor> key, pinning the track to the durable key scan-state.json actually owns (bare-major or language-only keys: python-v3, go, go-v3, node, node-v26).",
   "languages": {
     "cpp": {
@@ -265,8 +265,9 @@
           "drive": {
             "configuredRootToken": "Lx2efpuK9lt7m5dxNLVckP7enYe",
             "releaseRoot": {
-              "resolution": "configured-root",
-              "token": "Lx2efpuK9lt7m5dxNLVckP7enYe"
+              "resolution": "explicit-child",
+              "token": "F9M3fK4Dbl69PPdSxTXcsIwgnDh",
+              "verified": "2026-10-05: container children listed (v2.6.x, v3.0.0 folder, two Bitables); group folders enumerated beneath F9M3fK4Dbl69PPdSxTXcsIwgnDh"
             }
           }
         }

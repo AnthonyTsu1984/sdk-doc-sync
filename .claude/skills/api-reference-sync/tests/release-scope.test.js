@@ -3144,7 +3144,9 @@ test('reviewed release context builder carries existing record and copy source e
   assert.deepEqual(result.filteredScope.actions[0].planningContext.current, {
     recordId: 'rec-bulk',
     documentToken: 'doc-bulk',
+    recordType: null,
     parentRecordId: 'rec-bulk-parent',
+    parentRecordIds: ['rec-bulk-parent'],
     version: 'v2.5.x',
     folderToken: 'bulk-import-folder-v25',
     versionRootToken: 'root-v25',

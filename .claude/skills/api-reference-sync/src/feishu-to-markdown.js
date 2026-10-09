@@ -116,7 +116,23 @@ class FeishuToMarkdown extends larkDocWriter {
         // live block ID with the source block ID, which cannot satisfy the
         // executor's live top-level precondition and cannot be preserved by a
         // patch against the target document.
-        return this.__fetch_doc_blocks(documentToken);
+        //
+        // __fetch_doc_blocks collapses every non-429 API failure into `null`
+        // (including transient throttle/5xx shapes that arrive as code != 0
+        // with HTTP 200). Downstream that null becomes an empty block list
+        // and surfaces as PAGE_STRUCTURE_INVALID — which, with a review
+        // session bound, drops the unit from the derived manifest and fails
+        // resume validation. Retry the null a few times with backoff; after
+        // the attempts are spent, return the last read so downstream keeps
+        // its typed failure.
+        const TRANSIENT_NULL_ATTEMPTS = 3;
+        let last = null;
+        for (let attempt = 1; attempt <= TRANSIENT_NULL_ATTEMPTS; attempt += 1) {
+            last = await this.__fetch_doc_blocks(documentToken);
+            if (Array.isArray(last) && last.length > 0) return last;
+            if (attempt < TRANSIENT_NULL_ATTEMPTS) await this.__wait(500 * attempt);
+        }
+        return last;
     }
 
     async __raw_content(elements) {
@@ -240,7 +256,14 @@ class FeishuToMarkdown extends larkDocWriter {
         if (response.code === 0) {
             blocks.push(...response.data.items);
             if (response.data.has_more) {
-                await this.__fetch_doc_blocks(document_id, response.data.page_token, blocks);
+                // A failed continuation previously returned its PARTIAL block
+                // list silently (the recursive result was discarded) — the
+                // truncated list then failed downstream as random
+                // MISSING_TOP_LEVEL_BLOCK errors. Propagate the failure so
+                // the whole read fails and readBlocks' retry can re-fetch.
+                if (await this.__fetch_doc_blocks(document_id, response.data.page_token, blocks) === null) {
+                    return null;
+                }
             }
 
             return blocks;
@@ -251,14 +274,14 @@ class FeishuToMarkdown extends larkDocWriter {
             await this.__wait(timeout)
             return await this.__fetch_doc_blocks(document_id, page_token, blocks)
         } else {
-            // 2026-10-06: a failed read used to return null, which consumers
-            // masked as an empty page (PAGE_STRUCTURE_INVALID) and dropped
-            // units from the review-unit manifest mid-batch. Fail loud with
-            // the API's own code and message instead.
-            const error = new Error(`fetch doc blocks failed for ${document_id}: code=${response.code} msg=${response.msg}`)
-            error.code = 'DOC_BLOCKS_FETCH_FAILED'
-            error.apiCode = response.code
-            throw error
+            // Non-retryable failure collapses to null (go-v30 merge ruling):
+            // readBlocks retries nulls with backoff and, once spent, hands
+            // the null downstream where it surfaces as the typed
+            // PAGE_STRUCTURE_INVALID — the java campaign's fail-loud goal
+            // lands at that layer, while transient code!=0-with-HTTP-200
+            // shapes still get the retry they deserve instead of an
+            // unretried throw.
+            return null
         }
     }
 

@@ -586,6 +586,9 @@ function defaultIdentityMapPath({ skillRoot, language, track }) {
   if (language === 'go' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'go-v26.json');
   }
+  if (language === 'go' && track === 'v3.0.x') {
+    return path.join(skillRoot, 'references', 'identity', 'go-v30.json');
+  }
   if (language === 'cpp' && track === 'v2.6.x') {
     return path.join(skillRoot, 'references', 'identity', 'cpp-v26.json');
   }

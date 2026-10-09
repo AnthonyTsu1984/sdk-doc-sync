@@ -1,0 +1,32 @@
+{
+ "name": "ConsistencyLevel",
+ "kind": "enum",
+ "parentClass": "Collections",
+ "signature": "type ConsistencyLevel commonpb",
+ "docstring": "A ConsistencyLevel instance specifies the consistency guarantee level for read operations on a collection.",
+ "values": [
+  {
+   "name": "ClStrong",
+   "value": "",
+   "description": "= ConsistencyLevel(commonpb.ConsistencyLevel_Strong) Strong consistency. All operations are immediately visible."
+  },
+  {
+   "name": "ClBounded",
+   "value": "",
+   "description": "= ConsistencyLevel(commonpb.ConsistencyLevel_Bounded) Bounded staleness with a default 5-second tolerance window."
+  },
+  {
+   "name": "ClSession",
+   "value": "",
+   "description": "= ConsistencyLevel(commonpb.ConsistencyLevel_Session) Session consistency. Reads see writes from the same session."
+  }
+ ],
+ "fields": [],
+ "params": [],
+ "optionMethods": [],
+ "methods": [],
+ "filePath": "client/entity/consistency.go",
+ "lineNumber": 10,
+ "pkg": "entity",
+ "example": null
+}

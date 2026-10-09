@@ -88,6 +88,7 @@ function parseArgs(argv) {
     else if (argument === '--review-unit-id' && argv[index + 1]) args.reviewUnitId = argv[++index];
     else if (argument === '--manifest' && argv[index + 1]) args.manifest = argv[++index];
     else if (argument === '--journal' && argv[index + 1]) args.journal = argv[++index];
+    else if (argument === '--execution-journal' && argv[index + 1]) args.executionJournal = argv[++index];
     else if (argument === '--approve-rollback-digest' && argv[index + 1]) args.approveRollbackDigest = argv[++index];
     else if (argument === '--json') args.json = true;
     else if (argument === '--supersede-stale-lease') args.supersedeStaleLease = true;
@@ -235,7 +236,14 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
   let sessionDigest = loadedDigest;
 
   if (args.command === 'plan') {
-    const planned = planner({ session, reviewUnitId: args.reviewUnitId });
+    const planned = planner({
+      session,
+      reviewUnitId: args.reviewUnitId,
+      // Operator-anchored recovery: a resource-first batch that fails before
+      // its document action cannot record its journal into the session, so
+      // the durable journal is supplied here by path instead.
+      executionJournalPath: args.executionJournal || null,
+    });
     if (planned.status !== 'READY') {
       const result = {
         status: planned.status,
@@ -326,6 +334,7 @@ async function runCli({ argv = process.argv, env = process.env, dependencies = {
         rollbackManifestDigest: manifest.rollbackManifestDigest,
         rollbackJournalPath: journalPath,
         supersedeStaleLease: args.supersedeStaleLease === true,
+        executionJournal: args.executionJournal || null,
       });
       const saved = saveReviewSession(sessionPath, session, { expectedPreviousDigest: sessionDigest });
       sessionDigest = saved.stateDigest;

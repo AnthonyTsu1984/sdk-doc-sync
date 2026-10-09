@@ -1,0 +1,36 @@
+{
+ "name": "Collection",
+ "kind": "struct",
+ "parentClass": "Collections",
+ "signature": "type Collection struct {\n    ID               int64\n    Name             string\n    Schema           *entity.Schema\n    ConsistencyLevel ConsistencyLevel\n}",
+ "docstring": "A Collection instance represents collection metadata in Milvus, including the collection schema and consistency settings.",
+ "fields": [
+  {
+   "name": "ID",
+   "type": "int64",
+   "description": "The unique identifier of the collection."
+  },
+  {
+   "name": "Name",
+   "type": "string",
+   "description": "The name of the collection."
+  },
+  {
+   "name": "Schema",
+   "type": "*entity.Schema",
+   "description": "The collection schema, with field definitions and the primary key."
+  },
+  {
+   "name": "ConsistencyLevel",
+   "type": "ConsistencyLevel",
+   "description": "The consistency level of the collection."
+  }
+ ],
+ "params": [],
+ "optionMethods": [],
+ "methods": [],
+ "filePath": "client/entity/collections.go",
+ "lineNumber": 12,
+ "pkg": "entity",
+ "example": null
+}

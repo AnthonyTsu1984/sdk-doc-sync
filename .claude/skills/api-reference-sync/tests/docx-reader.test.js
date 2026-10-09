@@ -53,6 +53,110 @@ test('readBlocks resolves wiki tokens and fully paginates document blocks', asyn
   }]);
 });
 
+test('readBlocks retries a children-omitting page read and recovers', async () => {
+  // Feishu intermittently returns code 0 with the page block's children
+  // field omitted; the read layer retries that exact transient signature
+  // instead of surfacing it downstream as PAGE_STRUCTURE_INVALID.
+  const responses = [
+    [{ block_id: 'page', block_type: 1 }],
+    [{ block_id: 'page', block_type: 1, children: ['b1'] }, { block_id: 'b1', parent_id: 'page', block_type: 2 }],
+  ];
+  let calls = 0;
+  const reader = new DocxReader({
+    client: {
+      async request() { throw new Error('drive source never resolves wiki tokens'); },
+      async paginate() {
+        const response = responses[Math.min(calls, responses.length - 1)];
+        calls += 1;
+        return response;
+      },
+    },
+    sourceType: 'drive',
+  });
+
+  const blocks = await reader.readBlocks('doc-token');
+
+  assert.equal(calls, 2, 'the transient read was retried once');
+  assert.deepEqual(blocks.find(b => b.block_type === 1).children, ['b1']);
+});
+
+test('readBlocks returns the last read when the transient signature persists', async () => {
+  let calls = 0;
+  const reader = new DocxReader({
+    client: {
+      async request() { throw new Error('drive source never resolves wiki tokens'); },
+      async paginate() {
+        calls += 1;
+        return [{ block_id: 'page', block_type: 1 }];
+      },
+    },
+    sourceType: 'drive',
+  });
+
+  const blocks = await reader.readBlocks('doc-token');
+
+  assert.equal(calls, 3, 'all transient attempts are spent');
+  assert.deepEqual(blocks, [{ block_id: 'page', block_type: 1 }]);
+});
+
+test('FeishuToMarkdown.readBlocks retries the null collapse of a failed block read', async () => {
+  // __fetch_doc_blocks collapses every non-429 API failure into null; the
+  // null previously reached the patch planner as an empty block list and
+  // failed as PAGE_STRUCTURE_INVALID, dropping the unit from the session
+  // manifest. The read layer retries the null with backoff first.
+  const FeishuToMarkdown = require('../src/feishu-to-markdown');
+  const reader = new FeishuToMarkdown({ sourceType: 'drive', rootToken: 'r', baseToken: 'b' });
+  const healthy = [{ block_id: 'page', block_type: 1, children: ['b1'] }];
+  const reads = [null, healthy];
+  let calls = 0;
+  reader.__fetch_doc_blocks = async () => reads[Math.min(calls++, reads.length - 1)];
+  reader.__wait = async () => {};
+
+  const blocks = await reader.readBlocks('doc-token');
+  assert.equal(calls, 2, 'the null read was retried once');
+  assert.deepEqual(blocks, healthy);
+});
+
+test('FeishuToMarkdown.readBlocks returns the last null after spending all attempts', async () => {
+  const FeishuToMarkdown = require('../src/feishu-to-markdown');
+  const reader = new FeishuToMarkdown({ sourceType: 'drive', rootToken: 'r', baseToken: 'b' });
+  let calls = 0;
+  reader.__fetch_doc_blocks = async () => { calls += 1; return null; };
+  reader.__wait = async () => {};
+
+  const blocks = await reader.readBlocks('doc-token');
+  assert.equal(calls, 3, 'all transient attempts are spent');
+  assert.equal(blocks, null, 'the typed downstream failure is preserved, not masked');
+});
+
+test('FeishuToMarkdown partial pagination failure propagates instead of returning a truncated list', async () => {
+  // A failed continuation previously discarded the recursive null and
+  // returned the partial block list silently. Replicated at the
+  // __fetch_doc_blocks level with a stubbed fetch chain: first page has_more,
+  // continuation fails, whole read must come back null.
+  const FeishuToMarkdown = require('../src/feishu-to-markdown');
+  const reader = new FeishuToMarkdown({ sourceType: 'drive', rootToken: 'r', baseToken: 'b' });
+  const pages = [
+    { code: 0, data: { items: [{ block_id: 'page', block_type: 1 }], has_more: true, page_token: 't2' } },
+    { code: 1770001, msg: 'internal error' },
+  ];
+  let call = 0;
+  reader.tokenFetcher = { token: async () => 'test-token' };
+  reader.__wait = async () => {};
+  const originalFetch = global.fetch;
+  global.fetch = async () => ({
+    status: 200,
+    headers: { get: () => null },
+    json: async () => pages[Math.min(call++, pages.length - 1)],
+  });
+  try {
+    const blocks = await reader.__fetch_doc_blocks('doc-token');
+    assert.equal(blocks, null, 'a failed continuation fails the whole read');
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
 test('reference source_document_id is read directly as a Docx document token', async () => {
   const paths = [];
   const reader = new DocxReader({

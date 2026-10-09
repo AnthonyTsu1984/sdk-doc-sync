@@ -89,10 +89,33 @@ function pageFactsFromBlocks(blocks = []) {
         && pageBlock.children.length > 0
         && pageBlock.children.every(c => typeof c === 'string' && byId.has(c));
     const resolve = (block) => (typeof block === 'string' ? byId.get(block) : block) ?? null;
+    const list = Array.isArray(blocks) ? blocks : [blocks];
+    // The Feishu list-blocks payload is flat: `children` holds block-ID
+    // strings and every block sits at top level. Callout child lines must
+    // read as callout content — the governed-callout exemptions in the
+    // content rules (bare "Notes" line, deprecation prose) depend on that
+    // boundary — so resolve string children through the id map and keep the
+    // walk from counting them as page-level prose.
+    const blockById = new Map();
+    for (const block of list) {
+        if (block && typeof block === 'object' && block.block_id) blockById.set(block.block_id, block);
+    }
+    const calloutChildIds = new Set();
+    for (const block of list) {
+        if (!block || typeof block !== 'object' || block.block_type !== CALLOUT_BLOCK_TYPE) continue;
+        for (const child of block.children || []) {
+            if (typeof child === 'string' && blockById.has(child)) calloutChildIds.add(child);
+        }
+    }
     const walk = (list, insideCallout) => {
         for (const entry of list || []) {
             const block = flatHierarchy ? resolve(entry) : entry;
             if (!block || typeof block !== 'object') continue;
+            // The page block never recurses: in flat payloads every block
+            // already sits at top level, and re-walking its children would
+            // duplicate every census entry and body line.
+            if (block.block_type === 1) continue;
+            if (!insideCallout && calloutChildIds.has(block.block_id)) continue;
             if (block.block_type >= HEADING_LEVEL_BASE + 1 && block.block_type <= HEADING_LEVEL_MAX) {
                 const text = (block[`heading${block.block_type - HEADING_LEVEL_BASE}`]?.elements || [])
                     .map((element) => element?.text_run?.content || '')
@@ -135,24 +158,31 @@ function pageFactsFromBlocks(blocks = []) {
             }
             if (block.block_type === CALLOUT_BLOCK_TYPE) {
                 const childLines = [];
+                const objectChildren = [];
                 for (const child of block.children || []) {
-                    const text = (child?.text?.elements || [])
-                        .map((element) => element?.text_run?.content || '')
-                        .join('');
-                    if (child?.block_type === TEXT_BLOCK_TYPE) childLines.push(text);
+                    const resolved = typeof child === 'string' ? blockById.get(child) : child;
+                    if (!resolved || typeof resolved !== 'object') continue;
+                    objectChildren.push(resolved);
+                    if (resolved.block_type === TEXT_BLOCK_TYPE) {
+                        const text = (resolved.text?.elements || [])
+                            .map((element) => element?.text_run?.content || '')
+                            .join('');
+                        childLines.push(text);
+                    }
                 }
                 callouts.push({ lines: childLines });
-                walk((block.children ?? []).map(resolve).filter(Boolean), true);
+                if (objectChildren.length > 0) walk(objectChildren, true);
                 continue;
             }
             if (Array.isArray(block.children)) walk(block.children.map(resolve).filter(Boolean), insideCallout);
         }
     };
-    if (flatHierarchy) {
-        walk((pageBlock.children ?? []).map(resolve).filter(Boolean), false);
-    } else {
-        walk(flatBlocks, false);
-    }
+    // Walk the FULL flat list at top level (strings skip harmlessly): a
+    // block outside the page block's children (parented directly to the
+    // page yet absent from its children array) is still page content, and
+    // callout interiors stay excluded at top level through calloutChildIds
+    // while their governed lines ride the callout census.
+    walk(flatBlocks, false);
     const nonEmpty = (text) => String(text).trim() !== '';
     return {
         headings,
@@ -304,6 +334,12 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
             // 2026-10-06 Volume ruling: the response-fields list may be a
             // PARAMETERS list (data fields) or a METHODS list (methods of the
             // returned instance) — either satisfies the depth rule.
+            // Operator ruling 2026-10-07 (go GetTelemetry): a method-surfaced
+            // response (opaque manager handle) titles its list METHODS — the
+            // methods label after RETURNS carries the response surface the
+            // same way a PARAMETERS list does. Type-page members sections sit
+            // before RETURN TYPE, so a post-RETURNS METHODS label is
+            // unambiguous.
             const parametersIndex = entries.findIndex((entry, index) => index > returnsIndex
                 && (isLabel(entry.text, 'parameters') || isLabel(entry.text, 'methods')));
             let fieldBullets = 0;
@@ -314,9 +350,31 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
                 }
             }
             if (fieldBullets === 0) {
-                report('RETURNS_MIN_DEPTH', parametersIndex === -1
-                    ? 'RETURNS section carries no response-fields list'
-                    : 'response-fields list carries no field bullets');
+                // Data-declared exemption (language diff → layoutRules data):
+                // a profile may declare return-type tokens whose strong-form
+                // response-fields list is intentionally absent — go renders a
+                // single `error` return as RETURNS prose only (the Go void
+                // equivalent; operator ruling 2026-10-06). The value read is
+                // the entry after the RETURN TYPE label immediately above the
+                // RETURNS section; pages without RETURN TYPE stay bound.
+                const exemptTypes = (contentRules.returnsResponseFieldsExemptTypes || [])
+                    .map((token) => normalizeTypeToken(token).toLowerCase())
+                    .filter(nonEmptyString);
+                let exempt = false;
+                if (exemptTypes.length > 0) {
+                    for (let index = returnsIndex - 1; index >= 0; index -= 1) {
+                        if (!isLabel(entries[index].text, 'return type')) continue;
+                        const value = entries[index + 1];
+                        exempt = Boolean(value)
+                            && exemptTypes.includes(normalizeTypeToken(value.text).toLowerCase());
+                        break;
+                    }
+                }
+                if (!exempt) {
+                    report('RETURNS_MIN_DEPTH', parametersIndex === -1
+                        ? 'RETURNS section carries no response-fields PARAMETERS list'
+                        : 'response-fields PARAMETERS list carries no field bullets');
+                }
             }
         }
     }

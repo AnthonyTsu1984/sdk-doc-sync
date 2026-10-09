@@ -45,6 +45,24 @@ function editedRecordMetadata() {
   return { progress: 'WIP' };
 }
 
+// A category group node doubling as the type page's record is its own
+// parent: writing the parent-record link would point the record at itself
+// (Feishu LinkFieldConvFail) and is meaningless — the record already sits
+// in its parent. Drop the field for that shape, keep the rest of the
+// payload (2026-10-08, Collection type page).
+function recordUpdatePayload(plan, payload) {
+  const { parentRecordId } = payload;
+  // Null is the planner's deliberate "no parent repoint" (UPDATE postcondition
+  // TARGET_PARENT: null) — serializing it would write 父记录: [null] into the
+  // SingleLink field and the write API rejects that with LinkFieldConvFail.
+  if (!parentRecordId || parentRecordId === plan.source?.recordId) {
+    const rest = { ...payload };
+    delete rest.parentRecordId;
+    return rest;
+  }
+  return payload;
+}
+
 function containsLegacyTodo(content) {
   return typeof content === 'string' && /<!--\s*TODO:/i.test(content);
 }
@@ -619,7 +637,11 @@ class SyncExecutor {
   async _executeRepointVirtualNode(plan, resolutions, result) {
     const resource = plan.resource;
     this._assertBitableTarget(resource);
-    const folderToken = resourceValue(resolutions, resource.folderRef);
+    // A concrete folderToken (existing-folder form) needs no in-batch
+    // resolution; the folderRef form resolves from the batch CREATE_FOLDER.
+    const folderToken = nonEmptyString(resource.folderToken)
+      ? resource.folderToken
+      : resourceValue(resolutions, resource.folderRef);
     if (!nonEmptyString(folderToken)) {
       const error = new SyncExecutionError(
         'RESOURCE_RESOLUTION_REQUIRED',
@@ -761,24 +783,29 @@ class SyncExecutor {
     result.record = created;
     result.completedSteps.push('createVirtualNode');
 
-    // The Slug duplex field derives from the parent-record chain
-    // asynchronously (2026-10-06 operator ruling): poll briefly before the
-    // mismatch verdict, mirroring the createFolder consistency tolerance.
-    let observed = await this._getRecordWithRetry(createdRecordId);
-    const approvedSlug = resource.existingLookup.criteria.canonicalSlug;
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      if (virtualNodeFields(observed).slug === approvedSlug) break;
-      await new Promise(resolve => setTimeout(resolve, 1500));
+    // Bitable read-after-write is eventually consistent: a record refetched
+    // immediately after creation can transiently miss fields (observed live:
+    // Slug returned empty on the first read, correct seconds later). The
+    // approved-state verification still must hold, so sample the read a
+    // bounded number of times before refusing — never weakening the checks.
+    const verifySamples = 3;
+    let observed = null;
+    let errors = [];
+    for (let sample = 1; sample <= verifySamples; sample += 1) {
       observed = await this._getRecordWithRetry(createdRecordId);
+      const docs = docsField(observed);
+      const actualFields = virtualNodeFields(observed);
+      errors = [];
+      if (docs.title !== resource.title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
+      if (actualFields.type !== 'VirtualNode') errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
+      if (!sameNormalizedTargets(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
+      if (actualFields.progress !== resource.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
+      if (actualFields.slug !== resource.existingLookup.criteria.canonicalSlug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
+      if (errors.length === 0) break;
+      if (sample < verifySamples) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * sample));
+      }
     }
-    const docs = docsField(observed);
-    const actualFields = virtualNodeFields(observed);
-    const errors = [];
-    if (docs.title !== resource.title || docs.link !== link) errors.push({ code: 'VIRTUAL_NODE_LINK_MISMATCH' });
-    if (actualFields.type !== 'VirtualNode') errors.push({ code: 'VIRTUAL_NODE_TYPE_MISMATCH' });
-    if (!sameNormalizedTargets(actualFields.targets, resource.targets)) errors.push({ code: 'VIRTUAL_NODE_TARGETS_MISMATCH' });
-    if (actualFields.progress !== resource.progress) errors.push({ code: 'VIRTUAL_NODE_PROGRESS_MISMATCH' });
-    if (actualFields.slug !== resource.existingLookup.criteria.canonicalSlug) errors.push({ code: 'VIRTUAL_NODE_SLUG_MISMATCH' });
     if (errors.length > 0) {
       const error = new SyncExecutionError(
         'RESOURCE_VERIFICATION_FAILED',
@@ -1128,10 +1155,12 @@ class SyncExecutor {
   async _executeRebuild(plan, artifact, action, result, rollbackCapsule = null) {
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
-    // Mirrors the planner gate exactly (layout + non-rebuild strategy is the
-    // surgical shape), plus the hand-patched apiPatchPlan form — both are the
-    // UPDATE path and never land as whole-body bytes (review r1 P3-1).
-    if ((artifact.layout && artifact.patchStrategy !== 'rebuild')
+    // Mirrors the planner gate exactly (layout + explicit non-rebuild strategy,
+    // or a hand-patched apiPatchPlan, is the surgical shape) — both are the
+    // UPDATE path and never land as whole-body bytes (review r1 P3-1). A
+    // schema-first artifact has a layout but no patch strategy and no patch
+    // plan: whole-body content, normalized to 'rebuild' below (2026-10-08).
+    if ((artifact.layout && artifact.patchStrategy != null && artifact.patchStrategy !== 'rebuild')
       || (artifact.layout && plan.apiPatchPlan)) {
       const error = new SyncExecutionError(
         'REBUILD_STRATEGY_REQUIRED',
@@ -1172,7 +1201,7 @@ class SyncExecutor {
         link: docxLink(plan.source.documentToken),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
     } catch (error) {
@@ -1218,7 +1247,7 @@ class SyncExecutor {
         link: docxLink(plan.source.documentToken),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
     } catch (error) {
@@ -1232,7 +1261,7 @@ class SyncExecutor {
     const targetRecordType = planPostcondition(plan, 'TARGET_RECORD_TYPE');
     try {
       result.record = await this.bitableWriter.updateRecord(plan.source.recordId, {
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...editedRecordMetadata(),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
@@ -1257,7 +1286,7 @@ class SyncExecutor {
         link: linkFromCreated(created),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
       });
       result.completedSteps.push('updateRecord');
     } catch (error) {
@@ -1294,7 +1323,7 @@ class SyncExecutor {
         link: linkFromCreated(copied),
         lastModified: plan.target.version,
         ...editedRecordMetadata(),
-        parentRecordId: plan.target.parentRecordId,
+        ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
         ...(targetRecordType?.expected ? { type: targetRecordType.expected } : {}),
       });
       result.completedSteps.push('updateRecord');
@@ -1454,7 +1483,7 @@ class SyncExecutor {
       // Record type rides the plan's target (injected by the placement
       // resolver); the artifact metadata rarely carries it for CREATE.
       type: reviewedRecordType || plan.target?.recordType || metadata.type,
-      parentRecordId: plan.target.parentRecordId,
+      ...recordUpdatePayload(plan, { parentRecordId: plan.target.parentRecordId }),
     });
   }
 

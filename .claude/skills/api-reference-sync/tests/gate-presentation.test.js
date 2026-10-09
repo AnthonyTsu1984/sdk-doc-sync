@@ -118,8 +118,37 @@ test('--from-dryrun extracts writeApprovalPresentation links and binds the batch
     // The card snippet binds the digest the APPROVE_WRITES reply carries
     assert.match(report.cardSnippet, /Bound digest: sha256:bbbb/);
     const html = fs.readFileSync(report.indexHtml, 'utf8');
-    assert.ok(html.includes('getAsync() — page preview'));
+    assert.ok(html.includes('getAsync() — document link (for copy actions: the pre-copy source)'));
     assert.ok(html.includes('queryAsync() — Bitable record') === false);
+});
+
+test('--from-dryrun embeds the verbatim markdown preview inline in the index', () => {
+    // COPY units' documentLink is the pre-copy SOURCE page — the operator
+    // reviewing that link sees the old page (no synthesized BUILDER METHODS)
+    // and reports exactly that. The verbatim preview of the page the
+    // approval WRITES must be embedded in the index itself (§3.7).
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
+    const indexDir = path.join(dir, 'gate-presentation-out');
+    const dryrun = path.join(dir, 'unit-dryrun.json');
+    fs.writeFileSync(dryrun, JSON.stringify({
+        proposedExecutionBatch: { batchDigest: `sha256:${'c'.repeat(64)}` },
+        writeApprovalPresentation: [
+            {
+                stableId: 'go:Authentication:CreateRole',
+                title: 'CreateRole',
+                documentLink: 'https://host/docx/source-page',
+                recordLink: 'https://host/base/t/r',
+                markdownPreview: '**BUILDER METHODS:**\n\n- `NewCreateRoleOption(roleName)`',
+            },
+        ],
+    }));
+    const result = runPresentation(['--from-dryrun', dryrun, '--index-dir', indexDir, '--json', '--no-open', '--no-clipboard']);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    const html = fs.readFileSync(report.indexHtml, 'utf8');
+    assert.ok(html.includes('the page this approval writes (verbatim markdown preview)'));
+    assert.ok(html.includes('**BUILDER METHODS:**'), 'the write content is embedded, not just the source link');
+    assert.ok(html.includes('document link (for copy actions: the pre-copy source)'), 'the source-page link is labeled as such');
 });
 
 test('--from-dryrun without presentation entries fails closed', () => {

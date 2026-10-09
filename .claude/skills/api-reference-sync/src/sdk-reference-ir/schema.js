@@ -115,9 +115,10 @@ function createResult({
   type = { display: '', references: [] },
   description = '',
   fields = [],
+  schemaCode = '',
   evidence = [],
 } = {}) {
-  return immutable({ type, description, fields, evidence });
+  return immutable({ type, description, fields, schemaCode, evidence });
 }
 
 function createError({ name, condition = '', description = '', evidence = [] } = {}) {

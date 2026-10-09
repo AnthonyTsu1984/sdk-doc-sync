@@ -201,6 +201,82 @@ test('rollback planner reverses original dependencies so documents and records p
   assert.equal(result.rollbackManifest.scanStateUpdated, false);
 });
 
+test('rollback planner anchors the newest change request when a unit was redone multiple times', () => {
+  // A redo cycle appends another changeRequests entry; the live artifacts
+  // belong to the NEWEST execution. The array itself is sorted by
+  // reviewUnitId, so requestedAt — not array position — must decide.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-redo-'));
+  const older = writeJournal(directory, 'older', [{ actionId: 'action:0', action: 'CREATE', recordId: 'rec-old', createdDocument: { token: 'doc-old', folderToken: 'folder-v30' }, postRecord: { recordId: 'rec-old', writableFields: { Progress: 'WIP' } } }]);
+  const newer = writeJournal(directory, 'newer', [{ actionId: 'action:0', action: 'CREATE', recordId: 'rec-new', createdDocument: { token: 'doc-new', folderToken: 'folder-v30' }, postRecord: { recordId: 'rec-new', writableFields: { Progress: 'WIP' } } }]);
+  const reviewUnitId = 'review:action:0';
+  const session = sessionFor(older, unit(['action:0']), {
+    activeExecution: null,
+    pendingExecutions: [],
+    changeRequests: [
+      { reviewUnitId, executionJournalPath: newer.filePath, executionJournalDigest: newer.digest, requestedAt: '2026-10-07T11:00:00.000Z' },
+      { reviewUnitId, executionJournalPath: older.filePath, executionJournalDigest: older.digest, requestedAt: '2026-10-07T10:00:00.000Z' },
+    ],
+  });
+
+  const result = buildRollbackManifest({ session, reviewUnitId });
+  assert.equal(result.status, 'READY');
+  assert.equal(
+    result.rollbackManifest.executionJournalDigest,
+    newer.digest,
+    'the newest execution is the one whose artifacts are live',
+  );
+  assert.equal(validateRollbackManifest(result.rollbackManifest), true);
+});
+
+test('operator-anchored rollback overrides session anchors for a failed-but-mutating newer execution', () => {
+  // go-v30 b35r2 shape: the unit's recorded change request anchors the last
+  // SUCCESSFUL execution (doc-old, record→doc-old), but a later run mutated
+  // live state and failed its post-write verification (created doc-new,
+  // record→doc-new) — its journal carries a failed observed action, so the
+  // session can never anchor it. The operator names that journal; inverting
+  // the anchored-older execution instead would restore against drifted live
+  // state (its own preflight refuses) and orphan the newer run's artifacts.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-operator-override-'));
+  const anchored = writeJournal(directory, 'anchored', [{
+    actionId: 'action:0',
+    action: 'COPY_PATCH_AND_REPOINT',
+    beforeRecord: { ...beforeRecord, recordId: 'rec-qi', rawFields: { ...beforeRecord.rawFields }, writableFields: { ...beforeRecord.writableFields } },
+    postRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' } },
+    createdDocument: { token: 'doc-old', folderToken: 'folder-v30' },
+  }]);
+  const failedNewer = writeJournal(directory, 'failed-newer', [{
+    actionId: 'action:0',
+    action: 'COPY_PATCH_AND_REPOINT',
+    status: 'failure',
+    verified: false,
+    beforeRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' } },
+    postRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-new' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-new' }, Progress: 'WIP' } },
+    createdDocument: { token: 'doc-new', folderToken: 'folder-v30' },
+  }]);
+  const reviewUnitId = 'review:action:0';
+  const session = sessionFor(anchored, unit(['action:0']), {
+    activeExecution: null,
+    pendingExecutions: [],
+    changeRequests: [
+      { reviewUnitId, executionJournalPath: anchored.filePath, executionJournalDigest: anchored.digest, requestedAt: '2026-10-09T14:29:11.488Z' },
+    ],
+  });
+
+  const result = buildRollbackManifest({ session, reviewUnitId, executionJournalPath: failedNewer.filePath });
+  assert.equal(result.status, 'READY');
+  assert.equal(
+    result.rollbackManifest.executionJournalDigest,
+    failedNewer.digest,
+    'the operator-named execution is the one whose artifacts are live',
+  );
+  const inverse = result.rollbackManifest.actions[0];
+  assert.equal(inverse.inverse, 'RESTORE_RECORD_AND_DELETE_COPY');
+  assert.equal(inverse.copiedDocument.token, 'doc-new');
+  assert.equal(inverse.beforeRecord.writableFields.Docs.link, 'https://docs.example/docx/doc-old');
+  assert.deepEqual(result.rollbackManifest.sideEffects.deleteDocumentTokens, ['doc-new']);
+  assert.equal(validateRollbackManifest(result.rollbackManifest), true);
+});
+
 test('rollback planner fails closed for finalized sessions and incomplete or drifted original evidence', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-invalid-'));
   const action = { actionId: 'node:Vector:search', action: 'CREATE', recordId: 'rec-search', createdDocument: { token: 'doc-search' } };
@@ -389,4 +465,140 @@ test('rollback planner blocks deletion of a resource used by another executed re
     resourceActionId: 'resource:folder',
     dependentReviewUnitIds: ['review:node:Vector:query'],
   }]);
+});
+
+test('operator-anchored rollback inverts exactly the landed resource actions of a failed resource-first batch', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-landed-'));
+  // Resource-first batch: folder landed, VirtualNode landed but failed its
+  // post-write verification (record exists), document action blocked by the
+  // failed dependency and never mutated anything (no rollback evidence).
+  const folderCapsule = {
+    schemaVersion: 1,
+    action: 'CREATE_FOLDER',
+    actionId: 'resource:res:folder-CDC',
+    dependsOn: [],
+    beforeRecord: null,
+    documentRollback: null,
+    source: null,
+    target: null,
+    resource: { kind: 'folder', ref: 'res:folder-CDC', name: 'CDC' },
+  };
+  const folderEvidence = {
+    schemaVersion: 1,
+    action: 'CREATE_FOLDER',
+    actionId: 'resource:res:folder-CDC',
+    completedSteps: ['verifyResourceAbsent', 'createFolder', 'verifyFolder'],
+    createdDocument: null,
+    createdFolder: { token: 'folder-cdc-token', name: 'CDC' },
+    patchedDocumentToken: null,
+    recordId: null,
+    postRecord: null,
+    resolvedResource: { ref: 'res:folder-CDC', kind: 'folder', value: 'folder-cdc-token' },
+  };
+  const vnCapsule = {
+    schemaVersion: 1,
+    action: 'CREATE_VIRTUAL_NODE',
+    actionId: 'resource:res:vn-CDC',
+    dependsOn: ['res:folder-CDC'],
+    beforeRecord: null,
+    documentRollback: null,
+    source: null,
+    target: null,
+    resource: { kind: 'virtual_node', ref: 'res:vn-CDC', title: 'CDC' },
+  };
+  const vnEvidence = {
+    schemaVersion: 1,
+    action: 'CREATE_VIRTUAL_NODE',
+    actionId: 'resource:res:vn-CDC',
+    completedSteps: ['verifyResourceAbsent', 'createVirtualNode'],
+    createdDocument: null,
+    createdFolder: null,
+    patchedDocumentToken: null,
+    recordId: null,
+    postRecord: {
+      recordId: 'rec-cdc-vn',
+      rawFields: { Type: 'VirtualNode', Slug: [{ text: 'v2-CDC', type: 'text' }] },
+      writableFields: {},
+    },
+    resolvedResource: null,
+  };
+  const docPrepared = {
+    schemaVersion: 1,
+    batchDigest: 'sha256:original-batch',
+    type: 'prepared',
+    actionId: 'go:CDC:CreateReplicateStream',
+    dependsOn: ['res:folder-CDC', 'res:vn-CDC'],
+    rollbackCapsule: {
+      schemaVersion: 1,
+      action: 'CREATE',
+      actionId: 'go:CDC:CreateReplicateStream',
+      dependsOn: ['res:folder-CDC', 'res:vn-CDC'],
+      beforeRecord: null,
+      documentRollback: null,
+      source: null,
+      target: null,
+      resource: null,
+    },
+  };
+  const entries = [
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'prepared', actionId: 'resource:res:folder-CDC', dependsOn: [], rollbackCapsule: folderCapsule },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'observed', actionId: 'resource:res:folder-CDC', status: 'success', verified: true, observedDigest: digestSemantic(folderEvidence), rollbackEvidence: folderEvidence },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'prepared', actionId: 'resource:res:vn-CDC', dependsOn: ['res:folder-CDC'], rollbackCapsule: vnCapsule },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'observed', actionId: 'resource:res:vn-CDC', status: 'failure', verified: false, observedDigest: digestSemantic(vnEvidence), rollbackEvidence: vnEvidence },
+    docPrepared,
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'observed', actionId: 'go:CDC:CreateReplicateStream', status: 'failure', verified: false, observedDigest: digestSemantic({ diagnostics: [{ code: 'DEPENDENCY_EXECUTION_FAILED' }] }), diagnostics: [{ code: 'DEPENDENCY_EXECUTION_FAILED' }] },
+    { schemaVersion: 1, batchDigest: 'sha256:original-batch', type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  const filePath = path.join(directory, 'sha256-landed-batch.jsonl');
+  fs.writeFileSync(filePath, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+
+  const session = {
+    schemaVersion: 1,
+    sessionId: 'sdk-doc-sync:go:v3.0.x:rollback-test',
+    status: 'in_progress',
+    scanStateUpdated: false,
+    reviewUnitManifestDigest: 'sha256:review-units',
+    reviewUnitManifest: {
+      schemaVersion: 1,
+      manifestDigest: 'sha256:review-units',
+      units: [{
+        schemaVersion: 1,
+        reviewUnitId: 'review:go:CDC:CreateReplicateStream',
+        documentStableId: 'go:CDC:CreateReplicateStream',
+        prerequisiteReviewUnitIds: [],
+      }],
+      unassignedResourceActionIds: [],
+    },
+    activeExecution: null,
+    pendingExecutions: [],
+    acceptedReviewUnits: [],
+    rollbackReceipts: [],
+    acceptanceManifest: null,
+    acceptanceManifestDigest: null,
+  };
+
+  // Without the operator anchor the failed journal is invisible to the
+  // session and the rollback refuses.
+  assert.throws(
+    () => buildRollbackManifest({ session, reviewUnitId: 'review:go:CDC:CreateReplicateStream' }),
+    /ROLLBACK_EXECUTION_NOT_FOUND/,
+  );
+
+  const result = buildRollbackManifest({
+    session,
+    reviewUnitId: 'review:go:CDC:CreateReplicateStream',
+    executionJournalPath: filePath,
+  });
+  assert.equal(result.status, 'READY');
+  const actions = result.rollbackManifest.actions;
+  assert.deepEqual(actions.map((action) => action.inverse), [
+    'DELETE_CREATED_RECORD',
+    'DELETE_CREATED_FOLDER',
+  ]);
+  assert.equal(actions[0].createdRecord.recordId, 'rec-cdc-vn');
+  assert.equal(actions[1].createdFolder.token, 'folder-cdc-token');
+  // The dependency-blocked document action never mutated anything: it must
+  // not appear in the manifest.
+  assert.equal(actions.some((action) => action.originalActionId === 'go:CDC:CreateReplicateStream'), false);
+  validateRollbackManifest(result.rollbackManifest);
 });

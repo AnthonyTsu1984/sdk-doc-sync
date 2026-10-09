@@ -4,6 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
+const { renderMarkdown } = require('../src/document-ir/ir-to-markdown');
+const goRenderer = require('../src/renderers/languages/go');
 const pythonAdapter = require('../src/sdk-reference-ir/adapters/python');
 const javaAdapter = require('../src/sdk-reference-ir/adapters/java');
 const nodeAdapter = require('../src/sdk-reference-ir/adapters/node');
@@ -207,6 +209,212 @@ test('Go struct adapter accepts reviewed constructor syntax and public methods',
   assert.equal(doc.callableMembers[0].name, 'Validate');
   assert.equal(doc.callableMembers[0].signature.display, 'Validate(parentName string) error');
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('Go method adapter merges reviewed parameter prose; kind:required never reaches constraints', () => {
+  // Operator ruling 2026-10-06: the PARAMETERS section renders the canonical
+  // signature inputs (scanner-derived). The reviewed PR prose must merge in,
+  // and required-ness renders as [REQUIRED] — the machine phrase
+  // "Constraints: kind: required." must not leak onto the page.
+  const symbol = {
+    name: 'AddPrivilegesToGroup',
+    kind: 'method',
+    signature: 'func (c *Client) AddPrivilegesToGroup(ctx context.Context, option AddPrivilegeToGroupOption, callOptions ...grpc.CallOption) error',
+    docstring: 'This operation adds one or more privileges to an existing privilege group.',
+    params: [
+      { name: 'groupName', type: 'string', kind: 'required' },
+      { name: 'privileges', type: '...string', kind: 'required' },
+    ],
+    filePath: 'client/milvusclient/rbac_v2.go',
+    lineNumber: 71,
+    parentClass: 'Authentication',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Authentication', {
+    title: 'AddPrivilegesToGroup',
+    requestVariants: [{
+      id: 'NewAddPrivilegesToGroupOption',
+      signature: 'option := milvusclient.NewAddPrivilegesToGroupOption(groupName, privilegeNames...)',
+      description: 'Creates the request for AddPrivilegesToGroup().',
+      inputs: [
+        { name: 'groupName', type: 'string', description: 'The name of the privilege group.' },
+        // Upstream naming drift: the PR list says privilegeNames where the
+        // builder signature says privileges — equal-length merge is by position.
+        { name: 'privilegeNames', type: '...string', description: 'The names of the privileges to add to the group.' },
+      ],
+    }],
+  }));
+
+  assert.equal(doc.signatures[0].inputs[0].description, 'The name of the privilege group.');
+  assert.equal(doc.signatures[0].inputs[1].description, 'The names of the privileges to add to the group.');
+  for (const input of doc.signatures[0].inputs) {
+    assert.equal(input.required, true, 'required-ness stays expressed as the boolean');
+    assert.equal(
+      (input.constraints || []).some((value) => /kind:\s*required/i.test(String(value))),
+      false,
+      'kind: required is not double-encoded into constraints',
+    );
+  }
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('go adapter merges reviewed struct-param children; field runs never glue into one description (DumpMessages)', () => {
+  // Operator rejection 2026-10-07 (DumpMessages): raw request-struct params
+  // (req *milvuspb.DumpMessagesRequest) carry their member fields as a
+  // structured children array in the reviewed inputs — the renderer emits
+  // field.children as nested bullets (upstream sub-list shape). The merge
+  // must carry children through; gluing "- field (type) - desc" runs into a
+  // single description string collapses the sub-fields into one text block.
+  const symbol = {
+    name: 'DumpMessages',
+    kind: 'method',
+    signature: 'func (c *Client) DumpMessages(ctx context.Context, req *milvuspb.DumpMessagesRequest, opts ...grpc.CallOption) (milvuspb.MilvusService_DumpMessagesClient, error)',
+    docstring: 'This operation streams messages from a WAL range for data salvage.',
+    params: [
+      { name: 'req', type: '*milvuspb.DumpMessagesRequest', kind: 'required' },
+      { name: 'opts', type: '...grpc.CallOption', kind: 'variadic' },
+    ],
+    filePath: 'client/milvusclient/wal.go',
+    lineNumber: 46,
+    parentClass: 'CDC',
+  };
+  const children = [
+    { name: 'Pchannel', type: 'string', description: 'The physical channel whose messages to dump.' },
+    { name: 'StartMessageId', type: '[]byte', description: 'The message ID from which the dump starts.' },
+  ];
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'CDC', {
+    title: 'DumpMessages',
+    requestVariants: [{
+      id: 'DumpMessages',
+      signature: 'stream, err := cli.DumpMessages(ctx, &milvuspb.DumpMessagesRequest{...})',
+      description: 'Streams messages from a WAL range.',
+      inputs: [
+        {
+          name: 'req',
+          type: '*milvuspb.DumpMessagesRequest',
+          description: 'The dump-messages request, with the following fields:',
+          children,
+        },
+        { name: 'opts', type: '...grpc.CallOption', description: 'Optional gRPC call options.' },
+      ],
+    }],
+    result: {
+      type: 'milvuspb.MilvusService_DumpMessagesClient, error',
+      description: 'A server-streaming client.',
+      fields: [
+        { name: 'GetClientID', type: 'string', description: 'Returns the unique client ID.', resultFieldKind: 'method' },
+      ],
+    },
+  }));
+
+  const req = doc.signatures[0].inputs[0];
+  assert.equal(req.description, 'The dump-messages request, with the following fields:');
+  assert.deepEqual(
+    req.children.map((child) => ({ name: child.name, type: child.type.display, description: child.description })),
+    children,
+  );
+  assert.equal(doc.signatures[0].inputs[1].children.length, 0, 'params without reviewed children stay flat');
+  assert.equal(doc.result.fields[0].resultFieldKind, 'method', 'method-kind result fields survive normalization');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+
+  const markdown = renderMarkdown(goRenderer.render(doc));
+  assert.equal(
+    /with the following fields:\n/.test(markdown),
+    true,
+    'a colon lead-in must not gain a stray sentence period',
+  );
+  assert.equal(
+    markdown.includes('with the following fields:\n  - **Pchannel** (*string*) -'),
+    true,
+    'struct member fields render as nested sub-bullets under the parameter',
+  );
+  // Operator ruling 2026-10-07 (GetTelemetry): a method-surfaced response
+  // (opaque manager handle) is titled METHODS, not PARAMETERS.
+  assert.equal(
+    markdown.includes('**METHODS:**\n\n- **GetClientID**'),
+    true,
+    'method-kind result fields render under the METHODS label',
+  );
+  assert.equal(
+    /\*\*PARAMETERS:\*\*/.test(markdown.split('**METHODS:**')[1] || ''),
+    false,
+    'the method surface must not double-label as PARAMETERS',
+  );
+});
+
+test('go adapter adopts reviewed inputs when the scanner extracts no params (chained builder RS)', () => {
+  // Operator finding 2026-10-07 (DropRole): chained builder forms like
+  // NewDropRoleOption("x").WithForce(true) leave scanner params empty, so
+  // the PARAMETERS section vanished while upstream documents the option
+  // parameter. The reviewed request-variant inputs are the canonical list.
+  const symbol = {
+    name: 'DropRole',
+    kind: 'method',
+    signature: 'func (c *Client) DropRole(ctx context.Context, opt DropRoleOption, callOpts ...grpc.CallOption) error',
+    docstring: 'This operation drops a role from the system.',
+    params: [],
+    filePath: 'client/milvusclient/role.go',
+    lineNumber: 88,
+    parentClass: 'Authentication',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Authentication', {
+    title: 'DropRole',
+    requestVariants: [{
+      id: 'WithForce',
+      signature: 'option := milvusclient.NewDropRoleOption("my_role").\n    WithForce(true)',
+      description: 'Creates the request for DropRole().',
+      inputs: [
+        { name: 'opt', type: 'DropRoleOption', description: 'The options for dropping the role.' },
+      ],
+    }],
+  }));
+
+  assert.equal(doc.signatures[0].inputs.length, 1);
+  assert.equal(doc.signatures[0].inputs[0].name, 'opt');
+  assert.equal(doc.signatures[0].inputs[0].type.display, 'DropRoleOption');
+  assert.equal(doc.signatures[0].inputs[0].description, 'The options for dropping the role.');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('go result schemaCode renders a go block between RETURNS prose and response fields', () => {
+  // Ruling 2026-10-07: multi-value returns expand the result value — a go
+  // schema code block between the RETURNS prose and the response-field
+  // PARAMETERS list, and the error part never appears in the fields.
+  const symbol = {
+    name: 'BackupRBAC',
+    kind: 'method',
+    signature: 'func (c *Client) BackupRBAC(ctx context.Context, option BackupRBACOption, callOptions ...grpc.CallOption) (*entity.RBACMeta, error)',
+    docstring: 'This operation creates a full backup of RBAC metadata.',
+    params: [{ name: 'option', type: 'BackupRBACOption', kind: 'required' }],
+    filePath: 'client/milvusclient/rbac_v2.go',
+    lineNumber: 21,
+    parentClass: 'Authentication',
+  };
+  const doc = goAdapter.toReferenceDocument(symbol, context('go', 'Authentication', {
+    title: 'BackupRBAC',
+    requestVariants: [{
+      id: 'NewBackupRBACOption',
+      signature: 'option := milvusclient.NewBackupRBACOption()\n\nbackup, err := client.BackupRBAC(ctx, option)',
+      description: 'Creates the request for BackupRBAC().',
+      inputs: [],
+    }],
+    result: {
+      type: '*entity.RBACMeta, error',
+      description: 'The full RBAC metadata snapshot including users, roles, grants, and privilege groups.',
+      schemaCode: 'type RBACMeta struct {\n    Users []*UserInfo\n    Roles []*Role\n}',
+      fields: [
+        { name: 'Users', type: '[]*UserInfo', description: 'The users.' },
+        { name: 'Roles', type: '[]*Role', description: 'The list of assigned roles.' },
+      ],
+    },
+    exceptions: [{ name: 'error', condition: 'The operation fails.', description: 'Check the returned error for failure details.' }],
+  }));
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+  assert.equal(doc.result.schemaCode.includes('type RBACMeta struct'), true);
+  assert.equal(
+    doc.result.fields.some((field) => /^error$/i.test(field.name)),
+    false,
+    'the error part never renders in the response fields',
+  );
 });
 
 test('Python preserves direct parameter semantics, return type, and supplied exceptions', () => {
@@ -628,6 +836,60 @@ test('Go keeps constructor inputs and option method full signatures', () => {
   assert.equal(doc.result.type.display, 'error');
 });
 
+test('Go reviewed context overrides builder members and type-page result fields', () => {
+  // Web-content method pages curate BUILDER METHODS descriptions the Go
+  // doc-comment scan cannot recover, and type pages carry curated FIELDS —
+  // the reviewed context wins over the bare scanner shape.
+  const methodDoc = goAdapter.toReferenceDocument(
+    fixture('go-create-collection.json'),
+    context('go', 'Collections', {
+      callableMembers: [{
+        kind: 'option',
+        name: 'WithMetricType',
+        signature: 'WithMetricType(metricType entity.MetricType)',
+        description: 'Sets the metric type used to measure vector similarity.',
+      }],
+    }),
+  );
+  assert.equal(methodDoc.callableMembers.length, 1);
+  assert.equal(methodDoc.callableMembers[0].description,
+    'Sets the metric type used to measure vector similarity.');
+
+  const structDoc = goAdapter.toReferenceDocument(
+    fixture('go-collection-struct.json'),
+    context('go', 'Collections', {
+      summary: 'Describes a Milvus collection.',
+      examples: [],
+      result: {
+        type: 'Collection',
+        description: 'Represents a collection with its schema.',
+        fields: [{ name: 'Name', type: 'string', description: 'The collection name.' }],
+      },
+    }),
+  );
+  assert.equal(structDoc.result.fields.length, 1);
+  assert.equal(structDoc.result.fields[0].description, 'The collection name.');
+  assert.equal(validateReferenceDocument(structDoc, { production: true }).valid, true);
+
+  const enumDoc = goAdapter.toReferenceDocument(
+    fixture('go-consistency-level-enum.json'),
+    context('go', 'Collections', {
+      summary: 'Lists Go consistency levels.',
+      examples: [],
+      result: {
+        type: 'ConsistencyLevel',
+        description: 'Consistency levels for reads.',
+        fields: [
+          { name: 'ClStrong', type: 'ConsistencyLevel', defaultValue: '0', description: 'The strongest consistency.' },
+        ],
+      },
+    }),
+  );
+  assert.equal(enumDoc.result.fields.length, 1);
+  assert.equal(enumDoc.result.fields[0].description, 'The strongest consistency.');
+  assert.equal(validateReferenceDocument(enumDoc, { production: true }).valid, true);
+});
+
 test('Go normalizes real struct fields recursively without inventing option members', () => {
   const symbol = fixture('go-collection-struct.json');
   symbol.fields[1].children = [{ name: 'Fields', type: '[]*Field', description: 'Schema fields.' }];
@@ -641,7 +903,12 @@ test('Go normalizes real struct fields recursively without inventing option memb
   assert.deepEqual(doc.result.fields.map((field) => field.name), ['Name', 'Schema']);
   assert.equal(doc.result.fields[1].children[0].name, 'Fields');
   assert.equal(doc.result.fields[0].evidence[0].confidence, 'derived');
-  assert.deepEqual(doc.callableMembers, []);
+  // Scanner methods carry through as implementation members with a
+  // Go-syntax display assembled from name/params/returnType.
+  assert.equal(doc.callableMembers.length, 1);
+  assert.equal(doc.callableMembers[0].kind, 'implementation');
+  assert.equal(doc.callableMembers[0].name, 'GetColumn');
+  assert.equal(doc.callableMembers[0].signature.display, 'GetColumn(fieldName string) Column');
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
 });
 
@@ -657,6 +924,75 @@ test('Go normalizes real enum values without callable members', () => {
   assert.deepEqual(doc.result.fields.map((field) => field.defaultValue), ['0', '2']);
   assert.deepEqual(doc.callableMembers, []);
   assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+});
+
+test('Go enum adapter splits glued "= constant prose" descriptions and trusts explicit constants', () => {
+  const glued = goAdapter.toReferenceDocument(
+    fixture('go-consistency-values.json'),
+    context('go', 'Collections', { summary: 'Lists Go consistency levels.', examples: [] }),
+  );
+  assert.deepEqual(
+    glued.result.fields.map((field) => field.defaultValue),
+    [
+      'ConsistencyLevel(commonpb.ConsistencyLevel_Strong)',
+      'ConsistencyLevel(commonpb.ConsistencyLevel_Bounded)',
+      'ConsistencyLevel(commonpb.ConsistencyLevel_Session)',
+    ],
+  );
+  assert.equal(glued.result.fields[0].description, 'Strong consistency. All operations are immediately visible.');
+
+  // An explicit scanner constant wins over the description prefix.
+  const explicit = goAdapter.toReferenceDocument(
+    fixture('go-consistency-level-enum.json'),
+    context('go', 'Collections', { summary: 'Lists Go consistency levels.', examples: [] }),
+  );
+  assert.deepEqual(explicit.result.fields.map((field) => field.defaultValue), ['0', '2']);
+  assert.equal(explicit.result.fields[0].description, 'Strong consistency.');
+});
+
+test('Go struct adapter carries scanner methods as implementation-kind callable members', () => {
+  const doc = goAdapter.toReferenceDocument(
+    fixture('go-field-struct.json'),
+    context('go', 'Collections', {
+      summary: 'A Field instance defines a field in a collection schema.',
+      examples: [],
+      callableMembers: [
+        { kind: 'option', name: 'WithName', signature: 'WithName(name string)', description: 'Sets the name of the field.' },
+      ],
+    }),
+  );
+  assert.equal(doc.identity.kind, 'struct');
+  const byKind = Object.groupBy(doc.callableMembers, (member) => member.kind);
+  assert.equal(byKind.option.length, 1);
+  assert.equal(byKind.option[0].name, 'WithName');
+  assert.equal(byKind.implementation.length, 1);
+  assert.equal(byKind.implementation[0].name, 'GetDim');
+  assert.match(byKind.implementation[0].signature.display, /GetDim\(\) \(int64, error\)/);
+  assert.equal(byKind.implementation[0].description, 'Returns the vector dimension of the field.');
+  assert.equal(validateReferenceDocument(doc, { production: true }).valid, true);
+
+  // Struct fields without prose get the deterministic value-oriented
+  // sentence (⑨: no empty descriptions), and Go doc name echoes ("Clone
+  // returns …") strip to verb-first house style — noun phrases stay.
+  const bare = goAdapter.toReferenceDocument({
+    name: 'Conn',
+    kind: 'struct',
+    signature: 'type Conn struct {\n    Addr string\n}',
+    fields: [{ name: 'Addr', type: 'string' }],
+    params: [],
+    methods: [
+      { name: 'Clone', params: '', returnType: '*Conn', description: 'Clone returns a deep copy of the connection.' },
+      { name: 'Name', params: '', returnType: 'string', description: 'Name of the connection.' },
+    ],
+    filePath: 'client/entity/conn.go',
+    lineNumber: 8,
+    pkg: 'entity',
+  }, context('go', 'Collections', { summary: 'A Conn instance wraps a connection.', examples: [] }));
+  assert.equal(bare.result.fields[0].description, 'The Addr of the Conn.');
+  const byName = new Map(bare.callableMembers.map((member) => [member.name, member]));
+  assert.equal(byName.get('Clone').description, 'Returns a deep copy of the connection.');
+  assert.equal(byName.get('Name').description, 'Name of the connection.');
+  assert.equal(validateReferenceDocument(bare, { production: true }).valid, true);
 });
 
 test('Go preserves real interface method signatures with derived evidence', () => {

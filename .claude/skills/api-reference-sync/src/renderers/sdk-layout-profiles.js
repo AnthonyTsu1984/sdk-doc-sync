@@ -140,11 +140,33 @@ const profiles = Object.freeze({
     layoutRules: GLOBAL_LAYOUT_RULES,
   }),
   go: freezeProfile({
-    id: 'go', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
-    order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
+    // v3: 'result-methods' slot — operator ruling 2026-10-07 (GetTelemetry):
+    // an opaque manager handle surfaces its public METHODS after RETURNS
+    // (resultFieldKind 'method' fields); the section model roles that list
+    // distinctly instead of flagging it as an out-of-order 'members'
+    // section. v2 had introduced the 'result-parameters' slot (strong-form
+    // RETURNS response-fields PARAMETERS after RETURNS).
+    id: 'go', version: 3, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'result-parameters', 'result-methods', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'Go', 'request-signature': 'Go', 'example-code': 'Go' },
-    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1] },
-    layoutRules: GLOBAL_LAYOUT_RULES,
+    cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, 1], 'result-parameters': [0, 1], 'result-methods': [0, 1] },
+    layoutRules: Object.freeze({
+      ...GLOBAL_LAYOUT_RULES,
+      // Vowel-initial type pages read "An Xxx instance is …" (go v3.0.x has
+      // several: An AbortImportOption instance, An AnalyzerResult instance) —
+      // the shared 'A Xxx instance' form does not match those.
+      contentQuality: Object.freeze({
+        ...GLOBAL_LAYOUT_RULES.contentQuality,
+        firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b']),
+        // Language-differentiated data (operator ruling 2026-10-06): a Go
+        // function whose sole return is `error` renders RETURNS prose only —
+        // the response-fields PARAMETERS list is the multi-value-return
+        // shape ("(int64, error)", structs). checkContentRules skips
+        // RETURNS_MIN_DEPTH when the RETURN TYPE value matches one of these
+        // tokens.
+        returnsResponseFieldsExemptTypes: Object.freeze(['error']),
+      }),
+    }),
   }),
   cpp: freezeProfile({
     id: 'cpp', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',

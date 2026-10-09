@@ -608,6 +608,54 @@ async function pythonArtifactWithTypeUrls({ automatic = {}, reviewed = {}, type 
   return output.artifact || output;
 }
 
+test('schema-first provider passes grouping-bound planning evidence through to the planner', async () => {
+  // Grouping-bound campaigns enter with the approved unfiltered scope, so the
+  // reviewed planning evidence (placement walk, dependency DAG, inheritance
+  // evidence) rides the reference-context entry instead of scope actions.
+  const placementWalk = { digest: `sha256:${'a'.repeat(64)}`, collectedAt: '2026-10-06T00:00:00.000Z' };
+  const inheritanceEvidence = createInheritanceEvidence({
+    stableId: 'go:Collections:create',
+    current: { recordId: 'rec1', documentToken: 'docx1', version: 'v2.6.x', folderToken: 'fld1' },
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: ['rec1', 'rec1'],
+  });
+  const provider = createSchemaFirstArtifactProvider({
+    language: 'go',
+    referenceContextProvider: async () => {
+      // Strip the classic target/lookup evidence: the planning-only fields
+      // below must trigger the passthrough shape on their own.
+      const { target, existingRecordLookup, ...content } = sdkContext('go');
+      return {
+        ...content,
+        placementWalk,
+        dependencies: ['res:folder-CDC'],
+        inheritanceEvidence,
+        sharedUpdateReviews: [{
+          recordId: 'rec2',
+          track: 'v2.6.x',
+          status: 'inherited',
+          decision: 'no_successor_action',
+        }],
+      };
+    },
+  });
+  const output = await provider({
+    type: 'UPDATE',
+    stableId: 'go:Collections:create',
+    slug: 'v2-Collections-create',
+    symbol: fixture('go-create-collection.json'),
+  }, {});
+
+  // Planning-only fields (no target/current) must still trigger the
+  // passthrough shape and survive it verbatim.
+  assert.ok(output.artifact);
+  assert.deepEqual(output.placementWalk, placementWalk);
+  assert.deepEqual(output.dependencies, ['res:folder-CDC']);
+  assert.deepEqual(output.inheritanceEvidence, inheritanceEvidence);
+  assert.deepEqual(output.sharedUpdateReviews[0].recordId, 'rec2');
+  assert.equal(output.target, undefined);
+});
+
 test('Bitable type URLs are embedded in schema-first Document IR and Markdown', async () => {
   const url = 'https://zilliverse.feishu.cn/docx/data-type-auto';
   const artifact = await pythonArtifactWithTypeUrls({ automatic: { DataType: url } });

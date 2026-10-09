@@ -36,6 +36,26 @@ test('pageFactsFromBlocks separates headings, body lines, callout child lines, a
     ]);
 });
 
+test('pageFactsFromBlocks resolves callout children from the flat list-blocks payload', () => {
+    // The live /documents/{id}/blocks payload is flat: `children` holds
+    // block-ID strings and every block sits at top level. The callout child
+    // lines must still read as callout content — a governed deprecation
+    // callout's "Notes" line must never leak into the page-level line scan.
+    const flat = [
+        { block_id: 'root', block_type: 1, parent_id: '', page: {}, children: ['c', 'n', 'p'] },
+        { block_id: 'c', block_type: 19, parent_id: 'root', callout: { emoji_id: 'blue_book' }, children: ['n', 'p'] },
+        { block_id: 'n', block_type: 2, parent_id: 'c', text: { elements: [{ text_run: { content: 'Notes' } }] } },
+        { block_id: 'p', block_type: 2, parent_id: 'c', text: { elements: [{ text_run: { content: 'This interface is deprecated, use GrantPrivilegeV2() instead.' } }] } },
+        { block_id: 't', block_type: 2, parent_id: 'root', text: { elements: [{ text_run: { content: 'This operation grants a privilege to a role.' } }] } },
+    ];
+    const facts = pageFactsFromBlocks(flat);
+    assert.deepEqual(facts.callouts, [{ lines: ['Notes', 'This interface is deprecated, use GrantPrivilegeV2() instead.'] }]);
+    assert.deepEqual(facts.lines, ['This operation grants a privilege to a role.']);
+    assert.equal(facts.stream.some((entry) => /^notes:?$/i.test(entry.text)), false);
+    const { violations } = checkLayoutConformance(sdkLayoutProfiles.go, facts);
+    assert.equal(violations.some((violation) => violation.code === 'INTERNAL_NOTE_LEAK'), false);
+});
+
 test('cpp profile flags the forbidden builder prefix; a register-compliant body line stays clean', () => {
     const facts = { headings: [], lines: ['AlterAliasRequest& WithCollectionName(const std::string& name)'], callouts: [] };
     const cpp = checkLayoutConformance(sdkLayoutProfiles.cpp, facts);
@@ -229,6 +249,44 @@ test('the five 2026-10-03 global content rules flag their failure modes and pass
         callouts: [{ lines: ['Notes', 'Deprecated in v3.0.x. Use queryAsync().'] }],
     });
     assert.deepEqual(clean.violations, []);
+});
+
+test('returnsResponseFieldsExemptTypes: declared data exempts single-error RETURNS from RETURNS_MIN_DEPTH', () => {
+    // Operator ruling 2026-10-06 (go): a sole `error` return is the void
+    // equivalent — RETURNS renders prose only, no response-fields list.
+    const bareErrorLines = [
+        'This operation adds one or more privileges to an existing privilege group.',
+        'RETURN TYPE:', '*error*',
+        'RETURNS:', 'Returns nil on success, or an error describing what went wrong.',
+    ];
+    // go declares the exemption; the bare-error page conforms.
+    assert.deepEqual(
+        checkLayoutConformance(sdkLayoutProfiles.go, { headings: [], lines: bareErrorLines, callouts: [] }).violations,
+        [],
+        'go exempts its declared single-error return type',
+    );
+    // A multi-value return stays bound: no PARAMETERS list still fails go.
+    const multiValue = checkLayoutConformance(sdkLayoutProfiles.go, {
+        headings: [],
+        lines: [
+            'This operation describes a role.',
+            'RETURN TYPE:', '*entity.Role, error*',
+            'RETURNS:', 'The role description including the role name, description, and privileges.',
+        ],
+        callouts: [],
+    });
+    assert.equal(
+        multiValue.violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'the exemption covers exactly the declared tokens, not every go page',
+    );
+    // Profiles without the declaration stay bound for the same page shape.
+    assert.equal(
+        checkLayoutConformance(sdkLayoutProfiles.java, { headings: [], lines: bareErrorLines, callouts: [] })
+            .violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'java has not declared the exemption',
+    );
 });
 
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
@@ -476,9 +534,11 @@ test('pageFactsFromBlocks walks the flat fetch format through the page block: ca
         { block_id: 'b', block_type: 12, parent_id: 'page', bullet: { elements: [{ text_run: { content: '**limit** (*int*) - The total number of entities to return.' } }] } },
     ]);
     assert.deepEqual(facts.lines, ['Search()']);
-    // flat format: the callout census collects child LINES from embedded children only;
-    // id-string children resolve through the hierarchy walk (stream scoping), not the census.
-    assert.deepEqual(facts.callouts, [{ lines: [] }]);
+    // go-v30 merge ruling: id-string children resolve into the callout census
+    // through the id map — live flat pages carry their governed Notes shape
+    // only there — while stream scoping (calloutChildIds + insideCallout)
+    // still keeps them out of body lines and the stream.
+    assert.deepEqual(facts.callouts, [{ lines: ['Notes', 'When search_aggregation is specified, do not explicitly set limit.'] }]);
     const bareNote = facts.stream.find((entry) => /^notes:?$/i.test(entry.text.trim()));
     assert.equal(bareNote, undefined);
 });

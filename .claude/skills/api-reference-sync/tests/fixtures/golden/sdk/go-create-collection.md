@@ -20,11 +20,9 @@ err := client.CreateCollection(ctx, option)
 - **collectionName** (*string*) -
   **\[REQUIRED\]**
   The name of the collection to create.
-  Constraints: kind: required.
 - **dimension** (*int64*) -
   **\[REQUIRED\]**
   The vector field dimension.
-  Constraints: kind: required.
 
 **BUILDER METHODS:**
 

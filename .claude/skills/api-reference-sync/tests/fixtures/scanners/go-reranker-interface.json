@@ -1,0 +1,15 @@
+{
+  "name": "Reranker",
+  "kind": "interface",
+  "parentClass": "Vector",
+  "docstring": "",
+  "methods": [
+    {
+      "name": "GetParams",
+      "fullSignature": "GetParams() []*commonpb.KeyValuePair"
+    }
+  ],
+  "filePath": "client/milvusclient/reranker.go",
+  "lineNumber": 19,
+  "pkg": "milvusclient"
+}

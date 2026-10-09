@@ -153,6 +153,51 @@ test('rejects an API patch when live top-level block preconditions drift', async
   );
 });
 
+test('get_document_blocks retries a children-omitting page read and recovers', async () => {
+  // Feishu occasionally returns code 0 with the page block's children field
+  // omitted; the read layer retries that exact transient signature instead of
+  // surfacing it downstream as PAGE_STRUCTURE_INVALID.
+  process.env.FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  m2f.tokenFetcher = { token: async () => 'test-token' };
+  const responses = [
+    { code: 0, data: { items: [{ block_id: 'page', block_type: 1 }] } },
+    { code: 0, data: { items: [{ block_id: 'page', block_type: 1, children: ['b1'] }, { block_id: 'b1', parent_id: 'page', block_type: 2, text: { elements: [] } }] } },
+  ];
+  let calls = 0;
+  m2f.__fetch_feishu_json = async () => responses[Math.min(calls++, responses.length - 1)];
+  const blocks = await m2f.get_document_blocks('doc-1');
+  assert.equal(calls, 2, 'the transient read was retried once');
+  assert.deepEqual(blocks.find(b => b.block_type === 1).children, ['b1']);
+});
+
+test('get_document_blocks returns the last read when the transient signature persists', async () => {
+  process.env.FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  m2f.tokenFetcher = { token: async () => 'test-token' };
+  let calls = 0;
+  m2f.__fetch_feishu_json = async () => {
+    calls += 1;
+    return { code: 0, data: { items: [{ block_id: 'page', block_type: 1 }] } };
+  };
+  const blocks = await m2f.get_document_blocks('doc-1');
+  assert.equal(calls, 3, 'all transient attempts are spent');
+  assert.equal(blocks.length, 1, 'the last read is returned, not masked as success of a healthy read');
+});
+
+test('get_document_blocks throws immediately on an API error without retrying', async () => {
+  process.env.FEISHU_HOST = process.env.FEISHU_HOST || 'https://open.feishu.cn';
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  m2f.tokenFetcher = { token: async () => 'test-token' };
+  let calls = 0;
+  m2f.__fetch_feishu_json = async () => {
+    calls += 1;
+    return { code: 131006, msg: 'permission denied' };
+  };
+  await assert.rejects(() => m2f.get_document_blocks('doc-1'), /Failed to get document blocks/);
+  assert.equal(calls, 1, 'hard API errors are not retried');
+});
+
 test('rebinds approved source block IDs to an equivalent freshly copied document', async () => {
   const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
   const calls = [];
@@ -288,6 +333,55 @@ test('rejects a copied document when nested block content differs from the live 
     }),
     (error) => error.code === 'API_PATCH_PRECONDITION_FAILED',
   );
+});
+
+test('rebinds a copy whose page-block title differs from the source page title', async () => {
+  // A drive copy names the document from the copy request, so the copy's
+  // page-block content (the `page` field carrying the title elements) is the
+  // requested title, never the source's title text (real pages carry
+  // "Method()" while the record/artifact title is "Method"). The rebind
+  // precheck must not fail on that — patch operations never touch the page
+  // block itself.
+  const m2f = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null, governance: boundGovernance() });
+  const calls = [];
+  const sourceBlocks = [
+    { block_id: 'source-page', block_type: 1, children: ['source-summary', 'source-parameters'], page: { elements: [{ text_run: { content: 'AddPrivilegesToGroup()', text_element_style: { bold: false, inline_code: false, italic: false, strikethrough: false, underline: false } } }], style: { align: 1 } } },
+    { block_id: 'source-summary', parent_id: 'source-page', block_type: 2, text: { elements: [{ text_run: { content: 'Summary' } }] } },
+    { block_id: 'source-parameters', parent_id: 'source-page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:' } }] } },
+  ];
+  const copiedBlocks = [
+    { block_id: 'copy-page', block_type: 1, children: ['copy-summary', 'copy-parameters'], page: { elements: [{ text_run: { content: 'AddPrivilegesToGroup', text_element_style: { bold: false, inline_code: false, italic: false, strikethrough: false, underline: false } } }], style: { align: 1 } } },
+    { block_id: 'copy-summary', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'Summary' } }] } },
+    { block_id: 'copy-parameters', parent_id: 'copy-page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS:' } }] } },
+  ];
+  m2f.get_document_blocks = async (documentId) => documentId === 'source-doc' ? sourceBlocks : copiedBlocks;
+  m2f.__delete_child_blocks_by_id = async (input) => {
+    calls.push(['delete', input.childBlockIds]);
+    return input.childBlockIds.length;
+  };
+  m2f.create_blocks = async (input) => {
+    calls.push(['create', input.startIndex, input.blocks]);
+    return { created: input.blocks.length };
+  };
+
+  const result = await m2f.apply_api_patch({
+    document_id: 'copy-doc',
+    source_document_id: 'source-doc',
+    patchPlan: {
+      strategy: 'targeted-semantic-patch',
+      currentModel: { pageBlockId: 'source-page', topLevelBlockIds: [...sourceBlocks[0].children] },
+      preservedBlockIds: [],
+      operations: [{
+        type: 'replace-section', role: 'parameters', insertAt: 1,
+        deleteBlockIds: ['source-parameters'], preserveBlockIds: [],
+        blocks: [{ block_id: 'desired-parameters', parent_id: 'source-page', block_type: 2, text: { elements: [{ text_run: { content: 'PARAMETERS (v3):' } }] } }],
+      }],
+      validation: { valid: true, errors: [] },
+    },
+  });
+
+  assert.deepEqual(calls[0], ['delete', ['copy-parameters']]);
+  assert.deepEqual(result, { updated: 0, created: 1, deleted: 1, unchanged: 1, operations: 1 });
 });
 
 test('orders delete-only sections by their approved live position before lower replacements', async () => {

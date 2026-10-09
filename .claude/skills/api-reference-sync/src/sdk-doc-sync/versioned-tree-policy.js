@@ -143,6 +143,11 @@ function validCategorySpec(category) {
     || folder.existingLookup?.absent !== true) {
     return false;
   }
+  // Node-less categories (go Database/ResourceGroup: the v2.6 group folder
+  // has no Bitable VirtualNode record to repoint — its first page is a Class
+  // document that itself rides the copy) declare repoint: null explicitly;
+  // their DAG carries the folder alone.
+  if (repoint === null) return true;
   if (!repoint
     || !nonEmptyString(repoint.ref)
     || repoint.ref === folder.ref
@@ -167,14 +172,17 @@ function validCategorySpec(category) {
 }
 
 function requiredResourceDag({ stableId, category }) {
-  return Object.freeze([
-    { action: 'CREATE_FOLDER', stableId: `resource:${category.folder.ref}` },
-    { action: 'COPY_PATCH_AND_REPOINT', stableId },
+  const repointNodes = category.repoint === null ? [] : [
     {
       action: 'REPOINT_CATEGORY_VIRTUAL_NODE',
       stableId: `resource:${category.repoint.ref}`,
       dependsOn: Object.freeze([`resource:${category.folder.ref}`, stableId]),
     },
+  ];
+  return Object.freeze([
+    { action: 'CREATE_FOLDER', stableId: `resource:${category.folder.ref}` },
+    { action: 'COPY_PATCH_AND_REPOINT', stableId },
+    ...repointNodes,
     { action: 'VERIFY_TREE_DELTA', stableId: `tree-delta:${stableId}` },
   ]);
 }
@@ -488,16 +496,18 @@ function categoryResourceDefinitions({ stableId, category }) {
   }
   const folder = category.folder;
   const repoint = category.repoint;
+  const folderResource = Object.freeze({
+    kind: 'folder',
+    ref: folder.ref,
+    name: folder.name,
+    parentFolderToken: folder.parentFolderToken,
+    versionRootToken: folder.versionRootToken,
+    ...(Array.isArray(folder.parentAncestry) ? { parentAncestry: Object.freeze([...folder.parentAncestry]) } : {}),
+    existingLookup: Object.freeze({ ...folder.existingLookup }),
+  });
+  if (repoint === null) return Object.freeze([folderResource]);
   return Object.freeze([
-    Object.freeze({
-      kind: 'folder',
-      ref: folder.ref,
-      name: folder.name,
-      parentFolderToken: folder.parentFolderToken,
-      versionRootToken: folder.versionRootToken,
-      ...(Array.isArray(folder.parentAncestry) ? { parentAncestry: Object.freeze([...folder.parentAncestry]) } : {}),
-      existingLookup: Object.freeze({ ...folder.existingLookup }),
-    }),
+    folderResource,
     Object.freeze({
       kind: 'virtual_node_repoint',
       ref: repoint.ref,

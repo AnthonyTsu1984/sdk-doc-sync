@@ -180,6 +180,30 @@ test('REBUILD demands whole-body artifacts: surgical layout artifacts are refuse
   assert.equal(plan.action, 'REBUILD');
 });
 
+test('session-executed schema-first CREATE units re-plan as REBUILD (J6 × schema-first, 2026-10-08)', () => {
+  // A schema-first artifact carries the layout but neither a patch strategy
+  // nor a patch plan: whole-body content, the shape the executor normalizes
+  // to 'rebuild'. The gate must not dead-end the J6 route for it.
+  const createOverExisting = { ...rebuildAction(), type: 'CREATE' };
+  const schemaFirst = {
+    ...rebuildContext().artifact,
+    layout: { profileId: 'go', profileVersion: 3 },
+  };
+  delete schemaFirst.patchStrategy;
+  const plan = new SyncPlanner().planAction(createOverExisting, rebuildContext({
+    artifact: schemaFirst,
+  }));
+  assert.equal(plan.action, 'REBUILD');
+  assert.equal(plan.metadata.autoRoutedFrom, 'CREATE');
+  // An explicit surgical strategy on the same layout artifact stays refused
+  assert.throws(
+    () => new SyncPlanner().planAction(createOverExisting, rebuildContext({
+      artifact: { ...schemaFirst, patchStrategy: 'smart' },
+    })),
+    (error) => error.code === 'REBUILD_STRATEGY_REQUIRED' && /UPDATE path/.test(error.message),
+  );
+});
+
 test('REBUILD requires the campaign record/document tokens and verified placement', () => {
   const planner = new SyncPlanner();
   const missingTokens = rebuildContext();
@@ -266,6 +290,115 @@ test('executor REBUILD reuses recordId+documentToken and lands whole-body replac
   assert.ok(!calls.some((entry) => entry[0] === 'createDocument' || entry[0] === 'createRecord'));
 });
 
+test('executor omits 父记录 entirely when the plan carries no parent repoint (null TARGET_PARENT)', async () => {
+  // UPDATE postconditions may deliberately carry TARGET_PARENT: null (no
+  // parent repoint). Serializing null produced 父记录: [null] and the write
+  // API rejected it with LinkFieldConvFail (2026-10-08, Collection).
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  // Root-level Class page shape (the per-category records: v2-Collection,
+  // v2-Database, …): recordType Class, no source parent, no target parent.
+  const plan = new SyncPlanner().planAction(rebuildAction({
+    doc: {
+      id: 'rec-group',
+      metadata: {
+        token: 'doc-campaign',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        type: 'Class',
+      },
+    },
+  }), rebuildContext({
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-group',
+      documentToken: 'doc-campaign',
+      folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: { ...rebuildContext().target, parentRecordId: null },
+  }));
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-group' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: rebuildContext().artifact,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success', JSON.stringify(result.error));
+  const updateCall = calls.find((entry) => entry[0] === 'updateRecord');
+  assert.ok(updateCall, 'updateRecord must still land');
+  assert.equal(updateCall[2].parentRecordId, undefined, 'null parent must be omitted, never serialized');
+});
+
+test('executor drops the parent-record link when the record is its own parent (structural type page)', async () => {
+  // Collection-style unit: the record IS the category group node, so
+  // plan.target.parentRecordId equals plan.source.recordId — writing the
+  // self-link fails (Feishu LinkFieldConvFail). The payload must omit the
+  // field while the rest of the update lands.
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  const plan = new SyncPlanner().planAction(rebuildAction({
+    doc: {
+      id: 'rec-group',
+      metadata: {
+        token: 'doc-campaign',
+        version: 'v2.6.x',
+        folderToken: 'collections-v26',
+        parentRecordId: 'rec-group',
+      },
+    },
+  }), rebuildContext({
+    current: {
+      version: 'v2.6.x',
+      recordId: 'rec-group',
+      documentToken: 'doc-campaign',
+      folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
+      parentRecordId: 'rec-group',
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: {
+      version: 'v2.6.x',
+      parentRecordId: 'rec-group',
+      folderToken: 'collections-v26',
+      versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'collections-v26'],
+      ancestryVerified: true,
+    },
+  }));
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-group' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: rebuildContext().artifact,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success');
+  const updateCall = calls.find((entry) => entry[0] === 'updateRecord');
+  assert.ok(updateCall, 'updateRecord must still land');
+  assert.equal(updateCall[2].parentRecordId, undefined, 'self-link must be dropped');
+});
+
 test('executor REBUILD refuses surgical artifacts before any write (defense in depth, both shapes)', async () => {
   const basePlan = new SyncPlanner().planAction(rebuildAction(), rebuildContext());
   for (const [name, plan, artifact] of [
@@ -297,6 +430,38 @@ test('executor REBUILD refuses surgical artifacts before any write (defense in d
     assert.equal(result.error.code, 'REBUILD_STRATEGY_REQUIRED', name);
     assert.deepEqual(calls, [], name);
   }
+});
+
+test('executor REBUILD normalizes a schema-first whole-body artifact to the rebuild strategy (2026-10-08)', async () => {
+  const { calls, documentWriter, bitableWriter } = executorSpies();
+  const schemaFirst = {
+    ...rebuildContext().artifact,
+    layout: { profileId: 'go', profileVersion: 3 },
+  };
+  delete schemaFirst.patchStrategy;
+  const plan = new SyncPlanner().planAction(rebuildAction(), rebuildContext({
+    artifact: schemaFirst,
+  }));
+  const executor = new SyncExecutor({
+    documentWriter,
+    bitableWriter,
+    tokenReferenceReader: {
+      async listTokenReferences() {
+        return [{ recordId: 'rec-campaign' }];
+      },
+    },
+  });
+  const result = await executor.execute(plan, {
+    artifact: schemaFirst,
+    approval: { approved: true },
+    rollbackCapsule: {
+      documentRollback: { documentToken: 'doc-campaign', historyVersionId: 'h-1', blockDigest: 'sha256:before' },
+    },
+  });
+  assert.equal(result.status, 'success');
+  assert.deepEqual(calls.map((entry) => entry[0]), ['patchDocument', 'renameDocument', 'updateRecord']);
+  assert.equal(calls[0][1].content, 'This operation gets asynchronously.\n');
+  assert.ok(!calls.some((entry) => entry[0] === 'createDocument' || entry[0] === 'createRecord'));
 });
 
 test('a classified shared-token REBUILD plans reviews and executes against the shared document (review r2 nit)', async () => {

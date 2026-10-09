@@ -349,9 +349,13 @@ function renderSentinels(d) {
         : '<span class="badge finalized">从未运行</span>';
     const rep = s.report || {};
     const r = s.readiness || {};
-    const readyBadge = r.awaitingFirstCampaign ? '<span class="badge">已就绪 · 待首战</span>'
-      : r.ready ? '<span class="badge active">已就绪</span>'
-        : '<span class="badge zombie">前提缺失</span>';
+    // Version skew: a stale server process serves in-memory old API payloads
+    // (no readiness field) while this HTML is read fresh from disk — absence
+    // is unknown, not "prerequisites missing".
+    const readyBadge = !s.readiness ? ''
+      : r.awaitingFirstCampaign ? '<span class="badge">已就绪 · 待首战</span>'
+        : r.ready ? '<span class="badge active">已就绪</span>'
+          : '<span class="badge zombie">前提缺失</span>';
     const readyDetail = [
       r.sdkClone ? null : 'SDK 克隆缺失',
       (r.identityMaps && r.identityMaps.missing && r.identityMaps.missing.length) ? `缺地图 ${r.identityMaps.missing.join(' ')}` : null,

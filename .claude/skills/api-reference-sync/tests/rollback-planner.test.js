@@ -228,6 +228,55 @@ test('rollback planner anchors the newest change request when a unit was redone 
   assert.equal(validateRollbackManifest(result.rollbackManifest), true);
 });
 
+test('operator-anchored rollback overrides session anchors for a failed-but-mutating newer execution', () => {
+  // go-v30 b35r2 shape: the unit's recorded change request anchors the last
+  // SUCCESSFUL execution (doc-old, record→doc-old), but a later run mutated
+  // live state and failed its post-write verification (created doc-new,
+  // record→doc-new) — its journal carries a failed observed action, so the
+  // session can never anchor it. The operator names that journal; inverting
+  // the anchored-older execution instead would restore against drifted live
+  // state (its own preflight refuses) and orphan the newer run's artifacts.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-operator-override-'));
+  const anchored = writeJournal(directory, 'anchored', [{
+    actionId: 'action:0',
+    action: 'COPY_PATCH_AND_REPOINT',
+    beforeRecord: { ...beforeRecord, recordId: 'rec-qi', rawFields: { ...beforeRecord.rawFields }, writableFields: { ...beforeRecord.writableFields } },
+    postRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' } },
+    createdDocument: { token: 'doc-old', folderToken: 'folder-v30' },
+  }]);
+  const failedNewer = writeJournal(directory, 'failed-newer', [{
+    actionId: 'action:0',
+    action: 'COPY_PATCH_AND_REPOINT',
+    status: 'failure',
+    verified: false,
+    beforeRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' } },
+    postRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-new' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-new' }, Progress: 'WIP' } },
+    createdDocument: { token: 'doc-new', folderToken: 'folder-v30' },
+  }]);
+  const reviewUnitId = 'review:action:0';
+  const session = sessionFor(anchored, unit(['action:0']), {
+    activeExecution: null,
+    pendingExecutions: [],
+    changeRequests: [
+      { reviewUnitId, executionJournalPath: anchored.filePath, executionJournalDigest: anchored.digest, requestedAt: '2026-10-09T14:29:11.488Z' },
+    ],
+  });
+
+  const result = buildRollbackManifest({ session, reviewUnitId, executionJournalPath: failedNewer.filePath });
+  assert.equal(result.status, 'READY');
+  assert.equal(
+    result.rollbackManifest.executionJournalDigest,
+    failedNewer.digest,
+    'the operator-named execution is the one whose artifacts are live',
+  );
+  const inverse = result.rollbackManifest.actions[0];
+  assert.equal(inverse.inverse, 'RESTORE_RECORD_AND_DELETE_COPY');
+  assert.equal(inverse.copiedDocument.token, 'doc-new');
+  assert.equal(inverse.beforeRecord.writableFields.Docs.link, 'https://docs.example/docx/doc-old');
+  assert.deepEqual(result.rollbackManifest.sideEffects.deleteDocumentTokens, ['doc-new']);
+  assert.equal(validateRollbackManifest(result.rollbackManifest), true);
+});
+
 test('rollback planner fails closed for finalized sessions and incomplete or drifted original evidence', () => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rollback-planner-invalid-'));
   const action = { actionId: 'node:Vector:search', action: 'CREATE', recordId: 'rec-search', createdDocument: { token: 'doc-search' } };

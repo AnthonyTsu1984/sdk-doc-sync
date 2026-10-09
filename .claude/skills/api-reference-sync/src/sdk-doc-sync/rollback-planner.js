@@ -480,15 +480,20 @@ function buildRollbackManifest({ session, reviewUnitId, executionJournalPath = n
   }
   const unit = session.reviewUnitManifest.units.find((item) => item.reviewUnitId === reviewUnitId);
   if (!unit) throw new RollbackPlanningError('ROLLBACK_REVIEW_UNIT_UNKNOWN', `Unknown review unit: ${reviewUnitId}`);
-  let executionRef = executionRefFor(session, reviewUnitId);
+  // An operator-supplied --execution-journal OVERRIDES the session anchors:
+  // a failed-but-mutating run leaves the newest live artifacts behind while
+  // the session can only anchor older recorded executions (a pending entry, a
+  // change request, an acceptance receipt), so those anchors are the default
+  // exactly when no journal is named. Inverting the anchored-older execution
+  // against live state would fail its own preflight (ROLLBACK_TARGET_DRIFT)
+  // and orphan the newer run's artifacts.
+  const hasOperatorJournal = nonEmptyString(executionJournalPath);
+  const executionRef = hasOperatorJournal ? null : executionRefFor(session, reviewUnitId);
   let execution = null;
-  if (executionRef) {
-    execution = loadExecution({ reviewUnitId, ...executionRef });
-  } else if (nonEmptyString(executionJournalPath)) {
-    // Operator-anchored rollback: the session cannot record the failed
-    // journal, so the operator points at the durable execution journal and
-    // the planner inverts exactly the actions that landed.
+  if (hasOperatorJournal) {
     execution = loadLandedExecutionJournal({ reviewUnitId, executionJournalPath });
+  } else if (executionRef) {
+    execution = loadExecution({ reviewUnitId, ...executionRef });
   } else {
     throw new RollbackPlanningError('ROLLBACK_EXECUTION_NOT_FOUND', `Review unit has no executed document to roll back: ${reviewUnitId}`);
   }

@@ -1161,16 +1161,15 @@ function recordRollbackIntent(session, {
     ))
     .pop();
   let operatorAnchored = false;
-  let anchor = pending || accepted || (changeRequested ? {
-    executionJournalPath: changeRequested.executionJournalPath,
-    executionJournalDigest: changeRequested.executionJournalDigest,
-  } : null);
-  // Operator-anchored recovery: a resource-first batch that fails before its
-  // document action cannot record its journal into the session (failed
-  // actions refuse recording), so no session anchor can ever exist. The
-  // operator points at the durable execution journal; the lease anchors to
-  // its on-disk content digest after verifying the completion sentinel.
-  if (!anchor && nonEmptyString(executionJournal)) {
+  // Operator-anchored recovery: the operator names the execution whose
+  // artifacts are live NOW, and that choice takes PRECEDENCE over the
+  // session anchors — a failed-but-mutating run cannot record its journal
+  // (failed actions refuse recording), so the newest live artifacts are
+  // invisible to pending/change-request/accepted anchors, which stay the
+  // default exactly when no journal is supplied. The lease anchors to the
+  // on-disk content digest after verifying the completion sentinel.
+  let anchor = null;
+  if (nonEmptyString(executionJournal)) {
     const operatorJournalPath = path.resolve(executionJournal);
     const entries = readExecutionJournal(operatorJournalPath);
     const completion = entries.find((entry) => entry.type === 'completion');
@@ -1186,6 +1185,11 @@ function recordRollbackIntent(session, {
       executionJournalPath: operatorJournalPath,
       executionJournalDigest: digestSemantic(entries),
     };
+  } else {
+    anchor = pending || accepted || (changeRequested ? {
+      executionJournalPath: changeRequested.executionJournalPath,
+      executionJournalDigest: changeRequested.executionJournalDigest,
+    } : null);
   }
   // Redo cycles legitimately produce a SECOND rollback for a unit — the
   // prior receipt pins an OLDER journal whose artifacts were already

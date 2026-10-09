@@ -1293,3 +1293,51 @@ test('a rollback intent anchors on the operator-supplied journal when the sessio
     /already rolled back/,
   );
 });
+
+test('an operator-supplied rollback journal overrides the session change-request anchor', () => {
+  // go-v30 b35r2 shape: the change request anchors the last SUCCESSFUL
+  // execution, but a later run mutated live state and failed its post-write
+  // verification — its journal (failed observed action) can never be recorded,
+  // so the session anchor names STALE artifacts. The operator journal wins.
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-operator-override-'));
+  const anchored = executionJournal(directory, 'node:Collections:a', 'anchored-execution.jsonl');
+  const session = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-operator-override',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  const requested = recordDocumentChangesRequested(withExecution(session, anchored), {
+    reviewUnitId: 'review:node:Collections:a',
+    reason: 'redo ruling',
+  });
+
+  const failedEntries = [
+    { schemaVersion: 1, type: 'prepared', batchDigest: 'sha256:failed-batch', actionId: 'node:Collections:a' },
+    { schemaVersion: 1, type: 'observed', batchDigest: 'sha256:failed-batch', actionId: 'node:Collections:a', status: 'failure', verified: false },
+    { schemaVersion: 1, type: 'completion', batchDigest: 'sha256:failed-batch', status: 'executed', completionSentinel: true },
+  ];
+  const failedPath = path.join(directory, 'failed-newer.jsonl');
+  fs.writeFileSync(failedPath, `${failedEntries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+  const failedDigest = digestSemantic(failedEntries);
+  const rollback = rollbackJournal(directory, { originalExecutionJournalDigest: failedDigest, name: 'override-rollback.jsonl' });
+
+  const leased = recordRollbackIntent(requested, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+    executionJournal: failedPath,
+  });
+  assert.equal(leased.activeRollback.originalExecutionJournalPath, path.resolve(failedPath));
+  assert.equal(leased.activeRollback.originalExecutionJournalDigest, failedDigest);
+  assert.notEqual(leased.activeRollback.originalExecutionJournalDigest, anchored.digest);
+
+  // Without the operator journal the change-request anchor still decides.
+  const anchoredLease = recordRollbackIntent(requested, {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackManifestDigest: 'sha256:rollback-manifest',
+    rollbackJournalPath: rollback.filePath,
+  });
+  assert.equal(anchoredLease.activeRollback.originalExecutionJournalDigest, anchored.digest);
+});

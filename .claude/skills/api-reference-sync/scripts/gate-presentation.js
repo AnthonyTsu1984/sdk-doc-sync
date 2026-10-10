@@ -96,12 +96,18 @@ function readManifest(filePath) {
         }
         links.push({ label: link.label, url: link.url });
     });
+    if (document.units !== undefined && (!Array.isArray(document.units)
+        || document.units.some((unit) => typeof unit !== 'string' || unit.trim() === ''))) {
+        throw invalid('manifest.units, when present, must be an array of non-empty review-unit id strings');
+    }
     return {
         gate: document.gate,
         title: typeof document.title === 'string' && document.title.trim() !== '' ? document.title : null,
         run: typeof document.run === 'string' && document.run.trim() !== '' ? document.run : null,
         digest: document.digest || null,
         session: document.session || null,
+        units: Array.isArray(document.units) ? [...document.units] : [],
+        replyLine: typeof document.replyLine === 'string' && document.replyLine.trim() !== '' ? document.replyLine.trim() : null,
         links,
         previews: Array.isArray(document.previews)
             ? document.previews.filter((preview) => preview && typeof preview.markdownPreview === 'string' && preview.markdownPreview.trim() !== '')
@@ -160,9 +166,50 @@ function manifestFromDryrun(filePath) {
         run: null,
         digest: batchDigest,
         session: null,
+        units: presentation.map((entry) => entry.stableId || entry.title).filter((unit) => typeof unit === 'string' && unit !== ''),
         links,
         previews,
     };
+}
+
+// The canonical gate card (2026-10-10: sessions hand-rolled the AskUserQuestion
+// card around the old snippet, so the presentation format drifted every
+// conversation switch). Every gate now emits the SAME layout: banner,
+// campaign/session identity, batch composition, materials index, bound
+// digest, and the exact pre-filled reply line — the operator reads one shape
+// for every gate of every campaign. Plain text only (GATE_CARD_LINK_LEAK
+// below still enforces no URLs anywhere in the card).
+const GATE_REPLY_LINES = Object.freeze({
+    APPROVE_WRITES: (manifest) => (manifest.digest ? `APPROVE_WRITES ${manifest.digest}` : null),
+    APPROVE_ACCEPTANCE: (manifest) => (manifest.digest ? `APPROVE_ACCEPTANCE ${manifest.digest}` : null),
+    APPROVE_GROUPING: (manifest) => (manifest.digest ? `APPROVE_GROUPING ${manifest.digest}` : null),
+    APPROVE_ROLLBACK: (manifest) => (manifest.digest ? `APPROVE_ROLLBACK ${manifest.digest}` : null),
+    // Per-unit gate: the reply binds the unit id and that unit's journal
+    // digest; a digest here IS the combined batch value only when the
+    // presenter says so, so the manifest carries the exact line to echo.
+    APPROVE_DOCUMENT: (manifest) => (typeof manifest.replyLine === 'string' && manifest.replyLine.trim() !== ''
+        ? manifest.replyLine.trim()
+        : null),
+});
+
+function canonicalGateCard(manifest, indexPath, opened, copied) {
+    const unitList = manifest.units.length > 0
+        ? manifest.units.slice(0, 8).join(', ') + (manifest.units.length > 8 ? ` (+${manifest.units.length - 8} more)` : '')
+        : '(no unit list carried — see the materials index)';
+    const replyLine = (GATE_REPLY_LINES[manifest.gate] || (() => null))(manifest);
+    return [
+        `════ GATE ${manifest.gate} ════`,
+        manifest.session ? `session: ${manifest.session}` : null,
+        manifest.title ? `batch: ${manifest.title}` : null,
+        `units (${manifest.units.length}): ${unitList}`,
+        `materials index: ${indexPath} (${manifest.links.length} link${manifest.links.length === 1 ? '' : 's'}: previews / records / session)`,
+        opened ? 'Index opened in your browser.' : 'Open the index path above to review the materials.',
+        copied ? 'Primary target copied to the clipboard — ⌘V works in a browser address bar or terminal.' : null,
+        manifest.digest ? `bound digest: ${manifest.digest}` : null,
+        replyLine ? 'If approved, reply exactly:' : null,
+        replyLine,
+        '══════════════',
+    ].filter((line) => line !== null).join('\n');
 }
 
 function escapeHtml(text) {
@@ -250,12 +297,7 @@ function main(argv = process.argv) {
         if (!copied) warnings.push('clipboard copy failed');
     }
 
-    const cardSnippet = [
-        `[${manifest.gate}] materials index: ${path.relative(process.cwd(), indexPath)} (${manifest.links.length} link${manifest.links.length === 1 ? '' : 's'}: previews / records / session)`,
-        opened ? 'Index opened in your browser.' : 'Open the index path above to review the materials.',
-        copied ? `Primary target copied to the clipboard — ⌘V works in a browser address bar or terminal (${path.basename(primaryTarget)}).` : null,
-        manifest.digest ? `Bound digest: ${manifest.digest}` : null,
-    ].filter((line) => line !== null).join('\n');
+    const cardSnippet = canonicalGateCard(manifest, path.relative(process.cwd(), indexPath), opened, copied);
     // Scheme-agnostic and case-insensitive: the snippet must carry no
     // clickable-looking target at all — https, HTTPS, file://, any scheme
     // (a leaked file:// path is just as much a link as a web URL).

@@ -61,7 +61,9 @@ test('a valid manifest produces the numbered local index and a link-free card sn
     // index path and digest, never a URL (2026-10-03 ruling)
     assert.doesNotMatch(report.cardSnippet, /https?:\/\//);
     assert.match(report.cardSnippet, /materials index: .*latest\.html/);
-    assert.match(report.cardSnippet, /Bound digest: sha256:/);
+    assert.match(report.cardSnippet, /bound digest: sha256:/);
+    assert.match(report.cardSnippet, /GATE APPROVE_WRITES/);
+    assert.match(report.cardSnippet, /If approved, reply exactly:\nAPPROVE_WRITES sha256:/);
 });
 
 test('malformed manifests fail closed with nothing written', () => {
@@ -116,7 +118,8 @@ test('--from-dryrun extracts writeApprovalPresentation links and binds the batch
     assert.equal(report.gate, 'APPROVE_WRITES');
     assert.equal(report.linkCount, 3);
     // The card snippet binds the digest the APPROVE_WRITES reply carries
-    assert.match(report.cardSnippet, /Bound digest: sha256:bbbb/);
+    assert.match(report.cardSnippet, /bound digest: sha256:bbbb/);
+    assert.match(report.cardSnippet, /APPROVE_WRITES sha256:bbbb/);
     const html = fs.readFileSync(report.indexHtml, 'utf8');
     assert.ok(html.includes('getAsync() — document link (for copy actions: the pre-copy source)'));
     assert.ok(html.includes('queryAsync() — Bitable record') === false);
@@ -236,4 +239,48 @@ test('single-link presentations make the URL itself the primary target; multi-li
     const many = runPresentation(['--manifest', multi, '--index-dir', path.join(multiDir, 'out'), '--json']);
     assert.equal(JSON.parse(one.stdout).primaryTarget, 'https://host/wiki/only');
     assert.equal(JSON.parse(many.stdout).primaryTarget, path.join(multiDir, 'out', 'latest.html'));
+});
+
+// --- canonical card (2026-10-10): one layout for every gate of every
+// campaign — units list and the pre-filled reply line are part of the card,
+// so a conversation switch cannot change what the operator sees ---
+
+test('the canonical card carries the unit composition and the exact pre-filled reply line', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-card-'));
+    const indexDir = path.join(dir, 'out');
+    const manifest = writeManifest(dir, {
+        gate: 'APPROVE_DOCUMENT',
+        title: 'document gate — Vector:get',
+        digest: `sha256:${'c'.repeat(64)}`,
+        session: 'tmp/sdk-release-scout/java-v30-session.json',
+        units: ['java:v2-Vector:get'],
+        replyLine: 'APPROVE_DOCUMENT review:java:v2-Vector:get sha256:cccc',
+        links: [
+            { label: 'Vector:get — page', url: 'https://zilliverse.feishu.cn/wiki/vg' },
+            { label: 'Vector:get — Bitable record', url: 'https://zilliverse.feishu.cn/base/t/rec' },
+        ],
+    });
+    const result = runPresentation(['--manifest', manifest, '--index-dir', indexDir, '--json']);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.match(report.cardSnippet, /units \(1\): java:v2-Vector:get/);
+    assert.match(report.cardSnippet, /If approved, reply exactly:\nAPPROVE_DOCUMENT review:java:v2-Vector:get sha256:cccc/);
+    assert.doesNotMatch(report.cardSnippet, /:\/\//);
+});
+
+test('long unit lists truncate at eight with a count tail; unknown gates carry no reply line', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-trunc-'));
+    const indexDir = path.join(dir, 'out');
+    const units = Array.from({ length: 10 }, (_, index) => `go:Cat:Unit${index}`);
+    const manifest = writeManifest(dir, {
+        gate: 'APPROVE_WRITES',
+        digest: `sha256:${'d'.repeat(64)}`,
+        units,
+        links: [{ label: 'only link', url: 'https://zilliverse.feishu.cn/wiki/x' }],
+    });
+    const result = runPresentation(['--manifest', manifest, '--index-dir', indexDir, '--json']);
+    assert.equal(result.status, 0, result.stderr);
+    const report = JSON.parse(result.stdout);
+    assert.match(report.cardSnippet, /units \(10\): go:Cat:Unit0, .*go:Cat:Unit7 \(\+2 more\)/);
+    assert.match(report.cardSnippet, /APPROVE_WRITES sha256:d{64}/);
 });

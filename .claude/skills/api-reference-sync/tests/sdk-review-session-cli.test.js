@@ -678,3 +678,97 @@ test('combined digest derivation refuses unmapped pendings and reports through s
   });
   assert.equal(deriveCombinedAcceptanceDigest(empty), null);
 });
+
+// --- handoff (cross-chat rotation entry point: next batch + ready commands
+// from durable state alone; the 30-60min "find the next batch" cost dies) ---
+
+test('handoff derives the document-gate batch with journal digests and the combined digest', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-handoff-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const manifestTwo = {
+    schemaVersion: 1,
+    manifestDigest: 'sha256:review-manifest-handoff',
+    units: [
+      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' },
+      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b' },
+    ],
+    unassignedResourceActionIds: [],
+  };
+  const journalEntries = (actionId) => [
+    { type: 'prepared', actionId },
+    { type: 'observed', actionId, status: 'success', verified: true },
+    { type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  const writeJournal = (name, actionId) => {
+    const entries = journalEntries(actionId);
+    const file = path.join(directory, name);
+    fs.writeFileSync(file, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+    return { file, digest: digestSemantic(entries) };
+  };
+  const journalA = writeJournal('a.jsonl', 'node:Collections:a');
+  let session = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:handoff',
+    language: 'node', sdkName: 'node', track: 'v3.0.x', reviewUnitManifest: manifestTwo,
+  });
+  session = recordDocumentExecution(session, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: journalA.file,
+    executionJournalDigest: journalA.digest,
+  });
+  saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
+
+  const stdout = [];
+  await runCli({
+    argv: ['node', 'sdk-review-session', 'handoff', '--session', sessionPath],
+    dependencies: { onStdout: (line) => stdout.push(line) },
+  });
+  const handoff = JSON.parse(stdout.join('\n'));
+  assert.equal(handoff.batch.gate, 'APPROVE_DOCUMENT');
+  assert.deepEqual(handoff.batch.units, ['review:node:Collections:a']);
+  assert.deepEqual(handoff.batch.journalDigests, [journalA.digest]);
+  assert.equal(handoff.combinedAcceptanceDigest.error, undefined);
+  assert.match(typeof handoff.combinedAcceptanceDigest === 'string' ? handoff.combinedAcceptanceDigest : '', /^sha256:[0-9a-f]{64}$/);
+  assert.ok(handoff.steps.some((step) => /present the document gate/.test(step.step)));
+});
+
+test('handoff slices the next write batch (≤20, manifest order) and substitutes a recipe', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-handoff-2-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const units = Array.from({ length: 25 }, (_, index) => ({
+    reviewUnitId: `review:node:Cat:u${index}`,
+    documentStableId: `node:Cat:u${index}`,
+  }));
+  saveReviewSession(sessionPath, createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:handoff2',
+    language: 'node', sdkName: 'node', track: 'v3.0.x',
+    reviewUnitManifest: { schemaVersion: 1, manifestDigest: 'sha256:m2', units, unassignedResourceActionIds: [] },
+  }), { expectedPreviousDigest: null });
+
+  const recipe = {
+    schemaVersion: 1,
+    campaign: 'node-v30',
+    env: { BASE_TOKEN: 'base-x', TABLE_ID: 'tbl-x' },
+    dryRun: ['node', 'bin/sdk-doc-sync.js', '--language', 'node', '--resume-session', '{{session}}'],
+    execute: ['node', 'bin/sdk-doc-sync.js', 'execute', '--session', '{{session}}', '--approve-batch-digest', '{{batchDigest}}'],
+    notes: ['resume 必须全量 scope 文件'],
+  };
+  const recipePath = path.join(directory, 'recipe.json');
+  fs.writeFileSync(recipePath, JSON.stringify(recipe));
+
+  const stdout = [];
+  await runCli({
+    argv: ['node', 'sdk-review-session', 'handoff', '--session', sessionPath, '--recipe', recipePath],
+    dependencies: { onStdout: (line) => stdout.push(line) },
+  });
+  const handoff = JSON.parse(stdout.join('\n'));
+  assert.equal(handoff.batch.gate, 'APPROVE_WRITE');
+  assert.equal(handoff.batch.units.length, 20);
+  assert.equal(handoff.batch.units[0], 'review:node:Cat:u0');
+  assert.equal(handoff.progress.remaining, 25);
+  const envStep = handoff.steps.find((step) => step.step === 'export env');
+  assert.deepEqual(envStep.env, { BASE_TOKEN: 'base-x', TABLE_ID: 'tbl-x' });
+  const dryRunStep = handoff.steps.find((step) => /dry-run/.test(step.step));
+  assert.deepEqual(dryRunStep.command, ['node', 'bin/sdk-doc-sync.js', '--language', 'node', '--resume-session', sessionPath]);
+  const notesStep = handoff.steps.find((step) => step.step === 'campaign notes');
+  assert.deepEqual(notesStep.notes, ['resume 必须全量 scope 文件']);
+});

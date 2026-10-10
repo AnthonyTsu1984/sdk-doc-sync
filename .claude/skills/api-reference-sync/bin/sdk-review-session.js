@@ -83,6 +83,7 @@ const ARG_SPECS = Object.freeze([
   { flag: '--reply', key: 'reply', kind: 'value' },
   { flag: '--gate-manifest', key: 'gateManifest', kind: 'value' },
   { flag: '--dry-run', key: 'dryRun', kind: 'boolean' },
+  { flag: '--recipe', key: 'recipe', kind: 'value' },
   { flag: '--json', key: 'json', kind: 'boolean' },
 ]);
 const ARG_BY_FLAG = new Map(ARG_SPECS.map((spec) => [spec.flag, spec]));
@@ -804,8 +805,7 @@ function nextGateOf(session) {
   return { gate: 'APPROVE_ACCEPTANCE', reviewUnitId: null };
 }
 
-function status(session, sessionPath) {
-  const expected = session.reviewUnitManifest?.units?.map((unit) => unit.reviewUnitId).sort() || [];
+function status(session, sessionPath) {  const expected = session.reviewUnitManifest?.units?.map((unit) => unit.reviewUnitId).sort() || [];
   const accepted = (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort();
   const acceptedSet = new Set(accepted);
   // Derived FRESH from the store on every status read (go-v30 b36 pinning:
@@ -840,6 +840,111 @@ function status(session, sessionPath) {
     // needs to rerun or reconcile it deterministically.
     activeRollback: session.activeRollback || null,
     scanStateUpdated: session.scanStateUpdated === true,
+  };
+}
+
+// Cross-chat handoff (2026-10-10): campaign chats rotate at ~42% context and
+// a fresh chat used to spend 30-60 minutes rediscovering "what is the next
+// batch and which commands run it". `handoff` derives everything from the
+// durable session state alone: the next gate (nextGateOf), the batch slice
+// (pending executions for document gates, the next ≤N unaccepted units for
+// write gates), the digests the replies will bind (per-unit journal digests,
+// combinedAcceptanceDigest), and ready-to-run command skeletons — optionally
+// materialized through a per-campaign recipe file (the durable form of the
+// batch method; see SKILL.md "Batch execution runbook").
+const HANDOFF_BATCH_CAP = 20;
+
+function handoffBatchOf(session) {
+  if (session.status === 'finalized') return { gate: null, units: [], reason: 'session finalized — archive only' };
+  if (session.activeRollback) {
+    return { gate: 'RESOLVE_ROLLBACK', units: [session.activeRollback.reviewUnitId], reason: 'a rollback lease is in flight; resolve it before any new gate' };
+  }
+  const pendings = Array.isArray(session.pendingExecutions)
+    ? session.pendingExecutions
+    : (session.activeExecution ? [session.activeExecution] : []);
+  if (pendings.length > 0) {
+    return {
+      gate: 'APPROVE_DOCUMENT',
+      units: pendings.slice(0, HANDOFF_BATCH_CAP).map((pending) => pending.reviewUnitId),
+      journalDigests: pendings.slice(0, HANDOFF_BATCH_CAP).map((pending) => pending.executionJournalDigest),
+      reason: `${pendings.length} executed unit(s) await the document gate`,
+    };
+  }
+  const acceptedIds = new Set((session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId));
+  const nextUnits = (session.reviewUnitManifest?.units || [])
+    .filter((unit) => !acceptedIds.has(unit.reviewUnitId))
+    .slice(0, HANDOFF_BATCH_CAP);
+  if (nextUnits.length > 0) {
+    return {
+      gate: 'APPROVE_WRITE',
+      units: nextUnits.map((unit) => unit.reviewUnitId),
+      stableIds: nextUnits.map((unit) => unit.documentStableId || unit.stableId || null),
+      reason: `next write batch of ${nextUnits.length} unaccepted unit(s), manifest order`,
+    };
+  }
+  if (session.acceptanceFlow === 'two-gate') return { gate: 'CLOSE_SESSION', units: [], reason: 'every unit finalized — close the session to advance scan-state' };
+  return { gate: 'BUILD_ACCEPTANCE', units: [], reason: 'legacy flow: build the campaign acceptance' };
+}
+
+function handoffSteps(session, sessionPath, summary, batch, recipe) {
+  const substitute = (parts, values) => parts.map((part) => part.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? `{{${key}}}`));
+  const base = { session: sessionPath };
+  const steps = [];
+  const push = (step, parts, values, env) => steps.push({ step, command: substitute(parts, { ...base, ...values }), env: env || undefined });
+
+  if (recipe?.env && Object.keys(recipe.env).length > 0) {
+    steps.push({ step: 'export env', env: recipe.env });
+  }
+  if (batch.gate === 'RESOLVE_ROLLBACK') {
+    push('inspect the rollback lease', ['node', 'bin/sdk-review-session.js', 'status', '--session', '{{session}}'], {});
+    steps.push({ step: 'resolve the lease (operator)', note: `activeRollback: ${JSON.stringify(session.activeRollback?.reviewUnitId)} — rerun the rollback execution or reconcile, then re-run handoff` });
+  } else if (batch.gate === 'APPROVE_WRITE') {
+    if (recipe?.dryRun) push('full-scope dry-run (resume requires the FULL scope file)', recipe.dryRun, {});
+    else push('full-scope dry-run (resume requires the FULL scope file)', ['node', '.claude/skills/api-reference-sync/bin/sdk-doc-sync.js', '<plan args: --sdk-dir --language --sdk-version --source-type --targets --reference-context --release-scope --resume-session>', '--session', '{{session}}'], {});
+    push('present the write gate (canonical card)', ['node', '.claude/skills/api-reference-sync/scripts/gate-presentation.js', '--from-dryrun', '<dryrun.json>'], {});
+    if (recipe?.execute) push('execute the approved batch (digests from the dry-run, never hand-typed)', recipe.execute, {});
+    else push('execute the approved batch (digests from the dry-run, never hand-typed)', ['node', '.claude/skills/api-reference-sync/bin/sdk-doc-sync.js', '<execute: --approve-batch-digest sha256:… --auto-approve --placement-walk-digest sha256:…>', '--session', '{{session}}'], {});
+  } else if (batch.gate === 'APPROVE_DOCUMENT') {
+    push('present the document gate(s) (canonical card)', ['node', '.claude/skills/api-reference-sync/scripts/gate-presentation.js', '--manifest', '<gate manifest json>'], {});
+    if (recipe?.acceptDocument) {
+      for (const [index, unit] of batch.units.entries()) {
+        push(`accept ${unit}`, recipe.acceptDocument, { reviewUnitId: unit, digest: batch.journalDigests?.[index] ?? '' });
+      }
+    } else {
+      steps.push({
+        step: 'accept the reviewed units',
+        note: `accept-document per unit (--review-unit-id <id> --execution-journal <path> --execution-journal-digest <pending journal digest> --touched-records <file> --document-link/--record-link) or one resolve-batch-review reply covering the batch; batch combined digest: ${typeof summary.combinedAcceptanceDigest === 'string' ? summary.combinedAcceptanceDigest : '(derive via status after acceptance)'}`,
+      });
+    }
+  } else if (batch.gate === 'CLOSE_SESSION') {
+    if (recipe?.closeSession) push('close the session (advances scan-state once)', recipe.closeSession, {});
+    else push('close the session (advances scan-state once)', ['node', '.claude/skills/api-reference-sync/bin/sdk-review-session.js', 'close-session', '--session', '{{session}}', '--scan-state-key', '<lang:track>', '--scan-state-entry', '<entry.json>'], {});
+  } else if (batch.gate === 'BUILD_ACCEPTANCE') {
+    push('build campaign acceptance (legacy flow)', ['node', '.claude/skills/api-reference-sync/bin/sdk-review-session.js', 'build-acceptance', '--session', '{{session}}'], {});
+  }
+  if (recipe?.notes && recipe.notes.length > 0) {
+    steps.push({ step: 'campaign notes', notes: recipe.notes });
+  }
+  return steps;
+}
+
+function buildHandoff(session, sessionPath, recipe) {
+  const summary = status(session, sessionPath);
+  const batch = handoffBatchOf(session);
+  return {
+    schemaVersion: 1,
+    command: 'handoff',
+    generatedAt: new Date().toISOString(),
+    sessionPath,
+    sessionId: session.sessionId,
+    status: session.status,
+    acceptanceFlow: session.acceptanceFlow || 'legacy',
+    nextGate: summary.nextGate,
+    progress: { accepted: summary.acceptedReviewUnitIds.length, remaining: summary.remainingReviewUnitIds.length },
+    batch,
+    combinedAcceptanceDigest: typeof summary.combinedAcceptanceDigest === 'string' ? summary.combinedAcceptanceDigest : null,
+    steps: handoffSteps(session, sessionPath, summary, batch, recipe),
+    recipePath: recipe?.__path || null,
   };
 }
 
@@ -1221,7 +1326,24 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     out(`Grouping approval bound to session ${session.sessionId}: ${receipt.proposalDigest}`);
     out(created ? `Durable receipt: ${receiptPath}` : `Durable receipt already recorded: ${receiptPath} (approvedAt ${JSON.parse(fs.readFileSync(receiptPath, 'utf8')).approvedAt})`);
   } else if (args.command !== 'status') {
-    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, resolve-batch-review, approve-grouping, list-learning-events, record-learning-suppression, build-acceptance, record-decision, status, or record-finalization');
+    if (args.command === 'handoff') {
+      // Cross-chat handoff: derive the next batch and ready commands from
+      // durable state alone; --recipe materializes a per-campaign invocation
+      // recipe (env + command templates + notes) into the skeletons.
+      let recipe = null;
+      if (args.recipe) {
+        const recipePath = path.resolve(args.recipe);
+        recipe = JSON.parse(fs.readFileSync(recipePath, 'utf8'));
+        if (!recipe || typeof recipe !== 'object' || Array.isArray(recipe)) {
+          throw new Error(`--recipe must point to a JSON object recipe file: ${recipePath}`);
+        }
+        recipe.__path = recipePath;
+      }
+      const handoff = buildHandoff(session, sessionPath, recipe);
+      out(JSON.stringify(handoff, null, 2));
+      return { session, handoff };
+    }
+    throw new Error('Command must be accept-document, backfill-targets, close-session, migrate-to-two-gate, transfer-unit-completion, request-document-changes, resolve-batch-review, approve-grouping, list-learning-events, record-learning-suppression, build-acceptance, record-decision, handoff, status, or record-finalization');
   }
 
   const summary = status(session, sessionPath);

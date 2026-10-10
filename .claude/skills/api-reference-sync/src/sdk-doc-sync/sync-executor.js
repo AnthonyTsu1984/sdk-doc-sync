@@ -1341,13 +1341,7 @@ class SyncExecutor {
   }
 
   async _executeCreateAndRepoint(plan, artifact, action, result) {
-    let created;
-    try {
-      created = await this._createDocument(plan, artifact, action);
-    } catch (error) {
-      await this._cleanupOrphanedCreateShell(error, result);
-      throw error;
-    }
+    const created = await this._createDocument(plan, artifact, action);
     result.createdDocument = created;
     result.completedSteps.push('createDocument');
     this._assertCreatedDocumentLink(plan, created);
@@ -1681,6 +1675,11 @@ class SyncExecutor {
     completedSteps = completedSteps.filter((step) => (
       step !== 'verifySharedTokenEvidence' && step !== 'verifyTargetPlacement'
       && step !== 'verifyResourceContainment' && step !== 'verifyCopyStructure'
+      // The orphaned-shell cleanup journals deleteDocument/deleteDocumentFailed
+      // on the failing CREATE itself; it is remediation, not progress, so a
+      // mid-create failure still infers createDocument (not the generic
+      // 'execute').
+      && step !== 'deleteDocument' && step !== 'deleteDocumentFailed'
     ));
     if (plan.action === 'CREATE_FOLDER') {
       if (completedSteps.length === 0) return 'verifyResourceAbsent';

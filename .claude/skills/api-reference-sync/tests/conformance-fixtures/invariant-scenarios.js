@@ -698,6 +698,57 @@ const scenarios = {
     }
   },
 
+  // --- api.absolute-link-urls intake mount (go-v30 b19 orphan-shell root
+  // cause: a relative .md link in a structured-route description field
+  // survived planning and only died at create_blocks, after the drive shell
+  // had landed). The preflight refuses it before a plan exists; fenced code
+  // that merely SHOWS markdown link syntax must stay exempt.
+
+  async contentRelativeLinkIntakeBlocked() {
+    const fs = require('node:fs');
+    const os = require('node:os');
+    const path = require('node:path');
+    const { spawnSync } = require('node:child_process');
+    const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'intake-relative-link-'));
+    const contextsPath = path.join(temp, 'contexts.json');
+    // Failure bytes are the go-v30 b19 incident's real forms: cross-directory
+    // `../Collection/FunctionScore.md` (FileResource.md), same-directory
+    // `SearchAggregation.md`, plus a fenced code block that only displays the
+    // syntax (must NOT be flagged) and an absolute link (must NOT be flagged).
+    const entry = {
+      category: 'File',
+      documentationOwnership: 'sdk',
+      examples: '```java\n// [demo](relative-in-code.md) stays code, not a link\n```',
+      exceptions: '',
+      kind: 'function',
+      notes: '',
+      pr: 3537,
+      reasons: [],
+      repository: 'milvus-sdk-go',
+      reviewedEvidence: [],
+      revision: 'v3.0.0',
+      sourceVariants: [],
+      summary: 'This operation lists file resources. See [guide](../Collection/FunctionScore.md) and [search](SearchAggregation.md); also [Milvus](https://milvus.io/docs) is fine.',
+      symbolName: 'ListFileResources',
+      title: 'ListFileResources',
+      verbatimContent: '# ListFileResources\n\nBody with [chain](FunctionChain.md) relative link.',
+    };
+    fs.writeFileSync(contextsPath, JSON.stringify({ contexts: [entry] }));
+    const script = path.join(__dirname, '..', '..', 'scripts', 'intake-preflight.js');
+    const result = spawnSync(process.execPath, [script, '--contexts', contextsPath, '--language', 'go'], {
+      encoding: 'utf8',
+    });
+    fs.rmSync(temp, { recursive: true, force: true });
+    return {
+      exitCode: result.status,
+      flaggedRelative: /INTAKE_RELATIVE_LINK_URL[^\n]*FunctionScore\.md/.test(result.stdout),
+      flaggedSameDir: /INTAKE_RELATIVE_LINK_URL[^\n]*SearchAggregation\.md/.test(result.stdout),
+      flaggedChain: /INTAKE_RELATIVE_LINK_URL[^\n]*FunctionChain\.md/.test(result.stdout),
+      flaggedAbsolute: /INTAKE_RELATIVE_LINK_URL[^\n]*milvus\.io/.test(result.stdout),
+      flaggedFenced: /INTAKE_RELATIVE_LINK_URL[^\n]*relative-in-code\.md/.test(result.stdout),
+    };
+  },
+
   // --- api.literal-include-preserved scenario (production artifact provider) ---
 
   async contentIncludeRebuildBlocked() {

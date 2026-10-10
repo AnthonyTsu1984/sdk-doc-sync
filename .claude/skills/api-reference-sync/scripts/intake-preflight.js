@@ -24,6 +24,9 @@
 //   INTAKE_CONTEXT_KEYS_MISSING / INTAKE_CONTEXT_KEYS_UNEXPECTED
 //   INTAKE_VERBATIM_EMPTY, INTAKE_VERBATIM_BARE_NOTES
 //   INTAKE_NOTES_KEY_NONEMPTY, INTAKE_SUMMARY_REGISTER, CONTENT_CJK_MIXING
+//   INTAKE_RELATIVE_LINK_URL (markdown link to a non-absolute URL anywhere in
+//   the entry, fence-aware — intake-side parity with the writer's
+//   RELATIVE_LINK_URL_REJECTED; go-v30 orphan-shell root cause)
 //   INTAKE_PR_MISSING (warn — scan-only actions legitimately have no PR)
 //   STYLE_MIRROR_ENTRY_INVALID / STYLE_MIRROR_SOURCE_NOT_ALLOWLISTED
 //   (batch 3: styleMirrors must reference operator-designated exemplar
@@ -33,6 +36,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { CJK_PATTERN } = require('../src/sdk-doc-sync/layout-conformance');
+const { collectRelativeLinkFindings } = require('../src/sdk-doc-sync/link-policy');
 const {
     loadStyleMirrorAllowlist,
     checkStyleMirrors,
@@ -172,6 +176,18 @@ function main(argv = process.argv) {
 
         const cjk = cjkOffendingTexts(entry);
         for (const detail of cjk) report('error', 'CONTENT_CJK_MIXING', identity, detail);
+
+        // Intake-side parity with the writer's RELATIVE_LINK_URL_REJECTED
+        // (api.absolute-link-urls): a relative .md link anywhere in the entry
+        // — verbatimContent, summary, or nested structured-route fields — is
+        // refused here, before a plan exists, instead of mid-CREATE after the
+        // drive shell has landed (go-v30 b19 ListFileResources orphan-shell
+        // incident). Fenced code blocks are exempt: code that SHOWS markdown
+        // link syntax converts to a code block, never a link object.
+        for (const finding of collectRelativeLinkFindings(entry)) {
+            report('error', 'INTAKE_RELATIVE_LINK_URL', identity,
+                `${finding.path} line ${finding.line}: ${finding.excerpt} → ${finding.url} — resolve to an absolute in-KB docx URL before planning (api.absolute-link-urls)`);
+        }
 
         if ('styleMirrors' in entry) {
             const { violations } = checkStyleMirrors({

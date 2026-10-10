@@ -154,3 +154,57 @@ test('entries without styleMirrors never load the allowlist (absence is the revi
     );
     assert.equal(result.status, 0, result.stderr);
 });
+
+// --- INTAKE_RELATIVE_LINK_URL (api.absolute-link-urls v2 intake mount) ---
+// Failure bytes are the go-v30 campaign's real relative-link family: the
+// cross-directory and same-directory forms that blocked b19/b36, the cpp
+// same-directory sibling, and the structured-route residue found in
+// requestVariants[].inputs[].name / callableMembers[].signature after the
+// campaign closed. Fenced code that only SHOWS link syntax stays exempt.
+
+test('relative markdown links are refused at intake across verbatim, summary, and nested structured fields', () => {
+    const { result } = runPreflight({
+        'go:File:ListFileResources': makeContextEntry({
+            repository: 'milvus-io/milvus-sdk-go',
+            category: 'File',
+            symbolName: 'ListFileResources',
+            summary: 'This operation lists file resources. See [guide](../Collection/FunctionScore.md).',
+            verbatimContent: '# ListFileResources\n\nSee [search](SearchAggregation.md) and [chain](FunctionChain.md).\n',
+        }),
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*\.\.\/Collection\/FunctionScore\.md/);
+    assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*SearchAggregation\.md/);
+    assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*FunctionChain\.md/);
+    // The finding names the field path so the fix is mechanically locatable
+    assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL go:File:ListFileResources — summary line 1:/);
+});
+
+test('absolute http(s) links and fenced code that displays link syntax pass clean', () => {
+    const { result } = runPreflight({
+        'go:File:ListFileResources': makeContextEntry({
+            repository: 'milvus-io/milvus-sdk-go',
+            category: 'File',
+            symbolName: 'ListFileResources',
+            summary: 'This operation lists file resources. See [Milvus](https://milvus.io/docs) and the [KB page](https://zilliverse.feishu.cn/docx/AAA).',
+            verbatimContent: '# ListFileResources\n\n```java\n// demo: [x](relative-in-code.md)\n```\n',
+        }),
+    });
+    assert.equal(result.status, 0, result.stdout);
+});
+
+test('structured-route residue (requestVariants/callableMembers link text) is flagged by the deep walk', () => {
+    const { result } = runPreflight({
+        'go:Client:DropAlias': makeContextEntry({
+            repository: 'milvus-io/milvus-sdk-go',
+            category: 'Client',
+            symbolName: 'DropAlias',
+            verbatimContent: '',
+            requestVariants: [{ inputs: [{ name: '[alias](Alias.md)', type: 'string' }] }],
+            callableMembers: [{ signature: 'WithDataType(dataType [FieldType](FieldType.md))' }],
+        }),
+    }, ['--route', 'structured', '--allow-missing-verbatim']);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*requestVariants\[0\]\.inputs\[0\]\.name[^\n]*Alias\.md/);
+    assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*callableMembers\[0\]\.signature[^\n]*FieldType\.md/);
+});

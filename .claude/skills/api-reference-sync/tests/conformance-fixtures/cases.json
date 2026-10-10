@@ -611,5 +611,20 @@
       "runner": "invariant-conformance",
       "scenario": "process-learning-execution-wall-captured"
     }
+  },
+  {
+    "id": "content-relative-link-intake-blocked",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "contentRelativeLinkIntakeBlocked"
+    },
+    "assertions": {
+      "exitCode": 1,
+      "flaggedRelative": true,
+      "flaggedSameDir": true,
+      "flaggedChain": true,
+      "flaggedAbsolute": false,
+      "flaggedFenced": false
+    }
   }
 ]

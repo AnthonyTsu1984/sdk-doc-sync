@@ -5,7 +5,7 @@
   "invariants": [
     {
       "id": "api.absolute-link-urls",
-      "version": 1,
+      "version": 2,
       "risk": "content-fidelity",
       "scope": "all-governed-markdown-writes",
       "status": "runtime-enforced",
@@ -13,10 +13,11 @@
         "evidence",
         "pre-write"
       ],
-      "statementDigest": "sha256:af716100e3170d117b5c73021c0a31dc63d84a79958fb01db9fddc04a95da9c5",
+      "statementDigest": "sha256:8e5f1fa06a254305736357c665d1784b989b022c930c33e9e9611ace2ba5c54f",
       "fixtureIds": [
         "content-relative-link-resolved",
-        "content-relative-link-blocked"
+        "content-relative-link-blocked",
+        "content-relative-link-intake-blocked"
       ],
       "enforcers": [
         {
@@ -32,9 +33,16 @@
           "codes": [
             "RELATIVE_LINK_URL_REJECTED"
           ]
+        },
+        {
+          "stage": "evidence",
+          "module": ".claude/skills/api-reference-sync/scripts/intake-preflight.js",
+          "codes": [
+            "INTAKE_RELATIVE_LINK_URL"
+          ]
         }
       ],
-      "notes": "Phase 4 (campaign content fidelity): resolveRelativeLinks (productized from the campaign builder, including the same-directory form) rewrites repo-relative .md links to in-KB docx URLs from reviewed snapshot evidence before planning, and MarkdownToFeishu block-carrying mutations decode every text_element_style link URL and refuse non-absolute values before the first writer call (Feishu block API schema mismatch 1770006)."
+      "notes": "Phase 4 (campaign content fidelity): resolveRelativeLinks (productized from the campaign builder, including the same-directory form) rewrites repo-relative .md links to in-KB docx URLs from reviewed snapshot evidence before planning, and MarkdownToFeishu block-carrying mutations decode every text_element_style link URL and refuse non-absolute values before the first writer call (Feishu block API schema mismatch 1770006). v2 (2026-10-10, go-v30 b19 orphan-shell postmortem): the absolute-link judgement gained an intake mount (enforcer stage evidence: it judges the reviewed-context evidence file) — scripts/intake-preflight.js deep-walks every string leaf of each reviewed-context entry (verbatim and structured routes alike) and refuses markdown links to non-absolute URLs before planning, fence-aware via src/sdk-doc-sync/link-policy.js, which now also backs the writer predicate (one semantic, one function)."
     },
     {
       "id": "api.changed-inherited-copy-patch",

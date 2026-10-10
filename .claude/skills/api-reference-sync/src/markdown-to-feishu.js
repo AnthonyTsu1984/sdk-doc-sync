@@ -10,6 +10,7 @@ const {
 } = require('./document-ir/block-registry');
 const layoutProfiles = require('./renderers/sdk-layout-profiles');
 const { buildApiSectionModel } = require('./sdk-doc-sync/api-section-model');
+const { isAbsoluteHttpUrl } = require('./sdk-doc-sync/link-policy');
 const { assertWriterMutation } = require('../../doc-ops-core/src/writer-governance');
 
 require('dotenv').config();
@@ -2029,7 +2030,7 @@ class MarkdownToFeishu {
             } catch (_) {
                 // Keep the raw form for the absolute check.
             }
-            if (!/^https?:\/\//i.test(decoded)) offenders.push(decoded);
+            if (!isAbsoluteHttpUrl(decoded)) offenders.push(decoded);
         }
         if (offenders.length > 0) {
             const unique = [...new Set(offenders)];

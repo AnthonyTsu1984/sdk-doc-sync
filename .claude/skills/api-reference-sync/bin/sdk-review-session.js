@@ -861,7 +861,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   if (args.command === 'backfill-targets') {
-    const io0 = {};
+    // dependencies.io (like the batch-review-resolver path) lets hermetic
+    // tests inject bitableWriter instead of a live Bitable.
+    const io0 = dependencies.io || {};
     // One-time stock pass: accepted two-gate units whose records sit at
     // Draft with empty Targets get the KB-wide final value under one gate.
     // 2026-10-09 widening (stock corrections): --records selects an explicit

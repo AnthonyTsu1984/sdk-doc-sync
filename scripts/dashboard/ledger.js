@@ -95,6 +95,22 @@ const SENTINELS = [
     artifactsDir: 'tmp/sdk-release-scout/daily',
     reportName: 'rust-{date}.md',
   },
+  {
+    id: 'node-daily-scan',
+    title: 'Node.js SDK 每日扫描',
+    schedule: '每天 10:15',
+    hour: 10,
+    minute: 15,
+    language: 'node',
+    sdkDir: 'repos/milvus-sdk-node',
+    identityMaps: ['node-v26.json', 'node-v30.json'],
+    // v3.0.x rides the legacy bare `node` scan-state key (no node-v3 alias),
+    // mirroring config/release-tracks.json scanStateKey overrides.
+    scanStateKeys: ['node-v26', 'node'],
+    cursorFile: 'tmp/sdk-release-scout/node-daily-scan-state.json',
+    artifactsDir: 'tmp/sdk-release-scout/daily',
+    reportName: 'node-{date}.md',
+  },
 ];
 
 function readJsonOrNull(absolutePath) {

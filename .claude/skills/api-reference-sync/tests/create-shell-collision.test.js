@@ -57,7 +57,7 @@ function boundGovernance() {
 // payload shape the go-v30 b19 exec4 artifact had.
 const RELATIVE_LINK_MARKDOWN = '# ListFileResources\n\nSee [FileResource](FileResource.md) for details.\n';
 
-function writerTransport({ failCleanupDelete = false } = {}) {
+function writerTransport({ failCleanupDelete = false, preExistingDocs = [] } = {}) {
   const calls = [];
   let shellCreated = false;
   const mockFetch = async (url, options = {}) => {
@@ -68,9 +68,10 @@ function writerTransport({ failCleanupDelete = false } = {}) {
       return { async json() { return { code: 0, data: { document: { document_id: 'doc-shell', revision_id: 1 } } }; } };
     }
     if (method === 'GET' && /\/open-apis\/drive\/v1\/files\?/.test(String(url))) {
-      const files = shellCreated
-        ? [{ token: 'doc-shell', type: 'docx', name: 'ListFileResources' }]
-        : [];
+      const files = [
+        ...preExistingDocs,
+        ...(shellCreated ? [{ token: 'doc-shell', type: 'docx', name: 'ListFileResources' }] : []),
+      ];
       return { async json() { return { code: 0, data: { files, has_more: false } }; } };
     }
     if (method === 'DELETE' && /\/open-apis\/drive\/v1\/files\/doc-shell/.test(String(url))) {
@@ -175,6 +176,38 @@ test('push_markdown reports a failed shell cleanup without masking the original 
       assert.equal(e.createdDocumentCleanedUp, undefined);
       assert.match(String(e.createdDocumentCleanupError), /no permission to delete/);
     },
+  );
+});
+
+test('push_markdown refuses to create beside an existing same-title docx before any write', async () => {
+  const { calls, mockFetch } = writerTransport({
+    preExistingDocs: [{ token: 'doc-occupied', type: 'docx', name: 'ListFileResources' }],
+  });
+  const MarkdownToFeishu = loadMarkdownToFeishuWithFetch(mockFetch);
+  const writer = new MarkdownToFeishu({
+    sourceType: 'drive',
+    rootToken: null,
+    baseToken: 'base-1',
+    governance: boundGovernance(),
+  });
+  writer.tokenFetcher = { token: async () => 'tenant-token' };
+
+  await rejectsWith(
+    writer.push_markdown({
+      markdown_content: '# ListFileResources\n',
+      title: 'ListFileResources',
+      folder_token: 'fld-target',
+      skip_image_upload: true,
+    }),
+    (e) => {
+      assert.equal(e.code, 'CREATE_TITLE_COLLISION_IN_FOLDER');
+      assert.match(e.message, /doc-occupied/);
+    },
+  );
+  assert.equal(
+    calls.filter((call) => call.method === 'POST').length,
+    0,
+    'the writer-level refusal fires before the create POST',
   );
 });
 
@@ -400,4 +433,127 @@ test('SyncExecutor skips redundant shell cleanup when the writer already deleted
   assert.equal(result.status, 'error');
   assert.equal(result.error.code, 'RELATIVE_LINK_URL_REJECTED');
   assert.equal(calls.filter((call) => call[0] === 'deleteDocument').length, 0, 'no double delete');
+});
+
+test('SyncExecutor refuses a walk-bound CREATE whose target folder holds a same-title docx', async () => {
+  const { calls, documentWriter, bitableWriter } = spies({
+    targetFolderDocs: [{ token: 'doc-orphan', type: 'docx', name: 'createCollection()' }],
+  });
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const createPlan = plan('CREATE', planningContext({
+    current: null,
+    placementWalk: { digest: `sha256:${'c'.repeat(64)}` },
+  }));
+
+  const result = await executor.execute(createPlan, approvalFor(createPlan));
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'CREATE_TITLE_COLLISION_IN_FOLDER');
+  assert.deepEqual(
+    calls.map((call) => call[0]).filter((name) => name !== 'listFolder'),
+    [],
+  );
+});
+
+test('SyncExecutor journals a failed shell cleanup without masking the create failure', async () => {
+  const shellError = Object.assign(
+    new Error('RELATIVE_LINK_URL_REJECTED: create_blocks refuses non-absolute text link URL(s): FileResource.md'),
+    { code: 'RELATIVE_LINK_URL_REJECTED', urls: ['FileResource.md'], createdDocumentToken: 'doc-shell' },
+  );
+  const calls = [];
+  const documentWriter = {
+    async listFolder({ folderToken }) {
+      calls.push(['listFolder', folderToken]);
+      if (folderToken === 'root-v26') return [{ token: 'collections-v26', type: 'folder', name: 'Collections' }];
+      return [];
+    },
+    async createDocument(input) {
+      calls.push(['createDocument', input]);
+      throw shellError;
+    },
+    async deleteDocument(input) {
+      calls.push(['deleteDocument', input]);
+      throw new Error('delete also failed');
+    },
+  };
+  const bitableWriter = {
+    async createRecord(fields) {
+      calls.push(['createRecord', fields]);
+      return { record_id: 'rec-new', fields };
+    },
+  };
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+  const createPlan = plan('CREATE', planningContext({ current: null }));
+
+  const result = await executor.execute(createPlan, approvalFor(createPlan));
+  assert.equal(result.status, 'error');
+  assert.equal(result.error.code, 'RELATIVE_LINK_URL_REJECTED', 'the original rejection is never masked');
+  assert.equal(result.failedStep, 'createDocument', 'cleanup journaling does not degrade step inference');
+  assert.ok(result.completedSteps.includes('deleteDocumentFailed'));
+  assert.deepEqual(result.cleanupError, {
+    step: 'deleteDocument',
+    documentToken: 'doc-shell',
+    message: 'delete also failed',
+  });
+});
+
+test('SyncExecutor refuses a kernel v5 copy whose target folder already holds a same-title docx', async () => {
+  const calls = [];
+  const documentWriter = {
+    async listFolder({ folderToken, type }) {
+      calls.push(['listFolder', folderToken, type]);
+      if (folderToken === 'root-v24-src') return [{ token: 'src-auth-v25', type: 'folder', name: 'Authentication' }];
+      if (folderToken === 'root-v26') return [{ token: 'folder-1', type: 'folder', name: 'Authentication' }];
+      if (folderToken === 'folder-1') return [{ token: 'doc-orphan', type: 'docx', name: 'create_user()' }];
+      return [];
+    },
+    async copyDocument(input) {
+      calls.push(['copyDocument', input]);
+      return { token: 'doc-copy', url: 'https://docs.example/doc-copy', title: input.title };
+    },
+  };
+  const bitableWriter = {
+    async updateRecord() {
+      calls.push(['updateRecord']);
+      throw new Error('updateRecord must not run after a collision refusal');
+    },
+  };
+  const executor = new SyncExecutor({ documentWriter, bitableWriter });
+
+  const result = await executor.execute(Object.freeze({
+    schemaVersion: 1,
+    action: 'COPY_PATCH_AND_REPOINT',
+    stableId: 'python:Authentication:create_user',
+    invariantAttestations: [{
+      id: 'api.versioned-tree-delta',
+      version: 5,
+      decision: 'COPY_PATCH_AND_REPOINT',
+      inputDigest: `sha256:${'d'.repeat(64)}`,
+    }],
+    source: { recordId: 'record-1', documentToken: 'old-doc' },
+    copySource: {
+      documentToken: 'old-doc',
+      link: 'https://zilliverse.feishu.cn/docx/old-doc',
+      placement: { versionRootToken: 'root-v24-src', folderToken: 'src-auth-v25' },
+    },
+    target: {
+      version: 'v2.6.x',
+      parentRecordId: 'parent-1',
+      folderToken: 'folder-1',
+      versionRootToken: 'root-v26',
+      folderAncestry: ['root-v26', 'folder-1'],
+    },
+    artifactDigest: 'digest',
+  }), {
+    approval: { approved: true },
+    artifact: { title: 'create_user()', content: '# create_user()' },
+  });
+
+  assert.equal(result.status, 'error');
+  assert.equal(result.failedStep, 'verifyTargetPlacement');
+  assert.equal(result.error.code, 'CREATE_TITLE_COLLISION_IN_FOLDER');
+  assert.deepEqual(
+    calls.map((call) => call[0]).filter((name) => name !== 'listFolder'),
+    [],
+    'no copy lands after the collision refusal',
+  );
 });

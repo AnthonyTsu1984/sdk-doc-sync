@@ -3619,18 +3619,40 @@ class MarkdownToFeishu {
             document_id = doc_info.document_id;
         }
 
-        // Process images - upload and get file_keys
-        if (!skip_image_upload) {
-            blocks = await this.__process_image_blocks(blocks, document_id);
-        }
+        // Everything below mutates the document this call created (when
+        // doc_info is set). A rejection here — e.g. RELATIVE_LINK_URL_REJECTED
+        // from create_blocks' absolute-link pre-write assertion — must not
+        // strand the empty shell in the target folder: delete it and report
+        // the token on the error, so a caller retry cannot mint a second
+        // same-title docx beside the orphan (go-v30 b19 ListFileResources,
+        // 2026-10-09). Update-mode calls (document_id supplied) never clean
+        // up — the document is not this call's to delete.
+        let uploadResult;
+        try {
+            // Process images - upload and get file_keys
+            if (!skip_image_upload) {
+                blocks = await this.__process_image_blocks(blocks, document_id);
+            }
 
-        // Upload blocks
-        const result = await this.create_blocks({ document_id, blocks });
+            // Upload blocks
+            uploadResult = await this.create_blocks({ document_id, blocks });
+        } catch (error) {
+            if (doc_info) {
+                error.createdDocumentToken = document_id;
+                try {
+                    await this.deleteDocument({ documentToken: document_id });
+                    error.createdDocumentCleanedUp = true;
+                } catch (cleanupError) {
+                    error.createdDocumentCleanupError = String(cleanupError?.message || cleanupError);
+                }
+            }
+            throw error;
+        }
 
         return {
             document_id,
             blocks_created: blocks.length,
-            result,
+            result: uploadResult,
             ...(doc_info && { node_token: doc_info.node_token, wiki_url: doc_info.wiki_url })
         };
     }

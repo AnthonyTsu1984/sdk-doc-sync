@@ -544,28 +544,37 @@ test('parseFinalTargets: subset override, KB default, and fail-closed parsing', 
 
 // 2026-10-09 stock-correction widening: backfill-targets --records accepts an
 // inline JSON array or a file path of recordIds; garbage fails closed.
-test('backfill-targets --records parsing: inline array ok, garbage fails', { skip: !fs.existsSync('tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json') ? 'live-session fixture absent on a fresh checkout (untracked campaign evidence); the hermetic rewrite is in flight on the collision-hardening branch' : false }, () => {
-  const run = (records) => {
-    try {
-      require('node:child_process').execFileSync(process.execPath, [
-        '.claude/skills/api-reference-sync/bin/sdk-review-session.js', 'backfill-targets',
-        '--session', 'tmp/sdk-doc-sync-runs/java-v30-revision/review-session.json',
-        '--base-token', 'AOFDbSmwma9XrNsLa8KcQgt9ngc', '--table-id', 'tbl63oNrbGDCXorc',
-        '--records', records,
-      ], { encoding: 'utf8', timeout: 120000, stdio: ['ignore', 'pipe', 'pipe'] });
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, message: String(error.stderr || error.message) };
-    }
-  };
+// 2026-10-10: hermetic rewrite — the original shelled out against the
+// gitignored local java-v30-revision session plus a live Bitable, so it could
+// never pass on a fresh CI runner (it broke the admission gate for every PR
+// after the java campaign merge). In-process runCli with an injected writer
+// covers the same validation chain without either dependency.
+test('backfill-targets --records parsing: inline array ok, garbage fails', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'backfill-targets-records-'));
+  const sessionPath = path.join(directory, 'session.json');
+  saveReviewSession(sessionPath, createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:backfill',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  }), { expectedPreviousDigest: null });
+  const run = (records) => runCli({
+    argv: [
+      'node', 'sdk-review-session', 'backfill-targets',
+      '--session', sessionPath,
+      '--records', records,
+    ],
+    dependencies: {
+      onStdout: () => {},
+      io: { bitableWriter: { listRecords: async () => [{ record_id: 'rec-live-1', fields: {} }] } },
+    },
+  });
   // non-live record id: must fail closed at the live-record check (after
   // parsing succeeds), proving the array parsed and was validated
-  const missing = run('["rec-does-not-exist"]');
-  assert.equal(missing.ok, false);
-  assert.match(missing.message, /not a live record/);
+  await assert.rejects(() => run('["rec-does-not-exist"]'), /not a live record/);
   // garbage: parse shape rejection
-  const garbage = run('not-json');
-  assert.equal(garbage.ok, false);
+  await assert.rejects(() => run('not-json'));
 });
 
 // --- combinedAcceptanceDigest (go-v30 b36 pinning: the batch acceptance

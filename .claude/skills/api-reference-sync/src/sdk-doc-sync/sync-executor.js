@@ -275,7 +275,7 @@ class SyncExecutor {
           await this._executeRepointVirtualNode(effectivePlan, resourceResolutions, result);
           break;
         case 'CREATE':
-          await this._verifyCreateTargetPlacement(effectivePlan, result);
+          await this._verifyCreateTargetPlacement(effectivePlan, result, artifact, action);
           await this._executeCreate(effectivePlan, artifact, action, result);
           break;
         case 'UPDATE_IN_PLACE':
@@ -826,7 +826,17 @@ class SyncExecutor {
   }
 
   async _executeCreate(plan, artifact, action, result) {
-    const created = await this._createDocument(plan, artifact, action);
+    let created;
+    try {
+      created = await this._createDocument(plan, artifact, action);
+    } catch (error) {
+      // The writer may fail AFTER its drive shell landed (e.g. the block
+      // upload's absolute-link pre-write assertion) and report the shell on
+      // the error; clean it up so the retry cannot mint a second same-title
+      // docx beside the orphan (go-v30 b19 ListFileResources, 2026-10-09).
+      await this._cleanupOrphanedCreateShell(error, result);
+      throw error;
+    }
     result.createdDocument = created;
     result.completedSteps.push('createDocument');
     try {
@@ -953,7 +963,7 @@ class SyncExecutor {
   // before the first write, so a target resolved inside the older tree — the
   // 2026-10-03 in-place-copy failure mode — fails closed here. Plans attested
   // before kernel v3 carry no chain and keep verifying as before.
-  async _verifyCopyTargetPlacement(plan, result) {
+  async _verifyCopyTargetPlacement(plan, result, artifact = null, action = null) {
     const attestation = (plan.invariantAttestations || [])
       .find((entry) => entry?.id === 'api.versioned-tree-delta');
     if (!attestation || attestation.decision !== 'COPY_PATCH_AND_REPOINT') return;
@@ -980,6 +990,10 @@ class SyncExecutor {
       stableId: plan.stableId,
       evidenceLabel: 'target.folderAncestry',
     });
+    // A copy lands a new docx in the target folder — the same folder-level
+    // uniqueness guard as CREATE applies (sameNameInOneDirectory:
+    // always-a-defect).
+    await this._assertNoCreateTitleCollision(plan, artifact, action);
     result.completedSteps.push('verifyTargetPlacement');
   }
 
@@ -1006,41 +1020,95 @@ class SyncExecutor {
   // approved folder chain (target.folderAncestry); the executor re-derives
   // it live. Plans without a chain (legacy evidence) keep the prior
   // behavior; the kernel requires chains for new plans.
-  async _verifyCreateTargetPlacement(plan, result) {
+  async _verifyCreateTargetPlacement(plan, result, artifact = null, action = null) {
+    const walkBound = nonEmptyString(plan.placementWalkDigest);
+    // A walk-bound plan's placement evidence is verified live — chain AND
+    // folder-title uniqueness both need a folder listing. A listing-less
+    // writer cannot verify any of it, so refuse up front rather than dying
+    // in a bare TypeError mid-gate.
+    if (walkBound && !this._writerCanListFolders()) {
+      const error = new SyncExecutionError(
+        'PLACEMENT_FOLDER_LISTING_REQUIRED',
+        `walk-bound CREATE plan for ${plan.stableId} cannot verify target-folder placement or title uniqueness — the document writer exposes no folder listing`,
+      );
+      error.step = 'verifyTargetPlacement';
+      throw error;
+    }
     const chain = plan.target?.folderAncestry;
     // A walk-bound plan (placementWalkDigest) carries the new-era evidence
     // contract: its CREATE must name the target chain — a bound plan without
     // one is missing placement evidence, not legacy. Legacy plans (no bound
     // walk) keep the prior behavior.
-    if (!Array.isArray(chain) || chain.length === 0) {
-      if (typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0) {
-        const error = new SyncExecutionError(
-          'PLACEMENT_TARGET_UNRESOLVED',
-          `walk-bound CREATE plan for ${plan.stableId} carries no target.folderAncestry — placement evidence is missing (supply spec.folderAncestry from the placement audit walk product)`,
-        );
+    if (Array.isArray(chain) && chain.length > 0) {
+      if (!plan.target?.versionRootToken || !plan.target?.folderToken) return;
+      try {
+        await this._assertLiveFolderChain({
+          rootToken: plan.target.versionRootToken,
+          chain,
+          leafToken: plan.target.folderToken,
+          stableId: plan.stableId,
+          evidenceLabel: 'target.folderAncestry',
+        });
+      } catch (error) {
+        if (error.code === 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT') {
+          error.code = 'PLACEMENT_TARGET_UNRESOLVED';
+          error.message = `PLACEMENT_TARGET_UNRESOLVED: the planned target folder for ${plan.stableId} is not live-resolvable under version root ${plan.target.versionRootToken} — re-run the placement audit and replan (${error.message.replace(/^TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT: /, '')})`;
+        }
         error.step = 'verifyTargetPlacement';
         throw error;
       }
-      return;
-    }
-    if (!plan.target?.versionRootToken || !plan.target?.folderToken) return;
-    try {
-      await this._assertLiveFolderChain({
-        rootToken: plan.target.versionRootToken,
-        chain,
-        leafToken: plan.target.folderToken,
-        stableId: plan.stableId,
-        evidenceLabel: 'target.folderAncestry',
-      });
-    } catch (error) {
-      if (error.code === 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT') {
-        error.code = 'PLACEMENT_TARGET_UNRESOLVED';
-        error.message = `PLACEMENT_TARGET_UNRESOLVED: the planned target folder for ${plan.stableId} is not live-resolvable under version root ${plan.target.versionRootToken} — re-run the placement audit and replan (${error.message.replace(/^TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT: /, '')})`;
-      }
+    } else if (typeof plan.placementWalkDigest === 'string' && plan.placementWalkDigest.length > 0) {
+      const error = new SyncExecutionError(
+        'PLACEMENT_TARGET_UNRESOLVED',
+        `walk-bound CREATE plan for ${plan.stableId} carries no target.folderAncestry — placement evidence is missing (supply spec.folderAncestry from the placement audit walk product)`,
+      );
       error.step = 'verifyTargetPlacement';
       throw error;
     }
+    // Folder-level uniqueness is version-independent and runs for legacy
+    // plans too — the collision refusal below.
+    await this._assertNoCreateTitleCollision(plan, artifact, action);
     result.completedSteps.push('verifyTargetPlacement');
+  }
+
+  _writerCanListFolders() {
+    return typeof this.documentWriter?.listFolder === 'function'
+      || typeof this.documentWriter?.list_folder === 'function';
+  }
+
+  // Write-boundary guard for folder-level uniqueness (sameNameInOneDirectory:
+  // always-a-defect): a CREATE whose target folder already holds a docx with
+  // the planned title refuses here. The collision is either a stranded shell
+  // from a failed earlier attempt (dispose of or adopt it first) or an
+  // unrecorded page (operator adjudication) — minting a second same-title
+  // docx beside it is never the answer (go-v30 b19 ListFileResources retry,
+  // 2026-10-09).
+  async _assertNoCreateTitleCollision(plan, artifact = null, action = null) {
+    const folderToken = plan.target?.folderToken;
+    if (!nonEmptyString(folderToken)) return;
+    if (!this._writerCanListFolders()) {
+      // Walk-bound plans were refused up front in _verifyCreateTargetPlacement;
+      // legacy plans with a listing-less writer keep prior behavior.
+      return;
+    }
+    const plannedTitle = (artifactTitle(plan, artifact, action) || '').trim();
+    if (!plannedTitle) return;
+    const siblings = (await this._listFolder(folderToken, 'docx')) || [];
+    const collisions = siblings
+      .filter((item) => (item?.type || 'docx') === 'docx')
+      .filter((item) => ((item?.name || item?.title || '')).trim() === plannedTitle);
+    if (collisions.length > 0) {
+      const collisionTokens = collisions
+        .map((item) => item?.token || item?.file_token || item?.document_id || '(unknown token)')
+        .join(', ');
+      const error = new SyncExecutionError(
+        'CREATE_TITLE_COLLISION_IN_FOLDER',
+        `The target folder ${folderToken} already holds a docx titled "${plannedTitle}" (${collisionTokens}); same-name pages in one directory are always a defect — dispose of or adopt the colliding page, then replan (stableId ${plan.stableId})`,
+        { folderToken, title: plannedTitle, collisionTokens },
+      );
+      error.step = 'verifyTargetPlacement';
+      throw error;
+    }
   }
 
   // Kernel v5 copy-structure mirror gate (campaign-control batch 2c, T2):
@@ -1273,7 +1341,13 @@ class SyncExecutor {
   }
 
   async _executeCreateAndRepoint(plan, artifact, action, result) {
-    const created = await this._createDocument(plan, artifact, action);
+    let created;
+    try {
+      created = await this._createDocument(plan, artifact, action);
+    } catch (error) {
+      await this._cleanupOrphanedCreateShell(error, result);
+      throw error;
+    }
     result.createdDocument = created;
     result.completedSteps.push('createDocument');
     this._assertCreatedDocumentLink(plan, created);
@@ -1297,7 +1371,7 @@ class SyncExecutor {
   }
 
   async _executeCopyPatchAndRepoint(plan, artifact, action, result) {
-    await this._verifyCopyTargetPlacement(plan, result);
+    await this._verifyCopyTargetPlacement(plan, result, artifact, action);
     await this._assertCopyStructureMirror(plan, result);
     await this._assertSharedTokenEvidence(plan, result);
     assertPublishableArtifact(plan, artifact);
@@ -1563,6 +1637,17 @@ class SyncExecutor {
       };
       result.completedSteps.push('deleteDocumentFailed');
     }
+  }
+
+  // A create that failed mid-flight can still have landed its drive shell:
+  // the writer reports it as error.createdDocumentToken (push_markdown does,
+  // after deleting it itself — createdDocumentCleanedUp). Without this
+  // second line the token dies with the error and the retry plans a fresh
+  // create beside the stranded same-title orphan.
+  async _cleanupOrphanedCreateShell(error, result) {
+    const documentToken = error?.createdDocumentToken;
+    if (!nonEmptyString(documentToken) || error?.createdDocumentCleanedUp === true) return;
+    await this._cleanupCreatedDocument({ token: documentToken }, result);
   }
 
   async _rollbackInPlaceMutation(plan, result, originalError) {

@@ -1766,6 +1766,18 @@ class MarkdownToFeishu {
             : [])
             .filter((item) => item.type === 'docx' && (item.name || '').trim() === expectedTitle)
             .map((item) => item.token || item.file_token));
+        // T1-symmetric same-title gate (go-v30 b19 ListFileResources): a
+        // same-titled DOCX sibling in the target folder is always a defect,
+        // reconcile never adopts one (adoption excludes the pre-state), and
+        // creating beside it only mints a duplicate. Refuse before the write
+        // — the executor-level gate covers governed runs; this covers direct
+        // writer callers and the gate→create window. Mirrors createFolder's
+        // FOLDER_NAME_COLLISION refusal.
+        if (preState.size > 0) {
+            const error = new Error(`Document "${expectedTitle}" already exists below ${targetFolderToken} (${[...preState].join(', ')}) — same-name pages in one directory are always a defect`);
+            error.code = 'CREATE_TITLE_COLLISION_IN_FOLDER';
+            throw error;
+        }
         const result = await this.__writeWithReconcile({
             write: async () => {
                 const token = await this.tokenFetcher.token();
@@ -1827,6 +1839,11 @@ class MarkdownToFeishu {
             if (!verified) {
                 const error = new Error(`create document post-check failed: "${title}" (token ${result.document_id}) not verifiable in ${targetFolderToken}`);
                 error.code = 'WRITE_POSTCHECK_FAILED';
+                // The shell (or the reconcile-adopted copy of this run) is
+                // this call's product — report it so the executor's cleanup
+                // second line can dispose of the content-empty page instead
+                // of stranding it beside a future retry.
+                error.createdDocumentToken = result.document_id;
                 throw error;
             }
         }

@@ -26,6 +26,7 @@ const {
   transferUnitCompletion,
   unitStatusOf,
 } = require('../src/sdk-doc-sync/review-session-store');
+const { deriveCombinedAcceptanceDigest } = require('../src/sdk-doc-sync/combined-acceptance-digest');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const {
   buildGroupingApprovalReceipt,
@@ -807,6 +808,17 @@ function status(session, sessionPath) {
   const expected = session.reviewUnitManifest?.units?.map((unit) => unit.reviewUnitId).sort() || [];
   const accepted = (session.acceptedReviewUnits || []).map((unit) => unit.reviewUnitId).sort();
   const acceptedSet = new Set(accepted);
+  // Derived FRESH from the store on every status read (go-v30 b36 pinning:
+  // the acceptance gate's combined digest must come from the last
+  // pendingExecutions read before the gate was presented — never a
+  // hand-assembled or cached value). Gate layers consume this field instead
+  // of rebuilding the formula.
+  let combinedAcceptanceDigest = null;
+  try {
+    combinedAcceptanceDigest = deriveCombinedAcceptanceDigest(session);
+  } catch (error) {
+    combinedAcceptanceDigest = { error: error.code || 'COMBINED_DIGEST_DERIVATION_FAILED', detail: error.message };
+  }
   return {
     sessionPath,
     sessionId: session.sessionId,
@@ -822,6 +834,7 @@ function status(session, sessionPath) {
         ? session.pendingExecutions
         : (session.activeExecution ? [session.activeExecution] : [])
     ).map((item) => item.reviewUnitId),
+    combinedAcceptanceDigest,
     // Surfaced so a ROLLBACK_INTENT_CONFLICT is diagnosable from `status`
     // alone: the lease names the unit, journal, and start time an operator
     // needs to rerun or reconcile it deterministically.

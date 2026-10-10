@@ -567,3 +567,114 @@ test('backfill-targets --records parsing: inline array ok, garbage fails', () =>
   const garbage = run('not-json');
   assert.equal(garbage.ok, false);
 });
+
+// --- combinedAcceptanceDigest (go-v30 b36 pinning: the batch acceptance
+// gate's combined value is derived fresh from pendingExecutions by the
+// store, never hand-assembled at a workflow layer) ---
+
+test('status derives the combined acceptance digest from pendingExecutions via the pinned formula', async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-combined-'));
+  const sessionPath = path.join(directory, 'session.json');
+  const manifestTwo = {
+    schemaVersion: 1,
+    manifestDigest: 'sha256:review-manifest-two',
+    units: [
+      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' },
+      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b' },
+    ],
+    unassignedResourceActionIds: [],
+  };
+  let session = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:combined',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifestTwo,
+  });
+  const journalEntries = (actionId) => [
+    { type: 'prepared', actionId },
+    { type: 'observed', actionId, status: 'success', verified: true },
+    { type: 'completion', status: 'executed', completionSentinel: true },
+  ];
+  const writeJournal = (name, actionId) => {
+    const entries = journalEntries(actionId);
+    const file = path.join(directory, name);
+    fs.writeFileSync(file, `${entries.map((entry) => JSON.stringify(entry)).join('\n')}\n`);
+    return { file, digest: digestSemantic(entries) };
+  };
+  const journalA = writeJournal('a.jsonl', 'node:Collections:a');
+  const journalB = writeJournal('b.jsonl', 'node:Collections:b');
+  const digestA = journalA.digest;
+  const digestB = journalB.digest;
+  session = recordDocumentExecution(session, {
+    reviewUnitId: 'review:node:Collections:a',
+    executionJournalPath: journalA.file,
+    executionJournalDigest: digestA,
+  });
+  session = recordDocumentExecution(session, {
+    reviewUnitId: 'review:node:Collections:b',
+    executionJournalPath: journalB.file,
+    executionJournalDigest: digestB,
+  }, { batchContinue: true });
+  saveReviewSession(sessionPath, session, { expectedPreviousDigest: null });
+
+  const stdout = [];
+  await runCli({
+    argv: ['node', 'sdk-review-session', 'status', '--session', sessionPath],
+    dependencies: { onStdout: (line) => stdout.push(line) },
+  });
+  const summary = JSON.parse(stdout.join('\n'));
+  assert.equal(summary.combinedAcceptanceDigest.error, undefined, JSON.stringify(summary.combinedAcceptanceDigest));
+
+  // Independent recomputation of the pinned formula — proves the CLI surface
+  // equals sha256(canonicalBytes([{reviewUnitId,stableId,batchDigest}…])).
+  const { canonicalBytes } = require('../../doc-ops-core/src/canonical-json');
+  const { createHash } = require('node:crypto');
+  const expected = `sha256:${createHash('sha256').update(canonicalBytes([
+    { reviewUnitId: 'review:node:Collections:a', stableId: 'node:Collections:a', batchDigest: digestA },
+    { reviewUnitId: 'review:node:Collections:b', stableId: 'node:Collections:b', batchDigest: digestB },
+  ])).digest('hex')}`;
+  assert.equal(summary.combinedAcceptanceDigest, expected);
+});
+
+test('combined digest derivation refuses unmapped pendings and reports through status', async () => {
+  const { deriveCombinedAcceptanceDigest } = require('../src/sdk-doc-sync/combined-acceptance-digest');
+  const base = {
+    pendingExecutions: [{ reviewUnitId: 'review:node:Ghost:x', executionJournalDigest: `sha256:${'c'.repeat(64)}` }],
+    reviewUnitManifest: { units: [] },
+  };
+  assert.throws(() => deriveCombinedAcceptanceDigest(base), (error) => error.code === 'COMBINED_DIGEST_UNIT_UNMAPPED');
+
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-combined-err-'));
+  const sessionPath = path.join(directory, 'session.json');
+  saveReviewSession(sessionPath, {
+    ...createReviewSession({
+      sessionId: 'sdk-doc-sync:node:v3.0.x:combined-err',
+      language: 'node',
+      sdkName: 'node',
+      track: 'v3.0.x',
+      reviewUnitManifest: {
+        schemaVersion: 1,
+        manifestDigest: 'sha256:m',
+        units: [{ reviewUnitId: 'review:node:Collections:a' }],
+        unassignedResourceActionIds: [],
+      },
+    }),
+    pendingExecutions: [{ reviewUnitId: 'review:node:Collections:a', executionJournalDigest: `sha256:${'d'.repeat(64)}` }],
+  }, { expectedPreviousDigest: null });
+  const stdout = [];
+  await runCli({
+    argv: ['node', 'sdk-review-session', 'status', '--session', sessionPath],
+    dependencies: { onStdout: (line) => stdout.push(line) },
+  });
+  const summary = JSON.parse(stdout.join('\n'));
+  assert.equal(summary.combinedAcceptanceDigest.error, 'COMBINED_DIGEST_STABLE_ID_MISSING');
+
+  // A session with nothing pending carries no acceptance to combine — null,
+  // not an error, so gate layers can branch on the field without try/catch.
+  const empty = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:combined-empty',
+    language: 'node', sdkName: 'node', track: 'v3.0.x', reviewUnitManifest: manifest(),
+  });
+  assert.equal(deriveCombinedAcceptanceDigest(empty), null);
+});

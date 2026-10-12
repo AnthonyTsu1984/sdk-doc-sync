@@ -411,13 +411,28 @@ class SyncExecutor {
     } else if (result.record) {
       postRecord = captureRecordState(result.record);
     }
+    // Replay-after-partial adoption (node v3.0.6 wall): a folder step that
+    // RESOLVED an existing identity satisfies the approved state without
+    // creating — but the unit product is still that folder, and a rollback
+    // must carry its identity. Fold the resolved token into createdFolder so
+    // the observed capsule names the inverse target; the resolution is
+    // batch-scoped (this exact unit's folder resource), so the folded token
+    // is the approved folder the rollback manifest cites.
+    const adoptedFolder = !result.createdFolder
+      && result.resolvedResource?.kind === 'folder'
+      && result.resolvedResource?.ref === effectivePlan.resource?.ref
+      && nonEmptyString(result.resolvedResource.value)
+      ? { name: effectivePlan.resource?.name || null, token: result.resolvedResource.value }
+      : null;
     return deepFreeze({
       schemaVersion: 1,
       action: effectivePlan.action,
       actionId: effectivePlan.stableId,
       completedSteps: [...(result.completedSteps || [])],
       createdDocument: result.createdDocument ? structuredClone(result.createdDocument) : null,
-      createdFolder: result.createdFolder ? structuredClone(result.createdFolder) : null,
+      createdFolder: result.createdFolder
+        ? structuredClone(result.createdFolder)
+        : (adoptedFolder ? structuredClone(adoptedFolder) : null),
       patchedDocumentToken: result.patchedDocument?.token
         || result.patchedDocument?.documentToken
         || null,

@@ -202,8 +202,20 @@ function pairedJournalActions(entries, unit) {
   // invertible set instead of demanding evidence that cannot exist. An action
   // that mutated before failing always carries its rollback evidence (the
   // executor journals it from the durable result), and stays invertible.
+  // A failure OBSERVED with an empty identity capsule is the same class
+  // (nothing was mutated; the executor journals a schemaVersion-only evidence
+  // shape on refusals) — no produced identity to reverse.
+  const carriesNoProducedIdentity = (evidence) => (
+    !nonEmptyString(evidence?.createdDocument?.token)
+    && !nonEmptyString(evidence?.createdFolder?.token)
+    && !nonEmptyString(evidence?.recordId)
+    && !nonEmptyString(recordId(evidence?.postRecord))
+    && !nonEmptyString(evidence?.patchedDocumentToken)
+  );
   const invertibleObserved = new Map([...observedById].filter(([, entry]) => (
-    !(entry.status === 'failure' && !entry.rollbackEvidence)
+    !(entry.status === 'failure' && (
+      !entry.rollbackEvidence || carriesNoProducedIdentity(entry.rollbackEvidence)
+    ))
   )));
   const unitActionIds = Array.isArray(unit.actionIds) && unit.actionIds.length > 0
     ? unit.actionIds.filter((actionId) => invertibleObserved.has(actionId))
@@ -340,8 +352,20 @@ function inverseFor(pair) {
       };
     }
     case 'CREATE_FOLDER': {
+      // Replay-after-partial adoption (node v3.0.6 wall): an observed capsule
+      // minted before the adopted-folder folding carries createdFolder: null
+      // with the resolved identity riding resolvedResource — accept that
+      // scoped resolution (ref must name this exact action) as the folder
+      // identity, so a unit whose batch adopted its own product can reverse
+      // it and free the canonical journal slot on the next run.
+      const adoptedFolderToken = evidence.resolvedResource?.kind === 'folder'
+        && (evidence.resolvedResource?.ref === capsule.actionId
+          || `resource:${evidence.resolvedResource?.ref}` === capsule.actionId)
+        && nonEmptyString(evidence.resolvedResource.value)
+        ? evidence.resolvedResource.value
+        : null;
       const token = requireValue(
-        folderToken(evidence.createdFolder),
+        folderToken(evidence.createdFolder) || adoptedFolderToken,
         'ROLLBACK_EVIDENCE_MISSING',
         `Created folder identity is missing for ${capsule.actionId}`,
       );

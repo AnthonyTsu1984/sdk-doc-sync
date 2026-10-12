@@ -162,3 +162,42 @@ test('campaignUsage is honest when nothing is attributed yet', (t) => {
   assert.deepEqual(view.perUnit, []);
   assert.equal(view.collectedSince, null);
 });
+
+test('campaignUsage lifetime survives a host rollout rotation', (t) => {
+  const { root } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const rollout = path.join(root, 'rollout');
+  fs.mkdirSync(rollout, { recursive: true });
+  const file = path.join(rollout, 'model-io-sessR.jsonl');
+  fs.writeFileSync(file, turnLine({ input: 5000, output: 900 }) + '\n');
+
+  const db = openDb(root);
+  usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T10:00:00Z') });
+  usage.upsertAttribution(db, 'sessR', 'main::tmp/sdk-release-scout/r-session.json', 'worker-registry', new Date('2026-10-05T10:00:00Z'));
+  const runId = usage.openApproveRun(db, {
+    sessionId: 'sessR',
+    campaignPath: 'main::tmp/sdk-release-scout/r-session.json',
+    unitId: 'review:node:X',
+  }, new Date('2026-10-05T10:01:00Z'));
+  fs.appendFileSync(file, turnLine({ input: 2000, output: 100, startedAt: '2026-10-05T10:02:00Z' }) + '\n');
+  usage.closeApproveRun(db, runId, { rolloutDir: rollout, now: new Date('2026-10-05T10:03:00Z') });
+
+  // Host prunes/rotates the rollout: the file shrinks to a fresh turn list.
+  fs.writeFileSync(file, turnLine({ input: 10, output: 2, startedAt: '2026-10-05T11:00:00Z' }) + '\n');
+  usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T11:01:00Z') });
+
+  const view = usage.campaignUsage(db, 'main::tmp/sdk-release-scout/r-session.json');
+  assert.equal(view.totals.sessions, 1);
+  assert.equal(view.totals.totalTokens, 10 + 2, 'window totals follow the rotated file');
+  assert.equal(view.lifetime.runs, 1);
+  assert.equal(view.lifetime.totalTokens, 2100, 'lifetime keeps the closed-run delta');
+  assert.equal(view.lifetime.inputTokens, 2000);
+  assert.equal(view.lifetime.outputTokens, 100);
+  assert.equal(view.runs.length, 1, 'per-run rows listed');
+  assert.equal(view.runs[0].runId, 1);
+  assert.equal(view.runs[0].unitId, 'review:node:X');
+  assert.equal(view.runs[0].turns, 1);
+  assert.equal(view.runs[0].total, 2100);
+  assert.equal(view.runs[0].input, 2000);
+  assert.equal(view.runs[0].output, 100);
+});

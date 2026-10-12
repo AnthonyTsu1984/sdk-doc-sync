@@ -41,19 +41,35 @@ function saveWorkerRegistry(filePath, map) {
   }
 }
 
-// Same sessionId updates in place (running → idle transitions); a new id
-// appends; the per-card window keeps the most recent MAX_ENTRIES_PER_CARD.
+// Same sessionId updates the STORED entry in place (running → idle
+// transitions mutate the object the callers hold live references to — copies
+// would strand those references and lose the flip); a new id appends; the
+// per-card window keeps the most recent MAX_ENTRIES_PER_CARD. A null
+// sessionId (spawn still resolving its id) always appends — dedup on null
+// would merge concurrent spawns.
 function upsertWorkerEntry(entries, entry) {
   const list = Array.isArray(entries) ? entries.slice() : [];
-  const existing = list.findIndex((e) => e.sessionId === entry.sessionId);
-  if (existing >= 0) list[existing] = { ...list[existing], ...entry };
-  else list.push({ ...entry });
+  if (entry.sessionId != null) {
+    const existing = list.findIndex((e) => e.sessionId === entry.sessionId);
+    if (existing >= 0) {
+      Object.assign(list[existing], entry);
+      return list.slice(-MAX_ENTRIES_PER_CARD);
+    }
+  }
+  list.push(entry);
   return list.slice(-MAX_ENTRIES_PER_CARD);
+}
+
+// Returns the STORED entry so callers keep mutating the registry's object,
+// not a private copy.
+function storedWorkerEntry(map, sessionPath, sessionId) {
+  return (map.get(sessionPath) || []).find((e) => e.sessionId === sessionId) || null;
 }
 
 module.exports = {
   MAX_ENTRIES_PER_CARD,
   loadWorkerRegistry,
   saveWorkerRegistry,
+  storedWorkerEntry,
   upsertWorkerEntry,
 };

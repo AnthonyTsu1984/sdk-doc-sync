@@ -377,10 +377,38 @@ function campaignUsage(db, campaignPath) {
     cacheWrite: acc.cacheWrite + (s.cacheWrite ?? 0),
     totalTokens: acc.totalTokens + (s.totalTokens ?? 0),
   }), { sessions: 0, inputTokens: 0, outputTokens: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 });
+  // Durable campaign-lifetime totals from the closed approve-run deltas. The
+  // per-session counters above follow the host's rollout files, which get
+  // rotated and pruned — after a rotation the window restarts and those
+  // totals undercount. Approve-run deltas are snapshotted at run close and
+  // never rewritten, so this is the number that survives.
+  const lifetimeRow = db.prepare(
+    `SELECT COUNT(*) AS runs,
+            SUM(deltaInput) AS inputTokens,
+            SUM(deltaOutput) AS outputTokens,
+            SUM(deltaTotal) AS totalTokens
+     FROM approve_runs WHERE campaignPath = ? AND state = 'done'`,
+  ).get(campaignPath);
+  // Per-run rows for the board's 逐轮 table: the durable, rotation-proof
+  // record of what each approved turn consumed.
+  const runRows = db.prepare(
+    `SELECT id AS runId, sessionId, unitId, startedAt, endedAt,
+            (endTurns - startTurns) AS turns,
+            deltaInput AS input, deltaOutput AS output, deltaTotal AS total
+     FROM approve_runs WHERE campaignPath = ? AND state = 'done'
+     ORDER BY startedAt DESC`,
+  ).all(campaignPath);
   const firstTsList = sessions.map((s) => s.firstTs).filter(Boolean).sort();
   return {
     campaignPath,
     totals,
+    runs: runRows,
+    lifetime: {
+      runs: lifetimeRow?.runs ?? 0,
+      inputTokens: lifetimeRow?.inputTokens ?? 0,
+      outputTokens: lifetimeRow?.outputTokens ?? 0,
+      totalTokens: lifetimeRow?.totalTokens ?? 0,
+    },
     collectedSince: firstTsList[0] ?? null,
     perUnit: perUnitRows,
     sessions: sessions.map((s) => ({ ...s, harvested: s.turns != null })),

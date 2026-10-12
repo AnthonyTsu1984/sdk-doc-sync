@@ -135,6 +135,10 @@ async function refreshNextGates() {
     try {
       value = await fetchNextGate(target.root, target.sessionPath);
     } catch {
+      // A transient status failure must not clobber a good cached gate with
+      // null (the board would flash "当前无待批准的门"); keep serving the
+      // previous value and retry on the next refresh cycle.
+      if (nextGateCache.has(cardKey)) continue;
       value = null;
     }
     // The status machine cannot see a planned-but-unexecuted rollback (the
@@ -384,6 +388,7 @@ function persistWorkerRegistry() {
 function registerWorker(sessionPath, entry) {
   spawnedWorkers.set(sessionPath, workerRegistry.upsertWorkerEntry(spawnedWorkers.get(sessionPath), entry));
   persistWorkerRegistry();
+  return workerRegistry.storedWorkerEntry(spawnedWorkers, sessionPath, entry.sessionId) || entry;
 }
 
 function parseSpawnSessionId(stdout) {
@@ -569,8 +574,9 @@ function scheduleNotifyAfterWorkerExit() {
 // approval's semantics and digest binding stay with the worker + canonical
 // CLI gates — this is transport only, exactly like /api/approve.
 function dispatchResumeTurn({ key, sessionId, checkoutRoot, line }) {
-  const next = { sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
-  registerWorker(key, next);
+  // Bind to the STORED registry entry — the exit closure below flips its
+  // status and that mutation must land in the persisted registry.
+  const next = registerWorker(key, { sessionId, spawnedAt: new Date().toISOString(), status: 'running' });
   const approveRunId = usageDb
     ? usage.openApproveRun(usageDb, {
       sessionId,

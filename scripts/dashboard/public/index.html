@@ -1098,6 +1098,17 @@ async function renderUsagePanel(c) {
       host.innerHTML = '<div class="empty">尚无本战役的 token 采集（采集自看板批 7 上线起；历史战役无数据）</div>';
       return;
     }
+    const runRows = (u.runs || []).map((r) => `<tr>
+        <td class="num">#${r.runId}</td>
+        <td class="fname">${esc(r.unitId ? humanUnit(r.unitId) : '（战役级）')}</td>
+        <td class="fname" title="${esc(r.sessionId)}">${esc(String(r.sessionId).slice(0, 16))}…</td>
+        <td class="num">${r.turns ?? '—'}</td>
+        <td class="num">${fmtTokens(r.input)}</td>
+        <td class="num">${fmtTokens(r.output)}</td>
+        <td class="num">${fmtTokens(r.total)}</td>
+        <td class="dim">${r.startedAt ? fmt(r.startedAt) : '—'} → ${r.endedAt ? fmt(r.endedAt) : '—'}</td>
+      </tr>`).join('');
+    const lt = (u.lifetime && u.lifetime.runs > 0) ? u.lifetime : null;
     const sessRows = u.sessions.map((s) => `<tr>
         <td class="fname" title="${esc(s.sessionId)}">${esc(String(s.sessionId).slice(0, 20))}…</td>
         <td class="dim">${esc(s.source ?? '—')}</td>
@@ -1117,22 +1128,37 @@ async function renderUsagePanel(c) {
           <td class="dim">${p.lastAt ? rel(p.lastAt) : '—'}</td>
         </tr>`).join('')
       : '<tr><td colspan="6" class="dim" style="text-align:center;padding:12px">暂无看板批准回合的逐篇归因（经界面批准的回合才会记到单篇）</td></tr>';
+    const headerCard = lt
+      ? `<div class="card" style="cursor:default;margin-bottom:12px">
+          <div class="row1">
+            <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(lt.totalTokens)}</span> tokens</span>
+            <span class="meta"><span>输入 ${fmtTokens(lt.inputTokens)}</span><span>输出 ${fmtTokens(lt.outputTokens)}</span><span>批准轮 ${lt.runs}</span></span>
+          </div>
+          <div class="note" style="border:0">逐轮批准回合的固化合计（每轮关闭时快照，宿主清理转录不影响）；上表各列即此数字的构成。</div>
+        </div>`
+      : `<div class="card" style="cursor:default;margin-bottom:12px">
+          <div class="row1">
+            <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(t.totalTokens)}</span> tokens</span>
+            <span class="meta"><span>输入 ${fmtTokens(t.inputTokens)}</span><span>输出 ${fmtTokens(t.outputTokens)}</span><span>缓存读 ${fmtTokens(t.cacheRead)}</span><span>缓存写 ${fmtTokens(t.cacheWrite)}</span><span>会话 ${t.sessions}</span></span>
+          </div>
+          <div class="note" style="border:0">尚无批准轮固化账时按当前采集窗口显示；宿主会清理原始转录，窗口计数会随重写重置。</div>
+        </div>`;
     host.innerHTML = `
-      <div class="card" style="cursor:default;margin-bottom:12px">
-        <div class="row1">
-          <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(t.totalTokens)}</span> tokens</span>
-          <span class="meta"><span>输入 ${fmtTokens(t.inputTokens)}</span><span>输出 ${fmtTokens(t.outputTokens)}</span><span>缓存读 ${fmtTokens(t.cacheRead)}</span><span>缓存写 ${fmtTokens(t.cacheWrite)}</span><span>会话 ${t.sessions}</span></span>
-        </div>
-        <div class="note" style="border:0">采集${u.collectedSince ? `始于 ${fmt(u.collectedSince)}` : '中'}；宿主会清理原始转录，看板每 2 分钟增量落库。人工会话回合计入战役级、无法精确到单篇（如实呈现，不做估算）。</div>
-      </div>
+      ${headerCard}
+      <h2>逐轮批准回合（固化账）</h2>
       <table class="tbl">
-        <thead><tr><th>会话</th><th>归因来源</th><th>回合</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
-        <tbody>${sessRows}</tbody>
+        <thead><tr><th>轮次</th><th>单元</th><th>会话</th><th>回合</th><th>输入</th><th>输出</th><th>合计</th><th>起止</th></tr></thead>
+        <tbody>${runRows || '<tr><td colspan="8" class="dim" style="text-align:center;padding:12px">暂无批准轮（经看板/门禁批准续跑的回合在此逐轮列账）</td></tr>'}</tbody>
       </table>
-      <h2>逐篇写作消耗（看板批准回合）</h2>
+      <h2>逐篇写作消耗（按单元汇总批准轮）</h2>
       <table class="tbl">
         <thead><tr><th>单元</th><th>回合数</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
         <tbody>${unitRows}</tbody>
+      </table>
+      <h2>会话窗口（当前采集窗口，转录轮换会重置）</h2>
+      <table class="tbl">
+        <thead><tr><th>会话</th><th>归因来源</th><th>回合</th><th>输入</th><th>输出</th><th>合计</th><th>最近</th></tr></thead>
+        <tbody>${sessRows}</tbody>
       </table>`;
   } catch {
     host.innerHTML = '<div class="empty">token 数据载入失败</div>';

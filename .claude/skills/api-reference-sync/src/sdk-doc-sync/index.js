@@ -637,18 +637,33 @@ class SdkDocSync {
                     // acceptance path never minted. Synthesize an accepted
                     // placeholder plan (the same NOOP shape the planner emits
                     // for accepted diff-less documents) and skip planner calls.
-                    const finalizedUnitIds = new Set(
-                        (this.reviewSession?.acceptedReviewUnits || [])
-                            .filter((unit) => (unit.touchedRecords || []).some((row) => nonEmptyString(row?.recordId)))
-                            .map((unit) => unit.reviewUnitId),
+                    // finalized (accepted receipts) AND pending-executed rows
+                    // both hold journal-verified identity evidence and must not
+                    // re-enter write planning: a pending row's review gate
+                    // already binds its executed batch, and a held-accepted
+                    // unit has no redo in flight. Change-requested units are
+                    // the ONLY session rows whose re-drive replans for real.
+                    const changeRequestedUnitIds = new Set(
+                        (this.reviewSession?.changeRequests || []).map((row) => row.reviewUnitId),
                     );
+                    const finalizedUnitIds = new Set([
+                        ...(this.reviewSession?.acceptedReviewUnits || [])
+                            .filter((unit) => (unit.touchedRecords || []).some((row) => nonEmptyString(row?.recordId)))
+                            .map((unit) => `accepted:${unit.reviewUnitId}`),
+                        ...((this.reviewSession?.pendingExecutions || (this.reviewSession?.activeExecution ? [this.reviewSession.activeExecution] : [])) || [])
+                            .filter((unit) => nonEmptyString(unit?.executionJournalDigest))
+                            .map((unit) => `pending:${unit.reviewUnitId}`),
+                    ]);
                     const unitRowIds = new Set(
                         (this.reviewSession?.reviewUnitManifest?.units || [])
                             .filter((unit) => unit.documentStableId === plannableAction.stableId)
                             .map((unit) => unit.reviewUnitId),
                     );
-                    const finalizedHere = [...unitRowIds].some((unitId) => finalizedUnitIds.has(unitId));
-                    if (finalizedHere) {
+                    const settledUnitId = [...unitRowIds].find((unitId) => (
+                        !changeRequestedUnitIds.has(unitId)
+                        && (finalizedUnitIds.has(`accepted:${unitId}`) || finalizedUnitIds.has(`pending:${unitId}`))
+                    ));
+                    if (settledUnitId) {
                         const acceptedPadPlan = Object.freeze({
                             schemaVersion: 1,
                             action: 'NOOP',
@@ -661,9 +676,11 @@ class SdkDocSync {
                             preconditions: [],
                             postconditions: Object.freeze([{ type: 'NO_MUTATION' }]),
                             metadata: Object.freeze({
-                                diffAction: 'ACCEPTED_UNIT_NOOP',
-                                acceptedUnit: true,
-                                reason: 'unit finalized under the two-gate acceptance; no redo is in flight',
+                                diffAction: 'SETTLED_UNIT_NOOP',
+                                acceptedUnit: finalizedUnitIds.has(`accepted:${settledUnitId}`),
+                                reason: finalizedUnitIds.has(`accepted:${settledUnitId}`)
+                                    ? 'unit finalized under the two-gate acceptance; no redo is in flight'
+                                    : 'unit executed and verified; the batch document gate binds its review',
                             }),
                         });
                         SyncPlanner.reconcilePlanTargetChain(acceptedPadPlan, this.placementWalkProduct);
@@ -2073,7 +2090,9 @@ class SdkDocSync {
         // the folder facts, BEFORE the live placement stamp below runs.
         const sessionExecutedIds = this._sessionExecutedDocumentIds();
         if (sessionExecutedIds && sessionExecutedIds.has(action.stableId)
-            && !nonEmptyString(current.folderToken)
+            && (!nonEmptyString(current.recordId)
+                || !nonEmptyString(current.documentToken)
+                || !nonEmptyString(current.folderToken))
             && this.reviewSession) {
             const unitRowIds = new Set(
                 (this.reviewSession.reviewUnitManifest?.units || [])
@@ -2092,9 +2111,47 @@ class SdkDocSync {
                 );
                 const rowSource = (executionRow?.touchedRecords?.length ? executionRow : undefined)
                     || (acceptedRow?.touchedRecords?.length ? acceptedRow : undefined);
-                const documentRecord = (rowSource?.touchedRecords || []).find((row) => (
+                let documentRecord = (rowSource?.touchedRecords || []).find((row) => (
                     nonEmptyString(row?.recordId) && nonEmptyString(row?.documentToken)
-                ));
+                )) || null;
+                // A pending row journals the verification identities but not a
+                // touched-records list (that lands at acceptance) — read the
+                // document identity straight from the durable journal.
+                const journalPathRaw = executionRow?.executionJournalPath
+                    || acceptedRow?.executionJournalPath
+                    || null;
+                if (!documentRecord && nonEmptyString(action.stableId)
+                    && nonEmptyString(journalPathRaw) && fs.existsSync(journalPathRaw)) {
+                    try {
+                        const journalEntries = fs.readFileSync(journalPathRaw, 'utf8')
+                            .trim()
+                            .split('\n')
+                            .map((line) => JSON.parse(line));
+                        const observedDoc = journalEntries.find((entry) => (
+                            entry?.type === 'observed'
+                            && entry?.actionId === action.stableId
+                            && entry?.status === 'success'
+                            && entry?.verified === true
+                        ));
+                        const evidence = observedDoc?.rollbackEvidence || null;
+                        if (evidence && nonEmptyString(evidence.recordId)
+                            && (nonEmptyString(evidence.createdDocument?.document_id)
+                                || nonEmptyString(evidence.createdDocument?.documentToken))) {
+                            documentRecord = {
+                                actionId: action.stableId,
+                                recordId: evidence.recordId,
+                                documentToken: evidence.createdDocument?.document_id
+                                    ?? evidence.createdDocument?.documentToken,
+                                documentToken: evidence.createdDocument?.document_id
+                                    ?? evidence.createdDocument?.documentToken,
+                            };
+                        }
+                    } catch {
+                        // Journal read is best-effort: without it the fill stays
+                        // empty and the planner refuses typed where required.
+                        documentRecord = null;
+                    }
+                }
                 if (documentRecord) {
                     const liveRow = (result?.indexed || []).find((row) => (
                         row?.metadata?.token === documentRecord.documentToken
@@ -2132,11 +2189,18 @@ class SdkDocSync {
                     current.documentToken = current.documentToken ?? documentRecord.documentToken;
                     current.folderToken = current.folderToken ?? executedFolderToken ?? null;
                     current.parentRecordId = current.parentRecordId ?? liveRow?.metadata?.parentRecordId ?? null;
-                    // Stamp the placement proof live (same session-executed
-                    // verification the executor-side 2032 support runs for
-                    // externally-marked contexts): the plan-time derivation
-                    // must see the unit's own folder (a walk the product
-                    // postdates proves containment by live derivation alone).
+                }
+                // Stamp the placement proof live whenever the plan-call legs
+                // are present — INDEPENDENT of the fill above (a scan-matched
+                // index row already carries all three tokens; only the live
+                // stamp is missing), same session-executed verification the
+                // executor-side 2032 support runs for externally-marked
+                // contexts.
+                if (nonEmptyString(current.recordId)
+                    && nonEmptyString(current.documentToken)
+                    && nonEmptyString(current.folderToken)
+                    && this.placementWalkDigest
+                    && this.placementWalkProduct) {
                     const probe = this.m2f
                         || (this.readonlyProbe ||= new MarkdownToFeishu({ sourceType: this.sourceType, rootToken: this.rootToken, baseToken: this.baseToken }));
                     const listFolders = typeof probe?.listFolder === 'function'
@@ -2150,10 +2214,17 @@ class SdkDocSync {
                                 versionRootToken,
                                 folderToken: current.folderToken,
                             });
+                            // folderChains are self-terminating (root→…→leaf)
+                            // and so is the live derive: a walk-covered folder
+                            // agrees only when the chains are byte-equal; a
+                            // folder the walk predates (this unit's own
+                            // product) proves containment by live derivation
+                            // alone.
                             const walked = this.placementWalkProduct?.folderChains?.[current.folderToken];
-                            const parentAgrees = !Array.isArray(walked)
-                                || (derived && JSON.stringify(walked) === JSON.stringify(derived.slice(0, -1)));
-                            if (Array.isArray(derived) && derived[0] === versionRootToken && parentAgrees) {
+                            const placementAgrees = !Array.isArray(walked)
+                                || (Array.isArray(derived)
+                                    && JSON.stringify(walked) === JSON.stringify(derived));
+                            if (Array.isArray(derived) && derived[0] === versionRootToken && placementAgrees) {
                                 current.versionRootToken = versionRootToken;
                                 current.ancestryVerified = true;
                                 current.placementVerified = true;

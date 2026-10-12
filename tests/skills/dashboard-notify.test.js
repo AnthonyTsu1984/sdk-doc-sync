@@ -183,6 +183,11 @@ test('deriveEvents: rollback gate surfaced via nextGate rides the campaign-gate 
   assert.match(gate.key, /APPROVE_ROLLBACK$/);
   assert.match(gate.line, /APPROVE_ROLLBACK/);
   assert.match(gate.line, /alterRole/);
+  assert.doesNotMatch(gate.line, /worker 执行中/, 'no running worker → no executing suffix');
+
+  payload.campaigns[0].workers = [{ sessionId: 'sess_x', status: 'running' }];
+  const withWorker = gateWatch.deriveEvents({ payload, dispatchLines: [], now: new Date('2026-10-12T11:30:00.000Z') });
+  assert.match(withWorker.find((e) => e.category === '战役门').line, /worker 执行中/);
 });
 
 // ---------- gate-watch: send decisions ----------

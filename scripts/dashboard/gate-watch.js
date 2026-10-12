@@ -119,10 +119,14 @@ function campaignEvents(payload, nowMs) {
     }
     const gate = card.nextGate && card.nextGate.gate;
     if (card.health === 'active' && gate && gate !== 'CLOSE_SESSION') {
+      // A dispatched worker mid-turn may already hold this gate's approval —
+      // "停在 X" alone reads as "waiting for the operator" and has repeatedly
+      // sent the operator to re-approve during execution. Surface the worker.
+      const running = (card.workers || []).some((w) => w && w.status === 'running');
       events.push({
         key: `gate:${sessionKey}:${gate}`,
         category: '战役门',
-        line: `${cardLabel(card)} 停在 ${gate}${card.nextGate.reviewUnitId ? `（${card.nextGate.reviewUnitId}）` : ''}`,
+        line: `${cardLabel(card)} 停在 ${gate}${card.nextGate.reviewUnitId ? `（${card.nextGate.reviewUnitId}）` : ''}${running ? ' — worker 执行中（批准可能已注入，等它停住再操作）' : ''}`,
         since: card.updatedAt ?? null,
       });
     }

@@ -629,6 +629,49 @@ class SdkDocSync {
                     : action;
                 if (sessionExecutedDocumentIds?.has(plannableAction.stableId)) {
                     context.reviewSessionExecuted = true;
+                    // Finalized two-gate units (accepted receipt on file) keep
+                    // their slot in the manifest WITHOUT re-entering write
+                    // planning: their acceptance is journal-verified evidence,
+                    // no redo is in flight, and a re-drive of the scope's
+                    // CREATE action would dead-end in REBUILD evidence that the
+                    // acceptance path never minted. Synthesize an accepted
+                    // placeholder plan (the same NOOP shape the planner emits
+                    // for accepted diff-less documents) and skip planner calls.
+                    const finalizedUnitIds = new Set(
+                        (this.reviewSession?.acceptedReviewUnits || [])
+                            .filter((unit) => (unit.touchedRecords || []).some((row) => nonEmptyString(row?.recordId)))
+                            .map((unit) => unit.reviewUnitId),
+                    );
+                    const unitRowIds = new Set(
+                        (this.reviewSession?.reviewUnitManifest?.units || [])
+                            .filter((unit) => unit.documentStableId === plannableAction.stableId)
+                            .map((unit) => unit.reviewUnitId),
+                    );
+                    const finalizedHere = [...unitRowIds].some((unitId) => finalizedUnitIds.has(unitId));
+                    if (finalizedHere) {
+                        const acceptedPadPlan = Object.freeze({
+                            schemaVersion: 1,
+                            action: 'NOOP',
+                            stableId: plannableAction.stableId,
+                            artifactDigest: null,
+                            layout: context.artifact?.layout ?? null,
+                            placementWalkDigest: this.placementWalkDigest ?? null,
+                            target: context.target ?? undefined,
+                            dependencies: [],
+                            preconditions: [],
+                            postconditions: Object.freeze([{ type: 'NO_MUTATION' }]),
+                            metadata: Object.freeze({
+                                diffAction: 'ACCEPTED_UNIT_NOOP',
+                                acceptedUnit: true,
+                                reason: 'unit finalized under the two-gate acceptance; no redo is in flight',
+                            }),
+                        });
+                        SyncPlanner.reconcilePlanTargetChain(acceptedPadPlan, this.placementWalkProduct);
+                        result.plans.push(acceptedPadPlan);
+                        plannedEntries.push({ kind: 'document', action: plannableAction, plan: acceptedPadPlan, context });
+                        this._planningContexts.set(plannableAction, context);
+                        continue;
+                    }
                     // Batch 5 REBUILD lineage: the session's changeRequests
                     // remember every prior execution journal this unit
                     // replaced (recordDocumentChangesRequested preserves the
@@ -2029,17 +2072,6 @@ class SdkDocSync {
         // accepted receipt) and join the live row (this run's own index) for
         // the folder facts, BEFORE the live placement stamp below runs.
         const sessionExecutedIds = this._sessionExecutedDocumentIds();
-        if (process.env.REPLAN_DEBUG && sessionExecutedIds && sessionExecutedIds.has(action.stableId)) {
-            console.error('[repdebug]', JSON.stringify({
-                stableId: action.stableId,
-                current: current,
-                sessionIdsHas: sessionExecutedIds.has(action.stableId),
-                walkDigest: this.placementWalkDigest,
-                walkProductNull: !this.placementWalkProduct,
-                rootToken: this.rootToken,
-                m2fType: typeof this.m2f,
-            }));
-        }
         if (sessionExecutedIds && sessionExecutedIds.has(action.stableId)
             && !nonEmptyString(current.folderToken)
             && this.reviewSession) {
@@ -2094,14 +2126,6 @@ class SdkDocSync {
                                 executedFolderToken = null;
                             }
                         }
-                    }
-                    if (process.env.REPLAN_DEBUG) {
-                        console.error('[repdebug2]', JSON.stringify({
-                            journalPath: executionRow?.executionJournalPath || acceptedRow?.executionJournalPath || null,
-                            executedFolder: executedFolderToken,
-                            docToken: documentRecord.documentToken,
-                            actionId: documentRecord.actionId,
-                        }));
                     }
                     current.version = current.version ?? this.sdkVersion;
                     current.recordId = current.recordId ?? documentRecord.recordId;

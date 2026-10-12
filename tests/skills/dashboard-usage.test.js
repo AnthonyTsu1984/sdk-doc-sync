@@ -230,3 +230,27 @@ test('closeApproveRun survives a mid-run counter rotation; orphan closer is hone
   assert.equal(row.state, 'orphaned');
   assert.equal(row.deltaTotal, null);
 });
+
+test('campaignUsage inFlight estimates an open run from the session window', (t) => {
+  const { root } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const rollout = path.join(root, 'rollout');
+  fs.mkdirSync(rollout, { recursive: true });
+  const file = path.join(rollout, 'model-io-sessF.jsonl');
+  fs.writeFileSync(file, turnLine({ input: 1000, output: 100 }) + '\n');
+  const db = openDb(root);
+  usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T10:00:00Z') });
+  usage.upsertAttribution(db, 'sessF', 'main::c2', 'worker-registry', new Date('2026-10-05T10:00:00Z'));
+  const runId = usage.openApproveRun(db, { sessionId: 'sessF', campaignPath: 'main::c2', unitId: 'review:node:Y' }, new Date('2026-10-05T10:01:00Z'));
+
+  fs.appendFileSync(file, turnLine({ input: 500, output: 50, startedAt: '2026-10-05T10:30:00Z' }) + '\n');
+  usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T10:31:00Z') });
+
+  const view = usage.campaignUsage(db, 'main::c2');
+  assert.equal(view.inFlight.length, 1);
+  assert.equal(view.inFlight[0].runId, runId);
+  assert.equal(view.inFlight[0].estimate, true);
+  assert.equal(view.inFlight[0].turns, 1, 'window(2) - start(1)');
+  assert.equal(view.inFlight[0].total, 550, 'window(1650) - start(1100)');
+  assert.equal(view.runs.length, 0, 'open run not yet a closed row');
+});

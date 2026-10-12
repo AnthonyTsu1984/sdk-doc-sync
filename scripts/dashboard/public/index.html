@@ -1122,7 +1122,17 @@ async function renderUsagePanel(c) {
       host.innerHTML = '<div class="empty">尚无本战役的 token 采集（采集自看板批 7 上线起；历史战役无数据）</div>';
       return;
     }
-    const runRows = (u.runs || []).map((r) => `<tr>
+    const flightRows = (u.inFlight || []).map((r) => `<tr style="background:rgba(59,130,246,.07)">
+        <td class="num">#${r.runId} <span class="badge active">进行中</span></td>
+        <td class="fname">${esc(r.unitId ? humanUnit(r.unitId) : '（战役级）')}</td>
+        <td class="fname" title="${esc(r.sessionId ?? '')}">…</td>
+        <td class="num">${r.turns ?? '—'}</td>
+        <td class="num">${fmtTokens(r.input)}</td>
+        <td class="num">${fmtTokens(r.output)}</td>
+        <td class="num">${fmtTokens(r.total)}</td>
+        <td class="dim">自 ${r.startedAt ? fmt(r.startedAt) : '—'}（估算，随采集 2 分钟刷新）</td>
+      </tr>`).join('');
+    const runRows = flightRows + (u.runs || []).map((r) => `<tr>
         <td class="num">#${r.runId}</td>
         <td class="fname">${esc(r.unitId ? humanUnit(r.unitId) : '（战役级）')}</td>
         <td class="fname" title="${esc(r.sessionId)}">${esc(String(r.sessionId).slice(0, 16))}…</td>
@@ -1152,13 +1162,14 @@ async function renderUsagePanel(c) {
           <td class="dim">${p.lastAt ? rel(p.lastAt) : '—'}</td>
         </tr>`).join('')
       : '<tr><td colspan="6" class="dim" style="text-align:center;padding:12px">暂无看板批准回合的逐篇归因（经界面批准的回合才会记到单篇）</td></tr>';
+    const flightTotal = (u.inFlight || []).reduce((acc, r) => acc + (r.total || 0), 0);
     const headerCard = lt
       ? `<div class="card" style="cursor:default;margin-bottom:12px">
           <div class="row1">
-            <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(lt.totalTokens)}</span> tokens</span>
-            <span class="meta"><span>输入 ${fmtTokens(lt.inputTokens)}</span><span>输出 ${fmtTokens(lt.outputTokens)}</span><span>批准轮 ${lt.runs}</span></span>
+            <span class="title">战役总计 <span style="color:var(--blue)">${fmtTokens(lt.totalTokens)}</span> tokens${flightTotal > 0 ? ` <span class="dim">+ 进行中 ~${fmtTokens(flightTotal)}（估算）</span>` : ''}</span>
+            <span class="meta"><span>输入 ${fmtTokens(lt.inputTokens)}</span><span>输出 ${fmtTokens(lt.outputTokens)}</span><span>已固化 ${lt.runs} 轮${(u.inFlight || []).length ? ` · 1 轮进行中` : ''}</span></span>
           </div>
-          <div class="note" style="border:0">逐轮批准回合的固化合计（每轮关闭时快照，宿主清理转录不影响）；上表各列即此数字的构成。</div>
+          <div class="note" style="border:0">固化合计=已关闭批准轮的快照（宿主清理转录不影响）；进行中=当前开轮的窗口估算（转录轮换时可能偏高，关轮时校正）。</div>
         </div>`
       : `<div class="card" style="cursor:default;margin-bottom:12px">
           <div class="row1">

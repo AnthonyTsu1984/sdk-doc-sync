@@ -417,10 +417,34 @@ function campaignUsage(db, campaignPath) {
      FROM approve_runs WHERE campaignPath = ? AND state = 'done'
      ORDER BY startedAt DESC`,
   ).all(campaignPath);
+  // Live spend of still-open approve runs — the frozen-panel gap: a run that
+  // stays open for an hour (long executor turn) updates nothing in the runs
+  // table or the lifetime total until it closes. Estimate from the session's
+  // current window; under a mid-run rotation the window also covers pre-run
+  // turns, so the number is marked estimate and floors at zero otherwise.
+  const sessionByld = new Map(sessions.map((row) => [row.sessionId, row]));
+  const inFlight = db.prepare(
+    `SELECT id AS runId, sessionId, unitId, startedAt, startTurns, startInput, startOutput, startTotal
+     FROM approve_runs WHERE campaignPath = ? AND state = 'open' ORDER BY startedAt`,
+  ).all(campaignPath).map((run) => {
+    const win = sessionByld.get(run.sessionId) || {};
+    const rotated = (win.turns ?? 0) < run.startTurns;
+    return {
+      runId: run.runId,
+      unitId: run.unitId,
+      startedAt: run.startedAt,
+      estimate: true,
+      turns: rotated ? (win.turns ?? 0) : Math.max(0, (win.turns ?? 0) - run.startTurns),
+      input: rotated ? (win.inputTokens ?? 0) : Math.max(0, (win.inputTokens ?? 0) - (run.startInput ?? 0)),
+      output: rotated ? (win.outputTokens ?? 0) : Math.max(0, (win.outputTokens ?? 0) - (run.startOutput ?? 0)),
+      total: rotated ? (win.totalTokens ?? 0) : Math.max(0, (win.totalTokens ?? 0) - run.startTotal),
+    };
+  });
   const firstTsList = sessions.map((s) => s.firstTs).filter(Boolean).sort();
   return {
     campaignPath,
     totals,
+    inFlight,
     runs: runRows,
     lifetime: {
       runs: lifetimeRow?.runs ?? 0,

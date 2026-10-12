@@ -658,3 +658,27 @@ test('workerContextEvents: heavy running worker advises rotation at the 42% boun
   assert.match(events[0].line, /超 42% 轮换约定/);
   assert.match(events[0].line, /460k/);
 });
+
+test('parseGatePresentation: extracts gate, digest, session, and unit links', () => {
+  const html = `<!DOCTYPE html><html><body>
+<h1>APPROVE_DOCUMENT — gate materials</h1>
+<p>node v3.0.x 文档验收门 · 9 单元（批14 挂起执行）</p>
+<p>bound digest: <code>sha256:1570c48ecc72d1bdaede22b46f9880d9509da76d171a880b6d4237cb2e1b2e2d</code></p>
+<p>session: <code>tmp/sdk-doc-sync-runs/node-v30/review-session.json</code></p>
+<p>generated: 2026-10-12T13:46:15.441Z</p>
+<ol>
+<li><a href="https://zilliverse.feishu.cn/docx/AAA">1. review:node:Client:Client:getTelemetry — page</a></li>
+<li><a href="https://zilliverse.feishu.cn/docx/BBB">2. review:node:Collections:addCollectionFunction — page</a></li>
+</ol>
+</body></html>`;
+  const parsed = gateWatch.parseGatePresentation(html);
+  assert.equal(parsed.gate, 'APPROVE_DOCUMENT');
+  assert.equal(parsed.digest, 'sha256:1570c48ecc72d1bdaede22b46f9880d9509da76d171a880b6d4237cb2e1b2e2d');
+  assert.equal(parsed.sessionPath, 'tmp/sdk-doc-sync-runs/node-v30/review-session.json');
+  assert.deepEqual(parsed.links, [
+    { unitId: 'review:node:Client:Client:getTelemetry', url: 'https://zilliverse.feishu.cn/docx/AAA' },
+    { unitId: 'review:node:Collections:addCollectionFunction', url: 'https://zilliverse.feishu.cn/docx/BBB' },
+  ]);
+  assert.equal(gateWatch.parseGatePresentation('<html>no gate</html>'), null);
+  assert.equal(gateWatch.parseGatePresentation(null), null);
+});

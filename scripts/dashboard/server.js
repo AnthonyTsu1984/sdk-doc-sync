@@ -177,8 +177,29 @@ function mergeNextGate(payload) {
     if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) {
       card.nextGate = cached.value?.nextGate ?? null;
     }
+    attachGatePresentation(card);
   }
   return payload;
+}
+
+// Show the operator what the current gate approves: the canonical
+// presentation artifact's link list rides along when its gate kind and
+// session match the card — any mismatch drops it (the digest line stays the
+// only binding).
+function attachGatePresentation(card) {
+  card.gatePresentation = null;
+  if (!card.nextGate || !card.nextGate.gate) return;
+  let html;
+  try {
+    html = fs.readFileSync(path.join(REPO_ROOT, 'tmp/api-reference-sync/gate-presentation/latest.html'), 'utf8');
+  } catch {
+    return;
+  }
+  const parsed = gateWatch.parseGatePresentation(html);
+  if (!parsed) return;
+  if (parsed.gate !== card.nextGate.gate) return;
+  if (parsed.sessionPath !== card.sessionPath) return;
+  card.gatePresentation = parsed;
 }
 
 // ---------- session spawn (opt-in, one-click headless → desktop surface) ----------

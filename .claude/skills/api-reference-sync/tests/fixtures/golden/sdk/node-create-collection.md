@@ -51,9 +51,11 @@ await client.createCollection({ collection_name, schema })
     **\[REQUIRED\]**
     Field data type.
 
-**RETURNS:**
+**RETURN TYPE:**
 
 *[Promise&lt;CreateCollectionResponse&gt;](/reference/node/create-collection-response)*
+
+**RETURNS:**
 
 Resolves after the collection is created.
 

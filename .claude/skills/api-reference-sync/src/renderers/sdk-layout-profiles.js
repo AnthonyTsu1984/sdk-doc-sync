@@ -63,6 +63,18 @@ const CPP_LAYOUT_RULES = Object.freeze({
   builderSignature: Object.freeze({ prefixForbidden: Object.freeze(['Request& (With|Add)']) }),
 });
 
+// Node adopts the 2026-10-01 split return-section family (java/rust first):
+// 2026-10-12 operator ruling on FileResources:addFileResource doc review —
+// RETURN TYPE carries the bare type token, RETURNS carries the prose, and a
+// type row repeated inside RETURNS is a defect. The five global content
+// rules come with the GLOBAL base.
+const NODE_LAYOUT_RULES = Object.freeze({
+  ...GLOBAL_LAYOUT_RULES,
+  version: 4,
+  returnSections: Object.freeze({ split: true }),
+  returnsProseRequired: true,
+});
+
 // Java declares the 2026-10-01 return-section rules (semantic ruling: the
 // return type and the RETURNS prose live in two separate labeled sections,
 // the type token never repeats inside RETURNS, RETURNS carries prose). The
@@ -133,11 +145,16 @@ const profiles = Object.freeze({
     layoutRules: JAVA_LAYOUT_RULES,
   }),
   node: freezeProfile({
-    id: 'node', version: 1, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    // v2: intersects the 2026-10-01 java split return-section family (RETURN
+    // TYPE / RETURNS as separate labeled sections, RETURNS carries prose,
+    // type token never repeats inside RETURNS) — node adoption 2026-10-12
+    // operator ruling on FileResources:addFileResource doc review. The five
+    // global content rules still come with the GLOBAL base.
+    id: 'node', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
     order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
     fences: { 'canonical-signature': 'TypeScript', 'request-signature': 'TypeScript' },
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, Number.POSITIVE_INFINITY] },
-    layoutRules: GLOBAL_LAYOUT_RULES,
+    layoutRules: NODE_LAYOUT_RULES,
   }),
   go: freezeProfile({
     // v3: 'result-methods' slot — operator ruling 2026-10-07 (GetTelemetry):

@@ -34,6 +34,7 @@
 |---|---|---|---|---|
 | python | `*dict*` | 一句话 + **Python fence 示例字典**（真实示例值，如 `'test_01'`、`field_id: 100`） | **PARAMETERS** bullets，嵌套 4 空格；`params` 内按字段类型列可选属性（max_length/dim/max_capacity…） | **EXCEPTIONS** |
 | java | `*XxxResp*` | 一句话（无 fence） | **PARAMETERS** 平铺 bullets | **EXCEPTIONS**（MilvusClientException） |
+| node | `*Promise\<XxxResp\>*`（或裸 `*Xxx*`） | 一句话（无 fence；响应含方法面时其上为 **METHODS** 列表） | **PARAMETERS** bullets | **EXCEPTIONS**（MilvusError） |
 | go | `*entity.X, error*` | 一句话 + **Go fence 完整 struct 定义** | **PARAMETERS** bullets（类型词可挂文档链接） | **ERROR HANDLING**（`error` 条目） |
 | go（仅 error） | `*error*` | "Returns nil on success, or an error describing what went wrong." | —（无响应字段段） | **ERROR HANDLING** |
 | c++ | —（无独立段） | `*Status*` + 一句话 | 响应字段以**多层嵌套 bullets 直接挂在 RETURNS 下**（层级 2 空格递进） | Status 行文内 |

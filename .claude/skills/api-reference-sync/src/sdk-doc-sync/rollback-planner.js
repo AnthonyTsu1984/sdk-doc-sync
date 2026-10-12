@@ -266,6 +266,19 @@ function pairedJournalActions(entries, unit) {
   }));
 }
 
+// The folder creation capsule names the approved parent (resource spec);
+// the DELETE_CREATED_FOLDER inverse verifies identity + absence against
+// that parent, so the manifest must carry it even when the adopted-folder
+// form assembles the identity from resolvedResource instead of the capsule.
+function withFolderParent(createdFolder, capsule, token) {
+  const parentFolderToken = capsule.resource?.parentFolderToken || null;
+  return {
+    ...(createdFolder ? structuredClone(createdFolder) : {}),
+    token,
+    ...(nonEmptyString(parentFolderToken) ? { parentFolderToken } : {}),
+  };
+}
+
 function inverseFor(pair) {
   const { capsule, evidence } = pair;
   const base = {
@@ -376,12 +389,12 @@ function inverseFor(pair) {
           inverse: 'RESTORE_VIRTUAL_NODE_AND_DELETE_FOLDER',
           beforeRecord: structuredClone(capsule.beforeRecord),
           expectedPostRecord: expectedPostRecordForRollback(evidence.postRecord, capsule.beforeRecord),
-          createdFolder: { ...structuredClone(evidence.createdFolder), token },
+          createdFolder: withFolderParent(evidence.createdFolder, capsule, token),
         };
       }
       return {
         ...base,
-        createdFolder: { ...structuredClone(evidence.createdFolder), token },
+        createdFolder: withFolderParent(evidence.createdFolder, capsule, token),
       };
     }
     case 'ORPHAN':

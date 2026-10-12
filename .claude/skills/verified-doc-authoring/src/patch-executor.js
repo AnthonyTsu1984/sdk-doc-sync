@@ -43,7 +43,7 @@ function assertPreflight(plan, live) {
 // to this exact plan's batch facts, and the patch call is cross-checked
 // against the bound target, so no injected adapter can mutate outside the
 // approved batch. Reads (snapshot/refetch) stay ungated.
-function bindPlanGovernance({ plan, approval }) {
+function bindPlanGovernance({ plan, approval, evidenceDir = null }) {
   const governance = createWriterGovernance({
     skill: plan.actionBatch.skill,
     operation: plan.actionBatch.operation,
@@ -66,13 +66,20 @@ function bindPlanGovernance({ plan, approval }) {
     batchDigest: plan.actionBatch.batchDigest,
     sessionDigest: `authoring:${plan.actionBatch.batchDigest}`,
   }), { repoRoot: REPO_ROOT });
+  // 2026-10-12 fixture hygiene: hermetic runners inject a sandbox evidence
+  // dir so fixture executions never stain the canonical digest-keyed
+  // namespace (a stale fixture manifest then refuses every later re-mint
+  // once the tree changes). Production keeps the canonical dir.
   writeRunManifestArtifact(governance.run, {
-    filePath: path.join(REPO_ROOT, 'tmp', 'verified-doc-authoring', `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`),
+    filePath: path.join(
+      evidenceDir || path.join(REPO_ROOT, 'tmp', 'verified-doc-authoring'),
+      `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`,
+    ),
   });
   return governance;
 }
 
-async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
+async function executeAuthoringPatch({ plan, approval, journalPath, adapter, evidenceDir = null }) {
   assertExactApproval(plan, approval);
   // Journal pre-flight BEFORE governance binding or any adapter call (6.7
   // fault injection): a pre-existing journal for this batch is durable
@@ -87,7 +94,7 @@ async function executeAuthoringPatch({ plan, approval, journalPath, adapter }) {
   if (journal.read().length > 0) {
     return resumeAuthoringPatchFromJournal({ plan, journal, adapter });
   }
-  const governance = bindPlanGovernance({ plan, approval });
+  const governance = bindPlanGovernance({ plan, approval, evidenceDir });
   const liveBefore = await adapter.snapshot(plan.target);
   assertPreflight(plan, liveBefore);
   journal.prepared({

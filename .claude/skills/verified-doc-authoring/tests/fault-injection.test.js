@@ -124,18 +124,27 @@ function seedJournal(planValue, journalPath, { observed = true, complete = false
   return journal;
 }
 
+
+// Fixture hygiene: executeAuthoringPatch mints run-manifest evidence keyed by
+// the fixture batch digest — sandbox it so fixture runs never collide with
+// the canonical digest-keyed namespace (a stale fixture manifest would
+// refuse every later re-mint once the tree changes).
+function sandboxEvidenceDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'authoring-fault-evidence-'));
+}
+
 test('S1 before_mutation: crash before the mutation leaves no journal and the rerun executes cleanly', async () => {
   const planValue = plan();
   const journalPath = tempJournalPath();
   const injector = createFaultInjector({ failAt: 'before_mutation' });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: countingAdapter({ planValue, injector }) }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: countingAdapter({ planValue, injector , evidenceDir: sandboxEvidenceDir() }) , evidenceDir: sandboxEvidenceDir() }),
     (error) => error instanceof InjectedFailure && error.point === 'before_mutation',
   );
   assert.equal(fs.existsSync(journalPath), false);
 
   const retry = countingAdapter({ planValue });
-  const result = await executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry });
+  const result = await executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry, evidenceDir: sandboxEvidenceDir() });
   assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
   assert.deepEqual(retry.calls, { snapshot: 1, patch: 1, refetch: 1 });
   assert.match(fs.readFileSync(journalPath, 'utf8'), /"completionSentinel":true/);
@@ -146,7 +155,7 @@ test('S2 after_mutation: crash between the mutation and its observed evidence re
   const journalPath = tempJournalPath();
   const injector = createFaultInjector({ failAt: 'after_mutation' });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: countingAdapter({ planValue, injector }) }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: countingAdapter({ planValue, injector , evidenceDir: sandboxEvidenceDir() }) , evidenceDir: sandboxEvidenceDir() }),
     (error) => error instanceof InjectedFailure && error.point === 'after_mutation',
   );
   const lastEntry = JSON.parse(fs.readFileSync(journalPath, 'utf8').trim().split('\n').at(-1));
@@ -154,7 +163,7 @@ test('S2 after_mutation: crash between the mutation and its observed evidence re
 
   const retry = countingAdapter({ planValue });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry , evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(retry.calls, { snapshot: 0, patch: 0, refetch: 0 });
@@ -165,12 +174,12 @@ test('S3 during_refetch: an injected verification-read crash is crash-like evide
   const journalPath = tempJournalPath();
   const injector = createFaultInjector({ failAt: 'during_refetch' });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: countingAdapter({ planValue, injector }) }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: countingAdapter({ planValue, injector , evidenceDir: sandboxEvidenceDir() }) , evidenceDir: sandboxEvidenceDir() }),
     (error) => error instanceof InjectedFailure && error.point === 'during_refetch',
   );
   const retry = countingAdapter({ planValue });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry , evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(retry.calls, { snapshot: 0, patch: 0, refetch: 0 });
@@ -183,7 +192,7 @@ test('S4 before_completion: the resumable crash window auto-completes and re-pro
   assert.equal(classifyJournalEntries({ entries: seeded.read(), approvedActionIds: [...seeded.approvedActionIds] }), 'resumable');
 
   const retry = countingAdapter({ planValue });
-  const result = await executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry });
+  const result = await executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry, evidenceDir: sandboxEvidenceDir() });
   assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
   assert.deepEqual(retry.calls, { snapshot: 0, patch: 0, refetch: 1 });
   assert.equal(result.documentId, 'doc-fault');
@@ -198,7 +207,7 @@ test('S5 after_completion: a completed journal resumes read-only and refuses if 
   seedJournal(planValue, journalPath, { complete: true });
 
   const retry = countingAdapter({ planValue });
-  const result = await executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry });
+  const result = await executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: retry, evidenceDir: sandboxEvidenceDir() });
   assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
   assert.deepEqual(retry.calls, { snapshot: 0, patch: 0, refetch: 1 });
 
@@ -208,7 +217,7 @@ test('S5 after_completion: a completed journal resumes read-only and refuses if 
     draftArtifact: { ...planValue.draftArtifact, markdownDigest: `sha256:${'9'.repeat(64)}` },
   };
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: driftedPlan, approval: approvalFor(driftedPlan), journalPath, adapter: drifted }),
+    () => executeAuthoringPatch({ plan: driftedPlan, approval: approvalFor(driftedPlan), journalPath, adapter: drifted , evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(drifted.calls, { snapshot: 0, patch: 0, refetch: 1 });
@@ -226,7 +235,7 @@ test('S5 after_completion: a completed journal resumes read-only and refuses if 
     },
   };
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: liveDriftAdapter }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath, adapter: liveDriftAdapter , evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(liveDriftCalls, { snapshot: 0, patch: 0, refetch: 1 });
@@ -238,7 +247,7 @@ test('ambiguous journals (prepared-only or failed observations) refuse typed and
   seedJournal(planValue, preparedOnly, { observed: false });
   const preparedAdapter = countingAdapter({ planValue });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath: preparedOnly, adapter: preparedAdapter }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath: preparedOnly, adapter: preparedAdapter , evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(preparedAdapter.calls, { snapshot: 0, patch: 0, refetch: 0 });
@@ -247,7 +256,7 @@ test('ambiguous journals (prepared-only or failed observations) refuse typed and
   seedJournal(planValue, failed, { verified: false });
   const failedAdapter = countingAdapter({ planValue });
   await assert.rejects(
-    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath: failed, adapter: failedAdapter }),
+    () => executeAuthoringPatch({ plan: planValue, approval: approvalFor(planValue), journalPath: failed, adapter: failedAdapter , evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(failedAdapter.calls, { snapshot: 0, patch: 0, refetch: 0 });

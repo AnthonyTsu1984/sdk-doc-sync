@@ -213,29 +213,6 @@ function pairedJournalActions(entries, unit) {
     Array.isArray(evidence?.completedSteps)
     && evidence.completedSteps.some((step) => mutatingSteps.includes(String(step).replace(/^verify/, '').replace('Resolved', '')))
   );
-  const externallyOwnedTokens = (session, reviewUnitId) => {
-    const owned = new Set();
-    for (const row of [
-      ...((session?.pendingExecutions || (session?.activeExecution ? [session.activeExecution] : [])) || []),
-      ...(session?.acceptedReviewUnits || []),
-      ...(session?.changeRequests || []),
-    ]) {
-      if (!row || row.reviewUnitId === reviewUnitId) continue;
-      const journalPath = row.executionJournalPath || null;
-      if (!nonEmptyString(journalPath) || !fs.existsSync(journalPath)) continue;
-      try {
-        const entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
-        for (const entry of entries) {
-          const token = entry?.rollbackEvidence?.createdFolder?.token || entry?.rollbackEvidence?.createdFolder?.documentToken || null;
-          if (nonEmptyString(token)) owned.add(token);
-        }
-      } catch {
-        // Best-effort: an unreadable journal grants no claim either way.
-      }
-    }
-    return owned;
-  };
-
   // A PRE-WRITE failure (nothing mutated: no copied/created document —
   // createdDocument may carry only the planned blockIds with no live
   // identity field — no created folder, no record, no patched token, no
@@ -535,6 +512,32 @@ function validateRollbackManifest(manifest) {
     );
   }
   return true;
+}
+
+// Tokens another unit's landed execution minted (pending, accepted, or
+// change-requested rows — whichever rows still carry a readable journal): a
+// rollback of THIS unit must never delete those artifacts.
+function externallyOwnedTokens(session, reviewUnitId) {
+  const owned = new Set();
+  for (const row of [
+    ...((session?.pendingExecutions || (session?.activeExecution ? [session.activeExecution] : [])) || []),
+    ...(session?.acceptedReviewUnits || []),
+    ...(session?.changeRequests || []),
+  ]) {
+    if (!row || row.reviewUnitId === reviewUnitId) continue;
+    const journalPath = row.executionJournalPath || null;
+    if (!nonEmptyString(journalPath) || !fs.existsSync(journalPath)) continue;
+    try {
+      const entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+      for (const entry of entries) {
+        const token = entry?.rollbackEvidence?.createdFolder?.token || entry?.rollbackEvidence?.createdFolder?.documentToken || null;
+        if (nonEmptyString(token)) owned.add(token);
+      }
+    } catch {
+      // Best-effort: an unreadable journal grants no claim either way.
+    }
+  }
+  return owned;
 }
 
 function sharedResourceBlockers(session, targetReviewUnitId, createdResourceIds) {

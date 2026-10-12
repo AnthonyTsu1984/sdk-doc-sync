@@ -39,7 +39,10 @@ function writeJournal(directory, name, actions, { complete = true } = {}) {
       schemaVersion: 1,
       action: action.action,
       actionId: action.actionId,
-      completedSteps: ['execute', 'verify'],
+      // The planner's mutation gates read the executor step ledger
+      // (copyDocument/patchDocument/rebuildDocument…): fixtures carry the
+      // realistic per-action steps, not generic execute/verify.
+      completedSteps: action.completedSteps || ['execute', 'verify'],
       createdDocument: action.createdDocument || null,
       createdFolder: action.createdFolder || null,
       patchedDocumentToken: action.patchedDocumentToken || null,
@@ -129,7 +132,7 @@ test('rollback planner maps every original mutation to its action-specific inver
     },
     {
       action: 'COPY_PATCH_AND_REPOINT',
-      input: { beforeRecord, postRecord, createdDocument: { token: 'copy-doc', folderToken: 'folder-v30' } },
+      input: { beforeRecord, postRecord, completedSteps: ['copyDocument', 'verify'], createdDocument: { token: 'copy-doc', folderToken: 'folder-v30' } },
       inverse: 'RESTORE_RECORD_AND_DELETE_COPY',
     },
     {
@@ -137,12 +140,13 @@ test('rollback planner maps every original mutation to its action-specific inver
       input: {
         beforeRecord,
         postRecord: { ...postRecord, writableFields: { Progress: 'WIP' } },
+        completedSteps: ['patchDocument', 'verify'],
         patchedDocumentToken: 'source-doc',
         documentRollback: { documentToken: 'source-doc', historyVersionId: 'history-before', blockDigest: 'sha256:before-blocks' },
       },
       inverse: 'REVERT_DOCUMENT_AND_RESTORE_RECORD',
     },
-    { action: 'UPDATE_RECORD_METADATA', input: { beforeRecord, postRecord }, inverse: 'RESTORE_RECORD' },
+    { action: 'UPDATE_RECORD_METADATA', input: { beforeRecord, postRecord, completedSteps: ['updateRecord', 'verify'] }, inverse: 'RESTORE_RECORD' },
     { action: 'DEPRECATE', input: { beforeRecord, postRecord }, inverse: 'RESTORE_RECORD' },
     {
       action: 'CREATE_VIRTUAL_NODE',
@@ -240,6 +244,7 @@ test('operator-anchored rollback overrides session anchors for a failed-but-muta
   const anchored = writeJournal(directory, 'anchored', [{
     actionId: 'action:0',
     action: 'COPY_PATCH_AND_REPOINT',
+    completedSteps: ['copyDocument', 'verify'],
     beforeRecord: { ...beforeRecord, recordId: 'rec-qi', rawFields: { ...beforeRecord.rawFields }, writableFields: { ...beforeRecord.writableFields } },
     postRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' } },
     createdDocument: { token: 'doc-old', folderToken: 'folder-v30' },
@@ -249,6 +254,7 @@ test('operator-anchored rollback overrides session anchors for a failed-but-muta
     action: 'COPY_PATCH_AND_REPOINT',
     status: 'failure',
     verified: false,
+    completedSteps: ['copyDocument'],
     beforeRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-old' }, Progress: 'WIP' } },
     postRecord: { recordId: 'rec-qi', rawFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-new' }, Progress: 'WIP' }, writableFields: { Docs: { text: 'search()', link: 'https://docs.example/docx/doc-new' }, Progress: 'WIP' } },
     createdDocument: { token: 'doc-new', folderToken: 'folder-v30' },
@@ -340,6 +346,7 @@ test('rollback planner expects the baseline Targets when the executed snapshot w
   const journal = writeJournal(directory, 'targets', [{
     actionId: 'node:Authentication:addPrivilegesToGroup',
     action: 'COPY_PATCH_AND_REPOINT',
+    completedSteps: ['copyDocument', 'verify'],
     beforeRecord: baselineBeforeRecord,
     postRecord: wipedPostRecord,
     createdDocument: { token: 'copy-doc', folderToken: 'folder-v30' },
@@ -385,6 +392,7 @@ test('rollback planner keeps the observed shape for empty baselines and complian
   const blankBaselineJournal = writeJournal(directory, 'blank-baseline', [{
     actionId: 'node:Collections:a',
     action: 'COPY_PATCH_AND_REPOINT',
+    completedSteps: ['copyDocument', 'verify'],
     beforeRecord,
     postRecord,
     createdDocument: { token: 'copy-doc', folderToken: 'folder-v30' },
@@ -403,6 +411,7 @@ test('rollback planner keeps the observed shape for empty baselines and complian
   const compliantJournal = writeJournal(directory, 'compliant', [{
     actionId: 'node:Collections:b',
     action: 'COPY_PATCH_AND_REPOINT',
+    completedSteps: ['copyDocument', 'verify'],
     beforeRecord: baselineWithTargets,
     postRecord: compliantPostRecord,
     createdDocument: { token: 'copy-doc-2', folderToken: 'folder-v30' },

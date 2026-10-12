@@ -436,3 +436,47 @@ test('intakeDispatchStateFrom: dispatch blocks across a restart until exit or ag
   assert.equal(intakeDispatchStateFrom(['{not json', ''], key, now), null);
   assert.equal(intakeDispatchStateFrom(undefined, key, now), null);
 });
+
+// ---------- worker registry persistence (one-click approve survives restarts) ----------
+
+const {
+  MAX_ENTRIES_PER_CARD,
+  loadWorkerRegistry,
+  saveWorkerRegistry,
+  upsertWorkerEntry,
+} = require('../../scripts/dashboard/worker-registry.js');
+
+test('worker registry: save/load round-trip, malformed file degrades to empty', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'worker-registry-'));
+  const file = path.join(dir, 'worker-registry.json');
+
+  const map = new Map([
+    ['main::tmp/sdk-doc-sync-runs/node-v30/review-session.json', [
+      { sessionId: 'sess_a', spawnedAt: '2026-10-12T08:51:31.000Z', status: 'idle' },
+    ]],
+  ]);
+  saveWorkerRegistry(file, map);
+  const loaded = loadWorkerRegistry(file);
+  assert.deepEqual(loaded.get('main::tmp/sdk-doc-sync-runs/node-v30/review-session.json'), [
+    { sessionId: 'sess_a', spawnedAt: '2026-10-12T08:51:31.000Z', status: 'idle' },
+  ]);
+
+  fs.writeFileSync(file, '{broken json');
+  assert.equal(loadWorkerRegistry(file).size, 0);
+  assert.equal(loadWorkerRegistry(path.join(dir, 'absent.json')).size, 0);
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('worker registry: upsert updates in place and caps the per-card window', () => {
+  let entries = [];
+  entries = upsertWorkerEntry(entries, { sessionId: 'sess_a', status: 'running' });
+  entries = upsertWorkerEntry(entries, { sessionId: 'sess_a', status: 'idle' });
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0].status, 'idle');
+  for (let i = 0; i < MAX_ENTRIES_PER_CARD + 2; i += 1) {
+    entries = upsertWorkerEntry(entries, { sessionId: `sess_${i}`, status: 'idle' });
+  }
+  assert.equal(entries.length, MAX_ENTRIES_PER_CARD);
+  // sess_a + sess_0..sess_(MAX+1) = 9 entries; the window keeps the last 6.
+  assert.equal(entries[0].sessionId, `sess_2`);
+});

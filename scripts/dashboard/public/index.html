@@ -950,7 +950,7 @@ function advancedApproveForm(c) {
   const gate = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
   const unit = c.nextGate?.reviewUnitId || '';
   const pending = (c.pendingUnits || []).find((p) => !unit || p.reviewUnitId === unit);
-  const digest = pending?.executionJournalDigest || '';
+  const digest = pending?.executionJournalDigest || c.nextGate?.digest || '';
   const workerSel = workers.map((w) => `<option value="${esc(w.sessionId)}" ${w.status === 'idle' ? 'selected' : 'disabled'}>${esc(w.sessionId.slice(0, 18))}…（${w.status === 'idle' ? '可注入' : '运行中'}）</option>`).join('');
   return `<details class="fold"><summary>高级表单：手组批准行（其余门的 digest 从呈门材料复制）</summary>
     <div class="approve">
@@ -986,7 +986,8 @@ function oneClickApproveCard(c, detail) {
     const lineGate0 = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
     const unit0 = c.nextGate?.reviewUnitId || '';
     const pending0 = (c.pendingUnits || []).find((p) => !unit0 || p.reviewUnitId === unit0);
-    const line0 = pending0 ? `${lineGate0}${unit0 ? ' ' + unit0 : ''} ${pending0.executionJournalDigest}`.trim() : null;
+    const digest0 = pending0?.executionJournalDigest || c.nextGate?.digest || null;
+    const line0 = digest0 ? `${lineGate0}${unit0 ? ' ' + unit0 : ''} ${digest0}`.trim() : null;
     return `<div class="approve"><div class="t">⛩ ${g0 ? esc(g0.title) : '界面批准'}</div>
       ${line0 && APPROVE_LINE_RE.test(line0)
         ? `<div class="frow"><code>${esc(line0)}</code><button class="act primary" onclick="copyText(${JSON.stringify(line0).replace(/"/g, '&quot;')})">复制批准行</button></div>`
@@ -1005,7 +1006,7 @@ function oneClickApproveCard(c, detail) {
   const lineGate = GATE_TO_LINE[gate] || gate;
   const unit = c.nextGate.reviewUnitId || '';
   const pending = (c.pendingUnits || []).find((p) => !unit || p.reviewUnitId === unit);
-  const digest = pending?.executionJournalDigest || '';
+  const digest = pending?.executionJournalDigest || c.nextGate?.digest || '';
   const fileRow = unit && detail
     ? (detail.files || []).find((f) => f.unitId === unit || f.unitId === `review:${unit}` || f.stableId === unit)
     : null;

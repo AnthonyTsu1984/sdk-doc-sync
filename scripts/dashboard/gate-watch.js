@@ -7,6 +7,54 @@
 // append-only ledger under tmp/dashboard-events/ so a restart neither
 // re-spams nor forgets. Pure functions only: the server owns all IO.
 
+const fs = require('node:fs');
+const path = require('node:path');
+
+const ROLLBACK_MANIFESTS_RELATIVE_DIR = 'tmp/api-reference-sync/rollback-manifests';
+
+// A rollback gate the session status machine cannot see: the worker planned
+// the rollback (manifest on disk) but the wait-for-operator state lives only
+// in the worker conversation — the session file has no activeRollback until
+// execution. The board therefore derives the gate from the manifest itself:
+// pending while the anchored journal still sits in its slot (rollback
+// completion byte-archives it away), closed once the slot is released or the
+// manifest is cleaned up.
+function pendingRollbackGateFor(repoRoot, sessionId) {
+  if (!repoRoot || !sessionId) return null;
+  const dir = path.join(repoRoot, ROLLBACK_MANIFESTS_RELATIVE_DIR);
+  let names;
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return null;
+  }
+  for (const name of names) {
+    if (!name.endsWith('.json')) continue;
+    let manifest;
+    try {
+      manifest = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8'));
+    } catch {
+      continue;
+    }
+    if (manifest.sessionId !== sessionId) continue;
+    if (!manifest.reviewUnitId || !manifest.rollbackManifestDigest) continue;
+    if (typeof manifest.executionJournalPath !== 'string') continue;
+    try {
+      fs.statSync(manifest.executionJournalPath);
+    } catch {
+      continue; // anchored journal already archived — rollback completed
+    }
+    return {
+      gate: 'APPROVE_ROLLBACK',
+      reviewUnitId: manifest.reviewUnitId,
+      digest: manifest.rollbackManifestDigest,
+      manifestPath: `${ROLLBACK_MANIFESTS_RELATIVE_DIR}/${name}`,
+      source: 'rollback-manifest',
+    };
+  }
+  return null;
+}
+
 // Re-notify a still-pending event at most every 2h (dwell escalation).
 const ESCALATE_AFTER_MS = 2 * 60 * 60 * 1000;
 // Quiet window 22:00–07:59 local: sweeps still record resolve bookkeeping but
@@ -245,7 +293,9 @@ module.exports = {
   QUIET_END_HOUR,
   LOST_WORKER_MIN_AGE_MS,
   LOST_WORKER_MAX_AGE_MS,
+  ROLLBACK_MANIFESTS_RELATIVE_DIR,
   inQuietWindow,
+  pendingRollbackGateFor,
   deriveEvents,
   decideSends,
   formatMessage,

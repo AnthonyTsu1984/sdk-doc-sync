@@ -116,6 +116,75 @@ test('deriveEvents: lost dispatch worker inside the notify window only', () => {
   assert.equal(events[0].key, 'lost-worker:scout:b');
 });
 
+// ---------- gate-watch: rollback gate derivation from disk manifests ----------
+//
+// The session status machine cannot see a planned-but-unexecuted rollback
+// (the wait lives in the worker conversation), so the board derives it from
+// rollback-manifests/ — pending while the anchored journal still occupies
+// its slot, closed once the rollback completion archives it away.
+
+const fs = require('node:fs');
+const os = require('node:os');
+const nodePath = require('node:path');
+
+function rollbackFixture({ sessionId = 'sdk-doc-sync:node:v3.0.x:sha256:aaa', anchoredJournalExists = true }) {
+  const root = fs.mkdtempSync(nodePath.join(os.tmpdir(), 'rollback-gate-'));
+  const manifestsDir = nodePath.join(root, gateWatch.ROLLBACK_MANIFESTS_RELATIVE_DIR);
+  fs.mkdirSync(manifestsDir, { recursive: true });
+  const journalPath = nodePath.join(root, 'tmp/api-reference-sync/sha256-anchored.jsonl');
+  if (anchoredJournalExists) fs.writeFileSync(journalPath, '{}\n');
+  fs.writeFileSync(nodePath.join(manifestsDir, 'unit-a.json'), JSON.stringify({
+    schemaVersion: 1,
+    sessionId,
+    reviewUnitId: 'review:node:Authentication:alterRole',
+    rollbackManifestDigest: 'sha256:85fd283834948c4be4f87cc89645ec0d935653fe384916217ec6b6008f352805',
+    executionJournalPath: journalPath,
+  }));
+  return root;
+}
+
+test('pendingRollbackGateFor: manifest with live anchored journal is a gate', () => {
+  const root = rollbackFixture({});
+  assert.deepEqual(gateWatch.pendingRollbackGateFor(root, 'sdk-doc-sync:node:v3.0.x:sha256:aaa'), {
+    gate: 'APPROVE_ROLLBACK',
+    reviewUnitId: 'review:node:Authentication:alterRole',
+    digest: 'sha256:85fd283834948c4be4f87cc89645ec0d935653fe384916217ec6b6008f352805',
+    manifestPath: `${gateWatch.ROLLBACK_MANIFESTS_RELATIVE_DIR}/unit-a.json`,
+    source: 'rollback-manifest',
+  });
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('pendingRollbackGateFor: archived journal or foreign session closes the gate', () => {
+  const rolledBack = rollbackFixture({ anchoredJournalExists: false });
+  assert.equal(gateWatch.pendingRollbackGateFor(rolledBack, 'sdk-doc-sync:node:v3.0.x:sha256:aaa'), null);
+  fs.rmSync(rolledBack, { recursive: true, force: true });
+
+  const root = rollbackFixture({});
+  assert.equal(gateWatch.pendingRollbackGateFor(root, 'sdk-doc-sync:other-session'), null);
+  assert.equal(gateWatch.pendingRollbackGateFor(root, ''), null);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('deriveEvents: rollback gate surfaced via nextGate rides the campaign-gate channel', () => {
+  const payload = basePayload();
+  payload.campaigns = [
+    {
+      sessionKey: 'main::tmp/sdk-doc-sync-runs/node.json',
+      sessionPath: 'tmp/sdk-doc-sync-runs/node.json',
+      language: 'node', track: 'v3.0.x', checkoutLabel: '主检出',
+      health: 'active', updatedAt: '2026-10-12T11:00:00.000Z',
+      nextGate: { gate: 'APPROVE_ROLLBACK', reviewUnitId: 'review:node:Authentication:alterRole', digest: 'sha256:85fd' },
+    },
+  ];
+  const events = gateWatch.deriveEvents({ payload, dispatchLines: [], now: new Date('2026-10-12T11:30:00.000Z') });
+  const gate = events.find((e) => e.category === '战役门');
+  assert.ok(gate, 'campaign gate event derived for APPROVE_ROLLBACK');
+  assert.match(gate.key, /APPROVE_ROLLBACK$/);
+  assert.match(gate.line, /APPROVE_ROLLBACK/);
+  assert.match(gate.line, /alterRole/);
+});
+
 // ---------- gate-watch: send decisions ----------
 
 test('decideSends: first send, dedup, 2h escalation, resolve-then-new', () => {

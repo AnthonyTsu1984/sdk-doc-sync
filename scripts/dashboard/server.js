@@ -137,6 +137,17 @@ async function refreshNextGates() {
     } catch {
       value = null;
     }
+    // The status machine cannot see a planned-but-unexecuted rollback (the
+    // wait lives in the worker conversation; activeRollback appears only at
+    // execution). Derive that gate from the rollback manifest so the board,
+    // doorbell, and one-click approve all see it — closed automatically once
+    // the anchored journal is archived by the rollback completion. A pending
+    // rollback OVERRIDES the status gate: the occupied journal slot blocks the
+    // write batch anyway, so the rollback is always the true next step.
+    if (value && card.sessionId) {
+      const rollbackGate = gateWatch.pendingRollbackGateFor(target.root, card.sessionId);
+      if (rollbackGate) value = { ...value, nextGate: rollbackGate };
+    }
     nextGateCache.set(cardKey, { value, at: Date.now() });
     changed = true;
   }
@@ -355,17 +366,24 @@ let spawnOptions = { allowSpawn: false, allowApprove: false };
 // ---------- worker registry (dashboard-spawned headless sessions) ----------
 
 // card sessionPath -> [{sessionId, spawnedAt, status: running|idle}].
-// Runtime-only view state (not durable truth): session ids are captured from
-// the spawned `--json` run's final stdout; `idle` = process exited, so the
-// session is safe to --resume with an approval line.
-const spawnedWorkers = new Map();
+// Session ids are captured from the spawned `--json` run's final stdout;
+// `idle` = process exited, so the session is safe to --resume with an
+// approval line. View state persisted to tmp/dashboard-events/ (not repo
+// truth) so a dashboard restart keeps the one-click approve targets — the
+// resume CLI re-validates every injection regardless.
+const WORKER_REGISTRY_FILE = path.join(REPO_ROOT, 'tmp/dashboard-events/worker-registry.json');
+const workerRegistry = require('./worker-registry.js');
+const spawnedWorkers = workerRegistry.loadWorkerRegistry(WORKER_REGISTRY_FILE);
 
 const SPAWN_STDOUT_CAP = 2 * 1024 * 1024;
 
+function persistWorkerRegistry() {
+  workerRegistry.saveWorkerRegistry(WORKER_REGISTRY_FILE, spawnedWorkers);
+}
+
 function registerWorker(sessionPath, entry) {
-  const list = spawnedWorkers.get(sessionPath) || [];
-  list.push(entry);
-  spawnedWorkers.set(sessionPath, list.slice(-6));
+  spawnedWorkers.set(sessionPath, workerRegistry.upsertWorkerEntry(spawnedWorkers.get(sessionPath), entry));
+  persistWorkerRegistry();
 }
 
 function parseSpawnSessionId(stdout) {
@@ -567,6 +585,7 @@ function dispatchResumeTurn({ key, sessionId, checkoutRoot, line }) {
   });
   child.on('exit', () => {
     next.status = 'idle';
+    persistWorkerRegistry();
     if (usageDb && approveRunId != null) {
       try { usage.closeApproveRun(usageDb, approveRunId); } catch { /* telemetry only */ }
     }
@@ -928,6 +947,7 @@ async function handler(req, res) {
       child.on('exit', () => {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
+        persistWorkerRegistry();
         if (usageDb && worker.sessionId) {
           usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
         }
@@ -1026,6 +1046,7 @@ async function handler(req, res) {
       child.on('exit', () => {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
+        persistWorkerRegistry();
         // The durable ledger's in-flight window ends with the child: the
         // operator may now dispatch again (or continue on a campaign card).
         appendIntakeDispatchRecord({

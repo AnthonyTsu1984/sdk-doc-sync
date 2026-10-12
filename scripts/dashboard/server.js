@@ -13,7 +13,7 @@
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
-const { exec, execFile, spawn } = require('node:child_process');
+const { exec, execFile, spawn, spawnSync } = require('node:child_process');
 const { promisify } = require('node:util');
 
 const { buildLedger, parseWorktreeList, readJsonOrNull, RELEASE_TRACKS_RELATIVE_PATH, resolveSessionTarget } = require('./ledger.js');
@@ -383,6 +383,33 @@ const SPAWN_STDOUT_CAP = 2 * 1024 * 1024;
 
 function persistWorkerRegistry() {
   workerRegistry.saveWorkerRegistry(WORKER_REGISTRY_FILE, spawnedWorkers);
+}
+
+// Dead-parent recovery: a dashboard restart orphans every dispatched child's
+// exit event, leaving registry entries stuck at 'running' and their approve
+// runs stuck 'open' forever. Reconcile by inspection — a 'running' entry with
+// no live process matching its session id is idle; its open runs close
+// honestly (state 'orphaned', no fabricated deltas). Runs at boot and on the
+// next-gate refresh cadence.
+function reconcileWorkerRegistry() {
+  let changed = false;
+  for (const entries of spawnedWorkers.values()) {
+    for (const entry of entries) {
+      if (entry.status !== 'running' || !entry.sessionId) continue;
+      let alive = true;
+      try {
+        alive = String(spawnSync('pgrep', ['-f', entry.sessionId], { encoding: 'utf8' }).stdout || '').trim().length > 0;
+      } catch {
+        alive = true; // cannot inspect — keep it visible as running
+      }
+      if (!alive) {
+        entry.status = 'idle';
+        changed = true;
+        if (usageDb) usage.closeOrphanedRuns(usageDb, entry.sessionId, new Date().toISOString());
+      }
+    }
+  }
+  if (changed) persistWorkerRegistry();
 }
 
 function registerWorker(sessionPath, entry) {
@@ -1278,6 +1305,8 @@ function main() {
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
   refreshNextGates().catch(() => {});
   setInterval(() => refreshNextGates().catch(() => {}), 60_000).unref();
+  reconcileWorkerRegistry();
+  setInterval(() => reconcileWorkerRegistry(), 60_000).unref();
   if (notify) {
     // Lazy require keeps plain server imports free of any credential paths;
     // the notifier reads BOT_APP_ID/BOT_APP_SECRET/OPERATOR_* through the

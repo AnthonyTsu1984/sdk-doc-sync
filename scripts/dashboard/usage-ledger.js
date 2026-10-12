@@ -336,22 +336,41 @@ function closeApproveRun(db, id, { rolloutDir = defaultRolloutDir(), now = new D
     // file already pruned: close with what the store has
   }
   const end = sessionUsageNow(db, run.sessionId);
+  // Rotation guard: the host prunes/rewrites rollout files, so the per-session
+  // counters can RESET below the run's snapshot mid-run. A reset means the
+  // current window counts exactly the post-rotation activity — for a run that
+  // spans the reset that window IS the run's spend (clamping the difference to
+  // zero would silently drop it, as it once did).
+  const rotated = end.turns < run.startTurns;
+  const deltaInput = rotated ? end.inputTokens : Math.max(0, end.inputTokens - (run.startInput ?? 0));
+  const deltaOutput = rotated ? end.outputTokens : Math.max(0, end.outputTokens - (run.startOutput ?? 0));
+  const deltaTotal = rotated ? end.totalTokens : Math.max(0, end.totalTokens - run.startTotal);
   db.prepare(
     'UPDATE approve_runs SET endedAt = ?, endTurns = ?, endTotal = ?, deltaInput = ?, deltaOutput = ?, deltaTotal = ?, state = ? WHERE id = ?',
   ).run(
     now.toISOString(),
-    end.turns,
-    end.totalTokens,
-    Math.max(0, end.inputTokens - (run.startInput ?? 0)),
-    Math.max(0, end.outputTokens - (run.startOutput ?? 0)),
-    Math.max(0, end.totalTokens - run.startTotal),
+    rotated ? run.startTurns + end.turns : end.turns,
+    rotated ? run.startTotal + end.totalTokens : end.totalTokens,
+    deltaInput,
+    deltaOutput,
+    deltaTotal,
     'done',
     id,
   );
   return {
-    deltaTurns: Math.max(0, end.turns - run.startTurns),
-    deltaTotal: Math.max(0, end.totalTokens - run.startTotal),
+    deltaTurns: rotated ? end.turns : Math.max(0, end.turns - run.startTurns),
+    deltaTotal,
   };
+}
+
+// A dashboard restart orphans a dispatched child's exit event: no live owner
+// remains to close its approve run. Close it honestly without fabricating
+// deltas — the window counters keep whatever was harvested.
+function closeOrphanedRuns(db, sessionId, endedAt) {
+  const result = db.prepare(
+    'UPDATE approve_runs SET state = ?, endedAt = COALESCE(endedAt, ?) WHERE sessionId = ? AND state = ?',
+  ).run('orphaned', endedAt, sessionId, 'open');
+  return Number(result.changes);
 }
 
 // ---------- campaign usage view ----------
@@ -417,6 +436,7 @@ function campaignUsage(db, campaignPath) {
 
 module.exports = {
   ATTRIBUTION_LOOKBACK_DAYS,
+  closeOrphanedRuns,
   ROLLOUT_FILE_RE,
   USAGE_DB_RELATIVE_PATH,
   attributeFromEvents,

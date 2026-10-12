@@ -201,3 +201,32 @@ test('campaignUsage lifetime survives a host rollout rotation', (t) => {
   assert.equal(view.runs[0].input, 2000);
   assert.equal(view.runs[0].output, 100);
 });
+
+test('closeApproveRun survives a mid-run counter rotation; orphan closer is honest', (t) => {
+  const { root } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const rollout = path.join(root, 'rollout');
+  fs.mkdirSync(rollout, { recursive: true });
+  const file = path.join(rollout, 'model-io-sessT.jsonl');
+  fs.writeFileSync(file, turnLine({ input: 7000, output: 300 }) + '\n' + turnLine({ input: 400, output: 50, startedAt: '2026-10-05T09:59:00Z' }) + '\n');
+  const db = openDb(root);
+  usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T10:00:00Z') });
+  usage.upsertAttribution(db, 'sessT', 'main::c1', 'worker-registry', new Date('2026-10-05T10:00:00Z'));
+  const runId = usage.openApproveRun(db, { sessionId: 'sessT', campaignPath: 'main::c1', unitId: 'u1' }, new Date('2026-10-05T10:01:00Z'));
+
+  // Mid-run rotation: the file is rewritten from scratch; counters reset.
+  fs.writeFileSync(file, turnLine({ input: 1500, output: 90, startedAt: '2026-10-05T10:02:00Z' }) + '\n');
+  const delta = usage.closeApproveRun(db, runId, { rolloutDir: rollout, now: new Date('2026-10-05T10:03:00Z') });
+  assert.equal(delta.deltaTotal, 1590, 'rotation window becomes the run delta');
+  const view = usage.campaignUsage(db, 'main::c1');
+  assert.equal(view.lifetime.totalTokens, 1590);
+  assert.equal(view.runs[0].turns, 1);
+
+  // Orphaned open run closes without fabricating deltas.
+  const orphanId = usage.openApproveRun(db, { sessionId: 'sessT', campaignPath: 'main::c1', unitId: 'u1' }, new Date('2026-10-05T11:00:00Z'));
+  const closed = usage.closeOrphanedRuns(db, 'sessT', '2026-10-05T11:05:00Z');
+  assert.equal(closed, 1);
+  const row = db.prepare('SELECT state, deltaTotal FROM approve_runs WHERE id = ?').get(orphanId);
+  assert.equal(row.state, 'orphaned');
+  assert.equal(row.deltaTotal, null);
+});

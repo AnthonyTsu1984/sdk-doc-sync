@@ -25,7 +25,7 @@ function assertSnapshot(expected, observed) {
 // exact plan's batch facts, and every patch call is cross-checked against the
 // bound target list, so no injected adapter can mutate outside the approved
 // batch. Read adapter methods (inventory/refetch) stay ungated.
-function bindPlanGovernance({ plan, approval }) {
+function bindPlanGovernance({ plan, approval, evidenceDir = null }) {
   const governance = createWriterGovernance({
     skill: plan.actionBatch.skill,
     operation: plan.actionBatch.operation,
@@ -48,13 +48,20 @@ function bindPlanGovernance({ plan, approval }) {
     batchDigest: plan.actionBatch.batchDigest,
     sessionDigest: `procedure:${plan.actionBatch.batchDigest}`,
   }), { repoRoot: REPO_ROOT });
+  // 2026-10-12 fixture hygiene: hermetic runners inject a sandbox evidence
+  // dir so fixture executions never stain the canonical digest-keyed
+  // namespace (a stale fixture manifest then refuses every later re-mint
+  // once the tree changes). Production keeps the canonical dir.
   writeRunManifestArtifact(governance.run, {
-    filePath: path.join(REPO_ROOT, 'tmp', 'procedure-code-sync', `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`),
+    filePath: path.join(
+      evidenceDir || path.join(REPO_ROOT, 'tmp', 'procedure-code-sync'),
+      `run-manifest-${plan.actionBatch.batchDigest.replace(':', '-')}.json`,
+    ),
   });
   return governance;
 }
 
-async function executeProcedurePatch({ plan, approval, journalPath, adapter, verifier }) {
+async function executeProcedurePatch({ plan, approval, journalPath, adapter, verifier, evidenceDir = null }) {
   assertWholeDocumentApproval({ plan, approval });
   // Journal pre-flight BEFORE governance binding or any adapter call (6.7
   // fault injection): a pre-existing journal for this batch is durable
@@ -68,7 +75,7 @@ async function executeProcedurePatch({ plan, approval, journalPath, adapter, ver
   if (journal.read().length > 0) {
     return resumeProcedurePatchFromJournal({ plan, journal, verifier });
   }
-  const governance = bindPlanGovernance({ plan, approval });
+  const governance = bindPlanGovernance({ plan, approval, evidenceDir });
   const liveBefore = await adapter.inventory(plan.snapshot.documentId);
   assertSnapshot(plan.snapshot, liveBefore);
   const ordered = [...plan.actionBatch.actions].sort((left, right) => (

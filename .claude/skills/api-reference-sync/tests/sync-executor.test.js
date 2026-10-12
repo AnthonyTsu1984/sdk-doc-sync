@@ -3036,3 +3036,48 @@ test('SyncExecutor verifies a folder resource parent chain before creating the f
     assert.equal(result.error.code, 'TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT');
     assert.deepEqual(createCalls, []);
 });
+
+test('SyncExecutor resolves a resource-ref target into the complete root→leaf chain', () => {
+    const executor = new SyncExecutor({ documentWriter: {}, bitableWriter: {} });
+    const plan = {
+        schemaVersion: 1,
+        stableId: 'node:Authentication:alterRole',
+        target: {
+            version: 'v3.0.x',
+            folderRef: 'res:folder-Auth',
+            folderToken: null,
+            versionRootToken: 'root-token',
+            folderAncestry: ['root-token'],
+        },
+        postconditions: [],
+    };
+    const resolved = executor._resolvePlan(plan, new Map([['res:folder-Auth', { value: 'fld-created' }]]));
+    assert.deepEqual(resolved.target.folderAncestry, ['root-token', 'fld-created']);
+    assert.equal(resolved.target.folderToken, 'fld-created');
+
+    // A concrete-token plan's chain (intake-transcribed, leaf-final) passes
+    // through untouched — no second leaf, no dedupe drift.
+    const concrete = {
+        schemaVersion: 1,
+        stableId: 'node:Collections:getTelemetry',
+        target: {
+            folderToken: 'fld-client',
+            versionRootToken: 'root-token',
+            folderAncestry: ['root-token', 'fld-client'],
+        },
+        postconditions: [],
+    };
+    const resolvedConcrete = executor._resolvePlan(concrete, new Map());
+    assert.deepEqual(resolvedConcrete.target.folderAncestry, ['root-token', 'fld-client']);
+
+    // An unresolvable folderRef still refuses typed (unchanged contract).
+    assert.throws(
+        () => executor._resolvePlan({
+            schemaVersion: 1,
+            stableId: 'node:x',
+            target: { folderRef: 'res:folder-Other', folderAncestry: ['root-token'] },
+            postconditions: [],
+        }, new Map()),
+        (error) => error.code === 'RESOURCE_RESOLUTION_REQUIRED',
+    );
+});

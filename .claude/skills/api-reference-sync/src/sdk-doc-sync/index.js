@@ -340,6 +340,7 @@ class SdkDocSync {
         artifactBlockRenderer = null,
         apiPatchPlanner = planApiReferencePatch,
         executionJournalFactory = null,
+        runManifestEvidenceDir = null,
         collaborativeReview = false,
         reviewUnitId = null,
         batchContinue = false,
@@ -420,6 +421,7 @@ class SdkDocSync {
         this.artifactBlockRenderer = artifactBlockRenderer;
         this.apiPatchPlanner = apiPatchPlanner;
         this.executionJournalFactory = executionJournalFactory;
+        this.runManifestEvidenceDir = runManifestEvidenceDir;
         this.collaborativeReview = collaborativeReview === true;
         this.reviewUnitId = reviewUnitId;
         this.batchContinue = batchContinue === true;
@@ -1004,6 +1006,15 @@ class SdkDocSync {
         });
         const { createRunManifest, writeRunManifestArtifact } = require('../../../doc-ops-core/src/run-manifest');
         const repoRoot = path.resolve(__dirname, '..', '..', '..', '..', '..');
+        // Evidence dir seam (fixture hygiene, 2026-10-12): production runs
+        // mint into the canonical tmp/api-reference-sync evidence dir; hermetic
+        // runners inject a sandbox dir so fixture executions never stain the
+        // canonical digest-keyed namespace (a stale fixture manifest would
+        // refuse every later re-mint once the tree changes — the conflict loop
+        // that ground admission to a halt).
+        const evidenceDir = typeof this.runManifestEvidenceDir === 'string' && this.runManifestEvidenceDir.trim() !== ''
+            ? this.runManifestEvidenceDir
+            : path.join(repoRoot, 'tmp', 'api-reference-sync');
         governance.bindRunManifest(createRunManifest({
             skill: 'api-reference-sync',
             skillVersion: 'api-reference-sync/execute@1',
@@ -1015,7 +1026,7 @@ class SdkDocSync {
         // Durable evidence before the first mutation — a manifest that cannot
         // be persisted stops the run instead of executing unrecorded.
         writeRunManifestArtifact(governance.run, {
-            filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', `run-manifest-${result.executionBatch.batchDigest.replace(':', '-')}.json`),
+            filePath: path.join(evidenceDir, `run-manifest-${result.executionBatch.batchDigest.replace(':', '-')}.json`),
         });
         bindWriterGovernance(this.m2f, governance);
         bindWriterGovernance(this.bitableWriter, governance);

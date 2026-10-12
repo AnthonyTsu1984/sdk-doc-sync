@@ -437,6 +437,17 @@ class SyncExecutor {
           `Folder resource ${target.folderRef} is not resolved for ${plan.stableId}`,
         );
       }
+      // folderRef targets bind PARENT-form containment evidence at plan time
+      // (a resource-ref target cannot carry its own leaf token until the
+      // folder creation resolves within the batch) — append the resolved
+      // leaf so the write-boundary assertion compares the complete
+      // version-root→leaf chain, the same form concrete-token plans
+      // transcribe at intake. A chain that already names the leaf (concrete
+      // token plan) passes through untouched.
+      if (Array.isArray(target.folderAncestry)
+        && target.folderAncestry[target.folderAncestry.length - 1] !== target.folderToken) {
+        target.folderAncestry = [...target.folderAncestry, target.folderToken];
+      }
     }
     if (nonEmptyString(target.parentRecordRef)) {
       target.parentRecordId = resourceValue(resolutions, target.parentRecordRef);

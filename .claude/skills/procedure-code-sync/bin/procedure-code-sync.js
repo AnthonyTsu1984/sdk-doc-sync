@@ -95,6 +95,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
       journalPath: path.resolve(args.journal),
       adapter: loadAdapter(args, dependencies),
       verifier: loadVerifier(args, dependencies),
+      // 2026-10-12 fixture hygiene (run-manifest evidence seam): hermetic CLI
+      // runners redirect run-manifest artifacts out of the canonical dir.
+      evidenceDir: (dependencies && dependencies.evidenceDir) || null,
     });
     writeJson(args.output, result);
     // Completion reloads the session FRESH: the digest loaded before the

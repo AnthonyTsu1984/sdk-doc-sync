@@ -78,6 +78,14 @@ function tempJournalPath() {
   return path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'procedure-fault-')), 'execution.jsonl');
 }
 
+// Fixture hygiene: executeProcedurePatch mints run-manifest evidence keyed by
+// the fixture batch digest — sandbox it so fixture runs never collide with
+// the canonical digest-keyed namespace (a stale fixture manifest would
+// refuse every later re-mint once the tree changes).
+function sandboxEvidenceDir() {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'procedure-fault-evidence-'));
+}
+
 function seedJournal(plan, journalPath, { observed = true, complete = false, verified = true } = {}) {
   const journal = new ExecutionJournal({
     filePath: journalPath,
@@ -120,13 +128,13 @@ test('S1 before_mutation: crash before the first mutation leaves no journal and 
   const journalPath = tempJournalPath();
   const injector = createFaultInjector({ failAt: 'before_mutation' });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: countingAdapter({ plan, injector }), verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: countingAdapter({ plan, injector }), verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error instanceof InjectedFailure && error.point === 'before_mutation',
   );
   assert.equal(fs.existsSync(journalPath), false);
 
   const retry = countingAdapter({ plan });
-  const result = await executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier });
+  const result = await executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier, evidenceDir: sandboxEvidenceDir() });
   assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
   assert.deepEqual(retry.calls, { inventory: 1, patch: 2, refetch: 2 });
   assert.match(fs.readFileSync(journalPath, 'utf8'), /"completionSentinel":true/);
@@ -137,7 +145,7 @@ test('S2 after_mutation: crash between a mutation and its observed evidence refu
   const journalPath = tempJournalPath();
   const injector = createFaultInjector({ failAt: 'after_mutation' });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: countingAdapter({ plan, injector }), verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: countingAdapter({ plan, injector }), verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error instanceof InjectedFailure && error.point === 'after_mutation',
   );
   // The crash window is real: a prepared action without its observed result.
@@ -146,7 +154,7 @@ test('S2 after_mutation: crash between a mutation and its observed evidence refu
 
   const retry = countingAdapter({ plan });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   // Refusal precedes EVERY adapter call — the external state is ambiguous and
@@ -159,12 +167,12 @@ test('S3 during_refetch: an injected verification-read crash is crash-like evide
   const journalPath = tempJournalPath();
   const injector = createFaultInjector({ failAt: 'during_refetch' });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: countingAdapter({ plan, injector }), verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: countingAdapter({ plan, injector }), verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error instanceof InjectedFailure && error.point === 'during_refetch',
   );
   const retry = countingAdapter({ plan });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(retry.calls, { inventory: 0, patch: 0, refetch: 0 });
@@ -181,6 +189,7 @@ test('S4 before_completion: the resumable crash window auto-completes from journ
   const result = await executeProcedurePatch({
     plan, approval: approvalFor(plan), journalPath, adapter: retry,
     verifier: async (input) => { verifierCalls.push(input); return verifier(); },
+    evidenceDir: sandboxEvidenceDir(),
   });
   assert.equal(result.status, 'ACCEPTANCE_REQUIRED');
   assert.deepEqual(retry.calls, { inventory: 0, patch: 0, refetch: 0 });
@@ -205,8 +214,8 @@ test('S5 after_completion: a completed journal resumes verify-only, idempotently
   assert.equal(classifyJournalEntries({ entries: seeded.read(), approvedActionIds: [...seeded.approvedActionIds] }), 'complete');
 
   const retry = countingAdapter({ plan });
-  const first = await executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier });
-  const second = await executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier });
+  const first = await executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier, evidenceDir: sandboxEvidenceDir() });
+  const second = await executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath, adapter: retry, verifier, evidenceDir: sandboxEvidenceDir() });
   assert.deepEqual(retry.calls, { inventory: 0, patch: 0, refetch: 0 });
   assert.equal(first.executionJournalDigest, second.executionJournalDigest);
   assert.equal(first.verifierResultDigest, second.verifierResultDigest);
@@ -221,7 +230,7 @@ test('ambiguous journals (prepared-only or failed observations) refuse typed and
   seedJournal(plan, preparedOnly, { observed: false });
   const preparedAdapter = countingAdapter({ plan });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath: preparedOnly, adapter: preparedAdapter, verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath: preparedOnly, adapter: preparedAdapter, verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(preparedAdapter.calls, { inventory: 0, patch: 0, refetch: 0 });
@@ -230,7 +239,7 @@ test('ambiguous journals (prepared-only or failed observations) refuse typed and
   seedJournal(plan, failed, { verified: false });
   const failedAdapter = countingAdapter({ plan });
   await assert.rejects(
-    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath: failed, adapter: failedAdapter, verifier }),
+    () => executeProcedurePatch({ plan, approval: approvalFor(plan), journalPath: failed, adapter: failedAdapter, verifier, evidenceDir: sandboxEvidenceDir() }),
     (error) => error.code === 'EXECUTION_RECONCILIATION_REQUIRED',
   );
   assert.deepEqual(failedAdapter.calls, { inventory: 0, patch: 0, refetch: 0 });

@@ -1727,6 +1727,11 @@ function syncFixture({ dryRun, approvalCallback = null, calls }) {
         approvedActionIds: batch.actions.map(action => action.actionId),
       });
     },
+    // Fixture hygiene: a hermetic runner mints its run-manifest evidence into
+    // the sandbox dir, never into the canonical tmp/api-reference-sync
+    // namespace (a stale fixture manifest would refuse every later re-mint
+    // once the tree changes).
+    runManifestEvidenceDir: journalDir,
     onProgress() {},
   });
 }

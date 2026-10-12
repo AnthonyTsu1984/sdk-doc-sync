@@ -86,7 +86,12 @@ test('execute and accept commands persist journal-bound verifier acceptance', as
   const patchOrder = [];
   const execution = await runCli({
     argv: ['node', 'procedure-code-sync.js', 'execute', '--plan', paths.planPath, '--approval', approvalPath, '--journal', journalPath, '--output', executionPath, '--session', paths.sessionPath],
+    // Fixture hygiene: redirect run-manifest artifacts out of the canonical
+    // digest-keyed namespace.
     dependencies: {
+      // Fixture hygiene: redirect run-manifest artifacts out of the canonical
+      // digest-keyed namespace.
+      evidenceDir: fs.mkdtempSync(path.join(os.tmpdir(), 'procedure-cli-evidence-')),
       onStdout() {},
       adapter: {
         async inventory() { return plan.snapshot; },

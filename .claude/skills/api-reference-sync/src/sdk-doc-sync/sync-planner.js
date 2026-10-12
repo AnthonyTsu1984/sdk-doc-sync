@@ -230,7 +230,11 @@ class SyncPlanner {
     return deepFreeze(plans);
   }
 
-  planResource(resource, { placementWalkDigest = null } = {}) {
+  planResource(resourceInput, { placementWalkDigest = null, walkProduct = null } = {}) {
+    // Walk-bound folder creation carries its PARENT chain live-asserted at
+    // the write boundary; the attach runs on the local view (the caller's
+    // reviewed scope resource stays untouched).
+    const resource = applyWalkResourceParentChain(resourceInput, { walkProduct, placementWalkDigest });
     if (!resource || typeof resource !== 'object') {
       throw new SyncPlanningError('RESOURCE_REQUIRED', 'A resource definition is required');
     }
@@ -1033,8 +1037,127 @@ function reconcilePlanTargetChain(plan, placementWalkProduct) {
   }
 }
 
+// Walk-proofing doc-action placement (node v3.0.6 wall, 2026-10-12): a walk-
+// bound CREATE/COPY whose plan body carries no containment chain refuses at
+// the write boundary (PLACEMENT_TARGET_UNRESOLVED / v3+ copy without
+// folderAncestry), UNLESS the reviewed context happens to transcribe one —
+// and resource-ref targets cannot transcribe one at all because the planned
+// folder token is minted in-batch. When the run binds a walk PRODUCT, fold
+// the walk's live chains into the per-action plan context BEFORE planAction
+// re-derives its attestation, so the plan digest binds walk-derived evidence:
+//   - concrete target.folderToken → the walk's chain for that folder (absent
+//     from the walk → PLACEMENT_TARGET_CHAIN_STALE: the walk predates it)
+//   - resource-ref target.folderRef → the PARENT chain the folder resource
+//     creates under (walk chain of parentFolderToken; a folder parented
+//     directly at the version root attests [versionRootToken]) — the same
+//     chain the folder creation live-asserts, and exactly the
+//     category.folder.parentAncestry form the kernel demands for
+//     category-create copies. The executor early-returns for a plan that
+//     carries a chain without a resolved leaf token, and the folder-create
+//     step's own containment assert covers the minted leaf.
+// Existing context chains pass through untouched (intake transcriptions stay
+// authoritative) and the walk reconcile below then byte-compares them.
+function applyWalkPlacementEvidence(context, {
+  walkProduct = null,
+  resourcePlans = [],
+  placementWalkDigest = null,
+} = {}) {
+  if (!nonEmptyString(placementWalkDigest) || !walkProduct) return context;
+  const target = context?.target;
+  if (!target) return context;
+  const chains = walkProduct.folderChains || {};
+  if (nonEmptyString(target.folderToken) && !Array.isArray(target.folderAncestry)) {
+    const walked = chains[target.folderToken];
+    if (!Array.isArray(walked)) {
+      throw new SyncPlanningError(
+        'PLACEMENT_TARGET_CHAIN_STALE',
+        `walk-bound plan target folder ${target.folderToken} is absent from the bound placement walk product — `
+        + 'the walk predates the folder (re-run the placement audit and replan)',
+      );
+    }
+    target.folderAncestry = deepClone(walked);
+  }
+  if (nonEmptyString(target.folderRef) && !Array.isArray(target.folderAncestry)) {
+    const categoryFolder = context.treeDelta?.category?.folder;
+    const categoryParentChain = categoryFolder?.ref === target.folderRef
+      ? categoryFolder.parentAncestry
+      : undefined;
+    if (Array.isArray(categoryParentChain)) {
+      // The reviewed category spec carries the parent odds-on (root→
+      // parentFolderToken); the plan target binds the same chain so the
+      // write-boundary gates see one evidence shape.
+      target.folderAncestry = deepClone(categoryParentChain);
+      return context;
+    }
+    const resource = (resourcePlans || [])
+      .map((plan) => plan.resource)
+      .find((resourceDefinition) => resourceDefinition?.ref === target.folderRef);
+    if (!resource) {
+      throw new SyncPlanningError(
+        'PLACEMENT_TARGET_UNRESOLVABLE',
+        `walk-bound plan target ${target.folderRef} names no folder resource in the batch — the folder spec must ride the campaign resources`,
+      );
+    }
+    if (!nonEmptyString(resource.parentFolderToken) || !nonEmptyString(resource.versionRootToken)) {
+      throw new SyncPlanningError(
+        'FOLDER_RESOURCE_INVALID',
+        `walk-bound plan target ${target.folderRef} resolves under a folder resource without parent/root tokens`,
+      );
+    }
+    const walkedParent = chains[resource.parentFolderToken];
+    const parentChain = Array.isArray(walkedParent)
+      ? deepClone(walkedParent)
+      : (resource.parentFolderToken === resource.versionRootToken
+        ? [resource.parentFolderToken]
+        : null);
+    if (!Array.isArray(parentChain)) {
+      throw new SyncPlanningError(
+        'PLACEMENT_TARGET_CHAIN_STALE',
+        `folder resource ${target.folderRef} parents at ${resource.parentFolderToken}, absent from the bound walk product — the walk predates the parent (re-run the placement audit and replan)`,
+      );
+    }
+    target.folderAncestry = parentChain;
+    if (categoryFolder?.ref === target.folderRef
+      && !Array.isArray(categoryFolder.parentAncestry)) {
+      categoryFolder.parentAncestry = deepClone(parentChain);
+    }
+  }
+  return context;
+}
+
+// Folder resource containment at creation time (same wall): a folder created
+// UNDER another walked folder carries that parent chain live-asserted at the
+// write boundary (_executeCreateFolder checks it when parentAncestry rides
+// the resource); a folder created directly under the version root is skipped
+// — deriveFolderAncestry returns null for the root and byte-compare would
+// misread trivial containment as drift. Attach only what the executor can
+// actually prove; the walked root token plus the existingLookup's parent
+// match stays the evidence for the root-parented form.
+function applyWalkResourceParentChain(resource, {
+  walkProduct = null,
+  placementWalkDigest = null,
+} = {}) {
+  if (!nonEmptyString(placementWalkDigest) || !walkProduct) return resource;
+  if (!resource || resource.kind !== 'folder') return resource;
+  if (!nonEmptyString(resource.parentFolderToken)
+    || !nonEmptyString(resource.versionRootToken)
+    || Array.isArray(resource.parentAncestry)) return resource;
+  if (resource.parentFolderToken === resource.versionRootToken) return resource;
+  const walkedParent = walkProduct.folderChains?.[resource.parentFolderToken];
+  if (!Array.isArray(walkedParent)) {
+    throw new SyncPlanningError(
+      'PLACEMENT_TARGET_CHAIN_STALE',
+      `folder resource ${resource.ref} parents at ${resource.parentFolderToken}, absent from the bound walk product — the walk predates the parent (re-run the placement audit and replan)`,
+    );
+  }
+  resource.parentAncestry = deepClone(walkedParent);
+  return resource;
+}
+
 SyncPlanner.SyncPlanningError = SyncPlanningError;
 SyncPlanner.stableSerialize = stableSerialize;
 SyncPlanner.reconcilePlanTargetChain = reconcilePlanTargetChain;
+SyncPlanner.applyWalkPlacementEvidence = applyWalkPlacementEvidence;
+SyncPlanner.applyWalkResourceParentChain = applyWalkResourceParentChain;
 
 module.exports = SyncPlanner;

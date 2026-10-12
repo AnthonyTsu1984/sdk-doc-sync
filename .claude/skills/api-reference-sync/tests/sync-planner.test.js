@@ -2701,3 +2701,101 @@ test('SyncPlanner accepts a declared top-level root VirtualNode resource without
     existingLookup: { checked: true, absent: true, baseToken: 'base-v30', tableId: 'table-v30', criteria: { canonicalSlug: 'Client-Child' } },
   }), /rootVirtualNode:true with a prefix-less slug/);
 });
+
+test('walk-bound plan contexts fold walk-derived containment chains in (node v3.0.6 wall)', () => {
+  const { applyWalkPlacementEvidence, applyWalkResourceParentChain } = SyncPlanner;
+  const walkProduct = {
+    walkDigest: 'sha256:' + 'd'.repeat(64),
+    folderChains: {
+      'fld-client': ['root-token', 'fld-client'],
+      'fld-import': ['root-token', 'fld-import'],
+    },
+  };
+
+  // Concrete-token CREATE targets take the walk's chain verbatim.
+  const concrete = {
+    target: { version: 'v3.0.x', folderToken: 'fld-client', versionRootToken: 'root-token' },
+  };
+  applyWalkPlacementEvidence(concrete, { walkProduct, placementWalkDigest: 'sha256:' + 'd'.repeat(64) });
+  assert.deepEqual(concrete.target.folderAncestry, ['root-token', 'fld-client']);
+
+  // Resource-ref targets under the version root attest the root chain; a
+  // matching category spec without a parentAncestry receives it too.
+  const created = {
+    target: { version: 'v3.0.x', folderRef: 'res:folder-Auth', folderToken: null, versionRootToken: 'root-token' },
+    treeDelta: {
+      category: {
+        folder: {
+          ref: 'res:folder-Auth',
+          beyondTokens: undefined,
+          parentFolderToken: 'root-token',
+          versionRootToken: 'root-token',
+        },
+      },
+    },
+  };
+  applyWalkPlacementEvidence(created, {
+    walkProduct,
+    resourcePlans: [{ resource: { ref: 'res:folder-Auth', kind: 'folder', parentFolderToken: 'root-token', versionRootToken: 'root-token' } }],
+    placementWalkDigest: 'sha256:' + 'd'.repeat(64),
+  });
+  assert.deepEqual(created.target.folderAncestry, ['root-token']);
+  assert.deepEqual(created.treeDelta.category.folder.parentAncestry, ['root-token']);
+
+  // Resource-ref targets parented under a walked folder take the walk's
+  // PARENT chain; a category spec that already carries one stays authoritative.
+  const copy = {
+    target: { version: 'v3.0.x', folderRef: 'res:folder-Writer', folderToken: null, versionRootToken: 'root-token' },
+    treeDelta: {
+      category: {
+        folder: {
+          ref: 'res:folder-Writer',
+          parentFolderToken: 'fld-import',
+          versionRootToken: 'root-token',
+          parentAncestry: ['root-token', 'fld-import'],
+        },
+      },
+    },
+  };
+  applyWalkPlacementEvidence(copy, {
+    walkProduct,
+    resourcePlans: [{ resource: { ref: 'res:folder-Writer', kind: 'folder', parentFolderToken: 'fld-import', versionRootToken: 'root-token' } }],
+    placementWalkDigest: 'sha256:' + 'd'.repeat(64),
+  });
+  assert.deepEqual(copy.target.folderAncestry, ['root-token', 'fld-import']);
+  assert.deepEqual(copy.treeDelta.category.folder.parentAncestry, ['root-token', 'fld-import']);
+
+  // Unbound (legacy) runs stay untouched.
+  const legacy = { target: { folderToken: 'fld-client' } };
+  applyWalkPlacementEvidence(legacy, { walkProduct, placementWalkDigest: null });
+  assert.equal(legacy.target.folderAncestry, undefined);
+
+  // A walk that predates the target folder fails planning, not the write gate.
+  assert.throws(
+    () => applyWalkPlacementEvidence({ target: { folderToken: 'fld-later' } }, { walkProduct, placementWalkDigest: 'sha256:' + 'd'.repeat(64) }),
+    (error) => error.code === 'PLACEMENT_TARGET_CHAIN_STALE' && /predates the folder/.test(error.message),
+  );
+
+  // A resource-ref target naming no batch resource refuses typed.
+  assert.throws(
+    () => applyWalkPlacementEvidence({ target: { folderRef: 'res:folder-missing' } }, { walkProduct, resourcePlans: [], placementWalkDigest: 'sha256:' + 'd'.repeat(64) }),
+    (error) => error.code === 'PLACEMENT_TARGET_UNRESOLVABLE',
+  );
+
+  // A resource parented under a walked folder carries its parent chain into
+  // the resource plan; the context stays unaffected.
+  const scopeFolder = { kind: 'folder', ref: 'res:folder-Writer', parentFolderToken: 'fld-import', versionRootToken: 'root-token' };
+  applyWalkResourceParentChain(scopeFolder, { walkProduct, placementWalkDigest: 'sha256:' + 'd'.repeat(64) });
+  assert.deepEqual(scopeFolder.parentAncestry, ['root-token', 'fld-import']);
+
+  // Root-parented folder resources stay untouched: skip deriveFolderAncestry's
+  // root-null Form so trivial containment is never misread as drift.
+  const rootFolder = { kind: 'folder', ref: 'res:folder-Auth', parentFolderToken: 'root-token', versionRootToken: 'root-token' };
+  applyWalkResourceParentChain(rootFolder, { walkProduct, placementWalkDigest: 'sha256:' + 'd'.repeat(64) });
+  assert.equal(rootFolder.parentAncestry, undefined);
+
+  // An already-transcribed parent chain stays authoritative.
+  const transcribed = { kind: 'folder', ref: 'res:folder-Writer', parentFolderToken: 'fld-import', versionRootToken: 'root-token', parentAncestry: ['root-token', 'old', 'fld-import'] };
+  applyWalkResourceParentChain(transcribed, { walkProduct, placementWalkDigest: 'sha256:' + 'd'.repeat(64) });
+  assert.deepEqual(transcribed.parentAncestry, ['root-token', 'old', 'fld-import']);
+});

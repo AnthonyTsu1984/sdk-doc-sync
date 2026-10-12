@@ -586,7 +586,10 @@ class SdkDocSync {
         const plannedEntries = [];
         for (const resource of [...(this.releaseScope?.resources || []), ...(this.campaignResources || [])]) {
             try {
-                const plan = this.planner.planResource(resource, { placementWalkDigest: this.placementWalkDigest });
+                const plan = this.planner.planResource(resource, {
+                    placementWalkDigest: this.placementWalkDigest,
+                    walkProduct: this.placementWalkProduct,
+                });
                 // T3 walk binding: resource lookups in this scope were
                 // derived from the same placement audit walk as the document
                 // plans — planResource carries the digest natively, and the
@@ -637,6 +640,17 @@ class SdkDocSync {
                     const lineage = rebuildLineageFor(this.reviewSession, unitIds);
                     if (lineage.length > 0) context.reviewSessionRebuildLineage = lineage;
                 }
+                // Walk-bound runs fold the walk product's live chains into the
+                // per-action context before planAction re-derives the
+                // attestation — walk-bound CREATE/COPY plans without a
+                // containment chain refuse at the write boundary otherwise
+                // (node v3.0.6 wall, PLACEMENT_TARGET_UNRESOLVED; the chain
+                // rides the plan digest, not the reviewed artifact).
+                SyncPlanner.applyWalkPlacementEvidence(context, {
+                    walkProduct: this.placementWalkProduct,
+                    resourcePlans: result.resourcePlans,
+                    placementWalkDigest: this.placementWalkDigest,
+                });
                 const plan = this.planner.planAction(plannableAction, context);
                 SyncPlanner.reconcilePlanTargetChain(plan, this.placementWalkProduct);
                 result.plans.push(plan);

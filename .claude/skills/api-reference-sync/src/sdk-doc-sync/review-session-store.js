@@ -1151,7 +1151,13 @@ function validateRollbackJournal(filePath, expectedDigest) {
   if (failed.length > 0) throw new Error('Rollback journal contains failed or unverified actions');
   const preparedIds = entries.filter((entry) => entry.type === 'prepared').map((entry) => entry.actionId).sort();
   const observedIds = entries.filter((entry) => entry.type === 'observed').map((entry) => entry.actionId).sort();
-  if (preparedIds.length === 0 || JSON.stringify(preparedIds) !== JSON.stringify(observedIds)) {
+  // Zero-action rollback (empty-inversion manifest): nothing was prepared or
+  // observed BY DESIGN — the completion-only journal with a satisfied
+  // sentinel is the executable content, so the pairing law applies only
+  // when at least one action exists.
+  const zeroActionRollback = preparedIds.length === 0 && observedIds.length === 0;
+  if (!zeroActionRollback
+    && (preparedIds.length === 0 || JSON.stringify(preparedIds) !== JSON.stringify(observedIds))) {
     throw new Error('Rollback journal does not pair every prepared action with a verified observation');
   }
   const manifestDigests = new Set(entries.map((entry) => entry.rollbackManifestDigest).filter(nonEmptyString));

@@ -1353,3 +1353,43 @@ test('an operator-supplied rollback journal overrides the session change-request
   });
   assert.equal(anchoredLease.activeRollback.originalExecutionJournalDigest, anchored.digest);
 });
+
+test('a zero-action rollback journal (empty-inversion reversals) validates and clears the anchor', () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'review-session-rollback-zero-'));
+  const execution = executionJournal(directory);
+  // The zero-action form: completion ONLY — reversed-by-design nothing.
+  const binding = {
+    schemaVersion: 1,
+    operation: 'rollback-document',
+    rollbackManifestDigest: 'sha256:rollback-manifest-zero',
+    originalExecutionJournalDigest: execution.digest,
+  };
+  const filePath = path.join(directory, 'rollback-zero.jsonl');
+  fs.writeFileSync(filePath, `${JSON.stringify({
+    ...binding,
+    type: 'completion',
+    status: 'rolled_back',
+    completionSentinel: true,
+    reviewUnitId: 'review:node:Collections:a',
+    scanStateUpdated: false,
+  })}\n`);
+  const digest = digestSemantic([JSON.parse(fs.readFileSync(filePath, 'utf8'))]);
+
+  const initial = createReviewSession({
+    sessionId: 'sdk-doc-sync:node:v3.0.x:rollback-zero',
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    reviewUnitManifest: manifest(),
+  });
+  const updated = recordDocumentRollback(withExecution(initial, execution), {
+    reviewUnitId: 'review:node:Collections:a',
+    rollbackJournalPath: filePath,
+    rollbackJournalDigest: digest,
+    rolledBackAt: '2026-10-12T12:10:00.000Z',
+  });
+  assert.equal(updated.rollbackReceipts.length, 1);
+  assert.equal(updated.rollbackReceipts[0].originalExecutionJournalDigest, execution.digest);
+  assert.equal(updated.rollbackReceipts[0].rollbackManifestDigest, 'sha256:rollback-manifest-zero');
+  assert.equal(updated.activeExecution, null);
+});

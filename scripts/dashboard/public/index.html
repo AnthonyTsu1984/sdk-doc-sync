@@ -213,15 +213,20 @@ const SKILLS = [
 ];
 
 function parseHash() {
-  const h = decodeURIComponent(location.hash.replace(/^#/, '')) || '/home';
-  const parts = h.split('/').filter(Boolean);
-  if (parts[0] === 'home' || parts.length === 0) return { name: 'home' };
-  if (parts[0] === 'skill' && parts[1] === 'api' && parts[2] === 'lang' && parts[3]) return { name: 'lang', lang: parts[3] };
-  if (parts[0] === 'skill' && parts[1] === 'api' && parts[2] === 'track' && parts[3]) return { name: 'track', key: parts[3] };
-  if (parts[0] === 'skill' && parts[1] === 'api') return { name: 'skill-api' };
-  if (parts[0] === 'skill' && parts[1]) return { name: 'skill', id: parts.slice(1).join('/') };
-  if (parts[0] === 'campaign' && parts[1]) return { name: 'campaign', path: parts.slice(1).join('/') };
-  return { name: 'home' };
+  const raw = decodeURIComponent(location.hash.replace(/^#/, '')) || '/home';
+  // Hash routing puts a trailing "#anchor" inside location.hash (e.g.
+  // "#/skill/api/lang/node#findings") — it is a scroll target for the
+  // rendered page, not part of the route path, so peel it off first.
+  const cut = raw.indexOf('#');
+  const anchor = cut >= 0 ? raw.slice(cut + 1) : '';
+  const parts = (cut >= 0 ? raw.slice(0, cut) : raw).split('/').filter(Boolean);
+  if (parts[0] === 'home' || parts.length === 0) return { name: 'home', anchor };
+  if (parts[0] === 'skill' && parts[1] === 'api' && parts[2] === 'lang' && parts[3]) return { name: 'lang', lang: parts[3], anchor };
+  if (parts[0] === 'skill' && parts[1] === 'api' && parts[2] === 'track' && parts[3]) return { name: 'track', key: parts[3], anchor };
+  if (parts[0] === 'skill' && parts[1] === 'api') return { name: 'skill-api', anchor };
+  if (parts[0] === 'skill' && parts[1]) return { name: 'skill', id: parts.slice(1).join('/'), anchor };
+  if (parts[0] === 'campaign' && parts[1]) return { name: 'campaign', path: parts.slice(1).join('/'), anchor };
+  return { name: 'home', anchor };
 }
 
 function navActive(route) {
@@ -481,6 +486,12 @@ async function postSpawnIntake(payload) {
     });
     const j = await r.json();
     alert(j.note || j.error || JSON.stringify(j));
+    if (j.ok) {
+      // The button just retired behind this artifact — refetch so the
+      // findings section immediately shows the running/campaign state.
+      scoutCache = { at: 0, data: null };
+      route();
+    }
   } catch (e) { alert('派出失败: ' + e); }
 }
 
@@ -499,13 +510,22 @@ function renderFindingsSection(d, language, scout) {
       <td class="dim" style="font-size:12px">${esc(act.sourceLocator ?? act.sourceRepository ?? '—')}</td>
       <td class="dim">${esc(a.trackKey)}</td>
     </tr>`)).join('');
-  const artifactControls = entry.artifacts.map((a) => `
-    <span style="display:inline-flex;gap:6px;align-items:center">
-      ${viewLink(a.path, `${a.trackKey} · ${a.actionCount} 项`).replace('<a ', '<a class="badge" style="text-decoration:none" ')}
-      ${spawnOn
-        ? `<button class="act danger" title="派只读处理会话：停在分组批准门，批准分组后才写作" onclick="spawnIntake('${esc(language)}', ${JSON.stringify(a.path).replace(/"/g, '&quot;')})">开始处理</button>`
-        : ''}
-    </span>`).join(' ');
+  // Dispatch-state control per artifact: once the intake produced a review
+  // session (durable campaign card) or a seeded worker is still running, the
+  // button retires — the flow continues on the campaign card / running feed.
+  const artifactControls = entry.artifacts.map((a) => {
+    const link = viewLink(a.path, `${a.trackKey} · ${a.actionCount} 项`).replace('<a ', '<a class="badge" style="text-decoration:none" ');
+    let control = '';
+    if (a.dispatch && a.dispatch.campaignCard) {
+      control = `<a class="badge finalized" style="text-decoration:none" href="#/campaign/${encodeURIComponent(a.dispatch.campaignCard.key)}" title="该轨道已建评审会话——到战役卡片续接">⛩ 已建评审会话 → 战役卡片</a>`;
+    } else if (a.dispatch && a.dispatch.runningSpawnedAt) {
+      control = `<span class="badge active" title="intake 会话后台只读运行中：证据核证 → 规划 dry-run → 建会话；停在分组门后此处变为分组门卡片">⚙ 处理中（派出 ${rel(a.dispatch.runningSpawnedAt)}）</span>`;
+    } else if (spawnOn) {
+      control = `<button class="act danger" title="派只读处理会话：停在分组批准门，批准分组后才写作" onclick="spawnIntake('${esc(language)}', ${JSON.stringify(a.path).replace(/"/g, '&quot;')})">开始处理</button>`;
+    }
+    return `
+    <span style="display:inline-flex;gap:6px;align-items:center">${link}${control}</span>`;
+  }).join(' ');
   return `<a id="findings"></a>
     <div class="card" style="cursor:default;margin-bottom:12px">
       <div class="row1">
@@ -516,7 +536,7 @@ function renderFindingsSection(d, language, scout) {
         <thead><tr><th>方法</th><th>类型</th><th>原因</th><th>证据</th><th>轨道</th></tr></thead>
         <tbody>${items}</tbody>
       </table>
-      <div class="note">扫描器原文透传；「开始处理」= 派只读 intake 会话（每轨一个），分组门是开工门，未批准不写。</div>
+      <div class="note">扫描器原文透传；「开始处理」= 派只读 intake 会话（每轨一个；已派出或已建评审会话后按钮自动退位），分组门是开工门，未批准不写。</div>
     </div>`;
 }
 
@@ -1367,7 +1387,9 @@ function restoreUiState(state) {
 
 // ---------- router ----------
 
-function route() {
+let anchorDoneFor = '';
+
+async function route() {
   if (!latest) return;
   maybeReloadOnUiVersion(latest);
   const uiState = snapshotUiState();
@@ -1375,13 +1397,23 @@ function route() {
   renderNav(r);
   renderHeader(latest);
   const d = latest;
-  if (r.name === 'home') pageHome(d);
-  else if (r.name === 'skill-api') pageSkillApi(d);
-  else if (r.name === 'lang') pageLang(d, r.lang);
-  else if (r.name === 'track') pageTrack(d, r.key);
-  else if (r.name === 'campaign') pageCampaign(d, r.path);
-  else if (r.name === 'skill') pageSkill(d, r.id);
+  if (r.name === 'home') await pageHome(d);
+  else if (r.name === 'skill-api') await pageSkillApi(d);
+  else if (r.name === 'lang') await pageLang(d, r.lang);
+  else if (r.name === 'track') await pageTrack(d, r.key);
+  else if (r.name === 'campaign') await pageCampaign(d, r.path);
+  else if (r.name === 'skill') await pageSkill(d, r.id);
   restoreUiState(uiState);
+  // Scroll to the "#anchor" suffix once per hash — re-renders (SSE / 30s
+  // poll) keep restoring the user's live scroll position instead.
+  if (r.anchor) {
+    if (anchorDoneFor !== location.hash) {
+      anchorDoneFor = location.hash;
+      document.getElementById(r.anchor)?.scrollIntoView();
+    }
+  } else {
+    anchorDoneFor = '';
+  }
 }
 window.route = route;
 window.addEventListener('hashchange', route);
@@ -1392,7 +1424,11 @@ function connect() {
   const es = new EventSource('/api/events');
   es.addEventListener('cards', (e) => {
     dot.className = 'dot live'; text.textContent = '实时';
-    try { latest = JSON.parse(e.data); route(); } catch {}
+    try { latest = JSON.parse(e.data); } catch {}
+    // Card pushes can retire a findings button (campaign landed) — drop the
+    // scout cache so the re-render picks the new dispatch state up.
+    scoutCache = { at: 0, data: null };
+    route();
   });
   es.onopen = () => { dot.className = 'dot live'; text.textContent = '实时'; };
   es.onerror = () => { dot.className = 'dot dead'; text.textContent = '断开（轮询兜底）'; };

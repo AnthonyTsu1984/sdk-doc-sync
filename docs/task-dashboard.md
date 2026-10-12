@@ -116,6 +116,27 @@
 - **修订卡**（`buildRevisionCards`，载荷 `revisions[]`）：逐检出扫 `tmp/api-reference-sync/*worklist*.json`；范围口径优先取分组门所链**活体 revision-scope**（新于工作单）；进度=apply-review run-manifest 逐页对账（revision / pr-polish 两流）；分组门 digest 展示；**同 stem 跨检出去重**——活的（进度更深/带门）胜出，主检出筹备期残留副本出局。API 参考页与语种页新增"修订战役"区，语种卡计数并入。
 - **交接=/attach 第三类目标**：`/attach <工作单 stem>`（如 `java-revision-worklist`，`rev:` 前缀/全键均可）→ 确定性简报=工作树指引（一切以该检出为准）+ 裁定原文 + 分组门 digest（提示确认已批）+ 已写页面逐条对账 + 待写页数 + 续接规则（governed writer 逐页 manifest/共享页 in-place/需决策即停）+ 铁律。`buildBrief` 在战役解析失败后自动尝试修订目标；CLI 与 spawn 派单同一入口（修订 worker 以工作树为 --cwd）。
 
+## 4i. 门铃通知（批 14，本 PR）
+
+解决"操作员盯板"（自动化路线 S1 的注意力回路）：worker 停门、哨兵停摆、待关账等可行动项主动推送到操作员飞书**点对点会话**（绝不发群），把"人盯板"翻转为"板找人"。
+
+- **事件派生**（`gate-watch.js`，纯函数，载荷零第二真相）：战役门（nextGate 停在 APPROVE_*/RESOLVE_ROLLBACK）、僵尸会话、待关账（awaiting-close）、回执未落（staleReceipts）、**未批分组门**（intakes 卡 approved=false——含会话建立前的首门，dwell 用真实 presentedAt）、哨兵停摆（stale）与具备条件却从未运行（never-run 且 capabilityReady）、失联 worker（派单台账有 dispatch 无 exit，2–24h 窗口）。
+- **发送决策**（同一模块）：追加式 `tmp/dashboard-events/notify-ledger.jsonl`（send/resolve 两类记录，最新记录定夺）——未发过才发、同事件**2h 升级重提醒**、事件消失记 resolve（再出现视为新）、**静默窗 22:00–07:59 只记账不发送**（攒到早窗合并成一条）；发送记录只在消息真发出后落账，失败的下扫重试。
+- **消息形态**：纯文本、合并单条（一次扫一条消息列全部待决项）、按事件真实时间戳算 dwell（"已等待 48.0 小时"）、**无链接无 digest**（卡片链接不可点与 digest 仅展示两条既有裁定），处理入口指向看板。
+- **发送器**（`notify-feishu.js`）：复用 skill 的 larkTokenFetcher（.env APP_ID/APP_SECRET）；收件人=OPERATOR_OPEN_ID 直用或 OPERATOR_EMAIL 经 contact batch_get_id 反查（需只读 scope contact:user.id:readonly，open_id 进程内缓存）；fetch/token 全可注入，测试零网络。CLI 冒烟：`node scripts/dashboard/notify-feishu.js --text "..."`。
+- **接线**（server.js）：`--notify` 显式 opt-in（与 --allow-spawn/--allow-approve 同款模式——发 IM 是遥测不是写路径，governed 状态仍零接触）；5 分钟周期扫 + worker 退场后 60s 加扫 + 启动 90s 首扫（等 nextGate 刷新落定）；一切失败打日志降级，看板本体不受影响。
+
+### 14b. 消息指令回路（回复即批准）
+
+`--notify-relay`（隐含 --notify）在同一私聊里接收操作员指令：**长连接**事件订阅（`@larksuiteoapi/node-sdk` WSClient，无公网端点，拨出式）。语法确定性（bot-integration 契约，绝不自由解释）：
+
+- **回复（引用）某条通知消息 + 「批准」** → 批准该通知的分组门。信任链：回复 root_id → 发件台账（`notify-outbox.jsonl`，发送通知时落 message_id→事件绑定）→ 唯一分组门事件 → **digest 执行时从工件重读**（绝不取自消息文本；工件变了=STALE_DIGEST 拒批并失效旧通知键等重发新通知）→ 组装精确 `APPROVE_GROUPING sha256:<digest>` 行 → 与 /api/approve 同一条 resume 注入链（`dispatchResumeTurn` 共用核：注册回合+usage 边界归因+退场重响门铃）。worker 会话从派单台账 dispatch/exit 对（trackKey 精确 join 优先、歧义即拒）；重复回复幂等；非操作员/群聊消息整体忽略。
+- **「状态」** → 当前全部待决事件快照（同门铃派生）。
+- **「帮助」/未知指令** → 语法说明。
+- **v1 边界（诚实声明）**：消息通道只受理**分组门**——digest 是 gate manifest 的一手字段（读工件≠造第二真相）；写门/文档门/回滚/验收的 digest 由 canonical CLI 派生呈报，看板重派即第二真相，一律回复指路看板。
+- 应用侧前置（一次性）：后台「事件与回调→事件配置」切**长连接**、订阅 `im.message.receive_v1`、事件详情勾上单聊权限（`im:message.p2p_msg:readonly`）、**发版生效**；未配置时长连接失败自动降级为纯门铃。
+
+
 ## 5. 路线
 
 - **批 1（PR #92）**：聚合层 + 只读 server + 页面 + 测试。
@@ -125,6 +146,7 @@
 - **批 5（本 PR）**：信息架构重排（§4d）。
 - **批 6**：live 飞书统计（registry 驱动逐轨 Bitable 记录总数 + Drive 文档数，TTL 缓存失败降级）+ 每日发现呈门（scout 工件解析成人话清单，「开始处理」一键派只读 intake worker，**分组门=开工门**：worker 停在 APPROVE_GROUPING 等操作员批准后才进入写作——"哨兵只发现不处置"修订为"呈门后的一键派单仍属人工动作，两道人工确认不变"）。
 - **批 7**：token 消耗（harvest 宿主 `~/.zcode/cli/rollout/model-io-sess_*.jsonl` 逐回合 usage → `node:sqlite` 派生遥测库，approve 回合边界差分归因到单篇；战役详情加消耗面板：总计+分会话小计+分篇明细+采集覆盖率注记；历史无数据如实标注）。
+- **批 14**：门铃通知（§4i）——飞书 p2p 直达操作员，`--notify` opt-in；自动化路线 S1 注意力回路的第一段。
 
 ## 6. 测试
 
@@ -135,3 +157,4 @@
 - `tests/skills/dashboard-checkouts.test.js`（批 8）：worktree 清单解析（bare 跳过/主检出标签）、跨检出发现与键防碰撞（同相对路径双检出+各自 scan-state 僵尸判定）、绝对 sessionRef 只归因本检出、运行会话推导（窗口/最长根匹配检出推断/战役滚动归因）、resolveSessionTarget 键解析。
 - `tests/skills/dashboard-revision.test.js`（批 10）：修订卡发现（活体 scope 优先/apply-review 逐页对账/无关 run-manifest 不计）、跨检出去重（进度深者活）、目标解析三种形态与简报确定性。
 - `tests/skills/dashboard-usage.test.js`（批 7）：解析（嵌套 snake/camelCase、无 usage 行不算回合、坏行容忍）、增量采集（追加快路径/书签跳过/轮转重建无幽灵行）、事件归因（绝对路径归一化 join）、approve 边界差分（resume 回合归到单元）、空态诚实呈现。
+- `tests/skills/dashboard-notify.test.js`（批 14/14b）：事件派生（战役门/僵尸/待关账/回执未落四类一卡一事件、僵尸不重复报门、未批分组门与已批静默、哨兵 stale/never-ready/never-unready 三态、失联 worker 只在 2–24h 窗）、发送决策（首发、2h 内去重、升级重提醒、resolve 后再现视为新、静默窗记账不发送、force 越窗）、dwell 从事件真实时间戳起算、消息纯文本无链接无 digest、发送器（邮箱反查+请求形状、OPERATOR_OPEN_ID 优先且反查缓存、缺目标/无用户/scope 拒绝三类 typed 错误、线程内回复+无 id 回退平发）；relay（指令语法确定性、事件解码拒非文本/无发送者、worker 解析 trackKey join 优先/歧义拒/无 exit 跳过、planApprove 快乐路径拼精确行/STALE 拒且失效键/已批/多事件/工件不可读/无 worker 五类拒绝、handleIncoming 非操作员与群聊整体忽略/无引用与外来说明/幂等重批/状态与帮助）。

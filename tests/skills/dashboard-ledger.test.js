@@ -374,3 +374,37 @@ test('an unstamped intake session counts on its registry-pinned track', (t) => {
   assert.equal(v30.key, 'go-v3');
   assert.equal(v30.campaigns.active, 1, 'unstamped go intake session counts as active on go-v3');
 });
+
+// ---------- intake grouping-gate manifests (batch 12: subdirectory tolerance) ----------
+
+test('intake cards discover gate manifests one subdirectory deep, deduped, filtered by shape', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const gateManifest = (title) => ({
+    gate: 'APPROVE_GROUPING',
+    title,
+    run: 'node v3.0.x intake',
+    digest: 'sha256:' + 'a'.repeat(64),
+    links: [{ label: 'proposal', url: 'file:///tmp/proposal.json' }],
+  });
+  // The real blind spot: a dispatched worker's per-intake workdir manifest.
+  write('tmp/sdk-release-scout/node-v30-intake-2026-10-10/node-v30-grouping-gate-manifest.json', gateManifest('node v3.0.x 分组门'));
+  // Top-level (go precedent) still discovered.
+  write('tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json', gateManifest('go v3.0.0 分组门'));
+  // Shape gates: no digest / non-grouping gate never become cards.
+  write('tmp/sdk-release-scout/other-intake-dir/x-grouping-gate-manifest.json', { gate: 'APPROVE_GROUPING', title: 'no digest' });
+  write('tmp/sdk-release-scout/other-intake-dir/y-grouping-gate-manifest.json', { gate: 'APPROVE_WRITES', title: 'wrong gate', digest: 'sha256:' + 'b'.repeat(64) });
+  // Deeper nesting stays invisible: the glob is exactly one '*' segment.
+  write('tmp/sdk-release-scout/node-v30-intake-2026-10-10/nested/z-grouping-gate-manifest.json', gateManifest('too deep'));
+
+  const ledger = buildLedger({ repoRoot: root });
+  const paths = ledger.intakes.map((c) => c.manifestPath).sort();
+  assert.deepEqual(paths, [
+    'tmp/sdk-release-scout/go-v30-grouping-gate-manifest.json',
+    'tmp/sdk-release-scout/node-v30-intake-2026-10-10/node-v30-grouping-gate-manifest.json',
+  ]);
+  const nodeCard = ledger.intakes.find((c) => c.manifestPath.includes('node-v30-intake'));
+  assert.equal(nodeCard.language, 'node', 'title/run words carry the language join');
+  assert.equal(nodeCard.approved, false, 'no receipt/session evidence → awaiting');
+});

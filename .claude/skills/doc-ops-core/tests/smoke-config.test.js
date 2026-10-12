@@ -35,11 +35,11 @@ test('smoke config rejects production token and app reuse', () => {
   const env = validEnv();
   env.ROOT_TOKEN = env.SMOKE_ROOT_TOKEN;
   env.BASE_TOKEN = env.SMOKE_BASE_TOKEN;
-  env.APP_ID = env.SMOKE_APP_ID;
+  env.DOC_APP_ID = env.SMOKE_APP_ID;
   assert.throws(
     () => loadSmokeConfig(env),
     error => error.code === 'SMOKE_CONFIG_COLLISION'
-      && error.collisions.join(',') === 'APP_ID,BASE_TOKEN,ROOT_TOKEN',
+      && error.collisions.join(',') === 'BASE_TOKEN,DOC_APP_ID,ROOT_TOKEN',
   );
 });
 

@@ -24,6 +24,25 @@ const IRON_RULES = [
   '- 铁律: 执行中绝不删除 journal 重放；写路径只走 canonical CLI；scan-state 只由 close-session/finalize 推进。',
   '- 本简报由盘上 durable 状态确定性生成；续接以 durable 状态与 canonical CLI 输出为准，勿凭记忆。',
 ];
+// Execution critical path (batch 12): the java/go-proven loop, pinned so a
+// fresh chat starts from the materialized handoff instead of re-deriving the
+// method from SKILL.md each time (the writing sessions' 30–40% repo-exploration
+// overhead). SKILL.md §Domain Workflow 8 stays the reference; this is the
+// entry-point contract the brief guarantees.
+const EXECUTION_PATH_LINES = [
+  '- 写作/落盘关键路径（战役已验证的方法，勿再自行推导）:',
+  '  1. 每个新对话第一步: `node .claude/skills/api-reference-sync/bin/sdk-review-session.js handoff --session <session-file> [--recipe <recipe.json>]`——它推导下一道门、批切片（文档门=挂起执行；写门=manifest 序下 ≤20 个未接受单元）、要绑的 digest 和可直接执行的命令骨架。',
+  '  2. 循环骨架: FULL-scope dry-run → `node .claude/skills/api-reference-sync/scripts/gate-presentation.js --from-dryrun` 呈卡 → 操作员回 `APPROVE_WRITES sha256:<batch-digest>` → execute（`--approve-batch-digest` 等 digest 全部程序化注入，绝不手抄）→ 文档门/resolve-batch-review → 循环到 remaining=0 → `close-session`（scan-state 恰好推进一次；打回即铸在闭关时自动落 rule candidate）。',
+  '  3. 工件与回执落点: journal/run-manifest 在 `tmp/api-reference-sync/`（execute 每跑一轮用全新 journal 路径）；分组批准回执在 `tmp/api-reference-sync/grouping-approvals/`。',
+];
+
+// Workspace disciplines (batch 13): mirrors intake-brief.js — the canon is
+// references/workspace-contract.md, the brief carries the operative lines.
+const WORKSPACE_LINES = [
+  '- 工作空间契约（全文见 skill references/workspace-contract.md）: tmp/ 只写规范位——治理工件（journal/run-manifest/回执）进 `tmp/api-reference-sync/`，扫描与 intake 进 `tmp/sdk-release-scout/`，战役 run 进 `tmp/sdk-doc-sync-runs/`；一次性脚本不落 tmp 顶层，收官战役的诊断转储归 `tmp/archive/`。',
+  '- 工作树原则: 只读工作可在主树；改树的战役在专用 worktree（`<repo>-<purpose>` 命名，一场战役一棵树一条分支，绝不共享）；收官 merge 后证据迁回主树 tmp，worktree 与分支随即退役。',
+  '- 回合契约: 一回合 = 派出/续接 → 干活 → 停在下一道门或终态。门后必停、绝不自批；批准只有落成回执才生效；任何重规划/重扫使 digest 作废、必须重新走门；回合产物（journal/manifest/回执）先落规范位再结束回合。',
+];
 
 function resolveTarget(campaigns, requested) {
   const raw = String(requested || '').trim();
@@ -166,6 +185,8 @@ function buildBrief({ repoRoot, requested, now = new Date(), runStatus = default
 
   lines.push('');
   lines.push('### 续接规则');
+  lines.push(...EXECUTION_PATH_LINES);
+  lines.push(...WORKSPACE_LINES);
   lines.push(...GATE_FORMAT_LINES, ...IRON_RULES);
   return { ok: true, text: lines.join('\n'), card };
 }

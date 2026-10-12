@@ -248,6 +248,21 @@ test('buildIntakeBrief is deterministic and fail-closed', (t) => {
   assert.match(good.text, /停在 APPROVE_GROUPING 门/);
   assert.match(good.text, /会话文件落位契约/);
   assert.match(good.text, /APPROVE_GROUPING sha256:<digest>/);
+  // Intake critical path (batch 12): pinned commands, artifact locations,
+  // and payload discipline so a dispatched worker stops re-deriving them.
+  assert.match(good.text, /intake 关键路径/);
+  assert.match(good.text, /lark-cli drive files list --folder-token/);
+  assert.match(good.text, /原始记录绝不整页过上下文/);
+  assert.match(good.text, /-bitable-snapshot\.json/);
+  assert.match(good.text, /build-current-placement-audit\.js/);
+  assert.match(good.text, /gate manifest 落位契约/);
+  assert.match(good.text, /tmp\/sdk-release-scout\/<track>-grouping-gate-manifest\*\.json/);
+  assert.match(good.text, /写进子目录看板不可见/);
+  // Workspace disciplines (batch 13): tmp layout, worktree, gate rounds.
+  assert.match(good.text, /工作空间契约/);
+  assert.match(good.text, /工作树原则/);
+  assert.match(good.text, /回合契约/);
+  assert.match(good.text, /一次性脚本不落 tmp 顶层/);
   // Canonical grouping flow (grouping-governance): builder, receipt, binding.
   assert.match(good.text, /build-grouping-proposal\.js/);
   assert.match(good.text, /record-grouping-approval\.js --proposal/);
@@ -346,4 +361,78 @@ test('buildTrackIntakeBrief: absent baseline is stated, not faked', (t) => {
   const brief = buildTrackIntakeBrief({ repoRoot: root, language: 'node', trackKey: 'node-v24' });
   assert.equal(brief.ok, true);
   assert.match(brief.text, /无推进记录（首次覆盖）/);
+});
+
+
+// ---------- duplicate-dispatch guards ("开始处理" retire conditions) ----------
+
+const { liveCampaignFrom, runningWorkerFrom, intakeDispatchStateFrom } = require('../../scripts/dashboard/server.js');
+
+test('buildIntakeBrief meta carries the trackKey join the dispatch guard needs', (t) => {
+  const { root, write } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const now = new Date('2026-10-10T12:00:00');
+  write('tmp/sdk-release-scout/daily/2026-10-10-node-v30.json', scoutArtifact([{ symbol: 'X' }]));
+  const brief = buildIntakeBrief({
+    repoRoot: root,
+    language: 'node',
+    scoutPath: 'tmp/sdk-release-scout/daily/2026-10-10-node-v30.json',
+    now,
+  });
+  assert.equal(brief.ok, true);
+  assert.equal(brief.meta.trackKey, 'node-v30');
+});
+
+test('liveCampaignFrom: only a live same-language same-track campaign blocks a re-dispatch', () => {
+  const card = (language, key, health) => ({
+    language,
+    track: 'v3.0.x',
+    sessionPath: 'tmp/x-session.json',
+    scanState: { key },
+    health,
+  });
+  const cards = [
+    card('node', 'node-v26', 'active'),          // same language, other track
+    card('java', 'node-v30', 'active'),          // same key spelling, other language
+    card('node', 'node-v30', 'finalized'),       // closed → fresh findings may dispatch
+    card('node', 'node-v30', 'zombie'),          // superseded → likewise
+    card('node', 'node-v30', 'awaiting-close'),  // still occupying the track
+  ];
+  const hit = liveCampaignFrom(cards, 'node-v30', 'node');
+  assert.equal(hit.health, 'awaiting-close');
+  assert.equal(liveCampaignFrom([card('node', 'node-v30', 'active')], 'node-v30', 'node').health, 'active');
+  // No cross-track / cross-language joins; degenerate inputs stay null.
+  assert.equal(liveCampaignFrom(cards, 'node-v26', 'java'), null);
+  assert.equal(liveCampaignFrom(null, 'node-v30', 'node'), null);
+  assert.equal(liveCampaignFrom(cards, null, 'node'), null);
+  assert.equal(liveCampaignFrom(cards, 'node-v30', null), null);
+});
+
+test('runningWorkerFrom: any running entry blocks; idle-only or empty does not', () => {
+  const idle = { status: 'idle', sessionId: 'sess_a', spawnedAt: '2026-10-10T02:51:23.000Z' };
+  const running = { status: 'running', sessionId: null, spawnedAt: '2026-10-10T02:51:45.000Z' };
+  assert.equal(runningWorkerFrom([idle]), null);
+  assert.equal(runningWorkerFrom([]), null);
+  assert.equal(runningWorkerFrom(undefined), null);
+  assert.equal(runningWorkerFrom([idle, running]), running);
+});
+
+test('intakeDispatchStateFrom: dispatch blocks across a restart until exit or age cap', () => {
+  const key = 'scout:tmp/sdk-release-scout/daily/2026-10-10-node-v30.json';
+  const now = Date.parse('2026-10-10T04:00:00.000Z');
+  const lines = [
+    JSON.stringify({ v: 1, kind: 'dispatch', workerKey: key, at: '2026-10-10T02:51:23.000Z' }),
+    JSON.stringify({ v: 1, kind: 'exit', workerKey: key, at: '2026-10-10T03:10:00.000Z', sessionId: 'sess_x' }),
+    JSON.stringify({ v: 1, kind: 'dispatch', workerKey: key, at: '2026-10-10T03:30:00.000Z' }),
+  ];
+  // Latest record is a dispatch still inside the 2h cap → in-flight.
+  assert.equal(intakeDispatchStateFrom(lines, key, now).kind, 'dispatch');
+  // A later exit record lifts the block (operator may dispatch again).
+  assert.equal(intakeDispatchStateFrom([...lines, JSON.stringify({ v: 1, kind: 'exit', workerKey: key, at: '2026-10-10T03:59:00.000Z' })], key, now), null);
+  // Stale dispatch beyond the cap (crashed worker, no exit) must not wedge.
+  assert.equal(intakeDispatchStateFrom(lines, key, Date.parse('2026-10-10T06:00:00.000Z')), null);
+  // Other keys / malformed lines never match.
+  assert.equal(intakeDispatchStateFrom(lines, 'scout:other', now), null);
+  assert.equal(intakeDispatchStateFrom(['{not json', ''], key, now), null);
+  assert.equal(intakeDispatchStateFrom(undefined, key, now), null);
 });

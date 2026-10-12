@@ -22,6 +22,8 @@ const { buildCampaignDetail, sessionPathAllowed } = require('./campaign-detail.j
 const { createLiveStatsCollector } = require('./live-stats.js');
 const { buildScoutFindings } = require('./scout-findings.js');
 const { buildIntakeBrief, buildTrackIntakeBrief } = require('./intake-brief.js');
+const gateWatch = require('./gate-watch.js');
+const relay = require('./notify-relay.js');
 const usage = require('./usage-ledger.js');
 
 const execFileAsync = promisify(execFile);
@@ -52,9 +54,13 @@ const DEBOUNCE_MS = 400;
 const FINGERPRINT_TTL_MS = 5 * 60_000;
 const LIVE_STATS_TTL_MS = 10 * 60_000;
 const FILE_VIEW_MAX_BYTES = 2 * 1024 * 1024;
+// Doorbell cadence: a sweep every 5 min covers gate arrivals between the 30s
+// card poll; the worker-exit hook triggers an extra early sweep below.
+const NOTIFY_SWEEP_INTERVAL_MS = 5 * 60_000;
+const NOTIFY_LEDGER_RELATIVE_PATH = 'tmp/dashboard-events/notify-ledger.jsonl';
 
 function parseArgs(argv) {
-  const options = { port: 8765, open: true, allowSpawn: false, allowApprove: false };
+  const options = { port: 8765, open: true, allowSpawn: false, allowApprove: false, notify: false, notifyRelay: false };
   for (let i = 2; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--port') {
@@ -69,6 +75,10 @@ function parseArgs(argv) {
       options.allowSpawn = true;
     } else if (arg === '--allow-approve') {
       options.allowApprove = true;
+    } else if (arg === '--notify') {
+      options.notify = true;
+    } else if (arg === '--notify-relay') {
+      options.notifyRelay = true;
     }
   }
   return options;
@@ -363,12 +373,359 @@ function parseSpawnSessionId(stdout) {
   return match ? match[1] : null;
 }
 
+// A live campaign card occupies the track's intake target: the worker's
+// session-file contract (fixed path per track) would collide with it, so a
+// second dispatch must be refused — the operator continues on that card.
+// scanState.key is the single join truth (session stamp → registry →
+// derivation, all owned by ledger.js); finalized/zombie campaigns do not
+// block: a fresh same-track artifact after them is new findings by design.
+function liveCampaignFrom(campaigns, trackKey, language) {
+  if (!trackKey || !language || !Array.isArray(campaigns)) return null;
+  return campaigns.find((card) => card.language === language
+    && card.scanState?.key === trackKey
+    && (card.health === 'active' || card.health === 'awaiting-close')) || null;
+}
+
+function liveCampaignForTrack(trackKey, language) {
+  if (!currentPayload) recompute('intake-guard-cold-start');
+  return liveCampaignFrom(currentPayload?.campaigns, trackKey, language);
+}
+
+// In-flight dispatch check for a worker registry key: any entry still running
+// means the seeded worker has not exited yet (headless runs exit when they
+// stop at a gate or finish), so a re-dispatch would duplicate the intake.
+function runningWorkerFrom(workers) {
+  const running = (Array.isArray(workers) ? workers : []).filter((w) => w && w.status === 'running');
+  return running.length ? running[running.length - 1] : null;
+}
+
+function runningWorkerFor(workerKey) {
+  return runningWorkerFrom(spawnedWorkers.get(workerKey));
+}
+
+// Durable dispatch ledger: the runtime registry above dies with the server
+// process, and a restart mid-intake would otherwise re-offer "开始处理" for
+// an artifact whose worker is still running headless. Append-only records in
+// the dashboard's own events domain: dispatch on spawn, exit record when the
+// child leaves (headless runs exit at their gate stop). A dispatch with no
+// later exit means in-flight; a 2h cap bounds a crashed-without-exit run.
+const INTAKE_DISPATCH_LEDGER = path.join(REPO_ROOT, 'tmp/dashboard-events/intake-dispatches.jsonl');
+const INTAKE_DISPATCH_MAX_AGE_MS = 2 * 60 * 60 * 1000;
+
+function appendIntakeDispatchRecord(record) {
+  try {
+    fs.mkdirSync(path.dirname(INTAKE_DISPATCH_LEDGER), { recursive: true });
+    fs.appendFileSync(INTAKE_DISPATCH_LEDGER, `${JSON.stringify({ v: 1, ...record })}\n`);
+  } catch {
+    // best-effort only — registry + campaign guards still hold
+  }
+}
+
+// Pure core over ledger lines (newest last): the latest record for the key
+// decides. A stale dispatch (older than the cap) reads as not-in-flight so a
+// dead worker cannot wedge the button forever.
+function intakeDispatchStateFrom(lines, workerKey, now = Date.now()) {
+  let last = null;
+  for (const line of Array.isArray(lines) ? lines : []) {
+    let parsed;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (parsed && parsed.workerKey === workerKey) last = parsed;
+  }
+  if (!last || last.kind === 'exit') return null;
+  const age = now - Date.parse(last.at);
+  return Number.isFinite(age) && age >= 0 && age <= INTAKE_DISPATCH_MAX_AGE_MS ? last : null;
+}
+
+function lastIntakeDispatch(workerKey) {
+  try {
+    return intakeDispatchStateFrom(
+      fs.readFileSync(INTAKE_DISPATCH_LEDGER, 'utf8').split('\n').filter(Boolean),
+      workerKey,
+    );
+  } catch {
+    return null;
+  }
+}
+
 // The exact approval grammar the campaign gates accept; L1 still enforces
 // semantics and digest binding downstream — this is shape-only pre-validation.
 const APPROVE_LINE_RE = /^APPROVE_(GROUPING|WRITES|DOCUMENT|ROLLBACK|ACCEPTANCE)(?: [^\s]+)? sha256:[a-f0-9]{64}$/;
 
 function validateApproveLine(line) {
   return APPROVE_LINE_RE.test(String(line || '').trim());
+}
+
+// ---------- doorbell notifications (batch 14: --notify opt-in) ----------
+//
+// Outbound telemetry only: plain-text p2p IM to the operator — no links, no
+// digests, never a group chat. Events derive from the same payload the cards
+// already show (no second truth); send/dedup decisions persist to an
+// append-only ledger under tmp/dashboard-events/ so a restart neither
+// re-spams nor forgets. Every failure logs and degrades — the dashboard
+// itself must keep serving.
+
+const notifyState = { enabled: false, notifier: null, inFlight: false };
+
+function readNotifyLedgerLines() {
+  try {
+    return fs.readFileSync(path.join(REPO_ROOT, NOTIFY_LEDGER_RELATIVE_PATH), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function appendNotifyRecords(records) {
+  if (!Array.isArray(records) || records.length === 0) return;
+  try {
+    const absolute = path.join(REPO_ROOT, NOTIFY_LEDGER_RELATIVE_PATH);
+    fs.mkdirSync(path.dirname(absolute), { recursive: true });
+    fs.appendFileSync(absolute, `${records.map((record) => JSON.stringify({ v: 1, ...record })).join('\n')}\n`);
+  } catch {
+    // best-effort only — a lost record means at worst one duplicate message
+  }
+}
+
+function readIntakeDispatchLines() {
+  try {
+    return fs.readFileSync(INTAKE_DISPATCH_LEDGER, 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function notifySweep(reason) {
+  if (!notifyState.enabled || notifyState.inFlight) return;
+  notifyState.inFlight = true;
+  try {
+    if (!currentPayload) recompute('notify-cold-start');
+    const now = new Date();
+    const events = gateWatch.deriveEvents({
+      payload: currentPayload,
+      dispatchLines: readIntakeDispatchLines(),
+      now,
+    });
+    const decision = gateWatch.decideSends(events, readNotifyLedgerLines(), now);
+    appendNotifyRecords(decision.appends);
+    if (decision.sends.length === 0) return;
+    const text = gateWatch.formatMessage(decision.sends, { generatedAt: currentPayload?.generatedAt });
+    const result = await notifyState.notifier.sendText(text);
+    // Send records land only after the message actually went out — a failed
+    // send retries on the next sweep instead of being marked done.
+    appendNotifyRecords(decision.sends.map((send) => ({ key: send.key, at: now.toISOString(), kind: 'send' })));
+    // Outbox binds the message id to its events so a reply can reference
+    // exactly one gate (join back to the intake card for digest staleness).
+    if (result.messageId) {
+      appendOutboxRecords([{
+        v: 1,
+        kind: 'sent',
+        messageId: result.messageId,
+        sentAt: now.toISOString(),
+        events: outboxEventsFrom(decision.sends),
+      }]);
+    }
+    process.stdout.write(`[notify] ${decision.sends.length} event(s) sent (${reason})\n`);
+  } catch (error) {
+    process.stderr.write(`[notify] sweep failed (${reason}): ${error?.message ?? error}\n`);
+  } finally {
+    notifyState.inFlight = false;
+  }
+}
+
+// Worker exits deserve an early look (the headless run stopped at a gate or
+// finished): recompute fires immediately, the next-gate cache refreshes on
+// its own cadence, so a 60s-delayed sweep reads settled state.
+function scheduleNotifyAfterWorkerExit() {
+  if (!notifyState.enabled) return;
+  setTimeout(() => {
+    notifySweep('worker-exit');
+  }, 60_000).unref();
+}
+
+// One approve-turn resume, shared by the HTTP approve forwarding and the
+// message relay: register the turn, attribute usage across the boundary,
+// spawn the detached resume, and re-arm the doorbell on its exit. The
+// approval's semantics and digest binding stay with the worker + canonical
+// CLI gates — this is transport only, exactly like /api/approve.
+function dispatchResumeTurn({ key, sessionId, checkoutRoot, line }) {
+  const next = { sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
+  registerWorker(key, next);
+  const approveRunId = usageDb
+    ? usage.openApproveRun(usageDb, {
+      sessionId,
+      campaignPath: key,
+      unitId: unitIdFromApproveLine(line),
+    })
+    : null;
+  if (usageDb) usage.upsertAttribution(usageDb, sessionId, key, 'worker-registry');
+  const child = spawn('zcode', buildResumeArgs(checkoutRoot, sessionId, line), {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.on('exit', () => {
+    next.status = 'idle';
+    if (usageDb && approveRunId != null) {
+      try { usage.closeApproveRun(usageDb, approveRunId); } catch { /* telemetry only */ }
+    }
+    scheduleRecompute('approve-turn-exit');
+    scheduleNotifyAfterWorkerExit();
+  });
+  child.unref();
+  return next;
+}
+
+// ---------- message relay (batch 14b: --notify-relay opt-in) ----------
+//
+// The operator commands the doorbell back in the SAME p2p chat: reply-bound
+// 「批准」 for grouping gates, 「状态」, 「帮助」. Outbox ledger binds our
+// notification message ids to their events so a reply references exactly one
+// gate; the digest is re-read from the artifact at execution time. Pure
+// decisions live in notify-relay.js; this side is IO only.
+
+const NOTIFY_OUTBOX_RELATIVE_PATH = 'tmp/dashboard-events/notify-outbox.jsonl';
+
+function readOutboxLines() {
+  try {
+    return fs.readFileSync(path.join(REPO_ROOT, NOTIFY_OUTBOX_RELATIVE_PATH), 'utf8').split('\n').filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+function appendOutboxRecords(records) {
+  if (!Array.isArray(records) || records.length === 0) return;
+  try {
+    const absolute = path.join(REPO_ROOT, NOTIFY_OUTBOX_RELATIVE_PATH);
+    fs.mkdirSync(path.dirname(absolute), { recursive: true });
+    fs.appendFileSync(absolute, `${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
+  } catch {
+    // best-effort only — a lost outbox line means that message cannot be
+    // reply-approved; the board remains the fallback
+  }
+}
+
+function checkoutRootForWorkerKey(workerKey) {
+  // `track:<checkoutId>:<trackKey>` dispatches ran inside their checkout;
+  // scout keys and everything else resolve against the main checkout.
+  const match = /^track:([A-Za-z0-9._-]+):/.exec(String(workerKey || ''));
+  if (match) {
+    const checkout = checkoutsState.find((entry) => entry.id === match[1]);
+    if (checkout) return checkout.root;
+  }
+  return REPO_ROOT;
+}
+
+function manifestDigestFromRepo(relativePath) {
+  const payload = readJsonOrNull(path.join(REPO_ROOT, relativePath));
+  return payload && typeof payload.digest === 'string' ? payload.digest : null;
+}
+
+function relayStatus() {
+  if (!currentPayload) recompute('relay-status-cold-start');
+  const events = gateWatch.deriveEvents({
+    payload: currentPayload,
+    dispatchLines: readIntakeDispatchLines(),
+    now: new Date(),
+  });
+  if (events.length === 0) return { text: '当前没有待决事件。', events: [] };
+  return {
+    text: gateWatch.formatMessage(
+      events.map((event) => ({ ...event, dwellMs: null, escalated: false })),
+      { generatedAt: currentPayload?.generatedAt },
+    ),
+    events,
+  };
+}
+
+// Outbox event records join back to the intake card for digest staleness —
+// one mapper shared by the doorbell sweep and the relay's status snapshots.
+function outboxEventsFrom(events) {
+  return (Array.isArray(events) ? events : []).map((event) => {
+    if (event.category !== '分组门') return { key: event.key, category: event.category };
+    const card = (currentPayload?.intakes || []).find(
+      (candidate) => `grouping:${candidate.manifestPath}` === event.key,
+    );
+    return {
+      key: event.key,
+      category: event.category,
+      manifestPath: card?.manifestPath ?? null,
+      digest: card?.digest ?? null,
+      language: card?.language ?? null,
+    };
+  });
+}
+
+async function handleRelayEvent(data) {
+  // Raw receipt line first: without it a console-side delivery gap (missing
+  // p2p scope, unpublished event subscription) is indistinguishable from a
+  // dead handler.
+  const rawEvent = data?.event || {};
+  const rawMessage = rawEvent.message ?? data?.message ?? {};
+  const rawType = data?.header?.event_type ?? data?.event_type ?? 'unknown';
+  process.stdout.write(`[notify-relay] event received: type=${rawType} chat=${rawMessage.chat_type ?? '?'} msg=${rawMessage.message_id ?? '?'} root=${rawMessage.root_id ?? '-'}\n`);
+  const incoming = relay.decodeIncoming(data);
+  if (!incoming) {
+    process.stdout.write('[notify-relay] event dropped at decode (non-text message or missing sender)\n');
+    return;
+  }
+  let operatorOpenId = null;
+  try {
+    operatorOpenId = await notifyState.notifier.resolveOpenId();
+  } catch {
+    operatorOpenId = null; // degrade: identity check off, grammar still strict
+  }
+  if (incoming.chatType && incoming.chatType !== 'p2p') {
+    process.stdout.write('[notify-relay] event dropped: not a p2p chat\n');
+    return;
+  }
+  if (operatorOpenId && incoming.senderOpenId !== operatorOpenId) {
+    process.stdout.write(`[notify-relay] event dropped: sender ${incoming.senderOpenId} is not the operator\n`);
+    return;
+  }
+  if (incoming.text === null || incoming.text === '') {
+    process.stdout.write('[notify-relay] event dropped: empty text\n');
+    return;
+  }
+  if (!currentPayload) recompute('relay-cold-start');
+  const decision = relay.handleIncoming({
+    incoming,
+    operatorOpenId,
+    outboxLines: readOutboxLines(),
+    payload: currentPayload,
+    dispatchLines: readIntakeDispatchLines(),
+    manifestDigestOf: manifestDigestFromRepo,
+    formatStatus: relayStatus,
+  });
+  if (!decision.reply) return;
+  if (decision.action?.type === 'invalidate-key') {
+    // Stale digest: forget the old notification so the next sweep re-sends.
+    appendNotifyRecords([{ key: decision.action.key, at: new Date().toISOString(), kind: 'resolve' }]);
+  }
+  if (decision.action?.type === 'resume') {
+    const { sessionId, workerKey, line, outboxMessageId } = decision.action;
+    dispatchResumeTurn({ key: workerKey, sessionId, checkoutRoot: checkoutRootForWorkerKey(workerKey), line });
+    appendOutboxRecords([{ v: 1, kind: 'approved', messageId: outboxMessageId, at: new Date().toISOString(), line }]);
+  }
+  try {
+    const result = await notifyState.notifier.replyText(incoming.messageId, decision.reply);
+    // A status snapshot becomes an approvable binding: the snapshot lists the
+    // same events a doorbell message would, so record it in the outbox keyed
+    // by the reply's own message id.
+    if (decision.action?.type === 'outbox-status' && result.messageId) {
+      appendOutboxRecords([{
+        v: 1,
+        kind: 'sent',
+        messageId: result.messageId,
+        sentAt: new Date().toISOString(),
+        events: outboxEventsFrom(decision.action.events),
+      }]);
+    }
+  } catch (error) {
+    process.stderr.write(`[notify-relay] reply failed: ${error?.message ?? error}\n`);
+  }
 }
 
 function buildResumeArgs(repoRoot, sessionId, prompt) {
@@ -575,14 +932,15 @@ async function handler(req, res) {
           usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
         }
         scheduleRecompute('worker-exit');
+        scheduleNotifyAfterWorkerExit();
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
         card: workerKey,
         note: brief.revision
-          ? `修订战役会话已派出（${brief.revision.checkoutLabel} · ZCode 桌面端呈现 · 已写 ${brief.revision.writtenPages}/${brief.revision.scope.pages} 页）——按简报逐页 governed 写入，需决策处停下`
-          : `会话已派出（${resolvedTarget.checkout.label} · ZCode 桌面端呈现 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准`,
+          ? `修订战役会话已派出（${brief.revision.checkoutLabel} · 后台运行 · 已写 ${brief.revision.writtenPages}/${brief.revision.scope.pages} 页）——按简报逐页 governed 写入，需决策处停下；总览页「正在运行的会话」可跟进`
+          : `会话已派出（${resolvedTarget.checkout.label} · 后台运行 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准，总览页「正在运行的会话」可跟进`,
       });
     });
     return;
@@ -630,8 +988,32 @@ async function handler(req, res) {
         sendJson(res, 404, { error: brief?.error || 'missing language/scoutPath' });
         return;
       }
+      // Duplicate-dispatch guards: a live campaign already occupies the track,
+      // or a seeded worker is still running (runtime registry first, then the
+      // durable dispatch ledger — a restart mid-intake must not re-offer the
+      // button). Both continue elsewhere — the campaign card or the
+      // running-sessions feed — never a second intake.
+      const occupant = liveCampaignForTrack(brief.meta.trackKey, brief.meta.language);
+      if (occupant) {
+        sendJson(res, 409, {
+          error: `该轨道已有进行中的评审会话（${occupant.sessionKey ?? `main::${occupant.sessionPath}`}）——到看板战役卡片续接，勿重复派出 intake`,
+        });
+        return;
+      }
+      const running = runningWorkerFor(workerKey) || lastIntakeDispatch(workerKey);
+      if (running) {
+        sendJson(res, 409, {
+          error: `该 intake 会话已在后台运行（派出于 ${running.at ?? running.spawnedAt}）——等它停在分组门或结束后再操作；总览页「正在运行的会话」可跟进`,
+        });
+        return;
+      }
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
       registerWorker(workerKey, worker);
+      appendIntakeDispatchRecord({
+        kind: 'dispatch', workerKey, at: worker.spawnedAt,
+        language: brief.meta.language, trackKey: brief.meta.trackKey ?? null,
+        mode: brief.meta.mode ?? 'scout',
+      });
       const child = spawn(
         'zcode',
         [...buildHeadlessSpawnArgs(briefRoot, buildIntakeWorkerPrompt(brief.text)), '--json'],
@@ -644,20 +1026,26 @@ async function handler(req, res) {
       child.on('exit', () => {
         worker.sessionId = parseSpawnSessionId(stdout);
         worker.status = 'idle';
+        // The durable ledger's in-flight window ends with the child: the
+        // operator may now dispatch again (or continue on a campaign card).
+        appendIntakeDispatchRecord({
+          kind: 'exit', workerKey, at: new Date().toISOString(), sessionId: worker.sessionId,
+        });
         if (usageDb && worker.sessionId) {
           // Intake workers attribute to their dispatch key; once intake
           // builds a review session, event-based attribution takes over.
           usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
         }
         scheduleRecompute('intake-worker-exit');
+        scheduleNotifyAfterWorkerExit();
       });
       child.unref();
       sendJson(res, 200, {
         ok: true,
         workerKey,
         note: brief.meta.mode === 'track'
-          ? `轨道工作会话已派出（ZCode 桌面端呈现 · ${brief.meta.language} ${brief.meta.trackKey}）——只读侦察后：有发现停在分组批准门（APPROVE_GROUPING），无发现则明确报告后结束`
-          : `处理会话已派出（ZCode 桌面端呈现 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——只读侦察后停在分组批准门（APPROVE_GROUPING），批准分组后才进入写作`,
+          ? `轨道工作会话已派出（后台只读运行 · ${brief.meta.language} ${brief.meta.trackKey}）——总览页「正在运行的会话」可跟进；有发现停在分组批准门（APPROVE_GROUPING），无发现则明确报告后结束`
+          : `处理会话已派出（后台只读运行 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——总览页「正在运行的会话」可跟进；停在分组批准门（APPROVE_GROUPING）后本页会显示分组门卡片，批准分组后才进入写作`,
       });
     });
     return;
@@ -708,30 +1096,9 @@ async function handler(req, res) {
         sendJson(res, 409, { error: 'worker 仍在首轮运行中——等它停在门禁后再批准' });
         return;
       }
-      const next = { sessionId: worker.sessionId, spawnedAt: new Date().toISOString(), status: 'running' };
-      registerWorker(cardKey, next);
       // Approve-run boundary: snapshot the worker's usage before the resume
       // dispatch; on exit the delta is attributed to the approved unit.
-      const approveRunId = usageDb
-        ? usage.openApproveRun(usageDb, {
-          sessionId: worker.sessionId,
-          campaignPath: cardKey,
-          unitId: unitIdFromApproveLine(line),
-        })
-        : null;
-      if (usageDb) usage.upsertAttribution(usageDb, worker.sessionId, cardKey, 'worker-registry');
-      const child = spawn('zcode', buildResumeArgs(cardRoot, worker.sessionId, line), {
-        detached: true,
-        stdio: 'ignore',
-      });
-      child.on('exit', () => {
-        next.status = 'idle';
-        if (usageDb && approveRunId != null) {
-          try { usage.closeApproveRun(usageDb, approveRunId); } catch { /* telemetry only */ }
-        }
-        scheduleRecompute('approve-turn-exit');
-      });
-      child.unref();
+      dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line });
       sendJson(res, 200, {
         ok: true,
         card: cardKey,
@@ -816,6 +1183,24 @@ async function handler(req, res) {
     case '/api/scout': {
       const language = url.searchParams.get('language');
       const findings = buildScoutFindings({ repoRoot: REPO_ROOT, language });
+      // Dispatch state per artifact so the findings card can retire the
+      // "开始处理" button: a live campaign card on the track (durable — the
+      // worker's session file already landed) or an in-flight worker
+      // (runtime registry, then the durable dispatch ledger for restarts).
+      // Same joins the spawn guard enforces.
+      for (const entry of findings.languages || []) {
+        for (const artifact of entry.artifacts || []) {
+          const workerKey = `scout:${artifact.path}`;
+          const occupant = liveCampaignForTrack(artifact.trackKey, entry.language);
+          const running = runningWorkerFor(workerKey) || lastIntakeDispatch(workerKey);
+          artifact.dispatch = {
+            runningSpawnedAt: running ? (running.at ?? running.spawnedAt) : null,
+            campaignCard: occupant
+              ? { key: occupant.sessionKey ?? `main::${occupant.sessionPath}`, health: occupant.health }
+              : null,
+          };
+        }
+      }
       sendJson(res, 200, findings);
       return;
     }
@@ -858,13 +1243,52 @@ async function handler(req, res) {
 }
 
 function main() {
-  const { port, open, allowSpawn, allowApprove } = parseArgs(process.argv);
+  const { port, open, allowSpawn, allowApprove, notify: notifyFlag, notifyRelay } = parseArgs(process.argv);
+  const notify = notifyFlag || notifyRelay; // the relay implies the doorbell
   spawnOptions = { allowSpawn, allowApprove };
   recompute('startup');
   computeFingerprint();
   setInterval(() => computeFingerprint(), FINGERPRINT_TTL_MS).unref();
   refreshNextGates().catch(() => {});
   setInterval(() => refreshNextGates().catch(() => {}), 60_000).unref();
+  if (notify) {
+    // Lazy require keeps plain server imports free of any credential paths;
+    // the notifier reads BOT_APP_ID/BOT_APP_SECRET/OPERATOR_* through the
+    // skill's dotenv-loaded token fetcher (messaging app, not DOC_*).
+    const { createFeishuNotifier } = require('./notify-feishu.js');
+    notifyState.enabled = true;
+    notifyState.notifier = createFeishuNotifier({ repoRoot: REPO_ROOT });
+    // First sweep waits for the initial next-gate refresh to settle so the
+    // opening message does not race half-computed gate chips.
+    setTimeout(() => notifySweep('startup'), 90_000).unref();
+    setInterval(() => notifySweep('interval'), NOTIFY_SWEEP_INTERVAL_MS).unref();
+    process.stdout.write(`[notify] doorbell armed (p2p Feishu · sweep ${NOTIFY_SWEEP_INTERVAL_MS / 1000}s · ledger ${NOTIFY_LEDGER_RELATIVE_PATH})\n`);
+  }
+  if (notifyRelay) {
+    // Long-connection event subscription: no public endpoint, the client
+    // dials out. Receiving the operator's replies needs the app console to
+    // (a) switch 事件订阅 to 长连接, (b) subscribe im.message.receive_v1 with
+    // the p2p-read scope granted, (c) publish a version. Any failure here
+    // degrades to doorbell-only.
+    try {
+      const lark = require('@larksuiteoapi/node-sdk');
+      const appId = process.env.BOT_APP_ID;
+      const appSecret = process.env.BOT_APP_SECRET;
+      if (!appId || !appSecret) throw new Error('BOT_APP_ID/BOT_APP_SECRET missing from env (.env not loaded?) — the messaging app owns the IM long connection');
+      const dispatcher = new lark.EventDispatcher({ loggerLevel: 'warn' }).register({
+        'im.message.receive_v1': (data) => handleRelayEvent(data).catch((error) => {
+          process.stderr.write(`[notify-relay] event handling failed: ${error?.message ?? error}\n`);
+        }),
+      });
+      const wsClient = new lark.WSClient({ appId, appSecret, loggerLevel: 'warn' });
+      wsClient.start({ eventDispatcher: dispatcher }).then(
+        () => process.stdout.write('[notify-relay] long-connection established — 回复通知消息即可下达指令（批准/状态/帮助）\n'),
+        (error) => process.stderr.write(`[notify-relay] long-connection failed (doorbell-only mode): ${error?.message ?? error}\n`),
+      );
+    } catch (error) {
+      process.stderr.write(`[notify-relay] disabled: ${error?.message ?? error}\n`);
+    }
+  }
   // Live Feishu stats: warm the cache in the background; failures degrade to
   // a fallback chip, never a server error.
   liveStats.get().catch(() => {});
@@ -890,7 +1314,7 @@ function main() {
   const server = http.createServer(handler);
   server.listen(port, '127.0.0.1', () => {
     const address = `http://127.0.0.1:${server.address().port}`;
-    process.stdout.write(`[dashboard] serving ${address} (read-only${allowSpawn ? ' + spawn' : ''}${allowApprove ? ' + approve-forwarding' : ''}; repo ${REPO_ROOT})\n`);
+    process.stdout.write(`[dashboard] serving ${address} (read-only${allowSpawn ? ' + spawn' : ''}${allowApprove ? ' + approve-forwarding' : ''}${notify ? ' + notify' : ''}${notifyRelay ? ' + message-relay' : ''}; repo ${REPO_ROOT})\n`);
     if (open) exec(`open ${address}`);
   });
 }
@@ -906,4 +1330,7 @@ module.exports = {
   parseSpawnSessionId,
   parseStatusOutput,
   validateApproveLine,
+  liveCampaignFrom,
+  runningWorkerFrom,
+  intakeDispatchStateFrom,
 };

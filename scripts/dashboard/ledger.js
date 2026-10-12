@@ -767,7 +767,36 @@ function mergeRevisionFlows(campaigns, revisions) {
 const INTAKE_MANIFEST_GLOBS = [
   `${REVISION_DIR_RELATIVE_PATH}/gate-manifest-grouping-*.json`,
   'tmp/sdk-release-scout/*grouping*manifest*.json',
+  // One subdirectory level: dispatched intake workers keep their evidence in
+  // per-intake workdirs (node-v30-intake-2026-10-10/…) and the manifest has
+  // landed beside it before — the brief pins the top-level contract, this
+  // keeps the reader tolerant of the habit (batch 12).
+  'tmp/sdk-release-scout/*/*grouping*manifest*.json',
 ];
+// Expand a glob pattern's directory part against the filesystem: each '*'
+// path segment matches one level of subdirectories (files never match).
+function expandManifestDirs(root, pattern) {
+  const segments = path.dirname(pattern).split('/');
+  let dirs = [root];
+  for (const segment of segments) {
+    if (segment === '*') {
+      const expanded = [];
+      for (const dir of dirs) {
+        try {
+          for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (entry.isDirectory()) expanded.push(path.join(dir, entry.name));
+          }
+        } catch {
+          // unreadable level — nothing to expand into
+        }
+      }
+      dirs = expanded;
+    } else {
+      dirs = dirs.map((dir) => path.join(dir, segment));
+    }
+  }
+  return dirs;
+}
 const KNOWN_LANGUAGES = new Set(['cpp', 'go', 'java', 'python', 'node', 'rest', 'zilliz-cli']);
 const GROUPING_APPROVALS_DIR_RELATIVE_PATH = `${REVISION_DIR_RELATIVE_PATH}/grouping-approvals`;
 
@@ -820,9 +849,10 @@ function buildIntakeCards(checkouts, campaigns, revisions = [], receipts = [], n
   const cards = [];
   for (const checkout of checkouts) {
     const root = checkout.root || '';
+    const seen = new Set();
     for (const pattern of INTAKE_MANIFEST_GLOBS) {
-      const dir = path.join(root, path.dirname(pattern));
       const re = new RegExp('^' + path.basename(pattern).replace(/[.+^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+      for (const dir of expandManifestDirs(root, pattern)) {
       let names;
       try {
         names = fs.readdirSync(dir);
@@ -832,6 +862,8 @@ function buildIntakeCards(checkouts, campaigns, revisions = [], receipts = [], n
       for (const name of names) {
         if (!re.test(name)) continue;
         const absolute = path.join(dir, name);
+        if (seen.has(absolute)) continue;
+        seen.add(absolute);
         const payload = readJsonOrNull(absolute);
         if (!payload || !/GROUPING/i.test(String(payload.gate ?? ''))) continue;
         if (typeof payload.digest !== 'string' || !payload.digest.startsWith('sha256:')) continue;
@@ -878,6 +910,7 @@ function buildIntakeCards(checkouts, campaigns, revisions = [], receipts = [], n
             ? payload.links.filter((l) => l && typeof l.url === 'string').map((l) => ({ label: l.label ?? l.url, url: l.url }))
             : [],
         });
+      }
       }
     }
   }

@@ -83,6 +83,18 @@ test('buildBrief: deterministic brief with stubbed status CLI', (t) => {
   assert.ok(text.includes('APPROVE_GROUPING sha256:<digest>'));
   assert.ok(text.includes('铁律'));
   assert.ok(text.includes('勿凭记忆'));
+  // Execution critical path (batch 12): the fresh chat starts from the
+  // materialized handoff, never re-derives the loop from SKILL.md.
+  assert.ok(text.includes('写作/落盘关键路径'));
+  assert.ok(text.includes('sdk-review-session.js handoff --session'));
+  assert.ok(text.includes('gate-presentation.js --from-dryrun'));
+  assert.ok(text.includes('close-session'));
+  assert.ok(text.includes('grouping-approvals/'));
+  // Workspace disciplines (batch 13): tmp layout, worktree, gate rounds.
+  assert.ok(text.includes('工作空间契约'));
+  assert.ok(text.includes('工作树原则'));
+  assert.ok(text.includes('回合契约'));
+  assert.ok(text.includes('workspace-contract.md'));
 });
 
 test('resolveTarget: key prefers live sessions, flags ambiguity, lists keys', (t) => {

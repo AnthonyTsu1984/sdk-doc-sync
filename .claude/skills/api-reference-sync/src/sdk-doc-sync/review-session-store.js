@@ -353,7 +353,9 @@ function validateExecutionForUnit(session, {
   executionJournalDigest,
 }) {
   const reviewUnit = session.reviewUnitManifest.units.find((unit) => unit.reviewUnitId === reviewUnitId);
-  if (!reviewUnit) throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  if (!reviewUnit) {
+    throw new Error(`Unknown review unit: ${reviewUnitId || '(missing)'}`);
+  }
   if (!nonEmptyString(executionJournalDigest)) throw new Error('executionJournalDigest is required');
   const journalPath = path.resolve(executionJournalPath || '');
   const { entries } = validateExecutionJournal(journalPath, executionJournalDigest);

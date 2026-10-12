@@ -480,3 +480,30 @@ test('worker registry: upsert updates in place and caps the per-card window', ()
   // sess_a + sess_0..sess_(MAX+1) = 9 entries; the window keeps the last 6.
   assert.equal(entries[0].sessionId, `sess_2`);
 });
+
+// ---------- operator change requests from the board file list ----------
+
+const {
+  validateRequestChangesInput,
+  composeRequestChangesPrompt,
+} = require('../../scripts/dashboard/change-request.js');
+
+test('change-request: validation gates unit id and reason', () => {
+  assert.equal(validateRequestChangesInput({ unitId: 'review:node:X', reason: '语气收紧' }).ok, true);
+  assert.equal(validateRequestChangesInput({ unitId: 'review:node:X', reason: '   ' }).ok, false);
+  assert.equal(validateRequestChangesInput({ unitId: '', reason: 'x' }).ok, false);
+  assert.equal(validateRequestChangesInput({ unitId: 'bad id; rm -rf', reason: 'x' }).ok, false);
+  assert.equal(validateRequestChangesInput({ unitId: 'review:node:X', reason: 'x'.repeat(2001) }).ok, false);
+});
+
+test('change-request: prompt carries the canonical command verbatim, reason fenced inline', () => {
+  const prompt = composeRequestChangesPrompt({
+    sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json',
+    unitId: 'review:node:Authentication:alterRole',
+    reason: 'RETURNS 段落缺失——补齐字段表',
+  });
+  assert.match(prompt, /^REQUEST_CHANGES review:node:Authentication:alterRole$/m);
+  assert.match(prompt, /request-document-changes --session tmp\/sdk-doc-sync-runs\/node-v30\/review-session\.json --review-unit-id review:node:Authentication:alterRole --reason/);
+  assert.match(prompt, /原因：RETURNS 段落缺失——补齐字段表/);
+  assert.match(prompt, /呈新的写门（APPROVE_WRITES \+ 新 digest）后停下等批/);
+});

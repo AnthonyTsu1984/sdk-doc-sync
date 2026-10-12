@@ -23,6 +23,7 @@ const { createLiveStatsCollector } = require('./live-stats.js');
 const { buildScoutFindings } = require('./scout-findings.js');
 const { buildIntakeBrief, buildTrackIntakeBrief } = require('./intake-brief.js');
 const gateWatch = require('./gate-watch.js');
+const changeRequest = require('./change-request.js');
 const relay = require('./notify-relay.js');
 const usage = require('./usage-ledger.js');
 
@@ -1140,6 +1141,70 @@ async function handler(req, res) {
         note: brief.meta.mode === 'track'
           ? `轨道工作会话已派出（后台只读运行 · ${brief.meta.language} ${brief.meta.trackKey}）——总览页「正在运行的会话」可跟进；有发现停在分组批准门（APPROVE_GROUPING），无发现则明确报告后结束`
           : `处理会话已派出（后台只读运行 · ${brief.meta.language} · ${brief.meta.actionCount} 项发现）——总览页「正在运行的会话」可跟进；停在分组批准门（APPROVE_GROUPING）后本页会显示分组门卡片，批准分组后才进入写作`,
+      });
+    });
+    return;
+  }
+  if (url.pathname === '/api/request-changes') {
+    if (req.method !== 'POST') {
+      sendJson(res, 405, { error: 'POST only' });
+      return;
+    }
+    if (!spawnOptions.allowApprove) {
+      sendJson(res, 404, { error: 'request-changes disabled — restart the dashboard with --allow-approve' });
+      return;
+    }
+    let body = '';
+    req.on('data', (chunk) => {
+      body += chunk;
+      if (body.length > 65_536) req.destroy();
+    });
+    req.on('end', () => {
+      let request = null;
+      try {
+        request = JSON.parse(body || '{}');
+      } catch {
+        sendJson(res, 400, { error: 'invalid JSON body' });
+        return;
+      }
+      const { target, sessionId, unitId, reason } = request || {};
+      const validation = changeRequest.validateRequestChangesInput({ unitId, reason });
+      if (!validation.ok) {
+        sendJson(res, 400, { error: validation.error });
+        return;
+      }
+      if (!sessionId) {
+        sendJson(res, 400, { error: 'missing sessionId' });
+        return;
+      }
+      const card = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === target || c.sessionPath === target);
+      if (!card) {
+        sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
+        return;
+      }
+      const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
+      const worker = (card.workers || []).find((w) => w.sessionId === sessionId);
+      if (!worker) {
+        sendJson(res, 404, { error: '该会话不是看板派出的 worker（修改要求仅注入看板派出的会话）' });
+        return;
+      }
+      if (worker.status !== 'idle') {
+        sendJson(res, 409, { error: 'worker 正在运行——等它停在门禁后再提修改要求' });
+        return;
+      }
+      const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
+      const prompt = changeRequest.composeRequestChangesPrompt({
+        sessionPath: card.sessionPath,
+        unitId,
+        reason,
+      });
+      dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line: prompt });
+      sendJson(res, 200, {
+        ok: true,
+        card: cardKey,
+        sessionId: worker.sessionId,
+        unitId,
+        note: '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，停在新写门时再通知你',
       });
     });
     return;

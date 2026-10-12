@@ -1054,7 +1054,31 @@ function stepChips(c) {
   return `<div class="steps">${steps.map((s, i) => `${i ? '<span class="arr">›</span>' : ''}<span class="st ${s.state}">${s.state === 'done' ? '✓ ' : ''}${esc(s.label)}</span>`).join('')}</div>`;
 }
 
-function filesTable(detail) {
+async function requestChanges(target, unitId) {
+  const reason = window.prompt(`对 ${unitId} 的修改要求（将注入 worker 会话，按 canonical 打回流程重建该单元）：`, '');
+  if (reason === null) return;
+  const trimmed = reason.trim();
+  if (!trimmed) { alert('修改要求不能为空'); return; }
+  try {
+    const latestCards = await (await fetch('/api/cards')).json();
+    const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
+    const idle = (card?.workers || []).find((w) => w.status === 'idle');
+    if (!idle) { alert('无可注入的 idle worker——等 worker 停在门禁后再提'); return; }
+    const res = await fetch('/api/request-changes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target, sessionId: idle.sessionId, unitId, reason: trimmed }),
+    });
+    const body = await res.json();
+    if (!res.ok) { alert(body.error || '提交失败'); return; }
+    alert(body.note || '已注入');
+    refreshDetail();
+  } catch (error) {
+    alert(`提交失败：${error?.message ?? error}`);
+  }
+}
+
+function filesTable(detail, c) {
   const files = (detail?.files || []).slice();
   const order = { 'pending-approval': 0, executing: 1, 'rolling-back': 2, queued: 3, accepted: 4, ungrouped: 5 };
   files.sort((a, b) => (order[a.status] ?? 9) - (order[b.status] ?? 9));
@@ -1066,7 +1090,7 @@ function filesTable(detail) {
       <td>${f.status === 'accepted' ? '<span class="badge finalized">已写入·验收</span>' : f.status === 'pending-approval' ? '<span class="badge gate">待批准写入</span>' : f.status === 'ungrouped' ? '<span class="badge">未入组</span>' : `<span class="badge active">${esc(UNIT_STATUS_LABEL[f.status] ?? f.status)}</span>`}</td>
       <td class="dim">${esc(f.reason ?? '—')}</td>
       <td class="dim num" title="${esc(f.sourceLocator ?? '')}">${f.sourcePr ? `PR #${f.sourcePr}` : (f.sourceLocator ?? f.changeType ?? '—')}</td>
-      <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}${(f.documentLinks?.length || f.recordLinks?.length) ? '' : (f.status === 'accepted' || f.status === 'ungrouped' ? '<span class="dim">—</span>' : '<span class="dim" title="文档/记录链接由该单元的验收回执携带">待写入后生成</span>')}</td>
+      <td class="iconlink">${f.documentLinks?.length ? `<a href="${esc(f.documentLinks[0])}" target="_blank" title="${esc(f.documentLinks[0])}">文档</a>` : ''}${f.recordLinks?.length ? ` <a href="${esc(f.recordLinks[0])}" target="_blank" title="${esc(f.recordLinks[0])}">记录</a>` : ''}${(f.documentLinks?.length || f.recordLinks?.length) ? '' : (f.status === 'accepted' || f.status === 'ungrouped' ? '<span class="dim">—</span>' : '<span class="dim" title="文档/记录链接由该单元的验收回执携带">待写入后生成</span>')}${f.status === 'accepted' && c ? ` <a href="javascript:void(0)" title="对该单元提出修改要求——注入 worker 会话按 canonical 打回流程重建" onclick="requestChanges(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(f.unitId).replace(/"/g, '&quot;')})">修改</a>` : ''}</td>
     </tr>`).join('');
   return `<table class="tbl">
     <thead><tr><th>文件</th><th>单元</th><th>状态</th><th>变更原因</th><th>来源</th><th>飞书</th></tr></thead>
@@ -1289,6 +1313,7 @@ async function pageCampaign(d, path) {
   // Revision targets have no campaign card yet — keep the raw path so the
   // fallback below can match them by cardKey before rendering.
   window._detailPath = c ? cardKey(c) : path;
+  window._detailCard = c || null;
   if (!c) {
     const gate = (d.intakes || []).find((x) => cardKey(x) === path);
     if (gate) { pageIntakeDetail(d, gate); return; }
@@ -1370,7 +1395,7 @@ async function pageCampaign(d, path) {
       <b>版本区间</b><span>${esc(detail.scale.baselineTag ?? '—')} → ${esc(detail.scale.targetTag ?? '—')}</span>`);
   }
   const filesHost = document.getElementById('filesHost');
-  if (filesHost) filesHost.innerHTML = filesTable(detail);
+  if (filesHost) filesHost.innerHTML = filesTable(detail, window._detailCard);
   const approveHost = document.querySelector('.approve');
   if (approveHost) approveHost.outerHTML = oneClickApproveCard(c, detail);
   renderUsagePanel(c);

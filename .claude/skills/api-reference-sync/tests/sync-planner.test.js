@@ -1928,6 +1928,7 @@ test('collaborative resume validates persisted receipts and keeps accepted NOOP 
   });
   configure(initial, false);
   const initialResult = await initial.run();
+  console.error('[seam-debug]', JSON.stringify({units: (initialResult.reviewUnitManifest.units||[]).map(u=>u.reviewUnitId), errors: (initialResult.planningErrors||[]).map(e=>e.code)}));
   const journalDir = fs.mkdtempSync(path.join(os.tmpdir(), 'resume-journal-'));
   const journal = new ExecutionJournal({
     filePath: path.join(journalDir, 'accepted.jsonl'),
@@ -1949,6 +1950,7 @@ test('collaborative resume validates persisted receipts and keeps accepted NOOP 
     track: 'v2.6.x',
     reviewUnitManifest: initialResult.reviewUnitManifest,
   });
+  console.error('[seam-debug-sess]', JSON.stringify({units: (reviewSession.reviewUnitManifest.units||[]).map(u=>u.reviewUnitId), flow: reviewSession.acceptanceFlow, status: reviewSession.status}));
   const session = recordDocumentAcceptance(recordDocumentExecution(reviewSession, {
     reviewUnitId: 'review:node:Collections:createCollection',
     executionJournalPath: journal.filePath,

@@ -39,7 +39,7 @@ const {
     WRITE_PLAN_ACTIONS,
     verifyPlacementWalkBinding,
 } = require('./versioned-tree-policy');
-const { deriveFolderChainNames } = require('./tree-delta-reconciliation');
+const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
 const {
     validateResumeSession,
@@ -56,6 +56,10 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 // .claude/ → repository root. Must match bin/sdk-doc-sync.js's own resolution
 // so execution journals and the acceptance finalizer agree on one location.
 const REPO_ROOT = path.resolve(__dirname, '../../../../..');
+
+function nonEmptyString(value) {
+    return typeof value === 'string' && value.trim() !== '';
+}
 
 // Canonical execution-journal location for a batch digest. Acceptance
 // finalization resolves the journal receipt through this binding.
@@ -2018,6 +2022,176 @@ class SdkDocSync {
             ...(suppliedContext.current || {}),
             ...(actionContext.current || {}),
         };
+        // Two-gate redo replans (node v3.0.6): the CREATE-reviewed context
+        // predates the unit's own record, so the auto-routed REBUILD replan
+        // needs the executed unit's verified record identity as its current
+        // proof — read it from the durable session evidence (pending or
+        // accepted receipt) and join the live row (this run's own index) for
+        // the folder facts, BEFORE the live placement stamp below runs.
+        const sessionExecutedIds = this._sessionExecutedDocumentIds();
+        if (process.env.REPLAN_DEBUG && sessionExecutedIds && sessionExecutedIds.has(action.stableId)) {
+            console.error('[repdebug]', JSON.stringify({
+                stableId: action.stableId,
+                current: current,
+                sessionIdsHas: sessionExecutedIds.has(action.stableId),
+                walkDigest: this.placementWalkDigest,
+                walkProductNull: !this.placementWalkProduct,
+                rootToken: this.rootToken,
+                m2fType: typeof this.m2f,
+            }));
+        }
+        if (sessionExecutedIds && sessionExecutedIds.has(action.stableId)
+            && !nonEmptyString(current.folderToken)
+            && this.reviewSession) {
+            const unitRowIds = new Set(
+                (this.reviewSession.reviewUnitManifest?.units || [])
+                    .filter((unit) => unit.documentStableId === action.stableId)
+                    .map((unit) => unit.reviewUnitId),
+            );
+            const unitRowId = (this.reviewUnitId && unitRowIds.has(this.reviewUnitId))
+                ? this.reviewUnitId
+                : ([...unitRowIds][0] ?? null);
+            if (unitRowId) {
+                const executionRow = (this.reviewSession.pendingExecutions || []).find(
+                    (entry) => entry.reviewUnitId === unitRowId,
+                );
+                const acceptedRow = (this.reviewSession.acceptedReviewUnits || []).find(
+                    (entry) => entry.reviewUnitId === unitRowId,
+                );
+                const rowSource = (executionRow?.touchedRecords?.length ? executionRow : undefined)
+                    || (acceptedRow?.touchedRecords?.length ? acceptedRow : undefined);
+                const documentRecord = (rowSource?.touchedRecords || []).find((row) => (
+                    nonEmptyString(row?.recordId) && nonEmptyString(row?.documentToken)
+                ));
+                if (documentRecord) {
+                    const liveRow = (result?.indexed || []).find((row) => (
+                        row?.metadata?.token === documentRecord.documentToken
+                    ));
+                    let executedFolderToken = liveRow?.metadata?.folderToken ?? null;
+                    // The current index row of a freshly created document may
+                    // not yet carry a folder field (index-side join lag); the
+                    // unit's own journal holds the execution-verified folder
+                    // identity, so the placement stamp always has its input.
+                    if (!nonEmptyString(executedFolderToken)) {
+                        const journalPath = executionRow?.executionJournalPath
+                            || acceptedRow?.executionJournalPath
+                            || null;
+                        if (nonEmptyString(journalPath) && fs.existsSync(journalPath)) {
+                            try {
+                                const journalEntries = fs.readFileSync(journalPath, 'utf8')
+                                    .trim()
+                                    .split('\n')
+                                    .map((line) => JSON.parse(line));
+                                const observed = journalEntries.find((entry) => (
+                                    entry?.type === 'observed' && entry?.actionId === documentRecord.actionId
+                                ));
+                                executedFolderToken = observed?.rollbackEvidence?.createdDocument?.folderToken
+                                    ?? observed?.rollbackEvidence?.createdFolder?.token
+                                    ?? null;
+                            } catch {
+                                // Journal read is best-effort: the live stamp below stays
+                                // the authoritative verification either way.
+                                executedFolderToken = null;
+                            }
+                        }
+                    }
+                    if (process.env.REPLAN_DEBUG) {
+                        console.error('[repdebug2]', JSON.stringify({
+                            journalPath: executionRow?.executionJournalPath || acceptedRow?.executionJournalPath || null,
+                            executedFolder: executedFolderToken,
+                            docToken: documentRecord.documentToken,
+                            actionId: documentRecord.actionId,
+                        }));
+                    }
+                    current.version = current.version ?? this.sdkVersion;
+                    current.recordId = current.recordId ?? documentRecord.recordId;
+                    current.documentToken = current.documentToken ?? documentRecord.documentToken;
+                    current.folderToken = current.folderToken ?? executedFolderToken ?? null;
+                    current.parentRecordId = current.parentRecordId ?? liveRow?.metadata?.parentRecordId ?? null;
+                    // Stamp the placement proof live (same session-executed
+                    // verification the executor-side 2032 support runs for
+                    // externally-marked contexts): the plan-time derivation
+                    // must see the unit's own folder (a walk the product
+                    // postdates proves containment by live derivation alone).
+                    const probe = this.m2f
+                        || (this.readonlyProbe ||= new MarkdownToFeishu({ sourceType: this.sourceType, rootToken: this.rootToken, baseToken: this.baseToken }));
+                    const listFolders = typeof probe?.listFolder === 'function'
+                        ? probe.listFolder.bind(probe)
+                        : null;
+                    const versionRootToken = this.rootToken || null;
+                    if (listFolders && nonEmptyString(versionRootToken)) {
+                        try {
+                            const derived = await deriveFolderAncestry({
+                                listFolder: ({ folderToken, type }) => listFolders({ folderToken, type }),
+                                versionRootToken,
+                                folderToken: current.folderToken,
+                            });
+                            const walked = this.placementWalkProduct?.folderChains?.[current.folderToken];
+                            const parentAgrees = !Array.isArray(walked)
+                                || (derived && JSON.stringify(walked) === JSON.stringify(derived.slice(0, -1)));
+                            if (Array.isArray(derived) && derived[0] === versionRootToken && parentAgrees) {
+                                current.versionRootToken = versionRootToken;
+                                current.ancestryVerified = true;
+                                current.placementVerified = true;
+                            }
+                        } catch {
+                            // Read-only verification: a transient live failure leaves the
+                            // proof unstamped and the planner refuses typed.
+                        }
+                    }
+                }
+            }
+        }
+
+        // Session-executed re-plan proof (two-gate redo, node v3.0.6): the
+        // reviewed context of a CREATE unit predates its own record, so the
+        // auto-routed REBUILD re-plan carries no current-placement evidence —
+        // the planner refuses typed (REBUILD_PLACEMENT_REQUIRED) even though
+        // the unit's own execution just verified that placement live. Verify
+        // the live record's folder chain live at plan time (same derivation
+        // the executor byte-compares) and stamp it into the current proof.
+        // A folder the walk already records must agree with its walked chain;
+        // a folder created by this very unit (walk predates it) is proven by
+        // the live derivation alone. An unresolvable or drifting placement
+        // stays unverified and keeps refusing typed.
+        const executedDocumentIds = this._sessionExecutedDocumentIds();
+        const sessionExecuted = Boolean(executedDocumentIds?.has(this._stableIdFor(action)));
+        if (sessionExecuted
+            && nonEmptyString(current.recordId)
+            && nonEmptyString(current.documentToken)
+            && nonEmptyString(current.folderToken)
+            && this.placementWalkDigest
+            && this.placementWalkProduct) {
+            const listFolders = typeof this.documentWriter?.listFolder === 'function'
+                ? this.documentWriter.listFolder.bind(this.documentWriter)
+                : (typeof this.documentWriter?.list_folder === 'function'
+                    ? (async ({ folderToken }) => this.documentWriter.list_folder({ folder_token: folderToken, type: 'folder' }))
+                    : null);
+            const versionRootToken = suppliedContext.target?.versionRootToken
+                || extraContext.target?.versionRootToken
+                || this.rootToken
+                || null;
+            if (listFolders && nonEmptyString(versionRootToken)) {
+                try {
+                    const derived = await deriveFolderAncestry({
+                        listFolder: ({ folderToken, type }) => listFolders({ folderToken, type }),
+                        versionRootToken,
+                        folderToken: current.folderToken,
+                    });
+                    const walked = this.placementWalkProduct.folderChains?.[current.folderToken];
+                    const parentAgrees = !Array.isArray(walked)
+                        || (derived && JSON.stringify(walked) === JSON.stringify(derived.slice(0, -1)));
+                    if (Array.isArray(derived) && derived[0] === versionRootToken && parentAgrees) {
+                        current.versionRootToken = versionRootToken;
+                        current.ancestryVerified = true;
+                        current.placementVerified = true;
+                    }
+                } catch {
+                    // Read-only verification: a transient live failure leaves the
+                    // proof unstamped and the planner refuses typed.
+                }
+            }
+        }
         const target = {
             version: this.sdkVersion,
             parentRecordId: null,

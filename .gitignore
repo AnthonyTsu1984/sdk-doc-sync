@@ -27,3 +27,4 @@ tmp/
 # SDK source repos (cloned externally)
 repos/*
 !repos/.gitkeep
+.playwright-cli/

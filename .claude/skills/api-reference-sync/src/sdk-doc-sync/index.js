@@ -2145,6 +2145,14 @@ class SdkDocSync {
                 const acceptedRow = (this.reviewSession.acceptedReviewUnits || []).find(
                     (entry) => entry.reviewUnitId === unitRowId,
                 );
+                // A changes-requested unit lives in NO other row: the machine
+                // moved its executed entry out of pendingExecutions, so the
+                // redo proof reads the execution journal from the change
+                // request itself (the machine preserves the digest+path there
+                // precisely for this receipt-citation use).
+                const changeRequestRow = (this.reviewSession.changeRequests || []).find(
+                    (entry) => entry.reviewUnitId === unitRowId,
+                );
                 const rowSource = (executionRow?.touchedRecords?.length ? executionRow : undefined)
                     || (acceptedRow?.touchedRecords?.length ? acceptedRow : undefined);
                 let documentRecord = (rowSource?.touchedRecords || []).find((row) => (
@@ -2155,6 +2163,7 @@ class SdkDocSync {
                 // document identity straight from the durable journal.
                 const journalPathRaw = executionRow?.executionJournalPath
                     || acceptedRow?.executionJournalPath
+                    || changeRequestRow?.executionJournalPath
                     || null;
                 if (!documentRecord && nonEmptyString(action.stableId)
                     && nonEmptyString(journalPathRaw) && fs.existsSync(journalPathRaw)) {
@@ -2200,6 +2209,7 @@ class SdkDocSync {
                     if (!nonEmptyString(executedFolderToken)) {
                         const journalPath = executionRow?.executionJournalPath
                             || acceptedRow?.executionJournalPath
+                            || changeRequestRow?.executionJournalPath
                             || null;
                         if (nonEmptyString(journalPath) && fs.existsSync(journalPath)) {
                             try {
@@ -2293,10 +2303,18 @@ class SdkDocSync {
             && nonEmptyString(current.folderToken)
             && this.placementWalkDigest
             && this.placementWalkProduct) {
-            const listFolders = typeof this.documentWriter?.listFolder === 'function'
-                ? this.documentWriter.listFolder.bind(this.documentWriter)
-                : (typeof this.documentWriter?.list_folder === 'function'
-                    ? (async ({ folderToken }) => this.documentWriter.list_folder({ folder_token: folderToken, type: 'folder' }))
+            // this.documentWriter is an unassigned name — the construction
+            // field is this.m2f, and the adjacent CREATE-like proof block
+            // builds a readonly probe when m2f is absent. Dry-runs have no
+            // writer instance, so without the probe the redo proof could
+            // never stamp placement and every changes-requested redo failed
+            // typed (REBUILD_PLACEMENT_REQUIRED).
+            const probe = this.m2f
+                || (this.readonlyProbe ||= new MarkdownToFeishu({ sourceType: this.sourceType, rootToken: this.rootToken, baseToken: this.baseToken }));
+            const listFolders = typeof probe?.listFolder === 'function'
+                ? probe.listFolder.bind(probe)
+                : (typeof probe?.list_folder === 'function'
+                    ? (async ({ folderToken }) => probe.list_folder({ folder_token: folderToken, type: 'folder' }))
                     : null);
             const versionRootToken = suppliedContext.target?.versionRootToken
                 || extraContext.target?.versionRootToken

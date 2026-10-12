@@ -642,12 +642,26 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
     }
     if (decision === DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE) {
       const expectedFolderLink = observed?.categoryFolderLink ?? null;
-      if (!nonEmptyString(expectedFolderLink) || observed?.categoryNodeLink !== expectedFolderLink) {
-        errors.push({
-          code: 'TREE_DELTA_CATEGORY_NODE_NOT_REPOINTED',
-          expected: expectedFolderLink,
-          actual: observed?.categoryNodeLink ?? null,
-        });
+      // The attested DAG is the reviewed classification: a NON-EMPTY dag
+      // that names no REPOINT node is the repoint:null assembly ( BulkWriter
+      // class folder inside an already-existing Data Import directory — the
+      // go Database/ResourceGroup precedent: a category with no VirtualNode
+      // record to move). Demanding the category-node link would burn every
+      // repoint-null copy. A MISSING or empty dag (legacy/kernel-v2-era
+      // plans) keeps the old strict expectation.
+      const attestedDag = plan?.metadata?.requiredResourceDag
+        || (plan?.invariantAttestations || []).find(entry => entry?.id === INVARIANT_ID)?.requiredResourceDag
+        || [];
+      const attestedRepointNode = attestedDag.find(node => node?.action === 'REPOINT_CATEGORY_VIRTUAL_NODE');
+      const repointNullAssembly = attestedDag.length > 0 && !attestedRepointNode;
+      if (!repointNullAssembly) {
+        if (!nonEmptyString(expectedFolderLink) || observed?.categoryNodeLink !== expectedFolderLink) {
+          errors.push({
+            code: 'TREE_DELTA_CATEGORY_NODE_NOT_REPOINTED',
+            expected: expectedFolderLink,
+            actual: observed?.categoryNodeLink ?? null,
+          });
+        }
       }
       const expectedFolderToken = observed?.categoryFolderToken ?? null;
       if (!nonEmptyString(expectedFolderToken)

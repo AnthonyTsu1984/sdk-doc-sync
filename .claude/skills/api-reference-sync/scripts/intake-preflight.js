@@ -53,7 +53,13 @@ const CONTEXT_KEYS = [
 // request/callable entries, reviewed type URLs) — expected on the entries
 // that carry them, never flagged as UNEXPECTED.
 const OPTIONAL_CONTEXT_KEYS = ['params', 'result', 'signature', 'typeUrls', 'requestSyntax', 'requiredFields', 'styleMirrors',
-    'summaryCallouts', 'requestVariants', 'callableMembers', 'inheritanceReview', 'reviewedActionType', 'treeDelta'];
+    'summaryCallouts', 'requestVariants', 'callableMembers', 'inheritanceReview', 'reviewedActionType', 'treeDelta',
+    // build-reviewed-release-context attaches these to the entry whenever the
+    // scope action carries a canonical stateful-class organization contract
+    // (node-stateful-class, …); a stateful-class campaign can never pass
+    // strict intake without them. validateOrganizationContract judges them
+    // downstream — these keys only stop being "unexpected".
+    'organization', 'organizationInventory'];
 // Structured-route entries (go v3.0.0 campaign shape: the reviewed context
 // carries the parsed upstream structure, not solidified verbatim bytes) and
 // grouping-bound planning evidence that rides the reference context when the

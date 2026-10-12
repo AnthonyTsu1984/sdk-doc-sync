@@ -208,3 +208,23 @@ test('structured-route residue (requestVariants/callableMembers link text) is fl
     assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*requestVariants\[0\]\.inputs\[0\]\.name[^\n]*Alias\.md/);
     assert.match(result.stdout, /INTAKE_RELATIVE_LINK_URL[^\n]*callableMembers\[0\]\.signature[^\n]*FieldType\.md/);
 });
+
+test('builder organization keys on a stateful-class entry are not unexpected', () => {
+    const entry = makeContextEntry({
+        organization: {
+            schemaVersion: 1,
+            profileId: 'node-stateful-class',
+            profileVersion: 1,
+            reviewed: true,
+            groupingChange: false,
+            classRecord: { stableId: 'node:DataImport:BulkWriter', title: 'BulkWriter', recordId: 'recx', recordType: 'Class', docsResourceType: 'docx', parentRecordType: 'VirtualNode', virtualNode: false, parentRecordId: 'recvn' },
+            drive: { layout: 'same_named_class_folder', folderName: 'BulkWriter', folderRef: 'res:folder-BulkWriter', landingDocumentInside: true, methodDocumentsInside: true },
+            methodInventory: { complete: true, publicMethodStableIds: ['node:DataImport:BulkWriter:append'] },
+            methods: [{ stableId: 'node:DataImport:BulkWriter:append', recordType: 'Function', parentRecordId: 'recx' }],
+        },
+        organizationInventory: { classStableId: 'node:DataImport:BulkWriter' },
+    });
+    const { result } = runPreflight({ 'node:DataImport:BulkWriter': entry });
+    assert.equal(result.status, 0, result.stdout);
+    assert.doesNotMatch(result.stdout, /INTAKE_CONTEXT_KEYS_UNEXPECTED/);
+});

@@ -354,7 +354,14 @@ class SyncPlanner {
         // The Slug duplex field derives from the parent-record chain: a VN
         // record parented under its category VirtualNode carries the
         // prefixed slug (MilvusClient-FunctionChain) without writing it.
-        throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires parentRecordId (the category VirtualNode record) — the Slug derives from the parent-record chain`);
+        // A TOP-LEVEL category VirtualNode (declared rootVirtualNode:true —
+        // go FileResources precedent) has no category parent, so its slug
+        // stays prefix-less; the executor read-back derives the same value
+        // without ever writing Slug directly.
+        if (resource.rootVirtualNode !== true
+          || String(resource.existingLookup?.criteria?.canonicalSlug || '').includes('-')) {
+          throw new SyncPlanningError('VIRTUAL_NODE_RESOURCE_INVALID', `VirtualNode resource ${ref} requires parentRecordId (the category VirtualNode record) — Slug derives from the parent-record chain, or declare rootVirtualNode:true with a prefix-less slug for a top-level category row`);
+        }
       }
       action = 'CREATE_VIRTUAL_NODE';
       postconditions = [

@@ -1131,3 +1131,61 @@ test('the post-write comparator rules a created document misplaced when the targ
     });
     assert.equal(legacy.ok, true);
 });
+
+test('WITH_CATEGORY_CREATE with an attested repoint:null DAG does not demand the category-node repoint', () => {
+    // Manifest classification honored: a category assembly with repoint:null
+    // (BulkWriter class folder inside an already-existing Data Import
+    // directory) carries no category VirtualNode to move; demanding the node
+    // link the review never attested would burn every repoint-null copy.
+    const plan = {
+        stableId: 'node:DataImport:BulkWriter',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        metadata: {
+            requiredResourceDag: [
+                { action: 'CREATE_FOLDER', stableId: 'resource:res:folder-BulkWriter' },
+                { action: 'COPY_PATCH_AND_REPOINT', stableId: 'node:DataImport:BulkWriter' },
+                { action: 'VERIFY_TREE_DELTA', stableId: 'tree-delta:node:DataImport:BulkWriter' },
+            ],
+        },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 5,
+            inputDigest: sha('bw-plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE,
+            evidenceDigest: null,
+            requiredResourceDag: [
+                { action: 'CREATE_FOLDER', stableId: 'resource:res:folder-BulkWriter' },
+                { action: 'COPY_PATCH_AND_REPOINT', stableId: 'node:DataImport:BulkWriter' },
+                { action: 'VERIFY_TREE_DELTA', stableId: 'tree-delta:node:DataImport:BulkWriter' },
+            ],
+        }],
+    };
+    const cleanObservedBw = {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        // post-repoint expected remaining: the evidence multiset minus this unit's own repointed record
+        createdDocumentToken: 'doc-bw-copy',
+        targetRecordDocumentToken: 'doc-bw-copy',
+        categoryFolderToken: 'folder-bulkwriter-v30',
+        createdDocumentFolderToken: 'folder-bulkwriter-v30',
+        // no categoryNodeLink — there is no category VirtualNode record.
+    };
+    const clean = verifyTreeDeltaPostconditions({ plan, observed: cleanObservedBw });
+    assert.equal(clean.ok, true, JSON.stringify(clean.errors));
+
+    // A unit that DID attest the repoint still gets the node checked.
+    const withRepoint = {
+        ...plan,
+        metadata: undefined,
+        invariantAttestations: [{
+            ...plan.invariantAttestations[0],
+            requiredResourceDag: [
+                ...plan.invariantAttestations[0].requiredResourceDag,
+                { action: 'REPOINT_CATEGORY_VIRTUAL_NODE', stableId: 'resource:repoint:node:v30:Authentication', dependsOn: [] },
+            ],
+        }],
+    };
+    const drifted = verifyTreeDeltaPostconditions({ plan: withRepoint, observed: { ...cleanObservedBw, categoryNodeLink: 'https://zilliverse.feishu.cn/drive/folder/folder-old' } });
+    assert.equal(drifted.ok, false);
+    assert.equal(drifted.errors[0].code, 'TREE_DELTA_CATEGORY_NODE_NOT_REPOINTED');
+});

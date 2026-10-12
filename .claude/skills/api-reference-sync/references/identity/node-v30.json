@@ -200,6 +200,11 @@
       "canonicalSlug": "Client-connect",
       "category": "Client"
     },
+    "Client.getTelemetry": {
+      "stableId": "node:Client:getTelemetry",
+      "canonicalSlug": "Client-getTelemetry",
+      "category": "Client"
+    },
     "Client.getVersion": {
       "stableId": "node:Client:getVersion",
       "canonicalSlug": "Client-getVersion",

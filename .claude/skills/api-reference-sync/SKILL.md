@@ -142,6 +142,7 @@ Read only the relevant domain references:
 - Bitable hierarchy and layout sampling: [references/bitable-document-organization.md](references/bitable-document-organization.md).
 - Execution and verification: [references/post-write-verification.md](references/post-write-verification.md), [references/release-smoke-test.md](references/release-smoke-test.md), and [references/stable-core-boundary.md](references/stable-core-boundary.md).
 - Commands and recovery: [references/cli.md](references/cli.md) and [references/troubleshooting.md](references/troubleshooting.md).
+- Workspace disciplines — canonical tmp/ layout, worktree principles, gate-round mechanism: [references/workspace-contract.md](references/workspace-contract.md).
 - Surgical patching of operator-authored pages: [references/surgical-patch.md](references/surgical-patch.md).
 - Per-document full rollback: [references/document-rollback.md](references/document-rollback.md).
 - Interactive chat and bot gates: [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md); these are mandatory whenever a user decision or approval is requested.

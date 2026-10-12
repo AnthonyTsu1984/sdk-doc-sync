@@ -2,24 +2,39 @@ const fetch = require('node-fetch')
 const process = require('node:process')
 require('dotenv').config()
 
-const APP_ID = process.env.APP_ID
-const APP_SECRET = process.env.APP_SECRET
+// The doc-writing app owns the bitable/drive scopes; the messaging app
+// (BOT_*) deliberately does not. Passing no args means the doc chain —
+// messaging consumers must pass { appIdEnv: 'BOT_APP_ID', ... } explicitly.
+const DEFAULT_APP_ID_ENV = 'DOC_APP_ID'
+const DEFAULT_APP_SECRET_ENV = 'DOC_APP_SECRET'
 const FEISHU_HOST = process.env.FEISHU_HOST
 
 class larkTokenFetcher {
 
-    constructor () {
+    constructor (options = {}) {
+        this.appIdEnv = options.appIdEnv || DEFAULT_APP_ID_ENV
+        this.appSecretEnv = options.appSecretEnv || DEFAULT_APP_SECRET_ENV
         this.tenantAccessToken = undefined
         this.tenantAccessTokenExpireTime = undefined
     }
 
+    resolveCredentials () {
+        const appId = process.env[this.appIdEnv]
+        const appSecret = process.env[this.appSecretEnv]
+        if (!appId || !appSecret) {
+            throw new Error(`${this.appIdEnv}/${this.appSecretEnv} missing from env — Feishu auth is fail-closed without them`)
+        }
+        return { appId, appSecret }
+    }
+
     async fetchToken() {
+        const { appId, appSecret } = this.resolveCredentials()
 
         const req = {
             method: 'post',
             body: JSON.stringify({
-                "app_id": APP_ID,
-                "app_secret": APP_SECRET
+                "app_id": appId,
+                "app_secret": appSecret
             }),
             headers: {
                 'Content-Type': 'application/json'
@@ -33,6 +48,8 @@ class larkTokenFetcher {
         if (res.code == 0) {
             this.tenantAccessToken = res.tenant_access_token
             this.tenantAccessTokenExpireTime = Date.now() + res.expire
+        } else {
+            throw new Error(`tenant_access_token fetch failed for ${this.appIdEnv}: ${res.code} ${res.msg}`)
         }
     }
 

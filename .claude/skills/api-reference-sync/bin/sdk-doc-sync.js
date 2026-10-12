@@ -167,8 +167,8 @@ Options:
 Environment (.env):
   ROOT_TOKEN    Drive folder or Wiki parent node token (required for live writes)
   BASE_TOKEN    Bitable base token for the target version (required for diff baseline unless --previous-base-token is set)
-  APP_ID        Feishu app ID
-  APP_SECRET    Feishu app secret
+  DOC_APP_ID    Feishu doc-writing app ID (bitable/drive scopes)
+  DOC_APP_SECRET Feishu doc-writing app secret
   FEISHU_HOST   Feishu API host (default: https://open.feishu.cn)
 `);
 }

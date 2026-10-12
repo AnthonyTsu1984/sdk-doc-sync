@@ -2660,3 +2660,44 @@ test('py-v30 wall rule: plan-time target chain reconciliation against the bound 
   reconcilePlanTargetChain({ stableId: 'noop', target: {} }, walkProduct);
   reconcilePlanTargetChain({ stableId: 'update', target: { folderToken: 'fld-live' } }, walkProduct);
 });
+
+test('SyncPlanner accepts a declared top-level root VirtualNode resource without a parent record', () => {
+  const plan = new SyncPlanner().planResource({
+    kind: 'virtual_node',
+    ref: 'res:vn-FileResources',
+    title: 'FileResources',
+    folderRef: 'res:folder-FileResources',
+    rootVirtualNode: true,
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    version: 'v3.0.x',
+    targets: ['Milvus', 'Zilliz'],
+    progress: 'Draft',
+    dependsOn: ['res:folder-FileResources'],
+    existingLookup: {
+      checked: true,
+      absent: true,
+      baseToken: 'base-v30',
+      tableId: 'table-v30',
+      criteria: { canonicalSlug: 'FileResources' },
+    },
+  });
+  assert.equal(plan.action, 'CREATE_VIRTUAL_NODE');
+
+  // A prefixed slug still refuses the root form — nesting is the only legal
+  // way to mint a slug carrying the parent alias.
+  assert.throws(() => new SyncPlanner().planResource({
+    kind: 'virtual_node',
+    ref: 'res:vn-Parented',
+    title: 'Child',
+    folderRef: 'res:folder-X',
+    rootVirtualNode: true,
+    baseToken: 'base-v30',
+    tableId: 'table-v30',
+    version: 'v3.0.x',
+    targets: ['Milvus'],
+    progress: 'Draft',
+    dependsOn: ['res:folder-X'],
+    existingLookup: { checked: true, absent: true, baseToken: 'base-v30', tableId: 'table-v30', criteria: { canonicalSlug: 'Client-Child' } },
+  }), /rootVirtualNode:true with a prefix-less slug/);
+});

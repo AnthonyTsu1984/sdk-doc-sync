@@ -1036,6 +1036,7 @@ function oneClickApproveCard(c, detail) {
     <div class="sum">${summary}</div>
     <details class="fold" style="margin:6px 0"><summary>技术详情（批准行与绑定摘要）</summary><code>${esc(line)}</code><div class="hint">worker：${esc(idle.sessionId)} · 注入方式 --resume 原文转发，语义校验在治理 CLI。</div></details>
     <button class="act primary" onclick="submitApprove(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')}, ${JSON.stringify(idle.sessionId).replace(/"/g, '&quot;')}, ${JSON.stringify(line).replace(/"/g, '&quot;')})">批准并继续</button>
+    ${lineGate === 'APPROVE_DOCUMENT' ? `<button class="act danger" title="打回：worker 读取该批页面的飞书评论并转成修改要求" onclick="rejectWithComments(${JSON.stringify(cardKey(c)).replace(/"/g, '&quot;')})">打回（读飞书评论）</button>` : ''}
   </div>`;
 }
 
@@ -1052,6 +1053,27 @@ function stepChips(c) {
     { label: '收口', state: done ? 'done' : (total > 0 && c.accepted >= total ? 'cur' : 'todo') },
   ];
   return `<div class="steps">${steps.map((s, i) => `${i ? '<span class="arr">›</span>' : ''}<span class="st ${s.state}">${s.state === 'done' ? '✓ ' : ''}${esc(s.label)}</span>`).join('')}</div>`;
+}
+
+async function rejectWithComments(target) {
+  if (!window.confirm('打回本轮文档验收？worker 将读取该批页面的飞书评论并转成修改要求（评论 API 不可达时会向你索要原文），重建受影响单元后呈新写门。')) return;
+  try {
+    const latestCards = await (await fetch('/api/cards')).json();
+    const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
+    const idle = (card?.workers || []).find((w) => w.status === 'idle');
+    if (!idle) { alert('无可注入的 idle worker——等 worker 停在门禁后再打回'); return; }
+    const res = await fetch('/api/request-changes', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target, sessionId: idle.sessionId, mode: 'comments' }),
+    });
+    const body = await res.json();
+    if (!res.ok) { alert(body.error || '打回失败'); return; }
+    alert(body.note || '已注入');
+    refreshDetail();
+  } catch (error) {
+    alert(`打回失败：${error?.message ?? error}`);
+  }
 }
 
 async function requestChanges(target, unitId) {

@@ -507,3 +507,16 @@ test('change-request: prompt carries the canonical command verbatim, reason fenc
   assert.match(prompt, /原因：RETURNS 段落缺失——补齐字段表/);
   assert.match(prompt, /呈新的写门（APPROVE_WRITES \+ 新 digest）后停下等批/);
 });
+
+test('reject-with-comments prompt: reads doc comments, canonical filing, honest fallback', () => {
+  const { composeRejectWithCommentsPrompt } = require('../../scripts/dashboard/change-request.js');
+  const batch = composeRejectWithCommentsPrompt({ sessionPath: 'tmp/s.json', unitId: null });
+  assert.match(batch, /^REJECT_DOCUMENT <batch>$/m);
+  assert.match(batch, /飞书评论/);
+  assert.match(batch, /404[）)]时[，,]如实向操作员逐条索要评论原文/);
+  assert.match(batch, /request-document-changes --session tmp\/s\.json --review-unit-id <受影响单元>/);
+  assert.match(batch, /呈新写门（APPROVE_WRITES \+ 新 digest）后停/);
+
+  const single = composeRejectWithCommentsPrompt({ sessionPath: 'tmp/s.json', unitId: 'review:node:X' });
+  assert.match(single, /^REJECT_DOCUMENT review:node:X$/m);
+});

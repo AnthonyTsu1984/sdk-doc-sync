@@ -142,20 +142,28 @@ async function refreshNextGates() {
       if (nextGateCache.has(cardKey)) continue;
       value = null;
     }
-    // The status machine cannot see a planned-but-unexecuted rollback (the
-    // wait lives in the worker conversation; activeRollback appears only at
-    // execution). Derive that gate from the rollback manifest so the board,
-    // doorbell, and one-click approve all see it — closed automatically once
-    // the anchored journal is archived by the rollback completion. A pending
-    // rollback OVERRIDES the status gate: the occupied journal slot blocks the
-    // write batch anyway, so the rollback is always the true next step.
-    if (value && card.sessionId) {
+    // Rollback gates: the SESSION MACHINE decides (RESOLVE_ROLLBACK is the
+    // machine's own signal that a rollback blocks progress); the manifest
+    // only supplies the digest for the approval line. Deriving gates from
+    // manifests alone misreads pre-staged planning artifacts (a worker once
+    // batch-generated nine per-unit rollback manifests and hijacked the
+    // board's real document gate).
+    if (value && card.sessionId && value.nextGate && value.nextGate.gate === 'RESOLVE_ROLLBACK') {
       const rollbackGate = gateWatch.pendingRollbackGateFor(
         target.root,
         card.sessionId,
         executedRollbackManifestDigests(target.root, target.sessionPath),
+        value.nextGate.reviewUnitId,
       );
-      if (rollbackGate) value = { ...value, nextGate: rollbackGate };
+      value = {
+        ...value,
+        nextGate: rollbackGate || {
+          gate: 'APPROVE_ROLLBACK',
+          reviewUnitId: value.nextGate.reviewUnitId,
+          digest: null,
+          source: 'machine',
+        },
+      };
     }
     nextGateCache.set(cardKey, { value, at: Date.now() });
     changed = true;
@@ -421,7 +429,7 @@ function reconcileWorkerRegistry() {
   let changed = false;
   for (const entries of spawnedWorkers.values()) {
     for (const entry of entries) {
-      if (entry.status !== 'running' || !entry.sessionId) continue;
+      if (entry.status !== 'running' || (!entry.sessionId && !entry.pid)) continue;
       let alive = true;
       if (entry.pid) {
         try {
@@ -442,7 +450,7 @@ function reconcileWorkerRegistry() {
       if (!alive) {
         entry.status = 'idle';
         changed = true;
-        if (usageDb) usage.closeOrphanedRuns(usageDb, entry.sessionId, new Date().toISOString());
+        if (usageDb && entry.sessionId) usage.closeOrphanedRuns(usageDb, entry.sessionId, new Date().toISOString());
       }
     }
   }
@@ -1013,12 +1021,13 @@ async function handler(req, res) {
         ].join('\n');
       }
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
-      registerWorker(workerKey, worker);
       const child = spawn(
         'zcode',
         [...buildHeadlessSpawnArgs(spawnRoot, spawnPrompt), '--json'],
         { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
       );
+      worker.pid = child.pid; // reconcile liveness signal (argv is lost on re-exec)
+      registerWorker(workerKey, worker);
       let stdout = '';
       child.stdout.on('data', (chunk) => {
         if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
@@ -1107,17 +1116,18 @@ async function handler(req, res) {
         return;
       }
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
+      const child = spawn(
+        'zcode',
+        [...buildHeadlessSpawnArgs(briefRoot, buildIntakeWorkerPrompt(brief.text)), '--json'],
+        { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      worker.pid = child.pid; // reconcile liveness signal (argv is lost on re-exec)
       registerWorker(workerKey, worker);
       appendIntakeDispatchRecord({
         kind: 'dispatch', workerKey, at: worker.spawnedAt,
         language: brief.meta.language, trackKey: brief.meta.trackKey ?? null,
         mode: brief.meta.mode ?? 'scout',
       });
-      const child = spawn(
-        'zcode',
-        [...buildHeadlessSpawnArgs(briefRoot, buildIntakeWorkerPrompt(brief.text)), '--json'],
-        { detached: true, stdio: ['ignore', 'pipe', 'ignore'] },
-      );
       let stdout = '';
       child.stdout.on('data', (chunk) => {
         if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
@@ -1172,10 +1182,16 @@ async function handler(req, res) {
         sendJson(res, 400, { error: 'invalid JSON body' });
         return;
       }
-      const { target, sessionId, unitId, reason } = request || {};
-      const validation = changeRequest.validateRequestChangesInput({ unitId, reason });
-      if (!validation.ok) {
-        sendJson(res, 400, { error: validation.error });
+      const { target, sessionId, unitId, reason, mode } = request || {};
+      const isCommentsReject = mode === 'comments';
+      if (!isCommentsReject) {
+        const validation = changeRequest.validateRequestChangesInput({ unitId, reason });
+        if (!validation.ok) {
+          sendJson(res, 400, { error: validation.error });
+          return;
+        }
+      } else if (unitId && !/^[\w:.-]+$/.test(unitId)) {
+        sendJson(res, 400, { error: '单元 id 无效' });
         return;
       }
       if (!sessionId) {
@@ -1198,18 +1214,18 @@ async function handler(req, res) {
         return;
       }
       const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
-      const prompt = changeRequest.composeRequestChangesPrompt({
-        sessionPath: card.sessionPath,
-        unitId,
-        reason,
-      });
+      const prompt = isCommentsReject
+        ? changeRequest.composeRejectWithCommentsPrompt({ sessionPath: card.sessionPath, unitId: unitId || null })
+        : changeRequest.composeRequestChangesPrompt({ sessionPath: card.sessionPath, unitId, reason });
       dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line: prompt });
       sendJson(res, 200, {
         ok: true,
         card: cardKey,
         sessionId: worker.sessionId,
-        unitId,
-        note: '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，停在新写门时再通知你',
+        unitId: unitId ?? null,
+        note: isCommentsReject
+          ? '打回已注入 worker 会话——它将读取该批文档的飞书评论并转成修改要求落账（评论 API 不可达时会向你索要原文），重建后停在新写门'
+          : '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，停在新写门时再通知你',
       });
     });
     return;

@@ -30,7 +30,7 @@ function contextTokensOf(worker) {
 // pending while the anchored journal still sits in its slot (rollback
 // completion byte-archives it away), closed once the slot is released or the
 // manifest is cleaned up.
-function pendingRollbackGateFor(repoRoot, sessionId, executedManifestDigests = null) {
+function pendingRollbackGateFor(repoRoot, sessionId, executedManifestDigests = null, unitId = null) {
   if (!repoRoot || !sessionId) return null;
   const dir = path.join(repoRoot, ROLLBACK_MANIFESTS_RELATIVE_DIR);
   let names;
@@ -48,6 +48,10 @@ function pendingRollbackGateFor(repoRoot, sessionId, executedManifestDigests = n
       continue;
     }
     if (manifest.sessionId !== sessionId) continue;
+    // Pre-staged manifests exist for units that are not the machine's
+    // current blocker — only the unit the session machine points at is a
+    // live gate.
+    if (unitId && manifest.reviewUnitId !== unitId) continue;
     // A receipt binding this manifest digest means the rollback already
     // executed — the gate is closed regardless of journal archiving (the
     // supersede path rewrites the slot instead of archiving it).

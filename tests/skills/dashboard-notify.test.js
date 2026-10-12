@@ -625,6 +625,9 @@ test('pendingRollbackGateFor: receipted manifest digest closes the gate (superse
   assert.equal(closed, null, 'executed manifest digest must not derive a gate');
   const open = gateWatch.pendingRollbackGateFor(root, 'sdk-doc-sync:node:v3.0.x:sha256:aaa', new Set(['sha256:other']));
   assert.equal(open.gate, 'APPROVE_ROLLBACK');
+  // Pre-staged manifests for OTHER units must not hijack the machine's gate.
+  assert.equal(gateWatch.pendingRollbackGateFor(root, 'sdk-doc-sync:node:v3.0.x:sha256:aaa', null, 'review:node:Other:unit'), null);
+  assert.equal(gateWatch.pendingRollbackGateFor(root, 'sdk-doc-sync:node:v3.0.x:sha256:aaa', null, 'review:node:Authentication:alterRole').gate, 'APPROVE_ROLLBACK');
   fs.rmSync(root, { recursive: true, force: true });
 });
 

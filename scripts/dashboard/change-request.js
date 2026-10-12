@@ -22,6 +22,25 @@ function validateRequestChangesInput({ unitId, reason } = {}) {
   return { ok: true };
 }
 
+// REJECT on a document gate: the operator's change requests live as Feishu
+// comments on the written pages — the agent must read them and file the
+// change requests itself (comments API may 404 for the app; the fallback is
+// asking the operator for the texts verbatim — an old known gap).
+function composeRejectWithCommentsPrompt({ sessionPath, unitId }) {
+  const scope = unitId ? `单元 ${unitId}` : '本轮文档验收批次（门卡所列全部单元）';
+  return [
+    unitId ? `REJECT_DOCUMENT ${unitId}` : 'REJECT_DOCUMENT <batch>',
+    `操作员在本轮文档验收门点了打回：${scope}。`,
+    '',
+    '请执行：',
+    '1. 逐个读取本批已写页面的飞书评论（文档 token/链接取自该单元的验收回执或挂起执行记录；用 DOC_* 凭据）。评论 API 对应用不可达（404）时，如实向操作员逐条索要评论原文，不得臆造。',
+    '2. 把每条未解决评论转成修改要求，用 canonical CLI 落账打回：',
+    `   node .claude/skills/api-reference-sync/bin/sdk-review-session.js request-document-changes --session ${sessionPath} --review-unit-id <受影响单元> --reason <评论原文>`,
+    '3. 打回落账后本回合继续：受影响单元回 reviewed planning → 重建（scoped dry-run）→ 呈新写门（APPROVE_WRITES + 新 digest）后停。未受评论影响的单元保持挂起验收不动。',
+    '门后必停，绝不自批。',
+  ].join('\n');
+}
+
 function composeRequestChangesPrompt({ sessionPath, unitId, reason }) {
   const clean = String(reason).trim();
   return [
@@ -39,4 +58,5 @@ module.exports = {
   MAX_REASON_LENGTH,
   validateRequestChangesInput,
   composeRequestChangesPrompt,
+  composeRejectWithCommentsPrompt,
 };

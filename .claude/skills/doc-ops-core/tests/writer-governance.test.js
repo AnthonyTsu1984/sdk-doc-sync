@@ -124,6 +124,32 @@ test('bindApproval validates the envelope against the caller-declared batch fact
     actionCount: 0,
     approval: approvalFor(),
   }), (error) => error.code === 'WRITER_ACTION_COUNT_REQUIRED');
+
+  assert.throws(() => governance.bindApproval({
+    ...BATCH,
+    actionCount: -1,
+    approval: approvalFor({ actionCount: -1 }),
+  }), (error) => error.code === 'WRITER_ACTION_COUNT_REQUIRED');
+});
+
+test('rollback governance binds a zero-action batch (empty-inversion rollbacks have no mutations to control)', () => {
+  const governance = createWriterGovernance({ skill: 'api-reference-sync', operation: 'rollback' });
+  const envelope = createApprovalEnvelope({
+    skill: 'api-reference-sync',
+    operation: 'rollback',
+    batchDigest: 'sha256:' + 'e'.repeat(64),
+    actionCount: 0,
+    targets: [],
+    sideEffects: [],
+    decision: 'approved',
+  });
+  governance.bindApproval({
+    batchDigest: 'sha256:' + 'e'.repeat(64),
+    actionCount: 0,
+    targets: [],
+    sideEffects: [],
+    approval: envelope,
+  });
 });
 
 test('bindApproval refuses empty or malformed invariant attestations', () => {

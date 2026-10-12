@@ -609,3 +609,16 @@ test('replyText: posts to the message thread, falls back to a plain send', async
   assert.equal(flat.messageId, 'om_flat');
   assert.ok(calls.some((call) => call.url.includes('?receive_id_type=open_id')));
 });
+
+test('pendingRollbackGateFor: receipted manifest digest closes the gate (supersede path)', () => {
+  const root = rollbackFixture({});
+  const closed = gateWatch.pendingRollbackGateFor(
+    root,
+    'sdk-doc-sync:node:v3.0.x:sha256:aaa',
+    new Set(['sha256:85fd283834948c4be4f87cc89645ec0d935653fe384916217ec6b6008f352805']),
+  );
+  assert.equal(closed, null, 'executed manifest digest must not derive a gate');
+  const open = gateWatch.pendingRollbackGateFor(root, 'sdk-doc-sync:node:v3.0.x:sha256:aaa', new Set(['sha256:other']));
+  assert.equal(open.gate, 'APPROVE_ROLLBACK');
+  fs.rmSync(root, { recursive: true, force: true });
+});

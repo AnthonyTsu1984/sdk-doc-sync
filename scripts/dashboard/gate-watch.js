@@ -19,7 +19,7 @@ const ROLLBACK_MANIFESTS_RELATIVE_DIR = 'tmp/api-reference-sync/rollback-manifes
 // pending while the anchored journal still sits in its slot (rollback
 // completion byte-archives it away), closed once the slot is released or the
 // manifest is cleaned up.
-function pendingRollbackGateFor(repoRoot, sessionId) {
+function pendingRollbackGateFor(repoRoot, sessionId, executedManifestDigests = null) {
   if (!repoRoot || !sessionId) return null;
   const dir = path.join(repoRoot, ROLLBACK_MANIFESTS_RELATIVE_DIR);
   let names;
@@ -37,6 +37,10 @@ function pendingRollbackGateFor(repoRoot, sessionId) {
       continue;
     }
     if (manifest.sessionId !== sessionId) continue;
+    // A receipt binding this manifest digest means the rollback already
+    // executed — the gate is closed regardless of journal archiving (the
+    // supersede path rewrites the slot instead of archiving it).
+    if (executedManifestDigests && executedManifestDigests.has(manifest.rollbackManifestDigest)) continue;
     if (!manifest.reviewUnitId || !manifest.rollbackManifestDigest) continue;
     if (typeof manifest.executionJournalPath !== 'string') continue;
     try {

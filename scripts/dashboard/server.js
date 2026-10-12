@@ -149,7 +149,11 @@ async function refreshNextGates() {
     // rollback OVERRIDES the status gate: the occupied journal slot blocks the
     // write batch anyway, so the rollback is always the true next step.
     if (value && card.sessionId) {
-      const rollbackGate = gateWatch.pendingRollbackGateFor(target.root, card.sessionId);
+      const rollbackGate = gateWatch.pendingRollbackGateFor(
+        target.root,
+        card.sessionId,
+        executedRollbackManifestDigests(target.root, target.sessionPath),
+      );
       if (rollbackGate) value = { ...value, nextGate: rollbackGate };
     }
     nextGateCache.set(cardKey, { value, at: Date.now() });
@@ -385,6 +389,22 @@ function persistWorkerRegistry() {
   workerRegistry.saveWorkerRegistry(WORKER_REGISTRY_FILE, spawnedWorkers);
 }
 
+// Digests of rollbacks the session machine has already receipted — those
+// manifests are consumed, whatever their anchored-journal state says (the
+// supersede path rewrites the slot rather than archiving it).
+function executedRollbackManifestDigests(repoRoot, sessionPath) {
+  try {
+    const session = JSON.parse(fs.readFileSync(path.join(repoRoot, sessionPath), 'utf8'));
+    const digests = new Set();
+    for (const receipt of session.rollbackReceipts || []) {
+      if (receipt && typeof receipt.rollbackManifestDigest === 'string') digests.add(receipt.rollbackManifestDigest);
+    }
+    return digests;
+  } catch {
+    return null;
+  }
+}
+
 // Dead-parent recovery: a dashboard restart orphans every dispatched child's
 // exit event, leaving registry entries stuck at 'running' and their approve
 // runs stuck 'open' forever. Reconcile by inspection — a 'running' entry with
@@ -397,10 +417,21 @@ function reconcileWorkerRegistry() {
     for (const entry of entries) {
       if (entry.status !== 'running' || !entry.sessionId) continue;
       let alive = true;
-      try {
-        alive = String(spawnSync('pgrep', ['-f', entry.sessionId], { encoding: 'utf8' }).stdout || '').trim().length > 0;
-      } catch {
-        alive = true; // cannot inspect — keep it visible as running
+      if (entry.pid) {
+        try {
+          process.kill(entry.pid, 0); // ESRCH = exited; EPERM = alive
+        } catch (error) {
+          alive = error.code === 'EPERM';
+        }
+      } else {
+        // Legacy pid-less entries: pgrep best-effort. NOTE the zcode launcher
+        // re-execs without argv, so this can false-negative — pid-carrying
+        // entries (post-2026-10-12) never take this path.
+        try {
+          alive = String(spawnSync('pgrep', ['-f', entry.sessionId], { encoding: 'utf8' }).stdout || '').trim().length > 0;
+        } catch {
+          alive = true; // cannot inspect — keep it visible as running
+        }
       }
       if (!alive) {
         entry.status = 'idle';
@@ -601,9 +632,22 @@ function scheduleNotifyAfterWorkerExit() {
 // approval's semantics and digest binding stay with the worker + canonical
 // CLI gates — this is transport only, exactly like /api/approve.
 function dispatchResumeTurn({ key, sessionId, checkoutRoot, line }) {
-  // Bind to the STORED registry entry — the exit closure below flips its
-  // status and that mutation must land in the persisted registry.
-  const next = registerWorker(key, { sessionId, spawnedAt: new Date().toISOString(), status: 'running' });
+  // Injecting the bare approval line lets the worker answer with a bare
+  // acknowledgment and end its turn — the operator then approves "again" and
+  // nothing executes. Frame the resume prompt as a command to continue NOW.
+  const prompt = `${line}\n\n批准已注入：本回合立即继续执行（canonical CLI，digest 程序化注入不手抄），推进到下一道 APPROVE_* 门或完成再停——不要只回执确认。`;
+  const child = spawn('zcode', buildResumeArgs(checkoutRoot, sessionId, prompt), {
+    detached: true,
+    stdio: 'ignore',
+  });
+  // Register AFTER spawn so the entry carries the child pid — re-exec drops
+  // argv, so pid is the only reliable liveness signal for reconciliation.
+  const next = registerWorker(key, {
+    sessionId,
+    spawnedAt: new Date().toISOString(),
+    status: 'running',
+    pid: child.pid,
+  });
   const approveRunId = usageDb
     ? usage.openApproveRun(usageDb, {
       sessionId,
@@ -612,10 +656,6 @@ function dispatchResumeTurn({ key, sessionId, checkoutRoot, line }) {
     })
     : null;
   if (usageDb) usage.upsertAttribution(usageDb, sessionId, key, 'worker-registry');
-  const child = spawn('zcode', buildResumeArgs(checkoutRoot, sessionId, line), {
-    detached: true,
-    stdio: 'ignore',
-  });
   child.on('exit', () => {
     next.status = 'idle';
     persistWorkerRegistry();

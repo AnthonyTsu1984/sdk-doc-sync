@@ -119,7 +119,16 @@ class WriterGovernance {
         if (!requireNonEmptyString(batchDigest)) {
             throw new WriterGovernanceError('WRITER_BATCH_DIGEST_REQUIRED', 'batchDigest is required to bind writer governance');
         }
-        if (!Number.isInteger(actionCount) || actionCount < 1) {
+        if (!Number.isInteger(actionCount) || actionCount < 0) {
+            throw new WriterGovernanceError('WRITER_ACTION_COUNT_REQUIRED', 'actionCount must be a non-negative integer');
+        }
+        // A zero-action batch binds only for rollback governance: reversing a
+        // journal whose remaining inversions are all pre-write refusals has
+        // nothing to mutate — its executable content IS the empty set, journaled
+        // as a completion-only rolled_back receipt. Forward executions keep
+        // the positive-action invariant (a batch that approves nothing is a
+        // bug, not a no-op).
+        if (actionCount === 0 && this.operation !== 'rollback') {
             throw new WriterGovernanceError('WRITER_ACTION_COUNT_REQUIRED', 'actionCount must be a positive integer');
         }
         const expected = {

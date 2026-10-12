@@ -1,0 +1,232 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - heading "治理看板" [level=1] [ref=e3]
+    - navigation [ref=e4]:
+      - link "总览" [ref=e5] [cursor=pointer]:
+        - /url: "#/home"
+      - link "API 参考" [ref=e6] [cursor=pointer]:
+        - /url: "#/skill/api"
+      - link "本地化对齐" [ref=e7] [cursor=pointer]:
+        - /url: "#/skill/localized-doc-sync"
+      - link "示例补齐" [ref=e8] [cursor=pointer]:
+        - /url: "#/skill/procedure-code-sync"
+      - link "代码验证" [ref=e9] [cursor=pointer]:
+        - /url: "#/skill/doc-code-verify"
+      - link "验证式起草" [ref=e10] [cursor=pointer]:
+        - /url: "#/skill/verified-doc-authoring"
+    - generic [ref=e11]: 准入 未匹配（台账最新 node-v30-write-batch1 vs 当前树指纹）
+    - link "呈门材料待审（主检出）→" [ref=e13] [cursor=pointer]:
+      - /url: /api/file?path=%2FUsers%2Fanthony%2FDocuments%2Fprojects%2Ffeishu-markdown-bridge%2Ftmp%2Fapi-reference-sync%2Fgate-presentation%2Flatest.html
+    - generic [ref=e16]: 实时
+    - generic [ref=e17]: 生成于 2026/10/12 21:30:41
+  - main [ref=e18]:
+    - generic [ref=e19]:
+      - link "API 参考" [ref=e20] [cursor=pointer]:
+        - /url: "#/skill/api"
+      - text: ›
+      - link "node" [ref=e21] [cursor=pointer]:
+        - /url: "#/skill/api/lang/node"
+      - text: › v3.0.x 战役
+    - generic [ref=e22]:
+      - generic [ref=e23]:
+        - generic [ref=e24]: node · v3.0.x · three-gate
+        - generic [ref=e25]:
+          - generic "review:node:Client:Client:getTelemetry" [ref=e26] [cursor=pointer]: 批准回滚
+          - generic [ref=e27]: 进行中
+      - generic [ref=e28]:
+        - text: sdk-doc-sync:node:milvus-sdk-node:v3.0.x:sha256:fce752b1df97ff73ff9ab5d54205d307419dbceec0550c6d3920380e6f757f96
+        - button "复制会话路径" [ref=e29] [cursor=pointer]
+      - generic [ref=e30]:
+        - generic [ref=e31]: ✓ 发现
+        - generic [ref=e32]: ›
+        - generic [ref=e33]: ✓ 分组
+        - generic [ref=e34]: ›
+        - generic [ref=e35]: 写入·验收 1/18
+        - generic [ref=e36]: ›
+        - generic [ref=e37]: 收口
+      - generic [ref=e40]:
+        - generic [ref=e41]: 单元 1/18
+        - generic [ref=e42]: 创建 5 小时前
+        - generic [ref=e43]: 更新 9 分钟前
+        - generic [ref=e44]: 活动 1 分钟前 · 67 步
+        - generic [ref=e45]: 挂起执行 9 · 执行中 · 历史回滚 2
+      - generic [ref=e46]:
+        - button "复制挂载命令" [ref=e47] [cursor=pointer]
+        - button "一键派出执行会话" [ref=e48] [cursor=pointer]
+    - generic [ref=e49]:
+      - generic [ref=e50]: ⛩ 批准回滚
+      - generic [ref=e51]: 批准回滚 review:node:Client:Client:getTelemetry
+      - generic [ref=e52]: worker 正在运行——等它停在门禁后再批准。
+    - group [ref=e53]:
+      - generic "高级表单：手组批准行（其余门的 digest 从呈门材料复制）" [ref=e54] [cursor=pointer]
+      - option "APPROVE_GROUPING"
+      - option "APPROVE_WRITES"
+      - option "APPROVE_DOCUMENT"
+      - option "APPROVE_ROLLBACK" [selected]
+      - option "APPROVE_ACCEPTANCE"
+      - option "sess_6aaa1e16-4a21…（运行中）" [disabled]
+    - heading "规模" [level=2] [ref=e55]
+    - generic [ref=e57]:
+      - generic [ref=e58]: 写作单元
+      - generic [ref=e59]: 1/18 已接受 · 挂起 9
+      - generic [ref=e60]: scan-state
+      - generic [ref=e61]: node @ v3.0.3（会话目标 v3.0.6）
+      - generic [ref=e62]: 分组绑定
+      - generic "提案 sha256:245a9efc526692d33a7173ea1150dfebad86bdb7a522d17e99248d35d264d522 · 已批 scope sha256:445a6a7e8d20e6fcc24a44db5da5ce901dfc33bc7f82c40994bb9df7a1e752de · 批准于 2026-10-12T06:34:48.752Z——入口 release-scope 漂移即拒（GROUPING_STALE）" [ref=e63]: APPROVE_GROUPING 已绑 · 245a9efc5266…
+      - generic [ref=e64]: 变更动作
+      - generic [ref=e65]: 21 个 · PR 文件 — 个 · SDK 源码变更 34 个
+      - generic [ref=e66]: 版本区间
+      - generic [ref=e67]: v3.0.3 → v3.0.6
+      - generic [ref=e68]: 变更动作
+      - generic [ref=e69]: 21 个 · PR 文件 — 个 · SDK 源码变更 34 个
+      - generic [ref=e70]: 版本区间
+      - generic [ref=e71]: v3.0.3 → v3.0.6
+    - heading "文件清单（按单元分组，文件名为主）" [level=2] [ref=e72]
+    - generic [ref=e73]:
+      - table [ref=e74]:
+        - rowgroup [ref=e75]:
+          - row "文件 单元 状态 变更原因 来源 飞书" [ref=e76]:
+            - columnheader "文件" [ref=e77]
+            - columnheader "单元" [ref=e78]
+            - columnheader "状态" [ref=e79]
+            - columnheader "变更原因" [ref=e80]
+            - columnheader "来源" [ref=e81]
+            - columnheader "飞书" [ref=e82]
+        - rowgroup [ref=e83]:
+          - row "Client.getTelemetry Client.Client.getTelemetry 已写入·待验收 new public Function milvus/grpc/GrpcClient.ts:569 待写入后生成" [ref=e84]:
+            - cell "Client.getTelemetry" [ref=e85]
+            - cell "Client.Client.getTelemetry" [ref=e86]
+            - cell "已写入·待验收" [ref=e87]
+            - cell "new public Function" [ref=e88]
+            - cell "milvus/grpc/GrpcClient.ts:569" [ref=e89]
+            - cell "待写入后生成" [ref=e90]
+          - row "Collections.addCollectionFunction Collections.addCollectionFunction 已写入·待验收 parameters changed milvus/grpc/Collection.ts:1977 待写入后生成" [ref=e91]:
+            - cell "Collections.addCollectionFunction" [ref=e92]
+            - cell "Collections.addCollectionFunction" [ref=e93]
+            - cell "已写入·待验收" [ref=e94]
+            - cell "parameters changed" [ref=e95]
+            - cell "milvus/grpc/Collection.ts:1977" [ref=e96]
+            - cell "待写入后生成" [ref=e97]
+          - row "Collections.addFunctionField Collections.addFunctionField 已写入·待验收 new public Function milvus/grpc/Collection.ts:1804 待写入后生成" [ref=e98]:
+            - cell "Collections.addFunctionField" [ref=e99]
+            - cell "Collections.addFunctionField" [ref=e100]
+            - cell "已写入·待验收" [ref=e101]
+            - cell "new public Function" [ref=e102]
+            - cell "milvus/grpc/Collection.ts:1804" [ref=e103]
+            - cell "待写入后生成" [ref=e104]
+          - row "Collections.alterCollectionFunction Collections.alterCollectionFunction 已写入·待验收 parameters changed milvus/grpc/Collection.ts:2036 待写入后生成" [ref=e105]:
+            - cell "Collections.alterCollectionFunction" [ref=e106]
+            - cell "Collections.alterCollectionFunction" [ref=e107]
+            - cell "已写入·待验收" [ref=e108]
+            - cell "parameters changed" [ref=e109]
+            - cell "milvus/grpc/Collection.ts:2036" [ref=e110]
+            - cell "待写入后生成" [ref=e111]
+          - row "Collections.alterCollectionSchema Collections.alterCollectionSchema 已写入·待验收 new public Function milvus/grpc/Collection.ts:1759 待写入后生成" [ref=e112]:
+            - cell "Collections.alterCollectionSchema" [ref=e113]
+            - cell "Collections.alterCollectionSchema" [ref=e114]
+            - cell "已写入·待验收" [ref=e115]
+            - cell "new public Function" [ref=e116]
+            - cell "milvus/grpc/Collection.ts:1759" [ref=e117]
+            - cell "待写入后生成" [ref=e118]
+          - row "Collections.dropCollectionField Collections.dropCollectionField 已写入·待验收 new public Function milvus/grpc/Collection.ts:1897 待写入后生成" [ref=e119]:
+            - cell "Collections.dropCollectionField" [ref=e120]
+            - cell "Collections.dropCollectionField" [ref=e121]
+            - cell "已写入·待验收" [ref=e122]
+            - cell "new public Function" [ref=e123]
+            - cell "milvus/grpc/Collection.ts:1897" [ref=e124]
+            - cell "待写入后生成" [ref=e125]
+          - row "Collections.dropFunctionField Collections.dropFunctionField 已写入·待验收 new public Function milvus/grpc/Collection.ts:1930 待写入后生成" [ref=e126]:
+            - cell "Collections.dropFunctionField" [ref=e127]
+            - cell "Collections.dropFunctionField" [ref=e128]
+            - cell "已写入·待验收" [ref=e129]
+            - cell "new public Function" [ref=e130]
+            - cell "milvus/grpc/Collection.ts:1930" [ref=e131]
+            - cell "待写入后生成" [ref=e132]
+          - row "Client.addFileResource FileResources.addFileResource 已写入·待验收 new public Function milvus/grpc/GrpcClient.ts:773 待写入后生成" [ref=e133]:
+            - cell "Client.addFileResource" [ref=e134]
+            - cell "FileResources.addFileResource" [ref=e135]
+            - cell "已写入·待验收" [ref=e136]
+            - cell "new public Function" [ref=e137]
+            - cell "milvus/grpc/GrpcClient.ts:773" [ref=e138]
+            - cell "待写入后生成" [ref=e139]
+          - row "Client.listFileResources FileResources.listFileResources 已写入·待验收 new public Function milvus/grpc/GrpcClient.ts:806 待写入后生成" [ref=e140]:
+            - cell "Client.listFileResources" [ref=e141]
+            - cell "FileResources.listFileResources" [ref=e142]
+            - cell "已写入·待验收" [ref=e143]
+            - cell "new public Function" [ref=e144]
+            - cell "milvus/grpc/GrpcClient.ts:806" [ref=e145]
+            - cell "待写入后生成" [ref=e146]
+          - row "Authentication.createRole Authentication.createRole 排队中 parameters changed milvus/grpc/User.ts:225 待写入后生成" [ref=e147]:
+            - cell "Authentication.createRole" [ref=e148]
+            - cell "Authentication.createRole" [ref=e149]
+            - cell "排队中" [ref=e150]
+            - cell "parameters changed" [ref=e151]
+            - cell "milvus/grpc/User.ts:225" [ref=e152]
+            - cell "待写入后生成" [ref=e153]
+          - row "Authentication.createUser Authentication.createUser 排队中 parameters changed milvus/grpc/User.ts:67 待写入后生成" [ref=e154]:
+            - cell "Authentication.createUser" [ref=e155]
+            - cell "Authentication.createUser" [ref=e156]
+            - cell "排队中" [ref=e157]
+            - cell "parameters changed" [ref=e158]
+            - cell "milvus/grpc/User.ts:67" [ref=e159]
+            - cell "待写入后生成" [ref=e160]
+          - row "Authentication.updateUser Authentication.updateUser 排队中 parameters changed milvus/grpc/User.ts:108 待写入后生成" [ref=e161]:
+            - cell "Authentication.updateUser" [ref=e162]
+            - cell "Authentication.updateUser" [ref=e163]
+            - cell "排队中" [ref=e164]
+            - cell "parameters changed" [ref=e165]
+            - cell "milvus/grpc/User.ts:108" [ref=e166]
+            - cell "待写入后生成" [ref=e167]
+          - row "DataImport.BulkWriter DataImport.BulkWriter 排队中 public method behavior changed milvus/bulkwriter/BulkWriter.ts:19 待写入后生成" [ref=e168]:
+            - cell "DataImport.BulkWriter" [ref=e169]
+            - cell "DataImport.BulkWriter" [ref=e170]
+            - cell "排队中" [ref=e171]
+            - cell "public method behavior changed" [ref=e172]
+            - cell "milvus/bulkwriter/BulkWriter.ts:19" [ref=e173]
+            - cell "待写入后生成" [ref=e174]
+          - row "DataImport.Formatter DataImport.Formatter 排队中 public method behavior changed milvus/bulkwriter/ParquetFormatter.ts:284 待写入后生成" [ref=e175]:
+            - cell "DataImport.Formatter" [ref=e176]
+            - cell "DataImport.Formatter" [ref=e177]
+            - cell "排队中" [ref=e178]
+            - cell "public method behavior changed" [ref=e179]
+            - cell "milvus/bulkwriter/ParquetFormatter.ts:284" [ref=e180]
+            - cell "待写入后生成" [ref=e181]
+          - row "Client.removeFileResource FileResources.removeFileResource 排队中 new public Function milvus/grpc/GrpcClient.ts:790 待写入后生成" [ref=e182]:
+            - cell "Client.removeFileResource" [ref=e183]
+            - cell "FileResources.removeFileResource" [ref=e184]
+            - cell "排队中" [ref=e185]
+            - cell "new public Function" [ref=e186]
+            - cell "milvus/grpc/GrpcClient.ts:790" [ref=e187]
+            - cell "待写入后生成" [ref=e188]
+          - row "Vector.hybridSearch Vector.hybridSearch 排队中 parameters changed milvus/grpc/Data.ts:1159 待写入后生成" [ref=e189]:
+            - cell "Vector.hybridSearch" [ref=e190]
+            - cell "Vector.hybridSearch" [ref=e191]
+            - cell "排队中" [ref=e192]
+            - cell "parameters changed" [ref=e193]
+            - cell "milvus/grpc/Data.ts:1159" [ref=e194]
+            - cell "待写入后生成" [ref=e195]
+          - row "Vector.search Vector.search 排队中 parameters changed milvus/grpc/Data.ts:819 待写入后生成" [ref=e196]:
+            - cell "Vector.search" [ref=e197]
+            - cell "Vector.search" [ref=e198]
+            - cell "排队中" [ref=e199]
+            - cell "parameters changed" [ref=e200]
+            - cell "milvus/grpc/Data.ts:819" [ref=e201]
+            - cell "待写入后生成" [ref=e202]
+          - row "Authentication.alterRole Authentication.alterRole 已写入·验收 new public Function milvus/grpc/User.ts:257 文档 记录 修改" [ref=e203]:
+            - cell "Authentication.alterRole" [ref=e204]
+            - cell "Authentication.alterRole" [ref=e205]
+            - cell "已写入·验收" [ref=e206]
+            - cell "new public Function" [ref=e207]
+            - cell "milvus/grpc/User.ts:257" [ref=e208]
+            - cell "文档 记录 修改" [ref=e209]:
+              - link "文档" [ref=e210] [cursor=pointer]:
+                - /url: https://zilliverse.feishu.cn/docx/Fvw0dyRalo2ceVxdY4Fcf9uTnBg
+              - link "记录" [ref=e211] [cursor=pointer]:
+                - /url: https://zilliverse.feishu.cn/base/LlrPbysPZau2dGsSVuicHmvCn0e?record=reczz28MUm5T1FNK
+              - link "修改" [ref=e212] [cursor=pointer]:
+                - /url: javascript:void(0)
+      - generic [ref=e213]: 本次范围为源码证据驱动（无 web-content PR 文件）：首列为方法/单元名，「来源」列为 SDK 源码定位（仓库 file:line）。「飞书」列链接由已写入·验收单元的回执携带。
+    - heading "token 消耗" [level=2] [ref=e214]
+    - generic [ref=e216]: 载入中…
+    - group [ref=e217]:
+      - generic "工件与执行 journal（治理原始材料）" [ref=e218] [cursor=pointer]

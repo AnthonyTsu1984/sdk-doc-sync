@@ -1184,7 +1184,12 @@ class SdkDocSync {
                     resourceResolutions.set(execResult.resolvedResource.ref, execResult.resolvedResource);
                 }
                 const rollbackEvidence = typeof this.executor.observeRollback === 'function'
-                    ? await this.executor.observeRollback(planned.plan, execResult)
+                    ? await this.executor.observeRollback(planned.plan, execResult, {
+                        ownedFolderTokens: await collectUnitOwnedFolderTokens({
+                            reviewSession: this.reviewSession,
+                            reviewUnitId: this.activeReviewUnitId || this.reviewUnitId,
+                        }),
+                    })
                     : {
                         schemaVersion: 1,
                         action: planned.plan.action,
@@ -2026,6 +2031,37 @@ class SdkDocSync {
                 evidence: action.evidence,
             } : action.releaseScopeAction,
         }));
+    }
+
+    // Folder tokens THIS unit itself minted across its own durable journals
+    // (pending/accepted/changeRequests rows bound to its review-unit id).
+    // Replay_RESOLUTIONS may resolve the SAME token for sibling units (the
+    // replay-after-partial tolerance adopts the first unit's product); a
+    // sibling's rollback capsule must NOT claim ownership of what only
+    // reflects a resolution, or a rollback would delete another unit's product.
+    async collectUnitOwnedFolderTokensFromSession({ reviewSession, reviewUnitId }) {
+        const tokens = new Set();
+        if (!reviewSession || !nonEmptyString(reviewUnitId)) return tokens;
+        const rows = [
+            ...(reviewSession.pendingExecutions || (reviewSession.activeExecution ? [reviewSession.activeExecution] : [])),
+            ...(reviewSession.acceptedReviewUnits || []),
+            ...(reviewSession.changeRequests || []),
+        ].filter((row) => row && row.reviewUnitId === reviewUnitId);
+        for (const row of rows) {
+            const journalPath = row.executionJournalPath || row.rollbackJournalPath || null;
+            if (!nonEmptyString(journalPath) || !fs.existsSync(journalPath)) continue;
+            try {
+                const entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+                for (const entry of entries) {
+                    const token = entry?.rollbackEvidence?.createdFolder?.token || entry?.rollbackEvidence?.createdFolderToken || null;
+                    if (nonEmptyString(token)) tokens.add(token);
+                }
+            } catch {
+                // A best-effort ownership read: an unreadable journal leaves the
+                // token set empty, which only widens the conservative fold.
+            }
+        }
+        return tokens;
     }
 
     _sessionExecutedDocumentIds() {

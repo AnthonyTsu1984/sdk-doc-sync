@@ -12,6 +12,17 @@ const path = require('node:path');
 
 const ROLLBACK_MANIFESTS_RELATIVE_DIR = 'tmp/api-reference-sync/rollback-manifests';
 
+// 2026-10-01 two-gate ruling: rotate conversations at 42% context usage. For
+// headless workers the board approximates context with the latest turn's
+// reprocessed input (fresh input + cache read); past the advisory a long turn
+// is burning mostly context carriage (once: 115M tokens / 249 turns).
+const CONTEXT_LIMIT_TOKENS = 1_000_000; // tune to the worker model's window
+const CONTEXT_ROTATION_FRACTION = 0.42;
+
+function contextTokensOf(worker) {
+  return typeof worker?.contextTokens === 'number' ? worker.contextTokens : null;
+}
+
 // A rollback gate the session status machine cannot see: the worker planned
 // the rollback (manifest on disk) but the wait-for-operator state lives only
 // in the worker conversation — the session file has no activeRollback until
@@ -75,6 +86,25 @@ const LOST_WORKER_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 function inQuietWindow(date) {
   const hour = date.getHours();
   return hour >= QUIET_START_HOUR || hour < QUIET_END_HOUR;
+}
+
+function workerContextEvents(payload) {
+  const events = [];
+  for (const card of payload?.campaigns || []) {
+    for (const worker of card.workers || []) {
+      if (!worker || worker.status !== 'running') continue;
+      const contextTokens = contextTokensOf(worker);
+      if (contextTokens == null) continue;
+      if (contextTokens < CONTEXT_LIMIT_TOKENS * CONTEXT_ROTATION_FRACTION) continue;
+      events.push({
+        key: `context:${card.sessionKey ?? `main::${card.sessionPath}`}:${worker.sessionId}`,
+        category: '会话过重',
+        line: `${cardLabel(card)} worker 上下文 ≈${Math.round(contextTokens / 1000)}k tokens——超 42% 轮换约定，建议它停门后「一键派出执行会话」换新会话续接`,
+        since: null,
+      });
+    }
+  }
+  return events;
 }
 
 function cardLabel(card) {
@@ -211,6 +241,7 @@ function deriveEvents({ payload, dispatchLines, now = new Date() }) {
     ...intakeEvents(payload),
     ...sentinelEvents(payload),
     ...lostWorkerEvents(dispatchLines, nowMs),
+    ...workerContextEvents(payload),
   ];
 }
 
@@ -304,6 +335,9 @@ module.exports = {
   ROLLBACK_MANIFESTS_RELATIVE_DIR,
   inQuietWindow,
   pendingRollbackGateFor,
+  CONTEXT_LIMIT_TOKENS,
+  CONTEXT_ROTATION_FRACTION,
+  workerContextEvents,
   deriveEvents,
   decideSends,
   formatMessage,

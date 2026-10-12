@@ -205,18 +205,71 @@ function pairedJournalActions(entries, unit) {
   // A failure OBSERVED with an empty identity capsule is the same class
   // (nothing was mutated; the executor journals a schemaVersion-only evidence
   // shape on refusals) — no produced identity to reverse.
-  const carriesNoProducedIdentity = (evidence) => (
-    !nonEmptyString(evidence?.createdDocument?.token)
-    && !nonEmptyString(evidence?.createdFolder?.token)
-    && !nonEmptyString(evidence?.recordId)
-    && !nonEmptyString(recordId(evidence?.postRecord))
-    && !nonEmptyString(evidence?.patchedDocumentToken)
+  // Executor-completedSteps is the mutation ledger: verify* steps prove
+  // nothing landed; createFolder/createDocument/copyDocument/patchDocument/
+  // createRecord/repointVirtualNode/rebuildDocument do.
+  const mutatingSteps = ['createFolder', 'createFolderResolved', 'verifyFolder', 'createDocument', 'copyDocument', 'patchDocument', 'rebuildDocument', 'createRecord', 'repointVirtualNode', 'updateRecord'];
+  const producedMutation = (evidence) => (
+    Array.isArray(evidence?.completedSteps)
+    && evidence.completedSteps.some((step) => mutatingSteps.includes(String(step).replace(/^verify/, '').replace('Resolved', '')))
   );
-  const invertibleObserved = new Map([...observedById].filter(([, entry]) => (
-    !(entry.status === 'failure' && (
-      !entry.rollbackEvidence || carriesNoProducedIdentity(entry.rollbackEvidence)
-    ))
-  )));
+  const externallyOwnedTokens = (session, reviewUnitId) => {
+    const owned = new Set();
+    for (const row of [
+      ...((session?.pendingExecutions || (session?.activeExecution ? [session.activeExecution] : [])) || []),
+      ...(session?.acceptedReviewUnits || []),
+      ...(session?.changeRequests || []),
+    ]) {
+      if (!row || row.reviewUnitId === reviewUnitId) continue;
+      const journalPath = row.executionJournalPath || null;
+      if (!nonEmptyString(journalPath) || !fs.existsSync(journalPath)) continue;
+      try {
+        const entries = fs.readFileSync(journalPath, 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+        for (const entry of entries) {
+          const token = entry?.rollbackEvidence?.createdFolder?.token || entry?.rollbackEvidence?.createdFolder?.documentToken || null;
+          if (nonEmptyString(token)) owned.add(token);
+        }
+      } catch {
+        // Best-effort: an unreadable journal grants no claim either way.
+      }
+    }
+    return owned;
+  };
+
+  // A PRE-WRITE failure (nothing mutated: no copied/created document —
+  // createdDocument may carry only the planned blockIds with no live
+  // identity field — no created folder, no record, no patched token, no
+  // post-record) inverts to nothing regardless of the action shape.
+  const carriesNoProducedIdentity = (evidence) => !(
+    nonEmptyString(evidence?.createdDocument?.token)
+    || nonEmptyString(evidence?.createdDocument?.document_id)
+    || nonEmptyString(evidence?.createdFolder?.token)
+    || nonEmptyString(evidence?.recordId)
+    || nonEmptyString(recordId(evidence?.postRecord))
+    || nonEmptyString(evidence?.patchedDocumentToken)
+  );
+  // Replay-ADOPTED success actions carry the resolution signature without an
+  // owned product (verifyResourcePresent resolved a token that belongs to the
+  // first unit's own receipt) — there is nothing THIS execution minted, so
+  // the action inverts to nothing and must not delete another unit's artifact.
+  // Replay-ADOPTED success actions carry the resolution signature without an
+  // owned product (verifyResourcePresent resolved a token that belongs to the
+  // first unit's own receipt) — there is nothing THIS execution minted, so
+  // the action inverts to nothing and must not delete another unit's artifact.
+  const carriesOnlyAdoptedResolution = (evidence) => (
+    evidence?.resolvedResource?.kind === 'folder'
+    || evidence?.resolvedResource?.kind === 'virtual_node'
+    || evidence?.resolvedResource?.kind === 'virtual_node_repoint'
+  ) && Array.isArray(evidence?.completedSteps)
+    && evidence.completedSteps.includes('verifyResourcePresent')
+    && carriesNoProducedIdentity(evidence);
+  const invertibleObserved = new Map([...observedById].filter(([actionId, entry]) => {
+    if (entry.status === 'failure'
+      && (!entry.rollbackEvidence || carriesNoProducedIdentity(entry.rollbackEvidence))) return false;
+    // Adopted-resolution successes invert to nothing (see the signature rule).
+    if (entry.status === 'success' && carriesOnlyAdoptedResolution(entry.rollbackEvidence)) return false;
+    return true;
+  }));
   const unitActionIds = Array.isArray(unit.actionIds) && unit.actionIds.length > 0
     ? unit.actionIds.filter((actionId) => invertibleObserved.has(actionId))
     : [...invertibleObserved.keys()].sort();
@@ -307,6 +360,12 @@ function inverseFor(pair) {
       };
     }
     case 'COPY_PATCH_AND_REPOINT': {
+      // A copy refusal before the copy lands nothing: the evidence keeps the
+      // SOURCE row identity (recordId/postRecord are the captured pre-state,
+      // not products); the mutating steps say it plainly — no copyDocument
+      // verdict, no mint.
+      if (!Array.isArray(evidence.completedSteps)
+        || !evidence.completedSteps.includes('copyDocument')) return null;
       requireValue(capsule.beforeRecord, 'ROLLBACK_EVIDENCE_MISSING', `Original Bitable state is missing for ${capsule.actionId}`);
       requireValue(evidence.postRecord, 'ROLLBACK_EVIDENCE_MISSING', `Executed Bitable state is missing for ${capsule.actionId}`);
       const token = requireValue(
@@ -326,6 +385,11 @@ function inverseFor(pair) {
     // restore (batch 5 review r1 P2-2).
     case 'UPDATE_IN_PLACE':
     case 'REBUILD': {
+      // A pre-write refusal left the document unchanged; a revert would mint
+      // a revision for nothing.
+      if (!Array.isArray(evidence.completedSteps)
+        || (!evidence.completedSteps.includes('patchDocument')
+          && !evidence.completedSteps.includes('rebuildDocument'))) return null;
       requireValue(capsule.beforeRecord, 'ROLLBACK_EVIDENCE_MISSING', `Original Bitable state is missing for ${capsule.actionId}`);
       requireValue(evidence.postRecord, 'ROLLBACK_EVIDENCE_MISSING', `Executed Bitable state is missing for ${capsule.actionId}`);
       const rollback = capsule.documentRollback;
@@ -365,20 +429,13 @@ function inverseFor(pair) {
       };
     }
     case 'CREATE_FOLDER': {
-      // Replay-after-partial adoption (node v3.0.6 wall): an observed capsule
-      // minted before the adopted-folder folding carries createdFolder: null
-      // with the resolved identity riding resolvedResource — accept that
-      // scoped resolution (ref must name this exact action) as the folder
-      // identity, so a unit whose batch adopted its own product can reverse
-      // it and free the canonical journal slot on the next run.
-      const adoptedFolderToken = evidence.resolvedResource?.kind === 'folder'
-        && (evidence.resolvedResource?.ref === capsule.actionId
-          || `resource:${evidence.resolvedResource?.ref}` === capsule.actionId)
-        && nonEmptyString(evidence.resolvedResource.value)
-        ? evidence.resolvedResource.value
-        : null;
+      // Success evidence must state its OWN created identity: the folding
+      // rule at the executor resolves only into the unit's own tokens, and an
+      // adopted-only observation belongs to another unit's receipt (the
+      // invertibleObserved filter excluded it), so a CREATE_FOLDER reaching
+      // here reversed rows this unit actually minted.
       const token = requireValue(
-        folderToken(evidence.createdFolder) || adoptedFolderToken,
+        folderToken(evidence.createdFolder),
         'ROLLBACK_EVIDENCE_MISSING',
         `Created folder identity is missing for ${capsule.actionId}`,
       );
@@ -551,9 +608,23 @@ function buildRollbackManifest({ session, reviewUnitId, executionJournalPath = n
     });
   }
 
+  const foreignMounted = externallyOwnedTokens(session, reviewUnitId);
   const actions = [...manifestActionIds]
     .reverse()
-    .map((actionId) => inverseFor(pairs.get(actionId)))
+    .map((actionId) => {
+      const pair = pairs.get(actionId);
+      const inverse = inverseFor(pair);
+      if (!inverse) return null;
+      // Slots minted BEFORE the executor's ownership gate could carry a
+      // replay-resolution as a claimed createdFolder/createdRecord; the
+      // session's OTHER units' journals hold the real ownership — a delete
+      // inverse for a token another unit minted is dropped here (its live
+      // artifact stays; the re-running batch re-adopts it at the write
+      // boundary exactly as the first resident unit's product).
+      const token = inverse.createdFolder?.token || inverse.createdRecord?.recordId || null;
+      if (!nonEmptyString(token) || !foreignMounted.has(token)) return inverse;
+      return null;
+    })
     .filter(Boolean);
   const semantic = {
     schemaVersion: 1,

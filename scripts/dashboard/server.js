@@ -259,7 +259,12 @@ function fingerprintStatus(state) {
 
 function mergeWorkers(payload) {
   for (const card of payload.campaigns) {
-    card.workers = spawnedWorkers.get(card.sessionKey ?? `main::${card.sessionPath}`) || [];
+    const workerEntries = spawnedWorkers.get(card.sessionKey ?? `main::${card.sessionPath}`) || [];
+    // 42% rotation advisory input: the running worker's latest-turn context
+    // (fresh input + cache read of its most recent harvested turn).
+    card.workers = workerEntries.map((w) => (w.status === 'running' && usageDb
+      ? { ...w, contextTokens: usage.latestContextTokens(usageDb, w.sessionId) ?? undefined }
+      : w));
   }
   return payload;
 }

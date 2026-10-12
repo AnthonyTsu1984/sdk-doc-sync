@@ -36,6 +36,14 @@ const EXECUTION_PATH_LINES = [
   '  3. 工件与回执落点: journal/run-manifest 在 `tmp/api-reference-sync/`（execute 每跑一轮用全新 journal 路径）；分组批准回执在 `tmp/api-reference-sync/grouping-approvals/`。',
 ];
 
+// Session self-restraint (2026-10-12 ruling: rotate conversations at 42%
+// context). A long turn pays the full accumulated context on every step —
+// an unbounded executor turn once burned 115M tokens in 249 turns. The
+// brief tells the worker to bank its work and hand back BEFORE that.
+const SESSION_BUDGET_LINES = [
+  '- 会话节制（42% 轮换约定的执行面）: 上下文随回合累积且每步全量付费。当本轮 token 消耗接近 ~40M 或回合数接近 ~80 时，把当前单元推到安全停点（写入完成且回执/journal 落账，或停门呈报）后收工——战役是会话文件不是对话，看板会派新会话无损续接。不要为省一次交接而拖长回合。',
+];
+
 // Workspace disciplines (batch 13): mirrors intake-brief.js — the canon is
 // references/workspace-contract.md, the brief carries the operative lines.
 const WORKSPACE_LINES = [
@@ -186,6 +194,7 @@ function buildBrief({ repoRoot, requested, now = new Date(), runStatus = default
   lines.push('');
   lines.push('### 续接规则');
   lines.push(...EXECUTION_PATH_LINES);
+  lines.push(...SESSION_BUDGET_LINES);
   lines.push(...WORKSPACE_LINES);
   lines.push(...GATE_FORMAT_LINES, ...IRON_RULES);
   return { ok: true, text: lines.join('\n'), card };

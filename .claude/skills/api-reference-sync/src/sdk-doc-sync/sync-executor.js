@@ -390,7 +390,7 @@ class SyncExecutor {
     });
   }
 
-  async observeRollback(plan, result) {
+  async observeRollback(plan, result, { ownedFolderTokens = new Set() } = {}) {
     const effectivePlan = result.resolvedPlan || plan;
     const observedRecordId = recordId(result.record) || effectivePlan.source?.recordId || null;
     let postRecord = null;
@@ -418,11 +418,19 @@ class SyncExecutor {
     // the observed capsule names the inverse target; the resolution is
     // batch-scoped (this exact unit's folder resource), so the folded token
     // is the approved folder the rollback manifest cites.
-    const adoptedFolder = !result.createdFolder
-      && result.resolvedResource?.kind === 'folder'
+    // Replay-RESOLVED folders are only the unit's own product when THE UNIT
+    // itself (across its own durable journals) minted that token; a sibling's
+    // resolution reflects the FIRST unit's product — the capsule must never
+    // claim it, or the rollback would delete another unit's artifact.
+    const resolvedValue = result.resolvedResource?.kind === 'folder'
       && result.resolvedResource?.ref === effectivePlan.resource?.ref
-      && nonEmptyString(result.resolvedResource.value)
-      ? { name: effectivePlan.resource?.name || null, token: result.resolvedResource.value }
+      ? result.resolvedResource.value
+      : null;
+    const ownedResolution = nonEmptyString(resolvedValue) && ownedFolderTokens.has(resolvedValue);
+    const adoptedFolder = !result.createdFolder
+      && ownedResolution
+      && nonEmptyString(resolvedValue)
+      ? { name: effectivePlan.resource?.name || null, token: resolvedValue }
       : null;
     return deepFreeze({
       schemaVersion: 1,

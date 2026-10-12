@@ -1185,7 +1185,7 @@ class SdkDocSync {
                 }
                 const rollbackEvidence = typeof this.executor.observeRollback === 'function'
                     ? await this.executor.observeRollback(planned.plan, execResult, {
-                        ownedFolderTokens: await collectUnitOwnedFolderTokens({
+                        ownedFolderTokens: await this.collectUnitOwnedFolderTokensFromSession({
                             reviewSession: this.reviewSession,
                             reviewUnitId: this.activeReviewUnitId || this.reviewUnitId,
                         }),

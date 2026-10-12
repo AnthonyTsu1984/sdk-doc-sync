@@ -458,8 +458,23 @@ function campaignUsage(db, campaignPath) {
   };
 }
 
+// Latest-turn context proxy: what the most recent harvested turn reprocessed
+// (fresh input + cache read). Approximates the session's live context size.
+function latestContextTokens(db, sessionId) {
+  try {
+    const row = db.prepare(
+      'SELECT inputTokens, cacheRead FROM usage_turns WHERE sessionId = ? ORDER BY turnSeq DESC LIMIT 1',
+    ).get(sessionId);
+    if (!row) return null;
+    return (row.inputTokens ?? 0) + (row.cacheRead ?? 0);
+  } catch {
+    return null;
+  }
+}
+
 module.exports = {
   ATTRIBUTION_LOOKBACK_DAYS,
+  latestContextTokens,
   closeOrphanedRuns,
   ROLLOUT_FILE_RE,
   USAGE_DB_RELATIVE_PATH,

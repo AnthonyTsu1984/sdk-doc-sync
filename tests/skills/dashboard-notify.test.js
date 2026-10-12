@@ -627,3 +627,31 @@ test('pendingRollbackGateFor: receipted manifest digest closes the gate (superse
   assert.equal(open.gate, 'APPROVE_ROLLBACK');
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('workerContextEvents: heavy running worker advises rotation at the 42% bound', () => {
+  const payload = basePayload();
+  payload.campaigns = [
+    {
+      sessionKey: 'main::tmp/sdk-doc-sync-runs/node.json',
+      sessionPath: 'tmp/sdk-doc-sync-runs/node.json',
+      language: 'node', track: 'v3.0.x', checkoutLabel: '主检出',
+      health: 'active', updatedAt: '2026-10-12T13:00:00.000Z',
+      workers: [{ sessionId: 'sess_heavy', status: 'running', contextTokens: 460_000 }],
+    },
+    {
+      sessionKey: 'main::tmp/sdk-doc-sync-runs/calm.json',
+      sessionPath: 'tmp/sdk-doc-sync-runs/calm.json',
+      language: 'go', track: 'v3.0.x', checkoutLabel: '主检出',
+      health: 'active', updatedAt: '2026-10-12T13:00:00.000Z',
+      workers: [
+        { sessionId: 'sess_fresh', status: 'running', contextTokens: 120_000 },
+        { sessionId: 'sess_idle_heavy', status: 'idle', contextTokens: 900_000 },
+      ],
+    },
+  ];
+  const events = gateWatch.workerContextEvents(payload);
+  assert.equal(events.length, 1, 'only the heavy RUNNING worker fires');
+  assert.equal(events[0].key, 'context:main::tmp/sdk-doc-sync-runs/node.json:sess_heavy');
+  assert.match(events[0].line, /超 42% 轮换约定/);
+  assert.match(events[0].line, /460k/);
+});

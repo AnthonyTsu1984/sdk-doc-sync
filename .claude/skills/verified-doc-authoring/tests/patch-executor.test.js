@@ -72,6 +72,8 @@ test('executor journals exact patch, refetches, and acceptance binds claims and 
   let patchCalls = 0;
   const result = await executeAuthoringPatch({
     plan: patchPlan, approval, journalPath,
+    // Fixture hygiene: sandbox the run-manifest evidence dir.
+    evidenceDir: directory,
     adapter: {
       async snapshot() { return patchPlan.target; },
       async patch() { patchCalls += 1; return { documentId: 'doc-1', revision: 10, created: false }; },

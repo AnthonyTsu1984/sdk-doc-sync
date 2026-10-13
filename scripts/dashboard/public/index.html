@@ -975,6 +975,14 @@ function refreshDetail() {
   fetch('/api/cards').then((x) => x.json()).then((d) => { latest = d; route(); }).catch(() => {});
 }
 
+// Unchecked-board-action target: the LATEST idle worker — the freshest
+// session is the one that presented the current gate (and after a
+// checkbox-created session it stays the default until a newer one exists).
+// Never the oldest parked entry.
+function latestIdleWorker(card) {
+  return [...(card?.workers || [])].reverse().find((w) => w.status === 'idle');
+}
+
 // Approve-and-rotate (42% convention): the approval rides a FRESH session
 // seeded with the campaign brief instead of a resume turn into the parked
 // worker. Digest binding still enforced by the canonical CLI on execution.
@@ -1025,7 +1033,7 @@ async function rejectWriteGate(target) {
   try {
     const latestCards = await (await fetch('/api/cards')).json();
     const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
-    const idle = (card?.workers || []).find((w) => w.status === 'idle');
+    const idle = latestIdleWorker(card);
     if (!idle) { boardAlert('无可注入的 idle worker', '等 worker 停在门禁后再打回；或先「一键派出执行会话」。'); return; }
     const res = await fetch('/api/request-changes', {
       method: 'POST',
@@ -1067,7 +1075,8 @@ function advancedApproveForm(c) {
   const gate = GATE_TO_LINE[c.nextGate?.gate] || 'APPROVE_WRITES';
   const unit = c.nextGate?.reviewUnitId || '';
   const digest = approveDigestOf(c, unit);
-  const workerSel = workers.map((w) => `<option value="${esc(w.sessionId)}" ${w.status === 'idle' ? 'selected' : 'disabled'}>${esc(w.sessionId.slice(0, 18))}…（${w.status === 'idle' ? '可注入' : '运行中'}）</option>`).join('');
+  const lastIdle = [...workers].reverse().find((w) => w.status === 'idle');
+  const workerSel = workers.map((w) => `<option value="${esc(w.sessionId)}" ${w === lastIdle ? 'selected' : (w.status === 'idle' ? '' : 'disabled')}>${esc(w.sessionId.slice(0, 18))}…（${w.status === 'idle' ? '可注入' : '运行中'}）</option>`).join('');
   return `<details class="fold"><summary>高级表单：手组批准行（其余门的 digest 从呈门材料复制）</summary>
     <div class="approve">
       <div class="frow">
@@ -1150,9 +1159,18 @@ function oneClickApproveCard(c, detail) {
         : ''}
       <div class="hint">无看板 worker：界面注入仅限看板派出的会话（防并发写）。手开的会话把上面的批准行原文粘进去即为批复；或用「一键派出执行会话」派一个可注入的 worker。</div></div>`;
   }
-  const idle = workers.find((w) => w.status === 'idle');
+  // Any live worker on this campaign suspends the approve affordance — with
+  // several parked workers on the registry the FIRST idle must not resurrect
+  // the button while a sibling executes the just-approved turn (two writers
+  // on one batch). When several are idle, prefer the LATEST: the freshest
+  // session is the one that presented the current gate.
+  const anyRunning = workers.some((w) => w.status === 'running');
+  const idle = [...workers].reverse().find((w) => w.status === 'idle');
   const g = gateSummary(c);
-  if (!g || !c.nextGate) {
+  if (anyRunning) {
+    return `<div class="approve"><div class="t">⛩ ${esc(g ? g.title : '门禁')} · worker 执行中</div><div class="sum">${g ? esc(g.detail) : ''}</div>${gatePresentationLinks(c)}<div class="hint">批准回合已在 worker 会话里执行——等它推进到下一门或完成；期间本战役不接受第二次注入（防双写）。</div></div>`;
+  }
+  if (!idle || !g || !c.nextGate) {
     return `<div class="approve"><div class="t">⛩ 当前无待批准的门</div><div class="hint">下一门由治理 CLI 推导（约 1 分钟刷新）；机械收口 CLOSE_SESSION 在会话里跑 close-session 命令。</div></div>`;
   }
   const gate = c.nextGate.gate;
@@ -1279,7 +1297,7 @@ async function rejectWithComments(target) {
   try {
     const latestCards = await (await fetch('/api/cards')).json();
     const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
-    const idle = (card?.workers || []).find((w) => w.status === 'idle');
+    const idle = latestIdleWorker(card);
     if (!idle) { boardAlert('无可注入的 idle worker', '等 worker 停在门禁后再打回'); return; }
     const res = await fetch('/api/request-changes', {
       method: 'POST',
@@ -1303,7 +1321,7 @@ async function requestChanges(target, unitId) {
   try {
     const latestCards = await (await fetch('/api/cards')).json();
     const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
-    const idle = (card?.workers || []).find((w) => w.status === 'idle');
+    const idle = latestIdleWorker(card);
     if (!idle) { boardAlert('无可注入的 idle worker', '等 worker 停在门禁后再提'); return; }
     const res = await fetch('/api/request-changes', {
       method: 'POST',

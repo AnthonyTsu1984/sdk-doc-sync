@@ -1425,6 +1425,10 @@ async function handler(req, res) {
         sendJson(res, 409, { error: 'worker 正在运行——等它停在门禁后再提修改要求' });
         return;
       }
+      if ((card.workers || []).some((w) => w.sessionId !== sessionId && w.status === 'running')) {
+        sendJson(res, 409, { error: '该战役另一个 worker 正在执行——等它停门后再注入（防双写）' });
+        return;
+      }
       const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
       const busy = sessionRecentlyActive(cardRoot, worker.sessionId);
       if (busy) {
@@ -1507,6 +1511,13 @@ async function handler(req, res) {
       }
       if (worker.status !== 'idle') {
         sendJson(res, 409, { error: 'worker 仍在首轮运行中——等它停在门禁后再批准' });
+        return;
+      }
+      // Sibling guard: several parked workers may be idle while one executes
+      // the just-approved turn — a second injection would put two writers on
+      // the same batch. Refuse while ANY worker of this campaign runs.
+      if ((card.workers || []).some((w) => w.sessionId !== sessionId && w.status === 'running')) {
+        sendJson(res, 409, { error: '该战役另一个 worker 正在执行——等它停门后再注入（防双写）' });
         return;
       }
       const approveBusy = sessionRecentlyActive(

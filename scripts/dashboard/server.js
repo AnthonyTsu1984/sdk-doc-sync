@@ -453,8 +453,10 @@ function reconcileWorkerRegistry() {
       if (entry.status !== 'running' || (!entry.sessionId && !entry.pid)) continue;
       let alive = true;
       if (entry.pid) {
+        // Process GROUP liveness: the launcher shim exits fast but the
+        // detached group persists while the forked worker runs.
         try {
-          process.kill(entry.pid, 0); // ESRCH = exited; EPERM = alive
+          process.kill(-entry.pid, 0); // negative pid = the whole group
         } catch (error) {
           alive = error.code === 'EPERM';
         }
@@ -471,7 +473,12 @@ function reconcileWorkerRegistry() {
       if (!alive) {
         entry.status = 'idle';
         changed = true;
-        if (usageDb && entry.sessionId) usage.closeOrphanedRuns(usageDb, entry.sessionId, new Date().toISOString());
+        scheduleNotifyAfterWorkerExit();
+        // Finalize open runs with REAL harvested deltas — the shim's fast
+        // exit used to close them empty long before the spend landed.
+        if (usageDb && entry.sessionId) {
+          try { usage.finalizeOpenRuns(usageDb, entry.sessionId); } catch { /* stays open */ }
+        }
       }
     }
   }
@@ -692,13 +699,14 @@ function dispatchResumeTurn({ key, sessionId, checkoutRoot, line }) {
     : null;
   if (usageDb) usage.upsertAttribution(usageDb, sessionId, key, 'worker-registry');
   child.on('exit', () => {
-    next.status = 'idle';
-    persistWorkerRegistry();
-    if (usageDb && approveRunId != null) {
-      try { usage.closeApproveRun(usageDb, approveRunId); } catch { /* telemetry only */ }
-    }
+    // The zcode launcher shim forks the real worker and exits within
+    // seconds — an instant idle flip here resurrects buttons while the
+    // worker still lives, and concurrent resumes then die on the busy
+    // session (five one-second, zero-turn runs in one evening). Defer to
+    // reconcile: the detached process GROUP outlives the shim while any
+    // descendant runs, and reconcile flips + finalizes when it empties.
+    reconcileWorkerRegistry();
     scheduleRecompute('approve-turn-exit');
-    scheduleNotifyAfterWorkerExit();
   });
   child.unref();
   return next;

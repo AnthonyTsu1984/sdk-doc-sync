@@ -472,8 +472,21 @@ function latestContextTokens(db, sessionId) {
   }
 }
 
+// Close every open approve run for a session with real harvested deltas.
+// Group-death reconcile lands here: the launcher-shim exit once closed runs
+// within a second (zero deltas), long before the worker's spend was in the
+// store.
+function finalizeOpenRuns(db, sessionId, { rolloutDir = defaultRolloutDir(), now = new Date() } = {}) {
+  const rows = db.prepare('SELECT id FROM approve_runs WHERE sessionId = ? AND state = ?').all(sessionId, 'open');
+  for (const row of rows) {
+    try { closeApproveRun(db, row.id, { rolloutDir, now }); } catch { /* stays open for the next pass */ }
+  }
+  return rows.length;
+}
+
 module.exports = {
   ATTRIBUTION_LOOKBACK_DAYS,
+  finalizeOpenRuns,
   latestContextTokens,
   closeOrphanedRuns,
   ROLLOUT_FILE_RE,

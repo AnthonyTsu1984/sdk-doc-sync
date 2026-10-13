@@ -923,9 +923,9 @@ async function submitApprove(target, sessionId, line) {
       body: JSON.stringify({ target, sessionId, line }),
     });
     const j = await r.json();
-    alert(j.note || j.error || JSON.stringify(j));
+    boardDialog({ title: j.error ? '注入失败' : '已注入', message: j.note || j.error || JSON.stringify(j) });
     refreshDetail();
-  } catch (e) { alert('批准失败: ' + e); }
+  } catch (e) { boardAlert('批准失败', String(e)); }
 }
 
 function refreshDetail() {
@@ -1063,21 +1063,71 @@ function stepChips(c) {
   return `<div class="steps">${steps.map((s, i) => `${i ? '<span class="arr">›</span>' : ''}<span class="st ${s.state}">${s.state === 'done' ? '✓ ' : ''}${esc(s.label)}</span>`).join('')}</div>`;
 }
 
+// Native prompt()/alert()/confirm() are silently swallowed by embedded
+// webviews — the board renders its own dialogs so operator actions always
+// give feedback.
+function boardDialog({ title, message = '', placeholder = '', input = false, confirmText = '确定', cancelText = '取消', danger = false }) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:999;display:flex;align-items:center;justify-content:center';
+    const box = document.createElement('div');
+    box.style.cssText = 'background:var(--bg,#fff);color:var(--fg,#111);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.35);max-width:520px;width:92%;padding:18px;font-size:14px';
+    const h = document.createElement('div');
+    h.textContent = title;
+    h.style.cssText = 'font-weight:600;margin-bottom:8px;white-space:pre-wrap';
+    box.appendChild(h);
+    if (message) {
+      const m = document.createElement('div');
+      m.textContent = message;
+      m.style.cssText = 'opacity:.75;margin-bottom:10px;white-space:pre-wrap';
+      box.appendChild(m);
+    }
+    let inputEl = null;
+    if (input) {
+      inputEl = document.createElement('textarea');
+      inputEl.placeholder = placeholder;
+      inputEl.style.cssText = 'width:100%;min-height:72px;box-sizing:border-box;margin-bottom:10px;padding:8px;border-radius:6px;border:1px solid #888';
+      box.appendChild(inputEl);
+    }
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;gap:8px;justify-content:flex-end';
+    const cancel = document.createElement('button');
+    cancel.textContent = cancelText;
+    cancel.style.cssText = 'padding:6px 14px;border-radius:6px;border:1px solid #888;background:transparent;cursor:pointer';
+    const ok = document.createElement('button');
+    ok.textContent = confirmText;
+    ok.style.cssText = `padding:6px 14px;border-radius:6px;border:0;background:${danger ? '#dc2626' : '#2563eb'};color:#fff;cursor:pointer`;
+    row.appendChild(cancel);
+    row.appendChild(ok);
+    box.appendChild(row);
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+    const close = (value) => { overlay.remove(); resolve(value); };
+    ok.onclick = () => close(input ? String(inputEl.value || '').trim() : true);
+    cancel.onclick = () => close(input ? null : false);
+    overlay.onclick = (e) => { if (e.target === overlay) close(input ? null : false); };
+    if (inputEl) inputEl.focus();
+  });
+}
+const boardAlert = (title, message) => boardDialog({ title, message, confirmText: '知道了' });
+const boardConfirm = (title, message) => boardDialog({ title, message, confirmText: '继续', danger: true });
+const boardPrompt = (title, placeholder) => boardDialog({ title, placeholder, input: true });
+
 async function rejectWithComments(target) {
-  if (!window.confirm('打回本轮文档验收？worker 将读取该批页面的飞书评论并转成修改要求（评论 API 不可达时会向你索要原文），重建受影响单元后呈新写门。')) return;
+  if (!await boardConfirm('打回本轮文档验收？', 'worker 将读取该批页面的飞书评论并转成修改要求（评论 API 不可达时会向你索要原文），重建受影响单元后呈新写门。')) return;
   try {
     const latestCards = await (await fetch('/api/cards')).json();
     const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
     const idle = (card?.workers || []).find((w) => w.status === 'idle');
-    if (!idle) { alert('无可注入的 idle worker——等 worker 停在门禁后再打回'); return; }
+    if (!idle) { boardAlert('无可注入的 idle worker', '等 worker 停在门禁后再打回'); return; }
     const res = await fetch('/api/request-changes', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ target, sessionId: idle.sessionId, mode: 'comments' }),
     });
     const body = await res.json();
-    if (!res.ok) { alert(body.error || '打回失败'); return; }
-    alert(body.note || '已注入');
+    if (!res.ok) { boardDialog({ title: '打回失败', message: body.error || '' }); return; }
+    boardDialog({ title: '已注入', message: body.note || '' });
     refreshDetail();
   } catch (error) {
     alert(`打回失败：${error?.message ?? error}`);
@@ -1085,23 +1135,23 @@ async function rejectWithComments(target) {
 }
 
 async function requestChanges(target, unitId) {
-  const reason = window.prompt(`对 ${unitId} 的修改要求（将注入 worker 会话，按 canonical 打回流程重建该单元）：`, '');
+  const reason = await boardPrompt(`对 ${humanUnit(unitId)} 的修改要求`, '将注入 worker 会话，按 canonical 打回流程重建该单元');
   if (reason === null) return;
-  const trimmed = reason.trim();
-  if (!trimmed) { alert('修改要求不能为空'); return; }
+  const trimmed = reason;
+  if (!trimmed) { boardAlert('修改要求不能为空'); return; }
   try {
     const latestCards = await (await fetch('/api/cards')).json();
     const card = (latestCards.campaigns || []).find((x) => cardKey(x) === target || x.sessionPath === target);
     const idle = (card?.workers || []).find((w) => w.status === 'idle');
-    if (!idle) { alert('无可注入的 idle worker——等 worker 停在门禁后再提'); return; }
+    if (!idle) { boardAlert('无可注入的 idle worker', '等 worker 停在门禁后再提'); return; }
     const res = await fetch('/api/request-changes', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ target, sessionId: idle.sessionId, unitId, reason: trimmed }),
     });
     const body = await res.json();
-    if (!res.ok) { alert(body.error || '提交失败'); return; }
-    alert(body.note || '已注入');
+    if (!res.ok) { boardAlert('提交失败', body.error || ''); return; }
+    boardAlert('已注入', body.note || '');
     refreshDetail();
   } catch (error) {
     alert(`提交失败：${error?.message ?? error}`);

@@ -620,7 +620,7 @@ test('Node renders request and example subheadings only when multiple variants n
   assert.match(markdown, /dropCollectionField\(\{ collection_name: "docs", field_name: "old" \}\);/);
 });
 
-test('Node reviewed context renders concrete implementations inside an interface page', () => {
+test('Node reviewed context renders per-implementation H2 sections inside an interface page', () => {
   const symbol = {
     name: 'Formatter',
     parentClass: 'DataImport',
@@ -630,6 +630,28 @@ test('Node reviewed context renders concrete implementations inside an interface
     lineNumber: 283,
     params: [],
   };
+  const persistShape = (name, extension) => [
+    `class ${name} implements Formatter {`,
+    `  readonly extension = '${extension}';`,
+    '',
+    '  async persist(',
+    '    columns: Map<string, any[]>,',
+    '    dynamicRows: Record<string, any>[],',
+    '    rowCount: number,',
+    '    dir: string,',
+    '    schema: BulkWriterSchema',
+    '  ): Promise<string[]>',
+    '}',
+  ].join('\n');
+  const persistParams = () => [{
+    name: 'columns',
+    type: 'Map<string, any[]>',
+    description: 'The columnar batch the writer buffered.',
+  }, {
+    name: 'dir',
+    type: 'string',
+    description: 'The output directory.',
+  }];
   const adapterContext = {
     repository: 'milvus-io/milvus-sdk-node',
     revision: 'v2.6.17',
@@ -638,16 +660,21 @@ test('Node reviewed context renders concrete implementations inside an interface
     title: 'Formatter',
     summary: 'Serializes buffered BulkWriter columns into import files.',
     signature: 'interface Formatter',
+    implementationIntro: 'The Formatter base is implemented by two classes: JsonFormatter and ParquetFormatter.',
     reviewedEvidence: sourceEvidence('node'),
     callableMembers: [{
       kind: 'implementation',
       name: 'JsonFormatter',
-      signature: 'class JsonFormatter implements Formatter',
+      signature: 'new JsonFormatter()',
+      shapeCode: persistShape('JsonFormatter', '.json'),
+      params: persistParams(),
       description: 'Writes JSON import files.',
     }, {
       kind: 'implementation',
       name: 'ParquetFormatter',
-      signature: 'class ParquetFormatter implements Formatter',
+      signature: 'new ParquetFormatter()',
+      shapeCode: persistShape('ParquetFormatter', '.parquet'),
+      params: persistParams(),
       description: 'Writes Parquet import files with @shanghaikid/parquetjs.',
     }],
     examples: [{
@@ -662,11 +689,29 @@ test('Node reviewed context renders concrete implementations inside an interface
   assert.equal(reference.identity.kind, 'interface');
   assert.equal(validateReferenceDocument(reference, { production: true }).valid, true);
   const markdown = renderMarkdown(nodeRenderer.render(reference));
-  assert.match(markdown, /\*\*IMPLEMENTATIONS:\*\*/);
+  // 2026-10-13 Formatter REJECT_WRITES ruling: no IMPLEMENTATIONS labelled
+  // list — the one-sentence intro is followed by one H2 per implementation,
+  // each carrying its class shape fence and the persist parameter list.
+  assert.doesNotMatch(markdown, /IMPLEMENTATIONS/);
+  assert.match(markdown, /The Formatter base is implemented by two classes: JsonFormatter and ParquetFormatter\./);
+  assert.match(markdown, /## JsonFormatter\n/);
+  assert.match(markdown, /## ParquetFormatter\n/);
   assert.match(markdown, /```typescript\ninterface Formatter\n```/);
   assert.match(markdown, /class JsonFormatter implements Formatter/);
   assert.match(markdown, /class ParquetFormatter implements Formatter/);
   assert.match(markdown, /@shanghaikid\/parquetjs/);
+  assert.equal(markdown.match(/\*\*PARAMETERS:\*\*/g)?.length, 2);
+  assert.match(markdown, /readonly extension = '\.parquet';/);
+  const withoutShape = { ...adapterContext, callableMembers: [{
+    kind: 'implementation',
+    name: 'JsonFormatter',
+    signature: 'new JsonFormatter()',
+    description: 'Writes JSON import files.',
+  }] };
+  assert.throws(
+    () => nodeRenderer.render(nodeAdapter.toReferenceDocument(symbol, withoutShape)),
+    /carries no reviewed shapeCode/,
+  );
 });
 
 test('language policies control exact sections, fences, and conditional request rendering', () => {

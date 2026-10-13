@@ -1436,6 +1436,14 @@ async function handler(req, res) {
         : isWriteReject
           ? changeRequest.composeRejectWritePrompt({ sessionPath: card.sessionPath, reason })
           : changeRequest.composeRequestChangesPrompt({ sessionPath: card.sessionPath, unitId, reason });
+      // Same reject-in-flight semantics as the rotate path: an injected
+      // REJECT also supersedes the on-disk presentation until a newer one
+      // lands. Idle card.workers entries ARE the registry's stored objects,
+      // and dispatchResumeTurn's upsert merges without touching the stamp.
+      if (isCommentsReject || isWriteReject) {
+        worker.directive = { kind: 'reject', mode: isWriteReject ? 'write' : 'comments', at: new Date().toISOString() };
+        persistWorkerRegistry();
+      }
       dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line: prompt });
       sendJson(res, 200, {
         ok: true,

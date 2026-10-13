@@ -106,9 +106,14 @@ function createCallableMember({
   description = '',
   audience = 'shared',
   fields = [],
+  // 2026-10-13 Formatter ruling (node v3.0.6): implementation sections on
+  // type pages carry the reviewed class shape as a code fence and the
+  // persisted method's parameter list as bullets.
+  shapeCode = '',
+  params = [],
   evidence = [],
 } = {}) {
-  return immutable({ kind, name, signature, description, audience, fields, evidence });
+  return immutable({ kind, name, signature, description, audience, fields, shapeCode, params, evidence });
 }
 
 function createResult({
@@ -157,6 +162,10 @@ function createReferenceDocument({
   signatures = [],
   requestVariants = [],
   callableMembers = [],
+  // 2026-10-13 Formatter ruling (node v3.0.6): the reviewed intro sentence
+  // above the per-implementation H2 sections ("the base is implemented by
+  // the two classes").
+  implementationIntro = '',
   result = null,
   errors = [],
   examples = [],
@@ -176,6 +185,7 @@ function createReferenceDocument({
     signatures,
     requestVariants,
     callableMembers,
+    implementationIntro,
     result,
     errors,
     examples,

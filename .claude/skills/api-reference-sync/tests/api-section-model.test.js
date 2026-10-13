@@ -107,3 +107,54 @@ test('classifies scrambled Python section order as a reviewed rebuild', () => {
   assert.ok(model.errors.some((error) => error.code === 'SECTION_ORDER_INVALID'));
   assert.equal(model.requiresReviewedRebuild, true);
 });
+
+function nodeFormatterLike() {
+  const blocks = [
+    textBlock('summary', 'A Formatter instance serializes buffered columns.'),
+    textBlock('base-fence', 'interface Formatter', 14),
+    textBlock('intro', 'The Formatter base is implemented by two classes.'),
+    textBlock('json-heading', 'JsonFormatter', 4),
+    textBlock('json-desc', 'Writes JSON import files.'),
+    textBlock('json-fence', 'class JsonFormatter implements Formatter', 14),
+    textBlock('json-params', 'PARAMETERS:', 2, { bold: true }),
+    textBlock('json-param', 'dir - The output directory.', 12),
+    textBlock('parquet-heading', 'ParquetFormatter', 4),
+    textBlock('parquet-desc', 'Writes Parquet import files.'),
+    textBlock('parquet-fence', 'class ParquetFormatter implements Formatter', 14),
+    textBlock('parquet-params', 'PARAMETERS:', 2, { bold: true }),
+    textBlock('parquet-param', 'dir - The output directory.', 12),
+    textBlock('example-heading', 'Example{#example}', 4),
+    textBlock('example-code', 'const formatter = new ParquetFormatter();', 14),
+  ];
+  return document(blocks.map((block) => block.block_id), blocks);
+}
+
+test('node implementation family: per-implementation H2 sections stay scoped (2026-10-13 Formatter ruling)', () => {
+  const model = buildApiSectionModel(nodeFormatterLike(), profiles.node);
+  assert.deepEqual(model.errors, []);
+  assert.deepEqual(model.sections.map((section) => section.role), [
+    'summary', 'canonical-signature', 'implementation:jsonformatter', 'implementation:parquetformatter', 'examples',
+  ]);
+  // The per-implementation PARAMETERS labels scope to their owning section;
+  // neither becomes a page-level parameters section.
+  assert.ok(!model.sections.some((section) => section.role === 'parameters'));
+  // Two unknown-H2 sections do not trip the extensions duplicate rule.
+  assert.equal(model.errors.filter((error) => error.code === 'DUPLICATE_SECTION').length, 0);
+});
+
+test('node implementation family: a repeated implementation heading stays a duplicate section', () => {
+  const blocks = nodeFormatterLike();
+  const page = blocks[0];
+  page.children.splice(page.children.indexOf('json-heading') + 1, 0, 'json-heading-dup');
+  blocks.push(textBlock('json-heading-dup', 'JsonFormatter', 4));
+  const model = buildApiSectionModel(blocks, profiles.node);
+  assert.ok(model.errors.some((error) => error.code === 'DUPLICATE_SECTION'));
+  assert.equal(model.requiresReviewedRebuild, true);
+});
+
+test('profiles without the implementation family keep the generic extensions fallback', () => {
+  const blocks = nodeFormatterLike();
+  const model = buildApiSectionModel(blocks, profiles.java);
+  assert.ok(model.sections.some((section) => section.role === 'extensions'));
+  assert.ok(!model.sections.some((section) => section.role.startsWith('implementation:')));
+});

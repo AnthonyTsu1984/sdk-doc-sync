@@ -203,6 +203,13 @@ function makeCallableMember(kind, member, evidence, signatureDisplay, signatureI
       ...options,
       role: 'field',
     }),
+    // 2026-10-13 Formatter ruling: per-implementation shape fence + the
+    // persist method's reviewed parameter bullets.
+    shapeCode: String(member.shapeCode || ''),
+    params: normalizeFields(member.params, memberEvidence, {
+      ...options,
+      role: 'field',
+    }),
     evidence: memberEvidence,
   });
 }
@@ -307,6 +314,9 @@ function buildReferenceDocument({
     signatures,
     requestVariants,
     callableMembers,
+    // 2026-10-13 Formatter ruling: the reviewed intro sentence above the
+    // per-implementation H2 sections.
+    implementationIntro: String(context.implementationIntro || ''),
     result,
     errors,
     examples: makeExamples(symbol, context, language, evidence),

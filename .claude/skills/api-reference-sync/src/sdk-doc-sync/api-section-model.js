@@ -20,13 +20,22 @@ function normalizedLabel(block) {
   return textOf(block).replace(/\s+/g, ' ').replace(/:$/, '').trim().toUpperCase();
 }
 
-function headingSection(block) {
+function headingSection(block, profile) {
   if (block?.block_type !== 4) return null;
-  const value = textOf(block).replace(/\{#[^}]+\}$/, '').trim().toLowerCase();
+  const raw = textOf(block);
+  const value = raw.replace(/\{#[^}]+\}$/, '').trim().toLowerCase();
   if (value === 'request syntax') return 'request';
   if (value === 'example' || value === 'examples') return 'examples';
   if (value === 'notes') return 'notes';
   if (value === 'related') return 'related';
+  // 2026-10-13 Formatter REJECT_WRITES ruling: a profile that declares the
+  // per-implementation section family (node type pages) keys every other
+  // level-two heading into its own section — role `implementation:<text>` is
+  // unique per heading, so each implementation keeps section identity, and a
+  // repeated heading name still fails as a duplicate section.
+  if (profile.implementationSections === true) {
+    return `implementation:${raw.replace(/\{#[^}]+\}$/, '').trim().replace(/\s+/g, ' ').toLowerCase()}`;
+  }
   return 'extensions';
 }
 
@@ -42,6 +51,11 @@ function labelSection(block, profile, currentRole) {
       // section, not a duplicate request-side section (describeReplicas
       // baseline).
       if (profile.order.includes('result-parameters')) return 'result-parameters';
+      return null;
+    }
+    if (currentRole?.startsWith('implementation:')) {
+      // 2026-10-13 Formatter ruling: the parameter list rides the owning
+      // implementation section — it is not a page-level PARAMETERS section.
       return null;
     }
     return profile.id === 'node' && currentRole === 'request' ? null : 'parameters';
@@ -109,7 +123,7 @@ function buildApiSectionModel(rawBlocks, profile) {
       continue;
     }
 
-    const headingRole = headingSection(block);
+    const headingRole = headingSection(block, profile);
     const labelRole = labelSection(block, profile, current?.role || null);
     let nextRole = headingRole || labelRole;
     if (!nextRole && block.block_type === 14 && (!current || current.role === 'summary')) {

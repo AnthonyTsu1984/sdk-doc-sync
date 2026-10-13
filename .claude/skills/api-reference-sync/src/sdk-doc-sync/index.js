@@ -2191,6 +2191,25 @@ class SdkDocSync {
                                     ?? evidence.createdDocument?.documentToken,
                             };
                         }
+                        // A REBUILD observation journals a REUSED document: no
+                        // createdDocument — the reused token rides the
+                        // prepared capsule's documentRollback and the record
+                        // identity rides the observed recordId (two-gate
+                        // batch2d wall, 2026-10-13).
+                        if (!documentRecord && evidence && nonEmptyString(evidence.recordId)) {
+                            const prepared = journalEntries.find((entry) => (
+                                entry?.type === 'prepared' && entry?.actionId === action.stableId
+                            ));
+                            const reusedToken = prepared?.rollbackCapsule?.documentRollback?.documentToken || null;
+                            if (nonEmptyString(reusedToken)) {
+                                documentRecord = {
+                                    actionId: action.stableId,
+                                    recordId: evidence.recordId,
+                                    documentToken: reusedToken,
+                                    documentToken: reusedToken,
+                                };
+                            }
+                        }
                     } catch {
                         // Journal read is best-effort: without it the fill stays
                         // empty and the planner refuses typed where required.
@@ -2220,8 +2239,15 @@ class SdkDocSync {
                                 const observed = journalEntries.find((entry) => (
                                     entry?.type === 'observed' && entry?.actionId === documentRecord.actionId
                                 ));
+                                // REBUILD journals carry no createdDocument —
+                                // the reused document's folder rides the
+                                // prepared capsule's resolved target.
+                                const preparedCopy = journalEntries.find((entry) => (
+                                    entry?.type === 'prepared' && entry?.actionId === documentRecord.actionId
+                                ));
                                 executedFolderToken = observed?.rollbackEvidence?.createdDocument?.folderToken
                                     ?? observed?.rollbackEvidence?.createdFolder?.token
+                                    ?? preparedCopy?.rollbackCapsule?.target?.folderToken
                                     ?? null;
                             } catch {
                                 // Journal read is best-effort: the live stamp below stays

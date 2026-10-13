@@ -15,8 +15,8 @@ module.exports = createSdkRenderer({
   parametersLabel: 'PARAMETERS:',
   // 2026-10-13 BulkWriter/Formatter ruling: type-page member channels must
   // not overlap with the shared implementation channel — the member filter
-  // stays disjoint from 'implementation', which the type-page branch renders
-  // once under typeMethodsLabel (the two formatter classes land there).
+  // stays disjoint from 'implementation' (the two formatter classes ride
+  // their own sections below).
   memberKind: ['option', 'method', 'member'],
   membersLabel: 'MEMBERS:',
   returnsLabel: 'RETURNS:',
@@ -32,10 +32,13 @@ module.exports = createSdkRenderer({
   // its whole response surface is methods), matching the python/go
   // resultMethodsLabel data.
   resultMethodsLabel: 'METHODS:',
-  // 2026-10-13 Formatter ruling: the interface's implementation members ride
-  // the shared 'implementation' channel on type pages — one section, labeled
-  // IMPLEMENTATIONS: (not the generic METHODS:).
-  typeMethodsLabel: 'IMPLEMENTATIONS:',
+  // 2026-10-13 Formatter REJECT_WRITES ruling: the interface's
+  // implementations render as per-implementation H2 sections — one intro
+  // sentence above them, then JsonFormatter/ParquetFormatter each carrying
+  // the reviewed class shape (fence) and the persist parameter list. The
+  // earlier single **IMPLEMENTATIONS:** labelled list is retired; go keeps
+  // that label path until its own ruling.
+  implementationSections: true,
   errorsLabel: 'EXCEPTIONS:',
   exampleHeading: 'Example{#example}',
   showExampleTitles: (document) => (document.examples || []).length > 1,

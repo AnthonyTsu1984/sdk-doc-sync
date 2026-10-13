@@ -21,6 +21,15 @@ const ROLE_GROUPS = Object.freeze({
   'type-fields-list': 'members',
   'type-values-label': 'members',
   'type-values-list': 'members',
+  // 2026-10-13 Formatter ruling: per-implementation H2 sections on type
+  // pages (one-sentence intro + heading + shape fence + parameter list)
+  // ride the members slot under their own semantic roles.
+  'implementation-intro': 'members',
+  'implementation-heading': 'members',
+  'implementation-description': 'members',
+  'implementation-shape': 'members',
+  'implementation-fields-label': 'members',
+  'implementation-fields-list': 'members',
   'result-type-label': 'result-type',
   'result-type-value': 'result-type',
   'returns-label': 'returns',
@@ -145,6 +154,10 @@ function validateSdkLayout(documentIr, profile) {
     ['exceptions-label', 'exceptions-list'],
     ['examples-heading', 'example-code'],
     ['request-heading', 'request-signature'],
+    // 2026-10-13 Formatter ruling: each implementation H2 needs its reviewed
+    // shape fence; the section's PARAMETERS label needs its list.
+    ['implementation-heading', 'implementation-shape'],
+    ['implementation-fields-label', 'implementation-fields-list'],
   ];
   for (const [labelRole, contentRole] of pairs) {
     for (const labelEntry of byRole.get(labelRole) || []) {

@@ -150,9 +150,22 @@ const profiles = Object.freeze({
     // type token never repeats inside RETURNS) — node adoption 2026-10-12
     // operator ruling on FileResources:addFileResource doc review. The five
     // global content rules still come with the GLOBAL base.
-    id: 'node', version: 2, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    // v3: implementationSections family (2026-10-13 Formatter REJECT_WRITES
+    // ruling) joins the 2026-10-12 split return-section adoption — the
+    // interface's implementations render as per-implementation level-two
+    // sections with a TypeScript shape fence (fences implementation-shape)
+    // and a section-scoped PARAMETERS list.
+    id: 'node', version: 3, bodyTitle: 'omit', canonicalSignature: 'when-distinct',
+    // implementationSections: the api-section model keys the per-
+    // implementation headings into unique implementation:<text> section
+    // roles and scopes the per-section PARAMETERS list to the owning
+    // implementation.
+    implementationSections: true,
     order: ['summary', 'audience', 'canonical-signature', 'request', 'parameters', 'members', 'result-type', 'returns', 'exceptions', 'examples', 'extensions', 'notes', 'related'],
-    fences: { 'canonical-signature': 'TypeScript', 'request-signature': 'TypeScript' },
+    // implementation-shape: 2026-10-13 Formatter ruling — the per-
+    // implementation H2 sections on type pages carry the reviewed class
+    // shape as a TypeScript fence (layout-conformance guards the language).
+    fences: { 'canonical-signature': 'TypeScript', 'request-signature': 'TypeScript', 'implementation-shape': 'TypeScript' },
     cardinality: { 'canonical-signature': [0, 1], 'request-signature': [0, Number.POSITIVE_INFINITY] },
     layoutRules: NODE_LAYOUT_RULES,
   }),

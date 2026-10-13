@@ -417,6 +417,46 @@ function renderPrimaryInputs(document, policy, context) {
   ];
 }
 
+// 2026-10-13 operator ruling (node v3.0.6 Formatter REJECT_WRITES): the
+// interface's implementations are not a labeled bullet list — a one-sentence
+// intro states the base is implemented by the member classes, and every
+// implementation gets its own H2 section carrying the reviewed class shape
+// (fence) and the persist method's parameter list. A member without its
+// reviewed shape fence fails the render instead of silently degrading to the
+// bullet list the policy no longer declares.
+function renderImplementationSections(document, policy, context) {
+  const members = (document.callableMembers || []).filter((member) => member?.kind === 'implementation');
+  if (members.length === 0) return [];
+  const blocks = [];
+  const intro = String(document.implementationIntro || '').trim();
+  if (intro) blocks.push(paragraph(intro, [], semantic('implementation-intro')));
+  for (const member of members) {
+    const memberKey = member.name || String(member.signature?.display || '').trim();
+    blocks.push(heading(2, member.name, semantic('implementation-heading', memberKey)));
+    const description = sentence(member.description);
+    if (description) {
+      blocks.push(paragraph(description, [], {
+        ...semantic('implementation-description', memberKey),
+        links: typeLinks(context),
+      }));
+    }
+    const shapeCode = String(member.shapeCode || '').trim();
+    if (!shapeCode) {
+      throw new TypeError(
+        `implementation member ${memberKey || member.name} carries no reviewed shapeCode under implementationSections`
+      );
+    }
+    blocks.push(ir.codeBlock(shapeCode, policy.canonicalFence || 'TypeScript', semantic('implementation-shape', memberKey)));
+    if (Array.isArray(member.params) && member.params.length > 0 && policy.parametersLabel) {
+      blocks.push(
+        label(policy.parametersLabel, semantic('implementation-fields-label', memberKey)),
+        ...renderFieldBlocks(member.params, context, 'implementation-fields-list', memberKey),
+      );
+    }
+  }
+  return blocks;
+}
+
 function renderCallableMembers(document, policy, context, { kind, labelOverride } = {}) {
   const memberFilter = kind ?? policy.memberKind;
   if (!memberFilter) return [];
@@ -643,10 +683,12 @@ function createSdkRenderer(policy) {
         members: [
           ...renderTypeMembersSection(document, frozenPolicy, context),
           ...renderCallableMembers(document, frozenPolicy, context),
-          ...renderCallableMembers(document, frozenPolicy, context, {
-            kind: 'implementation',
-            labelOverride: frozenPolicy.typeMethodsLabel || 'METHODS:',
-          }),
+          ...(frozenPolicy.implementationSections
+            ? renderImplementationSections(document, frozenPolicy, context)
+            : renderCallableMembers(document, frozenPolicy, context, {
+              kind: 'implementation',
+              labelOverride: frozenPolicy.typeMethodsLabel || 'METHODS:',
+            })),
         ],
         'result-type': [],
         returns: [],

@@ -424,6 +424,21 @@ function persistWorkerRegistry() {
   workerRegistry.saveWorkerRegistry(WORKER_REGISTRY_FILE, spawnedWorkers);
 }
 
+// Pre-dispatch occupancy guard: a worker whose transcript was written
+// seconds ago is still mid-turn (the registry's group check cannot see
+// setsid'd grandchildren). Refuse rather than dispatch into a busy session
+// and burn a zero-turn run.
+function sessionRecentlyActive(repoRoot, sessionId) {
+  try {
+    const file = path.join(usage.defaultRolloutDir(repoRoot), `model-io-${sessionId}.jsonl`);
+    const stat = fs.statSync(file);
+    const age = Date.now() - stat.mtimeMs;
+    return age < 120_000 ? age : null;
+  } catch {
+    return null;
+  }
+}
+
 // Digests of rollbacks the session machine has already receipted — those
 // manifests are consumed, whatever their anchored-journal state says (the
 // supersede path rewrites the slot rather than archiving it).
@@ -1243,6 +1258,11 @@ async function handler(req, res) {
         return;
       }
       const cardRoot = (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root;
+      const busy = sessionRecentlyActive(cardRoot, worker.sessionId);
+      if (busy) {
+        sendJson(res, 409, { error: `该会话 ${Math.round(busy / 1000)} 秒前仍有转录写入——疑似上一回合未结束，稍候再试` });
+        return;
+      }
       const prompt = isCommentsReject
         ? changeRequest.composeRejectWithCommentsPrompt({ sessionPath: card.sessionPath, unitId: unitId || null })
         : changeRequest.composeRequestChangesPrompt({ sessionPath: card.sessionPath, unitId, reason });
@@ -1303,6 +1323,14 @@ async function handler(req, res) {
       }
       if (worker.status !== 'idle') {
         sendJson(res, 409, { error: 'worker 仍在首轮运行中——等它停在门禁后再批准' });
+        return;
+      }
+      const approveBusy = sessionRecentlyActive(
+        (checkoutsState.find((c) => c.id === card.checkout) || checkoutsState[0]).root,
+        worker.sessionId,
+      );
+      if (approveBusy) {
+        sendJson(res, 409, { error: `该会话 ${Math.round(approveBusy / 1000)} 秒前仍有转录写入——疑似上一回合未结束，稍候再试` });
         return;
       }
       // Approve-run boundary: snapshot the worker's usage before the resume

@@ -18,7 +18,12 @@ function loadWorkerRegistry(filePath) {
     const map = new Map();
     for (const [key, entries] of Object.entries(parsed)) {
       if (!Array.isArray(entries)) continue;
-      map.set(key, entries.filter((e) => e && typeof e.sessionId === 'string' && typeof e.status === 'string'));
+      // sessionId null is a LEGITIMATE live state (spawn still resolving its
+      // id) — dropping such entries at load orphaned running workers on every
+      // restart, together with their directive stamps. Malformed guard is
+      // shape-only.
+      map.set(key, entries.filter((e) => e && typeof e.status === 'string'
+        && (e.sessionId === null || typeof e.sessionId === 'string')));
     }
     return map;
   } catch {
@@ -66,10 +71,25 @@ function storedWorkerEntry(map, sessionPath, sessionId) {
   return (map.get(sessionPath) || []).find((e) => e.sessionId === sessionId) || null;
 }
 
+// Derive the board-facing reject-dispatch state from a card's worker
+// entries: a dispatched REJECT supersedes the on-disk gate presentation
+// until a NEWER one is regenerated — the card must stop offering the
+// rejected batch as if it still awaited the operator's decision. null when
+// no reject was dispatched or a newer presentation already landed.
+function rejectDispatchState(workerEntries, presentationGeneratedAt) {
+  const latest = (Array.isArray(workerEntries) ? workerEntries : [])
+    .filter((w) => w?.directive?.kind === 'reject')
+    .sort((a, b) => String(b.directive.at).localeCompare(String(a.directive.at)))[0];
+  if (!latest) return null;
+  if (presentationGeneratedAt && String(latest.directive.at) <= String(presentationGeneratedAt)) return null;
+  return { at: latest.directive.at, running: latest.status === 'running' };
+}
+
 module.exports = {
   MAX_ENTRIES_PER_CARD,
   loadWorkerRegistry,
   saveWorkerRegistry,
   storedWorkerEntry,
   upsertWorkerEntry,
+  rejectDispatchState,
 };

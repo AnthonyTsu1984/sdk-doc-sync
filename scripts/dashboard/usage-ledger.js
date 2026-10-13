@@ -378,7 +378,9 @@ function closeOrphanedRuns(db, sessionId, endedAt) {
 function campaignUsage(db, campaignPath) {
   const sessions = db.prepare(
     `SELECT a.sessionId, a.source, a.firstSeenAt, a.lastSeenAt,
-            s.turns, s.firstTs, s.lastTs, s.inputTokens, s.outputTokens, s.cacheRead, s.cacheWrite, s.totalTokens
+            s.turns, s.firstTs, s.lastTs, s.inputTokens, s.outputTokens, s.cacheRead, s.cacheWrite, s.totalTokens,
+            (SELECT t.inputTokens + t.cacheRead FROM usage_turns t
+             WHERE t.sessionId = a.sessionId ORDER BY t.turnSeq DESC LIMIT 1) AS contextTokens
      FROM attribution a LEFT JOIN usage_sessions s ON s.sessionId = a.sessionId
      WHERE a.campaignPath = ?
      ORDER BY COALESCE(s.lastTs, a.lastSeenAt) DESC`,
@@ -472,6 +474,33 @@ function latestContextTokens(db, sessionId) {
   }
 }
 
+// Context view for the overview's running-sessions panel: one row per
+// requested sessionId — the latest-turn context proxy (the same input the
+// gate-watch 42%-rotation advisory feeds on) plus the current collection
+// window's totals. Unknown sessions map to null so the UI can say "not
+// harvested yet" instead of showing a misleading zero.
+function runningSessionUsage(db, sessionIds) {
+  const rows = new Map();
+  for (const sessionId of sessionIds ?? []) {
+    if (typeof sessionId !== 'string' || !sessionId) continue;
+    try {
+      const win = db.prepare('SELECT turns, totalTokens FROM usage_sessions WHERE sessionId = ?').get(sessionId);
+      if (!win) {
+        rows.set(sessionId, null);
+        continue;
+      }
+      rows.set(sessionId, {
+        contextTokens: latestContextTokens(db, sessionId),
+        turns: win.turns ?? 0,
+        windowTotalTokens: win.totalTokens ?? 0,
+      });
+    } catch {
+      rows.set(sessionId, null);
+    }
+  }
+  return rows;
+}
+
 // Close every open approve run for a session with real harvested deltas.
 // Group-death reconcile lands here: the launcher-shim exit once closed runs
 // within a second (zero deltas), long before the worker's spend was in the
@@ -488,6 +517,7 @@ module.exports = {
   ATTRIBUTION_LOOKBACK_DAYS,
   finalizeOpenRuns,
   latestContextTokens,
+  runningSessionUsage,
   closeOrphanedRuns,
   ROLLOUT_FILE_RE,
   USAGE_DB_RELATIVE_PATH,

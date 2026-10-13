@@ -443,6 +443,7 @@ const {
   MAX_ENTRIES_PER_CARD,
   loadWorkerRegistry,
   saveWorkerRegistry,
+  rejectDispatchState,
   upsertWorkerEntry,
 } = require('../../scripts/dashboard/worker-registry.js');
 
@@ -479,6 +480,26 @@ test('worker registry: upsert updates in place and caps the per-card window', ()
   assert.equal(entries.length, MAX_ENTRIES_PER_CARD);
   // sess_a + sess_0..sess_(MAX+1) = 9 entries; the window keeps the last 6.
   assert.equal(entries[0].sessionId, `sess_2`);
+});
+
+test('rejectDispatchState: a dispatched reject supersedes the presentation until a newer one lands', () => {
+  const reject = (at, status) => ({ sessionId: null, spawnedAt: at, status, directive: { kind: 'reject', mode: 'write', at } });
+  const approve = (at, status) => ({ sessionId: null, spawnedAt: at, status, directive: { kind: 'approve', at } });
+
+  // Reject newer than the on-disk presentation → superseded, running flag follows the worker.
+  const state1 = rejectDispatchState([approve('2026-10-13T01:00:00Z', 'idle'), reject('2026-10-13T01:52:27Z', 'running')], '2026-10-13T01:06:37Z');
+  assert.deepEqual(state1, { at: '2026-10-13T01:52:27Z', running: true });
+
+  // Worker exited but no newer presentation → still superseded (not running).
+  const state2 = rejectDispatchState([reject('2026-10-13T01:52:27Z', 'idle')], '2026-10-13T01:06:37Z');
+  assert.deepEqual(state2, { at: '2026-10-13T01:52:27Z', running: false });
+
+  // A presentation regenerated AFTER the reject clears the superseded state.
+  assert.equal(rejectDispatchState([reject('2026-10-13T01:52:27Z', 'idle')], '2026-10-13T02:30:00Z'), null);
+
+  // No reject directive at all, or a newer approve directive only.
+  assert.equal(rejectDispatchState([approve('2026-10-13T03:00:00Z', 'running')], '2026-10-13T01:06:37Z'), null);
+  assert.equal(rejectDispatchState([], null), null);
 });
 
 // ---------- operator change requests from the board file list ----------

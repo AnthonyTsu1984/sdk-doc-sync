@@ -623,13 +623,23 @@ function createSdkRenderer(policy) {
       // for them — the result channel on a type page carries its fields, and
       // rendering it as a return value invents RT/RETURNS content.
       // Builder options and real methods ride the callableMembers channel
-      // under separate labels when the page carries them (upstream Field:
+      // under separate labels when the the page carries them (upstream Field:
       // **BUILDER METHODS:** + **METHODS:**; dropping them loses content the
       // shared page already had). Members with other kinds stay suppressed —
       // the type-page channel only vouches for option/method shapes.
+      // 2026-10-13 operator ruling (node v3.0.6 BulkWriter:REJECT_WRITES): a
+      // class page that carries a REVIEWED constructor request (stateful
+      // class, `new BulkWriter(options: BulkWriterOptions)`) keeps the
+      // request/parameters channels — the upstream KB shape for such pages
+      // already renders the options fields as a PARAMETERS list, and the
+      // reviewed build dropped them (regression: rebuild would delete the
+      // live shape). Struct/enum pages keep the sections suppressed.
+      const constructorRequest = (document.requestVariants || []).some(
+        (variant) => Array.isArray(variant.inputs) && variant.inputs.length > 0
+      );
       Object.assign(sections, {
-        request: [],
-        parameters: [],
+        request: constructorRequest ? sections.request : [],
+        parameters: constructorRequest ? sections.parameters : [],
         members: [
           ...renderTypeMembersSection(document, frozenPolicy, context),
           ...renderCallableMembers(document, frozenPolicy, context),

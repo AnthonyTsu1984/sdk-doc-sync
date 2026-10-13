@@ -144,6 +144,7 @@ test('approve-run boundary attributes a resume turn to its unit', (t) => {
   const view = usage.campaignUsage(db, 'main::tmp/sdk-release-scout/w-session.json');
   assert.equal(view.totals.sessions, 1);
   assert.equal(view.totals.totalTokens, (1000 + 200) + (3000 + 800));
+  assert.equal(view.sessions[0].contextTokens, 3000, 'latest-turn context proxy rides the session row');
   assert.equal(view.perUnit.length, 1);
   assert.equal(view.perUnit[0].unitId, 'review:java:v2-Vector:get');
   assert.equal(view.perUnit[0].total, 3800);
@@ -253,4 +254,25 @@ test('campaignUsage inFlight estimates an open run from the session window', (t)
   assert.equal(view.inFlight[0].turns, 1, 'window(2) - start(1)');
   assert.equal(view.inFlight[0].total, 550, 'window(1650) - start(1100)');
   assert.equal(view.runs.length, 0, 'open run not yet a closed row');
+});
+
+test('runningSessionUsage: latest-turn context proxy + window totals; null when unharvested', (t) => {
+  const { root } = makeFixtureTree();
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const rollout = path.join(root, 'rollout');
+  fs.mkdirSync(rollout, { recursive: true });
+  fs.writeFileSync(path.join(rollout, 'model-io-sessCtx.jsonl'), [
+    turnLine({ input: 100, output: 20 }),
+    turnLine({ input: 40, output: 10, cacheRead: 160, startedAt: '2026-10-05T10:01:00Z' }),
+  ].join('\n') + '\n');
+  const db = openDb(root);
+  usage.harvestRolloutDir(db, { rolloutDir: rollout, now: new Date('2026-10-05T10:02:00Z') });
+
+  const view = usage.runningSessionUsage(db, ['sessCtx', 'never-harvested', '', 42]);
+  assert.equal(view.get('sessCtx').contextTokens, 200, 'latest turn: input(40) + cacheRead(160)');
+  assert.equal(view.get('sessCtx').turns, 2);
+  assert.equal(view.get('sessCtx').windowTotalTokens, (100 + 20) + (40 + 10));
+  assert.equal(view.get('never-harvested'), null, 'no telemetry yet is null, not zero');
+  assert.equal(view.has(''), false, 'non-string ids are skipped entirely');
+  assert.equal(view.has(42), false);
 });

@@ -682,3 +682,35 @@ test('parseGatePresentation: extracts gate, digest, session, and unit links', ()
   assert.equal(gateWatch.parseGatePresentation('<html>no gate</html>'), null);
   assert.equal(gateWatch.parseGatePresentation(null), null);
 });
+
+test('parseGatePresentation: write-gate artifacts carry file:// preview links', () => {
+  const html = `<!DOCTYPE html><html><body>
+<h1>APPROVE_WRITES — gate materials</h1>
+<p>node v3.0.x 写门 · 批2 · K=14 全部剩余单元</p>
+<p>bound digest: <code>sha256:bf099cf4d36465681fc13de92803dc3efef6f9b988b905fb34b1a3dfea6f3253</code></p>
+<p>session: <code>tmp/sdk-doc-sync-runs/node-v30/review-session.json</code></p>
+<p>generated: 2026-10-13T01:06:37.532Z</p>
+<ol>
+<li><a href="file:///Users/x/repo/tmp/sdk-doc-sync-runs/node-v30/write-batch2b/fresh2b-preview-createRole.md">1. review:node:Authentication:createRole — 预览(新建)</a></li>
+</ol>
+</body></html>`;
+  const parsed = gateWatch.parseGatePresentation(html);
+  assert.equal(parsed.gate, 'APPROVE_WRITES');
+  assert.deepEqual(parsed.links, [
+    { unitId: 'review:node:Authentication:createRole', url: 'file:///Users/x/repo/tmp/sdk-doc-sync-runs/node-v30/write-batch2b/fresh2b-preview-createRole.md' },
+  ]);
+});
+
+test('presentationMatchesCard: write-gate vocabulary (APPROVE_WRITE ↔ APPROVE_WRITES) and mismatch drops', () => {
+  const artifact = { gate: 'APPROVE_WRITES', sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json' };
+  const card = { sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json', nextGate: { gate: 'APPROVE_WRITE', reviewUnitId: 'review:node:Authentication:createRole' } };
+  assert.equal(gateWatch.presentationMatchesCard(artifact, card), true, 'singular machine name matches plural line name');
+
+  const sameKind = { ...card, nextGate: { gate: 'APPROVE_DOCUMENT', reviewUnitId: 'x' } };
+  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, gate: 'APPROVE_DOCUMENT' }, sameKind), true, 'identical names still match');
+
+  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, gate: 'APPROVE_DOCUMENT' }, card), false, 'artifact for another gate kind drops');
+  assert.equal(gateWatch.presentationMatchesCard({ ...artifact, sessionPath: 'tmp/sdk-doc-sync-runs/node-v31/review-session.json' }, card), false, 'artifact for another session drops');
+  assert.equal(gateWatch.presentationMatchesCard(null, card), false);
+  assert.equal(gateWatch.presentationMatchesCard(artifact, { sessionPath: 'x' }), false, 'card without nextGate never matches');
+});

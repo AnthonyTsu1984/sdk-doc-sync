@@ -12,6 +12,8 @@ const { spawnSync } = require('node:child_process');
 
 const { buildBrief, gateLine, resolveTarget } = require('../../scripts/dashboard/attach-brief.js');
 const {
+  appendApproveDirective,
+  appendRejectDirective,
   buildHeadlessPrompt,
   buildHeadlessSpawnArgs,
   buildResumeArgs,
@@ -177,4 +179,48 @@ test('approve forwarding: exact-line validation, worker-id capture, resume args'
 
   const resume = buildResumeArgs('/Users/x/repo', 'sess_1', 'APPROVE_WRITES ' + goodDigest);
   assert.deepEqual(resume, ['--cwd', '/Users/x/repo', '--surface', 'desktop', '--resume', 'sess_1', '--prompt', 'APPROVE_WRITES ' + goodDigest]);
+});
+
+test('approve-in-new-session: the approval line rides the brief verbatim with a verify-first directive', () => {
+  const goodDigest = `sha256:${'b'.repeat(64)}`;
+  const line = `APPROVE_WRITES ${goodDigest}`;
+  const prompt = appendApproveDirective(buildHeadlessPrompt('简报正文'), line);
+  assert.ok(prompt.startsWith(buildHeadlessPrompt('简报正文')), 'brief stays intact as the prefix');
+  assert.ok(prompt.includes(`\n${line}\n`), 'approval line embedded as its own line, verbatim');
+  assert.ok(prompt.includes('canonical CLI'), 'worker is told to verify against durable state first');
+  assert.ok(prompt.includes('勿强行套用'), 'mismatch falls back to on-disk state, never force-applied');
+});
+
+test('reject-in-new-session: rotate checkbox dispatches the composed reject on the brief', () => {
+  const brief = buildHeadlessPrompt('简报正文');
+  const write = appendRejectDirective(brief, {
+    sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json',
+    mode: 'write',
+    reason: '批次拆小，先写 5 篇',
+  });
+  assert.ok(write.startsWith(brief), 'brief stays intact as the prefix');
+  assert.ok(write.includes('REJECT_WRITES <batch>'));
+  assert.ok(write.includes('原因：批次拆小，先写 5 篇'), 'reason verbatim');
+  assert.ok(write.includes('勿强行套用'), 'verify-first directive present');
+
+  const comments = appendRejectDirective(brief, {
+    sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json',
+    mode: 'comments',
+    unitId: 'review:node:Authentication:createRole',
+  });
+  assert.ok(comments.includes('REJECT_DOCUMENT review:node:Authentication:createRole'), 'comments mode reuses the document-reject composition');
+  assert.ok(comments.includes('飞书评论'));
+});
+
+test('write-gate reject: validation and prompt composition', () => {
+  const changeRequest = require('../../scripts/dashboard/change-request.js');
+  assert.equal(changeRequest.validateRejectWriteInput({ reason: '   ' }).ok, false);
+  assert.equal(changeRequest.validateRejectWriteInput({ reason: 'x'.repeat(2001) }).ok, false, 'length cap enforced');
+  assert.equal(changeRequest.validateRejectWriteInput({ reason: '批次拆小，先写 5 篇' }).ok, true);
+  const prompt = changeRequest.composeRejectWritePrompt({ sessionPath: 'tmp/sdk-doc-sync-runs/node-v30/review-session.json', reason: '批次拆小，先写 5 篇' });
+  assert.ok(prompt.startsWith('REJECT_WRITES <batch>'));
+  assert.ok(prompt.includes('原因：批次拆小，先写 5 篇'), 'reason verbatim');
+  assert.ok(prompt.includes('不执行本批写入'));
+  assert.ok(prompt.includes('scoped dry-run'));
+  assert.ok(prompt.includes('门后必停'));
 });

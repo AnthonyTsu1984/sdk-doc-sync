@@ -17,9 +17,16 @@ function toReferenceDocument(symbol, context = {}) {
     ? context.params
     : Array.isArray(symbol.params) ? symbol.params : [];
   const callable = ['method', 'function'].includes(kind);
+  // 2026-10-13 BulkWriter ruling: stateful classes carry a reviewed
+  // constructor request (context.signature + context.params = the options
+  // object's reviewed fields). They ride the same request-variant channel as
+  // method pages so the Request Syntax + PARAMETERS sections render their
+  // shape; interfaces/classes without constructor params keep the type-page
+  // shape (no request section, members under typeMethodsLabel).
+  const requestBearing = callable || ((kind === 'class' || kind === 'interface') && params.length > 0);
   const canonical = callable
     ? context.signature || symbol.signature || `client.${symbol.name || ''}(${params.map((param) => param.name).join(', ')})`
-    : '';
+    : context.signature || symbol.signature || '';
   const signatures = callable || context.signature
     ? [common.makeSignature(canonical || context.signature, params, evidence, { symbol, context })]
     : [];
@@ -27,13 +34,13 @@ function toReferenceDocument(symbol, context = {}) {
   const reviewedVariants = Array.isArray(context.requestVariants)
     ? context.requestVariants
     : symbol.requestVariants;
-  if (callable && Array.isArray(reviewedVariants) && reviewedVariants.length > 0) {
+  if (requestBearing && Array.isArray(reviewedVariants) && reviewedVariants.length > 0) {
     requestVariants = reviewedVariants.map((variant) => common.makeRequestVariant(
       variant,
       evidence,
       { symbol, context },
     ));
-  } else if (callable && params.length > 0) {
+  } else if (requestBearing && params.length > 0) {
     requestVariants = [common.makeRequestVariant({
       id: 'default',
       title: `${symbol.name || ''} request`,

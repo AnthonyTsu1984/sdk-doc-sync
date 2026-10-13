@@ -174,7 +174,13 @@ async function refreshNextGates() {
 function mergeNextGate(payload) {
   for (const card of payload.campaigns) {
     const cached = nextGateCache.get(card.sessionKey ?? `main::${card.sessionPath}`);
-    if (cached && Date.now() - cached.at < NEXT_GATE_TTL_MS) {
+    // Stale-while-revalidate: an expired entry keeps serving until the 60s
+    // refresh cycle replaces it. Dropping it on expiry made the gate chip and
+    // 呈门 blink off for up to a minute at every TTL boundary — any recompute
+    // (worker tmp writes trigger fs.watch constantly) published a gate-less
+    // payload in the gap. Max staleness is unchanged: within TTL the old code
+    // served the same cached value anyway.
+    if (cached) {
       card.nextGate = cached.value?.nextGate ?? null;
     }
     attachGatePresentation(card);
@@ -182,24 +188,39 @@ function mergeNextGate(payload) {
   return payload;
 }
 
+// Last known good presentation per session — the artifact file is rewritten
+// at every 呈门 and a read landing mid-rewrite sees a truncated page (parse
+// fails). Serving the previous parse for a short grace window keeps the card
+// stable across regeneration blips; a genuine mismatch still drops it.
+const PRESENTATION_GRACE_MS = 60_000;
+const lastKnownPresentation = new Map();
+
 // Show the operator what the current gate approves: the canonical
 // presentation artifact's link list rides along when its gate kind and
 // session match the card — any mismatch drops it (the digest line stays the
-// only binding).
+// only binding). Gate-kind comparison goes through the line vocabulary
+// (APPROVE_WRITE state-machine name ↔ APPROVE_WRITES artifact name).
 function attachGatePresentation(card) {
   card.gatePresentation = null;
   if (!card.nextGate || !card.nextGate.gate) return;
-  let html;
+  let html = null;
   try {
     html = fs.readFileSync(path.join(REPO_ROOT, 'tmp/api-reference-sync/gate-presentation/latest.html'), 'utf8');
   } catch {
+    // momentarily unreadable — fall through to the grace window below
+  }
+  const parsed = html ? gateWatch.parseGatePresentation(html) : null;
+  if (parsed) {
+    if (gateWatch.presentationMatchesCard(parsed, card)) {
+      lastKnownPresentation.set(card.sessionPath, { parsed, at: Date.now() });
+      card.gatePresentation = parsed;
+    }
     return;
   }
-  const parsed = gateWatch.parseGatePresentation(html);
-  if (!parsed) return;
-  if (parsed.gate !== card.nextGate.gate) return;
-  if (parsed.sessionPath !== card.sessionPath) return;
-  card.gatePresentation = parsed;
+  const lkg = lastKnownPresentation.get(card.sessionPath);
+  if (lkg && Date.now() - lkg.at < PRESENTATION_GRACE_MS && gateWatch.presentationMatchesCard(lkg.parsed, card)) {
+    card.gatePresentation = lkg.parsed;
+  }
 }
 
 // ---------- session spawn (opt-in, one-click headless → desktop surface) ----------
@@ -221,6 +242,37 @@ function buildHeadlessPrompt(briefText) {
 
 function buildHeadlessSpawnArgs(repoRoot, prompt) {
   return ['--cwd', String(repoRoot), '--surface', 'desktop', '--prompt', prompt];
+}
+
+// Approve-and-rotate: the operator's approval rides the fresh session's
+// brief instead of a resume turn into the parked worker (42% rotation —
+// execution continues in a new context). The line is the exact validated
+// APPROVE_* form; digest binding stays with the canonical CLI, which
+// re-validates it when the worker executes.
+function appendApproveDirective(prompt, line) {
+  return [
+    prompt,
+    '---',
+    '操作员已批准当前门禁——下面一行是批复原文（在你这个新会话中执行）：',
+    line,
+    '先以 canonical CLI（status / handoff）对照盘上 durable 状态确认当前门与此批复一致；不一致时以盘上状态为准并停下报告，勿强行套用。据此批准继续执行到下一门或完成，后续门禁照常停下等批。',
+  ].join('\n');
+}
+
+// Reject-and-rotate: same shape as appendApproveDirective for the REJECT
+// side of the gate card's rotate checkbox — the composed change-request
+// prompt rides the fresh session's brief (write-gate typed feedback, or the
+// document-gate read-Feishu-comments flow).
+function appendRejectDirective(prompt, { sessionPath, mode, unitId, reason }) {
+  const body = mode === 'comments'
+    ? changeRequest.composeRejectWithCommentsPrompt({ sessionPath, unitId: unitId ?? null })
+    : changeRequest.composeRejectWritePrompt({ sessionPath, reason });
+  return [
+    prompt,
+    '---',
+    body,
+    '先以 canonical CLI（status / handoff）对照盘上 durable 状态确认当前门与此打回一致；不一致时以盘上状态为准并停下报告，勿强行套用。',
+  ].join('\n');
 }
 
 // Intake variant (batch 6): the worker is seeded with the daily-scout
@@ -294,7 +346,30 @@ function mergeWorkers(payload) {
     card.workers = workerEntries.map((w) => (w.status === 'running' && usageDb
       ? { ...w, contextTokens: usage.latestContextTokens(usageDb, w.sessionId) ?? undefined }
       : w));
+    // A dispatched REJECT invalidates the attached gate presentation (the
+    // batch it describes was rejected and is being replanned) — the board
+    // must not keep offering it as "awaiting your decision".
+    const rejectState = workerRegistry.rejectDispatchState(workerEntries, card.gatePresentation?.generatedAt);
+    if (rejectState) {
+      card.presentationSuperseded = true;
+      card.rejectInFlight = rejectState.running;
+      card.rejectDispatchedAt = rejectState.at;
+    }
   }
+  return payload;
+}
+
+// Context spend for the overview's running-sessions panel — same store, same
+// latest-turn proxy the workers feed on, joined by sessionId. The ledger
+// stays pure; enrichment is a server-layer concern exactly like mergeWorkers.
+// Sessions without harvested telemetry keep their shape (no invented zeros).
+function mergeRunningSessionUsage(payload) {
+  if (!usageDb || !Array.isArray(payload.runningSessions) || payload.runningSessions.length === 0) return payload;
+  const view = usage.runningSessionUsage(usageDb, payload.runningSessions.map((s) => s.sessionId));
+  payload.runningSessions = payload.runningSessions.map((s) => {
+    const row = view.get(s.sessionId);
+    return row ? { ...s, ...row } : s;
+  });
   return payload;
 }
 
@@ -333,7 +408,7 @@ function buildPayload() {
     admission: { ...ledger.admission, fingerprint: fingerprintStatus(fingerprintState) },
     features: { spawnEnabled: spawnOptions.allowSpawn, approveEnabled: spawnOptions.allowApprove },
   };
-  return mergeWorkers(mergeNextGate(payload));
+  return mergeRunningSessionUsage(mergeWorkers(mergeNextGate(payload)));
 }
 
 // generatedAt (and fingerprint computedAt) are volatile; everything else
@@ -422,6 +497,37 @@ const SPAWN_STDOUT_CAP = 2 * 1024 * 1024;
 
 function persistWorkerRegistry() {
   workerRegistry.saveWorkerRegistry(WORKER_REGISTRY_FILE, spawnedWorkers);
+}
+
+// Bookkeeping for a spawned headless worker: capture the sessionId the
+// moment the CLI prints it on stdout (a running worker used to stay
+// anonymous until process exit, which read as "nothing happened" right
+// after a dispatch), then flip to idle + persist + recompute on exit.
+function wireSpawnedWorker(child, worker, workerKey, { exitReason = 'worker-exit', onExit } = {}) {
+  let stdout = '';
+  child.stdout.on('data', (chunk) => {
+    if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
+    if (!worker.sessionId) {
+      const early = parseSpawnSessionId(stdout);
+      if (early) {
+        worker.sessionId = early;
+        persistWorkerRegistry();
+        if (usageDb) usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
+        scheduleRecompute('worker-session-id');
+      }
+    }
+  });
+  child.on('exit', () => {
+    worker.sessionId = worker.sessionId || parseSpawnSessionId(stdout);
+    worker.status = 'idle';
+    persistWorkerRegistry();
+    if (usageDb && worker.sessionId) {
+      usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
+    }
+    scheduleRecompute(exitReason);
+    scheduleNotifyAfterWorkerExit();
+    onExit?.();
+  });
 }
 
 // Pre-dispatch occupancy guard: a worker whose transcript was written
@@ -1020,8 +1126,13 @@ async function handler(req, res) {
     });
     req.on('end', () => {
       let target = '';
+      let approveLine = '';
+      let gateReject = null;
       try {
-        target = String(JSON.parse(body || '{}').target || '');
+        const parsedBody = JSON.parse(body || '{}');
+        target = String(parsedBody.target || '');
+        approveLine = String(parsedBody.approveLine || '');
+        if (parsedBody.reject && typeof parsedBody.reject === 'object') gateReject = parsedBody.reject;
       } catch {
         // fall through to the missing-target rejection below
       }
@@ -1029,6 +1140,44 @@ async function handler(req, res) {
         sendJson(res, 400, { error: 'missing target (campaign sessionPath or scan-state key)' });
         return;
       }
+      // "在新会话中执行" checkbox: the gate decision (approve or reject) is
+      // forwarded into a FRESH session — needs both gates (spawn for the
+      // dispatch, approve for the forwarded decision).
+      if (approveLine && gateReject) {
+        sendJson(res, 400, { error: 'approveLine 与 reject 互斥——一次只转发一个门决定' });
+        return;
+      }
+      if (approveLine) {
+        if (!spawnOptions.allowApprove) {
+          sendJson(res, 404, { error: 'approve disabled — restart the dashboard with --allow-approve' });
+          return;
+        }
+        if (!validateApproveLine(approveLine)) {
+          sendJson(res, 400, { error: '批准行格式无效（须为 APPROVE_* [id] sha256:<64 位摘要> 精确行）' });
+          return;
+        }
+      }
+      if (gateReject) {
+        if (!spawnOptions.allowApprove) {
+          sendJson(res, 404, { error: 'approve disabled — restart the dashboard with --allow-approve' });
+          return;
+        }
+        if (gateReject.mode !== 'write' && gateReject.mode !== 'comments') {
+          sendJson(res, 400, { error: "reject.mode 须为 'write' 或 'comments'" });
+          return;
+        }
+        if (gateReject.mode === 'write') {
+          const validation = changeRequest.validateRejectWriteInput({ reason: gateReject.reason });
+          if (!validation.ok) {
+            sendJson(res, 400, { error: validation.error });
+            return;
+          }
+        } else if (gateReject.unitId && !/^[\w:.-]+$/.test(gateReject.unitId)) {
+          sendJson(res, 400, { error: '单元 id 无效' });
+          return;
+        }
+      }
+      const hasGateDirective = Boolean(approveLine || gateReject);
       // Checkout-qualified keys dispatch inside their own worktree; plain
       // paths/keys resolve against the main checkout as before.
       const resolvedTarget = resolveSessionTarget(target, checkoutsState);
@@ -1049,6 +1198,10 @@ async function handler(req, res) {
       } else {
         // Not a review-session campaign — a revision worklist hands off the
         // same way: deterministic brief, worker lands in its own checkout.
+        if (hasGateDirective) {
+          sendJson(res, 400, { error: '批复/打回转发仅适用于评审会话战役（修订工作单无 APPROVE_* 门）' });
+          return;
+        }
         const revision = resolveRevisionTarget(checkoutsState, target);
         if (!revision.card) {
           sendJson(res, 404, { error: brief.error || revision.error, available: brief.available, revisionAvailable: revision.available, candidates: brief.candidates });
@@ -1065,6 +1218,29 @@ async function handler(req, res) {
         ].join('\n');
       }
       const worker = { sessionId: null, spawnedAt: new Date().toISOString(), status: 'running' };
+      if (hasGateDirective) {
+        // Never two live writers on one campaign: a still-running board worker
+        // means the gate owner is mid-turn — rotate after it parks.
+        const live = (spawnedWorkers.get(workerKey) || []).some((w) => w.status === 'running');
+        if (live) {
+          sendJson(res, 409, { error: '该战役已有看板 worker 在运行——等它停在门禁后再用「在新会话中执行」' });
+          return;
+        }
+        // Stamp the forwarded decision on the worker entry (runtime registry
+        // state, same class as status/sessionId): a REJECT supersedes the
+        // on-disk gate presentation until a newer one is regenerated.
+        worker.directive = approveLine
+          ? { kind: 'approve', at: worker.spawnedAt }
+          : { kind: 'reject', mode: gateReject.mode, at: worker.spawnedAt };
+        spawnPrompt = approveLine
+          ? appendApproveDirective(spawnPrompt, approveLine)
+          : appendRejectDirective(spawnPrompt, {
+            sessionPath: brief.card.sessionPath,
+            mode: gateReject.mode,
+            unitId: gateReject.unitId,
+            reason: gateReject.reason,
+          });
+      }
       const child = spawn(
         'zcode',
         [...buildHeadlessSpawnArgs(spawnRoot, spawnPrompt), '--json'],
@@ -1072,27 +1248,19 @@ async function handler(req, res) {
       );
       worker.pid = child.pid; // reconcile liveness signal (argv is lost on re-exec)
       registerWorker(workerKey, worker);
-      let stdout = '';
-      child.stdout.on('data', (chunk) => {
-        if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
-      });
-      child.on('exit', () => {
-        worker.sessionId = parseSpawnSessionId(stdout);
-        worker.status = 'idle';
-        persistWorkerRegistry();
-        if (usageDb && worker.sessionId) {
-          usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
-        }
-        scheduleRecompute('worker-exit');
-        scheduleNotifyAfterWorkerExit();
-      });
+      scheduleRecompute('worker-spawn');
+      wireSpawnedWorker(child, worker, workerKey, { exitReason: 'worker-exit' });
       child.unref();
       sendJson(res, 200, {
         ok: true,
         card: workerKey,
-        note: brief.revision
-          ? `修订战役会话已派出（${brief.revision.checkoutLabel} · 后台运行 · 已写 ${brief.revision.writtenPages}/${brief.revision.scope.pages} 页）——按简报逐页 governed 写入，需决策处停下；总览页「正在运行的会话」可跟进`
-          : `会话已派出（${resolvedTarget.checkout.label} · 后台运行 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准，总览页「正在运行的会话」可跟进`,
+        note: approveLine
+          ? `新会话已派出并携带批复（${resolvedTarget.checkout.label} · 后台运行）——它将核对盘上状态后按批准继续执行到下一门；旧会话保持停门状态可归档。新会话约 1 分钟内出现首批活动（总览页「正在运行的会话」/本页会话窗口表可跟进）`
+          : gateReject
+            ? `新会话已派出并携带打回（${resolvedTarget.checkout.label} · 后台运行）——它将按打回内容调整规划并重呈新门；旧会话保持停门状态可归档。新会话约 1 分钟内出现首批活动（总览页「正在运行的会话」/本页会话窗口表可跟进）`
+            : brief.revision
+            ? `修订战役会话已派出（${brief.revision.checkoutLabel} · 后台运行 · 已写 ${brief.revision.writtenPages}/${brief.revision.scope.pages} 页）——按简报逐页 governed 写入，需决策处停下；总览页「正在运行的会话」可跟进`
+            : `会话已派出（${resolvedTarget.checkout.label} · 后台运行 · ${brief.card.language} ${brief.card.track}）——首轮按简报工作，门禁处停下；完成后此卡片可界面批准，总览页「正在运行的会话」可跟进`,
       });
     });
     return;
@@ -1167,31 +1335,19 @@ async function handler(req, res) {
       );
       worker.pid = child.pid; // reconcile liveness signal (argv is lost on re-exec)
       registerWorker(workerKey, worker);
+      scheduleRecompute('intake-worker-spawn');
       appendIntakeDispatchRecord({
         kind: 'dispatch', workerKey, at: worker.spawnedAt,
         language: brief.meta.language, trackKey: brief.meta.trackKey ?? null,
         mode: brief.meta.mode ?? 'scout',
       });
-      let stdout = '';
-      child.stdout.on('data', (chunk) => {
-        if (stdout.length < SPAWN_STDOUT_CAP) stdout += chunk;
-      });
-      child.on('exit', () => {
-        worker.sessionId = parseSpawnSessionId(stdout);
-        worker.status = 'idle';
-        persistWorkerRegistry();
+      wireSpawnedWorker(child, worker, workerKey, {
+        exitReason: 'intake-worker-exit',
         // The durable ledger's in-flight window ends with the child: the
         // operator may now dispatch again (or continue on a campaign card).
-        appendIntakeDispatchRecord({
+        onExit: () => appendIntakeDispatchRecord({
           kind: 'exit', workerKey, at: new Date().toISOString(), sessionId: worker.sessionId,
-        });
-        if (usageDb && worker.sessionId) {
-          // Intake workers attribute to their dispatch key; once intake
-          // builds a review session, event-based attribution takes over.
-          usage.upsertAttribution(usageDb, worker.sessionId, workerKey, 'worker-registry');
-        }
-        scheduleRecompute('intake-worker-exit');
-        scheduleNotifyAfterWorkerExit();
+        }),
       });
       child.unref();
       sendJson(res, 200, {
@@ -1228,7 +1384,15 @@ async function handler(req, res) {
       }
       const { target, sessionId, unitId, reason, mode } = request || {};
       const isCommentsReject = mode === 'comments';
-      if (!isCommentsReject) {
+      const isWriteReject = mode === 'write';
+      if (isWriteReject) {
+        // Write-gate REJECT: batch not yet written, operator-typed feedback.
+        const validation = changeRequest.validateRejectWriteInput({ reason });
+        if (!validation.ok) {
+          sendJson(res, 400, { error: validation.error });
+          return;
+        }
+      } else if (!isCommentsReject) {
         const validation = changeRequest.validateRequestChangesInput({ unitId, reason });
         if (!validation.ok) {
           sendJson(res, 400, { error: validation.error });
@@ -1245,6 +1409,10 @@ async function handler(req, res) {
       const card = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === target || c.sessionPath === target);
       if (!card) {
         sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
+        return;
+      }
+      if (card.rejectInFlight) {
+        sendJson(res, 409, { error: '该门已打回、新会话重规划中——先等它重呈新写门；对新门再提打回或修改' });
         return;
       }
       const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
@@ -1265,7 +1433,9 @@ async function handler(req, res) {
       }
       const prompt = isCommentsReject
         ? changeRequest.composeRejectWithCommentsPrompt({ sessionPath: card.sessionPath, unitId: unitId || null })
-        : changeRequest.composeRequestChangesPrompt({ sessionPath: card.sessionPath, unitId, reason });
+        : isWriteReject
+          ? changeRequest.composeRejectWritePrompt({ sessionPath: card.sessionPath, reason })
+          : changeRequest.composeRequestChangesPrompt({ sessionPath: card.sessionPath, unitId, reason });
       dispatchResumeTurn({ key: cardKey, sessionId: worker.sessionId, checkoutRoot: cardRoot, line: prompt });
       sendJson(res, 200, {
         ok: true,
@@ -1274,7 +1444,9 @@ async function handler(req, res) {
         unitId: unitId ?? null,
         note: isCommentsReject
           ? '打回已注入 worker 会话——它将读取该批文档的飞书评论并转成修改要求落账（评论 API 不可达时会向你索要原文），重建后停在新写门'
-          : '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，停在新写门时再通知你',
+          : isWriteReject
+            ? '写门打回已注入 worker 会话——它将按你的意见调整规划并重跑 dry-run，呈新写门后再通知你（本批不写入）'
+            : '修改要求已注入 worker 会话——它将用 canonical CLI 落账打回并重建该单元，停在新写门时再通知你',
       });
     });
     return;
@@ -1312,6 +1484,10 @@ async function handler(req, res) {
       const card = (currentPayload?.campaigns || []).find((c) => (c.sessionKey ?? `main::${c.sessionPath}`) === target || c.sessionPath === target);
       if (!card) {
         sendJson(res, 404, { error: `没有战役会话匹配 ${target}` });
+        return;
+      }
+      if (card.rejectInFlight) {
+        sendJson(res, 409, { error: '该门已打回、新会话重规划中——旧批准行随打回失效，等新写门呈报后再批' });
         return;
       }
       const cardKey = card.sessionKey ?? `main::${card.sessionPath}`;
@@ -1561,6 +1737,8 @@ function main() {
 if (require.main === module) main();
 
 module.exports = {
+  appendApproveDirective,
+  appendRejectDirective,
   buildHeadlessPrompt,
   resolveStatusTarget,
   buildHeadlessSpawnArgs,

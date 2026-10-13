@@ -54,9 +54,40 @@ function composeRequestChangesPrompt({ sessionPath, unitId, reason }) {
   ].join('\n');
 }
 
+// REJECT on a write gate: the batch has NOT been written yet (dry-run
+// previews only), so there are no Feishu comments to harvest — the operator
+// types the feedback directly and the worker replans from it. No session-
+// machine transition is involved: the units simply stay un-accepted and a
+// new write gate gets presented after the planning changes.
+function validateRejectWriteInput({ reason } = {}) {
+  if (!reason || typeof reason !== 'string' || reason.trim() === '') {
+    return { ok: false, error: '打回意见不能为空' };
+  }
+  if (reason.length > MAX_REASON_LENGTH) {
+    return { ok: false, error: `打回意见过长（上限 ${MAX_REASON_LENGTH} 字符）` };
+  }
+  return { ok: true };
+}
+
+function composeRejectWritePrompt({ sessionPath, reason }) {
+  const clean = String(reason).trim();
+  return [
+    'REJECT_WRITES <batch>',
+    `操作员在本轮写门（批次尚未执行写入）点了打回。原因：${clean}`,
+    '',
+    '请执行：',
+    '1. 不执行本批写入；批次所列单元保持未接受状态。',
+    `2. 按上述意见调整规划（会话 ${sessionPath} 的 durable 状态为准）；规划有变时重跑 scoped dry-run 重新规划。`,
+    '3. 呈新写门（gate-presentation --from-dryrun + APPROVE_WRITES 新 digest）后停下等批。',
+    '门后必停，绝不自批。意见原文作为调整依据时保持逐字一致。',
+  ].join('\n');
+}
+
 module.exports = {
   MAX_REASON_LENGTH,
   validateRequestChangesInput,
+  validateRejectWriteInput,
   composeRequestChangesPrompt,
   composeRejectWithCommentsPrompt,
+  composeRejectWritePrompt,
 };

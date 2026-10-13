@@ -13,8 +13,12 @@ module.exports = createSdkRenderer({
   variantHeadings: (document) => (document.requestVariants || []).length > 1,
   variantFields: true,
   parametersLabel: 'PARAMETERS:',
-  memberKind: 'implementation',
-  membersLabel: 'IMPLEMENTATIONS:',
+  // 2026-10-13 BulkWriter/Formatter ruling: type-page member channels must
+  // not overlap with the shared implementation channel — the member filter
+  // stays disjoint from 'implementation', which the type-page branch renders
+  // once under typeMethodsLabel (the two formatter classes land there).
+  memberKind: ['option', 'method', 'member'],
+  membersLabel: 'MEMBERS:',
   returnsLabel: 'RETURNS:',
   // 2026-10-12 node v3.0.6 operator ruling (FileResources:addFileResource doc
   // review): align node with the java-family split return section — RETURN
@@ -28,6 +32,10 @@ module.exports = createSdkRenderer({
   // its whole response surface is methods), matching the python/go
   // resultMethodsLabel data.
   resultMethodsLabel: 'METHODS:',
+  // 2026-10-13 Formatter ruling: the interface's implementation members ride
+  // the shared 'implementation' channel on type pages — one section, labeled
+  // IMPLEMENTATIONS: (not the generic METHODS:).
+  typeMethodsLabel: 'IMPLEMENTATIONS:',
   errorsLabel: 'EXCEPTIONS:',
   exampleHeading: 'Example{#example}',
   showExampleTitles: (document) => (document.examples || []).length > 1,

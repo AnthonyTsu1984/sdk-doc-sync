@@ -41,6 +41,7 @@ const {
 } = require('./versioned-tree-policy');
 const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
 const { buildAcceptanceManifest, buildReviewUnitManifest } = require('./review-units');
+const { settledResourceIdentity } = require('./settled-resources');
 const {
     validateResumeSession,
     executedUnitIdsOf,
@@ -602,6 +603,53 @@ class SdkDocSync {
                 // reconciler re-derives the target chain from the walk
                 // product when one is bound (foreign-folder targets refuse).
                 SyncPlanner.reconcilePlanTargetChain(plan, this.placementWalkProduct);
+                // Two-gate executed-resource settlement: an executed-row
+                // journal that observed and verified this resource's
+                // resolution settles the plan to NOOP (no re-drive, no
+                // claim, no mutation). Without it the plan stays actionable
+                // while its every consuming unit ends up a deps-cleared
+                // SETTLED_UNIT_NOOP pad — the resource loses its owner and
+                // UNASSIGNED_REVIEW_UNIT_RESOURCE wedges the rest of the
+                // batch (batch2e wall, 2026-10-14).
+                const resourceSettlement = this.reviewSession
+                    ? settledResourceIdentity({
+                        reviewSession: this.reviewSession,
+                        actionStableId: plan.stableId,
+                        resourceRef: resource?.ref ?? null,
+                    })
+                    : null;
+                if (resourceSettlement) {
+                    const settledPlan = Object.freeze({
+                        schemaVersion: 1,
+                        action: 'NOOP',
+                        stableId: plan.stableId,
+                        artifactDigest: null,
+                        layout: plan.layout ?? undefined,
+                        placementWalkDigest: plan.placementWalkDigest ?? null,
+                        resource: plan.resource ?? undefined,
+                        target: plan.target ?? {},
+                        dependencies: [...(plan.dependencies || [])],
+                        preconditions: [],
+                        postconditions: Object.freeze([
+                            { type: 'NO_MUTATION' },
+                            { type: 'RESOURCE_RESOLVED', ref: resourceSettlement.ref, value: resourceSettlement.value },
+                        ]),
+                        metadata: Object.freeze({
+                            diffAction: 'SETTLED_RESOURCE_NOOP',
+                            settledFrom: Object.freeze({
+                                observedActionId: resourceSettlement.observedActionId,
+                                ref: resourceSettlement.ref,
+                                kind: resourceSettlement.kind,
+                                value: resourceSettlement.value,
+                            }),
+                            reason: 'resource identity verified by an executed unit journal; no redo is in flight',
+                        }),
+                    });
+                    SyncPlanner.reconcilePlanTargetChain(settledPlan, this.placementWalkProduct);
+                    result.resourcePlans.push(settledPlan);
+                    plannedEntries.push({ kind: 'resource', action: resource, plan: settledPlan, context: {} });
+                    continue;
+                }
                 result.resourcePlans.push(plan);
                 plannedEntries.push({ kind: 'resource', action: resource, plan, context: {} });
             } catch (error) {

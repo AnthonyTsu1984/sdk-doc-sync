@@ -59,6 +59,12 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { document
         prerequisiteReviewUnitIds.add(reviewUnitId(dependencyEntry.plan.stableId));
         continue;
       }
+      // A settled pad (action NOOP — journal-verified completed resource or
+      // document placeholder) is an identity reference, not an executable
+      // claim: claiming it would pin a selectedId its unit's batch entries
+      // cannot carry (NOOP entries stay out of the actionable set) and build
+      // a batch whose dependsOn edges dangle.
+      if (dependencyEntry.plan.action === 'NOOP') continue;
       if (selectedIds.has(dependencyId)) continue;
       selectedIds.add(dependencyId);
       assignedResourceIds.add(dependencyId);
@@ -67,6 +73,7 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { document
 
     for (const downstreamId of downstreamResourceIdsByDocumentId.get(documentEntry.plan.stableId) || []) {
       if (selectedIds.has(downstreamId)) continue;
+      if (byPlanId.get(downstreamId)?.plan?.action === 'NOOP') continue;
       selectedIds.add(downstreamId);
       assignedResourceIds.add(downstreamId);
     }

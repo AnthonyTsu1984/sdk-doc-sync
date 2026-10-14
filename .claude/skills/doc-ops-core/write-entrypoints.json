@@ -458,6 +458,13 @@
       "basis": "no external mutation signature found (writes only the local gate-presentation index under tmp/, spawns open/pbcopy for the operator's own desktop)"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/gate-presentation-check.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "gate-presentation-check",
+      "basis": "pre-presentation structure/binding check (2026-10-14 ruling): reads the gate-presentation index and its source, regenerates via the separately registered gate-presentation.js under --ensure; itself writes nothing"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/generate-cli-docs.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

@@ -19,21 +19,38 @@
 // treatment.
 //
 // Inputs (exactly one):
-//   --manifest <file>   { gate, title?, run?, digest?, session?,
-//                         links: [{ label, url }] }
+//   --manifest <file>   { gate, title?, run?, digest? | replyLine,
+//                         session, links: [{ label, url }] }
+//                         — session is REQUIRED and digest is resolved from
+//                         `digest` or extracted from `replyLine`; a manifest
+//                         binding neither is invalid (2026-10-14 ruling: the
+//                         presentation page has a fixed structure and every
+//                         key point is machine-checked before presenting).
 //   --from-dryrun <file>  sdk-doc-sync dry-run JSON — extracts
 //                         writeApprovalPresentation[] (document/record
 //                         links per planned entry) as APPROVE_WRITES
-//                         materials
+//                         materials; REQUIRES --session <path> (the dry-run
+//                         JSON carries the session object, not its path —
+//                         emitting a session-less page is exactly the
+//                         2026-10-14 board-attach incident)
+//   --session <path>    review-session path (only with --from-dryrun)
 // Flags:
 //   --index-dir <dir>   default tmp/api-reference-sync/gate-presentation
 //   --json              machine-readable result
 //   --no-open / --no-clipboard   skip the side effects (tests, CI)
 // Env: GATE_PRESENTATION_NO_OPEN=1 / GATE_PRESENTATION_NO_CLIPBOARD=1
 //
+// Every rendered page is self-checked against the fixed structure
+// (scripts/gate-presentation-check.js — gate banner, bound digest, session
+// binding, generated stamp, material links, tag balance) BEFORE anything is
+// written: a page that would not pass the pre-presentation check is never
+// produced, let alone presented.
+//
 // Exit 0 on success; 1 on GATE_PRESENTATION_MANIFEST_INVALID (nothing is
-// written — a malformed presentation never partially reaches the operator)
-// or when the generated card snippet would leak a URL.
+// written — a malformed presentation never partially reaches the operator),
+// GATE_PRESENTATION_SELF_CHECK_FAILED (rendered page failed the fixed-
+// structure check; also nothing is written), or when the generated card
+// snippet would leak a URL.
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -48,6 +65,7 @@ function parseArgs(argv) {
         const arg = argv[index];
         if (arg === '--manifest') options.manifest = path.resolve(argv[++index]);
         else if (arg === '--from-dryrun') options.fromDryrun = path.resolve(argv[++index]);
+        else if (arg === '--session') options.session = path.resolve(argv[++index]);
         else if (arg === '--index-dir') options.indexDir = path.resolve(argv[++index]);
         else if (arg === '--json') options.json = true;
         else if (arg === '--no-open') options.open = false;
@@ -57,6 +75,12 @@ function parseArgs(argv) {
     if (Boolean(options.manifest) === Boolean(options.fromDryrun)) {
         throw new Error('exactly one of --manifest or --from-dryrun is required');
     }
+    if (options.session && options.manifest) {
+        throw new Error('--session only pairs with --from-dryrun — a manifest binds its own session field');
+    }
+    if (options.fromDryrun && !options.session) {
+        throw new Error('--from-dryrun requires --session <review-session path>: the dry-run JSON carries the session object, not its path, and a session-less presentation page cannot attach to its campaign (2026-10-14 incident)');
+    }
     return options;
 }
 
@@ -64,6 +88,19 @@ function invalid(detail) {
     const error = new Error(detail);
     error.code = 'GATE_PRESENTATION_MANIFEST_INVALID';
     return error;
+}
+
+// The presentation page carries the session path in REPO-RELATIVE form —
+// the board matches it literally against the campaign card's sessionPath.
+// An absolute --session is therefore relativized against the working root;
+// a path escaping the tree is a caller error, not a presentation.
+function repoRelativeSession(sessionPath) {
+    const resolved = path.isAbsolute(sessionPath) ? sessionPath : path.resolve(sessionPath);
+    const relative = path.relative(process.cwd(), resolved);
+    if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
+        throw invalid(`session path ${sessionPath} does not resolve inside the working tree (${process.cwd()}) — the page must bind a repo-relative campaign session`);
+    }
+    return relative;
 }
 
 function readManifest(filePath) {
@@ -79,11 +116,22 @@ function readManifest(filePath) {
     if (typeof document.gate !== 'string' || document.gate.trim() === '') {
         throw invalid('manifest.gate must be a non-empty string (the gate this presentation serves, e.g. APPROVE_WRITES)');
     }
-    if (document.digest !== undefined && !DIGEST_PATTERN.test(document.digest)) {
+    if (typeof document.session !== 'string' || document.session.trim() === '') {
+        throw invalid('manifest.session is REQUIRED — a session-less presentation page cannot attach to its campaign on the board (2026-10-14 incident, fixed-structure ruling)');
+    }
+    // The reply line binds a digest for every gate kind; a manifest carrying
+    // neither a digest nor a digest-bearing replyLine presents an unbindable
+    // approval.
+    let digest = typeof document.digest === 'string' && document.digest.trim() !== '' ? document.digest.trim() : null;
+    if (digest !== null && !DIGEST_PATTERN.test(digest)) {
         throw invalid(`manifest.digest must match sha256:<64 hex> (got ${JSON.stringify(document.digest)})`);
     }
-    if (document.session !== undefined && (typeof document.session !== 'string' || document.session.trim() === '')) {
-        throw invalid('manifest.session, when present, must be a non-empty path string');
+    if (digest === null && typeof document.replyLine === 'string') {
+        const extracted = /sha256:[0-9a-f]{64}/.exec(document.replyLine);
+        if (extracted) digest = extracted[0];
+    }
+    if (digest === null) {
+        throw invalid('manifest binds no digest — provide manifest.digest or a replyLine carrying sha256:<64 hex>');
     }
     if (!Array.isArray(document.links) || document.links.length === 0) {
         throw invalid('manifest.links must be a non-empty array of { label, url } — a gate presentation with no materials is a bug');
@@ -104,8 +152,8 @@ function readManifest(filePath) {
         gate: document.gate,
         title: typeof document.title === 'string' && document.title.trim() !== '' ? document.title : null,
         run: typeof document.run === 'string' && document.run.trim() !== '' ? document.run : null,
-        digest: document.digest || null,
-        session: document.session || null,
+        digest,
+        session: repoRelativeSession(document.session),
         units: Array.isArray(document.units) ? [...document.units] : [],
         replyLine: typeof document.replyLine === 'string' && document.replyLine.trim() !== '' ? document.replyLine.trim() : null,
         links,
@@ -115,7 +163,7 @@ function readManifest(filePath) {
     };
 }
 
-function manifestFromDryrun(filePath) {
+function manifestFromDryrun(filePath, sessionPath) {
     let document;
     try {
         document = JSON.parse(fs.readFileSync(filePath, 'utf8'));
@@ -165,7 +213,7 @@ function manifestFromDryrun(filePath) {
         title: `write-approval previews (${presentation.length} planned entr${presentation.length === 1 ? 'y' : 'ies'})`,
         run: null,
         digest: batchDigest,
-        session: null,
+        session: repoRelativeSession(sessionPath),
         units: presentation.map((entry) => entry.stableId || entry.title).filter((unit) => typeof unit === 'string' && unit !== ''),
         links,
         previews,
@@ -230,8 +278,12 @@ function renderIndexHtml(manifest) {
     lines.push(`<h1>${escapeHtml(manifest.gate)} — gate materials</h1>`);
     if (manifest.title) lines.push(`<p>${escapeHtml(manifest.title)}</p>`);
     if (manifest.run) lines.push(`<p>run: ${escapeHtml(manifest.run)}</p>`);
-    if (manifest.digest) lines.push(`<p>bound digest: <code>${escapeHtml(manifest.digest)}</code></p>`);
-    if (manifest.session) lines.push(`<p>session: <code>${escapeHtml(manifest.session)}</code></p>`);
+    // Fixed structure (2026-10-14 ruling): the bound digest and the session
+    // binding are unconditional — the readManifest/manifestFromDryrun layers
+    // guarantee both, and the pre-presentation check rejects a page lacking
+    // either.
+    lines.push(`<p>bound digest: <code>${escapeHtml(manifest.digest)}</code></p>`);
+    lines.push(`<p>session: <code>${escapeHtml(manifest.session)}</code></p>`);
     lines.push(`<p>generated: ${escapeHtml(new Date().toISOString())}</p>`);
     lines.push('<ol>');
     manifest.links.forEach((link) => {
@@ -262,7 +314,7 @@ function main(argv = process.argv) {
     const options = parseArgs(argv);
     const manifest = options.manifest
         ? readManifest(options.manifest)
-        : manifestFromDryrun(options.fromDryrun);
+        : manifestFromDryrun(options.fromDryrun, options.session);
 
     // `open` (and most launchers) parse a leading '-' as a flag; a
     // presentation target is a URL or a local path, never an option.
@@ -279,7 +331,27 @@ function main(argv = process.argv) {
     }
 
     const indexPath = path.join(options.indexDir, 'latest.html');
-    writeAtomic(indexPath, renderIndexHtml(manifest));
+    const rendered = renderIndexHtml(manifest);
+    // Self-check against the fixed structure BEFORE anything is written: the
+    // same validator the pre-presentation check runs (P1–P6; the binding P7
+    // is redundant here — the page was just rendered from this manifest).
+    // A page that would not pass the check is never produced, so the
+    // check --ensure regeneration loop can only fail on broken SOURCES,
+    // never on generator drift.
+    const { validatePresentationHtml } = require('./gate-presentation-check.js');
+    // Structure only (P1–P6, session-line-present): the session file's
+    // on-disk existence is enforced by the pre-presentation check at runtime;
+    // here it would tie rendering to campaign state a CI checkout lacks.
+    const selfCheck = validatePresentationHtml(rendered, {
+        repoRoot: process.cwd(),
+        skipSessionFileExistence: true,
+    });
+    if (!selfCheck.ok) {
+        const error = new Error(`rendered page failed the fixed-structure self-check:\n${selfCheck.failures.map((item) => `  [${item.point}] ${item.code}: ${item.detail}`).join('\n')}`);
+        error.code = 'GATE_PRESENTATION_SELF_CHECK_FAILED';
+        throw error;
+    }
+    writeAtomic(indexPath, rendered);
 
     const warnings = [];
     let opened = false;

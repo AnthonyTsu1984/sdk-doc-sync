@@ -89,8 +89,12 @@ test('malformed manifests fail closed with nothing written', () => {
 test('labels and URLs are HTML-escaped in the index', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
     const indexDir = path.join(dir, 'gate-presentation-out');
+    // Hostile gate names no longer reach rendering at all (fixed-structure
+    // P1 rejects them); escaping is exercised through the free-text fields.
     const manifest = writeManifest(dir, {
-        gate: '<script>',
+        gate: 'APPROVE_WRITES',
+        digest: `sha256:${'a'.repeat(64)}`,
+        session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
         links: [{ label: '<img src=x onerror=alert(1)>', url: 'https://x/"><script>' }],
     });
     const result = runPresentation(['--manifest', manifest, '--index-dir', indexDir, '--json']);
@@ -99,6 +103,22 @@ test('labels and URLs are HTML-escaped in the index', () => {
     assert.doesNotMatch(html, /<script>/);
     assert.ok(html.includes('&lt;img src=x onerror=alert(1)&gt;'));
     assert.ok(html.includes('https://x/&quot;&gt;&lt;script&gt;'));
+});
+
+test('unknown gate names are refused by the fixed-structure self-check before anything is written', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
+    const indexDir = path.join(dir, 'gate-presentation-out');
+    const manifest = writeManifest(dir, {
+        gate: '<script>',
+        digest: `sha256:${'a'.repeat(64)}`,
+        session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
+        links: [{ label: 'a', url: 'https://x' }],
+    });
+    const result = runPresentation(['--manifest', manifest, '--index-dir', indexDir]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /GATE_PRESENTATION_SELF_CHECK_FAILED/);
+    assert.match(result.stderr, /PRESENTATION_GATE_BANNER_MISSING|PRESENTATION_GATE_NAME_UNKNOWN/);
+    assert.equal(fs.existsSync(indexDir), false, 'a page failing the self-check is never written');
 });
 
 test('--from-dryrun extracts writeApprovalPresentation links and binds the batch digest (null record links skipped)', () => {
@@ -112,7 +132,7 @@ test('--from-dryrun extracts writeApprovalPresentation links and binds the batch
             { stableId: 'java:Collections:queryAsync', title: 'queryAsync()', documentLink: 'https://host/wiki/b', recordLink: null, markdownPreview: 'x' },
         ],
     }));
-    const result = runPresentation(['--from-dryrun', dryrun, '--index-dir', indexDir, '--json']);
+    const result = runPresentation(['--from-dryrun', dryrun, '--session', 'tmp/sdk-doc-sync-runs/java-v26/review-session.json', '--index-dir', indexDir, '--json']);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     assert.equal(report.gate, 'APPROVE_WRITES');
@@ -123,6 +143,22 @@ test('--from-dryrun extracts writeApprovalPresentation links and binds the batch
     const html = fs.readFileSync(report.indexHtml, 'utf8');
     assert.ok(html.includes('getAsync() — document link (for copy actions: the pre-copy source)'));
     assert.ok(html.includes('queryAsync() — Bitable record') === false);
+    // The from-dryrun page binds the campaign session (2026-10-14 ruling)
+    assert.ok(html.includes('session: <code>tmp/sdk-doc-sync-runs/java-v26/review-session.json</code>'));
+});
+
+test('--from-dryrun without --session fails closed (session-less pages cannot attach, 2026-10-14 incident)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
+    const dryrun = path.join(dir, 'unit-dryrun.json');
+    fs.writeFileSync(dryrun, JSON.stringify({
+        proposedExecutionBatch: { batchDigest: `sha256:${'b'.repeat(64)}` },
+        writeApprovalPresentation: [
+            { stableId: 's', title: 't', documentLink: 'https://host/wiki/a', recordLink: null, markdownPreview: 'x' },
+        ],
+    }));
+    const result = runPresentation(['--from-dryrun', dryrun]);
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /--from-dryrun requires --session/);
 });
 
 test('--from-dryrun embeds the verbatim markdown preview inline in the index', () => {
@@ -145,7 +181,7 @@ test('--from-dryrun embeds the verbatim markdown preview inline in the index', (
             },
         ],
     }));
-    const result = runPresentation(['--from-dryrun', dryrun, '--index-dir', indexDir, '--json', '--no-open', '--no-clipboard']);
+    const result = runPresentation(['--from-dryrun', dryrun, '--session', 'tmp/sdk-doc-sync-runs/java-v26/review-session.json', '--index-dir', indexDir, '--json', '--no-open', '--no-clipboard']);
     assert.equal(result.status, 0, result.stderr);
     const report = JSON.parse(result.stdout);
     const html = fs.readFileSync(report.indexHtml, 'utf8');
@@ -158,7 +194,7 @@ test('--from-dryrun without presentation entries fails closed', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
     const dryrun = path.join(dir, 'dryrun.json');
     fs.writeFileSync(dryrun, JSON.stringify({ plans: [] }));
-    const result = runPresentation(['--from-dryrun', dryrun]);
+    const result = runPresentation(['--from-dryrun', dryrun, '--session', 'tmp/sdk-doc-sync-runs/java-v26/review-session.json']);
     assert.notEqual(result.status, 0);
     assert.match(result.stderr, /writeApprovalPresentation/);
 });
@@ -177,7 +213,7 @@ test('--from-dryrun without a well-formed batch digest fails closed (review r1 P
                 { stableId: 's', title: 't', documentLink: 'https://host/wiki/a', recordLink: null, markdownPreview: 'x' },
             ],
         }));
-        const result = runPresentation(['--from-dryrun', dryrun]);
+        const result = runPresentation(['--from-dryrun', dryrun, '--session', 'tmp/sdk-doc-sync-runs/java-v26/review-session.json']);
         assert.notEqual(result.status, 0, name);
         assert.match(result.stderr, /batchDigest must match sha256:<64 hex>/, name);
     }
@@ -185,11 +221,19 @@ test('--from-dryrun without a well-formed batch digest fails closed (review r1 P
 
 test('a card snippet that would leak ANY scheme (HTTPS://, file://) fails with GATE_CARD_LINK_LEAK (review r1 P2)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
-    for (const [name, gate] of [
-        ['uppercase-https', 'G — HTTPS://EVIL.COM/payload'],
-        ['file-scheme', 'G file:///etc/passwd'],
+    // The leak rides a free-text field that flows into the card (title →
+    // "batch:" line); gate names are structure-checked before rendering.
+    for (const [name, title] of [
+        ['uppercase-https', 'batch 1 — HTTPS://EVIL.COM/payload'],
+        ['file-scheme', 'batch 1 file:///etc/passwd'],
     ]) {
-        const manifest = writeManifest(dir, { gate, links: [{ label: 'a', url: 'https://x' }] });
+        const manifest = writeManifest(dir, {
+            gate: 'APPROVE_WRITES',
+            title,
+            digest: `sha256:${'a'.repeat(64)}`,
+            session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
+            links: [{ label: 'a', url: 'https://x' }],
+        });
         const result = runPresentation(['--manifest', manifest, '--index-dir', path.join(dir, `out-${name}`)]);
         assert.notEqual(result.status, 0, name);
         assert.match(result.stderr, /GATE_CARD_LINK_LEAK/, name);
@@ -199,7 +243,9 @@ test('a card snippet that would leak ANY scheme (HTTPS://, file://) fails with G
 test('a primary target starting with "-" is refused before open (flag injection)', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-presentation-'));
     const manifest = writeManifest(dir, {
-        gate: 'DOCUMENT_REVIEW',
+        gate: 'APPROVE_DOCUMENT',
+        digest: `sha256:${'a'.repeat(64)}`,
+        session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
         links: [{ label: 'weird', url: '-foo' }],
     });
     const outDir = path.join(dir, 'out');
@@ -225,11 +271,15 @@ test('single-link presentations make the URL itself the primary target; multi-li
     const singleDir = path.join(dir, 'single');
     const multiDir = path.join(dir, 'multi');
     const single = writeManifest(path.join(singleDir, 'src'), {
-        gate: 'DOCUMENT_REVIEW',
+        gate: 'APPROVE_DOCUMENT',
+        digest: `sha256:${'a'.repeat(64)}`,
+        session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
         links: [{ label: 'live page', url: 'https://host/wiki/only' }],
     });
     const multi = writeManifest(path.join(multiDir, 'src'), {
-        gate: 'DOCUMENT_REVIEW',
+        gate: 'APPROVE_DOCUMENT',
+        digest: `sha256:${'a'.repeat(64)}`,
+        session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
         links: [
             { label: 'page A', url: 'https://host/wiki/a' },
             { label: 'page B', url: 'https://host/wiki/b' },
@@ -275,6 +325,7 @@ test('long unit lists truncate at eight with a count tail; unknown gates carry n
     const manifest = writeManifest(dir, {
         gate: 'APPROVE_WRITES',
         digest: `sha256:${'d'.repeat(64)}`,
+        session: 'tmp/sdk-doc-sync-runs/java-v26/review-session.json',
         units,
         links: [{ label: 'only link', url: 'https://zilliverse.feishu.cn/wiki/x' }],
     });

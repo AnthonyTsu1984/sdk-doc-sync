@@ -18,9 +18,9 @@
     "lastScanDate": "2026-10-04T13:28:28.098Z"
   },
   "node": {
-    "lastScannedTag": "v3.0.3",
-    "lastScannedCommit": "b85dfcd618ef2692e687464478d1f0f9ba1d6875",
-    "lastScanDate": "2026-06-17"
+    "lastScannedTag": "v3.0.6",
+    "lastScannedCommit": "d45bb1d1ef546d78c444c053f85a7820d33983ee",
+    "lastScanDate": "2026-10-14"
   },
   "cpp": {
     "lastScannedTag": "origin/master",

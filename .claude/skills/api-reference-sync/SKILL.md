@@ -15,9 +15,9 @@ Do not use for a narrative guide, localization, code-only checks, or missing lan
 
 ## Permission Boundary
 
-- Discovery through dry-run is read-only; write only after the user approves the exact batch digest. Keep the older-version doc as a historical snapshot — never patch or delete it during a newer release sync.
+- Discovery through dry-run is read-only; write only after the user gives explicit approval of the exact batch digest. Keep the older-version doc as a historical snapshot — never patch or delete it during a newer release sync.
 - Write approval never authorizes Acceptance Finalization (records stay `WIP` until separate acceptance) nor rollback (`APPROVE_ROLLBACK <review-unit-id> sha256:<digest>`, pre-finalization only).
-- Mechanical sub-clauses are code-enforced: `Slug` never written (TOPOLOGY_RECORD_SLUG_URL); the executor never writes `Targets`; a partial-acceptance request is blocked until every unit is accepted — next gate remains `APPROVE_ACCEPTANCE` (`build-acceptance`); rollback only via `bin/sdk-document-rollback.js`.
+- Mechanical clauses are code-enforced: `Slug` never written (TOPOLOGY_RECORD_SLUG_URL); the executor never writes `Targets`; a partial-acceptance request is blocked until every unit is accepted — the next missing gate remains `APPROVE_ACCEPTANCE` (`build-acceptance`); rollback only via `bin/sdk-document-rollback.js`.
 
 ## Shared Contract
 
@@ -33,7 +33,7 @@ Do not use for a narrative guide, localization, code-only checks, or missing lan
 
 ## Explicit Interactive Gates
 
-Quick start:
+Quickstart:
 
 ```bash
 npm run api-reference-sync -- --sdk-dir repos/pymilvus --language python \
@@ -55,12 +55,12 @@ Multi-line batch replies are parsed by CODE: relay the operator's text verbatim 
 
 Gate cards are plain text: generate via `scripts/gate-presentation.js`, then pass `scripts/gate-presentation-check.js … --ensure` — `PRESENTATION_OK` is a precondition; a failing gate is NOT presented (GATE_CARD_LINK_LEAK on leaked URLs).
 
-Approval and receipt digests are read ONLY programmatically, in full, from session/store/artifact — a truncated display digest is presentation, never input (references/cli.md).
+Approval and receipt digests are read ONLY programmatically, from session/store/artifact — a truncated display digest is presentation, never input (references/cli.md).
 
 ## Domain Workflow
 
 1. Release scope: read `scan-state.json` + BOTH Git log and Git diff since the last accepted tag (`bin/sdk-release-scout.js` pins both).
-2. Candidate proposal: normalize symbols, resolve records and live ancestry, stop for grouping and successor-track review; the same-pass successor check stays a judgment obligation. Scope = the filtered scope (batch 15; sdk-pr-sync.md Canonical intake chain).
+2. Candidate proposal: normalize symbols, resolve records and live ancestry, stop for grouping and successor-track review; the same-pass successor check is a judgment obligation. Scope = the filtered scope (batch 15; sdk-pr-sync.md Canonical intake chain).
 3. Reviewed planning: source-verified artifacts, immutable plans, `planCount == diffCount`, exact evidence; `scripts/intake-preflight.js --strict` before any campaign.
 4. Collaborative execution: deterministic order, one unit at a time — approve, execute, verify, stop for digest-bound document review.
 5. Acceptance Finalization: persist the accepted-unit manifest after every unit's accepted receipt; separate operator approval, then `WIP→Draft`, refetch/verify, advance `scan-state.json`. The close runs process-learning capture (打回即铸).
@@ -71,7 +71,7 @@ Approval and receipt digests are read ONLY programmatically, in full, from sessi
 ## Domain Invariants
 
 - Single-request methods never get their own H3; Example is a bare code block (LAYOUT_SINGLE_REQUEST_H3). [api.global-layout-rules]
-- Classify ownership as `standalone`, `method_owned`, or `ambiguous`, embedding method-owned request, response, result, task, info, iterator, descriptor, transport, and wrapper types in their public owner pages. [api.ownership-classification]
+- Classify ownership as `standalone`, `method_owned`, or `ambiguous`, embedding method-owned request, response, result, task, info, iterator, descriptor, transport, and wrapper types in their owner pages. [api.ownership-classification]
 - A public class is not standalone evidence; ambiguous ownership blocks planning; standalone creation requires an explicit reviewed standalone exception. [api.standalone-evidence-gate]
 - One document per public interface record; parameter-only changes never justify an umbrella page. [api.one-document-per-interface]
 - Release folders are sparse deltas; version Bitables are complete indexes; unchanged entries keep inherited links. [api.sparse-version-delta-model]

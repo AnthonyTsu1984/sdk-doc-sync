@@ -375,7 +375,7 @@
         "evidence",
         "plan"
       ],
-      "statementDigest": "sha256:4d0e1887aac3990a3b482d59f5e516c0c2c813639d94517bf5f4a7b0010f520e",
+      "statementDigest": "sha256:c37bc7bcf17a310532bca6b1a184b123d70cddbefa6d7fd017950ee0a99d1fcd",
       "notes": "Statement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics unchanged."
     },
     {

@@ -286,7 +286,13 @@ function writeWave(dir, { unitCount = 2 } = {}) {
     schemaVersion: 3,
     version: 3,
     status: 'placement_audit_ready',
-    inheritanceEvidenceStatus: 'evidence_complete',
+    // Honest per the build-current-placement-audit producer: it computes this
+    // per-set — every entry carrying evidence would be 'evidence_complete';
+    // this wave's DropRole entry deliberately carries none (the mint-path
+    // unit), so the honest value is 'evidence_blocked' (review P1-3: the
+    // composer's audit-level gate is the overall status only, per-entry
+    // evidence gaps are the per-entry logic's business).
+    inheritanceEvidenceStatus: 'evidence_blocked',
     collectedAt: '2026-10-15T06:36:20.782Z',
     generatedAt: '2026-10-15T06:36:20.782Z',
     walkDigest: 'sha256:204a988ee9b02f9c66fa0f77491cd35225f5c7b80632b9a03699870ab402c335',
@@ -494,14 +500,43 @@ test('input contract rejections are typed, not defaults (§4.5 fail-closed)', ()
     assert.equal(error.code, 'MISSING_REQUIRED_INPUT');
     return true;
   });
-  // evidence-blocked audits are rejected, never silently downgraded
+  // a blocked placement audit is rejected, never silently downgraded; a
+  // ready audit with PARTIAL per-entry evidence is not this rejection — the
+  // mint branch owns it (see the mintedEvidence ledger test below, review P1-3)
   const audit = JSON.parse(fs.readFileSync(files.audit, 'utf8'));
-  audit.inheritanceEvidenceStatus = 'evidence_blocked';
+  audit.status = 'placement_audit_blocked';
   fs.writeFileSync(files.audit, `${JSON.stringify(audit, null, 2)}\n`);
   assert.throws(() => compose(waveArgs(dir, files)), (error) => {
     assert.equal(error.code, 'PLACEMENT_AUDIT_NOT_READY');
     return true;
   });
+});
+
+test('partial per-entry evidence rides the mint branch and reports the mintedEvidence ledger (review P1-3)', () => {
+  // Before the P1-3 ruling the composer rejected any audit whose
+  // inheritanceEvidenceStatus was not 'evidence_complete', which made the
+  // per-entry mint branch (target folder == live placement folder)
+  // unreachable for exactly the audits the producer honestly emits with
+  // partial evidence ('evidence_blocked' per-set). This fixture is that
+  // shape: one entry carries evidence, one does not.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-mint-'));
+  const files = writeWave(dir);
+  const audit = JSON.parse(fs.readFileSync(files.audit, 'utf8'));
+  assert.equal(audit.status, 'placement_audit_ready');
+  assert.equal(audit.inheritanceEvidenceStatus, 'evidence_blocked');
+  assert.equal(audit.entries.some((entry) => !entry.inheritanceEvidence), true);
+
+  const { spec } = compose(waveArgs(dir, files));
+  // the evidence-less unit (DropRole) was minted in place, not rejected
+  const minted = spec.candidates['v2-Authentication-DropRole'].inheritanceEvidence;
+  assert.equal(minted.sharedToken.status, 'unique');
+  assert.equal(minted.target.folderToken, FAM_AUTH);
+  // the mintedEvidence ledger names the minted unit in composerNotes
+  assert.match(spec.composerNotes.join(' '), /inheritance evidence minted in-place for 1 unit\(s\).*go:Authentication:DropRole/);
+  // the evidence-carrying unit keeps its audited evidence untouched
+  const audited = spec.candidates['v2-Authentication-AddRole'].inheritanceEvidence;
+  assert.notEqual(audited, minted);
+  assert.equal(audited.current.recordId, 'rec-add-role');
 });
 
 test('structured node wave composes signature/params/result/exceptions with the orphan verbatim fallback', () => {

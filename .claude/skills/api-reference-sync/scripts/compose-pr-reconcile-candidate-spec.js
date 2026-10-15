@@ -783,8 +783,17 @@ function compose(args) {
   if (identityMap.language !== language || identityMap.track !== track) {
     reject('IDENTITY_MAP_TRACK_MISMATCH', `identity map is ${identityMap.language}/${identityMap.track}; expected ${language}/${track}`);
   }
-  if (audit.status !== 'placement_audit_ready' || audit.inheritanceEvidenceStatus !== 'evidence_complete') {
-    reject('PLACEMENT_AUDIT_NOT_READY', `placement audit ${path.basename(auditPath)} is not evidence-complete (status ${audit.status}/${audit.inheritanceEvidenceStatus})`);
+  // Review P1-3 ruling: the audit-level gate is the OVERALL readiness face
+  // only. The 2026-10-15 audit producer computes inheritanceEvidenceStatus
+  // per-set ('evidence_complete' | 'evidence_blocked') independently of
+  // status, so a placement_audit_ready audit can honestly carry partial
+  // per-entry evidence; the per-entry logic below owns that case — an entry
+  // whose live placement folder IS the target re-mints its evidence
+  // (mintedEvidence ledger), anything else is a typed
+  // INHERITANCE_EVIDENCE_MISSING. Rejecting those audits up front made the
+  // mint branch unreachable.
+  if (audit.status !== 'placement_audit_ready') {
+    reject('PLACEMENT_AUDIT_NOT_READY', `placement audit ${path.basename(auditPath)} is not ready (status ${audit.status})`);
   }
 
   const repository = args.repository

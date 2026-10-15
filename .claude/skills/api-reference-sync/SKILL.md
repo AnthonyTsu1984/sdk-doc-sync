@@ -7,8 +7,6 @@ description: Use when a Milvus or Zilliz SDK, CLI, REST API, or OpenAPI release 
 
 Synchronize versioned API-reference records without changing established documentation ownership or release history.
 
-Thin skill: mechanics code-enforced; narratives in references/skill-history/2026-10-15-pre-thin.md.
-
 ## Trigger Boundary
 
 Use for release-range discovery, API-reference inventory, versioned record planning, backfill, deprecation, reparenting, or source-backed SDK/CLI/REST reference updates.
@@ -18,24 +16,24 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 ## Permission Boundary
 
 - Discovery through dry-run is read-only; write only after the user approves the exact batch digest. Never patch/delete an inherited older-version document in a newer release sync.
-- Write approval never authorizes Acceptance Finalization (records stay `WIP` until separate acceptance; `WIP→Draft` only via the acceptance finalizer) nor rollback (pre-finalization only, via the exact `APPROVE_ROLLBACK <review-unit-id> sha256:<digest>` line).
+- Write approval never authorizes Acceptance Finalization (records stay `WIP` until separate acceptance) nor rollback (pre-finalization only, via the exact `APPROVE_ROLLBACK <review-unit-id> sha256:<digest>` line).
 - Mechanical sub-clauses are code-enforced: `Slug` never written (TOPOLOGY_RECORD_SLUG_URL); the executor never writes `Targets`; partial acceptance blocked (`build-acceptance`); rollback only via `bin/sdk-document-rollback.js`.
 
 ## Shared Contract
 
 - Capability baseline: [capabilities.json](capabilities.json); canonical artifacts, lineage, approval envelopes, journals, and state semantics come from `../doc-ops-core/`.
-- REST/OpenAPI review is one unit per `(versionTrack, endpoint, method)`; the Feishu state machine does not apply to zdoc spec-file writes; fragments are deterministic from pinned revisions, never control-plane truth from Feishu (`sdk-rest.md`).
+- REST/OpenAPI review is one unit per `(versionTrack, endpoint, method)`; the Feishu state machine does not apply to zdoc spec-file writes; fragments are deterministic from pinned revisions, never control-plane truth from Feishu; adapters must never guess an internal-to-public control-plane mapping — ambiguous ones are agent work (`sdk-rest.md`).
 - Planning emits a deterministic `reviewUnitManifest`, one unit per public document; never approve or execute a multi-document release batch outside verified batch mode.
 - Verified batch mode is an explicit operator decision, never a default: the operator sets batch size `K` (first batch = canary). One WRITE gate binds the ordered next `K` units, not per-unit digests; presentation is batched (`chunkWriteApprovalBatches`). Any verification failure freezes the batch; one DOCUMENT_REVIEW gate reviews it against the touched-inventory presentation.
 - Two-gate acceptance flow (2026-10-01 ruling): document acceptance IS the unit's final acceptance — governed `WIP→Draft` with a digest-bound per-unit receipt; the unit is terminal (corrective release instead); `scan-state.json` moves only at mechanical `close-session` once every unit finalized.
 - The manifest digest binds the stable document sequence, not stale write plans: replan immediately before approval; any changed artifact, correction, or unit selection means a new batch and new approval. Review comments rebuild only that unit; never advance while comments remain unresolved.
-- Progress lives in a review-session JSON outside model context: create only from the complete initial dry-run (`--session-state`), resume only via `--resume-session`; caller-declared unit IDs are never proof of acceptance. Rotation is gate-boundary: one campaign = one session file, ~42% context budget per chat — an approval not in its durable artifact does not survive rotation.
-- Journal every approved action before and after mutation; an existing journal returns `EXECUTION_RECONCILIATION_REQUIRED` — reconcile, never relaunch. Rollback capsules precede every mutation; a finalized session is not rollback-capable.
+- Progress lives in a review-session JSON: create only from the complete initial dry-run (`--session-state`), resume only via `--resume-session`; caller-declared unit IDs are never proof of acceptance. Rotation is gate-boundary: one campaign = one session file, ~42% context budget per chat — an approval not in its durable artifact does not survive rotation.
+- Journal every approved action before and after mutation, ending in a durable completion sentinel; an existing journal returns `EXECUTION_RECONCILIATION_REQUIRED` — reconcile live state first, do not relaunch. Rollback capsules precede every mutation; a finalized session is not rollback-capable.
 - PR intake from `milvus-io/web-content` is read-only discovery (`bin/sdk-pr-scan.js`, `sdk-pr-sync.md`; MERGED PRs only). PLACEHOLDER — intake scope-chain pending batch 15 slice 3-3 (pre-thin bullet binds).
 
 ## Explicit Interactive Gates
 
-For any interactive chat review or approval, **MUST** read [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md) — never rely on a generic "please approve". Report phase, status, artifact paths, scope, blockers, and the exact digest; end with exactly one copy-ready approval line. Bare approval words, a digest without its gate command, or a stale digest is not approval.
+For any interactive chat review or approval, **MUST read** [references/bot-integration.md](references/bot-integration.md) and [references/bot-prompts.md](references/bot-prompts.md) — never rely on a generic "please approve". Report phase, status, artifact paths, scope, blockers, and the exact digest; end with exactly one copy-ready approval line.
 
 | Gate | Bound artifact | If approved, reply exactly |
 |------|----------------|----------------------------|
@@ -53,20 +51,20 @@ Approval and receipt digests are read ONLY programmatically, in full, from sessi
 
 ## Domain Workflow
 
-1. Release scope: read `scan-state.json` + BOTH Git log and Git diff since the last accepted tag (`bin/sdk-release-scout.js` pins commit/tag); tables and scanner runs never replace approval-grade scope.
+1. Release scope: read `scan-state.json` + BOTH Git log and Git diff since the last accepted tag (`bin/sdk-release-scout.js` pins commit/tag).
 2. Candidate proposal: normalize symbols, resolve records and live ancestry, stop for grouping and successor-track review; the same-pass successor check stays a judgment obligation. PLACEHOLDER — scope chain pending batch 15 slice 3-3 (pre-thin step 2 binds until then).
-3. Reviewed planning: source-verified artifacts, immutable plans, `planCount == diffCount`, exact evidence; `scripts/intake-preflight.js --strict` before any campaign; declare `styleMirrors` ([api.style-mirror-allowlist]).
-4. Collaborative execution: deterministic order, one unit at a time — approve, execute, verify, stop for digest-bound document review; changes-requested redos route through REBUILD ([api.rebuild-first-class]).
-5. Acceptance Finalization: persist the accepted-unit manifest after every unit's accepted receipt; separate operator approval, then `WIP→Draft`, refetch/verify, advance `scan-state.json`; a still-`in_progress` session post-campaign is a zombie. The close runs process-learning capture (打回即铸, [api.process-learning-capture]).
+3. Reviewed planning: source-verified artifacts, immutable plans, `planCount == diffCount`, exact evidence; `scripts/intake-preflight.js --strict` before any campaign; declare `styleMirrors`.
+4. Collaborative execution: deterministic order, one unit at a time — approve, execute, verify, stop for digest-bound document review; changes-requested redos route through REBUILD.
+5. Acceptance Finalization: persist the accepted-unit manifest after every unit's accepted receipt; separate operator approval, then `WIP→Draft`, refetch/verify, advance `scan-state.json`; a still-`in_progress` session post-campaign is a zombie. The close runs process-learning capture (打回即铸).
 6. Campaign-runner preflight: PARTIAL is failure (record, stop, reconcile — never blind-retry); scripts are COPIED FROM THE CERTIFIED TEMPLATE, never inherited (audit B-4: template-hash lint).
-7. Operator-authored pages land through a hand-authored surgical `apiPatchPlan` ([api.operator-authored-surgical-patch]), simulation-validated pre-approval; the preview shows the desired shape, the landing is the delta.
-8. Batch runbook: start from `sdk-review-session.js handoff --session <file> [--recipe <recipe.json>]`. PLACEHOLDER — the loop is pending batch 15 slice 3-3 (pre-thin step 8 binds until then); batch-leveling and digest-injection discipline still apply.
+7. Operator-authored pages land through a hand-authored surgical `apiPatchPlan`, simulation-validated pre-approval; the preview shows the desired shape, the landing is the delta.
+8. Batch runbook: start from `sdk-review-session.js handoff --session <file> [--recipe <recipe.json>]`. PLACEHOLDER — the loop is pending batch 15 slice 3-3 (pre-thin step 8 binds until then).
 
 ## Domain Invariants
 
 - Single-request methods never get their own H3; Example is a bare code block (LAYOUT_SINGLE_REQUEST_H3). [api.global-layout-rules]
-- Classify ownership `standalone`/`method_owned`/`ambiguous`; embed method-owned types in owner pages. [api.ownership-classification]
-- A public class is not standalone evidence; ambiguous blocks planning; standalone needs an explicit reviewed exception. [api.standalone-evidence-gate]
+- Classify ownership as `standalone`, `method_owned`, or `ambiguous`, embedding method-owned request, response, result, task, info, iterator, descriptor, transport, and wrapper types in their public owner pages. [api.ownership-classification]
+- A public class is not standalone evidence; ambiguous ownership blocks planning; standalone creation requires an explicit reviewed standalone exception. [api.standalone-evidence-gate]
 - One document per public interface record; parameter-only changes never justify an umbrella page. [api.one-document-per-interface]
 - Release folders are sparse deltas; version Bitables are complete indexes; unchanged entries keep inherited links. [api.sparse-version-delta-model]
 - Delta model: older tree = full inventory, newer = changed pages; copy-patch-repoint via the fixed DAG; shared-doc patches need `no_successor_action`. [api.versioned-tree-delta]
@@ -79,7 +77,7 @@ Approval and receipt digests are read ONLY programmatically, in full, from sessi
 - Every organization rule keeps a tracked evidence manifest, never an untracked dump. [api.organization-evidence-manifest]
 - SDK artifacts: reviewed evidence, versioned layout profile, block-safety validation, immutable plan; full-body repair needs exact token approval. [api.reviewed-artifact-evidence]
 - After writes verify tenant host, ancestry, record metadata, older-source preservation, human-visible access. [api.post-write-verification]
-- APPROVE_GROUPING binds the exact release scope (one-shot); later artifacts must match the approved scopeDigest (GROUPING_STALE, GROUPING_APPROVAL_CHAIN_INVALID). [api.grouping-proposal-staleness]
+- A grouping approval binds the campaign to the exact release scope it covers (one-shot, GROUPING_APPROVAL_ALREADY_BOUND); later dry-runs/resumes/writes must match the approved lineage scopeDigest (GROUPING_STALE, GROUPING_APPROVAL_CHAIN_INVALID) — any newer candidate spec, reviewed context, scoped dry-run, or execution artifact requires a fresh grouping gate. [api.grouping-proposal-staleness]
 - Grouping proposals come only from scripts/build-grouping-proposal.js; credentials only via scripts/record-grouping-approval.js. [api.grouping-proposal-governance]
 - Governed markdown converts losslessly: unrepresentable tokens refuse; native table blocks. [api.markdown-block-fidelity]
 - Repo-relative URLs never reach documents: intake preflight and the writer refuse non-absolute links. [api.absolute-link-urls]
@@ -100,7 +98,7 @@ Approval and receipt digests are read ONLY programmatically, in full, from sessi
 
 ## Precedent Intake (how this file grows)
 
-1. Three-question test: schema writable? fixture writable? replays 100% from on-disk artifacts? All three → CODE (typed code + fixture + registry entry); partially → precedent (one sentence, narrative archived); neither → operator adjudication. Every never/refuse here cites a real code or is marked operator judgment.
+1. Three-question test: schema writable? fixture writable? replays 100% from on-disk artifacts? All three → CODE (typed code + fixture + registry entry); partially → precedent (one sentence, narrative archived); neither → operator adjudication. Every never/refuse here cites a real code.
 2. A recurring incident's first stop is not this file: `close-session` drafts rule candidates (打回即铸); fix data/code + fixture first; edit precedent prose only when the adjudication itself changed. Precedent template: principle + code/command + date/decider + archive pointer; prose over three lines names its archive.
 3. This file is lint-gated (`scripts/skill-md-lint.js`: size budget, pointer integrity, marker↔registry digest consistency) — the anti-rebound mechanism.
 

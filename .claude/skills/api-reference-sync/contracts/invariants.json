@@ -141,7 +141,7 @@
       "enforcement": [
         "pre-write"
       ],
-      "statementDigest": "sha256:da6525b6599fb44db2f52431af8a7a875d50ffec775fbe3e315080c02314f0fe",
+      "statementDigest": "sha256:a34ad2ba038eb570c3ec86d66b8f2ab00db62f95a26815b7d961287021f31d42",
       "fixtureIds": [
         "grouping-proposal-staleness"
       ],
@@ -375,7 +375,7 @@
         "evidence",
         "plan"
       ],
-      "statementDigest": "sha256:a0b12da24aa62ad0a95c8e0e0419d70ce80390f5f1bb414922d832d4bdb66eed",
+      "statementDigest": "sha256:4d0e1887aac3990a3b482d59f5e516c0c2c813639d94517bf5f4a7b0010f520e",
       "notes": "Statement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics unchanged."
     },
     {
@@ -836,7 +836,7 @@
       "enforcement": [
         "plan"
       ],
-      "statementDigest": "sha256:f244b7262b1f339914634072683bea60290ce99102096feb05815f7839d63f4b",
+      "statementDigest": "sha256:fa6a4abeef723429af2fc8758de83690c2d14015837491e474140e3bd351237e",
       "notes": "Statement pointerized 2026-10-15 (slice 3-2 thin-SKILL.md rewrite): the compressed statement above is the registry-bound wording; the pre-thin precedent narrative is archived at references/skill-history/2026-10-15-pre-thin.md. Enforcement semantics unchanged."
     },
     {

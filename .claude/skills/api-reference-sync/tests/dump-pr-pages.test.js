@@ -60,6 +60,8 @@ const PAGE_A = '# addPrivilegesToGroup()\n\nThis operation adds privileges.\n\n`
 const PAGE_B = '# alterRole()\n\nThis operation alters a role.\n\nSee [Notes on role behavior](x.md).\n';
 
 test('extractH1 is fence-aware: headings displayed inside code fences never count', () => {
+    assert.equal(extractH1, require('../src/sdk-doc-sync/pr-page-parser').extractH1,
+        'extractH1 is single-sourced from the page-parser kernel (batch 15 slice 3-3)');
     assert.equal(extractH1(PAGE_A), 'addPrivilegesToGroup()');
     assert.equal(extractH1('```markdown\n# Not A Title\n```\n\n# Real Title\n'), 'Real Title');
     assert.equal(extractH1('## Only an H2\n'), null);

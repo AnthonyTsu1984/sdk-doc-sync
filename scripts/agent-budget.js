@@ -146,7 +146,7 @@ function cmdLedger(root, args) {
     summary.totals.budgetCount ? fmtTokens(summary.totals.budget) : '-',
     summary.totals.actualCount ? fmtTokens(summary.totals.actual) : '-',
     summary.totals.varianceCount ? fmtTokens(summary.totals.variance) : '-', '-']);
-  console.log(column(rows));
+  console.log(column(rows).join('\n'));
   const file = path.relative(root, ledgerFilePath(root));
   console.log(`\n${summary.rows.length} entries${summary.date ? ` on ${summary.date}` : ''} from ${file}`);
   return 0;

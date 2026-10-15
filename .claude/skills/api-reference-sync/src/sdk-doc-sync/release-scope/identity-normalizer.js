@@ -53,6 +53,36 @@ function loadIdentityMap(filePath) {
   });
 }
 
+// Live go slug-head conventions the scanner's parentClass cannot express.
+// Both rules are evidence-pinned against the two go Bitable snapshots (172
+// v2.6.x / 232 v3.0.x records) over the full scanned symbol sets at the track
+// target tags: live-hit 102→165 (v2.6.x) and 139→222 (v3.0.x) with zero
+// regressions, every residual miss a record that does not exist live.
+//  - index/annparam constructors are parented by the doc-tree category
+//    (Management.NewGenericIndex / Vector.NewIvfRabitQAnnParam) but live under
+//    the constructed-type head (v2-Index-NewGenericIndex,
+//    v2-AnnParam-NewIvfRabitQAnnParam); the head is the name suffix, not the
+//    filePath directory — both families live in the same client/index/*.go
+//    files, so a directory-based head cannot distinguish them and would also
+//    corrupt the landing interfaces (v2-Management-Index) and every flat
+//    method. This mirrors deepPathIdentity's slugMiddle in pr-scan.js so tag
+//    scouts and PR intakes compose the same stableId/canonicalSlug.
+//  - the collection/partition method groups scan with plural parentClass
+//    while every live record head is singular (24 v2-Collection-* and 6
+//    v2-Partition-* records, zero v2-Collections-*/v2-Partitions-*); the go
+//    identity maps already bridge exactly this rename for mapped entries
+//    (Collections.AddCollectionField => v2-Collection-AddCollectionField).
+const GO_FALLBACK_HEAD_RENAMES = new Map([
+  ['Collections', 'Collection'],
+  ['Partitions', 'Partition'],
+]);
+
+function goFallbackHead({ name, middle }) {
+  const constructorOwner = /^New.+(Index|AnnParam)$/.exec(name || '');
+  if (constructorOwner) return constructorOwner[1];
+  return GO_FALLBACK_HEAD_RENAMES.get(middle) || middle;
+}
+
 function fallbackIdentity(delta, map) {
   const slugPrefix = typeof map.slugPrefix === 'string' ? map.slugPrefix : '';
   if (!slugPrefix) {
@@ -66,16 +96,20 @@ function fallbackIdentity(delta, map) {
   // Prefixed tracks (java: v2-<middle>-<member>) derive the fallback from the
   // scanner-assigned category (client methods and type pages) or the owning
   // class (nested members) so tag scouts and PR intakes compose the same
-  // stableId/canonicalSlug for the same interface.
+  // stableId/canonicalSlug for the same interface. Go additionally mirrors
+  // the live slug-head conventions above, otherwise an unmapped deep-path
+  // symbol would CREATE under a category-headed slug the PR pipeline just
+  // updated under its owner-headed one.
   const dot = delta.symbolIdentity.lastIndexOf('.');
   const middle = (delta.symbol && delta.symbol.category)
     || (dot > 0 ? delta.symbolIdentity.slice(0, dot) : '')
     || map.defaultCategory;
   const pageName = dot > 0 ? delta.symbolIdentity.slice(dot + 1) : delta.symbolIdentity;
+  const head = map.language === 'go' ? goFallbackHead({ name: pageName, middle }) : middle;
   return {
-    stableId: `${map.language}:${slugPrefix}${middle}:${pageName}`,
-    canonicalSlug: `${slugPrefix}${middle}-${pageName}`,
-    category: middle,
+    stableId: `${map.language}:${slugPrefix}${head}:${pageName}`,
+    canonicalSlug: `${slugPrefix}${head}-${pageName}`,
+    category: head,
   };
 }
 

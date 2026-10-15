@@ -760,6 +760,48 @@ test('identity normalizer gives unmapped symbols explicit diagnostics', () => {
   });
 });
 
+test('identity normalizer mirrors live go slug heads for unmapped deep-path and plural-family symbols', () => {
+  // Tag-scout fallback must land unmapped go symbols on the same slug the PR
+  // pipeline (deepPathIdentity) and the live Bitable use; every asserted
+  // slug below exists in the go v2.6.x snapshot. All six identities are
+  // absent from the 21-key go-v26 delta map, so the fallback path runs.
+  const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'go-v26.json'));
+  const goDelta = (symbolIdentity, name, filePath) => ({
+    type: 'CREATE',
+    symbolIdentity,
+    symbol: {
+      name,
+      kind: 'function',
+      parentClass: symbolIdentity.slice(0, symbolIdentity.lastIndexOf('.')),
+      filePath,
+      lineNumber: 10,
+    },
+    reason: 'new public function',
+  });
+  // Index/AnnParam constructors live under the constructed-type head — the
+  // head is the name suffix, never the filePath directory (both families
+  // share client/index/*.go files).
+  const ctor = normalizeDelta(goDelta('Management.NewGenericIndex', 'NewGenericIndex', 'client/index/index.go'), map);
+  assert.equal(ctor.canonicalSlug, 'v2-Index-NewGenericIndex');
+  assert.equal(ctor.stableId, 'go:v2-Index:NewGenericIndex');
+  assert.equal(ctor.diagnostic.code, 'UNMAPPED_CANONICAL_IDENTITY');
+  const annParam = normalizeDelta(goDelta('Vector.NewIvfRabitQAnnParam', 'NewIvfRabitQAnnParam', 'client/index/ivf.go'), map);
+  assert.equal(annParam.canonicalSlug, 'v2-AnnParam-NewIvfRabitQAnnParam');
+  assert.equal(annParam.stableId, 'go:v2-AnnParam:NewIvfRabitQAnnParam');
+  // The collection/partition method groups scan with plural parentClass
+  // while every live record head is singular — the same rename the go maps
+  // encode for mapped entries.
+  const alias = normalizeDelta(goDelta('Collections.CreateAlias', 'CreateAlias', 'client/milvusclient/collection.go'), map);
+  assert.equal(alias.canonicalSlug, 'v2-Collection-CreateAlias');
+  const partition = normalizeDelta(goDelta('Partitions.ListPartitions', 'ListPartitions', 'client/milvusclient/partition.go'), map);
+  assert.equal(partition.canonicalSlug, 'v2-Partition-ListPartitions');
+  // Landing interfaces and ordinary flat categories keep the category head.
+  const landing = normalizeDelta(goDelta('Management.Index', 'Index', 'client/index/index.go'), map);
+  assert.equal(landing.canonicalSlug, 'v2-Management-Index');
+  const flat = normalizeDelta(goDelta('Authentication.BackupRBAC', 'BackupRBAC', 'client/milvusclient/rbac.go'), map);
+  assert.equal(flat.canonicalSlug, 'v2-Authentication-BackupRBAC');
+});
+
 test('identity normalizer gives Node BulkWriter methods stable child Function identities', () => {
   const map = loadIdentityMap(path.join(__dirname, '..', 'references', 'identity', 'node-v30.json'));
   const normalized = normalizeDelta({

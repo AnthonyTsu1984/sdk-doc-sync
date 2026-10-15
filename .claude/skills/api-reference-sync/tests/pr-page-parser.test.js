@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {
   REJECTION_CODES,
+  extractH1,
   flattenDescription,
   isAllCapsAcronym,
   normalizeSummary,
@@ -467,6 +468,32 @@ test('fence-aware sectioning ignores heading markers inside code fences', () => 
   const parsed = parsePage('# T()\n\nThis operation does the thing.\n\n## Request Syntax\n\n```go\nclient.T(ctx)\n```\n\n**PARAMETERS:**\n\n- **a** (*string*)\n\n    The a parameter.\n\n**RETURN TYPE:**\n\n```go\n// **RETURN TYPE:** decoy\n```\n\n*error*\n', { ...profiles.go, route: 'verbatim' }, 'fence.md');
   assert.equal(parsed.returnType, 'error');
   assert.equal(parsed.params.length, 1);
+});
+
+test('unified fence semantics: indent, non-word info strings, orphan closers, fence-aware H1 (review P2-5)', () => {
+  // Openers: up to 3 spaces indent, non-word info strings; the language is
+  // the info string's first word.
+  const indented = splitOrderedFences('# T()\n\n   ```go\nx := 1\n   ```\n');
+  assert.equal(indented.filter((part) => part.fence).length, 1);
+  assert.equal(indented.find((part) => part.fence).lang, 'go');
+  const tagged = splitOrderedFences('```js showLineNumbers\nlet x = 1;\n```\n');
+  assert.equal(tagged.find((part) => part.fence).lang, 'js');
+  const cpp = splitOrderedFences('```c++\nint x;\n```\n');
+  assert.equal(cpp.find((part) => part.fence).lang, 'c++');
+
+  // Orphan closer: a bare ``` line with no open fence stays prose instead of
+  // opening a phantom fence that swallows the following heading.
+  const orphan = splitOrderedFences('prose before\n```\n\n**PARAMETERS:**\n\n- **a** (*string*)\n');
+  assert.equal(orphan.some((part) => part.fence), false);
+  const orphanParsed = parsePage('# T()\n\nThis operation does it.\n\nstray closer below\n```\n\n**PARAMETERS:**\n\n- **a** (*string*)\n', { ...profiles.go, route: 'verbatim' }, 'orphan.md');
+  assert.equal(orphanParsed.params.length, 1);
+
+  // H1 extraction is fence-aware: a `# comment` inside a fence is not a title.
+  assert.equal(extractH1('```python\n# this is a comment\n```\n\n# RealTitle()\n'), 'RealTitle()');
+  assert.throws(() => parsePage('```python\n# fake title comment\n```\n', { ...profiles.python, route: 'structured', requireSignature: false }, 'nofence.md'), (error) => {
+    assert.equal(error.code, REJECTION_CODES.PAGE_H1_MISSING);
+    return true;
+  });
 });
 
 test('flattenDescription collapses multi-line bullet prose', () => {

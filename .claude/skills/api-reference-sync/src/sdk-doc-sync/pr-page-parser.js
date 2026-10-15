@@ -41,8 +41,15 @@ function stripMdEscapes(text) {
   return String(text).replace(/\\([[\]<>_*])/g, '$1');
 }
 
-// ---- fence-aware sectioning (java base draft, verbatim) --------------------
+// ---- fence-aware sectioning (java base draft; unified semantics, P2-5) -----
 
+// Unified fence rules (review P2-5): openers are up-to-3-space-indented runs
+// of 3+ backticks followed by a non-empty info string (the language is its
+// first word, so non-word info like `c++` or tagged infos like
+// `js showLineNumbers` are recognized); closers are bare 3+ backtick lines at
+// 0-3 spaces indent. A bare ``` line OUTSIDE a fence is an orphan closer and
+// stays prose — the old opener regex accepted an empty info string, so an
+// orphan closer opened a phantom fence and swallowed the rest of the page.
 function splitOrderedFences(markdown) {
   const lines = String(markdown).split(/\r?\n/);
   const out = [];
@@ -57,15 +64,16 @@ function splitOrderedFences(markdown) {
     }
   };
   for (const line of lines) {
-    const open = line.match(/^```(\w*)\s*$/);
-    if (!inFence && open) {
+    const open = !inFence && line.match(/^ {0,3}(`{3,})([^`]+)$/);
+    const close = inFence && /^ {0,3}`{3,}\s*$/.test(line);
+    if (open) {
       flushProse();
       inFence = true;
-      lang = open[1] || '';
+      lang = open[2].trim().split(/\s+/)[0] || '';
       buf = [];
       continue;
     }
-    if (inFence && /^```\s*$/.test(line)) {
+    if (close) {
       inFence = false;
       out.push({ fence: true, lang, text: buf.join('\n'), index: out.length });
       continue;
@@ -76,6 +84,24 @@ function splitOrderedFences(markdown) {
   if (inFence) throw typedError(REJECTION_CODES.SIGNATURE_FENCE_MISSING, 'unterminated fence on page');
   flushProse();
   return out;
+}
+
+// Fence-aware H1: a `# ` line inside a code fence is page content (go/python
+// comments), never the title — the same unified fence rules as
+// splitOrderedFences, mirroring dump-pr-pages extractH1 (review P2-5).
+function extractH1(markdown) {
+  let inFence = false;
+  for (const line of String(markdown).split(/\r?\n/)) {
+    const open = !inFence && /^ {0,3}(`{3,})([^`]+)$/.test(line);
+    const close = inFence && /^ {0,3}`{3,}\s*$/.test(line);
+    if (open) { inFence = true; continue; }
+    if (close) { inFence = false; continue; }
+    if (!inFence) {
+      const match = line.match(/^# (.+)$/);
+      if (match) return match[1].trim();
+    }
+  }
+  return null;
 }
 
 function section(parts, startRe, endRe) {
@@ -442,9 +468,10 @@ function summaryCalloutsAfterH1(parts) {
 
 function parsePage(markdown, profile, pageName, opts = {}) {
   const stats = newStats();
-  const h1Match = String(markdown).match(/^# (.+)$/m);
-  if (!h1Match) throw typedError(REJECTION_CODES.PAGE_H1_MISSING, `${pageName}: no H1 title`);
-  const title = h1Match[1].trim();
+  // Fence-aware: a `# ` line inside a code fence is page content, not a title.
+  const h1Text = extractH1(markdown);
+  if (!h1Text) throw typedError(REJECTION_CODES.PAGE_H1_MISSING, `${pageName}: no H1 title`);
+  const title = h1Text;
   const titleBase = profile.titleSuffix && title.endsWith(profile.titleSuffix)
     ? title.slice(0, -profile.titleSuffix.length)
     : title;
@@ -630,6 +657,7 @@ function parsePage(markdown, profile, pageName, opts = {}) {
 module.exports = {
   REJECTION_CODES,
   articleFor,
+  extractH1,
   flattenDescription,
   isAllCapsAcronym,
   lowerFirst,

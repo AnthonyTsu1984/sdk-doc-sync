@@ -14,7 +14,12 @@
 //   --sweep   additionally run the offline versioned-tree-policy precheck over
 //             every composed candidate (§8.3) and emit the typed exception
 //             queue entries CLONE_ID_SHARED_IN_PLACE (kernel) and
-//             FEISHU_RECORD_ABSENT (report-only) into the spec (§7).
+//             FEISHU_RECORD_ABSENT (report-only) into the spec (§7). Ruling
+//             (review P2-8): FEISHU_RECORD_ABSENT is reported ONLY under
+//             --sweep — a gate-bound compose without --sweep never emits it
+//             (nor CLONE_ID_SHARED_IN_PLACE); SCANNER_TAXONOMY_ORPHAN is the
+//             one always-on queue entry because it drives the per-unit
+//             verbatim fallback switch (§4.4).
 //   --sweep-spec <spec>  sweep an already-composed candidate-spec instead of
 //             composing (presentation mode for foreign-wave specs).
 //   --patch-context <context> --candidate-spec <spec>
@@ -550,15 +555,26 @@ function sweepSpec(spec, { evaluateVersionedTreeDelta }) {
   }
   const counts = {};
   const blocked = [];
+  let ancestryDeclared = 0;
+  let ancestrySwept = 0;
   for (const [slug, candidate] of Object.entries(spec.candidates || {})) {
     const actionType = candidate.reviewedActionType || candidate.actionIntent || 'UPDATE';
     if (!candidate.existingRecord || actionType === 'CREATE' || actionType === 'BACKFILL') continue; // absent-record units ride FEISHU_RECORD_ABSENT
+    ancestrySwept += 1;
+    // Review P2-2: ancestryVerified used to be hardcoded true — the sweep
+    // claimed TARGET_ANCESTRY facts it never saw. The spec's own declared
+    // value passes through (candidate.ancestryVerified, falling back to the
+    // existing-record face); units that do not declare it sweep with false,
+    // and the report says the TARGET_ANCESTRY family is not covered.
+    const ancestryVerified = candidate.ancestryVerified === true
+      || candidate.existingRecord.ancestryVerified === true;
+    if (ancestryVerified) ancestryDeclared += 1;
     const current = {
       version: candidate.existingRecord.placement.version,
       recordId: candidate.existingRecord.recordId,
       documentToken: candidate.existingRecord.documentToken,
       folderToken: candidate.existingRecord.placement.folderToken,
-      ancestryVerified: true,
+      ancestryVerified,
     };
     const target = candidate.folderRef
       ? { version, folderRef: candidate.folderRef, versionRootToken }
@@ -593,7 +609,17 @@ function sweepSpec(spec, { evaluateVersionedTreeDelta }) {
       });
     }
   }
-  return { units: Object.keys(spec.candidates || {}).length, counts, blocked };
+  return {
+    units: Object.keys(spec.candidates || {}).length,
+    counts,
+    blocked,
+    // Review P2-2: honest coverage face for the TARGET_ANCESTRY family.
+    targetAncestryCoverage: ancestrySwept === 0
+      ? 'not-applicable (no sweepable UPDATE units)'
+      : (ancestryDeclared === ancestrySwept
+        ? `declared for all ${ancestryDeclared} swept unit(s)`
+        : `not declared — only ${ancestryDeclared}/${ancestrySwept} swept unit(s) declare ancestryVerified; TARGET_ANCESTRY blockers are outside this sweep's verified facts`),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -838,6 +864,16 @@ function compose(args) {
   let sharedCount = 0;
   let inheritedCount = 0;
 
+  // dump-pr-pages manifest cross-check face (review P2-4): present only when
+  // the dump was produced by the canonical dumper; absence (older dumps)
+  // skips the check silently.
+  const manifestBySlug = fs.existsSync(path.join(pagesDir, 'manifest.json'))
+    ? new Map((readJson(path.join(pagesDir, 'manifest.json')).pages || [])
+      .filter((page) => page && page.slug)
+      .map((page) => [page.slug, page]))
+    : null;
+  const manifestH1Drift = [];
+
   for (const unit of units) {
     const decision = unit.decision;
     const identity = decision.docIdentity;
@@ -875,6 +911,15 @@ function compose(args) {
     if (actualSha !== pr.pageSha256) {
       reject(REJECTION_CODES.PAGE_DUMP_DIGEST_MISMATCH, `${slug}: page dump sha256 ${actualSha} != decisions.pr.pageSha256 ${pr.pageSha256} (${pr.path})`);
     }
+    // Byte-length cross-check (review P2-9): the decisions record the pinned
+    // page's byte length next to its digest. When the pin is present it must
+    // match the dump — a disagreement means the bytes under review are not
+    // the bytes on disk (e.g. an export re-encoding), so the page is refused
+    // instead of composed with self-contradicting provenance. Older
+    // decisions without pageBytes skip the check.
+    if (pr.pageBytes != null && Number(pr.pageBytes) !== Buffer.byteLength(pageText, 'utf8')) {
+      reject(REJECTION_CODES.PAGE_DUMP_BYTES_MISMATCH, `${slug}: page dump is ${Buffer.byteLength(pageText, 'utf8')} bytes but decisions.pr.pageBytes recorded ${pr.pageBytes} (${pr.path})`);
+    }
 
     // per-unit route: scanner-taxonomy orphans on the structured route fall
     // back to verbatim (§4.4 fallback bridge, node 8-unit precedent).
@@ -884,9 +929,20 @@ function compose(args) {
     parseStats.routes[unitRoute] += 1;
 
     const row = existing.recordId ? rowByRecordId.get(existing.recordId) : null;
-    const parsed = parsePage(pageText, { ...profile, route: unitRoute }, pagePath, {
-      isTypePage: Boolean(row && row.type !== 'Function') || !/\(\)$/.test(identity.title),
-    });
+    // Computed once and shared by parsePage's register decision and the
+    // candidate kind (review P2-9: the expression used to be duplicated).
+    const isTypePage = Boolean(row && row.type !== 'Function') || !/\(\)$/.test(identity.title);
+    const parsed = parsePage(pageText, { ...profile, route: unitRoute }, pagePath, { isTypePage });
+    // Dumper manifest cross-check (review P2-4): when the pages dir carries
+    // dump-pr-pages' manifest.json, its H1 face must agree with the parsed
+    // title — disagreement is upstream identity drift, reported per unit in
+    // composerNotes (report-only: the digest gate already owns byte truth).
+    if (manifestBySlug) {
+      const manifestPage = manifestBySlug.get(slug);
+      if (manifestPage && manifestPage.h1 && manifestPage.h1 !== parsed.title) {
+        manifestH1Drift.push(`${slug}: manifest H1 ${JSON.stringify(manifestPage.h1)} != parsed title ${JSON.stringify(parsed.title)}`);
+      }
+    }
     parseStats.pages += 1;
     for (const [form, count] of Object.entries(parsed.stats.bulletForms)) {
       parseStats.bulletForms[form] = (parseStats.bulletForms[form] || 0) + count;
@@ -900,7 +956,6 @@ function compose(args) {
 
     const sidCategory = unit.sourceStableId.split(':')[1];
     const isCreateLike = unit.actionIntent === 'CREATE' || unit.actionIntent === 'BACKFILL';
-    const isTypePage = Boolean(row && row.type !== 'Function') || !/\(\)$/.test(identity.title);
     const structuredSymbol = unit.sourceStableId.split(':').slice(2).join(':');
     const symbol = unitRoute === 'verbatim' ? scopeAction.symbol : structuredSymbol;
 
@@ -1201,6 +1256,10 @@ function compose(args) {
       candidate.folderToken = targetFolderToken;
       if (unitRoute === 'structured') {
         candidate.folderAncestry = audit.folderChains ? audit.folderChains[targetFolderToken] || null : null;
+        // Review P2-2 passthrough face: a folder chain from the audited walk
+        // is the declared ancestry fact; verbatim-route specs stay undeclared
+        // and the sweep report says the TARGET_ANCESTRY family is not covered.
+        candidate.ancestryVerified = candidate.folderAncestry != null;
         candidate.parentRecordId = existingRecord.parentRecordId;
       }
       candidate.dependencies = [];
@@ -1344,6 +1403,9 @@ function compose(args) {
   if (mintedEvidence.length > 0) {
     composerNotes.push(`inheritance evidence minted in-place for ${mintedEvidence.length} unit(s) whose live placement folder IS the target (audit evidence absent, re-bind precedent): ${mintedEvidence.join(', ')}.`);
   }
+  if (manifestH1Drift.length > 0) {
+    composerNotes.push(`dumper manifest H1 drift (${manifestH1Drift.length} unit(s); manifest.json h1 != parsed title): ${manifestH1Drift.join('; ')}.`);
+  }
   if (effectiveRoute === 'structured' && orphanSlugs.size > 0) {
     composerNotes.push(`SCANNER_TAXONOMY_ORPHAN: ${orphanSlugs.size} scope slug(s) matched PR_SYMBOL_FALLBACK_BIND diagnostics; affected units were switched to the verbatim fallback route (design §4.4).`);
   }
@@ -1423,7 +1485,13 @@ function sweepOnly(args) {
     counts: report.counts,
     blocked: report.blocked,
     exceptions,
-    exportedJoinDependency: 'joinSharedUpdateReviews re-implemented read-only (build-reviewed-release-context.js does not export it yet; slice-3 export gap)',
+    // Review P2-1: this is a VERIFICATION-OMITTED declaration, not a
+    // provenance claim. joinSharedUpdateReviews is a read-only
+    // re-implementation because build-reviewed-release-context.js does not
+    // export it yet; until the builder exports the function and this sweep
+    // consumes that export, the shared-update-review join carries no
+    // guarantee against kernel drift.
+    joinSharedUpdateReviewsVerification: 'verification omitted — joinSharedUpdateReviews is a read-only re-implementation (build-reviewed-release-context.js does not export it yet); sweep verdicts make no claim against kernel drift for the shared-update-review join until the builder export replaces this copy',
     writesPerformed: false,
   };
   if (args.output) {
@@ -1436,6 +1504,7 @@ function sweepOnly(args) {
     counts: report.counts,
     blocked: report.blocked.length,
     cloneIdUnits: cloneUnits.length,
+    targetAncestryCoverage: report.targetAncestryCoverage,
     output: args.output || null,
   }, null, 2));
   return 0;
@@ -1460,7 +1529,10 @@ function patchContext(args) {
     context: contextPath,
     patchedEntries: 0,
     skippedEntries: [],
-    linksResolved: 0,
+    // Review P2-9 rename: this counts ABSOLUTE links already present in the
+    // patched verbatim bytes — a different metric from compose()'s
+    // linkStats.resolved (relative links resolved against the snapshot).
+    absoluteLinksPresent: 0,
     contentAdjustments: spec.contentAdjustments || [],
   };
   const patched = {};
@@ -1475,7 +1547,7 @@ function patchContext(args) {
     entry.verbatimContent = overlayEntry.verbatimContent;
     entry.pr = { ...overlayEntry.pr };
     report.patchedEntries += 1;
-    report.linksResolved += countAbsoluteLinks(overlayEntry.verbatimContent);
+    report.absoluteLinksPresent += countAbsoluteLinks(overlayEntry.verbatimContent);
     patched[stableId] = entry;
   }
   const missing = Object.keys(overlay).filter((stableId) => !contexts[stableId]);
@@ -1494,7 +1566,7 @@ function patchContext(args) {
     context: outputPath,
     patchedEntries: report.patchedEntries,
     skippedEntries: report.skippedEntries.length,
-    linksResolved: report.linksResolved,
+    absoluteLinksPresent: report.absoluteLinksPresent,
     contentAdjustments: report.contentAdjustments.length,
     patchReport: args.patchReport || null,
   }, null, 2));

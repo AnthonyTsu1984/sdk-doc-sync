@@ -805,6 +805,9 @@ test('sweepSpec flags the clone-ID shared in-place shape as CLONE_ID_SHARED_IN_P
       'Collections-truncateCollection': {
         docIdentity: { stableId: 'node:Collections:truncateCollection', canonicalSlug: 'Collections-truncateCollection' },
         reviewedActionType: 'UPDATE',
+        // structured-route unit: the audited folder chain declares the
+        // ancestry fact (review P2-2 passthrough face)
+        ancestryVerified: true,
         existingRecord: {
           recordId: ownRecordId,
           documentToken: 'docx-clone',
@@ -821,6 +824,16 @@ test('sweepSpec flags the clone-ID shared in-place shape as CLONE_ID_SHARED_IN_P
   assert.equal(report.blocked.length, 1);
   assert.equal(report.blocked[0].blocker, 'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED');
   assert.equal(report.blocked[0].cloneIdSharedInPlace, true);
+  assert.equal(report.targetAncestryCoverage, 'declared for all 1 swept unit(s)');
+
+  // Review P2-2: a spec that does not declare ancestryVerified sweeps with
+  // ancestry unverified and the report says the TARGET_ANCESTRY family is
+  // not covered — the sweep no longer fabricates the fact.
+  const undeclared = JSON.parse(JSON.stringify(spec));
+  delete undeclared.candidates['Collections-truncateCollection'].ancestryVerified;
+  const undeclaredReport = sweepSpec(undeclared, { evaluateVersionedTreeDelta });
+  assert.equal(undeclaredReport.blocked[0].blocker, 'TREE_DELTA_PLACEMENT_UNKNOWN');
+  assert.match(undeclaredReport.targetAncestryCoverage, /not declared .*TARGET_ANCESTRY/);
 
   // in-place unique units sweep clean
   const cleanEvidence = createInheritanceEvidence({
@@ -848,6 +861,7 @@ test('sweepSpec flags the clone-ID shared in-place shape as CLONE_ID_SHARED_IN_P
       'Authentication-hasRole': {
         docIdentity: { stableId: 'node:Authentication:hasRole', canonicalSlug: 'Authentication-hasRole' },
         reviewedActionType: 'UPDATE',
+        ancestryVerified: true,
         existingRecord: {
           recordId: 'rec-clean',
           documentToken: 'docx-clean',
@@ -862,6 +876,7 @@ test('sweepSpec flags the clone-ID shared in-place shape as CLONE_ID_SHARED_IN_P
   const cleanReport = sweepSpec(cleanSpec, { evaluateVersionedTreeDelta });
   assert.equal(cleanReport.blocked.length, 0);
   assert.equal(Object.values(cleanReport.counts)[0], 1);
+  assert.equal(cleanReport.targetAncestryCoverage, 'declared for all 1 swept unit(s)');
 });
 
 test('patch-context applies the verbatim overlay and rejects unmatched entries', () => {
@@ -926,6 +941,47 @@ test('prepareVerbatimContent de-links unresolvable relative links and records th
   assert.equal(prepared.linksResolved, 1);
   assert.deepEqual(prepared.linksDeLinked, [{ slug: 'v2-Authentication-AddRole', target: 'Missing.md', page: 'API_Reference/milvus-sdk-go/v3.0.x/Authentication/AddRole.md' }]);
   assert.match(prepared.content, /and Missing\./);
+});
+
+test('pageBytes cross-check and dumper-manifest H1 drift face (review P2-4/P2-9)', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-manifest-'));
+  const files = writeWave(dir);
+
+  // a decisions pageBytes pin that disagrees with the dump is a typed refusal
+  const drifted = JSON.parse(fs.readFileSync(files.decisions, 'utf8'));
+  drifted.units[0].decision.pr.pageBytes = Buffer.byteLength(GO_METHOD_PAGE) + 7;
+  fs.writeFileSync(files.decisions, `${JSON.stringify(drifted, null, 2)}\n`);
+  assert.throws(() => compose(waveArgs(dir, files)), (error) => {
+    assert.equal(error.code, 'PAGE_DUMP_BYTES_MISMATCH');
+    assert.match(error.message, /decisions\.pr\.pageBytes recorded/);
+    return true;
+  });
+
+  // manifest.json H1 agreement: a dumper manifest whose H1 face disagrees
+  // with the parsed title is reported per unit in composerNotes (report
+  // only — the digest gate owns byte truth)
+  const manifestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-manifest2-'));
+  const manifestFiles = writeWave(manifestDir);
+  fs.writeFileSync(path.join(manifestFiles.pagesDir, 'manifest.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    pages: [
+      { slug: 'v2-Authentication-AddRole', h1: 'SomeOtherTitle()', path: 'v2-Authentication-AddRole.md' },
+      { slug: 'v2-Authentication-DropRole', h1: 'DropRole()', path: 'v2-Authentication-DropRole.md' },
+    ],
+  }, null, 2)}\n`);
+  const { spec } = compose(waveArgs(manifestDir, manifestFiles));
+  assert.match(spec.composerNotes.join(' '), /dumper manifest H1 drift \(1 unit\(s\).*v2-Authentication-AddRole: manifest H1 "SomeOtherTitle\(\)" != parsed title "AddRole\(\)"/);
+
+  // agreeing manifests stay silent
+  fs.writeFileSync(path.join(manifestFiles.pagesDir, 'manifest.json'), `${JSON.stringify({
+    schemaVersion: 1,
+    pages: [
+      { slug: 'v2-Authentication-AddRole', h1: 'AddRole()', path: 'x.md' },
+      { slug: 'v2-Authentication-DropRole', h1: 'DropRole()', path: 'y.md' },
+    ],
+  }, null, 2)}\n`);
+  const clean = compose(waveArgs(manifestDir, manifestFiles));
+  assert.doesNotMatch(clean.spec.composerNotes.join(' '), /H1 drift/);
 });
 
 test('CLI surface: --help, a full compose run, and typed exit codes', () => {

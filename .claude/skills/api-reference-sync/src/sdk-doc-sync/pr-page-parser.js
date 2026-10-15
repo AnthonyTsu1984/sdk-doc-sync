@@ -25,6 +25,9 @@ const REJECTION_CODES = Object.freeze({
   PR_PIN_MISSING: 'PR_PIN_MISSING',
   PAGE_DIGEST_REQUIRED: 'PAGE_DIGEST_REQUIRED',
   PAGE_DUMP_DIGEST_MISMATCH: 'PAGE_DUMP_DIGEST_MISMATCH',
+  // Byte-length cross-face of the same pin (review P2-9): decisions carry
+  // the pinned page's byte length next to its digest.
+  PAGE_DUMP_BYTES_MISMATCH: 'PAGE_DUMP_BYTES_MISMATCH',
 });
 
 function typedError(code, message) {

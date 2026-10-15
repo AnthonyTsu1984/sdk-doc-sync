@@ -10,6 +10,19 @@ test('sdk-doc-sync test runner path exists', () => {
   assert.equal(fs.existsSync(runner), true, `Missing expected test runner: ${runner}`);
 });
 
+test('agent budget metering paths exist (slice 3-1, repo level)', () => {
+  const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
+  for (const relative of [
+    'scripts/agent-budget.js',
+    'scripts/dashboard/budget-meter.js',
+    'scripts/dashboard/event-tap.js',
+    'docs/agent-dispatch-brief-template.md',
+    'tests/skills/agent-budget-metering.test.js',
+  ]) {
+    assert.equal(fs.existsSync(path.join(repoRoot, relative)), true, `Missing metering path: ${relative}`);
+  }
+});
+
 test('sdk-release-scout CLI path exists', () => {
   const skillRoot = path.resolve(__dirname, '..');
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-release-scout.js')), true);

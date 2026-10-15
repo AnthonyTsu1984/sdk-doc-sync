@@ -56,8 +56,8 @@
       "recipe": "CLONE_ID_SHARED_IN_PLACE 例外队列处置（排除该 slug / 等 kernel 修复 / 操作员裁决三选一），绝不自行改共享记录"
     },
     {
-      "match": "SCHEMA_FIRST_GENERATION_FAILED",
-      "recipe": "报文含 reading 'filePath' = scanner-taxonomy orphan（新族无 scanned symbol）：该单元切 verbatim 路线兜底 + scanner 类目注册"
+      "match": "reading 'filePath'",
+      "recipe": "SCHEMA_FIRST_GENERATION_FAILED 报文含 reading 'filePath' = scanner-taxonomy orphan（新族无 scanned symbol）：该单元切 verbatim 路线兜底 + scanner 类目注册。match 收窄为 filePath 症状子串（batch 15 review P2-7）：SCHEMA_FIRST_GENERATION_FAILED 会包住任何 schema-first 生成失败（如 OpenAPI 版本错误），只有 filePath 孤儿才适用本配方"
     },
     {
       "match": "INTAKE_CONTEXT_KEYS_UNEXPECTED",

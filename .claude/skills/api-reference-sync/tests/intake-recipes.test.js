@@ -30,13 +30,14 @@ test('the shipped intake-recipes config validates: 8 collected entries + 6 batch
     ]) {
         assert.ok(recipes.some((entry) => entry.match === code), `missing collected entry: ${code}`);
     }
-    // 批 15 新增（设计 §8.2 今日六条）
+    // 批 15 新增（设计 §8.2 今日六条）。SCHEMA_FIRST_GENERATION_FAILED 已按
+    // review P2-7 收窄：其 match 是 filePath 症状子串而非裸错误码（该码包住
+    // 任何 schema-first 生成失败），单独断言见下方收窄测试。
     for (const code of [
         'GROUPING_STALE',
         'TARGET_ANCESTRY_REQUIRED',
         'PLACEMENT_TARGET_CHAIN_STALE',
         'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED',
-        'SCHEMA_FIRST_GENERATION_FAILED',
         'INTAKE_CONTEXT_KEYS_UNEXPECTED',
     ]) {
         assert.ok(recipes.some((entry) => entry.match === code), `missing batch-15 entry: ${code}`);
@@ -45,6 +46,22 @@ test('the shipped intake-recipes config validates: 8 collected entries + 6 batch
     const grouping = recipes.find((entry) => entry.match === 'GROUPING_STALE');
     assert.match(grouping.recipe, /filtered-scope/);
     assert.match(recipes.find((entry) => entry.match === 'TARGET_ANCESTRY_REQUIRED').recipe, /filtered-scope/);
+});
+
+test('the scanner-orphan recipe matches the filePath symptom, not the bare wrapper code (review P2-7)', () => {
+    const recipes = loadIntakeRecipes();
+    const orphan = recipes.find((entry) => entry.match.includes('filePath'));
+    assert.ok(orphan, 'the filePath-substring recipe entry is gone');
+    assert.match(orphan.recipe, /SCHEMA_FIRST_GENERATION_FAILED/);
+    assert.ok(!recipes.some((entry) => entry.match === 'SCHEMA_FIRST_GENERATION_FAILED'),
+        'the bare SCHEMA_FIRST_GENERATION_FAILED match must stay narrowed away');
+    // The real orphan message (V8 wording for reading a property of undefined)
+    // hits the recipe...
+    const orphanText = "SCHEMA_FIRST_GENERATION_FAILED: Schema-first generation failed for v2-Foo: "
+        + "Cannot read properties of undefined (reading 'filePath')";
+    assert.match(recipeFor(orphanText, recipes), /filePath/);
+    // ...while every other generation failure (no filePath symptom) does not.
+    assert.equal(recipeFor("SCHEMA_FIRST_GENERATION_FAILED: Schema-first generation failed: Unsupported OpenAPI version", recipes), null);
 });
 
 test('recipeFor keeps the dwf semantics: substring containment, table order, first match wins', () => {

@@ -42,7 +42,11 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     §5.1/§5.2, GET-only/git-show only), 100→102;
   //   - merged (100 + 1 + 2): 103 — advance this pin to 103 when the branches
   //     merge, and the merged registry carries all three entries.
-  assert.equal(discovered.length, 103);
+  //   - +1 read-only budget metering CLI scripts/agent-budget.js (slice 3-1
+  //     agent budget metering: reads host-side agent metadata/rollout and
+  //     repo tmp bookkeeping, appends only run-local
+  //     tmp/token-budget-{live,ledger}.jsonl records), 103→104.
+  assert.equal(discovered.length, 104);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

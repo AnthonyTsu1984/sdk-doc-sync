@@ -217,59 +217,59 @@ function classifySharedToken({ entry, enumerationComplete, referencesByToken, pl
 // with token/type/name/parent plus the self-inclusive ancestor chain, sorted
 // by chain so the bytes are deterministic — without a second live walk.
 function walkArtifact({ rootToken, byToken, walkedAt }) {
-    if (!rootToken || !(byToken instanceof Map)) {
-        throw new Error('walkArtifact requires rootToken and a byToken Map');
-    }
-    const nodes = [...byToken.values()]
-        .map(({ token, type, parentFolderToken, ancestors, name }) => ({
-            token,
-            type,
-            name,
-            parentFolderToken,
-            ancestors: [...ancestors, token],
-        }))
-        .sort((a, b) => (a.ancestors.join('/') < b.ancestors.join('/') ? -1 : 1));
-    return {
-        walkedAt: walkedAt || new Date().toISOString(),
-        rootToken,
-        nodeCount: nodes.length,
-        folderCount: nodes.filter((node) => node.type === 'folder').length,
-        nodes,
-        writesPerformed: false,
-    };
+  if (!rootToken || !(byToken instanceof Map)) {
+    throw new Error('walkArtifact requires rootToken and a byToken Map');
+  }
+  const nodes = [...byToken.values()]
+    .map(({ token, type, parentFolderToken, ancestors, name }) => ({
+      token,
+      type,
+      name,
+      parentFolderToken,
+      ancestors: [...ancestors, token],
+    }))
+    .sort((a, b) => (a.ancestors.join('/') < b.ancestors.join('/') ? -1 : 1));
+  return {
+    walkedAt: walkedAt || new Date().toISOString(),
+    rootToken,
+    nodeCount: nodes.length,
+    folderCount: nodes.filter((node) => node.type === 'folder').length,
+    nodes,
+    writesPerformed: false,
+  };
 }
 
 async function buildPlacementAudit({
-    proposal,
-    version,
-    versionRootToken,
-    sourceVersionRoots = [],
-    indexer,
-    trackBitables = [],
-    recordLister = null,
-    collectedAt = null,
-    requiredTrackVersions = null,
-    targetWalkSink = null,
+  proposal,
+  version,
+  versionRootToken,
+  sourceVersionRoots = [],
+  indexer,
+  trackBitables = [],
+  recordLister = null,
+  collectedAt = null,
+  requiredTrackVersions = null,
+  targetWalkSink = null,
 }) {
-    const runCollectedAt = collectedAt || new Date().toISOString();
-    const roots = [
-        { version, rootToken: versionRootToken, target: true },
-        ...sourceVersionRoots.map((item) => ({ ...item, target: false })),
-    ];
-    const indexes = [];
-    for (const root of roots) {
-        indexes.push({
-            ...root,
-            index: await indexer(root.rootToken),
-        });
-    }
-    const targetIndex = indexes[0].index;
-    // --dump-walk handoff: the caller receives the target root's live index so
-    // it can persist the walk artifact without re-walking. Sink, not return
-    // value — the audit artifact shape is a consumed contract and stays put.
-    if (typeof targetWalkSink === 'function') {
-        targetWalkSink({ rootToken: versionRootToken, byToken: targetIndex });
-    }
+  const runCollectedAt = collectedAt || new Date().toISOString();
+  const roots = [
+    { version, rootToken: versionRootToken, target: true },
+    ...sourceVersionRoots.map((item) => ({ ...item, target: false })),
+  ];
+  const indexes = [];
+  for (const root of roots) {
+    indexes.push({
+      ...root,
+      index: await indexer(root.rootToken),
+    });
+  }
+  const targetIndex = indexes[0].index;
+  // --dump-walk handoff: the caller receives the target root's live index so
+  // it can persist the walk artifact without re-walking. Sink, not return
+  // value — the audit artifact shape is a consumed contract and stays put.
+  if (typeof targetWalkSink === 'function') {
+    targetWalkSink({ rootToken: versionRootToken, byToken: targetIndex });
+  }
 
   // Completeness is "every applicable track was enumerated", never "at least
   // one was supplied". The required set is derived independently of what the

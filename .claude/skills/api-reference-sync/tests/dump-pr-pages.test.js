@@ -215,3 +215,36 @@ test('a unit pinning a PR path without a page digest is refused (no unverified p
         (error) => error.code === 'PAGE_DIGEST_REQUIRED',
     );
 });
+
+test('a unit pinning a PR path without a revision is a typed refusal, never a silent skip', () => {
+    // Review P2-6: a pinner without a revision used to fall out of the dump
+    // when OTHER units carried the revision — a silently incomplete dump.
+    // It must refuse at the same tier as the digest gate, before any read.
+    const web = makeWebContentRepo({ 'API_Reference/a.md': PAGE_A, 'API_Reference/b.md': PAGE_B });
+    const revisionLess = unit('u-no-rev', { slug: 'a', prPath: 'API_Reference/a.md', page: PAGE_A });
+    assert.throws(
+        () => liveDump(web, [revisionLess]),
+        (error) => error.code === 'PAGES_REVISION_REQUIRED'
+            && Array.isArray(error.details.unitIds) && error.details.unitIds.includes('u-no-rev')
+            && /decision\.pr\.revision \(path-pinning units without one: u-no-rev\)/.test(error.message),
+    );
+    // Mixed batch: the revision-less pinner refuses the whole dump even when a
+    // fully pinned sibling exists.
+    const pinned = unit('u-ok', { slug: 'b', prPath: 'API_Reference/b.md', page: PAGE_B, revision: web.revision });
+    assert.throws(
+        () => liveDump(web, [pinned, revisionLess]),
+        (error) => error.code === 'PAGES_REVISION_REQUIRED' && error.details.unitId === 'u-no-rev',
+    );
+});
+
+test('duplicate canonicalSlugs across units are refused before any byte is read', () => {
+    const web = makeWebContentRepo({ 'API_Reference/a.md': PAGE_A, 'API_Reference/b.md': PAGE_B });
+    const first = unit('u1', { slug: 'Client-same', prPath: 'API_Reference/a.md', page: PAGE_A, revision: web.revision });
+    const second = unit('u2', { slug: 'Client-same', prPath: 'API_Reference/b.md', page: PAGE_B, revision: web.revision });
+    assert.throws(
+        () => liveDump(web, [first, second]),
+        (error) => error.code === 'PAGE_SLUG_DUPLICATE'
+            && error.details.slug === 'Client-same'
+            && error.details.unitId === 'u2',
+    );
+});

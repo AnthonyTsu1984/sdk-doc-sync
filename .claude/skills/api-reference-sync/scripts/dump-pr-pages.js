@@ -6,7 +6,10 @@
 // export logic every 2026-10-15 campaign re-wrote by hand: batch-exports the
 // PR pages a decisions file pins, byte-verifies each against the recorded
 // sha256, and emits a manifest whose H1 list is the composer's first
-// anti-drift report surface (with duplicate-H1 detection).
+// anti-drift report surface (with duplicate-H1 detection). Every pin needed
+// to certify the dump is required per unit: a pinned PR path without a
+// revision or a page digest, and a duplicated canonicalSlug, are typed
+// refusals before any byte is read (batch 15 review P2-6).
 //
 // Division of labor with sdk-pr-scan: the scan already pinned the merge
 // revision and page digests; this dumper only bulk-exports and re-verifies
@@ -55,12 +58,18 @@ function prOf(unit) {
 }
 
 // One PR revision per decisions file: the dump certifies a single tree state,
-// so per-unit revision drift is refused before any byte is read.
+// so per-unit revision drift is refused before any byte is read. Units that
+// pin a PR path without a revision are named here too — they are the same
+// refusal dumpableUnits enforces for mixed batches (review P2-6).
 function pinnedRevision(units) {
     let revision = null;
+    const revisionLessUnitIds = [];
     for (const unit of units) {
         const pr = prOf(unit);
-        if (!pr?.revision) continue;
+        if (!pr?.revision) {
+            if (pr?.path) revisionLessUnitIds.push(unit.id);
+            continue;
+        }
         if (revision === null) revision = pr.revision;
         if (pr.revision !== revision) {
             throw new PageDumpError(
@@ -71,7 +80,13 @@ function pinnedRevision(units) {
         }
     }
     if (!revision) {
-        throw new PageDumpError('PAGES_REVISION_REQUIRED', 'no unit carries decision.pr.revision; nothing to dump');
+        throw new PageDumpError(
+            'PAGES_REVISION_REQUIRED',
+            revisionLessUnitIds.length > 0
+                ? `no unit carries decision.pr.revision (path-pinning units without one: ${revisionLessUnitIds.join(', ')}); nothing to dump`
+                : 'no unit carries decision.pr.revision; nothing to dump',
+            { unitIds: revisionLessUnitIds },
+        );
     }
     return revision;
 }
@@ -79,11 +94,22 @@ function pinnedRevision(units) {
 function dumpableUnits(units) {
     const dumpable = [];
     const skippedUnitIds = [];
+    const seenSlugs = new Set();
     for (const unit of units) {
         const pr = prOf(unit);
         if (!pr?.path) {
             skippedUnitIds.push(unit.id);
             continue;
+        }
+        // A pinned page needs its revision pin too: one dump certifies one
+        // tree state, and a path without a revision would silently drop out
+        // of the dump (the exact hole the manifest's H1 report cannot cover).
+        if (!pr.revision) {
+            throw new PageDumpError(
+                'PAGES_REVISION_REQUIRED',
+                `unit ${unit.id} pins PR path ${pr.path} without decision.pr.revision; one dump certifies one tree state, so the unversioned page is refused`,
+                { unitId: unit.id },
+            );
         }
         if (!pr.pageSha256) {
             throw new PageDumpError(
@@ -99,6 +125,17 @@ function dumpableUnits(units) {
                 { unitId: unit.id },
             );
         }
+        const slug = unit.decision.docIdentity.canonicalSlug;
+        // Two units claiming one slug would overwrite each other's page file;
+        // that is decisions-level identity drift, refused before any read.
+        if (seenSlugs.has(slug)) {
+            throw new PageDumpError(
+                'PAGE_SLUG_DUPLICATE',
+                `decisions pin duplicate canonicalSlug ${slug} (unit ${unit.id} repeats an earlier unit); refuse the ambiguous dump`,
+                { unitId: unit.id, slug },
+            );
+        }
+        seenSlugs.add(slug);
         dumpable.push(unit);
     }
     return { dumpable, skippedUnitIds };

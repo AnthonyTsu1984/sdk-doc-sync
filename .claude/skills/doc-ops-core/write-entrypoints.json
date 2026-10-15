@@ -839,6 +839,13 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": "scripts/skill-md-lint.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "skill-md-lint",
+      "basis": "slice 3-2 SKILL.md meta-lint (audit tmp/skill-thin-refactor-audit.md §6.5 B-5): read-only checks over the skill tree — size budget, marker/registry digest consistency, pointer integrity, refusal-code citations; no external mutation signature"
+    },
+    {
       "path": "scripts/validate-skills.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

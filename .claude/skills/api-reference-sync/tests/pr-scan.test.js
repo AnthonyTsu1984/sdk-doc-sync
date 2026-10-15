@@ -519,10 +519,13 @@ test('classifyPrFiles derives pymilvus container deep-path identities by owning-
   assert.deepEqual(skipped, []);
 });
 
-test('classifyPrFiles keeps deep paths of unrecognized trees out of page scope (fail-closed)', () => {
-  const { targets, skipped, namespaced } = classifyPrFiles([
+test('classifyPrFiles keeps deep paths of unrecognized trees or unevidenced depths out of page scope (fail-closed)', () => {
+  const { targets, skipped, deepSkipped, namespaced } = classifyPrFiles([
     { path: 'API_Reference/milvus-sdk-rust/v2.6.x/Management/Index/NewGenericIndex.md', changeType: 'ADDED' },
     { path: 'API_Reference/milvus-sdk-csharp/v3.0.x/MilvusClient/Authentication/grant_privilege.md', changeType: 'ADDED' },
+    // Recognized SDKs at depths beyond the evidence envelope are skipped too.
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/Nested/NewGenericIndex.md', changeType: 'ADDED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/Collections/CollectionSchema/Extra/run_analyzer.md', changeType: 'ADDED' },
     { path: 'API_Reference/milvus-sdk-cpp/v3.0.x/Authentication/AlterRole.md', changeType: 'MODIFIED' },
   ]);
   assert.deepEqual([...targets.keys()], ['milvus-sdk-cpp/v3.0.x']);
@@ -531,7 +534,10 @@ test('classifyPrFiles keeps deep paths of unrecognized trees out of page scope (
   assert.deepEqual(skipped, [
     'API_Reference/milvus-sdk-rust/v2.6.x/Management/Index/NewGenericIndex.md',
     'API_Reference/milvus-sdk-csharp/v3.0.x/MilvusClient/Authentication/grant_privilege.md',
+    'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/Nested/NewGenericIndex.md',
+    'API_Reference/pymilvus/v2.6.x/MilvusClient/Collections/CollectionSchema/Extra/run_analyzer.md',
   ]);
+  assert.deepEqual(deepSkipped, skipped);
   assert.equal(namespaced.size, 0);
 });
 
@@ -732,6 +738,9 @@ const GO_PR_META = {
   files: [
     { path: 'API_Reference/milvus-sdk-go/v2.6.x/About.md', changeType: 'MODIFIED' },
     { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewGenericIndex.md', changeType: 'MODIFIED' },
+    // Beyond the evidenced go depth envelope — must be skipped fail-closed
+    // with its own diagnostic, not silently mixed into PR_PATH_SKIPPED.
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/Nested/NewGenericIndex.md', changeType: 'ADDED' },
   ],
 };
 
@@ -790,6 +799,13 @@ test('runPrScan composes go deep-page fallback slugs with the owner head and the
   assert.equal(scope.pr.files.find((file) => file.path.endsWith('NewGenericIndex.md')).symbol, 'Management.NewGenericIndex');
   assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'UNMAPPED_CANONICAL_IDENTITY'));
   assert.ok(!scope.scannerDiagnostics.some((item) => item.code === 'FEISHU_RECORD_ABSENT_FOR_UPDATE'));
+  // The unevidenced-depth page is excluded with its own diagnostic carrying
+  // the path; the recognized deep page still produced the one action above.
+  const deepWarn = scope.scannerDiagnostics.find((item) => item.code === 'PR_DEEP_PATH_UNRECOGNIZED');
+  assert.ok(deepWarn, 'PR_DEEP_PATH_UNRECOGNIZED diagnostic present');
+  assert.equal(deepWarn.level, 'warn');
+  assert.match(deepWarn.message, /Management\/Index\/Nested\/NewGenericIndex\.md/);
+  assert.equal(scope.actions.length, 1);
   const validation = validateReleaseScope(scope);
   assert.deepEqual(validation, { valid: true, errors: [] });
 });

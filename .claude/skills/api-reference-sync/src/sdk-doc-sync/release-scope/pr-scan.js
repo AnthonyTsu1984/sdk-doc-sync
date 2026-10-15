@@ -189,11 +189,17 @@ function lexicalApiInventory({ repoDir, ref, publicRoots, spawn }) {
 // (MilvusClient-CollectionSchema) and with the path category at depth 3+
 // (Vector-FieldOp).
 //
-// Any other deep shape stays fail-closed: the caller keeps the skip + warn
-// behavior instead of inventing an identity from a speculative owner segment.
+// Any other deep shape — including a recognized SDK at an unevidenced depth —
+// stays fail-closed: the caller keeps the skip + warn behavior instead of
+// inventing an identity from a speculative owner segment. Depth envelopes are
+// pinned to the shapes observed across both tracks' full trees (go deep paths
+// are exactly <category>/<owner>; pymilvus are <container>/<category> and
+// <container>/<category>/<owner>); widening them requires new snapshot
+// evidence, not code drift.
 function deepPathIdentity({ sdkDirName, segments, pageName }) {
   const parentDir = segments[segments.length - 1];
   if (sdkDirName === 'milvus-sdk-go') {
+    if (segments.length !== 2) return null;
     const category = segments[0];
     return {
       symbol: `${category}.${pageName}`,
@@ -202,6 +208,7 @@ function deepPathIdentity({ sdkDirName, segments, pageName }) {
     };
   }
   if (sdkDirName === 'pymilvus') {
+    if (segments.length < 2 || segments.length > 3) return null;
     const slugHead = pageName === parentDir
       ? (segments.length >= 3 ? segments[1] : segments[0])
       : parentDir;
@@ -217,6 +224,11 @@ function deepPathIdentity({ sdkDirName, segments, pageName }) {
 function classifyPrFiles(prFiles, scanTrack = null) {
   const targets = new Map();
   const skipped = [];
+  // Deep API_Reference pages with no recognized shape: skipped like the rest,
+  // but reported separately so a blocked PR can see exactly which page paths
+  // the fail-closed gate rejected (and why) without diffing against the PR
+  // file list by hand.
+  const deepSkipped = [];
   const filteredTracks = new Map();
   const namespaced = new Map();
   for (const file of prFiles || []) {
@@ -252,6 +264,7 @@ function classifyPrFiles(prFiles, scanTrack = null) {
       if (segments.length > 1 && !namespace) {
         const deep = deepPathIdentity({ sdkDirName, segments, pageName });
         if (!deep) {
+          deepSkipped.push(file.path);
           skipped.push(file.path);
           continue;
         }
@@ -293,7 +306,7 @@ function classifyPrFiles(prFiles, scanTrack = null) {
     }
     skipped.push(file.path);
   }
-  return { targets, skipped, filteredTracks, namespaced };
+  return { targets, skipped, deepSkipped, filteredTracks, namespaced };
 }
 
 function targetTagFromAbout(aboutContent, track) {
@@ -509,7 +522,7 @@ async function runPrScan({
   const webContentRevision = prMeta.mergeCommit?.oid || prMeta.headRefOid;
   assertFullSha(webContentRevision, 'PR web-content revision');
 
-  const { targets, skipped, filteredTracks, namespaced } = classifyPrFiles(prMeta.files, scanTrack);
+  const { targets, skipped, deepSkipped, filteredTracks, namespaced } = classifyPrFiles(prMeta.files, scanTrack);
   if (scanTrack && !targets.has(scanTrack)) {
     throw new Error(`--scan-track ${scanTrack}: the PR touches no API_Reference pages under that sdk/track`);
   }
@@ -533,10 +546,24 @@ async function runPrScan({
     },
   ];
   if (skipped.length > 0) {
+    const shallowSkipped = skipped.length - deepSkipped.length;
+    if (shallowSkipped > 0) {
+      diagnostics.push({
+        level: 'info',
+        code: 'PR_PATH_SKIPPED',
+        message: `${shallowSkipped} changed file(s) outside API_Reference page scope were skipped.`,
+      });
+    }
+  }
+  if (deepSkipped.length > 0) {
+    // Fail-closed deep pages are API_Reference pages, not stray files: they
+    // get their own code and an explicit path list so the next PR blocked by
+    // the gate can self-identify what was excluded and extend the classifier
+    // with evidence.
     diagnostics.push({
-      level: 'info',
-      code: 'PR_PATH_SKIPPED',
-      message: `${skipped.length} changed file(s) outside API_Reference page scope were skipped.`,
+      level: 'warn',
+      code: 'PR_DEEP_PATH_UNRECOGNIZED',
+      message: `${deepSkipped.length} API_Reference page(s) under deep paths with no recognized shape were skipped (fail-closed): ${deepSkipped.join(', ')}; extend deepPathIdentity with snapshot evidence before scanning this PR.`,
     });
   }
   if (namespaced.size > 0) {

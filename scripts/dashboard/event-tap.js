@@ -70,11 +70,18 @@ function main() {
   const tool = input.tool_name ?? input.toolName ?? null;
   const toolInput = input.tool_input ?? input.toolInput;
 
-  // Budget metering (slice 3-1), best-effort: never disturbs the event tap.
-  // Round count is read BEFORE this call's event lands, so +1 in the meter
-  // counts the current round exactly once.
+  // The dashboard event lands FIRST and exactly once, outside the metering
+  // try — the pre-fix shape appended it again in the catch fallback whenever
+  // a metering call after a successful append threw (batch15 review P2-4).
+  // Round count is still read BEFORE the append, so +1 in the meter counts
+  // the current round exactly once.
+  let eventsBefore = null;
   try {
-    const eventsBefore = countSessionRoundsToday(root, sessionId);
+    eventsBefore = countSessionRoundsToday(root, sessionId);
+  } catch {
+    // metering only; the event must still land below
+  }
+  try {
     appendEvent({
       kind: 'tool',
       sessionId,
@@ -82,25 +89,20 @@ function main() {
       summary: summarize(toolInput),
       sessionRef: extractSessionRef(toolInput),
     });
+  } catch {
+    // give up silently
+  }
+  try {
     if (isAgentDispatchTool(tool)) {
       recordAgentDispatch({ root, sessionId, tool, toolInput });
     }
     // Agent-like calls are rounds of the parent session too (its context pays
     // for them), so they count toward the parent's round meter as well.
-    mainSessionRoundRecord({ root, sessionId, lastTool: tool, eventsToday: eventsBefore });
-  } catch {
-    // metering is observability only; the dashboard event must still land
-    try {
-      appendEvent({
-        kind: 'tool',
-        sessionId,
-        tool,
-        summary: summarize(toolInput),
-        sessionRef: extractSessionRef(toolInput),
-      });
-    } catch {
-      // give up silently
+    if (eventsBefore !== null) {
+      mainSessionRoundRecord({ root, sessionId, lastTool: tool, eventsToday: eventsBefore });
     }
+  } catch {
+    // metering is observability only
   }
 }
 

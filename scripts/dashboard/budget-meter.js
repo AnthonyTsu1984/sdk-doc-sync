@@ -34,7 +34,9 @@ function repoRoot() {
   let dir = process.cwd();
   for (;;) {
     try {
-      if (fs.statSync(path.join(dir, '.git')).isDirectory()) return dir;
+      // In a git worktree `.git` is a FILE, not a directory — either shape
+      // marks the repo root (batch15 review P2-3).
+      if (fs.existsSync(path.join(dir, '.git'))) return dir;
     } catch {
       // keep walking
     }
@@ -215,7 +217,9 @@ function scanAgentMetadata({ home = zcodeCliHome(), limit = 200 } = {}) {
 function agentSnapshot({ metadataPath, metadata }, home = zcodeCliHome()) {
   const agentId = metadata.agentId || path.basename(path.dirname(metadataPath));
   const childSessionId = metadata.childSessionId || `sess_subagent_agent_${agentId}`;
-  const running = metadata.status === 'running' || (!metadata.completedAt && metadata.status !== 'failed');
+  // running means the host metadata still says so — cancelled/stopped/unknown
+  // terminal states must not render as running (batch15 review P2-5).
+  const running = metadata.status === 'running';
   const snapshot = {
     agentId,
     childSessionId,

@@ -1,0 +1,78 @@
+# describeAlias()
+
+This operation displays the details of an alias.
+
+```java
+public DescribeAliasResp describeAlias(DescribeAliasReq request)
+```
+
+## Request Syntax
+
+```java
+describeAlias(DescribeAliasReq.builder()
+    .databaseName(String databaseName)
+    .alias(String alias)
+    .build()
+);
+```
+
+**BUILDER METHODS:**
+
+- `databaseName(String databaseName)` -
+
+    The name of the database. Defaults to the current database if not specified.
+
+- `alias(String alias)` -
+
+    The alias name.
+
+**RETURN TYPE:**
+
+*DescribeAliasResp*
+
+**RETURNS:**
+
+A **DescribeAliasResp** object that contains the details of the specified alias. The object exposes the following getters:
+
+- `getDatabaseName()` (*String*) -
+
+    The name of the database that contains the collection.
+
+- `getCollectionName()` (*String*) -
+
+    The name of the collection the alias points to.
+
+- `getAlias()` (*String*) -
+
+    The name of the alias.
+
+**EXCEPTIONS:**
+
+- **MilvusClientException**
+
+    This exception will be raised when any error occurs during this operation.
+
+## Example
+
+```java
+import io.milvus.v2.client.ConnectConfig;
+import io.milvus.v2.client.MilvusClientV2;
+import io.milvus.v2.service.utility.request.DescribeAliasReq;
+import io.milvus.v2.service.utility.response.DescribeAliasResp;
+
+// 1. Set up a client
+ConnectConfig connectConfig = ConnectConfig.builder()
+        .uri("http://localhost:19530")
+        .token("root:Milvus")
+        .build();
+        
+MilvusClientV2 client = new MilvusClientV2(connectConfig);
+
+// 2. Describe alias
+DescribeAliasReq describeAliasReq = DescribeAliasReq.builder()
+        .databaseName("my_database")
+        .collectionName("my_collection")
+        .alias("test_alias")
+        .build();
+DescribeAliasResp describeAliasResp = client.describeAlias(describeAliasReq);
+```

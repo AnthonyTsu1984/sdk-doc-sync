@@ -1,0 +1,154 @@
+{
+  "profileVersion": 1,
+  "comment": "Canonical PR page grammars (campaign-control batch 15 design §4.3). Data, not code: registering a new language (rust/cpp) means adding an entry here, never patching the parser kernel (src/sdk-doc-sync/pr-page-parser.js). Regexes are anchored per line. Unregistered languages = null and the composer rejects with NOT_REGISTERED_PROFILE.",
+  "go": {
+    "route": "verbatim",
+    "signatureFenceLang": "go",
+    "exampleFenceLang": "go",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "paramsHeadings": [
+      "^\\*\\*PARAMETERS:\\*\\*\\s*$",
+      "^\\*\\*BUILDER METHODS:\\*\\*\\s*$",
+      "^\\*\\*METHODS:\\*\\*\\s*$"
+    ],
+    "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+    "returnTypeRequired": false,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^\\*\\*(EXCEPTIONS|ERROR HANDLING)\\b|^## ",
+    "errorHeading": "^\\*\\*(EXCEPTIONS|ERROR HANDLING):\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?:?\\s*$",
+    "relatedHeading": "^## Related operations\\s*$",
+    "titleSuffix": "()",
+    "verbStarts": [
+      "represents", "defines", "provides", "describes", "contains", "holds",
+      "specifies", "manages", "tracks", "wraps", "configures", "models",
+      "encodes", "exposes", "captures", "supports", "includes", "offers"
+    ],
+    "typePageByRecordType": { "non-Function": "class" },
+    "kindRule": "recordTypeOrTitle",
+    "bulletForms": ["builder", "getter", "param", "untyped", "untypedDescribed", "enumChoice", "backtickChoice"],
+    "exampleFallbackFirstSignatureFence": true,
+    "verbatim": {
+      "bareNotesQualify": true,
+      "linkResolution": "snapshot-doc-link"
+    }
+  },
+  "java": {
+    "route": "structured",
+    "signatureFenceLang": "java",
+    "exampleFenceLang": "java",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "includeMarkers": ["include-start milvus", "include-start zilliz"],
+    "requestClassFromSignature": "\\((\\w+Req) \\w+\\)",
+    "paramsHeadings": [
+      "^\\*\\*BUILDER METHODS:\\*\\*\\s*$",
+      "^\\*\\*PARAMETERS:\\*\\*\\s*$"
+    ],
+    "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+    "returnTypeRequired": true,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^(\\*\\*EXCEPTIONS|## )",
+    "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?:?\\s*$",
+    "relatedHeading": "^## Related operations\\s*$",
+    "titleSuffix": "()",
+    "kindRule": "method",
+    "bulletForms": ["builder", "getter", "param", "untyped", "untypedDescribed", "enumChoice", "backtickChoice"],
+    "structured": {
+      "requestVariantsFromIncludeMarkers": true,
+      "releasePlacement": true,
+      "exceptionDefaults": {
+        "condition": "This exception will be raised when any error occurs during this operation.",
+        "description": "Inspect the server error message for the exact failure reason."
+      }
+    }
+  },
+  "node": {
+    "route": "structured",
+    "signatureFenceLang": "javascript",
+    "exampleFenceLang": "javascript",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "paramsHeadings": ["^\\*\\*PARAMETERS:\\*\\*\\s*$", "^## Constants\\s*$"],
+    "returnTypeHeading": null,
+    "returnTypeRequired": false,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^(\\*\\*[A-Z]|## )",
+    "returnsTypeInline": true,
+    "returnsSchemaFence": true,
+    "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?:?\\s*$",
+    "titleSuffix": "()",
+    "kindRule": "method",
+    "requiredMarker": "^\\s*\\*\\*\\[REQUIRED\\]\\*\\*\\s*$",
+    "defaultMarker": "^\\s*Default: `?([^`\\n]+)`?\\s*$",
+    "bulletForms": ["builder", "getter", "param", "untyped", "untypedDescribed", "enumChoice", "enumEquality", "callbackChoice", "backtickChoice", "pythonParam", "bareParam", "proseBullet"],
+    "calloutBulletsAsDescription": true,
+    "signatureExemptTitles": ["DataType", "MetricType", "IndexType"],
+    "formEvidence": {
+      "bareParam": "node-pr1180-intake pages-v26/Authentication-listGrants.md:19 `roleName (*string*)`",
+      "param(fullwidth-paren)": "node-pr1180-intake pages-v26/Authentication-restoreRBAC.md:54 `**privilege** （*PrivilegeEntity*) -`",
+      "untypedDescribed(colon)": "node-pr1180-intake pages-v26/Collections-addCollectionField.md `**true**: The field can contain null values...`",
+      "untypedDescribed(trailing-dash)": "node-pr1180-intake pages-v26/Collections-dropCollectionProperties.md:38 `**collection.ttl.seconds** -`, Management-dropIndexProperties.md:45 `**mmap.enabled** -`",
+      "enumEquality": "node-pr1180-intake pages-v26/Partitions-listPartitions.md:40 `**All** = 0`; pages-v26/Collections-DataType.md `NONE = 0`; pages-v26/Management-IndexType.md `**ANNOY** = ANNOY`",
+      "callbackChoice": "node-pr1180-intake pages-v26/Vector-search.md:198 `BFloat16Vector (`(bf16bytes: Uint8Array) => BFloat16Vector;`)`",
+      "proseBullet": "node-pr1180-intake pages-v26/Collections-createCollection.md:274 + addCollectionField/addCollectionFields `- Built-in analyzer`; Authentication-restoreRBAC.md:66 `- Collection`; Vector-search.md:226 `- When using the RRFRanker strategy...`",
+      "enumEquality(quoted-value)": "node-pr1180-intake pages-v26/Management-IndexType.md:76 `**INVERTED** = 'INVERTED'`",
+      "calloutBulletsAsDescription": "node-pr1180-intake pages-v26/Collections-alterAlias.md callout alias-state bullets `- `collection_1`'s alias = [\"bob\"]`",
+      "signatureExemptTitles": "node-pr1180-intake pages-v26/Management-MetricType.md + Collections-DataType.md + Management-IndexType.md: enum-constants pages with no javascript fence",
+      "paramsHeadings[Constants]": "node-pr1180-intake pages-v26/Collections-DataType.md + Management-IndexType.md `## Constants` sections",
+      "summaryCalloutSkip": "node-pr1180-intake pages-v30/Collections-addCollectionFunction.md + Collections-dropCollectionFunction.md: deprecation warning callout between H1 and summary"
+    },
+    "structured": {
+      "untypedTypeFromName": true,
+      "typedParamFallbackDescription": "The {type} object for this operation.",
+      "resultFallbackType": "void",
+      "resultFallbackDescription": "The response of the {symbol} operation.",
+      "exampleMinCodeLength": 12,
+      "exampleFallbackFirstPageFence": true,
+      "requestDisplayStripAwaitPrefix": true,
+      "dedupeRepeatedParams": true
+    }
+  },
+  "python": {
+    "route": "structured",
+    "signatureFenceLang": "python",
+    "exampleFenceLang": "python",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "paramsHeadings": ["^\\*\\*PARAMETERS:\\*\\*\\s*$"],
+    "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+    "returnTypeRequired": false,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^(\\*\\*[A-Z]|## )",
+    "returnsBulletsAsProse": true,
+    "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?\\s*$",
+    "titleSuffix": "()",
+    "kindRule": "method",
+    "bulletForms": ["param", "untyped", "untypedDescribed", "enumChoice", "backtickChoice", "pythonParam", "pythonException", "emphasisParam", "describedChoice", "proseBullet"],
+    "calloutBulletsAsDescription": true,
+    "formEvidence": {
+      "untypedDescribed(trailing-dash)": "python-pr1181-intake pages-v26/Collections-describe_collection.md:25 + Vector-search_iterator.md:117 `**kwargs** -` (N5 fallback description)",
+      "emphasisParam": "python-pr1181-intake pages-v26/Collections-add_collection_field.md:32 `**collection_name** *(string)* –` (en-dash)",
+      "describedChoice": "python-pr1181-intake pages-v26/Collections-alter_collection_properties.md:47 `When set to **\"true\"**: Inserts, ...`",
+      "calloutBulletsAsDescription": "python-pr1181-intake pages-v26/Vector-query.md callout note bullets `- Setting this as `output_fields=[\"\\*\"]` outputs all fields.`",
+      "proseBullet": "python-pr1181-intake pages-v30/Vector-query.md:157 `- `sum` and `avg` accept only numeric fields...`",
+      "param(en-dash)/pythonParam(en-dash)": "en-dash separators `–` ride the shared separator tolerance (batch 15 review P1-2)"
+    },
+    "normalizations": {
+      "N1": "nested-parameters-fold-into-description",
+      "N2": "description-start-article-plural-register",
+      "N3": "brief-description-placeholder-to-short-description",
+      "N4": "additional-arguments-to-additional-parameters",
+      "N5": "kwargs-bullets-composer-authored-description",
+      "N6": "example-keyword-call-reflow-one-arg-per-line",
+      "N7": "summary-register-wrap"
+    },
+    "structured": {
+      "kwargsFallbackDescription": "Additional parameters to pass through to this operation.",
+      "exampleCallReflow": true,
+      "ensureSentences": true
+    }
+  },
+  "rust": null,
+  "cpp": null
+}

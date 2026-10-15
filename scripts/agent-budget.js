@@ -154,7 +154,12 @@ function cmdLedger(root, args) {
 
 function findSnapshot(snapshots, query) {
   const q = String(query);
-  return snapshots.find((s) => s.agentId === q || s.agentId.startsWith(q) || s.childSessionId === q || s.childSessionId.endsWith(q))
+  const byId = (fn) => snapshots.find((s) => fn(s.agentId) || fn(s.childSessionId));
+  // exact/prefix hits win ("agent_9e8a", "9e8a"); contains is the fallback so
+  // bare id fragments match the agent_-prefixed agentId too.
+  return byId((id) => id === q)
+    || byId((id) => id.startsWith(q) || id.endsWith(q))
+    || byId((id) => id.includes(q))
     || snapshots.find((s) => (s.description || '').includes(q) || (s.promptHead || '').includes(q));
 }
 

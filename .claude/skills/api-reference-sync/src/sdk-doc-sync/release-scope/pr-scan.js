@@ -166,6 +166,54 @@ function lexicalApiInventory({ repoDir, ref, publicRoots, spawn }) {
   return names;
 }
 
+// Deep page shapes without a vN namespace segment, derived from the live
+// Bitable snapshot artifacts (bitable-snapshot-{go,python}-v2*.json, kept in
+// the project's ignored scout directory) plus the scanner and identity-map
+// key conventions. Slug alignment verified against the full page trees of
+// both tracks: go 376/379, pymilvus 704/714 (every residual is a live record
+// that does not exist yet or lives under a map-owned placement override,
+// not a wrong derivation).
+//
+// milvus-sdk-go — segments are <category>/<owner>/... (Management/Index/,
+// Vector/AnnParam/): the go scanner and identity maps key constructors by the
+// top category (Management.NewGenericIndex) while the Bitable slug heads them
+// with the owning directory (v2-Index-NewGenericIndex); a landing page named
+// after its own directory keeps the category head (v2-Management-Index).
+//
+// pymilvus — segments are <container>/<category>/.../<owner> (MilvusClient/
+// Authentication/, MilvusClient/Collections/CollectionSchema/): pages bind to
+// the container client class (MilvusClient.grant_privilege, the python map's
+// key shape) while the slug heads with the owning directory
+// (Authentication-grant_privilege, CollectionSchema-run_analyzer); a
+// self-named landing page heads with the container at depth 2
+// (MilvusClient-CollectionSchema) and with the path category at depth 3+
+// (Vector-FieldOp).
+//
+// Any other deep shape stays fail-closed: the caller keeps the skip + warn
+// behavior instead of inventing an identity from a speculative owner segment.
+function deepPathIdentity({ sdkDirName, segments, pageName }) {
+  const parentDir = segments[segments.length - 1];
+  if (sdkDirName === 'milvus-sdk-go') {
+    const category = segments[0];
+    return {
+      symbol: `${category}.${pageName}`,
+      slugMiddle: pageName === parentDir ? category : parentDir,
+      category,
+    };
+  }
+  if (sdkDirName === 'pymilvus') {
+    const slugHead = pageName === parentDir
+      ? (segments.length >= 3 ? segments[1] : segments[0])
+      : parentDir;
+    return {
+      symbol: `${segments[0]}.${pageName}`,
+      slugMiddle: null,
+      category: slugHead,
+    };
+  }
+  return null;
+}
+
 function classifyPrFiles(prFiles, scanTrack = null) {
   const targets = new Map();
   const skipped = [];
@@ -187,22 +235,39 @@ function classifyPrFiles(prFiles, scanTrack = null) {
       // (<class>.<member>), matching the record slug convention
       // (v2-<class>-<member>); a page named after its own directory is a
       // landing/enum page and identifies by the top category
-      // (<category>.<Type>). Deep paths WITHOUT a vN namespace segment (go,
-      // pymilvus) are not a recognized page shape here: they keep the
-      // pre-adaptation out-of-scope behavior instead of inventing an
-      // identity from a speculative owner segment.
+      // (<category>.<Type>). Deep paths WITHOUT a vN namespace segment follow
+      // deepPathIdentity's two evidenced shapes (go, pymilvus); every other
+      // deep shape keeps the pre-adaptation out-of-scope behavior.
       const segments = categoryPath.split('/');
       const namespace = /^v\d+$/.test(segments[0]) ? segments.shift() : null;
       if (namespace === 'v1') {
         namespaced.set(namespace, (namespaced.get(namespace) || 0) + 1);
         continue;
       }
-      if (segments.length === 0 || (segments.length > 1 && !namespace)) {
+      if (segments.length === 0) {
         skipped.push(file.path);
         continue;
       }
-      const category = segments[0];
       const parentDir = segments[segments.length - 1];
+      if (segments.length > 1 && !namespace) {
+        const deep = deepPathIdentity({ sdkDirName, segments, pageName });
+        if (!deep) {
+          skipped.push(file.path);
+          continue;
+        }
+        if (!targets.has(key)) targets.set(key, []);
+        targets.get(key).push({
+          ...file,
+          category: deep.category,
+          parentDir,
+          namespace: null,
+          pageName,
+          symbol: deep.symbol,
+          ...(deep.slugMiddle ? { slugMiddle: deep.slugMiddle } : {}),
+        });
+        continue;
+      }
+      const category = segments[0];
       const middle = pageName === parentDir ? category : parentDir;
       if (!targets.has(key)) targets.set(key, []);
       targets.get(key).push({
@@ -341,7 +406,7 @@ function sourceEvidenceFor(symbol, sdkRevision) {
   };
 }
 
-function identityFor({ mapped, symbolIdentity, category, pageName, language, slugPrefix = '' }) {
+function identityFor({ mapped, symbolIdentity, category, pageName, language, slugPrefix = '', slugMiddle = null }) {
   if (mapped?.stableId) {
     return {
       identity: { stableId: mapped.stableId, canonicalSlug: mapped.canonicalSlug, category: mapped.category },
@@ -360,8 +425,11 @@ function identityFor({ mapped, symbolIdentity, category, pageName, language, slu
     // Prefixed tracks (java: v2-<middle>-<member>) compose the fallback from
     // the page symbol's middle segment so the same interface lands on one
     // stableId/slug whether it arrives through a PR page or a tag scout.
+    // Deep go pages carry an explicit slugMiddle because their bind symbol
+    // keys on the category (Management.NewGenericIndex) while the slug heads
+    // with the owning directory (v2-Index-NewGenericIndex).
     const dot = symbolIdentity.lastIndexOf('.');
-    const middle = (dot > 0 ? symbolIdentity.slice(0, dot) : '') || category;
+    const middle = slugMiddle || ((dot > 0 ? symbolIdentity.slice(0, dot) : '') || category);
     return {
       identity: {
         stableId: `${language}:${slugPrefix}${middle}:${pageName}`,
@@ -673,6 +741,7 @@ async function runPrScan({
       pageName: entry.pageName,
       language,
       slugPrefix,
+      slugMiddle: entry.slugMiddle || null,
     });
     if (unmapped) {
       diagnostics.push({

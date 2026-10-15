@@ -445,18 +445,92 @@ test('classifyPrFiles parses java namespace trees: category pages, nested class 
   assert.equal(namespaced.get('v1'), 1);
 });
 
-test('classifyPrFiles keeps flat-tree deep paths out of page scope (go/pymilvus pre-adaptation behavior)', () => {
+test('classifyPrFiles derives go deep-path identities: category-keyed symbol, owner-headed slug middle', () => {
   const { targets, skipped, namespaced } = classifyPrFiles([
-    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewAutoIndex.md', changeType: 'ADDED' },
-    { path: 'API_Reference/pymilvus/v3.0.x/DataImport/Volume/VolumeManager/create_volume.md', changeType: 'MODIFIED' },
+    // go PR #1179 shapes: Management/Index constructors + landing page,
+    // Vector/AnnParam constructors, plus a flat-page regression.
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewGenericIndex.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/Index.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Vector/AnnParam/NewSparseAnnParam.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Authentication/BackupRBAC.md', changeType: 'MODIFIED' },
+  ]);
+  assert.deepEqual([...targets.keys()], ['milvus-sdk-go/v2.6.x']);
+  const byPath = new Map(targets.get('milvus-sdk-go/v2.6.x').map((entry) => [entry.path, entry]));
+  // Constructor pages bind by the scanner/map key shape (category.member) but
+  // carry the owning directory as the slug middle (live v2-Index-NewGenericIndex,
+  // v2-AnnParam-NewSparseAnnParam).
+  const ctor = byPath.get('API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewGenericIndex.md');
+  assert.equal(ctor.symbol, 'Management.NewGenericIndex');
+  assert.equal(ctor.category, 'Management');
+  assert.equal(ctor.slugMiddle, 'Index');
+  assert.equal(ctor.namespace, null);
+  const annParam = byPath.get('API_Reference/milvus-sdk-go/v2.6.x/Vector/AnnParam/NewSparseAnnParam.md');
+  assert.equal(annParam.symbol, 'Vector.NewSparseAnnParam');
+  assert.equal(annParam.slugMiddle, 'AnnParam');
+  // A landing page named after its own directory keeps the category head on
+  // both the symbol and the slug middle (live v2-Management-Index).
+  const landing = byPath.get('API_Reference/milvus-sdk-go/v2.6.x/Management/Index/Index.md');
+  assert.equal(landing.symbol, 'Management.Index');
+  assert.equal(landing.slugMiddle, 'Management');
+  // Flat pages are untouched: no slugMiddle override, legacy symbol shape.
+  const flat = byPath.get('API_Reference/milvus-sdk-go/v2.6.x/Authentication/BackupRBAC.md');
+  assert.equal(flat.symbol, 'Authentication.BackupRBAC');
+  assert.equal(flat.slugMiddle, undefined);
+  assert.deepEqual(skipped, []);
+  assert.equal(namespaced.size, 0);
+});
+
+test('classifyPrFiles derives pymilvus container deep-path identities by owning-directory slug head', () => {
+  const { targets, skipped } = classifyPrFiles([
+    // python PR #1181 shapes: MilvusClient category pages, the 4-segment
+    // CollectionSchema owner page, ORM utility pages, and the two self-named
+    // landing depths (MilvusClient-CollectionSchema, Vector-FieldOp).
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/Authentication/remove_privileges_from_group.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/ORM/utility/delete_user.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/CollectionSchema/CollectionSchema.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/Vector/FieldOp/FieldOp.md', changeType: 'MODIFIED' },
+  ]);
+  assert.deepEqual([...targets.keys()], ['pymilvus/v2.6.x']);
+  const byPath = new Map(targets.get('pymilvus/v2.6.x').map((entry) => [entry.path, entry]));
+  // Member pages bind to the container client class (the python map/scanner
+  // key shape) while the fallback slug heads with the owning directory.
+  const member = byPath.get('API_Reference/pymilvus/v2.6.x/MilvusClient/Authentication/remove_privileges_from_group.md');
+  assert.equal(member.symbol, 'MilvusClient.remove_privileges_from_group');
+  assert.equal(member.category, 'Authentication');
+  assert.equal(member.slugMiddle, undefined);
+  assert.equal(member.namespace, null);
+  // The deepest middle segment is the slug head for nested owner pages
+  // (live CollectionSchema-run_analyzer).
+  const nested = byPath.get('API_Reference/pymilvus/v2.6.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md');
+  assert.equal(nested.symbol, 'MilvusClient.run_analyzer');
+  assert.equal(nested.category, 'CollectionSchema');
+  const orm = byPath.get('API_Reference/pymilvus/v2.6.x/ORM/utility/delete_user.md');
+  assert.equal(orm.symbol, 'ORM.delete_user');
+  assert.equal(orm.category, 'utility');
+  // Self-named landing pages: container head at depth 2, path-category head
+  // at depth 3+ (live MilvusClient-CollectionSchema, Vector-FieldOp).
+  const landing2 = byPath.get('API_Reference/pymilvus/v2.6.x/MilvusClient/CollectionSchema/CollectionSchema.md');
+  assert.equal(landing2.symbol, 'MilvusClient.CollectionSchema');
+  assert.equal(landing2.category, 'MilvusClient');
+  const landing3 = byPath.get('API_Reference/pymilvus/v2.6.x/MilvusClient/Vector/FieldOp/FieldOp.md');
+  assert.equal(landing3.symbol, 'MilvusClient.FieldOp');
+  assert.equal(landing3.category, 'Vector');
+  assert.deepEqual(skipped, []);
+});
+
+test('classifyPrFiles keeps deep paths of unrecognized trees out of page scope (fail-closed)', () => {
+  const { targets, skipped, namespaced } = classifyPrFiles([
+    { path: 'API_Reference/milvus-sdk-rust/v2.6.x/Management/Index/NewGenericIndex.md', changeType: 'ADDED' },
+    { path: 'API_Reference/milvus-sdk-csharp/v3.0.x/MilvusClient/Authentication/grant_privilege.md', changeType: 'ADDED' },
     { path: 'API_Reference/milvus-sdk-cpp/v3.0.x/Authentication/AlterRole.md', changeType: 'MODIFIED' },
   ]);
   assert.deepEqual([...targets.keys()], ['milvus-sdk-cpp/v3.0.x']);
   const page = targets.get('milvus-sdk-cpp/v3.0.x').find((entry) => !entry.about);
   assert.equal(page.symbol, 'Authentication.AlterRole');
   assert.deepEqual(skipped, [
-    'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewAutoIndex.md',
-    'API_Reference/pymilvus/v3.0.x/DataImport/Volume/VolumeManager/create_volume.md',
+    'API_Reference/milvus-sdk-rust/v2.6.x/Management/Index/NewGenericIndex.md',
+    'API_Reference/milvus-sdk-csharp/v3.0.x/MilvusClient/Authentication/grant_privilege.md',
   ]);
   assert.equal(namespaced.size, 0);
 });
@@ -631,6 +705,184 @@ test('runPrScan prefers live record categories when scanner and map placements d
   // The bind came through the unique-same-name last resort (the Client scanner
   // category disagrees with the Management page/live placement) — surfaced.
   assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'PR_SYMBOL_FALLBACK_BIND'));
+});
+
+const GO_DEEP_PAGE = `# NewGenericIndex()
+
+This function creates a generic index configuration with custom parameters.
+
+\`\`\`go
+func NewGenericIndex(name string, params map[string]string) GenericIndex
+\`\`\`
+
+**PARAMETERS:**
+
+- **name** (*string*)
+`;
+
+const GO_PR_META = {
+  number: 1179,
+  title: 'Update milvus-sdk-go docs to v2.6.5',
+  state: 'MERGED',
+  mergedAt: '2026-10-15T02:00:00Z',
+  baseRefName: 'master',
+  headRefName: 'sdk/go-2.6.5-doc',
+  headRefOid: 'a'.repeat(40),
+  mergeCommit: { oid: 'b'.repeat(40) },
+  files: [
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/About.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/milvus-sdk-go/v2.6.x/Management/Index/NewGenericIndex.md', changeType: 'MODIFIED' },
+  ],
+};
+
+function goScanSymbol(name, parentClass) {
+  return {
+    name,
+    kind: 'function',
+    parentClass,
+    signature: `func ${name}(name string, params map[string]string) GenericIndex`,
+    params: [{ name: 'name', kind: 'keyword' }, { name: 'params', kind: 'keyword' }],
+    filePath: `client/index/${name.toLowerCase()}.go`,
+    lineNumber: 10,
+  };
+}
+
+test('runPrScan composes go deep-page fallback slugs with the owner head and the map slugPrefix', async () => {
+  // go PR #1179 offline shape: Management/Index/NewGenericIndex.md is absent
+  // from the go-v26 delta map, so the fallback must compose
+  // v2-Index-NewGenericIndex (slugPrefix from the map, owner head from the
+  // page path) and reconcile against the live record as an UPDATE.
+  const symbol = goScanSymbol('NewGenericIndex', 'Management');
+  const scope = await runPrScan({
+    prMeta: GO_PR_META,
+    webContentDir: '/tmp/web-content',
+    repoDir: '/tmp/sdk-repo',
+    publicRoots: ['client/'],
+    identityMapPath: require('node:path').join(__dirname, '..', 'references', 'identity', 'go-v26.json'),
+    scanState: { 'go-v26': { lastScannedTag: 'client/v2.6.4' } },
+    // go About.md pins are markdown links, not bare versions — the CLI path
+    // always passes --target-tag for go, mirror that here.
+    targetTag: 'client/v2.6.5',
+    feishuRows: [{ slug: 'v2-Index-NewGenericIndex', type: 'Function', progress: 'Draft' }],
+    runGit: (args) => {
+      const joined = args.join(' ');
+      if (joined.startsWith('rev-list -n 1 client/v2.6.5')) return 'c'.repeat(40) + '\n';
+      if (joined.startsWith('show -s --format=%cI')) return '2026-10-14T09:00:00+00:00\n';
+      if (joined.startsWith('show ') && joined.endsWith(':API_Reference/milvus-sdk-go/v2.6.x/About.md')) {
+        return '| 2.6.x | client/v2.6.5 |';
+      }
+      if (joined.startsWith('show ')) return GO_DEEP_PAGE;
+      throw new Error(`unexpected git call: ${joined}`);
+    },
+    runGh: () => '',
+    baselineSymbols: [symbol],
+    targetSymbols: [symbol],
+    spawnGrep: stubSpawnGrep({}),
+  });
+  assert.equal(scope.baselineTag, 'client/v2.6.4');
+  assert.equal(scope.targetTag, 'client/v2.6.5');
+  const action = scope.actions.find((item) => item.canonicalSlug === 'v2-Index-NewGenericIndex');
+  assert.ok(action, 'owner-headed fallback slug action present');
+  assert.equal(action.stableId, 'go:v2-Index:NewGenericIndex');
+  assert.equal(action.type, 'UPDATE');
+  assert.equal(action.reason, 'pr-doc-update');
+  assert.equal(action.symbol, 'Management.NewGenericIndex');
+  assert.equal(scope.pr.files.find((file) => file.path.endsWith('NewGenericIndex.md')).symbol, 'Management.NewGenericIndex');
+  assert.ok(scope.scannerDiagnostics.some((item) => item.code === 'UNMAPPED_CANONICAL_IDENTITY'));
+  assert.ok(!scope.scannerDiagnostics.some((item) => item.code === 'FEISHU_RECORD_ABSENT_FOR_UPDATE'));
+  const validation = validateReleaseScope(scope);
+  assert.deepEqual(validation, { valid: true, errors: [] });
+});
+
+const PY_DEEP_PAGE = `# remove_privileges_from_group()
+
+This operation removes the specified privileges from a group.
+
+## Request Syntax
+
+\`\`\`python
+remove_privileges_from_group(
+    self,
+    group_name: str,
+    privileges: List[str],
+)
+\`\`\`
+`;
+
+const PYTHON_PR_META = {
+  number: 1181,
+  title: 'Update pymilvus docs to v2.6.17',
+  state: 'MERGED',
+  mergedAt: '2026-10-15T03:00:00Z',
+  baseRefName: 'master',
+  headRefName: 'sdk/python-2.6.17-doc',
+  headRefOid: '1'.repeat(40),
+  mergeCommit: { oid: '2'.repeat(40) },
+  files: [
+    { path: 'API_Reference/pymilvus/v2.6.x/About.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/Authentication/remove_privileges_from_group.md', changeType: 'MODIFIED' },
+    { path: 'API_Reference/pymilvus/v2.6.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md', changeType: 'MODIFIED' },
+  ],
+};
+
+function pythonScanSymbol(name) {
+  return {
+    name,
+    kind: 'method',
+    parentClass: 'MilvusClient',
+    signature: `def ${name}(self, group_name, privileges, timeout=None, **kwargs)`,
+    params: [{ name: 'group_name', kind: 'keyword' }, { name: 'privileges', kind: 'keyword' }],
+    filePath: 'pymilvus/milvus_client/milvus_client.py',
+    lineNumber: 10,
+  };
+}
+
+test('runPrScan derives pymilvus deep-page slugs from the owning directory', async () => {
+  // python PR #1181 offline shape: every page is a container deep path. The
+  // fallback identity must head the slug with the owning directory
+  // (Authentication-..., CollectionSchema-...) and bind the scanned
+  // MilvusClient method for verification.
+  const symbols = [pythonScanSymbol('remove_privileges_from_group'), pythonScanSymbol('run_analyzer')];
+  const scope = await runPrScan({
+    prMeta: PYTHON_PR_META,
+    webContentDir: '/tmp/web-content',
+    repoDir: '/tmp/sdk-repo',
+    publicRoots: ['pymilvus/'],
+    identityMapPath: require('node:path').join(__dirname, '..', 'references', 'identity', 'python-v26.json'),
+    scanState: { 'python-v26': { lastScannedTag: 'v2.6.16' } },
+    feishuRows: [
+      { slug: 'Authentication-remove_privileges_from_group', type: 'Function', progress: 'Draft' },
+      { slug: 'CollectionSchema-run_analyzer', type: 'Function', progress: 'Draft' },
+    ],
+    runGit: (args) => {
+      const joined = args.join(' ');
+      if (joined.startsWith('rev-list -n 1 v2.6.17')) return 'c'.repeat(40) + '\n';
+      if (joined.startsWith('show -s --format=%cI')) return '2026-10-14T10:00:00+00:00\n';
+      if (joined.startsWith('show ') && joined.endsWith(':API_Reference/pymilvus/v2.6.x/About.md')) {
+        return '| 2.6.x | v2.6.17 |';
+      }
+      if (joined.startsWith('show ')) return PY_DEEP_PAGE.replace(/remove_privileges_from_group/g, 'run_analyzer');
+      throw new Error(`unexpected git call: ${joined}`);
+    },
+    runGh: () => '',
+    baselineSymbols: symbols,
+    targetSymbols: symbols,
+    spawnGrep: stubSpawnGrep({}),
+  });
+  assert.equal(scope.targetTag, 'v2.6.17');
+  const auth = scope.actions.find((item) => item.canonicalSlug === 'Authentication-remove_privileges_from_group');
+  assert.ok(auth, 'Authentication-headed action present');
+  assert.equal(auth.type, 'UPDATE');
+  assert.equal(auth.symbol, 'MilvusClient.remove_privileges_from_group');
+  assert.equal(auth.source.file, 'pymilvus/milvus_client/milvus_client.py');
+  const nested = scope.actions.find((item) => item.canonicalSlug === 'CollectionSchema-run_analyzer');
+  assert.ok(nested, 'owner-headed nested action present');
+  assert.equal(nested.type, 'UPDATE');
+  assert.equal(nested.symbol, 'MilvusClient.run_analyzer');
+  assert.ok(!scope.scannerDiagnostics.some((item) => item.code === 'FEISHU_RECORD_ABSENT_FOR_UPDATE'));
+  assert.ok(!scope.scannerDiagnostics.some((item) => item.code === 'PR_SYMBOL_NOT_SCANNED'));
+  const validation = validateReleaseScope(scope);
+  assert.deepEqual(validation, { valid: true, errors: [] });
 });
 
 test('fetchPrMeta paginates the complete PR file list beyond the gh view cap', () => {

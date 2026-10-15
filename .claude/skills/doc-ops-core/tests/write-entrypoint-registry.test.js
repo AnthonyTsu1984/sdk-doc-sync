@@ -46,7 +46,11 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     agent budget metering: reads host-side agent metadata/rollout and
   //     repo tmp bookkeeping, appends only run-local
   //     tmp/token-budget-{live,ledger}.jsonl records), 103→104.
-  assert.equal(discovered.length, 104);
+  //   - +1 read-only SKILL.md meta-lint scripts/skill-md-lint.js (slice 3-2
+  //     thin-skill refactor, audit tmp/skill-thin-refactor-audit.md §6.5 B-5:
+  //     size budget + marker/registry digest consistency + pointer integrity
+  //     + refusal-code citations; no external mutation signature), 104→105.
+  assert.equal(discovered.length, 105);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

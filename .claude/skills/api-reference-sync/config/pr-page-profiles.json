@@ -1,0 +1,129 @@
+{
+  "profileVersion": 1,
+  "comment": "Canonical PR page grammars (campaign-control batch 15 design §4.3). Data, not code: registering a new language (rust/cpp) means adding an entry here, never patching the parser kernel (src/sdk-doc-sync/pr-page-parser.js). Regexes are anchored per line. Unregistered languages = null and the composer rejects with NOT_REGISTERED_PROFILE.",
+  "go": {
+    "route": "verbatim",
+    "signatureFenceLang": "go",
+    "exampleFenceLang": "go",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "paramsHeadings": [
+      "^\\*\\*PARAMETERS:\\*\\*\\s*$",
+      "^\\*\\*BUILDER METHODS:\\*\\*\\s*$",
+      "^\\*\\*METHODS:\\*\\*\\s*$"
+    ],
+    "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+    "returnTypeRequired": false,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^\\*\\*(EXCEPTIONS|ERROR HANDLING)\\b|^## ",
+    "errorHeading": "^\\*\\*(EXCEPTIONS|ERROR HANDLING):\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?:?\\s*$",
+    "relatedHeading": "^## Related operations\\s*$",
+    "titleSuffix": "()",
+    "verbStarts": [
+      "represents", "defines", "provides", "describes", "contains", "holds",
+      "specifies", "manages", "tracks", "wraps", "configures", "models",
+      "encodes", "exposes", "captures", "supports", "includes", "offers"
+    ],
+    "typePageByRecordType": { "non-Function": "class" },
+    "kindRule": "recordTypeOrTitle",
+    "bulletForms": ["builder", "getter", "param", "untyped", "untypedDescribed", "enumChoice", "backtickChoice"],
+    "exampleFallbackFirstSignatureFence": true,
+    "verbatim": {
+      "bareNotesQualify": true,
+      "linkResolution": "snapshot-doc-link"
+    }
+  },
+  "java": {
+    "route": "structured",
+    "signatureFenceLang": "java",
+    "exampleFenceLang": "java",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "includeMarkers": ["include-start milvus", "include-start zilliz"],
+    "requestClassFromSignature": "\\((\\w+Req) \\w+\\)",
+    "paramsHeadings": [
+      "^\\*\\*BUILDER METHODS:\\*\\*\\s*$",
+      "^\\*\\*PARAMETERS:\\*\\*\\s*$"
+    ],
+    "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+    "returnTypeRequired": true,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^(\\*\\*EXCEPTIONS|## )",
+    "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?:?\\s*$",
+    "relatedHeading": "^## Related operations\\s*$",
+    "titleSuffix": "()",
+    "kindRule": "method",
+    "bulletForms": ["builder", "getter", "param", "untyped", "untypedDescribed", "enumChoice", "backtickChoice"],
+    "structured": {
+      "requestVariantsFromIncludeMarkers": true,
+      "releasePlacement": true,
+      "exceptionDefaults": {
+        "condition": "This exception will be raised when any error occurs during this operation.",
+        "description": "Inspect the server error message for the exact failure reason."
+      }
+    }
+  },
+  "node": {
+    "route": "structured",
+    "signatureFenceLang": "javascript",
+    "exampleFenceLang": "javascript",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "paramsHeadings": ["^\\*\\*PARAMETERS:\\*\\*\\s*$"],
+    "returnTypeHeading": null,
+    "returnTypeRequired": false,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^(\\*\\*[A-Z]|## )",
+    "returnsTypeInline": true,
+    "returnsSchemaFence": true,
+    "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?:?\\s*$",
+    "titleSuffix": "()",
+    "kindRule": "method",
+    "requiredMarker": "^\\s*\\*\\*\\[REQUIRED\\]\\*\\*\\s*$",
+    "defaultMarker": "^\\s*Default: `?([^`\\n]+)`?\\s*$",
+    "bulletForms": ["builder", "getter", "param", "untyped", "enumChoice", "backtickChoice", "pythonParam"],
+    "structured": {
+      "untypedTypeFromName": true,
+      "typedParamFallbackDescription": "The {type} object for this operation.",
+      "resultFallbackType": "void",
+      "resultFallbackDescription": "The response of the {symbol} operation.",
+      "exampleMinCodeLength": 12,
+      "exampleFallbackFirstPageFence": true,
+      "requestDisplayStripAwaitPrefix": true,
+      "dedupeRepeatedParams": true
+    }
+  },
+  "python": {
+    "route": "structured",
+    "signatureFenceLang": "python",
+    "exampleFenceLang": "python",
+    "requestSyntaxHeading": "^## Request Syntax\\s*$",
+    "paramsHeadings": ["^\\*\\*PARAMETERS:\\*\\*\\s*$"],
+    "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+    "returnTypeRequired": false,
+    "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+    "returnsStop": "^(\\*\\*[A-Z]|## )",
+    "returnsBulletsAsProse": true,
+    "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",
+    "exampleHeading": "^##+ Examples?\\s*$",
+    "titleSuffix": "()",
+    "kindRule": "method",
+    "bulletForms": ["param", "untyped", "enumChoice", "backtickChoice", "pythonParam", "pythonException"],
+    "normalizations": {
+      "N1": "nested-parameters-fold-into-description",
+      "N2": "description-start-article-plural-register",
+      "N3": "brief-description-placeholder-to-short-description",
+      "N4": "additional-arguments-to-additional-parameters",
+      "N5": "kwargs-bullets-composer-authored-description",
+      "N6": "example-keyword-call-reflow-one-arg-per-line",
+      "N7": "summary-register-wrap"
+    },
+    "structured": {
+      "kwargsFallbackDescription": "Additional parameters to pass through to this operation.",
+      "exampleCallReflow": true,
+      "ensureSentences": true
+    }
+  },
+  "rust": null,
+  "cpp": null
+}

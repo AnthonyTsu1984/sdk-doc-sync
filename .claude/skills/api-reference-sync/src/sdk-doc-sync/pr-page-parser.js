@@ -18,9 +18,12 @@ const REJECTION_CODES = Object.freeze({
   SIGNATURE_FENCE_MISSING: 'SIGNATURE_FENCE_MISSING',
   BULLET_FORM_UNRECOGNIZED: 'BULLET_FORM_UNRECOGNIZED',
   RETURN_TYPE_MISSING: 'RETURN_TYPE_MISSING',
-  // Composer-side digest gate (design §4.1-3/§4.5-1 sixth code): the page dump
-  // on disk must hash to decisions.pr.pageSha256. Lives here so every intake
-  // typed rejection shares one code registry.
+  // Composer-side digest gates (design §4.1-3/§4.5-1, review P1-4): the
+  // decisions must pin the PR provenance and a well-formed page digest —
+  // their absence is a typed rejection, never an unverified fallback. Both
+  // live here so every intake typed rejection shares one code registry.
+  PR_PIN_MISSING: 'PR_PIN_MISSING',
+  PAGE_DIGEST_REQUIRED: 'PAGE_DIGEST_REQUIRED',
   PAGE_DUMP_DIGEST_MISMATCH: 'PAGE_DUMP_DIGEST_MISMATCH',
 });
 

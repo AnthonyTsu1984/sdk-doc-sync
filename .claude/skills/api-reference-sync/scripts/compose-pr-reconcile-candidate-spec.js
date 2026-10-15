@@ -853,12 +853,26 @@ function compose(args) {
     if (identityMap.symbols && identityMap.symbols[identityKey]) identityCoverage.mapped += 1;
     else identityCoverage.unmapped.push(unit.sourceStableId);
 
+    // PR pin gate (review P1-4): decisions are the binding authority for
+    // provenance. A unit without a decision.pr.path pin has no reviewed
+    // PR page to verify against — typed rejection, never an upstream
+    // fallback to unreviewed sources.
+    if (!pr || !pr.path) {
+      reject(REJECTION_CODES.PR_PIN_MISSING, `${slug}: decisions carry no decision.pr.path pin (decision.pr ${pr ? 'has no path' : 'is absent'}); the composer does not fall back to unreviewed provenance`);
+    }
+
     // page dump + sha gate (§4.1-3, fail-closed)
     const pagePath = path.join(pagesDir, `${slug}.md`);
     if (!fs.existsSync(pagePath)) reject('PAGE_DUMP_MISSING', `${slug}: no page dump at ${pagePath}`);
     const pageText = fs.readFileSync(pagePath, 'utf8');
     const actualSha = sha256(pageText);
-    if (pr.pageSha256 && actualSha !== pr.pageSha256) {
+    // A missing or malformed digest is its own typed rejection (review
+    // P1-4): the old `if (pr.pageSha256 && ...)` silently skipped the
+    // verification when the pin was absent.
+    if (!pr.pageSha256 || !/^[0-9a-f]{64}$/.test(String(pr.pageSha256))) {
+      reject(REJECTION_CODES.PAGE_DIGEST_REQUIRED, `${slug}: decision.pr.pageSha256 is missing or not a 64-hex digest (${JSON.stringify(pr.pageSha256 ?? null)}); refuse the unverified page (${pr.path})`);
+    }
+    if (actualSha !== pr.pageSha256) {
       reject(REJECTION_CODES.PAGE_DUMP_DIGEST_MISMATCH, `${slug}: page dump sha256 ${actualSha} != decisions.pr.pageSha256 ${pr.pageSha256} (${pr.path})`);
     }
 

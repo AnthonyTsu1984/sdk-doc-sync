@@ -479,6 +479,64 @@ test('page dump digest mismatch is a typed PAGE_DUMP_DIGEST_MISMATCH rejection',
   });
 });
 
+test('digest pins are required and shape-checked, never silently skipped (review P1-4)', () => {
+  // A missing or malformed decision.pr.pageSha256 used to skip the sha gate
+  // (`if (pr.pageSha256 && ...)`) — an unverified page composed clean. Both
+  // faces are typed rejections now, and so is a unit without a PR pin.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-digest-gates-'));
+  const files = writeWave(dir);
+  const pristine = fs.readFileSync(files.decisions, 'utf8');
+  const load = () => JSON.parse(pristine);
+  const save = (decisions) => fs.writeFileSync(files.decisions, `${JSON.stringify(decisions, null, 2)}\n`);
+
+  // no decision.pr at all
+  const noPr = load();
+  delete noPr.units[0].decision.pr;
+  save(noPr);
+  assert.throws(() => compose(waveArgs(dir, files)), (error) => {
+    assert.equal(error.code, 'PR_PIN_MISSING');
+    assert.match(error.message, /no decision\.pr\.path pin/);
+    return true;
+  });
+
+  // pr pin present but pathless
+  const pathless = load();
+  delete pathless.units[0].decision.pr.path;
+  save(pathless);
+  assert.throws(() => compose(waveArgs(dir, files)), (error) => {
+    assert.equal(error.code, 'PR_PIN_MISSING');
+    return true;
+  });
+
+  // digest absent
+  const noDigest = load();
+  delete noDigest.units[0].decision.pr.pageSha256;
+  save(noDigest);
+  assert.throws(() => compose(waveArgs(dir, files)), (error) => {
+    assert.equal(error.code, 'PAGE_DIGEST_REQUIRED');
+    assert.match(error.message, /missing or not a 64-hex digest \(null\)/);
+    return true;
+  });
+
+  // digest malformed (not 64 hex)
+  const badDigest = load();
+  badDigest.units[0].decision.pr.pageSha256 = 'sha256:204a';
+  save(badDigest);
+  assert.throws(() => compose(waveArgs(dir, files)), (error) => {
+    assert.equal(error.code, 'PAGE_DIGEST_REQUIRED');
+    return true;
+  });
+
+  // a well-formed wrong digest is still the mismatch code, not the gate
+  const wrongDigest = load();
+  wrongDigest.units[0].decision.pr.pageSha256 = 'a'.repeat(64);
+  save(wrongDigest);
+  assert.throws(() => compose(waveArgs(dir, files)), (error) => {
+    assert.equal(error.code, 'PAGE_DUMP_DIGEST_MISMATCH');
+    return true;
+  });
+});
+
 test('input contract rejections are typed, not defaults (§4.5 fail-closed)', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'composer-reject-'));
   const files = writeWave(dir);

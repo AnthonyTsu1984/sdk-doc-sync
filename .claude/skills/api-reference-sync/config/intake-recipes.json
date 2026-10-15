@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "notes": [
+    "Intake diagnostic recipes (campaign-control batch 15 §8.2): the collected recipeFor table.",
+    "Collected from .zcode/workflows/java-v30-campaign.dwf.ts ERROR_RECIPES (8 entries) plus the 2026-10-15 intake additions named in tmp/campaign-control-batch15-design.md.",
+    "Consumption: substring match over error text, table order, first match wins — recipes[i].match against the stderr/finding text; the dwf.ts copies converge onto this file as their data dependency.",
+    "Entries are ordered: campaign-stability codes first, then the intake diagnostic family."
+  ],
+  "recipes": [
+    {
+      "match": "RUN_MANIFEST_EVIDENCE_CONFLICT",
+      "recipe": "把 tmp/api-reference-sync/run-manifest-*.json 原子移入 tmp/run-manifest-archive/ 后重跑同一命令（全仓指纹键控的已知环境性冲突）"
+    },
+    {
+      "match": "EXECUTION_RECONCILIATION_REQUIRED",
+      "recipe": "该 batch 的 journal 已存在:核对 completion sentinel 后由 resume 恢复接管;绝不删除 journal 重放"
+    },
+    {
+      "match": "REVIEW_SESSION_REFERENCE_CONTEXT_REQUIRED",
+      "recipe": "resume 必须传 --reference-context <reviewed-context.json>"
+    },
+    {
+      "match": "RELEASE_ROOT_TOKEN_MISMATCH",
+      "recipe": "placement root 与操作员确认的 ROOT_TOKEN 不一致:向操作员重新确认目标轨树根 token 后重试"
+    },
+    {
+      "match": "MISSING_REVIEWED_EVIDENCE",
+      "recipe": "扫描器证据不是批准级:每个符号需要含 confidence=reviewed 证据的上下文条目,先完成上下文材料化"
+    },
+    {
+      "match": "SESSION_STATE_EXISTS",
+      "recipe": "会话文件已存在:改用 --resume-session 续接,不要删除会话"
+    },
+    {
+      "match": "ADMISSION_DIRTY_WORKTREE",
+      "recipe": "工作树不干净:先 commit/stash 再准入"
+    },
+    {
+      "match": "REVIEW_SESSION_INVALID",
+      "recipe": "resume 校验失败(会话漂移或记录状态漂移):按 troubleshooting 让操作员核对 live 状态,绝不代改"
+    },
+    {
+      "match": "GROUPING_STALE",
+      "recipe": "检查 --release-scope 是否 filtered-scope（canonical 链）；重走审计会 re-key placement，重建 context 后 re-gate"
+    },
+    {
+      "match": "TARGET_ANCESTRY_REQUIRED",
+      "recipe": "×N（N≈全量）= scope 动作缺 planningContext：绑 filtered-scope 而非 of-record（go 0 计划迷宫的配方化）"
+    },
+    {
+      "match": "PLACEMENT_TARGET_CHAIN_STALE",
+      "recipe": "×N = --placement-walk-digest 传审计 walkDigest（of-record 绑定症状）"
+    },
+    {
+      "match": "TREE_DELTA_POINTING_TRACK_UNCLASSIFIED",
+      "recipe": "CLONE_ID_SHARED_IN_PLACE 例外队列处置（排除该 slug / 等 kernel 修复 / 操作员裁决三选一），绝不自行改共享记录"
+    },
+    {
+      "match": "SCHEMA_FIRST_GENERATION_FAILED",
+      "recipe": "报文含 reading 'filePath' = scanner-taxonomy orphan（新族无 scanned symbol）：该单元切 verbatim 路线兜底 + scanner 类目注册"
+    },
+    {
+      "match": "INTAKE_CONTEXT_KEYS_UNEXPECTED",
+      "recipe": "structured 键族（current/target/placementWalk 等）出现在 verbatim 校验下：该文件走 structured 路线——preflight 已默认 --route auto 逐条目判定，显式 --route structured 可强制"
+    }
+  ]
+}

@@ -626,5 +626,26 @@
       "flaggedAbsolute": false,
       "flaggedFenced": false
     }
+  },
+  {
+    "id": "stateful-class-identity",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "stateful-class-identity-backfill"
+    },
+    "assertions": {
+      "badPlacementCode": "RELEASE_PLACEMENT_VERIFICATION_REQUIRED",
+      "mismatchedPlacementCode": "RELEASE_TARGET_MISMATCH"
+    }
+  },
+  {
+    "id": "organization-inventory-binding",
+    "executable": {
+      "runner": "invariant-conformance",
+      "scenario": "stateful-class-identity-backfill"
+    },
+    "assertions": {
+      "missingInventoryCode": "SOURCE_ORGANIZATION_INVENTORY_REQUIRED"
+    }
   }
 ]

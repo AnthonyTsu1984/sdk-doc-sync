@@ -5,16 +5,26 @@
 // The candidate proposal an APPROVE_GROUPING gate approves is assembled ONLY
 // here — per-campaign hand-written tmp builders produced un-schema'd artifacts
 // with no lineage (the 2026-10 go/java intake lessons). Inputs are governed:
-// the release scope (scout or PR-scan artifact), the track identity map, and
+// the release scope, the track identity map, and
 // the review decisions file; the builder binds the upstream artifacts as
 // semantic digests in `lineage`, embeds the identity-coverage accounting, and
 // refuses — typed, fail-closed, writing nothing — a non-approval-grade scope,
 // ambiguous ownership, or a units/exclusions partition that is not exactly
 // the scope's action set.
 //
+// Scope chain (campaign-control batch 15 §6.2): --scope consumes the FILTERED
+// scope — the build-reviewed-release-context.js --output-scope artifact
+// (stamped ofRecord: true), whose actions carry the reviewed planning
+// evidence. The proposal binds that exact file, the approval binds the
+// proposal, and every later dry-run presents the same file as --release-scope;
+// the scout/PR-scan artifact stays a lineage input upstream. The units/
+// exclusions partition check is isomorphic for both scope kinds (a filtered
+// scope preserves the scope's action set), so only the consumption contract
+// changed here — the GROUPING_STALE chain is untouched.
+//
 // Usage:
 //   node scripts/build-grouping-proposal.js \
-//     --scope <release-scope.json> \
+//     --scope <filtered-scope.json> \
 //     --identity-map <references/identity/<track>.json> \
 //     --decisions <decisions.json> \
 //     [--snapshot <bitable-snapshot.json>] \
@@ -56,7 +66,7 @@ function parseArgs(argv) {
 }
 
 function printUsage(out = console.log) {
-  out('Usage: build-grouping-proposal --scope <release-scope.json> --identity-map <map.json> --decisions <decisions.json> [--snapshot <snapshot.json>] [--output <file>] [--json]');
+  out('Usage: build-grouping-proposal --scope <filtered-scope.json> --identity-map <map.json> --decisions <decisions.json> [--snapshot <snapshot.json>] [--output <file>] [--json]');
 }
 
 function readJson(file, label) {

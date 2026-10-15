@@ -20,6 +20,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { execFileSync } = require('node:child_process');
+// Single-sourced H1 extraction (batch 15 slice 3-3): the page-parser kernel
+// owns the unified fence semantics (review P2-5); the local copy this dumper
+// carried before the kernel existed is gone.
+const { extractH1 } = require('../src/sdk-doc-sync/pr-page-parser');
 
 class PageDumpError extends Error {
     constructor(code, message, details = {}) {
@@ -139,23 +143,6 @@ function dumpableUnits(units) {
         dumpable.push(unit);
     }
     return { dumpable, skippedUnitIds };
-}
-
-// Fence-aware first H1: lines inside ``` fences never count, so a page that
-// only SHOWS markdown headings cannot fake its own title.
-function extractH1(markdown) {
-    let insideFence = false;
-    for (const line of String(markdown).split(/\r?\n/)) {
-        if (/^\s*```/.test(line)) {
-            insideFence = !insideFence;
-            continue;
-        }
-        if (!insideFence) {
-            const match = line.match(/^#\s+(.+?)\s*$/);
-            if (match) return match[1];
-        }
-    }
-    return null;
 }
 
 function gitShow(webContentDir, revision, prPath) {

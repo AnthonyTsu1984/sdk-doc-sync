@@ -692,3 +692,35 @@ test('build-grouping-proposal CLI builds, refuses, and writes nothing on refusal
   assert.match(refused.stderr, /GROUPING_PARTITION_INCOMPLETE/);
   assert.equal(fs.existsSync(refusedFile), false, 'a refused build must write nothing');
 });
+
+test('the filtered scope is the binding scope: lineage digest equals the presented ofRecord-stamped file (batch 15 §6.2)', () => {
+  // Consumption-contract switch (batch 15 §6.3): the builder consumes the
+  // build-reviewed-release-context filtered scope — ofRecord: true, actions
+  // carrying the reviewed planningContext — instead of the scout artifact.
+  // The builder stays scope-kind agnostic (the units/exclusions partition
+  // check is isomorphic) and binds the presented file's digestSemantic
+  // verbatim; the GROUPING_STALE mechanics on top of that digest are covered
+  // by the resume tests above and are unchanged by this slice.
+  const base = makeScope(scopeActions);
+  const filteredScope = {
+    ...base,
+    actions: base.actions.map((action) => ({
+      ...action,
+      planningContext: { target: { version: 'v3.0.x' } },
+    })),
+    ofRecord: true,
+  };
+  const decisions = happyDecisions();
+  const proposal = createGroupingProposal({
+    scope: filteredScope,
+    identityMap: makeIdentityMap(),
+    units: decisions.units,
+    exclusions: decisions.exclusions,
+  });
+  assert.equal(proposal.lineage.scopeDigest, digestSemantic(filteredScope));
+  assert.equal(validateGroupingProposal(proposal, { scope: filteredScope, identityMap: makeIdentityMap() }).valid, true);
+  // The scout artifact is no longer the binding face: presenting it (or any
+  // other scope) against this proposal's digest is exactly the GROUPING_STALE
+  // shape the chain already refuses.
+  assert.notEqual(proposal.lineage.scopeDigest, digestSemantic(base));
+});

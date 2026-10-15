@@ -122,6 +122,47 @@ const scenarios = {
     };
   },
 
+  // Slice 3-2 registry backfill (2026-10-15): the declared -> runtime-enforced
+  // upgrades of api.stateful-class-identity and
+  // api.organization-inventory-binding required executable refusals. Drives
+  // the production SyncPlanner guards: reviewed releasePlacement policy
+  // validation (sdk-organization-contract.js) with the planner target rebind
+  // (sync-planner.js RELEASE_TARGET_MISMATCH) and the scanner-derived
+  // organization-inventory requirement (sync-planner.js
+  // SOURCE_ORGANIZATION_INVENTORY_REQUIRED).
+  'stateful-class-identity-backfill': () => {
+    const planner = new SyncPlanner();
+    const verifiedPlacement = {
+      configuredRootKind: 'release_folder',
+      configuredRootToken: 'root-v26',
+      actualReleaseFolderToken: 'root-v26',
+      actualReleaseFolderName: 'v2.6.x',
+      targetVersion: 'v2.6.x',
+      verified: true,
+    };
+    const unverifiedPlacement = {
+      ...verifiedPlacement,
+      configuredRootToken: 'root-v30',
+      actualReleaseFolderToken: 'root-v30',
+      actualReleaseFolderName: 'v3.0.x',
+      targetVersion: 'v3.0.x',
+      verified: false,
+    };
+    const badPlacementCode = planningError(() => planner.planAction(updateAction(), {
+      ...sharedInheritedContext(),
+      releasePlacement: unverifiedPlacement,
+    }));
+    const mismatchedPlacementCode = planningError(() => planner.planAction(updateAction(), {
+      ...sharedInheritedContext(),
+      releasePlacement: verifiedPlacement,
+    }));
+    const missingInventoryCode = planningError(() => planner.planAction(updateAction(), {
+      ...sharedInheritedContext(),
+      organization: { reviewed: true },
+    }));
+    return { badPlacementCode, mismatchedPlacementCode, missingInventoryCode };
+  },
+
   // Changed interface whose target category folder already exists: copy the
   // older document into the target category, patch the copy, and repoint only
   // the target-track record.

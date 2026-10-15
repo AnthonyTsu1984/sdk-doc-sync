@@ -1018,13 +1018,12 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       organization: clone(organization),
       organizationInventory: clone(organizationInventory),
       notes: spec.notes || candidateSpec.notes || [],
-      // Planning context mirror (grouping write binding): a grouping-bound
-      // campaign enters with the APPROVED unfiltered release scope, whose
-      // actions cannot carry the reviewed planningContext (touching them
-      // would re-key the bound scope digest). The per-candidate planning
-      // evidence therefore also rides the reference context — the schema-first
-      // artifact provider passes these fields through to the planner. Keep
-      // this object in lockstep with selectedAction.planningContext above.
+      // Planning context mirror: since batch 15 §6.2 the filtered scope is
+      // the grouping-bound of-record, so the scope's own actions may carry
+      // planningContext without re-keying the bound digest; the evidence also
+      // rides the reference context — the schema-first artifact provider
+      // passes these fields through to the planner. Keep this object in
+      // lockstep with selectedAction.planningContext above.
       current: existingRecord || undefined,
       target: planningTarget,
       existingRecordLookup: existingRecordLookup || undefined,
@@ -1079,6 +1078,11 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
     ],
     writesPerformed: false,
     scanStateUpdated: false,
+    // Batch 15 §6.2: the filtered scope IS the grouping-bound of-record —
+    // the proposal, the APPROVE_GROUPING receipt, and every later dry-run
+    // bind this one file; the scout/PR artifact stays a lineage input. The
+    // additive marker makes the chain role explicit on the artifact itself.
+    ofRecord: true,
   };
   const validation = validateReleaseScope(filteredScope);
   if (!validation.valid) {
@@ -1091,10 +1095,10 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       schemaVersion: 1,
       releaseRange: releaseScope.releaseRange,
       targetTag: releaseScope.targetTag,
-      // Grouping-bound campaigns enter with the receipt-bound unfiltered
-      // scope, which cannot carry campaign resources without re-keying the
-      // chained digest — the reviewed resources ride here instead and the
-      // CLI merges them into resource planning (sdk-doc-sync campaignResources).
+      // Since batch 15 §6.2 the filtered scope is the grouping-bound
+      // of-record and could carry resources without re-keying the bound
+      // digest; the reviewed resources still ride here and the CLI merges
+      // them into resource planning (sdk-doc-sync campaignResources).
       resources,
       contexts,
     },
@@ -1147,6 +1151,7 @@ module.exports = {
   compareTracks,
   detectVersionTracksFromReference,
   expandCandidateSpec,
+  joinSharedUpdateReviews,
   parseArgs,
   readSdkReference,
   resolveDetectedSuccessorTracks,

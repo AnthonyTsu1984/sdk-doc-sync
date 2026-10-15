@@ -1040,3 +1040,78 @@ test('exception code registry matches the design §7 three-code enumeration', ()
   assert.equal(typeof main, 'function');
   assert.equal(parseArgs(['node', 'x', '--sweep']).sweep, true);
 });
+
+test('sweep join is the builder export: attributed shared units classify, malformed attributions fail typed', () => {
+  // Slice 3-3: the sweep consumes build-reviewed-release-context's exported
+  // joinSharedUpdateReviews — the same join the reviewed-context build runs,
+  // SHARED_UPDATE_REVIEW_* validations included. Well-formed attribution
+  // classifies the shared in-place unit (no blocker); the read-only replica
+  // used to sweep the malformed shape unclassified, the real join refuses it.
+  const ownRecordId = 'rec-own';
+  const otherRecordId = 'rec-other';
+  const evidence = createInheritanceEvidence({
+    stableId: 'node:Collections:truncateCollection',
+    current: {
+      recordId: ownRecordId,
+      documentToken: 'docx-shared',
+      version: 'v2.6.x',
+      folderToken: FAM_AUTH,
+      versionRootToken: ROOT,
+      ancestryVerified: true,
+      placementVerified: true,
+    },
+    target: { version: 'v2.6.x', folderToken: FAM_AUTH, folderRef: null, versionRootToken: ROOT, ancestryVerified: true },
+    sharedTokenStatus: 'shared',
+    referencedRecordIds: [ownRecordId, otherRecordId],
+    trackInventoryDigests: {
+      'v2.4.x': 'sha256:' + crypto.randomBytes(32).toString('hex'),
+      'v2.6.x': 'sha256:' + crypto.randomBytes(32).toString('hex'),
+    },
+    collectedAt: '2026-10-15T06:36:20.782Z',
+  });
+  const spec = (inheritanceReview) => ({
+    language: 'node',
+    track: 'v2.6.x',
+    target: { version: 'v2.6.x', versionRootToken: ROOT },
+    candidates: {
+      'Collections-truncateCollection': {
+        docIdentity: { stableId: 'node:Collections:truncateCollection', canonicalSlug: 'Collections-truncateCollection' },
+        reviewedActionType: 'UPDATE',
+        ancestryVerified: true,
+        existingRecord: {
+          recordId: ownRecordId,
+          documentToken: 'docx-shared',
+          placement: { version: 'v2.6.x', folderToken: FAM_AUTH, versionRootToken: ROOT, verified: true },
+        },
+        folderToken: FAM_AUTH,
+        folderAncestry: [ROOT, FAM_AUTH],
+        inheritanceEvidence: evidence,
+        inheritanceReview,
+      },
+    },
+  });
+  const wellFormed = {
+    requiredSuccessorTracks: [],
+    successors: [{
+      track: 'v2.4.x',
+      status: 'inherited',
+      decision: 'no_successor_action',
+      pointingRecordIds: [otherRecordId],
+    }],
+  };
+  const report = sweepSpec(spec(wellFormed), { evaluateVersionedTreeDelta });
+  assert.equal(report.units, 1);
+  assert.equal(report.blocked.length, 0);
+  assert.throws(
+    () => sweepSpec(spec({
+      requiredSuccessorTracks: [],
+      successors: [{
+        track: 'v2.4.x',
+        status: 'unreviewed',
+        decision: 'no_successor_action',
+        pointingRecordIds: [otherRecordId],
+      }],
+    }), { evaluateVersionedTreeDelta }),
+    (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID',
+  );
+});

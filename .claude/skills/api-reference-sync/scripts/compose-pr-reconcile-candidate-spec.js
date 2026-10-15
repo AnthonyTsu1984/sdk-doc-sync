@@ -44,6 +44,11 @@ const {
 } = require('../src/sdk-doc-sync/pr-page-parser');
 const { validateReleaseScope } = require('../src/sdk-doc-sync/release-scope/schema');
 const { normalizeReferenceMultiset } = require('../src/sdk-doc-sync/reference-multiset');
+// Slice 3-3 (§8.3 prerequisite fulfilled): the sweep consumes the builder's
+// exported joinSharedUpdateReviews — the exact join the reviewed-context
+// build runs, SHARED_UPDATE_REVIEW_* validations included. The read-only
+// re-implementation this file carried before the export existed is gone.
+const { joinSharedUpdateReviews } = require('./build-reviewed-release-context');
 
 const PROFILES_PATH = path.join(__dirname, '..', 'config', 'pr-page-profiles.json');
 
@@ -109,7 +114,7 @@ function parseArgs(argv) {
 
 function usage() {
   return `Usage: compose-pr-reconcile-candidate-spec --language <lang> --track <vX.Y.x> \\
-  --release-scope <of-record scope> --decisions <decisions.json> \\
+  --release-scope <lineage scope (scout/PR-scan artifact)> --decisions <decisions.json> \\
   --pages-dir <pages-<track>> --snapshot <bitable-snapshot.json> \\
   --placement-audit <placement-audit.json> --root-walk <root-walk.json> \\
   --identity-map <identity/<track>.json> --output <candidate-spec.json> \\
@@ -517,28 +522,6 @@ function copySourceNeeded({ existingRecord, track, targetFolderToken }) {
 // Sweep (§8.3): offline versioned-tree-policy precheck
 // ---------------------------------------------------------------------------
 
-// joinSharedUpdateReviews semantics from build-reviewed-release-context.js
-// (NOT exported there yet — slice-3 export gap; this read-only reimplementation
-// mirrors the 2026-10-15 java kernel-sweep.js and must be dropped once the
-// builder exports the function).
-function joinSharedUpdateReviews({ evidence, inheritanceReview }) {
-  if (!evidence || evidence.sharedToken?.status !== 'shared') return undefined;
-  const byRecordId = new Map();
-  for (const successor of inheritanceReview?.successors || []) {
-    for (const recordId of successor.pointingRecordIds || []) byRecordId.set(recordId, successor);
-  }
-  const reviews = [];
-  const seen = new Set();
-  for (const recordId of normalizeReferenceMultiset(evidence.sharedToken.referencedRecordIds)) {
-    if (!recordId || recordId === evidence.current?.recordId || seen.has(recordId)) continue;
-    seen.add(recordId);
-    const successor = byRecordId.get(recordId);
-    if (!successor) continue;
-    reviews.push({ recordId, track: successor.track, status: successor.status ?? null, decision: successor.decision ?? null });
-  }
-  return reviews.length > 0 ? reviews : undefined;
-}
-
 function isCloneIdSharedInPlace(evidence) {
   if (!evidence || evidence.sharedToken?.status !== 'shared') return false;
   const multiset = normalizeReferenceMultiset(evidence.sharedToken.referencedRecordIds || []);
@@ -584,6 +567,7 @@ function sweepSpec(spec, { evaluateVersionedTreeDelta }) {
     if (Array.isArray(candidate.folderAncestry)) target.folderAncestry = candidate.folderAncestry;
     const evidence = candidate.inheritanceEvidence || null;
     const sharedUpdateReviews = joinSharedUpdateReviews({
+      identity: { stableId: candidate.docIdentity?.stableId || slug },
       evidence,
       inheritanceReview: candidate.inheritanceReview,
     });
@@ -1485,13 +1469,12 @@ function sweepOnly(args) {
     counts: report.counts,
     blocked: report.blocked,
     exceptions,
-    // Review P2-1: this is a VERIFICATION-OMITTED declaration, not a
-    // provenance claim. joinSharedUpdateReviews is a read-only
-    // re-implementation because build-reviewed-release-context.js does not
-    // export it yet; until the builder exports the function and this sweep
-    // consumes that export, the shared-update-review join carries no
-    // guarantee against kernel drift.
-    joinSharedUpdateReviewsVerification: 'verification omitted — joinSharedUpdateReviews is a read-only re-implementation (build-reviewed-release-context.js does not export it yet); sweep verdicts make no claim against kernel drift for the shared-update-review join until the builder export replaces this copy',
+    // Batch 15 slice 3-3: the sweep consumes the builder's exported
+    // joinSharedUpdateReviews directly — the same join the reviewed-context
+    // build runs, with its SHARED_UPDATE_REVIEW_INVALID/AMBIGUOUS validations
+    // live: a malformed attribution fails the sweep typed instead of silently
+    // sweeping the unit unclassified.
+    joinSharedUpdateReviewsVerification: 'builder-export reuse — joinSharedUpdateReviews is imported from build-reviewed-release-context.js; its SHARED_UPDATE_REVIEW_* validations apply to every swept shared unit (no read-only copy, no drift gap)',
     writesPerformed: false,
   };
   if (args.output) {

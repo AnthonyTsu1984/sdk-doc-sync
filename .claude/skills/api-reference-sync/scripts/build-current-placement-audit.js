@@ -44,7 +44,7 @@ function parseArgs(argv = process.argv) {
   const repeatable = new Set(['--source-version-root', '--adjacent-bitable', '--required-track']);
   const options = new Set([
     '--proposal', '--version', '--version-root', '--output',
-    '--language', '--registry', '--target-bitable',
+    '--language', '--registry', '--target-bitable', '--dump-walk',
     ...repeatable,
   ]);
   for (let index = 2; index < argv.length; index += 1) {
@@ -210,30 +210,66 @@ function classifySharedToken({ entry, enumerationComplete, referencesByToken, pl
   return { status, referencedRecordIds, blockers };
 }
 
+// Pure artifact face of a version-root walk (campaign-control batch 15 §5.3).
+// go's intake was forced to hand-roll walk-version-root.js because the audit
+// consumed `indexVersionRoot` internally without ever exposing the walk shape
+// its composer needed. --dump-walk now emits the same artifact — every node
+// with token/type/name/parent plus the self-inclusive ancestor chain, sorted
+// by chain so the bytes are deterministic — without a second live walk.
+function walkArtifact({ rootToken, byToken, walkedAt }) {
+    if (!rootToken || !(byToken instanceof Map)) {
+        throw new Error('walkArtifact requires rootToken and a byToken Map');
+    }
+    const nodes = [...byToken.values()]
+        .map(({ token, type, parentFolderToken, ancestors, name }) => ({
+            token,
+            type,
+            name,
+            parentFolderToken,
+            ancestors: [...ancestors, token],
+        }))
+        .sort((a, b) => (a.ancestors.join('/') < b.ancestors.join('/') ? -1 : 1));
+    return {
+        walkedAt: walkedAt || new Date().toISOString(),
+        rootToken,
+        nodeCount: nodes.length,
+        folderCount: nodes.filter((node) => node.type === 'folder').length,
+        nodes,
+        writesPerformed: false,
+    };
+}
+
 async function buildPlacementAudit({
-  proposal,
-  version,
-  versionRootToken,
-  sourceVersionRoots = [],
-  indexer,
-  trackBitables = [],
-  recordLister = null,
-  collectedAt = null,
-  requiredTrackVersions = null,
+    proposal,
+    version,
+    versionRootToken,
+    sourceVersionRoots = [],
+    indexer,
+    trackBitables = [],
+    recordLister = null,
+    collectedAt = null,
+    requiredTrackVersions = null,
+    targetWalkSink = null,
 }) {
-  const runCollectedAt = collectedAt || new Date().toISOString();
-  const roots = [
-    { version, rootToken: versionRootToken, target: true },
-    ...sourceVersionRoots.map((item) => ({ ...item, target: false })),
-  ];
-  const indexes = [];
-  for (const root of roots) {
-    indexes.push({
-      ...root,
-      index: await indexer(root.rootToken),
-    });
-  }
-  const targetIndex = indexes[0].index;
+    const runCollectedAt = collectedAt || new Date().toISOString();
+    const roots = [
+        { version, rootToken: versionRootToken, target: true },
+        ...sourceVersionRoots.map((item) => ({ ...item, target: false })),
+    ];
+    const indexes = [];
+    for (const root of roots) {
+        indexes.push({
+            ...root,
+            index: await indexer(root.rootToken),
+        });
+    }
+    const targetIndex = indexes[0].index;
+    // --dump-walk handoff: the caller receives the target root's live index so
+    // it can persist the walk artifact without re-walking. Sink, not return
+    // value — the audit artifact shape is a consumed contract and stays put.
+    if (typeof targetWalkSink === 'function') {
+        targetWalkSink({ rootToken: versionRootToken, byToken: targetIndex });
+    }
 
   // Completeness is "every applicable track was enumerated", never "at least
   // one was supplied". The required set is derived independently of what the
@@ -544,6 +580,7 @@ async function main(argv = process.argv) {
     throw new Error('Missing --version-root (or --language with a registered release root)');
   }
 
+  let targetWalkByToken = null;
   const artifact = await buildPlacementAudit({
     proposal,
     version: args.version,
@@ -553,10 +590,23 @@ async function main(argv = process.argv) {
     trackBitables,
     recordLister: ({ baseToken, tableId }) => listBitableRecords(tokenFetcher, baseToken, tableId),
     requiredTrackVersions,
+    ...(args.dumpWalk ? { targetWalkSink: ({ byToken }) => { targetWalkByToken = byToken; } } : {}),
   });
   artifact.sourceProposal = args.proposal;
   fs.mkdirSync(path.dirname(args.output), { recursive: true });
   fs.writeFileSync(args.output, `${JSON.stringify(artifact, null, 2)}\n`);
+  if (args.dumpWalk && targetWalkByToken) {
+    // §5.3: the audit walks the target root once; the walk artifact rides the
+    // same walk out (collectedAt shared) instead of a second live traversal.
+    const dumpWalkPath = path.resolve(args.dumpWalk);
+    fs.mkdirSync(path.dirname(dumpWalkPath), { recursive: true });
+    const walkJson = walkArtifact({
+      rootToken: versionRootToken,
+      byToken: targetWalkByToken,
+      walkedAt: artifact.collectedAt,
+    });
+    fs.writeFileSync(dumpWalkPath, `${JSON.stringify(walkJson, null, 2)}\n`);
+  }
   console.log(JSON.stringify({
     output: args.output,
     status: artifact.status,
@@ -565,6 +615,7 @@ async function main(argv = process.argv) {
     blocked: artifact.blocked.length,
     evidenceBlocked: artifact.evidenceBlocked.length,
     sharedTokenSummary: artifact.sharedTokenSummary,
+    ...(args.dumpWalk ? { dumpWalk: path.resolve(args.dumpWalk) } : {}),
   }, null, 2));
 }
 
@@ -587,4 +638,5 @@ module.exports = {
   proposalEntries,
   resolveRegistryContext,
   tokenFromLink,
+  walkArtifact,
 };

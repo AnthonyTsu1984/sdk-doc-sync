@@ -96,6 +96,8 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/document-ir.test.js',
     '.claude/skills/api-reference-sync/tests/docx-reader.test.js',
     '.claude/skills/api-reference-sync/tests/docx-section-patcher.test.js',
+    '.claude/skills/api-reference-sync/tests/dump-bitable-snapshot.test.js',
+    '.claude/skills/api-reference-sync/tests/dump-pr-pages.test.js',
     '.claude/skills/api-reference-sync/tests/evidence-manifest.test.js',
     '.claude/skills/api-reference-sync/tests/execution-outcome.test.js',
     '.claude/skills/api-reference-sync/tests/fault-injection.test.js',

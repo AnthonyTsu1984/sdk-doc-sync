@@ -750,6 +750,13 @@
       "basis": "node --check parse gate over the first-party tree; no writes"
     },
     {
+      "path": "scripts/agent-budget.js",
+      "skill": "doc-ops-core",
+      "classification": "read-only",
+      "operation": "agent-budget-report",
+      "basis": "slice 3-1 budget metering CLI: reads host-side agent metadata/rollout and repo tmp bookkeeping, appends only run-local tmp/token-budget-{live,ledger}.jsonl records; no external mutation signature"
+    },
+    {
       "path": ".claude/skills/api-reference-sync/scripts/dump-bitable-snapshot.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

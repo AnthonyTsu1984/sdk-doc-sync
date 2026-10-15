@@ -18,6 +18,10 @@ const REJECTION_CODES = Object.freeze({
   SIGNATURE_FENCE_MISSING: 'SIGNATURE_FENCE_MISSING',
   BULLET_FORM_UNRECOGNIZED: 'BULLET_FORM_UNRECOGNIZED',
   RETURN_TYPE_MISSING: 'RETURN_TYPE_MISSING',
+  // Composer-side digest gate (design §4.1-3/§4.5-1 sixth code): the page dump
+  // on disk must hash to decisions.pr.pageSha256. Lives here so every intake
+  // typed rejection shares one code registry.
+  PAGE_DUMP_DIGEST_MISMATCH: 'PAGE_DUMP_DIGEST_MISMATCH',
 });
 
 function typedError(code, message) {

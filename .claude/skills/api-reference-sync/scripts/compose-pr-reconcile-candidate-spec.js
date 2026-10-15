@@ -824,6 +824,7 @@ function compose(args) {
   const parseStats = { bulletForms: {}, tailModifiers: { required: 0, default: 0 }, sections: {}, pages: 0, routes: { verbatim: 0, structured: 0 } };
   const verbatimOverlay = {};
   const absentUnits = [];
+  const mintedEvidence = [];
 
   let sharedCount = 0;
   let inheritedCount = 0;
@@ -1317,6 +1318,9 @@ function compose(args) {
     `profile ${language} v${profileVersion} route ${effectiveRoute} (per-unit: ${parseStats.routes.verbatim} verbatim / ${parseStats.routes.structured} structured); parsed ${parseStats.pages} pages; bullet forms hit ${JSON.stringify(parseStats.bulletForms)} (total ${bulletTotal}); tail modifiers ${JSON.stringify(parseStats.tailModifiers)}; section hits ${JSON.stringify(parseStats.sections)}.`,
     `identity map coverage: ${identityCoverage.mapped}/${units.length} units mapped${identityCoverage.unmapped.length > 0 ? ` (unmapped: ${identityCoverage.unmapped.join(', ')})` : ''}.`,
   );
+  if (mintedEvidence.length > 0) {
+    composerNotes.push(`inheritance evidence minted in-place for ${mintedEvidence.length} unit(s) whose live placement folder IS the target (audit evidence absent, re-bind precedent): ${mintedEvidence.join(', ')}.`);
+  }
   if (effectiveRoute === 'structured' && orphanSlugs.size > 0) {
     composerNotes.push(`SCANNER_TAXONOMY_ORPHAN: ${orphanSlugs.size} scope slug(s) matched PR_SYMBOL_FALLBACK_BIND diagnostics; affected units were switched to the verbatim fallback route (design §4.4).`);
   }

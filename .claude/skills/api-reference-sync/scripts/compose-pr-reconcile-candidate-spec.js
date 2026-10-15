@@ -114,7 +114,7 @@ function parseArgs(argv) {
 
 function usage() {
   return `Usage: compose-pr-reconcile-candidate-spec --language <lang> --track <vX.Y.x> \\
-  --release-scope <of-record scope> --decisions <decisions.json> \\
+  --release-scope <lineage scope (scout/PR-scan artifact)> --decisions <decisions.json> \\
   --pages-dir <pages-<track>> --snapshot <bitable-snapshot.json> \\
   --placement-audit <placement-audit.json> --root-walk <root-walk.json> \\
   --identity-map <identity/<track>.json> --output <candidate-spec.json> \\

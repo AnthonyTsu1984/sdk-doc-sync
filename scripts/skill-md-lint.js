@@ -104,7 +104,11 @@ function lintSkillMd({ skillDir, repoRoot, maxBytes = MAX_BYTES } = {}) {
   }
 
   // 4. Refusal codes must be real (or operator judgment must be marked).
-  const sourceRoots = ['src', 'bin', 'scripts'].map((dir) => path.join(skillDir, dir));
+  // Cross-skill real codes legitimately live in doc-ops-core too (batch15
+  // review P1: e.g. PROCESS_LEARNING_CAPTURE_REQUIRED in its src).
+  const sourceRoots = ['src', 'bin', 'scripts']
+    .map((dir) => path.join(skillDir, dir))
+    .concat(path.join(repoRoot, '.claude', 'skills', 'doc-ops-core', 'src'));
   const sourceText = [];
   const walk = (dir) => {
     if (!fs.existsSync(dir)) return;
@@ -116,15 +120,22 @@ function lintSkillMd({ skillDir, repoRoot, maxBytes = MAX_BYTES } = {}) {
   };
   for (const dir of sourceRoots) walk(dir);
   const sourceBlob = sourceText.join('\n');
-  const inline = /`[^`]*`|```[\s\S]*?```/g;
-  const proseOnly = markdown.replace(inline, (match) => match.replace(CODE_PATTERN, ''));
-  const operatorJudgment = OPERATOR_JUDGMENT_PATTERN.test(markdown);
-  for (const match of proseOnly.matchAll(CODE_PATTERN)) {
-    const code = match[1];
-    findings.codes.push(code);
-    if (sourceBlob.includes(code)) continue;
-    if (operatorJudgment) continue; // section-level operator-judgment marking
-    errors.push({ code: 'SKILL_LINT_CODE_UNVERIFIED', detail: `${code} not found in skill source` });
+  // Per-LINE exemption (batch15 review P1): a whole-file operator-judgment
+  // short-circuit is fail-open — one incidental phrase exempted every code in
+  // the file. A code is exempt only when its own line carries an explicit
+  // operator-judgment marker.
+  let inFence = false;
+  for (const rawLine of markdown.split('\n')) {
+    if (/^\s*```/.test(rawLine)) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    const line = rawLine.replace(/`[^`]*`/g, (span) => span.replace(CODE_PATTERN, ''));
+    for (const match of line.matchAll(CODE_PATTERN)) {
+      const code = match[1];
+      findings.codes.push(code);
+      if (sourceBlob.includes(code)) continue;
+      if (OPERATOR_JUDGMENT_PATTERN.test(rawLine)) continue; // same-line explicit marking
+      errors.push({ code: 'SKILL_LINT_CODE_UNVERIFIED', detail: `${code} not found in skill source` });
+    }
   }
 
   return { valid: errors.length === 0, errors, findings };

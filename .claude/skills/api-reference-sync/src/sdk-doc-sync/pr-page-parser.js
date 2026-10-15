@@ -150,21 +150,37 @@ function parseBulletTree(block, profile, pageName, stats) {
       const rest = stripMdEscapes(bullet[2]);
       let entry = null;
       let m;
-      if (forms.has('builder') && (m = rest.match(/^`([A-Za-z_$][\w$]*)\(([^)]*)\)`(?:\s*\(\*(.+?)\*\))?/))) {
-        // `roleName(String roleName)` possibly (*Type*) after
+      // Getter is judged BEFORE the builder form: an empty-paren `getX()`
+      // (*Type*) bullet otherwise matches the builder branch as a zero-arg
+      // builder and the getter counter stays 0 on real corpora (review P1-1 —
+      // the getter form was dead code; java corpus 2026-10-15: 249 getter
+      // bullets all miscounted).
+      if (forms.has('getter') && (m = rest.match(/^`([A-Za-z_$][\w$]*)\(\)`(?:\s*\(\*(.+?)\*\)|\s*\(([^)]*)\))?\s*(?:-\s*)?(.*)$/))) {
+        // `getRoleName()` (*String*) - inline description optional; the type
+        // annotation may be (*Type*) or bare (Type) (java harvest:
+        // v2-Authentication-listPrivilegeGroups `getGroupName()` (String) -).
+        entry = {
+          name: m[1],
+          type: m[2] || m[3] || null,
+          children: [], required: false, defaultValue: null, descriptionLines: [], method: true,
+        };
+        if (m[4]) entry.descriptionLines.push(m[4]);
+        stats.bulletForms.getter += 1;
+      } else if (forms.has('builder') && (m = rest.match(/^`([A-Za-z_$][\w$]*)\(([^)]+)\)`(?:\s*\(\*(.+?)\*\))?\s*(?:-\s*)?(.*)$/))) {
+        // `roleName(String roleName)` possibly (*Type*) after, plus an optional
+        // inline description — captured into descriptionLines, never silently
+        // dropped (review P1-1). Non-empty parameter list: empty parens belong
+        // to the getter form above.
         entry = {
           name: m[1],
           type: m[3] || null,
-          builderArg: m[2] || '',
-          builderArgType: (m[2] || '').trim().split(/\s+/)[0] || null,
+          builderArg: m[2],
+          builderArgType: m[2].trim().split(/\s+/)[0] || null,
           fullSignature: `${m[1]}(${m[2]})`,
           children: [], required: false, defaultValue: null, descriptionLines: [],
         };
+        if (m[4]) entry.descriptionLines.push(m[4]);
         stats.bulletForms.builder += 1;
-      } else if (forms.has('getter') && (m = rest.match(/^`([A-Za-z_$][\w$]*)\(\)`\s*\(\*(.+?)\*\)/))) {
-        // `getRoleName()` (*String*) -
-        entry = { name: m[1], type: m[2], children: [], required: false, defaultValue: null, descriptionLines: [], method: true };
-        stats.bulletForms.getter += 1;
       } else if (forms.has('param') && (m = rest.match(/^\*\*(.+?)\*\*\s*\(([^)]*)\)\s*(?:-\s*)?(.*)$/))) {
         // **apiKey** (*String*) - description... Union emphasis spans inside
         // the type parens (*str* | *None*) are flattened to their words.

@@ -232,9 +232,9 @@ client.createCollection(createCollectionReq);
 
 **BUILDER METHODS:**
 
-- \`CreateCollectionReq(String collectionName)\` (*CreateCollectionReq*)
+- \`CreateCollectionReq(String collectionName)\` (*CreateCollectionReq*) - builds the request wrapper.
 
-    Creates a request to create a collection.
+    Detailed builder prose stays on its own lines.
 
 **PARAMETERS:**
 
@@ -247,6 +247,13 @@ client.createCollection(createCollectionReq);
 *Void*
 
 **RETURNS:**
+
+*CreateCollectionRes*
+
+- \`getCollectionName()\` (*String*) - the name echoed back by the server.
+- \`getFieldName()\` (*String*) - the target field name.
+
+    A getter's block description rides its own lines.
 
 **EXCEPTIONS:**
 
@@ -341,6 +348,35 @@ test('java page keeps include markers in the raw request fence for variant split
   assert.match(parsed.requestFenceText, /include-start zilliz/);
   assert.equal(parsed.returnType, 'Void');
   assert.deepEqual(parsed.exceptions.map((entry) => entry.name), ['MilvusClientException']);
+});
+
+test('getter bullets win over the builder form and both capture inline descriptions (review P1-1)', () => {
+  // Review P1-1: the getter branch was dead code — the builder regex accepted
+  // empty parens and ran first, so every real getter bullet was counted (and
+  // shaped) as a zero-arg builder, silently dropping its type and inline
+  // description. The getter form must judge first and win.
+  const parsed = parsePage(JAVA_METHOD_PAGE, { ...profiles.java, route: 'structured' }, 'java-method.md');
+  // getters: empty-paren `getX()` (*Type*) bullets from the RETURNS section
+  assert.deepEqual(parsed.getters.map((getter) => [getter.name, getter.type]), [
+    ['getCollectionName', 'String'],
+    ['getFieldName', 'String'],
+  ]);
+  assert.equal(parsed.stats.bulletForms.getter, 2);
+  assert.equal(parsed.stats.bulletForms.builder, 1);
+  // inline descriptions survive: "- the name echoed back by the server." rides
+  // the bullet line, the block description on its own lines joins it.
+  assert.equal(parsed.getters[0].descriptionLines.join(' '), 'the name echoed back by the server.');
+  assert.match(parsed.getters[1].descriptionLines.join(' ').replace(/\s+/g, ' '), /the target field name\. A getter's block description/);
+  // builder: non-empty parameter list required, inline description captured.
+  const builder = parsed.params.find((entry) => entry.name === 'CreateCollectionReq');
+  assert.equal(builder.builderArgType, 'String');
+  // (The trailing section-heading noise in descriptionLines is pre-existing
+  // section scoping — the java profile's BUILDER METHODS section stops at
+  // RETURN TYPE, so the PARAMETERS heading line rides along; outside P1-1.)
+  assert.match(
+    builder.descriptionLines.join(' ').replace(/\s+/g, ' '),
+    /^builds the request wrapper\. Detailed builder prose stays on its own lines\./,
+  );
 });
 
 test('summary register normalization follows the three-branch contract', () => {

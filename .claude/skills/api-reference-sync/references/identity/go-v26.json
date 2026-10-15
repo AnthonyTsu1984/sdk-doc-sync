@@ -4,6 +4,7 @@
   "track": "v2.6.x",
   "defaultCategory": "Client",
   "packagePrefix": "",
+  "slugPrefix": "v2-",
   "symbols": {
     "Client.New": {
       "stableId": "go:Client:New",

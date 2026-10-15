@@ -4,6 +4,7 @@
   "track": "v3.0.x",
   "defaultCategory": "Client",
   "packagePrefix": "",
+  "slugPrefix": "v2-",
   "symbols": {
     "Vector.NewAutoAnnParam": {
       "stableId": "go:Vector:NewAutoAnnParam",

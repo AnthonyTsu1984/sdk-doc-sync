@@ -8,6 +8,11 @@
 // sees successful calls. No-op outside this repository or on any error — the
 // session must never feel this hook.
 //
+// Also feeds agent budget metering (slice 3-1): every event carries the main
+// session's session_id, so the tap can meter MAIN-session tool rounds, and
+// Agent-like tool calls record subagent dispatches (hooks do NOT fire inside
+// subagent child sessions — verified empirically; see budget-meter.js).
+//
 // Registered via the thin shim .zcode/hooks/post-tool-use.cjs (machine-local,
 // gitignored); this module is the versioned, CI-tested implementation and can
 // also be run directly for manual verification:
@@ -16,6 +21,12 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { appendEvent, extractSessionRef } = require('./event-lib.js');
+const {
+  countSessionRoundsToday,
+  isAgentDispatchTool,
+  mainSessionRoundRecord,
+  recordAgentDispatch,
+} = require('./budget-meter.js');
 
 const HOOK_ROOT = process.env.DASHBOARD_HOOK_ROOT
   ? path.resolve(process.env.DASHBOARD_HOOK_ROOT)
@@ -55,13 +66,42 @@ function main() {
   }
   if (cwd !== root) return;
 
-  appendEvent({
-    kind: 'tool',
-    sessionId: input.session_id ?? input.sessionId ?? null,
-    tool: input.tool_name ?? input.toolName ?? null,
-    summary: summarize(input.tool_input ?? input.toolInput),
-    sessionRef: extractSessionRef(input.tool_input ?? input.toolInput),
-  });
+  const sessionId = input.session_id ?? input.sessionId ?? null;
+  const tool = input.tool_name ?? input.toolName ?? null;
+  const toolInput = input.tool_input ?? input.toolInput;
+
+  // Budget metering (slice 3-1), best-effort: never disturbs the event tap.
+  // Round count is read BEFORE this call's event lands, so +1 in the meter
+  // counts the current round exactly once.
+  try {
+    const eventsBefore = countSessionRoundsToday(root, sessionId);
+    appendEvent({
+      kind: 'tool',
+      sessionId,
+      tool,
+      summary: summarize(toolInput),
+      sessionRef: extractSessionRef(toolInput),
+    });
+    if (isAgentDispatchTool(tool)) {
+      recordAgentDispatch({ root, sessionId, tool, toolInput });
+    }
+    // Agent-like calls are rounds of the parent session too (its context pays
+    // for them), so they count toward the parent's round meter as well.
+    mainSessionRoundRecord({ root, sessionId, lastTool: tool, eventsToday: eventsBefore });
+  } catch {
+    // metering is observability only; the dashboard event must still land
+    try {
+      appendEvent({
+        kind: 'tool',
+        sessionId,
+        tool,
+        summary: summarize(toolInput),
+        sessionRef: extractSessionRef(toolInput),
+      });
+    } catch {
+      // give up silently
+    }
+  }
 }
 
 if (require.main === module) {

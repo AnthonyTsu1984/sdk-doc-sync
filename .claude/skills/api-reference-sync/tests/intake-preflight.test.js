@@ -228,3 +228,95 @@ test('builder organization keys on a stateful-class entry are not unexpected', (
     assert.equal(result.status, 0, result.stdout);
     assert.doesNotMatch(result.stdout, /INTAKE_CONTEXT_KEYS_UNEXPECTED/);
 });
+
+// --- §9 route discovery: --route auto is the default, judged per entry ---
+// go/python preflights failed structured-route files because the verbatim
+// default judged the nine structured keys unexpected; the node campaign
+// legitimately ships mixed files, so the verdict is per entry.
+
+function makeStructuredEntry(overrides = {}) {
+    // The structured contract: no kind/pr/verbatimContent, planning evidence instead.
+    const entry = makeContextEntry();
+    delete entry.kind;
+    delete entry.pr;
+    delete entry.verbatimContent;
+    return {
+        ...entry,
+        target: { version: 'v3.0.x', parentRecordId: 'rec-parent', folderToken: 'folder-x', versionRootToken: 'root-x', ancestryVerified: true },
+        current: { version: 'v2.6.x', recordId: 'rec-a', documentToken: 'docx-a', folderToken: 'folder-a', ancestryVerified: true },
+        placementWalk: { digest: 'sha256:walk', collectedAt: '2026-10-15T00:00:00.000Z' },
+        ...overrides,
+    };
+}
+
+test('auto (the default) routes a structured entry by its structured keys and passes it clean', () => {
+    const { result } = runPreflight({ 'go:Client:ListFileResources': makeStructuredEntry() });
+    assert.equal(result.status, 0, result.stdout);
+    assert.doesNotMatch(result.stdout, /INTAKE_CONTEXT_KEYS_UNEXPECTED/);
+    assert.doesNotMatch(result.stdout, /INTAKE_VERBATIM_EMPTY/);
+    assert.match(result.stdout, /route \(auto\): 1 structured, 0 verbatim/);
+});
+
+test('the same structured file under explicit --route verbatim keeps the legacy refusal', () => {
+    const { result } = runPreflight(
+        { 'go:Client:ListFileResources': makeStructuredEntry() },
+        ['--route', 'verbatim'],
+    );
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /INTAKE_CONTEXT_KEYS_UNEXPECTED[^\n]*unexpected current, placementWalk, target/);
+    assert.match(result.stdout, /INTAKE_CONTEXT_KEYS_MISSING[^\n]*missing kind, pr, verbatimContent/);
+});
+
+test('a verbatim entry under auto still requires the verbatim contract', () => {
+    const { result } = runPreflight({
+        'go:Client:DropAlias': makeContextEntry({ verbatimContent: '' }),
+    });
+    assert.notEqual(result.status, 0);
+    assert.match(result.stdout, /INTAKE_VERBATIM_EMPTY/);
+    assert.match(result.stdout, /route \(auto\): 0 structured, 1 verbatim/);
+});
+
+test('a mixed file (node 139+20 shape) is judged per entry and both routes pass', () => {
+    const entries = {};
+    for (let index = 0; index < 2; index += 1) {
+        entries[`go:Client:structured${index}`] = makeStructuredEntry();
+    }
+    entries['go:Client:verbatimFallback'] = makeContextEntry();
+    const { result, file } = runPreflight(entries, ['--json']);
+    assert.equal(result.status, 0, result.stdout);
+    const report = JSON.parse(result.stdout);
+    assert.equal(report.route, 'auto');
+    assert.deepEqual(report.entryRoutes, {
+        'go:Client:structured0': 'structured',
+        'go:Client:structured1': 'structured',
+        'go:Client:verbatimFallback': 'verbatim',
+    });
+    assert.deepEqual(report.summary.routes, { mode: 'auto', structured: 2, verbatim: 1 });
+    assert.equal(report.summary.errors, 0);
+    // The mixed verdict only holds for this file; nothing else was read.
+    assert.ok(fs.existsSync(file));
+});
+
+test('findings carry the route that judged their entry', () => {
+    const { result } = runPreflight({
+        'go:Client:structured': makeStructuredEntry({ notes: 'scouting record' }),
+        'go:Client:verbatim': makeContextEntry({ verbatimContent: '' }),
+    }, ['--json']);
+    const report = JSON.parse(result.stdout);
+    assert.notEqual(result.status, 0);
+    const byIdentity = Object.fromEntries(report.findings.map((finding) => [finding.identity, finding]));
+    assert.equal(byIdentity['go:Client:structured'].route, 'structured');
+    assert.equal(byIdentity['go:Client:verbatim'].route, 'verbatim');
+    assert.equal(byIdentity['go:Client:structured'].code, 'INTAKE_NOTES_KEY_NONEMPTY');
+    assert.equal(byIdentity['go:Client:verbatim'].code, 'INTAKE_VERBATIM_EMPTY');
+});
+
+test('--route auto is accepted explicitly and an unknown route value is refused', () => {
+    const { result } = runPreflight({ 'java:v2-Authentication:describeRole': makeContextEntry() }, ['--route', 'auto']);
+    assert.equal(result.status, 0, result.stdout);
+    assert.match(result.stdout, /route \(auto\): 0 structured, 1 verbatim/);
+
+    const bad = runPreflight({ 'java:v2-Authentication:describeRole': makeContextEntry() }, ['--route', 'magic']);
+    assert.equal(bad.result.status, 1);
+    assert.match(bad.result.stderr, /--route must be auto, verbatim, or structured/);
+});

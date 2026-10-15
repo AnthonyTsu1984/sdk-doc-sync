@@ -337,6 +337,16 @@ function parseBulletTree(block, profile, pageName, stats) {
         // accept only numeric fields..."). Profile-gated so other languages
         // still fail loud; the proseBullet counter rides the composer's
         // coverage note as the template-drift signal.
+        // Top-level prose bullets are rejected: every harvested proseBullet
+        // sits at depth >= 2, so a top-level hit is template drift, and
+        // folding a whole sentence in as a parameter name would silently
+        // corrupt the IR instead of failing loud (batch15 review P1').
+        if (Math.floor(indent / 4) === 0) {
+          throw typedError(
+            REJECTION_CODES.BULLET_FORM_UNRECOGNIZED,
+            `${pageName}: top-level prose bullet (proseBullet is nested-only): ${JSON.stringify(rest.slice(0, 80))}`,
+          );
+        }
         entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [] };
         stats.bulletForms.proseBullet += 1;
       } else {

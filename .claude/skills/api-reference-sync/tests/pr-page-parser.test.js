@@ -450,6 +450,14 @@ test('typed rejections cover the fail-loud contract (design §4.5-1)', () => {
     assert.match(error.message, /rule-candidate/);
     return true;
   });
+  // batch15 review P1': a top-level plain-prose bullet is template drift, not a
+  // parameter — it must fail loud instead of folding the sentence in as a name.
+  const topProse = NODE_METHOD_PAGE.replace('- **group_name** (*string*)', '- This whole sentence is a top-level prose bullet with no markup at all');
+  assert.throws(() => parsePage(topProse, { ...profiles.node }, 'node-prose.md'), (error) => {
+    assert.equal(error.code, REJECTION_CODES.BULLET_FORM_UNRECOGNIZED);
+    assert.match(error.message, /top-level prose bullet/);
+    return true;
+  });
   assert.throws(
     () => parsePage(GO_METHOD_PAGE, { ...profiles.go, returnTypeRequired: true, returnTypeHeading: '^\\*\\*MISSING TYPE:\\*\\*\\s*$', requireSignature: false }, 'go-method.md'),
     (error) => {

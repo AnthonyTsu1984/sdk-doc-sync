@@ -29,7 +29,7 @@ Do not use for a narrative guide, localization, verification-only code checks, o
 - The manifest digest binds the stable document sequence, not stale write plans: replan immediately before approval (`--review-unit-id` → scoped dry-run → `--approve-batch-digest <hash>`); any changed artifact, correction, or unit selection means a new batch and new approval. Review comments rebuild only that unit; never advance while comments remain unresolved.
 - Progress lives in a review-session JSON: create only from the complete initial dry-run (`--session-state`), resume only via `--resume-session`; caller-declared unit IDs are never proof of acceptance. Rotation is gate-boundary: one campaign = one session file, ~42% context budget per chat — an approval not in its durable artifact does not survive rotation.
 - Journal every approved action before and after mutation, ending in a durable completion sentinel; an existing journal returns `EXECUTION_RECONCILIATION_REQUIRED` — reconcile live state first, do not relaunch. Rollback capsules precede every mutation; a finalized session is not rollback-capable.
-- PR intake from `milvus-io/web-content` is read-only discovery (`bin/sdk-pr-scan.js`, `sdk-pr-sync.md`; MERGED PRs only). PLACEHOLDER — intake scope-chain pending batch 15 slice 3-3 (pre-thin bullet binds).
+- PR intake from `milvus-io/web-content` is read-only discovery (`bin/sdk-pr-scan.js`, `sdk-pr-sync.md`; MERGED PRs only). Batch 15: the filtered scope IS the of-record — proposal, approval, and dry-runs bind one file.
 
 ## Explicit Interactive Gates
 
@@ -60,13 +60,13 @@ Approval and receipt digests are read ONLY programmatically, in full, from sessi
 ## Domain Workflow
 
 1. Release scope: read `scan-state.json` + BOTH Git log and Git diff since the last accepted tag (`bin/sdk-release-scout.js` pins commit/tag).
-2. Candidate proposal: normalize symbols, resolve records and live ancestry, stop for grouping and successor-track review; the same-pass successor check stays a judgment obligation. PLACEHOLDER — scope chain pending batch 15 slice 3-3 (pre-thin step 2 binds until then).
+2. Candidate proposal: normalize symbols, resolve records and live ancestry, stop for grouping and successor-track review; the same-pass successor check stays a judgment obligation. Its scope = the filtered scope (batch 15 chain; sdk-pr-sync.md Canonical intake chain).
 3. Reviewed planning: source-verified artifacts, immutable plans, `planCount == diffCount`, exact evidence; `scripts/intake-preflight.js --strict` before any campaign.
 4. Collaborative execution: deterministic order, one unit at a time — approve, execute, verify, stop for digest-bound document review.
 5. Acceptance Finalization: persist the accepted-unit manifest after every unit's accepted receipt; separate operator approval, then `WIP→Draft`, refetch/verify, advance `scan-state.json`. The close runs process-learning capture (打回即铸).
 6. Campaign-runner preflight: PARTIAL is failure (record, stop, reconcile); scripts are COPIED FROM THE CERTIFIED TEMPLATE, never inherited (audit B-4).
 7. Operator-authored pages land through a hand-authored surgical `apiPatchPlan`, simulation-validated pre-approval (disclose: preview = desired shape, landing = surgical delta).
-8. Batch runbook: start from `sdk-review-session.js handoff --session <file> [--recipe <recipe.json>]`. PLACEHOLDER — the loop is pending batch 15 slice 3-3 (pre-thin step 8 binds until then).
+8. Batch runbook: start from `sdk-review-session.js handoff --session <file> [--recipe <recipe.json>]`. Recipes: config/intake-recipes.json; dispatch: docs/agent-dispatch-brief-template.md.
 
 ## Domain Invariants
 

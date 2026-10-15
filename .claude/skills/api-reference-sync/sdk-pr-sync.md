@@ -153,6 +153,53 @@ Diagnostics: `PR_MERGED` / `PR_OPEN_READ_ONLY` (info), `PR_PATH_SKIPPED` (info),
 
 Standing reconciliation: run `node bin/identity-reconcile.js --snapshot <bitable-snapshot.json> --identity-map references/identity/<lang>-<track>.json [--emit-draft <file>] [--strict]` at task start. It reports every governed record slug the map does not resolve plus map keys no record represents; `--emit-draft` writes evidence-backed entry drafts derived from the same records (merging stays a manual, master-compared map edit); `--strict` exits non-zero on drift. The CLI applies the cpp `Category.Method` key convention and has no delta-map awareness: for `inventoryCoverage: "delta"` maps (java) its `missing` list is not a coverage signal — the authoritative per-page resolution lives in the PR scan/tag scout, which derive fallback identities through the map's `slugPrefix`.
 
+## Canonical intake chain (batch 15)
+
+One Reconcile wave runs one deterministic chain, and every gate sees the SAME scope file end to end (design §6.2 ruling: the filtered scope IS the of-record — a grouping proposal consumes it, the APPROVE_GROUPING receipt binds it, and every dry-run/resume presents it as `--release-scope`):
+
+```bash
+# 1. scout / PR-scan artifact — the LINEAGE input; never the binding scope
+node .claude/skills/api-reference-sync/bin/sdk-pr-scan.js ... \
+  --output tmp/sdk-release-scout/<lang>-<track>.json
+
+# 2. compose the candidate spec (--sweep adds the offline versioned-tree
+#    precheck and the typed exception queue, §8.3)
+node .claude/skills/api-reference-sync/scripts/compose-pr-reconcile-candidate-spec.js \
+  --language <lang> --track <vX.Y.x> \
+  --release-scope tmp/sdk-release-scout/<lang>-<track>.json \
+  --decisions <decisions.json> --pages-dir <pages-<track>> \
+  --snapshot <bitable-snapshot.json> --placement-audit <placement-audit.json> \
+  --root-walk <root-walk.json> \
+  --identity-map references/identity/<lang>-<track>.json \
+  --output <candidate-spec.json> --sweep
+
+# 3. derive the filtered scope (stamped "ofRecord": true) + reference context
+node .claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js \
+  --release-scope tmp/sdk-release-scout/<lang>-<track>.json \
+  --candidate-spec <candidate-spec.json> \
+  --output-scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
+  --output-context tmp/sdk-release-scout/<lang>-<track>-context.json
+
+# 4. the grouping proposal consumes the FILTERED scope; the approval receipt
+#    re-checks the lineage against the same artifacts
+node .claude/skills/api-reference-sync/scripts/build-grouping-proposal.js \
+  --scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
+  --identity-map references/identity/<lang>-<track>.json \
+  --decisions <decisions.json> --output <proposal.json>
+node .claude/skills/api-reference-sync/scripts/record-grouping-approval.js \
+  --proposal <proposal.json> \
+  --scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
+  --identity-map references/identity/<lang>-<track>.json
+
+# 5. dry-run and every later resume present the SAME filtered scope file
+node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js ... \
+  --release-scope tmp/sdk-release-scout/<lang>-<track>-filtered.json \
+  --reference-context tmp/sdk-release-scout/<lang>-<track>-context.json \
+  --grouping-approval <receipt.json> --dry-run --json
+```
+
+The proposal binds `digestSemantic(filtered scope)`; the untouched GROUPING_STALE mechanics compare every later `--release-scope` presentation against the approved lineage, so one file identity covers proposal/dry-run/session. A placement re-walk after the gate (walkDigest drift) correctly re-keys the bound digest → GROUPING_STALE → rebuild the context and re-gate (expected, not a defect; the recipe lives in `config/intake-recipes.json`).
+
 ## Notes
 
 - Pinned page reads use the sibling checkout `../web-content` (override with `--web-content-dir`). The checkout may lag master as long as the PR merge commit is present (`git fetch origin master` refreshes it); content is always read with `git show <sha>:<path>`, never from the working tree.

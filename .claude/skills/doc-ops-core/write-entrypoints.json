@@ -743,6 +743,20 @@
       "basis": "node --check parse gate over the first-party tree; no writes"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/dump-bitable-snapshot.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "dump-bitable-snapshot",
+      "basis": "GET-only Bitable pagination through the governed Feishu client (batch 15 input-side snapshot producer); the only writes are the --output snapshot artifact, self-certified writesPerformed:false"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/dump-pr-pages.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "dump-pr-pages",
+      "basis": "zero live calls: batch git show exports of PR pages already pinned by a decisions file into --output-dir plus a sha256-verified manifest"
+    },
+    {
       "path": "scripts/invariant-coverage-report.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

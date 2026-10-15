@@ -42,6 +42,7 @@ const {
     checkGroupingScopeChain,
     validateGroupingApprovalReceipt,
 } = require('../src/sdk-doc-sync/grouping-proposal');
+const { recipeLines } = require('../src/sdk-doc-sync/intake-recipes');
 
 const adapters = Object.freeze({
     python: require('../src/sdk-reference-ir/adapters/python'),
@@ -1067,6 +1068,19 @@ async function runCli({
         writeFile(path.resolve(args.summaryJson), `${JSON.stringify(createBoundedSummary(result), null, 2)}\n`);
     }
 
+    // Intake recipe hints (campaign-control batch 15 §8.2): planning errors
+    // matching a collected recipe print the recipe line on stderr — stderr is
+    // the operator/wrapper face, the JSON output stays the machine face.
+    // Best-effort by design: a broken recipe table is reported, never allowed
+    // to convert a finished run into a crash.
+    try {
+        for (const line of recipeLines(result.planningErrors.map((planningError) => `${planningError.code || ''} ${planningError.message || ''}`))) {
+            err(line);
+        }
+    } catch (recipeError) {
+        err(`recipe hints unavailable: ${recipeError.code || ''} ${recipeError.message}`);
+    }
+
     if (args.json) {
         out(JSON.stringify(result, null, 2));
         return result;
@@ -1336,6 +1350,15 @@ function nonEmptyReceiptString(value) {
 if (require.main === module) {
     runCli().catch(err => {
         console.error('Fatal error:', err && err.code ? `[${err.code}] ${err.message}` : err.message);
+        // Recipe hints ride the fatal face too (batch 15 §8.2); the original
+        // fatal always outranks a broken recipe table.
+        try {
+            for (const line of recipeLines([err && err.code ? `${err.code} ${err.message}` : err && err.message])) {
+                console.error(line);
+            }
+        } catch (recipeError) {
+            console.error(`recipe hints unavailable: ${recipeError.code || ''} ${recipeError.message}`);
+        }
         process.exit(1);
     });
 }

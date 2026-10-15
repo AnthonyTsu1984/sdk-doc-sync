@@ -128,6 +128,15 @@ function parseBulletTree(block, profile, pageName, stats) {
   const requiredMarker = compile(profile.requiredMarker || '^\\s*\\*\\*\\[REQUIRED\\]\\*\\*\\s*$');
   const defaultMarker = compile(profile.defaultMarker || '^\\s*Default: `?([^`\\n]+)`?\\s*$');
   let current = null;
+  // Profile-gated (calloutBulletsAsDescription): <div class="alert ...">...
+  // </div> blocks inside a section are prose callouts, so their bullet lines
+  // fold into the current entry's description instead of being parsed as
+  // entries (node alterAlias alias-state example bullets, python
+  // Vector-query output_fields note bullets — 2026-10-15 harvest). Marker
+  // lines inside a callout stay prose too: no harvested callout carries a
+  // REQUIRED/Default marker.
+  const calloutProse = profile.calloutBulletsAsDescription === true;
+  let inCallout = false;
   function pushEntry(entry, indent) {
     const depth = Math.floor(indent / 4);
     if (depth === 0) {
@@ -144,6 +153,22 @@ function parseBulletTree(block, profile, pageName, stats) {
     }
   }
   for (const raw of lines) {
+    if (calloutProse) {
+      if (!inCallout && /<div\b[^>]*class="alert /i.test(raw)) {
+        inCallout = true;
+        if (current && raw.trim()) current.descriptionLines.push(raw);
+        continue;
+      }
+      if (inCallout && /<\/div>/i.test(raw.trim())) {
+        inCallout = false;
+        if (current && raw.trim()) current.descriptionLines.push(raw);
+        continue;
+      }
+      if (inCallout && current && raw.trim()) {
+        current.descriptionLines.push(raw);
+        continue;
+      }
+    }
     const bullet = raw.match(/^(\s*)- (.*)$/);
     if (bullet) {
       const indent = bullet[1].length;
@@ -181,9 +206,12 @@ function parseBulletTree(block, profile, pageName, stats) {
         };
         if (m[4]) entry.descriptionLines.push(m[4]);
         stats.bulletForms.builder += 1;
-      } else if (forms.has('param') && (m = rest.match(/^\*\*(.+?)\*\*\s*\(([^)]*)\)\s*(?:-\s*)?(.*)$/))) {
+      } else if (forms.has('param') && (m = rest.match(/^\*\*(.+?)\*\*\s*[（(]([^)）]*)[)）]\s*(?:[-–]\s*)?(.*)$/))) {
         // **apiKey** (*String*) - description... Union emphasis spans inside
         // the type parens (*str* | *None*) are flattened to their words.
+        // Full-width paren variants (**privilege** （*PrivilegeEntity*)) and
+        // en-dash separators are the same form (node/python 2026-10-15
+        // harvest: Authentication-restoreRBAC, add_collection_field).
         entry = {
           name: m[1].trim(),
           type: stripEmphasisSpans(m[2]).trim(),
@@ -195,15 +223,61 @@ function parseBulletTree(block, profile, pageName, stats) {
         // **MilvusClientException** — exception/group entries carry no type.
         entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [] };
         stats.bulletForms.untyped += 1;
-      } else if (forms.has('untypedDescribed') && (m = rest.match(/^\*\*(.+?)\*\*\s+-\s+(.*)$/))) {
-        // **error** - description — go ERROR HANDLING single-line shape.
-        entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [m[2]] };
+      } else if (forms.has('untypedDescribed') && (m = rest.match(/^\*\*(.+?)\*\*\s*(?::\s+|-\s*)(.*)$/))) {
+        // **error** - description (go ERROR HANDLING shape), **true**: The
+        // field can... (node boolean-choice shape), and the trailing-dash
+        // **kwargs** - / **collection.ttl.seconds** - shapes with the
+        // description on the following indented lines (node/python harvest:
+        // Vector-search_iterator, Collections-dropCollectionProperties).
+        entry = { name: m[1].trim(), type: null, children: [], required: false, defaultValue: null, descriptionLines: m[2] ? [m[2]] : [] };
         stats.bulletForms.untypedDescribed += 1;
+      } else if (forms.has('bareParam') && (m = rest.match(/^([A-Za-z_]\w*)\s+\(\*(.+?)\*\)\s*(?:[-–]\s*)?(.*)$/))) {
+        // roleName (*string*) - unbolded parameter bullet (node harvest:
+        // Authentication-listGrants).
+        entry = {
+          name: m[1],
+          type: stripEmphasisSpans(m[2]).trim(),
+          children: [], required: false, defaultValue: null, descriptionLines: m[3] ? [m[3]] : [],
+        };
+        stats.bulletForms.bareParam += 1;
+      } else if (forms.has('emphasisParam') && (m = rest.match(/^\*\*(.+?)\*\*\s+\*\(([^)]+)\)\*\s*(?:[-–]\s*)?(.*)$/))) {
+        // **collection_name** *(string)* – bold name with a single-star
+        // emphasis-wrapped type and an en-dash separator (python harvest:
+        // Collections-add_collection_field).
+        entry = {
+          name: m[1].trim(),
+          type: stripEmphasisSpans(m[2]).trim(),
+          children: [], required: false, defaultValue: null, descriptionLines: m[3] ? [m[3]] : [],
+        };
+        stats.bulletForms.emphasisParam += 1;
+      } else if (forms.has('describedChoice') && (m = rest.match(/^(When set to \*\*"([^"]*)"\*\*)\s*:\s*(.*)$/))) {
+        // When set to **"true"**: Inserts, ... — boolean-choice prose bullets
+        // nested under a parameter (python harvest:
+        // Collections-alter_collection_properties). The whole lead phrase is
+        // the entry name so the N1 fold reads as a sentence.
+        entry = {
+          name: `When set to "${m[2]}"`,
+          type: null, children: [], required: false, defaultValue: null,
+          descriptionLines: m[3] ? [m[3]] : [], choice: true,
+        };
+        stats.bulletForms.describedChoice += 1;
+      } else if (forms.has('enumEquality') && (m = rest.match(/^(?:\*\*)?([A-Za-z_$][\w$]*)(?:\*\*)?\s*=\s*(.+?)\s*$/))) {
+        // **All** = 0 / NONE = 0 / **ANNOY** = ANNOY / **INVERTED** =
+        // 'INVERTED' — enumeration-value bullets (node harvest:
+        // Partitions-listPartitions, the DataType/MetricType/IndexType
+        // constants pages; values may be numeric, symbolic, or quoted).
+        entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [], choice: true, choiceValue: m[2] };
+        stats.bulletForms.enumEquality += 1;
+      } else if (forms.has('callbackChoice') && (m = rest.match(/^([A-Za-z_$][\w$]*)\s*\(\s*`([^`]+)`\s*\)\s*$/))) {
+        // BFloat16Vector (`(bf16bytes: Uint8Array) => BFloat16Vector;`) —
+        // callback-typed conversion bullets (node harvest: Vector-search).
+        entry = { name: m[1], type: m[2], children: [], required: false, defaultValue: null, descriptionLines: [], choice: true };
+        stats.bulletForms.callbackChoice += 1;
       } else if (forms.has('enumChoice') && (m = rest.match(/^([A-Za-z_$][\w$]*)\(([^())]*)\)\s*$/))) {
         // UndefiedState(0) / Executing(1) — bare enum-value bullets.
         entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [], choice: true };
         stats.bulletForms.enumChoice += 1;
-      } else if (forms.has('pythonParam') && (m = rest.match(/^`([^`]+)`\s*\((.+)\)\s*(?:-\s*)?(.*)$/))) {
+      } else if (forms.has('pythonParam') && (m = rest.match(/^`([^`]+)`\s*\((.+)\)\s*(?:[-–]\s*)?(.*)$/))) {
         // python: `texts` (*Union[str, List[str]]*) - description...
         // The type span may itself carry emphasis markers (*str* | *None*),
         // so the capture runs to the closing paren of the type annotation.
@@ -214,7 +288,7 @@ function parseBulletTree(block, profile, pageName, stats) {
         };
         if (m[3]) entry.descriptionLines.push(m[3]);
         stats.bulletForms.pythonParam += 1;
-      } else if (forms.has('pythonException') && (m = rest.match(/^`([^`]+)`\s+-\s+(.*)$/))) {
+      } else if (forms.has('pythonException') && (m = rest.match(/^`([^`]+)`\s+[-–]\s+(.*)$/))) {
         // python single-line exception: `MilvusException` - Raised if ...
         entry = { name: m[1].trim(), type: null, children: [], required: false, defaultValue: null, descriptionLines: [m[2]] };
         stats.bulletForms.pythonException += 1;
@@ -222,6 +296,17 @@ function parseBulletTree(block, profile, pageName, stats) {
         // `REPLACE` — backticked bare choice nested in a description.
         entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [], choice: true };
         stats.bulletForms.backtickChoice += 1;
+      } else if (forms.has('proseBullet') && (m = rest.match(/^(.+)$/))) {
+        // Last-resort plain-prose bullet, checked after every structured
+        // form: nested illustrative bullets with no markup at all (node
+        // harvest: "Built-in analyzer" alternatives under analyzerParams,
+        // restoreRBAC "- Collection" value list, Vector-search RRFRanker
+        // strategy note; python harvest: Vector-query "`sum` and `avg`
+        // accept only numeric fields..."). Profile-gated so other languages
+        // still fail loud; the proseBullet counter rides the composer's
+        // coverage note as the template-drift signal.
+        entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [] };
+        stats.bulletForms.proseBullet += 1;
       } else {
         throw typedError(
           REJECTION_CODES.BULLET_FORM_UNRECOGNIZED,
@@ -299,7 +384,8 @@ function newStats() {
   return {
     bulletForms: {
       builder: 0, getter: 0, param: 0, untyped: 0, untypedDescribed: 0, enumChoice: 0, backtickChoice: 0,
-      pythonParam: 0, pythonException: 0,
+      pythonParam: 0, pythonException: 0, bareParam: 0, emphasisParam: 0, describedChoice: 0, enumEquality: 0,
+      callbackChoice: 0, proseBullet: 0,
     },
     tailModifiers: { required: 0, default: 0 },
     sections: {},
@@ -308,16 +394,31 @@ function newStats() {
 
 function firstParagraphAfterH1(parts) {
   // Prose between the H1 and the first fence/heading/bullet/callout-open.
+  // Complete <div class="alert ...">...</div> callout blocks between the H1
+  // and the summary are skipped (they are summaryCallouts' input, not the end
+  // of prose): node v30 harvest Collections-addCollectionFunction /
+  // Collections-dropCollectionFunction open with a deprecation warning
+  // callout ahead of the summary paragraph.
   const pre = (parts.find((p) => !p.fence) || { text: '' }).text;
   const lines = pre.split('\n').slice(1);
   const paragraph = [];
-  for (const line of lines) {
-    const trimmed = line.trim();
+  for (let index = 0; index < lines.length; index += 1) {
+    const trimmed = lines[index].trim();
     if (!trimmed) {
       if (paragraph.length > 0) break;
       continue;
     }
-    if (/^#{1,6}\s/.test(trimmed) || /^[-*]\s/.test(trimmed) || /^```/.test(trimmed) || /^<div\b/i.test(trimmed)) break;
+    if (/^#{1,6}\s/.test(trimmed) || /^[-*]\s/.test(trimmed) || /^```/.test(trimmed)) break;
+    if (/^<div\b/i.test(trimmed)) {
+      if (!/class="alert /i.test(trimmed)) break;
+      // Skip the whole callout block; its text is summaryCallouts' business.
+      let closed = false;
+      for (let scan = index + 1; scan < lines.length; scan += 1) {
+        if (/<\/div>/i.test(lines[scan].trim())) { index = scan; closed = true; break; }
+      }
+      if (!closed) break;
+      continue;
+    }
     paragraph.push(trimmed);
   }
   return paragraph.join(' ').replace(/\s+/g, ' ').trim();
@@ -363,7 +464,14 @@ function parsePage(markdown, profile, pageName, opts = {}) {
   const signatureLang = new RegExp(`^${profile.signatureFenceLang}$`, 'i');
   const signatureFences = parts.filter((p) => p.fence && signatureLang.test(p.lang)).map((p) => p.text);
   const signature = signatureFences.length > 0 ? signatureFences[0].trim() : null;
-  if (!signature && profile.route === 'structured' && profile.requireSignature !== false) {
+  // Enum-constants pages carry no signature fence by design (node harvest:
+  // Collections-DataType, Management-MetricType, Management-IndexType — a
+  // `## Constants` value list, not a callable). The exemption is an explicit
+  // per-title list in the profile, never a global relaxation (batch 15
+  // review P1-2).
+  const signatureExempt = Array.isArray(profile.signatureExemptTitles)
+    && profile.signatureExemptTitles.includes(titleBase);
+  if (!signature && profile.route === 'structured' && profile.requireSignature !== false && !signatureExempt) {
     throw typedError(REJECTION_CODES.SIGNATURE_FENCE_MISSING, `${pageName}: no ${profile.signatureFenceLang} fence`);
   }
 

@@ -1,5 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const {
   REJECTION_CODES,
   flattenDescription,
@@ -469,4 +471,85 @@ test('fence-aware sectioning ignores heading markers inside code fences', () => 
 
 test('flattenDescription collapses multi-line bullet prose', () => {
   assert.equal(flattenDescription(['Check `err != nil`', 'for failure details.']), 'Check `err != nil` for failure details.');
+});
+
+// ---- four-language real-page replay (review P1-2) ---------------------------
+//
+// The full 2026-10-15 intake page dumps (643 pages, sha-pinned by the intake
+// campaigns) replay with ZERO typed rejections of the three drift codes. Any
+// new upstream shape lands here as a typed rejection and is fixed with
+// profile data (config/pr-page-profiles.json formEvidence keys name the
+// harvest page of every accepted form), never by loosening the kernel.
+
+const REPLAY_DIR = path.join(__dirname, 'fixtures', 'pr-page-replay');
+const REPLAY_TRACKS = [
+  ['go', 'go-v26', 101], ['go', 'go-v30', 118],
+  ['java', 'java-v26', 64], ['java', 'java-v30', 26],
+  ['node', 'node-v26', 140], ['node', 'node-v30', 159],
+  ['python', 'python-v26', 15], ['python', 'python-v30', 20],
+];
+const DRIFT_CODES = new Set([
+  REJECTION_CODES.BULLET_FORM_UNRECOGNIZED,
+  REJECTION_CODES.SIGNATURE_FENCE_MISSING,
+  REJECTION_CODES.PAGE_SUMMARY_MISSING,
+]);
+
+for (const [language, dir, expected] of REPLAY_TRACKS) {
+  test(`replay ${language} ${dir}: ${expected} real pages parse with zero drift rejections`, () => {
+    const full = path.join(REPLAY_DIR, dir);
+    const pages = fs.readdirSync(full).filter((name) => name.endsWith('.md')).sort();
+    assert.equal(pages.length, expected, 'fixture corpus must stay complete');
+    const failures = [];
+    const stats = { getter: 0, proseBullet: 0, bareParam: 0, emphasisParam: 0, describedChoice: 0, enumEquality: 0, callbackChoice: 0, untypedDescribed: 0 };
+    for (const name of pages) {
+      const text = fs.readFileSync(path.join(full, name), 'utf8');
+      try {
+        const parsed = parsePage(text, { ...profiles[language], route: profiles[language].route }, `${dir}/${name}`);
+        stats.getter += parsed.stats.bulletForms.getter;
+        stats.proseBullet += parsed.stats.bulletForms.proseBullet;
+        stats.bareParam += parsed.stats.bulletForms.bareParam;
+        stats.emphasisParam += parsed.stats.bulletForms.emphasisParam;
+        stats.describedChoice += parsed.stats.bulletForms.describedChoice;
+        stats.enumEquality += parsed.stats.bulletForms.enumEquality;
+        stats.callbackChoice += parsed.stats.bulletForms.callbackChoice;
+        stats.untypedDescribed += parsed.stats.bulletForms.untypedDescribed;
+      } catch (error) {
+        if (DRIFT_CODES.has(error.code)) failures.push(`${name}: [${error.code}] ${error.message.slice(0, 140)}`);
+        else throw error; // non-drift rejections fail the test directly
+      }
+    }
+    assert.deepEqual(failures, [], `${dir}: upstream template drift detected`);
+    if (language === 'java' && dir === 'java-v26') assert.equal(stats.getter, 249, 'java getter bullets must count as the getter form (review P1-1: was 0)');
+    if (language === 'node') {
+      assert.ok(stats.bareParam > 0, 'node bareParam form exercised');
+      assert.ok(stats.enumEquality > 0, 'node enumEquality form exercised');
+      assert.ok(stats.callbackChoice > 0, 'node callbackChoice form exercised');
+      assert.ok(stats.proseBullet > 0, 'node proseBullet form exercised');
+    }
+    if (language === 'python' && dir === 'python-v26') {
+      assert.ok(stats.emphasisParam > 0, 'python emphasisParam form exercised');
+      assert.ok(stats.describedChoice > 0, 'python describedChoice form exercised');
+      assert.ok(stats.untypedDescribed > 0, 'python trailing-dash untypedDescribed form exercised');
+    }
+    if (language === 'python' && dir === 'python-v30') {
+      assert.ok(stats.proseBullet > 0, 'python proseBullet form exercised');
+    }
+  });
+}
+
+test('profile data carries the harvest evidence for every accepted form (review P1-2 rule)', () => {
+  for (const language of ['go', 'java', 'node', 'python']) {
+    const profile = profiles[language];
+    for (const form of profile.bulletForms || []) {
+      assert.ok(
+        // The five base forms + untypedDescribed (the go ERROR HANDLING
+        // single-line shape) predate the batch-15 harvest and are documented
+        // on the kernel's bullet-grammar comment; forms added by the P1-2
+        // harvest must carry their own formEvidence key.
+        ['builder', 'getter', 'param', 'untyped', 'untypedDescribed', 'enumChoice', 'backtickChoice', 'pythonParam', 'pythonException'].includes(form)
+          || Object.keys(profile.formEvidence || {}).some((key) => key === form || key.startsWith(`${form}(`)),
+        `${language}: bullet form "${form}" has no formEvidence entry`,
+      );
+    }
+  }
 });

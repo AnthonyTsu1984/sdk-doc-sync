@@ -56,6 +56,14 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/bin/campaign-run.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "campaign-run",
+      "basis": "no external mutation signature found; batch 18 §5 optional headless shell: orchestrates the existing canonical governed CLI phases as subprocesses (the write boundary stays with each child entrypoint, which enforces its own exact-batch-digest approval), and writes only the local findings-ledger/freeze artifacts under tmp/",
+      "tests": [".claude/skills/api-reference-sync/tests/campaign-run.test.js"]
+    },
+    {
       "path": ".claude/skills/api-reference-sync/bin/compare-scan-artifacts.js",
       "skill": "api-reference-sync",
       "classification": "read-only",

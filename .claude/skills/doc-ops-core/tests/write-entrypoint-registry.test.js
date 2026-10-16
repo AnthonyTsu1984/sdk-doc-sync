@@ -55,7 +55,11 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     batch 18 wiring: scripts/intake-assemble.js, scripts/inject-includes.js,
   //     scripts/propose-audience.js, scripts/record-campaign-approval.js — all
   //     local-artifact producers with no external mutation signature), 105→111.
-  assert.equal(discovered.length, 111);
+  //   - +1 read-only batch-18 §5 headless shell bin/campaign-run.js (W-H/W-I
+  //     runner call-site: spawns the canonical governed CLI phases as
+  //     subprocesses, the write boundary staying with each child entrypoint;
+  //     writes only the local findings-ledger/freeze artifacts under tmp/), 111→112.
+  assert.equal(discovered.length, 112);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

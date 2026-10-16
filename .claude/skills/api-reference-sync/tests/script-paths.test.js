@@ -29,6 +29,7 @@ test('sdk-release-scout CLI path exists', () => {
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-release-impact.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-handwritten-audit.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-document-rollback.js')), true);
+  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'campaign-run.js')), true);
 });
 
 test('sdk-doc-sync planning helper scripts exist', () => {
@@ -107,6 +108,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/build-revision-scope.test.js',
     '.claude/skills/api-reference-sync/tests/campaign-approval.test.js',
     '.claude/skills/api-reference-sync/tests/campaign-completion.test.js',
+    '.claude/skills/api-reference-sync/tests/campaign-run.test.js',
     '.claude/skills/api-reference-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/code-variants.test.js',
     '.claude/skills/api-reference-sync/tests/compose-pr-reconcile-candidate-spec.test.js',

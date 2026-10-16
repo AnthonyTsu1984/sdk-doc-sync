@@ -221,6 +221,17 @@ node .claude/skills/api-reference-sync/bin/zilliz-cli-handwritten-audit.js \
 
 Treat `SOURCE_VALIDATION_REQUIRED`, `HANDWRITTEN_FLAG_MISSING`, and `HANDWRITTEN_METADATA_MISSING` as blockers for approval-ready sync plans.
 
+## Campaign Run (headless shell)
+
+When no ZCode runtime is present (cron / unattended), drive the post-approval execution loop from plain node. The shell runs the phases named in a plan file — each phase is an existing canonical CLI invocation — and settles once at the end: all phases pass → the PR is marked disposed on the findings ledger (W-I); a phase fails → a freeze record is persisted and the doorbell rings (W-H).
+
+```bash
+node .claude/skills/api-reference-sync/bin/campaign-run.js --plan tmp/api-reference-sync/campaign-run-plan.json --dry-run
+node .claude/skills/api-reference-sync/bin/campaign-run.js --plan tmp/api-reference-sync/campaign-run-plan.json --json
+```
+
+Exit codes: `0` disposed · `1` frozen · `2` success but undisposed (a missing ledger path — a caller bug) · `64` plan/usage error. With `--json`, stdout is a single JSON document and any child output is forwarded to stderr. `--dry-run` validates and prints the phase list without running it. The plan's `phases[].argv` are the canonical commands; the sequence is data, supplied by the dwf parameterization (batch 16) when present, or hand-written otherwise. The same `settleCampaign` terminal hook is what the dwf execution loop calls (batch 18 §5), and the ledger it writes is the substrate batch 17's `daily-scan.js` consumes.
+
 ## Feishu Documents And Bitables
 
 ```bash

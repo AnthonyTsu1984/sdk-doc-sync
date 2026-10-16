@@ -35,6 +35,7 @@ const APPROVE_CAMPAIGN_GATE = 'APPROVE_CAMPAIGN';
 const CAMPAIGN_PLAN_INVALID = 'CAMPAIGN_PLAN_INVALID';
 const CAMPAIGN_DIGEST_STALE = 'CAMPAIGN_DIGEST_STALE';
 const CAMPAIGN_APPROVAL_ALREADY_BOUND = 'CAMPAIGN_APPROVAL_ALREADY_BOUND';
+const CAMPAIGN_BATCH_DIGEST_CONFLICT = 'CAMPAIGN_BATCH_DIGEST_CONFLICT';
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const COMPONENT_KEYS = Object.freeze(['scopeDigest', 'groupingDigest', 'candidateSpecDigest', 'batchDigest']);
@@ -223,9 +224,30 @@ function assertCampaignApprovalBindable({ approval, plan } = {}) {
   return { campaignPlanDigest: digest };
 }
 
+// The write-boundary consumption of a merged approval — the ONE call the
+// canonical write path (bin/sdk-doc-sync.js --campaign-approval) makes. It fans
+// the envelope back out to the exact two checks the split gates performed,
+// never a relaxation: the scope component chains against the presented release
+// scope (a drift is GROUPING_STALE, byte-for-byte the grouping receipt's
+// ruling), and the batch component becomes the write's approved batch digest.
+// A standalone --approve-batch-digest that disagrees with the enveloped batch
+// is a stale/foreign approval, refused rather than silently preferred.
+function resolveCampaignApprovalForWrite({ approval, scope, presentedBatchDigest = null } = {}) {
+  const { campaignPlanDigest, scopeDigest } = checkCampaignScopeChain({ approval, scope });
+  if (presentedBatchDigest !== null && presentedBatchDigest !== undefined
+    && presentedBatchDigest !== approval.components.batchDigest) {
+    throw new CampaignApprovalError(
+      CAMPAIGN_BATCH_DIGEST_CONFLICT,
+      `the standalone batch digest (${presentedBatchDigest}) is not the batch the campaign approval covers (${approval.components.batchDigest}) — replan and re-run the gate`,
+    );
+  }
+  return { campaignPlanDigest, scopeDigest, approvedBatchDigest: approval.components.batchDigest };
+}
+
 module.exports = {
   APPROVE_CAMPAIGN_GATE,
   CAMPAIGN_APPROVAL_ALREADY_BOUND,
+  CAMPAIGN_BATCH_DIGEST_CONFLICT,
   CAMPAIGN_DIGEST_STALE,
   CAMPAIGN_PLAN_INVALID,
   CAMPAIGN_PLAN_SCHEMA_VERSION,
@@ -237,6 +259,7 @@ module.exports = {
   campaignPlanDigest,
   checkCampaignScopeChain,
   componentDigests,
+  resolveCampaignApprovalForWrite,
   validateCampaignApprovalReceipt,
   writeCampaignApprovalReceipt,
 };

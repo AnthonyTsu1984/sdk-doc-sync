@@ -44,6 +44,10 @@ const {
     checkGroupingScopeChain,
     validateGroupingApprovalReceipt,
 } = require('../src/sdk-doc-sync/grouping-proposal');
+const {
+    resolveCampaignApprovalForWrite,
+    validateCampaignApprovalReceipt,
+} = require('../src/sdk-doc-sync/campaign-approval');
 const { recipeLines } = require('../src/sdk-doc-sync/intake-recipes');
 
 const adapters = Object.freeze({
@@ -131,6 +135,8 @@ function parseArgs(argv) {
             args.resumeSession = argv[++i];
         } else if (arg === '--grouping-approval' && argv[i + 1]) {
             args.groupingApproval = argv[++i];
+        } else if (arg === '--campaign-approval' && argv[i + 1]) {
+            args.campaignApproval = argv[++i];
         } else if (arg === '--finalize-acceptance' && argv[i + 1]) {
             args.finalizeAcceptance = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
@@ -171,6 +177,7 @@ Options:
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
   --grouping-approval <file>       Bind the durable APPROVE_GROUPING receipt into the created session; a bound session refuses any entry whose --release-scope digest is not the approved scope (GROUPING_STALE)
+  --campaign-approval <file>       The merged APPROVE_CAMPAIGN receipt (batch 18 W-C): one approval that envelopes the scope and the batch digest. Chained against the presented --release-scope (a drifted scope is GROUPING_STALE, exactly as the grouping receipt would be) and it supplies the write's approved batch digest. Per-invocation like --approve-batch-digest (NOT persisted into the session — re-present it at every live entry). Mutually exclusive with --grouping-approval
   --finalize-acceptance <file>     Finalize acceptance from a receipt bound (by acceptanceManifestDigest) to the canonical --session-state session
   --help, -h                       Show this help
 
@@ -581,6 +588,11 @@ async function runCli({
             exit(1);
             return null;
         }
+        if (args.campaignApproval) {
+            err('Error: CAMPAIGN_APPROVAL_CONFLICT: --campaign-approval cannot be combined with --finalize-acceptance; finalization chains through the session\'s bound receipts, not a new campaign approval');
+            exit(1);
+            return null;
+        }
         return await finalizeAcceptance({
             receiptPath: args.finalizeAcceptance,
             sessionPath: args.sessionState,
@@ -685,6 +697,14 @@ async function runCli({
             return null;
         }
     }
+    // The merged APPROVE_CAMPAIGN receipt already carries the approved scope,
+    // so pairing it with a standalone grouping receipt is ambiguous — refuse it
+    // up front, before either binding does any work.
+    if (args.campaignApproval && args.groupingApproval) {
+        err('Error: CAMPAIGN_APPROVAL_CONFLICT: --campaign-approval already carries the approved scope; do not also pass --grouping-approval');
+        exit(1);
+        return null;
+    }
     // Grouping write binding (api.grouping-proposal-staleness,
     // runtime-enforced): a bound campaign executes only the release scope its
     // grouping approval covers. Binding activates from either side —
@@ -727,6 +747,47 @@ async function runCli({
         }
         try {
             checkGroupingScopeChain({ approval: groupingApprovalBinding, scope: releaseScope });
+        } catch (error) {
+            err(`Error: ${error.code}: ${error.message}`);
+            exit(1);
+            return null;
+        }
+    }
+    // Merged-gate write binding (batch 18 W-C, api.campaign-plan-digest): ONE
+    // APPROVE_CAMPAIGN receipt envelopes {scopeDigest, groupingDigest,
+    // candidateSpecDigest, batchDigest}. resolveCampaignApprovalForWrite fans
+    // it back out to the exact two checks the split gates performed — never a
+    // relaxation — and returns the batch digest the write must execute.
+    // Per-invocation, exactly like --approve-batch-digest (not persisted into
+    // the session); combining it with --grouping-approval is refused as
+    // ambiguous (two scope bindings).
+    let approvedBatchDigest = args.approveBatchDigest || null;
+    if (args.campaignApproval) {
+        let campaignReceipt;
+        try {
+            campaignReceipt = JSON.parse(readFile(path.resolve(args.campaignApproval)));
+        } catch (error) {
+            err(`Error: CAMPAIGN_PLAN_INVALID: cannot read --campaign-approval: ${error.message}`);
+            exit(1);
+            return null;
+        }
+        const campaignValidation = validateCampaignApprovalReceipt(campaignReceipt);
+        if (!campaignValidation.valid) {
+            err(`Error: CAMPAIGN_PLAN_INVALID: ${campaignValidation.errors.map((item) => item.message).join('; ')}`);
+            exit(1);
+            return null;
+        }
+        if (!releaseScope) {
+            err('Error: CAMPAIGN_PLAN_INVALID: a campaign approval is bound but no --release-scope was presented to chain against');
+            exit(1);
+            return null;
+        }
+        try {
+            approvedBatchDigest = resolveCampaignApprovalForWrite({
+                approval: campaignReceipt,
+                scope: releaseScope,
+                presentedBatchDigest: args.approveBatchDigest ?? null,
+            }).approvedBatchDigest;
         } catch (error) {
             err(`Error: ${error.code}: ${error.message}`);
             exit(1);
@@ -892,7 +953,7 @@ async function runCli({
         exclude: args.exclude || [],
         excludeSlugs: args.excludeSlugs || [],
         approvalCallback: createApprovalCallback(args.autoApprove),
-        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest, args.approveBatchDigest),
+        executionApprovalProvider: createExecutionApprovalProvider(args.repairApprove, args.approvePlanDigest, approvedBatchDigest),
         artifactProvider,
         planner: dependencies.planner || null,
         planningContextProvider,

@@ -9,6 +9,7 @@ const path = require('node:path');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const {
   CAMPAIGN_APPROVAL_ALREADY_BOUND,
+  CAMPAIGN_BATCH_DIGEST_CONFLICT,
   CAMPAIGN_DIGEST_STALE,
   CAMPAIGN_PLAN_INVALID,
   CampaignApprovalError,
@@ -18,6 +19,7 @@ const {
   campaignPlanDigest,
   checkCampaignScopeChain,
   componentDigests,
+  resolveCampaignApprovalForWrite,
   validateCampaignApprovalReceipt,
   writeCampaignApprovalReceipt,
 } = require('../src/sdk-doc-sync/campaign-approval');
@@ -128,6 +130,40 @@ test('writeCampaignApprovalReceipt is first-write-wins', () => {
   const second = writeCampaignApprovalReceipt({ receipt, approvalsDir: dir });
   assert.equal(second.created, false);
   assert.equal(second.receiptPath, first.receiptPath);
+});
+
+test('resolveCampaignApprovalForWrite fans the envelope out to the two write checks', () => {
+  const p = plan();
+  const approval = buildCampaignApprovalReceipt({ plan: p });
+
+  // The enveloped batch digest IS the write's approved digest (one gate line).
+  const resolved = resolveCampaignApprovalForWrite({ approval, scope: scope() });
+  assert.equal(resolved.approvedBatchDigest, p.components.batchDigest);
+  assert.equal(resolved.campaignPlanDigest, approval.campaignPlanDigest);
+  assert.equal(resolved.scopeDigest, approval.lineage.scopeDigest);
+
+  // A standalone batch digest that agrees is accepted…
+  assert.equal(
+    resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedBatchDigest: p.components.batchDigest }).approvedBatchDigest,
+    p.components.batchDigest,
+  );
+  // …a foreign one is refused, never silently preferred.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedBatchDigest: 'sha256:' + '7'.repeat(64) }),
+    (error) => error.code === CAMPAIGN_BATCH_DIGEST_CONFLICT,
+  );
+  // The grouping staleness floor is preserved through this consumption path.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope({ actions: [{ stableId: 'python:Other:x' }] }) }),
+    (error) => error.code === 'GROUPING_STALE',
+  );
+});
+
+test('resolveCampaignApprovalForWrite refuses a malformed approval before chaining', () => {
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval: { schemaVersion: 1, gate: 'APPROVE_GROUPING' }, scope: scope() }),
+    (error) => error.code === CAMPAIGN_PLAN_INVALID,
+  );
 });
 
 test('the CLI records a receipt and prints the APPROVE_CAMPAIGN reply', () => {

@@ -20,6 +20,10 @@ const {
 } = require('../src/sdk-doc-sync/inheritance-evidence');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
+const {
+  buildCampaignApprovalReceipt,
+  buildCampaignPlan,
+} = require('../src/sdk-doc-sync/campaign-approval');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
 
@@ -2659,4 +2663,173 @@ test('resume with the reference context passes the fail-closed guard and constru
   });
 
   assert.equal(constructed, true);
+});
+
+// Batch 18 W-C: the merged APPROVE_CAMPAIGN gate is consumable by the write
+// path — one receipt fans back out to the scope chain (GROUPING_STALE floor
+// kept) plus the write's approved batch digest.
+test('CLI consumes the merged APPROVE_CAMPAIGN: chains the scope and supplies the batch digest', async () => {
+  const scope = {
+    schemaVersion: 1,
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    baselineTag: 'v2.6.12',
+    targetTag: 'v2.6.17',
+    targetCommit: '05e8a0c4ac9f5f5e10505804f1f43f2c214a27e4',
+    targetDate: '2026-07-15T08:32:32.000Z',
+    releaseRange: 'v2.6.12..v2.6.17',
+    approvalGrade: true,
+    changedFiles: ['pymilvus/milvus_client/milvus_client.py'],
+    actions: [{
+      type: 'UPDATE',
+      stableId: 'python:Management:compact',
+      canonicalSlug: 'Management-compact',
+      symbol: 'MilvusClient.compact',
+      source: { file: 'pymilvus/milvus_client/milvus_client.py', line: 1835 },
+      reason: 'signature changed',
+      documentationOwnership: { classification: 'standalone' },
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const batchDigest = `sha256:${'a'.repeat(64)}`;
+  const receipt = buildCampaignApprovalReceipt({
+    plan: buildCampaignPlan({
+      language: 'python', sdkName: 'pymilvus', track: 'v2.6.x',
+      components: {
+        scopeDigest: digestSemantic(scope),
+        groupingDigest: `sha256:${'b'.repeat(64)}`,
+        candidateSpecDigest: `sha256:${'c'.repeat(64)}`,
+        batchDigest,
+      },
+    }),
+  });
+  // readFile is injected once in the CLI: dispatch by path so the release scope
+  // and the campaign receipt are distinguishable.
+  const readScoped = (driftedScope = scope) => (file) => JSON.stringify(
+    String(file).includes('campaign') ? receipt : driftedScope,
+  );
+  const argv = [
+    'node', 'sdk-doc-sync',
+    '--sdk-dir', '/fixtures/sdk',
+    '--language', 'python',
+    '--sdk-name', 'pymilvus',
+    '--sdk-version', 'v2.6.x',
+    '--release-scope', '/tmp/release-scope.json',
+    '--campaign-approval', '/tmp/campaign-approval.json',
+    '--dry-run',
+    '--json',
+  ];
+  const runRefusal = async (extraArgs, readFile) => {
+    let exitCode = null;
+    const stderr = [];
+    const result = await runCli({
+      argv: [...argv, ...extraArgs],
+      env: {},
+      dependencies: {
+        loadEnv: false,
+        readFile,
+        onStderr: (line) => stderr.push(line),
+        exit: (code) => { exitCode = code; },
+      },
+    });
+    return { result, exitCode, stderr: stderr.join('\n') };
+  };
+
+  // (1) A drifted scope keeps the grouping staleness floor.
+  const drifted = await runRefusal([], readScoped({ ...scope, actions: [{ ...scope.actions[0], stableId: 'python:Management:other' }] }));
+  assert.equal(drifted.result, null);
+  assert.equal(drifted.exitCode, 1);
+  assert.match(drifted.stderr, /GROUPING_STALE/);
+
+  // (2) Two scope bindings at once is ambiguous.
+  const conflicted = await runRefusal(['--grouping-approval', '/tmp/grouping.json'], readScoped());
+  assert.equal(conflicted.result, null);
+  assert.equal(conflicted.exitCode, 1);
+  assert.match(conflicted.stderr, /CAMPAIGN_APPROVAL_CONFLICT/);
+
+  // (3) A standalone batch digest that is not the enveloped one is refused.
+  const batchConflict = await runRefusal(['--approve-batch-digest', `sha256:${'9'.repeat(64)}`], readScoped());
+  assert.equal(batchConflict.result, null);
+  assert.equal(batchConflict.exitCode, 1);
+  assert.match(batchConflict.stderr, /CAMPAIGN_BATCH_DIGEST_CONFLICT/);
+
+  // (4) A matching scope proceeds, and the write's approved batch digest is the
+  // enveloped one — no --approve-batch-digest was passed.
+  let captured;
+  const result = await runCli({
+    argv,
+    env: { BASE_TOKEN: 'base-v26', ROOT_TOKEN: 'root-v26' },
+    dependencies: {
+      loadEnv: false,
+      readFile: readScoped(),
+      scanner: scannerFor(fixture('python-search.json')),
+      indexReader: async () => [],
+      referenceContextProvider: () => sdkContext('python'),
+      syncFactory: (options) => {
+        captured = options;
+        return { run: async () => ({
+          scanned: [], indexed: [], diff: [], resourcePlans: [], plans: [],
+          planningErrors: [], approved: [], results: [],
+          reviewUnitManifest: { schemaVersion: 1, manifestDigest: `sha256:${'d'.repeat(64)}`, units: [] },
+          reviewUnitPreviews: [],
+          proposedExecutionBatch: null,
+        }) };
+      },
+      onStdout: () => {},
+    },
+  });
+  assert.ok(result, 'a matching campaign approval must not be refused');
+  const provider = captured.executionApprovalProvider;
+  const batch = { batchDigest, skill: 'api-reference-sync', operation: 'sync', actions: [], targets: [], sideEffects: [] };
+  assert.doesNotThrow(() => provider({ stableId: 'python:Management:compact' }, {}, batch));
+  assert.throws(
+    () => provider({ stableId: 'python:Management:compact' }, {}, { ...batch, batchDigest: `sha256:${'8'.repeat(64)}` }),
+    /APPROVED_BATCH_DIGEST_MISMATCH/,
+  );
+});
+
+test('CLI refuses --campaign-approval without a scope or combined with --finalize-acceptance', async () => {
+  const receipt = buildCampaignApprovalReceipt({
+    plan: buildCampaignPlan({
+      language: 'python', sdkName: 'pymilvus', track: 'v2.6.x',
+      components: {
+        scopeDigest: `sha256:${'1'.repeat(64)}`,
+        groupingDigest: `sha256:${'2'.repeat(64)}`,
+        candidateSpecDigest: `sha256:${'3'.repeat(64)}`,
+        batchDigest: `sha256:${'4'.repeat(64)}`,
+      },
+    }),
+  });
+  const run = async (argv) => {
+    let exitCode = null;
+    const stderr = [];
+    const result = await runCli({
+      argv,
+      env: {},
+      dependencies: {
+        loadEnv: false,
+        readFile: (file) => JSON.stringify(String(file).includes('campaign') ? receipt : {}),
+        onStderr: (line) => stderr.push(line),
+        exit: (code) => { exitCode = code; },
+      },
+    });
+    return { result, exitCode, stderr: stderr.join('\n') };
+  };
+  const base = ['node', 'sdk-doc-sync', '--sdk-dir', '/fixtures/sdk', '--language', 'python', '--sdk-name', 'pymilvus', '--sdk-version', 'v2.6.x', '--dry-run'];
+
+  // (a) A campaign approval with no release scope has nothing to chain against.
+  const noScope = await run([...base, '--campaign-approval', '/tmp/campaign-approval.json']);
+  assert.equal(noScope.result, null);
+  assert.equal(noScope.exitCode, 1);
+  assert.match(noScope.stderr, /CAMPAIGN_PLAN_INVALID/);
+
+  // (b) Combined with --finalize-acceptance it is refused, mirroring the F1
+  //     grouping refusal, rather than silently ignored.
+  const finalize = await run([...base, '--campaign-approval', '/tmp/campaign-approval.json', '--finalize-acceptance', '/tmp/receipt.json', '--session-state', '/tmp/session.json']);
+  assert.equal(finalize.result, null);
+  assert.equal(finalize.exitCode, 1);
+  assert.match(finalize.stderr, /CAMPAIGN_APPROVAL_CONFLICT/);
 });

@@ -38,7 +38,7 @@
     },
     {
       "id": "api.phase-gates",
-      "description": "Keep grouping, write approval, execution, and acceptance as separate gates.",
+      "description": "Keep grouping and write approval as separate gates; the write approval authorizes acceptance (2026-10-16 ruling).",
       "fixtureIds": [
         "phase-gates"
       ]

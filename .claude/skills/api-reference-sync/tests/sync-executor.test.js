@@ -1823,6 +1823,33 @@ test('SyncExecutor requires history and block digest before preparing UPDATE_IN_
   });
 });
 
+test('SyncExecutor refuses to prepare a mutation for an already-Deprecated record', async () => {
+  // Operator ruling 2026-10-16: the planner rejects such units, but the live
+  // pre-mutation read is the fail-closed backstop — a record that became
+  // Deprecated after planning must still never have its Progress rewritten or
+  // its document changed.
+  const deprecated = {
+    record_id: 'rec-v26',
+    fields: {
+      Docs: { text: 'createCollection()', link: 'https://docs.example/docx/doc-v26' },
+      Progress: 'Deprecated',
+    },
+  };
+  const executor = new SyncExecutor({
+    documentWriter: {},
+    bitableWriter: { async getRecord() { return deprecated; } },
+    verifier: {
+      async beforeMutation() {
+        throw new Error('history must not be read for a Deprecated record');
+      },
+    },
+  });
+  await assert.rejects(
+    () => executor.prepareRollback(plan('UPDATE')),
+    (error) => error.code === 'DEPRECATED_RECORD_IMMUTABLE' && error.step === 'assertNotDeprecated',
+  );
+});
+
 test('SyncExecutor reports patchDocument when patching a copied inherited doc fails', async () => {
   const context = planningContext({
     current: { ...planningContext().current, version: 'v2.5.x', folderToken: 'collections-v25' },

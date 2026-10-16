@@ -218,3 +218,51 @@ test('a registry track whose base token never resolves is refused fail-closed at
             && /TRACK_REGISTRY_BASE_TOKEN_REQUIRED/.test(error.message),
     );
 });
+
+test('Docs link canonical-form rule (2026-10-16 ruling): the cell holds the folder path once', () => {
+  const { classifyDocsLink, linkFindingsFromRecords, buildSnapshot } = require('../scripts/dump-bitable-snapshot');
+  const canonical = classifyDocsLink('https://zilliverse.feishu.cn/drive/folder/WidffJPNIlfIlZdHlU8cMiGOnpg');
+  assert.equal(canonical.form, 'canonical');
+  assert.equal(canonical.token, 'WidffJPNIlfIlZdHlU8cMiGOnpg');
+  assert.equal(canonical.finding, null);
+
+  // the doubled value the live KB holds on MilvusClient-Database (both python bases)
+  const doubled = classifyDocsLink('https://zilliverse.feishu.cn/drive/folder/https://zilliverse.feishu.cn/drive/folder/JT0gfXjE3lCqEAdn6jPcFbHgnnd');
+  assert.equal(doubled.form, 'doubled');
+  assert.equal(doubled.finding, 'DOCS_LINK_DOUBLED');
+  assert.equal(doubled.token, 'JT0gfXjE3lCqEAdn6jPcFbHgnnd', 'the token is recovered from the URL tail');
+  assert.equal(doubled.canonicalLink, 'https://zilliverse.feishu.cn/drive/folder/JT0gfXjE3lCqEAdn6jPcFbHgnnd');
+
+  assert.equal(classifyDocsLink('JT0gfXjE3lCqEAdn6jPcFbHgnnd').finding, 'DOCS_LINK_TOKEN_ONLY');
+  assert.equal(classifyDocsLink('').finding, 'DOCS_LINK_MISSING');
+  assert.equal(classifyDocsLink('not a folder value').finding, 'DOCS_LINK_UNPARSEABLE');
+
+  const records = [{
+    record_id: 'recuA1SRTlr3w2',
+    fields: {
+      Slug: 'MilvusClient-Database',
+      Type: 'VirtualNode',
+      Docs: { link: 'https://zilliverse.feishu.cn/drive/folder/https://zilliverse.feishu.cn/drive/folder/JT0gfXjE3lCqEAdn6jPcFbHgnnd', text: 'Database' },
+    },
+  }, {
+    record_id: 'recGood',
+    fields: {
+      Slug: 'MilvusClient-Collections',
+      Type: 'VirtualNode',
+      Docs: { link: 'https://zilliverse.feishu.cn/drive/folder/WidffJPNIlfIlZdHlU8cMiGOnpg', text: 'Collections' },
+    },
+  }];
+  const findings = linkFindingsFromRecords(records);
+  assert.equal(findings.length, 1, 'canonical cells produce no finding');
+  assert.equal(findings[0].code, 'DOCS_LINK_DOUBLED');
+  assert.equal(findings[0].slug, 'MilvusClient-Database');
+  assert.equal(findings[0].recoveredToken, 'JT0gfXjE3lCqEAdn6jPcFbHgnnd');
+  assert.equal(findings[0].canonicalLink, 'https://zilliverse.feishu.cn/drive/folder/JT0gfXjE3lCqEAdn6jPcFbHgnnd');
+  assert.equal(findings[0].rawLink, records[0].fields.Docs.link, 'the raw cell value is preserved for the ops report');
+
+  // the artifact shape stays the certified one: no findings key, no extra row keys
+  const snapshot = buildSnapshot({ track: 'v3.0.x', baseToken: 'base', records, fetchedAt: '2026-10-16T00:00:00Z' });
+  assert.deepEqual(Object.keys(snapshot).sort(), ['baseToken', 'count', 'fetchedAt', 'rows', 'tableId', 'track', 'writesPerformed']);
+  assert.deepEqual(Object.keys(snapshot.rows[0]).sort(), ['docLink', 'parent', 'progress', 'recordId', 'slug', 'targets', 'title', 'type']);
+  assert.equal(snapshot.rows[0].docLink, records[0].fields.Docs.link, 'the doubled value is carried verbatim, not rewritten');
+});

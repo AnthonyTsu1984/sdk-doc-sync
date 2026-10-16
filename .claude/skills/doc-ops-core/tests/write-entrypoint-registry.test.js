@@ -50,7 +50,12 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     thin-skill refactor, audit tmp/skill-thin-refactor-audit.md §6.5 B-5:
   //     size budget + marker/registry digest consistency + pointer integrity
   //     + refusal-code citations; no external mutation signature), 104→105.
-  assert.equal(discovered.length, 105);
+  //   - +6 read-only intake/batch-18 CLIs (python PR #1173/#1181 intake draft:
+  //     scripts/copy-and-repoint-plan.js, scripts/resolve-content-targets.js;
+  //     batch 18 wiring: scripts/intake-assemble.js, scripts/inject-includes.js,
+  //     scripts/propose-audience.js, scripts/record-campaign-approval.js — all
+  //     local-artifact producers with no external mutation signature), 105→111.
+  assert.equal(discovered.length, 111);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

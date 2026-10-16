@@ -3192,6 +3192,7 @@ test('reviewed release context builder carries existing record and copy source e
     version: 'v2.5.x',
     folderToken: 'bulk-import-folder-v25',
     versionRootToken: 'root-v25',
+    progress: null,
     ancestryVerified: true,
     placementVerified: true,
     referencedByOlderVersions: true,

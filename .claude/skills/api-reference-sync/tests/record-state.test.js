@@ -5,7 +5,9 @@ const assert = require('node:assert/strict');
 
 const {
   executionTargetsBaseline,
+  isDeprecatedProgress,
   normalizedTargetsValue,
+  progressText,
   sameNormalizedTargets,
 } = require('../src/sdk-doc-sync/record-state');
 
@@ -45,4 +47,20 @@ test('sameNormalizedTargets compares every raw shape through the shared canonica
   assert.equal(sameNormalizedTargets(['Milvus'], ['Milvus', 'Zilliz']), false);
   assert.equal(sameNormalizedTargets(['Milvus'], []), false);
   assert.equal(sameNormalizedTargets([' Milvus '], ['Milvus']), true);
+});
+
+test('isDeprecatedProgress recognizes the terminal Deprecated progress across single-select cell shapes', () => {
+  assert.equal(isDeprecatedProgress('Deprecated'), true);
+  assert.equal(isDeprecatedProgress({ text: 'Deprecated' }), true);
+  assert.equal(isDeprecatedProgress({ value: 'Deprecated' }), true);
+  assert.equal(isDeprecatedProgress([{ name: 'Deprecated' }]), true);
+  assert.equal(isDeprecatedProgress(' Deprecated '), true);
+  assert.equal(isDeprecatedProgress('WIP'), false);
+  assert.equal(isDeprecatedProgress('Draft'), false);
+  assert.equal(isDeprecatedProgress('Deprecated-ish'), false);
+  assert.equal(isDeprecatedProgress(undefined), false);
+  assert.equal(isDeprecatedProgress(null), false);
+  assert.equal(isDeprecatedProgress(''), false);
+  assert.equal(progressText('Draft'), 'Draft');
+  assert.equal(progressText(undefined), null);
 });

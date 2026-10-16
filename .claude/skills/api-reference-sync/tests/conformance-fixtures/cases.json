@@ -353,7 +353,7 @@
   {
     "id": "phase-gates",
     "assertions": {
-      "writeApprovalImpliesAcceptance": false,
+      "writeApprovalImpliesAcceptance": true,
       "groupingApprovalImpliesWrite": false
     }
   },

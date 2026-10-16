@@ -124,7 +124,7 @@
     "exampleHeading": "^##+ Examples?\\s*$",
     "titleSuffix": "()",
     "kindRule": "method",
-    "bulletForms": ["param", "untyped", "untypedDescribed", "enumChoice", "backtickChoice", "pythonParam", "pythonException", "emphasisParam", "describedChoice", "proseBullet"],
+    "bulletForms": ["param", "untyped", "untypedDescribed", "untypedColon", "enumChoice", "backtickChoice", "backtickChoiceDescribed", "pythonParam", "pythonException", "emphasisParam", "describedChoice", "proseBullet"],
     "calloutBulletsAsDescription": true,
     "formEvidence": {
       "untypedDescribed(trailing-dash)": "python-pr1181-intake pages-v26/Collections-describe_collection.md:25 + Vector-search_iterator.md:117 `**kwargs** -` (N5 fallback description)",
@@ -132,7 +132,9 @@
       "describedChoice": "python-pr1181-intake pages-v26/Collections-alter_collection_properties.md:47 `When set to **\"true\"**: Inserts, ...`",
       "calloutBulletsAsDescription": "python-pr1181-intake pages-v26/Vector-query.md callout note bullets `- Setting this as `output_fields=[\"\\*\"]` outputs all fields.`",
       "proseBullet": "python-pr1181-intake pages-v30/Vector-query.md:157 `- `sum` and `avg` accept only numeric fields...`",
-      "param(en-dash)/pythonParam(en-dash)": "en-dash separators `–` ride the shared separator tolerance (batch 15 review P1-2)"
+      "param(en-dash)/pythonParam(en-dash)": "en-dash separators `–` ride the shared separator tolerance (batch 15 review P1-2)",
+      "untypedColon": "python-pr1173-1181-intake pages-v30/EmbeddingList-add.md:30 `**ValueError**:` — bold entry, empty inline description, description on the following indented lines (same shape in add_batch / to_flat_array / to_numpy)",
+      "backtickChoiceDescribed": "python-pr1173-1181-intake pages-v30/MilvusClient-Function.md:43 `` `FunctionType.RERANK`: Applies reranking strategies to the search results. `` — top-level backticked choice with an inline colon description; the sibling BM25/TEXTEMBEDDING/MINHASH choices sit one indent deeper upstream"
     },
     "normalizations": {
       "N1": "nested-parameters-fold-into-description",

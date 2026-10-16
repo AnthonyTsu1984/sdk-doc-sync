@@ -93,9 +93,9 @@ node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js \
   --json
 ```
 
-The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`, again with `--resume-session "$SESSION"`. After execution, stop for document review; if comments change any artifact or plan, rerun the same unit and obtain a new digest.
+The selected unit's batch includes the document and all required resource operations. Approve and execute only its `proposedExecutionBatch.batchDigest`, again with `--resume-session "$SESSION"`. After execution each verified unit finalizes automatically (`--auto-accept`: the write approval authorizes acceptance, 2026-10-16 ruling); if comments change any artifact or plan, rerun the same unit and obtain a new digest.
 
-After the exact `APPROVE_DOCUMENT` reply, write the verified touched-record inventory as JSON. Every entry must bind a live record to a successful action in the execution journal:
+Under the legacy manual path this ran after the exact `APPROVE_DOCUMENT` reply; the auto path derives it from the journal. Either way the verified touched-record inventory is written as JSON — every entry binds a live record to a successful action in the execution journal:
 
 ```json
 [
@@ -130,7 +130,7 @@ node .claude/skills/api-reference-sync/bin/sdk-review-session.js build-acceptanc
   --session "$SESSION"
 ```
 
-Use the emitted `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` gate. Pass that same digest to `AcceptanceFinalizer`. After finalization writes its successful JSON journal, bind it back to the session:
+The `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` gate is RETIRED (2026-10-16: the write approval authorizes acceptance; each unit finalizes as it runs). This legacy closure remains for older sessions: pass the acceptance-manifest digest to `AcceptanceFinalizer`. After finalization writes its successful JSON journal, bind it back to the session:
 
 ```bash
 node .claude/skills/api-reference-sync/scripts/review-artifact-digest.js <acceptance-journal.json>
@@ -144,7 +144,7 @@ Only the last command can mark the persistent session `finalized` and `scanState
 
 ## Per-Document Rollback
 
-Rollback is available for one executed unit while it is awaiting `APPROVE_DOCUMENT`, or after its accepted receipt exists but before final acceptance is finalized. A finalized session cannot be reopened; use a corrective release.
+Rollback is available for one executed unit before it finalizes (the approved write finalizes it automatically with `--auto-accept`), or after its accepted receipt exists but before the session closes. A finalized session cannot be reopened; use a corrective release.
 
 Planning is read-only and writes only the local rollback manifest:
 

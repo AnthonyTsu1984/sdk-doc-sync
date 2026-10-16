@@ -11,6 +11,7 @@ const { FeishuOperationalVerifier } = require('./feishu-operational-verifier');
 const { validateRenderedApiBlocks } = require('./feishu-block-safety');
 const SyncExecutor = require('./sync-executor');
 const SyncPlanner = require('./sync-planner');
+const { batchMutatedLiveState } = require('./execution-outcome');
 const { bitableRecordTokens, createTokenReferenceReader } = require('./token-reference-reader');
 const { planApiReferencePatch } = require('./docx-section-patcher');
 const { checkMarkdownContentQuality } = require('./layout-conformance');
@@ -1442,6 +1443,11 @@ class SdkDocSync {
                 treeDeltaFailures: treeDeltaFailures.length,
                 contentFidelityVerifications: result.contentFidelityVerifications.length,
                 contentFidelityFailures: contentFidelityFailures.length,
+                // The evidence-based mutation fact (batch 18): true iff a write
+                // landed and was not rolled back. The status label above answers
+                // "did any action error"; this answers "did live change" — the
+                // question the retry loop and session recording actually ask.
+                mutatedLiveState: batchMutatedLiveState(result.results),
             },
         });
 

@@ -1,0 +1,52 @@
+{
+  "profileVersion": 1,
+  "comment": "Canonical intake assembly facts (batch 18 step 1). Replaces the per-campaign bespoke assembly heap under tmp/sdk-release-scout/*intake* with one profile: per-language sdk checkout, web-content path prefix, route, and per-track successor. `sdkDir` and `shared.webContentDir` are REPO-ROOT-RELATIVE paths (the --run shell forces cwd to the repo root); campaign artifact paths are taken verbatim from --artifacts. Campaign-specific decisions are explicit inputs, never profile data; baseToken/tableId stay in config/release-tracks.json. Stage order is provisional until validated against the six existing intake directories (batch 18 §9 step 2).",
+  "shared": {
+    "webContentRepo": "milvus-io/web-content",
+    "webContentDir": "../web-content"
+  },
+  "languages": {
+    "cpp": {
+      "sdkDir": "repos/milvus-sdk-cpp",
+      "sdkName": "milvus-sdk-cpp",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-cpp/",
+      "route": "verbatim",
+      "tracks": { "v2.6.x": {}, "v3.0.x": {} }
+    },
+    "node": {
+      "sdkDir": "repos/milvus-sdk-node",
+      "sdkName": "milvus-sdk-node",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-node/",
+      "route": "structured",
+      "tracks": { "v2.6.x": {}, "v3.0.x": {} }
+    },
+    "python": {
+      "sdkDir": "repos/pymilvus",
+      "sdkName": "pymilvus",
+      "webContentPathPrefix": "API_Reference/pymilvus/",
+      "route": "structured",
+      "tracks": { "v2.6.x": { "successorTrack": "v3.0.x" }, "v3.0.x": {} }
+    },
+    "java": {
+      "sdkDir": "repos/milvus-sdk-java",
+      "sdkName": "milvus-sdk-java",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-java/",
+      "route": "structured",
+      "tracks": { "v2.6.x": {}, "v3.0.x": {} }
+    },
+    "go": {
+      "sdkDir": "repos/milvus-sdk-go",
+      "sdkName": "milvus",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-go/",
+      "route": "structured",
+      "tracks": { "v2.6.x": {}, "v3.0.x": {} }
+    },
+    "rust": {
+      "sdkDir": "repos/milvus-sdk-rust",
+      "sdkName": "milvus-sdk-rust",
+      "webContentPathPrefix": "API_Reference/milvus-sdk-rust/",
+      "route": "verbatim",
+      "tracks": { "v2.6.x": {}, "v3.0.x": {} }
+    }
+  }
+}

@@ -18,6 +18,7 @@ const {
 } = require('./versioned-tree-policy');
 const { canonicalStringify } = require('../../../doc-ops-core/src/canonical-json');
 const { sha256Digest } = require('../../../doc-ops-core/src/digest');
+const { isDeprecatedProgress } = require('./record-state');
 
 const WRITE_ACTIONS = new Set(['CREATE', 'UPDATE', 'BACKFILL', 'REBUILD']);
 const KNOWN_ACTIONS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'ORPHAN', 'SKIP', 'BACKFILL', 'REBUILD']);
@@ -709,6 +710,20 @@ class SyncPlanner {
           folderToken: source.folderToken || null,
           placementVerified: currentProof.placementVerified === true,
         },
+      );
+    }
+    // A record already marked Deprecated is terminal (operator ruling
+    // 2026-10-16): its Progress is never rewritten and the document it points
+    // at is never changed. Every action that resolves to an existing record —
+    // the document actions and the metadata-only update alike, since the
+    // executor's metadata write carries Progress — is rejected here, before any
+    // plan is produced. The executor's pre-mutation read re-checks this as the
+    // fail-closed backstop.
+    if (nonEmptyString(currentProof.recordId) && isDeprecatedProgress(currentProof.progress)) {
+      throw new SyncPlanningError(
+        'DEPRECATED_RECORD_PLAN_REJECTED',
+        `${effectiveDiffAction} ${stableId} targets a Deprecated record (${currentProof.recordId}); a deprecated record's Progress is immutable and its document must not be changed`,
+        { recordId: currentProof.recordId, progress: 'Deprecated' },
       );
     }
     let inheritanceEvidence = null;

@@ -205,6 +205,11 @@
       "canonicalSlug": "Internal-COLLECTION_ID",
       "category": "Internal"
     },
+    "CollectionSchema": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
     "CollectionSchema.__init__": {
       "stableId": "python:MilvusClient:CollectionSchema",
       "canonicalSlug": "MilvusClient-CollectionSchema",
@@ -325,6 +330,11 @@
       "canonicalSlug": "Internal-EF",
       "category": "Internal"
     },
+    "EmbeddingList": {
+      "stableId": "python:MilvusClient:EmbeddingList",
+      "canonicalSlug": "MilvusClient-EmbeddingList",
+      "category": "MilvusClient"
+    },
     "FIELDS": {
       "stableId": "python:Internal:FIELDS",
       "canonicalSlug": "Internal-FIELDS",
@@ -355,9 +365,19 @@
       "canonicalSlug": "FieldOp-FieldOpType",
       "category": "FieldOp"
     },
+    "FieldSchema": {
+      "stableId": "python:MilvusClient:FieldSchema",
+      "canonicalSlug": "MilvusClient-FieldSchema",
+      "category": "MilvusClient"
+    },
     "FieldSchema.__init__": {
       "stableId": "python:MilvusClient:FieldSchema",
       "canonicalSlug": "MilvusClient-FieldSchema",
+      "category": "MilvusClient"
+    },
+    "Function": {
+      "stableId": "python:MilvusClient:Function",
+      "canonicalSlug": "MilvusClient-Function",
       "category": "MilvusClient"
     },
     "FunctionChain": {
@@ -470,6 +490,11 @@
       "canonicalSlug": "FunctionChain-FunctionChainStage",
       "category": "FunctionChain"
     },
+    "FunctionScore": {
+      "stableId": "python:MilvusClient:FunctionScore",
+      "canonicalSlug": "MilvusClient-FunctionScore",
+      "category": "MilvusClient"
+    },
     "GUARANTEE_TIMESTAMP": {
       "stableId": "python:Internal:GUARANTEE_TIMESTAMP",
       "canonicalSlug": "Internal-GUARANTEE_TIMESTAMP",
@@ -540,6 +565,11 @@
       "canonicalSlug": "Authentication-alter_role",
       "category": "Authentication"
     },
+    "MilvusClient.CollectionSchema": {
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "category": "MilvusClient"
+    },
     "MilvusClient.create_role": {
       "stableId": "python:Authentication:create_role",
       "canonicalSlug": "Authentication-create_role",
@@ -559,6 +589,11 @@
       "stableId": "python:Management:dump_messages",
       "canonicalSlug": "Management-dump_messages",
       "category": "Management"
+    },
+    "MilvusClient.FieldSchema": {
+      "stableId": "python:MilvusClient:FieldSchema",
+      "canonicalSlug": "MilvusClient-FieldSchema",
+      "category": "MilvusClient"
     },
     "MilvusClient.get_replicate_info": {
       "stableId": "python:Management:get_replicate_info",
@@ -789,6 +824,11 @@
           }
         ]
       }
+    },
+    "StructFieldSchema": {
+      "stableId": "python:MilvusClient:StructFieldSchema",
+      "canonicalSlug": "MilvusClient-StructFieldSchema",
+      "category": "MilvusClient"
     },
     "StructFieldSchema.__init__": {
       "stableId": "python:MilvusClient:StructFieldSchema",

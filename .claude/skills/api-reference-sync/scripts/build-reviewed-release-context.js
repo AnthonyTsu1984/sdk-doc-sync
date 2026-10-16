@@ -376,6 +376,10 @@ function assertExistingRecordEvidence({ action, spec, identity }) {
     parentRecordIds: Array.isArray(existing.parentRecordIds) ? [...existing.parentRecordIds] : (existing.parentRecordId ? [existing.parentRecordId] : []),
     version: existing.placement.version,
     folderToken: existing.placement.folderToken,
+    // Carried so the planner can reject a unit that targets an already
+    // Deprecated record (operator ruling 2026-10-16). Absent evidence stays
+    // null and the planner's guard simply does not fire.
+    progress: existing.progress ?? null,
     ancestryVerified: true,
     placementVerified: true,
     versionRootToken: existing.placement.versionRootToken || null,

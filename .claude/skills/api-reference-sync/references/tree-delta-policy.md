@@ -220,3 +220,68 @@ correctly forked changed identities. Keys that match no registered track
 version fail closed; other languages' track versions are allowed (unused for
 the run). The classification artifact is produced by the scan/diff tooling
 per release; malformed files fail closed.
+
+## Content-wave target rules (2026-10-16 operator ruling, scripted)
+
+Three operator rulings are now code, not prose. The script is the rule; this section is its
+index.
+
+1. **Our directory conventions govern the target.** `scripts/resolve-content-targets.js` resolves
+   every unit's target directory in this order — (a) the live parent folder when the document
+   already lives in this track (in-place; a wave never proposes a move for such a page), (b) a
+   reviewed category-create entry (the directory is created in THIS track and the record
+   repointed), (c) the walk folder named after the unit's family (the copy lands beside its
+   family), (d) the family landing-page folder, (e) otherwise the unit is BLOCKED with a typed
+   reason. Upstream's own layout never decides a target.
+   `BINDINGS.IN_TRACK` / `BINDINGS.INHERITED` record which case applied.
+2. **An inherited pointer is the normal state, never a destination.** Under the sparse-delta
+   model a newer track holds only what changed; an unchanged entry keeps the inherited link, and
+   that link is a lawful SOURCE only. A content wave never rewrites it in place — the successor
+   copy (rule 1's outcome) is what lands in this track. The script reports `binding` and
+   `sourceIsOtherVersion` per unit so the distinction is visible in every intake.
+3. **The Docs cell holds the folder's path.** `scripts/dump-bitable-snapshot.js` classifies every
+   `Docs` value (`classifyDocsLink`, `linkFindingsFromRecords`): a VirtualNode row must be exactly
+   one absolute folder URL (`<host>/drive/folder/<token>`), every other row exactly one page URL
+   (`<host>/docx/<token>`). A concatenated value (the "double link": the folder prefix plus a
+   second full URL) is a typed finding — `DOCS_LINK_DOUBLED` / `DOCS_LINK_NONCANONICAL` /
+   `DOCS_LINK_TOKEN_ONLY` / `DOCS_LINK_UNPARSEABLE` — reported to stderr and a sidecar
+   `<snapshot>.link-findings.json` with the recovered token and the canonical replacement. The
+   snapshot artifact itself is never rewritten: its shape is a pinned consumer contract and a
+   lineage digest.
+4. **Containment is enforced on every candidate** (`R3`): a family folder outside the track version
+   root (the per-track ORM branch) is refused as a target — the kernel would refuse it too
+   (`TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT`), so normalising such a family means moving the whole
+   branch, not repointing the few pages a wave touches.
+
+Tests: `tests/resolve-content-targets.test.js`, `tests/dump-bitable-snapshot.test.js`.
+
+## COPY-AND-REPOINT as one scripted strategy (`scripts/copy-and-repoint-plan.js`)
+
+The transition is a strategy, not a sequence a model improvises. One script owns the whole order;
+the model authors the CONTENT payload only.
+
+```text
+CREATE_FOLDER (only when the target directory does not exist)
+    -> COPY_PATCH_AND_REPOINT (copy the successor document, apply content: patch OR rewrite)
+    -> REPOINT_CATEGORY_VIRTUAL_NODE (only when a category node is repointed; depends on the
+       directory AND on the completed document)
+    -> VERIFY_TREE_DELTA (older source unchanged, record points at the copy)
+```
+
+- **Payload** (reviewed input): `unit` + `source` (the document being copied, with its live
+  placement) + `target` (existing `folderToken`, or `folderRef` with the folder-create spec and the
+  optional VirtualNode repoint) + `content` (`{mode:'patch',operations[]}` or
+  `{mode:'rewrite',markdown}`).
+- **Script side**: ordering, containment (`parentAncestry` must run from the version root),
+  explicit Bitable targets for a repoint, the copy-before-patch/media dependency, the plan artifact
+  and its `strategyDigest` — what an approval binds.
+- **Model side**: the content payload only. Writing prose/patches is the one judgement call here;
+  everything else is refused fail-closed before a step is emitted.
+- Typed refusals: `STRATEGY_PAYLOAD_INVALID`, `STRATEGY_UNIT_REQUIRED`, `STRATEGY_SOURCE_REQUIRED`,
+  `STRATEGY_TARGET_REQUIRED`, `STRATEGY_TARGET_PLACEMENT_UNKNOWN`, `STRATEGY_CONTENT_MODE_REQUIRED`,
+  `STRATEGY_CONTENT_EMPTY`, `STRATEGY_CONTENT_AMBIGUOUS`, `STRATEGY_FOLDER_CREATE_INVALID`,
+  `STRATEGY_CREATE_PARENT_OUTSIDE_VERSION_ROOT`, `STRATEGY_CREATE_PARENT_MISMATCH`,
+  `STRATEGY_REPOINT_INVALID`, `STRATEGY_REPOINT_BITABLE_TARGET_REQUIRED`, `STRATEGY_SOURCE_IS_TARGET`.
+- Execution rides the certified executor (`sync-executor` `COPY_PATCH_AND_REPOINT` steps +
+  `CREATE_FOLDER` / `REPOINT_CATEGORY_VIRTUAL_NODE`); this script only assembles and binds.
+  Tests: `tests/copy-and-repoint-plan.test.js`.

@@ -92,7 +92,7 @@ const VALUE_OPTIONS = new Set([
   '--snapshot', '--placement-audit', '--root-walk', '--identity-map',
   '--audit-proposal', '--repository', '--base-token', '--table-id', '--route',
   '--output', '--sweep-spec', '--candidate-spec', '--patch-context',
-  '--patch-context-output', '--patch-report', '--successor-track',
+  '--patch-context-output', '--patch-report', '--successor-track', '--category-creates',
 ]);
 
 function parseArgs(argv) {
@@ -118,7 +118,7 @@ function usage() {
   --pages-dir <pages-<track>> --snapshot <bitable-snapshot.json> \\
   --placement-audit <placement-audit.json> --root-walk <root-walk.json> \\
   --identity-map <identity/<track>.json> --output <candidate-spec.json> \\
-  [--audit-proposal <file>] [--repository owner/repo] [--base-token t] [--table-id t] \\
+  [--audit-proposal <file>] [--category-creates <plan.json>] [--repository owner/repo] [--base-token t] [--table-id t] \\
   [--route verbatim|structured] [--successor-track <vX.Y.x>] [--sweep] \\
   | --sweep-spec <spec.json> [--output <report.json>]
   | --patch-context <reference-context.json> --candidate-spec <spec.json> \\
@@ -499,6 +499,9 @@ function existingRecordFor({ decision, auditEntry, rowByRecordId }) {
     recordId: existing.recordId,
     documentToken: existing.currentDocumentToken,
     recordType: row ? row.type : (existing.currentType || existing.rowType || null),
+    // The live Progress drives the planner's deprecated-record rejection
+    // (operator ruling 2026-10-16); a row without it stays null.
+    progress: row && row.progress != null ? String(row.progress) : null,
     parentRecordId: parents[0] || null,
     parentRecordIds: parents,
     placement: {
@@ -609,6 +612,98 @@ function sweepSpec(spec, { evaluateVersionedTreeDelta }) {
 // ---------------------------------------------------------------------------
 // Audit-proposal derivation (§4.1: --audit-proposal may be omitted)
 // ---------------------------------------------------------------------------
+
+// Reviewed category-create plan (2026-10-16 operator ruling: a target directory
+// that does not exist in this track is created in this track and the record is
+// repointed to it). Fail-closed: every fact the kernel's category spec needs
+// (in-root parent chain, checked absence by name, an existing VirtualNode row
+// with its approved current folder token) is re-derived from the audit walk and
+// the live snapshot; a plan entry that does not agree with them is refused, and
+// the composer never invents a folder or a record.
+function nonEmptyString(value) {
+  return typeof value === "string" && value.length > 0;
+}
+
+function loadCategoryCreates({ args, audit, walk, snapshot, versionRootToken, reject }) {
+  if (!args.categoryCreates) return null;
+  const planPath = requireFile(args, 'categoryCreates', 'category-create plan');
+  const plan = readJson(planPath);
+  const tracks = plan.tracks || plan;
+  const entry = tracks[args.track] || plan[plan.track] || null;
+  if (!entry || !Array.isArray(entry.categories)) {
+    reject('CATEGORY_CREATE_PLAN_INVALID', `${path.basename(planPath)}: no categories[] for track ${args.track}`);
+  }
+  if (entry.versionRootToken !== versionRootToken) {
+    reject('CATEGORY_CREATE_PLAN_MISMATCH', `${path.basename(planPath)}: versionRootToken ${entry.versionRootToken} != audit version root ${versionRootToken}`);
+  }
+  const walkFolderTokens = new Set((walk ? walk.nodes : []).filter((node) => node.type === 'folder').map((node) => node.token));
+  const byCategory = new Map();
+  const byUnit = new Map();
+  const resources = [];
+  const notes = [];
+  for (const categoryEntry of entry.categories) {
+    const folder = categoryEntry.folder;
+    const name = categoryEntry.category;
+    if (!folder || !nonEmptyString(folder.ref) || !nonEmptyString(name) || !nonEmptyString(folder.parentFolderToken)) {
+      reject('CATEGORY_CREATE_PLAN_INVALID', `${name}: folder.ref/parentFolderToken missing`);
+    }
+    const chain = (audit.folderChains || {})[folder.parentFolderToken] || null;
+    if (!Array.isArray(chain) || chain[0] !== versionRootToken) {
+      reject('CATEGORY_CREATE_PARENT_NOT_IN_ROOT', `${name}: parent ${folder.parentFolderToken} has no audit folder chain from version root ${versionRootToken} (the kernel refuses an out-of-root create parent)`);
+    }
+    if (folder.parentAncestry && JSON.stringify(folder.parentAncestry) !== JSON.stringify(chain)) {
+      reject('CATEGORY_CREATE_PLAN_MISMATCH', `${name}: declared parentAncestry does not match the audit chain for ${folder.parentFolderToken}`);
+    }
+    if (walk) {
+      const collision = walk.nodes.find((node) => node.type === 'folder'
+        && node.name === name && node.parentFolderToken === folder.parentFolderToken);
+      if (collision) {
+        reject('CATEGORY_CREATE_ALREADY_PRESENT', `${name}: the walk already holds folder ${collision.token} named ${name} under ${folder.parentFolderToken} — the plan says it must be created`);
+      }
+    }
+    const folderResource = {
+      kind: 'folder',
+      ref: folder.ref,
+      name,
+      parentFolderToken: folder.parentFolderToken,
+      versionRootToken,
+      parentAncestry: chain,
+      existingLookup: { ...(folder.existingLookup || {}), checked: true, absent: true, parentFolderToken: folder.parentFolderToken, name },
+    };
+    resources.push(folderResource);
+    let repoint = null;
+    if (categoryEntry.repoint) {
+      const r = categoryEntry.repoint;
+      const row = (snapshot.rows || []).find((candidate) => candidate.recordId === r.recordId) || null;
+      if (!row) {
+        reject('CATEGORY_CREATE_REPOINT_UNVERIFIED', `${name}: repoint record ${r.recordId} is not in the live snapshot`);
+      }
+      if (row.type !== 'VirtualNode') {
+        reject('CATEGORY_CREATE_REPOINT_UNVERIFIED', `${name}: repoint record ${r.recordId} is a ${row.type}, not a VirtualNode`);
+      }
+      if (row.slug !== (r.expectedFields || {}).Slug) {
+        reject('CATEGORY_CREATE_REPOINT_DRIFT', `${name}: live slug ${row.slug} != plan expectedFields.Slug ${(r.expectedFields || {}).Slug}`);
+      }
+      repoint = {
+        ref: r.ref,
+        recordId: r.recordId,
+        title: r.title || row.title || name,
+        folderRef: folder.ref,
+        currentFolderToken: r.currentFolderToken,
+        expectedFields: { ...r.expectedFields },
+        baseToken: r.baseToken || snapshot.baseToken || null,
+        tableId: r.tableId || null,
+        dependsOn: [folder.ref],
+        existingLookup: { ...(r.existingLookup || {}), checked: true, matched: true, recordId: r.recordId, currentFolderToken: r.currentFolderToken },
+      };
+      resources.push({ kind: 'virtual_node_repoint', ...repoint });
+      if (r.currentFolderLinkDefect) notes.push(`${name}: ${r.currentFolderLinkDefect}`);
+    }
+    byCategory.set(name, { folder: folderResource, repoint, units: categoryEntry.units || [] });
+    for (const unit of categoryEntry.units || []) byUnit.set(unit, byCategory.get(name));
+  }
+  return { path: planPath, byCategory, byUnit, resources, notes };
+}
 
 function auditProposalFromInputs({ decisions, walk, audit, reject }) {
   // Port of the 2026-10-15 go build-audit-proposal.js: UPDATE units bind the
@@ -789,6 +884,9 @@ function compose(args) {
   const auditProposal = args.auditProposal
     ? readJson(args.auditProposal)
     : auditProposalFromInputs({ decisions, walk, audit, reject });
+  const categoryCreates = loadCategoryCreates({
+    args, audit, walk, snapshot, versionRootToken: audit.versionRootToken, reject,
+  });
 
   if (identityMap.language !== language || identityMap.track !== track) {
     reject('IDENTITY_MAP_TRACK_MISMATCH', `identity map is ${identityMap.language}/${identityMap.track}; expected ${language}/${track}`);
@@ -844,6 +942,7 @@ function compose(args) {
   const verbatimOverlay = {};
   const absentUnits = [];
   const mintedEvidence = [];
+  const createdCategoryUnits = [];
 
   let sharedCount = 0;
   let inheritedCount = 0;
@@ -1181,9 +1280,19 @@ function compose(args) {
       if (!auditEntry) reject('AUDIT_ENTRY_MISSING', `${unit.sourceStableId}: no placement-audit entry`);
       const placement = auditEntry.placement;
       if (placement.verified !== true) reject('PLACEMENT_UNVERIFIED', `${slug}: placement unverified in the audit`);
-      const targetFolderToken = targetFolderByStableId.get(unit.sourceStableId) || identity.targetFolderToken
-        || (targetFolderByStableId.size === 0 && !walk ? placement.folderToken : null);
-      if (!targetFolderToken) {
+      // Missing-category ruling (2026-10-16 operator): when the wave's reviewed
+      // category-create plan declares this unit's category, the target is the
+      // to-be-created folder (target.folderRef), not a token — the kernel then
+      // decides COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE and requires the
+      // folder + VirtualNode-repoint resources this spec carries.
+      const createdCategory = categoryCreates
+        ? categoryCreates.byCategory.get(identity.category)
+          || categoryCreates.byUnit.get(unit.sourceStableId) || null
+        : null;
+      const targetFolderToken = createdCategory ? null
+        : (targetFolderByStableId.get(unit.sourceStableId) || identity.targetFolderToken
+          || (targetFolderByStableId.size === 0 && !walk ? placement.folderToken : null));
+      if (!targetFolderToken && !createdCategory) {
         reject('TARGET_FOLDER_MISSING', `${slug}: no target folder token (audit proposal + decisions.docIdentity.targetFolderToken both empty)`);
       }
       const shared = auditEntry.sharedToken.status === 'shared';
@@ -1193,11 +1302,13 @@ function compose(args) {
       candidate.existingRecord = existingRecord;
       if (auditEntry.inheritanceEvidence) {
         candidate.inheritanceEvidence = auditEntry.inheritanceEvidence;
-      } else if (targetFolderToken === placement.folderToken) {
+      } else if (createdCategory || targetFolderToken === placement.folderToken) {
         // Re-mint against this campaign's target when the audit's own target
         // binding was unverified but the live placement folder IS the target
         // (python v30 5-unit precedent: in-place re-bind, node mintEvidence
-        // precedent). Anything else stays a typed rejection.
+        // precedent), or when the target is a reviewed to-be-created category
+        // folder (folderRef form — the evidence contract accepts either face).
+        // Anything else stays a typed rejection.
         const { createInheritanceEvidence } = require('../src/sdk-doc-sync/inheritance-evidence');
         candidate.inheritanceEvidence = createInheritanceEvidence({
           stableId: unit.sourceStableId,
@@ -1212,8 +1323,8 @@ function compose(args) {
           },
           target: {
             version: track,
-            folderToken: targetFolderToken,
-            folderRef: null,
+            folderToken: targetFolderToken || null,
+            folderRef: createdCategory ? createdCategory.folder.ref : null,
             versionRootToken: VERSION_ROOT,
             ancestryVerified: true,
           },
@@ -1237,14 +1348,32 @@ function compose(args) {
           },
         };
       }
-      candidate.folderToken = targetFolderToken;
-      if (unitRoute === 'structured') {
-        candidate.folderAncestry = audit.folderChains ? audit.folderChains[targetFolderToken] || null : null;
-        // Review P2-2 passthrough face: a folder chain from the audited walk
-        // is the declared ancestry fact; verbatim-route specs stay undeclared
-        // and the sweep report says the TARGET_ANCESTRY family is not covered.
-        candidate.ancestryVerified = candidate.folderAncestry != null;
-        candidate.parentRecordId = existingRecord.parentRecordId;
+      if (createdCategory) {
+        candidate.folderRef = createdCategory.folder.ref;
+        // the category spec (folder + optional VirtualNode repoint) is what the
+        // versioned-tree policy validates for the create decision.
+        candidate.treeDelta = {
+          category: {
+            folder: createdCategory.folder,
+            repoint: createdCategory.repoint,
+          },
+        };
+        createdCategoryUnits.push(unit.sourceStableId);
+      } else {
+        candidate.folderToken = targetFolderToken;
+        // Review P2-2 made honest: the declared ancestry fact is the chain the
+        // AUDITED walk actually produced for this target folder — never a
+        // hardcoded true. A copy patch cannot be classified without it
+        // (TREE_DELTA_PLACEMENT_UNKNOWN), so the chain is declared whenever
+        // the audit saw one, on BOTH routes; a unit whose target folder has no
+        // audited chain stays undeclared and the sweep reports TARGET_ANCESTRY
+        // as uncovered for it.
+        const targetChain = audit.folderChains ? audit.folderChains[targetFolderToken] || null : null;
+        if (Array.isArray(targetChain) && targetChain.length > 0) {
+          candidate.folderAncestry = targetChain;
+          candidate.ancestryVerified = true;
+        }
+        if (unitRoute === 'structured') candidate.parentRecordId = existingRecord.parentRecordId;
       }
       candidate.dependencies = [];
 
@@ -1384,6 +1513,10 @@ function compose(args) {
     `profile ${language} v${profileVersion} route ${effectiveRoute} (per-unit: ${parseStats.routes.verbatim} verbatim / ${parseStats.routes.structured} structured); parsed ${parseStats.pages} pages; bullet forms hit ${JSON.stringify(parseStats.bulletForms)} (total ${bulletTotal}); tail modifiers ${JSON.stringify(parseStats.tailModifiers)}; section hits ${JSON.stringify(parseStats.sections)}.`,
     `identity map coverage: ${identityCoverage.mapped}/${units.length} units mapped${identityCoverage.unmapped.length > 0 ? ` (unmapped: ${identityCoverage.unmapped.join(', ')})` : ''}.`,
   );
+  if (createdCategoryUnits.length > 0) {
+    composerNotes.push(`category-create plan ${path.basename(categoryCreates.path)}: ${categoryCreates.byCategory.size} missing category folder(s) created in this track, ${createdCategoryUnits.length} unit(s) target a folderRef (${[...categoryCreates.byCategory.keys()].join(", ")}); kernel decision COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE.`);
+    for (const note of categoryCreates.notes) composerNotes.push(`category-create note: ${note}`);
+  }
   if (mintedEvidence.length > 0) {
     composerNotes.push(`inheritance evidence minted in-place for ${mintedEvidence.length} unit(s) whose live placement folder IS the target (audit evidence absent, re-bind precedent): ${mintedEvidence.join(', ')}.`);
   }
@@ -1401,7 +1534,7 @@ function compose(args) {
     version: track,
     versionRootToken: VERSION_ROOT,
     folders,
-    resources: [],
+    resources: categoryCreates ? categoryCreates.resources : [],
   };
   if (profile.structured?.releasePlacement) {
     // java precedent: the release-root placement review rides the target

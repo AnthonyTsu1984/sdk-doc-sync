@@ -49,13 +49,13 @@ test('api-reference-sync exposes deterministic batch approval, recovery, and acc
   assert.match(content, /proposedExecutionBatch/);
   assert.match(content, /--approve-batch-digest/);
   assert.match(content, /EXECUTION_RECONCILIATION_REQUIRED/);
-  assert.match(content, /executionJournalDigest/);
+  assert.match(content, /digest-bound per-unit receipt/);
 });
 
-test('api-reference-sync keeps the complete acceptance gate pending after a partial request', () => {
+test('api-reference-sync: the write approval authorizes acceptance (2026-10-16 ruling)', () => {
   const content = skill('api-reference-sync');
-  assert.match(content, /A partial-acceptance request is blocked/i);
-  assert.match(content, /the next missing gate remains `APPROVE_ACCEPTANCE`/i);
+  assert.match(content, /Write approval authorizes Acceptance Finalization/i);
+  assert.match(content, /APPROVE_DOCUMENT.*APPROVE_ACCEPTANCE.*retired/is);
 });
 
 test('localized-doc-sync uses current table-aware translator options', () => {

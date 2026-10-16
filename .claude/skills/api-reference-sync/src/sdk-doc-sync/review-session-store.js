@@ -65,18 +65,62 @@ const REVIEW_MACHINE = defineSessionMachine({
   },
 });
 
-// The KB-wide final Targets value written by the document gate. Single source
-// of truth for accept-document, the stock backfill, and resume validation.
-const TARGETS_FINAL = Object.freeze(['Milvus', 'Zilliz']);
+// The KB-wide final Targets value written by the document gate, plus per
+// category overrides. Single source of truth for accept-document, the stock
+// backfill, and resume validation. Batch 18 W-F: the table is DATA
+// (config/targets-categories.json), not a hardcoded map — a new category
+// ruling is an entry, never a code edit. Fail-closed: a malformed or missing
+// table refuses to build the store (TARGETS_CATEGORY_INVALID).
+const TARGETS_VALUE_ALLOWED = Object.freeze(['Milvus', 'Zilliz']);
+const TARGETS_CATEGORIES_PATH = path.join(__dirname, '..', '..', 'config', 'targets-categories.json');
+
+class TargetsCategoryError extends TypeError {
+  constructor(message) {
+    super(message);
+    this.name = 'TargetsCategoryError';
+    this.code = 'TARGETS_CATEGORY_INVALID';
+  }
+}
+
+function loadTargetsCategories(configPath = TARGETS_CATEGORIES_PATH) {
+  let raw;
+  try {
+    raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  } catch (error) {
+    throw new TargetsCategoryError(`cannot read targets categories at ${configPath}: ${error.message}`);
+  }
+  const fail = (message) => { throw new TargetsCategoryError(`targets categories ${configPath}: ${message}`); };
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) fail('must be an object');
+  if (raw.schemaVersion !== 1) fail('schemaVersion must be 1');
+  const checkList = (value, where) => {
+    if (!Array.isArray(value) || value.length === 0) fail(`${where} must be a non-empty array`);
+    for (const entry of value) {
+      if (!TARGETS_VALUE_ALLOWED.includes(entry)) {
+        fail(`${where} entries must be one of ${TARGETS_VALUE_ALLOWED.join(', ')} (got ${JSON.stringify(entry)})`);
+      }
+    }
+    return [...new Set(value)];
+  };
+  const defaultTargets = checkList(raw.default, 'default');
+  const categories = new Map();
+  if (raw.categories !== undefined) {
+    if (raw.categories === null || typeof raw.categories !== 'object' || Array.isArray(raw.categories)) {
+      fail('categories must be an object');
+    }
+    for (const [category, value] of Object.entries(raw.categories)) {
+      categories.set(category, checkList(value, `categories.${category}`));
+    }
+  }
+  return { defaultTargets, categories };
+}
+
+const { defaultTargets: KB_TARGETS_FINAL, categories: CATEGORY_TARGETS_FINAL } = loadTargetsCategories();
 
 // Per-category overrides of the KB-wide final Targets value, written by the
-// document gate instead of TARGETS_FINAL (2026-10-09 operator ruling: the
-// Resource Group feature is Milvus-only, so its records carry Targets=[Milvus]
-// and must never be stamped with the Zilliz-wide pair). Categories are the
-// middle segment of the reviewUnitId ('review:go:<Category>:<Symbol>').
-const CATEGORY_TARGETS_FINAL = new Map([
-  ['ResourceGroup', ['Milvus']],
-]);
+// document gate instead of the default (2026-10-09 operator ruling: the
+// Resource Group feature is Milvus-only). Categories are the middle segment of
+// the reviewUnitId ('review:go:<Category>:<Symbol>').
+const TARGETS_FINAL = Object.freeze([...KB_TARGETS_FINAL]);
 
 function targetsFinalForReviewUnit(reviewUnitId) {
   const category = typeof reviewUnitId === 'string' && reviewUnitId.split(':').length >= 3
@@ -1663,6 +1707,8 @@ function validateResumeSession({ session, reviewUnitManifest, currentRecords }) 
 
 module.exports = {
   targetsFinalForReviewUnit,
+  loadTargetsCategories,
+  TargetsCategoryError,
   executedUnitIdsOf,
   rebuildLineageFor,
   REVIEW_MACHINE,

@@ -660,6 +660,23 @@ test('SyncPlanner gates a same-track shared update on classified inheriting refe
   );
 });
 
+test('SyncPlanner rejects a unit that targets an already-Deprecated record', () => {
+  // Operator ruling 2026-10-16: a record already marked Deprecated is terminal
+  // — its Progress is immutable and the document it points at must not be
+  // changed. The plan is refused before it is produced.
+  assert.throws(
+    () => new SyncPlanner().planAction(updateAction(), planningContext({
+      current: { ...planningContext().current, progress: 'Deprecated' },
+    })),
+    (error) => error.code === 'DEPRECATED_RECORD_PLAN_REJECTED',
+  );
+  // Any other Progress value (WIP/Draft/absent) plans normally.
+  const plan = new SyncPlanner().planAction(updateAction(), planningContext({
+    current: { ...planningContext().current, progress: 'Draft' },
+  }));
+  assert.ok(plan.action);
+});
+
 test('SyncPlanner rejects unsafe UPDATEs without copy source evidence', () => {
   assert.throws(
     () => new SyncPlanner().planAction(updateAction(), planningContext({
@@ -1231,7 +1248,11 @@ test('review-unit manifest remains stable when an accepted document replans as N
   const resumed = buildReviewUnitManifest([
     document('node:Collections:a', 'NOOP'),
     document('node:Collections:b', 'UPDATE_IN_PLACE', ['node:Collections:a']),
-  ], SdkDocSync.buildExecutionBatch);
+  ], SdkDocSync.buildExecutionBatch, {
+    // Resume passes the session's own units as documentStableIds (index.js),
+    // which is what keeps the bound manifest digest stable across a session.
+    documentStableIds: initial.manifest.units.map((unit) => unit.documentStableId),
+  });
 
   assert.equal(resumed.manifest.manifestDigest, initial.manifest.manifestDigest);
   assert.deepEqual(resumed.manifest.units.map((unit) => unit.reviewUnitId), [
@@ -1239,6 +1260,29 @@ test('review-unit manifest remains stable when an accepted document replans as N
     'review:node:Collections:b',
   ]);
   assert.deepEqual(resumed.units.find((unit) => unit.documentStableId.endsWith(':a')).actionIds, []);
+});
+
+test('a fresh review-unit manifest excludes no-change (NOOP/ORPHAN) documents', () => {
+  // 2026-10-16: the write approval authorizes acceptance, so every manifest unit
+  // must be one that actually writes — a no-change unit would wedge
+  // closeSession on a Draft transition no write ever performed.
+  const document = (stableId, action) => ({
+    kind: 'document',
+    plan: Object.freeze({
+      schemaVersion: 1,
+      action,
+      stableId,
+      dependencies: [],
+      source: { documentToken: `doc-${stableId.at(-1)}` },
+      invariantAttestations: [minimalAttestation()],
+    }),
+  });
+  const fresh = buildReviewUnitManifest([
+    document('node:Collections:a', 'NOOP'),
+    document('node:Collections:b', 'UPDATE_IN_PLACE'),
+    document('node:Collections:c', 'ORPHAN'),
+  ], SdkDocSync.buildExecutionBatch);
+  assert.deepEqual(fresh.manifest.units.map((unit) => unit.reviewUnitId), ['review:node:Collections:b']);
 });
 
 test('review-unit manifest digest binds stable inter-document prerequisites', () => {

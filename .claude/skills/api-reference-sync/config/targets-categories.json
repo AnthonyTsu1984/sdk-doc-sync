@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "comment": "Per-category overrides of the KB-wide final Targets value written by the document gate (batch 18 W-F, superseding the map hardcoded in review-session-store.js). Categories are the middle segment of the reviewUnitId ('review:<lang>:<Category>:<Symbol>'). The 2026-10-09 operator ruling — the Resource Group feature is Milvus-only, so its records carry Targets=[Milvus] and must never be stamped with the Zilliz-wide pair — is the first entry.",
+  "default": ["Milvus", "Zilliz"],
+  "categories": {
+    "ResourceGroup": ["Milvus"]
+  }
+}

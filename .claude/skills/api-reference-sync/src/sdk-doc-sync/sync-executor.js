@@ -7,7 +7,7 @@ const {
 const { assertApproval } = require('../../../doc-ops-core/src/approval-guard');
 const { organizationRecordType } = require('./sdk-organization-contract');
 const { validateInheritanceEvidence } = require('./inheritance-evidence');
-const { captureRecordState, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
+const { DEPRECATED_PROGRESS, captureRecordState, isDeprecatedProgress, normalizedTargetsValue, sameNormalizedTargets } = require('./record-state');
 const { verbatimCarriesIncludeMarker, verbatimContentDigest } = require('./verbatim-content');
 const { deriveFolderAncestry, deriveFolderChainNames } = require('./tree-delta-reconciliation');
 const {
@@ -349,6 +349,20 @@ class SyncExecutor {
     const beforeRecord = recordIdValue
       ? captureRecordState(await this._getRecord(recordIdValue))
       : null;
+    // Fail-closed backstop for the 2026-10-16 deprecated-record ruling: the
+    // planner rejects such units, but this pre-mutation read of the LIVE record
+    // is the last gate — a record that became Deprecated after planning (or a
+    // plan that skipped the planner) still never has its Progress rewritten or
+    // its document changed.
+    if (beforeRecord && isDeprecatedProgress(beforeRecord.writableFields?.Progress)) {
+      const error = new SyncExecutionError(
+        'DEPRECATED_RECORD_IMMUTABLE',
+        `Record ${beforeRecord.recordId} is Deprecated; its Progress is immutable and the document must not be changed (${effectivePlan.action} ${effectivePlan.stableId})`,
+        { recordId: beforeRecord.recordId, action: effectivePlan.action, progress: DEPRECATED_PROGRESS },
+      );
+      error.step = 'assertNotDeprecated';
+      throw error;
+    }
     let documentRollback = null;
     if (effectivePlan.action === 'UPDATE_IN_PLACE' || effectivePlan.action === 'REBUILD') {
       if (typeof this.verifier?.beforeMutation !== 'function') {

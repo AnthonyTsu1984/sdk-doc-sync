@@ -43,8 +43,12 @@ test('sdk-doc-sync planning helper scripts exist', () => {
     'compose-pr-reconcile-candidate-spec.js',
     'gate-presentation.js',
     'gate-presentation-check.js',
+    'inject-includes.js',
+    'intake-assemble.js',
     'intake-preflight.js',
+    'propose-audience.js',
     'reconcile-content.js',
+    'record-campaign-approval.js',
     'record-grouping-approval.js',
     'render-grouping-inheritance-table.js',
   ]) {
@@ -91,19 +95,23 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/agent-harness.test.js',
     '.claude/skills/api-reference-sync/tests/api-section-model.test.js',
     '.claude/skills/api-reference-sync/tests/apply-polish-context.test.js',
+    '.claude/skills/api-reference-sync/tests/audience-proposal.test.js',
     '.claude/skills/api-reference-sync/tests/audience.test.js',
     '.claude/skills/api-reference-sync/tests/audit-sdk-type-ownership.test.js',
+    '.claude/skills/api-reference-sync/tests/auto-acceptance.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-record-index.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-repository.test.js',
     '.claude/skills/api-reference-sync/tests/bitable-writer.test.js',
     '.claude/skills/api-reference-sync/tests/block-registry.test.js',
     '.claude/skills/api-reference-sync/tests/blocks-to-markdown.test.js',
     '.claude/skills/api-reference-sync/tests/build-revision-scope.test.js',
+    '.claude/skills/api-reference-sync/tests/campaign-approval.test.js',
     '.claude/skills/api-reference-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/code-variants.test.js',
     '.claude/skills/api-reference-sync/tests/compose-pr-reconcile-candidate-spec.test.js',
     '.claude/skills/api-reference-sync/tests/content-fidelity-guards.test.js',
     '.claude/skills/api-reference-sync/tests/content-reconciliation.test.js',
+    '.claude/skills/api-reference-sync/tests/copy-and-repoint-plan.test.js',
     '.claude/skills/api-reference-sync/tests/cpp-scanner-coverage.test.js',
     '.claude/skills/api-reference-sync/tests/create-shell-collision.test.js',
     '.claude/skills/api-reference-sync/tests/decision-capture.test.js',
@@ -123,7 +131,9 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/gate-presentation.test.js',
     '.claude/skills/api-reference-sync/tests/grouping-proposal.test.js',
     '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',
+    '.claude/skills/api-reference-sync/tests/include-injection.test.js',
     '.claude/skills/api-reference-sync/tests/inheritance-evidence.test.js',
+    '.claude/skills/api-reference-sync/tests/intake-assemble.test.js',
     '.claude/skills/api-reference-sync/tests/intake-preflight.test.js',
     '.claude/skills/api-reference-sync/tests/intake-recipes.test.js',
     '.claude/skills/api-reference-sync/tests/invariant-conformance.test.js',
@@ -159,6 +169,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/release-track-registry.test.js',
     '.claude/skills/api-reference-sync/tests/repair-java-topology.test.js',
     '.claude/skills/api-reference-sync/tests/repair-same-name-placement.test.js',
+    '.claude/skills/api-reference-sync/tests/resolve-content-targets.test.js',
     '.claude/skills/api-reference-sync/tests/rest-control-plane-reconcile.test.js',
     '.claude/skills/api-reference-sync/tests/rest-control-plane-review.test.js',
     '.claude/skills/api-reference-sync/tests/rest-fragment-collection.test.js',
@@ -197,6 +208,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/two-gate-flow.test.js',
     '.claude/skills/api-reference-sync/tests/type-url-index.test.js',
     '.claude/skills/api-reference-sync/tests/verbatim-content.test.js',
+    '.claude/skills/api-reference-sync/tests/verify-retry-loop.test.js',
     '.claude/skills/api-reference-sync/tests/versioned-tree-policy.test.js',
     '.claude/skills/api-reference-sync/tests/write-approval-preflight.test.js',
     '.claude/skills/api-reference-sync/tests/zilliz-cli-release-impact.test.js',
@@ -267,10 +279,13 @@ test('interactive approval gates require exact digest-bound copy-ready replies',
   for (const source of [skill, integration, prompts]) {
     assert.match(source, /APPROVE_GROUPING sha256:<proposal-digest>/);
     assert.match(source, /APPROVE_WRITES sha256:<batch-digest>/);
-    assert.match(source, /APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>/);
     assert.match(source, /APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>/);
-    assert.match(source, /APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>/);
   }
+  // The 2026-10-16 ruling retires document review and acceptance review — the
+  // write approval authorizes acceptance, so those gates are no longer live.
+  assert.match(skill, /APPROVE_DOCUMENT.*APPROVE_ACCEPTANCE.*retired/is);
+  assert.match(integration, /retired \(2026-10-16 ruling: the write approval authorizes acceptance\)/);
+  assert.match(prompts, /retired \(2026-10-16 ruling: the write approval authorizes acceptance\)/);
 
   assert.match(skill, /If approved, reply exactly/i);
   assert.match(skill, /interactive chat.*MUST read.*bot-integration.*bot-prompts/is);

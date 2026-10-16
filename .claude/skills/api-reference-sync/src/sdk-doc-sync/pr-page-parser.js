@@ -263,6 +263,16 @@ function parseBulletTree(block, profile, pageName, stats) {
         // Vector-search_iterator, Collections-dropCollectionProperties).
         entry = { name: m[1].trim(), type: null, children: [], required: false, defaultValue: null, descriptionLines: m[2] ? [m[2]] : [] };
         stats.bulletForms.untypedDescribed += 1;
+      } else if (forms.has('untypedColon') && (m = rest.match(/^\*\*(.+?)\*\*\s*:\s*(.*)$/))) {
+        // **ValueError**: — bold entry whose colon carries an EMPTY inline
+        // description, the description sitting on the following indented
+        // lines (python harvest 2026-10-16: Vector/EmbeddingList
+        // add.md:30, add_batch/to_flat_array/to_numpy exceptions). The
+        // existing untypedDescribed separator needs whitespace after the
+        // colon, and the proseBullet guard refuses to fold a top-level
+        // bullet in as prose — a missing FORM, not missing tolerance (§4.5).
+        entry = { name: m[1].trim(), type: null, children: [], required: false, defaultValue: null, descriptionLines: m[2] ? [m[2]] : [] };
+        stats.bulletForms.untypedColon += 1;
       } else if (forms.has('bareParam') && (m = rest.match(/^([A-Za-z_]\w*)\s+\(\*(.+?)\*\)\s*(?:[-–]\s*)?(.*)$/))) {
         // roleName (*string*) - unbolded parameter bullet (node harvest:
         // Authentication-listGrants).
@@ -328,6 +338,16 @@ function parseBulletTree(block, profile, pageName, stats) {
         // `REPLACE` — backticked bare choice nested in a description.
         entry = { name: m[1], type: null, children: [], required: false, defaultValue: null, descriptionLines: [], choice: true };
         stats.bulletForms.backtickChoice += 1;
+      } else if (forms.has('backtickChoiceDescribed') && (m = rest.match(/^`([^`]+)`\s*:\s*(.*)$/))) {
+        // `FunctionType.RERANK`: Applies reranking strategies ... — backticked
+        // choice carrying an inline colon description at TOP level (python
+        // harvest 2026-10-16: MilvusClient/Function/Function.md:43, where
+        // upstream indents the sibling BM25/TEXTEMBEDDING/MINHASH choices one
+        // level deeper). choice: true keeps it in the enum-choice family it
+        // belongs to; the form is profile-gated so every other language still
+        // fails loud on the shape.
+        entry = { name: m[1].trim(), type: null, children: [], required: false, defaultValue: null, descriptionLines: m[2] ? [m[2]] : [], choice: true };
+        stats.bulletForms.backtickChoiceDescribed += 1;
       } else if (forms.has('proseBullet') && (m = rest.match(/^(.+)$/))) {
         // Last-resort plain-prose bullet, checked after every structured
         // form: nested illustrative bullets with no markup at all (node
@@ -427,7 +447,7 @@ function newStats() {
     bulletForms: {
       builder: 0, getter: 0, param: 0, untyped: 0, untypedDescribed: 0, enumChoice: 0, backtickChoice: 0,
       pythonParam: 0, pythonException: 0, bareParam: 0, emphasisParam: 0, describedChoice: 0, enumEquality: 0,
-      callbackChoice: 0, proseBullet: 0,
+      callbackChoice: 0, proseBullet: 0, untypedColon: 0, backtickChoiceDescribed: 0,
     },
     tailModifiers: { required: 0, default: 0 },
     sections: {},

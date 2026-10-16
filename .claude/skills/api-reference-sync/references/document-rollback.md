@@ -6,12 +6,12 @@ This contract defines full rollback for one document review unit in the collabor
 
 Rollback supports both of these states:
 
-- the document has executed and is awaiting `APPROVE_DOCUMENT`;
-- the document has an accepted receipt, but the release has not completed `APPROVE_ACCEPTANCE` finalization.
+- the document has executed and not yet finalized (the approved write finalizes it automatically with `--auto-accept`);
+- the document has an accepted receipt, but the session has not been closed.
 
 A session with `status: finalized` or `scanStateUpdated: true` cannot be reopened or rolled back in place. Correct it through a new reviewed release.
 
-Rollback is a new destructive operation. `APPROVE_WRITES`, `APPROVE_DOCUMENT`, and `APPROVE_ACCEPTANCE` do not authorize it. The only valid authorization is:
+Rollback is a new destructive operation. `APPROVE_WRITES` (and the retired document/acceptance gates) do not authorize it. The only valid authorization is:
 
 ```text
 APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>
@@ -115,7 +115,7 @@ Only a successfully completed rollback journal may update the review session:
 
 The receipt or active execution is removed only after rollback completion has been verified. A failed or partial rollback leaves both intact so resume remains fail-closed.
 
-After rollback, the unit must be regenerated against live state. A replacement write requires a new execution batch digest, a new `APPROVE_WRITES`, a new execution journal, and a new `APPROVE_DOCUMENT`.
+After rollback, the unit must be regenerated against live state. A replacement write requires a new execution batch digest, a new `APPROVE_WRITES`, and a new execution journal (it then finalizes via `--auto-accept`).
 
 ## Verification Requirements
 

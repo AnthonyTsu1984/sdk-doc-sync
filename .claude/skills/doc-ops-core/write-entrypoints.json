@@ -771,6 +771,48 @@
       "basis": "zero live calls: batch git show exports of PR pages already pinned by a decisions file into --output-dir plus a sha256-verified manifest"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/copy-and-repoint-plan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "copy-and-repoint-plan",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/inject-includes.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "inject-includes",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/intake-assemble.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "intake-assemble",
+      "basis": "no external mutation signature found; orchestrates the canonical intake stage scripts (read-only through the dry-run stage)"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/propose-audience.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "propose-audience",
+      "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/record-campaign-approval.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "record-campaign-approval",
+      "basis": "no external mutation signature found; writes only a local approval receipt under tmp/"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/resolve-content-targets.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "resolve-content-targets",
+      "basis": "no external mutation signature found"
+    },
+    {
       "path": "scripts/invariant-coverage-report.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

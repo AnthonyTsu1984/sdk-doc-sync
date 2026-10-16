@@ -521,7 +521,7 @@ const REPLAY_TRACKS = [
   ['go', 'go-v26', 101], ['go', 'go-v30', 118],
   ['java', 'java-v26', 64], ['java', 'java-v30', 26],
   ['node', 'node-v26', 140], ['node', 'node-v30', 159],
-  ['python', 'python-v26', 15], ['python', 'python-v30', 20],
+  ['python', 'python-v26', 15], ['python', 'python-v30', 25],
 ];
 const DRIFT_CODES = new Set([
   REJECTION_CODES.BULLET_FORM_UNRECOGNIZED,

@@ -20,9 +20,19 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { document
   const actionable = planned.filter((entry) => entry.plan.action !== 'NOOP');
   const byPlanId = new Map(planned.map((entry) => [entry.plan.stableId, entry]));
   const allowedDocumentIds = documentStableIds ? new Set(documentStableIds) : null;
+  // A FRESH manifest excludes no-change documents: a NOOP (settled) or ORPHAN
+  // document mutates nothing and never finalizes (2026-10-16 ruling: the write
+  // approval authorizes acceptance, so every manifest unit must be one that
+  // actually writes) — a fresh unit for it would wedge closeSession on a Draft
+  // transition no write ever performed. On RESUME the session's own units are
+  // authoritative and are preserved verbatim (including a document that
+  // replanned to NOOP), keeping the bound manifest digest stable across
+  // sessions. allowedDocumentIds non-null marks the resume path.
+  const excludeNoChange = allowedDocumentIds === null;
   const documentEntries = planned
     .filter((entry) => entry.kind === 'document'
-      && (!allowedDocumentIds || allowedDocumentIds.has(entry.plan.stableId)))
+      && (!allowedDocumentIds || allowedDocumentIds.has(entry.plan.stableId))
+      && (!excludeNoChange || (entry.plan.action !== 'NOOP' && entry.plan.action !== 'ORPHAN')))
     .sort((left, right) => left.plan.stableId.localeCompare(right.plan.stableId));
   const assignedResourceIds = new Set();
   const entriesByUnitId = new Map();
@@ -56,6 +66,11 @@ function buildReviewUnitManifest(plannedEntries, buildExecutionBatch, { document
       if (!dependencyId) continue;
       const dependencyEntry = byPlanId.get(dependencyId);
       if (dependencyEntry.kind === 'document') {
+        // A no-change dependency excluded from a FRESH manifest is not a unit,
+        // so it is not a prerequisite either; on resume a session-known NOOP
+        // document is retained and stays a prerequisite.
+        if (excludeNoChange
+          && (dependencyEntry.plan.action === 'NOOP' || dependencyEntry.plan.action === 'ORPHAN')) continue;
         prerequisiteReviewUnitIds.add(reviewUnitId(dependencyEntry.plan.stableId));
         continue;
       }

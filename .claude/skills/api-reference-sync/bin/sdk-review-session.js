@@ -402,20 +402,28 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   const prepared = prepareDocumentAcceptance(session, receipt);
   const repoRoot = path.resolve(__dirname, '..', '..', '..', '..');
   const targets = prepared.touchedRecords.map((record) => record.recordId);
+  // The authorizing artifact is the approved BATCH digest (the write approval
+  // that authorized this execution), not the execution journal digest — the
+  // journal identifies the run, the batch digest identifies the approval
+  // (2026-10-16 ruling; review P2). The unit carries it from the manifest.
+  const acceptanceBatchDigest = prepared.reviewUnit.batchDigest;
+  if (!nonEmptyText(acceptanceBatchDigest)) {
+    throw new Error(`Acceptance requires the unit's approved batch digest for ${receipt.reviewUnitId}`);
+  }
 
   const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'document-acceptance' });
   const writer = io.bitableWriter
     || new BitableWriter({ baseToken: args.baseToken, tableId: args.tableId || undefined, governance });
   if (writer?.governance?.bindApproval) {
     writer.governance.bindApproval({
-      batchDigest: receipt.executionJournalDigest,
+      batchDigest: acceptanceBatchDigest,
       actionCount: targets.length,
       targets,
       sideEffects: ['bitable.update'],
       approval: createApprovalEnvelope({
         skill: 'api-reference-sync',
         operation: 'document-acceptance',
-        batchDigest: receipt.executionJournalDigest,
+        batchDigest: acceptanceBatchDigest,
         actionCount: targets.length,
         targets,
         sideEffects: ['bitable.update'],
@@ -430,14 +438,14 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       skill: 'api-reference-sync',
       skillVersion: 'api-reference-sync/document-acceptance@1',
       repoRoot,
-      batchDigest: receipt.executionJournalDigest,
+      batchDigest: acceptanceBatchDigest,
       sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
     }), { repoRoot });
     writeRunManifestArtifact(createRunManifest({
       skill: 'api-reference-sync',
       skillVersion: 'api-reference-sync/document-acceptance@1',
       repoRoot,
-      batchDigest: receipt.executionJournalDigest,
+      batchDigest: acceptanceBatchDigest,
       sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
     }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', `run-manifest-document-acceptance-${receipt.reviewUnitId.replace(/[^A-Za-z0-9-]/g, '-')}.json`) });
   }
@@ -525,6 +533,82 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   saveReviewSession(sessionPath, nextSession, { expectedPreviousDigest: sessionDigest });
   out(`Unit finalized: ${receipt.reviewUnitId} (${draftRecords.length} record(s) WIP→Draft, receipt ${path.basename(unitReceiptPath)})`);
   return nextSession;
+}
+
+// ---------- auto-acceptance (batch 18 W-G, 2026-10-16 operator ruling) ----------
+//
+// The write approval authorizes acceptance: the old "records stay WIP until a
+// separate acceptance" policy is RETIRED. A verified, recorded execution
+// therefore finalizes (WIP→Draft with the final Targets) in the SAME
+// invocation. Nothing is loosened except the extra human stop — every evidence
+// check the two-gate acceptance ran still runs: the receipt is derived from the
+// durable journal, and prepareDocumentAcceptance/recordDocumentAcceptance
+// re-validate the journal digest, the WIP baseline, and the Targets baseline
+// before and after the write.
+function buildAutoAcceptanceReceipt({
+  reviewUnitId,
+  executionJournalPath,
+  executionJournalDigest,
+  entries,
+  documentLinks = [],
+  recordLinks = [],
+}) {
+  if (!nonEmptyText(reviewUnitId)) throw new Error('auto-acceptance requires a reviewUnitId');
+  if (!nonEmptyText(executionJournalPath)) throw new Error('auto-acceptance requires an execution journal path');
+  if (!nonEmptyText(executionJournalDigest)) throw new Error('auto-acceptance requires an execution journal digest');
+  const touchedRecords = touchedRecordsFromJournal(entries);
+  if (touchedRecords.length === 0) {
+    throw new Error(`auto-acceptance found no record-touching journal entries for ${reviewUnitId}`);
+  }
+  return {
+    schemaVersion: 1,
+    status: 'document_accepted',
+    // Auto-acceptance runs after the execution, with no interactive review
+    // window: there are no open comments by construction. The two-gate receipt
+    // validator still requires the field explicitly (review P0-1).
+    commentsResolved: true,
+    reviewUnitId,
+    executionJournalPath,
+    executionJournalDigest,
+    touchedRecords,
+    documentLinks: documentLinks.filter(nonEmptyText),
+    recordLinks: recordLinks.filter(nonEmptyText),
+  };
+}
+
+async function acceptExecutedUnit({
+  session,
+  sessionPath,
+  sessionDigest,
+  reviewUnitId,
+  executionJournalPath,
+  executionJournalDigest,
+  documentLinks = [],
+  recordLinks = [],
+  baseToken = null,
+  tableId = null,
+  bitableWriter = null,
+  finalTargets,
+  out = () => {},
+}) {
+  const entries = readJournalEntries(executionJournalPath);
+  const receipt = buildAutoAcceptanceReceipt({
+    reviewUnitId,
+    executionJournalPath,
+    executionJournalDigest,
+    entries,
+    documentLinks,
+    recordLinks,
+  });
+  return acceptDocumentTwoGate({
+    session,
+    sessionPath,
+    sessionDigest,
+    receipt,
+    args: { baseToken, tableId, finalTargets },
+    io: { bitableWriter },
+    out,
+  });
 }
 
 // ---------- batch review resolver (R16 lesson, 2026-10-07) ----------
@@ -1388,4 +1472,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { parseArgs, parseBatchReply, parseFinalTargets, runCli, status };
+module.exports = { parseArgs, parseBatchReply, parseFinalTargets, runCli, status, acceptDocumentTwoGate, acceptExecutedUnit, buildAutoAcceptanceReceipt, readJournalEntries, touchedRecordsFromJournal };

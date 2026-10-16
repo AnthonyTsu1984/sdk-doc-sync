@@ -93,12 +93,38 @@ function sameNormalizedTargets(left, right) {
   return JSON.stringify(normalizedTargetsValue(left)) === JSON.stringify(normalizedTargetsValue(right));
 }
 
+// Progress vocabulary. A record already marked Deprecated is terminal: its
+// Progress is never rewritten and the document it points at is never changed
+// (operator ruling 2026-10-16). The planner rejects such units up front; the
+// executor's pre-mutation read is the fail-closed backstop. The value arrives
+// as a single-select cell, so it may be a bare string or a {text|value|name}
+// object.
+const DEPRECATED_PROGRESS = 'Deprecated';
+
+function progressText(value) {
+  if (value === undefined || value === null) return null;
+  const raw = Array.isArray(value) ? value[0] : value;
+  const text = raw !== null && typeof raw === 'object'
+    ? (raw.text ?? raw.value ?? raw.name ?? null)
+    : raw;
+  if (text === undefined || text === null) return null;
+  const trimmed = String(text).trim();
+  return trimmed === '' ? null : trimmed;
+}
+
+function isDeprecatedProgress(value) {
+  return progressText(value) === DEPRECATED_PROGRESS;
+}
+
 module.exports = {
+  DEPRECATED_PROGRESS,
   WRITABLE_FIELD_NAMES,
   captureRecordState,
   executionTargetsBaseline,
+  isDeprecatedProgress,
   matchesRecordState,
   normalizedTargetsValue,
+  progressText,
   recordFields,
   recordId,
   sameNormalizedTargets,

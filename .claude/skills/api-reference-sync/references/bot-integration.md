@@ -85,6 +85,8 @@ Accept only digest-bound command-style replies for gates:
 - Rollback approval: `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>`, `REJECT_ROLLBACK <review-unit-id>`
 - Acceptance review: `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>`, `REQUEST_ACCEPTANCE_CHANGES <review-unit-id>`, `REJECT_ACCEPTANCE`
 
+Document review and acceptance review are retired (2026-10-16 ruling: the write approval authorizes acceptance); they remain only for legacy sessions.
+
 A bare approval command is not approved. The parser must compare both the review-unit ID and submitted digest with the active bound artifacts before changing phase.
 
 If a reply is conversational or ambiguous, do not transition phases. Respond with:
@@ -159,17 +161,17 @@ Do not use row numbers as IDs. Row order can change after filtering, regrouping,
 - The grouping command also approves inheritance decisions shown in the same digest-bound proposal. If a successor-track decision is absent, ambiguous, or stale, keep the session in `candidate_proposal`.
 - `APPROVE_WRITES sha256:<batch-digest>` applies only to the exact action list and artifact digests bound into that batch.
 - If the user selects only part of a bound action list, the canonical response is to reject the stale digest and regenerate a reduced `proposedExecutionBatch`. Record both `reject_stale_digest` and `regenerate_batch` in that replacement artifact, then stop for a new exact `APPROVE_WRITES`; never execute the subset under the old digest.
-- Write approval does not accept the resulting documentation and never authorizes another document unit or a scan-state update.
-- `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` is valid only for the active, successfully verified unit. It records review completion but leaves interface records at `WIP` and leaves scan state unchanged.
+- Write approval authorizes acceptance of the units it binds (2026-10-16 ruling) and never authorizes another document unit or a scan-state update.
+- `APPROVE_DOCUMENT <review-unit-id> sha256:<execution-journal-digest>` is RETIRED (2026-10-16); it applied only to legacy sessions, where it recorded review completion while leaving interface records at `WIP`.
 - `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` is a separate destructive approval. It is valid only for an executed active unit or an accepted unit before finalization. It never authorizes a different unit and never changes `scan-state.json`.
 - For `COPY_PATCH_AND_REPOINT`, rollback must restore the complete captured Bitable fields so `Docs` points back to the untouched COPY source, verify that pointer, and delete only the copied-and-patched Docx. Never history-revert the source because the source was not modified.
 - For `CREATE`, delete and verify the new Bitable record before deleting and verifying the new Docx. Delete newly created VirtualNode records and folders only in reverse dependency order; restore a repointed pre-existing VirtualNode before deleting its new folder.
 - If another executed or accepted unit uses a created resource, block rollback and name the dependent review-unit IDs. If the rollback journal is partial or has an unresolved prepared action, do not mutate the session or relaunch automatically.
-- Persist `APPROVE_DOCUMENT` with `sdk-review-session.js accept-document`. The command must re-read the matching completed execution journal, require resolved comments, bind every touched record to a verified journal action, and reject a journal for a different document unit.
+- `sdk-review-session.js accept-document` (now also invoked automatically by the approved write, `--auto-accept`) re-reads the matching completed execution journal, requires resolved comments, binds every touched record to a verified journal action, and rejects a journal for a different document unit.
 - Before a new process selects the next unit, rerun `node .claude/skills/api-reference-sync/bin/sdk-doc-sync.js` with `--resume-session`. Manifest drift, journal drift, missing records, a non-`WIP` progress value, `Targets` drifted from the execution baseline, or a changed Docx token blocks the phase transition.
 - `REQUEST_DOCUMENT_CHANGES` freezes progression, requires reading the active document's comments, and returns only that unit to reviewed planning. Any changed artifact or resource plan invalidates the previous batch and execution-journal digest.
-- `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` is valid only after every unit in the original review-unit manifest has one accepted journal in the complete acceptance manifest. It authorizes only the listed interface-document `WIP` to `Draft` transitions and the subsequent verified `scan-state.json` update. Structural VirtualNode or Module records are excluded from that transition.
-- A request to accept only part of the manifest is blocked and performs no writes. Report `APPROVE_ACCEPTANCE` as the next missing gate, not `null`, because finalization still requires a complete manifest and its exact digest after every unit is accepted.
+- `APPROVE_ACCEPTANCE sha256:<acceptance-manifest-digest>` is RETIRED (2026-10-16; the write approval authorizes acceptance). It applied only to legacy sessions, where it was valid after every unit had one accepted journal in the complete manifest.
+- A legacy partial-acceptance request is blocked and performs no writes; the live path finalizes each verified unit as it runs.
 - Build that digest with `sdk-review-session.js build-acceptance`. After finalization, mark the session complete only with `record-finalization` and a successful finalization journal bound to the same digest.
 - If any artifact changes after approval, return to the relevant review gate.
 - If planning produces `planningErrorCount > 0`, do not request write approval.

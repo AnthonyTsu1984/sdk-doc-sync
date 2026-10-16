@@ -7,6 +7,8 @@ const fs = require('fs');
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 
 const SdkDocSync = require('../src/sdk-doc-sync');
+const { interpretExecutionOutcome } = require('../src/sdk-doc-sync/execution-outcome');
+const { acceptExecutedUnit, readJournalEntries, touchedRecordsFromJournal } = require('./sdk-review-session');
 const FeishuToMarkdown = require('../src/feishu-to-markdown');
 const { validateReferenceDocument } = require('../src/sdk-reference-ir/validate');
 const { validateDocumentIr } = require('../src/document-ir/validate');
@@ -98,6 +100,13 @@ function parseArgs(argv) {
             args.json = true;
         } else if (arg === '--auto-approve') {
             args.autoApprove = true;
+        } else if (arg === '--auto-accept') {
+            // Batch 18 W-G (2026-10-16 ruling): the write approval authorizes
+            // acceptance — a verified, recorded execution finalizes (WIP→Draft)
+            // in the same invocation, with no separate acceptance gate.
+            args.autoAccept = true;
+        } else if (arg === '--final-targets' && argv[i + 1]) {
+            args.finalTargets = argv[++i];
         } else if (arg === '--repair-approve' && argv[i + 1]) {
             args.repairApprove = (args.repairApprove || []).concat(argv[++i]);
         } else if (arg === '--approve-plan-digest' && argv[i + 1]) {
@@ -911,13 +920,16 @@ async function runCli({
     const result = await withJsonConsoleIsolation(args.json === true, err, () => sync.run());
     if (args.resumeSession
         && !args.dryRun
-        && ['EXECUTED', 'PARTIAL'].includes(result.executionResult?.status)
+        && interpretExecutionOutcome(result.executionResult).mutated === true
         && result.activeReviewUnit?.reviewUnitId
         && result.executionJournalPath
         && result.executionJournalDigest) {
-        // PARTIAL runs mutate Feishu exactly like EXECUTED runs, so the session
-        // must record them too — otherwise the executed unit is invisible to
-        // rollback planning and to the accepted/active transition checks.
+        // A mutation-bearing run (EXECUTED, or the PARTIAL that landed writes)
+        // must be recorded — otherwise the executed unit is invisible to
+        // rollback planning and to the accepted/active transition checks. The
+        // decision rides the shared evidence-based ruling (batch 18), so a
+        // PARTIAL whose every landed write was rolled back is NOT recorded:
+        // nothing mutated, nothing to make visible.
         const sessionPath = path.resolve(args.resumeSession);
         // Completion reloads the session FRESH: the resume digest predates
         // the unit's live writes and is stale by construction once they ran
@@ -932,7 +944,12 @@ async function runCli({
                 executionJournalPath: result.executionJournalPath,
                 executionJournalDigest: result.executionJournalDigest,
             }, { batchContinue: args.batchContinue === true });
-            saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
+            const saved = saveReviewSession(sessionPath, reviewSession, { expectedPreviousDigest: resumeSessionDigest });
+            // The recording save produced a NEW on-disk digest; the acceptance
+            // CAS below must carry THAT digest, never the stale pre-recording
+            // one (review P0-2: a stale expectation threw AFTER the live Draft
+            // write, leaving Bitable at Draft and the session at executed/WIP).
+            resumeSessionDigest = saved.stateDigest;
         } catch (error) {
             // A refused recording (typically a journal whose observed actions
             // failed) must not kill the result JSON: the action's own
@@ -945,6 +962,54 @@ async function runCli({
                 actionId: result.activeReviewUnit.reviewUnitId,
                 message: `Session recording refused for ${result.activeReviewUnit.reviewUnitId}: ${error.message}`,
             });
+        }
+        // Batch 18 W-G (2026-10-16 ruling): the write approval authorizes
+        // acceptance, so a recorded, verified execution finalizes here — no
+        // separate gate reply. The acceptance remains a governed write with its
+        // own evidence checks (journal digest, WIP baseline, Targets baseline,
+        // post-write verification); a refusal leaves the unit recorded at WIP
+        // and surfaces typed — never silent, never partially applied.
+        if (args.autoAccept && !result.sessionRecordingError && result.activeReviewUnit?.reviewUnitId) {
+            try {
+                // Links the acceptance receipt records come from the run's own
+                // canonical builders (the same ones the review presentation
+                // uses), derived from the unit's journal (review P0-1: the
+                // acceptance refuses an empty links evidence).
+                const unitTouched = touchedRecordsFromJournal(readJournalEntries(result.executionJournalPath));
+                const documentLinks = [...new Set(unitTouched.map((record) => sync.docxLink(record.documentToken)).filter(Boolean))];
+                const recordLinks = [];
+                for (const record of unitTouched) {
+                    const link = await sync.recordLink(record.recordId);
+                    if (link) recordLinks.push(link);
+                }
+                await acceptExecutedUnit({
+                    session: reviewSession,
+                    sessionPath,
+                    sessionDigest: resumeSessionDigest,
+                    reviewUnitId: result.activeReviewUnit.reviewUnitId,
+                    executionJournalPath: result.executionJournalPath,
+                    executionJournalDigest: result.executionJournalDigest,
+                    documentLinks,
+                    recordLinks,
+                    baseToken,
+                    finalTargets: args.finalTargets,
+                    out,
+                });
+                ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));
+                result.unitAcceptance = { reviewUnitId: result.activeReviewUnit.reviewUnitId, finalized: true };
+            } catch (error) {
+                result.unitAcceptance = {
+                    reviewUnitId: result.activeReviewUnit.reviewUnitId,
+                    finalized: false,
+                    code: error.code || 'AUTO_ACCEPTANCE_REFUSED',
+                    message: error.message,
+                };
+                (result.executionResult.diagnostics || []).push({
+                    code: error.code || 'AUTO_ACCEPTANCE_REFUSED',
+                    actionId: result.activeReviewUnit.reviewUnitId,
+                    message: `Auto-acceptance refused for ${result.activeReviewUnit.reviewUnitId}: ${error.message}`,
+                });
+            }
         }
         result.reviewSession = {
             ...(result.reviewSession || {}),

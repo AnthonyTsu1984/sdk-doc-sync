@@ -18,7 +18,7 @@ function manifest() {
   return {
     schemaVersion: 1,
     manifestDigest: 'sha256:review-manifest',
-    units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' }],
+    units: [{ reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a', batchDigest: `sha256:${'a'.repeat(64)}` }],
     unassignedResourceActionIds: [],
   };
 }
@@ -220,8 +220,8 @@ function twoUnitManifest() {
     schemaVersion: 1,
     manifestDigest: 'sha256:review-manifest-2',
     units: [
-      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' },
-      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b' },
+      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a', batchDigest: `sha256:${'a'.repeat(64)}` },
+      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b', batchDigest: `sha256:${'b'.repeat(64)}` },
     ],
     unassignedResourceActionIds: [],
   };
@@ -588,8 +588,8 @@ test('status derives the combined acceptance digest from pendingExecutions via t
     schemaVersion: 1,
     manifestDigest: 'sha256:review-manifest-two',
     units: [
-      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' },
-      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b' },
+      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a', batchDigest: `sha256:${'a'.repeat(64)}` },
+      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b', batchDigest: `sha256:${'b'.repeat(64)}` },
     ],
     unassignedResourceActionIds: [],
   };
@@ -698,8 +698,8 @@ test('handoff derives the document-gate batch with journal digests and the combi
     schemaVersion: 1,
     manifestDigest: 'sha256:review-manifest-handoff',
     units: [
-      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a' },
-      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b' },
+      { reviewUnitId: 'review:node:Collections:a', documentStableId: 'node:Collections:a', batchDigest: `sha256:${'a'.repeat(64)}` },
+      { reviewUnitId: 'review:node:Collections:b', documentStableId: 'node:Collections:b', batchDigest: `sha256:${'b'.repeat(64)}` },
     ],
     unassignedResourceActionIds: [],
   };

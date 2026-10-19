@@ -243,6 +243,22 @@ process.stdout.write('appended');
 const ECHO_PAYLOAD = `
 process.stdout.write(process.argv[1] || '');
 `;
+// 从 reviewed-context 派生 propose-audience 的 entries 工件（8 行）:每条
+// {symbol,symbolName},{title,page},{kind},{category} —— propose-audience 的
+// 归属候选输入面;intake 链的 --artifacts 是另一形状,不得复用同一文件。
+const DERIVE_AUDIENCE_ENTRIES_PAYLOAD = `
+const fs = require('node:fs');
+const ctx = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const entries = Object.entries(ctx.contexts || {}).map(([stableId, entry]) => ({
+  symbol: String(entry.symbolName || stableId.split(':').pop() || ''),
+  page: String(entry.title || ''),
+  kind: String(entry.kind || 'method'),
+  category: String(entry.category || ''),
+  stableId: String(stableId),
+}));
+fs.writeFileSync(process.argv[2], JSON.stringify({ entries }, null, 2) + '\n');
+console.log(JSON.stringify({ ok: true, entries: entries.length }));
+`;
 
 // ===== plan 全文读取与字段收窄（规格 2:路径派生全从 plan 读,模板零硬编码业务常量）=====
 log("读取 campaign plan:" + planPath);
@@ -446,10 +462,13 @@ if (rehearsal) {
 }
 
 // ===== 步骤 2:W-A 组装链（规格 3:intake CLI 逐段调用,argv 由 plan 派生,只串调用与查 exitCode）=====
-// entries 工件 = intake 链的输入面（由 plan 生成侧/intake 工件链供,模板不拼装业务映射;
-// 按 campaignId 键控约定放在 campaignDir 下,缺失时 propose-audience 以 typed 错误 fail-closed）。
+// intake-artifacts.json = intake 链的输入面（intake-assemble --artifacts 的
+// 工件路径映射,由 plan 生成侧/intake 工件链供,按 campaignId 键控约定放在
+// campaignDir 下）。propose-audience 的 entries 是另一形状（{symbol,page,
+// kind,category}[]）,由 reviewed-context 在步骤 3 前派生,不复用本文件。
+const intakeArtifactsPath = paths.campaignDir + "/intake-artifacts.json";
 const audienceEntriesPath = paths.campaignDir + "/audience-entries.json";
-const intakeBaseArgs = ["--language", identity.language, "--track", identity.track, "--artifacts", audienceEntriesPath, "--identity-map", paths.identityMap, "--base-token", feishu.baseToken, "--table-id", feishu.tableId, "--root-token", feishu.rootToken];
+const intakeBaseArgs = ["--language", identity.language, "--track", identity.track, "--artifacts", intakeArtifactsPath, "--identity-map", paths.identityMap, "--base-token", feishu.baseToken, "--table-id", feishu.tableId, "--root-token", feishu.rootToken];
 phase("组装发布范围工件链");
 const intakePlanRun = await runTrackedCli("intake-assemble --plan（校验组装计划）", [INTAKE_ASSEMBLE, "--plan"].concat(intakeBaseArgs, ["--json"]), campaignFile("intake-plan"), 300000);
 if (!intakePlanRun.ok) {
@@ -463,6 +482,11 @@ log("W-A 组装链完成:scope/grouping/candidate-spec/reviewed-context 工件�
 
 // ===== 步骤 3:W-B 归属（规格 4:propose-audience 提候选 → A2 单次批量确认 → targets.json 进取数链）=====
 phase("确认候选归属");
+// 派生 propose-audience 的 entries（reviewed-context 是归属判断的权威面）。
+const deriveEntriesRun = await runTrackedCli("派生 audience entries（reviewed-context → {symbol,page,kind,category}）", ["-e", DERIVE_AUDIENCE_ENTRIES_PAYLOAD, paths.referenceContext, audienceEntriesPath], campaignFile("derive-audience-entries"), 60000);
+if (!deriveEntriesRun.ok) {
+  return await freezeAndSettle("AUDIENCE_ENTRIES_DERIVE_FAILED", { code: "AUDIENCE_ENTRIES_DERIVE_FAILED", detail: deriveEntriesRun.detail, note: "reviewed-context 不可读或 entries 派生失败,不进场归属" }, null);
+}
 const proposalsFile = campaignFile("audience-proposals");
 const proposeRun = await runTrackedCli("propose-audience（提候选+must-ask）", [PROPOSE_AUDIENCE, "--entries", audienceEntriesPath, "--json"], proposalsFile, 120000);
 if (!proposeRun.ok) {

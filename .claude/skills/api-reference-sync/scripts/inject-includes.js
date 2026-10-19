@@ -1,15 +1,27 @@
 #!/usr/bin/env node
 'use strict';
 
-// Include injector CLI (batch 18 W-E). Reads a request describing the content to
-// wrap and the target audience, and emits the canonical include form:
+// Include injector CLI (batch 18 W-E; three-state form ruling batch 16
+// slice 5 P2). Reads a request describing the content to wrap and the target
+// audience, and emits the canonical include form:
 //
 //   node scripts/inject-includes.js --request <request.json> [--json]
 //
-// Request shape (one wrapping):
-//   { "target": "zilliz", "content": "…markdown…", "inCodeFence": false, "form": null }
-// Or a batch:
-//   { "target": "zilliz", "items": [ { "content": "…", "inCodeFence": true }, … ] }
+// Request shape — the placement decides the entry (one wrapping per item):
+//   { "target": "zilliz", "content": "…", "inCodeFence": false, "form": null }
+//     → whole-content wrap: multi-line = block form (tags each standalone),
+//       single line = inline, code fence = comment magic tag (unchanged).
+//   { "target": "zilliz", "blockText": "…", "fragment": "…" }
+//     → fragment-level inline (块内分叉): the fragment is tagged IN PLACE
+//       inside its block via wrapFragment.
+//   { "target": "zilliz", "blocks": ["…", "…"] }
+//     → block-run merge: one tag pair, before the first and after the last.
+//   { "target": "zilliz", "listItems": ["- …", "- …"] }
+//     → list-item run: tags one indent level outside the items; deep nests
+//       (indent >= 4) are refused typed (INCLUDE_FRAGMENT_INDENT_UNSUPPORTED).
+//   { "target": "zilliz", "tableCells": ["…", "…"] }
+//     → table-row fork: every cell's content tagged front and back.
+// Or a batch: { "target": "zilliz", "items": [ … ] }
 //
 // Prints the wrapped markdown (text) or a JSON result. The form is chosen
 // deterministically; a forced form the content cannot honor is a typed refusal.
@@ -20,6 +32,10 @@ const path = require('node:path');
 const {
   IncludeInjectionError,
   buildIncludeWrapping,
+  wrapBlockRun,
+  wrapFragment,
+  wrapListItems,
+  wrapTableRow,
 } = require('../src/sdk-doc-sync/include-injection');
 
 const VALUE_OPTIONS = new Set(['--request']);
@@ -61,13 +77,27 @@ function main(argv = process.argv, io = process) {
   const items = Array.isArray(request.items) ? request.items : [request];
 
   const results = items.map((item) => {
-    const wrapping = buildIncludeWrapping({
+    // Pass-through of the three-state ruling: the placement fields on the
+    // item pick the entry; whole-content wraps keep the original decision
+    // path (block / inline / code-fence magic tag) untouched.
+    if (item.blockText !== undefined || item.fragment !== undefined) {
+      return wrapFragment(item.blockText, item.fragment, target);
+    }
+    if (Array.isArray(item.blocks)) {
+      return wrapBlockRun(item.blocks, target);
+    }
+    if (Array.isArray(item.listItems)) {
+      return wrapListItems(item.listItems, target);
+    }
+    if (Array.isArray(item.tableCells)) {
+      return wrapTableRow(item.tableCells, target);
+    }
+    return buildIncludeWrapping({
       ...common,
       inCodeFence: item.inCodeFence === true || common.inCodeFence,
       form: item.form ?? common.form,
       content: item.content,
     });
-    return wrapping;
   });
 
   if (args.json) {

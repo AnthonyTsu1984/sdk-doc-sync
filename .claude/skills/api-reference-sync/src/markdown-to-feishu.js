@@ -391,6 +391,31 @@ class MarkdownToFeishu {
     __parse_html_block(token) {
         const html = token.text;
 
+        // Audience regions are checked FIRST (batch 16 slice 5, P2): the
+        // full-anchored marker regex only ever matches a token that is exactly
+        // one include/exclude region, so hoisting it above the component
+        // branches cannot change how any other token routes. Without this, a
+        // region wrapping an alert callout div was absorbed by the alert
+        // branch below (cheerio keeps only the div) and the marker bytes were
+        // lost — the P2-promised terminal layout is marker blocks sandwiching
+        // the callout block.
+        // Preserve audience markers while parsing the enclosed Markdown into
+        // normal rich blocks. Treating the complete region as one text block
+        // exposes Markdown escapes such as object\_url in the live Docx.
+        const audience = html.match(/^\s*<(include|exclude)\s+target="([^"]+)">\s*\n?([\s\S]*?)\n?\s*<\/\1>\s*$/i);
+        if (audience) {
+            const [, mode, target, body] = audience;
+            const innerBlocks = marked.lexer(body)
+                .flatMap(innerToken => this.__token_to_blocks(innerToken));
+            return {
+                __audience_blocks: [
+                    this.__create_audience_marker_block(`<${mode.toLowerCase()} target="${target}">`),
+                    ...innerBlocks,
+                    this.__create_audience_marker_block(`</${mode.toLowerCase()}>`),
+                ]
+            };
+        }
+
         // Check if it's a Grid component
         if (html.includes('<Grid')) {
             return this.__parse_grid(html);
@@ -426,23 +451,6 @@ class MarkdownToFeishu {
             return this.__create_table_block(html);
         }
 
-        // Preserve audience markers while parsing the enclosed Markdown into
-        // normal rich blocks. Treating the complete region as one text block
-        // exposes Markdown escapes such as object\_url in the live Docx.
-        const audience = html.match(/^\s*<(include|exclude)\s+target="([^"]+)">\s*\n?([\s\S]*?)\n?\s*<\/\1>\s*$/i);
-        if (audience) {
-            const [, mode, target, body] = audience;
-            const innerBlocks = marked.lexer(body)
-                .flatMap(innerToken => this.__token_to_blocks(innerToken));
-            return {
-                __audience_blocks: [
-                    this.__create_audience_marker_block(`<${mode.toLowerCase()} target="${target}">`),
-                    ...innerBlocks,
-                    this.__create_audience_marker_block(`</${mode.toLowerCase()}>`),
-                ]
-            };
-        }
-
         // Preserve malformed or marker-only audience HTML verbatim so the
         // caller can surface it for review instead of silently dropping it.
         if (html.includes('<include') || html.includes('<exclude')) {
@@ -457,7 +465,13 @@ class MarkdownToFeishu {
         return {
             block_type: this.block_type_map.text,
             text: {
-                elements: [this.__create_text_element(text)],
+                // Marker bytes are canonical (batch 16 slice 5, P2 review
+                // fix): the blank-line authoring form tokenizes the open
+                // marker into this branch with a trailing newline while the
+                // compact form rebuilds it clean, and downstream publish
+                // pipelines literal-match the marker — trim to one canonical
+                // byte form (the compact one) so both authoring shapes agree.
+                elements: [this.__create_text_element(String(text).trim())],
                 style: {}
             }
         };
@@ -481,6 +495,30 @@ class MarkdownToFeishu {
         const kind = (className.match(/alert\s+([a-z-]+)/i) || [])[1] || 'note';
         const content = alertDiv.html() || '';
         const children = [];
+        // Fragment-level include/exclude markers composed INSIDE the callout
+        // (batch 16 slice 5, rule 5 gap fix): cheerio text() walks text nodes
+        // only, so an <include target="…">…</include> element contributed just
+        // its inner text and the tag bytes were silently deleted ("see
+        // <include …>this</include> first" rendered as "see this first").
+        // Serialize every include/exclude element back to its literal tag text
+        // before the extraction: the entity-escaped self-replacement makes the
+        // parser materialize the exact outer HTML as one text node, which
+        // text() then passes through verbatim. Callout content follows the
+        // same rule as prose — the fragment tag survives byte-for-byte (in the
+        // canonical compact marker form; nested include/exclude inside an
+        // include ride along inside the outer tag's serialized bytes). A
+        // region tag on its own line inside the wrapper is unclosed in the
+        // source, so the DOM auto-closes it at the wrapper's </div> and the
+        // serialization synthesizes the matching </include> — content between
+        // the tags is preserved and the marker pair stays well-formed.
+        alertDiv.find('include, exclude').each((_, marker) => {
+            const literal = $.html(marker) || '';
+            const escaped = literal
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;');
+            $(marker).replaceWith(escaped);
+        });
         const text = alertDiv.text().trim();
         if (text) {
             // Global callout convention (established 2026-09-22): line 1 is the

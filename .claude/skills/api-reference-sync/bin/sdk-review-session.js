@@ -53,6 +53,7 @@ const ARG_SPECS = Object.freeze([
   { flag: '--execution-journal-digest', key: 'executionJournalDigest', kind: 'value' },
   { flag: '--touched-records', key: 'touchedRecords', kind: 'value' },
   { flag: '--final-targets', key: 'finalTargets', kind: 'value' },
+  { flag: '--targets-json', key: 'targetsJson', kind: 'value' },
   { flag: '--records', key: 'records', kind: 'value' },
   { flag: '--document-link', key: 'documentLinks', kind: 'multi' },
   { flag: '--record-link', key: 'recordLinks', kind: 'multi' },
@@ -394,6 +395,30 @@ function parseFinalTargets(raw) {
   return TARGETS_FINAL.filter((value) => seen.has(value));
 }
 
+// A2 attribution artifact (batch 16 slice 5, rule 6): the campaign plan carries
+// the ruling file at plan.paths.targetsJson (campaign-plan.js:147). Semantics at
+// this write path: file present -> read + parse and hand to
+// targetsFinalForReviewUnit (A2 ruling > category table > default); file absent
+// -> null, the category table governs as before. A PRESENT file that cannot be
+// read or parsed fails closed — the A2 seat did rule for this campaign, so
+// silently accepting a category-table value it may have contradicted is not an
+// option.
+function loadAudienceRulings(targetsJsonPath) {
+  if (!nonEmptyText(targetsJsonPath)) return null;
+  let raw;
+  try {
+    raw = fs.readFileSync(path.resolve(String(targetsJsonPath)), 'utf8');
+  } catch (error) {
+    if (error && error.code === 'ENOENT') return null;
+    throw new Error(`cannot read targets.json at ${targetsJsonPath}: ${error.message}`);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    throw new Error(`targets.json at ${targetsJsonPath} is not valid JSON: ${error.message}`);
+  }
+}
+
 async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, receipt, args, io, out }) {
   const BitableWriter = require('../src/sdk-doc-sync/bitable-writer');
   const { WriterGovernance, createApprovalEnvelope } = require('../../doc-ops-core/src/writer-governance');
@@ -468,14 +493,19 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   }
 
   // One governed write per record: the Draft transition carries the final
-  // Targets value — the KB-wide pair by default, per-category data-driven
-  // overrides where a feature is platform-bound (2026-10-01 ruling — Targets
-  // 终值 lands in the document gate; 2026-10-09 ruling — ResourceGroup is
-  // Milvus-only), and an explicit --final-targets subset overriding both
-  // when the operator names one (validated against the KB pair).
+  // Targets value — the A2 attribution ruling where targets.json rules this
+  // unit (batch 16 slice 5, rule 6: union of member-symbol audiences, whole-page
+  // exclusivity used directly), else the KB-wide pair by default, per-category
+  // data-driven overrides where a feature is platform-bound (2026-10-01 ruling
+  // — Targets 终值 lands in the document gate; 2026-10-09 ruling — ResourceGroup
+  // is Milvus-only), and an explicit --final-targets subset overriding all of
+  // the above when the operator names one (validated against the KB pair).
   const unitTargetsFinal = args.finalTargets !== undefined && String(args.finalTargets).trim() !== ''
     ? parseFinalTargets(args.finalTargets)
-    : targetsFinalForReviewUnit(receipt.reviewUnitId);
+    : targetsFinalForReviewUnit(
+      receipt.reviewUnitId,
+      args.audienceRulings !== undefined ? args.audienceRulings : loadAudienceRulings(args.targetsJson),
+    );
   const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
     finalTargets[touched.recordId] = [...unitTargetsFinal];
@@ -589,6 +619,7 @@ async function acceptExecutedUnit({
   tableId = null,
   bitableWriter = null,
   finalTargets,
+  targetsJson = null,
   out = () => {},
 }) {
   const entries = readJournalEntries(executionJournalPath);
@@ -605,7 +636,7 @@ async function acceptExecutedUnit({
     sessionPath,
     sessionDigest,
     receipt,
-    args: { baseToken, tableId, finalTargets },
+    args: { baseToken, tableId, finalTargets, targetsJson },
     io: { bitableWriter },
     out,
   });

@@ -122,7 +122,74 @@ const { defaultTargets: KB_TARGETS_FINAL, categories: CATEGORY_TARGETS_FINAL } =
 // the reviewUnitId ('review:go:<Category>:<Symbol>').
 const TARGETS_FINAL = Object.freeze([...KB_TARGETS_FINAL]);
 
-function targetsFinalForReviewUnit(reviewUnitId) {
+// A2 attribution ruling lookup (batch 16 slice 5, rule 6 closing). The A2 seat
+// writes targets.json via propose-audience --confirm (scripts/propose-audience.js:79
+// emits `{ entries: [...] }`, each entry built by confirmAudience in
+// audience-proposal.js:146-160: { symbol, page, kind: 'param|variant|page',
+// category, audience, targets, ... }). Merge rule (design §5.5 rule 6): a unit's
+// targets = the UNION of its member symbols' audiences; when the file rules the
+// WHOLE PAGE (kind === 'page', 整页专有) that page-level value is used directly.
+// Precedence: A2 ruling > category table (CATEGORY_TARGETS_FINAL) > default
+// (TARGETS_FINAL). Returns null when the rulings carry no entry for this unit —
+// the caller then falls through to the category table.
+function audienceRulingTargets(reviewUnitId, audienceRulings) {
+  if (audienceRulings === null || audienceRulings === undefined) return null;
+  const entries = Array.isArray(audienceRulings)
+    ? audienceRulings
+    : (Array.isArray(audienceRulings.entries) ? audienceRulings.entries : null);
+  if (!entries || entries.length === 0) return null;
+  if (typeof reviewUnitId !== 'string' || reviewUnitId.trim() === '') return null;
+  const unitSymbol = reviewUnitId.split(':').pop();
+  if (!unitSymbol) return null;
+
+  // Seed: entries that name the unit itself — by its symbol (the interface/page
+  // name, the A2 entries' primary key) or, for page-kind records, by the page
+  // field carrying the bare page name.
+  const seed = entries.filter((entry) => entry !== null && typeof entry === 'object'
+    && (entry.symbol === unitSymbol
+      || (typeof entry.page === 'string' && entry.page !== '' && entry.page === unitSymbol)));
+  if (seed.length === 0) return null;
+  // Member expansion: every entry filed under the same page as a seed entry
+  // belongs to the same document unit (one page = one review unit).
+  const pageKeys = new Set(seed
+    .map((entry) => entry.page)
+    .filter((page) => typeof page === 'string' && page !== ''));
+  const members = entries.filter((entry) => entry !== null && typeof entry === 'object'
+    && (seed.includes(entry)
+      || (typeof entry.page === 'string' && entry.page !== '' && pageKeys.has(entry.page))));
+  if (members.length === 0) return null;
+
+  const { TARGETS_BY_AUDIENCE } = require('./audience-proposal');
+  const valueOf = (entry) => {
+    if (typeof entry.audience === 'string' && TARGETS_BY_AUDIENCE[entry.audience]) {
+      return [...TARGETS_BY_AUDIENCE[entry.audience]];
+    }
+    // An entry with no usable audience may still carry an explicit, in-vocabulary
+    // targets value; anything else contributes nothing (never a guess).
+    if (Array.isArray(entry.targets)
+      && entry.targets.length > 0
+      && entry.targets.every((value) => TARGETS_VALUE_ALLOWED.includes(value))) {
+      return [...entry.targets];
+    }
+    return null;
+  };
+
+  // 整页专有: a page-level ruling governs the whole unit directly (union across
+  // page-level entries — normally exactly one; multiple conflicting ones merge
+  // monotonically, never narrowing).
+  const pageLevel = members.filter((entry) => entry.kind === 'page');
+  const scope = pageLevel.length > 0 ? pageLevel : members;
+  const union = new Set();
+  for (const entry of scope) {
+    for (const value of valueOf(entry) || []) union.add(value);
+  }
+  if (union.size === 0) return null;
+  return TARGETS_VALUE_ALLOWED.filter((value) => union.has(value));
+}
+
+function targetsFinalForReviewUnit(reviewUnitId, audienceRulings = null) {
+  const ruling = audienceRulingTargets(reviewUnitId, audienceRulings);
+  if (ruling) return ruling;
   const category = typeof reviewUnitId === 'string' && reviewUnitId.split(':').length >= 3
     ? reviewUnitId.split(':')[2]
     : null;

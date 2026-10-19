@@ -32,7 +32,7 @@ const path = require('node:path');
 
 // Anti-drift: the digest producer and the sources projection are the executor's
 // own functions (bin/revision-apply.js:191-226), not copies.
-const { buildRevisionBatch, sourcesFromContext } = require('../bin/revision-apply');
+const { buildRevisionBatch, loadContextEntries, sourcesFromContext } = require('../bin/revision-apply');
 const { loadReviewSessionState } = require('../src/sdk-doc-sync/review-session-store');
 const { sortApprovalUnits } = require('../src/sdk-doc-sync/campaign-approval');
 
@@ -84,19 +84,6 @@ function readJsonFile(filePath, errorCode) {
         throw typedError(errorCode, `cannot read ${errorCode.replace(/^REVISION_UNIT_DIGEST_/, '').replace(/_INVALID$/, '')} artifact at ${filePath}: ${error.message}`);
     }
     return raw;
-}
-
-// Contexts container shapes shared with the executor's loader
-// (bin/revision-apply.js:178-185 loadContextEntries — same three accepted
-// shapes; that function is not exported, so the shape contract is mirrored
-// here and pinned by the same fixture vocabulary).
-function loadContextEntries(filePath) {
-    const raw = readJsonFile(filePath, 'REVISION_UNIT_DIGEST_CONTEXTS_INVALID');
-    const container = raw.contexts || raw.byStableId || raw.bySlug || null;
-    if (!container || typeof container !== 'object' || Array.isArray(container)) {
-        throw typedError('REVISION_UNIT_DIGEST_CONTEXTS_INVALID', 'Contexts document must carry a contexts/byStableId/bySlug object', { path: filePath });
-    }
-    return container;
 }
 
 function runCli({ argv = process.argv } = {}) {

@@ -87,7 +87,10 @@ function parseArgs(argv) {
         else if (arg === '--journal') args.journal = path.resolve(argv[++index]);
         else if (arg === '--base-token') args.baseToken = argv[++index];
         else if (arg === '--table-id') args.tableId = argv[++index];
+        else if (arg === '--final-targets') args.finalTargets = argv[++index];
+        else if (arg === '--targets-json') args.targetsJson = argv[++index];
         else if (arg === '--batch-continue') args.batchContinue = true;
+        else if (arg === '--auto-accept') args.autoAccept = true;
         else if (arg === '--json') args.json = true;
         else throw new Error(`Unknown argument: ${arg}`);
     }
@@ -255,7 +258,15 @@ function resolveRevisionApproval({ args, session, scope, contexts }) {
     if (!args.campaignApproval) {
         return { approveDigest: args.approveDigest, regeneration: null, approveDigestWas: 'standalone' };
     }
-    const receipt = JSON.parse(fs.readFileSync(path.resolve(args.campaignApproval), 'utf8'));
+    let receipt;
+    try {
+        receipt = JSON.parse(fs.readFileSync(path.resolve(args.campaignApproval), 'utf8'));
+    } catch (error) {
+        throw Object.assign(
+            new Error(`CAMPAIGN_PLAN_INVALID: cannot read --campaign-approval: ${error.message}`),
+            { code: 'CAMPAIGN_PLAN_INVALID' },
+        );
+    }
     const validation = validateCampaignApprovalReceipt(receipt);
     if (!validation.valid) {
         throw Object.assign(
@@ -694,6 +705,30 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     }, { batchContinue: args.batchContinue === true });
     saveReviewSession(path.resolve(args.session), nextSession, { expectedPreviousDigest: sessionDigest });
 
+    // Slice 7 / 2026-10-16 ruling: a verified, recorded execution finalizes
+    // within the same approved write (--auto-accept). The record re-open
+    // already moved the record WIP; the two-gate acceptance writes the
+    // verified WIP→Draft transition, lands the digest-bound per-unit receipt,
+    // and finalizes the unit — so close-session can advance the watermark.
+    // The touchedRecords are derived from THIS journal (record-touching
+    // observed + tree-delta evidence already persisted).
+    if (args.autoAccept) {
+        const { acceptExecutedUnit } = require('./sdk-review-session');
+        const acceptedSession = await acceptExecutedUnit({
+            session: nextSession,
+            sessionPath: path.resolve(args.session),
+            sessionDigest,
+            reviewUnitId: args.reviewUnitId,
+            executionJournalPath: journalPath,
+            executionJournalDigest: journalDigest,
+            baseToken: args.baseToken,
+            tableId: args.tableId,
+            finalTargets: args.finalTargets ?? null,
+            out: () => {},
+        });
+        saveReviewSession(path.resolve(args.session), acceptedSession, { expectedPreviousDigest: sessionDigest });
+    }
+
     const result = {
         status: 'EXECUTED',
         reviewUnitId: args.reviewUnitId,
@@ -703,6 +738,7 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         journalPath,
         journalDigest,
         polishedContentDigest: sha256Digest(polishedContent),
+        autoAccepted: args.autoAccept === true,
     };
     if (args.json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     else process.stdout.write(`Revision applied: ${args.reviewUnitId} (terminal verified, journal ${journalDigest.slice(0, 18)}…)\n`);
@@ -713,6 +749,7 @@ module.exports = {
     assembleBlockTree,
     buildRevisionBatch,
     contextsProjection,
+    loadContextEntries,
     rebuildPage,
     resolveRevisionApproval,
     runCli,

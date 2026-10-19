@@ -16,9 +16,15 @@
 //     --identity <lang>:<sdk>:<track> \
 //     --trigger pr:<N> | tag:<baselineTag>..<targetTag> \
 //     --campaign-dir <dir> \
+//     [--kind release-sync|revision] \
 //     [--artifacts k=v ...] [--out <file>] [--json] [--repo-root <dir>]
 //     [--run-nonce <string>]
 //
+// --kind selects the campaign shape (batch 16 design §10 slice 7): the default
+// `release-sync` keeps every byte of the slice 2 behavior; `revision` swaps
+// the template pin, the campaignId suffix, and the paths spine (the six-key
+// REVISION_PATH_KEYS shape of campaign-plan.js) while keeping the rest of the
+// plan isomorphic.
 // --run-nonce is OPTIONAL per-run bookkeeping (design §4: the nonce is per-run
 // args injection into the dwf template; the plan field is a double-lock, not a
 // requirement). When passed, it is stamped as plan.runNonce and the digest
@@ -68,10 +74,24 @@ const PROJECT_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 // Repo-root-relative constants of the release-sync shape. The template path is
 // the canonical tracked template of design §4 (slice 5 writes it; until then
 // generation fails closed naming the missing file instead of pinning a guess).
+// REVISION_TEMPLATE_PATH is the slice 7 sibling under the same discipline: the
+// revision template is parallel work, so --kind revision fails closed naming
+// the missing file until it lands.
 const TEMPLATE_PATH = '.claude/skills/api-reference-sync/workflows/release-sync-campaign.dwf.ts';
+const REVISION_TEMPLATE_PATH = '.claude/skills/api-reference-sync/workflows/revision-campaign.dwf.ts';
+// The kind enum, mirroring the kernel (campaign-plan.js CAMPAIGN_KINDS).
+const CAMPAIGN_KINDS = Object.freeze(['release-sync', 'revision']);
+const KIND_TEMPLATE_PATHS = Object.freeze({
+  'release-sync': TEMPLATE_PATH,
+  'revision': REVISION_TEMPLATE_PATH,
+});
 // The intake-assemble pin (B-4): the reviewed-context assembly script whose
 // bytes the campaign freezes (task-specified: scripts/build-reviewed-release-context.js).
+// The revision campaign freezes its own intake bin instead (slice 7): that bin
+// CREATES the session only — its header routes every later operation (close
+// included) through bin/sdk-review-session.js.
 const INTAKE_ASSEMBLE_SCRIPT = '.claude/skills/api-reference-sync/scripts/build-reviewed-release-context.js';
+const REVISION_INTAKE_SCRIPT = '.claude/skills/api-reference-sync/bin/revision-intake.js';
 const REGISTRY_PATH = '.claude/skills/api-reference-sync/config/release-tracks.json';
 const RECORD_APPROVAL_SCRIPT = '.claude/skills/api-reference-sync/scripts/record-campaign-approval.js';
 const REVIEW_SESSION_SCRIPT = '.claude/skills/api-reference-sync/bin/sdk-review-session.js';
@@ -93,23 +113,34 @@ const BUILD_CAMPAIGN_PLAN_PINNED_SCRIPT_MISSING = 'BUILD_CAMPAIGN_PLAN_PINNED_SC
 const BUILD_CAMPAIGN_PLAN_OUTPUT = 'BUILD_CAMPAIGN_PLAN_OUTPUT';
 
 const USAGE_LINE = 'Usage: build-campaign-plan --identity <lang>:<sdk>:<track> --trigger pr:<N>|tag:<baseline>..<target> '
-  + '--campaign-dir <dir> [--artifacts k=v ...] [--out <file>] [--json] [--repo-root <dir>] [--run-nonce <string>]';
+  + '--campaign-dir <dir> [--kind release-sync|revision] [--artifacts k=v ...] [--out <file>] [--json] '
+  + '[--repo-root <dir>] [--run-nonce <string>]';
 
-// --artifacts may override exactly these plan.paths keys (the campaignDir
-// layout below plus sdkDir); everything else in `paths` is derived. Unknown
-// keys are a usage error — an override of a name the schema does not carry
-// would silently change nothing.
+// --artifacts may override exactly these plan.paths keys; everything else in
+// `paths` is derived. The overridable set is per-kind because the paths spine
+// is per-kind (slice 7). Unknown keys are a usage error — an override of a
+// name the schema does not carry would silently change nothing.
 const ARTIFACT_PATH_KEYS = Object.freeze([
   'sdkDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson',
 ]);
+const REVISION_ARTIFACT_PATH_KEYS = Object.freeze([
+  'sessionPath', 'scopePath', 'contextsPath', 'manifestProjectionPath', 'candidateSpecProjectionPath', 'unitDigestsPath',
+]);
 
-// campaignId convention: `<lang>-v<major><minor>-sync`. This is the root the
-// hand templates already use: java-v26-sync-campaign.dwf.ts:430 admits under
-// `java-v26-sync-<nonce>`, and the design §3 example / published reports use
-// `java-v30-sync`. Digits are pinned rather than the raw track string so the
-// id cannot carry dots (the kernel's CAMPAIGN_ID_PATTERN would allow them, but
-// the report/admit-prefix root has always been dot-free).
+function artifactKeysForKind(kind) {
+  return kind === 'revision' ? REVISION_ARTIFACT_PATH_KEYS : ARTIFACT_PATH_KEYS;
+}
+
+// campaignId convention: `<lang>-v<major><minor>-sync` for release-sync and
+// `<lang>-v<major><minor>-revision` for the revision shape (slice 7: e.g.
+// java-v30-revision). This is the root the hand templates already use:
+// java-v26-sync-campaign.dwf.ts:430 admits under `java-v26-sync-<nonce>`, and
+// the design §3 example / published reports use `java-v30-sync`. Digits are
+// pinned rather than the raw track string so the id cannot carry dots (the
+// kernel's CAMPAIGN_ID_PATTERN would allow them, but the report/admit-prefix
+// root has always been dot-free).
 const TRACK_VERSION_PATTERN = /^v(\d+)\.(\d+)/;
+const KIND_CAMPAIGN_ID_SUFFIXES = Object.freeze({ 'release-sync': 'sync', 'revision': 'revision' });
 
 class BuildCampaignPlanError extends TypeError {
   constructor(code, message, details = {}) {
@@ -138,12 +169,13 @@ function flagValue(argv, index, flag) {
 }
 
 function parseArgs(argv) {
-  const args = { artifacts: [] };
+  const args = { artifacts: [], kind: 'release-sync' };
   for (let index = 2; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === '--identity') args.identity = flagValue(argv, ++index, '--identity');
     else if (arg === '--trigger') args.trigger = flagValue(argv, ++index, '--trigger');
     else if (arg === '--campaign-dir') args.campaignDir = flagValue(argv, ++index, '--campaign-dir');
+    else if (arg === '--kind') args.kind = flagValue(argv, ++index, '--kind');
     else if (arg === '--artifacts') args.artifacts.push(flagValue(argv, ++index, '--artifacts'));
     else if (arg === '--run-nonce') args.runNonce = flagValue(argv, ++index, '--run-nonce');
     else if (arg === '--out') args.out = flagValue(argv, ++index, '--out');
@@ -176,6 +208,18 @@ function parseIdentity(raw) {
     throw new UsageError(`--identity sdk segment becomes repos/<sdk> and must be a plain path segment (got ${JSON.stringify(sdkName)})`);
   }
   return { language, sdkName, track };
+}
+
+// --kind release-sync|revision: the campaign shape selector (slice 7). The
+// default is applied in parseArgs, so an omitted flag and `--kind release-sync`
+// are the same plan; any other value is usage — a misspelled kind must never
+// silently generate a release-sync plan.
+function parseKind(raw) {
+  const value = String(raw ?? '');
+  if (!CAMPAIGN_KINDS.includes(value)) {
+    throw new UsageError(`--kind must be one of ${CAMPAIGN_KINDS.join('|')} (got ${JSON.stringify(raw)})`);
+  }
+  return value;
 }
 
 // --trigger pr:<N> → {kind:'pr', prNumber} · tag:<baseline>..<target> →
@@ -238,25 +282,26 @@ function derivePeerTag(registry, language, track) {
   return peer ? `${peer.version}-latest` : null;
 }
 
-function campaignIdFor(language, track) {
+function campaignIdFor(language, track, kind = 'release-sync') {
+  const suffix = KIND_CAMPAIGN_ID_SUFFIXES[kind];
   const match = TRACK_VERSION_PATTERN.exec(track);
   if (!match) {
-    throw new UsageError(`--identity track ${JSON.stringify(track)} must start with v<major>.<minor> to root a campaignId of the form <lang>-v<major><minor>-sync (java-v26-sync / java-v30-sync convention)`);
+    throw new UsageError(`--identity track ${JSON.stringify(track)} must start with v<major>.<minor> to root a campaignId of the form <lang>-v<major><minor>-${suffix} (java-v26-sync / java-v30-revision convention)`);
   }
-  return `${language}-v${match[1]}${match[2]}-sync`;
+  return `${language}-v${match[1]}${match[2]}-${suffix}`;
 }
 
-function parseArtifacts(values) {
+function parseArtifacts(values, allowedKeys = ARTIFACT_PATH_KEYS) {
   const overrides = new Map();
   for (const raw of values) {
     const eq = raw.indexOf('=');
     if (eq <= 0) {
-      throw new UsageError(`--artifacts must be k=v (got ${JSON.stringify(raw)}); allowed keys: ${ARTIFACT_PATH_KEYS.join(', ')}`);
+      throw new UsageError(`--artifacts must be k=v (got ${JSON.stringify(raw)}); allowed keys: ${allowedKeys.join(', ')}`);
     }
     const key = raw.slice(0, eq);
     const value = raw.slice(eq + 1);
-    if (!ARTIFACT_PATH_KEYS.includes(key)) {
-      throw new UsageError(`--artifacts key ${JSON.stringify(key)} is not a plan.paths field; allowed keys: ${ARTIFACT_PATH_KEYS.join(', ')}`);
+    if (!allowedKeys.includes(key)) {
+      throw new UsageError(`--artifacts key ${JSON.stringify(key)} is not a plan.paths field of this kind; allowed keys: ${allowedKeys.join(', ')}`);
     }
     if (!nonEmptyString(value)) {
       throw new UsageError(`--artifacts ${key}=<path> requires a non-empty value`);
@@ -266,10 +311,10 @@ function parseArtifacts(values) {
   return overrides;
 }
 
-function buildCampaignPlan({ identity, trigger, registry, campaignDir, artifactOverrides = new Map(), repoRoot = PROJECT_ROOT, runNonce = null }) {
+function buildCampaignPlan({ identity, trigger, registry, campaignDir, kind = 'release-sync', artifactOverrides = new Map(), repoRoot = PROJECT_ROOT, runNonce = null }) {
   const track = requireTrack(registry, identity.language, identity.track);
   const scanStateKey = `${identity.language}:${identity.track}`;
-  const campaignId = campaignIdFor(identity.language, identity.track);
+  const campaignId = campaignIdFor(identity.language, identity.track, kind);
 
   // The campaignDir layout is a convention, not operator input: one directory
   // (keyed by campaignId per design §11.10) holds every artifact of the
@@ -277,7 +322,25 @@ function buildCampaignPlan({ identity, trigger, registry, campaignDir, artifactO
   // (session in tmp/sdk-doc-sync-runs/<track>/, context in the scout daily
   // dir) — and fixes the v30:38 copy-drift where the scope default still
   // pointed at the v26 scope file.
-  const paths = {
+  //
+  // Revision spine (slice 7): the three shared keys keep the release-sync
+  // basenames; the derived trio carries the rev intake surfaces — contextsPath
+  // is the reviewed-contexts document bin/revision-intake.js consumes
+  // (--contexts), manifestProjectionPath is the reviewUnitManifest projection,
+  // unitDigestsPath is the file scripts/revision-unit-digests.js writes
+  // (--out) and record-campaign-approval reads back (--unit-digests). The
+  // basenames follow the kernel's revision-spine fixture vocabulary
+  // (campaign-plan.test.js: contexts.json / manifest-projection.json /
+  // unit-digests.json).
+  const paths = kind === 'revision' ? {
+    campaignDir,
+    sessionPath: joinPath(campaignDir, 'session-state.json'),
+    scopePath: joinPath(campaignDir, 'release-scope.json'),
+    contextsPath: joinPath(campaignDir, 'contexts.json'),
+    manifestProjectionPath: joinPath(campaignDir, 'manifest-projection.json'),
+    candidateSpecProjectionPath: joinPath(campaignDir, 'contexts-spec.json'),
+    unitDigestsPath: joinPath(campaignDir, 'unit-digests.json'),
+  } : {
     sdkDir: `repos/${identity.sdkName}`,
     campaignDir,
     sessionPath: joinPath(campaignDir, 'session-state.json'),
@@ -297,9 +360,9 @@ function buildCampaignPlan({ identity, trigger, registry, campaignDir, artifactO
   const plan = {
     schemaVersion: 2,
     campaignId,
-    kind: 'release-sync',
+    kind,
     template: {
-      path: TEMPLATE_PATH,
+      path: KIND_TEMPLATE_PATHS[kind],
       sha256: null, // pinned below, before validation
       pinnedScripts: {
         intakeAssemble: null, // pinned below
@@ -322,7 +385,11 @@ function buildCampaignPlan({ identity, trigger, registry, campaignDir, artifactO
         // Terminal wiring of design §5 step 8 / §6: close-session advances the
         // scan-state watermark (--scan-state-key/--scan-state-entry), with the
         // session path pointing at THIS campaign's session-state.json so two
-        // campaigns can never close each other's session.
+        // campaigns can never close each other's session. BOTH kinds use this
+        // entry: bin/revision-intake.js only CREATES a session (it has no
+        // close-session subcommand — its header routes every later operation
+        // through bin/sdk-review-session.js, whose COMMAND_REQUIREMENTS pin
+        // close-session to --scan-state-key/--scan-state-entry).
         argv: [
           'node',
           REVIEW_SESSION_SCRIPT,
@@ -396,16 +463,20 @@ function buildCampaignPlan({ identity, trigger, registry, campaignDir, artifactO
     plan.runNonce = runNonce;
   }
 
-  // B-4 pins: the template and the intake-assemble script are hashed from the
-  // bytes ACTUALLY on disk. A missing file is a typed error — a pinned digest
-  // of a file that does not exist would freeze a lie into the campaign.
-  plan.template.sha256 = sha256File(path.join(repoRoot, TEMPLATE_PATH), {
+  // B-4 pins: the template and the intake script are hashed from the bytes
+  // ACTUALLY on disk. A missing file is a typed error — a pinned digest of a
+  // file that does not exist would freeze a lie into the campaign. The intake
+  // pin follows the kind: release-sync freezes the reviewed-context assembler,
+  // revision freezes bin/revision-intake.js (the session creation entry the
+  // rev campaign runs first).
+  const pinnedIntakeScript = kind === 'revision' ? REVISION_INTAKE_SCRIPT : INTAKE_ASSEMBLE_SCRIPT;
+  plan.template.sha256 = sha256File(path.join(repoRoot, KIND_TEMPLATE_PATHS[kind]), {
     code: BUILD_CAMPAIGN_PLAN_TEMPLATE_MISSING,
-    label: `campaign template (plan.template.path ${TEMPLATE_PATH})`,
+    label: `campaign template (plan.template.path ${KIND_TEMPLATE_PATHS[kind]})`,
   });
-  plan.template.pinnedScripts.intakeAssemble = sha256File(path.join(repoRoot, INTAKE_ASSEMBLE_SCRIPT), {
+  plan.template.pinnedScripts.intakeAssemble = sha256File(path.join(repoRoot, pinnedIntakeScript), {
     code: BUILD_CAMPAIGN_PLAN_PINNED_SCRIPT_MISSING,
-    label: `pinned intake-assemble script (${INTAKE_ASSEMBLE_SCRIPT})`,
+    label: `pinned intake script (${pinnedIntakeScript})`,
   });
 
   // The generator's own kernel gate: a plan that cannot validate is a
@@ -421,6 +492,25 @@ function shellArg(value) {
 }
 
 function recordApprovalArgv(plan) {
+  // Slice 7 ruling (campaign-plan.js header): the revision kind is open under
+  // the same units-based (b) semantics as release-sync — the approval
+  // envelope's batch component IS the combined digest of the sorted unit set.
+  // The printed next command is the recorder's --unit-digests mode with all
+  // three chains named: grouping = the reviewUnitManifest projection, and
+  // candidate-spec = the CONTEXTS SPECIFICATION projection (content bytes
+  // stripped — bound by the units' batchDigest instead, review P1-1 / P0-1).
+  // The spec-projection file is produced by the template's step 7 before the
+  // gate; the printed argv names its plan-keyed path (candidateSpecProjectionPath).
+  if (plan.kind === 'revision') {
+    return [
+      'node',
+      RECORD_APPROVAL_SCRIPT,
+      '--scope', plan.paths.scopePath,
+      '--grouping', plan.paths.manifestProjectionPath,
+      '--candidate-spec', plan.paths.candidateSpecProjectionPath,
+      '--unit-digests', plan.paths.unitDigestsPath,
+    ];
+  }
   // The batch digest does not exist yet at generation time: it comes from the
   // initial full dry-run (design §5 step 5), so the argv carries an explicit
   // placeholder the operator/template replaces — never a fabricated digest.
@@ -462,10 +552,12 @@ function runCli({ argv = process.argv, repoRoot = PROJECT_ROOT, dependencies = {
   let identity;
   let trigger;
   let artifactOverrides;
+  let kind;
   try {
+    kind = parseKind(parsed.kind);
     identity = parseIdentity(parsed.identity);
     trigger = parseTrigger(parsed.trigger);
-    artifactOverrides = parseArtifacts(parsed.artifacts);
+    artifactOverrides = parseArtifacts(parsed.artifacts, artifactKeysForKind(kind));
   } catch (error) {
     if (!(error instanceof UsageError)) throw error;
     err(`Error: ${error.message}`);
@@ -483,6 +575,7 @@ function runCli({ argv = process.argv, repoRoot = PROJECT_ROOT, dependencies = {
       trigger,
       registry,
       campaignDir: parsed.campaignDir,
+      kind,
       artifactOverrides,
       repoRoot: root,
       runNonce: nonEmptyString(parsed.runNonce) ? parsed.runNonce : null,
@@ -547,7 +640,10 @@ module.exports = {
   BUILD_CAMPAIGN_PLAN_TEMPLATE_MISSING,
   BUILD_CAMPAIGN_PLAN_USAGE,
   BuildCampaignPlanError,
+  CAMPAIGN_KINDS,
   FEISHU_HOST,
+  REVISION_INTAKE_SCRIPT,
+  REVISION_TEMPLATE_PATH,
   TEMPLATE_PATH,
   buildCampaignPlan,
   parseArgs,

@@ -821,6 +821,16 @@
       "basis": "no external mutation signature found"
     },
     {
+      "path": ".claude/skills/api-reference-sync/scripts/revision-unit-digests.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "revision-unit-digests",
+      "basis": "reads session/scope/contexts, writes only the requested unit-digests file under tmp/",
+      "tests": [
+        ".claude/skills/api-reference-sync/tests/revision-unit-digests.test.js"
+      ]
+    },
+    {
       "path": "scripts/invariant-coverage-report.js",
       "skill": "doc-ops-core",
       "classification": "read-only",

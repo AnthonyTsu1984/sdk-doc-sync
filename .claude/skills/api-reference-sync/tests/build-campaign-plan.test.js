@@ -21,6 +21,8 @@ const {
   BUILD_CAMPAIGN_PLAN_REGISTRY,
   BUILD_CAMPAIGN_PLAN_TEMPLATE_MISSING,
   BuildCampaignPlanError,
+  REVISION_INTAKE_SCRIPT,
+  REVISION_TEMPLATE_PATH,
   TEMPLATE_PATH,
   runCli,
 } = require('../scripts/build-campaign-plan');
@@ -30,6 +32,7 @@ const { ReleaseTrackRegistryError } = require('../src/sdk-doc-sync/release-track
 const SCRIPT = path.resolve(__dirname, '..', 'scripts', 'build-campaign-plan.js');
 const REAL_REGISTRY_PATH = path.resolve(__dirname, '..', 'config', 'release-tracks.json');
 const REAL_INTAKE_SCRIPT = path.resolve(__dirname, '..', 'scripts', 'build-reviewed-release-context.js');
+const REAL_REVISION_INTAKE_SCRIPT = path.resolve(__dirname, '..', 'bin', 'revision-intake.js');
 
 // --- dwf-extracted golden literals (sources are gitignored; pinned, not read) ---
 // .zcode/workflows/java-v26-sync-campaign.dwf.ts (line):
@@ -86,11 +89,14 @@ function registryWithDwfTableIds() {
 const TEMPLATE_STUB = '// release-sync campaign template — slice 5 writes the real one\n'
   + 'export const PLACEHOLDER = "the generator only hashes these bytes";\n';
 
+const REVISION_TEMPLATE_STUB = '// revision campaign template — slice 7 lands the real one\n'
+  + 'export const PLACEHOLDER = "the generator only hashes these bytes";\n';
+
 function sha256Of(content) {
   return `sha256:${crypto.createHash('sha256').update(content).digest('hex')}`;
 }
 
-function makeRepoRoot({ registry = registryWithDwfTableIds(), withTemplate = true } = {}) {
+function makeRepoRoot({ registry = registryWithDwfTableIds(), withTemplate = true, withRevisionTemplate = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-plan-builder-'));
   const skillRoot = path.join(root, '.claude', 'skills', 'api-reference-sync');
   fs.mkdirSync(path.join(skillRoot, 'config'), { recursive: true });
@@ -102,6 +108,14 @@ function makeRepoRoot({ registry = registryWithDwfTableIds(), withTemplate = tru
   if (withTemplate) {
     fs.mkdirSync(path.join(skillRoot, 'workflows'), { recursive: true });
     fs.writeFileSync(path.join(skillRoot, 'workflows', 'release-sync-campaign.dwf.ts'), TEMPLATE_STUB);
+  }
+  if (withRevisionTemplate) {
+    // The revision kind pins the same way: template stub + the REAL intake bin
+    // (copied verbatim) for the pinnedScripts digest assertion.
+    fs.mkdirSync(path.join(skillRoot, 'workflows'), { recursive: true });
+    fs.writeFileSync(path.join(skillRoot, 'workflows', 'revision-campaign.dwf.ts'), REVISION_TEMPLATE_STUB);
+    fs.mkdirSync(path.join(skillRoot, 'bin'), { recursive: true });
+    fs.copyFileSync(REAL_REVISION_INTAKE_SCRIPT, path.join(skillRoot, 'bin', 'revision-intake.js'));
   }
   return root;
 }
@@ -249,6 +263,103 @@ test('golden java v3.0.x: registry facts replace the v30 constants and the copy-
   assert.equal(plan.crossTrack.peerTag, 'v2.6.x-latest'); // design §3 example value for java-v30-sync (adjacent older track: v3.0.x is newest)
   assert.deepEqual(plan.notes, { scoutWarnings: 0 }); // dwf v30:506 copied v26's "9 条" — not a v30 fact
   assert.equal(plan.template.pinnedScripts.intakeAssemble, sha256Of(fs.readFileSync(REAL_INTAKE_SCRIPT)));
+});
+
+// --- revision kind (batch 16 slice 7: design §10 row 7) ---
+
+test('kind=revision generates a validating plan: six-key spine, revision template pin, units-mode next command', () => {
+  const root = makeRepoRoot({ withRevisionTemplate: true });
+  const campaignDir = 'tmp/sdk-release-scout/campaign-v30-revision';
+  const { result, stdout } = runBuilder(
+    ['--kind', 'revision', '--identity', 'java:milvus-sdk-java:v3.0.x', '--trigger', 'tag:v3.0.24..v3.0.25', '--campaign-dir', campaignDir],
+    root,
+  );
+  assert.equal(result.status, 'ok');
+  const plan = result.plan;
+  assert.deepEqual(validateCampaignPlan(plan), { valid: true, errors: [] });
+  assert.equal(plan.kind, 'revision');
+  assert.equal(plan.campaignId, 'java-v30-revision'); // <lang>-v<major><minor>-revision convention (slice 7)
+  assert.equal(plan.template.path, REVISION_TEMPLATE_PATH);
+  assert.equal(plan.template.sha256, sha256Of(REVISION_TEMPLATE_STUB));
+  // The B-4 pin follows the kind: the rev campaign freezes its intake bin.
+  assert.equal(plan.template.pinnedScripts.intakeAssemble, sha256Of(fs.readFileSync(REAL_REVISION_INTAKE_SCRIPT)));
+
+  // The seven-key revision spine (kernel REVISION_PATH_KEYS): the shared
+  // trio keeps the release-sync basenames; the derived four follow the kernel
+  // fixture vocabulary (contexts.json / manifest-projection.json /
+  // contexts-spec.json / unit-digests.json) beneath the same campaignDir.
+  assert.equal(plan.paths.campaignDir, campaignDir);
+  assert.equal(plan.paths.sessionPath, `${campaignDir}/session-state.json`);
+  assert.equal(plan.paths.scopePath, `${campaignDir}/release-scope.json`);
+  assert.equal(plan.paths.contextsPath, `${campaignDir}/contexts.json`);
+  assert.equal(plan.paths.manifestProjectionPath, `${campaignDir}/manifest-projection.json`);
+  assert.equal(plan.paths.candidateSpecProjectionPath, `${campaignDir}/contexts-spec.json`);
+  assert.equal(plan.paths.unitDigestsPath, `${campaignDir}/unit-digests.json`);
+
+  // close-session: bin/revision-intake.js only CREATES a session (no
+  // close-session subcommand — its header routes every later operation
+  // through bin/sdk-review-session.js), so the terminal phase names the real
+  // entry with the same argv shape as release-sync.
+  assert.equal(plan.run.phases.length, 1);
+  assert.equal(plan.run.phases[0].label, 'close-session');
+  assert.deepEqual(plan.run.phases[0].argv, [
+    'node',
+    '.claude/skills/api-reference-sync/bin/sdk-review-session.js',
+    'close-session',
+    '--session', plan.paths.sessionPath,
+    '--scan-state-key', 'java:v3.0.x',
+    '--scan-state-entry', plan.terminal.scanStateEntryPath,
+  ]);
+
+  // The next command rides the ruled units-based (b) semantics: the
+  // recorder's --unit-digests mode over the plan's unitDigestsPath.
+  assert.equal(stdout.length, 2);
+  assert.equal(stdout[0], `planDigest ${planDigest(plan)}`);
+  assert.ok(stdout[1].includes('--unit-digests'), stdout[1]);
+  assert.ok(stdout[1].includes(plan.paths.unitDigestsPath), stdout[1]);
+
+  // --artifacts honors the per-kind allowlist: a rev key is overridable, a
+  // release-sync-only key is a usage refusal.
+  const overridden = runBuilder(
+    ['--kind', 'revision', '--identity', 'java:milvus-sdk-java:v3.0.x', '--trigger', 'pr:1200', '--campaign-dir', campaignDir,
+      '--artifacts', `contextsPath=${campaignDir}/materialized/contexts.json`],
+    root,
+  ).result.plan;
+  assert.equal(overridden.paths.contextsPath, `${campaignDir}/materialized/contexts.json`);
+  assert.equal(overridden.paths.unitDigestsPath, `${campaignDir}/unit-digests.json`);
+  const refused = runBuilder(
+    ['--kind', 'revision', '--identity', 'java:milvus-sdk-java:v3.0.x', '--trigger', 'pr:1200', '--campaign-dir', campaignDir,
+      '--artifacts', 'sdkDir=repos/milvus-sdk-java'],
+    root,
+  );
+  assert.deepEqual({ status: refused.result.status, exitCode: refused.result.exitCode }, { status: 'usage', exitCode: 64 });
+});
+
+test('revision plans are byte-deterministic across same-argument runs', () => {
+  const root = makeRepoRoot({ withRevisionTemplate: true });
+  const argv = ['--kind', 'revision', '--identity', 'java:milvus-sdk-java:v3.0.x', '--trigger', 'pr:1200', '--campaign-dir', 'tmp/sdk-release-scout/campaign-v30-revision'];
+  const first = runBuilder(argv, root).result;
+  const second = runBuilder(argv, root).result;
+  assert.equal(JSON.stringify(first.plan), JSON.stringify(second.plan));
+  assert.equal(first.digest, second.digest);
+  assert.equal(planDigest(first.plan), planDigest(second.plan));
+});
+
+test('--kind: explicit release-sync equals the default; unknown/missing values are usage 64', () => {
+  const root = makeRepoRoot();
+  const base = goldenArgv('v2.6.x', 'tmp/sdk-release-scout/campaign-v26', 'pr:1181');
+  const plain = runBuilder(base, root).result;
+  const explicit = runBuilder([...base, '--kind', 'release-sync'], root).result;
+  assert.equal(explicit.status, 'ok');
+  assert.equal(explicit.plan.kind, 'release-sync');
+  assert.equal(explicit.plan.template.path, TEMPLATE_PATH);
+  assert.equal(JSON.stringify(explicit.plan), JSON.stringify(plain.plan));
+
+  for (const bad of [['--kind', 'bad'], ['--kind', ''], ['--kind'], ['--kind', '--json']]) {
+    const { result, stderr } = runBuilder([...base, ...bad], root);
+    assert.deepEqual({ status: result.status, exitCode: result.exitCode }, { status: 'usage', exitCode: 64 }, bad.join(' '));
+    assert.ok(stderr.join('\n').length > 0, 'a usage refusal explains itself');
+  }
 });
 
 // --- kernel gate, digest, stdout/--json/--out contracts ---

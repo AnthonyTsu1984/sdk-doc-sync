@@ -23,8 +23,57 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const TEMPLATE = path.resolve(__dirname, '..', 'workflows', 'release-sync-campaign.dwf.ts');
+const REVISION_TEMPLATE = path.resolve(__dirname, '..', 'workflows', 'revision-campaign.dwf.ts');
 const source = fs.readFileSync(TEMPLATE, 'utf8');
 const lines = source.split('\n');
+const revisionSource = fs.readFileSync(REVISION_TEMPLATE, 'utf8');
+const revisionLines = revisionSource.split('\n');
+
+// Slice 7 (2026-10-19 ruling (b)): the revision shape is parameterized by its
+// own canonical template under the same engine contract. The structural
+// assertions run against BOTH templates; the settle-ok terminal differs
+// (revision units end executed, not finalized, so the ok settle is the same
+// call — the difference is the intake face).
+for (const [name, text] of [['release-sync', source], ['revision', revisionSource]]) {
+  test(`[${name}] template exists on its tracked path and is substantial`, () => {
+    assert.ok(text.length > 0, `${name} template empty`);
+    assert.ok(text.split('\n').length > 500, `${name} template must be >500 lines, got ${text.split('\n').length}`);
+  });
+  test(`[${name}] carries the campaign-settle terminal call surface for BOTH outcomes`, () => {
+    assert.ok((text.match(/campaign-settle/g) || []).length >= 2, `${name}: campaign-settle must appear at least twice`);
+    assert.ok(text.includes('"--outcome", "ok"'), `${name}: --outcome ok settle missing`);
+    assert.ok(text.includes('"--outcome", "frozen"'), `${name}: --outcome frozen settle missing`);
+  });
+  test(`[${name}] binds APPROVE_CAMPAIGN; the retired APPROVE_DOCUMENT never resurrects`, () => {
+    assert.ok(text.includes('APPROVE_CAMPAIGN'), `${name}: APPROVE_CAMPAIGN binding missing`);
+    assert.equal((text.match(/APPROVE_DOCUMENT/g) || []).length, 0, `${name}: APPROVE_DOCUMENT is retired and must not appear`);
+  });
+  test(`[${name}] every world.run args array ends with the NONCE tail`, () => {
+    const calls = (text.match(/world\.run\("node", \[/g) || []).length;
+    const nonceTails = (text.match(/, NONCE\], \{/g) || []).length;
+    assert.ok(calls > 0, `${name}: no world.run calls`);
+    assert.equal(nonceTails, calls, `${name}: ${calls} calls vs ${nonceTails} nonce tails`);
+  });
+  test(`[${name}] no import/export/declare statements`, () => {
+    const offenders = text.split('\n')
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => /^\s*(import\s|export\s|declare\s)/.test(line))
+      .map(({ line, index }) => `line ${index + 1}: ${line.trim().slice(0, 80)}`);
+    assert.deepEqual(offenders, []);
+  });
+  test(`[${name}] frontmatter args are exactly {planPath, nonce, batchSize}`, () => {
+    const fmEnd = text.indexOf('*/');
+    assert.ok(fmEnd > 0, `${name}: frontmatter terminator missing`);
+    const frontmatter = text.slice(0, fmEnd);
+    const argsStart = frontmatter.indexOf('\nargs:\n');
+    assert.ok(argsStart > 0, `${name}: args block missing`);
+    const argsBlock = frontmatter.slice(argsStart);
+    const keys = [...argsBlock.matchAll(/^  ([A-Za-z]+):$/gm)].map((match) => match[1]).sort();
+    assert.deepEqual(keys, ['batchSize', 'nonce', 'planPath']);
+    assert.ok(/planPath:\n    type: string\n    description:[^\n]*\n    required: true\n/.test(argsBlock), `${name}: planPath required`);
+    assert.ok(/nonce:\n    type: string\n    description:[^\n]*\n    required: true\n/.test(argsBlock), `${name}: nonce required`);
+  });
+}
 
 test('the canonical release-sync template exists on its tracked path and is substantial', () => {
   assert.ok(fs.existsSync(TEMPLATE), `template missing at ${TEMPLATE} — generation and engine runs fail closed without it`);

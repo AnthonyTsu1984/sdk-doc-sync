@@ -166,6 +166,7 @@ test('kind "revision" is open as of slice 7 and validates under the revision pat
     scopePath: 'tmp/campaign-rev/scope.json',
     contextsPath: 'tmp/campaign-rev/contexts.json',
     manifestProjectionPath: 'tmp/campaign-rev/manifest-projection.json',
+    candidateSpecProjectionPath: 'tmp/campaign-rev/contexts-spec.json',
     unitDigestsPath: 'tmp/campaign-rev/unit-digests.json',
   };
   assert.deepEqual(validateCampaignPlan(plan), { valid: true, errors: [] });
@@ -174,7 +175,7 @@ test('kind "revision" is open as of slice 7 and validates under the revision pat
   plan.paths = { campaignDir: 'tmp/campaign-rev', sessionPath: 's', scopePath: 's' };
   const validation = validateCampaignPlan(plan);
   assert.equal(validation.valid, false);
-  for (const key of ['contextsPath', 'manifestProjectionPath', 'unitDigestsPath']) {
+  for (const key of ['contextsPath', 'manifestProjectionPath', 'candidateSpecProjectionPath', 'unitDigestsPath']) {
     assert.ok(validation.errors.some((error) => error.path === `$.paths.${key}`), key);
   }
 

@@ -194,6 +194,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/rest-zdoc-direct-edit-guidance.test.js',
     '.claude/skills/api-reference-sync/tests/review-session-store.test.js',
     '.claude/skills/api-reference-sync/tests/revision-campaign.test.js',
+    '.claude/skills/api-reference-sync/tests/revision-unit-digests.test.js',
     '.claude/skills/api-reference-sync/tests/rollback-executor.test.js',
     '.claude/skills/api-reference-sync/tests/rollback-planner.test.js',
     '.claude/skills/api-reference-sync/tests/rust-scanner.test.js',

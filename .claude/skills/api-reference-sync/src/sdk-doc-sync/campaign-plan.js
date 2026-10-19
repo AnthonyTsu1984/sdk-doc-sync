@@ -50,7 +50,7 @@ const RELEASE_SYNC_PATH_KEYS = Object.freeze(['sdkDir', 'campaignDir', 'sessionP
 // authority (the approval's candidateSpec chain), the manifest projection is
 // the reviewUnitManifest view (the grouping chain), the unit-digests file is
 // the initial per-unit digest set (the approval's units binding).
-const REVISION_PATH_KEYS = Object.freeze(['campaignDir', 'sessionPath', 'scopePath', 'contextsPath', 'manifestProjectionPath', 'unitDigestsPath']);
+const REVISION_PATH_KEYS = Object.freeze(['campaignDir', 'sessionPath', 'scopePath', 'contextsPath', 'manifestProjectionPath', 'candidateSpecProjectionPath', 'unitDigestsPath']);
 
 class CampaignPlanError extends TypeError {
   constructor(code, message, details = {}) {

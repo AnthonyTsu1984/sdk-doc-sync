@@ -13,7 +13,8 @@ const {
     loadReviewSessionState,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { intakeRevisionSession, main: intakeMain } = require('../bin/revision-intake');
-const { assembleBlockTree, buildRevisionBatch, resolveRevisionApproval, runCli: applyRunCli } = require('../bin/revision-apply');
+const { main: recordMain } = require('../scripts/record-campaign-approval');
+const { assembleBlockTree, buildRevisionBatch, contextsProjection, resolveRevisionApproval, runCli: applyRunCli } = require('../bin/revision-apply');
 const {
     buildCampaignApprovalReceipt,
     buildCampaignPlan,
@@ -541,19 +542,6 @@ test('a content-only context drift does NOT trip the chain (the regeneration pat
 // --- batch 16 slice 7: the merged campaign approval authorizes revision writes
 // (ruling (b): unit set + three chains + membership; fresh digest = regeneration) ---
 
-function stripContent(contextsContainer) {
-    const projected = {};
-    for (const [key, entry] of Object.entries(contextsContainer)) {
-        if (entry && typeof entry === 'object') {
-            const { verbatimContent, ...rest } = entry;
-            projected[key] = rest;
-        } else {
-            projected[key] = entry;
-        }
-    }
-    return projected;
-}
-
 function revisionUnitDigestsFor(scope, contexts, session) {
     const units = [];
     for (const unit of session.reviewUnitManifest.units) {
@@ -586,7 +574,7 @@ function revisionCampaignReceipt({ scope, contexts, units, session }) {
             // projection (content bytes stripped — they are bound by the
             // units' batchDigest instead), exactly what revision-apply
             // re-derives at write time.
-            candidateSpec: stripContent(contexts.contexts),
+            candidateSpec: contextsProjection(contexts.contexts),
             batchDigest: combinedUnitsDigest(units),
         }),
     });
@@ -798,4 +786,68 @@ test('a campaign receipt with a structurally drifted context chain is CAMPAIGN_D
         }),
         (error) => error.code === 'CAMPAIGN_DIGEST_STALE' && /candidateSpecDigest/.test(error.message),
     );
+});
+
+test('a receipt recorded through the REAL record-campaign-approval path authorizes the revision write (P1-2 end-to-end)', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-campaign-e2e-'));
+    const scope = scopeFixture();
+    writeJson(directory, 'scope.json', scope);
+    const contextsPath = writeJson(directory, 'contexts.json', contextsFixture());
+    const contexts = JSON.parse(fs.readFileSync(contextsPath, 'utf8'));
+    const sessionPath = createSessionFixture(directory, scope);
+    const { session } = loadReviewSessionState(path.resolve(sessionPath));
+
+    // The recording inputs a real campaign would pass: the manifest
+    // projection (grouping chain), the contexts SPEC projection (candidate
+    // chain), and the unit digests (units set) — all on disk.
+    const manifestPath = writeJson(directory, 'manifest-projection.json', { reviewUnitManifest: session.reviewUnitManifest });
+    const specPath = writeJson(directory, 'contexts-spec.json', contextsProjection(contexts.contexts));
+    const units = revisionUnitDigestsFor(scope, contexts, session);
+    const digestsPath = writeJson(directory, 'unit-digests.json', units);
+
+    const approvalsDir = path.join(directory, 'approvals');
+    const io = { stdout: { write: () => {} }, stderr: { write: () => {} } };
+    const code = recordMain([
+        'node', 'record-campaign-approval.js',
+        '--scope', path.join(directory, 'scope.json'),
+        '--grouping', manifestPath,
+        '--candidate-spec', specPath,
+        '--unit-digests', digestsPath,
+        '--approvals-dir', approvalsDir,
+        '--json',
+    ], io);
+    assert.equal(code, 0);
+
+    // The receipt on disk (keyed by its digest) — the same artifact the
+    // template hands to revision-apply.
+    const receiptFiles = fs.readdirSync(approvalsDir).filter((file) => file.endsWith('.json'));
+    assert.equal(receiptFiles.length, 1);
+    const receiptPath = path.join(approvalsDir, receiptFiles[0]);
+
+    const runManifestPath = path.resolve('tmp', 'api-reference-sync', `run-manifest-revision-apply-${UNIT_ID.replace(/[^A-Za-z0-9-]/g, '-')}.json`);
+    if (fs.existsSync(runManifestPath)) fs.rmSync(runManifestPath);
+
+    const result = await applyRunCli({
+        argv: [
+            'node', 'revision-apply',
+            '--session', sessionPath,
+            '--review-unit-id', UNIT_ID,
+            '--scope', path.join(directory, 'scope.json'),
+            '--contexts', contextsPath,
+            '--campaign-approval', receiptPath,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
+            '--journal', path.join(directory, 'execution.jsonl'),
+            '--json',
+        ],
+        dependencies: {
+            fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+            fetchRawContent: async () => BASE_CONTENT,
+            fetchBlocks: async () => CONFORMANT_BLOCKS,
+            rebuildPage: async () => 1,
+            reopenRecord: async () => 'reopened',
+        },
+    });
+    assert.equal(result.status, 'EXECUTED');
+    fs.rmSync(runManifestPath, { force: true });
 });

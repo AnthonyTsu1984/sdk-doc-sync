@@ -597,7 +597,15 @@ class SdkDocSync {
         // as a foreign CREATE-conflict.
         const sessionExecutedDocumentIds = this._sessionExecutedDocumentIds();
         const plannedEntries = [];
-        for (const resource of [...(this.releaseScope?.resources || []), ...(this.campaignResources || [])]) {
+        // Resources may legitimately ride BOTH the release scope and the
+        // reviewed context (the context carries the campaign's resource set and
+        // the filtered scope carries the same set) — dedup by ref so a shared
+        // resource never plans twice (ACTION_ID_INVALID otherwise).
+        const mergedResources = [...(this.releaseScope?.resources || []), ...(this.campaignResources || [])];
+        const seenResourceRefs = new Set();
+        for (const resource of mergedResources) {
+            if (resource?.ref && seenResourceRefs.has(resource.ref)) continue;
+            if (resource?.ref) seenResourceRefs.add(resource.ref);
             try {
                 const plan = this.planner.planResource(resource, {
                     placementWalkDigest: this.placementWalkDigest,

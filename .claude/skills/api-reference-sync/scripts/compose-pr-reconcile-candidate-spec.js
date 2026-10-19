@@ -169,6 +169,45 @@ function plainText(text) {
     .trim();
 }
 
+// Resolve repo-relative markdown links inside structured-candidate prose to
+// absolute in-KB docx URLs (api.absolute-link-urls). Relative links the
+// resolver cannot map (no live row for the target slug) become plain text so
+// the plan never ships a relative URL; absolute URLs pass through unchanged.
+function resolveMarkdownLinks(text, { resolveLink, prPath }) {
+  return String(text || '').replace(/\[([^\]]+)\]\(([^)]+)\)/g, (whole, label, rawTarget) => {
+    if (!isRelativeLink(rawTarget)) return whole;
+    const resolved = resolveLink(rawTarget, prPath);
+    if (!resolved) return label;
+    return `[${label}](${resolved})`;
+  });
+}
+
+// Deep-walk a candidate's markdown-bearing prose (any string EXCEPT code — the
+// example/request-syntax code fences may legitimately show markdown syntax)
+// and resolve relative links. The preflight's relative-link walker is
+// whole-entry recursive, so the resolution must match that coverage:
+// summary, summaryCallouts, params (incl. children/name/type/description),
+// requestVariants inputs, result (type/schemaCode/fields), exceptions.
+function resolveCandidateMarkdownLinks(candidate, { resolveLink, prPath }) {
+  const SKIP_KEYS = new Set(['code', 'verbatimContent']);
+  const walk = (value) => {
+    if (typeof value === 'string') return resolveMarkdownLinks(value, { resolveLink, prPath });
+    if (Array.isArray(value)) return value.map(walk);
+    if (value !== null && typeof value === 'object') {
+      const out = {};
+      for (const [key, item] of Object.entries(value)) {
+        out[key] = SKIP_KEYS.has(key) ? item : walk(item);
+      }
+      return out;
+    }
+    return value;
+  };
+  for (const key of Object.keys(candidate)) {
+    if (SKIP_KEYS.has(key)) continue;
+    candidate[key] = walk(candidate[key]);
+  }
+}
+
 function toField(entry, profile) {
   const structured = profile.structured || {};
   const type = entry.type || entry.builderArgType || null;
@@ -690,10 +729,29 @@ function loadCategoryCreates({ args, audit, walk, snapshot, versionRootToken, re
         title: r.title || row.title || name,
         folderRef: folder.ref,
         currentFolderToken: r.currentFolderToken,
-        expectedFields: { ...r.expectedFields },
+        // Normalize the category-create plan's PascalCase Bitable fields
+        // (Type/Targets/Progress/Slug, Targets as a single string) to the
+        // planner's camelCase contract (type/targets[]/progress/slug) — the
+        // executor's VirtualNode-repoint validation reads the camelCase face.
+        expectedFields: {
+          type: (r.expectedFields || {}).Type || (r.expectedFields || {}).type || 'VirtualNode',
+          targets: (() => {
+            const raw = (r.expectedFields || {}).Targets ?? (r.expectedFields || {}).targets;
+            return Array.isArray(raw) ? raw : (typeof raw === 'string' && raw.trim() !== '' ? raw.split(/[,\s]+/).filter(Boolean) : []);
+          })(),
+          progress: (r.expectedFields || {}).Progress || (r.expectedFields || {}).progress || 'Draft',
+          slug: (r.expectedFields || {}).Slug || (r.expectedFields || {}).slug || row.slug,
+        },
         baseToken: r.baseToken || snapshot.baseToken || null,
         tableId: r.tableId || null,
-        dependsOn: [folder.ref],
+        // The repoint rides the created folder AND the category's documents:
+        // dependsOn = [folder.ref, ...category units]. The tree-delta DAG
+        // check demands the repoint depend on at least one document IN the
+        // executing unit's batch — the repoint is shared across the category's
+        // units, so it names every unit and each unit's batch passes
+        // documentWired (the own unit's document still never depends on the
+        // repoint, so no cycle).
+        dependsOn: [folder.ref, ...(categoryEntry.units || [])],
         existingLookup: { ...(r.existingLookup || {}), checked: true, matched: true, recordId: r.recordId, currentFolderToken: r.currentFolderToken },
       };
       resources.push({ kind: 'virtual_node_repoint', ...repoint });
@@ -705,7 +763,7 @@ function loadCategoryCreates({ args, audit, walk, snapshot, versionRootToken, re
   return { path: planPath, byCategory, byUnit, resources, notes };
 }
 
-function auditProposalFromInputs({ decisions, walk, audit, reject }) {
+function auditProposalFromInputs({ decisions, walk, audit, categoryCreates = null, reject }) {
   // Port of the 2026-10-15 go build-audit-proposal.js: UPDATE units bind the
   // LIVE parent folder of their existing docx per the walk (authoritative);
   // absent units bind their family folder by walk name.
@@ -753,12 +811,34 @@ function auditProposalFromInputs({ decisions, walk, audit, reject }) {
   }
   const folderByName = new Map(walk.nodes.filter((node) => node.type === 'folder').map((node) => [node.name, node]));
   const folderByToken = new Map(walk.nodes.filter((node) => node.type === 'folder').map((node) => [node.token, node]));
+  // Seed the family-folder index with the folders this wave CREATES in this
+  // track (category-create plan): absent-family units (Database-use_database,
+  // Highlighter-*) bind their target to the folder the wave creates, which the
+  // live walk does not yet hold.
+  if (categoryCreates) {
+    for (const { folder } of categoryCreates.byCategory.values()) {
+      if (folder && folder.name && folder.ref) folderByName.set(folder.name, { name: folder.name, token: folder.ref });
+    }
+  }
   const familyFolderToken = (canonicalSlug) => {
-    const familyWord = canonicalSlug.split('-').slice(1, -1).pop() || canonicalSlug.split('-')[1];
-    const byName = folderByName.get(familyWord)
-      || [...folderByName.values()].find((folder) => folder.name.toLowerCase() === familyWord.toLowerCase());
-    if (!byName) reject('FAMILY_FOLDER_UNRESOLVED', `no walk folder for family ${familyWord} (${canonicalSlug})`);
-    return byName.token;
+    // The family word is the DEEPEST slug segment that names a walk folder:
+    //   Category-member      -> Category  (Authentication-remove_privileges_from_group)
+    //   Category-Class       -> Class     (MilvusClient-CollectionSchema: the class
+    //                                      folder is where the type's method pages live)
+    //   Category-Class-mem   -> Class     (Collections-add_collection_function's class
+    //                                      would resolve the same way when present)
+    // The old heuristic (slice(1,-1).pop() || split('-')[1]) picked the member for
+    // two-segment method slugs (Authentication-remove_privileges_from_group ->
+    // remove_privileges_from_group), which no walk folder names — FAMILY_FOLDER_UNRESOLVED.
+    const parts = canonicalSlug.split('-');
+    let familyWord = null;
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      if (folderByName.has(parts[index])) { familyWord = parts[index]; break; }
+      const caseInsensitive = [...folderByName.values()].find((folder) => folder.name.toLowerCase() === parts[index].toLowerCase());
+      if (caseInsensitive) { familyWord = caseInsensitive.name; break; }
+    }
+    if (!familyWord) reject('FAMILY_FOLDER_UNRESOLVED', `no walk folder for family ${parts.join('-')} (${canonicalSlug})`);
+    return folderByName.get(familyWord).token;
   };
   const proposals = [];
   const notes = [];
@@ -881,12 +961,16 @@ function compose(args) {
   const snapshot = readJson(snapshotPath);
   const walk = walkPath ? readJson(walkPath) : null;
   const identityMap = readJson(identityMapPath);
-  const auditProposal = args.auditProposal
-    ? readJson(args.auditProposal)
-    : auditProposalFromInputs({ decisions, walk, audit, reject });
+  // Category creates are loaded BEFORE the audit proposal: absent-family
+  // units (Database-use_database, Highlighter-*) bind their family folder to
+  // a folder this wave CREATES in this track, so the family-folder resolution
+  // must see the to-be-created folders.
   const categoryCreates = loadCategoryCreates({
     args, audit, walk, snapshot, versionRootToken: audit.versionRootToken, reject,
   });
+  const auditProposal = args.auditProposal
+    ? readJson(args.auditProposal)
+    : auditProposalFromInputs({ decisions, walk, audit, categoryCreates, reject });
 
   if (identityMap.language !== language || identityMap.track !== track) {
     reject('IDENTITY_MAP_TRACK_MISMATCH', `identity map is ${identityMap.language}/${identityMap.track}; expected ${language}/${track}`);
@@ -1145,6 +1229,17 @@ function compose(args) {
       if (isPython) {
         params = params.map((field) => {
           let shaped = pythonFoldChildren(field); // N1
+          // Enum-choice params render as `Enum.VALUE` names (FunctionType.RERANK)
+          // with no separate type — the enum type IS the name's prefix.
+          if (!shaped.type && /^[A-Z][A-Za-z0-9_]*\.[A-Z0-9_]+$/.test(String(shaped.name || ''))) {
+            shaped = { ...shaped, type: String(shaped.name).split('.')[0] };
+          }
+          // Variadic params (**kwargs / *args) carry no type metadata — the
+          // documented normalization (sdk-python.md) renders them as Any so the
+          // IR type.display is never empty.
+          if (!shaped.type && /^(?:\*\*?)?(?:kwargs|args)$/.test(shaped.name)) {
+            shaped = { ...shaped, type: 'Any' };
+          }
           if (!shaped.description && /^kwargs$/.test(shaped.name) && profile.normalizations.N5) {
             shaped = { ...shaped, description: structured.kwargsFallbackDescription }; // N5
           }
@@ -1245,6 +1340,13 @@ function compose(args) {
           `repeated PARAMETERS entries folded to their first occurrence (union-typed page lists one field per request shape): ${[...new Set(dedupeNotes)].join(', ')}`,
         ];
       }
+      // Structured prose may carry repo-relative markdown links (param types
+      // like [DataType](../../Collections/DataType.md), result types, summary).
+      // The absolute-link invariant (api.absolute-link-urls) demands docx URLs:
+      // resolve them against the live snapshot before the reviewed context is
+      // built. Unresolvable relative links are dropped (plain text) so the
+      // plan never ships a repo-relative URL.
+      resolveCandidateMarkdownLinks(candidate, { resolveLink, prPath: pr.path });
     }
 
     // ---- placement / record evidence (both routes) ----
@@ -1350,12 +1452,32 @@ function compose(args) {
       }
       if (createdCategory) {
         candidate.folderRef = createdCategory.folder.ref;
-        // the category spec (folder + optional VirtualNode repoint) is what the
-        // versioned-tree policy validates for the create decision.
+        // The reviewed folder-ref target's ancestry (the chain the category
+        // folder will sit in once created) rides the candidate so the planner
+        // can verify the target (TARGET_ANCESTRY_REQUIRED otherwise).
+        if (Array.isArray(createdCategory.folder.parentAncestry)) {
+          candidate.folderAncestry = createdCategory.folder.parentAncestry;
+        }
+        // The category spec's folder is what the versioned-tree policy
+        // validates for the create decision. The VirtualNode repoint rides
+        // ONLY the document the repoint itself depends on (its own unit's
+        // batch): sibling documents that depend on the repoint would close a
+        // DAG cycle (doc → repoint → doc) and their units do not carry the
+        // repoint entry. The repoint resource is planned once and its own
+        // unit's batch covers the transition.
+        const repoint = createdCategory.repoint || null;
+        const repointOwnDocument = repoint
+          ? (repoint.dependsOn || []).find((dep) => !dep.startsWith('res:'))
+          : null;
+        // repoint: null is the EXPLICIT no-repoint face (validCategorySpec):
+        // a category without a VirtualNode record to repoint must declare
+        // null, not omit the key (omission = undefined = invalid spec).
         candidate.treeDelta = {
           category: {
             folder: createdCategory.folder,
-            repoint: createdCategory.repoint,
+            ...(repoint && repointOwnDocument === unit.sourceStableId
+              ? { repoint }
+              : { repoint: null }),
           },
         };
         createdCategoryUnits.push(unit.sourceStableId);

@@ -137,6 +137,33 @@ test('duplicate H1s across pages are detected with both slugs named', () => {
     assert.deepEqual(findDuplicateH1s(pages), [{ h1: 'describe()', slugs: ['Client-A', 'Client-B'] }]);
 });
 
+test('same H1 across distinct categories is legitimate, not flagged (python method pages)', () => {
+    const pages = [
+        { slug: 'CollectionSchema-to_dict', h1: 'to_dict()', category: 'CollectionSchema' },
+        { slug: 'FieldSchema-to_dict', h1: 'to_dict()', category: 'FieldSchema' },
+        { slug: 'Function-to_dict', h1: 'to_dict()', category: 'Function' },
+        { slug: 'StructFieldSchema-to_dict', h1: 'to_dict()', category: 'StructFieldSchema' },
+        // A same-category pair with the same H1 IS still flagged.
+        { slug: 'Client-dupOne', h1: 'same Title()', category: 'Client' },
+        { slug: 'Client-dupTwo', h1: 'same Title()', category: 'Client' },
+        // A cross-category pair with the same H1 is NOT.
+        { slug: 'Auth-create_role', h1: 'create_role()', category: 'Authentication' },
+        { slug: 'Client-create_role', h1: 'create_role()', category: 'Client' },
+    ];
+    assert.deepEqual(findDuplicateH1s(pages), [
+        { h1: 'same Title()', category: 'Client', slugs: ['Client-dupOne', 'Client-dupTwo'] },
+    ]);
+});
+
+test('a category collision and a null-category collision are reported distinctly', () => {
+    const pages = [
+        // Null-category pages (no docIdentity.category) keep the strict rule.
+        { slug: 'Legacy-A', h1: 'legacy()' },
+        { slug: 'Legacy-B', h1: 'legacy()' },
+    ];
+    assert.deepEqual(findDuplicateH1s(pages), [{ h1: 'legacy()', slugs: ['Legacy-A', 'Legacy-B'] }]);
+});
+
 test('the CLI dumps pages plus manifest, refuses a digest mismatch, and flags duplicate H1s', () => {
     const dupPage = '# same Title()\n\nOne.\n';
     const web = makeWebContentRepo({
@@ -184,7 +211,7 @@ test('the CLI dumps pages plus manifest, refuses a digest mismatch, and flags du
     assert.equal(dupRun.status, 1);
     assert.match(dupRun.stderr, /\[PAGE_H1_DUPLICATE\]/);
     const dupManifest = JSON.parse(fs.readFileSync(path.join(dupOut, 'manifest.json'), 'utf8'));
-    assert.deepEqual(dupManifest.duplicateH1s, [{ h1: 'same Title()', slugs: ['Client-dupOne', 'Client-dupTwo'] }]);
+    assert.deepEqual(dupManifest.duplicateH1s, [{ h1: 'same Title()', category: 'Client', slugs: ['Client-dupOne', 'Client-dupTwo'] }]);
 });
 
 test('parseArgs requires all three paths and refuses unknown arguments', () => {

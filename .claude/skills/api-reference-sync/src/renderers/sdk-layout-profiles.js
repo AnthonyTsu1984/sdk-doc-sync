@@ -52,6 +52,10 @@ const PYTHON_LAYOUT_RULES = Object.freeze({
   ...GLOBAL_LAYOUT_RULES,
   contentQuality: Object.freeze({
     ...GLOBAL_LAYOUT_RULES.contentQuality,
+    // Vowel-initial type pages read "An Xxx instance is …" (python has
+    // EmbeddingList, AnnSearchRequest, AnnSearchRequest-like families) — the
+    // shared 'A Xxx instance' form does not match those (go precedent, 2026-10-07).
+    firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b']),
     requestSignatureOneParamPerLine: true,
     parameterTypeEmphasisForbidden: true,
     templatedExampleIntroForbidden: true,

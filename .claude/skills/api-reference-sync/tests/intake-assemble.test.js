@@ -25,6 +25,8 @@ function fullArtifacts() {
     decisions: 'tmp/x/decisions.json',
     scope: 'tmp/x/scope.json',
     pagesDir: 'tmp/x/pages',
+    proposals: 'tmp/x/proposals.json',
+    snapshot: 'tmp/x/snapshot.json',
     placementAudit: 'tmp/x/audit.json',
     rootWalk: 'tmp/x/root-walk.json',
     candidateSpec: 'tmp/x/candidate-spec.json',
@@ -124,7 +126,7 @@ test('runIntakePlan runs stages in order and stops at the first failure', async 
     (error) => error.code === 'INTAKE_STAGE_FAILED' && error.details.stage === 'candidate-spec' && error.details.exitCode === 2 && error.details.stderr === 'boom',
   );
   // The chain stopped at candidate-spec — reviewed-context never ran.
-  assert.deepEqual(partial, ['dump-pr-pages', 'placement-audit', 'candidate-spec']);
+  assert.deepEqual(partial, ['dump-pr-pages', 'proposals', 'placement-audit', 'candidate-spec']);
 });
 
 test('runIntakePlan requires a runner', async () => {

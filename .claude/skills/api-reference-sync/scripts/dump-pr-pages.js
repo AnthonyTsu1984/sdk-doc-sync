@@ -194,6 +194,12 @@ function dumpPages({ decisions, showFn }) {
             bytes: Buffer.byteLength(markdown, 'utf8'),
             sha256: digest,
             h1: extractH1(markdown),
+            // The stableId category segment (docIdentity.category): the
+            // discriminator for duplicate-H1 adjudication. Two pages sharing
+            // an H1 are upstream identity drift only when they claim the SAME
+            // category — a method name repeating across distinct classes
+            // (CollectionSchema-to_dict vs FieldSchema-to_dict) is legitimate.
+            category: unit.decision.docIdentity?.category || null,
             markdown,
         });
     }
@@ -202,17 +208,41 @@ function dumpPages({ decisions, showFn }) {
 }
 
 // Duplicate-H1 detection over the dumped pages: two pages claiming one title
-// is upstream identity drift, refused before a composer can consume the dump.
+// is upstream identity drift only when they claim it in the SAME category —
+// a method name repeating across distinct classes (CollectionSchema-to_dict
+// vs FieldSchema-to_dict, both H1 `to_dict()`) is legitimate and NOT flagged.
+// A category is the stableId's second segment (docIdentity.category); pages
+// with no category (null) fall back to the strict rule (any same-H1 pair
+// counts), which is the pre-carve-out behavior for decisions that omit it.
 function findDuplicateH1s(pages) {
     const byH1 = new Map();
     for (const page of pages) {
         if (!page.h1) continue;
-        byH1.set(page.h1, [...(byH1.get(page.h1) || []), page.slug]);
+        byH1.set(page.h1, [...(byH1.get(page.h1) || []), page]);
     }
-    return [...byH1.entries()]
-        .filter(([, slugs]) => slugs.length > 1)
-        .map(([h1, slugs]) => ({ h1, slugs: slugs.sort() }))
-        .sort((left, right) => (left.h1 < right.h1 ? -1 : left.h1 > right.h1 ? 1 : 0));
+    const flagged = [];
+    for (const [h1, group] of byH1) {
+        if (group.length < 2) continue;
+        // Pages sharing an H1 collide only within one category. Null-category
+        // pages collide with each other (and only with each other) — the strict
+        // historical rule for decisions that carry no category.
+        const byCategory = new Map();
+        for (const page of group) {
+            const key = page.category === null || page.category === undefined ? '\u0000null' : page.category;
+            byCategory.set(key, [...(byCategory.get(key) || []), page]);
+        }
+        for (const [category, pagesInCategory] of byCategory) {
+            if (pagesInCategory.length < 2) continue;
+            // Null-category collisions keep the historical manifest shape
+            // ({h1, slugs}); categorized collisions add the category so the
+            // adjudication is visible in the manifest.
+            const entry = category === '\u0000null'
+                ? { h1, slugs: pagesInCategory.map((page) => page.slug).sort() }
+                : { h1, category, slugs: pagesInCategory.map((page) => page.slug).sort() };
+            flagged.push(entry);
+        }
+    }
+    return flagged.sort((left, right) => (left.h1 < right.h1 ? -1 : left.h1 > right.h1 ? 1 : 0));
 }
 
 function buildManifest({ decisionsPath, webContentDir, outputDir, dump }) {

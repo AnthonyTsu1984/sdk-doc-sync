@@ -47,13 +47,18 @@ function readJson(filePath, label) {
 // The stage runner: spawn each canonical script with the repo root as cwd (so
 // repo-relative artifact paths resolve) and the script path resolved against
 // the skill root. Injected into runIntakePlan so the orchestration stays pure.
-function childProcessRunner(io) {
+// Feishu tokens (--base-token/--table-id/--root-token, from the campaign plan)
+// are merged into the child env: the dry-run stage (sdk-doc-sync) needs
+// BASE_TOKEN for the diff baseline and ROOT_TOKEN/TABLE_ID for live writes,
+// and these come from the plan, not from .env.
+function childProcessRunner(io, tokenEnv = {}) {
   return ({ script, argv, cwd }) => {
     const scriptPath = path.resolve(SKILL_ROOT, script);
     const result = spawnSync(process.execPath, [scriptPath, ...argv], {
       cwd,
       encoding: 'utf8',
       maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, ...tokenEnv },
     });
     if (result.stdout) io.stdout.write(result.stdout);
     if (result.stderr) io.stderr.write(result.stderr);
@@ -62,7 +67,7 @@ function childProcessRunner(io) {
   };
 }
 
-const VALUE_OPTIONS = new Set(['--language', '--track', '--artifacts', '--identity-map', '--profile']);
+const VALUE_OPTIONS = new Set(['--language', '--track', '--artifacts', '--identity-map', '--profile', '--base-token', '--table-id', '--root-token']);
 
 function parseArgs(argv) {
   const args = {};
@@ -122,8 +127,12 @@ async function main(argv = process.argv, io = process) {
   });
 
   if (args.run) {
+    const tokenEnv = {};
+    if (args.baseToken) tokenEnv.BASE_TOKEN = args.baseToken;
+    if (args.tableId) tokenEnv.TABLE_ID = args.tableId;
+    if (args.rootToken) tokenEnv.ROOT_TOKEN = args.rootToken;
     const outcome = await runIntakePlan(plan, {
-      run: childProcessRunner(io),
+      run: childProcessRunner(io, tokenEnv),
       cwd: REPO_ROOT,
       onStage: ({ stage, exitCode }) => io.stdout.write(`[intake] ${stage} — exit ${exitCode}\n`),
     });

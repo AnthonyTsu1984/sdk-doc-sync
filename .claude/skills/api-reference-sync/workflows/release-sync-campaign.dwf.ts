@@ -449,7 +449,7 @@ if (rehearsal) {
 // entries 工件 = intake 链的输入面（由 plan 生成侧/intake 工件链供,模板不拼装业务映射;
 // 按 campaignId 键控约定放在 campaignDir 下,缺失时 propose-audience 以 typed 错误 fail-closed）。
 const audienceEntriesPath = paths.campaignDir + "/audience-entries.json";
-const intakeBaseArgs = ["--language", identity.language, "--track", identity.track, "--artifacts", audienceEntriesPath, "--identity-map", paths.identityMap];
+const intakeBaseArgs = ["--language", identity.language, "--track", identity.track, "--artifacts", audienceEntriesPath, "--identity-map", paths.identityMap, "--base-token", feishu.baseToken, "--table-id", feishu.tableId, "--root-token", feishu.rootToken];
 phase("组装发布范围工件链");
 const intakePlanRun = await runTrackedCli("intake-assemble --plan（校验组装计划）", [INTAKE_ASSEMBLE, "--plan"].concat(intakeBaseArgs, ["--json"]), campaignFile("intake-plan"), 300000);
 if (!intakePlanRun.ok) {

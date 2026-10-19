@@ -22,6 +22,7 @@ const KNOWN_ROUTES = Object.freeze(['verbatim', 'structured']);
 // filtered scope, so grouping consumes it; the dry-run is last.
 const STAGE_ORDER = Object.freeze([
   'dump-pr-pages',
+  'proposals',
   'placement-audit',
   'candidate-spec',
   'reviewed-context',
@@ -35,8 +36,12 @@ const STAGE_ORDER = Object.freeze([
 // half-assembled intake fails loudly instead of running with empty paths.
 const STAGE_IO = Object.freeze({
   'dump-pr-pages': { consumes: ['decisions'], produces: ['pagesDir'] },
-  'placement-audit': { consumes: ['scope'], produces: ['placementAudit', 'rootWalk'] },
-  'candidate-spec': { consumes: ['decisions', 'pagesDir', 'placementAudit', 'rootWalk', 'scope'], produces: ['candidateSpec'] },
+  // proposals: the placement-audit's input surface. The audit consumes
+  // proposal.proposals[] (recordId/documentToken/targetFolderToken), which the
+  // release scope does NOT carry — this stage projects it from decisions.
+  'proposals': { consumes: ['decisions'], produces: ['proposals'] },
+  'placement-audit': { consumes: ['scope', 'proposals'], produces: ['placementAudit', 'rootWalk'] },
+  'candidate-spec': { consumes: ['decisions', 'pagesDir', 'placementAudit', 'rootWalk', 'scope', 'snapshot'], produces: ['candidateSpec'] },
   'reviewed-context': { consumes: ['candidateSpec', 'scope'], produces: ['filteredScope', 'reviewedContext'] },
   'grouping-proposal': { consumes: ['filteredScope', 'decisions'], produces: ['groupingProposal'] },
   'intake-preflight': { consumes: ['reviewedContext'], produces: [] },
@@ -44,7 +49,7 @@ const STAGE_IO = Object.freeze({
 });
 
 const ARTIFACT_KEYS = Object.freeze([
-  'decisions', 'scope', 'pagesDir', 'placementAudit', 'rootWalk',
+  'decisions', 'scope', 'pagesDir', 'proposals', 'placementAudit', 'rootWalk', 'snapshot',
   'candidateSpec', 'filteredScope', 'reviewedContext', 'groupingProposal', 'session',
   // categoryCreates: OPTIONAL per-campaign category-create plan (placement
   // ruling: a changed page whose target folder is missing in this track gets
@@ -145,10 +150,26 @@ function stageArgv(stage, ctx) {
         script: 'scripts/dump-pr-pages.js',
         args: { '--decisions': a.decisions, '--web-content-dir': ctx.webContentDir, '--output-dir': a.pagesDir },
       };
+    case 'proposals':
+      return {
+        script: 'scripts/build-audit-proposals.js',
+        args: { '--decisions': a.decisions, '--output': a.proposals },
+      };
     case 'placement-audit':
       return {
         script: 'scripts/build-current-placement-audit.js',
-        args: { '--proposal': a.scope, '--version': ctx.track, '--output': a.placementAudit, '--dump-walk': a.rootWalk },
+        args: {
+          '--proposal': a.proposals,
+          '--version': ctx.track,
+          // Registry-driven resolution (build-current-placement-audit.js main):
+          // --language resolves the track's release root / Bitable base from
+          // config/release-tracks.json; without it the audit refuses with
+          // "Missing --version-root (or --language with a registered release root)".
+          '--language': ctx.language,
+          '--registry': '.claude/skills/api-reference-sync/config/release-tracks.json',
+          '--output': a.placementAudit,
+          '--dump-walk': a.rootWalk,
+        },
       };
     case 'candidate-spec':
       return {
@@ -159,6 +180,7 @@ function stageArgv(stage, ctx) {
           '--release-scope': a.scope,
           '--decisions': a.decisions,
           '--pages-dir': a.pagesDir,
+          '--snapshot': a.snapshot,
           '--placement-audit': a.placementAudit,
           '--root-walk': a.rootWalk,
           '--identity-map': ctx.identityMap,
@@ -191,6 +213,12 @@ function stageArgv(stage, ctx) {
           '--sdk-version': ctx.track,
           '--reference-context': a.reviewedContext,
           '--release-scope': a.filteredScope,
+          // The placement audit PRODUCT (walkDigest + folderChains) binds every
+          // plan's target chain to the audit's live walk (planner requires
+          // canonical target folder + verified ancestry for walk-bound entries;
+          // PLACEMENT_TARGET_CHAIN_STALE otherwise). The root-walk artifact
+          // alone lacks folderChains.
+          '--placement-walk': a.placementAudit,
           '--dry-run': true,
           '--session-state': a.session,
         },

@@ -821,9 +821,11 @@ test('sweepSpec flags the clone-ID shared in-place shape as CLONE_ID_SHARED_IN_P
   };
   const report = sweepSpec(spec, { evaluateVersionedTreeDelta });
   assert.equal(report.units, 1);
-  assert.equal(report.blocked.length, 1);
-  assert.equal(report.blocked[0].blocker, 'TREE_DELTA_POINTING_TRACK_UNCLASSIFIED');
-  assert.equal(report.blocked[0].cloneIdSharedInPlace, true);
+  // Kernel allowance (2026-10-19 ruling): the clone-only shape — the
+  // reference multiset carries ONLY the unit's own recordId (clone-ID fork
+  // rows kept the record ids) — has no other track to push the change onto,
+  // so it sweeps clean instead of failing closed as unclassified.
+  assert.equal(report.blocked.length, 0);
   assert.equal(report.targetAncestryCoverage, 'declared for all 1 swept unit(s)');
 
   // Review P2-2: a spec that does not declare ancestryVerified sweeps with

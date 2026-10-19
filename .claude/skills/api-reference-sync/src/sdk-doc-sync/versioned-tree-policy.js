@@ -240,6 +240,18 @@ function validateSharedUpdateReviews(reviews, { referencedRecordIds, sourceRecor
   // this gap.
   const others = [...new Set(referencedRecordIds.filter((id) => id !== sourceRecordId))];
   const blocked = (detail) => ({ ok: false, code: BLOCKERS.TREE_DELTA_POINTING_TRACK_UNCLASSIFIED, detail });
+  // Operator allowance (2026-10-19, python-v30 wave): when the reference
+  // multiset holds NO record other than the unit's own (every duplicate is a
+  // cloned sibling occurrence sharing sourceRecordId — measured, e.g.,
+  // Collection-construct_from_dataframe own recu3Qt36ehdPQ x4 across the
+  // per-version bases), there is no other track to push the change onto, so
+  // the patch passes without an inheritance review. The executor's post-write
+  // multiset check still locks reference counts by token. The check remains
+  // meaningful when a DISTINCT record really points at the document: then
+  // `others` is non-empty and classification is still required.
+  if (others.length === 0) {
+    return { ok: true, reviews: [] };
+  }
   if (!Array.isArray(reviews) || reviews.length === 0) {
     return blocked(
       'A shared cross-track in-place patch requires a sharedUpdateReviews classification for every other referencing record (inheritance review decision no_successor_action); none were supplied',

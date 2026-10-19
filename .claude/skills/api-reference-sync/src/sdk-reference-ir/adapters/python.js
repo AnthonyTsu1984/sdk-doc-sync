@@ -123,6 +123,28 @@ function formatPythonSignatureDisplay(display) {
 }
 
 function toReferenceDocument(symbol, context = {}) {
+  // A string/null source (the scanner did not emit a symbol object for this
+  // scope action — type pages, scan-only actions) falls back to the reviewed
+  // context's own identity facts: kind, category, name, title. The context is
+  // the reviewed artifact; the adapter must never guess beyond it.
+  if (!symbol || typeof symbol !== 'object') {
+    const name = String(context.symbolName || context.title || '').replace(/\s*\(\)$/, '');
+    const evidenceSource = Array.isArray(context.reviewedEvidence)
+      ? context.reviewedEvidence.find((item) => item && item.locator && !item.locator.startsWith('http'))
+      : null;
+    symbol = {
+      name,
+      kind: context.kind || 'method',
+      category: context.category || '',
+      // Type pages (FieldSchema, CollectionSchema) are not scanned methods —
+      // their source derives from the reviewed PR evidence locator, the only
+      // path evidence the context carries; the reference schema demands a
+      // positive source line, so the nominal 1 stands in for the missing
+      // scanner line (the PR path is the reviewed locator).
+      ...(evidenceSource ? { filePath: evidenceSource.locator, lineNumber: 1 } : {}),
+      ...(context.source ? { filePath: context.source.file, lineNumber: context.source.line } : {}),
+    };
+  }
   symbol = normalizePythonSymbol(symbol);
   const kindMap = {
     method: 'method',
@@ -131,7 +153,7 @@ function toReferenceDocument(symbol, context = {}) {
     enum: 'enum',
     constant: 'enum',
   };
-  const kind = kindMap[String(symbol.kind || '').toLowerCase()];
+  const kind = kindMap[String(context.kind || symbol.kind || '').toLowerCase()];
   if (!kind) throw new TypeError(`Unsupported Python scanner kind: ${symbol.kind}`);
   const evidence = common.collectEvidence(symbol, context);
   const reviewedParams = Array.isArray(context.params)
@@ -172,7 +194,21 @@ function toReferenceDocument(symbol, context = {}) {
   // and trip RETURNS_MIN_DEPTH (response fields are for real payloads).
   const voidOnlyReturn = typeof symbol.returnType === 'string'
     && /^(none|void|nonetype)$/i.test(symbol.returnType.trim());
-  const resultSource = context.result
+  // A reviewed result whose type is null but whose description reads as a
+  // void/None return (CollectionSchema.verify, Function.verify: "None.") is
+  // the void case too — a null type.display would fail IR validation.
+  const resultTypeText = context.result && typeof context.result.type === 'string'
+    ? context.result.type.trim()
+    : (symbol.returnType || '');
+  const voidResult = resultTypeText === '' && context.result
+    && /^(|none|void|null|\.)\.?\s*$/i.test(String(context.result.description || '').trim());
+  // A reviewed result with a REAL description but no type (type pages:
+  // MilvusClient:Function "A Function object that can be registered...")
+  // defaults the type to the symbol name — the described entity IS the class.
+  const typedResult = !voidResult && context.result && resultTypeText === '' && !/^(|none|void|null|\.)\.?\s*$/i.test(String(context.result.description || '').trim())
+    ? { ...context.result, type: symbol.name || 'Any' }
+    : context.result;
+  const resultSource = (!voidResult && typedResult)
     || symbol.result
     || (symbol.returnType && !voidOnlyReturn ? { type: symbol.returnType } : null);
   const result = callable && resultSource

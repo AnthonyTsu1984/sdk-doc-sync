@@ -444,6 +444,17 @@ test('validateSharedUpdateReviews is the executor-reusable classification gate',
     ], { referencedRecordIds: ['rec-own', 'rec-a', 'rec-a'], sourceRecordId: 'rec-own' });
     assert.equal(clonedBase.ok, true);
 
+    // Clone-only allowance (2026-10-19 ruling): when the reference multiset
+    // carries ONLY the unit's own recordId (a CLONE_ID_SHARED_IN_PLACE set —
+    // the per-version bases are clones, so the same recordId recurs), there is
+    // no other track to push the change onto: no reviews required.
+    const cloneOnly = validateSharedUpdateReviews([], {
+        referencedRecordIds: ['rec-own', 'rec-own', 'rec-own'],
+        sourceRecordId: 'rec-own',
+    });
+    assert.equal(cloneOnly.ok, true);
+    assert.deepEqual(cloneOnly.reviews, []);
+
     const gap = validateSharedUpdateReviews([
         { recordId: 'rec-a', track: 'v2.6.x', decision: 'no_successor_action' },
     ], { referencedRecordIds, sourceRecordId: 'rec-own' });

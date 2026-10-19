@@ -870,12 +870,31 @@ function buildReviewedReleaseContext({ releaseScope, candidateSpec, sdkReference
       }
     }
 
-    const folderToken = spec.folderToken || folders[category] || null;
     const folderRef = spec.folderRef || null;
+    // A reviewed folder-ref target (category-create) is the folderRef face —
+    // the walk-category folder fallback must NOT apply, or the planning target
+    // would carry a live folder token the evidence's folderRef target does not
+    // (INHERITANCE_EVIDENCE_TARGET_MISMATCH on $.target.folderToken).
+    const folderToken = folderRef ? null : (spec.folderToken || folders[category] || null);
     if (!folderToken && (!folderRef || !resourceRefs.has(folderRef))) {
       throw new Error(`Candidate ${action.canonicalSlug} has no folder token or approved folder resource for category ${category}`);
     }
-    const dependencies = [...new Set(spec.dependencies || [])];
+    // A category-create document depends on the created folder AND, when the
+    // category plan repoints the folder's VirtualNode, on that repoint resource
+    // (the tree-delta attestation DAG requires the repoint in the document's
+    // batch — TREE_DELTA_DAG_VIOLATION otherwise). The document the repoint
+    // ITSELF depends on (the category's first unit) is exempt: it would close
+    // a DAG cycle (repoint → document → repoint).
+    const repointRef = spec.treeDelta?.category?.repoint?.ref || null;
+    const repointOwnDocument = spec.treeDelta?.category?.repoint?.dependsOn
+      ?.filter((dep) => !dep.startsWith('res:'))
+      ?.[0] || null;
+    const dependsOnRepoint = repointRef && repointOwnDocument !== identity.stableId;
+    const dependencies = [...new Set([
+      ...(spec.dependencies || []),
+      ...(folderRef ? [folderRef] : []),
+      ...(dependsOnRepoint ? [repointRef] : []),
+    ])];
     for (const dependency of dependencies) {
       if (!resourceRefs.has(dependency)) throw new Error(`Candidate ${action.canonicalSlug} references unknown resource ${dependency}`);
     }

@@ -158,7 +158,7 @@ if (!plan.template || typeof plan.template.path !== 'string' || typeof plan.temp
 const got = 'sha256:' + crypto.createHash('sha256').update(fs.readFileSync(plan.template.path)).digest('hex');
 if (got !== plan.template.sha256) fail('TEMPLATE_DRIFTED', 'recomputed ' + got + ' wanted ' + plan.template.sha256);
 if (plan.runNonce !== undefined && plan.runNonce !== null && plan.runNonce !== process.argv[2]) fail('RUN_NONCE_MISMATCH', 'plan.runNonce bookkeeping ' + String(plan.runNonce) + ' != args.nonce (re-run build-campaign-plan --run-nonce or pass the matching nonce)');
-const { FAILURE_CLASSES } = require('.claude/skills/api-reference-sync/src/sdk-doc-sync/failure-class.js');
+const { FAILURE_CLASSES } = require('./.claude/skills/api-reference-sync/src/sdk-doc-sync/failure-class.js');
 console.log(JSON.stringify({ ok: true, campaignId: plan.campaignId, budgets: FAILURE_CLASSES.DEFAULT_BUDGETS }));
 `;
 // 初始/单元 dry-run 结果提取（10 行,规格 5）:reviewUnitPreviews → {units:[{reviewUnitId,batchDigest}]}
@@ -181,7 +181,7 @@ console.log(JSON.stringify({ ok: true, units: units.length, digest: units.length
 // stdout 只回 {ok,exitCode,mutated,failureClass,code} 小摘要。分类映射表不进模板。
 const EXEC_CLASSIFY_PAYLOAD = `
 const { spawnSync } = require('node:child_process'), fs = require('node:fs'), path = require('node:path');
-const { classifyFailure } = require('.claude/skills/api-reference-sync/src/sdk-doc-sync/failure-class.js');
+const { classifyFailure } = require('./.claude/skills/api-reference-sync/src/sdk-doc-sync/failure-class.js');
 const childArgs = JSON.parse(process.argv[1]), outFile = process.argv[2];
 const r = spawnSync(process.execPath, childArgs, { cwd: process.cwd(), env: { ...process.env, BASE_TOKEN: process.argv[3], TABLE_ID: process.argv[4], ROOT_TOKEN: process.argv[5] }, encoding: 'utf8', timeout: 540000, maxBuffer: 64 * 1024 * 1024 });
 fs.mkdirSync(path.dirname(outFile), { recursive: true }); fs.writeFileSync(outFile, (r.stdout || '') + (r.stderr ? '\\n--- stderr ---\\n' + r.stderr : ''));
@@ -195,7 +195,7 @@ console.log(JSON.stringify({ ok, exitCode: r.status, mutated, failureClass: ok ?
 // {code,expected,actual,path,...} 定位 JSON,落盘供 A1 回喂与 settle --reason,stdout 回小摘要。
 const LOCATE_PAYLOAD = `
 const fs = require('node:fs');
-const { locateFailure } = require('.claude/skills/api-reference-sync/src/sdk-doc-sync/verify-retry-loop.js');
+const { locateFailure } = require('./.claude/skills/api-reference-sync/src/sdk-doc-sync/verify-retry-loop.js');
 let parsed = null; try { parsed = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); } catch (e) {}
 const located = locateFailure((parsed && parsed.executionResult) || parsed || {});
 fs.writeFileSync(process.argv[2], JSON.stringify(located, null, 2) + '\\n');

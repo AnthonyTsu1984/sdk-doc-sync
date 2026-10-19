@@ -256,7 +256,7 @@ const entries = Object.entries(ctx.contexts || {}).map(([stableId, entry]) => ({
   category: String(entry.category || ''),
   stableId: String(stableId),
 }));
-fs.writeFileSync(process.argv[2], JSON.stringify({ entries }, null, 2) + '\n');
+fs.writeFileSync(process.argv[2], JSON.stringify({ entries }, null, 2) + '\\n');
 console.log(JSON.stringify({ ok: true, entries: entries.length }));
 `;
 

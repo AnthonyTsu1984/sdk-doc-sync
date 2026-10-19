@@ -901,6 +901,22 @@
       "classification": "read-only",
       "operation": "validate-skills",
       "basis": "no external mutation signature found"
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/build-campaign-plan.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "build-campaign-plan",
+      "basis": "no external mutation signature found; batch 16 design §8: campaign plan v2 generator — reads config/release-tracks.json and intake artifact paths, writes only the requested plan file under tmp/",
+      "tests": [".claude/skills/api-reference-sync/tests/build-campaign-plan.test.js"]
+    },
+    {
+      "path": ".claude/skills/api-reference-sync/scripts/campaign-settle.js",
+      "skill": "api-reference-sync",
+      "classification": "read-only",
+      "operation": "campaign-settle",
+      "basis": "no external mutation signature found; batch 16 design §6: settleCampaign CLI-ization — marks the findings ledger disposed or persists a freeze record + doorbell, only local artifacts under tmp/ (same basis as campaign-run)",
+      "tests": [".claude/skills/api-reference-sync/tests/campaign-settle.test.js"]
     }
   ]
 }

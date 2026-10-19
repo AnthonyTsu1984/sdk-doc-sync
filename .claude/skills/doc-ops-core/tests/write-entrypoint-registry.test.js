@@ -59,7 +59,13 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     runner call-site: spawns the canonical governed CLI phases as
   //     subprocesses, the write boundary staying with each child entrypoint;
   //     writes only the local findings-ledger/freeze artifacts under tmp/), 111→112.
-  assert.equal(discovered.length, 112);
+  //   - +2 read-only batch-16 CLIs: scripts/campaign-settle.js (design §6:
+  //     settleCampaign CLI-ization — findings-ledger mark-disposed or freeze
+  //     + doorbell, only local tmp/ artifacts, same basis as campaign-run) and
+  //     scripts/build-campaign-plan.js (design §8: campaign plan v2 generator
+  //     — reads config/release-tracks.json + intake artifact paths, writes
+  //     only the requested plan file), 112→114.
+  assert.equal(discovered.length, 114);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

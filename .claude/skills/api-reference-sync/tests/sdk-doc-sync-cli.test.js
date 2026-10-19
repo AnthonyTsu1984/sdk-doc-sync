@@ -23,6 +23,8 @@ const { digestSemantic } = require('../../doc-ops-core/src/digest');
 const {
   buildCampaignApprovalReceipt,
   buildCampaignPlan,
+  combinedUnitsDigest,
+  componentDigests,
 } = require('../src/sdk-doc-sync/campaign-approval');
 
 const scannerDir = path.join(__dirname, 'fixtures', 'scanners');
@@ -2832,4 +2834,91 @@ test('CLI refuses --campaign-approval without a scope or combined with --finaliz
   assert.equal(finalize.result, null);
   assert.equal(finalize.exitCode, 1);
   assert.match(finalize.stderr, /CAMPAIGN_APPROVAL_CONFLICT/);
+});
+
+// --- batch 16 slice 4.5 (review P1-1): units-based campaign receipts re-chain ---
+
+test('a units-based campaign receipt requires and re-chains the grouping/candidateSpec artifacts', async () => {
+  const directory = tempDir('sdk-doc-sync-campaign-chain-');
+  const scope = {
+    schemaVersion: 1,
+    language: 'node',
+    sdkName: 'node',
+    track: 'v3.0.x',
+    baselineTag: 'v3.0.24',
+    targetTag: 'v3.0.25',
+    targetCommit: 'abc1234',
+    targetDate: '2026-10-16',
+    releaseRange: 'v3.0.24..v3.0.25',
+    approvalGrade: true,
+    changedFiles: ['index.ts'],
+    actions: [{
+      type: 'CREATE',
+      stableId: 'node:Collections:a',
+      canonicalSlug: 'Collections-a',
+      symbol: 'Collections.a',
+      source: { file: 'index.ts', line: 1 },
+      reason: 'new public method',
+      documentationOwnership: { classification: 'standalone' },
+    }],
+    scannerDiagnostics: [],
+    writesPerformed: false,
+    scanStateUpdated: false,
+  };
+  const grouping = { proposals: [], version: 1 };
+  const candidateSpec = { language: 'node', track: 'v3.0.x', candidates: {} };
+  const scopePath = path.join(directory, 'scope.json');
+  const groupingPath = path.join(directory, 'grouping.json');
+  const specPath = path.join(directory, 'spec.json');
+  writeJson(scopePath, scope);
+  writeJson(groupingPath, grouping);
+  writeJson(specPath, candidateSpec);
+
+  const units = [{ reviewUnitId: 'review:node:Collections:a', batchDigest: `sha256:${'2'.repeat(64)}` }];
+  const plan = buildCampaignPlan({
+    language: 'node', sdkName: 'node', track: 'v3.0.x',
+    components: componentDigests({ scope, grouping, candidateSpec, batchDigest: combinedUnitsDigest(units) }),
+  });
+  const receipt = buildCampaignApprovalReceipt({ plan, units });
+  const receiptPath = path.join(directory, 'receipt.json');
+  writeJson(receiptPath, receipt);
+
+  const runChain = async (argv) => {
+    const stderr = [];
+    const exitCodes = [];
+    await runCli({
+      argv: [
+        'node', 'sdk-doc-sync',
+        '--sdk-dir', '/fixtures/sdk',
+        '--language', 'node', '--sdk-name', 'node', '--sdk-version', 'v3.0.x',
+        '--release-scope', scopePath,
+        '--campaign-approval', receiptPath,
+        '--review-unit-id', 'review:node:Collections:a',
+        ...argv,
+        '--json',
+      ],
+      env: {},
+      dependencies: {
+        syncFactory: () => { throw new Error('must not reach the executor from a refused chain'); },
+        onStdout: () => {},
+        onStderr: (line) => stderr.push(line),
+        exit: (code) => exitCodes.push(code),
+      },
+    });
+    return { stderr: stderr.join(''), exitCodes };
+  };
+
+  // Units receipt without the chain artifacts → refused before any planning.
+  const missing = await runChain([]);
+  assert.deepEqual(missing.exitCodes, [1]);
+  assert.match(missing.stderr, /CAMPAIGN_PLAN_INVALID/);
+  assert.match(missing.stderr, /--campaign-chain-grouping/);
+
+  // A drifted grouping artifact is CAMPAIGN_DIGEST_STALE — the explicit chain
+  // the byte-pin used to enforce implicitly.
+  writeJson(path.join(directory, 'drifted.json'), { proposals: [], version: 2 });
+  const drifted = await runChain(['--campaign-chain-grouping', path.join(directory, 'drifted.json'), '--campaign-chain-candidate-spec', specPath]);
+  assert.deepEqual(drifted.exitCodes, [1]);
+  assert.match(drifted.stderr, /CAMPAIGN_DIGEST_STALE/);
+  assert.match(drifted.stderr, /groupingDigest/);
 });

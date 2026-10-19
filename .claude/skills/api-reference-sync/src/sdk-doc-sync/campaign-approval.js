@@ -36,6 +36,11 @@ const CAMPAIGN_PLAN_INVALID = 'CAMPAIGN_PLAN_INVALID';
 const CAMPAIGN_DIGEST_STALE = 'CAMPAIGN_DIGEST_STALE';
 const CAMPAIGN_APPROVAL_ALREADY_BOUND = 'CAMPAIGN_APPROVAL_ALREADY_BOUND';
 const CAMPAIGN_BATCH_DIGEST_CONFLICT = 'CAMPAIGN_BATCH_DIGEST_CONFLICT';
+const CAMPAIGN_UNIT_NOT_APPROVED = 'CAMPAIGN_UNIT_NOT_APPROVED';
+// Journal event code (batch 16 slice 4.5): a units-based approval accepted a
+// regenerated unit digest — the envelope pinned the initial content, the
+// three-chain scope/grouping/candidateSpec binding authorized the fresh bytes.
+const CONTENT_REGENERATED = 'CONTENT_REGENERATED';
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const COMPONENT_KEYS = Object.freeze(['scopeDigest', 'groupingDigest', 'candidateSpecDigest', 'batchDigest']);
@@ -101,9 +106,27 @@ function componentDigests({ scope, grouping, candidateSpec, batchDigest } = {}) 
   return components;
 }
 
-function buildCampaignApprovalReceipt({ plan, approvedAt = new Date().toISOString() } = {}) {
+// Canonical unit ordering: the combined digest is computed over this order, so
+// the recorder and every consumer must sort identically (review P0-2). Plain
+// codepoint comparison — deterministic across locales.
+function sortApprovalUnits(units) {
+  return [...units].sort((a, b) => (a.reviewUnitId < b.reviewUnitId ? -1 : a.reviewUnitId > b.reviewUnitId ? 1 : 0));
+}
+
+// The combined batch component of a units-based approval (design §5.6 P1(b),
+// P0-2 revision): the semantic digest over the per-unit {reviewUnitId,
+// batchDigest} set — NOT a whole-batch digest (those diverge under cross-unit
+// dependency normalization and have no honest consumer, review ruling).
+function combinedUnitsDigest(units) {
+  if (!Array.isArray(units) || units.length === 0) {
+    throw new CampaignApprovalError(CAMPAIGN_PLAN_INVALID, 'combined units digest requires a non-empty units array');
+  }
+  return digestSemantic(sortApprovalUnits(units));
+}
+
+function buildCampaignApprovalReceipt({ plan, units = null, approvedAt = new Date().toISOString() } = {}) {
   const digest = campaignPlanDigest(plan);
-  return {
+  const receipt = {
     schemaVersion: CAMPAIGN_PLAN_SCHEMA_VERSION,
     gate: APPROVE_CAMPAIGN_GATE,
     campaignPlanDigest: digest,
@@ -117,6 +140,28 @@ function buildCampaignApprovalReceipt({ plan, approvedAt = new Date().toISOStrin
     lineage: { scopeDigest: plan.components.scopeDigest },
     approvedAt,
   };
+  if (units !== null && units !== undefined) {
+    if (!Array.isArray(units) || units.length === 0) {
+      throw new CampaignApprovalError(CAMPAIGN_PLAN_INVALID, 'units must be a non-empty array when present');
+    }
+    for (const unit of units) {
+      if (!isObject(unit) || typeof unit.reviewUnitId !== 'string' || unit.reviewUnitId.length === 0) {
+        throw new CampaignApprovalError(CAMPAIGN_PLAN_INVALID, 'every unit requires a non-empty reviewUnitId');
+      }
+      assertDigest(unit.batchDigest, `units[${unit.reviewUnitId}].batchDigest`);
+    }
+    const sorted = sortApprovalUnits(units);
+    // The derived binding: the envelope's batch component IS the combined
+    // units digest, so a receipt whose two disagree is unbuildable.
+    if (combinedUnitsDigest(sorted) !== plan.components.batchDigest) {
+      throw new CampaignApprovalError(
+        CAMPAIGN_PLAN_INVALID,
+        'components.batchDigest must equal the combined digest of the sorted units (derived binding)',
+      );
+    }
+    receipt.units = sorted;
+  }
+  return receipt;
 }
 
 function validateCampaignApprovalReceipt(receipt) {
@@ -142,6 +187,28 @@ function validateCampaignApprovalReceipt(receipt) {
   }
   if (!isObject(receipt.lineage) || receipt.lineage.scopeDigest !== receipt.components?.scopeDigest) {
     report('$.lineage.scopeDigest must equal $.components.scopeDigest (the receipt must bind the approved scope)');
+  }
+  if (receipt.units !== undefined && receipt.units !== null) {
+    if (!Array.isArray(receipt.units) || receipt.units.length === 0) {
+      report('$.units must be a non-empty array when present');
+    } else {
+      for (const unit of receipt.units) {
+        if (!isObject(unit) || typeof unit.reviewUnitId !== 'string' || unit.reviewUnitId.length === 0) {
+          report('$.units[] requires a non-empty reviewUnitId per member');
+        } else if (typeof unit.batchDigest !== 'string' || !DIGEST_PATTERN.test(unit.batchDigest)) {
+          report(`$.units[${unit.reviewUnitId}].batchDigest must be a sha256:<64-hex> digest`);
+        }
+      }
+      // Canonical order is part of the binding, and the derived binding makes
+      // the envelope's batch component RE-derivable: any in-place tamper of a
+      // unit member (or of components.batchDigest) breaks this equality —
+      // the fail-closed upgrade review P0-2 demanded.
+      if (typeof receipt.components?.batchDigest === 'string'
+        && DIGEST_PATTERN.test(receipt.components.batchDigest)
+        && combinedUnitsDigest(receipt.units) !== receipt.components.batchDigest) {
+        report('$.units re-derived combined digest must equal $.components.batchDigest (the receipt is tampered or was not recorded by record-campaign-approval)');
+      }
+    }
   }
   for (const key of ['language', 'sdkName', 'track', 'approvedAt']) {
     if (typeof receipt[key] !== 'string' || receipt[key].length === 0) report(`$.${key} must be a non-empty string`);
@@ -226,22 +293,84 @@ function assertCampaignApprovalBindable({ approval, plan } = {}) {
 
 // The write-boundary consumption of a merged approval — the ONE call the
 // canonical write path (bin/sdk-doc-sync.js --campaign-approval) makes. It fans
-// the envelope back out to the exact two checks the split gates performed,
-// never a relaxation: the scope component chains against the presented release
-// scope (a drift is GROUPING_STALE, byte-for-byte the grouping receipt's
-// ruling), and the batch component becomes the write's approved batch digest.
-// A standalone --approve-batch-digest that disagrees with the enveloped batch
-// is a stale/foreign approval, refused rather than silently preferred.
-function resolveCampaignApprovalForWrite({ approval, scope, presentedBatchDigest = null } = {}) {
-  const { campaignPlanDigest, scopeDigest } = checkCampaignScopeChain({ approval, scope });
-  if (presentedBatchDigest !== null && presentedBatchDigest !== undefined
-    && presentedBatchDigest !== approval.components.batchDigest) {
+// the envelope back out to the exact checks the split gates performed.
+//
+// Units-based receipts (batch 16 slice 4.5, the P1(b)/P0-1(b) ruling) judge in
+// order: ① the receipt's own re-derivation already held in validation; ② the
+// three-chain scope/grouping/candidateSpec binding — the scope chains against
+// the presented scope, and chainComponents (the grouping/candidateSpec digests
+// computed from the on-disk artifacts the caller presents) MUST be supplied and
+// match: the byte-pin the old single-digest receipts executed the grouping and
+// candidateSpec staleness gates implicitly, and this relaxation removed that
+// backstop, so the explicit chain is what keeps SKILL.md's "any newer candidate
+// spec … requires a fresh grouping gate" true on the regeneration path
+// (review P1-1); ③ unit membership by reviewUnitId; ④ dual-track batch
+// acceptance — the pinned unit digest executes directly, and a FRESH digest is
+// accepted if and only if ①②③ all held (regenerated content within the same
+// unit; the envelope's pinned value stays the initial bookkeeping). Every
+// regeneration is returned to the caller so the execution journal records
+// CONTENT_REGENERATED.
+// Legacy receipts without units keep the exact prior behavior: one pinned
+// batch digest, foreign presentations refused.
+function resolveCampaignApprovalForWrite({ approval, scope, presentedBatchDigest = null, presentedUnitId = null, chainComponents = null } = {}) {
+  if (Array.isArray(approval.units) && (!isObject(chainComponents)
+    || typeof chainComponents.groupingDigest !== 'string' || !DIGEST_PATTERN.test(chainComponents.groupingDigest)
+    || typeof chainComponents.candidateSpecDigest !== 'string' || !DIGEST_PATTERN.test(chainComponents.candidateSpecDigest))) {
     throw new CampaignApprovalError(
-      CAMPAIGN_BATCH_DIGEST_CONFLICT,
-      `the standalone batch digest (${presentedBatchDigest}) is not the batch the campaign approval covers (${approval.components.batchDigest}) — replan and re-run the gate`,
+      CAMPAIGN_PLAN_INVALID,
+      'this campaign approval binds a unit set — the write must re-chain the grouping and candidateSpec artifacts it executes against (--campaign-chain-grouping / --campaign-chain-candidate-spec)',
     );
   }
-  return { campaignPlanDigest, scopeDigest, approvedBatchDigest: approval.components.batchDigest };
+  const { campaignPlanDigest, scopeDigest } = checkCampaignScopeChain({ approval, scope, components: chainComponents });
+  const units = Array.isArray(approval.units) ? approval.units : null;
+  if (units === null) {
+    if (presentedBatchDigest !== null && presentedBatchDigest !== undefined
+      && presentedBatchDigest !== approval.components.batchDigest) {
+      throw new CampaignApprovalError(
+        CAMPAIGN_BATCH_DIGEST_CONFLICT,
+        `the standalone batch digest (${presentedBatchDigest}) is not the batch the campaign approval covers (${approval.components.batchDigest}) — replan and re-run the gate`,
+      );
+    }
+    return { campaignPlanDigest, scopeDigest, approvedBatchDigest: approval.components.batchDigest, regeneration: null };
+  }
+
+  if (typeof presentedUnitId !== 'string' || presentedUnitId.length === 0) {
+    throw new CampaignApprovalError(
+      CAMPAIGN_PLAN_INVALID,
+      'this campaign approval binds a unit set — the write must name its unit (--review-unit-id) so membership can be checked',
+    );
+  }
+  const unit = units.find((entry) => entry.reviewUnitId === presentedUnitId);
+  if (!unit) {
+    throw new CampaignApprovalError(
+      CAMPAIGN_UNIT_NOT_APPROVED,
+      `review unit ${presentedUnitId} is not a member of the approved campaign unit set — the unit set changed after the gate; replan and re-run the gate`,
+    );
+  }
+  const pinnedBatchDigest = unit.batchDigest;
+  if (presentedBatchDigest === null || presentedBatchDigest === undefined) {
+    return { campaignPlanDigest, scopeDigest, approvedBatchDigest: pinnedBatchDigest, approvedReviewUnitId: presentedUnitId, regeneration: null };
+  }
+  if (typeof presentedBatchDigest !== 'string' || !DIGEST_PATTERN.test(presentedBatchDigest)) {
+    throw new CampaignApprovalError(CAMPAIGN_PLAN_INVALID, `presentedBatchDigest must be a sha256:<64-hex> digest (got ${JSON.stringify(presentedBatchDigest)})`);
+  }
+  if (presentedBatchDigest === pinnedBatchDigest) {
+    return { campaignPlanDigest, scopeDigest, approvedBatchDigest: pinnedBatchDigest, approvedReviewUnitId: presentedUnitId, regeneration: null };
+  }
+  // Regeneration path (P0-1(b)): same unit, three chains verified, within the
+  // caller's retry budget — the approval authorizes the fresh bytes.
+  return {
+    campaignPlanDigest,
+    scopeDigest,
+    approvedBatchDigest: presentedBatchDigest,
+    approvedReviewUnitId: presentedUnitId,
+    regeneration: {
+      code: CONTENT_REGENERATED,
+      reviewUnitId: presentedUnitId,
+      pinnedBatchDigest,
+      freshBatchDigest: presentedBatchDigest,
+    },
+  };
 }
 
 module.exports = {
@@ -251,6 +380,8 @@ module.exports = {
   CAMPAIGN_DIGEST_STALE,
   CAMPAIGN_PLAN_INVALID,
   CAMPAIGN_PLAN_SCHEMA_VERSION,
+  CAMPAIGN_UNIT_NOT_APPROVED,
+  CONTENT_REGENERATED,
   COMPONENT_KEYS,
   CampaignApprovalError,
   assertCampaignApprovalBindable,
@@ -258,8 +389,10 @@ module.exports = {
   buildCampaignPlan,
   campaignPlanDigest,
   checkCampaignScopeChain,
+  combinedUnitsDigest,
   componentDigests,
   resolveCampaignApprovalForWrite,
+  sortApprovalUnits,
   validateCampaignApprovalReceipt,
   writeCampaignApprovalReceipt,
 };

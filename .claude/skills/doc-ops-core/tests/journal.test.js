@@ -141,3 +141,34 @@ test('classifyJournalEntries names the crash phase for fault-injection recovery 
   ];
   assert.equal(classifyJournalEntries({ entries: wellFormed, approvedActionIds: approved, batchDigest: 'sha256:mine' }), 'complete');
 });
+
+// --- batch 16 slice 4.5 (review P2-2): campaignEvent type namespace ---
+
+test('campaignEvent records campaign-namespaced lineage and refuses reserved types', () => {
+  const filePath = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'doc-ops-journal-campaign-')), 'run.jsonl');
+  const journal = new ExecutionJournal({ filePath, batchDigest: 'sha256:a'.padEnd(71, 'a'), approvedActionIds: ['a'] });
+  const event = journal.campaignEvent({
+    type: 'campaign-approval-regeneration',
+    code: 'CONTENT_REGENERATED',
+    reviewUnitId: 'python:Collections:alpha',
+    pinnedBatchDigest: 'sha256:b'.padEnd(71, 'b'),
+    freshBatchDigest: 'sha256:c'.padEnd(71, 'c'),
+  });
+  assert.equal(event.type, 'campaign-approval-regeneration');
+  assert.deepEqual(journal.read().map((entry) => entry.type), ['campaign-approval-regeneration']);
+  // A campaign event is not a per-action outcome and never satisfies the
+  // completion invariants: complete() still demands the observed results.
+  assert.throws(() => journal.complete(), (error) => error.code === 'MISSING_ACTION_RESULT');
+  assert.equal(journal.read().filter((entry) => entry.type === 'completion').length, 0);
+
+  // Reserved action-ledger types can never be minted through this door — a
+  // campaign event must not be mistakable for a completion sentinel.
+  for (const type of ['prepared', 'observed', 'tree-delta', 'content-fidelity', 'completion', 'lineage-without-namespace']) {
+    assert.throws(
+      () => journal.campaignEvent({ type }),
+      (error) => error.code === 'JOURNAL_ENTRY_TYPE_RESERVED',
+      type,
+    );
+  }
+  assert.throws(() => journal.campaignEvent(null), (error) => error.code === 'JOURNAL_ENTRY_TYPE_REQUIRED');
+});

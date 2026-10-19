@@ -12,6 +12,17 @@
 //     --scope <release-scope.json> --grouping <proposal.json> \
 //     --candidate-spec <spec.json> --batch-digest <sha256:...> \
 //     [--approvals-dir <dir>] [--json]
+//   node scripts/record-campaign-approval.js \
+//     --scope <release-scope.json> --grouping <proposal.json> \
+//     --candidate-spec <spec.json> --unit-digests <unit-previews.json> \
+//     [--approvals-dir <dir>] [--json]
+//
+// Units mode (batch 16 slice 4.5): --unit-digests takes the initial dry-run's
+// reviewUnitPreviews written to disk (an array of {reviewUnitId, batchDigest}
+// or {units:[…]}), and the envelope's batch component becomes the COMBINED
+// digest of that sorted unit set (the derived binding). The receipt then
+// carries `units`, so write-time consumption can check membership and accept
+// regenerated unit digests. Exactly one of --batch-digest / --unit-digests.
 //
 // Identity (language/sdkName/track) is read from the release scope. Prints the
 // exact reply line the operator returns: APPROVE_CAMPAIGN sha256:<digest>.
@@ -24,7 +35,9 @@ const {
   buildCampaignApprovalReceipt,
   buildCampaignPlan,
   campaignPlanDigest,
+  combinedUnitsDigest,
   componentDigests,
+  sortApprovalUnits,
   writeCampaignApprovalReceipt,
 } = require('../src/sdk-doc-sync/campaign-approval');
 
@@ -35,7 +48,7 @@ const DEFAULT_APPROVALS_DIR = path.resolve(
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
-const VALUE_OPTIONS = new Set(['--scope', '--grouping', '--candidate-spec', '--batch-digest', '--approvals-dir']);
+const VALUE_OPTIONS = new Set(['--scope', '--grouping', '--candidate-spec', '--batch-digest', '--unit-digests', '--approvals-dir']);
 
 function parseArgs(argv) {
   const args = {};
@@ -55,7 +68,8 @@ function parseArgs(argv) {
 function usage() {
   return [
     'Usage: record-campaign-approval --scope <release-scope.json> --grouping <proposal.json>',
-    '  --candidate-spec <spec.json> --batch-digest <sha256:...> [--approvals-dir <dir>] [--json]',
+    '  --candidate-spec <spec.json> (--batch-digest <sha256:...> | --unit-digests <unit-previews.json>)',
+    '  [--approvals-dir <dir>] [--json]',
   ].join('\n');
 }
 
@@ -67,16 +81,64 @@ function readJson(file, label) {
   }
 }
 
+// The unit set from the initial dry-run's reviewUnitPreviews on disk: either a
+// bare array or {units:[…]}. Only {reviewUnitId, batchDigest} are extracted —
+// preview extras (actionIds, …) are presentation, not binding.
+function readUnitDigests(file) {
+  const raw = readJson(file, 'unit digests');
+  const list = Array.isArray(raw) ? raw : (Array.isArray(raw?.units) ? raw.units : null);
+  if (!list || list.length === 0) {
+    throw new CampaignApprovalError('CAMPAIGN_PLAN_INVALID', `--unit-digests at ${file} must hold a non-empty units array`);
+  }
+  const units = [];
+  const seen = new Set();
+  for (const entry of list) {
+    if (!entry || typeof entry.reviewUnitId !== 'string' || entry.reviewUnitId.length === 0) {
+      throw new CampaignApprovalError('CAMPAIGN_PLAN_INVALID', `every unit in ${file} requires a non-empty reviewUnitId`);
+    }
+    if (seen.has(entry.reviewUnitId)) {
+      // A duplicated unit id would silently shrink the set membership check
+      // picks from — refuse rather than pick a winner (review P2-5).
+      throw new CampaignApprovalError('CAMPAIGN_PLAN_INVALID', `unit ${entry.reviewUnitId} appears more than once in ${file}`);
+    }
+    seen.add(entry.reviewUnitId);
+    if (typeof entry.batchDigest !== 'string' || !DIGEST_PATTERN.test(entry.batchDigest)) {
+      throw new CampaignApprovalError('CAMPAIGN_PLAN_INVALID', `unit ${entry.reviewUnitId} in ${file} has no sha256 batchDigest`);
+    }
+    units.push({ reviewUnitId: entry.reviewUnitId, batchDigest: entry.batchDigest });
+  }
+  return sortApprovalUnits(units);
+}
+
 function main(argv = process.argv, io = process) {
   const args = parseArgs(argv);
   if (args.help) { io.stdout.write(`${usage()}\n`); return 0; }
-  for (const required of ['scope', 'grouping', 'candidateSpec', 'batchDigest']) {
+  for (const required of ['scope', 'grouping', 'candidateSpec']) {
     if (!args[required]) {
       io.stderr.write(`CAMPAIGN_PLAN_INVALID: --${required.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} is required\n`);
       return 1;
     }
   }
-  if (!DIGEST_PATTERN.test(args.batchDigest)) {
+  if (Boolean(args.batchDigest) === Boolean(args.unitDigests)) {
+    io.stderr.write('CAMPAIGN_PLAN_INVALID: exactly one of --batch-digest / --unit-digests is required\n');
+    return 1;
+  }
+  let units = null;
+  let batchDigest = args.batchDigest ?? null;
+  if (args.unitDigests) {
+    try {
+      units = readUnitDigests(args.unitDigests);
+    } catch (error) {
+      if (error instanceof CampaignApprovalError) {
+        io.stderr.write(`${error.code}: ${error.message}\n`);
+        return 1;
+      }
+      throw error;
+    }
+    // The derived binding: the envelope's batch component IS the combined
+    // digest of the sorted unit set.
+    batchDigest = combinedUnitsDigest(units);
+  } else if (!DIGEST_PATTERN.test(batchDigest)) {
     io.stderr.write(`CAMPAIGN_PLAN_INVALID: --batch-digest must be a sha256:<64-hex> digest\n`);
     return 1;
   }
@@ -89,9 +151,9 @@ function main(argv = process.argv, io = process) {
     language: scope.language,
     sdkName: scope.sdkName,
     track: scope.track,
-    components: componentDigests({ scope, grouping, candidateSpec, batchDigest: args.batchDigest }),
+    components: componentDigests({ scope, grouping, candidateSpec, batchDigest }),
   });
-  const receipt = buildCampaignApprovalReceipt({ plan });
+  const receipt = buildCampaignApprovalReceipt({ plan, units });
   const approvalsDir = args.approvalsDir ? path.resolve(args.approvalsDir) : DEFAULT_APPROVALS_DIR;
   const { receiptPath, created } = writeCampaignApprovalReceipt({ receipt, approvalsDir });
 
@@ -123,4 +185,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { DEFAULT_APPROVALS_DIR, main, parseArgs, usage };
+module.exports = { DEFAULT_APPROVALS_DIR, main, parseArgs, readUnitDigests, usage };

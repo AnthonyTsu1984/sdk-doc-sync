@@ -111,6 +111,11 @@ function parseArgs(argv) {
             args.autoAccept = true;
         } else if (arg === '--final-targets' && argv[i + 1]) {
             args.finalTargets = argv[++i];
+        } else if (arg === '--targets-json' && argv[i + 1]) {
+            // Batch 16 slice 5 (rule 6): the A2 attribution ruling file
+            // (plan.paths.targetsJson semantics) — read at the acceptance write
+            // path; absent file falls back to the category table.
+            args.targetsJson = argv[++i];
         } else if (arg === '--repair-approve' && argv[i + 1]) {
             args.repairApprove = (args.repairApprove || []).concat(argv[++i]);
         } else if (arg === '--approve-plan-digest' && argv[i + 1]) {
@@ -137,6 +142,10 @@ function parseArgs(argv) {
             args.groupingApproval = argv[++i];
         } else if (arg === '--campaign-approval' && argv[i + 1]) {
             args.campaignApproval = argv[++i];
+        } else if (arg === '--campaign-chain-grouping' && argv[i + 1]) {
+            args.campaignChainGrouping = argv[++i];
+        } else if (arg === '--campaign-chain-candidate-spec' && argv[i + 1]) {
+            args.campaignChainCandidateSpec = argv[++i];
         } else if (arg === '--finalize-acceptance' && argv[i + 1]) {
             args.finalizeAcceptance = argv[++i];
         } else if (arg === '--help' || arg === '-h') {
@@ -177,7 +186,9 @@ Options:
   --session-state <file>           Create a persistent session from a complete initial dry-run; with --finalize-acceptance, the canonical acceptance-pending session to finalize
   --resume-session <file>          Resume from verified persisted document-acceptance receipts
   --grouping-approval <file>       Bind the durable APPROVE_GROUPING receipt into the created session; a bound session refuses any entry whose --release-scope digest is not the approved scope (GROUPING_STALE)
-  --campaign-approval <file>       The merged APPROVE_CAMPAIGN receipt (batch 18 W-C): one approval that envelopes the scope and the batch digest. Chained against the presented --release-scope (a drifted scope is GROUPING_STALE, exactly as the grouping receipt would be) and it supplies the write's approved batch digest. Per-invocation like --approve-batch-digest (NOT persisted into the session — re-present it at every live entry). Mutually exclusive with --grouping-approval
+  --campaign-approval <file>       The merged APPROVE_CAMPAIGN receipt (batch 18 W-C): one approval that envelopes the scope and the batch digest. Chained against the presented --release-scope (a drifted scope is GROUPING_STALE, exactly as the grouping receipt would be) and it supplies the write's approved batch digest. Units-based receipts (batch 16) additionally require --review-unit-id plus --campaign-chain-grouping/--campaign-chain-candidate-spec (the grouping and candidate-spec artifacts the receipt approved — re-chained, CAMPAIGN_DIGEST_STALE on drift) and accept a regenerated unit digest (CONTENT_REGENERATED journaled). Per-invocation like --approve-batch-digest (NOT persisted into the session — re-present it at every live entry). Mutually exclusive with --grouping-approval
+  --campaign-chain-grouping <file>     The grouping artifact to re-chain a units-based --campaign-approval against (its semantic digest must equal the receipt's groupingDigest)
+  --campaign-chain-candidate-spec <file>  The candidate-spec artifact to re-chain a units-based --campaign-approval against
   --finalize-acceptance <file>     Finalize acceptance from a receipt bound (by acceptanceManifestDigest) to the canonical --session-state session
   --help, -h                       Show this help
 
@@ -762,6 +773,7 @@ async function runCli({
     // the session); combining it with --grouping-approval is refused as
     // ambiguous (two scope bindings).
     let approvedBatchDigest = args.approveBatchDigest || null;
+    let campaignApprovalRegeneration = null;
     if (args.campaignApproval) {
         let campaignReceipt;
         try {
@@ -783,11 +795,45 @@ async function runCli({
             return null;
         }
         try {
-            approvedBatchDigest = resolveCampaignApprovalForWrite({
+            // Batch 16 slice 4.5: units-based receipts check unit membership
+            // (--review-unit-id) and may accept a regenerated unit digest —
+            // the journal then records the CONTENT_REGENERATED lineage. The
+            // grouping/candidateSpec chains are re-verified from the on-disk
+            // artifacts the caller presents (review P1-1): the old byte-pin
+            // enforced these two gates implicitly, and the relaxation removed
+            // that backstop.
+            let chainComponents = null;
+            if (Array.isArray(campaignReceipt.units)) {
+                if (!args.campaignChainGrouping || !args.campaignChainCandidateSpec) {
+                    err('Error: CAMPAIGN_PLAN_INVALID: this campaign approval binds a unit set — pass --campaign-chain-grouping and --campaign-chain-candidate-spec (the artifacts the receipt approved)');
+                    exit(1);
+                    return null;
+                }
+                let chainGrouping;
+                let chainSpec;
+                try {
+                    chainGrouping = JSON.parse(readFile(path.resolve(args.campaignChainGrouping)));
+                    chainSpec = JSON.parse(readFile(path.resolve(args.campaignChainCandidateSpec)));
+                } catch (error) {
+                    err(`Error: CAMPAIGN_PLAN_INVALID: cannot read the campaign chain artifacts: ${error.message}`);
+                    exit(1);
+                    return null;
+                }
+                const { digestSemantic } = require('../../doc-ops-core/src/digest');
+                chainComponents = {
+                    groupingDigest: digestSemantic(chainGrouping),
+                    candidateSpecDigest: digestSemantic(chainSpec),
+                };
+            }
+            const campaignResolution = resolveCampaignApprovalForWrite({
                 approval: campaignReceipt,
                 scope: releaseScope,
                 presentedBatchDigest: args.approveBatchDigest ?? null,
-            }).approvedBatchDigest;
+                presentedUnitId: args.reviewUnitId ?? null,
+                chainComponents,
+            });
+            approvedBatchDigest = campaignResolution.approvedBatchDigest;
+            campaignApprovalRegeneration = campaignResolution.regeneration;
         } catch (error) {
             err(`Error: ${error.code}: ${error.message}`);
             exit(1);
@@ -968,6 +1014,7 @@ async function runCli({
         collaborativeReview: true,
         reviewUnitId: args.reviewUnitId || null,
         batchContinue: args.batchContinue === true,
+        campaignApprovalRegeneration,
         reviewSession,
         tokenReferenceReader: dependencies.tokenReferenceReader || null,
         tokenReferenceTracks,
@@ -1054,6 +1101,7 @@ async function runCli({
                     recordLinks,
                     baseToken,
                     finalTargets: args.finalTargets,
+                    targetsJson: args.targetsJson,
                     out,
                 });
                 ({ session: reviewSession, sessionDigest: resumeSessionDigest } = loadReviewSessionState(sessionPath));

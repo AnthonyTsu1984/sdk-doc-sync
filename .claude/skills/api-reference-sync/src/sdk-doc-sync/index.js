@@ -350,6 +350,7 @@ class SdkDocSync {
         collaborativeReview = false,
         reviewUnitId = null,
         batchContinue = false,
+        campaignApprovalRegeneration = null,
         reviewSession = null,
         tokenReferenceReader = null,
         tokenReferenceTracks = [],
@@ -431,6 +432,10 @@ class SdkDocSync {
         this.collaborativeReview = collaborativeReview === true;
         this.reviewUnitId = reviewUnitId;
         this.batchContinue = batchContinue === true;
+        // Batch 16 slice 4.5: the CONTENT_REGENERATED lineage a units-based
+        // campaign approval produced at resolve time (null when the pinned
+        // digest executed, or when no campaign approval was presented).
+        this.campaignApprovalRegeneration = campaignApprovalRegeneration;
         this.reviewSession = reviewSession;
         this.m2f = documentWriter || null;
         this.bitableWriter = bitableWriter || null;
@@ -1089,6 +1094,18 @@ class SdkDocSync {
                 diagnostics: approvalDiagnostics,
             });
             return result;
+        }
+
+        // Batch 16 slice 4.5: a units-based campaign approval that accepted
+        // fresh (regenerated) unit bytes records the lineage here — the
+        // approval envelope did not pin these bytes; the three-chain
+        // scope/grouping/candidateSpec binding authorized them, and the
+        // journal is the audit of exactly that relaxation. Placed AFTER the
+        // approval-provider gate (review P2-1): a provider refusal must not
+        // strand a lineage-only journal that reads as a phantom
+        // EXECUTION_RECONCILIATION_REQUIRED on the next presentation.
+        if (this.campaignApprovalRegeneration) {
+            journal.campaignEvent({ type: 'campaign-approval-regeneration', ...this.campaignApprovalRegeneration });
         }
 
         // Every writer mutation below this line is gated on the governance

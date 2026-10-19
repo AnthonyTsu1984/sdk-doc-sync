@@ -16,7 +16,7 @@ Do not use for a narrative guide, localization, code-only checks, or missing lan
 ## Permission Boundary
 
 - Discovery through dry-run is read-only; write only after the user gives explicit approval of the exact batch digest. Keep the older-version doc as a historical snapshot — never patch or delete it during a newer release sync.
-- Write approval authorizes Acceptance Finalization (2026-10-16 ruling: a verified, recorded execution finalizes `WIP→Draft` within the approved write — `--auto-accept`; the old "records stay `WIP` until separate acceptance" policy is retired). It never authorizes rollback (`APPROVE_ROLLBACK <review-unit-id> sha256:<digest>`, pre-finalization only).
+- Write approval authorizes Acceptance Finalization (2026-10-16 ruling: a verified, recorded execution finalizes `WIP→Draft` in the same approved write — `--auto-accept`). It never authorizes rollback (`APPROVE_ROLLBACK <review-unit-id> sha256:<digest>`, pre-finalization only).
 - Mechanical clauses are code-enforced: `Slug` never written (TOPOLOGY_RECORD_SLUG_URL); the executor never writes `Targets`; rollback only via `bin/sdk-document-rollback.js`.
 
 ## Shared Contract
@@ -24,9 +24,9 @@ Do not use for a narrative guide, localization, code-only checks, or missing lan
 - Capability baseline: [capabilities.json](capabilities.json); canonical artifacts, lineage, approval envelopes, journals, and state semantics come from `../doc-ops-core/`.
 - REST/OpenAPI review is one unit per `(versionTrack, endpoint, method)`; the Feishu state machine does not apply to zdoc spec-file writes; fragments are deterministic from pinned revisions, never control-plane truth from Feishu; adapters must never guess an internal-to-public control-plane mapping — ambiguous ones are agent work (`sdk-rest.md`).
 - Planning emits a deterministic `reviewUnitManifest`, one unit per public document; never execute a multi-document release batch outside verified batch mode.
-- Verified batch mode is an explicit operator decision, never a default: the operator sets batch size `K` (first batch = canary). One WRITE gate binds the ordered next `K` units, not per-unit digests; presentation is batched (`chunkWriteApprovalBatches`). Any verification failure freezes the batch — a new invariant failure freezes batch mode for that release until root-caused; verified units stay intact and verified.
+- Verified batch mode is an explicit operator decision, never a default: the operator sets batch size `K` (first batch = canary). One WRITE gate binds the ordered next `K` units, not per-unit digests. Any verification failure freezes the batch — a new invariant failure freezes batch mode for that release until root-caused; verified units stay intact and verified.
 - Acceptance is authorized by the write approval (2026-10-16 ruling, superseding the 2026-10-01 two-gate flow): a verified, recorded execution finalizes — governed `WIP→Draft` with the digest-bound per-unit receipt — in the same approved write (`--auto-accept`); no separate acceptance gate remains. The unit is terminal (corrective release instead); `scan-state.json` moves at mechanical `close-session` once every unit finalized.
-- The manifest digest binds the stable document sequence, not stale write plans: replan immediately before approval (`--review-unit-id` → scoped dry-run → `--approve-batch-digest <hash>`); any changed artifact, correction, or unit selection means a new batch and new approval. Review comments rebuild only that unit; never advance while comments remain unresolved.
+- The manifest digest binds the stable document sequence, not stale write plans: replan immediately before approval (`--review-unit-id` → scoped dry-run → `--approve-batch-digest <hash>`); any changed artifact, correction, or unit selection means a new batch and new approval. Units-based campaign receipts bind the unit set + the three chains instead (2026-10-16 ruling): a regenerated unit digest inside the approved set executes without a fresh gate (`CONTENT_REGENERATED` journaled). Review comments rebuild only that unit; never advance while comments remain unresolved.
 - Progress lives in a review-session JSON: create only from the complete initial dry-run (`--session-state`), resume only via `--resume-session`; caller-declared unit IDs are never proof of acceptance. Rotation is gate-boundary: one campaign = one session file, ~42% context budget per chat — an approval not in its durable artifact does not survive rotation.
 - Journal every approved action before and after mutation, ending in a durable completion sentinel; an existing journal returns `EXECUTION_RECONCILIATION_REQUIRED` — reconcile live state first, do not relaunch. Rollback capsules precede every mutation; a finalized session is not rollback-capable.
 - PR intake from `milvus-io/web-content` is read-only discovery (`bin/sdk-pr-scan.js`, `sdk-pr-sync.md`; MERGED PRs only). Batch 15: the filtered scope IS the of-record — proposal, approval, and dry-runs bind one file.
@@ -45,15 +45,16 @@ For any interactive chat review or approval, **MUST read** [references/bot-integ
 
 | Gate | Bound artifact | If approved, reply exactly |
 |------|----------------|----------------------------|
+| Merged campaign gate | scope/grouping/candidateSpec/units envelope receipt | `APPROVE_CAMPAIGN sha256:<campaignPlanDigest>` |
 | Grouping review | Complete candidate-proposal semantic digest | `APPROVE_GROUPING sha256:<proposal-digest>` |
 | Write approval | `proposedExecutionBatch.batchDigest` | `APPROVE_WRITES sha256:<batch-digest>` |
 | Rollback approval | Active or accepted unit ID and its deterministic rollback manifest | `APPROVE_ROLLBACK <review-unit-id> sha256:<rollback-manifest-digest>` |
 
 Document review (`APPROVE_DOCUMENT`) and acceptance review (`APPROVE_ACCEPTANCE`) are retired (2026-10-16 ruling).
 
-Multi-line batch replies (legacy sessions and `REQUEST_DOCUMENT` change requests) are parsed by CODE: relay the operator's text verbatim into `bin/sdk-review-session.js resolve-batch-review`. It classifies each `APPROVE_DOCUMENT`/`REQUEST_DOCUMENT` line, re-derives journal hashes, and refuses the WHOLE reply on any unparseable/unbindable line (`REPLY_EMPTY`, `REPLY_NOT_FULLY_PARSED`, `REPLY_DIGEST_MISMATCH`, `REPLY_JOURNAL_DIGEST_MISMATCH`, `REPLY_UNIT_NOT_PENDING`, `REPLY_LINKS_MISSING`, `REPLY_JOURNAL_UNUSABLE`). Replays converge; unaddressed units stay pending; never re-classify lines yourself (2026-10-07 R16).
+Multi-line batch replies (legacy sessions and `REQUEST_DOCUMENT` change requests) are parsed by CODE: relay the operator's text verbatim into `bin/sdk-review-session.js resolve-batch-review`. It classifies each `APPROVE_DOCUMENT`/`REQUEST_DOCUMENT` line, re-derives journal hashes, and refuses the WHOLE reply on any unbindable line (typed `REPLY_*` refusals). Replays converge; unaddressed units stay pending; never re-classify lines yourself (2026-10-07 R16).
 
-Gate cards are plain text: generate via `scripts/gate-presentation.js`, then pass `scripts/gate-presentation-check.js … --ensure` — `PRESENTATION_OK` is a precondition; a failing gate is NOT presented (GATE_CARD_LINK_LEAK on leaked URLs).
+Gate cards are plain text: generate via `scripts/gate-presentation.js`, then pass `scripts/gate-presentation-check.js … --ensure` — `PRESENTATION_OK` is a precondition; a failing gate is NOT presented.
 
 Approval and receipt digests are read ONLY programmatically, from session/store/artifact — a truncated display digest is presentation, never input (references/cli.md).
 

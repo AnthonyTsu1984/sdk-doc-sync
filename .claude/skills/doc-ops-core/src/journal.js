@@ -109,6 +109,24 @@ class ExecutionJournal {
     return this._append({ type: 'content-fidelity', ...entry });
   }
 
+  // Campaign-level lineage fact, not tied to one approved action (batch 16
+  // slice 4.5): a units-based campaign approval that accepted regenerated unit
+  // bytes records CONTENT_REGENERATED here — durable evidence of which bytes
+  // the three-chain authorization covered, before any completion sentinel.
+  // Types are namespaced to `campaign-` and may not shadow the reserved
+  // action-ledger types: a campaign event must never be mistakable for (nor
+  // minted as) a completion sentinel or a per-action outcome (review P2-2).
+  campaignEvent(entry) {
+    const RESERVED_TYPES = ['prepared', 'observed', 'tree-delta', 'content-fidelity', 'completion'];
+    if (!entry || typeof entry.type !== 'string' || entry.type.length === 0) {
+      throw new JournalError('JOURNAL_ENTRY_TYPE_REQUIRED', 'campaignEvent requires a non-empty type');
+    }
+    if (!entry.type.startsWith('campaign-') || RESERVED_TYPES.includes(entry.type)) {
+      throw new JournalError('JOURNAL_ENTRY_TYPE_RESERVED', `campaignEvent type must be campaign-namespaced (got ${entry.type})`);
+    }
+    return this._append({ ...entry });
+  }
+
   complete() {
     if (this.entries.some(entry => entry.type === 'completion')) {
       throw new JournalError('DUPLICATE_COMPLETION_SENTINEL', 'journal is already complete');

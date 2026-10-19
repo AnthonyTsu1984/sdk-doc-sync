@@ -12,14 +12,18 @@ const {
   CAMPAIGN_BATCH_DIGEST_CONFLICT,
   CAMPAIGN_DIGEST_STALE,
   CAMPAIGN_PLAN_INVALID,
+  CAMPAIGN_UNIT_NOT_APPROVED,
+  CONTENT_REGENERATED,
   CampaignApprovalError,
   assertCampaignApprovalBindable,
   buildCampaignApprovalReceipt,
   buildCampaignPlan,
   campaignPlanDigest,
   checkCampaignScopeChain,
+  combinedUnitsDigest,
   componentDigests,
   resolveCampaignApprovalForWrite,
+  sortApprovalUnits,
   validateCampaignApprovalReceipt,
   writeCampaignApprovalReceipt,
 } = require('../src/sdk-doc-sync/campaign-approval');
@@ -189,4 +193,217 @@ test('the CLI records a receipt and prints the APPROVE_CAMPAIGN reply', () => {
   const io2 = { stdout: { write: (text) => secondWrites.push(text) }, stderr: { write: () => {} } };
   assert.equal(main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--batch-digest', 'sha256:' + '9'.repeat(64), '--approvals-dir', dir], io2), 0);
   assert.match(secondWrites.join(''), /already recorded/);
+});
+
+// --- batch 16 slice 4.5: units-based approvals (P1(b) combined digest, P0-2
+// derived binding, P0-1(b) regeneration acceptance) ---
+
+function unitSet() {
+  return [
+    { reviewUnitId: 'python:Collections:zeta', batchDigest: 'sha256:' + '2'.repeat(64) },
+    { reviewUnitId: 'python:Collections:alpha', batchDigest: 'sha256:' + '3'.repeat(64) },
+  ];
+}
+
+function unitsPlan(units) {
+  return buildCampaignPlan({
+    language: 'python',
+    sdkName: 'pymilvus',
+    track: 'v2.6.x',
+    components: componentDigests({
+      scope: scope(),
+      grouping: { proposals: [], version: 1 },
+      candidateSpec: { language: 'python', track: 'v2.6.x', candidates: {} },
+      batchDigest: combinedUnitsDigest(units),
+    }),
+  });
+}
+
+// The grouping/candidateSpec chain components a write presents for a units
+// receipt (review P1-1): the digests of the on-disk artifacts the receipt
+// approved, re-chained at every write.
+function chainFor(planOrComponents) {
+  const components = planOrComponents.components ?? planOrComponents;
+  return { groupingDigest: components.groupingDigest, candidateSpecDigest: components.candidateSpecDigest };
+}
+
+test('combinedUnitsDigest is order-independent and per-unit (not a whole-batch digest)', () => {
+  const units = unitSet();
+  const sorted = sortApprovalUnits(units);
+  assert.deepEqual(sorted.map((unit) => unit.reviewUnitId), ['python:Collections:alpha', 'python:Collections:zeta']);
+  assert.equal(combinedUnitsDigest(units), combinedUnitsDigest(sorted));
+  // A member's batch digest moving changes the combination — the set is the
+  // binding, not any single presentation order.
+  const moved = [...sorted];
+  moved[0] = { ...moved[0], batchDigest: 'sha256:' + '4'.repeat(64) };
+  assert.notEqual(combinedUnitsDigest(moved), combinedUnitsDigest(sorted));
+});
+
+test('a units receipt carries the sorted unit set and refuses a derived-binding mismatch', () => {
+  const units = unitSet();
+  const receipt = buildCampaignApprovalReceipt({ plan: unitsPlan(units), units });
+  assert.deepEqual(receipt.units, sortApprovalUnits(units));
+  assert.equal(validateCampaignApprovalReceipt(receipt).valid, true);
+
+  // The envelope's batch component IS the combined digest: a receipt whose
+  // two disagree is unbuildable (the recorder cannot mint it).
+  const driftingPlan = buildCampaignPlan({
+    language: 'python', sdkName: 'pymilvus', track: 'v2.6.x',
+    components: componentDigests({ scope: scope(), grouping: {}, candidateSpec: {}, batchDigest: 'sha256:' + '5'.repeat(64) }),
+  });
+  assert.throws(
+    () => buildCampaignApprovalReceipt({ plan: driftingPlan, units }),
+    (error) => error.code === CAMPAIGN_PLAN_INVALID,
+  );
+});
+
+test('a tampered units receipt fails validation (the derived binding is re-checked)', () => {
+  const units = unitSet();
+  const receipt = buildCampaignApprovalReceipt({ plan: unitsPlan(units), units });
+
+  // In-place tamper of one unit's batch digest breaks re-derivation (review
+  // P0-2: the old shape-only validation could not see this).
+  const tamperedUnit = { ...receipt, units: receipt.units.map((unit, index) => (index === 0 ? { ...unit, batchDigest: 'sha256:' + '6'.repeat(64) } : unit)) };
+  const unitCheck = validateCampaignApprovalReceipt(tamperedUnit);
+  assert.equal(unitCheck.valid, false);
+  assert.ok(unitCheck.errors.some((error) => /combined digest/.test(error.message)));
+
+  // Swapping a member's reviewUnitId breaks it just the same.
+  const swapped = { ...receipt, units: [{ ...receipt.units[0], reviewUnitId: 'python:Collections:hijacked' }, receipt.units[1]] };
+  assert.equal(validateCampaignApprovalReceipt(swapped).valid, false);
+
+  // Tampering components.batchDigest (without re-recording) also breaks it.
+  const tamperedComponent = { ...receipt, components: { ...receipt.components, batchDigest: 'sha256:' + '7'.repeat(64) } };
+  assert.equal(validateCampaignApprovalReceipt(tamperedComponent).valid, false);
+
+  // Reordering alone is NOT a violation: the sort is inside the canonical
+  // combined digest (design §5.6 P0-2 "canonical 排序钉死" pins the order
+  // inside the function), so the binding is the SET of per-unit pairs. Pin
+  // that here so validation is never "fixed" into order-strictness without a
+  // ruling — what breaks the digest is changing a pair, not moving one.
+  const unsorted = { ...receipt, units: [...receipt.units].reverse() };
+  assert.equal(validateCampaignApprovalReceipt(unsorted).valid, true);
+});
+
+test('units-based resolve requires the unit, its membership, and the re-chained artifacts (P0-2 ③, review P1-1)', () => {
+  const units = unitSet();
+  const plan = unitsPlan(units);
+  const approval = buildCampaignApprovalReceipt({ plan, units });
+  const pinned = sortApprovalUnits(units)[0].batchDigest;
+  const chain = chainFor(plan);
+
+  // No unit named → refused: the approval binds a SET, not a batch.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), chainComponents: chain }),
+    (error) => error.code === CAMPAIGN_PLAN_INVALID,
+  );
+  // A unit outside the approved set → typed refusal.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:intruder', chainComponents: chain }),
+    (error) => error.code === CAMPAIGN_UNIT_NOT_APPROVED,
+  );
+  // The scope-chain floor (GROUPING_STALE) still fires through the units path.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope({ actions: [{ stableId: 'python:Other:x' }] }), presentedUnitId: 'python:Collections:alpha', chainComponents: chain }),
+    (error) => error.code === 'GROUPING_STALE',
+  );
+  // Review P1-1: units receipts MUST re-chain the grouping/candidateSpec
+  // artifacts — the relaxation removed the byte-pin that enforced these gates
+  // implicitly, so the explicit chain is mandatory, not optional.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha' }),
+    (error) => error.code === CAMPAIGN_PLAN_INVALID && /campaign-chain-grouping/.test(error.message),
+  );
+});
+
+test('dual-track batch acceptance: pinned digest executes, fresh digest regenerates (P0-1(b))', () => {
+  const units = unitSet();
+  const plan = unitsPlan(units);
+  const approval = buildCampaignApprovalReceipt({ plan, units });
+  const pinned = sortApprovalUnits(units)[0].batchDigest;
+  const chain = chainFor(plan);
+
+  // Pinned path: no presentation, or the exact pinned digest → executes as-is.
+  assert.equal(resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', chainComponents: chain }).approvedBatchDigest, pinned);
+  assert.equal(resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: pinned, chainComponents: chain }).approvedBatchDigest, pinned);
+  assert.equal(resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: pinned, chainComponents: chain }).regeneration, null);
+
+  // Regeneration path: a fresh digest within the same unit is accepted — the
+  // three chains and membership held — and the lineage is returned for the
+  // execution journal's CONTENT_REGENERATED event.
+  const fresh = 'sha256:' + '8'.repeat(64);
+  const regenerated = resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: fresh, chainComponents: chain });
+  assert.equal(regenerated.approvedBatchDigest, fresh);
+  assert.deepEqual(regenerated.regeneration, {
+    code: CONTENT_REGENERATED,
+    reviewUnitId: 'python:Collections:alpha',
+    pinnedBatchDigest: pinned,
+    freshBatchDigest: fresh,
+  });
+  // The fresh bytes of ANOTHER unit do not leak across members: presenting
+  // unit B's digest while executing unit A is a regeneration of A, not a
+  // free pass — but it IS accepted (same unit set, three chains held). The
+  // journal lineage makes the cross-visibility auditable.
+  const cross = resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:zeta', presentedBatchDigest: pinned, chainComponents: chain });
+  assert.equal(cross.regeneration.reviewUnitId, 'python:Collections:zeta');
+
+  // Review P1-1: the explicit chain bites on the regeneration path — a
+  // grouping or candidateSpec drifted AFTER the gate is CAMPAIGN_DIGEST_STALE,
+  // not a silently accepted "regeneration".
+  const driftedChain = { groupingDigest: 'sha256:' + 'a'.repeat(64), candidateSpecDigest: chain.candidateSpecDigest };
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: fresh, chainComponents: driftedChain }),
+    (error) => error.code === CAMPAIGN_DIGEST_STALE && /groupingDigest/.test(error.message),
+  );
+  const driftedSpec = { groupingDigest: chain.groupingDigest, candidateSpecDigest: 'sha256:' + 'b'.repeat(64) };
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: fresh, chainComponents: driftedSpec }),
+    (error) => error.code === CAMPAIGN_DIGEST_STALE && /candidateSpecDigest/.test(error.message),
+  );
+
+  // A non-digest presentation is malformed, never silently accepted.
+  assert.throws(
+    () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: 'garbage', chainComponents: chain }),
+    (error) => error.code === CAMPAIGN_PLAN_INVALID,
+  );
+});
+
+test('the CLI records a units receipt and keeps the reply line identical', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-approval-units-'));
+  const write = (name, value) => { const p = path.join(dir, name); fs.writeFileSync(p, JSON.stringify(value)); return p; };
+  const scopePath = write('scope.json', scope());
+  const groupingPath = write('grouping.json', { proposals: [], version: 1 });
+  const specPath = write('spec.json', { language: 'python', track: 'v2.6.x', candidates: {} });
+  // reviewUnitPreviews shape, unsorted, with presentation extras.
+  const previewsPath = write('previews.json', { units: [...unitSet().reverse()].map((unit) => ({ ...unit, actionIds: ['a1'] })) });
+
+  const writes = [];
+  const io = { stdout: { write: (text) => writes.push(text) }, stderr: { write: (text) => writes.push(`ERR:${text}`) } };
+  const code = main([
+    'node', 'record-campaign-approval.js',
+    '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath,
+    '--unit-digests', previewsPath,
+    '--approvals-dir', dir,
+  ], io);
+  assert.equal(code, 0, writes.join(''));
+  assert.match(writes.join(''), /Reply: APPROVE_CAMPAIGN sha256:[0-9a-f]{64}/);
+
+  const digest = writes.join('').match(/sha256:[0-9a-f]{64}/)[0];
+  const receipt = JSON.parse(fs.readFileSync(path.join(dir, `${digest}.json`), 'utf8'));
+  assert.deepEqual(receipt.units, sortApprovalUnits(unitSet()));
+  assert.equal(receipt.components.batchDigest, combinedUnitsDigest(unitSet()));
+
+  // Exactly one of --batch-digest / --unit-digests.
+  const both = main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--batch-digest', 'sha256:' + '9'.repeat(64), '--unit-digests', previewsPath, '--approvals-dir', dir], io);
+  assert.equal(both, 1);
+  const neither = main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--approvals-dir', dir], io);
+  assert.equal(neither, 1);
+  assert.match(writes.join(''), /exactly one of --batch-digest \/ --unit-digests/);
+
+  // A duplicated unit id is refused (review P2-5): membership must never pick
+  // a winner from a shrunken set.
+  const dupPath = write('dup.json', { units: [unitSet()[0], { ...unitSet()[0], batchDigest: 'sha256:' + 'c'.repeat(64) }] });
+  const dup = main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--unit-digests', dupPath, '--approvals-dir', dir], io);
+  assert.equal(dup, 1);
+  assert.match(writes.join(''), /appears more than once/);
 });

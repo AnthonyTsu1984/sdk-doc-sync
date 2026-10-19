@@ -70,7 +70,11 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     (batch 16 slice 7: per-unit {reviewUnitId, batchDigest} set for the
   //     approval's derived units binding; reads session/scope/contexts,
   //     writes only the requested unit-digests file under tmp/), 114→115.
-  assert.equal(discovered.length, 115);
+  //   - +1 read-only placement-audit proposals builder
+  //     .claude/skills/api-reference-sync/scripts/build-audit-proposals.js
+  //     (shadow campaign #1: derives the audit's proposals view from intake
+  //     decisions — local file write only), 115→116.
+  assert.equal(discovered.length, 116);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

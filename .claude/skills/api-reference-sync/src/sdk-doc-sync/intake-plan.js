@@ -46,6 +46,15 @@ const STAGE_IO = Object.freeze({
 const ARTIFACT_KEYS = Object.freeze([
   'decisions', 'scope', 'pagesDir', 'placementAudit', 'rootWalk',
   'candidateSpec', 'filteredScope', 'reviewedContext', 'groupingProposal', 'session',
+  // categoryCreates: OPTIONAL per-campaign category-create plan (placement
+  // ruling: a changed page whose target folder is missing in this track gets
+  // CREATE_FOLDER → COPY_PATCH_AND_REPOINT → REPOINT_CATEGORY_VIRTUAL_NODE).
+  // The composer emits folder-create resources ONLY when this plan is supplied
+  // (compose-pr-reconcile-candidate-spec.js: resources: [] without it), so a
+  // wave that needs folder creates MUST carry it; waves that do not leave it
+  // out. Not in STAGE_IO.consumes: the chain would otherwise demand it for
+  // every language.
+  'categoryCreates',
 ]);
 
 // Stages whose scripts hard-require --identity-map (build-grouping-proposal.js,
@@ -153,6 +162,7 @@ function stageArgv(stage, ctx) {
           '--placement-audit': a.placementAudit,
           '--root-walk': a.rootWalk,
           '--identity-map': ctx.identityMap,
+          '--category-creates': a.categoryCreates || null,
           '--output': a.candidateSpec,
         },
       };

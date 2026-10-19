@@ -121,7 +121,7 @@ const USAGE_LINE = 'Usage: build-campaign-plan --identity <lang>:<sdk>:<track> -
 // is per-kind (slice 7). Unknown keys are a usage error — an override of a
 // name the schema does not carry would silently change nothing.
 const ARTIFACT_PATH_KEYS = Object.freeze([
-  'sdkDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson',
+  'sdkDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson', 'identityMap',
 ]);
 const REVISION_ARTIFACT_PATH_KEYS = Object.freeze([
   'sessionPath', 'scopePath', 'contextsPath', 'manifestProjectionPath', 'candidateSpecProjectionPath', 'unitDigestsPath',
@@ -291,6 +291,18 @@ function campaignIdFor(language, track, kind = 'release-sync') {
   return `${language}-v${match[1]}${match[2]}-${suffix}`;
 }
 
+// The per-track identity map the intake chain's candidate-spec/grouping stages
+// resolve symbols through (intake-plan.js REQUIRES_IDENTITY_MAP). Same
+// v<major><minor> root as campaignIdFor, repo-root-relative like every other
+// plan.paths value (intake-assemble resolves it against the process cwd).
+function identityMapPathFor(identity) {
+  const match = TRACK_VERSION_PATTERN.exec(identity.track);
+  if (!match) {
+    throw new UsageError(`--identity track ${JSON.stringify(identity.track)} must start with v<major>.<minor> to name a per-track identity map (references/identity/<lang>-v<major><minor>.json)`);
+  }
+  return `.claude/skills/api-reference-sync/references/identity/${identity.language}-v${match[1]}${match[2]}.json`;
+}
+
 function parseArtifacts(values, allowedKeys = ARTIFACT_PATH_KEYS) {
   const overrides = new Map();
   for (const raw of values) {
@@ -349,6 +361,7 @@ function buildCampaignPlan({ identity, trigger, registry, campaignDir, kind = 'r
     candidateSpecPath: joinPath(campaignDir, 'candidate-spec.json'),
     referenceContext: joinPath(campaignDir, 'reviewed-context.md'),
     targetsJson: joinPath(campaignDir, 'targets.json'),
+    identityMap: identityMapPathFor(identity),
   };
   for (const [key, value] of artifactOverrides) paths[key] = value;
 

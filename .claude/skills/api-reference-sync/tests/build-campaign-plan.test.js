@@ -174,6 +174,7 @@ test('golden java v2.6.x: every registry-sourced field matches the dwf constant 
   assert.equal(plan.paths.candidateSpecPath, `${DWF.V26_CAMPAIGN_DIR}/candidate-spec.json`);
   assert.equal(plan.paths.referenceContext, `${DWF.V26_CAMPAIGN_DIR}/reviewed-context.md`);
   assert.equal(plan.paths.targetsJson, `${DWF.V26_CAMPAIGN_DIR}/targets.json`);
+  assert.equal(plan.paths.identityMap, '.claude/skills/api-reference-sync/references/identity/java-v26.json'); // intake chain REQUIRES_IDENTITY_MAP
 
   // run / terminal — the terminal the dwf templates did NOT have (dwf v26:947:
   // "close-session→scan-state 是操作员步骤, 本工作流不含")

@@ -302,6 +302,7 @@ const paths = {
   candidateSpecPath: pathsR === null ? "" : reqString(pathsR.candidateSpecPath, "plan.paths.candidateSpecPath"),
   referenceContext: pathsR === null ? "" : reqString(pathsR.referenceContext, "plan.paths.referenceContext"),
   targetsJson: pathsR === null ? "" : reqString(pathsR.targetsJson, "plan.paths.targetsJson"),
+  identityMap: pathsR === null ? "" : reqString(pathsR.identityMap, "plan.paths.identityMap"),
 };
 const journalPath = runR === null ? missingString("plan.run") : reqString(runR.journalPath, "plan.run.journalPath");
 const freezeDir = runR === null ? "" : reqString(runR.freezeDir, "plan.run.freezeDir");
@@ -448,7 +449,7 @@ if (rehearsal) {
 // entries 工件 = intake 链的输入面（由 plan 生成侧/intake 工件链供,模板不拼装业务映射;
 // 按 campaignId 键控约定放在 campaignDir 下,缺失时 propose-audience 以 typed 错误 fail-closed）。
 const audienceEntriesPath = paths.campaignDir + "/audience-entries.json";
-const intakeBaseArgs = ["--language", identity.language, "--track", identity.track, "--artifacts", audienceEntriesPath];
+const intakeBaseArgs = ["--language", identity.language, "--track", identity.track, "--artifacts", audienceEntriesPath, "--identity-map", paths.identityMap];
 phase("组装发布范围工件链");
 const intakePlanRun = await runTrackedCli("intake-assemble --plan（校验组装计划）", [INTAKE_ASSEMBLE, "--plan"].concat(intakeBaseArgs, ["--json"]), campaignFile("intake-plan"), 300000);
 if (!intakePlanRun.ok) {
@@ -707,7 +708,7 @@ async function locateUnitFailure(resultFile: string, unitId: string): Promise<{ 
 }
 // 内容类失败:A1 带 {code,expected,actual,path} 定位回喂重刷（预算轴 content,设计 §5.6 P3）。
 async function regenerateWithWriter(unit: UnitDigest, located: LocatedFailure): Promise<boolean> {
-  const writer = agent("A1 写手", {
+  const writer = agent("A1 写手（重刷）", {
     system: "你是 governed 文档战役的 A1 材料化写手:产出高质量 reviewed 上下文材料,如实报告,绝不编造;指令不可能完成时如实上报而不是硬凑。只写任务指定的唯一目标文件。",
   });
   const answer = await writer.ask<RegenAnswer>(

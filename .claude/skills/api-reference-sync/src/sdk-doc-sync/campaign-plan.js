@@ -44,8 +44,11 @@ const CAMPAIGN_KINDS = Object.freeze(['release-sync', 'revision']);
 const SEATS = Object.freeze(['a1', 'a2', 'a3']);
 const SEAT_INT_FIELDS = Object.freeze(['pagesPerWriter', 'maxRounds']);
 // Path keys required for every kind (slice 7: the revision shape carries the
-// same artifact spine, keyed by kind in the generator).
-const RELEASE_SYNC_PATH_KEYS = Object.freeze(['sdkDir', 'campaignDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson']);
+// same artifact spine, keyed by kind in the generator). identityMap is the
+// per-track identity map the intake chain's candidate-spec and
+// grouping-proposal stages hard-require (intake-plan.js REQUIRES_IDENTITY_MAP);
+// the generator derives it as references/identity/<lang>-v<major><minor>.json.
+const RELEASE_SYNC_PATH_KEYS = Object.freeze(['sdkDir', 'campaignDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson', 'identityMap']);
 // Revision-shape required paths: the contexts document is the content
 // authority (the approval's candidateSpec chain), the manifest projection is
 // the reviewUnitManifest view (the grouping chain), the unit-digests file is

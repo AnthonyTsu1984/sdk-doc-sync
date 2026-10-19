@@ -55,6 +55,7 @@ function fixturePlan() {
       candidateSpecPath: `${campaignDir}/candidate-spec.json`,
       referenceContext: `${campaignDir}/reference-context`,
       targetsJson: `${campaignDir}/targets.json`,
+      identityMap: `${campaignDir}/identity.json`,
     },
     run: {
       journalPath: `${campaignDir}/execution-journal.jsonl`,
@@ -123,6 +124,7 @@ test('each broken segment is reported at its exact field path', () => {
     ['trigger.kind', (plan) => { plan.trigger = { kind: 'carrier-pigeon' }; }, '$.trigger.kind'],
     ['feishu.rootToken', (plan) => { delete plan.feishu.rootToken; }, '$.feishu.rootToken'],
     ['paths.targetsJson', (plan) => { delete plan.paths.targetsJson; }, '$.paths.targetsJson'],
+    ['paths.identityMap', (plan) => { delete plan.paths.identityMap; }, '$.paths.identityMap'],
     ['run.phases', (plan) => { plan.run.phases = []; }, '$.run.phases'],
     ['run.phases[].argv', (plan) => { plan.run.phases[0].argv = ['node', 7]; }, '$.run.phases[0].argv'],
     ['terminal.scanStateKey', (plan) => { delete plan.terminal.scanStateKey; }, '$.terminal.scanStateKey'],

@@ -60,6 +60,7 @@ function fixturePlan(ws, overrides = {}) {
       candidateSpecPath: 'tmp/api-reference-sync/campaigns/java-v30-sync/candidate-spec.json',
       referenceContext: 'tmp/api-reference-sync/campaigns/java-v30-sync/reviewed-context',
       targetsJson: 'tmp/api-reference-sync/campaigns/java-v30-sync/targets.json',
+      identityMap: 'tmp/api-reference-sync/campaigns/java-v30-sync/identity.json',
     },
     run: {
       journalPath: ws.journal,

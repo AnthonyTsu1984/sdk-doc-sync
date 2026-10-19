@@ -12,6 +12,7 @@ const {
   PHASE_EXIT_NONZERO,
   PHASE_OUTCOME_UNREADABLE,
   SETTLE_FAILED,
+  TRIGGER_UNSUPPORTED,
   runCampaignPlan,
   validateCampaignRunPlan,
 } = require('../src/sdk-doc-sync/campaign-runner');
@@ -295,4 +296,90 @@ test('an unknown notify kind is refused before any phase runs', () => {
   const run = spawnSync(process.execPath, [CLI, '--plan', planPath], { cwd: REPO_ROOT, encoding: 'utf8' });
   assert.equal(run.status, 64);
   assert.equal(fs.existsSync(marker), false, 'the notify kind is validated before phases run');
+});
+
+// --- batch 16 slice 4: the shell consumes v2 campaign plans as their v1 view ---
+
+test('a v2 campaign plan runs through its v1 view and disposes', async () => {
+  const ws = workspace();
+  recordFinding(ws.ledger, { prNumber: 1181, languages: ['python'] });
+  const result = await runCampaignPlan({
+    plan: {
+      schemaVersion: 2,
+      campaignId: 'java-v30-sync',
+      kind: 'release-sync',
+      identity: { language: 'python', sdkName: 'pymilvus', track: 'v3.0.x' },
+      trigger: { kind: 'pr', prNumber: 1181 },
+      run: {
+        journalPath: 'tmp/execution-journal.jsonl',
+        ledgerPath: ws.ledger,
+        freezeDir: ws.freezeDir,
+        phases: [{ label: 'execute', argv: ['node', '-e', '0'] }],
+      },
+    },
+    runPhase: async () => ({ exitCode: 0 }),
+    frozenAt: '2026-10-16T00:00:00.000Z',
+  });
+  assert.equal(result.status, 'disposed');
+  assert.equal(result.exitCode, 0);
+  assert.equal(disposedWatermark(readLedger(ws.ledger), 'python'), 1181);
+});
+
+test('a v2 plan validates through its v1 view (trigger.prNumber derived)', () => {
+  const validation = validateCampaignRunPlan({
+    schemaVersion: 2,
+    identity: { language: 'python' },
+    trigger: { kind: 'pr', prNumber: 1181 },
+    run: { phases: [{ label: 'execute', argv: ['node', '-e', '0'] }] },
+  });
+  assert.deepEqual(validation, { valid: true, errors: [] });
+});
+
+test('a v2 plan with a tag trigger is refused typed (TRIGGER_UNSUPPORTED)', () => {
+  const validation = validateCampaignRunPlan({
+    schemaVersion: 2,
+    trigger: { kind: 'tag', baselineTag: 'v2.6.25', targetTag: 'v3.0.25' },
+    run: { phases: [{ label: 'execute', argv: ['node', '-e', '0'] }] },
+  });
+  assert.equal(validation.valid, false);
+  assert.deepEqual(validation.errors, [{
+    code: TRIGGER_UNSUPPORTED,
+    path: '$',
+    message: validation.errors[0].message,
+  }]);
+  assert.match(validation.errors[0].message, /tag/);
+});
+
+test('the tag refusal survives the shipping entry points (review P2-4)', async () => {
+  const tagPlan = {
+    schemaVersion: 2,
+    campaignId: 'java-v30-sync',
+    kind: 'release-sync',
+    identity: { language: 'java', sdkName: 'milvus-sdk-java', track: 'v3.0.x' },
+    trigger: { kind: 'tag', baselineTag: 'v2.6.25', targetTag: 'v3.0.25' },
+    run: { journalPath: 'tmp/j.jsonl', ledgerPath: 'tmp/l.jsonl', freezeDir: 'tmp/f', phases: [{ label: 'execute', argv: ['node', '-e', '0'] }] },
+  };
+  // runCampaignPlan (the loop entry) keeps the typed refusal, not a generic
+  // prNumber error.
+  await assert.rejects(
+    () => runCampaignPlan({ plan: tagPlan, runPhase: async () => ({ exitCode: 0 }) }),
+    (error) => error.code === CAMPAIGN_RUN_PLAN_INVALID && error.details?.errors?.[0]?.code === TRIGGER_UNSUPPORTED,
+  );
+  // The CLI preflight (a cron's green-light gate) reports the typed code too.
+  const ws = workspace();
+  const planPath = path.join(ws.dir, 'plan.json');
+  fs.writeFileSync(planPath, JSON.stringify(tagPlan));
+  const run = spawnSync(process.execPath, [CLI, '--plan', planPath, '--dry-run'], { cwd: REPO_ROOT, encoding: 'utf8' });
+  assert.equal(run.status, 64);
+  assert.match(run.stderr, /TRIGGER_UNSUPPORTED/);
+});
+
+test('a v2 plan without a pr trigger fails validation on the derived prNumber', () => {
+  const validation = validateCampaignRunPlan({
+    schemaVersion: 2,
+    trigger: { kind: 'carrier-pigeon' },
+    run: { phases: [{ label: 'execute', argv: ['node', '-e', '0'] }] },
+  });
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.some((error) => /prNumber/.test(error.message)));
 });

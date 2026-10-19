@@ -25,8 +25,15 @@ const { locateFailure } = require('./verify-retry-loop');
 const { settleCampaign } = require('./campaign-completion');
 
 const CAMPAIGN_RUN_PLAN_SCHEMA_VERSION = 1;
+// Batch 16 slice 4: the shell also consumes the generator's v2 campaign plan
+// (campaign-plan.js) as a v1 VIEW — trigger.prNumber is derived, the run
+// segment flattens. A tag trigger has no PR to dispose on the findings ledger
+// (tag watermarks advance via close-session, design §6), so it is refused
+// typed instead of mis-settled.
+const CAMPAIGN_RUN_PLAN_SCHEMA_VERSIONS = Object.freeze([1, 2]);
 
 const CAMPAIGN_RUN_PLAN_INVALID = 'CAMPAIGN_RUN_PLAN_INVALID';
+const TRIGGER_UNSUPPORTED = 'TRIGGER_UNSUPPORTED';
 const PHASE_EXIT_NONZERO = 'PHASE_EXIT_NONZERO';
 const PHASE_OUTCOME_UNREADABLE = 'PHASE_OUTCOME_UNREADABLE';
 const SETTLE_FAILED = 'SETTLE_FAILED';
@@ -52,26 +59,51 @@ function positiveInt(value) {
   return Number.isInteger(value) && value > 0;
 }
 
+// v2 campaign plan (batch 16 slice 4) → the v1 view this shell runs. Unknown
+// trigger kinds collapse to an undefined prNumber so validation reports the
+// real problem; tag triggers are cut off earlier with a typed refusal.
+function normalizeCampaignRunPlan(plan) {
+  if (!isObject(plan) || plan.schemaVersion !== 2) return plan;
+  return {
+    schemaVersion: CAMPAIGN_RUN_PLAN_SCHEMA_VERSION,
+    prNumber: isObject(plan.trigger) && plan.trigger.kind === 'pr' ? plan.trigger.prNumber : undefined,
+    language: isObject(plan.identity) && nonEmptyString(plan.identity.language) ? plan.identity.language : null,
+    campaignPlanDigest: plan.campaignPlanDigest ?? null,
+    journalPath: plan.run?.journalPath ?? null,
+    ledgerPath: plan.run?.ledgerPath ?? null,
+    freezeDir: plan.run?.freezeDir ?? null,
+    note: plan.run?.note ?? null,
+    notify: plan.notify ?? null,
+    phases: Array.isArray(plan.run?.phases) ? plan.run.phases : [],
+  };
+}
+
 // The plan is the dwf's parameterization surface (batch 16): identity + the
 // ordered canonical phases. Validation is fail-closed on shape so a malformed
-// plan never half-runs a campaign.
+// plan never half-runs a campaign. v2 plans are validated through their v1
+// view; a tag trigger is refused typed (TRIGGER_UNSUPPORTED) before that.
 function validateCampaignRunPlan(plan) {
   const errors = [];
-  const report = (message) => errors.push({ code: CAMPAIGN_RUN_PLAN_INVALID, path: '$', message });
+  const report = (message, code = CAMPAIGN_RUN_PLAN_INVALID) => errors.push({ code, path: '$', message });
   if (!isObject(plan)) return { valid: false, errors: [{ code: CAMPAIGN_RUN_PLAN_INVALID, path: '$', message: 'must be an object' }] };
-  if (plan.schemaVersion !== CAMPAIGN_RUN_PLAN_SCHEMA_VERSION) report(`$.schemaVersion must be ${CAMPAIGN_RUN_PLAN_SCHEMA_VERSION}`);
-  if (!positiveInt(plan.prNumber)) report('$.prNumber must be a positive integer (the PR the campaign disposes on success)');
-  if (plan.language !== undefined && plan.language !== null && !nonEmptyString(plan.language)) report('$.language must be a non-empty string when present');
-  if (plan.campaignPlanDigest !== undefined && plan.campaignPlanDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(plan.campaignPlanDigest)) {
+  if (plan.schemaVersion === 2 && isObject(plan.trigger) && plan.trigger.kind === 'tag') {
+    report('[TRIGGER_UNSUPPORTED] $.trigger.kind "tag" is not supported by the campaign shell — tag watermarks advance via close-session, not the findings ledger (design §6)', TRIGGER_UNSUPPORTED);
+    return { valid: false, errors };
+  }
+  const view = normalizeCampaignRunPlan(plan);
+  if (!CAMPAIGN_RUN_PLAN_SCHEMA_VERSIONS.includes(view.schemaVersion)) report(`$.schemaVersion must be one of ${CAMPAIGN_RUN_PLAN_SCHEMA_VERSIONS.join('|')}`);
+  if (!positiveInt(view.prNumber)) report('$.prNumber must be a positive integer (the PR the campaign disposes on success; v2 plans derive it from trigger.prNumber)');
+  if (view.language !== undefined && view.language !== null && !nonEmptyString(view.language)) report('$.language must be a non-empty string when present');
+  if (view.campaignPlanDigest !== undefined && view.campaignPlanDigest !== null && !/^sha256:[0-9a-f]{64}$/.test(view.campaignPlanDigest)) {
     report('$.campaignPlanDigest must be a sha256:<64-hex> digest when present');
   }
   for (const key of ['ledgerPath', 'freezeDir', 'journalPath', 'note']) {
-    if (plan[key] !== undefined && plan[key] !== null && !nonEmptyString(plan[key])) report(`$.${key} must be a non-empty string when present`);
+    if (view[key] !== undefined && view[key] !== null && !nonEmptyString(view[key])) report(`$.${key} must be a non-empty string when present`);
   }
-  if (!Array.isArray(plan.phases) || plan.phases.length === 0) {
+  if (!Array.isArray(view.phases) || view.phases.length === 0) {
     report('$.phases must be a non-empty array of phases');
   } else {
-    plan.phases.forEach((phase, index) => {
+    view.phases.forEach((phase, index) => {
       if (!isObject(phase)) { report(`$.phases[${index}] must be an object`); return; }
       if (!nonEmptyString(phase.label)) report(`$.phases[${index}].label must be a non-empty string`);
       if (!Array.isArray(phase.argv) || phase.argv.length === 0 || phase.argv.some((token) => typeof token !== 'string')) {
@@ -130,6 +162,10 @@ async function runCampaignPlan({
   notify = null,
   frozenAt = null,
 } = {}) {
+  // Validate the RAW plan: validateCampaignRunPlan normalizes internally and
+  // its tag-trigger precheck reads the raw trigger — normalizing here first
+  // would strip it and demote TRIGGER_UNSUPPORTED to a generic prNumber error
+  // (review P2-4).
   const validation = validateCampaignRunPlan(plan);
   if (!validation.valid) {
     throw new CampaignRunError(
@@ -138,12 +174,13 @@ async function runCampaignPlan({
       { errors: validation.errors },
     );
   }
+  const runPlan = normalizeCampaignRunPlan(plan);
   if (typeof runPhase !== 'function') {
     throw new CampaignRunError(CAMPAIGN_RUN_PLAN_INVALID, 'runCampaignPlan requires a runPhase function');
   }
 
   const phaseRecords = [];
-  for (const phase of plan.phases) {
+  for (const phase of runPlan.phases) {
     const result = await runPhase({ label: phase.label, argv: phase.argv, cwd: repoRoot });
     const exitCode = Number.isInteger(result?.exitCode) ? result.exitCode : 1;
     const record = { label: phase.label, argv: phase.argv, exitCode, outcomeRead: null };
@@ -175,11 +212,11 @@ async function runCampaignPlan({
   try {
     settled = await settleCampaign({
       outcome: { ok: true },
-      prNumber: plan.prNumber,
-      language: plan.language ?? null,
-      ledgerPath: plan.ledgerPath ?? null,
-      note: plan.note ?? null,
-      campaignPlanDigest: plan.campaignPlanDigest ?? null,
+      prNumber: runPlan.prNumber,
+      language: runPlan.language ?? null,
+      ledgerPath: runPlan.ledgerPath ?? null,
+      note: runPlan.note ?? null,
+      campaignPlanDigest: runPlan.campaignPlanDigest ?? null,
       frozenAt,
     });
   } catch (error) {
@@ -208,12 +245,12 @@ async function runCampaignPlan({
   };
 }
 
-async function settleFrozen({ plan, phaseRecords, failure, notify, frozenAt }) {
+async function settleFrozen({ plan: runPlan, phaseRecords, failure, notify, frozenAt }) {
   const settled = await settleCampaign({
     outcome: { ok: false, frozen: true, reason: failure.reason, location: failure.location },
-    campaignPlanDigest: plan.campaignPlanDigest ?? null,
-    journalPath: plan.journalPath ?? null,
-    freezeDir: plan.freezeDir ?? null,
+    campaignPlanDigest: runPlan.campaignPlanDigest ?? null,
+    journalPath: runPlan.journalPath ?? null,
+    freezeDir: runPlan.freezeDir ?? null,
     notify,
     frozenAt,
   });
@@ -223,6 +260,9 @@ async function settleFrozen({ plan, phaseRecords, failure, notify, frozenAt }) {
 module.exports = {
   CAMPAIGN_RUN_PLAN_INVALID,
   CAMPAIGN_RUN_PLAN_SCHEMA_VERSION,
+  CAMPAIGN_RUN_PLAN_SCHEMA_VERSIONS,
+  TRIGGER_UNSUPPORTED,
+  normalizeCampaignRunPlan,
   CampaignRunError,
   PHASE_EXIT_NONZERO,
   PHASE_OUTCOME_UNREADABLE,

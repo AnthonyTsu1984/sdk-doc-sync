@@ -35,6 +35,7 @@ const { spawnSync } = require('node:child_process');
 const {
   CAMPAIGN_RUN_PLAN_INVALID,
   CampaignRunError,
+  normalizeCampaignRunPlan,
   runCampaignPlan,
   validateCampaignRunPlan,
 } = require('../src/sdk-doc-sync/campaign-runner');
@@ -127,7 +128,10 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   }
 
   const repoRoot = path.resolve(args.repoRoot || PROJECT_ROOT);
-  const plan = readPlan(args.plan, repoRoot);
+  const rawPlan = readPlan(args.plan, repoRoot);
+  // v2 campaign plans (batch 16 generator output) are consumed as their v1
+  // view; a tag trigger is refused by validation, never mis-settled.
+  const plan = normalizeCampaignRunPlan(rawPlan);
   // Canonical default locations, overridable per plan.
   const resolvedPlan = {
     ...plan,
@@ -138,7 +142,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
   if (args.dryRun) {
     // Validate before printing so a --dry-run preflight never reports a
     // malformed plan as runnable (a cron would take that as a green light).
-    assertPlanValid(resolvedPlan);
+    // The RAW plan is validated (not the normalized view) so a tag trigger
+    // keeps its typed TRIGGER_UNSUPPORTED refusal (review P2-4).
+    assertPlanValid(rawPlan);
     if (args.json) out(JSON.stringify({ status: 'dry-run', phases: resolvedPlan.phases.map((phase) => ({ label: phase.label, argv: phase.argv })) }, null, 2));
     else for (const phase of resolvedPlan.phases) out(`${phase.label}: ${phase.argv.join(' ')}`);
     return { status: 'dry-run', exitCode: 0, plan: resolvedPlan };

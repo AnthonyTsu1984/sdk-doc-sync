@@ -5,11 +5,18 @@
 // revision campaign's per-unit write step. The fix IS the write: the unit's
 // reviewed fixed canonical markdown lands through the same writer-governance
 // and pr-polish validation machinery the release pipeline uses, authorized
-// by the operator's APPROVE_WRITES batch digest.
+// by the operator's APPROVE_WRITES batch digest — or, in a batch-16
+// campaign, by the merged APPROVE_CAMPAIGN receipt (slice 7, ruling (b)): the
+// receipt binds the unit SET + the three chains (scope, reviewUnitManifest,
+// contexts), unit membership is checked by --review-unit-id, and a FRESH unit
+// digest inside the approved set is accepted as a content regeneration and
+// journaled CONTENT_REGENERATED (the byte-pin would freeze every content
+// failure — the relaxation is what makes "regenerate and retry" legal).
 //
 // Per unit, in order:
 //   1. recompute the execution batch from the reviewed context and refuse
-//      unless --approve-digest equals its digest (approval binds content);
+//      unless the approval authorizes its digest (--approve-digest equals it,
+//      or the campaign receipt's dual-track acceptance authorizes it);
 //   2. fetch the live raw_content as the base and journal a base-capture
 //      content-fidelity outcome (the digest chain binds the exact bytes the
 //      fix was computed against, plus a full rollback capsule of the prior
@@ -33,7 +40,8 @@
 // Usage:
 //   node bin/revision-apply.js --session <session.json> --review-unit-id <id>
 //       --scope <scope.json> --contexts <contexts.json>
-//       --approve-digest sha256:... [--journal <path>] [--json]
+//       (--approve-digest sha256:... | --campaign-approval <receipt.json>)
+//       [--journal <path>] [--json]
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -42,6 +50,10 @@ const { spawnSync } = require('node:child_process');
 process.env.DOTENV_CONFIG_QUIET = process.env.DOTENV_CONFIG_QUIET || 'true';
 
 const { digestSemantic, sha256Digest } = require('../../doc-ops-core/src/digest');
+const {
+    resolveCampaignApprovalForWrite,
+    validateCampaignApprovalReceipt,
+} = require('../src/sdk-doc-sync/campaign-approval');
 const {
     WriterGovernance,
     createApprovalEnvelope,
@@ -71,6 +83,7 @@ function parseArgs(argv) {
         else if (arg === '--scope') args.scope = path.resolve(argv[++index]);
         else if (arg === '--contexts') args.contexts = path.resolve(argv[++index]);
         else if (arg === '--approve-digest') args.approveDigest = argv[++index];
+        else if (arg === '--campaign-approval') args.campaignApproval = path.resolve(argv[++index]);
         else if (arg === '--journal') args.journal = path.resolve(argv[++index]);
         else if (arg === '--base-token') args.baseToken = argv[++index];
         else if (arg === '--table-id') args.tableId = argv[++index];
@@ -78,10 +91,20 @@ function parseArgs(argv) {
         else if (arg === '--json') args.json = true;
         else throw new Error(`Unknown argument: ${arg}`);
     }
-    for (const required of ['session', 'reviewUnitId', 'scope', 'contexts', 'approveDigest', 'baseToken', 'tableId']) {
+    for (const required of ['session', 'reviewUnitId', 'scope', 'contexts', 'baseToken', 'tableId']) {
         if (!args[required]) {
             throw new Error(`Missing required argument: --${required.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`);
         }
+    }
+    // Write-gate shape: a standalone --approve-digest, OR a campaign receipt
+    // (--campaign-approval) with an OPTIONAL --approve-digest that presents
+    // the fresh (regenerated) unit digest against the receipt's dual-track
+    // acceptance. Neither fails closed; a receipt without any digest presents
+    // the receipt's pinned unit digest.
+    const hasApprove = Boolean(args.approveDigest);
+    const hasCampaign = Boolean(args.campaignApproval);
+    if (!hasApprove && !hasCampaign) {
+        throw new Error('A write gate is required: --approve-digest or --campaign-approval');
     }
     return args;
 }
@@ -198,6 +221,83 @@ function sourcesFromContext(entry) {
         }));
 }
 
+// The revision campaign's write authorization (slice 7, ruling (b)). The
+// campaign receipt's units component binds {scopeDigest, groupingDigest
+// (=reviewUnitManifest projection), candidateSpecDigest (=contexts document),
+// units[]}. At every unit write we re-chain the SAME three artifacts the gate
+// bound (the byte-pin a standalone digest used to enforce implicitly must be
+// explicit here — review P1-1 discipline carried into the revision shape) and
+// resolve dual-track:
+//   * pinned unit digest → executes as-is;
+//   * a fresh unit digest (content regenerated after the gate) → accepted as
+//     regeneration, returned as lineage for the journal.
+// The returned lineage is exactly the campaign-approval CONTENT_REGENERATED
+// event; the unit's journal records it before any mutation.
+// The contexts SPECIFICATION projection for the candidateSpec chain (slice 7
+// ruling (b)): every entry with its content bytes stripped. Structural facts
+// (units, category, metadata, reviewedEvidence, sanctioned edits) stay in the
+// chain; verbatimContent is bound by the unit's batchDigest instead, so a
+// content regeneration does not trip the chain while a structural change does.
+function contextsProjection(contexts) {
+    const projected = {};
+    for (const [key, entry] of Object.entries(contexts)) {
+        if (entry && typeof entry === 'object') {
+            const { verbatimContent, ...rest } = entry;
+            projected[key] = rest;
+        } else {
+            projected[key] = entry;
+        }
+    }
+    return projected;
+}
+
+function resolveRevisionApproval({ args, session, scope, contexts }) {
+    if (!args.campaignApproval) {
+        return { approveDigest: args.approveDigest, regeneration: null, approveDigestWas: 'standalone' };
+    }
+    const receipt = JSON.parse(fs.readFileSync(path.resolve(args.campaignApproval), 'utf8'));
+    const validation = validateCampaignApprovalReceipt(receipt);
+    if (!validation.valid) {
+        throw Object.assign(
+            new Error(`CAMPAIGN_PLAN_INVALID: campaign approval is malformed: ${validation.errors.map((error) => error.message).join('; ')}`),
+            { code: 'CAMPAIGN_PLAN_INVALID' },
+        );
+    }
+    if (!Array.isArray(receipt.units)) {
+        throw Object.assign(
+            new Error('CAMPAIGN_PLAN_INVALID: this campaign receipt does not bind a unit set — it cannot authorize revision writes'),
+            { code: 'CAMPAIGN_PLAN_INVALID' },
+        );
+    }
+    // The three chains, derived from the artifacts THIS write presents — the
+    // same ones the gate bound. The scope is the revision scope the session
+    // was built from; the grouping chain is the session's reviewUnitManifest
+    // projection; the candidate-spec chain is the contexts document's
+    // SPECIFICATION projection — every entry minus its verbatimContent bytes.
+    // The content itself is bound by units[].batchDigest (pinned → fresh via
+    // the dual-track acceptance), NOT by the candidateSpec chain: under
+    // ruling (b) a content regeneration must not trip the chain, but a
+    // structural change (units, metadata, reviewedEvidence) must.
+    const candidateSpecProjection = contextsProjection(contexts);
+    const chainComponents = {
+        groupingDigest: digestSemantic({ reviewUnitManifest: session.reviewUnitManifest }),
+        candidateSpecDigest: digestSemantic(candidateSpecProjection),
+    };
+    const resolved = resolveCampaignApprovalForWrite({
+        approval: receipt,
+        scope,
+        presentedBatchDigest: args.approveDigest ?? null,
+        presentedUnitId: args.reviewUnitId,
+        chainComponents,
+    });
+    return {
+        approveDigest: resolved.approvedBatchDigest,
+        regeneration: resolved.regeneration,
+        approveDigestWas: 'campaign',
+        campaignPlanDigest: resolved.campaignPlanDigest,
+    };
+}
+
 function buildRevisionBatch({ stableId, reviewUnitId, documentToken, recordId, fixedContent, sources }) {
     const planDigest = digestSemantic({
         schemaVersion: 1,
@@ -295,13 +395,29 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
         fixedContent: entry.verbatimContent,
         sources,
     });
-    if (args.approveDigest !== batch.batchDigest) {
-        throw Object.assign(
-            new Error(`Approval digest mismatch: the write gate approved ${batch.batchDigest}, got ${args.approveDigest}. The reviewed content changed since approval — re-present the write gate.`),
-            { code: 'REVISION_APPROVAL_DIGEST_MISMATCH' },
-        );
+    // Slice 7: the campaign receipt resolves the approval (unit membership +
+    // three-chain re-verification + dual-track digest acceptance); a
+    // standalone --approve-digest keeps the exact byte-pin ruling.
+    const authorization = resolveRevisionApproval({ args, session, scope, contexts });
+    const batchDigest = authorization.approveDigest;
+    if (authorization.approveDigestWas === 'standalone') {
+        if (args.approveDigest !== batch.batchDigest) {
+            throw Object.assign(
+                new Error(`Approval digest mismatch: the write gate approved ${batch.batchDigest}, got ${args.approveDigest}. The reviewed content changed since approval — re-present the write gate.`),
+                { code: 'REVISION_APPROVAL_DIGEST_MISMATCH' },
+            );
+        }
+    } else {
+        // The campaign receipt already resolved the dual track; the executed
+        // digest (pinned or regenerated) must equal the recomputed batch —
+        // provider-side equality is the same final gate as the release path.
+        if (batchDigest !== batch.batchDigest) {
+            throw Object.assign(
+                new Error(`Approval digest mismatch: the recomputed batch is ${batch.batchDigest}, got ${batchDigest}. The reviewed content changed since the campaign gate — re-present the unit's fresh digest.`),
+                { code: 'REVISION_APPROVAL_DIGEST_MISMATCH' },
+            );
+        }
     }
-    const batchDigest = batch.batchDigest;
 
     const governance = new WriterGovernance({ skill: 'api-reference-sync', operation: 'revision-apply' });
     governance.bindApproval({
@@ -381,6 +497,20 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
     // Base capture BEFORE any mutation: the content-fidelity outcome binds
     // the exact live bytes the fix was computed against, and the rollback
     // capsule preserves the prior page body for pre-finalization rollback.
+    // A campaign-authorization regeneration is journaled FIRST (the approval
+    // envelope did not pin these bytes; the three-chain binding authorized
+    // them) so the audit trail opens with the lineage fact.
+    if (authorization.regeneration) {
+        journalLines.push({
+            schemaVersion: 1,
+            type: 'campaign-approval-regeneration',
+            code: authorization.regeneration.code,
+            reviewUnitId: args.reviewUnitId,
+            pinnedBatchDigest: authorization.regeneration.pinnedBatchDigest,
+            freshBatchDigest: authorization.regeneration.freshBatchDigest,
+            campaignPlanDigest: authorization.campaignPlanDigest ?? null,
+        });
+    }
     const baseOutcome = {
         schemaVersion: 1,
         type: 'content-fidelity',
@@ -582,7 +712,9 @@ async function runCli({ argv = process.argv, dependencies = {} } = {}) {
 module.exports = {
     assembleBlockTree,
     buildRevisionBatch,
+    contextsProjection,
     rebuildPage,
+    resolveRevisionApproval,
     runCli,
     sourcesFromContext,
 };

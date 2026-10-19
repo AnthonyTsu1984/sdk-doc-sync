@@ -154,16 +154,34 @@ test('pinnedScripts values must each be a digest', () => {
   assert.ok(!validation.errors.some((error) => error.path === '$.template.pinnedScripts.intakeAssemble'));
 });
 
-test('kind "revision" is refused typed until slice 7', () => {
+test('kind "revision" is open as of slice 7 and validates under the revision path spine', () => {
   const plan = fixturePlan();
   plan.kind = 'revision';
+  // The revision shape requires the contexts/manifest/unit-digests trio, not
+  // the release-sync sdk paths — the same fixture passes only if the
+  // per-kind spine is honored (the sdk paths are simply not required here).
+  plan.paths = {
+    campaignDir: 'tmp/campaign-rev',
+    sessionPath: 'tmp/campaign-rev/session.json',
+    scopePath: 'tmp/campaign-rev/scope.json',
+    contextsPath: 'tmp/campaign-rev/contexts.json',
+    manifestProjectionPath: 'tmp/campaign-rev/manifest-projection.json',
+    unitDigestsPath: 'tmp/campaign-rev/unit-digests.json',
+  };
+  assert.deepEqual(validateCampaignPlan(plan), { valid: true, errors: [] });
+
+  // A revision plan missing the trio is refused with the exact field paths.
+  plan.paths = { campaignDir: 'tmp/campaign-rev', sessionPath: 's', scopePath: 's' };
   const validation = validateCampaignPlan(plan);
   assert.equal(validation.valid, false);
-  assert.deepEqual(
-    validation.errors.filter((error) => error.code === CAMPAIGN_KIND_UNSUPPORTED),
-    [{ code: CAMPAIGN_KIND_UNSUPPORTED, path: '$.kind', message: validation.errors[0].message }],
-  );
-  assert.match(validation.errors[0].message, /slice 7/);
+  for (const key of ['contextsPath', 'manifestProjectionPath', 'unitDigestsPath']) {
+    assert.ok(validation.errors.some((error) => error.path === `$.paths.${key}`), key);
+  }
+
+  // A release-sync plan missing its sdk spine is still refused.
+  const releasePlan = fixturePlan();
+  releasePlan.paths = { campaignDir: 'c', sessionPath: 's', scopePath: 's' };
+  assert.equal(validateCampaignPlan(releasePlan).valid, false);
 });
 
 test('a tag trigger is kernel-legal (the shell is what refuses it)', () => {

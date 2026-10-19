@@ -13,7 +13,13 @@ const {
     loadReviewSessionState,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { intakeRevisionSession, main: intakeMain } = require('../bin/revision-intake');
-const { assembleBlockTree, buildRevisionBatch, runCli: applyRunCli } = require('../bin/revision-apply');
+const { assembleBlockTree, buildRevisionBatch, resolveRevisionApproval, runCli: applyRunCli } = require('../bin/revision-apply');
+const {
+    buildCampaignApprovalReceipt,
+    buildCampaignPlan,
+    combinedUnitsDigest,
+    componentDigests,
+} = require('../src/sdk-doc-sync/campaign-approval');
 const { checkLayoutConformance, pageFactsFromBlocks } = require('../src/sdk-doc-sync/layout-conformance');
 const sdkLayoutProfiles = require('../src/renderers/sdk-layout-profiles');
 
@@ -504,4 +510,292 @@ test('revision-apply verifies a landed callout page when the live fetch returns 
     assert.equal(completion.status, 'executed');
     assert.equal(completion.completionSentinel, true);
     fs.rmSync(runManifestPath, { force: true });
+});
+
+test('a content-only context drift does NOT trip the chain (the regeneration path, ruling b)', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-campaign-contentonly-'));
+    const scope = scopeFixture();
+    const contexts = contextsFixture();
+    const sessionPath = createSessionFixture(directory, scope);
+    const { session } = loadReviewSessionState(path.resolve(sessionPath));
+
+    const units = revisionUnitDigestsFor(scope, contexts, session);
+    const receipt = revisionCampaignReceipt({ scope, contexts, units, session });
+    const receiptPath = writeJson(directory, 'receipt.json', receipt);
+
+    // Only verbatimContent changed: the spec projection strips content, so the
+    // chain holds — the fresh digest rides the dual-track acceptance instead.
+    const regenerated = { ...contexts.contexts[STABLE_ID], verbatimContent: 'SOME NEW CONTENT' };
+    const drifted = { ...contexts.contexts, [STABLE_ID]: regenerated };
+    const resolution = resolveRevisionApproval({
+        args: { campaignApproval: receiptPath, approveDigest: units[0].batchDigest, reviewUnitId: UNIT_ID },
+        session,
+        scope,
+        contexts: drifted,
+    });
+    // The pinned digest executes; the chain held through the content drift.
+    assert.equal(resolution.approveDigest, units[0].batchDigest);
+    assert.equal(resolution.regeneration, null);
+});
+
+// --- batch 16 slice 7: the merged campaign approval authorizes revision writes
+// (ruling (b): unit set + three chains + membership; fresh digest = regeneration) ---
+
+function stripContent(contextsContainer) {
+    const projected = {};
+    for (const [key, entry] of Object.entries(contextsContainer)) {
+        if (entry && typeof entry === 'object') {
+            const { verbatimContent, ...rest } = entry;
+            projected[key] = rest;
+        } else {
+            projected[key] = entry;
+        }
+    }
+    return projected;
+}
+
+function revisionUnitDigestsFor(scope, contexts, session) {
+    const units = [];
+    for (const unit of session.reviewUnitManifest.units) {
+        const action = scope.actions.find((item) => item.stableId === unit.documentStableId);
+        const entry = contexts.contexts[unit.documentStableId];
+        const batch = buildRevisionBatch({
+            stableId: unit.documentStableId,
+            reviewUnitId: unit.reviewUnitId,
+            documentToken: action.documentToken,
+            recordId: action.recordId,
+            fixedContent: entry.verbatimContent,
+            sources: [],
+        });
+        units.push({ reviewUnitId: unit.reviewUnitId, batchDigest: batch.batchDigest });
+    }
+    return units;
+}
+
+function revisionCampaignReceipt({ scope, contexts, units, session }) {
+    const plan = buildCampaignPlan({
+        language: scope.language,
+        sdkName: scope.sdkName,
+        track: scope.track,
+        components: componentDigests({
+            scope,
+            // The grouping chain = the session's reviewUnitManifest projection,
+            // exactly what revision-apply re-derives at write time.
+            grouping: { reviewUnitManifest: session.reviewUnitManifest },
+            // The candidate-spec chain = the contexts container's SPECIFICATION
+            // projection (content bytes stripped — they are bound by the
+            // units' batchDigest instead), exactly what revision-apply
+            // re-derives at write time.
+            candidateSpec: stripContent(contexts.contexts),
+            batchDigest: combinedUnitsDigest(units),
+        }),
+    });
+    return buildCampaignApprovalReceipt({ plan, units });
+}
+
+test('revision-apply executes under a campaign receipt when the three chains hold (slice 7 ruling b)', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-campaign-approval-'));
+    const scope = scopeFixture();
+    writeJson(directory, 'scope.json', scope);
+    const contextsPath = writeJson(directory, 'contexts.json', contextsFixture());
+    const contexts = JSON.parse(fs.readFileSync(contextsPath, 'utf8'));
+    const sessionPath = createSessionFixture(directory, scope);
+    const { session } = loadReviewSessionState(path.resolve(sessionPath));
+
+    // The receipt the campaign gate would have recorded: unit set from the
+    // initial dry-run previews, grouping = the session's reviewUnitManifest
+    // projection, candidate-spec = the contexts document.
+    const units = revisionUnitDigestsFor(scope, contexts, session);
+    const receipt = revisionCampaignReceipt({ scope, contexts, units, session });
+    const receiptPath = writeJson(directory, 'receipt.json', receipt);
+
+    const batch = buildRevisionBatch({
+        stableId: STABLE_ID,
+        reviewUnitId: UNIT_ID,
+        documentToken: 'tokA',
+        recordId: 'recA',
+        fixedContent: FIXED_CONTENT,
+        sources: [],
+    });
+
+    const runManifestPath = path.resolve('tmp', 'api-reference-sync', `run-manifest-revision-apply-${UNIT_ID.replace(/[^A-Za-z0-9-]/g, '-')}.json`);
+    if (fs.existsSync(runManifestPath)) fs.rmSync(runManifestPath);
+
+    const result = await applyRunCli({
+        argv: [
+            'node', 'revision-apply',
+            '--session', sessionPath,
+            '--review-unit-id', UNIT_ID,
+            '--scope', path.join(directory, 'scope.json'),
+            '--contexts', contextsPath,
+            '--campaign-approval', receiptPath,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
+            '--journal', path.join(directory, 'execution.jsonl'),
+            '--json',
+        ],
+        dependencies: {
+            fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+            fetchRawContent: async () => BASE_CONTENT,
+            fetchBlocks: async () => CONFORMANT_BLOCKS,
+            rebuildPage: async () => 1,
+            reopenRecord: async () => 'reopened',
+        },
+    });
+
+    assert.equal(result.status, 'EXECUTED');
+    assert.equal(result.batchDigest, batch.batchDigest);
+    fs.rmSync(runManifestPath, { force: true });
+});
+
+test('revision-apply refuses a campaign receipt whose unit set no longer contains the unit', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-campaign-membership-'));
+    const scope = scopeFixture();
+    writeJson(directory, 'scope.json', scope);
+    const contextsPath = writeJson(directory, 'contexts.json', contextsFixture());
+    const contexts = JSON.parse(fs.readFileSync(contextsPath, 'utf8'));
+    const sessionPath = createSessionFixture(directory, scope);
+    const { session } = loadReviewSessionState(path.resolve(sessionPath));
+
+    // Approved set WITHOUT our unit: an intruder executes against a receipt
+    // that never approved it. A single-unit campaign has no sibling to
+    // exclude, so the approved set is a DIFFERENT unit id — membership (not
+    // the digest) is what must refuse.
+    const units = [{ reviewUnitId: 'review:java:v3-SomeOtherClass', batchDigest: `sha256:${'9'.repeat(64)}` }];
+    const receipt = revisionCampaignReceipt({ scope, contexts, units, session });
+    const receiptPath = writeJson(directory, 'receipt.json', receipt);
+
+    await assert.rejects(
+        () => applyRunCli({
+            argv: [
+                'node', 'revision-apply',
+                '--session', sessionPath,
+                '--review-unit-id', UNIT_ID,
+                '--scope', path.join(directory, 'scope.json'),
+                '--contexts', contextsPath,
+                '--campaign-approval', receiptPath,
+                '--base-token', 'base-canary',
+                '--table-id', 'tbl-canary',
+                '--journal', path.join(directory, 'execution.jsonl'),
+                '--json',
+            ],
+            dependencies: {
+                fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+                fetchRawContent: async () => BASE_CONTENT,
+                fetchBlocks: async () => CONFORMANT_BLOCKS,
+                rebuildPage: async () => 1,
+                reopenRecord: async () => 'reopened',
+            },
+        }),
+        (error) => error.code === 'CAMPAIGN_UNIT_NOT_APPROVED',
+    );
+    // A refused membership writes nothing: no journal, no session change.
+    assert.equal(fs.existsSync(path.join(directory, 'execution.jsonl')), false);
+});
+
+test('revision-apply journals CONTENT_REGENERATED when the executed digest is fresh (ruling b)', async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-campaign-regenerated-'));
+    const scope = scopeFixture();
+    writeJson(directory, 'scope.json', scope);
+    const contextsPath = writeJson(directory, 'contexts.json', contextsFixture());
+    const contexts = JSON.parse(fs.readFileSync(contextsPath, 'utf8'));
+    const sessionPath = createSessionFixture(directory, scope);
+    const { session } = loadReviewSessionState(path.resolve(sessionPath));
+
+    const units = revisionUnitDigestsFor(scope, contexts, session);
+    const receipt = revisionCampaignReceipt({ scope, contexts, units, session });
+    const receiptPath = writeJson(directory, 'receipt.json', receipt);
+
+    // A fresh fixed content (the writer regenerated after the gate): the
+    // recomputed batch digest differs from the receipt's pinned value, so
+    // the write presents the FRESH digest and the receipt's dual-track
+    // acceptance authorizes it as regeneration.
+    const regeneratedContent = `${FIXED_CONTENT}\nA further clarified sentence.\n`;
+    const regeneratedBatch = buildRevisionBatch({
+        stableId: STABLE_ID,
+        reviewUnitId: UNIT_ID,
+        documentToken: 'tokA',
+        recordId: 'recA',
+        fixedContent: regeneratedContent,
+        sources: [],
+    });
+    const contextsRegenerated = JSON.parse(fs.readFileSync(contextsPath, 'utf8'));
+    contextsRegenerated.contexts[STABLE_ID].verbatimContent = regeneratedContent;
+    const contextsRegeneratedPath = writeJson(directory, 'contexts-regenerated.json', contextsRegenerated);
+
+    const runManifestPath = path.resolve('tmp', 'api-reference-sync', `run-manifest-revision-apply-${UNIT_ID.replace(/[^A-Za-z0-9-]/g, '-')}.json`);
+    if (fs.existsSync(runManifestPath)) fs.rmSync(runManifestPath);
+
+    // The live page AFTER the rebuild carries the regenerated content: the
+    // terminal comparator reads the block tree, so the mock live blocks must
+    // include the clarified sentence.
+    const regeneratedLiveBlocks = [
+        ...CONFORMANT_BLOCKS,
+        { block_id: 'blk-4', block_type: 2, text: { elements: [{ text_run: { content: 'A further clarified sentence.' } }] } },
+    ];
+    const result = await applyRunCli({
+        argv: [
+            'node', 'revision-apply',
+            '--session', sessionPath,
+            '--review-unit-id', UNIT_ID,
+            '--scope', path.join(directory, 'scope.json'),
+            '--contexts', contextsRegeneratedPath,
+            '--campaign-approval', receiptPath,
+            '--approve-digest', regeneratedBatch.batchDigest,
+            '--base-token', 'base-canary',
+            '--table-id', 'tbl-canary',
+            '--journal', path.join(directory, 'execution.jsonl'),
+            '--json',
+        ],
+        dependencies: {
+            fetchRecordState: async () => ({ record_id: 'rec-1', fields: { Progress: 'Draft', Targets: ['Milvus'] } }),
+            fetchRawContent: async () => BASE_CONTENT,
+            fetchBlocks: async () => regeneratedLiveBlocks,
+            rebuildPage: async () => 1,
+            reopenRecord: async () => 'reopened',
+        },
+    });
+
+    assert.equal(result.status, 'EXECUTED');
+    assert.equal(result.batchDigest, regeneratedBatch.batchDigest);
+    const journal = fs.readFileSync(path.join(directory, 'execution.jsonl'), 'utf8').trim().split('\n').map((line) => JSON.parse(line));
+    const regeneration = journal.find((entry) => entry.type === 'campaign-approval-regeneration');
+    assert.ok(regeneration, 'the CONTENT_REGENERATED lineage must be journaled');
+    assert.equal(regeneration.code, 'CONTENT_REGENERATED');
+    assert.equal(regeneration.reviewUnitId, UNIT_ID);
+    assert.equal(regeneration.freshBatchDigest, regeneratedBatch.batchDigest);
+    fs.rmSync(runManifestPath, { force: true });
+});
+
+test('a campaign receipt with a structurally drifted context chain is CAMPAIGN_DIGEST_STALE (the explicit three-chain)', () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'revision-campaign-chain-'));
+    const scope = scopeFixture();
+    writeJson(directory, 'scope.json', scope);
+    const contexts = contextsFixture();
+    const contextsPath = writeJson(directory, 'contexts.json', contexts);
+    const sessionPath = createSessionFixture(directory, scope);
+    const { session } = loadReviewSessionState(path.resolve(sessionPath));
+
+    const units = revisionUnitDigestsFor(scope, contexts, session);
+    const receipt = revisionCampaignReceipt({ scope, contexts, units, session });
+    const receiptPath = writeJson(directory, 'receipt.json', receipt);
+
+    // A STRUCTURAL drift after the gate — the spec projection excludes
+    // verbatimContent (bound by the units' batchDigest instead), so only a
+    // structural fact (units, metadata, reviewedEvidence) can trip the chain.
+    // Content-only drift is the regeneration path (ruling b); structural drift
+    // demands a fresh gate.
+    const driftedContexts = JSON.parse(fs.readFileSync(contextsPath, 'utf8'));
+    driftedContexts.contexts[STABLE_ID].reviewedEvidence = [];
+    const driftedPath = writeJson(directory, 'drifted-contexts.json', driftedContexts);
+
+    assert.throws(
+        () => resolveRevisionApproval({
+            args: { campaignApproval: receiptPath, approveDigest: units[0].batchDigest, reviewUnitId: UNIT_ID },
+            session,
+            scope,
+            contexts: JSON.parse(fs.readFileSync(driftedPath, 'utf8')).contexts,
+        }),
+        (error) => error.code === 'CAMPAIGN_DIGEST_STALE' && /candidateSpecDigest/.test(error.message),
+    );
 });

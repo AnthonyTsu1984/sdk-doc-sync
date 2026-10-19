@@ -11,10 +11,11 @@
 //
 // Validation is fail-closed on KNOWN fields and ignores unknown ones (the
 // generator may add fields forward-compatibly), but the digest still covers
-// the WHOLE object — an unknown-field edit is still a different plan. Two
-// typed codes: CAMPAIGN_PLAN_INVALID for shape violations, and
-// CAMPAIGN_KIND_UNSUPPORTED for the parsed-but-closed `revision` kind (slice 7
-// opens it; refusing closed beats silently half-supporting it).
+// the WHOLE object — an unknown-field edit is still a different plan. The
+// `revision` kind is OPEN as of batch 16 slice 7 (operator ruling 2026-10-19,
+// design §10 slice 7: gate convergence under the same units-based (b) semantics
+// as release-sync); CAMPAIGN_KIND_UNSUPPORTED remains for kinds outside the
+// enum.
 //
 // The kernel accepts BOTH trigger kinds (`pr` and `tag`): tag watermarks
 // advance via close-session and are legitimate plan data. It is the campaign
@@ -42,6 +43,14 @@ const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const CAMPAIGN_KINDS = Object.freeze(['release-sync', 'revision']);
 const SEATS = Object.freeze(['a1', 'a2', 'a3']);
 const SEAT_INT_FIELDS = Object.freeze(['pagesPerWriter', 'maxRounds']);
+// Path keys required for every kind (slice 7: the revision shape carries the
+// same artifact spine, keyed by kind in the generator).
+const RELEASE_SYNC_PATH_KEYS = Object.freeze(['sdkDir', 'campaignDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson']);
+// Revision-shape required paths: the contexts document is the content
+// authority (the approval's candidateSpec chain), the manifest projection is
+// the reviewUnitManifest view (the grouping chain), the unit-digests file is
+// the initial per-unit digest set (the approval's units binding).
+const REVISION_PATH_KEYS = Object.freeze(['campaignDir', 'sessionPath', 'scopePath', 'contextsPath', 'manifestProjectionPath', 'unitDigestsPath']);
 
 class CampaignPlanError extends TypeError {
   constructor(code, message, details = {}) {
@@ -89,11 +98,9 @@ function validateCampaignPlan(plan) {
     report('$.campaignId', 'must match /^[a-z0-9][a-z0-9.-]*$/ (it roots report titles and admit phase prefixes)');
   }
 
-  // `revision` parses but is refused closed until slice 7 parameterizes the
-  // revision shape; anything else outside the enum is a plain shape error.
-  if (plan.kind === 'revision') {
-    report('$.kind', '"revision" is not open until batch 16 slice 7 — the plan is refused closed', CAMPAIGN_KIND_UNSUPPORTED);
-  } else if (!CAMPAIGN_KINDS.includes(plan.kind)) {
+  // Both kinds are open as of slice 7; anything outside the enum is a plain
+  // shape error.
+  if (!CAMPAIGN_KINDS.includes(plan.kind)) {
     report('$.kind', `must be one of ${CAMPAIGN_KINDS.join('|')}`);
   }
 
@@ -144,7 +151,12 @@ function validateCampaignPlan(plan) {
   if (!isObject(plan.paths)) {
     report('$.paths', 'must be an object');
   } else {
-    for (const key of ['sdkDir', 'campaignDir', 'sessionPath', 'scopePath', 'groupingPath', 'candidateSpecPath', 'referenceContext', 'targetsJson']) {
+    // Per-kind required spine (slice 7): release-sync keeps the sdk-scanner
+    // paths; revision replaces them with the contexts/manifest/unit-digests
+    // trio. Shared keys (campaignDir/sessionPath/scopePath) stay required in
+    // both.
+    const requiredPaths = plan.kind === 'revision' ? REVISION_PATH_KEYS : RELEASE_SYNC_PATH_KEYS;
+    for (const key of requiredPaths) {
       if (!nonEmptyString(plan.paths[key])) report(`$.paths.${key}`, 'must be a non-empty string');
     }
   }

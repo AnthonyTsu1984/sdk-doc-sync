@@ -553,10 +553,14 @@ if (rehearsal) {
     "## 你唯一允许写入的文件\n" + paths.referenceContext + "\n" +
     "## 任务\n" +
     "为 scope 内 CREATE/schema-first 单元材料化/刷新 reviewed 上下文条目。\n" +
-    "UPDATE 页硬性 verbatim 规则（2026-10-20 裁定 A 收紧,最硬约束）:对 scope 中每个 type=UPDATE 的单元,reviewed 上下文条目的 summary/result/example 三字段必须从 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字透传 PR 页原文——禁止改写措辞、禁止截断（含末尾句）、禁止重排或自增内容;唯一豁免=example 代码块内的确定性排版归一化（单行↔多行、行内空白规范化,属确定性变换,不得改变任何代码字节之外的语义）。update 单元的 summaryCallouts/deprecation alert 也必须原样保留。随轨事实:sourceRevision=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.sourceRevision) + ";CREATE 白名单注记=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.createWhitelistNote) + ";文风范式 exemplar=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.exemplarPath) + ";scout 警告条数=" + JSON.stringify(notesR === null ? null : notesR.scoutWarnings) + ";每写手页数上限=" + pagesPerWriter + "。\n" +
+    "UPDATE 页硬性 verbatim 规则（2026-10-20 裁定 A 收紧,最硬约束;r7 修例:候选规格已是 intake 链确定性处理的产物,不得回退）:对 scope 中每个 type=UPDATE 的单元——\n" +
+    "① summary/result 两字段的**文本内容**必须与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致（禁止改写措辞、禁止截断含末尾句、禁止重排或自增）;summaryCallouts/deprecation alert 文本同样逐字保留。\n" +
+    "② example 代码块**不重新抄写 PR 原文**——直接采用 candidate-spec（" + paths.candidateSpecPath + "）里该单元 examples[].code 的现成字节（它已是 PR 逐字 + intake 链 N6 确定性重排/链接解析的产物）;若某单元候选规格缺 examples,才从 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 补抄。\n" +
+    "③ 任何 prose 里的 repo-relative 链接（[text](xxx.md)）保持 candidate-spec 已解析的形态,不得用 PR 原文的相对链接覆盖。\n" +
+    "④ 唯一可对 example 做的变换=代码块内确定性排版归一化（单行↔多行、行内空白规范化,不得移动行内注释、不得增删标点）。随轨事实:sourceRevision=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.sourceRevision) + ";CREATE 白名单注记=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.createWhitelistNote) + ";文风范式 exemplar=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.exemplarPath) + ";scout 警告条数=" + JSON.stringify(notesR === null ? null : notesR.scoutWarnings) + ";每写手页数上限=" + pagesPerWriter + "。\n" +
     "## include 分叉纪律（W-E）\n" +
     "需要按 target 分叉的内容,一律调 " + SKILL + "/scripts/inject-includes.js --request <request.json> 产 canonical 标签形态（块式/片段级 inline/code fence 行指令/列表项/表格行,形态由该 CLI 依内容裁决）,绝不手写 include 标签。\n" +
-    "## 返回\n{\"written\":<条数>,\"selfCheckOk\":<bool>,\"notes\":\"<备注或空>\"}。selfCheckOk=scope 内每个 CREATE 单元在 reviewed 上下文都有内容条目,且每个 UPDATE 单元的 summary/result/example 与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致（仅 example 确定性排版归一化豁免）;做不到就如实写 false 并在 notes 说明,绝不编造。",
+    "## 返回\n{\"written\":<条数>,\"selfCheckOk\":<bool>,\"notes\":\"<备注或空>\"}。selfCheckOk=scope 内每个 CREATE 单元在 reviewed 上下文都有内容条目,且每个 UPDATE 单元的 summary/result 文本与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致,example 代码保持 candidate-spec 的处理形态（不重抄、不回退 N6/链接解析）;做不到就如实写 false 并在 notes 说明,绝不编造。",
   );
   log("A1 写手完成:written=" + String(writerAnswer.written) + ",selfCheckOk=" + String(writerAnswer.selfCheckOk) + (typeof writerAnswer.notes === "string" && writerAnswer.notes !== "" ? ",notes=" + writerAnswer.notes.slice(0, 160) : ""));
   for (let round = 1; round <= 2; round += 1) {
@@ -566,7 +570,7 @@ if (rehearsal) {
     const verdict = await reviewer.ask<ReviewVerdict>(
       "你是 release-sync 战役 " + campaignId + " 的独立复核员（第 " + round + "/2 轮,run " + NONCE + "）。只读审阅:\n" +
       "- 发布范围:" + paths.scopePath + "\n- reviewed 上下文:" + paths.referenceContext + "\n- 归属裁定:" + paths.targetsJson + "\n- PR 页 dump（UPDATE verbatim 权威源）:" + (pagesDir === "" ? "<未知>" : pagesDir) + "\n\n" +
-      "职责边界:只对以下两类问题报 findings——①scope 内 CREATE/schema-first 单元在上下文中缺失,或其内容与 scope 动作明显不符;②UPDATE 单元的 summary/result/example 未逐字透传 PR 页——必须打开 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字比对,报告改写/截断/缺失（含末尾句丢失、RETURNS dict 与嵌套表丢失、deprecation alert 丢失、示例被替换）;例外:example 代码块内单行↔多行的确定性排版归一化不构成 finding。include 标签形态是否 canonical 由 CLI 校验管,不进你的 findings;scope 外的发现放 notes,不计 fail。\n" +
+      "职责边界:只对以下两类问题报 findings——①scope 内 CREATE/schema-first 单元在上下文中缺失,或其内容与 scope 动作明显不符;②UPDATE 单元的 summary/result 文本未逐字透传 PR 页——打开 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 比对 summary/result/summaryCallouts（含末尾句丢失、RETURNS dict 与嵌套表丢失、deprecation alert 丢失）。example 代码**不查**——它由 intake 链确定性处理（N6 重排/链接解析），以 candidate-spec 现成字节为准,不与 PR 页逐字比对;summary/result 里的 repo-relative 链接保持解析形态即可,原始相对链接不构成 finding。include 标签形态是否 canonical 由 CLI 校验管,不进你的 findings;scope 外的发现放 notes,不计 fail。\n" +
       "返回:{\"pass\":<bool>,\"findings\":[{\"unit\":\"<stableId>\",\"problem\":\"<一句话,写手能照着修>\"}],\"notes\":[\"<scope 外发现,可空>\"]};无问题 findings=[]。",
     );
     const findings = verdict !== null && verdict !== undefined && Array.isArray(verdict.findings) ? verdict.findings : [];
@@ -583,7 +587,7 @@ if (rehearsal) {
     }
     log("独立复核轮 " + round + ":" + findings.length + " 条发现,回 A1 修正…");
     await writer.ask<RegenAnswer>(
-      "独立复核员对 " + paths.referenceContext + " 提出以下问题,逐条修正（只动点名单元;UPDATE 页保持逐字 verbatim——summary/result/example 必须对照 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 透传,禁止改写/截断/重排,仅 example 确定性排版归一化豁免;run " + NONCE + "）:\n" +
+      "独立复核员对 " + paths.referenceContext + " 提出以下问题,逐条修正（只动点名单元;UPDATE 页 summary/result 保持逐字 verbatim——对照 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 透传,禁止改写/截断/重排;example 代码保持 candidate-spec 处理形态,不重抄 PR 原文;run " + NONCE + "）:\n" +
       findings.map((f) => "- " + String(f.unit) + ": " + String(f.problem).slice(0, 200)).join("\n").slice(0, 3000) +
       "\n返回 {\"fixed\":<bool>,\"notes\":\"…\"};修不了就如实 fixed=false。",
     );
@@ -766,7 +770,7 @@ async function regenerateWithWriter(unit: UnitDigest, located: LocatedFailure): 
     system: "你是 governed 文档战役的 A1 材料化写手:产出高质量 reviewed 上下文材料,如实报告,绝不编造;指令不可能完成时如实上报而不是硬凑。只写任务指定的唯一目标文件。",
   });
   const answer = await writer.ask<RegenAnswer>(
-    "单元 " + unit.reviewUnitId + " 执行期 verifier 失败,带定位回喂重刷（run " + NONCE + "）。只修 " + paths.referenceContext + " 中该单元对应条目,其余条目一字不动;UPDATE 页保持逐字 verbatim——summary/result/example 必须对照 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 透传,禁止改写/截断/重排,仅 example 确定性排版归一化豁免。\n" +
+    "单元 " + unit.reviewUnitId + " 执行期 verifier 失败,带定位回喂重刷（run " + NONCE + "）。只修 " + paths.referenceContext + " 中该单元对应条目,其余条目一字不动;UPDATE 页 summary/result 保持逐字 verbatim——对照 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 透传,禁止改写/截断/重排;example 代码保持 candidate-spec 处理形态,不重抄 PR 原文。\n" +
     "## 定位失败\n" + JSON.stringify(located, null, 1).slice(0, 1600) + "\n" +
     "## 输入参照（只读）\n- scope:" + paths.scopePath + "\n- SDK 检出:" + paths.sdkDir + "\n- PR 页 dump:" + (pagesDir === "" ? "<未知>" : pagesDir) + "\n" +
     "include 分叉仍一律走 " + SKILL + "/scripts/inject-includes.js。\n" +

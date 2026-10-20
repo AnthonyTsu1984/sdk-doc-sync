@@ -206,6 +206,15 @@ console.log(JSON.stringify({ ok: true, code: located.code, path: located.path, l
 const GATE_PRESENT_PAYLOAD = `
 const fs = require('node:fs'), path = require('node:path');
 const manifest = JSON.parse(process.argv[1]);
+// Material links must be absolute (https?|file):// URLs for the fixed-structure
+// self-check P5 (PRESENTATION_LINKS_MISSING). Campaign manifests carry
+// repo-relative paths (tmp/...); resolve them to file:// against the cwd so
+// the operator's index is clickable and the check passes (round-10 freeze).
+manifest.links = (manifest.links || []).map((link) => {
+  const url = String(link && link.url || '');
+  if (/^(https?|file):\\/\\//i.test(url)) return link;
+  return { ...link, url: 'file://' + path.resolve(url) };
+});
 fs.mkdirSync(process.argv[2], { recursive: true });
 const mFile = path.join(process.argv[2], 'gate-manifest-campaign-' + process.argv[3] + '.json');
 fs.writeFileSync(mFile, JSON.stringify(manifest, null, 2));

@@ -74,6 +74,27 @@ test('a page matching the fixed structure passes all points', () => {
     assert.equal(report.linkCount, 1);
 });
 
+test('campaign-level APPROVE_CAMPAIGN gate is a known reply-line gate (round-10 freeze)', () => {
+    const html = validHtml().replace('APPROVE_WRITES', 'APPROVE_CAMPAIGN');
+    const report = validatePresentationHtml(html, { skipSessionFileExistence: true });
+    assert.equal(report.ok, true, JSON.stringify(report.failures));
+    assert.equal(report.gate, 'APPROVE_CAMPAIGN');
+    // The generator (gate-presentation.js, run as a subprocess) must pre-fill
+    // the reply line for the campaign gate.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gate-campaign-'));
+    const manifest = path.join(dir, 'manifest.json');
+    fs.writeFileSync(manifest, JSON.stringify({
+        gate: 'APPROVE_CAMPAIGN',
+        digest: DIGEST,
+        session: SESSION_FIXTURE,
+        links: [{ label: 'get — page', url: 'https://zilliverse.feishu.cn/wiki/a' }],
+    }));
+    const generated = spawnSync(process.execPath, [GENERATOR_SCRIPT, '--manifest', manifest,
+        '--index-dir', dir, '--no-open', '--no-clipboard'], { cwd: REPO_ROOT, encoding: 'utf8' });
+    assert.equal(generated.status, 0, generated.stderr);
+    assert.match(generated.stdout, new RegExp(`APPROVE_CAMPAIGN ${DIGEST}`));
+});
+
 test('P1 — a missing, duplicate, or unknown gate banner fails', () => {
     for (const [name, mutate] of [
         ['missing', (html) => html.replace(/<h1>[^<]+<\/h1>/, '')],

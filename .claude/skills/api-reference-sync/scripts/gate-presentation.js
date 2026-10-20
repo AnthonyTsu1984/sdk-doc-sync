@@ -238,6 +238,9 @@ const GATE_REPLY_LINES = Object.freeze({
     APPROVE_DOCUMENT: (manifest) => (typeof manifest.replyLine === 'string' && manifest.replyLine.trim() !== ''
         ? manifest.replyLine.trim()
         : null),
+    // Campaign-level merged gate (batch-16 release-sync template): the reply
+    // binds the campaignPlanDigest — APPROVE_CAMPAIGN sha256:<digest>.
+    APPROVE_CAMPAIGN: (manifest) => (manifest.digest ? `APPROVE_CAMPAIGN ${manifest.digest}` : null),
 });
 
 function canonicalGateCard(manifest, indexPath, opened, copied) {

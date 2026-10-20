@@ -61,6 +61,10 @@ const GATE_NAMES = Object.freeze([
     'APPROVE_DOCUMENT',
     'APPROVE_ROLLBACK',
     'APPROVE_ACCEPTANCE',
+    // Campaign-level merged gate (batch-16 release-sync template, shadow
+    // campaign #1 round-10): the only human stop of a whole campaign run,
+    // binding the campaignPlanDigest from the approval receipt.
+    'APPROVE_CAMPAIGN',
 ]);
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;

@@ -106,6 +106,13 @@ function pythonExampleCallLayoutDiagnostics(source) {
     const args = topLevelArguments(source, open, close);
     const hasKeyword = args.some((arg) => /^(?:\*\*)?[A-Za-z_]\w*\s*=/.test(arg.text));
     if (args.length < 2 || !hasKeyword) continue;
+    // Reflow would move inline comments off their argument lines and insert
+    // commas into them (splitTopLevelArguments orphans `# ...` tails, then the
+    // rebuild appends a comma to every argument). A deterministic layout
+    // transform must never reorder comment positions, so calls whose argument
+    // region carries a `#` outside strings are left byte-identical to the PR
+    // page — no diagnostic, no reflow.
+    if (regionHasComment(source, open, close)) continue;
     const openLine = lineNumberAt(source, open);
     const closeLine = lineNumberAt(source, close);
     const argumentLines = args.map((arg) => arg.startLine);
@@ -120,6 +127,21 @@ function pythonExampleCallLayoutDiagnostics(source) {
     }
   }
   return diagnostics;
+}
+
+// True when the slice (open, close) contains a `#` outside a string literal.
+// Matching the string/comment skipping of topLevelArguments/matchingParen so
+// the guard and the tokenizer agree.
+function regionHasComment(source, open, close) {
+  for (let cursor = open + 1; cursor < close; cursor += 1) {
+    const char = source[cursor];
+    if (char === '"' || char === "'") {
+      cursor = skipString(source, cursor) - 1;
+      continue;
+    }
+    if (char === '#') return true;
+  }
+  return false;
 }
 
 module.exports = { pythonExampleCallLayoutDiagnostics };

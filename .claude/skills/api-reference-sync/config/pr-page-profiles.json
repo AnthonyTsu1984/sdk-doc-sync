@@ -175,6 +175,7 @@
   ],
   "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
   "returnTypeRequired": false,
+  "returnTypePlainToken": true,
   "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
   "returnsStop": "^(\\*\\*[A-Z]|## )",
   "returnsBulletsAsProse": true,

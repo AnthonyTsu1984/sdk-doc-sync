@@ -67,8 +67,13 @@ function splitOrderedFences(markdown) {
     }
   };
   for (const line of lines) {
-    const open = !inFence && line.match(/^ {0,3}(`{3,})([^`]+)$/);
-    const close = inFence && /^ {0,3}`{3,}\s*$/.test(line);
+    // Allow fences indented up to 8 spaces (CommonMark list-item content):
+    // python PR pages nest example fences under `- **Quick setup**` bullets
+    // (create_collection/create_schema 2026-10-20 harvest). The 0-3 space cap
+    // silently dropped those, leaving example extraction short and forcing the
+    // writer to reconstruct examples (lead-in mis-attribution).
+    const open = !inFence && line.match(/^ {0,8}(`{3,})([^`]+)$/);
+    const close = inFence && /^ {0,8}`{3,}\s*$/.test(line);
     if (open) {
       flushProse();
       inFence = true;
@@ -95,8 +100,8 @@ function splitOrderedFences(markdown) {
 function extractH1(markdown) {
   let inFence = false;
   for (const line of String(markdown).split(/\r?\n/)) {
-    const open = !inFence && /^ {0,3}(`{3,})([^`]+)$/.test(line);
-    const close = inFence && /^ {0,3}`{3,}\s*$/.test(line);
+    const open = !inFence && /^ {0,8}(`{3,})([^`]+)$/.test(line);
+    const close = inFence && /^ {0,8}`{3,}\s*$/.test(line);
     if (open) { inFence = true; continue; }
     if (close) { inFence = false; continue; }
     if (!inFence) {
@@ -574,9 +579,20 @@ function parsePage(markdown, profile, pageName, opts = {}) {
   // return type: first *type* line in the section
   let returnType = null;
   if (profile.returnTypeHeading) {
-    const returnTypeMatch = section(parts, compile(profile.returnTypeHeading), compile(profile.returnTypeStop || '^\\*\\*(RETURNS|EXCEPTIONS|EXAMPLES|NOTES|ERROR HANDLING)\\b'))
-      .match(/^\s*\*(.+?)\*\s*$/m);
-    returnType = returnTypeMatch ? stripMdEscapes(returnTypeMatch[1]).trim() : null;
+    const returnTypeSection = section(parts, compile(profile.returnTypeHeading), compile(profile.returnTypeStop || '^\\*\\*(RETURNS|EXCEPTIONS|EXAMPLES|NOTES|ERROR HANDLING)\\b'));
+    const returnTypeMatch = returnTypeSection.match(/^\s*\*(.+?)\*\s*$/m);
+    if (returnTypeMatch) {
+      returnType = stripMdEscapes(returnTypeMatch[1]).trim();
+    } else if (profile.returnTypePlainToken === true) {
+      // python PR pages write the type both as `*None*` (bold) and `None`
+      // (plain). A short single-line token without sentence punctuation is a
+      // type; a longer prose sentence ("Instance of Function that ... .") is
+      // not — it belongs to result description, not result.type.
+      const plainMatch = returnTypeSection.match(/^\s*([^*\s][^\n.]*?)\s*$/m);
+      if (plainMatch && plainMatch[1].trim().length <= 60 && plainMatch[1].trim() !== '') {
+        returnType = stripMdEscapes(plainMatch[1]).trim();
+      }
+    }
     if (!returnType && profile.returnTypeRequired) {
       throw typedError(REJECTION_CODES.RETURN_TYPE_MISSING, `${pageName}: RETURN TYPE section has no *type* line`);
     }
@@ -635,6 +651,7 @@ function parsePage(markdown, profile, pageName, opts = {}) {
   // examples: every exampleFenceLang fence in the Example section, in order
   let exampleIntro = '';
   let exampleFences = [];
+  let exampleLeadIns = [];
   let exampleSectionPresent = false;
   if (profile.exampleHeading) {
     const exampleSection = section(parts, compile(profile.exampleHeading), compile(profile.exampleStop || '^## '));
@@ -647,6 +664,23 @@ function parsePage(markdown, profile, pageName, opts = {}) {
         .filter((p) => p.fence && new RegExp(`^${profile.exampleFenceLang}$`, 'i').test(p.lang))
         .map((p) => p.text.trim())
         .filter(Boolean);
+      // Per-example lead-in: the prose block immediately preceding each code
+      // fence (its heading/bullet label), so composer can attribute each
+      // example its own intro instead of dumping the whole Examples section
+      // into example 1's description (python harvest 2026-10-20: create_
+      // collection/create_schema multi-example attribution).
+      const leadInBuf = [];
+      for (const part of exampleParts) {
+        if (part.fence && new RegExp(`^${profile.exampleFenceLang}$`, 'i').test(part.lang) && part.text.trim() !== '') {
+          exampleLeadIns.push(leadInBuf.join('\n').split('\n').map((l) => l.trim()).filter(Boolean).join(' '));
+          leadInBuf.length = 0;
+        } else if (!part.fence) {
+          leadInBuf.push(part.text);
+        }
+      }
+      if (exampleLeadIns.length < exampleFences.length) {
+        exampleLeadIns.push(...Array(exampleFences.length - exampleLeadIns.length).fill(''));
+      }
     }
   }
   stats.sections.examples = exampleFences.length > 0;
@@ -681,6 +715,7 @@ function parsePage(markdown, profile, pageName, opts = {}) {
     exceptions,
     exampleIntro,
     exampleFences,
+    exampleLeadIns,
     exampleSectionPresent,
     related,
     stats,

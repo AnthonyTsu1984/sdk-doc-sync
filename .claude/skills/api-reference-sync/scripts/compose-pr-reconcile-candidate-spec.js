@@ -334,6 +334,11 @@ function reflowPythonCalls(code, pythonExampleStyle) {
     const openAbs = lines.slice(0, lineIndex).reduce((sum, l) => sum + l.length + 1, 0) + openLocal;
     const closeAbs = matchParen(source, openAbs);
     if (closeAbs < 0) break;
+    // Defense in depth: a `#` comment inside the argument region means the
+    // layout transform would move it off its argument line / insert commas
+    // into it — never reflow such calls (the style diagnostic already skips
+    // them; this guard keeps the invariant even if that module changes).
+    if (regionHasComment(source, openAbs, closeAbs)) break;
     const args = splitTopLevelArgs(source, openAbs, closeAbs);
     if (args.length < 2) break;
     const indentMatch = (/^[ \t]*/.exec(target));
@@ -346,6 +351,19 @@ function reflowPythonCalls(code, pythonExampleStyle) {
     source = source.slice(0, openAbs) + replacement + source.slice(closeAbs + 1 + after.length);
   }
   return source;
+}
+
+// True when the slice (open, close) contains a `#` outside a string literal.
+function regionHasComment(source, open, close) {
+  for (let cursor = open + 1; cursor < close; cursor += 1) {
+    const char = source[cursor];
+    if (char === '"' || char === "'") {
+      cursor = skipString(source, cursor) - 1;
+      continue;
+    }
+    if (char === '#') return true;
+  }
+  return false;
 }
 
 function skipString(source, start) {
@@ -1163,22 +1181,30 @@ function compose(args) {
     if (unitRoute === 'verbatim') {
       // summary + example satisfy the builder + strict registers; the page
       // bytes ride the verbatim overlay (applied onto the reference context by
-      // --patch-context, §4.4).
-      let exampleCode = null;
-      if (parsed.exampleFences.length > 0) {
-        exampleCode = parsed.exampleFences[0];
-      } else if (profile.exampleFallbackFirstSignatureFence !== false && parsed.signatureFences.length > 0) {
-        exampleCode = parsed.signatureFences[0].trim(); // type-page precedent
+      // --patch-context, §4.4). Every example fence is emitted with its own
+      // lead-in (heading/bullet label): multi-example pages (create_collection
+      // etc.) must carry all fences in the deterministic chain so the writer
+      // never reconstructs examples and mis-attributes lead-ins.
+      const parsedLeadIns = Array.isArray(parsed.exampleLeadIns) ? parsed.exampleLeadIns : [];
+      let exampleItems = parsed.exampleFences.map((code, index) => ({
+        code,
+        leadIn: (parsedLeadIns[index] || '').trim(),
+      }));
+      if (exampleItems.length === 0 && profile.exampleFallbackFirstSignatureFence !== false && parsed.signatureFences.length > 0) {
+        exampleItems = [{ code: parsed.signatureFences[0].trim(), leadIn: '' }]; // type-page precedent
       }
-      if (!exampleCode) reject('EXAMPLE_FENCE_MISSING', `${slug}: no example fence and no ${profile.signatureFenceLang} fence on the page`);
-      candidate.examples = [{
-        title: `${identity.title.replace(/\(\)$/, '')} example`,
-        description: '',
+      if (isPython && pythonExampleStyle) {
+        exampleItems = exampleItems.map((item) => ({ ...item, code: reflowPythonCalls(item.code, pythonExampleStyle) })); // N6
+      }
+      if (exampleItems.length === 0) reject('EXAMPLE_FENCE_MISSING', `${slug}: no example fence and no ${profile.exampleFenceLang} fence on the page`);
+      candidate.examples = exampleItems.map((item, index) => ({
+        title: `${identity.title.replace(/\(\)$/, '')} example${exampleItems.length > 1 ? ` ${index + 1}` : ''}`,
+        description: plainText(item.leadIn),
         audience: 'shared',
         language: profile.exampleFenceLang,
-        code: exampleCode,
+        code: item.code,
         evidence: [prEv(pr)],
-      }];
+      }));
       candidate.sourceVariants = [{
         stableId: unit.sourceStableId,
         canonicalSlug: slug,
@@ -1314,25 +1340,33 @@ function compose(args) {
       }));
 
       // examples
-      let exampleCodes = parsed.exampleFences;
+      // Keep the fence→lead-in pairing when exampleMinCodeLength filters:
+      // each surviving code carries its own preceding lead-in (heading/bullet
+      // label), never the whole Examples section dumped into example 1
+      // (python harvest 2026-10-20 create_collection/create_schema).
+      const parsedLeadIns = Array.isArray(parsed.exampleLeadIns) ? parsed.exampleLeadIns : [];
+      let exampleItems = parsed.exampleFences.map((code, index) => ({
+        code,
+        leadIn: (parsedLeadIns[index] || '').trim(),
+      }));
       if (structured.exampleMinCodeLength) {
-        exampleCodes = exampleCodes.filter((code) => code.length >= structured.exampleMinCodeLength);
+        exampleItems = exampleItems.filter((item) => item.code.length >= structured.exampleMinCodeLength);
       }
-      if (exampleCodes.length === 0 && structured.exampleFallbackFirstPageFence && parsed.signatureFences.length > 0) {
-        exampleCodes = [parsed.signatureFences[0]];
+      if (exampleItems.length === 0 && structured.exampleFallbackFirstPageFence && parsed.signatureFences.length > 0) {
+        exampleItems = [{ code: parsed.signatureFences[0], leadIn: (parsedLeadIns[0] || '').trim() }];
       }
       if (isPython && pythonExampleStyle) {
-        exampleCodes = exampleCodes.map((code) => reflowPythonCalls(code, pythonExampleStyle)); // N6
+        exampleItems = exampleItems.map((item) => ({ ...item, code: reflowPythonCalls(item.code, pythonExampleStyle) })); // N6
       }
-      if (exampleCodes.length === 0) {
+      if (exampleItems.length === 0) {
         reject('EXAMPLE_FENCE_MISSING', `${slug}: no example fence on a structured-route page`);
       }
-      candidate.examples = exampleCodes.map((code, index) => ({
-        title: `${candidate.symbol} example${exampleCodes.length > 1 ? ` ${index + 1}` : ''}`,
-        description: index === 0 ? plainText(parsed.exampleIntro) : '',
+      candidate.examples = exampleItems.map((item, index) => ({
+        title: `${candidate.symbol} example${exampleItems.length > 1 ? ` ${index + 1}` : ''}`,
+        description: plainText(item.leadIn),
         audience: 'shared',
         language: profile.exampleFenceLang,
-        code,
+        code: item.code,
       }));
       candidate.reviewedEvidence = scopeAction.evidence || [];
       if (dedupeNotes.length > 0) {

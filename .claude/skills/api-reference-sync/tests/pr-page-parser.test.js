@@ -504,6 +504,97 @@ test('unified fence semantics: indent, non-word info strings, orphan closers, fe
   });
 });
 
+// 2026-10-20 fixes (shadow campaign #1 round-6 freeze):
+// ① indented example fences under list items are real fences (create_collection
+//    had 6 examples, the 0-3 space cap saw only 1 → writer reconstructed and
+//    mis-attributed lead-ins);
+// ② each example fence carries its own preceding lead-in (heading/bullet label),
+//    never the whole Examples section dumped into example 1;
+// ③ RETURN TYPE section accepts a short plain token ("None") as type, not just
+//    the bold `*None*` form (verify pages write plain None; prose sentences are
+//    excluded by the length/punctuation guard).
+test('indented fences under list items are detected with per-example lead-ins', () => {
+  const text = `# create_collection()
+
+This operation creates a collection.
+
+## Request Syntax
+
+\`\`\`python
+client.create_collection(collection_name: str)
+\`\`\`
+
+## Examples
+
+### Set up a Milvus client
+
+\`\`\`python
+from pymilvus import MilvusClient
+client = MilvusClient(uri="http://localhost:19530")
+\`\`\`
+
+- **Quick setup**
+
+    \`\`\`python
+    client.create_collection(
+        collection_name="test_collection",
+        dimension=5
+    )
+    \`\`\`
+
+- **Customized setup with index parameters**
+
+    \`\`\`python
+    client.create_collection(
+        collection_name="quick_setup",
+        dimension=5,
+        index_params=index_params
+    )
+    \`\`\`
+`;
+  const parsed = parsePage(text, { ...profiles.python, route: 'verbatim' }, 'create_collection.md');
+  assert.equal(parsed.exampleFences.length, 3);
+  assert.equal(parsed.exampleLeadIns.length, 3);
+  assert.match(parsed.exampleLeadIns[0], /Set up a Milvus client/);
+  assert.match(parsed.exampleLeadIns[1], /Quick setup/);
+  assert.match(parsed.exampleLeadIns[2], /Customized setup with index parameters/);
+  // The indented fence's code is preserved verbatim (no mis-attribution).
+  assert.match(parsed.exampleFences[1], /collection_name="test_collection"/);
+});
+
+test('plain RETURN TYPE token is captured, prose is not', () => {
+  const plainNone = `# verify()
+
+This operation validates a function.
+
+## Request Syntax
+
+\`\`\`python
+verify(schema: CollectionSchema)
+\`\`\`
+
+**RETURN TYPE:**
+
+None
+
+**RETURNS:**
+
+None
+`;
+  const parsedPlain = parsePage(plainNone, { ...profiles.python, route: 'structured', requireSignature: false }, 'verify.md');
+  assert.equal(parsedPlain.returnType, 'None');
+
+  // Bold form still works (create_role).
+  const boldNone = plainNone.replace('**RETURN TYPE:**\n\nNone', '**RETURN TYPE:**\n\n*None*');
+  const parsedBold = parsePage(boldNone, { ...profiles.python, route: 'structured', requireSignature: false }, 'create_role.md');
+  assert.equal(parsedBold.returnType, 'None');
+
+  // Prose (sentence with terminal period) is NOT a type token.
+  const prose = plainNone.replace('**RETURN TYPE:**\n\nNone', '**RETURN TYPE:**\n\nInstance of \\`Function\\` that encapsulates the behavior for converting data.');
+  const parsedProse = parsePage(prose, { ...profiles.python, route: 'structured', requireSignature: false }, 'function.md');
+  assert.equal(parsedProse.returnType, null);
+});
+
 test('flattenDescription collapses multi-line bullet prose', () => {
   assert.equal(flattenDescription(['Check `err != nil`', 'for failure details.']), 'Check `err != nil` for failure details.');
 });

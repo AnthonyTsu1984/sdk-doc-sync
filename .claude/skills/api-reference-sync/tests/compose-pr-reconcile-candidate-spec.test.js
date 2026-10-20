@@ -1117,3 +1117,29 @@ test('sweep join is the builder export: attributed shared units classify, malfor
     (error) => error.code === 'SHARED_UPDATE_REVIEW_INVALID',
   );
 });
+
+// 2026-10-20 fix (shadow campaign #1 round-6 freeze #2/#3/#4): python N6
+// reflow must never move inline comments off their argument lines or insert
+// commas into them. Calls whose argument region carries a `#` outside strings
+// are left byte-identical; comment-free multi-arg calls still reflow to one
+// argument per line.
+test('python example reflow skips comment-bearing calls and reflows clean ones', () => {
+  const { reflowPythonCalls } = require('../scripts/compose-pr-reconcile-candidate-spec');
+  const style = require('../src/sdk-reference-ir/python-example-style');
+
+  const withComments = `text_embedding_function = Function(
+    name="openai_embedding",                        # Unique identifier for this embedding function
+    function_type=FunctionType.TEXTEMBEDDING,       # Type of embedding function
+    params={
+        "provider": "openai",
+    }
+)`;
+  assert.equal(reflowPythonCalls(withComments, style), withComments, 'comment-bearing call must stay byte-identical');
+
+  const clean = `client.create_collection(
+    collection_name="test_collection", dimension=5
+)`;
+  const reflowed = reflowPythonCalls(clean, style);
+  assert.notEqual(reflowed, clean, 'comment-free multi-arg call still reflows');
+  assert.match(reflowed, /collection_name="test_collection",\n {4}dimension=5,\n\)/);
+});

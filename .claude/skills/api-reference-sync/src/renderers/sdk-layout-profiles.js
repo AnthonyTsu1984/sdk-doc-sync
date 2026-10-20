@@ -55,7 +55,15 @@ const PYTHON_LAYOUT_RULES = Object.freeze({
     // Vowel-initial type pages read "An Xxx instance is …" (python has
     // EmbeddingList, AnnSearchRequest, AnnSearchRequest-like families) — the
     // shared 'A Xxx instance' form does not match those (go precedent, 2026-10-07).
-    firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b']),
+    // 2026-10-20 operator ruling (shadow campaign #1, round-8 escalation):
+    // UPDATE pages carry PR-verbatim summaries whose first sentences are
+    // authoritative — the python PR corpus legitimately opens class pages with
+    // a bare-verb definition ("Defines a field's name …"), a change note
+    // ("Constructor behavior changed …"), or an article form ("The
+    // LexicalHighlighter configures …"). These are well-formed first sentences;
+    // admitting them keeps the register's protective value (still rejects
+    // empty/broken summaries) without forcing a rewrite of verbatim content.
+    firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b', '^Defines\\b', '^Constructor behavior\\b', '^The \\w+\\b']),
     requestSignatureOneParamPerLine: true,
     parameterTypeEmphasisForbidden: true,
     templatedExampleIntroForbidden: true,

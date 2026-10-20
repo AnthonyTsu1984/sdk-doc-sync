@@ -26,6 +26,19 @@ function nonEmptyString(value) {
     return typeof value === 'string' && value.length > 0;
 }
 
+// Strip inline markdown emphasis (bold/code/italic) so the first-sentence
+// register tests the plain text. UPDATE pages carry PR-verbatim summaries
+// whose type names are emphasised ("A **CollectionSchema** instance
+// represents ...", "The `Function` instance ..."); the register patterns
+// (`^A \w+ instance\b`, `^The \w+\b`, ...) must match after stripping
+// (shadow campaign #1 round-9 freeze).
+function stripInlineMarkdown(text) {
+    return String(text)
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1');
+}
+
 // Section label vocabulary shared with the KB-wide section convention
 // (api-section-model label roles). Lines exactly matching one of these
 // terminate a RETURNS section scan; heading text is indistinguishable from
@@ -320,7 +333,7 @@ function checkContentRules(contentRules, entries, calloutGroups, report) {
             ...(contentRules.firstSentencePatterns || []).filter(nonEmptyString),
         ];
         const firstBody = entries.find((entry) => entry.kind === 'text' && !isKnownLabel(entry.text));
-        if (firstBody && !registers.some((pattern) => new RegExp(pattern).test(firstBody.text.trim()))) {
+        if (firstBody && !registers.some((pattern) => new RegExp(pattern).test(stripInlineMarkdown(firstBody.text).trim()))) {
             report('FIRST_SENTENCE_REGISTER', `page body first sentence does not match any declared register (${registers.map((pattern) => `/${pattern}/`).join(' ')}): ${firstBody.text}`);
         }
     }

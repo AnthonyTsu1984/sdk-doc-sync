@@ -455,6 +455,21 @@ test('2026-10-04 adjudication: operation and class registers are both accepted; 
     assert.equal(code(['This class initiates a MilvusClientV2 instance that connects to a Milvus deployment.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
 });
 
+test('register test strips inline markdown emphasis from PR-verbatim summaries (round-9 freeze)', () => {
+    const profile = sdkLayoutProfiles.python;
+    const code = (lines, name) => checkLayoutConformance(profile, { headings: [], lines, callouts: [] })
+        .violations.find((violation) => violation.code === name)?.code || null;
+
+    // UPDATE summaries are PR-verbatim and carry emphasised type names:
+    // bold **CollectionSchema** / code `Function` must match the plain register.
+    assert.equal(code(['A **CollectionSchema** instance represents the schema of a collection.'], 'FIRST_SENTENCE_REGISTER'), null);
+    assert.equal(code(['An **EmbeddingList** instance represents a list of vector embeddings.'], 'FIRST_SENTENCE_REGISTER'), null);
+    assert.equal(code(['The **LexicalHighlighter** configures post-processing term highlighting.'], 'FIRST_SENTENCE_REGISTER'), null);
+    assert.equal(code(['Adds a query-term definition to a `LexicalHighlighter` configuration.'], 'FIRST_SENTENCE_REGISTER'), null);
+    // A genuinely unregistered form still fails after stripping.
+    assert.equal(code(['This getter returns the parameters.'], 'FIRST_SENTENCE_REGISTER'), 'FIRST_SENTENCE_REGISTER');
+});
+
 test('block-path parameter bullets are judged by bold style, not literal markers (review r1 P1)', () => {
     const profile = sdkLayoutProfiles.java;
     // Feishu bold is a style: name run carries text_element_style.bold.

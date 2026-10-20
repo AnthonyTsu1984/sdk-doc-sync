@@ -88,6 +88,18 @@ const STRUCTURED_ROUTE_KEYS = [
 // them with the adapter-consumed structure keys.
 const VERBATIM_ROUTE_KEYS = ['kind', 'pr', 'verbatimContent'];
 
+// Strip inline markdown emphasis (bold/code/italic) so register patterns test
+// the plain first sentence. UPDATE summaries are PR-verbatim (ruling A) and
+// legitimately carry `**Type**` / `` `Type` `` emphasis — "A **CollectionSchema**
+// instance represents ..." must match `^A \w+ instance\b` after stripping
+// (shadow campaign #1 round-9 freeze).
+function stripInlineMarkdown(text) {
+    return String(text)
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\*([^*]+)\*/g, '$1');
+}
+
 function parseArgs(argv = process.argv) {
     const options = { language: 'java', json: false, strict: false, route: 'auto' };
     for (let index = 2; index < argv.length; index += 1) {
@@ -202,7 +214,7 @@ function main(argv = process.argv) {
         }
 
         if (typeof entry.summary === 'string' && entry.summary.trim() !== ''
-            && !registers.some((pattern) => new RegExp(pattern).test(entry.summary.trim()))) {
+            && !registers.some((pattern) => new RegExp(pattern).test(stripInlineMarkdown(entry.summary).trim()))) {
             pushFinding('error', 'INTAKE_SUMMARY_REGISTER', `summary first sentence does not match any declared register (${registers.map((pattern) => `/${pattern}/`).join(' ')}): ${entry.summary.slice(0, 80)}`);
         }
 

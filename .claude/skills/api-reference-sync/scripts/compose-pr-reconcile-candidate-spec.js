@@ -1157,9 +1157,12 @@ function compose(args) {
       symbol,
       title: unitRoute === 'verbatim' ? identity.title : (parsed.title || identity.title),
       // structured route serves the summary through the reference-IR plain
-      // register (java/node precedent); verbatim keeps the page register.
-      summary: unitRoute === 'verbatim'
-        ? parsed.summary
+      // register (java/node precedent) — EXCEPT for UPDATE units, whose
+      // summary is PR-verbatim per ruling A: use the raw first paragraph,
+      // never the N7 register-wrap ("Adds a query-term..." must not become
+      // "This operation adds..."; round-8 finding 1).
+      summary: unitRoute === 'verbatim' || unit.actionIntent === 'UPDATE'
+        ? (parsed.summaryRaw || parsed.summary)
         : (profile.structured && profile.structured.ensureSentences
           ? ensureSentence(plainText(parsed.summary))
           : plainText(parsed.summary)),
@@ -1321,9 +1324,16 @@ function compose(args) {
       const resultDescription = structured.ensureSentences
         ? ensureSentence(plainText(parsed.returnsDescription))
         : plainText(parsed.returnsDescription);
+      // RETURN TYPE section may carry prose ("Instance of Function that
+      // encapsulates ... .") that is not a type token but is authoritative
+      // content (python MilvusClient-Function, round-8 finding 3): fold it
+      // into the result description. When RETURNS also has prose, merge them
+      // so neither is lost.
+      const returnTypeProseText = plainText(parsed.returnTypeProse || '');
+      const mergedDescription = [returnTypeProseText, resultDescription].filter(Boolean).join(' ');
       const result = {
         type: resultType || null,
-        description: resultDescription || (structured.resultFallbackDescription
+        description: mergedDescription || (structured.resultFallbackDescription
           ? structured.resultFallbackDescription.replace('{symbol}', candidate.symbol)
           : ''),
       };

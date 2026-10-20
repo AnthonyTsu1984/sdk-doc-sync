@@ -599,6 +599,76 @@ test('flattenDescription collapses multi-line bullet prose', () => {
   assert.equal(flattenDescription(['Check `err != nil`', 'for failure details.']), 'Check `err != nil` for failure details.');
 });
 
+// 2026-10-20 fixes (shadow campaign #1 round-8 freeze):
+// ① summaryRaw is exposed so UPDATE units keep the PR first paragraph verbatim
+//    (the N7 register-wrap must not turn "Adds ..." into "This operation adds ...");
+// ② RETURN TYPE/RETURNS headings with the colon OUTSIDE the bold
+//    ("**RETURN TYPE**:") are matched, not just colon-inside ("**RETURN TYPE:**");
+// ③ a prose sentence in the RETURN TYPE section is captured as returnTypeProse
+//    (not lost) so the composer can fold it into the result description.
+test('summaryRaw stays PR-verbatim while summary carries the register wrap', () => {
+  const text = `# with_query()
+
+Adds a query-term definition to a \`LexicalHighlighter\` configuration for highlighting text.
+
+## Request Syntax
+
+\`\`\`python
+with_query(highlight_query: list)
+\`\`\`
+`;
+  const parsed = parsePage(text, { ...profiles.python, route: 'structured', requireSignature: false }, 'with_query.md');
+  assert.match(parsed.summaryRaw, /^Adds a query-term definition/);
+  assert.match(parsed.summary, /^This operation adds a query-term definition/);
+});
+
+test('colon-outside RETURN headings are matched and prose is captured', () => {
+  const text = `# LexicalHighlighter()
+
+The **LexicalHighlighter** configures highlighting.
+
+## Constructor
+
+\`\`\`python
+LexicalHighlighter()
+\`\`\`
+
+**RETURN TYPE**:
+
+*LexicalHighlighter*
+
+**RETURNS**:
+
+A **LexicalHighlighter** object.
+`;
+  const parsed = parsePage(text, { ...profiles.python, route: 'structured', requireSignature: false }, 'LexicalHighlighter.md');
+  assert.equal(parsed.returnType, 'LexicalHighlighter');
+  assert.match(parsed.returnsDescription, /A \*\*LexicalHighlighter\*\* object/);
+
+  // Prose RETURN TYPE section (no bold token) is captured as returnTypeProse.
+  const proseType = `# Function()
+
+A \`Function\` instance for embeddings.
+
+## Request Syntax
+
+\`\`\`python
+Function(name: str)
+\`\`\`
+
+**RETURN TYPE**:
+
+Instance of \`Function\` that encapsulates the specific processing behavior for converting raw data to vector embeddings.
+
+**RETURNS**:
+
+A \`Function\` object.
+`;
+  const parsedProse = parsePage(proseType, { ...profiles.python, route: 'structured', requireSignature: false }, 'Function.md');
+  assert.equal(parsedProse.returnType, null);
+  assert.match(parsedProse.returnTypeProse, /^Instance of \`Function\` that encapsulates/);
+});
+
 // ---- four-language real-page replay (review P1-2) ---------------------------
 //
 // The full 2026-10-15 intake page dumps (643 pages, sha-pinned by the intake

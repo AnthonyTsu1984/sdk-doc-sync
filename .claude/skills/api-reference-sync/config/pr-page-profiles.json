@@ -173,10 +173,10 @@
   "paramsHeadings": [
    "^\\*\\*PARAMETERS:\\*\\*\\s*$"
   ],
-  "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
+  "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$|^\\*\\*RETURN TYPE\\*\\*:\\s*$",
   "returnTypeRequired": false,
   "returnTypePlainToken": true,
-  "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$",
+  "returnsHeading": "^\\*\\*RETURNS:\\*\\*\\s*$|^\\*\\*RETURNS\\*\\*:\\s*$",
   "returnsStop": "^(\\*\\*[A-Z]|## )",
   "returnsBulletsAsProse": true,
   "errorHeading": "^\\*\\*EXCEPTIONS:\\*\\*\\s*$",

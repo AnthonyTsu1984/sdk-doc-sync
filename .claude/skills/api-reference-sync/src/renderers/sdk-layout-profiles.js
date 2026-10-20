@@ -63,7 +63,7 @@ const PYTHON_LAYOUT_RULES = Object.freeze({
     // LexicalHighlighter configures …"). These are well-formed first sentences;
     // admitting them keeps the register's protective value (still rejects
     // empty/broken summaries) without forcing a rewrite of verbatim content.
-    firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b', '^Defines\\b', '^Constructor behavior\\b', '^The \\w+\\b']),
+    firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b', '^Defines\\b', '^Adds\\b', '^Constructor behavior\\b', '^The \\w+\\b']),
     requestSignatureOneParamPerLine: true,
     parameterTypeEmphasisForbidden: true,
     templatedExampleIntroForbidden: true,

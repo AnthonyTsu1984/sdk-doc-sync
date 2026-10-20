@@ -578,6 +578,7 @@ function parsePage(markdown, profile, pageName, opts = {}) {
 
   // return type: first *type* line in the section
   let returnType = null;
+  let returnTypeProse = null;
   if (profile.returnTypeHeading) {
     const returnTypeSection = section(parts, compile(profile.returnTypeHeading), compile(profile.returnTypeStop || '^\\*\\*(RETURNS|EXCEPTIONS|EXAMPLES|NOTES|ERROR HANDLING)\\b'));
     const returnTypeMatch = returnTypeSection.match(/^\s*\*(.+?)\*\s*$/m);
@@ -588,16 +589,25 @@ function parsePage(markdown, profile, pageName, opts = {}) {
       // (plain). A short single-line token without sentence punctuation is a
       // type; a longer prose sentence ("Instance of Function that ... .") is
       // not — it belongs to result description, not result.type.
-      const plainMatch = returnTypeSection.match(/^\s*([^*\s][^\n.]*?)\s*$/m);
-      if (plainMatch && plainMatch[1].trim().length <= 60 && plainMatch[1].trim() !== '') {
-        returnType = stripMdEscapes(plainMatch[1]).trim();
+      const plainMatch = returnTypeSection.match(/^\s*([^*\s][^\n]*?)\s*$/m);
+      if (plainMatch) {
+        const candidate = stripMdEscapes(plainMatch[1]).trim();
+        // Type token: short, no sentence-ending period (or a period-less
+        // punctuation-free token). Prose: longer, or ends with sentence
+        // punctuation.
+        const isProse = candidate.length > 60 || /[.!?]$/.test(candidate);
+        if (isProse) {
+          returnTypeProse = candidate;
+        } else if (candidate !== '') {
+          returnType = candidate;
+        }
       }
     }
     if (!returnType && profile.returnTypeRequired) {
       throw typedError(REJECTION_CODES.RETURN_TYPE_MISSING, `${pageName}: RETURN TYPE section has no *type* line`);
     }
   }
-  stats.sections.returnType = returnType !== null;
+  stats.sections.returnType = returnType !== null || returnTypeProse !== null;
 
   // returns prose + getter tree
   let returnsDescription = '';
@@ -699,6 +709,7 @@ function parsePage(markdown, profile, pageName, opts = {}) {
     title,
     titleBase,
     summary: summaryNormalized.summary,
+    summaryRaw,
     summaryRegisterNormalized: summaryNormalized.normalized,
     summaryCallouts,
     signature,
@@ -708,6 +719,7 @@ function parsePage(markdown, profile, pageName, opts = {}) {
     requestFenceText,
     params,
     returnType,
+    returnTypeProse,
     returnsTypeLine,
     returnsDescription,
     returnsSchemaFence,

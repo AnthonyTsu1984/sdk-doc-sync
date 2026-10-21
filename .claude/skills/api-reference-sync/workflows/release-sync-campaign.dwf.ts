@@ -19,8 +19,11 @@ description: release-sync 形状的参数化战役编排模板（批 16 切片 5
   mutated=true 一律冻结禁盲重跑）→ ⑧全部 finalized → close-session（plan.run.phases 供 argv）→
   ⑨campaign-settle --outcome ok。异常道：任意冻结/耗尽 → campaign-settle --outcome frozen
   --reason <located failure JSON 落盘路径>（冻结+门铃，journal 保留），然后照常返回报告。
-  rehearsal 模式（args.rehearsal===true 或 plan.rehearsal===true）：零 agent、零 live 写，
-  只逐步 echo 将执行的 argv 序列与门卡内容，返回 {status:'rehearsal', argv 序列, 门卡}。
+  rehearsal 模式（args.rehearsal===true 或 plan.rehearsal===true）：零 agent、零文档写、
+  确定性链真跑（M3 2026-10-21: intake-assemble → 模型写作面检测 → UPDATE 字节同源断言 →
+  初始 dry-run → record-campaign-approval 真实收据，连 dry-run 一起真跑，读 KB 基线、
+  写本地会话文件）;agent 席（A1/A2/A3/复核员）跳过、执行段与终点 close-session/settle 只
+  echo argv、门只记 manifest 不弹桌面。返回 {status:'rehearsal', 确定性链真实工件, 门卡}。
 whenToUse: 一场 release-sync 战役（PR 或 tag 触发）的执行 runner：操作员先跑
   scripts/build-campaign-plan.js 生成 plan（钉模板 sha256；可选 --run-nonce 盖当次 nonce 簿记），
   再以 {planPath, nonce} 提交本模板；操作员只在 APPROVE_CAMPAIGN 合并门批准一次。
@@ -388,7 +391,7 @@ if (missing.length > 0 || planRoot === null) {
 }
 const plan = planRoot;
 const rehearsal = argsRehearsal || plan.rehearsal === true;
-log("plan 校验通过:" + campaignId + "（" + identity.language + "/" + identity.sdkName + "/" + identity.track + ",trigger " + JSON.stringify(plan.trigger) + ",host " + feishu.host + "）" + (rehearsal ? "【rehearsal 预演模式:零 agent、零 live 写】" : ""));
+log("plan 校验通过:" + campaignId + "（" + identity.language + "/" + identity.sdkName + "/" + identity.track + ",trigger " + JSON.stringify(plan.trigger) + ",host " + feishu.host + "）" + (rehearsal ? "【rehearsal 预演模式:零 agent、零文档写,确定性链真跑含 dry-run】" : ""));
 
 // ===== 共享运行时状态 =====
 const argvTrace: { label: string; argv: string[] }[] = [];
@@ -402,9 +405,13 @@ function campaignFile(name: string): string {
 }
 
 // ===== live/rehearsal 双模执行原语（nonce 纪律:一切 world.run 尾参带 NONCE）=====
-async function runTrackedCli(label: string, childArgs: string[], outFile: string, timeoutMs?: number): Promise<{ ok: boolean; detail: string }> {
+// M3 (2026-10-21): rehearsal 升级零-agent 真跑——确定性链 CLI（intake/dry-run/
+// record-approval/断言）在 rehearsal 真跑（连 dry-run 一起,读 KB 基线、写本地会话文件,
+// 零文档写）;只有治理/活体动作（campaign-settle/close-session 推进 scan-state、
+// A2 确认的 confirmations 落盘）显式 echoOnly。rehearsal 的产出=确定性链真实工件+门卡 manifest。
+async function runTrackedCli(label: string, childArgs: string[], outFile: string, timeoutMs?: number, echoOnly?: boolean): Promise<{ ok: boolean; detail: string }> {
   const fullArgv = ["node"].concat(childArgs);
-  if (rehearsal) {
+  if (rehearsal && echoOnly === true) {
     argvTrace.push({ label, argv: fullArgv });
     await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify(fullArgv), NONCE], { timeoutMs: 30000 });
     return { ok: true, detail: "rehearsal-echo" };
@@ -430,13 +437,16 @@ async function freezeAndSettle(status: string, located: Record<string, unknown>,
   const freezeFile = freezeDir + "/" + (unitId === null ? "campaign" : slugOf(unitId)) + "-" + nonceslug + ".json";
   await writeJsonFile(freezeFile, JSON.stringify(located, null, 2) + "\n");
   await journalAppend({ type: "campaign-frozen", status, unit: unitId, located, run: NONCE });
+  // M3: rehearsal 失败不触发 campaign-settle（不响门铃、不触 scan-state）——echoOnly 只记 argv;
+  // located failure 随报告返回,操作员按它处置。live 才真正冻结+结算。
   const settleRun = await runTrackedCli(
     "campaign-settle --outcome frozen（冻结+门铃,journal 保留）",
     [CAMPAIGN_SETTLE, "--plan", planPath, "--outcome", "frozen", "--reason", freezeFile, "--json"],
     campaignFile("settle-frozen"),
     300000,
+    rehearsal,
   );
-  settled = settleRun.ok;
+  settled = settleRun.ok && !rehearsal;
   return {
     status,
     campaignId,
@@ -447,43 +457,41 @@ async function freezeAndSettle(status: string, located: Record<string, unknown>,
     settled,
     detail: settled
       ? "已冻结并落结算记录（门铃已响）;按 located failure JSON 处置后以新组合摘要重开。"
-      : "冻结文件已落盘但 campaign-settle 自身失败（SETTLE_FAILED 语义,人工对账）:" + settleRun.detail.slice(0, 200),
+      : (rehearsal
+        ? "rehearsal 链失败,未触发冻结结算（rehearsal 零治理写）;按 located failure 处置后重试。"
+        : "冻结文件已落盘但 campaign-settle 自身失败（SETTLE_FAILED 语义,人工对账）:" + settleRun.detail.slice(0, 200)),
   };
 }
 
 // ===== 步骤 1:plan 自校验 + admit 干净树（规格 2;admit --phase 带 campaignId+run 代际）=====
 phase("校验战役计划与模板指纹");
 const selfCheckArgs = [planPath, NONCE];
-if (rehearsal) {
-  argvTrace.push({ label: "self-check(模板 sha256 指纹 + runNonce 簿记校验(字段如带))", argv: ["node", "-e", "<self-check payload>"].concat(selfCheckArgs) });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify(["node", "-e", "<self-check payload>"].concat(selfCheckArgs)), NONCE], { timeoutMs: 30000 });
-} else {
-  const selfRes = await world.run("node", ["-e", SELF_CHECK_PAYLOAD, selfCheckArgs[0], selfCheckArgs[1], NONCE], { timeoutMs: 120000 });
-  const selfParsed = asRecord(parseJsonLoose(selfRes.stdout));
-  if (selfRes.exitCode !== 0 || selfParsed === null || selfParsed.ok !== true) {
-    const code = selfParsed !== null && typeof selfParsed.code === "string" ? selfParsed.code : "SELF_CHECK_FAILED";
-    const detail = selfParsed !== null && typeof selfParsed.detail === "string" ? selfParsed.detail : (String(selfRes.stdout || "") + String(selfRes.stderr || "")).slice(0, 300);
-    return {
-      status: code === "TEMPLATE_DRIFTED" ? "TEMPLATE_DRIFTED" : code,
-      campaignId,
-      unitsFinalized: 0,
-      journalPath,
-      settled: false,
-      detail: "plan 自校验 fail-closed:" + code + " — " + detail + "（TEMPLATE_DRIFTED=plan 钉的模板 sha256 与盘上模板漂移,须以当前模板重新 build-campaign-plan;RUN_NONCE_MISMATCH=plan.runNonce 簿记字段与本次 args.nonce 不一致,用 --run-nonce 重出 plan 或传入匹配的 nonce）",
-    };
-  }
-  const budgetsRaw = asRecord(selfParsed.budgets);
-  if (budgetsRaw !== null) {
-    budgets = {
-      transient: typeof budgetsRaw.transient === "number" ? budgetsRaw.transient : 3,
-      stale: typeof budgetsRaw.stale === "number" ? budgetsRaw.stale : 2,
-      content: typeof budgetsRaw.content === "number" ? budgetsRaw.content : 3,
-      verbatim: typeof budgetsRaw.verbatim === "number" ? budgetsRaw.verbatim : 1,
-      unknown: typeof budgetsRaw.unknown === "number" ? budgetsRaw.unknown : 0,
-    };
-  }
-  log("模板指纹一致（sha256 pin 核验通过）,runNonce 一致;重试预算轴 transient=" + budgets.transient + "/stale=" + budgets.stale + "/content=" + budgets.content + "/verbatim=" + budgets.verbatim + "/unknown=" + budgets.unknown + "。");
+// M3: self-check 确定性,rehearsal 也真跑（模板 sha256/nonce 校验,零写）。
+const selfRes = await world.run("node", ["-e", SELF_CHECK_PAYLOAD, selfCheckArgs[0], selfCheckArgs[1], NONCE], { timeoutMs: 120000 });
+const selfParsed = asRecord(parseJsonLoose(selfRes.stdout));
+if (selfRes.exitCode !== 0 || selfParsed === null || selfParsed.ok !== true) {
+  const code = selfParsed !== null && typeof selfParsed.code === "string" ? selfParsed.code : "SELF_CHECK_FAILED";
+  const detail = selfParsed !== null && typeof selfParsed.detail === "string" ? selfParsed.detail : (String(selfRes.stdout || "") + String(selfRes.stderr || "")).slice(0, 300);
+  return {
+    status: code === "TEMPLATE_DRIFTED" ? "TEMPLATE_DRIFTED" : code,
+    campaignId,
+    unitsFinalized: 0,
+    journalPath,
+    settled: false,
+    detail: "plan 自校验 fail-closed:" + code + " — " + detail + "（TEMPLATE_DRIFTED=plan 钉的模板 sha256 与盘上模板漂移,须以当前模板重新 build-campaign-plan;RUN_NONCE_MISMATCH=plan.runNonce 簿记字段与本次 args.nonce 不一致,用 --run-nonce 重出 plan 或传入匹配的 nonce）",
+  };
 }
+const budgetsRaw = asRecord(selfParsed.budgets);
+if (budgetsRaw !== null) {
+  budgets = {
+    transient: typeof budgetsRaw.transient === "number" ? budgetsRaw.transient : 3,
+    stale: typeof budgetsRaw.stale === "number" ? budgetsRaw.stale : 2,
+    content: typeof budgetsRaw.content === "number" ? budgetsRaw.content : 3,
+    verbatim: typeof budgetsRaw.verbatim === "number" ? budgetsRaw.verbatim : 1,
+    unknown: typeof budgetsRaw.unknown === "number" ? budgetsRaw.unknown : 0,
+  };
+}
+log("模板指纹一致（sha256 pin 核验通过）,runNonce 一致;重试预算轴 transient=" + budgets.transient + "/stale=" + budgets.stale + "/content=" + budgets.content + "/verbatim=" + budgets.verbatim + "/unknown=" + budgets.unknown + "。");
 const treeState = await git.status();
 log("工作树状态:" + String(JSON.stringify(treeState)).slice(0, 240) + "。");
 phase("核对确定性准入与干净树");
@@ -583,30 +591,29 @@ async function runUpdateFidelityAssertion(label: string): Promise<{ ok: boolean;
   }
   return { ok: true, detail: assertRun.detail };
 }
-if (rehearsal) {
-  const detectArgv = ["node", "-e", "<detect-model-writing payload>", paths.scopePath];
-  argvTrace.push({ label: "模型写作面检测（CREATE/BACKFILL 判定,读 scope actions.type）", argv: detectArgv });
-  const assertArgv = ["node", COMPARE_UPDATE_CONTEXT, "--candidate-spec", paths.candidateSpecPath, "--reviewed-context", paths.referenceContext, "--json"];
-  argvTrace.push({ label: "UPDATE 字节同源断言（compare-update-spec-context,机械门）", argv: assertArgv });
-  log("rehearsal:材料化按 P0-1 判定执行——纯 UPDATE 战役零 agent,含 CREATE/BACKFILL 才启 A1/复核员。");
-} else {
-  const detectRun = await runTrackedCli("模型写作面检测（scope 含 CREATE/BACKFILL 才启模型席）", ["-e", DETECT_MODEL_WRITING_PAYLOAD, paths.scopePath], campaignFile("model-writing-detect"), 60000);
-  if (!detectRun.ok) {
-    return await freezeAndSettle("MODEL_WRITING_DETECT_FAILED", { code: "MODEL_WRITING_DETECT_FAILED", detail: detectRun.detail, note: "scope 不可读或 actions 形状不符,无法判定模型写作面" }, null);
+// M3 (2026-10-21): detect + assertion 是确定性链,rehearsal 也真跑（零 token、零 agent）;
+// 只有 A1 写手/复核员席是 agent 席,rehearsal 跳过。断言门在两种模式都是机械收口。
+const detectRun = await runTrackedCli("模型写作面检测（scope 含 CREATE/BACKFILL 才启模型席）", ["-e", DETECT_MODEL_WRITING_PAYLOAD, paths.scopePath], campaignFile("model-writing-detect"), 60000);
+if (!detectRun.ok) {
+  return await freezeAndSettle("MODEL_WRITING_DETECT_FAILED", { code: "MODEL_WRITING_DETECT_FAILED", detail: detectRun.detail, note: "scope 不可读或 actions 形状不符,无法判定模型写作面" }, null);
+}
+const detectReport = parseJsonLoose(detectRun.detail);
+const detectParsed = asRecord(detectReport);
+const hasModelWriting = detectParsed !== null && detectParsed.hasModelWriting === true;
+log("P0-1 模型写作面判定:hasModelWriting=" + String(hasModelWriting) + "（scope " + String(detectParsed === null ? "?" : detectParsed.total) + " 动作,CREATE/BACKFILL " + String(detectParsed === null ? "?" : detectParsed.createLike) + " 个）。");
+if (!hasModelWriting) {
+  // 纯 UPDATE 战役:零 agent、零模型 token。intake 链产物即终态材料,断言证明字节同源。
+  const assertion = await runUpdateFidelityAssertion("UPDATE 字节同源断言（零 agent 材料化,机械门）");
+  if (!assertion.ok) {
+    return await freezeAndSettle("REVIEWED_CONTENT_DRIFT", { code: "REVIEWED_CONTENT_DRIFT", detail: assertion.detail, note: "UPDATE 条目与 candidate-spec 字节不一致——intake 链或重跑环节破坏确定性产物,须按 located failure 处置后重开" }, null);
   }
-  const detectReport = parseJsonLoose(detectRun.detail);
-  const detectParsed = asRecord(detectReport);
-  const hasModelWriting = detectParsed !== null && detectParsed.hasModelWriting === true;
-  log("P0-1 模型写作面判定:hasModelWriting=" + String(hasModelWriting) + "（scope " + String(detectParsed === null ? "?" : detectParsed.total) + " 动作,CREATE/BACKFILL " + String(detectParsed === null ? "?" : detectParsed.createLike) + " 个）。");
-  if (!hasModelWriting) {
-    // 纯 UPDATE 战役:零 agent、零模型 token。intake 链产物即终态材料,断言证明字节同源。
-    const assertion = await runUpdateFidelityAssertion("UPDATE 字节同源断言（零 agent 材料化,机械门）");
-    if (!assertion.ok) {
-      return await freezeAndSettle("REVIEWED_CONTENT_DRIFT", { code: "REVIEWED_CONTENT_DRIFT", detail: assertion.detail, note: "UPDATE 条目与 candidate-spec 字节不一致——intake 链或重跑环节破坏确定性产物,须按 located failure 处置后重开" }, null);
-    }
-    log("纯 UPDATE 战役材料化完成:零 agent,UPDATE 条目字节同源已证（" + String(assertion.detail).slice(0, 160) + "）。");
+  log("纯 UPDATE 战役材料化完成:零 agent,UPDATE 条目字节同源已证（" + String(assertion.detail).slice(0, 160) + "）。");
+} else {
+  phase("刷新注入并材料化写作（CREATE/BACKFILL 面）");
+  if (rehearsal) {
+    argvTrace.push({ label: "A1 写手 + 独立复核员（rehearsal 跳过 agent;live 时只写 CREATE/BACKFILL 条目,UPDATE 只读不写）", argv: ["agent:A1 写手", "agent:独立复核员"] });
+    log("rehearsal:含 CREATE/BACKFILL 模型写作面——A1/复核员跳过（零 agent）,断言门真跑证明 UPDATE 字节同源。");
   } else {
-    phase("刷新注入并材料化写作（CREATE/BACKFILL 面）");
     const writer = agent("A1 写手", {
       system: "你是 governed 文档战役的 A1 材料化写手:产出高质量 reviewed 上下文材料,如实报告,绝不编造;指令不可能完成时如实上报而不是硬凑。只写任务指定的唯一目标文件,绝不调用任何飞书写接口。",
     });
@@ -656,13 +663,13 @@ if (rehearsal) {
         "\n返回 {\"fixed\":<bool>,\"notes\":\"…\"};修不了就如实 fixed=false。",
       );
     }
-    // 模型席结束后,断言门证明 UPDATE 条目未被触碰（REVIEWED_CONTENT_DRIFT 冻结）。
-    const assertion = await runUpdateFidelityAssertion("UPDATE 字节同源断言（模型席后机械门）");
-    if (!assertion.ok) {
-      return await freezeAndSettle("REVIEWED_CONTENT_DRIFT", { code: "REVIEWED_CONTENT_DRIFT", detail: assertion.detail, note: "A1/复核员改动 UPDATE 条目或确定性链破坏字节——断言 CLI 定位 drift,须按 located failure 处置后重开" }, null);
-    }
-    log("材料化完成:CREATE/BACKFILL 已写作,UPDATE 字节同源已证（" + String(assertion.detail).slice(0, 160) + "）。");
   }
+  // 模型席结束后（或 rehearsal 跳过席后）,断言门证明 UPDATE 条目未被触碰（REVIEWED_CONTENT_DRIFT 冻结）。
+  const assertion = await runUpdateFidelityAssertion("UPDATE 字节同源断言（模型席后机械门）");
+  if (!assertion.ok) {
+    return await freezeAndSettle("REVIEWED_CONTENT_DRIFT", { code: "REVIEWED_CONTENT_DRIFT", detail: assertion.detail, note: "A1/复核员改动 UPDATE 条目或确定性链破坏字节——断言 CLI 定位 drift,须按 located failure 处置后重开" }, null);
+  }
+  log("材料化完成:CREATE/BACKFILL 已写作,UPDATE 字节同源已证（" + String(assertion.detail).slice(0, 160) + "）。");
 }
 
 // ===== 步骤 5:初始 dry-run → previews → 合并批准收据 → 唯一一张 campaign 卡（规格 6）=====
@@ -682,15 +689,11 @@ async function sdkBaseArgs(): Promise<string[]> {
 const initialDryrunFile = campaignFile("initial-dryrun");
 // W-A 链尾 dry-run 已建过预检会话（无 --final-targets）;先清旧文件,步骤 5 的 canonical
 // dry-run 才可能以 --session-state 新建带 final-targets 的会话（sdk-doc-sync 对既有文件
-// 一律拒 "review session already exists"）。best-effort,不存在则静默;rehearsal 零 live 写。
-if (rehearsal) {
-  argvTrace.push({ label: "清 W-A 预检会话 → 步骤 5 canonical dry-run 新建会话", argv: ["node", "-e", "<clear-session payload>", paths.sessionPath] });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify(["node", "-e", "<clear-session payload>", paths.sessionPath]), NONCE], { timeoutMs: 30000 });
-} else {
-  const clearSessionRes = await world.run("node", ["-e", CLEAR_SESSION_PAYLOAD, paths.sessionPath, NONCE], { timeoutMs: 30000 });
-  if (clearSessionRes.exitCode !== 0) {
-    return await freezeAndSettle("SESSION_CLEAR_FAILED", { code: "SESSION_CLEAR_FAILED", detail: (String(clearSessionRes.stdout || "") + String(clearSessionRes.stderr || "")).slice(0, 300), note: "清旧会话失败,无法新建 canonical 会话" }, null);
-  }
+// 一律拒 "review session already exists"）。best-effort,不存在则静默。
+// M3: rehearsal 也真跑（dry-run 真跑需清旧会话）,零治理写。
+const clearSessionRes = await world.run("node", ["-e", CLEAR_SESSION_PAYLOAD, paths.sessionPath, NONCE], { timeoutMs: 30000 });
+if (clearSessionRes.exitCode !== 0) {
+  return await freezeAndSettle("SESSION_CLEAR_FAILED", { code: "SESSION_CLEAR_FAILED", detail: (String(clearSessionRes.stdout || "") + String(clearSessionRes.stderr || "")).slice(0, 300), note: "清旧会话失败,无法新建 canonical 会话" }, null);
 }
 const initialDryrunArgs = (await sdkBaseArgs()).concat([
   "--session-state", paths.sessionPath,
@@ -701,16 +704,12 @@ if (!initialRun.ok) {
   return await freezeAndSettle("INITIAL_DRYRUN_FAILED", { code: "INITIAL_DRYRUN_FAILED", detail: initialRun.detail, note: "会话未建,不进批准" }, null);
 }
 const previewsFile = campaignFile("unit-previews");
-if (rehearsal) {
-  argvTrace.push({ label: "提取 reviewUnitPreviews → unit-previews.json", argv: ["node", "-e", "<extract-units payload>", initialDryrunFile, previewsFile] });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify(["node", "-e", "<extract-units payload>", initialDryrunFile, previewsFile]), NONCE], { timeoutMs: 30000 });
-} else {
-  const extractRes = await world.run("node", ["-e", EXTRACT_UNITS_PAYLOAD, initialDryrunFile, previewsFile, "", NONCE], { timeoutMs: 60000 });
-  if (extractRes.exitCode !== 0) {
-    return await freezeAndSettle("UNIT_PREVIEWS_FAILED", { code: "UNIT_PREVIEWS_FAILED", detail: (String(extractRes.stdout || "") + String(extractRes.stderr || "")).slice(0, 400), note: "无 reviewUnitPreviews/proposedExecutionBatch 或 digest 形态非法" }, null);
-  }
-  log("单元摘要已落盘:" + previewsFile + "。");
+// M3: rehearsal 也真跑（dry-run 真跑产出 previews,供 record-approval 消费）。
+const extractRes = await world.run("node", ["-e", EXTRACT_UNITS_PAYLOAD, initialDryrunFile, previewsFile, "", NONCE], { timeoutMs: 60000 });
+if (extractRes.exitCode !== 0) {
+  return await freezeAndSettle("UNIT_PREVIEWS_FAILED", { code: "UNIT_PREVIEWS_FAILED", detail: (String(extractRes.stdout || "") + String(extractRes.stderr || "")).slice(0, 400), note: "无 reviewUnitPreviews/proposedExecutionBatch 或 digest 形态非法" }, null);
 }
+log("单元摘要已落盘:" + previewsFile + "。");
 const recordOutFile = campaignFile("approval-receipt-json");
 const recordRun = await runTrackedCli("record-campaign-approval（合并批准收据,digest 键控）", [RECORD_APPROVAL, "--scope", paths.scopePath, "--grouping", paths.groupingPath, "--candidate-spec", paths.candidateSpecPath, "--unit-digests", previewsFile, "--json"], recordOutFile, 120000);
 if (!recordRun.ok) {
@@ -718,18 +717,15 @@ if (!recordRun.ok) {
 }
 let receiptPath = "";
 let campaignPlanDigest = "";
-if (rehearsal) {
-  receiptPath = "<receiptPath 由 live 收据 JSON 给出>";
-  campaignPlanDigest = "sha256:" + "0".repeat(64) + "（rehearsal 占位,live 由 record-campaign-approval --json 输出）";
-} else {
-  const receiptParsed = asRecord(parseJsonLoose(await readTextSafe(recordOutFile)));
-  receiptPath = receiptParsed !== null && typeof receiptParsed.receiptPath === "string" ? receiptParsed.receiptPath : "";
-  campaignPlanDigest = receiptParsed !== null && typeof receiptParsed.campaignPlanDigest === "string" ? receiptParsed.campaignPlanDigest : "";
-  if (receiptPath === "" || !/^sha256:[0-9a-f]{64}$/.test(campaignPlanDigest)) {
-    return await freezeAndSettle("RECEIPT_INVALID", { code: "RECEIPT_INVALID", detail: "收据 JSON 缺 receiptPath/campaignPlanDigest（或 digest 形态非法）:" + recordOutFile }, null);
-  }
-  log("合并批准收据:" + receiptPath + "（campaignPlanDigest " + campaignPlanDigest.slice(0, 22) + "…）。");
+// M3: rehearsal 也真跑 record-approval → 真实收据 + 真实 campaignPlanDigest
+// （门卡 manifest 用真实 digest,不再占位）。
+const receiptParsed = asRecord(parseJsonLoose(await readTextSafe(recordOutFile)));
+receiptPath = receiptParsed !== null && typeof receiptParsed.receiptPath === "string" ? receiptParsed.receiptPath : "";
+campaignPlanDigest = receiptParsed !== null && typeof receiptParsed.campaignPlanDigest === "string" ? receiptParsed.campaignPlanDigest : "";
+if (receiptPath === "" || !/^sha256:[0-9a-f]{64}$/.test(campaignPlanDigest)) {
+  return await freezeAndSettle("RECEIPT_INVALID", { code: "RECEIPT_INVALID", detail: "收据 JSON 缺 receiptPath/campaignPlanDigest（或 digest 形态非法）:" + recordOutFile }, null);
 }
+log("合并批准收据:" + receiptPath + "（campaignPlanDigest " + campaignPlanDigest.slice(0, 22) + "…）。");
 const gateManifest: GateManifest = {
   gate: "APPROVE_CAMPAIGN",
   title: campaignId + " 合并批准（唯一人工停）",
@@ -982,7 +978,7 @@ if (rehearsal) {
     unitsFinalized: 0,
     journalPath,
     settled: false,
-    detail: "rehearsal 预演完成:零 agent、零 live 写;rehearsal.argv 为将执行的 argv 序列,rehearsal.gate 为门卡 manifest。",
+    detail: "rehearsal 预演完成（M3 2026-10-21:零 agent,确定性链真跑含 dry-run,零文档写）;确定性链工件已落盘（scope/candidate-spec/reviewed-context/会话/previews/收据）,rehearsal.gate 为门卡 manifest（真实 campaignPlanDigest）。执行段与终点 close-session/settle 未跑（live 才写文档/推进 scan-state）。",
     rehearsal: { argv: argvTrace, gate: gateTrace },
   };
 }

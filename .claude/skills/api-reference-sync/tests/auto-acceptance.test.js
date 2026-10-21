@@ -20,6 +20,25 @@ test('touchedRecordsFromJournal keeps one entry per action, sorted by recordId',
   ]);
 });
 
+test('touchedRecordsFromJournal reads the record identity from the rollback capsule (executor shape)', () => {
+  // The live executor's prepared entry carries the record id inside the
+  // rollback capsule (captureRecordState.beforeRecord.recordId), not as a flat
+  // field — the shape the M5 live canary create_role journal actually wrote
+  // (MUTATED_LIVE_STATE / AUTO_ACCEPTANCE_REFUSED seam, 2026-10-21).
+  const capsuleEntries = [
+    { type: 'prepared', actionId: 'u2', rollbackCapsule: { beforeRecord: { recordId: 'rec-cap-b' }, documentRollback: { documentToken: 'doc-b' } } },
+    { type: 'prepared', actionId: 'u1', rollbackCapsule: { beforeRecord: { recordId: 'rec-cap-a' }, documentRollback: { documentToken: 'doc-a' } } },
+    // A prepared entry with a flat recordId wins; a capsule-less folder step stays untracked.
+    { type: 'prepared', actionId: 'u3', recordId: 'rec-flat' },
+    { type: 'prepared', actionId: 'u0', rollbackCapsule: { beforeRecord: null } },
+  ];
+  assert.deepEqual(touchedRecordsFromJournal(capsuleEntries), [
+    { actionId: 'u1', recordId: 'rec-cap-a', documentToken: null },
+    { actionId: 'u2', recordId: 'rec-cap-b', documentToken: null },
+    { actionId: 'u3', recordId: 'rec-flat', documentToken: null },
+  ]);
+});
+
 test('buildAutoAcceptanceReceipt derives the two-gate receipt from the journal', () => {
   const receipt = buildAutoAcceptanceReceipt({
     reviewUnitId: 'review:python:Collections:create',

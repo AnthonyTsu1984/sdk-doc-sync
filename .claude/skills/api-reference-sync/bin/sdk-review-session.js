@@ -691,14 +691,25 @@ function parseBatchReply(text) {
 // touchedRecords derived from the digest-verified journal itself — the
 // prepared entries carry the exact (actionId, recordId, documentToken) the
 // acceptance transition re-validates. The executor never transcribes them.
+// The executor's prepared entry carries the record identity inside the rollback
+// capsule (rollbackCapsule.beforeRecord.recordId — captureRecordState, and the
+// record-state.js executionTargetsBaseline reads it from there); the flat
+// recordId field is the fixture/accepted shape for folder/resource steps that
+// carry no capsule. Read both.
 function touchedRecordsFromJournal(entries) {
   const byAction = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
-    if (entry?.type !== 'prepared' || !nonEmptyText(entry.actionId) || !nonEmptyText(entry.recordId)) continue;
+    if (entry?.type !== 'prepared' || !nonEmptyText(entry.actionId)) continue;
+    const recordId = nonEmptyText(entry.recordId)
+      ? entry.recordId
+      : (nonEmptyText(entry.rollbackCapsule?.beforeRecord?.recordId)
+        ? entry.rollbackCapsule.beforeRecord.recordId
+        : null);
+    if (!recordId) continue;
     if (!byAction.has(entry.actionId)) {
       byAction.set(entry.actionId, {
         actionId: entry.actionId,
-        recordId: entry.recordId,
+        recordId,
         documentToken: entry.documentToken || null,
       });
     }

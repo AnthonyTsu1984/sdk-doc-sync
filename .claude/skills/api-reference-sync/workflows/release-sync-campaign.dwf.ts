@@ -563,7 +563,7 @@ if (rehearsal) {
     "## 任务\n" +
     "为 scope 内 CREATE/schema-first 单元材料化/刷新 reviewed 上下文条目。\n" +
     "UPDATE 页硬性 verbatim 规则（2026-10-20 裁定 A 收紧,最硬约束;r7 修例:候选规格已是 intake 链确定性处理的产物,不得回退）:对 scope 中每个 type=UPDATE 的单元——\n" +
-    "① summary/result 两字段的**文本内容**必须与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致（禁止改写措辞、禁止截断含末尾句、禁止重排或自增）;summaryCallouts/deprecation alert 文本同样逐字保留。\n" +
+    "① summary/result 两字段的**文本内容**必须与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致（禁止改写措辞、禁止截断含末尾句、禁止重排或自增）;summaryCallouts/deprecation alert 文本同样逐字保留。result 的嵌套结构（result.fields[].description、嵌套表、RETURNS dict 的每个键值）同样逐字透传、禁止截断——PR 里一句都不许丢（2026-10-21 裁定:describe_collection field 描述截末尾句）。\n" +
     "② example 代码块**不重新抄写 PR 原文**——直接采用 candidate-spec（" + paths.candidateSpecPath + "）里该单元 examples[].code 的现成字节（它已是 PR 逐字 + intake 链 N6 确定性重排/链接解析的产物）;若某单元候选规格缺 examples,才从 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 补抄。\n" +
     "③ 任何 prose 里的 repo-relative 链接（[text](xxx.md)）保持 candidate-spec 已解析的形态,不得用 PR 原文的相对链接覆盖。\n" +
     "④ 唯一可对 example 做的变换=代码块内确定性排版归一化（单行↔多行、行内空白规范化,不得移动行内注释、不得增删标点）。随轨事实:sourceRevision=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.sourceRevision) + ";CREATE 白名单注记=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.createWhitelistNote) + ";文风范式 exemplar=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.exemplarPath) + ";scout 警告条数=" + JSON.stringify(notesR === null ? null : notesR.scoutWarnings) + ";每写手页数上限=" + pagesPerWriter + "。\n" +

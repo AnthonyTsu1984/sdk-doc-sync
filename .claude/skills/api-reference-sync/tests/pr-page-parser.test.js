@@ -669,6 +669,37 @@ A \`Function\` object.
   assert.match(parsedProse.returnTypeProse, /^Instance of \`Function\` that encapsulates/);
 });
 
+// 2026-10-21 fixes (shadow campaign #1 round-11 freeze): a class-method note
+// placed AFTER the Request Syntax fence must still surface as a summary
+// callout (create_schema / construct_from_dict), not be silently dropped by
+// the pre-first-fence scan.
+test('summary callouts after the first fence are captured (round-11 freeze)', () => {
+  const text = `# create_schema()
+
+This operation creates a collection schema.
+
+## Request syntax
+
+\`\`\`python
+MilvusClient.create_schema(**kwargs) -> CollectionSchema
+\`\`\`
+
+<div class="alert note">
+
+This is a class method. You should call this method like this: \`MilvusClient.create_schema()\`.
+
+</div>
+
+**PARAMETERS:**
+
+- **kwargs** -
+`;
+  const parsed = parsePage(text, { ...profiles.python, route: 'structured', requireSignature: false }, 'create_schema.md');
+  assert.equal(parsed.summaryCallouts.length, 1);
+  assert.equal(parsed.summaryCallouts[0].kind, 'note');
+  assert.match(parsed.summaryCallouts[0].text, /class method/);
+});
+
 // ---- four-language real-page replay (review P1-2) ---------------------------
 //
 // The full 2026-10-15 intake page dumps (643 pages, sha-pinned by the intake

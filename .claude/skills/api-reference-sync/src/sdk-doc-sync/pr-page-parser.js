@@ -494,8 +494,22 @@ function firstParagraphAfterH1(parts) {
 // Node callout blocks: <div class="alert note"> ... </div> between H1 and the
 // first paragraph — collected as summaryCallouts (node precedent).
 function summaryCalloutsAfterH1(parts) {
-  const pre = (parts.find((p) => !p.fence) || { text: '' }).text;
-  const joined = pre.split('\n').slice(1).join('\n');
+  // Scan ALL prose parts after the H1 (not just the pre-first-fence prose):
+  // python pages place class-method notes AFTER the Request Syntax fence
+  // (create_schema / construct_from_dict 2026-10-21 harvest), so a callout
+  // only appearing in a later prose part was silently dropped. Bound the scan
+  // to the top region — stop at the first params/request/example heading so
+  // parameter-section callouts don't leak into summary callouts.
+  const prose = [];
+  for (const part of parts) {
+    if (part.fence) continue;
+    const text = part.text;
+    const h1End = text.indexOf('\n');
+    const afterH1 = text.slice(h1End + 1);
+    const boundary = afterH1.split('\n').findIndex((line) => /^\s*\*\*PARAMETERS:\*\*\s*$|^#{1,6}\s+(Request|Parameters|Examples|Constructor)/i.test(line.trim()));
+    prose.push(boundary === -1 ? afterH1 : afterH1.split('\n').slice(0, boundary).join('\n'));
+  }
+  const joined = prose.join('\n');
   const callouts = [];
   for (const m of joined.matchAll(/<div[^>]*class="alert (\w+)"[^>]*>([\s\S]*?)<\/div>/g)) {
     const text = m[2].replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();

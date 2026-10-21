@@ -162,6 +162,8 @@ function loadProfile(language) {
 
 function plainText(text) {
   return stripMdEscapes(String(text || ''))
+    .replace(/<div\b[^>]*>/g, ' ')
+    .replace(/<\/div>/g, ' ')
     .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1')
     .replace(/\*\*([^*]+)\*\*/g, '$1')
     .replace(/`([^`]+)`/g, '$1')

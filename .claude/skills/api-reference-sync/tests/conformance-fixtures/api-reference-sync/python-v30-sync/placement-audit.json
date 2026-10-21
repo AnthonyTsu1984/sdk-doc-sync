@@ -1,0 +1,4912 @@
+{
+  "schemaVersion": 3,
+  "walkDigest": "sha256:16c8468692cc7c1216823c11d231514b0ca6e963361ba7476fa28acb02a7db29",
+  "status": "placement_audit_ready",
+  "inheritanceEvidenceStatus": "evidence_blocked",
+  "generatedAt": "2026-10-20T23:37:10.584Z",
+  "collectedAt": "2026-10-20T23:36:11.626Z",
+  "version": "v3.0.x",
+  "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+  "sourceVersionRoots": [
+    {
+      "version": "v2.4.x",
+      "rootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b"
+    },
+    {
+      "version": "v2.5.x",
+      "rootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc"
+    },
+    {
+      "version": "v2.6.x",
+      "rootToken": "IaWgf4osAlpdwqdVIclct97wnCg"
+    }
+  ],
+  "recordEnumeration": {
+    "complete": true,
+    "supplied": 4,
+    "requiredVersions": [
+      "v3.0.x",
+      "v2.4.x",
+      "v2.5.x",
+      "v2.6.x"
+    ],
+    "failures": [],
+    "tracks": [
+      {
+        "version": "v3.0.x",
+        "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a",
+        "tableId": "tblKV2Wj45qrmD0J",
+        "recordCount": 398,
+        "documentTokenCount": 378,
+        "inventoryDigest": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff"
+      },
+      {
+        "version": "v2.4.x",
+        "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g",
+        "tableId": null,
+        "recordCount": 275,
+        "documentTokenCount": 261,
+        "inventoryDigest": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37"
+      },
+      {
+        "version": "v2.5.x",
+        "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG",
+        "tableId": null,
+        "recordCount": 320,
+        "documentTokenCount": 303,
+        "inventoryDigest": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4"
+      },
+      {
+        "version": "v2.6.x",
+        "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc",
+        "tableId": null,
+        "recordCount": 365,
+        "documentTokenCount": 347,
+        "inventoryDigest": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+      }
+    ]
+  },
+  "trackInventoryDigests": {
+    "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+    "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+    "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+    "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+  },
+  "sharedTokenSummary": {
+    "shared": 37,
+    "unshared": 27,
+    "unknown": 0
+  },
+  "folderChains": {
+    "MY7rf4sRLl60nddnuNKcs0YTnHh": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "MY7rf4sRLl60nddnuNKcs0YTnHh"
+    ],
+    "BBPZfcRbOlWEnjdbIJgc3wgynsg": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg"
+    ],
+    "SIN6f7FuAlseoDdllIXck663nBg": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "SIN6f7FuAlseoDdllIXck663nBg"
+    ],
+    "PWyVfD7HUl1x3ydji7RcraKin1g": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "PWyVfD7HUl1x3ydji7RcraKin1g"
+    ],
+    "WcUXfN1f2lNbrmdWYOoc6MRlngg": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "MY7rf4sRLl60nddnuNKcs0YTnHh",
+      "WcUXfN1f2lNbrmdWYOoc6MRlngg"
+    ],
+    "KSDYfo9pCl89wKdRNGccbzT2nid": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "KSDYfo9pCl89wKdRNGccbzT2nid"
+    ],
+    "YhYwfvxhNlJmvSd6gCUcGFepnue": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "YhYwfvxhNlJmvSd6gCUcGFepnue"
+    ],
+    "Q72tf8sE5lBdfNdXHgQc8pwvnnb": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "Q72tf8sE5lBdfNdXHgQc8pwvnnb"
+    ],
+    "GdHBfpL0SloH6tdx3Iycq3NwnRc": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "GdHBfpL0SloH6tdx3Iycq3NwnRc"
+    ],
+    "ReL5fij0MlHIpbd5WJHcko3on4g": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "ReL5fij0MlHIpbd5WJHcko3on4g"
+    ],
+    "WidffJPNIlfIlZdHlU8cMiGOnpg": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "WidffJPNIlfIlZdHlU8cMiGOnpg"
+    ],
+    "VWo0fuUollpgQ5dnvPkcc92Mntf": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "VWo0fuUollpgQ5dnvPkcc92Mntf"
+    ],
+    "ClUPfEshEljX8zdh0sgcOY5Nn4v": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "ClUPfEshEljX8zdh0sgcOY5Nn4v"
+    ],
+    "RoBzflamplZFzYd1ZSWccuVfnnc": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "RoBzflamplZFzYd1ZSWccuVfnnc"
+    ],
+    "BOTAfAdGJl7C9Ad00CWcOawendd": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "BOTAfAdGJl7C9Ad00CWcOawendd"
+    ],
+    "M9bMfXz3llm0ebdks4Hc3KdMnCd": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "M9bMfXz3llm0ebdks4Hc3KdMnCd"
+    ],
+    "EBJgfcRHNlrAHEdOPtMcGOKpnvb": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "EBJgfcRHNlrAHEdOPtMcGOKpnvb"
+    ],
+    "GeyTfigvDlnt6td9pPFcteQenk0": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "SIN6f7FuAlseoDdllIXck663nBg",
+      "GeyTfigvDlnt6td9pPFcteQenk0"
+    ],
+    "QTHlfUcX5l22SmdOCVrc8V2fnRh": [
+      "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "KSDYfo9pCl89wKdRNGccbzT2nid",
+      "QTHlfUcX5l22SmdOCVrc8V2fnRh"
+    ]
+  },
+  "entries": [
+    {
+      "proposalId": "proposal:python:Authentication:create_role",
+      "stableId": "python:Authentication:create_role",
+      "canonicalSlug": "Authentication-create_role",
+      "title": "create_role()",
+      "recordId": "recu3QwdFC0YXO",
+      "documentToken": "HRqudGOOnokInhxczclcADBDn8g",
+      "targetFolderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "VWo0fuUollpgQ5dnvPkcc92Mntf"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recu3QwdFC0YXO"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QwdFC0YXO",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Authentication:create_role",
+        "current": {
+          "recordId": "recu3QwdFC0YXO",
+          "documentToken": "HRqudGOOnokInhxczclcADBDn8g",
+          "version": "v3.0.x",
+          "folderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recu3QwdFC0YXO"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:3d1894cb7067081af163c041c9a251534737d39735ba4462f04676a35e0bdeac"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Authentication:remove_privileges_from_group",
+      "stableId": "python:Authentication:remove_privileges_from_group",
+      "canonicalSlug": "Authentication-remove_privileges_from_group",
+      "title": "remove_privileges_from_group()",
+      "recordId": "recuAAA5Ub7Lhm",
+      "documentToken": "IGPAdBQ5Von3lFxv4uSc5dGDnAd",
+      "targetFolderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "W9SBfQfXUlZAXDdK6nTcop4rnFd",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ICGwfi8ZClVQLHdLn9Hc3oeFn1d",
+          "W9SBfQfXUlZAXDdK6nTcop4rnFd"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuAAA5Ub7Lhm",
+          "recuAAA5Ub7Lhm",
+          "recuAAA5Ub7Lhm",
+          "recuAAypkcYEvN"
+        ],
+        "references": [
+          {
+            "recordId": "recuAAA5Ub7Lhm",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuAAA5Ub7Lhm",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recuAAA5Ub7Lhm",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          },
+          {
+            "recordId": "recuAAypkcYEvN",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Authentication:remove_privileges_from_group",
+        "current": {
+          "recordId": "recuAAA5Ub7Lhm",
+          "documentToken": "IGPAdBQ5Von3lFxv4uSc5dGDnAd",
+          "version": "v2.4.x",
+          "folderToken": "W9SBfQfXUlZAXDdK6nTcop4rnFd",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuAAA5Ub7Lhm",
+            "recuAAA5Ub7Lhm",
+            "recuAAA5Ub7Lhm",
+            "recuAAypkcYEvN"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:ae3d1de60e34883a1faa51c0337fdcc8b9814019e3e77829cb83cebcf4efb871"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Authentication:revoke_privilege",
+      "stableId": "python:Authentication:revoke_privilege",
+      "canonicalSlug": "Authentication-revoke_privilege",
+      "title": "revoke_privilege()",
+      "recordId": "recvaDowQHNuUr",
+      "documentToken": "LB90d4VGZogYIZxwCgpcSkgKnng",
+      "targetFolderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "Tjnufe7LvlX9wtddOfEctVJ6nKB",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "Tjnufe7LvlX9wtddOfEctVJ6nKB"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDowQHNuUr",
+          "recvaDowQHNuUr"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDowQHNuUr",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDowQHNuUr",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Authentication:revoke_privilege",
+        "current": {
+          "recordId": "recvaDowQHNuUr",
+          "documentToken": "LB90d4VGZogYIZxwCgpcSkgKnng",
+          "version": "v2.6.x",
+          "folderToken": "Tjnufe7LvlX9wtddOfEctVJ6nKB",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDowQHNuUr",
+            "recvaDowQHNuUr"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:c9a7bcd50e812014fcd3878cb0ed013d717044528e5c281a34722a4c75f449b6"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Client:session",
+      "stableId": "python:Client:session",
+      "canonicalSlug": "Client-session",
+      "title": "session()",
+      "recordId": "recvingHZOtJfq",
+      "documentToken": "UASmdlcqvojCe4xNY94cz9Wznyh",
+      "targetFolderToken": "M9bMfXz3llm0ebdks4Hc3KdMnCd",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "M9bMfXz3llm0ebdks4Hc3KdMnCd",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "M9bMfXz3llm0ebdks4Hc3KdMnCd"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvingHZOtJfq"
+        ],
+        "references": [
+          {
+            "recordId": "recvingHZOtJfq",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Client:session",
+        "current": {
+          "recordId": "recvingHZOtJfq",
+          "documentToken": "UASmdlcqvojCe4xNY94cz9Wznyh",
+          "version": "v3.0.x",
+          "folderToken": "M9bMfXz3llm0ebdks4Hc3KdMnCd",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "M9bMfXz3llm0ebdks4Hc3KdMnCd",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvingHZOtJfq"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:b251c37a34da64d6a7ddda95cda6f033fd2ec4a940cd7a5d99ce558abea1807d"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:add_collection_field",
+      "stableId": "python:Collections:add_collection_field",
+      "canonicalSlug": "Collections-add_collection_field",
+      "title": "add_collection_field()",
+      "recordId": "recuNY0FWBE1ED",
+      "documentToken": "IquldHhyGo9s4IxF3cicOXGnnNf",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "CqXrfDyXZlkNSrdh5eJcI0Fznjh"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuNY0FWBE1ED",
+          "recuNY0FWBE1ED"
+        ],
+        "references": [
+          {
+            "recordId": "recuNY0FWBE1ED",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuNY0FWBE1ED",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:add_collection_field",
+        "current": {
+          "recordId": "recuNY0FWBE1ED",
+          "documentToken": "IquldHhyGo9s4IxF3cicOXGnnNf",
+          "version": "v2.6.x",
+          "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuNY0FWBE1ED",
+            "recuNY0FWBE1ED"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:a9a0735aa5e652ed800143f9fcb3a466b7c8e0e7ea0be72208211437d7ba5d92"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:add_collection_function",
+      "stableId": "python:Collections:add_collection_function",
+      "canonicalSlug": "Collections-add_collection_function",
+      "title": "add_collection_function()",
+      "recordId": "recvaDp3EYvfOX",
+      "documentToken": "Qe3GdWZa9oAxjrx85tkct8ManRe",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "CqXrfDyXZlkNSrdh5eJcI0Fznjh"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDp3EYvfOX",
+          "recvaDp3EYvfOX"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDp3EYvfOX",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDp3EYvfOX",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:add_collection_function",
+        "current": {
+          "recordId": "recvaDp3EYvfOX",
+          "documentToken": "Qe3GdWZa9oAxjrx85tkct8ManRe",
+          "version": "v2.6.x",
+          "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDp3EYvfOX",
+            "recvaDp3EYvfOX"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:6ddc42e50aa908830253c4e33a2219474d77e029fce499d2f3fbfbc021c30569"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:add_collection_struct_field",
+      "stableId": "python:Collections:add_collection_struct_field",
+      "canonicalSlug": "Collections-add_collection_struct_field",
+      "title": "add_collection_struct_field()",
+      "recordId": "recvxhgt9tRjHr",
+      "documentToken": "M97RdhP3Co4QadxrDFGcpV8EnYe",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvxhgt9tRjHr"
+        ],
+        "references": [
+          {
+            "recordId": "recvxhgt9tRjHr",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:add_collection_struct_field",
+        "current": {
+          "recordId": "recvxhgt9tRjHr",
+          "documentToken": "M97RdhP3Co4QadxrDFGcpV8EnYe",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvxhgt9tRjHr"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:2e5e5d23c1028455e05ca467db85a32abe6a28d9c9996bb1e9966fa4aa298fdd"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:alter_collection_function",
+      "stableId": "python:Collections:alter_collection_function",
+      "canonicalSlug": "Collections-alter_collection_function",
+      "title": "alter_collection_function()",
+      "recordId": "recvaDp6FxRTgD",
+      "documentToken": "N9d9df9IIojLZDxft1HcU0mkn0b",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "CqXrfDyXZlkNSrdh5eJcI0Fznjh"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDp6FxRTgD",
+          "recvaDp6FxRTgD"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDp6FxRTgD",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDp6FxRTgD",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:alter_collection_function",
+        "current": {
+          "recordId": "recvaDp6FxRTgD",
+          "documentToken": "N9d9df9IIojLZDxft1HcU0mkn0b",
+          "version": "v2.6.x",
+          "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDp6FxRTgD",
+            "recvaDp6FxRTgD"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:66c4e9a6a29d3434a12a2ad973fa79dfe38aca94a1089c335ce003630f5b6306"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:alter_collection_properties",
+      "stableId": "python:Collections:alter_collection_properties",
+      "canonicalSlug": "Collections-alter_collection_properties",
+      "title": "alter_collection_properties()",
+      "recordId": "recuAv9f5uxE8j",
+      "documentToken": "SJ1FdUQQnohtObxhNgpcHalMnUc",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recuAv9f5uxE8j"
+        ],
+        "references": [
+          {
+            "recordId": "recuAv9f5uxE8j",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:alter_collection_properties",
+        "current": {
+          "recordId": "recuAv9f5uxE8j",
+          "documentToken": "SJ1FdUQQnohtObxhNgpcHalMnUc",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recuAv9f5uxE8j"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:d68aaf839e1892241734398402901b6ddfe31e58927cc7bfe47bddccbc92ab7d"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:create_collection",
+      "stableId": "python:Collections:create_collection",
+      "canonicalSlug": "Collections-create_collection",
+      "title": "create_collection()",
+      "recordId": "recu3Qw7kc2cgj",
+      "documentToken": "NbYidGUPcokra9xJ6IAcUNLEn9f",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recu3Qw7kc2cgj"
+        ],
+        "references": [
+          {
+            "recordId": "recu3Qw7kc2cgj",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:create_collection",
+        "current": {
+          "recordId": "recu3Qw7kc2cgj",
+          "documentToken": "NbYidGUPcokra9xJ6IAcUNLEn9f",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recu3Qw7kc2cgj"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:39db7bb9ee2cde9e90e6ad720522a04856c40974db2253f2dfa0e159009f0626"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:create_schema",
+      "stableId": "python:Collections:create_schema",
+      "canonicalSlug": "Collections-create_schema",
+      "title": "create_schema()",
+      "recordId": "recu3Qwg3v2hG2",
+      "documentToken": "Er8vdVepxoqhPFxVyZUcxSHMnqe",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recu3Qwg3v2hG2"
+        ],
+        "references": [
+          {
+            "recordId": "recu3Qwg3v2hG2",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:create_schema",
+        "current": {
+          "recordId": "recu3Qwg3v2hG2",
+          "documentToken": "Er8vdVepxoqhPFxVyZUcxSHMnqe",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recu3Qwg3v2hG2"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:361c28f08fe4dc8701f693c921827199d234ef1db8f86dbf43cb4a10f8d64ef2"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:describe_collection",
+      "stableId": "python:Collections:describe_collection",
+      "canonicalSlug": "Collections-describe_collection",
+      "title": "describe_collection()",
+      "recordId": "recu3Qwo8o6Pjs",
+      "documentToken": "LXASdPs6KoRfCJx11A1cl2Ssngg",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "CqXrfDyXZlkNSrdh5eJcI0Fznjh"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3Qwo8o6Pjs",
+          "recu3Qwo8o6Pjs"
+        ],
+        "references": [
+          {
+            "recordId": "recu3Qwo8o6Pjs",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3Qwo8o6Pjs",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:describe_collection",
+        "current": {
+          "recordId": "recu3Qwo8o6Pjs",
+          "documentToken": "LXASdPs6KoRfCJx11A1cl2Ssngg",
+          "version": "v2.6.x",
+          "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3Qwo8o6Pjs",
+            "recu3Qwo8o6Pjs"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:2fb821b0fe7427362077a0b1cedb5a7a9eb79298a8dacfe2c612b3603a872d29"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:drop_collection_field",
+      "stableId": "python:Collections:drop_collection_field",
+      "canonicalSlug": "Collections-drop_collection_field",
+      "title": "drop_collection_field()",
+      "recordId": "recvj5llTC9QWs",
+      "documentToken": "SpmqdHRBjoRKQuxTibQcx0zMnnb",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvj5llTC9QWs"
+        ],
+        "references": [
+          {
+            "recordId": "recvj5llTC9QWs",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:drop_collection_field",
+        "current": {
+          "recordId": "recvj5llTC9QWs",
+          "documentToken": "SpmqdHRBjoRKQuxTibQcx0zMnnb",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvj5llTC9QWs"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:694c9cf6196e0711107a1e57e48b90849cf10ead3ad73fdc8f1c5ce03b966c1f"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:drop_collection_function",
+      "stableId": "python:Collections:drop_collection_function",
+      "canonicalSlug": "Collections-drop_collection_function",
+      "title": "drop_collection_function()",
+      "recordId": "recvaDoAR3FcQS",
+      "documentToken": "F1mJdDLyzoMTrxxarPMcqPkqnqg",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "CqXrfDyXZlkNSrdh5eJcI0Fznjh"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDoAR3FcQS",
+          "recvaDoAR3FcQS"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDoAR3FcQS",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDoAR3FcQS",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:drop_collection_function",
+        "current": {
+          "recordId": "recvaDoAR3FcQS",
+          "documentToken": "F1mJdDLyzoMTrxxarPMcqPkqnqg",
+          "version": "v2.6.x",
+          "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDoAR3FcQS",
+            "recvaDoAR3FcQS"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:8db22e566b9bd65a2248034b3e5485ac131b8836f466ad8cb0b1afcecb7d8325"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:get_refresh_external_collection_progress",
+      "stableId": "python:Collections:get_refresh_external_collection_progress",
+      "canonicalSlug": "Collections-get_refresh_external_collection_progress",
+      "title": "get_refresh_external_collection_progress()",
+      "recordId": "recvh86AGwqZd1",
+      "documentToken": "HITBdKb0HotcK0xCKsycEeuqnXe",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh86AGwqZd1"
+        ],
+        "references": [
+          {
+            "recordId": "recvh86AGwqZd1",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:get_refresh_external_collection_progress",
+        "current": {
+          "recordId": "recvh86AGwqZd1",
+          "documentToken": "HITBdKb0HotcK0xCKsycEeuqnXe",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh86AGwqZd1"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:f93976302d02401e4af929680521d89daef46a3c4ae80b595d1e587a041854de"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:list_refresh_external_collection_jobs",
+      "stableId": "python:Collections:list_refresh_external_collection_jobs",
+      "canonicalSlug": "Collections-list_refresh_external_collection_jobs",
+      "title": "list_refresh_external_collection_jobs()",
+      "recordId": "recvh86BXWrpyn",
+      "documentToken": "VkBFdLHwao9hVMxzRurcBYIynFh",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh86BXWrpyn"
+        ],
+        "references": [
+          {
+            "recordId": "recvh86BXWrpyn",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:list_refresh_external_collection_jobs",
+        "current": {
+          "recordId": "recvh86BXWrpyn",
+          "documentToken": "VkBFdLHwao9hVMxzRurcBYIynFh",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh86BXWrpyn"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:6bab92a5468995615a74003665e033b4f1ebd065171a4f41f14922277d1f7887"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:refresh_external_collection",
+      "stableId": "python:Collections:refresh_external_collection",
+      "canonicalSlug": "Collections-refresh_external_collection",
+      "title": "refresh_external_collection()",
+      "recordId": "recvh7XqNTZM8t",
+      "documentToken": "ZVs4dDpvmoXI0OxOnKhc9numnJd",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "WidffJPNIlfIlZdHlU8cMiGOnpg"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh7XqNTZM8t"
+        ],
+        "references": [
+          {
+            "recordId": "recvh7XqNTZM8t",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:refresh_external_collection",
+        "current": {
+          "recordId": "recvh7XqNTZM8t",
+          "documentToken": "ZVs4dDpvmoXI0OxOnKhc9numnJd",
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh7XqNTZM8t"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:3385a1212562419a9555254bda2d24812c94e0459ea8b87ebd4ad6091ffe84c0"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Collections:truncate_collection",
+      "stableId": "python:Collections:truncate_collection",
+      "canonicalSlug": "Collections-truncate_collection",
+      "title": "truncate_collection()",
+      "recordId": "recvaDovn5LmO4",
+      "documentToken": "T2lWd4LMOoAkUCxa8wjcJVoinrf",
+      "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "CqXrfDyXZlkNSrdh5eJcI0Fznjh"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDovn5LmO4",
+          "recvaDovn5LmO4"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDovn5LmO4",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDovn5LmO4",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Collections:truncate_collection",
+        "current": {
+          "recordId": "recvaDovn5LmO4",
+          "documentToken": "T2lWd4LMOoAkUCxa8wjcJVoinrf",
+          "version": "v2.6.x",
+          "folderToken": "CqXrfDyXZlkNSrdh5eJcI0Fznjh",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDovn5LmO4",
+            "recvaDovn5LmO4"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:a11b4f46be4ac2f3e4909e79da89675947e34b7c0247898bab64327ccff6cd9d"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:CollectionSchema:add_field",
+      "stableId": "python:CollectionSchema:add_field",
+      "canonicalSlug": "CollectionSchema-add_field",
+      "title": "add_field()",
+      "recordId": "recu3QuG6ou5y1",
+      "documentToken": "TG3Rd9aM5offvFxKy2CcKXn9nWc",
+      "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "NZa5fZusilxYZ5d3Q1Dc1l8BnOd",
+          "SeaffVvutlNtvTdpV17cy78un5T"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QuG6ou5y1",
+          "recu3QuG6ou5y1",
+          "recu3QuG6ou5y1",
+          "recu3QuG6ou5y1"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QuG6ou5y1",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QuG6ou5y1",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QuG6ou5y1",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QuG6ou5y1",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:CollectionSchema:add_field",
+        "current": {
+          "recordId": "recu3QuG6ou5y1",
+          "documentToken": "TG3Rd9aM5offvFxKy2CcKXn9nWc",
+          "version": "v2.4.x",
+          "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QuG6ou5y1",
+            "recu3QuG6ou5y1",
+            "recu3QuG6ou5y1",
+            "recu3QuG6ou5y1"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:eb68aee02db5eada16db8132314cf795e175ec9a88ae148940f73abf2f98b0e6"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:CollectionSchema:construct_from_dict",
+      "stableId": "python:CollectionSchema:construct_from_dict",
+      "canonicalSlug": "CollectionSchema-construct_from_dict",
+      "title": "construct_from_dict()",
+      "recordId": "recu3QuHRgwOZL",
+      "documentToken": "DYuUdc503o1TANxuGozcXhCmnRN",
+      "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "NZa5fZusilxYZ5d3Q1Dc1l8BnOd",
+          "SeaffVvutlNtvTdpV17cy78un5T"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QuHRgwOZL",
+          "recu3QuHRgwOZL",
+          "recu3QuHRgwOZL",
+          "recu3QuHRgwOZL"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QuHRgwOZL",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QuHRgwOZL",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QuHRgwOZL",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QuHRgwOZL",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:CollectionSchema:construct_from_dict",
+        "current": {
+          "recordId": "recu3QuHRgwOZL",
+          "documentToken": "DYuUdc503o1TANxuGozcXhCmnRN",
+          "version": "v2.4.x",
+          "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QuHRgwOZL",
+            "recu3QuHRgwOZL",
+            "recu3QuHRgwOZL",
+            "recu3QuHRgwOZL"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:c571ea4edc339cd734ab2b6fb96d4da4e2f991b4c3dc91bc78aa35fff0d2c12b"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:CollectionSchema:run_analyzer",
+      "stableId": "python:CollectionSchema:run_analyzer",
+      "canonicalSlug": "CollectionSchema-run_analyzer",
+      "title": "run_analyzer()",
+      "recordId": "recuNY13V44NfI",
+      "documentToken": "TWzjdJ61ho613AxKSd7clQt9nrg",
+      "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.5.x",
+        "folderToken": "DoD0fV2AalQwG7d77lVcSC4unxd",
+        "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "YHQ9fF9IDlENsMd9RZucYalqnNg",
+          "DoD0fV2AalQwG7d77lVcSC4unxd"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuNY13V44NfI",
+          "recuNY13V44NfI",
+          "recuNY2jbfAkKk"
+        ],
+        "references": [
+          {
+            "recordId": "recuNY13V44NfI",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuNY13V44NfI",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          },
+          {
+            "recordId": "recuNY2jbfAkKk",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:CollectionSchema:run_analyzer",
+        "current": {
+          "recordId": "recuNY13V44NfI",
+          "documentToken": "TWzjdJ61ho613AxKSd7clQt9nrg",
+          "version": "v2.5.x",
+          "folderToken": "DoD0fV2AalQwG7d77lVcSC4unxd",
+          "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuNY13V44NfI",
+            "recuNY13V44NfI",
+            "recuNY2jbfAkKk"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:a8ecb6819331308fac24ab17ec8ce50dd2cd499bf963a6df3b78a636c797e02a"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:CollectionSchema:to_dict",
+      "stableId": "python:CollectionSchema:to_dict",
+      "canonicalSlug": "CollectionSchema-to_dict",
+      "title": "to_dict()",
+      "recordId": "recu3QuJLSNBGW",
+      "documentToken": "GfTadfqhAo64XDxc643ci4Zwnwb",
+      "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "NZa5fZusilxYZ5d3Q1Dc1l8BnOd",
+          "SeaffVvutlNtvTdpV17cy78un5T"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QuJLSNBGW",
+          "recu3QuJLSNBGW",
+          "recu3QuJLSNBGW",
+          "recu3QuJLSNBGW"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QuJLSNBGW",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QuJLSNBGW",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QuJLSNBGW",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QuJLSNBGW",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:CollectionSchema:to_dict",
+        "current": {
+          "recordId": "recu3QuJLSNBGW",
+          "documentToken": "GfTadfqhAo64XDxc643ci4Zwnwb",
+          "version": "v2.4.x",
+          "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QuJLSNBGW",
+            "recu3QuJLSNBGW",
+            "recu3QuJLSNBGW",
+            "recu3QuJLSNBGW"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:c565f1ae095d80a03756289e886c4f7587dbbdaf5edab899713ef3f5fb64f6bb"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:CollectionSchema:verify",
+      "stableId": "python:CollectionSchema:verify",
+      "canonicalSlug": "CollectionSchema-verify",
+      "title": "verify()",
+      "recordId": "recu3QuLDI2pSd",
+      "documentToken": "KSECdBDcUoIkL7xI4KOc29Ukn1g",
+      "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "NZa5fZusilxYZ5d3Q1Dc1l8BnOd",
+          "SeaffVvutlNtvTdpV17cy78un5T"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QuLDI2pSd",
+          "recu3QuLDI2pSd",
+          "recu3QuLDI2pSd",
+          "recu3QuLDI2pSd"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QuLDI2pSd",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QuLDI2pSd",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QuLDI2pSd",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QuLDI2pSd",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:CollectionSchema:verify",
+        "current": {
+          "recordId": "recu3QuLDI2pSd",
+          "documentToken": "KSECdBDcUoIkL7xI4KOc29Ukn1g",
+          "version": "v2.4.x",
+          "folderToken": "SeaffVvutlNtvTdpV17cy78un5T",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QuLDI2pSd",
+            "recu3QuLDI2pSd",
+            "recu3QuLDI2pSd",
+            "recu3QuLDI2pSd"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:a0aa5c6bafdf1889b44422aa818b771452e58c9d35fc53f63ff9de5f8778054b"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Database:use_database",
+      "stableId": "python:Database:use_database",
+      "canonicalSlug": "Database-use_database",
+      "title": "use_database()",
+      "recordId": "recvaDoBTJGJ1N",
+      "documentToken": "AglQd68yqoEn8Ixkn9ociyqKnMx",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "JT0gfXjE3lCqEAdn6jPcFbHgnnd",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "JT0gfXjE3lCqEAdn6jPcFbHgnnd"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDoBTJGJ1N",
+          "recvaDoBTJGJ1N"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDoBTJGJ1N",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDoBTJGJ1N",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:EmbeddingList:add",
+      "stableId": "python:EmbeddingList:add",
+      "canonicalSlug": "EmbeddingList-add",
+      "title": "add()",
+      "recordId": "recuZt7HCIsRcP",
+      "documentToken": "R0E9dLzIAoYGCcxRVj6cjJmWnPe",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KE7AfgsvalVIwFdRllUcFLWUn5c",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KE7AfgsvalVIwFdRllUcFLWUn5c"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt7HCIsRcP",
+          "recuZt7HCIsRcP"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt7HCIsRcP",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt7HCIsRcP",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:EmbeddingList:add_batch",
+      "stableId": "python:EmbeddingList:add_batch",
+      "canonicalSlug": "EmbeddingList-add_batch",
+      "title": "add_batch()",
+      "recordId": "recuZt7K2107WA",
+      "documentToken": "TJundbM8FoU8UKxczaMcix3QnHb",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KE7AfgsvalVIwFdRllUcFLWUn5c",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KE7AfgsvalVIwFdRllUcFLWUn5c"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt7K2107WA",
+          "recuZt7K2107WA"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt7K2107WA",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt7K2107WA",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:EmbeddingList:clear",
+      "stableId": "python:EmbeddingList:clear",
+      "canonicalSlug": "EmbeddingList-clear",
+      "title": "clear()",
+      "recordId": "recuZt7MNweh9n",
+      "documentToken": "M6mrdinAjo8CwrxirOQcR6E1nUc",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KE7AfgsvalVIwFdRllUcFLWUn5c",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KE7AfgsvalVIwFdRllUcFLWUn5c"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt7MNweh9n",
+          "recuZt7MNweh9n"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt7MNweh9n",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt7MNweh9n",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:EmbeddingList:to_flat_array",
+      "stableId": "python:EmbeddingList:to_flat_array",
+      "canonicalSlug": "EmbeddingList-to_flat_array",
+      "title": "to_flat_array()",
+      "recordId": "recuZt7OxfAfHv",
+      "documentToken": "Z76PdoAJkoGaMPxG4CFcCmShnwh",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KE7AfgsvalVIwFdRllUcFLWUn5c",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KE7AfgsvalVIwFdRllUcFLWUn5c"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt7OxfAfHv",
+          "recuZt7OxfAfHv"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt7OxfAfHv",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt7OxfAfHv",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:EmbeddingList:to_numpy",
+      "stableId": "python:EmbeddingList:to_numpy",
+      "canonicalSlug": "EmbeddingList-to_numpy",
+      "title": "to_numpy()",
+      "recordId": "recuZt7Q6EtzGE",
+      "documentToken": "XQAQd2tPKon4JgxKEoAc0CCHnUg",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KE7AfgsvalVIwFdRllUcFLWUn5c",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KE7AfgsvalVIwFdRllUcFLWUn5c"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt7Q6EtzGE",
+          "recuZt7Q6EtzGE"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt7Q6EtzGE",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt7Q6EtzGE",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:FieldSchema:construct_from_dict",
+      "stableId": "python:FieldSchema:construct_from_dict",
+      "canonicalSlug": "FieldSchema-construct_from_dict",
+      "title": "construct_from_dict()",
+      "recordId": "recu3QvHdAvpGQ",
+      "documentToken": "DCLUdOpVjohl8HxPUx1cGjokngf",
+      "targetFolderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "RV1nfeylFlUftwd2w4Wc40TYn6d",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "NZa5fZusilxYZ5d3Q1Dc1l8BnOd",
+          "RV1nfeylFlUftwd2w4Wc40TYn6d"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QvHdAvpGQ",
+          "recu3QvHdAvpGQ",
+          "recu3QvHdAvpGQ",
+          "recu3QvHdAvpGQ"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QvHdAvpGQ",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QvHdAvpGQ",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QvHdAvpGQ",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QvHdAvpGQ",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:FieldSchema:construct_from_dict",
+        "current": {
+          "recordId": "recu3QvHdAvpGQ",
+          "documentToken": "DCLUdOpVjohl8HxPUx1cGjokngf",
+          "version": "v2.4.x",
+          "folderToken": "RV1nfeylFlUftwd2w4Wc40TYn6d",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QvHdAvpGQ",
+            "recu3QvHdAvpGQ",
+            "recu3QvHdAvpGQ",
+            "recu3QvHdAvpGQ"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:01739badcbf1f6d42c2e68f2a942638b044b15fe190e7080950460f8d2ec7f92"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:FieldSchema:to_dict",
+      "stableId": "python:FieldSchema:to_dict",
+      "canonicalSlug": "FieldSchema-to_dict",
+      "title": "to_dict()",
+      "recordId": "recu3QvIMdek6N",
+      "documentToken": "G1gsdGWwuoPOPrxJdABcfa76nUd",
+      "targetFolderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "RV1nfeylFlUftwd2w4Wc40TYn6d",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "NZa5fZusilxYZ5d3Q1Dc1l8BnOd",
+          "RV1nfeylFlUftwd2w4Wc40TYn6d"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QvIMdek6N",
+          "recu3QvIMdek6N",
+          "recu3QvIMdek6N",
+          "recu3QvIMdek6N"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QvIMdek6N",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QvIMdek6N",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QvIMdek6N",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QvIMdek6N",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:FieldSchema:to_dict",
+        "current": {
+          "recordId": "recu3QvIMdek6N",
+          "documentToken": "G1gsdGWwuoPOPrxJdABcfa76nUd",
+          "version": "v2.4.x",
+          "folderToken": "RV1nfeylFlUftwd2w4Wc40TYn6d",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QvIMdek6N",
+            "recu3QvIMdek6N",
+            "recu3QvIMdek6N",
+            "recu3QvIMdek6N"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:e0d02e1741f3fd12aa3a8edf37a6f5f39dd048137dfa29115152d3447be22d9e"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Function:add_function",
+      "stableId": "python:Function:add_function",
+      "canonicalSlug": "Function-add_function",
+      "title": "add_function()",
+      "recordId": "recuvdqW92C2KJ",
+      "documentToken": "XhcVd1JXvoAgUfxSEpQcL2H6nVg",
+      "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.5.x",
+        "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+        "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "YHQ9fF9IDlENsMd9RZucYalqnNg",
+          "DEyifyf4elns3mdsbo3cZLOEnih"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuvdqW92C2KJ",
+          "recuvdqW92C2KJ",
+          "recuvdqW92C2KJ"
+        ],
+        "references": [
+          {
+            "recordId": "recuvdqW92C2KJ",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuvdqW92C2KJ",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recuvdqW92C2KJ",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Function:add_function",
+        "current": {
+          "recordId": "recuvdqW92C2KJ",
+          "documentToken": "XhcVd1JXvoAgUfxSEpQcL2H6nVg",
+          "version": "v2.5.x",
+          "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+          "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuvdqW92C2KJ",
+            "recuvdqW92C2KJ",
+            "recuvdqW92C2KJ"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:80ac25263c0d3dfd7c3c17427373e6187ab4fcd2e4d78a7ec48793aaaa986fd8"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Function:add_function_field",
+      "stableId": "python:Function:add_function_field",
+      "canonicalSlug": "Function-add_function_field",
+      "title": "add_function_field()",
+      "recordId": "recvxhgOSCbidl",
+      "documentToken": "SPl9dAH9noQ2e9xu86Zcy4XxnTb",
+      "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "ReL5fij0MlHIpbd5WJHcko3on4g"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvxhgOSCbidl"
+        ],
+        "references": [
+          {
+            "recordId": "recvxhgOSCbidl",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Function:add_function_field",
+        "current": {
+          "recordId": "recvxhgOSCbidl",
+          "documentToken": "SPl9dAH9noQ2e9xu86Zcy4XxnTb",
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvxhgOSCbidl"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:e2c9e25b2d1c0152fccc08257fc7e3689d6f424f738f9d84e607001dce20feeb"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Function:construct_from_dict",
+      "stableId": "python:Function:construct_from_dict",
+      "canonicalSlug": "Function-construct_from_dict",
+      "title": "construct_from_dict()",
+      "recordId": "recuvdqY1uLI6o",
+      "documentToken": "Ulypd24byoDBOpxGnnJcbF3Nnkb",
+      "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.5.x",
+        "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+        "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "YHQ9fF9IDlENsMd9RZucYalqnNg",
+          "DEyifyf4elns3mdsbo3cZLOEnih"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuvdqY1uLI6o",
+          "recuvdqY1uLI6o",
+          "recuvdqY1uLI6o"
+        ],
+        "references": [
+          {
+            "recordId": "recuvdqY1uLI6o",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuvdqY1uLI6o",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recuvdqY1uLI6o",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Function:construct_from_dict",
+        "current": {
+          "recordId": "recuvdqY1uLI6o",
+          "documentToken": "Ulypd24byoDBOpxGnnJcbF3Nnkb",
+          "version": "v2.5.x",
+          "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+          "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuvdqY1uLI6o",
+            "recuvdqY1uLI6o",
+            "recuvdqY1uLI6o"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:070238ed6e20d2c203f5d54584e673480727f4963791d3a7e3e38b7bfa70aebd"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Function:to_dict",
+      "stableId": "python:Function:to_dict",
+      "canonicalSlug": "Function-to_dict",
+      "title": "to_dict()",
+      "recordId": "recuvdr0MWXDFb",
+      "documentToken": "AmwJdW0z6opMPcxhMlBcYPIWn2M",
+      "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.5.x",
+        "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+        "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "YHQ9fF9IDlENsMd9RZucYalqnNg",
+          "DEyifyf4elns3mdsbo3cZLOEnih"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuvdr0MWXDFb",
+          "recuvdr0MWXDFb",
+          "recuvdr0MWXDFb"
+        ],
+        "references": [
+          {
+            "recordId": "recuvdr0MWXDFb",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuvdr0MWXDFb",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recuvdr0MWXDFb",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Function:to_dict",
+        "current": {
+          "recordId": "recuvdr0MWXDFb",
+          "documentToken": "AmwJdW0z6opMPcxhMlBcYPIWn2M",
+          "version": "v2.5.x",
+          "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+          "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuvdr0MWXDFb",
+            "recuvdr0MWXDFb",
+            "recuvdr0MWXDFb"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:53fa391c53b92bffc94de955330990b1d7e71436eaa0b52ab23d94e0f4e3efb9"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Function:verify",
+      "stableId": "python:Function:verify",
+      "canonicalSlug": "Function-verify",
+      "title": "verify()",
+      "recordId": "recuvdr2EgJw3a",
+      "documentToken": "YXogdv0Dpovi2Pxbyh2cdA4nnbe",
+      "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.5.x",
+        "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+        "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "YHQ9fF9IDlENsMd9RZucYalqnNg",
+          "DEyifyf4elns3mdsbo3cZLOEnih"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuvdr2EgJw3a",
+          "recuvdr2EgJw3a",
+          "recuvdr2EgJw3a"
+        ],
+        "references": [
+          {
+            "recordId": "recuvdr2EgJw3a",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuvdr2EgJw3a",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recuvdr2EgJw3a",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Function:verify",
+        "current": {
+          "recordId": "recuvdr2EgJw3a",
+          "documentToken": "YXogdv0Dpovi2Pxbyh2cdA4nnbe",
+          "version": "v2.5.x",
+          "folderToken": "DEyifyf4elns3mdsbo3cZLOEnih",
+          "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuvdr2EgJw3a",
+            "recuvdr2EgJw3a",
+            "recuvdr2EgJw3a"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:82c7fa478cacc84cdfc76d10cf74d2ad0d13b75adad594c874fe1746626957bb"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Highlighter:LexicalHighlighter",
+      "stableId": "python:Highlighter:LexicalHighlighter",
+      "canonicalSlug": "Highlighter-LexicalHighlighter",
+      "title": "LexicalHighlighter",
+      "recordId": "recv96Hti2rqk6",
+      "documentToken": "DXTJdXSquo8NutxCqfBccO7pnWw",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "O7mqfZp5fleHncduy7HcWkdTnPb",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "O7mqfZp5fleHncduy7HcWkdTnPb"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recv96Hti2rqk6",
+          "recv96Hti2rqk6"
+        ],
+        "references": [
+          {
+            "recordId": "recv96Hti2rqk6",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recv96Hti2rqk6",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:Highlighter:with_query",
+      "stableId": "python:Highlighter:with_query",
+      "canonicalSlug": "Highlighter-with_query",
+      "title": "with_query()",
+      "recordId": "recv96HwGrptdz",
+      "documentToken": "KdiQdpHp3oEQwNx2hd5chqQKn2D",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "O7mqfZp5fleHncduy7HcWkdTnPb",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "O7mqfZp5fleHncduy7HcWkdTnPb"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recv96HwGrptdz",
+          "recv96HwGrptdz"
+        ],
+        "references": [
+          {
+            "recordId": "recv96HwGrptdz",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recv96HwGrptdz",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:Management:alter_index_properties",
+      "stableId": "python:Management:alter_index_properties",
+      "canonicalSlug": "Management-alter_index_properties",
+      "title": "alter_index_properties()",
+      "recordId": "recuAADHjnCCFl",
+      "documentToken": "TRFadKWOAofCVoxH3qYcdTvynHf",
+      "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.5.x",
+        "folderToken": "MvvMf16FLlVOmtdgx5UcZ8qtnyd",
+        "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "YHQ9fF9IDlENsMd9RZucYalqnNg",
+          "MvvMf16FLlVOmtdgx5UcZ8qtnyd"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuAADHjnCCFl",
+          "recuAADHjnCCFl",
+          "recuAADHjnCCFl"
+        ],
+        "references": [
+          {
+            "recordId": "recuAADHjnCCFl",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuAADHjnCCFl",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recuAADHjnCCFl",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Management:alter_index_properties",
+        "current": {
+          "recordId": "recuAADHjnCCFl",
+          "documentToken": "TRFadKWOAofCVoxH3qYcdTvynHf",
+          "version": "v2.5.x",
+          "folderToken": "MvvMf16FLlVOmtdgx5UcZ8qtnyd",
+          "versionRootToken": "Z1SFf89zYlGHXvdo6dxcR6gXntc",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuAADHjnCCFl",
+            "recuAADHjnCCFl",
+            "recuAADHjnCCFl"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:a0dd4f9cb95b8ed7494c95b778ce7e7a81e93a749be7683566e1b649ae18bedb"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Management:compact",
+      "stableId": "python:Management:compact",
+      "canonicalSlug": "Management-compact",
+      "title": "compact()",
+      "recordId": "recuAAzNbuvkeF",
+      "documentToken": "JRNidzqX4o6VtkxVB5RcNvmHnnb",
+      "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KrK5fBnFDlG6CedvqyHcfZLynre",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KrK5fBnFDlG6CedvqyHcfZLynre"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recuAAzNbuvkeF"
+        ],
+        "references": [
+          {
+            "recordId": "recuAAzNbuvkeF",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Management:compact",
+        "current": {
+          "recordId": "recuAAzNbuvkeF",
+          "documentToken": "JRNidzqX4o6VtkxVB5RcNvmHnnb",
+          "version": "v2.6.x",
+          "folderToken": "KrK5fBnFDlG6CedvqyHcfZLynre",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recuAAzNbuvkeF"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:becae88c838a96cec95ea87aad772a2b07cffc1d8fbde14a28475ae404ec2cd8"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Management:flush_all",
+      "stableId": "python:Management:flush_all",
+      "canonicalSlug": "Management-flush_all",
+      "title": "flush_all()",
+      "recordId": "recvaDoE4JwzXs",
+      "documentToken": "QejKdv2qKo97mQxEV0CcaSM5nLh",
+      "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KrK5fBnFDlG6CedvqyHcfZLynre",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KrK5fBnFDlG6CedvqyHcfZLynre"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDoE4JwzXs",
+          "recvaDoE4JwzXs"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDoE4JwzXs",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDoE4JwzXs",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Management:flush_all",
+        "current": {
+          "recordId": "recvaDoE4JwzXs",
+          "documentToken": "QejKdv2qKo97mQxEV0CcaSM5nLh",
+          "version": "v2.6.x",
+          "folderToken": "KrK5fBnFDlG6CedvqyHcfZLynre",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDoE4JwzXs",
+            "recvaDoE4JwzXs"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:98e235362b88f1e8834a563b55300f3886ee5c889dc449387a65e71df85a411b"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Management:get_flush_all_state",
+      "stableId": "python:Management:get_flush_all_state",
+      "canonicalSlug": "Management-get_flush_all_state",
+      "title": "get_flush_all_state()",
+      "recordId": "recvaDoF7ZgozK",
+      "documentToken": "G31wdmzVFo687JxZTAGctQlKnir",
+      "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KrK5fBnFDlG6CedvqyHcfZLynre",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KrK5fBnFDlG6CedvqyHcfZLynre"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDoF7ZgozK",
+          "recvaDoF7ZgozK"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDoF7ZgozK",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDoF7ZgozK",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Management:get_flush_all_state",
+        "current": {
+          "recordId": "recvaDoF7ZgozK",
+          "documentToken": "G31wdmzVFo687JxZTAGctQlKnir",
+          "version": "v2.6.x",
+          "folderToken": "KrK5fBnFDlG6CedvqyHcfZLynre",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDoF7ZgozK",
+            "recvaDoF7ZgozK"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:d9592602bb6a84f1e5af6ee71a1a3332c9b4c3ac06f4eab60ef5ec10dceca0af"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Management:release_collection",
+      "stableId": "python:Management:release_collection",
+      "canonicalSlug": "Management-release_collection",
+      "title": "release_collection()",
+      "recordId": "recu3QxCtAqexB",
+      "documentToken": "PRR7dRfi8o1s61xFRovccAdRnHe",
+      "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.4.x",
+        "folderToken": "IZKcfUEfClhhnWdFhk2co7krnAV",
+        "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ICGwfi8ZClVQLHdLn9Hc3oeFn1d",
+          "IZKcfUEfClhhnWdFhk2co7krnAV"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recu3QxCtAqexB",
+          "recu3QxCtAqexB",
+          "recu3QxCtAqexB",
+          "recu3QxCtAqexB"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QxCtAqexB",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recu3QxCtAqexB",
+            "version": "v2.4.x",
+            "baseToken": "D1VabelmAansLwsNTvLc2Wxxn1g"
+          },
+          {
+            "recordId": "recu3QxCtAqexB",
+            "version": "v2.5.x",
+            "baseToken": "B8X9bJjJta2q4NskclYcxT7lngG"
+          },
+          {
+            "recordId": "recu3QxCtAqexB",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Management:release_collection",
+        "current": {
+          "recordId": "recu3QxCtAqexB",
+          "documentToken": "PRR7dRfi8o1s61xFRovccAdRnHe",
+          "version": "v2.4.x",
+          "folderToken": "IZKcfUEfClhhnWdFhk2co7krnAV",
+          "versionRootToken": "PTJzfzI0ulKGjwdUsxQcFxfJn6b",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recu3QxCtAqexB",
+            "recu3QxCtAqexB",
+            "recu3QxCtAqexB",
+            "recu3QxCtAqexB"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:f7645e227d21523a558b9ef83619860e0f7f8786db4256cc238379b2c680d447"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:MilvusClient:CollectionSchema",
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "title": "CollectionSchema",
+      "recordId": "recuihpJE5kpKn",
+      "documentToken": "SSiodq10FoH26hx2HlccfcAgnje",
+      "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "EBJgfcRHNlrAHEdOPtMcGOKpnvb"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recuihpJE5kpKn"
+        ],
+        "references": [
+          {
+            "recordId": "recuihpJE5kpKn",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:MilvusClient:CollectionSchema",
+        "current": {
+          "recordId": "recuihpJE5kpKn",
+          "documentToken": "SSiodq10FoH26hx2HlccfcAgnje",
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recuihpJE5kpKn"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:9eaf3e1acd925b4cc5701ade94378d105267aa7443e6f2f88c9a2b824157da2d"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:MilvusClient:EmbeddingList",
+      "stableId": "python:MilvusClient:EmbeddingList",
+      "canonicalSlug": "MilvusClient-EmbeddingList",
+      "title": "EmbeddingList",
+      "recordId": "recuZt7wTWxSj1",
+      "documentToken": "Ve2WdUAfwoz456xwBIJcGvltn6b",
+      "targetFolderToken": null,
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "KE7AfgsvalVIwFdRllUcFLWUn5c",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "KE7AfgsvalVIwFdRllUcFLWUn5c"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt7wTWxSj1",
+          "recuZt7wTWxSj1"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt7wTWxSj1",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt7wTWxSj1",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": false,
+      "inheritanceEvidence": null,
+      "inheritanceEvidenceBlockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "proposalId": "proposal:python:MilvusClient:FieldSchema",
+      "stableId": "python:MilvusClient:FieldSchema",
+      "canonicalSlug": "MilvusClient-FieldSchema",
+      "title": "FieldSchema",
+      "recordId": "recDBjeXvE",
+      "documentToken": "OD8mdC5aXo0XHbxSthRczioXnaf",
+      "targetFolderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "ClUPfEshEljX8zdh0sgcOY5Nn4v"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recDBjeXvE"
+        ],
+        "references": [
+          {
+            "recordId": "recDBjeXvE",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:MilvusClient:FieldSchema",
+        "current": {
+          "recordId": "recDBjeXvE",
+          "documentToken": "OD8mdC5aXo0XHbxSthRczioXnaf",
+          "version": "v3.0.x",
+          "folderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recDBjeXvE"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:3f25dabbfa8bf92ddc1b47f1556bc29b9db4b600fb303638b1d130b8fef45c99"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:MilvusClient:Function",
+      "stableId": "python:MilvusClient:Function",
+      "canonicalSlug": "MilvusClient-Function",
+      "title": "Function",
+      "recordId": "recuvdqTiESu1t",
+      "documentToken": "GaCYdVohYoHFhrx897zcmcNfn6e",
+      "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "ReL5fij0MlHIpbd5WJHcko3on4g"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recuvdqTiESu1t"
+        ],
+        "references": [
+          {
+            "recordId": "recuvdqTiESu1t",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:MilvusClient:Function",
+        "current": {
+          "recordId": "recuvdqTiESu1t",
+          "documentToken": "GaCYdVohYoHFhrx897zcmcNfn6e",
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recuvdqTiESu1t"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:9820f2ceb1a78d6e59ed883fe29278978716f478e9cde98f1da85cf093078229"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:MilvusClient:FunctionScore",
+      "stableId": "python:MilvusClient:FunctionScore",
+      "canonicalSlug": "MilvusClient-FunctionScore",
+      "title": "FunctionScore",
+      "recordId": "recuZt80jwuPWS",
+      "documentToken": "PfJNdkuMDoCqqcxm6S2cDD6TnFh",
+      "targetFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recuZt80jwuPWS",
+          "recuZt80jwuPWS"
+        ],
+        "references": [
+          {
+            "recordId": "recuZt80jwuPWS",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recuZt80jwuPWS",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:MilvusClient:FunctionScore",
+        "current": {
+          "recordId": "recuZt80jwuPWS",
+          "documentToken": "PfJNdkuMDoCqqcxm6S2cDD6TnFh",
+          "version": "v2.6.x",
+          "folderToken": "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recuZt80jwuPWS",
+            "recuZt80jwuPWS"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:e406a253d83180de1ec2e155f08f23aee383e1624cb74ea1d95d428d899b16c8"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:MilvusClient:StructFieldSchema",
+      "stableId": "python:MilvusClient:StructFieldSchema",
+      "canonicalSlug": "MilvusClient-StructFieldSchema",
+      "title": "StructFieldSchema",
+      "recordId": "recv0fp27rxSTM",
+      "documentToken": "R4vxd8dReoaZ85xZ23qctjfLnDh",
+      "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "YhYwfvxhNlJmvSd6gCUcGFepnue"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recv0fp27rxSTM"
+        ],
+        "references": [
+          {
+            "recordId": "recv0fp27rxSTM",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:MilvusClient:StructFieldSchema",
+        "current": {
+          "recordId": "recv0fp27rxSTM",
+          "documentToken": "R4vxd8dReoaZ85xZ23qctjfLnDh",
+          "version": "v3.0.x",
+          "folderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recv0fp27rxSTM"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:223d0d2cf0340e470e7ed76ae1289e8eb848eb6a29a953cc3d1183025a91acaf"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:ResourceGroup:get_replicate_configuration",
+      "stableId": "python:ResourceGroup:get_replicate_configuration",
+      "canonicalSlug": "ResourceGroup-get_replicate_configuration",
+      "title": "get_replicate_configuration()",
+      "recordId": "recvj5lmjw0VcB",
+      "documentToken": "CEw1d0nWbonImnxbspDcw4e6nby",
+      "targetFolderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "BOTAfAdGJl7C9Ad00CWcOawendd"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvj5lmjw0VcB"
+        ],
+        "references": [
+          {
+            "recordId": "recvj5lmjw0VcB",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:ResourceGroup:get_replicate_configuration",
+        "current": {
+          "recordId": "recvj5lmjw0VcB",
+          "documentToken": "CEw1d0nWbonImnxbspDcw4e6nby",
+          "version": "v3.0.x",
+          "folderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvj5lmjw0VcB"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:01e981d3ecdf7837efdd5a50710fbc6897d238a2afb71e906e47df7fc7eae5fc"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:ResourceGroup:update_replicate_configuration",
+      "stableId": "python:ResourceGroup:update_replicate_configuration",
+      "canonicalSlug": "ResourceGroup-update_replicate_configuration",
+      "title": "update_replicate_configuration()",
+      "recordId": "recvaDpfwAoyhz",
+      "documentToken": "UUSVdtsbxo9gNSxgqE6cdfytnfh",
+      "targetFolderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "Lr8lfQ7TjlcKntdAB97ctH2Qnjd",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "Lr8lfQ7TjlcKntdAB97ctH2Qnjd"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recvaDpfwAoyhz",
+          "recvaDpfwAoyhz"
+        ],
+        "references": [
+          {
+            "recordId": "recvaDpfwAoyhz",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recvaDpfwAoyhz",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:ResourceGroup:update_replicate_configuration",
+        "current": {
+          "recordId": "recvaDpfwAoyhz",
+          "documentToken": "UUSVdtsbxo9gNSxgqE6cdfytnfh",
+          "version": "v2.6.x",
+          "folderToken": "Lr8lfQ7TjlcKntdAB97ctH2Qnjd",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recvaDpfwAoyhz",
+            "recvaDpfwAoyhz"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:0bf5e963c143481576db155f1a838ce466d653ed313152e324ab8713fc1d8e16"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:describe_snapshot",
+      "stableId": "python:Snapshot:describe_snapshot",
+      "canonicalSlug": "Snapshot-describe_snapshot",
+      "title": "describe_snapshot()",
+      "recordId": "recvh8LqpBYo2T",
+      "documentToken": "GF0yd9S4RoImivxbIlPcicEynQb",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh8LqpBYo2T"
+        ],
+        "references": [
+          {
+            "recordId": "recvh8LqpBYo2T",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:describe_snapshot",
+        "current": {
+          "recordId": "recvh8LqpBYo2T",
+          "documentToken": "GF0yd9S4RoImivxbIlPcicEynQb",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh8LqpBYo2T"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:a0581d019a8bc7ecd23890000071495b5b9a29217c4019356e4789d45629bc44"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:drop_snapshot",
+      "stableId": "python:Snapshot:drop_snapshot",
+      "canonicalSlug": "Snapshot-drop_snapshot",
+      "title": "drop_snapshot()",
+      "recordId": "recvh8LpCtF4JC",
+      "documentToken": "UknCdYmtRoVIZ9xWcLnc02b0ndZ",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh8LpCtF4JC"
+        ],
+        "references": [
+          {
+            "recordId": "recvh8LpCtF4JC",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:drop_snapshot",
+        "current": {
+          "recordId": "recvh8LpCtF4JC",
+          "documentToken": "UknCdYmtRoVIZ9xWcLnc02b0ndZ",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh8LpCtF4JC"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:18821fbe45f83f5ce5d011617cd74cd503099d4827b2220b25cf9367ef13dd3f"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:list_restore_snapshot_jobs",
+      "stableId": "python:Snapshot:list_restore_snapshot_jobs",
+      "canonicalSlug": "Snapshot-list_restore_snapshot_jobs",
+      "title": "list_restore_snapshot_jobs()",
+      "recordId": "recvh8LrKwu7cX",
+      "documentToken": "PtHQdGNfaoI4Mux05rbcRWTVnMp",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh8LrKwu7cX"
+        ],
+        "references": [
+          {
+            "recordId": "recvh8LrKwu7cX",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:list_restore_snapshot_jobs",
+        "current": {
+          "recordId": "recvh8LrKwu7cX",
+          "documentToken": "PtHQdGNfaoI4Mux05rbcRWTVnMp",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh8LrKwu7cX"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:cd027ee6db6da8c2f64db77a3975ecad8da870c89e3a64f5415c2d8aab844886"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:list_snapshots",
+      "stableId": "python:Snapshot:list_snapshots",
+      "canonicalSlug": "Snapshot-list_snapshots",
+      "title": "list_snapshots()",
+      "recordId": "recvh8Lq1vzaWs",
+      "documentToken": "WgmLdM6nUogd7LxGtmfc5dBKnku",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh8Lq1vzaWs"
+        ],
+        "references": [
+          {
+            "recordId": "recvh8Lq1vzaWs",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:list_snapshots",
+        "current": {
+          "recordId": "recvh8Lq1vzaWs",
+          "documentToken": "WgmLdM6nUogd7LxGtmfc5dBKnku",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh8Lq1vzaWs"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:b2944a8763512f7ca5faddc55f6f6656422a0723964f6c21db997fba8758e93e"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:pin_snapshot_data",
+      "stableId": "python:Snapshot:pin_snapshot_data",
+      "canonicalSlug": "Snapshot-pin_snapshot_data",
+      "title": "pin_snapshot_data()",
+      "recordId": "recvj5lmTq0ozv",
+      "documentToken": "NqWDdRxKYoi6uTxHaYEcafx9nGc",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvj5lmTq0ozv"
+        ],
+        "references": [
+          {
+            "recordId": "recvj5lmTq0ozv",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:pin_snapshot_data",
+        "current": {
+          "recordId": "recvj5lmTq0ozv",
+          "documentToken": "NqWDdRxKYoi6uTxHaYEcafx9nGc",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvj5lmTq0ozv"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:985488064a0feb77b01d21febf667f41f29862b94531d7e60ae2781f7fbd67d9"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:restore_snapshot",
+      "stableId": "python:Snapshot:restore_snapshot",
+      "canonicalSlug": "Snapshot-restore_snapshot",
+      "title": "restore_snapshot()",
+      "recordId": "recvh8LqOAyCv4",
+      "documentToken": "I2OZdk40IomugOx9MTqcooVcnEf",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvh8LqOAyCv4"
+        ],
+        "references": [
+          {
+            "recordId": "recvh8LqOAyCv4",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:restore_snapshot",
+        "current": {
+          "recordId": "recvh8LqOAyCv4",
+          "documentToken": "I2OZdk40IomugOx9MTqcooVcnEf",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvh8LqOAyCv4"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:49172d0f32316df1393388f151b224e0fc924261f96fd0f27d68782323f3cf0f"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Snapshot:unpin_snapshot_data",
+      "stableId": "python:Snapshot:unpin_snapshot_data",
+      "canonicalSlug": "Snapshot-unpin_snapshot_data",
+      "title": "unpin_snapshot_data()",
+      "recordId": "recvj5lnq9gcce",
+      "documentToken": "RSOkdriHRoRd8ixyVZOch1l9nDd",
+      "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "RoBzflamplZFzYd1ZSWccuVfnnc"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recvj5lnq9gcce"
+        ],
+        "references": [
+          {
+            "recordId": "recvj5lnq9gcce",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Snapshot:unpin_snapshot_data",
+        "current": {
+          "recordId": "recvj5lnq9gcce",
+          "documentToken": "RSOkdriHRoRd8ixyVZOch1l9nDd",
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recvj5lnq9gcce"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:116f3b116edb8e81e0d42e401e717970f37a738aa151ecbb291fd99637c8aa92"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:StructFieldSchema:add_field",
+      "stableId": "python:StructFieldSchema:add_field",
+      "canonicalSlug": "StructFieldSchema-add_field",
+      "title": "add_field()",
+      "recordId": "recv0fpaaSqi8d",
+      "documentToken": "Up73d8d78oPM2FxkvlIcuxeBn9g",
+      "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "QmzcfpTxAlAaTqdRRbLc6fAanv7",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "QmzcfpTxAlAaTqdRRbLc6fAanv7"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recv0fpaaSqi8d",
+          "recv0fpaaSqi8d"
+        ],
+        "references": [
+          {
+            "recordId": "recv0fpaaSqi8d",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recv0fpaaSqi8d",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:StructFieldSchema:add_field",
+        "current": {
+          "recordId": "recv0fpaaSqi8d",
+          "documentToken": "Up73d8d78oPM2FxkvlIcuxeBn9g",
+          "version": "v2.6.x",
+          "folderToken": "QmzcfpTxAlAaTqdRRbLc6fAanv7",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recv0fpaaSqi8d",
+            "recv0fpaaSqi8d"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:c9554f29736997a25cf6043efbdb7839ca713a17741ccdf798282fa7b3067450"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:StructFieldSchema:construct_from_dict",
+      "stableId": "python:StructFieldSchema:construct_from_dict",
+      "canonicalSlug": "StructFieldSchema-construct_from_dict",
+      "title": "construct_from_dict()",
+      "recordId": "recv0fpdRH7lGA",
+      "documentToken": "KeoHdMDBCo3PByxKbWncifFMn9e",
+      "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "QmzcfpTxAlAaTqdRRbLc6fAanv7",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "QmzcfpTxAlAaTqdRRbLc6fAanv7"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recv0fpdRH7lGA",
+          "recv0fpdRH7lGA"
+        ],
+        "references": [
+          {
+            "recordId": "recv0fpdRH7lGA",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recv0fpdRH7lGA",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:StructFieldSchema:construct_from_dict",
+        "current": {
+          "recordId": "recv0fpdRH7lGA",
+          "documentToken": "KeoHdMDBCo3PByxKbWncifFMn9e",
+          "version": "v2.6.x",
+          "folderToken": "QmzcfpTxAlAaTqdRRbLc6fAanv7",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recv0fpdRH7lGA",
+            "recv0fpdRH7lGA"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:1344368b1c5f515b8eabb0de0cca32ff4726f930b0120912842294aa16accb3e"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:StructFieldSchema:to_dict",
+      "stableId": "python:StructFieldSchema:to_dict",
+      "canonicalSlug": "StructFieldSchema-to_dict",
+      "title": "to_dict()",
+      "recordId": "recv0fpgvovtaq",
+      "documentToken": "Mq7idUip3ofMQmxj55XcB98nn0b",
+      "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "inherited_source",
+        "version": "v2.6.x",
+        "folderToken": "QmzcfpTxAlAaTqdRRbLc6fAanv7",
+        "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+        "referencedByOlderVersions": true,
+        "ancestry": [
+          "IaWgf4osAlpdwqdVIclct97wnCg",
+          "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+          "QmzcfpTxAlAaTqdRRbLc6fAanv7"
+        ]
+      },
+      "sharedToken": {
+        "status": "shared",
+        "referencedRecordIds": [
+          "recv0fpgvovtaq",
+          "recv0fpgvovtaq"
+        ],
+        "references": [
+          {
+            "recordId": "recv0fpgvovtaq",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          },
+          {
+            "recordId": "recv0fpgvovtaq",
+            "version": "v2.6.x",
+            "baseToken": "J3Qzbv7AWazzivsv7vqcqlGCnFc"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:StructFieldSchema:to_dict",
+        "current": {
+          "recordId": "recv0fpgvovtaq",
+          "documentToken": "Mq7idUip3ofMQmxj55XcB98nn0b",
+          "version": "v2.6.x",
+          "folderToken": "QmzcfpTxAlAaTqdRRbLc6fAanv7",
+          "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "shared",
+          "referencedRecordIds": [
+            "recv0fpgvovtaq",
+            "recv0fpgvovtaq"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:e65ba31ce706de7b9c5c59d02c6ababce866ebfa6b9f790a6a7b9d45d4bcca47"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Vector:query",
+      "stableId": "python:Vector:query",
+      "canonicalSlug": "Vector-query",
+      "title": "query()",
+      "recordId": "recu3QxxfZJmQZ",
+      "documentToken": "ShzCdNgEGozKi3xa3lUcHpxQnaf",
+      "targetFolderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "KSDYfo9pCl89wKdRNGccbzT2nid"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recu3QxxfZJmQZ"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QxxfZJmQZ",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Vector:query",
+        "current": {
+          "recordId": "recu3QxxfZJmQZ",
+          "documentToken": "ShzCdNgEGozKi3xa3lUcHpxQnaf",
+          "version": "v3.0.x",
+          "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recu3QxxfZJmQZ"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:73020a6882fb823fcb0f3815469c2b934850114e7e675e231f84c9e242afd7e8"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Vector:search",
+      "stableId": "python:Vector:search",
+      "canonicalSlug": "Vector-search",
+      "title": "search()",
+      "recordId": "recu3QxOlGbhw0",
+      "documentToken": "DvaZdhYnyoo7lOxNIBwc5eKEn7d",
+      "targetFolderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "KSDYfo9pCl89wKdRNGccbzT2nid"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recu3QxOlGbhw0"
+        ],
+        "references": [
+          {
+            "recordId": "recu3QxOlGbhw0",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Vector:search",
+        "current": {
+          "recordId": "recu3QxOlGbhw0",
+          "documentToken": "DvaZdhYnyoo7lOxNIBwc5eKEn7d",
+          "version": "v3.0.x",
+          "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recu3QxOlGbhw0"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:61c0561f87317d9b91df28ebc8a3999f6e9848b1e5a280873d523817ea407cad"
+      },
+      "inheritanceEvidenceBlockers": []
+    },
+    {
+      "proposalId": "proposal:python:Vector:search_iterator",
+      "stableId": "python:Vector:search_iterator",
+      "canonicalSlug": "Vector-search_iterator",
+      "title": "search_iterator()",
+      "recordId": "recuF2kJ5w82P7",
+      "documentToken": "Z8WId53zDonHYuxckCDccOEcnjb",
+      "targetFolderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+      "parentRecordId": null,
+      "placement": {
+        "verified": true,
+        "status": "current_version_local",
+        "version": "v3.0.x",
+        "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+        "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+        "referencedByOlderVersions": false,
+        "ancestry": [
+          "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+          "KSDYfo9pCl89wKdRNGccbzT2nid"
+        ]
+      },
+      "sharedToken": {
+        "status": "unshared",
+        "referencedRecordIds": [
+          "recuF2kJ5w82P7"
+        ],
+        "references": [
+          {
+            "recordId": "recuF2kJ5w82P7",
+            "version": "v3.0.x",
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a"
+          }
+        ]
+      },
+      "targetFolderVerified": true,
+      "inheritanceEvidence": {
+        "schemaVersion": 1,
+        "stableId": "python:Vector:search_iterator",
+        "current": {
+          "recordId": "recuF2kJ5w82P7",
+          "documentToken": "Z8WId53zDonHYuxckCDccOEcnjb",
+          "version": "v3.0.x",
+          "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true,
+          "placementVerified": true
+        },
+        "target": {
+          "version": "v3.0.x",
+          "folderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+          "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+          "ancestryVerified": true
+        },
+        "sharedToken": {
+          "status": "unshared",
+          "referencedRecordIds": [
+            "recuF2kJ5w82P7"
+          ]
+        },
+        "trackInventoryDigests": {
+          "v3.0.x": "sha256:f527f68441b679852020b0dadd4de819efba4540d2d8de0626817413edde9dff",
+          "v2.4.x": "sha256:3c43ce7b4a700a2d7b057210dd5dacd0443f729c5223592245660b4daf3c1c37",
+          "v2.5.x": "sha256:f8996defb01840e64cb79b59c06103def2e36b306f862cc974ae671c53b2f5d4",
+          "v2.6.x": "sha256:a6cc96766b1d8c39b624b2b7fa9379de7e5de119cf9c876e59bc48ce5874153f"
+        },
+        "collectedAt": "2026-10-20T23:36:11.626Z",
+        "evidenceDigest": "sha256:bcdd03f14eb683659cd7da50d127f2c375123e0a63889acd57fb1a1c6d3e113b"
+      },
+      "inheritanceEvidenceBlockers": []
+    }
+  ],
+  "blocked": [],
+  "evidenceBlocked": [
+    {
+      "stableId": "python:Database:use_database",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:EmbeddingList:add",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:EmbeddingList:add_batch",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:EmbeddingList:clear",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:EmbeddingList:to_flat_array",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:EmbeddingList:to_numpy",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:Highlighter:LexicalHighlighter",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:Highlighter:with_query",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    },
+    {
+      "stableId": "python:MilvusClient:EmbeddingList",
+      "blockers": [
+        "TARGET_FOLDER_UNVERIFIED"
+      ]
+    }
+  ],
+  "writesPerformed": false,
+  "sourceProposal": "tmp/api-reference-sync/campaign-plans/python-v30-sync/proposals.json"
+}

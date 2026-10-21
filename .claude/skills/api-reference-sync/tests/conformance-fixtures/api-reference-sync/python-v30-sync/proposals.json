@@ -1,0 +1,1224 @@
+{
+  "schemaVersion": 1,
+  "derivedFrom": "intake decisions (placement-audit proposal view)",
+  "note": "All 64 reviewed units bind live Bitable rows; record/document tokens come from the decisions composer's live snapshot evidence.",
+  "proposalCount": 64,
+  "proposals": [
+    {
+      "id": "proposal:python:Authentication:create_role",
+      "docIdentity": {
+        "stableId": "python:Authentication:create_role",
+        "canonicalSlug": "Authentication-create_role",
+        "category": "Authentication",
+        "title": "create_role()",
+        "targetFolderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Authentication"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QwdFC0YXO",
+        "currentDocumentToken": "HRqudGOOnokInhxczclcADBDn8g",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Authentication:remove_privileges_from_group",
+      "docIdentity": {
+        "stableId": "python:Authentication:remove_privileges_from_group",
+        "canonicalSlug": "Authentication-remove_privileges_from_group",
+        "category": "Authentication",
+        "title": "remove_privileges_from_group()",
+        "targetFolderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Authentication"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuAAA5Ub7Lhm",
+        "currentDocumentToken": "IGPAdBQ5Von3lFxv4uSc5dGDnAd",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Authentication:revoke_privilege",
+      "docIdentity": {
+        "stableId": "python:Authentication:revoke_privilege",
+        "canonicalSlug": "Authentication-revoke_privilege",
+        "category": "Authentication",
+        "title": "revoke_privilege()",
+        "targetFolderToken": "VWo0fuUollpgQ5dnvPkcc92Mntf",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Authentication"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDowQHNuUr",
+        "currentDocumentToken": "LB90d4VGZogYIZxwCgpcSkgKnng",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Client:session",
+      "docIdentity": {
+        "stableId": "python:Client:session",
+        "canonicalSlug": "Client-session",
+        "category": "Client",
+        "title": "session()",
+        "targetFolderToken": "M9bMfXz3llm0ebdks4Hc3KdMnCd",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Client"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvingHZOtJfq",
+        "currentDocumentToken": "UASmdlcqvojCe4xNY94cz9Wznyh",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:add_collection_field",
+      "docIdentity": {
+        "stableId": "python:Collections:add_collection_field",
+        "canonicalSlug": "Collections-add_collection_field",
+        "category": "Collections",
+        "title": "add_collection_field()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuNY0FWBE1ED",
+        "currentDocumentToken": "IquldHhyGo9s4IxF3cicOXGnnNf",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:add_collection_function",
+      "docIdentity": {
+        "stableId": "python:Collections:add_collection_function",
+        "canonicalSlug": "Collections-add_collection_function",
+        "category": "Collections",
+        "title": "add_collection_function()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDp3EYvfOX",
+        "currentDocumentToken": "Qe3GdWZa9oAxjrx85tkct8ManRe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:add_collection_struct_field",
+      "docIdentity": {
+        "stableId": "python:Collections:add_collection_struct_field",
+        "canonicalSlug": "Collections-add_collection_struct_field",
+        "category": "Collections",
+        "title": "add_collection_struct_field()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvxhgt9tRjHr",
+        "currentDocumentToken": "M97RdhP3Co4QadxrDFGcpV8EnYe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:alter_collection_function",
+      "docIdentity": {
+        "stableId": "python:Collections:alter_collection_function",
+        "canonicalSlug": "Collections-alter_collection_function",
+        "category": "Collections",
+        "title": "alter_collection_function()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDp6FxRTgD",
+        "currentDocumentToken": "N9d9df9IIojLZDxft1HcU0mkn0b",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:alter_collection_properties",
+      "docIdentity": {
+        "stableId": "python:Collections:alter_collection_properties",
+        "canonicalSlug": "Collections-alter_collection_properties",
+        "category": "Collections",
+        "title": "alter_collection_properties()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuAv9f5uxE8j",
+        "currentDocumentToken": "SJ1FdUQQnohtObxhNgpcHalMnUc",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:create_collection",
+      "docIdentity": {
+        "stableId": "python:Collections:create_collection",
+        "canonicalSlug": "Collections-create_collection",
+        "category": "Collections",
+        "title": "create_collection()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3Qw7kc2cgj",
+        "currentDocumentToken": "NbYidGUPcokra9xJ6IAcUNLEn9f",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:create_schema",
+      "docIdentity": {
+        "stableId": "python:Collections:create_schema",
+        "canonicalSlug": "Collections-create_schema",
+        "category": "Collections",
+        "title": "create_schema()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3Qwg3v2hG2",
+        "currentDocumentToken": "Er8vdVepxoqhPFxVyZUcxSHMnqe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:describe_collection",
+      "docIdentity": {
+        "stableId": "python:Collections:describe_collection",
+        "canonicalSlug": "Collections-describe_collection",
+        "category": "Collections",
+        "title": "describe_collection()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3Qwo8o6Pjs",
+        "currentDocumentToken": "LXASdPs6KoRfCJx11A1cl2Ssngg",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:drop_collection_field",
+      "docIdentity": {
+        "stableId": "python:Collections:drop_collection_field",
+        "canonicalSlug": "Collections-drop_collection_field",
+        "category": "Collections",
+        "title": "drop_collection_field()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvj5llTC9QWs",
+        "currentDocumentToken": "SpmqdHRBjoRKQuxTibQcx0zMnnb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:drop_collection_function",
+      "docIdentity": {
+        "stableId": "python:Collections:drop_collection_function",
+        "canonicalSlug": "Collections-drop_collection_function",
+        "category": "Collections",
+        "title": "drop_collection_function()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDoAR3FcQS",
+        "currentDocumentToken": "F1mJdDLyzoMTrxxarPMcqPkqnqg",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:get_refresh_external_collection_progress",
+      "docIdentity": {
+        "stableId": "python:Collections:get_refresh_external_collection_progress",
+        "canonicalSlug": "Collections-get_refresh_external_collection_progress",
+        "category": "Collections",
+        "title": "get_refresh_external_collection_progress()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh86AGwqZd1",
+        "currentDocumentToken": "HITBdKb0HotcK0xCKsycEeuqnXe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:list_refresh_external_collection_jobs",
+      "docIdentity": {
+        "stableId": "python:Collections:list_refresh_external_collection_jobs",
+        "canonicalSlug": "Collections-list_refresh_external_collection_jobs",
+        "category": "Collections",
+        "title": "list_refresh_external_collection_jobs()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh86BXWrpyn",
+        "currentDocumentToken": "VkBFdLHwao9hVMxzRurcBYIynFh",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:refresh_external_collection",
+      "docIdentity": {
+        "stableId": "python:Collections:refresh_external_collection",
+        "canonicalSlug": "Collections-refresh_external_collection",
+        "category": "Collections",
+        "title": "refresh_external_collection()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh7XqNTZM8t",
+        "currentDocumentToken": "ZVs4dDpvmoXI0OxOnKhc9numnJd",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Collections:truncate_collection",
+      "docIdentity": {
+        "stableId": "python:Collections:truncate_collection",
+        "canonicalSlug": "Collections-truncate_collection",
+        "category": "Collections",
+        "title": "truncate_collection()",
+        "targetFolderToken": "WidffJPNIlfIlZdHlU8cMiGOnpg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Collections"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDovn5LmO4",
+        "currentDocumentToken": "T2lWd4LMOoAkUCxa8wjcJVoinrf",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:CollectionSchema:add_field",
+      "docIdentity": {
+        "stableId": "python:CollectionSchema:add_field",
+        "canonicalSlug": "CollectionSchema-add_field",
+        "category": "CollectionSchema",
+        "title": "add_field()",
+        "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > CollectionSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QuG6ou5y1",
+        "currentDocumentToken": "TG3Rd9aM5offvFxKy2CcKXn9nWc",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:CollectionSchema:construct_from_dict",
+      "docIdentity": {
+        "stableId": "python:CollectionSchema:construct_from_dict",
+        "canonicalSlug": "CollectionSchema-construct_from_dict",
+        "category": "CollectionSchema",
+        "title": "construct_from_dict()",
+        "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > CollectionSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QuHRgwOZL",
+        "currentDocumentToken": "DYuUdc503o1TANxuGozcXhCmnRN",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:CollectionSchema:run_analyzer",
+      "docIdentity": {
+        "stableId": "python:CollectionSchema:run_analyzer",
+        "canonicalSlug": "CollectionSchema-run_analyzer",
+        "category": "CollectionSchema",
+        "title": "run_analyzer()",
+        "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > CollectionSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuNY13V44NfI",
+        "currentDocumentToken": "TWzjdJ61ho613AxKSd7clQt9nrg",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:CollectionSchema:to_dict",
+      "docIdentity": {
+        "stableId": "python:CollectionSchema:to_dict",
+        "canonicalSlug": "CollectionSchema-to_dict",
+        "category": "CollectionSchema",
+        "title": "to_dict()",
+        "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > CollectionSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QuJLSNBGW",
+        "currentDocumentToken": "GfTadfqhAo64XDxc643ci4Zwnwb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:CollectionSchema:verify",
+      "docIdentity": {
+        "stableId": "python:CollectionSchema:verify",
+        "canonicalSlug": "CollectionSchema-verify",
+        "category": "CollectionSchema",
+        "title": "verify()",
+        "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > CollectionSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QuLDI2pSd",
+        "currentDocumentToken": "KSECdBDcUoIkL7xI4KOc29Ukn1g",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Database:use_database",
+      "docIdentity": {
+        "stableId": "python:Database:use_database",
+        "canonicalSlug": "Database-use_database",
+        "category": "Database",
+        "title": "use_database()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDoBTJGJ1N",
+        "currentDocumentToken": "AglQd68yqoEn8Ixkn9ociyqKnMx",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:EmbeddingList:add",
+      "docIdentity": {
+        "stableId": "python:EmbeddingList:add",
+        "canonicalSlug": "EmbeddingList-add",
+        "category": "EmbeddingList",
+        "title": "add()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt7HCIsRcP",
+        "currentDocumentToken": "R0E9dLzIAoYGCcxRVj6cjJmWnPe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:EmbeddingList:add_batch",
+      "docIdentity": {
+        "stableId": "python:EmbeddingList:add_batch",
+        "canonicalSlug": "EmbeddingList-add_batch",
+        "category": "EmbeddingList",
+        "title": "add_batch()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt7K2107WA",
+        "currentDocumentToken": "TJundbM8FoU8UKxczaMcix3QnHb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:EmbeddingList:clear",
+      "docIdentity": {
+        "stableId": "python:EmbeddingList:clear",
+        "canonicalSlug": "EmbeddingList-clear",
+        "category": "EmbeddingList",
+        "title": "clear()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt7MNweh9n",
+        "currentDocumentToken": "M6mrdinAjo8CwrxirOQcR6E1nUc",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:EmbeddingList:to_flat_array",
+      "docIdentity": {
+        "stableId": "python:EmbeddingList:to_flat_array",
+        "canonicalSlug": "EmbeddingList-to_flat_array",
+        "category": "EmbeddingList",
+        "title": "to_flat_array()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt7OxfAfHv",
+        "currentDocumentToken": "Z76PdoAJkoGaMPxG4CFcCmShnwh",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:EmbeddingList:to_numpy",
+      "docIdentity": {
+        "stableId": "python:EmbeddingList:to_numpy",
+        "canonicalSlug": "EmbeddingList-to_numpy",
+        "category": "EmbeddingList",
+        "title": "to_numpy()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt7Q6EtzGE",
+        "currentDocumentToken": "XQAQd2tPKon4JgxKEoAc0CCHnUg",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:FieldSchema:construct_from_dict",
+      "docIdentity": {
+        "stableId": "python:FieldSchema:construct_from_dict",
+        "canonicalSlug": "FieldSchema-construct_from_dict",
+        "category": "FieldSchema",
+        "title": "construct_from_dict()",
+        "targetFolderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > FieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QvHdAvpGQ",
+        "currentDocumentToken": "DCLUdOpVjohl8HxPUx1cGjokngf",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:FieldSchema:to_dict",
+      "docIdentity": {
+        "stableId": "python:FieldSchema:to_dict",
+        "canonicalSlug": "FieldSchema-to_dict",
+        "category": "FieldSchema",
+        "title": "to_dict()",
+        "targetFolderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > FieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QvIMdek6N",
+        "currentDocumentToken": "G1gsdGWwuoPOPrxJdABcfa76nUd",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Function:add_function",
+      "docIdentity": {
+        "stableId": "python:Function:add_function",
+        "canonicalSlug": "Function-add_function",
+        "category": "Function",
+        "title": "add_function()",
+        "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Function"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuvdqW92C2KJ",
+        "currentDocumentToken": "XhcVd1JXvoAgUfxSEpQcL2H6nVg",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Function:add_function_field",
+      "docIdentity": {
+        "stableId": "python:Function:add_function_field",
+        "canonicalSlug": "Function-add_function_field",
+        "category": "Function",
+        "title": "add_function_field()",
+        "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Function"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvxhgOSCbidl",
+        "currentDocumentToken": "SPl9dAH9noQ2e9xu86Zcy4XxnTb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Function:construct_from_dict",
+      "docIdentity": {
+        "stableId": "python:Function:construct_from_dict",
+        "canonicalSlug": "Function-construct_from_dict",
+        "category": "Function",
+        "title": "construct_from_dict()",
+        "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Function"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuvdqY1uLI6o",
+        "currentDocumentToken": "Ulypd24byoDBOpxGnnJcbF3Nnkb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Function:to_dict",
+      "docIdentity": {
+        "stableId": "python:Function:to_dict",
+        "canonicalSlug": "Function-to_dict",
+        "category": "Function",
+        "title": "to_dict()",
+        "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Function"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuvdr0MWXDFb",
+        "currentDocumentToken": "AmwJdW0z6opMPcxhMlBcYPIWn2M",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Function:verify",
+      "docIdentity": {
+        "stableId": "python:Function:verify",
+        "canonicalSlug": "Function-verify",
+        "category": "Function",
+        "title": "verify()",
+        "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Function"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuvdr2EgJw3a",
+        "currentDocumentToken": "YXogdv0Dpovi2Pxbyh2cdA4nnbe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Highlighter:LexicalHighlighter",
+      "docIdentity": {
+        "stableId": "python:Highlighter:LexicalHighlighter",
+        "canonicalSlug": "Highlighter-LexicalHighlighter",
+        "category": "Highlighter",
+        "title": "LexicalHighlighter",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recv96Hti2rqk6",
+        "currentDocumentToken": "DXTJdXSquo8NutxCqfBccO7pnWw",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Highlighter:with_query",
+      "docIdentity": {
+        "stableId": "python:Highlighter:with_query",
+        "canonicalSlug": "Highlighter-with_query",
+        "category": "Highlighter",
+        "title": "with_query()",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recv96HwGrptdz",
+        "currentDocumentToken": "KdiQdpHp3oEQwNx2hd5chqQKn2D",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Management:alter_index_properties",
+      "docIdentity": {
+        "stableId": "python:Management:alter_index_properties",
+        "canonicalSlug": "Management-alter_index_properties",
+        "category": "Management",
+        "title": "alter_index_properties()",
+        "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Management"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuAADHjnCCFl",
+        "currentDocumentToken": "TRFadKWOAofCVoxH3qYcdTvynHf",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Management:compact",
+      "docIdentity": {
+        "stableId": "python:Management:compact",
+        "canonicalSlug": "Management-compact",
+        "category": "Management",
+        "title": "compact()",
+        "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Management"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuAAzNbuvkeF",
+        "currentDocumentToken": "JRNidzqX4o6VtkxVB5RcNvmHnnb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Management:flush_all",
+      "docIdentity": {
+        "stableId": "python:Management:flush_all",
+        "canonicalSlug": "Management-flush_all",
+        "category": "Management",
+        "title": "flush_all()",
+        "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Management"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDoE4JwzXs",
+        "currentDocumentToken": "QejKdv2qKo97mQxEV0CcaSM5nLh",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Management:get_flush_all_state",
+      "docIdentity": {
+        "stableId": "python:Management:get_flush_all_state",
+        "canonicalSlug": "Management-get_flush_all_state",
+        "category": "Management",
+        "title": "get_flush_all_state()",
+        "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Management"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDoF7ZgozK",
+        "currentDocumentToken": "G31wdmzVFo687JxZTAGctQlKnir",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Management:release_collection",
+      "docIdentity": {
+        "stableId": "python:Management:release_collection",
+        "canonicalSlug": "Management-release_collection",
+        "category": "Management",
+        "title": "release_collection()",
+        "targetFolderToken": "Q72tf8sE5lBdfNdXHgQc8pwvnnb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Management"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QxCtAqexB",
+        "currentDocumentToken": "PRR7dRfi8o1s61xFRovccAdRnHe",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:MilvusClient:CollectionSchema",
+      "docIdentity": {
+        "stableId": "python:MilvusClient:CollectionSchema",
+        "canonicalSlug": "MilvusClient-CollectionSchema",
+        "category": "MilvusClient",
+        "title": "CollectionSchema",
+        "targetFolderToken": "EBJgfcRHNlrAHEdOPtMcGOKpnvb",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > CollectionSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuihpJE5kpKn",
+        "currentDocumentToken": "SSiodq10FoH26hx2HlccfcAgnje",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:MilvusClient:EmbeddingList",
+      "docIdentity": {
+        "stableId": "python:MilvusClient:EmbeddingList",
+        "canonicalSlug": "MilvusClient-EmbeddingList",
+        "category": "MilvusClient",
+        "title": "EmbeddingList",
+        "targetFolderToken": null,
+        "targetFolderStatus": "to-create (category-create plan)",
+        "targetFolderPath": "undefined > (unresolved)"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt7wTWxSj1",
+        "currentDocumentToken": "Ve2WdUAfwoz456xwBIJcGvltn6b",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:MilvusClient:FieldSchema",
+      "docIdentity": {
+        "stableId": "python:MilvusClient:FieldSchema",
+        "canonicalSlug": "MilvusClient-FieldSchema",
+        "category": "MilvusClient",
+        "title": "FieldSchema",
+        "targetFolderToken": "ClUPfEshEljX8zdh0sgcOY5Nn4v",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > FieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recDBjeXvE",
+        "currentDocumentToken": "OD8mdC5aXo0XHbxSthRczioXnaf",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:MilvusClient:Function",
+      "docIdentity": {
+        "stableId": "python:MilvusClient:Function",
+        "canonicalSlug": "MilvusClient-Function",
+        "category": "MilvusClient",
+        "title": "Function",
+        "targetFolderToken": "ReL5fij0MlHIpbd5WJHcko3on4g",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Function"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuvdqTiESu1t",
+        "currentDocumentToken": "GaCYdVohYoHFhrx897zcmcNfn6e",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:MilvusClient:FunctionScore",
+      "docIdentity": {
+        "stableId": "python:MilvusClient:FunctionScore",
+        "canonicalSlug": "MilvusClient-FunctionScore",
+        "category": "MilvusClient",
+        "title": "FunctionScore",
+        "targetFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuZt80jwuPWS",
+        "currentDocumentToken": "PfJNdkuMDoCqqcxm6S2cDD6TnFh",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:MilvusClient:StructFieldSchema",
+      "docIdentity": {
+        "stableId": "python:MilvusClient:StructFieldSchema",
+        "canonicalSlug": "MilvusClient-StructFieldSchema",
+        "category": "MilvusClient",
+        "title": "StructFieldSchema",
+        "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > StructFieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recv0fp27rxSTM",
+        "currentDocumentToken": "R4vxd8dReoaZ85xZ23qctjfLnDh",
+        "currentType": "Class",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:ResourceGroup:get_replicate_configuration",
+      "docIdentity": {
+        "stableId": "python:ResourceGroup:get_replicate_configuration",
+        "canonicalSlug": "ResourceGroup-get_replicate_configuration",
+        "category": "ResourceGroup",
+        "title": "get_replicate_configuration()",
+        "targetFolderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > ResourceGroup"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvj5lmjw0VcB",
+        "currentDocumentToken": "CEw1d0nWbonImnxbspDcw4e6nby",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:ResourceGroup:update_replicate_configuration",
+      "docIdentity": {
+        "stableId": "python:ResourceGroup:update_replicate_configuration",
+        "canonicalSlug": "ResourceGroup-update_replicate_configuration",
+        "category": "ResourceGroup",
+        "title": "update_replicate_configuration()",
+        "targetFolderToken": "BOTAfAdGJl7C9Ad00CWcOawendd",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > ResourceGroup"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvaDpfwAoyhz",
+        "currentDocumentToken": "UUSVdtsbxo9gNSxgqE6cdfytnfh",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:describe_snapshot",
+      "docIdentity": {
+        "stableId": "python:Snapshot:describe_snapshot",
+        "canonicalSlug": "Snapshot-describe_snapshot",
+        "category": "Snapshot",
+        "title": "describe_snapshot()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh8LqpBYo2T",
+        "currentDocumentToken": "GF0yd9S4RoImivxbIlPcicEynQb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:drop_snapshot",
+      "docIdentity": {
+        "stableId": "python:Snapshot:drop_snapshot",
+        "canonicalSlug": "Snapshot-drop_snapshot",
+        "category": "Snapshot",
+        "title": "drop_snapshot()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh8LpCtF4JC",
+        "currentDocumentToken": "UknCdYmtRoVIZ9xWcLnc02b0ndZ",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:list_restore_snapshot_jobs",
+      "docIdentity": {
+        "stableId": "python:Snapshot:list_restore_snapshot_jobs",
+        "canonicalSlug": "Snapshot-list_restore_snapshot_jobs",
+        "category": "Snapshot",
+        "title": "list_restore_snapshot_jobs()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh8LrKwu7cX",
+        "currentDocumentToken": "PtHQdGNfaoI4Mux05rbcRWTVnMp",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:list_snapshots",
+      "docIdentity": {
+        "stableId": "python:Snapshot:list_snapshots",
+        "canonicalSlug": "Snapshot-list_snapshots",
+        "category": "Snapshot",
+        "title": "list_snapshots()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh8Lq1vzaWs",
+        "currentDocumentToken": "WgmLdM6nUogd7LxGtmfc5dBKnku",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:pin_snapshot_data",
+      "docIdentity": {
+        "stableId": "python:Snapshot:pin_snapshot_data",
+        "canonicalSlug": "Snapshot-pin_snapshot_data",
+        "category": "Snapshot",
+        "title": "pin_snapshot_data()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvj5lmTq0ozv",
+        "currentDocumentToken": "NqWDdRxKYoi6uTxHaYEcafx9nGc",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:restore_snapshot",
+      "docIdentity": {
+        "stableId": "python:Snapshot:restore_snapshot",
+        "canonicalSlug": "Snapshot-restore_snapshot",
+        "category": "Snapshot",
+        "title": "restore_snapshot()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvh8LqOAyCv4",
+        "currentDocumentToken": "I2OZdk40IomugOx9MTqcooVcnEf",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Snapshot:unpin_snapshot_data",
+      "docIdentity": {
+        "stableId": "python:Snapshot:unpin_snapshot_data",
+        "canonicalSlug": "Snapshot-unpin_snapshot_data",
+        "category": "Snapshot",
+        "title": "unpin_snapshot_data()",
+        "targetFolderToken": "RoBzflamplZFzYd1ZSWccuVfnnc",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Snapshot"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recvj5lnq9gcce",
+        "currentDocumentToken": "RSOkdriHRoRd8ixyVZOch1l9nDd",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:StructFieldSchema:add_field",
+      "docIdentity": {
+        "stableId": "python:StructFieldSchema:add_field",
+        "canonicalSlug": "StructFieldSchema-add_field",
+        "category": "StructFieldSchema",
+        "title": "add_field()",
+        "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > StructFieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recv0fpaaSqi8d",
+        "currentDocumentToken": "Up73d8d78oPM2FxkvlIcuxeBn9g",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:StructFieldSchema:construct_from_dict",
+      "docIdentity": {
+        "stableId": "python:StructFieldSchema:construct_from_dict",
+        "canonicalSlug": "StructFieldSchema-construct_from_dict",
+        "category": "StructFieldSchema",
+        "title": "construct_from_dict()",
+        "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > StructFieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recv0fpdRH7lGA",
+        "currentDocumentToken": "KeoHdMDBCo3PByxKbWncifFMn9e",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:StructFieldSchema:to_dict",
+      "docIdentity": {
+        "stableId": "python:StructFieldSchema:to_dict",
+        "canonicalSlug": "StructFieldSchema-to_dict",
+        "category": "StructFieldSchema",
+        "title": "to_dict()",
+        "targetFolderToken": "YhYwfvxhNlJmvSd6gCUcGFepnue",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > StructFieldSchema"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recv0fpgvovtaq",
+        "currentDocumentToken": "Mq7idUip3ofMQmxj55XcB98nn0b",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Vector:query",
+      "docIdentity": {
+        "stableId": "python:Vector:query",
+        "canonicalSlug": "Vector-query",
+        "category": "Vector",
+        "title": "query()",
+        "targetFolderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Vector"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QxxfZJmQZ",
+        "currentDocumentToken": "ShzCdNgEGozKi3xa3lUcHpxQnaf",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Vector:search",
+      "docIdentity": {
+        "stableId": "python:Vector:search",
+        "canonicalSlug": "Vector-search",
+        "category": "Vector",
+        "title": "search()",
+        "targetFolderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Vector"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recu3QxOlGbhw0",
+        "currentDocumentToken": "DvaZdhYnyoo7lOxNIBwc5eKEn7d",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    },
+    {
+      "id": "proposal:python:Vector:search_iterator",
+      "docIdentity": {
+        "stableId": "python:Vector:search_iterator",
+        "canonicalSlug": "Vector-search_iterator",
+        "category": "Vector",
+        "title": "search_iterator()",
+        "targetFolderToken": "KSDYfo9pCl89wKdRNGccbzT2nid",
+        "targetFolderStatus": "existing",
+        "targetFolderPath": "undefined > UxyTfjS3wl0TF8dn9tZcRT39nUe > MilvusClient > Vector"
+      },
+      "existingBitable": {
+        "status": "matched",
+        "recordId": "recuF2kJ5w82P7",
+        "currentDocumentToken": "Z8WId53zDonHYuxckCDccOEcnjb",
+        "currentType": "Function",
+        "snapshotProvenance": "base Hk05b5eI6aXXSSsd6j9cqwwMn5a (v3.0.x), fetchedAt 2026-10-16T01:49:27.904Z, 398 rows"
+      }
+    }
+  ]
+}

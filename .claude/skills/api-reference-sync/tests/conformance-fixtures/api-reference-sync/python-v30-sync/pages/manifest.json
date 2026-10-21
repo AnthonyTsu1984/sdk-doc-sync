@@ -1,0 +1,652 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-10-20T23:36:11.513Z",
+  "decisions": "/Users/anthony/Documents/projects/feishu-markdown-bridge/tmp/api-reference-sync/campaign-plans/python-v30-sync/python-v30-decisions-excl-orm.json",
+  "webContentDir": "/Users/anthony/Documents/projects/web-content",
+  "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+  "pages": [
+    {
+      "slug": "Authentication-create_role",
+      "path": "Authentication-create_role.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/create_role.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 853,
+      "sha256": "7efb908df7871657790d330ef0d1dd175f6135ff2e213e8fa7813f7ddaa0ea79",
+      "h1": "create_role()",
+      "category": "Authentication"
+    },
+    {
+      "slug": "Authentication-remove_privileges_from_group",
+      "path": "Authentication-remove_privileges_from_group.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/remove_privileges_from_group.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1160,
+      "sha256": "f321b8bbe2e3c08cc4b11a0ebc620f723b8bee2f055799ef0b8bd66b87912aad",
+      "h1": "remove_privileges_from_group()",
+      "category": "Authentication"
+    },
+    {
+      "slug": "Authentication-revoke_privilege",
+      "path": "Authentication-revoke_privilege.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/revoke_privilege.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1990,
+      "sha256": "2a0aed8c51219661a4fc84350a810a9e7c3cfb7a4b4a5e206d5752a344494b91",
+      "h1": "revoke_privilege()",
+      "category": "Authentication"
+    },
+    {
+      "slug": "Client-session",
+      "path": "Client-session.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Client/session.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1415,
+      "sha256": "d970a010e8336a9c7f358e089d5c3bb47f7e7486a1d9e8185fa2325e8a004076",
+      "h1": "session()",
+      "category": "Client"
+    },
+    {
+      "slug": "CollectionSchema-add_field",
+      "path": "CollectionSchema-add_field.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/add_field.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 5349,
+      "sha256": "22600e321d1becc5305980570c878ae89ec086a2dc3423f87dd956b4da02d87b",
+      "h1": "add_field()",
+      "category": "CollectionSchema"
+    },
+    {
+      "slug": "CollectionSchema-construct_from_dict",
+      "path": "CollectionSchema-construct_from_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/construct_from_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1640,
+      "sha256": "68b58e9269ca7ba78b4cf2cb1c8cdd2a37c309b5a3c4dca740dadaab27696b1a",
+      "h1": "construct_from_dict()",
+      "category": "CollectionSchema"
+    },
+    {
+      "slug": "CollectionSchema-run_analyzer",
+      "path": "CollectionSchema-run_analyzer.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2471,
+      "sha256": "00bdde3ac439149ebaba1b369f983d351611bfeaaf0444b127cbf9b7f2ab9f4c",
+      "h1": "run_analyzer()",
+      "category": "CollectionSchema"
+    },
+    {
+      "slug": "CollectionSchema-to_dict",
+      "path": "CollectionSchema-to_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/to_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1175,
+      "sha256": "57fa16c619ad1c944e5c1a8f935c8fb06f0fb0b8f2c2f50447e5a143706e164a",
+      "h1": "to_dict()",
+      "category": "CollectionSchema"
+    },
+    {
+      "slug": "CollectionSchema-verify",
+      "path": "CollectionSchema-verify.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/verify.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 813,
+      "sha256": "08fcded682386715fff47fb11c8531d78a2457e3ec0d543864b1495f9752c4b5",
+      "h1": "verify()",
+      "category": "CollectionSchema"
+    },
+    {
+      "slug": "Collections-add_collection_field",
+      "path": "Collections-add_collection_field.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_field.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2844,
+      "sha256": "e3cfcfe705e30be3377af8a3b2be979b2106ed62618b8198a6346c3dce687154",
+      "h1": "add_collection_field()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-add_collection_function",
+      "path": "Collections-add_collection_function.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_function.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1928,
+      "sha256": "ae96e37f1ab164cf93586d77c5e4d5dfd05ec92203cd0cd8980cc36b7f729274",
+      "h1": "add_collection_function()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-add_collection_struct_field",
+      "path": "Collections-add_collection_struct_field.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_struct_field.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2438,
+      "sha256": "a1ff6d7708cc432d2feac3e671c88d13b608c427fd8a0e10680323cfd77f3c81",
+      "h1": "add_collection_struct_field()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-alter_collection_function",
+      "path": "Collections-alter_collection_function.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_function.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1682,
+      "sha256": "debb626847ed43053e71395e5029a2a4a2c76f09002de45afd412b197613385f",
+      "h1": "alter_collection_function()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-alter_collection_properties",
+      "path": "Collections-alter_collection_properties.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_properties.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3098,
+      "sha256": "dd4dbff3f8819b4273d6cf5f1696fb2364c69e968be08f8bd73484a9a92ca78d",
+      "h1": "alter_collection_properties()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-create_collection",
+      "path": "Collections-create_collection.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_collection.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 14612,
+      "sha256": "df3361dde7e251a31cf34d9eb6960afab9285abf41b3ffa9ba9db99da5d823a6",
+      "h1": "create_collection()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-create_schema",
+      "path": "Collections-create_schema.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_schema.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 6744,
+      "sha256": "0fc112635f852b901d470b0be87b978079ee12246a91b645d74baf9dfeedb898",
+      "h1": "create_schema()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-describe_collection",
+      "path": "Collections-describe_collection.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/describe_collection.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 7300,
+      "sha256": "96ed9984da98eb1bbb2fe4a9bc0a2dfb216ef8ca5b823826505e145599fc661e",
+      "h1": "describe_collection()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-drop_collection_field",
+      "path": "Collections-drop_collection_field.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/drop_collection_field.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1249,
+      "sha256": "a484e4b77b09651160e0603f69aec271bd9e8cf55db982dddd8f850c12a803d3",
+      "h1": "drop_collection_field()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-drop_collection_function",
+      "path": "Collections-drop_collection_function.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/drop_collection_function.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1504,
+      "sha256": "65ad7a865de6e2f8cbe95878454490adda49d03a64f3c2554a61c6811bb11dac",
+      "h1": "drop_collection_function()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-get_refresh_external_collection_progress",
+      "path": "Collections-get_refresh_external_collection_progress.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/get_refresh_external_collection_progress.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3142,
+      "sha256": "28ba8cd714ba2cd1d35bb40819566b4368a43513a6e619b11a90254feea8334c",
+      "h1": "get_refresh_external_collection_progress()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-list_refresh_external_collection_jobs",
+      "path": "Collections-list_refresh_external_collection_jobs.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/list_refresh_external_collection_jobs.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3173,
+      "sha256": "03754c6cb082c1992664907effd56614afaff5aa08aa27d0acdff305ddf1c8ba",
+      "h1": "list_refresh_external_collection_jobs()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-refresh_external_collection",
+      "path": "Collections-refresh_external_collection.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/refresh_external_collection.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3703,
+      "sha256": "3e0c2e1e22d9021922ecad375d1f7d7002f5b587323483901b916e3e91e4ac52",
+      "h1": "refresh_external_collection()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Collections-truncate_collection",
+      "path": "Collections-truncate_collection.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/truncate_collection.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1125,
+      "sha256": "1a3cacf82732fd995547944180bdcb473147637ba5372b336801351e0d9e8ebf",
+      "h1": "truncate_collection()",
+      "category": "Collections"
+    },
+    {
+      "slug": "Database-use_database",
+      "path": "Database-use_database.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Database/use_database.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 936,
+      "sha256": "56554e376b713568cc6519591645c0c05a00dd20cb8dd52a07ea470bd4859791",
+      "h1": "use_database()",
+      "category": "Database"
+    },
+    {
+      "slug": "EmbeddingList-add",
+      "path": "EmbeddingList-add.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 968,
+      "sha256": "22cee05ca77b1322d6f6c3bfa80a66784cf733dfa467aec9d36282125cfc1974",
+      "h1": "add()",
+      "category": "EmbeddingList"
+    },
+    {
+      "slug": "EmbeddingList-add_batch",
+      "path": "EmbeddingList-add_batch.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add_batch.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 998,
+      "sha256": "6a12a7bea3ff9555a3ae46ef832fd9a497661b02f6b713ac32f29a21ea6cff57",
+      "h1": "add_batch()",
+      "category": "EmbeddingList"
+    },
+    {
+      "slug": "EmbeddingList-clear",
+      "path": "EmbeddingList-clear.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/clear.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 631,
+      "sha256": "dcdd35e54d21e5e9cf58e4534ca9c06df65c049aea32b055dcb582b5516d58db",
+      "h1": "clear()",
+      "category": "EmbeddingList"
+    },
+    {
+      "slug": "EmbeddingList-to_flat_array",
+      "path": "EmbeddingList-to_flat_array.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_flat_array.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 791,
+      "sha256": "6a481c05716ce9ee70f073326c668957985fd9912ac984eee6d1b94cb0c294c9",
+      "h1": "to_flat_array()",
+      "category": "EmbeddingList"
+    },
+    {
+      "slug": "EmbeddingList-to_numpy",
+      "path": "EmbeddingList-to_numpy.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_numpy.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 794,
+      "sha256": "3f6eb7e2a990c249e0015ac4271d99e6c5b5770f892e466c8bc483e148be9a67",
+      "h1": "to_numpy()",
+      "category": "EmbeddingList"
+    },
+    {
+      "slug": "FieldSchema-construct_from_dict",
+      "path": "FieldSchema-construct_from_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/construct_from_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1148,
+      "sha256": "565a35b31f56dfa5a28aad3eef8f9cf4e054a2380ecb30035136faf4ae3393a8",
+      "h1": "construct_from_dict()",
+      "category": "FieldSchema"
+    },
+    {
+      "slug": "FieldSchema-to_dict",
+      "path": "FieldSchema-to_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/to_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1031,
+      "sha256": "f0807e4e2e4171d0e8eb811013dd199116d53a643bd2abee6037773ba0b09f77",
+      "h1": "to_dict()",
+      "category": "FieldSchema"
+    },
+    {
+      "slug": "Function-add_function",
+      "path": "Function-add_function.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/add_function.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 983,
+      "sha256": "2f38bc41d2e865d73ac716ceeaf961c665a178acd658969edd159c7fbdb4515e",
+      "h1": "add_function()",
+      "category": "Function"
+    },
+    {
+      "slug": "Function-add_function_field",
+      "path": "Function-add_function_field.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_function_field.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3854,
+      "sha256": "4067eec68c6870179d37059c2eb5eee031268f4097307ac8764e43295c352262",
+      "h1": "add_function_field()",
+      "category": "Function"
+    },
+    {
+      "slug": "Function-construct_from_dict",
+      "path": "Function-construct_from_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/construct_from_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 819,
+      "sha256": "2e2b1c8d39c2d390320e873c154e3896aff5b07ebb358ddcfb580b1852463160",
+      "h1": "construct_from_dict()",
+      "category": "Function"
+    },
+    {
+      "slug": "Function-to_dict",
+      "path": "Function-to_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/to_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 679,
+      "sha256": "2d3f1e01294816ecfe0b29b345ba30ba27bafa705ee3bdb6c6c2ad7cf5e387d4",
+      "h1": "to_dict()",
+      "category": "Function"
+    },
+    {
+      "slug": "Function-verify",
+      "path": "Function-verify.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/verify.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 753,
+      "sha256": "0db975509e21a1daef246c7c3306024025047e31ca18aaf9fd95a22371f9eaaa",
+      "h1": "verify()",
+      "category": "Function"
+    },
+    {
+      "slug": "Highlighter-LexicalHighlighter",
+      "path": "Highlighter-LexicalHighlighter.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/LexicalHighlighter.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3633,
+      "sha256": "9857959042c850d21c43c93f2f93c6e85ebbede2bbe79b2df19fbc929980f43c",
+      "h1": "LexicalHighlighter",
+      "category": "Highlighter"
+    },
+    {
+      "slug": "Highlighter-with_query",
+      "path": "Highlighter-with_query.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/with_query.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1590,
+      "sha256": "50da8e1e188032ea3197694afa5eb6f08d53eaf54894f9e4518e3f28ed21597c",
+      "h1": "with_query()",
+      "category": "Highlighter"
+    },
+    {
+      "slug": "Management-alter_index_properties",
+      "path": "Management-alter_index_properties.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/alter_index_properties.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1573,
+      "sha256": "d2cdce6507961b9b15eb3b89ffa1572f1cc8eb439b4fac95b4d74271dcbb32be",
+      "h1": "alter_index_properties()",
+      "category": "Management"
+    },
+    {
+      "slug": "Management-compact",
+      "path": "Management-compact.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/compact.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2144,
+      "sha256": "d18ba5608266c9430f9e2ff8808cacc0ab21b2a34b45cba4e3a2a63fecec5c00",
+      "h1": "compact()",
+      "category": "Management"
+    },
+    {
+      "slug": "Management-flush_all",
+      "path": "Management-flush_all.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/flush_all.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 793,
+      "sha256": "78e1c969a1dadf1389d9a08507676adde0499c7275ccc138acdc9fb86dc6f771",
+      "h1": "flush_all()",
+      "category": "Management"
+    },
+    {
+      "slug": "Management-get_flush_all_state",
+      "path": "Management-get_flush_all_state.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/get_flush_all_state.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1147,
+      "sha256": "43fec6d35aaff624038bc30e53eafcc733bacb0288aa124199d17671af947b2f",
+      "h1": "get_flush_all_state()",
+      "category": "Management"
+    },
+    {
+      "slug": "Management-release_collection",
+      "path": "Management-release_collection.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/release_collection.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3060,
+      "sha256": "d9428275d3e6149033f251b1258ad46b5daa2734954a35f38db13798bd50fa5e",
+      "h1": "release_collection()",
+      "category": "Management"
+    },
+    {
+      "slug": "MilvusClient-CollectionSchema",
+      "path": "MilvusClient-CollectionSchema.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/CollectionSchema.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 7393,
+      "sha256": "0f90467fee95663b13d7d1198c3c89a35bd43454e5fa0c8ea0d2da7e8c7e4eac",
+      "h1": "CollectionSchema",
+      "category": "MilvusClient"
+    },
+    {
+      "slug": "MilvusClient-EmbeddingList",
+      "path": "MilvusClient-EmbeddingList.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/EmbeddingList.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2149,
+      "sha256": "eacdfbb8abd465081dd46d9c39f0ae39b643ac0134365dbc69b3dd663009d48c",
+      "h1": "EmbeddingList",
+      "category": "MilvusClient"
+    },
+    {
+      "slug": "MilvusClient-FieldSchema",
+      "path": "MilvusClient-FieldSchema.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/FieldSchema.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1140,
+      "sha256": "1d03b5896ebc52d8a3ef6eee368ade914ada91abe035b7d0b1cb4e40b1455f31",
+      "h1": "FieldSchema",
+      "category": "MilvusClient"
+    },
+    {
+      "slug": "MilvusClient-Function",
+      "path": "MilvusClient-Function.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/Function.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 17312,
+      "sha256": "100c01ec375c25702da800a68fc1e032ef4e7971cad38bc1c6c990de14f5be39",
+      "h1": "Function",
+      "category": "MilvusClient"
+    },
+    {
+      "slug": "MilvusClient-FunctionScore",
+      "path": "MilvusClient-FunctionScore.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/FunctionScore.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 3179,
+      "sha256": "e1f9aa366e0a7f05f92b3c9848ef6fb95ef7c4e91d7402eec81067441877747f",
+      "h1": "FunctionScore",
+      "category": "MilvusClient"
+    },
+    {
+      "slug": "MilvusClient-StructFieldSchema",
+      "path": "MilvusClient-StructFieldSchema.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/StructFieldSchema.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1201,
+      "sha256": "1fce456b02085f65ec58e6da9b0579d280e21cab758b483becf4cb2b6ce4cb9f",
+      "h1": "StructFieldSchema",
+      "category": "MilvusClient"
+    },
+    {
+      "slug": "ResourceGroup-get_replicate_configuration",
+      "path": "ResourceGroup-get_replicate_configuration.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/ResourceGroup/get_replicate_configuration.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 916,
+      "sha256": "d26b3c9a7d12f2d0cf69cc4a7fa717918a968c47b84b82dd2dd1671f967c3e2e",
+      "h1": "get_replicate_configuration()",
+      "category": "ResourceGroup"
+    },
+    {
+      "slug": "ResourceGroup-update_replicate_configuration",
+      "path": "ResourceGroup-update_replicate_configuration.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/ResourceGroup/update_replicate_configuration.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2064,
+      "sha256": "d15edf7ecf0d5c1730b336bb5d7b1d775d388572481fcec5c9a1d7e6f5a2cbb7",
+      "h1": "update_replicate_configuration()",
+      "category": "ResourceGroup"
+    },
+    {
+      "slug": "Snapshot-describe_snapshot",
+      "path": "Snapshot-describe_snapshot.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/describe_snapshot.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2053,
+      "sha256": "016a91c6193585a4441f826853aa8df853f12793be06612b308fb94e679c7fcf",
+      "h1": "describe_snapshot()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "Snapshot-drop_snapshot",
+      "path": "Snapshot-drop_snapshot.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/drop_snapshot.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1086,
+      "sha256": "70624bf74e4dccdca787b1ea400f1fab8093ead77f0d7823e609417e657894f4",
+      "h1": "drop_snapshot()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "Snapshot-list_restore_snapshot_jobs",
+      "path": "Snapshot-list_restore_snapshot_jobs.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_restore_snapshot_jobs.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2272,
+      "sha256": "7c7f20ad9455f0e395817ed39ddb2be06392d60f7ef1089b5d267273a82744c5",
+      "h1": "list_restore_snapshot_jobs()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "Snapshot-list_snapshots",
+      "path": "Snapshot-list_snapshots.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_snapshots.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1214,
+      "sha256": "62256a528ec56dee7b9667aff0260d0f8bb381b128cef87ad56238574d8df9a3",
+      "h1": "list_snapshots()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "Snapshot-pin_snapshot_data",
+      "path": "Snapshot-pin_snapshot_data.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/pin_snapshot_data.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1457,
+      "sha256": "f7cee5e9d78d78f4f697523ea675eb93a7be26252a615ba04c2625e2b766b8e4",
+      "h1": "pin_snapshot_data()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "Snapshot-restore_snapshot",
+      "path": "Snapshot-restore_snapshot.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/restore_snapshot.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 2783,
+      "sha256": "f15f2c518dfd51ec861e26059f7be1386f9c7fc753fb4c2db2b4d065432a1fea",
+      "h1": "restore_snapshot()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "Snapshot-unpin_snapshot_data",
+      "path": "Snapshot-unpin_snapshot_data.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/unpin_snapshot_data.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1050,
+      "sha256": "fb3e1693b31d8773f612e9f31915aae2446898b8a394a9554795a1e32006eea2",
+      "h1": "unpin_snapshot_data()",
+      "category": "Snapshot"
+    },
+    {
+      "slug": "StructFieldSchema-add_field",
+      "path": "StructFieldSchema-add_field.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/add_field.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1951,
+      "sha256": "5f17f8b396dcaefd586562dd85fb6ccc25d57010ce2b99c3297ae833c8dcf61f",
+      "h1": "add_field()",
+      "category": "StructFieldSchema"
+    },
+    {
+      "slug": "StructFieldSchema-construct_from_dict",
+      "path": "StructFieldSchema-construct_from_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/construct_from_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 1468,
+      "sha256": "50a4a8f1540fd98aac8b68b6fc0d053de91aff580bf4058a3836080ff3b96d1f",
+      "h1": "construct_from_dict()",
+      "category": "StructFieldSchema"
+    },
+    {
+      "slug": "StructFieldSchema-to_dict",
+      "path": "StructFieldSchema-to_dict.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/to_dict.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 922,
+      "sha256": "9c2dc2f2b92e7ca3de14a4a8e160187f332244c1db3970c7ab20f5b714907f5c",
+      "h1": "to_dict()",
+      "category": "StructFieldSchema"
+    },
+    {
+      "slug": "Vector-query",
+      "path": "Vector-query.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/query.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 14000,
+      "sha256": "af5620930d6c0bc3392457bee68446cbef6906e1b111d65638bd3358d57c5361",
+      "h1": "query()",
+      "category": "Vector"
+    },
+    {
+      "slug": "Vector-search",
+      "path": "Vector-search.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 16061,
+      "sha256": "d304a51af274c6f5669a8282af1c7ced5476202ef253f90c2f714cda222ca784",
+      "h1": "search()",
+      "category": "Vector"
+    },
+    {
+      "slug": "Vector-search_iterator",
+      "path": "Vector-search_iterator.md",
+      "prPath": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search_iterator.md",
+      "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e",
+      "bytes": 7725,
+      "sha256": "5a8cbb4cd9f23230a0524602f45232300650b63dcdcb93be3c2a6b1aa66d4078",
+      "h1": "search_iterator()",
+      "category": "Vector"
+    }
+  ],
+  "missingH1s": [],
+  "duplicateH1s": [],
+  "skippedUnitIds": []
+}

@@ -1,0 +1,228 @@
+{
+  "schemaVersion": 1,
+  "note": "pymilvus Reconcile wave category-create plan (2026-10-16 operator ruling). Keys are track versions; each entry is consumed by compose-pr-reconcile-candidate-spec.js --category-creates.",
+  "tracks": {
+    "v2.6.x": {
+      "track": "v2.6.x",
+      "versionRootToken": "IaWgf4osAlpdwqdVIclct97wnCg",
+      "milvusClientFolderToken": "B2fdfjb1nl9Pjidkaa9cM6lAngd",
+      "categories": [],
+      "cannotCreate": [
+        {
+          "category": "utility",
+          "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+          "units": [
+            "python:utility:delete_user",
+            "python:utility:has_collection",
+            "python:utility:has_partition",
+            "python:utility:wait_for_loading_complete"
+          ],
+          "liveRowsInFamily": 43
+        }
+      ]
+    },
+    "v3.0.x": {
+      "track": "v3.0.x",
+      "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+      "milvusClientFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+      "categories": [
+        {
+          "category": "Database",
+          "ref": "res:folder-Database",
+          "folder": {
+            "ref": "res:folder-Database",
+            "name": "Database",
+            "parentFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+            "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+            "parentAncestry": [
+              "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+              "BBPZfcRbOlWEnjdbIJgc3wgynsg"
+            ],
+            "existingLookup": {
+              "checked": true,
+              "absent": true,
+              "parentFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+              "name": "Database"
+            }
+          },
+          "repoint": {
+            "ref": "res:repoint-Database",
+            "recordId": "recuA1SRTlr3w2",
+            "title": "Database",
+            "folderRef": "res:folder-Database",
+            "currentFolderToken": "JT0gfXjE3lCqEAdn6jPcFbHgnnd",
+            "expectedFields": {
+              "Type": "VirtualNode",
+              "Targets": "MilvusZilliz",
+              "Progress": "Draft",
+              "Slug": "MilvusClient-Database"
+            },
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a",
+            "tableId": "tblKV2Wj45qrmD0J",
+            "existingLookup": {
+              "checked": true,
+              "matched": true,
+              "recordId": "recuA1SRTlr3w2",
+              "currentFolderToken": "JT0gfXjE3lCqEAdn6jPcFbHgnnd"
+            },
+            "currentFolderLinkRaw": "https://zilliverse.feishu.cn/drive/folder/https://zilliverse.feishu.cn/drive/folder/JT0gfXjE3lCqEAdn6jPcFbHgnnd",
+            "currentFolderLinkDefect": "the stored docLink is a doubled URL (folder/https://...); the token is recovered from the URL tail and must be confirmed against the live record before the repoint is executed"
+          },
+          "units": [
+            "python:Database:use_database"
+          ]
+        },
+        {
+          "category": "EmbeddingList",
+          "ref": "res:folder-EmbeddingList",
+          "folder": {
+            "ref": "res:folder-EmbeddingList",
+            "name": "EmbeddingList",
+            "parentFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+            "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+            "parentAncestry": [
+              "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+              "BBPZfcRbOlWEnjdbIJgc3wgynsg"
+            ],
+            "existingLookup": {
+              "checked": true,
+              "absent": true,
+              "parentFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+              "name": "EmbeddingList"
+            }
+          },
+          "repoint": null,
+          "units": [
+            "python:EmbeddingList:add",
+            "python:EmbeddingList:add_batch",
+            "python:EmbeddingList:clear",
+            "python:EmbeddingList:to_flat_array",
+            "python:EmbeddingList:to_numpy",
+            "python:MilvusClient:EmbeddingList"
+          ]
+        },
+        {
+          "category": "Highlighter",
+          "ref": "res:folder-Highlighter",
+          "folder": {
+            "ref": "res:folder-Highlighter",
+            "name": "Highlighter",
+            "parentFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+            "versionRootToken": "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+            "parentAncestry": [
+              "UxyTfjS3wl0TF8dn9tZcRT39nUe",
+              "BBPZfcRbOlWEnjdbIJgc3wgynsg"
+            ],
+            "existingLookup": {
+              "checked": true,
+              "absent": true,
+              "parentFolderToken": "BBPZfcRbOlWEnjdbIJgc3wgynsg",
+              "name": "Highlighter"
+            }
+          },
+          "repoint": {
+            "ref": "res:repoint-Highlighter",
+            "recordId": "recv96HaZ62rV3",
+            "title": "Highlighter",
+            "folderRef": "res:folder-Highlighter",
+            "currentFolderToken": "O7mqfZp5fleHncduy7HcWkdTnPb",
+            "expectedFields": {
+              "Type": "VirtualNode",
+              "Targets": "MilvusZilliz",
+              "Progress": "Draft",
+              "Slug": "MilvusClient-Highlighter"
+            },
+            "baseToken": "Hk05b5eI6aXXSSsd6j9cqwwMn5a",
+            "tableId": "tblKV2Wj45qrmD0J",
+            "existingLookup": {
+              "checked": true,
+              "matched": true,
+              "recordId": "recv96HaZ62rV3",
+              "currentFolderToken": "O7mqfZp5fleHncduy7HcWkdTnPb"
+            },
+            "currentFolderLinkRaw": null,
+            "currentFolderLinkDefect": null
+          },
+          "units": [
+            "python:Highlighter:LexicalHighlighter",
+            "python:Highlighter:SemanticHighlighter",
+            "python:Highlighter:with_query"
+          ]
+        }
+      ],
+      "cannotCreate": [
+        {
+          "category": "Collection",
+          "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+          "units": [
+            "python:Collection:construct_from_dataframe"
+          ],
+          "liveRowsInFamily": 28
+        },
+        {
+          "category": "ORM",
+          "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+          "units": [
+            "python:ORM:CollectionSchema"
+          ],
+          "liveRowsInFamily": 8
+        },
+        {
+          "category": "utility",
+          "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+          "units": [
+            "python:utility:delete_user",
+            "python:utility:has_collection",
+            "python:utility:has_partition",
+            "python:utility:wait_for_loading_complete"
+          ],
+          "liveRowsInFamily": 43
+        }
+      ]
+    }
+  },
+  "uncreatable": {
+    "v2.6.x": [
+      {
+        "category": "utility",
+        "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+        "units": [
+          "python:utility:delete_user",
+          "python:utility:has_collection",
+          "python:utility:has_partition",
+          "python:utility:wait_for_loading_complete"
+        ],
+        "liveRowsInFamily": 43
+      }
+    ],
+    "v3.0.x": [
+      {
+        "category": "Collection",
+        "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+        "units": [
+          "python:Collection:construct_from_dataframe"
+        ],
+        "liveRowsInFamily": 28
+      },
+      {
+        "category": "ORM",
+        "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+        "units": [
+          "python:ORM:CollectionSchema"
+        ],
+        "liveRowsInFamily": 8
+      },
+      {
+        "category": "utility",
+        "reason": "ORM branch folder lies outside the version root (TREE_DELTA_TARGET_OUTSIDE_VERSION_ROOT); the branch must be normalised under the track root before its pages can be repointed",
+        "units": [
+          "python:utility:delete_user",
+          "python:utility:has_collection",
+          "python:utility:has_partition",
+          "python:utility:wait_for_loading_complete"
+        ],
+        "liveRowsInFamily": 43
+      }
+    ]
+  }
+}

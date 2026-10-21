@@ -139,6 +139,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/finalize-acceptance-cli.test.js',
     '.claude/skills/api-reference-sync/tests/gate-presentation-check.test.js',
     '.claude/skills/api-reference-sync/tests/gate-presentation.test.js',
+    '.claude/skills/api-reference-sync/tests/golden-replay.test.js',
     '.claude/skills/api-reference-sync/tests/grouping-proposal.test.js',
     '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',
     '.claude/skills/api-reference-sync/tests/include-fragment-injection.test.js',

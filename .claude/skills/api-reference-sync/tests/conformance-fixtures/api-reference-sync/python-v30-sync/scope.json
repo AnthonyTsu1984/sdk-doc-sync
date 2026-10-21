@@ -1,0 +1,3298 @@
+{
+  "actions": [
+    {
+      "canonicalSlug": "Authentication-create_role",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/create_role.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1793",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/create_role.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1793,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Authentication:create_role",
+      "symbol": "MilvusClient.create_role",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Authentication-remove_privileges_from_group",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/remove_privileges_from_group.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2342",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/remove_privileges_from_group.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2342,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Authentication:remove_privileges_from_group",
+      "symbol": "MilvusClient.remove_privileges_from_group",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Authentication-revoke_privilege",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/revoke_privilege.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1884",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/revoke_privilege.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1884,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Authentication:revoke_privilege",
+      "symbol": "MilvusClient.revoke_privilege",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Client-session",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Client/session.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:112",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Client/session.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 112,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Client:session",
+      "symbol": "MilvusClient.session",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-add_collection_field",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_field.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1215",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_field.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1215,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:add_collection_field",
+      "symbol": "MilvusClient.add_collection_field",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-add_collection_function",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_function.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1299",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_function.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1299,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:add_collection_function",
+      "symbol": "MilvusClient.add_collection_function",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-add_collection_struct_field",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_struct_field.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1255",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_collection_struct_field.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1255,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:add_collection_struct_field",
+      "symbol": "MilvusClient.add_collection_struct_field",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-alter_collection_function",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_function.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1327",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_function.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1327,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:alter_collection_function",
+      "symbol": "MilvusClient.alter_collection_function",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-alter_collection_properties",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_properties.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1169",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_properties.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1169,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:alter_collection_properties",
+      "symbol": "MilvusClient.alter_collection_properties",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-create_collection",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_collection.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:117",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_collection.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 117,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:create_collection",
+      "symbol": "MilvusClient.create_collection",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-create_schema",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_schema.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/base.py:32",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_schema.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/base.py",
+        "line": 32,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:create_schema",
+      "symbol": "MilvusClient.create_schema",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-describe_collection",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/describe_collection.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:919",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        },
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/describe_collection.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:919",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/describe_collection.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 919,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:describe_collection",
+      "symbol": "MilvusClient.describe_collection",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-drop_collection_field",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/drop_collection_field.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1404",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/drop_collection_field.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1404,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:drop_collection_field",
+      "symbol": "MilvusClient.drop_collection_field",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-drop_collection_function",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/drop_collection_function.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1364",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/drop_collection_function.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1364,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:drop_collection_function",
+      "symbol": "MilvusClient.drop_collection_function",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-get_refresh_external_collection_progress",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/get_refresh_external_collection_progress.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3575",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/get_refresh_external_collection_progress.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3575,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:get_refresh_external_collection_progress",
+      "symbol": "MilvusClient.get_refresh_external_collection_progress",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-list_refresh_external_collection_jobs",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/list_refresh_external_collection_jobs.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3599",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/list_refresh_external_collection_jobs.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3599,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:list_refresh_external_collection_jobs",
+      "symbol": "MilvusClient.list_refresh_external_collection_jobs",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-refresh_external_collection",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/refresh_external_collection.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3546",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/refresh_external_collection.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3546,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:refresh_external_collection",
+      "symbol": "MilvusClient.refresh_external_collection",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Collections-truncate_collection",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/truncate_collection.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:959",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/truncate_collection.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 959,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Collections:truncate_collection",
+      "symbol": "MilvusClient.truncate_collection",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "CollectionSchema-add_field",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/add_field.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/add_field.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/add_field.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:CollectionSchema:add_field",
+      "symbol": "ORM.add_field",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "CollectionSchema-construct_from_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/construct_from_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/construct_from_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/construct_from_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:CollectionSchema:construct_from_dict",
+      "symbol": "ORM.construct_from_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "CollectionSchema-run_analyzer",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2497",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        },
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2497",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2497,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:CollectionSchema:run_analyzer",
+      "symbol": "MilvusClient.run_analyzer",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "CollectionSchema-to_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/to_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/to_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/to_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:CollectionSchema:to_dict",
+      "symbol": "MilvusClient.to_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "CollectionSchema-verify",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/verify.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/verify.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/verify.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:CollectionSchema:verify",
+      "symbol": "MilvusClient.verify",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Database-use_database",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Database/use_database.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2031",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Database/use_database.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2031,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Database:use_database",
+      "symbol": "MilvusClient.use_database",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "EmbeddingList-add_batch",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add_batch.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "client/embedding_list.py:162",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add_batch.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "client/embedding_list.py",
+        "line": 162,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:EmbeddingList:add_batch",
+      "symbol": "MilvusClient.add_batch",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "EmbeddingList-add",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "client/embedding_list.py:116",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "client/embedding_list.py",
+        "line": 116,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:EmbeddingList:add",
+      "symbol": "MilvusClient.add",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "EmbeddingList-clear",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/clear.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/clear.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/clear.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:EmbeddingList:clear",
+      "symbol": "MilvusClient.clear",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "EmbeddingList-to_flat_array",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_flat_array.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "client/embedding_list.py:235",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_flat_array.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "client/embedding_list.py",
+        "line": 235,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:EmbeddingList:to_flat_array",
+      "symbol": "MilvusClient.to_flat_array",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "EmbeddingList-to_numpy",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_numpy.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "client/embedding_list.py:251",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_numpy.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "client/embedding_list.py",
+        "line": 251,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:EmbeddingList:to_numpy",
+      "symbol": "MilvusClient.to_numpy",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "FieldSchema-construct_from_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/construct_from_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/construct_from_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/construct_from_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:FieldSchema:construct_from_dict",
+      "symbol": "MilvusClient.construct_from_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "FieldSchema-to_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/to_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/to_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/to_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:FieldSchema:to_dict",
+      "symbol": "MilvusClient.to_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Function-add_function_field",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_function_field.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1510",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/add_function_field.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1510,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Function:add_function_field",
+      "symbol": "MilvusClient.add_function_field",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Function-add_function",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/add_function.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "orm/schema.py:553",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/add_function.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "orm/schema.py",
+        "line": 553,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Function:add_function",
+      "symbol": "MilvusClient.add_function",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Function-construct_from_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/construct_from_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/construct_from_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/construct_from_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Function:construct_from_dict",
+      "symbol": "MilvusClient.construct_from_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Function-to_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/to_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/to_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/to_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Function:to_dict",
+      "symbol": "MilvusClient.to_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Function-verify",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/verify.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/verify.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/verify.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Function:verify",
+      "symbol": "MilvusClient.verify",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Highlighter-LexicalHighlighter",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/LexicalHighlighter.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "orm/schema.py:1132",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/LexicalHighlighter.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "orm/schema.py",
+        "line": 1132,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Highlighter:LexicalHighlighter",
+      "symbol": "MilvusClient.LexicalHighlighter",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Highlighter-with_query",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/with_query.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "orm/schema.py:1152",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/with_query.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "orm/schema.py",
+        "line": 1152,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Highlighter:with_query",
+      "symbol": "MilvusClient.with_query",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Management-alter_index_properties",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/alter_index_properties.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1133",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/alter_index_properties.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1133,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Management:alter_index_properties",
+      "symbol": "MilvusClient.alter_index_properties",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Management-compact",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/compact.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2116",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/compact.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2116,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Management:compact",
+      "symbol": "MilvusClient.compact",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Management-flush_all",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/flush_all.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2732",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/flush_all.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2732,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Management:flush_all",
+      "symbol": "MilvusClient.flush_all",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Management-get_flush_all_state",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/get_flush_all_state.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2743",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/get_flush_all_state.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2743,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Management:get_flush_all_state",
+      "symbol": "MilvusClient.get_flush_all_state",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Management-release_collection",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/release_collection.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:1034",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/release_collection.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 1034,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Management:release_collection",
+      "symbol": "MilvusClient.release_collection",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "MilvusClient-CollectionSchema",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/CollectionSchema.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/CollectionSchema.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/CollectionSchema.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:MilvusClient:CollectionSchema",
+      "symbol": "MilvusClient.CollectionSchema",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "MilvusClient-EmbeddingList",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/EmbeddingList.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "client/embedding_list.py:16",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/EmbeddingList.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "client/embedding_list.py",
+        "line": 16,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:MilvusClient:EmbeddingList",
+      "symbol": "MilvusClient.EmbeddingList",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "MilvusClient-FieldSchema",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/FieldSchema.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/FieldSchema.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/FieldSchema.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:MilvusClient:FieldSchema",
+      "symbol": "MilvusClient.FieldSchema",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "MilvusClient-Function",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/Function.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "orm/schema.py:946",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/Function.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "orm/schema.py",
+        "line": 946,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:MilvusClient:Function",
+      "symbol": "MilvusClient.Function",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "MilvusClient-FunctionScore",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/FunctionScore.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "orm/schema.py:1110",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/FunctionScore.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "orm/schema.py",
+        "line": 1110,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:MilvusClient:FunctionScore",
+      "symbol": "MilvusClient.FunctionScore",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "MilvusClient-StructFieldSchema",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/StructFieldSchema.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "orm/schema.py:771",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/StructFieldSchema.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "orm/schema.py",
+        "line": 771,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:MilvusClient:StructFieldSchema",
+      "symbol": "MilvusClient.StructFieldSchema",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "ResourceGroup-get_replicate_configuration",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/ResourceGroup/get_replicate_configuration.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2603",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/ResourceGroup/get_replicate_configuration.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2603,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:ResourceGroup:get_replicate_configuration",
+      "symbol": "MilvusClient.get_replicate_configuration",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "ResourceGroup-update_replicate_configuration",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/ResourceGroup/update_replicate_configuration.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:2529",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/ResourceGroup/update_replicate_configuration.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 2529,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:ResourceGroup:update_replicate_configuration",
+      "symbol": "MilvusClient.update_replicate_configuration",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-describe_snapshot",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/describe_snapshot.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3256",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/describe_snapshot.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3256,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:describe_snapshot",
+      "symbol": "MilvusClient.describe_snapshot",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-drop_snapshot",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/drop_snapshot.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3182",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        },
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/drop_snapshot.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3182",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/drop_snapshot.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3182,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:drop_snapshot",
+      "symbol": "MilvusClient.drop_snapshot",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-list_restore_snapshot_jobs",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_restore_snapshot_jobs.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3405",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_restore_snapshot_jobs.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3405,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:list_restore_snapshot_jobs",
+      "symbol": "MilvusClient.list_restore_snapshot_jobs",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-list_snapshots",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_snapshots.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3219",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        },
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_snapshots.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3219",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_snapshots.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3219,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:list_snapshots",
+      "symbol": "MilvusClient.list_snapshots",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-pin_snapshot_data",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/pin_snapshot_data.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3444",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/pin_snapshot_data.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3444,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:pin_snapshot_data",
+      "symbol": "MilvusClient.pin_snapshot_data",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-restore_snapshot",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/restore_snapshot.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3305",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/restore_snapshot.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3305,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:restore_snapshot",
+      "symbol": "MilvusClient.restore_snapshot",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Snapshot-unpin_snapshot_data",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/unpin_snapshot_data.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:3486",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/unpin_snapshot_data.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 3486,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Snapshot:unpin_snapshot_data",
+      "symbol": "MilvusClient.unpin_snapshot_data",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "StructFieldSchema-add_field",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/add_field.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/add_field.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/add_field.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:StructFieldSchema:add_field",
+      "symbol": "MilvusClient.add_field",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "StructFieldSchema-construct_from_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/construct_from_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/construct_from_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/construct_from_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:StructFieldSchema:construct_from_dict",
+      "symbol": "MilvusClient.construct_from_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "StructFieldSchema-to_dict",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/to_dict.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        }
+      ],
+      "pr": {
+        "changeType": "RENAMED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/to_dict.md",
+        "verifyTier": "type-page"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/to_dict.md",
+        "line": 1,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:StructFieldSchema:to_dict",
+      "symbol": "MilvusClient.to_dict",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Vector-query",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/query.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:498",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/query.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 498,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Vector:query",
+      "symbol": "MilvusClient.query",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Vector-search_iterator",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search_iterator.md",
+          "revision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:598",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1181,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search_iterator.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 598,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Vector:search_iterator",
+      "symbol": "MilvusClient.search_iterator",
+      "type": "UPDATE"
+    },
+    {
+      "canonicalSlug": "Vector-search",
+      "documentationOwnership": {
+        "classification": "standalone"
+      },
+      "evidence": [
+        {
+          "confidence": "direct",
+          "kind": "pr",
+          "locator": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search.md",
+          "revision": "c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8"
+        },
+        {
+          "confidence": "direct",
+          "kind": "source",
+          "locator": "milvus_client/milvus_client.py:422",
+          "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+        }
+      ],
+      "pr": {
+        "changeType": "MODIFIED",
+        "number": 1173,
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search.md",
+        "verifyTier": "method"
+      },
+      "reason": "pr-doc-update",
+      "source": {
+        "file": "milvus_client/milvus_client.py",
+        "line": 422,
+        "repository": "milvus-io/pymilvus",
+        "revision": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11"
+      },
+      "stableId": "python:Vector:search",
+      "symbol": "MilvusClient.search",
+      "type": "UPDATE"
+    }
+  ],
+  "approvalGrade": true,
+  "baselineTag": "v3.0.2",
+  "changedFiles": [
+    "client/embedding_list.py",
+    "milvus_client/base.py",
+    "milvus_client/milvus_client.py",
+    "orm/collection.py",
+    "orm/schema.py",
+    "orm/utility.py"
+  ],
+  "language": "python",
+  "pr": {
+    "baseRef": "master",
+    "files": [
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/remove_privileges_from_group.md",
+        "symbol": "MilvusClient.remove_privileges_from_group"
+      },
+      {
+        "changeType": "REMOVED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/revoke_privileges.md",
+        "symbol": "MilvusClient.revoke_privileges"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/run_analyzer.md",
+        "symbol": "MilvusClient.run_analyzer"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/alter_collection_properties.md",
+        "symbol": "MilvusClient.alter_collection_properties"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/describe_collection.md",
+        "symbol": "MilvusClient.describe_collection"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/get_refresh_external_collection_progress.md",
+        "symbol": "MilvusClient.get_refresh_external_collection_progress"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/list_refresh_external_collection_jobs.md",
+        "symbol": "MilvusClient.list_refresh_external_collection_jobs"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/refresh_external_collection.md",
+        "symbol": "MilvusClient.refresh_external_collection"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/alter_index_properties.md",
+        "symbol": "MilvusClient.alter_index_properties"
+      },
+      {
+        "changeType": "REMOVED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/get_compact_state.md",
+        "symbol": "MilvusClient.get_compact_state"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/get_flush_all_state.md",
+        "symbol": "MilvusClient.get_flush_all_state"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Management/release_collection.md",
+        "symbol": "MilvusClient.release_collection"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/describe_snapshot.md",
+        "symbol": "MilvusClient.describe_snapshot"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/drop_snapshot.md",
+        "symbol": "MilvusClient.drop_snapshot"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_restore_snapshot_jobs.md",
+        "symbol": "MilvusClient.list_restore_snapshot_jobs"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Snapshot/list_snapshots.md",
+        "symbol": "MilvusClient.list_snapshots"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/query.md",
+        "symbol": "MilvusClient.query"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/search_iterator.md",
+        "symbol": "MilvusClient.search_iterator"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/ORM/utility/delete_user.md",
+        "symbol": "ORM.delete_user"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/ORM/utility/has_collection.md",
+        "symbol": "ORM.has_collection"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/ORM/utility/has_partition.md",
+        "symbol": "ORM.has_partition"
+      },
+      {
+        "changeType": "MODIFIED",
+        "path": "API_Reference/pymilvus/v3.0.x/ORM/utility/wait_for_loading_complete.md",
+        "symbol": "ORM.wait_for_loading_complete"
+      }
+    ],
+    "headRef": "sdk/pymilvus-doc-reconcile",
+    "mergedAt": "2026-10-14T10:26:04Z",
+    "number": 1181,
+    "repository": "milvus-io/web-content",
+    "state": "MERGED",
+    "title": "Fix and reconcile pymilvus v2.6.x and v3.0.x API reference",
+    "webContentRevision": "36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e"
+  },
+  "releaseRange": "v3.0.2..v3.0.2",
+  "scanStateUpdated": false,
+  "scannerDiagnostics": [
+    {
+      "code": "PR_MERGED",
+      "level": "info",
+      "message": "PR #1173 (Align pymilvus v3.0.x API reference: move type pages to categories, add RETURNS sections) is MERGED merged at 2026-10-10T06:24:46Z; web-content pinned at c2fa9c8fc04b071dc320ca6279810f94bdcbeaa8."
+    },
+    {
+      "code": "PR_MERGED",
+      "level": "info",
+      "message": "PR #1181 (Fix and reconcile pymilvus v2.6.x and v3.0.x API reference) is MERGED merged at 2026-10-14T10:26:04Z; web-content pinned at 36a9b34dfb00e3584a30f362b6b3aa45b2eecd1e."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/create_schema.md: no category-derived candidate matched; bound by unique page name to BaseMilvusClient.create_schema \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/add_function.md: no category-derived candidate matched; bound by unique page name to CollectionSchema.add_function \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/Function.md: no category-derived candidate matched; bound by unique page name to Function \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/StructFieldSchema.md: no category-derived candidate matched; bound by unique page name to StructFieldSchema \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add_batch.md: no category-derived candidate matched; bound by unique page name to EmbeddingList.add_batch \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/add.md: no category-derived candidate matched; bound by unique page name to EmbeddingList.add \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/EmbeddingList.md: no category-derived candidate matched; bound by unique page name to EmbeddingList \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_flat_array.md: no category-derived candidate matched; bound by unique page name to EmbeddingList.to_flat_array \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/to_numpy.md: no category-derived candidate matched; bound by unique page name to EmbeddingList.to_numpy \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/FunctionScore.md: no category-derived candidate matched; bound by unique page name to FunctionScore \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/LexicalHighlighter.md: no category-derived candidate matched; bound by unique page name to LexicalHighlighter \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/SemanticHighlighter.md: no category-derived candidate matched; bound by unique page name to SemanticHighlighter \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/Highlighter/with_query.md: no category-derived candidate matched; bound by unique page name to LexicalHighlighter.with_query \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/Collection/construct_from_dataframe.md: no category-derived candidate matched; bound by unique page name to Collection.construct_from_dataframe \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_SYMBOL_FALLBACK_BIND",
+      "level": "info",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/utility/wait_for_loading_complete.md: no category-derived candidate matched; bound by unique page name to wait_for_loading_complete \u2014 the category binding is unverified and must be confirmed at grouping review."
+    },
+    {
+      "code": "PR_TRACK_FILTERED",
+      "level": "info",
+      "message": "--scan-track pymilvus/v3.0.x: excluded pymilvus/v2.6.x (17 file(s)); scan one track per PR."
+    },
+    {
+      "code": "IDENTITY_MAP_INCOMPLETE",
+      "level": "warn",
+      "message": "366 governed record slug(s) resolve to no canonical identity in the identity map and are invisible to scans: Authentication-add_privileges_to_group, Authentication-alter_role, Authentication-create_privilege_group, Authentication-create_role, Authentication-create_user, Authentication-describe_role, Authentication-describe_user, Authentication-drop_privilege_group, Authentication-drop_role, Authentication-drop_user, Authentication-grant_privilege, Authentication-grant_privilege_v2, Authentication-grant_role, Authentication-list_privilege_groups, Authentication-list_roles, Authentication-list_users, Authentication-remove_privileges_from_group, Authentication-revoke_privilege, Authentication-revoke_privilege_v2, Authentication-revoke_privileges, Authentication-revoke_role, Authentication-update_password, Authentication-update_user, BGEM3EmbeddingFunction-__call__, BGEM3EmbeddingFunction-encode_documents, BGEM3EmbeddingFunction-encode_queries, BGERerankFunction-__call__, BM25EmbeddingFunction-encode_documents, BM25EmbeddingFunction-encode_queries, BM25EmbeddingFunction-fit, BM25EmbeddingFunction-load, BM25EmbeddingFunction-save, BulkImport-bulk_import, BulkImport-get_import_progress, BulkImport-list_import_jobs, Client-AsyncMilvusClient, Client-MilvusClient, Client-close, Client-session, CohereEmbeddingFunction-__call__, CohereEmbeddingFunction-encode_documents, CohereEmbeddingFunction-encode_queries, CohereRerankFunction-__call__, Collection-compact, Collection-construct_from_dataframe, Collection-create_index, Collection-create_partition, Collection-delete, Collection-describe, Collection-drop, Collection-drop_index, Collection-drop_partition, Collection-flush, Collection-get_compaction_plans, Collection-get_compaction_state, Collection-get_replicas, Collection-has_index, Collection-has_partition, Collection-hybrid_search, Collection-index, Collection-insert, Collection-load, Collection-partition, Collection-query, Collection-query_iterator, Collection-release, Collection-search, Collection-search_iterator, Collection-set_properties, Collection-upsert, Collection-wait_for_compaction_completed, CollectionSchema-add_field, CollectionSchema-construct_from_dict, CollectionSchema-run_analyzer, CollectionSchema-to_dict, CollectionSchema-verify, Collections-DataType, Collections-FunctionType, Collections-IndexType, Collections-add_collection_field, Collections-add_collection_function, Collections-add_collection_struct_field, Collections-alter_alias, Collections-alter_collection_field, Collections-alter_collection_function, Collections-alter_collection_properties, Collections-create_alias, Collections-create_collection, Collections-create_schema, Collections-describe_alias, Collections-describe_collection, Collections-drop_alias, Collections-drop_collection, Collections-drop_collection_field, Collections-drop_collection_function, Collections-drop_collection_properties, Collections-get_collection_stats, Collections-get_refresh_external_collection_progress, Collections-has_collection, Collections-list_aliases, Collections-list_collections, Collections-list_refresh_external_collection_jobs, Collections-refresh_external_collection, Collections-rename_collection, Collections-truncate_collection, Connections-add_connection, Connections-connect, Connections-disconnect, Connections-get_connection_addr, Connections-has_connection, Connections-list_connections, Connections-remove_connection, CrossEncoderRerankFunction-__call__, DataImport-BulkFileType, DataImport-BulkImport, DataImport-LocalBulkWriter, DataImport-RemoteBulkWriter, DataImport-VolumeBulkWriter, Database-alter_database_properties, Database-create_database, Database-describe_database, Database-drop_database, Database-drop_database_properties, Database-list_databases, Database-use_database, Database-using_database, EmbeddingList-add, EmbeddingList-add_batch, EmbeddingList-clear, EmbeddingList-to_flat_array, EmbeddingList-to_numpy, EmbeddingModels-BGEM3EmbeddingFunction, EmbeddingModels-BM25EmbeddingFunction, EmbeddingModels-CohereEmbeddingFunction, EmbeddingModels-GeminiEmbeddingFunction, EmbeddingModels-InstructorEmbeddingFunction, EmbeddingModels-JinaEmbeddingFunction, EmbeddingModels-MGTEEmbeddingFunction, EmbeddingModels-MistralAIEmbeddingFunction, EmbeddingModels-Model2VecEmbeddingFunction, EmbeddingModels-NomicEmbeddingFunction, EmbeddingModels-OnnxEmbeddingFunction, EmbeddingModels-OpenAIEmbeddingFunction, EmbeddingModels-SentenceTransformerEmbeddingFunction, EmbeddingModels-SpladeEmbeddingFunction, EmbeddingModels-VoyageEmbeddingFunction, FieldOp-FieldOpType, FieldSchema-construct_from_dict, FieldSchema-to_dict, FileResource-add_file_resource, FileResource-list_file_resources, FileResource-remove_file_resource, Function-add_function, Function-add_function_field, Function-construct_from_dict, Function-drop_function_field, Function-to_dict, Function-verify, FunctionChain-FunctionChainStage, GeminiEmbeddingFunction-__call__, GeminiEmbeddingFunction-encode_documents, GeminiEmbeddingFunction-encode_queries, Highlighter-LexicalHighlighter, Highlighter-SemanticHighlighter, Highlighter-with_query, InstructorEmbeddingFunction-__call__, InstructorEmbeddingFunction-encode_documents, InstructorEmbeddingFunction-encode_queries, JinaEmbeddingFunction-__call__, JinaEmbeddingFunction-encode_documents, JinaEmbeddingFunction-encode_queries, JinaRerankFunction-__call__, LocalBulkWriter-append_row, LocalBulkWriter-commit, MGTEEmbeddingFunction-__call__, MGTEEmbeddingFunction-encode_documents, MGTEEmbeddingFunction-encode_queries, Management-add_index, Management-alter_index_properties, Management-compact, Management-create_index, Management-describe_index, Management-drop_index, Management-drop_index_properties, Management-dump_messages, Management-flush, Management-flush_all, Management-get_compact_state, Management-get_compaction_plans, Management-get_compaction_state, Management-get_flush_all_state, Management-get_load_state, Management-get_replicate_info, Management-get_server_version, Management-list_compaction_tasks, Management-list_indexes, Management-list_loaded_segments, Management-list_persistent_segments, Management-list_segments, Management-load_collection, Management-optimize, Management-prepare_index_params, Management-refresh_load, Management-release_collection, MilvusClient-EmbeddingList, MilvusClient-Function, MilvusClient-FunctionChain, MilvusClient-FunctionScore, MilvusClient-StructFieldSchema, MistralAIEmbeddingFunction-__call__, MistralAIEmbeddingFunction-encode_documents, MistralAIEmbeddingFunction-encode_queries, Model2VecEmbeddingFunction-__call__, Model2VecEmbeddingFunction-encode_documents, Model2VecEmbeddingFunction-encode_queries, NomicEmbeddingFunction-__call__, NomicEmbeddingFunction-encode_documents, NomicEmbeddingFunction-encode_queries, ORM-Collection, ORM-CollectionSchema, ORM-Connections, ORM-Partition, ORM-Role, ORM-db, ORM-utility, OnnxEmbeddingFunction-__call__, OnnxEmbeddingFunction-encode_documents, OnnxEmbeddingFunction-encode_queries, OpenAIEmbeddingFunction-__call__, OpenAIEmbeddingFunction-encode_documents, OpenAIEmbeddingFunction-encode_queries, Partition-delete, Partition-drop, Partition-flush, Partition-get_replicas, Partition-insert, Partition-load, Partition-query, Partition-release, Partition-search, Partition-upsert, Partitions-create_partition, Partitions-drop_partition, Partitions-get_partition_stats, Partitions-has_partition, Partitions-list_partitions, Partitions-load_partitions, Partitions-release_partitions, RemoteBulkWriter-AzureConnectParam, RemoteBulkWriter-S3ConnectParam, RemoteBulkWriter-append_row, RemoteBulkWriter-commit, Rerankers-BGERerankFunction, Rerankers-CohereRerankFunction, Rerankers-CrossEncoderRerankFunction, Rerankers-JinaRerankFunction, Rerankers-VoyageRerankFunction, ResourceGroup-ResourceGroupConfig, ResourceGroup-create_resource_group, ResourceGroup-describe_replica, ResourceGroup-describe_resource_group, ResourceGroup-drop_resource_group, ResourceGroup-get_replicate_configuration, ResourceGroup-list_resource_groups, ResourceGroup-transfer_replica, ResourceGroup-update_replicate_configuration, ResourceGroup-update_resource_groups, Role-add_user, Role-create, Role-drop, Role-get_users, Role-grant, Role-is_exist, Role-list_grant, Role-list_grants, Role-remove_user, Role-revoke, SentenceTransformerEmbeddingFunction-__call__, SentenceTransformerEmbeddingFunction-encode_documents, SentenceTransformerEmbeddingFunction-encode_queries, Snapshot-create_snapshot, Snapshot-describe_snapshot, Snapshot-drop_snapshot, Snapshot-get_restore_snapshot_state, Snapshot-list_restore_snapshot_jobs, Snapshot-list_snapshots, Snapshot-pin_snapshot_data, Snapshot-restore_snapshot, Snapshot-unpin_snapshot_data, SpladeEmbeddingFunction-__call__, SpladeEmbeddingFunction-encode_documents, SpladeEmbeddingFunction-encode_queries, StructFieldSchema-add_field, StructFieldSchema-construct_from_dict, StructFieldSchema-to_dict, Vector-AggregationBucket, Vector-AggregationHit, Vector-FieldOp, Vector-SearchAggregation, Vector-TopHits, Vector-delete, Vector-get, Vector-hybrid_search, Vector-insert, Vector-query, Vector-query_iterator, Vector-search, Vector-search_iterator, Vector-upsert, Volume-VolumeFileManager, Volume-VolumeManager, VolumeManager-create_volume, VolumeManager-delete_volume, VolumeManager-describe_volume, VolumeManager-list_volumes, VoyageEmbeddingFunction-__call__, VoyageEmbeddingFunction-encode_documents, VoyageEmbeddingFunction-encode_queries, VoyageRerankFunction-__call__, db-create_database, db-drop_database, db-list_database, db-using_database, utility-BulkInsertState, utility-alter_alias, utility-create_alias, utility-create_resource_group, utility-create_user, utility-delete_user, utility-describe_resource_group, utility-do_bulk_insert, utility-drop_alias, utility-drop_collection, utility-drop_resource_group, utility-flush_all, utility-get_bulk_insert_state, utility-get_query_segment_info, utility-get_server_type, utility-get_server_version, utility-has_collection, utility-has_partition, utility-hybridts_to_datetime, utility-hybridts_to_unixtime, utility-index_building_progress, utility-list_aliases, utility-list_bulk_insert_tasks, utility-list_collections, utility-list_indexes, utility-list_resource_groups, utility-list_roles, utility-list_user, utility-list_usernames, utility-list_users, utility-load_balance, utility-load_state, utility-loading_progress, utility-mkts_from_datetime, utility-mkts_from_hybridts, utility-mkts_from_unixtime, utility-rename_collection, utility-reset_password, utility-transfer_node, utility-transfer_replica, utility-update_password, utility-wait_for_index_building_complete, utility-wait_for_loading_complete.",
+      "slugs": [
+        "Authentication-add_privileges_to_group",
+        "Authentication-alter_role",
+        "Authentication-create_privilege_group",
+        "Authentication-create_role",
+        "Authentication-create_user",
+        "Authentication-describe_role",
+        "Authentication-describe_user",
+        "Authentication-drop_privilege_group",
+        "Authentication-drop_role",
+        "Authentication-drop_user",
+        "Authentication-grant_privilege",
+        "Authentication-grant_privilege_v2",
+        "Authentication-grant_role",
+        "Authentication-list_privilege_groups",
+        "Authentication-list_roles",
+        "Authentication-list_users",
+        "Authentication-remove_privileges_from_group",
+        "Authentication-revoke_privilege",
+        "Authentication-revoke_privilege_v2",
+        "Authentication-revoke_privileges",
+        "Authentication-revoke_role",
+        "Authentication-update_password",
+        "Authentication-update_user",
+        "BGEM3EmbeddingFunction-__call__",
+        "BGEM3EmbeddingFunction-encode_documents",
+        "BGEM3EmbeddingFunction-encode_queries",
+        "BGERerankFunction-__call__",
+        "BM25EmbeddingFunction-encode_documents",
+        "BM25EmbeddingFunction-encode_queries",
+        "BM25EmbeddingFunction-fit",
+        "BM25EmbeddingFunction-load",
+        "BM25EmbeddingFunction-save",
+        "BulkImport-bulk_import",
+        "BulkImport-get_import_progress",
+        "BulkImport-list_import_jobs",
+        "Client-AsyncMilvusClient",
+        "Client-MilvusClient",
+        "Client-close",
+        "Client-session",
+        "CohereEmbeddingFunction-__call__",
+        "CohereEmbeddingFunction-encode_documents",
+        "CohereEmbeddingFunction-encode_queries",
+        "CohereRerankFunction-__call__",
+        "Collection-compact",
+        "Collection-construct_from_dataframe",
+        "Collection-create_index",
+        "Collection-create_partition",
+        "Collection-delete",
+        "Collection-describe",
+        "Collection-drop",
+        "Collection-drop_index",
+        "Collection-drop_partition",
+        "Collection-flush",
+        "Collection-get_compaction_plans",
+        "Collection-get_compaction_state",
+        "Collection-get_replicas",
+        "Collection-has_index",
+        "Collection-has_partition",
+        "Collection-hybrid_search",
+        "Collection-index",
+        "Collection-insert",
+        "Collection-load",
+        "Collection-partition",
+        "Collection-query",
+        "Collection-query_iterator",
+        "Collection-release",
+        "Collection-search",
+        "Collection-search_iterator",
+        "Collection-set_properties",
+        "Collection-upsert",
+        "Collection-wait_for_compaction_completed",
+        "CollectionSchema-add_field",
+        "CollectionSchema-construct_from_dict",
+        "CollectionSchema-run_analyzer",
+        "CollectionSchema-to_dict",
+        "CollectionSchema-verify",
+        "Collections-DataType",
+        "Collections-FunctionType",
+        "Collections-IndexType",
+        "Collections-add_collection_field",
+        "Collections-add_collection_function",
+        "Collections-add_collection_struct_field",
+        "Collections-alter_alias",
+        "Collections-alter_collection_field",
+        "Collections-alter_collection_function",
+        "Collections-alter_collection_properties",
+        "Collections-create_alias",
+        "Collections-create_collection",
+        "Collections-create_schema",
+        "Collections-describe_alias",
+        "Collections-describe_collection",
+        "Collections-drop_alias",
+        "Collections-drop_collection",
+        "Collections-drop_collection_field",
+        "Collections-drop_collection_function",
+        "Collections-drop_collection_properties",
+        "Collections-get_collection_stats",
+        "Collections-get_refresh_external_collection_progress",
+        "Collections-has_collection",
+        "Collections-list_aliases",
+        "Collections-list_collections",
+        "Collections-list_refresh_external_collection_jobs",
+        "Collections-refresh_external_collection",
+        "Collections-rename_collection",
+        "Collections-truncate_collection",
+        "Connections-add_connection",
+        "Connections-connect",
+        "Connections-disconnect",
+        "Connections-get_connection_addr",
+        "Connections-has_connection",
+        "Connections-list_connections",
+        "Connections-remove_connection",
+        "CrossEncoderRerankFunction-__call__",
+        "DataImport-BulkFileType",
+        "DataImport-BulkImport",
+        "DataImport-LocalBulkWriter",
+        "DataImport-RemoteBulkWriter",
+        "DataImport-VolumeBulkWriter",
+        "Database-alter_database_properties",
+        "Database-create_database",
+        "Database-describe_database",
+        "Database-drop_database",
+        "Database-drop_database_properties",
+        "Database-list_databases",
+        "Database-use_database",
+        "Database-using_database",
+        "EmbeddingList-add",
+        "EmbeddingList-add_batch",
+        "EmbeddingList-clear",
+        "EmbeddingList-to_flat_array",
+        "EmbeddingList-to_numpy",
+        "EmbeddingModels-BGEM3EmbeddingFunction",
+        "EmbeddingModels-BM25EmbeddingFunction",
+        "EmbeddingModels-CohereEmbeddingFunction",
+        "EmbeddingModels-GeminiEmbeddingFunction",
+        "EmbeddingModels-InstructorEmbeddingFunction",
+        "EmbeddingModels-JinaEmbeddingFunction",
+        "EmbeddingModels-MGTEEmbeddingFunction",
+        "EmbeddingModels-MistralAIEmbeddingFunction",
+        "EmbeddingModels-Model2VecEmbeddingFunction",
+        "EmbeddingModels-NomicEmbeddingFunction",
+        "EmbeddingModels-OnnxEmbeddingFunction",
+        "EmbeddingModels-OpenAIEmbeddingFunction",
+        "EmbeddingModels-SentenceTransformerEmbeddingFunction",
+        "EmbeddingModels-SpladeEmbeddingFunction",
+        "EmbeddingModels-VoyageEmbeddingFunction",
+        "FieldOp-FieldOpType",
+        "FieldSchema-construct_from_dict",
+        "FieldSchema-to_dict",
+        "FileResource-add_file_resource",
+        "FileResource-list_file_resources",
+        "FileResource-remove_file_resource",
+        "Function-add_function",
+        "Function-add_function_field",
+        "Function-construct_from_dict",
+        "Function-drop_function_field",
+        "Function-to_dict",
+        "Function-verify",
+        "FunctionChain-FunctionChainStage",
+        "GeminiEmbeddingFunction-__call__",
+        "GeminiEmbeddingFunction-encode_documents",
+        "GeminiEmbeddingFunction-encode_queries",
+        "Highlighter-LexicalHighlighter",
+        "Highlighter-SemanticHighlighter",
+        "Highlighter-with_query",
+        "InstructorEmbeddingFunction-__call__",
+        "InstructorEmbeddingFunction-encode_documents",
+        "InstructorEmbeddingFunction-encode_queries",
+        "JinaEmbeddingFunction-__call__",
+        "JinaEmbeddingFunction-encode_documents",
+        "JinaEmbeddingFunction-encode_queries",
+        "JinaRerankFunction-__call__",
+        "LocalBulkWriter-append_row",
+        "LocalBulkWriter-commit",
+        "MGTEEmbeddingFunction-__call__",
+        "MGTEEmbeddingFunction-encode_documents",
+        "MGTEEmbeddingFunction-encode_queries",
+        "Management-add_index",
+        "Management-alter_index_properties",
+        "Management-compact",
+        "Management-create_index",
+        "Management-describe_index",
+        "Management-drop_index",
+        "Management-drop_index_properties",
+        "Management-dump_messages",
+        "Management-flush",
+        "Management-flush_all",
+        "Management-get_compact_state",
+        "Management-get_compaction_plans",
+        "Management-get_compaction_state",
+        "Management-get_flush_all_state",
+        "Management-get_load_state",
+        "Management-get_replicate_info",
+        "Management-get_server_version",
+        "Management-list_compaction_tasks",
+        "Management-list_indexes",
+        "Management-list_loaded_segments",
+        "Management-list_persistent_segments",
+        "Management-list_segments",
+        "Management-load_collection",
+        "Management-optimize",
+        "Management-prepare_index_params",
+        "Management-refresh_load",
+        "Management-release_collection",
+        "MilvusClient-EmbeddingList",
+        "MilvusClient-Function",
+        "MilvusClient-FunctionChain",
+        "MilvusClient-FunctionScore",
+        "MilvusClient-StructFieldSchema",
+        "MistralAIEmbeddingFunction-__call__",
+        "MistralAIEmbeddingFunction-encode_documents",
+        "MistralAIEmbeddingFunction-encode_queries",
+        "Model2VecEmbeddingFunction-__call__",
+        "Model2VecEmbeddingFunction-encode_documents",
+        "Model2VecEmbeddingFunction-encode_queries",
+        "NomicEmbeddingFunction-__call__",
+        "NomicEmbeddingFunction-encode_documents",
+        "NomicEmbeddingFunction-encode_queries",
+        "ORM-Collection",
+        "ORM-CollectionSchema",
+        "ORM-Connections",
+        "ORM-Partition",
+        "ORM-Role",
+        "ORM-db",
+        "ORM-utility",
+        "OnnxEmbeddingFunction-__call__",
+        "OnnxEmbeddingFunction-encode_documents",
+        "OnnxEmbeddingFunction-encode_queries",
+        "OpenAIEmbeddingFunction-__call__",
+        "OpenAIEmbeddingFunction-encode_documents",
+        "OpenAIEmbeddingFunction-encode_queries",
+        "Partition-delete",
+        "Partition-drop",
+        "Partition-flush",
+        "Partition-get_replicas",
+        "Partition-insert",
+        "Partition-load",
+        "Partition-query",
+        "Partition-release",
+        "Partition-search",
+        "Partition-upsert",
+        "Partitions-create_partition",
+        "Partitions-drop_partition",
+        "Partitions-get_partition_stats",
+        "Partitions-has_partition",
+        "Partitions-list_partitions",
+        "Partitions-load_partitions",
+        "Partitions-release_partitions",
+        "RemoteBulkWriter-AzureConnectParam",
+        "RemoteBulkWriter-S3ConnectParam",
+        "RemoteBulkWriter-append_row",
+        "RemoteBulkWriter-commit",
+        "Rerankers-BGERerankFunction",
+        "Rerankers-CohereRerankFunction",
+        "Rerankers-CrossEncoderRerankFunction",
+        "Rerankers-JinaRerankFunction",
+        "Rerankers-VoyageRerankFunction",
+        "ResourceGroup-ResourceGroupConfig",
+        "ResourceGroup-create_resource_group",
+        "ResourceGroup-describe_replica",
+        "ResourceGroup-describe_resource_group",
+        "ResourceGroup-drop_resource_group",
+        "ResourceGroup-get_replicate_configuration",
+        "ResourceGroup-list_resource_groups",
+        "ResourceGroup-transfer_replica",
+        "ResourceGroup-update_replicate_configuration",
+        "ResourceGroup-update_resource_groups",
+        "Role-add_user",
+        "Role-create",
+        "Role-drop",
+        "Role-get_users",
+        "Role-grant",
+        "Role-is_exist",
+        "Role-list_grant",
+        "Role-list_grants",
+        "Role-remove_user",
+        "Role-revoke",
+        "SentenceTransformerEmbeddingFunction-__call__",
+        "SentenceTransformerEmbeddingFunction-encode_documents",
+        "SentenceTransformerEmbeddingFunction-encode_queries",
+        "Snapshot-create_snapshot",
+        "Snapshot-describe_snapshot",
+        "Snapshot-drop_snapshot",
+        "Snapshot-get_restore_snapshot_state",
+        "Snapshot-list_restore_snapshot_jobs",
+        "Snapshot-list_snapshots",
+        "Snapshot-pin_snapshot_data",
+        "Snapshot-restore_snapshot",
+        "Snapshot-unpin_snapshot_data",
+        "SpladeEmbeddingFunction-__call__",
+        "SpladeEmbeddingFunction-encode_documents",
+        "SpladeEmbeddingFunction-encode_queries",
+        "StructFieldSchema-add_field",
+        "StructFieldSchema-construct_from_dict",
+        "StructFieldSchema-to_dict",
+        "Vector-AggregationBucket",
+        "Vector-AggregationHit",
+        "Vector-FieldOp",
+        "Vector-SearchAggregation",
+        "Vector-TopHits",
+        "Vector-delete",
+        "Vector-get",
+        "Vector-hybrid_search",
+        "Vector-insert",
+        "Vector-query",
+        "Vector-query_iterator",
+        "Vector-search",
+        "Vector-search_iterator",
+        "Vector-upsert",
+        "Volume-VolumeFileManager",
+        "Volume-VolumeManager",
+        "VolumeManager-create_volume",
+        "VolumeManager-delete_volume",
+        "VolumeManager-describe_volume",
+        "VolumeManager-list_volumes",
+        "VoyageEmbeddingFunction-__call__",
+        "VoyageEmbeddingFunction-encode_documents",
+        "VoyageEmbeddingFunction-encode_queries",
+        "VoyageRerankFunction-__call__",
+        "db-create_database",
+        "db-drop_database",
+        "db-list_database",
+        "db-using_database",
+        "utility-BulkInsertState",
+        "utility-alter_alias",
+        "utility-create_alias",
+        "utility-create_resource_group",
+        "utility-create_user",
+        "utility-delete_user",
+        "utility-describe_resource_group",
+        "utility-do_bulk_insert",
+        "utility-drop_alias",
+        "utility-drop_collection",
+        "utility-drop_resource_group",
+        "utility-flush_all",
+        "utility-get_bulk_insert_state",
+        "utility-get_query_segment_info",
+        "utility-get_server_type",
+        "utility-get_server_version",
+        "utility-has_collection",
+        "utility-has_partition",
+        "utility-hybridts_to_datetime",
+        "utility-hybridts_to_unixtime",
+        "utility-index_building_progress",
+        "utility-list_aliases",
+        "utility-list_bulk_insert_tasks",
+        "utility-list_collections",
+        "utility-list_indexes",
+        "utility-list_resource_groups",
+        "utility-list_roles",
+        "utility-list_user",
+        "utility-list_usernames",
+        "utility-list_users",
+        "utility-load_balance",
+        "utility-load_state",
+        "utility-loading_progress",
+        "utility-mkts_from_datetime",
+        "utility-mkts_from_hybridts",
+        "utility-mkts_from_unixtime",
+        "utility-rename_collection",
+        "utility-reset_password",
+        "utility-transfer_node",
+        "utility-transfer_replica",
+        "utility-update_password",
+        "utility-wait_for_index_building_complete",
+        "utility-wait_for_loading_complete"
+      ]
+    },
+    {
+      "code": "PR_PAGE_REMOVED",
+      "level": "warn",
+      "message": "PR removes API_Reference/pymilvus/v3.0.x/MilvusClient/Authentication/revoke_privileges.md; deprecation requires a separate reviewed plan."
+    },
+    {
+      "code": "PR_PAGE_REMOVED",
+      "level": "warn",
+      "message": "PR removes API_Reference/pymilvus/v3.0.x/MilvusClient/Management/get_compact_state.md; deprecation requires a separate reviewed plan."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/add_field.md: symbol MilvusClient.add_field is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/CollectionSchema.md: symbol MilvusClient.CollectionSchema is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/construct_from_dict.md: symbol MilvusClient.construct_from_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/to_dict.md: symbol MilvusClient.to_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/CollectionSchema/verify.md: symbol MilvusClient.verify is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/construct_from_dict.md: symbol MilvusClient.construct_from_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/FieldSchema.md: symbol MilvusClient.FieldSchema is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/FieldSchema/to_dict.md: symbol MilvusClient.to_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/construct_from_dict.md: symbol MilvusClient.construct_from_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/to_dict.md: symbol MilvusClient.to_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/Function/verify.md: symbol MilvusClient.verify is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/add_field.md: symbol MilvusClient.add_field is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/construct_from_dict.md: symbol MilvusClient.construct_from_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Collections/StructFieldSchema/to_dict.md: symbol MilvusClient.to_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/MilvusClient/Vector/EmbeddingList/clear.md: symbol MilvusClient.clear is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/add_field.md: symbol ORM.add_field is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/CollectionSchema.md: symbol ORM.CollectionSchema is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/CollectionSchema/construct_from_dict.md: symbol ORM.construct_from_dict is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/utility/delete_user.md: symbol ORM.delete_user is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/utility/has_collection.md: symbol ORM.has_collection is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "PR_SYMBOL_NOT_SCANNED",
+      "level": "warn",
+      "message": "API_Reference/pymilvus/v3.0.x/ORM/utility/has_partition.md: symbol ORM.has_partition is not indexed by the python scanner at v3.0.2; verified lexically against pinned headers only."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add_batch in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add_collection_field in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add_collection_function in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add_field in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add_field in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.add_function in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.alter_collection_function in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.alter_collection_properties in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.alter_index_properties in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.clear in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.compact in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.construct_from_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.construct_from_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.construct_from_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.construct_from_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.create_collection in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.create_schema in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.describe_collection in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.describe_snapshot in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.drop_collection_field in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.drop_collection_function in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.drop_snapshot in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.flush_all in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.get_flush_all_state in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.get_refresh_external_collection_progress in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.get_replicate_configuration in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.LexicalHighlighter in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.list_refresh_external_collection_jobs in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.list_restore_snapshot_jobs in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.list_snapshots in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.pin_snapshot_data in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.query in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.refresh_external_collection in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.release_collection in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.remove_privileges_from_group in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.restore_snapshot in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.revoke_privilege in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.run_analyzer in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.SemanticHighlighter in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.session in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.to_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.to_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.to_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.to_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.to_flat_array in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.to_numpy in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.truncate_collection in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.unpin_snapshot_data in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.update_replicate_configuration in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.use_database in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.verify in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.verify in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for MilvusClient.with_query in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.add_field in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.CollectionSchema in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.construct_from_dataframe in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.construct_from_dict in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.delete_user in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.has_collection in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.has_partition in python v3.0.x."
+    },
+    {
+      "code": "UNMAPPED_CANONICAL_IDENTITY",
+      "level": "warn",
+      "message": "No canonical identity mapping for ORM.wait_for_loading_complete in python v3.0.x."
+    }
+  ],
+  "schemaVersion": 1,
+  "sdkName": "pymilvus",
+  "targetCommit": "5d478b094f3c37cceb3b3ba157ce3d6aab55ea11",
+  "targetDate": "2026-09-18T08:27:28.000Z",
+  "targetTag": "v3.0.2",
+  "track": "v3.0.x",
+  "writesPerformed": false
+}

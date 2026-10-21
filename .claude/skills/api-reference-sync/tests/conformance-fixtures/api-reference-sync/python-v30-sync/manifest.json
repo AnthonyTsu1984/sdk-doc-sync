@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "campaign": "python-v30-sync (shadow campaign #1, rounds r5-r11)",
+  "frozenAt": "2026-10-21 (campaign-frozen after round 11)",
+  "source": "tmp/api-reference-sync/campaign-plans/python-v30-sync/ (frozen artifacts) + tmp/sdk-release-scout/ (snapshot, category-creates)",
+  "purpose": "Golden corpus for the api-reference-sync offline replay test (M2, P0-2): the deterministic intake chain (compose-pr-reconcile-candidate-spec → build-reviewed-release-context → compare-update-spec-context) is re-run from these frozen INPUTS in CI; output digests are pinned in golden-replay.test.js so any parser/composer/assembly seam dies in npm test, not in a live campaign.",
+  "inputs": {
+    "decisions.json": "python-v30-decisions-excl-orm.json (PR decision set, 64 units)",
+    "scope.json": "python-v30-scope-excl-orm.json (release scope: 64 UPDATE actions)",
+    "pages/": "pages-v30/ (65 PR page dumps from upstream web-content)",
+    "placement-audit.json": "placement-audit.json (placement audit product with walkDigest)",
+    "root-walk.json": "root-walk.json (placement audit root walk)",
+    "proposals.json": "proposals.json (audit proposals view)",
+    "snapshot.json": "bitable-snapshot-python-v30.json (Bitable snapshot, offline dump)",
+    "identity-map.json": "references/identity/python-v30.json (canonical identity map)",
+    "category-create-plan.json": "category-create-plan.json (folder-create plan, python PR #1173/#1181 intake)"
+  },
+  "chainFacts": {
+    "walkDigest": "sha256:16c8468692cc7c1216823c11d231514b0ca6e963361ba7476fa28acb02a7db29",
+    "candidates": 64,
+    "createLike": 0,
+    "allActionsAreUpdate": true,
+    "offlineBoundary": "dump-pr-pages (needs web-content) and dry-run (needs Feishu tokens) are NOT in this replay; the covered seams are the parser/composer/assembly stages that produced rounds 5/6/7/8/9/10/11 freezes."
+  }
+}

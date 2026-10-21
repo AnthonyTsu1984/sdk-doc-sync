@@ -20,7 +20,7 @@ description: release-sync 形状的参数化战役编排模板（批 16 切片 5
   ⑨campaign-settle --outcome ok。异常道：任意冻结/耗尽 → campaign-settle --outcome frozen
   --reason <located failure JSON 落盘路径>（冻结+门铃，journal 保留），然后照常返回报告。
   rehearsal 模式（args.rehearsal===true 或 plan.rehearsal===true）：零 agent、零文档写、
-  确定性链真跑（M3 2026-10-21: intake-assemble → 模型写作面检测 → UPDATE 字节同源断言 →
+  确定性链真跑（M3 2026-10-21：intake-assemble → 模型写作面检测 → UPDATE 字节同源断言 →
   初始 dry-run → record-campaign-approval 真实收据，连 dry-run 一起真跑，读 KB 基线、
   写本地会话文件）;agent 席（A1/A2/A3/复核员）跳过、执行段与终点 close-session/settle 只
   echo argv、门只记 manifest 不弹桌面。返回 {status:'rehearsal', 确定性链真实工件, 门卡}。
@@ -39,6 +39,10 @@ args:
   batchSize:
     type: number
     description: 每批单元数覆盖（缺省用 plan.batch.defaultSize；首批强制 K=1 金丝雀，见 plan.batch.firstBatchK1）
+    required: false
+  rehearsal:
+    type: boolean
+    description: 预演模式（M3 2026-10-21）：零 agent、零文档写，确定性链真跑（intake→断言→dry-run→真实收据），门只记 manifest 不弹桌面；等价于 plan.rehearsal===true
     required: false
 */
 // 新写声明（设计 §12 新增坑）：本文件为批 16 切片 5 全新编写，未复制 java-v26/v30 手抄模板的
@@ -468,7 +472,7 @@ if (!hasModelWriting) {
       "- SDK 检出:" + paths.sdkDir + "\n" +
       "- PR 页 dump（CREATE 权威源）:" + (pagesDir === "" ? "<未知:intake-artifacts.json 缺 pagesDir,如实上报不硬猜>" : pagesDir) + "\n" +
       "## P0-1 铁律（2026-10-21 裁定,最硬约束）\n" +
-      "reviewed 上下文文件（" + paths.referenceContext + "）已由 intake 链确定性产出完整材料:其中每个 **UPDATE 条目（reviewedActionType=UPDATE）都是终态**——summary/result/exceptions/examples 全部字节同源于 candidate-spec（" + paths.candidateSpecPath + "）,由 compare-update-spec-context 断言 CLI 机械核验。**你绝不修改、重抄、删除任何 UPDATE 条目**;UPDATE 条目的内容以盘上现成字节为准,不重写、不"刷新"、不比对 PR 页。\n" +
+      "reviewed 上下文文件（" + paths.referenceContext + "）已由 intake 链确定性产出完整材料:其中每个 **UPDATE 条目（reviewedActionType=UPDATE）都是终态**——summary/result/exceptions/examples 全部字节同源于 candidate-spec（" + paths.candidateSpecPath + "）,由 compare-update-spec-context 断言 CLI 机械核验。**你绝不修改、重抄、删除任何 UPDATE 条目**;UPDATE 条目的内容以盘上现成字节为准,不重写、不「刷新」、不比对 PR 页。\n" +
       "## 任务\n" +
       "只为 scope 内 CREATE/BACKFILL 单元（模型写作面）材料化/刷新 reviewed 上下文条目——这些是真正需要你写作的地方:新文档内容、schema-first 描述、example 撰写。写入唯一允许文件 " + paths.referenceContext + "（保留全部现有条目,只增改 CREATE/BACKFILL 条目）。每写手页数上限=" + pagesPerWriter + "（plan.seats.a1）。\n" +
       "## include 分叉纪律（W-E）\n" +

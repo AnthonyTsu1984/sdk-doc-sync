@@ -61,7 +61,7 @@ for (const [name, text] of [['release-sync', source], ['revision', revisionSourc
       .map(({ line, index }) => `line ${index + 1}: ${line.trim().slice(0, 80)}`);
     assert.deepEqual(offenders, []);
   });
-  test(`[${name}] frontmatter args are exactly {planPath, nonce, batchSize}`, () => {
+  test(`[${name}] frontmatter args are exactly {planPath, nonce, batchSize${name === 'release-sync' ? ', rehearsal' : ''}}`, () => {
     const fmEnd = text.indexOf('*/');
     assert.ok(fmEnd > 0, `${name}: frontmatter terminator missing`);
     const frontmatter = text.slice(0, fmEnd);
@@ -69,9 +69,13 @@ for (const [name, text] of [['release-sync', source], ['revision', revisionSourc
     assert.ok(argsStart > 0, `${name}: args block missing`);
     const argsBlock = frontmatter.slice(argsStart);
     const keys = [...argsBlock.matchAll(/^  ([A-Za-z]+):$/gm)].map((match) => match[1]).sort();
-    assert.deepEqual(keys, ['batchSize', 'nonce', 'planPath']);
+    const expectedKeys = name === 'release-sync' ? ['batchSize', 'nonce', 'planPath', 'rehearsal'] : ['batchSize', 'nonce', 'planPath'];
+    assert.deepEqual(keys, expectedKeys);
     assert.ok(/planPath:\n    type: string\n    description:[^\n]*\n    required: true\n/.test(argsBlock), `${name}: planPath required`);
     assert.ok(/nonce:\n    type: string\n    description:[^\n]*\n    required: true\n/.test(argsBlock), `${name}: nonce required`);
+    if (name === 'release-sync') {
+      assert.ok(/rehearsal:\n    type: boolean\n    description:[^\n]*\n    required: false\n/.test(argsBlock), `${name}: rehearsal optional boolean`);
+    }
   });
 }
 
@@ -112,7 +116,7 @@ test('no import/export/declare statements (engine contract: pure function body)'
   assert.deepEqual(offenders, []);
 });
 
-test('frontmatter args are exactly {planPath, nonce, batchSize}', () => {
+test('frontmatter args are exactly {planPath, nonce, batchSize, rehearsal}', () => {
   const fmEnd = source.indexOf('*/');
   assert.ok(fmEnd > 0, 'frontmatter terminator missing');
   const frontmatter = source.slice(0, fmEnd);
@@ -122,9 +126,10 @@ test('frontmatter args are exactly {planPath, nonce, batchSize}', () => {
   // Keys are the 2-space-indented `key:` lines of the args block (the 4-space
   // property lines all carry values, so they cannot match this shape).
   const keys = [...argsBlock.matchAll(/^  ([A-Za-z]+):$/gm)].map((match) => match[1]).sort();
-  assert.deepEqual(keys, ['batchSize', 'nonce', 'planPath']);
+  assert.deepEqual(keys, ['batchSize', 'nonce', 'planPath', 'rehearsal']);
   // The two identity args must be required: a missing planPath/nonce is the
   // WORKFLOW_ARGS_LOST hard failure, never a guessed default.
   assert.ok(/planPath:\n    type: string\n    description:[^\n]*\n    required: true\n/.test(argsBlock), 'planPath must be type string + required');
   assert.ok(/nonce:\n    type: string\n    description:[^\n]*\n    required: true\n/.test(argsBlock), 'nonce must be type string + required');
+  assert.ok(/rehearsal:\n    type: boolean\n    description:[^\n]*\n    required: false\n/.test(argsBlock), 'rehearsal must be optional boolean');
 });

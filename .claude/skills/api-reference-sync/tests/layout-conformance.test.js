@@ -289,6 +289,39 @@ test('returnsResponseFieldsExemptTypes: declared data exempts single-error RETUR
     );
 });
 
+test('returnsResponseFieldsExemptTypes: python None/void returns are the void equivalent (M5 shadow campaign canary)', () => {
+    // Operator ruling 2026-10-21 (M5 canary create_role): a python operation
+    // whose PR page returns *None* renders RETURNS prose only — the
+    // response-fields PARAMETERS list is the real-payload shape (go 'error'
+    // precedent). normalizeTypeToken strips * _ ` so *None* → none.
+    const bareNoneLines = [
+        'This operation creates a role for role-based access control.',
+        'RETURN TYPE:', '*None*',
+        'RETURNS:', 'This operation returns no value.',
+    ];
+    // python declares the exemption; the bare-None page conforms.
+    assert.deepEqual(
+        checkLayoutConformance(sdkLayoutProfiles.python, { headings: [], lines: bareNoneLines, callouts: [] }).violations,
+        [],
+        'python exempts its declared None/void return types',
+    );
+    // A real payload return stays bound: no PARAMETERS list still fails python.
+    const payloadReturn = checkLayoutConformance(sdkLayoutProfiles.python, {
+        headings: [],
+        lines: [
+            'This operation describes a collection.',
+            'RETURN TYPE:', '*dict*',
+            'RETURNS:', 'A dictionary that contains detailed information about the specified collection.',
+        ],
+        callouts: [],
+    });
+    assert.equal(
+        payloadReturn.violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'the exemption covers exactly the declared tokens, not every python page',
+    );
+});
+
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)

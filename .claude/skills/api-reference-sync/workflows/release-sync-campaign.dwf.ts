@@ -637,6 +637,8 @@ async function runExecUnit(unit: UnitDigest): Promise<ExecSummary> {
     "--review-unit-id", unit.reviewUnitId,
     "--batch-continue",
     "--campaign-approval", receiptPath,
+    "--campaign-chain-grouping", paths.groupingPath,
+    "--campaign-chain-candidate-spec", paths.candidateSpecPath,
     "--auto-accept", "--auto-approve", "--json",
   ]);
   const res = await world.run("node", [PAYLOAD_RUNNER, "exec-classify", JSON.stringify(childArgs), resultFile, feishu.baseToken, feishu.tableId, feishu.rootToken, NONCE], { timeoutMs: 600000 });
@@ -787,6 +789,8 @@ if (rehearsal) {
     "--review-unit-id", representative.reviewUnitId,
     "--batch-continue",
     "--campaign-approval", receiptPath,
+    "--campaign-chain-grouping", paths.groupingPath,
+    "--campaign-chain-candidate-spec", paths.candidateSpecPath,
     "--auto-accept", "--auto-approve", "--json",
   ]);
   argvTrace.push({ label: "逐单元执行（代表行;单元集见 previews,首批 K=" + Math.min(firstK, batchCap) + ",cap=" + batchCap + "）", argv: ["node"].concat(execChild) });

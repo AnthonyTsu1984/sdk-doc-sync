@@ -64,6 +64,13 @@ const PYTHON_LAYOUT_RULES = Object.freeze({
     // admitting them keeps the register's protective value (still rejects
     // empty/broken summaries) without forcing a rewrite of verbatim content.
     firstSentencePatterns: Object.freeze(['^A \\w+ instance\\b', '^An \\w+ instance\\b', '^Defines\\b', '^Adds\\b', '^Constructor behavior\\b', '^The \\w+\\b']),
+    // 2026-10-21 operator ruling (M5 shadow campaign, canary create_role):
+    // python operations whose PR page returns *None* / "This operation returns
+    // no value." render RETURNS prose only — the response-fields PARAMETERS
+    // list is the real-payload shape (go 'error' precedent). normalizeTypeToken
+    // strips * _ `, so *None* → none matches here; exempting none/void/nonetype
+    // keeps RETURNS_MIN_DEPTH protective for actual payload operations.
+    returnsResponseFieldsExemptTypes: Object.freeze(['none', 'void', 'nonetype']),
     requestSignatureOneParamPerLine: true,
     parameterTypeEmphasisForbidden: true,
     templatedExampleIntroForbidden: true,

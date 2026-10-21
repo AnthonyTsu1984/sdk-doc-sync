@@ -350,6 +350,13 @@
    "basis": "no external mutation signature found"
   },
   {
+   "path": ".claude/skills/api-reference-sync/scripts/compare-update-spec-context.js",
+   "skill": "api-reference-sync",
+   "classification": "read-only",
+   "operation": "compare-update-spec-context",
+   "basis": "no external mutation signature found; reads candidate-spec + reviewed-context and prints a byte-fidelity report only (P0-1 UPDATE deterministic materialization assertion)"
+  },
+  {
    "path": ".claude/skills/api-reference-sync/scripts/compose-pr-reconcile-candidate-spec.js",
    "skill": "api-reference-sync",
    "classification": "read-only",

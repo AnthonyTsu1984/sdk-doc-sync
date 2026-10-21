@@ -6,7 +6,9 @@ description: release-sync 形状的参数化战役编排模板（批 16 切片 5
   独立复核员/A2 归属确认/A3 信使）与一道 APPROVE_CAMPAIGN 合并门。执行序（设计 §5）：
   ①plan 自校验（模板 sha256 指纹 + runNonce 簿记校验（如带该字段） + admit 干净树）→ ②W-A 组装链
   （intake-assemble --plan/--run，argv 由 plan 派生）→ ③W-B 归属（propose-audience 提候选 →
-  A2 单次批量确认 → targets.json）→ ④A1 材料化写手 + 独立复核员（fresh-eyes，≤2 轮）→
+  A2 单次批量确认 → targets.json）→ ④材料化（P0-1 2026-10-21:UPDATE 条目由 intake 链确定性拼装,
+  compare-update-spec-context 断言机械核验字节同源;模型席仅当 scope 含 CREATE/BACKFILL 才启用,
+  且只写 CREATE/BACKFILL 条目——纯 UPDATE 战役零 agent 零模型 token）→
   ⑤初始 dry-run（--session-state 建会话）→ reviewUnitPreviews 落盘 →
   record-campaign-approval --unit-digests 出收据 → gate-presentation 产唯一一张 campaign 卡 →
   ⑥唯一人工停（A3 呈卡，parseCampaignReply 正则逐字校验 APPROVE_CAMPAIGN sha256:<digest>，
@@ -67,6 +69,10 @@ const INTAKE_ASSEMBLE = SKILL + "/scripts/intake-assemble.js";
 const PROPOSE_AUDIENCE = SKILL + "/scripts/propose-audience.js";
 const RECORD_APPROVAL = SKILL + "/scripts/record-campaign-approval.js";
 const CAMPAIGN_SETTLE = SKILL + "/scripts/campaign-settle.js";
+// P0-1 (2026-10-21): UPDATE 字节同源断言 CLI——UPDATE 条目由 intake 链确定性拼装,
+// 模型席永不触碰;该 CLI 机械证明 reviewed-context 的 UPDATE 内容与 candidate-spec 字节一致,
+// 取代复核员对 UPDATE 的逐字比对（零 token 确定性）。
+const COMPARE_UPDATE_CONTEXT = SKILL + "/scripts/compare-update-spec-context.js";
 
 // ===== 类型（脚本内 interface;引擎 facade 允许）=====
 interface UnitDigest { reviewUnitId: string; batchDigest: string }
@@ -276,6 +282,20 @@ const entries = Object.entries(ctx.contexts || {}).map(([stableId, entry]) => ({
 }));
 fs.writeFileSync(process.argv[2], JSON.stringify({ entries }, null, 2) + '\\n');
 console.log(JSON.stringify({ ok: true, entries: entries.length }));
+`;
+// P0-1 模型写作面检测（6 行）:读 scope actions 的 type,存在 CREATE/BACKFILL
+// （CREATE_LIKE 面 = sync-planner 的模型写作面）即 hasModelWriting=true。
+// 纯 UPDATE 战役（如 python-v30-sync 64/64 UPDATE）→ 模型席整段跳过,零 agent。
+const DETECT_MODEL_WRITING_PAYLOAD = `
+const fs = require('node:fs');
+const scope = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
+const actions = Array.isArray(scope.actions) ? scope.actions : [];
+let hasModelWriting = false, createLike = 0;
+for (const action of actions) {
+  const t = action && (action.type || action.reviewedActionType);
+  if (t === 'CREATE' || t === 'BACKFILL') { hasModelWriting = true; createLike += 1; }
+}
+console.log(JSON.stringify({ ok: true, hasModelWriting, createLike, total: actions.length }));
 `;
 
 // ===== plan 全文读取与字段收窄（规格 2:路径派生全从 plan 读,模板零硬编码业务常量）=====
@@ -498,12 +518,12 @@ if (!intakeRunRun.ok) {
 }
 log("W-A 组装链完成:scope/grouping/candidate-spec/reviewed-context 工件已就位（" + paths.campaignDir + "）。");
 
-// UPDATE 页 verbatim 的权威源 = PR 页 dump（pagesDir,由 intake-artifacts.json 给出）:
-// 写手/复核员都必须按 <pagesDir>/<canonicalSlug>.md 逐字核对 summary/result/example,
-// 不能只凭候选规格或 SDK 源码自行重建。读取失败不硬猜——prompt 会如实标 unknown。
+// P0-1 (2026-10-21): UPDATE 条目的字节权威源 = candidate-spec（intake 链确定性产物）,
+// 由 compare-update-spec-context 断言 CLI 机械核验（summary/result/exceptions/examples 同源）。
+// pagesDir（PR 页 dump）仍供 CREATE/BACKFILL 写手参考;模型席永不触碰 UPDATE 条目。
 const pagesDirArtifacts = asRecord(parseJsonLoose(await readTextSafe(intakeArtifactsPath))) ?? null;
 const pagesDir = pagesDirArtifacts !== null && typeof pagesDirArtifacts.pagesDir === "string" ? pagesDirArtifacts.pagesDir : "";
-log("PR 页 dump 目录（UPDATE verbatim 权威源）:" + (pagesDir === "" ? "<未知:intake-artifacts.json 缺 pagesDir>" : pagesDir));
+log("PR 页 dump 目录（CREATE 写手权威源;UPDATE 由 candidate-spec 断言）:" + (pagesDir === "" ? "<未知:intake-artifacts.json 缺 pagesDir>" : pagesDir));
 
 // ===== 步骤 3:W-B 归属（规格 4:propose-audience 提候选 → A2 单次批量确认 → targets.json 进取数链）=====
 phase("确认候选归属");
@@ -543,63 +563,105 @@ if (rehearsal) {
   log("A2 归属确认完成:" + confirmations.length + " 项裁定 → " + paths.targetsJson + "（后续 sdk-doc-sync 以 --final-targets 接入取数链）。");
 }
 
-// ===== 步骤 4:A1 材料化写手 + 独立复核员（规格 5;fresh-eyes,≤2 轮;rehearsal 零 agent 跳过）=====
-if (rehearsal) {
-  argvTrace.push({ label: "A1 写手 + 独立复核员（rehearsal 跳过 agent;live 时写 " + paths.referenceContext + " 并 ≤2 轮 fresh-eyes 复核）", argv: ["agent:A1 写手", "agent:独立复核员"] });
-} else {
-  phase("刷新注入并材料化写作");
-  const writer = agent("A1 写手", {
-    system: "你是 governed 文档战役的 A1 材料化写手:产出高质量 reviewed 上下文材料,如实报告,绝不编造;指令不可能完成时如实上报而不是硬凑。只写任务指定的唯一目标文件,绝不调用任何飞书写接口。",
-  });
-  const writerAnswer = await writer.ask<WriterAnswer>(
-    "你是 release-sync 战役 " + campaignId + " 的材料化写手（run " + NONCE + "）。\n" +
-    "## 输入（只读）\n" +
-    "- 发布范围:" + paths.scopePath + "（本战役全部变更动作与单元清单）\n" +
-    "- 候选规格:" + paths.candidateSpecPath + "\n" +
-    "- 归属裁定:" + paths.targetsJson + "（A2 已确认）\n" +
-    "- SDK 检出:" + paths.sdkDir + "\n" +
-    "- PR 页 dump（UPDATE verbatim 权威源）:" + (pagesDir === "" ? "<未知:intake-artifacts.json 缺 pagesDir,如实上报不硬猜>" : pagesDir) + "——UPDATE 单元的 summary/result/example 必须按 <pagesDir>/<canonicalSlug>.md 逐字读取,不得凭 SDK 源码或记忆重建\n" +
-    "## 你唯一允许写入的文件\n" + paths.referenceContext + "\n" +
-    "## 任务\n" +
-    "为 scope 内 CREATE/schema-first 单元材料化/刷新 reviewed 上下文条目。\n" +
-    "UPDATE 页硬性 verbatim 规则（2026-10-20 裁定 A 收紧,最硬约束;r7 修例:候选规格已是 intake 链确定性处理的产物,不得回退）:对 scope 中每个 type=UPDATE 的单元——\n" +
-    "① summary/result 两字段的**文本内容**必须与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致（禁止改写措辞、禁止截断含末尾句、禁止重排或自增）;summaryCallouts/deprecation alert 文本同样逐字保留。result 的嵌套结构（result.fields[].description、嵌套表、RETURNS dict 的每个键值）同样逐字透传、禁止截断——PR 里一句都不许丢（2026-10-21 裁定:describe_collection field 描述截末尾句）。\n" +
-    "② example 代码块**不重新抄写 PR 原文**——直接采用 candidate-spec（" + paths.candidateSpecPath + "）里该单元 examples[].code 的现成字节（它已是 PR 逐字 + intake 链 N6 确定性重排/链接解析的产物）;若某单元候选规格缺 examples,才从 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 补抄。\n" +
-    "③ 任何 prose 里的 repo-relative 链接（[text](xxx.md)）保持 candidate-spec 已解析的形态,不得用 PR 原文的相对链接覆盖。\n" +
-    "④ 唯一可对 example 做的变换=代码块内确定性排版归一化（单行↔多行、行内空白规范化,不得移动行内注释、不得增删标点）。随轨事实:sourceRevision=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.sourceRevision) + ";CREATE 白名单注记=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.createWhitelistNote) + ";文风范式 exemplar=" + JSON.stringify(promptFactsR === null ? null : promptFactsR.exemplarPath) + ";scout 警告条数=" + JSON.stringify(notesR === null ? null : notesR.scoutWarnings) + ";每写手页数上限=" + pagesPerWriter + "。\n" +
-    "## include 分叉纪律（W-E）\n" +
-    "需要按 target 分叉的内容,一律调 " + SKILL + "/scripts/inject-includes.js --request <request.json> 产 canonical 标签形态（块式/片段级 inline/code fence 行指令/列表项/表格行,形态由该 CLI 依内容裁决）,绝不手写 include 标签。\n" +
-    "## 返回\n{\"written\":<条数>,\"selfCheckOk\":<bool>,\"notes\":\"<备注或空>\"}。selfCheckOk=scope 内每个 CREATE 单元在 reviewed 上下文都有内容条目,且每个 UPDATE 单元的 summary/result 文本与 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 逐字一致,example 代码保持 candidate-spec 的处理形态（不重抄、不回退 N6/链接解析）;做不到就如实写 false 并在 notes 说明,绝不编造。",
+// ===== 步骤 4:材料化（P0-1 2026-10-21:UPDATE 确定性,模型席条件启用）=====
+// P0-1 语义:UPDATE 条目的 reviewed-context 由 intake 链（build-reviewed-release-context）
+// 逐字节确定性拼装（summary required()/result clone()/exceptions+examples 机械富化 evidence）。
+// 模型席只在 scope 含 CREATE/BACKFILL（CREATE_LIKE 面=sync-planner 的模型写作面）时才启用,
+// 且只写 CREATE/BACKFILL 条目;UPDATE 条目模型永不触碰。
+// 两条路径都以 compare-update-spec-context 断言收口:UPDATE 内容与 candidate-spec 字节同源
+// 由机械断言证明（取代复核员逐字比对,零 token）;断言失败即 REVIEWED_CONTENT_DRIFT 冻结。
+phase("材料化 reviewed 上下文（UPDATE 确定性 + 模型席条件启用）");
+async function runUpdateFidelityAssertion(label: string): Promise<{ ok: boolean; detail: string }> {
+  const assertRun = await runTrackedCli(
+    label,
+    [COMPARE_UPDATE_CONTEXT, "--candidate-spec", paths.candidateSpecPath, "--reviewed-context", paths.referenceContext, "--json"],
+    campaignFile("update-fidelity"),
+    120000,
   );
-  log("A1 写手完成:written=" + String(writerAnswer.written) + ",selfCheckOk=" + String(writerAnswer.selfCheckOk) + (typeof writerAnswer.notes === "string" && writerAnswer.notes !== "" ? ",notes=" + writerAnswer.notes.slice(0, 160) : ""));
-  for (let round = 1; round <= 2; round += 1) {
-    const reviewer = agent("独立复核员-轮" + round, {
-      system: "你是独立复核员:fresh eyes,没参与写作,只看内容本身,以挑错的口吻工作——放行要有依据,反对只需要证据。绝不修改任何文件。",
+  if (!assertRun.ok) {
+    return { ok: false, detail: assertRun.detail };
+  }
+  return { ok: true, detail: assertRun.detail };
+}
+if (rehearsal) {
+  const detectArgv = ["node", "-e", "<detect-model-writing payload>", paths.scopePath];
+  argvTrace.push({ label: "模型写作面检测（CREATE/BACKFILL 判定,读 scope actions.type）", argv: detectArgv });
+  const assertArgv = ["node", COMPARE_UPDATE_CONTEXT, "--candidate-spec", paths.candidateSpecPath, "--reviewed-context", paths.referenceContext, "--json"];
+  argvTrace.push({ label: "UPDATE 字节同源断言（compare-update-spec-context,机械门）", argv: assertArgv });
+  log("rehearsal:材料化按 P0-1 判定执行——纯 UPDATE 战役零 agent,含 CREATE/BACKFILL 才启 A1/复核员。");
+} else {
+  const detectRun = await runTrackedCli("模型写作面检测（scope 含 CREATE/BACKFILL 才启模型席）", ["-e", DETECT_MODEL_WRITING_PAYLOAD, paths.scopePath], campaignFile("model-writing-detect"), 60000);
+  if (!detectRun.ok) {
+    return await freezeAndSettle("MODEL_WRITING_DETECT_FAILED", { code: "MODEL_WRITING_DETECT_FAILED", detail: detectRun.detail, note: "scope 不可读或 actions 形状不符,无法判定模型写作面" }, null);
+  }
+  const detectReport = parseJsonLoose(detectRun.detail);
+  const detectParsed = asRecord(detectReport);
+  const hasModelWriting = detectParsed !== null && detectParsed.hasModelWriting === true;
+  log("P0-1 模型写作面判定:hasModelWriting=" + String(hasModelWriting) + "（scope " + String(detectParsed === null ? "?" : detectParsed.total) + " 动作,CREATE/BACKFILL " + String(detectParsed === null ? "?" : detectParsed.createLike) + " 个）。");
+  if (!hasModelWriting) {
+    // 纯 UPDATE 战役:零 agent、零模型 token。intake 链产物即终态材料,断言证明字节同源。
+    const assertion = await runUpdateFidelityAssertion("UPDATE 字节同源断言（零 agent 材料化,机械门）");
+    if (!assertion.ok) {
+      return await freezeAndSettle("REVIEWED_CONTENT_DRIFT", { code: "REVIEWED_CONTENT_DRIFT", detail: assertion.detail, note: "UPDATE 条目与 candidate-spec 字节不一致——intake 链或重跑环节破坏确定性产物,须按 located failure 处置后重开" }, null);
+    }
+    log("纯 UPDATE 战役材料化完成:零 agent,UPDATE 条目字节同源已证（" + String(assertion.detail).slice(0, 160) + "）。");
+  } else {
+    phase("刷新注入并材料化写作（CREATE/BACKFILL 面）");
+    const writer = agent("A1 写手", {
+      system: "你是 governed 文档战役的 A1 材料化写手:产出高质量 reviewed 上下文材料,如实报告,绝不编造;指令不可能完成时如实上报而不是硬凑。只写任务指定的唯一目标文件,绝不调用任何飞书写接口。",
     });
-    const verdict = await reviewer.ask<ReviewVerdict>(
-      "你是 release-sync 战役 " + campaignId + " 的独立复核员（第 " + round + "/2 轮,run " + NONCE + "）。只读审阅:\n" +
-      "- 发布范围:" + paths.scopePath + "\n- reviewed 上下文:" + paths.referenceContext + "\n- 归属裁定:" + paths.targetsJson + "\n- PR 页 dump（UPDATE verbatim 权威源）:" + (pagesDir === "" ? "<未知>" : pagesDir) + "\n\n" +
-      "职责边界:只对以下两类问题报 findings——①scope 内 CREATE/schema-first 单元在上下文中缺失,或其内容与 scope 动作明显不符;②UPDATE 单元的 summary/result 文本未逐字透传 PR 页——打开 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 比对 summary/result/summaryCallouts（含末尾句丢失、RETURNS dict 与嵌套表丢失、deprecation alert 丢失）。example 代码**不查**——它由 intake 链确定性处理（N6 重排/链接解析），以 candidate-spec 现成字节为准,不与 PR 页逐字比对;summary/result 里的 repo-relative 链接保持解析形态即可,原始相对链接不构成 finding。include 标签形态是否 canonical 由 CLI 校验管,不进你的 findings;scope 外的发现放 notes,不计 fail。\n" +
-      "返回:{\"pass\":<bool>,\"findings\":[{\"unit\":\"<stableId>\",\"problem\":\"<一句话,写手能照着修>\"}],\"notes\":[\"<scope 外发现,可空>\"]};无问题 findings=[]。",
+    const writerAnswer = await writer.ask<WriterAnswer>(
+      "你是 release-sync 战役 " + campaignId + " 的材料化写手（run " + NONCE + "）。\n" +
+      "## 输入（只读）\n" +
+      "- 发布范围:" + paths.scopePath + "（本战役全部变更动作与单元清单）\n" +
+      "- 候选规格:" + paths.candidateSpecPath + "\n" +
+      "- 归属裁定:" + paths.targetsJson + "（A2 已确认）\n" +
+      "- SDK 检出:" + paths.sdkDir + "\n" +
+      "- PR 页 dump（CREATE 权威源）:" + (pagesDir === "" ? "<未知:intake-artifacts.json 缺 pagesDir,如实上报不硬猜>" : pagesDir) + "\n" +
+      "## P0-1 铁律（2026-10-21 裁定,最硬约束）\n" +
+      "reviewed 上下文文件（" + paths.referenceContext + "）已由 intake 链确定性产出完整材料:其中每个 **UPDATE 条目（reviewedActionType=UPDATE）都是终态**——summary/result/exceptions/examples 全部字节同源于 candidate-spec（" + paths.candidateSpecPath + "）,由 compare-update-spec-context 断言 CLI 机械核验。**你绝不修改、重抄、删除任何 UPDATE 条目**;UPDATE 条目的内容以盘上现成字节为准,不重写、不"刷新"、不比对 PR 页。\n" +
+      "## 任务\n" +
+      "只为 scope 内 CREATE/BACKFILL 单元（模型写作面）材料化/刷新 reviewed 上下文条目——这些是真正需要你写作的地方:新文档内容、schema-first 描述、example 撰写。写入唯一允许文件 " + paths.referenceContext + "（保留全部现有条目,只增改 CREATE/BACKFILL 条目）。每写手页数上限=" + pagesPerWriter + "（plan.seats.a1）。\n" +
+      "## include 分叉纪律（W-E）\n" +
+      "需要按 target 分叉的内容,一律调 " + SKILL + "/scripts/inject-includes.js --request <request.json> 产 canonical 标签形态（块式/片段级 inline/code fence 行指令/列表项/表格行,形态由该 CLI 依内容裁决）,绝不手写 include 标签。\n" +
+      "## 返回\n{\"written\":<条数>,\"selfCheckOk\":<bool>,\"notes\":\"<备注或空>\"}。selfCheckOk=scope 内每个 CREATE/BACKFILL 单元在 reviewed 上下文都有内容条目,且所有 UPDATE 条目一字未动（字节同源由断言 CLI 机械核验,你不改即过）;做不到就如实写 false 并在 notes 说明,绝不编造。",
     );
-    const findings = verdict !== null && verdict !== undefined && Array.isArray(verdict.findings) ? verdict.findings : [];
-    if (findings.length === 0) {
-      log("独立复核轮 " + round + ":通过。");
-      break;
+    log("A1 写手完成:written=" + String(writerAnswer.written) + ",selfCheckOk=" + String(writerAnswer.selfCheckOk) + (typeof writerAnswer.notes === "string" && writerAnswer.notes !== "" ? ",notes=" + writerAnswer.notes.slice(0, 160) : ""));
+    for (let round = 1; round <= 2; round += 1) {
+      const reviewer = agent("独立复核员-轮" + round, {
+        system: "你是独立复核员:fresh eyes,没参与写作,只看内容本身,以挑错的口吻工作——放行要有依据,反对只需要证据。绝不修改任何文件。",
+      });
+      const verdict = await reviewer.ask<ReviewVerdict>(
+        "你是 release-sync 战役 " + campaignId + " 的独立复核员（第 " + round + "/2 轮,run " + NONCE + "）。只读审阅:\n" +
+        "- 发布范围:" + paths.scopePath + "\n- reviewed 上下文:" + paths.referenceContext + "\n- 归属裁定:" + paths.targetsJson + "\n\n" +
+        "职责边界（P0-1 2026-10-21）:**UPDATE 条目不构成任何 finding**——它们的字节同源性由 compare-update-spec-context 断言 CLI 机械核验（summary/result/exceptions/examples vs candidate-spec）,不劳模型比对。你只审两类问题——①scope 内 CREATE/BACKFILL 单元在上下文中缺失,或其内容与 scope 动作明显不符;②CREATE/BACKFILL 条目形状非法（无 summary、无 reviewedEvidence、notes 非空但无说明）。include 标签形态是否 canonical 由 CLI 校验管,不进你的 findings;scope 外的发现放 notes,不计 fail。\n" +
+        "返回:{\"pass\":<bool>,\"findings\":[{\"unit\":\"<stableId>\",\"problem\":\"<一句话,写手能照着修>\"}],\"notes\":[\"<scope 外发现,可空>\"]};无问题 findings=[]。",
+      );
+      const findings = verdict !== null && verdict !== undefined && Array.isArray(verdict.findings) ? verdict.findings : [];
+      if (findings.length === 0) {
+        log("独立复核轮 " + round + ":通过。");
+        break;
+      }
+      if (round === 2) {
+        return await freezeAndSettle("REVIEW_FINDINGS_OPEN", {
+          code: "REVIEW_FINDINGS_OPEN",
+          note: "独立复核 2 轮仍有未清发现（仅 CREATE/BACKFILL 面;UPDATE 由断言 CLI 管）,材料化不进场执行",
+          findings: findings.map((f) => ({ unit: String(f.unit), problem: String(f.problem).slice(0, 160) })),
+        }, null);
+      }
+      log("独立复核轮 " + round + ":" + findings.length + " 条发现,回 A1 修正…");
+      await writer.ask<RegenAnswer>(
+        "独立复核员对 " + paths.referenceContext + " 提出以下问题,逐条修正（只动点名单元;UPDATE 条目一字不动——字节同源由断言 CLI 机械核验;run " + NONCE + "）:\n" +
+        findings.map((f) => "- " + String(f.unit) + ": " + String(f.problem).slice(0, 200)).join("\n").slice(0, 3000) +
+        "\n返回 {\"fixed\":<bool>,\"notes\":\"…\"};修不了就如实 fixed=false。",
+      );
     }
-    if (round === 2) {
-      return await freezeAndSettle("REVIEW_FINDINGS_OPEN", {
-        code: "REVIEW_FINDINGS_OPEN",
-        note: "独立复核 2 轮仍有未清发现,材料化不进场执行",
-        findings: findings.map((f) => ({ unit: String(f.unit), problem: String(f.problem).slice(0, 160) })),
-      }, null);
+    // 模型席结束后,断言门证明 UPDATE 条目未被触碰（REVIEWED_CONTENT_DRIFT 冻结）。
+    const assertion = await runUpdateFidelityAssertion("UPDATE 字节同源断言（模型席后机械门）");
+    if (!assertion.ok) {
+      return await freezeAndSettle("REVIEWED_CONTENT_DRIFT", { code: "REVIEWED_CONTENT_DRIFT", detail: assertion.detail, note: "A1/复核员改动 UPDATE 条目或确定性链破坏字节——断言 CLI 定位 drift,须按 located failure 处置后重开" }, null);
     }
-    log("独立复核轮 " + round + ":" + findings.length + " 条发现,回 A1 修正…");
-    await writer.ask<RegenAnswer>(
-      "独立复核员对 " + paths.referenceContext + " 提出以下问题,逐条修正（只动点名单元;UPDATE 页 summary/result 保持逐字 verbatim——对照 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 透传,禁止改写/截断/重排;example 代码保持 candidate-spec 处理形态,不重抄 PR 原文;run " + NONCE + "）:\n" +
-      findings.map((f) => "- " + String(f.unit) + ": " + String(f.problem).slice(0, 200)).join("\n").slice(0, 3000) +
-      "\n返回 {\"fixed\":<bool>,\"notes\":\"…\"};修不了就如实 fixed=false。",
-    );
+    log("材料化完成:CREATE/BACKFILL 已写作,UPDATE 字节同源已证（" + String(assertion.detail).slice(0, 160) + "）。");
   }
 }
 
@@ -779,7 +841,7 @@ async function regenerateWithWriter(unit: UnitDigest, located: LocatedFailure): 
     system: "你是 governed 文档战役的 A1 材料化写手:产出高质量 reviewed 上下文材料,如实报告,绝不编造;指令不可能完成时如实上报而不是硬凑。只写任务指定的唯一目标文件。",
   });
   const answer = await writer.ask<RegenAnswer>(
-    "单元 " + unit.reviewUnitId + " 执行期 verifier 失败,带定位回喂重刷（run " + NONCE + "）。只修 " + paths.referenceContext + " 中该单元对应条目,其余条目一字不动;UPDATE 页 summary/result 保持逐字 verbatim——对照 " + (pagesDir === "" ? "<PR 页 dump>" : pagesDir) + "/<canonicalSlug>.md 透传,禁止改写/截断/重排;example 代码保持 candidate-spec 处理形态,不重抄 PR 原文。\n" +
+    "单元 " + unit.reviewUnitId + " 执行期 verifier 失败,带定位回喂重刷（run " + NONCE + "）。只修 " + paths.referenceContext + " 中该单元对应条目,其余条目一字不动。P0-1 铁律（2026-10-21）:**UPDATE 条目是确定性终态,绝不重刷**——UPDATE 内容字节同源于 candidate-spec,由 compare-update-spec-context 断言 CLI 机械核验;若失败单元是 UPDATE,如实说明无法通过重刷修正（这是确定性链/执行器问题,不是写作问题）;若失败单元是 CREATE/BACKFILL,只修该条目,example 代码保持 candidate-spec 处理形态,不重抄 PR 原文。\n" +
     "## 定位失败\n" + JSON.stringify(located, null, 1).slice(0, 1600) + "\n" +
     "## 输入参照（只读）\n- scope:" + paths.scopePath + "\n- SDK 检出:" + paths.sdkDir + "\n- PR 页 dump:" + (pagesDir === "" ? "<未知>" : pagesDir) + "\n" +
     "include 分叉仍一律走 " + SKILL + "/scripts/inject-includes.js。\n" +

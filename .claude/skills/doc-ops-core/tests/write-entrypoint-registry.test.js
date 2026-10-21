@@ -74,7 +74,12 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     .claude/skills/api-reference-sync/scripts/build-audit-proposals.js
   //     (shadow campaign #1: derives the audit's proposals view from intake
   //     decisions — local file write only), 115→116.
-  assert.equal(discovered.length, 116);
+  //   - +1 read-only UPDATE fidelity assertion CLI
+  //     .claude/skills/api-reference-sync/scripts/compare-update-spec-context.js
+  //     (P0-1 2026-10-21: reads candidate-spec + reviewed-context, prints a
+  //     byte-fidelity report — UPDATE 条目确定性拼装的机械断言, no external
+  //     mutation signature), 116→117.
+  assert.equal(discovered.length, 117);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

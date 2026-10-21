@@ -28,9 +28,11 @@ const path = require('node:path');
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { GROUPING_STALE } = require('./grouping-proposal');
+// P1-3 (2026-10-21): gate names single-source from gate-registry.js.
+const { gateConstant } = require('./gate-registry');
 
 const CAMPAIGN_PLAN_SCHEMA_VERSION = 1;
-const APPROVE_CAMPAIGN_GATE = 'APPROVE_CAMPAIGN';
+const APPROVE_CAMPAIGN_GATE = gateConstant('APPROVE_CAMPAIGN');
 
 const CAMPAIGN_PLAN_INVALID = 'CAMPAIGN_PLAN_INVALID';
 const CAMPAIGN_DIGEST_STALE = 'CAMPAIGN_DIGEST_STALE';

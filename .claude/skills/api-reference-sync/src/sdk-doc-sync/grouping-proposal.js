@@ -14,12 +14,15 @@
 
 const { digestSemantic } = require('../../../doc-ops-core/src/digest');
 const { validateReleaseScope } = require('./release-scope/schema');
+// P1-3 (2026-10-21): gate names single-source from gate-registry.js.
+const { gateConstant } = require('./gate-registry');
 const fs = require('node:fs');
 const path = require('node:path');
 
 const GROUPING_PROPOSAL_SCHEMA_VERSION = 1;
 const UNIT_INTENTS = new Set(['CREATE', 'UPDATE', 'DEPRECATE', 'BACKFILL', 'REBUILD', 'NO_ACTION']);
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
+const APPROVE_GROUPING_GATE = gateConstant('APPROVE_GROUPING');
 
 const GROUPING_PROPOSAL_INVALID = 'GROUPING_PROPOSAL_INVALID';
 const GROUPING_PARTITION_INCOMPLETE = 'GROUPING_PARTITION_INCOMPLETE';
@@ -375,9 +378,9 @@ function buildGroupingApprovalReceipt({ proposal, proposalPath = null, approvedA
   const digest = groupingProposalDigest(proposal);
   return {
     schemaVersion: 1,
-    gate: 'APPROVE_GROUPING',
+    gate: APPROVE_GROUPING_GATE,
     proposalDigest: digest,
-    approvalCommand: `APPROVE_GROUPING ${digest}`,
+    approvalCommand: `${APPROVE_GROUPING_GATE} ${digest}`,
     ...(proposalPath ? { proposalPath } : {}),
     language: proposal.language,
     sdkName: proposal.sdkName,
@@ -393,12 +396,12 @@ function validateGroupingApprovalReceipt(receipt) {
   const report = (message) => errors.push({ code: GROUPING_APPROVAL_CHAIN_INVALID, path: '$', message });
   if (!isObject(receipt)) return { valid: false, errors: [{ code: GROUPING_APPROVAL_CHAIN_INVALID, path: '$', message: 'must be an object' }] };
   if (receipt.schemaVersion !== 1) report('$.schemaVersion must be 1');
-  if (receipt.gate !== 'APPROVE_GROUPING') report('$.gate must be APPROVE_GROUPING');
+  if (receipt.gate !== APPROVE_GROUPING_GATE) report(`$.gate must be ${APPROVE_GROUPING_GATE}`);
   if (typeof receipt.proposalDigest !== 'string' || !DIGEST_PATTERN.test(receipt.proposalDigest)) {
     report('$.proposalDigest must be a sha256:<64-hex> digest');
   }
-  if (receipt.approvalCommand !== `APPROVE_GROUPING ${receipt.proposalDigest}`) {
-    report('$.approvalCommand must be exactly "APPROVE_GROUPING <proposalDigest>"');
+  if (receipt.approvalCommand !== `${APPROVE_GROUPING_GATE} ${receipt.proposalDigest}`) {
+    report(`$.approvalCommand must be exactly "${APPROVE_GROUPING_GATE} <proposalDigest>"`);
   }
   if (!isObject(receipt.lineage)
     || typeof receipt.lineage.scopeDigest !== 'string'

@@ -55,17 +55,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-const GATE_NAMES = Object.freeze([
-    'APPROVE_GROUPING',
-    'APPROVE_WRITES',
-    'APPROVE_DOCUMENT',
-    'APPROVE_ROLLBACK',
-    'APPROVE_ACCEPTANCE',
-    // Campaign-level merged gate (batch-16 release-sync template, shadow
-    // campaign #1 round-10): the only human stop of a whole campaign run,
-    // binding the campaignPlanDigest from the approval receipt.
-    'APPROVE_CAMPAIGN',
-]);
+// P1-3 (2026-10-21): single-source gate registry — the validator consumes the
+// canonical GATE_NAMES from gate-registry.js; adding a gate in ONE file
+// propagates to the validator, the card builder, the receipts, and the template.
+const { GATE_NAMES } = require('../src/sdk-doc-sync/gate-registry');
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 const FUTURE_SKEW_MS = 5 * 60 * 1000;

@@ -79,7 +79,12 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     (P0-1 2026-10-21: reads candidate-spec + reviewed-context, prints a
   //     byte-fidelity report — UPDATE 条目确定性拼装的机械断言, no external
   //     mutation signature), 116→117.
-  assert.equal(discovered.length, 117);
+  //   - +1 read-only dwf payload runner
+  //     .claude/skills/api-reference-sync/scripts/dwf-payload-runner.js
+  //     (P1-2 2026-10-21: shared runner replacing template inline node -e
+  //     payloads — spawns child CLIs, writes only local tmp artifacts, the
+  //     write boundary staying with each child entrypoint), 117→118.
+  assert.equal(discovered.length, 118);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

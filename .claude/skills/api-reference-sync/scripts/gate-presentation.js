@@ -55,6 +55,9 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+// P1-3 (2026-10-21): single-source gate registry — the card builder consumes
+// gateReplyLine from gate-registry.js (the exact pre-filled reply per gate).
+const { gateReplyLine } = require('../src/sdk-doc-sync/gate-registry');
 
 const DIGEST_PATTERN = /^sha256:[0-9a-f]{64}$/;
 
@@ -227,27 +230,15 @@ function manifestFromDryrun(filePath, sessionPath) {
 // digest, and the exact pre-filled reply line — the operator reads one shape
 // for every gate of every campaign. Plain text only (GATE_CARD_LINK_LEAK
 // below still enforces no URLs anywhere in the card).
-const GATE_REPLY_LINES = Object.freeze({
-    APPROVE_WRITES: (manifest) => (manifest.digest ? `APPROVE_WRITES ${manifest.digest}` : null),
-    APPROVE_ACCEPTANCE: (manifest) => (manifest.digest ? `APPROVE_ACCEPTANCE ${manifest.digest}` : null),
-    APPROVE_GROUPING: (manifest) => (manifest.digest ? `APPROVE_GROUPING ${manifest.digest}` : null),
-    APPROVE_ROLLBACK: (manifest) => (manifest.digest ? `APPROVE_ROLLBACK ${manifest.digest}` : null),
-    // Per-unit gate: the reply binds the unit id and that unit's journal
-    // digest; a digest here IS the combined batch value only when the
-    // presenter says so, so the manifest carries the exact line to echo.
-    APPROVE_DOCUMENT: (manifest) => (typeof manifest.replyLine === 'string' && manifest.replyLine.trim() !== ''
-        ? manifest.replyLine.trim()
-        : null),
-    // Campaign-level merged gate (batch-16 release-sync template): the reply
-    // binds the campaignPlanDigest — APPROVE_CAMPAIGN sha256:<digest>.
-    APPROVE_CAMPAIGN: (manifest) => (manifest.digest ? `APPROVE_CAMPAIGN ${manifest.digest}` : null),
-});
+// The per-gate reply line now comes from gate-registry.js (gateReplyLine) —
+// single source shared with the validator (gate-presentation-check) and the
+// receipt consumers; the manifest's own gate name selects it.
 
 function canonicalGateCard(manifest, indexPath, opened, copied) {
     const unitList = manifest.units.length > 0
         ? manifest.units.slice(0, 8).join(', ') + (manifest.units.length > 8 ? ` (+${manifest.units.length - 8} more)` : '')
         : '(no unit list carried — see the materials index)';
-    const replyLine = (GATE_REPLY_LINES[manifest.gate] || (() => null))(manifest);
+    const replyLine = gateReplyLine(manifest.gate, manifest);
     return [
         `════ GATE ${manifest.gate} ════`,
         manifest.session ? `session: ${manifest.session}` : null,

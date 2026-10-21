@@ -213,7 +213,16 @@ function main(argv = process.argv) {
             pushFinding('error', 'INTAKE_NOTES_KEY_NONEMPTY', `notes key must stay empty (renderer would emit it as a page section): ${String(entry.notes).slice(0, 80)}`);
         }
 
-        if (typeof entry.summary === 'string' && entry.summary.trim() !== ''
+        // P1-1 (2026-10-21): the summary register is a rendering/CREATE-side
+        // style constraint. UPDATE units' summaries are PR-verbatim bytes
+        // (deterministic chain authority = the PR page, byte-faithful via
+        // compare-update-spec-context) — the PR author's phrasing must NOT be
+        // re-judged against the register (r6/r8/r9 class: register rejected
+        // legitimate PR-verbatim first sentences). Register applies only to
+        // model-written/structural units (CREATE/BACKFILL/DEPRECATE).
+        const reviewedType = entry.reviewedActionType;
+        if (reviewedType !== 'UPDATE'
+            && typeof entry.summary === 'string' && entry.summary.trim() !== ''
             && !registers.some((pattern) => new RegExp(pattern).test(stripInlineMarkdown(entry.summary).trim()))) {
             pushFinding('error', 'INTAKE_SUMMARY_REGISTER', `summary first sentence does not match any declared register (${registers.map((pattern) => `/${pattern}/`).join(' ')}): ${entry.summary.slice(0, 80)}`);
         }

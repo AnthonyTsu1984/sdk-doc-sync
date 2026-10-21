@@ -90,6 +90,29 @@ test('--json emits the schemaVersion 1 report with byCode summary', () => {
     assert.equal(report.summary.byCode.INTAKE_SUMMARY_REGISTER, 1);
 });
 
+test('P1-1: UPDATE units are exempt from the summary register (PR-verbatim authority)', () => {
+    // An UPDATE unit's summary is PR-verbatim byte-faithful (deterministic
+    // chain authority = the PR page, compare-update-spec-context proves it);
+    // the register is a rendering/CREATE-side style constraint and must not
+    // re-judge the PR author's phrasing (r6/r8/r9 class).
+    const { result } = runPreflight({
+        'python:FieldSchema:construct_from_dict': makeContextEntry({
+            summary: 'This operation constructs a FieldSchema object from a dictionary representation.',
+            reviewedActionType: 'UPDATE',
+        }),
+    });
+    assert.equal(result.status, 0, result.stdout);
+    assert.doesNotMatch(result.stdout, /INTAKE_SUMMARY_REGISTER/);
+
+    // A non-UPDATE unit with a non-register summary still fails (CREATE/
+    // BACKFILL are model-written, must conform to the register).
+    const create = runPreflight({
+        'python:Auth:create_user': makeContextEntry({ summary: 'Deletes entities.', reviewedActionType: 'CREATE' }),
+    });
+    assert.notEqual(create.result.status, 0);
+    assert.match(create.result.stdout, /INTAKE_SUMMARY_REGISTER/);
+});
+
 test('adapter-consumed optional keys (params/result/signature/typeUrls) are not unexpected (review r1)', () => {
     const entry = makeContextEntry({
         params: [{ name: 'collectionName', type: 'String', description: 'The target collection.' }],

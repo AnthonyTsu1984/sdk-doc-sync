@@ -76,6 +76,9 @@ const CAMPAIGN_SETTLE = SKILL + "/scripts/campaign-settle.js";
 // 模型席永不触碰;该 CLI 机械证明 reviewed-context 的 UPDATE 内容与 candidate-spec 字节一致,
 // 取代复核员对 UPDATE 的逐字比对（零 token 确定性）。
 const COMPARE_UPDATE_CONTEXT = SKILL + "/scripts/compare-update-spec-context.js";
+// P1-2 (2026-10-21): dwf payload runner——把模板内联 `node -e "<payload>"` 换成真实 CLI
+// （r1/r4 转义接缝类）。模板只调 subcommand,payload 逻辑进脚本可测。
+const PAYLOAD_RUNNER = SKILL + "/scripts/dwf-payload-runner.js";
 
 // ===== 类型（脚本内 interface;引擎 facade 允许）=====
 interface UnitDigest { reviewUnitId: string; batchDigest: string }
@@ -139,167 +142,6 @@ function parseCampaignReply(rawReply: string, expectedDigest: string): { approve
   return { approved: false, rejected: false, presented: presented.length > 0 ? presented[0] : null, error };
 }
 
-// ===== node -e payload（全部为静态字符串,零插值 → 无转义漂移面;行数见各自注释）=====
-// 通用 CLI 门禁 runner（10 行）:spawnSync 跑 tracked CLI,maxBuffer 64MB,stdout/stderr 分别落盘,
-// stdout 只回 {ok,outFile} 小摘要。用于 intake/dry-run/record-approval/close-session/settle/status。
-const GENERIC_RUNNER = `
-const { spawnSync } = require('node:child_process'), fs = require('node:fs'), path = require('node:path');
-const childArgs = JSON.parse(process.argv[1]), outFile = process.argv[2], errFile = process.argv[3];
-const r = spawnSync(process.execPath, childArgs, { cwd: process.cwd(), env: { ...process.env, BASE_TOKEN: process.argv[4], TABLE_ID: process.argv[5], ROOT_TOKEN: process.argv[6] }, encoding: 'utf8', timeout: 540000, maxBuffer: 64 * 1024 * 1024 });
-fs.mkdirSync(path.dirname(outFile), { recursive: true });
-fs.writeFileSync(outFile, r.stdout || '');
-fs.writeFileSync(errFile, r.stderr || '');
-const fail = (code, detail) => { console.log(JSON.stringify({ ok: false, code, detail: String(detail).slice(0, 300) })); process.exit(1); };
-if (r.error) fail('SPAWN_FAILED', r.error.message);
-if (r.status !== 0) fail('CLI_EXIT_' + r.status, String(r.stderr || r.stdout).slice(0, 300));
-console.log(JSON.stringify({ ok: true, outFile }));
-`;
-// plan 自校验（10 行,规格 2）:kind=release-sync;plan.template.path 实算 sha256 对 pin,漂移即
-// TEMPLATE_DRIFTED fail-closed;plan.runNonce 为可选簿记字段(设计 §4:nonce 是 per-run 的 args
-// 注入)——字段存在且 ≠ args.nonce 即 RUN_NONCE_MISMATCH 硬失败,字段不存在则放行;
-// 顺带带出 failure-class 的 DEFAULT_BUDGETS(预算轴进模块不进模板)。
-const SELF_CHECK_PAYLOAD = `
-const fs = require('node:fs'), crypto = require('node:crypto');
-const plan = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-const fail = (code, detail) => { console.log(JSON.stringify({ ok: false, code, detail: String(detail).slice(0, 300) })); process.exit(1); };
-if (plan.kind !== 'release-sync') fail('KIND_UNSUPPORTED', String(plan.kind));
-if (!plan.template || typeof plan.template.path !== 'string' || typeof plan.template.sha256 !== 'string') fail('TEMPLATE_PIN_MISSING', '');
-const got = 'sha256:' + crypto.createHash('sha256').update(fs.readFileSync(plan.template.path)).digest('hex');
-if (got !== plan.template.sha256) fail('TEMPLATE_DRIFTED', 'recomputed ' + got + ' wanted ' + plan.template.sha256);
-if (plan.runNonce !== undefined && plan.runNonce !== null && plan.runNonce !== process.argv[2]) fail('RUN_NONCE_MISMATCH', 'plan.runNonce bookkeeping ' + String(plan.runNonce) + ' != args.nonce (re-run build-campaign-plan --run-nonce or pass the matching nonce)');
-const { FAILURE_CLASSES } = require('./.claude/skills/api-reference-sync/src/sdk-doc-sync/failure-class.js');
-console.log(JSON.stringify({ ok: true, campaignId: plan.campaignId, budgets: FAILURE_CLASSES.DEFAULT_BUDGETS }));
-`;
-// 初始/单元 dry-run 结果提取（10 行,规格 5）:reviewUnitPreviews → {units:[{reviewUnitId,batchDigest}]}
-// 规范排序落盘(record-campaign-approval --unit-digests 的输入);单元级重 dry-run 走
-// proposedExecutionBatch 分量。校验 digest 形态;stdout 只回小摘要(单元多时不回明细)。
-const EXTRACT_UNITS_PAYLOAD = `
-const fs = require('node:fs');
-const dry = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-const fail = (code, detail) => { console.log(JSON.stringify({ ok: false, code, detail: String(detail).slice(0, 300) })); process.exit(1); };
-let units = Array.isArray(dry.reviewUnitPreviews) ? dry.reviewUnitPreviews.map((u) => ({ reviewUnitId: String(u.reviewUnitId), batchDigest: String(u.batchDigest) })) : [];
-if (units.length === 0 && dry.proposedExecutionBatch && typeof dry.proposedExecutionBatch.batchDigest === 'string') units = [{ reviewUnitId: String(process.argv[3] || 'batch'), batchDigest: dry.proposedExecutionBatch.batchDigest }];
-if (units.length === 0) fail('NO_UNIT_PREVIEWS', 'no reviewUnitPreviews/proposedExecutionBatch in ' + process.argv[1]);
-for (const u of units) { if (!/^sha256:[0-9a-f]{64}$/.test(u.batchDigest)) fail('UNIT_DIGEST_INVALID', u.reviewUnitId + ':' + u.batchDigest.slice(0, 40)); }
-units.sort((a, b) => (a.reviewUnitId < b.reviewUnitId ? -1 : a.reviewUnitId > b.reviewUnitId ? 1 : 0));
-fs.writeFileSync(process.argv[2], JSON.stringify({ units }, null, 2) + '\\n');
-console.log(JSON.stringify({ ok: true, units: units.length, digest: units.length === 1 ? units[0].batchDigest : null }));
-`;
-// 逐单元执行 + 失败分类（10 行,规格 8）:sdk-doc-sync --campaign-approval 全自动执行,结果 JSON
-// 落盘,同段读盘按 failure-class.js 分类(mutated=evidence.mutatedLiveState 一律不算 ok),
-// stdout 只回 {ok,exitCode,mutated,failureClass,code} 小摘要。分类映射表不进模板。
-const EXEC_CLASSIFY_PAYLOAD = `
-const { spawnSync } = require('node:child_process'), fs = require('node:fs'), path = require('node:path');
-const { classifyFailure } = require('./.claude/skills/api-reference-sync/src/sdk-doc-sync/failure-class.js');
-const childArgs = JSON.parse(process.argv[1]), outFile = process.argv[2];
-const r = spawnSync(process.execPath, childArgs, { cwd: process.cwd(), env: { ...process.env, BASE_TOKEN: process.argv[3], TABLE_ID: process.argv[4], ROOT_TOKEN: process.argv[5] }, encoding: 'utf8', timeout: 540000, maxBuffer: 64 * 1024 * 1024 });
-fs.mkdirSync(path.dirname(outFile), { recursive: true }); fs.writeFileSync(outFile, (r.stdout || '') + (r.stderr ? '\\n--- stderr ---\\n' + r.stderr : ''));
-let parsed = null; try { parsed = JSON.parse(r.stdout || ''); } catch (e) {}
-const er = (parsed && parsed.executionResult) || null;
-const mutated = !!(er && er.evidence && er.evidence.mutatedLiveState === true);
-const ok = r.status === 0 && !mutated && !(er && er.status === 'BLOCKED');
-console.log(JSON.stringify({ ok, exitCode: r.status, mutated, failureClass: ok ? null : classifyFailure(er || { error: { code: 'CLI_EXIT_' + r.status } }), code: ok ? null : String((er && er.error && er.error.code) || (er && Array.isArray(er.diagnostics) && er.diagnostics[0] && er.diagnostics[0].code) || ('CLI_EXIT_' + r.status)).slice(0, 120) }));
-`;
-// locateFailure 提取（6 行,规格 8 content 类）:verify-retry-loop 的 locateFailure 出
-// {code,expected,actual,path,...} 定位 JSON,落盘供 A1 回喂与 settle --reason,stdout 回小摘要。
-const LOCATE_PAYLOAD = `
-const fs = require('node:fs');
-const { locateFailure } = require('./.claude/skills/api-reference-sync/src/sdk-doc-sync/verify-retry-loop.js');
-let parsed = null; try { parsed = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); } catch (e) {}
-const located = locateFailure((parsed && parsed.executionResult) || parsed || {});
-fs.writeFileSync(process.argv[2], JSON.stringify(located, null, 2) + '\\n');
-console.log(JSON.stringify({ ok: true, code: located.code, path: located.path, located }));
-`;
-// 呈门三件套（9 行,规格 6）:campaign 卡 manifest 落盘 → gate-presentation --json
-// （本地索引+自动开页+剪贴板;卡内无链接）,stdout 回含 cardSnippet 的小 JSON。
-const GATE_PRESENT_PAYLOAD = `
-const fs = require('node:fs'), path = require('node:path');
-const manifest = JSON.parse(process.argv[1]);
-// Material links must be absolute (https?|file):// URLs for the fixed-structure
-// self-check P5 (PRESENTATION_LINKS_MISSING). Campaign manifests carry
-// repo-relative paths (tmp/...); resolve them to file:// against the cwd so
-// the operator's index is clickable and the check passes (round-10 freeze).
-manifest.links = (manifest.links || []).map((link) => {
-  const url = String(link && link.url || '');
-  if (/^(https?|file):\\/\\//i.test(url)) return link;
-  return { ...link, url: 'file://' + path.resolve(url) };
-});
-fs.mkdirSync(process.argv[2], { recursive: true });
-const mFile = path.join(process.argv[2], 'gate-manifest-campaign-' + process.argv[3] + '.json');
-fs.writeFileSync(mFile, JSON.stringify(manifest, null, 2));
-const { spawnSync } = require('node:child_process');
-const r = spawnSync(process.execPath, ['.claude/skills/api-reference-sync/scripts/gate-presentation.js', '--manifest', mFile, '--json'], { cwd: process.cwd(), encoding: 'utf8', timeout: 60000, maxBuffer: 16 * 1024 * 1024 });
-if (r.status !== 0) { console.log(JSON.stringify({ ok: false, code: 'GATE_PRESENTATION_FAILED', detail: String(r.stderr || r.stdout).slice(0, 300) })); process.exit(1); }
-process.stdout.write(String(r.stdout || '').slice(0, 2000));
-`;
-// 确定性准入（5 行,规格 2"admit 干净树"）:npm run admit:skills 经 node -e 包 spawnSync
-// （world.run 第一参必须字面量 "node"）,--phase 带 campaignId+run 代际。
-const ADMIT_PAYLOAD = `
-const { spawnSync } = require('node:child_process');
-const r = spawnSync('npm', ['run', 'admit:skills', '--', '--phase', process.argv[1], '--deterministic-only'], { cwd: process.cwd(), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 1500000 });
-process.stdout.write(String(r.stdout || '').slice(-400));
-process.stderr.write(r.stderr || '');
-process.exit(r.status === 0 ? 0 : 1);
-`;
-// 写 JSON 文件（5 行）:confirmations/located failure JSON 落盘用;内容由 argv 原样传入。
-const WRITE_JSON_PAYLOAD = `
-const fs = require('node:fs'), path = require('node:path');
-const file = process.argv[1];
-fs.mkdirSync(path.dirname(file), { recursive: true });
-fs.writeFileSync(file, process.argv[2]);
-process.stdout.write('written');
-`;
-// journal 追加（5 行）:执行事件 JSONL 追加到 plan.run.journalPath（冻结也保留 journal）。
-const APPEND_PAYLOAD = `
-const fs = require('node:fs'), path = require('node:path');
-const file = process.argv[1];
-fs.mkdirSync(path.dirname(file), { recursive: true });
-fs.appendFileSync(file, String(process.argv[2]) + '\\n');
-process.stdout.write('appended');
-`;
-// rehearsal echo（1 行,规格 10）:零 live 写,只回显将执行的 argv 序列/门卡内容。
-const ECHO_PAYLOAD = `
-process.stdout.write(process.argv[1] || '');
-`;
-// 清 session 文件（4 行）:W-A 链尾 dry-run 已建过一个预检会话（未带 --final-targets）,
-// 步骤 5 的 canonical dry-run 要 --session-state 新建带 final-targets 的会话,旧文件必须先清,
-// 否则 sdk-doc-sync 报 "review session already exists"。best-effort:不存在就静默。
-const CLEAR_SESSION_PAYLOAD = `
-const fs = require('node:fs');
-const file = process.argv[1];
-if (fs.existsSync(file)) fs.unlinkSync(file);
-process.stdout.write('cleared');
-`;
-// 从 reviewed-context 派生 propose-audience 的 entries 工件（8 行）:每条
-// {symbol,symbolName},{title,page},{kind},{category} —— propose-audience 的
-// 归属候选输入面;intake 链的 --artifacts 是另一形状,不得复用同一文件。
-const DERIVE_AUDIENCE_ENTRIES_PAYLOAD = `
-const fs = require('node:fs');
-const ctx = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-const entries = Object.entries(ctx.contexts || {}).map(([stableId, entry]) => ({
-  symbol: String(entry.symbolName || stableId.split(':').pop() || ''),
-  page: String(entry.title || ''),
-  kind: String(entry.kind || 'method'),
-  category: String(entry.category || ''),
-  stableId: String(stableId),
-}));
-fs.writeFileSync(process.argv[2], JSON.stringify({ entries }, null, 2) + '\\n');
-console.log(JSON.stringify({ ok: true, entries: entries.length }));
-`;
-// P0-1 模型写作面检测（6 行）:读 scope actions 的 type,存在 CREATE/BACKFILL
-// （CREATE_LIKE 面 = sync-planner 的模型写作面）即 hasModelWriting=true。
-// 纯 UPDATE 战役（如 python-v30-sync 64/64 UPDATE）→ 模型席整段跳过,零 agent。
-const DETECT_MODEL_WRITING_PAYLOAD = `
-const fs = require('node:fs');
-const scope = JSON.parse(fs.readFileSync(process.argv[1], 'utf8'));
-const actions = Array.isArray(scope.actions) ? scope.actions : [];
-let hasModelWriting = false, createLike = 0;
-for (const action of actions) {
-  const t = action && (action.type || action.reviewedActionType);
-  if (t === 'CREATE' || t === 'BACKFILL') { hasModelWriting = true; createLike += 1; }
-}
-console.log(JSON.stringify({ ok: true, hasModelWriting, createLike, total: actions.length }));
-`;
 
 // ===== plan 全文读取与字段收窄（规格 2:路径派生全从 plan 读,模板零硬编码业务常量）=====
 log("读取 campaign plan:" + planPath);
@@ -413,10 +255,10 @@ async function runTrackedCli(label: string, childArgs: string[], outFile: string
   const fullArgv = ["node"].concat(childArgs);
   if (rehearsal && echoOnly === true) {
     argvTrace.push({ label, argv: fullArgv });
-    await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify(fullArgv), NONCE], { timeoutMs: 30000 });
+    await world.run("node", [PAYLOAD_RUNNER, "echo", JSON.stringify(fullArgv), NONCE], { timeoutMs: 30000 });
     return { ok: true, detail: "rehearsal-echo" };
   }
-  const res = await world.run("node", ["-e", GENERIC_RUNNER, JSON.stringify(childArgs), outFile, outFile + ".stderr", feishu.baseToken, feishu.tableId, feishu.rootToken, NONCE], { timeoutMs: timeoutMs === undefined ? 600000 : timeoutMs });
+  const res = await world.run("node", [PAYLOAD_RUNNER, "generic-run", JSON.stringify(childArgs), outFile, outFile + ".stderr", feishu.baseToken, feishu.tableId, feishu.rootToken, NONCE], { timeoutMs: timeoutMs === undefined ? 600000 : timeoutMs });
   if (res.exitCode !== 0) {
     return { ok: false, detail: (String(res.stdout || "") + "\n" + String(res.stderr || "")).slice(0, 400) };
   }
@@ -424,12 +266,12 @@ async function runTrackedCli(label: string, childArgs: string[], outFile: string
 }
 async function writeJsonFile(file: string, content: string): Promise<boolean> {
   if (rehearsal) { argvTrace.push({ label: "write-json(跳过,live 才写)", argv: [file] }); return true; }
-  const res = await world.run("node", ["-e", WRITE_JSON_PAYLOAD, file, content, NONCE], { timeoutMs: 30000 });
+  const res = await world.run("node", [PAYLOAD_RUNNER, "write-json", file, content, NONCE], { timeoutMs: 30000 });
   return res.exitCode === 0;
 }
 async function journalAppend(event: Record<string, unknown>): Promise<void> {
   if (rehearsal) { argvTrace.push({ label: "journal-append(跳过,live 才写)", argv: [String(event.type || "event")] }); return; }
-  await world.run("node", ["-e", APPEND_PAYLOAD, journalPath, JSON.stringify(event), NONCE], { timeoutMs: 30000 });
+  await world.run("node", [PAYLOAD_RUNNER, "append", journalPath, JSON.stringify(event), NONCE], { timeoutMs: 30000 });
 }
 // 异常道收口（设计 §6）:任何 fail-closed 分支 → located failure JSON 落盘 →
 // campaign-settle --outcome frozen --reason <落盘路径>（冻结+门铃,journal 保留）→ 照常返回报告。
@@ -467,7 +309,7 @@ async function freezeAndSettle(status: string, located: Record<string, unknown>,
 phase("校验战役计划与模板指纹");
 const selfCheckArgs = [planPath, NONCE];
 // M3: self-check 确定性,rehearsal 也真跑（模板 sha256/nonce 校验,零写）。
-const selfRes = await world.run("node", ["-e", SELF_CHECK_PAYLOAD, selfCheckArgs[0], selfCheckArgs[1], NONCE], { timeoutMs: 120000 });
+const selfRes = await world.run("node", [PAYLOAD_RUNNER, "self-check", selfCheckArgs[0], selfCheckArgs[1], NONCE], { timeoutMs: 120000 });
 const selfParsed = asRecord(parseJsonLoose(selfRes.stdout));
 if (selfRes.exitCode !== 0 || selfParsed === null || selfParsed.ok !== true) {
   const code = selfParsed !== null && typeof selfParsed.code === "string" ? selfParsed.code : "SELF_CHECK_FAILED";
@@ -498,9 +340,9 @@ phase("核对确定性准入与干净树");
 if (rehearsal) {
   const admitArgv = ["npm", "run", "admit:skills", "--", "--phase", campaignId + "-" + nonceslug, "--deterministic-only"];
   argvTrace.push({ label: "admit:skills（确定性准入）", argv: admitArgv });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify(admitArgv), NONCE], { timeoutMs: 30000 });
+  await world.run("node", [PAYLOAD_RUNNER, "echo", JSON.stringify(admitArgv), NONCE], { timeoutMs: 30000 });
 } else {
-  const admitRes = await world.run("node", ["-e", ADMIT_PAYLOAD, campaignId + "-" + nonceslug, NONCE], { timeoutMs: 1600000 });
+  const admitRes = await world.run("node", [PAYLOAD_RUNNER, "admit", campaignId + "-" + nonceslug, NONCE], { timeoutMs: 1600000 });
   if (admitRes.exitCode !== 0) {
     return await freezeAndSettle("ADMISSION_FAILED", { code: "ADMISSION_FAILED", detail: String(admitRes.stderr || admitRes.stdout || "").slice(0, 400), note: "ADMIT 全绿才进场;先 commit/stash 使树干净后重跑" }, null);
   }
@@ -536,7 +378,7 @@ log("PR 页 dump 目录（CREATE 写手权威源;UPDATE 由 candidate-spec 断�
 // ===== 步骤 3:W-B 归属（规格 4:propose-audience 提候选 → A2 单次批量确认 → targets.json 进取数链）=====
 phase("确认候选归属");
 // 派生 propose-audience 的 entries（reviewed-context 是归属判断的权威面）。
-const deriveEntriesRun = await runTrackedCli("派生 audience entries（reviewed-context → {symbol,page,kind,category}）", ["-e", DERIVE_AUDIENCE_ENTRIES_PAYLOAD, paths.referenceContext, audienceEntriesPath], campaignFile("derive-audience-entries"), 60000);
+const deriveEntriesRun = await runTrackedCli("派生 audience entries（reviewed-context → {symbol,page,kind,category}）", [PAYLOAD_RUNNER, "derive-audience-entries", paths.referenceContext, audienceEntriesPath], campaignFile("derive-audience-entries"), 60000);
 if (!deriveEntriesRun.ok) {
   return await freezeAndSettle("AUDIENCE_ENTRIES_DERIVE_FAILED", { code: "AUDIENCE_ENTRIES_DERIVE_FAILED", detail: deriveEntriesRun.detail, note: "reviewed-context 不可读或 entries 派生失败,不进场归属" }, null);
 }
@@ -593,7 +435,7 @@ async function runUpdateFidelityAssertion(label: string): Promise<{ ok: boolean;
 }
 // M3 (2026-10-21): detect + assertion 是确定性链,rehearsal 也真跑（零 token、零 agent）;
 // 只有 A1 写手/复核员席是 agent 席,rehearsal 跳过。断言门在两种模式都是机械收口。
-const detectRun = await runTrackedCli("模型写作面检测（scope 含 CREATE/BACKFILL 才启模型席）", ["-e", DETECT_MODEL_WRITING_PAYLOAD, paths.scopePath], campaignFile("model-writing-detect"), 60000);
+const detectRun = await runTrackedCli("模型写作面检测（scope 含 CREATE/BACKFILL 才启模型席）", [PAYLOAD_RUNNER, "detect-model-writing", paths.scopePath], campaignFile("model-writing-detect"), 60000);
 if (!detectRun.ok) {
   return await freezeAndSettle("MODEL_WRITING_DETECT_FAILED", { code: "MODEL_WRITING_DETECT_FAILED", detail: detectRun.detail, note: "scope 不可读或 actions 形状不符,无法判定模型写作面" }, null);
 }
@@ -691,7 +533,7 @@ const initialDryrunFile = campaignFile("initial-dryrun");
 // dry-run 才可能以 --session-state 新建带 final-targets 的会话（sdk-doc-sync 对既有文件
 // 一律拒 "review session already exists"）。best-effort,不存在则静默。
 // M3: rehearsal 也真跑（dry-run 真跑需清旧会话）,零治理写。
-const clearSessionRes = await world.run("node", ["-e", CLEAR_SESSION_PAYLOAD, paths.sessionPath, NONCE], { timeoutMs: 30000 });
+const clearSessionRes = await world.run("node", [PAYLOAD_RUNNER, "clear-session", paths.sessionPath, NONCE], { timeoutMs: 30000 });
 if (clearSessionRes.exitCode !== 0) {
   return await freezeAndSettle("SESSION_CLEAR_FAILED", { code: "SESSION_CLEAR_FAILED", detail: (String(clearSessionRes.stdout || "") + String(clearSessionRes.stderr || "")).slice(0, 300), note: "清旧会话失败,无法新建 canonical 会话" }, null);
 }
@@ -705,7 +547,7 @@ if (!initialRun.ok) {
 }
 const previewsFile = campaignFile("unit-previews");
 // M3: rehearsal 也真跑（dry-run 真跑产出 previews,供 record-approval 消费）。
-const extractRes = await world.run("node", ["-e", EXTRACT_UNITS_PAYLOAD, initialDryrunFile, previewsFile, "", NONCE], { timeoutMs: 60000 });
+const extractRes = await world.run("node", [PAYLOAD_RUNNER, "extract-units", initialDryrunFile, previewsFile, "", NONCE], { timeoutMs: 60000 });
 if (extractRes.exitCode !== 0) {
   return await freezeAndSettle("UNIT_PREVIEWS_FAILED", { code: "UNIT_PREVIEWS_FAILED", detail: (String(extractRes.stdout || "") + String(extractRes.stderr || "")).slice(0, 400), note: "无 reviewUnitPreviews/proposedExecutionBatch 或 digest 形态非法" }, null);
 }
@@ -744,9 +586,9 @@ let cardSnippet = "";
 if (rehearsal) {
   gateTrace = gateManifest;
   argvTrace.push({ label: "gate-presentation（唯一一张 campaign 卡,rehearsal 只记 manifest）", argv: ["node", SKILL + "/scripts/gate-presentation.js", "--manifest", "<gate-manifest-campaign-" + nonceslug + ".json>", "--json"] });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify({ rehearsalGateManifest: gateManifest }), NONCE], { timeoutMs: 30000 });
+  await world.run("node", [PAYLOAD_RUNNER, "echo", JSON.stringify({ rehearsalGateManifest: gateManifest }), NONCE], { timeoutMs: 30000 });
 } else {
-  const presentRes = await world.run("node", ["-e", GATE_PRESENT_PAYLOAD, JSON.stringify(gateManifest), paths.campaignDir, nonceslug, NONCE], { timeoutMs: 90000 });
+  const presentRes = await world.run("node", [PAYLOAD_RUNNER, "gate-present", JSON.stringify(gateManifest), paths.campaignDir, nonceslug, NONCE], { timeoutMs: 90000 });
   const presentParsed = asRecord(parseJsonLoose(presentRes.stdout));
   cardSnippet = presentParsed !== null && typeof presentParsed.cardSnippet === "string" ? presentParsed.cardSnippet : "";
   if (presentRes.exitCode !== 0 || cardSnippet === "") {
@@ -793,7 +635,7 @@ async function runExecUnit(unit: UnitDigest): Promise<ExecSummary> {
     "--campaign-approval", receiptPath,
     "--auto-accept", "--auto-approve", "--json",
   ]);
-  const res = await world.run("node", ["-e", EXEC_CLASSIFY_PAYLOAD, JSON.stringify(childArgs), resultFile, feishu.baseToken, feishu.tableId, feishu.rootToken, NONCE], { timeoutMs: 600000 });
+  const res = await world.run("node", [PAYLOAD_RUNNER, "exec-classify", JSON.stringify(childArgs), resultFile, feishu.baseToken, feishu.tableId, feishu.rootToken, NONCE], { timeoutMs: 600000 });
   const parsed = asRecord(parseJsonLoose(res.stdout));
   return {
     ok: parsed !== null && parsed.ok === true,
@@ -814,7 +656,7 @@ async function unitDryRun(unit: UnitDigest): Promise<{ ok: boolean; digest: stri
   ]);
   const run = await runTrackedCli("sdk-doc-sync 单元重 dry-run（机械重材料化）", childArgs, outFile, 600000);
   if (!run.ok) return { ok: false, digest: null, detail: run.detail };
-  const extractRes = await world.run("node", ["-e", EXTRACT_UNITS_PAYLOAD, outFile, campaignFile("dryrun-previews-" + slugOf(unit.reviewUnitId)), unit.reviewUnitId, NONCE], { timeoutMs: 60000 });
+  const extractRes = await world.run("node", [PAYLOAD_RUNNER, "extract-units", outFile, campaignFile("dryrun-previews-" + slugOf(unit.reviewUnitId)), unit.reviewUnitId, NONCE], { timeoutMs: 60000 });
   const parsed = asRecord(parseJsonLoose(extractRes.stdout));
   const digest = parsed !== null && typeof parsed.digest === "string" ? parsed.digest : null;
   if (extractRes.exitCode !== 0 || digest === null) {
@@ -824,7 +666,7 @@ async function unitDryRun(unit: UnitDigest): Promise<{ ok: boolean; digest: stri
 }
 async function locateUnitFailure(resultFile: string, unitId: string): Promise<{ located: LocatedFailure; file: string }> {
   const file = freezeDir + "/located-" + slugOf(unitId) + "-" + nonceslug + ".json";
-  const res = await world.run("node", ["-e", LOCATE_PAYLOAD, resultFile, file, NONCE], { timeoutMs: 60000 });
+  const res = await world.run("node", [PAYLOAD_RUNNER, "locate", resultFile, file, NONCE], { timeoutMs: 60000 });
   const parsed = asRecord(parseJsonLoose(res.stdout));
   const located: LocatedFailure = parsed !== null
     ? { code: typeof parsed.code === "string" ? parsed.code : "UNKNOWN", message: null, step: null, actionId: null, expected: parsed.expected, actual: parsed.actual, path: parsed.path }
@@ -944,7 +786,7 @@ if (rehearsal) {
     "--auto-accept", "--auto-approve", "--json",
   ]);
   argvTrace.push({ label: "逐单元执行（代表行;单元集见 previews,首批 K=" + Math.min(firstK, batchCap) + ",cap=" + batchCap + "）", argv: ["node"].concat(execChild) });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify({ rehearsalExecArgv: ["node"].concat(execChild), firstBatchK: Math.min(firstK, batchCap), cap: batchCap }), NONCE], { timeoutMs: 30000 });
+  await world.run("node", [PAYLOAD_RUNNER, "echo", JSON.stringify({ rehearsalExecArgv: ["node"].concat(execChild), firstBatchK: Math.min(firstK, batchCap), cap: batchCap }), NONCE], { timeoutMs: 30000 });
 } else {
   let firstBatch = true;
   while (remaining.length > 0) {
@@ -971,7 +813,7 @@ if (rehearsal) {
   }
   const settleArgv = ["node", CAMPAIGN_SETTLE, "--plan", planPath, "--outcome", "ok", "--json"];
   argvTrace.push({ label: "campaign-settle --outcome ok", argv: settleArgv });
-  await world.run("node", ["-e", ECHO_PAYLOAD, JSON.stringify({ rehearsalTerminal: terminalPhases.map((ph) => ph.argv), settleArgv }), NONCE], { timeoutMs: 30000 });
+  await world.run("node", [PAYLOAD_RUNNER, "echo", JSON.stringify({ rehearsalTerminal: terminalPhases.map((ph) => ph.argv), settleArgv }), NONCE], { timeoutMs: 30000 });
   return {
     status: "rehearsal",
     campaignId,

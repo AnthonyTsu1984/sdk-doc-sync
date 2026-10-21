@@ -788,6 +788,13 @@
    "basis": "zero live calls: batch git show exports of PR pages already pinned by a decisions file into --output-dir plus a sha256-verified manifest"
   },
   {
+   "path": ".claude/skills/api-reference-sync/scripts/dwf-payload-runner.js",
+   "skill": "api-reference-sync",
+   "classification": "read-only",
+   "operation": "dwf-payload-runner",
+   "basis": "no external mutation signature found; P1-2 shared runner replacing template inline node -e payloads — spawns child CLIs and writes only local tmp artifacts (stdout/stderr captures, journal, session), the write boundary staying with each child entrypoint"
+  },
+  {
    "path": ".claude/skills/api-reference-sync/scripts/copy-and-repoint-plan.js",
    "skill": "api-reference-sync",
    "classification": "read-only",

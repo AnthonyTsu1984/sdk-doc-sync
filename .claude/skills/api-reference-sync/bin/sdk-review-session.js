@@ -691,11 +691,12 @@ function parseBatchReply(text) {
 // touchedRecords derived from the digest-verified journal itself — the
 // prepared entries carry the exact (actionId, recordId, documentToken) the
 // acceptance transition re-validates. The executor never transcribes them.
-// The executor's prepared entry carries the record identity inside the rollback
-// capsule (rollbackCapsule.beforeRecord.recordId — captureRecordState, and the
-// record-state.js executionTargetsBaseline reads it from there); the flat
-// recordId field is the fixture/accepted shape for folder/resource steps that
-// carry no capsule. Read both.
+// The executor's prepared entry carries the record identity and the document
+// token inside the rollback capsule (rollbackCapsule.beforeRecord.recordId /
+// rollbackCapsule.documentRollback.documentToken — captureRecordState and the
+// pre-write verifier, the same sources record-state.js reads); the flat
+// recordId/documentToken fields are the fixture/accepted shape for
+// folder/resource steps that carry no capsule. Read both.
 function touchedRecordsFromJournal(entries) {
   const byAction = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
@@ -706,11 +707,16 @@ function touchedRecordsFromJournal(entries) {
         ? entry.rollbackCapsule.beforeRecord.recordId
         : null);
     if (!recordId) continue;
+    const documentToken = nonEmptyText(entry.documentToken)
+      ? entry.documentToken
+      : (nonEmptyText(entry.rollbackCapsule?.documentRollback?.documentToken)
+        ? entry.rollbackCapsule.documentRollback.documentToken
+        : null);
     if (!byAction.has(entry.actionId)) {
       byAction.set(entry.actionId, {
         actionId: entry.actionId,
         recordId,
-        documentToken: entry.documentToken || null,
+        documentToken,
       });
     }
   }

@@ -209,10 +209,22 @@ function pageFactsFromBlocks(blocks = []) {
 // Evaluates the profile's declared layout rules against page facts and
 // returns typed violations. A profile without layoutRules is not governed by
 // this invariant for that language.
-function checkLayoutConformance(profile, facts = {}) {
+function checkLayoutConformance(profile, facts = {}, options = {}) {
     const violations = [];
     const rules = profile?.layoutRules;
     if (!rules) return { invariantId: LAYOUT_INVARIANT_ID, violations };
+
+    // Update-verbatim provenance (M5 ruling, 2026-10-21: UPDATE pages are the
+    // PR's terminal bytes — no enrichment): the response-fields strong form
+    // (returnsResponseFieldsRequired, the describeReplicas schema-first
+    // baseline) demands structure PR pages do not carry (c8: create_schema's
+    // RETURNS is the PR's one-line prose "A CollectionSchema object." with the
+    // response surface on the linked type page). The caller unbinds that ONE
+    // rule for UPDATE-family actions; every other content rule stays bound.
+    let contentRules = rules.contentQuality;
+    if (contentRules && options.unbindReturnsResponseFields === true) {
+        contentRules = { ...contentRules, returnsResponseFieldsRequired: false };
+    }
 
     const report = (code, detail) => violations.push({ code, detail });
     const lines = facts.lines || [];
@@ -302,7 +314,7 @@ function checkLayoutConformance(profile, facts = {}) {
     // tracks declare them through GLOBAL_LAYOUT_RULES.contentQuality; a
     // profile that does not declare one stays unbound by it.
     if (rules.contentQuality) {
-        checkContentRules(rules.contentQuality, normalizeEntries(facts), facts.callouts || [], report);
+        checkContentRules(contentRules, normalizeEntries(facts), facts.callouts || [], report);
     }
 
     return { invariantId: LAYOUT_INVARIANT_ID, violations };

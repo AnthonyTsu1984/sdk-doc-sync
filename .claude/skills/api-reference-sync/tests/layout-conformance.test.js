@@ -322,6 +322,44 @@ test('returnsResponseFieldsExemptTypes: python None/void returns are the void eq
     );
 });
 
+test('unbindReturnsResponseFields: UPDATE-verbatim provenance unbinds the strong form, and only that form (c8 create_schema)', () => {
+    // M5 ruling (2026-10-21): UPDATE pages are the PR's terminal bytes — no
+    // enrichment. The c8 freeze (create_schema) showed the schema-first
+    // strong form demanding a PARAMETERS list the PR never carried (its
+    // RETURNS is one prose line with the response surface on the linked type
+    // page; a 56-page corpus scan found the shape family-wide, from
+    // *CollectionSchema* links to bare *Status*/*int*/*list[dict]* handles).
+    // The caller (feishu-operational-verifier) passes the flag for
+    // UPDATE-family actions; the generation surface (CREATE) stays bound.
+    const prVerbatimLines = [
+        'This operation creates a schema object.',
+        'RETURN TYPE:', '*[CollectionSchema](CollectionSchema/CollectionSchema.md)*',
+        'RETURNS:', 'A **[CollectionSchema](CollectionSchema/CollectionSchema.md)** object.',
+    ];
+    // Default (generation surface): the strong form still reports.
+    assert.equal(
+        checkLayoutConformance(sdkLayoutProfiles.python, { headings: [], lines: prVerbatimLines, callouts: [] })
+            .violations.some((violation) => violation.code === 'RETURNS_MIN_DEPTH'),
+        true,
+        'without the flag the schema-first strong form stays bound',
+    );
+    // Update-verbatim: the strong form is unbound for exactly this page.
+    assert.deepEqual(
+        checkLayoutConformance(sdkLayoutProfiles.python, { headings: [], lines: prVerbatimLines, callouts: [] }, { unbindReturnsResponseFields: true }).violations,
+        [],
+        'the PR-verbatim shape conforms with the flag',
+    );
+    // Only the response-fields rule is unbound: a CJK mixing violation still
+    // reports under the same flag.
+    const cjkLines = [...prVerbatimLines, '这一行中英混排会被内容规则拦下。'];
+    assert.equal(
+        checkLayoutConformance(sdkLayoutProfiles.python, { headings: [], lines: cjkLines, callouts: [] }, { unbindReturnsResponseFields: true })
+            .violations.some((violation) => violation.code === 'CONTENT_CJK_MIXING'),
+        true,
+        'every other content rule stays bound under the flag',
+    );
+});
+
 test('checkMarkdownContentQuality runs the five rules over preview markdown, skipping fenced code', () => {
     const profile = sdkLayoutProfiles.java;
     const code = (markdown, name) => checkMarkdownContentQuality(markdown, profile)

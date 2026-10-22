@@ -129,8 +129,16 @@ class FeishuOperationalVerifier extends SyncVerifier {
         // Declared structural layout rules (builder prefixes, single-request
         // H3, example H3, deprecation callout shape) — language differences
         // live in profile.layoutRules, this check is language-neutral
-        // (api.sdk-page-layout).
-        semanticErrors.push(...checkLayoutConformance(profile, pageFactsFromBlocks(blocks))
+        // (api.sdk-page-layout). The response-fields strong form is unbound
+        // for UPDATE-family actions: their content is the PR's terminal bytes
+        // (M5 ruling 2026-10-21), which do not carry the schema-first
+        // PARAMETERS list the strong form demands (c8: create_schema, 56-page
+        // corpus scan — the strong form is a generation-surface requirement).
+        semanticErrors.push(...checkLayoutConformance(
+            profile,
+            pageFactsFromBlocks(blocks),
+            { unbindReturnsResponseFields: /^(UPDATE|COPY_PATCH)/.test(String(plan.action || '')) },
+        )
             .violations.map((violation) => ({ code: violation.code, detail: violation.detail })));
         const expectedRoles = plan.apiPatchPlan?.desiredRoleSequence;
         const actualRoles = model.sections.map((section) => section.role);

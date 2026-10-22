@@ -72,6 +72,7 @@ function classifyFailureCode(code) {
   //    Exact codes first, then the whole *_STALE family.
   if (label === 'PLACEMENT_TARGET_CHAIN_STALE') return FAILURE_CLASSES.STALE; // sync-planner.js:1041/1048/1088/1130/1164 — walk-vs-plan target chain drift
   if (label === 'PLACEMENT_WALK_DIGEST_STALE') return FAILURE_CLASSES.STALE;  // design §5.6 P3 name; on disk the bound-walk drift is PLACEMENT_SOURCE_STALE (versioned-tree-policy.js:566), covered by the suffix rule below
+  if (label === 'APPROVED_BATCH_DIGEST_MISMATCH') return FAILURE_CLASSES.STALE; // sdk-doc-sync.js:283 — the pinned approval digest no longer matches the regenerated batch. c9 (2026-10-22): resource-bearing units regenerate with a placementWalkDigest stamp the session-creating dry-run's plans did not carry, so the first live entry mismatches. Stale is exact: the retry is a mechanical re dry-run whose FRESH digest re-enters through the units-based receipt's regeneration track (three chains + membership re-verified there — a genuinely different batch still refuses), never a blind rerun.
   if (label.endsWith('_STALE')) return FAILURE_CLASSES.STALE;                 // family suffix: GROUPING_STALE (grouping-proposal.js:31), CAMPAIGN_DIGEST_STALE (campaign-approval.js:36), PLACEMENT_SOURCE_STALE (versioned-tree-policy.js:566), HANDWRITTEN_FLAG_STALE / HANDWRITTEN_METADATA_STALE (zilliz-cli-handwritten-audit.js:99/109)
   // Sibling-unit link failures (merged from markdown-link-resolution.js:114):
   // a repo-relative .md link whose slug has no in-KB record yet — exactly

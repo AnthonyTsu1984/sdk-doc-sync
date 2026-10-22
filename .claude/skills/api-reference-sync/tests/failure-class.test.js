@@ -38,6 +38,7 @@ test('transient: exact codes, bare network errnos, 5xx prefixes and vocabulary',
 test('stale: exact codes, the *_STALE family, and the merged link-resolution code', () => {
   assert.equal(classifyFailureCode('PLACEMENT_TARGET_CHAIN_STALE'), STALE); // sync-planner.js:1041 — walk-vs-plan chain drift
   assert.equal(classifyFailureCode('PLACEMENT_WALK_DIGEST_STALE'), STALE);  // design §5.6 P3 name
+  assert.equal(classifyFailureCode('APPROVED_BATCH_DIGEST_MISMATCH'), STALE); // sdk-doc-sync.js:283 — pinned approval vs regenerated batch (c9: resource plans gain the placementWalkDigest stamp between the session-creating dry-run and the resumed execution); the retry re-presents the fresh digest through the receipt's regeneration track
   assert.equal(classifyFailureCode('PLACEMENT_SOURCE_STALE'), STALE);       // versioned-tree-policy.js:566 — suffix rule
   assert.equal(classifyFailureCode('GROUPING_STALE'), STALE);               // grouping-proposal.js:31 — suffix rule
   assert.equal(classifyFailureCode('CAMPAIGN_DIGEST_STALE'), STALE);        // campaign-approval.js:36 — suffix rule

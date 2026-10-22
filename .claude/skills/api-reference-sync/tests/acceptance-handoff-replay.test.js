@@ -50,6 +50,7 @@ const TEMPLATE = path.resolve(__dirname, '..', 'workflows', 'release-sync-campai
 const template = fs.readFileSync(TEMPLATE, 'utf8');
 const FIXTURES = path.resolve(__dirname, 'conformance-fixtures', 'api-reference-sync', 'python-v30-sync');
 const JOURNAL_FIXTURE = path.join(FIXTURES, 'm5-c4-create-role-execution-journal.jsonl');
+const COPY_JOURNAL_FIXTURE = path.join(FIXTURES, 'm5-c6-remove-privileges-copy-journal.jsonl');
 const SESSION_FIXTURE = path.join(FIXTURES, 'm5-c4-session-residue.json');
 const TARGETS_FIXTURE = path.join(FIXTURES, 'targets-python-v30.json');
 
@@ -57,9 +58,15 @@ const TARGETS_FIXTURE = path.join(FIXTURES, 'targets-python-v30.json');
 // executionJournalDigest of run m5-live-20261021-c4) — the fixture must stay
 // byte-identical to the campaign artifact.
 const C4_JOURNAL_DIGEST = 'sha256:6bab8ce4b663d95f5a0a298df66fe2f28d83b4618b7d9145d203b0c96d8669d3';
+// The m5 c6 copy-shape journal (COPY_PATCH_AND_REPOINT refusal,
+// run run8-20261022) — same byte-identity contract.
+const C6_COPY_JOURNAL_DIGEST = 'sha256:d91033b0bd3914769293ca43db63f6cb3c4a37672569a6265f27e3eb1e48d808';
 const C4_UNIT = 'review:python:Authentication:create_role';
 const C4_RECORD_ID = 'recu3QwdFC0YXO';
 const C4_DOCUMENT_TOKEN = 'HRqudGOOnokInhxczclcADBDn8g';
+const COPY_UNIT = 'review:python:Authentication:remove_privileges_from_group';
+const COPY_RECORD_ID = 'recuAAA5Ub7Lhm';
+const COPY_DOCUMENT_TOKEN = 'Vm7vddGfYo6dYsxJi1Ycjuycnad';
 
 // ── T1: the template's real flags survive the consumer's semantics ──────────
 
@@ -236,14 +243,23 @@ test('T8: the real c4 session accepts the real c4 journal through the full accep
 
 test('T8: without the capsule fallback the auto-acceptance receipt is unreachable (why the fallback exists)', () => {
     const entries = readJournalEntries(JOURNAL_FIXTURE);
-    // Flat-field-only derivation (the pre-c3-fallback world): no flat
-    // recordId on the prepared entry → no touched records → the receipt
-    // builder refuses. This is the c3 refusal, replayed.
+    // Flat-field-only derivation (the pre-c3 world): no flat recordId on the
+    // prepared entry AND no capsule/observed evidence either (the observed
+    // fallback landed with the c6 copy fix — strip it too to model the era
+    // before any fallback) → no touched records → the receipt builder
+    // refuses. This is the c3 refusal, replayed.
     const flatOnly = entries.map((entry) => {
-        if (entry.type !== 'prepared') return entry;
-        const { rollbackCapsule, ...rest } = entry;
-        void rollbackCapsule;
-        return rest;
+        if (entry.type === 'prepared') {
+            const { rollbackCapsule, ...rest } = entry;
+            void rollbackCapsule;
+            return rest;
+        }
+        if (entry.type === 'observed') {
+            const { rollbackEvidence, ...rest } = entry;
+            void rollbackEvidence;
+            return rest;
+        }
+        return entry;
     });
     assert.deepEqual(touchedRecordsFromJournal(flatOnly), []);
     assert.throws(
@@ -271,10 +287,10 @@ test('T8: without the capsule fallback the auto-acceptance receipt is unreachabl
 // function against the frozen session — no layer after prepareDocumentAcceptance
 // may hide again.
 
-function fakeBitableWriterFor(baselineTargets) {
+function fakeBitableWriterFor(baselineTargets, recordId = C4_RECORD_ID) {
     // Live state at acceptance time: the executor's updateRecord has already
     // set Progress back to WIP and never touches Targets (baseline survives).
-    const record = { record_id: C4_RECORD_ID, fields: { Progress: 'WIP', Targets: [...baselineTargets] } };
+    const record = { record_id: recordId, fields: { Progress: 'WIP', Targets: [...baselineTargets] } };
     const writes = [];
     return {
         writes,
@@ -380,3 +396,83 @@ function receiptWritesPush() {
     // the negative path must never reach the receipt write; kept as a named
     // no-op so an unexpected call is visible in a stack trace
 }
+
+// ── T8-copy: the c6 COPY_PATCH_AND_REPOINT shape (observed-evidence fallback) ──
+//
+// c6 froze on its SECOND unit with the c4 refusal message ("requires
+// documentLinks and recordLinks") — copy-type actions produce the document
+// AFTER the prepared entry, so its token lives only in the observed entry's
+// rollbackEvidence (createdDocument.documentToken), and the journal→identity
+// derivation never saw it. The derivation now falls back flat → capsule →
+// observed, per field; these tests pin the copy shape (and CREATE inherits the
+// same recordId fallback from rollbackEvidence/postRecord).
+
+test('T8-copy: the frozen c6 copy journal is byte-identical and its identity derives from observed evidence', () => {
+    const entries = readJournalEntries(COPY_JOURNAL_FIXTURE);
+    assert.equal(digestSemantic(entries), C6_COPY_JOURNAL_DIGEST,
+        'the fixture must stay byte-identical to the c6 campaign journal');
+    const prepared = entries.find((entry) => entry.type === 'prepared');
+    // The copy shape: capsule has the before-record but NO documentRollback,
+    // and no flat identity — the document exists only in observed evidence.
+    assert.ok(!prepared.rollbackCapsule?.documentRollback?.documentToken, 'no usable capsule document token');
+    assert.equal(prepared.documentToken, undefined);
+    const observed = entries.find((entry) => entry.type === 'observed');
+    assert.equal(observed.rollbackEvidence.createdDocument.documentToken, COPY_DOCUMENT_TOKEN);
+    assert.deepEqual(touchedRecordsFromJournal(entries), [{
+        actionId: 'python:Authentication:remove_privileges_from_group',
+        recordId: COPY_RECORD_ID,
+        documentToken: COPY_DOCUMENT_TOKEN,
+    }]);
+    // Without the observed fallback the derivation yields no documentToken —
+    // exactly the c6 refusal precondition (empty documentLinks).
+    const preparedOnly = entries.filter((entry) => entry.type !== 'observed');
+    assert.equal(touchedRecordsFromJournal(preparedOnly)[0].documentToken, null);
+});
+
+test('T8-copy: the full acceptance write path replays green for the copy shape (milvus-only baseline record)', async () => {
+    const journalPath = COPY_JOURNAL_FIXTURE;
+    const { tmp, sessionPath, session, stateDigest } = loadResidueSessionWith(journalPath);
+    // Bind the residue session's pending execution to THIS unit's journal
+    // (the residue fixture ships create_role's binding; the manifest covers
+    // all 64 units, so rebinding is a session-shape edit, not a new fixture).
+    const rebound = {
+        ...session,
+        pendingExecutions: [{
+            reviewUnitId: COPY_UNIT,
+            executionJournalPath: journalPath,
+            executionJournalDigest: C6_COPY_JOURNAL_DIGEST,
+            executedAt: session.pendingExecutions[0].executedAt,
+        }],
+        activeExecution: {
+            ...session.activeExecution,
+            reviewUnitId: COPY_UNIT,
+            executionJournalPath: journalPath,
+            executionJournalDigest: C6_COPY_JOURNAL_DIGEST,
+        },
+    };
+    fs.writeFileSync(sessionPath, `${JSON.stringify(rebound, null, 2)}\n`);
+    const reloaded = loadReviewSessionState(sessionPath);
+
+    const entries = readJournalEntries(journalPath);
+    const unitTouched = touchedRecordsFromJournal(entries);
+    const writer = fakeBitableWriterFor(['Milvus'], COPY_RECORD_ID); // journal baseline: milvus-only record
+    const nextSession = await acceptExecutedUnit({
+        session: reloaded.session,
+        sessionPath,
+        sessionDigest: reloaded.sessionDigest,
+        reviewUnitId: COPY_UNIT,
+        executionJournalPath: journalPath,
+        executionJournalDigest: C6_COPY_JOURNAL_DIGEST,
+        documentLinks: [...new Set(unitTouched.map((record) => `https://example-feishu/docx/${record.documentToken}`))],
+        recordLinks: unitTouched.map((record) => `https://example-feishu/bitable/${record.recordId}`),
+        approvedBatchDigest: 'sha256:d9e14f3bc0dab5cd24b645f8bcf15abc5443f3602eb308cb198830c288c66b34',
+        targetsJson: TARGETS_FIXTURE,
+        bitableWriter: writer,
+        out: () => {},
+    });
+    assert.equal(writer.writes.length, 1);
+    assert.equal(writer.writes[0].recordId, COPY_RECORD_ID);
+    assert.equal(writer.writes[0].progress, 'Draft');
+    assert.equal(unitStatusOf(nextSession, COPY_UNIT), 'finalized');
+    fs.rmSync(tmp, { recursive: true, force: true });
+});

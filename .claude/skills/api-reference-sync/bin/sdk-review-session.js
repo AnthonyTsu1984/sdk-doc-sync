@@ -707,7 +707,31 @@ function parseBatchReply(text) {
 // pre-write verifier, the same sources record-state.js reads); the flat
 // recordId/documentToken fields are the fixture/accepted shape for
 // folder/resource steps that carry no capsule. Read both.
+//
+// c6 seam (2026-10-22): COPY_PATCH_AND_REPOINT actions produce their document
+// AFTER the prepared entry — the new docx token lives in the OBSERVED entry's
+// rollbackEvidence (patchedDocumentToken for patches, createdDocument.document
+// Token for copies), and CREATE-type actions carry their created record the
+// same way (rollbackEvidence.recordId / postRecord). The observed entry is the
+// executor's own completion evidence (verified success is separately enforced
+// by deriveUnitEvidence), so it is a fallback source of last resort: flat →
+// capsule → observed, per field. Without it every copy/create unit's
+// auto-acceptance refuses "requires documentLinks and recordLinks".
 function touchedRecordsFromJournal(entries) {
+  const observedTokens = new Map();
+  const observedRecords = new Map();
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    if (entry?.type !== 'observed') continue;
+    const evidence = entry.rollbackEvidence || {};
+    const token = nonEmptyText(evidence.patchedDocumentToken)
+      ? evidence.patchedDocumentToken
+      : (nonEmptyText(evidence.createdDocument?.documentToken) ? evidence.createdDocument.documentToken : null);
+    if (token) observedTokens.set(entry.actionId, token);
+    const recordId = nonEmptyText(evidence.recordId)
+      ? evidence.recordId
+      : (nonEmptyText(evidence.postRecord?.recordId) ? evidence.postRecord.recordId : null);
+    if (recordId) observedRecords.set(entry.actionId, recordId);
+  }
   const byAction = new Map();
   for (const entry of Array.isArray(entries) ? entries : []) {
     if (entry?.type !== 'prepared' || !nonEmptyText(entry.actionId)) continue;
@@ -715,13 +739,13 @@ function touchedRecordsFromJournal(entries) {
       ? entry.recordId
       : (nonEmptyText(entry.rollbackCapsule?.beforeRecord?.recordId)
         ? entry.rollbackCapsule.beforeRecord.recordId
-        : null);
+        : (nonEmptyText(observedRecords.get(entry.actionId)) ? observedRecords.get(entry.actionId) : null));
     if (!recordId) continue;
     const documentToken = nonEmptyText(entry.documentToken)
       ? entry.documentToken
       : (nonEmptyText(entry.rollbackCapsule?.documentRollback?.documentToken)
         ? entry.rollbackCapsule.documentRollback.documentToken
-        : null);
+        : (nonEmptyText(observedTokens.get(entry.actionId)) ? observedTokens.get(entry.actionId) : null));
     if (!byAction.has(entry.actionId)) {
       byAction.set(entry.actionId, {
         actionId: entry.actionId,

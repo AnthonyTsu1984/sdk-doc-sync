@@ -430,8 +430,17 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   // The authorizing artifact is the approved BATCH digest (the write approval
   // that authorized this execution), not the execution journal digest — the
   // journal identifies the run, the batch digest identifies the approval
-  // (2026-10-16 ruling; review P2). The unit carries it from the manifest.
-  const acceptanceBatchDigest = prepared.reviewUnit.batchDigest;
+  // (2026-10-16 ruling; review P2). Source order (c5 seam, 2026-10-22): the
+  // auto-acceptance path passes the exact digest its write gate enforced
+  // (approvedBatchDigest, resolved from --campaign-approval /
+  // --approve-batch-digest in sdk-doc-sync); the manifest-unit fallback serves
+  // CLI callers, but the digest-stamped manifest strips per-unit digests BY
+  // DESIGN (review-units.js manifestSemantic), so a session whose caller
+  // supplies no digest refuses here — acceptance never binds to an unapproved
+  // digest.
+  const acceptanceBatchDigest = nonEmptyText(args.approvedBatchDigest)
+    ? args.approvedBatchDigest
+    : prepared.reviewUnit.batchDigest;
   if (!nonEmptyText(acceptanceBatchDigest)) {
     throw new Error(`Acceptance requires the unit's approved batch digest for ${receipt.reviewUnitId}`);
   }
@@ -618,6 +627,7 @@ async function acceptExecutedUnit({
   baseToken = null,
   tableId = null,
   bitableWriter = null,
+  approvedBatchDigest = null,
   finalTargets,
   targetsJson = null,
   out = () => {},
@@ -636,7 +646,7 @@ async function acceptExecutedUnit({
     sessionPath,
     sessionDigest,
     receipt,
-    args: { baseToken, tableId, finalTargets, targetsJson },
+    args: { baseToken, tableId, finalTargets, targetsJson, approvedBatchDigest },
     io: { bitableWriter },
     out,
   });

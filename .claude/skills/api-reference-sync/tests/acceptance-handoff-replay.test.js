@@ -26,6 +26,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 
 const { parseArgs } = require('../bin/sdk-doc-sync');
@@ -34,10 +35,14 @@ const {
     readJournalEntries,
     touchedRecordsFromJournal,
     buildAutoAcceptanceReceipt,
+    acceptExecutedUnit,
+    acceptDocumentTwoGate,
 } = require('../bin/sdk-review-session');
 const {
     prepareDocumentAcceptance,
     targetsFinalForReviewUnit,
+    loadReviewSessionState,
+    unitStatusOf,
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
@@ -253,3 +258,125 @@ test('T8: without the capsule fallback the auto-acceptance receipt is unreachabl
         /no record-touching journal entries/,
     );
 });
+
+// ── T8-full: the whole acceptance write path, c5 seam included ──────────────
+//
+// c5 (2026-10-22) exposed the NEXT onion layer: acceptDocumentTwoGate reads
+// `prepared.reviewUnit.batchDigest` — a session manifest unit field that
+// review-units.js strips BY DESIGN (the digest-stamped manifest carries no
+// per-unit digests), so no code path could ever satisfy it. c2/c3/c4 each
+// died at an earlier layer and this one was never reached. The fix threads the
+// approvedBatchDigest (the digest the write gate itself enforced) from
+// sdk-doc-sync through acceptExecutedUnit. These tests replay the ENTIRE
+// function against the frozen session — no layer after prepareDocumentAcceptance
+// may hide again.
+
+function fakeBitableWriterFor(baselineTargets) {
+    // Live state at acceptance time: the executor's updateRecord has already
+    // set Progress back to WIP and never touches Targets (baseline survives).
+    const record = { record_id: C4_RECORD_ID, fields: { Progress: 'WIP', Targets: [...baselineTargets] } };
+    const writes = [];
+    return {
+        writes,
+        listRecords: async () => [{ record_id: record.record_id, fields: { ...record.fields } }],
+        updateRecord: async (recordId, payload) => {
+            writes.push({ recordId, ...payload });
+            if (payload.progress) record.fields.Progress = payload.progress;
+            if (payload.targets) record.fields.Targets = [...payload.targets];
+            return { record_id: recordId, fields: { ...record.fields } };
+        },
+    };
+}
+
+function loadResidueSessionWith(journalPath) {
+    const raw = fs.readFileSync(SESSION_FIXTURE, 'utf8');
+    assert.ok(raw.includes('__FIXTURE_JOURNAL_PATH__'), 'the residue fixture keeps the placeholder contract');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 't8-acceptance-'));
+    const sessionPath = path.join(tmp, 'session-state.json');
+    fs.writeFileSync(sessionPath, raw.split('__FIXTURE_JOURNAL_PATH__').join(journalPath));
+    const loaded = loadReviewSessionState(sessionPath);
+    return { tmp, sessionPath, session: loaded.session, stateDigest: loaded.sessionDigest };
+}
+
+function c4Receipt(journalPath) {
+    const entries = readJournalEntries(journalPath);
+    const unitTouched = touchedRecordsFromJournal(entries);
+    return {
+        entries,
+        receipt: buildAutoAcceptanceReceipt({
+            reviewUnitId: C4_UNIT,
+            executionJournalPath: journalPath,
+            executionJournalDigest: C4_JOURNAL_DIGEST,
+            entries,
+            documentLinks: [...new Set(unitTouched.map((record) => `https://example-feishu/docx/${record.documentToken}`))],
+            recordLinks: unitTouched.map((record) => `https://example-feishu/bitable/${record.recordId}`),
+        }),
+    };
+}
+
+test('T8-full: the entire acceptance write path replays green against the frozen c4 session (fake BitableWriter)', async () => {
+    const journalPath = JOURNAL_FIXTURE;
+    const { tmp, sessionPath, session, stateDigest } = loadResidueSessionWith(journalPath);
+    const { receipt } = c4Receipt(journalPath);
+    const writer = fakeBitableWriterFor(['Milvus', 'Zilliz']);
+    const receiptWrites = [];
+
+    const nextSession = await acceptExecutedUnit({
+        session,
+        sessionPath,
+        sessionDigest: stateDigest,
+        reviewUnitId: C4_UNIT,
+        executionJournalPath: journalPath,
+        executionJournalDigest: C4_JOURNAL_DIGEST,
+        documentLinks: receipt.documentLinks,
+        recordLinks: receipt.recordLinks,
+        approvedBatchDigest: 'sha256:5fd55a08d39f6bff5ed0335c48448c5e0dd7409df36f55d63ac044d1e5d311b9',
+        targetsJson: TARGETS_FIXTURE,
+        bitableWriter: writer,
+        out: () => {},
+    });
+    void receiptWrites;
+
+    // The governed write: exactly one WIP→Draft transition carrying the A2
+    // ruling's final Targets ([Milvus, Zilliz] for the shared create_role).
+    assert.equal(writer.writes.length, 1);
+    assert.deepEqual(writer.writes[0], { recordId: C4_RECORD_ID, progress: 'Draft', targets: ['Milvus', 'Zilliz'] });
+    // The unit finalized in the returned AND the persisted session.
+    assert.equal(unitStatusOf(nextSession, C4_UNIT), 'finalized');
+    const reloaded = loadReviewSessionState(sessionPath);
+    assert.equal(unitStatusOf(reloaded.session, C4_UNIT), 'finalized');
+    assert.equal((reloaded.session.acceptedReviewUnits || []).length, 1);
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+test('T8-full: without the threaded approvedBatchDigest the acceptance refuses with the exact c5 message (fail-closed pin)', async () => {
+    const journalPath = JOURNAL_FIXTURE;
+    const { tmp, sessionPath, session, stateDigest } = loadResidueSessionWith(journalPath);
+    const { receipt } = c4Receipt(journalPath);
+    const writer = fakeBitableWriterFor(['Milvus', 'Zilliz']);
+
+    await assert.rejects(
+        acceptDocumentTwoGate({
+            session,
+            sessionPath,
+            sessionDigest: stateDigest,
+            receipt,
+            // No approvedBatchDigest AND no manifest digest — the c5 shape.
+            args: { targetsJson: TARGETS_FIXTURE },
+            io: { bitableWriter: writer, writeUnitReceipt: (file, content) => receiptWritesPush(file, content) },
+            out: () => {},
+        }),
+        (error) => {
+            assert.match(error.message, /Acceptance requires the unit's approved batch digest for review:python:Authentication:create_role/);
+            return true;
+        },
+    );
+    // Fail-closed: nothing was written to Feishu before the refusal.
+    assert.equal(writer.writes.length, 0);
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
+function receiptWritesPush() {
+    // the negative path must never reach the receipt write; kept as a named
+    // no-op so an unexpected call is visible in a stack trace
+}

@@ -1100,6 +1100,14 @@ async function runCli({
                     documentLinks,
                     recordLinks,
                     baseToken,
+                    // c5 seam (2026-10-22): the acceptance governance binds the
+                    // digest the write gate itself enforced — resolved above from
+                    // --campaign-approval / --approve-batch-digest. The session
+                    // manifest unit never carries it (the digest-stamped manifest
+                    // strips per-unit digests by design), so without this the
+                    // acceptance refuses "requires the unit's approved batch
+                    // digest" for every auto-accepted unit.
+                    approvedBatchDigest,
                     finalTargets: args.finalTargets,
                     targetsJson: args.targetsJson,
                     out,

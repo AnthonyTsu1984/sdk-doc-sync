@@ -468,20 +468,33 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
       // updateRecord, so every mutation is cross-checked against it.
       enforceTargets: true,
     });
-    writer.governance.bindRunManifest(createRunManifest({
+    // c7 seam (2026-10-22): the acceptance manifest artifact used to be keyed
+    // by UNIT alone, so run N+1's re-acceptance of the same unit (the dwf
+    // template rebuilds its session per run and re-executes every unit)
+    // minted different content at the same path and died on the exclusive
+    // write as RUN_MANIFEST_EVIDENCE_CONFLICT. The exec side never had this
+    // problem because its batchDigest itself moves with the tree state. Key
+    // the artifact by the manifest's OWN digest: identical content → same
+    // path → the byte-equal branch passes (idempotent); any content change
+    // (new approval, new tree fingerprint) → a fresh path. The exclusive
+    // same-path-different-bytes refusal stays as the tamper backstop.
+    const acceptanceManifest = createRunManifest({
       skill: 'api-reference-sync',
       skillVersion: 'api-reference-sync/document-acceptance@1',
       repoRoot,
       batchDigest: acceptanceBatchDigest,
       sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
-    }), { repoRoot });
-    writeRunManifestArtifact(createRunManifest({
-      skill: 'api-reference-sync',
-      skillVersion: 'api-reference-sync/document-acceptance@1',
-      repoRoot,
-      batchDigest: acceptanceBatchDigest,
-      sessionDigest: `document-acceptance:${receipt.reviewUnitId}`,
-    }), { filePath: path.join(repoRoot, 'tmp', 'api-reference-sync', `run-manifest-document-acceptance-${receipt.reviewUnitId.replace(/[^A-Za-z0-9-]/g, '-')}.json`) });
+    });
+    writer.governance.bindRunManifest(acceptanceManifest, { repoRoot });
+    const manifestWrite = io.writeRunManifestArtifact || writeRunManifestArtifact;
+    manifestWrite(acceptanceManifest, {
+      filePath: path.join(
+        repoRoot,
+        'tmp',
+        'api-reference-sync',
+        `run-manifest-document-acceptance-${receipt.reviewUnitId.replace(/[^A-Za-z0-9-]/g, '-')}-${String(acceptanceManifest.manifestDigest).replace('sha256:', '').slice(0, 16)}.json`,
+      ),
+    });
   }
 
   // Pre-write verification: WIP progress and untouched Targets from the

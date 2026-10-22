@@ -476,3 +476,64 @@ test('T8-copy: the full acceptance write path replays green for the copy shape (
     assert.equal(unitStatusOf(nextSession, COPY_UNIT), 'finalized');
     fs.rmSync(tmp, { recursive: true, force: true });
 });
+
+// ── T8-governance: the acceptance manifest artifact keying (c7 seam) ────────
+//
+// c7 froze at the canary's acceptance with RUN_MANIFEST_EVIDENCE_CONFLICT:
+// the artifact was keyed by UNIT alone, and run N+1's re-acceptance (the dwf
+// template rebuilds its session per run) minted different content at the same
+// path. The exec side never had this problem — its batchDigest itself moves
+// with the tree state. The artifact is now keyed by the manifest's OWN digest:
+// identical content → same path → byte-equal pass; different content → fresh
+// path. The fake writer here carries a governance object so the governance
+// block (skipped by the governance-less fakes above) actually runs.
+
+test('T8-governance: the acceptance manifest artifact is keyed by its own manifest digest', async () => {
+    const artifactWrites = [];
+    const makeGovernanceWriter = (baseline) => {
+        const writer = { ...fakeBitableWriterFor(baseline) };
+        writer.governance = {
+            bindApproval: () => {},
+            bindRunManifest: (manifest) => artifactWrites.push({ bound: manifest }),
+        };
+        return writer;
+    };
+    const acceptWith = async (approvedBatchDigest) => {
+        const { tmp, sessionPath, session, stateDigest } = loadResidueSessionWith(JOURNAL_FIXTURE);
+        const { receipt } = c4Receipt(JOURNAL_FIXTURE);
+        const writer = makeGovernanceWriter(['Milvus', 'Zilliz']);
+        await acceptDocumentTwoGate({
+            session,
+            sessionPath,
+            sessionDigest: stateDigest,
+            receipt,
+            args: { approvedBatchDigest, targetsJson: TARGETS_FIXTURE },
+            io: {
+                bitableWriter: writer,
+                // The per-unit receipt keeps its real durable write (its
+                // digest is re-validated from the file at rest); only the
+                // MANIFEST artifact write is redirected — it is the seam
+                // under test and must not stain the canonical namespace.
+                writeRunManifestArtifact: (manifest, { filePath }) => artifactWrites.push({ manifest, filePath }),
+            },
+            out: () => {},
+        });
+        fs.rmSync(tmp, { recursive: true, force: true });
+    };
+    const FIRST = 'sha256:1111111111111111111111111111111111111111111111111111111111111111';
+    const SECOND = 'sha256:2222222222222222222222222222222222222222222222222222222222222222';
+    await acceptWith(FIRST);
+    await acceptWith(SECOND);
+    const writes = artifactWrites.filter((entry) => entry.filePath);
+    assert.equal(writes.length, 2, 'one manifest artifact write per acceptance');
+    assert.notEqual(writes[0].filePath, writes[1].filePath,
+        'different approved digests (different runs) must land at different artifact paths — the c7 collision');
+    for (const write of writes) {
+        assert.match(write.filePath, /run-manifest-document-acceptance-review-python-Authentication-create-role-[0-9a-f]{16}\.json$/,
+            'the artifact filename carries the manifestDigest slice');
+        assert.ok([FIRST, SECOND].includes(write.manifest.batchDigest));
+        assert.equal(write.manifest.sessionDigest, `document-acceptance:${C4_UNIT}`);
+    }
+    assert.notEqual(writes[0].manifest.manifestDigest, writes[1].manifest.manifestDigest,
+        'the key is content-addressed: different content, different name');
+});

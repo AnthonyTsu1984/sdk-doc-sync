@@ -1,0 +1,370 @@
+{
+  "schemaVersion": 1,
+  "sessionId": "sdk-doc-sync:python:pymilvus:v3.0.x:sha256:b0268f422fd2cb3d4aa6030093a19b4086b50456335bfe3f3747cfb526d73045",
+  "language": "python",
+  "sdkName": "pymilvus",
+  "track": "v3.0.x",
+  "acceptanceFlow": "two-gate",
+  "status": "in_progress",
+  "reviewUnitManifest": {
+    "schemaVersion": 1,
+    "units": [
+      {
+        "reviewUnitId": "review:python:Authentication:create_role",
+        "documentStableId": "python:Authentication:create_role",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Authentication:remove_privileges_from_group",
+        "documentStableId": "python:Authentication:remove_privileges_from_group",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Authentication:revoke_privilege",
+        "documentStableId": "python:Authentication:revoke_privilege",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Client:session",
+        "documentStableId": "python:Client:session",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:add_collection_field",
+        "documentStableId": "python:Collections:add_collection_field",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:add_collection_function",
+        "documentStableId": "python:Collections:add_collection_function",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:add_collection_struct_field",
+        "documentStableId": "python:Collections:add_collection_struct_field",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:alter_collection_function",
+        "documentStableId": "python:Collections:alter_collection_function",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:alter_collection_properties",
+        "documentStableId": "python:Collections:alter_collection_properties",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:create_collection",
+        "documentStableId": "python:Collections:create_collection",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:create_schema",
+        "documentStableId": "python:Collections:create_schema",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:describe_collection",
+        "documentStableId": "python:Collections:describe_collection",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:drop_collection_field",
+        "documentStableId": "python:Collections:drop_collection_field",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:drop_collection_function",
+        "documentStableId": "python:Collections:drop_collection_function",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:get_refresh_external_collection_progress",
+        "documentStableId": "python:Collections:get_refresh_external_collection_progress",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:list_refresh_external_collection_jobs",
+        "documentStableId": "python:Collections:list_refresh_external_collection_jobs",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:refresh_external_collection",
+        "documentStableId": "python:Collections:refresh_external_collection",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Collections:truncate_collection",
+        "documentStableId": "python:Collections:truncate_collection",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:CollectionSchema:add_field",
+        "documentStableId": "python:CollectionSchema:add_field",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:CollectionSchema:construct_from_dict",
+        "documentStableId": "python:CollectionSchema:construct_from_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:CollectionSchema:run_analyzer",
+        "documentStableId": "python:CollectionSchema:run_analyzer",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:CollectionSchema:to_dict",
+        "documentStableId": "python:CollectionSchema:to_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:CollectionSchema:verify",
+        "documentStableId": "python:CollectionSchema:verify",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Database:use_database",
+        "documentStableId": "python:Database:use_database",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:EmbeddingList:add",
+        "documentStableId": "python:EmbeddingList:add",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:EmbeddingList:add_batch",
+        "documentStableId": "python:EmbeddingList:add_batch",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:EmbeddingList:clear",
+        "documentStableId": "python:EmbeddingList:clear",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:EmbeddingList:to_flat_array",
+        "documentStableId": "python:EmbeddingList:to_flat_array",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:EmbeddingList:to_numpy",
+        "documentStableId": "python:EmbeddingList:to_numpy",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:FieldSchema:construct_from_dict",
+        "documentStableId": "python:FieldSchema:construct_from_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:FieldSchema:to_dict",
+        "documentStableId": "python:FieldSchema:to_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Function:add_function",
+        "documentStableId": "python:Function:add_function",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Function:add_function_field",
+        "documentStableId": "python:Function:add_function_field",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Function:construct_from_dict",
+        "documentStableId": "python:Function:construct_from_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Function:to_dict",
+        "documentStableId": "python:Function:to_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Function:verify",
+        "documentStableId": "python:Function:verify",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Highlighter:LexicalHighlighter",
+        "documentStableId": "python:Highlighter:LexicalHighlighter",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Highlighter:with_query",
+        "documentStableId": "python:Highlighter:with_query",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Management:alter_index_properties",
+        "documentStableId": "python:Management:alter_index_properties",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Management:compact",
+        "documentStableId": "python:Management:compact",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Management:flush_all",
+        "documentStableId": "python:Management:flush_all",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Management:get_flush_all_state",
+        "documentStableId": "python:Management:get_flush_all_state",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Management:release_collection",
+        "documentStableId": "python:Management:release_collection",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:MilvusClient:CollectionSchema",
+        "documentStableId": "python:MilvusClient:CollectionSchema",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:MilvusClient:EmbeddingList",
+        "documentStableId": "python:MilvusClient:EmbeddingList",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:MilvusClient:FieldSchema",
+        "documentStableId": "python:MilvusClient:FieldSchema",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:MilvusClient:Function",
+        "documentStableId": "python:MilvusClient:Function",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:MilvusClient:FunctionScore",
+        "documentStableId": "python:MilvusClient:FunctionScore",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:MilvusClient:StructFieldSchema",
+        "documentStableId": "python:MilvusClient:StructFieldSchema",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:ResourceGroup:get_replicate_configuration",
+        "documentStableId": "python:ResourceGroup:get_replicate_configuration",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:ResourceGroup:update_replicate_configuration",
+        "documentStableId": "python:ResourceGroup:update_replicate_configuration",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:describe_snapshot",
+        "documentStableId": "python:Snapshot:describe_snapshot",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:drop_snapshot",
+        "documentStableId": "python:Snapshot:drop_snapshot",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:list_restore_snapshot_jobs",
+        "documentStableId": "python:Snapshot:list_restore_snapshot_jobs",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:list_snapshots",
+        "documentStableId": "python:Snapshot:list_snapshots",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:pin_snapshot_data",
+        "documentStableId": "python:Snapshot:pin_snapshot_data",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:restore_snapshot",
+        "documentStableId": "python:Snapshot:restore_snapshot",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Snapshot:unpin_snapshot_data",
+        "documentStableId": "python:Snapshot:unpin_snapshot_data",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:StructFieldSchema:add_field",
+        "documentStableId": "python:StructFieldSchema:add_field",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:StructFieldSchema:construct_from_dict",
+        "documentStableId": "python:StructFieldSchema:construct_from_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:StructFieldSchema:to_dict",
+        "documentStableId": "python:StructFieldSchema:to_dict",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Vector:query",
+        "documentStableId": "python:Vector:query",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Vector:search",
+        "documentStableId": "python:Vector:search",
+        "prerequisiteReviewUnitIds": []
+      },
+      {
+        "reviewUnitId": "review:python:Vector:search_iterator",
+        "documentStableId": "python:Vector:search_iterator",
+        "prerequisiteReviewUnitIds": []
+      }
+    ],
+    "unassignedResourceActionIds": [],
+    "manifestDigest": "sha256:b0268f422fd2cb3d4aa6030093a19b4086b50456335bfe3f3747cfb526d73045"
+  },
+  "reviewUnitManifestDigest": "sha256:b0268f422fd2cb3d4aa6030093a19b4086b50456335bfe3f3747cfb526d73045",
+  "placementWalk": {
+    "digest": "sha256:16c8468692cc7c1216823c11d231514b0ca6e963361ba7476fa28acb02a7db29",
+    "collectedAt": "2026-10-21T13:41:32.235Z"
+  },
+  "groupingApproval": null,
+  "artifacts": {
+    "releaseScope": "/Users/anthony/Documents/projects/feishu-markdown-bridge/tmp/api-reference-sync/campaign-plans/python-v30-sync/filtered-scope.json",
+    "referenceContext": "/Users/anthony/Documents/projects/feishu-markdown-bridge/tmp/api-reference-sync/campaign-plans/python-v30-sync/reviewed-context.json",
+    "summaryJson": null
+  },
+  "acceptedReviewUnits": [],
+  "pendingExecutions": [
+    {
+      "reviewUnitId": "review:python:Authentication:create_role",
+      "executionJournalPath": "__FIXTURE_JOURNAL_PATH__",
+      "executionJournalDigest": "sha256:6bab8ce4b663d95f5a0a298df66fe2f28d83b4618b7d9145d203b0c96d8669d3",
+      "executedAt": "2026-10-21T13:59:47.807Z"
+    }
+  ],
+  "activeExecution": {
+    "reviewUnitId": "review:python:Authentication:create_role",
+    "executionJournalPath": "__FIXTURE_JOURNAL_PATH__",
+    "executionJournalDigest": "sha256:6bab8ce4b663d95f5a0a298df66fe2f28d83b4618b7d9145d203b0c96d8669d3",
+    "executedAt": "2026-10-21T13:59:47.807Z"
+  },
+  "activeRollback": null,
+  "rollbackReceipts": [],
+  "activeReviewUnitId": "review:python:Authentication:create_role",
+  "acceptanceManifest": null,
+  "acceptanceManifestDigest": null,
+  "scanStateUpdated": false,
+  "createdAt": "2026-10-21T13:53:54.035Z",
+  "updatedAt": "2026-10-21T13:59:47.807Z"
+}

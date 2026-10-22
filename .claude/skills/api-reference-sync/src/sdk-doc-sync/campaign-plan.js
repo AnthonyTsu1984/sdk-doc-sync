@@ -192,6 +192,15 @@ function validateCampaignPlan(plan) {
     for (const key of ['scanStateKey', 'scanStateEntryPath']) {
       if (!nonEmptyString(plan.terminal[key])) report(`$.terminal.${key}`, 'must be a non-empty string');
     }
+    // P0-2 (2026-10-22 acceptance-handoff review): the close-session entry
+    // content travels in the plan; the dwf template materializes it to disk at
+    // close, stamping lastScanDate then. A plan without it would re-create the
+    // ENOENT-at-the-finish-line seam the review found.
+    if (!isObject(plan.terminal.scanStateEntry)) {
+      report('$.terminal.scanStateEntry', 'must be an object');
+    } else if (!nonEmptyString(plan.terminal.scanStateEntry.lastScannedTag)) {
+      report('$.terminal.scanStateEntry.lastScannedTag', 'must be a non-empty string');
+    }
   }
 
   if (!isObject(plan.batch)) {

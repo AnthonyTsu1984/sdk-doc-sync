@@ -368,6 +368,21 @@ function buildCampaignPlan({ identity, trigger, registry, campaignDir, kind = 'r
   const terminal = {
     scanStateKey,
     scanStateEntryPath: joinPath(campaignDir, 'scan-state-entry.json'),
+    // P0-2 (2026-10-22 acceptance-handoff review): the terminal close-session
+    // phase reads --scan-state-entry <scanStateEntryPath>, and until now
+    // NOTHING produced that file — a campaign that executed every unit would
+    // die at the finish line on ENOENT. The plan is the file's producer: the
+    // generator pins the watermark CONTENT here (digest-covered, offline
+    // testable), and the dwf template materializes it to disk at close,
+    // stamping lastScanDate then. Date-less by the determinism contract (the
+    // generator reads no clock). Tag campaigns advance the tag watermark; PR
+    // campaigns record pr-<N> — under the campaign's own scan-state key
+    // (`<language>:<track>`, e.g. python:v3.0.x), which is disjoint from the
+    // daily-scan keys (python-v3), so a PR sync never corrupts the daily
+    // tag-compare watermark.
+    scanStateEntry: {
+      lastScannedTag: trigger.kind === 'pr' ? `pr-${trigger.prNumber}` : trigger.targetTag,
+    },
   };
 
   const plan = {

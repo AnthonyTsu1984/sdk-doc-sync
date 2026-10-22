@@ -95,6 +95,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
   assert.equal(result.stderr, '');
   assert.deepEqual(result.stdout.trim().split('\n'), [
     '.claude/skills/api-reference-sync/tests/acceptance-finalizer.test.js',
+    '.claude/skills/api-reference-sync/tests/acceptance-handoff-replay.test.js',
     '.claude/skills/api-reference-sync/tests/agent-harness.test.js',
     '.claude/skills/api-reference-sync/tests/api-section-model.test.js',
     '.claude/skills/api-reference-sync/tests/apply-polish-context.test.js',

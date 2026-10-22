@@ -184,6 +184,9 @@ test('golden java v2.6.x: every registry-sourced field matches the dwf constant 
   assert.deepEqual(plan.terminal, {
     scanStateKey: 'java:v2.6.x',
     scanStateEntryPath: `${DWF.V26_CAMPAIGN_DIR}/scan-state-entry.json`,
+    // P0-2 (2026-10-22): the entry content rides in the plan (date-less); the
+    // dwf template materializes the file at close with lastScanDate stamped.
+    scanStateEntry: { lastScannedTag: 'v2.6.25' },
   });
   assert.equal(plan.run.phases.length, 1);
   assert.equal(plan.run.phases[0].label, 'close-session');
@@ -377,6 +380,9 @@ test('a pr-triggered plan for a temp campaignDir validates, pins real bytes, and
   assert.doesNotThrow(() => assertValidCampaignPlan(plan));
   assert.deepEqual(plan.trigger, { kind: 'pr', prNumber: 1181 });
   assert.equal(plan.promptFacts.sourceRevision, 'pr-1181'); // pr trigger → pr-<N>
+  // P0-2: same derivation governs the scan-state watermark — a PR campaign
+  // records pr-<N> under its own scan-state key, never a fabricated tag.
+  assert.deepEqual(plan.terminal.scanStateEntry, { lastScannedTag: 'pr-1181' });
   assert.match(result.digest, /^sha256:[0-9a-f]{64}$/);
   assert.equal(result.digest, planDigest(plan));
   assert.equal(plan.template.sha256, sha256Of(TEMPLATE_STUB));

@@ -1,0 +1,39 @@
+{
+  "entries": [
+    {
+      "symbol": "create_role",
+      "page": "create_role()",
+      "kind": "method",
+      "category": "Authentication",
+      "audience": "shared",
+      "targets": [
+        "Milvus",
+        "Zilliz"
+      ],
+      "evidence": {
+        "signals": []
+      },
+      "note": "Authentication NO_RULING_FOR_CATEGORY, signals empty; KB default Targets=[Milvus,Zilliz] (targets-categories.json:4) -> shared; no exclusivity marker in page",
+      "decidedAt": null
+    },
+    {
+      "symbol": "get_replicate_configuration",
+      "page": "get_replicate_configuration()",
+      "kind": "method",
+      "category": "ResourceGroup",
+      "audience": "milvus",
+      "targets": [
+        "Milvus"
+      ],
+      "evidence": {
+        "ruling": [
+          "Milvus"
+        ],
+        "signals": []
+      },
+      "note": "proposal candidate=milvus derivedFrom ruling:ResourceGroup; operator ruling targets-categories.json:6 sets ResourceGroup Targets=[Milvus] (2026-10-09)",
+      "decidedAt": null
+    }
+  ],
+  "note": "trimmed slice of python-v30-sync targets.json (m5 c4 campaign) for acceptance-handoff replay tests; entry shape is verbatim propose-audience --confirmations output"
+}

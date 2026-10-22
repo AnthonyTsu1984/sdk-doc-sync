@@ -401,6 +401,13 @@ const journalPath = runR === null ? missingString("plan.run") : reqString(runR.j
 const freezeDir = runR === null ? "" : reqString(runR.freezeDir, "plan.run.freezeDir");
 const terminalR = planRoot === null ? null : asRecord(planRoot.terminal);
 if (terminalR === null) missing.push("plan.terminal");
+// P0-2（2026-10-22 交接层评审,release-sync 同款）:close-session 的 --scan-state-entry
+// 文件由本模板在终点前落盘——内容=生成器钉进 plan 的 terminal.scanStateEntry
+// （无日期,确定性契约）,close 时盖 lastScanDate。两字段缺一即 PLAN_INVALID,不猜。
+const scanStateEntryPath = terminalR === null ? "" : reqString(terminalR.scanStateEntryPath, "plan.terminal.scanStateEntryPath");
+const scanStateEntryR = terminalR === null ? null : asRecord(terminalR.scanStateEntry);
+if (scanStateEntryR === null) missing.push("plan.terminal.scanStateEntry");
+if (scanStateEntryR !== null && (typeof scanStateEntryR.lastScannedTag !== "string" || scanStateEntryR.lastScannedTag === "")) missing.push("plan.terminal.scanStateEntry.lastScannedTag");
 const batchDefaultSize = batchR === null ? (missing.push("plan.batch"), 0) : reqNumber(batchR.defaultSize, "plan.batch.defaultSize");
 const batchCap = batchR === null ? 40 : (typeof batchR.cap === "number" ? batchR.cap : (missing.push("plan.batch.cap"), 40));
 const firstBatchK1 = batchR !== null && batchR.firstBatchK1 === true;
@@ -1061,6 +1068,13 @@ if (rehearsal) {
     detail: "rehearsal 预演完成:零 agent、零 live 写;rehearsal.argv 为将执行的 argv 序列,rehearsal.gate 为门卡 manifest。",
     rehearsal: { argv: argvTrace, gate: gateTrace },
   };
+}
+// P0-2（2026-10-22 交接层评审）:close-session 要读的 scan-state-entry.json 在此落盘
+// （生成器只把内容钉进 plan,文件由 close 时的本模板物化+盖当次时间戳）。写失败即冻
+// 结——文件缺席时终点 phase 必 ENOENT,先写先验比让全部单元的成果死在终点强。
+const entryWritten = await writeJsonFile(scanStateEntryPath, JSON.stringify({ ...scanStateEntryR, lastScanDate: new Date().toISOString() }, null, 2) + "\n");
+if (!entryWritten) {
+  return await freezeAndSettle("SCAN_STATE_ENTRY_WRITE_FAILED", { code: "SCAN_STATE_ENTRY_WRITE_FAILED", path: scanStateEntryPath, note: "close-session 的 --scan-state-entry 文件写失败,不进终点" }, null);
 }
 for (const ph of terminalPhases) {
   const phRun = await runTrackedCli("终点 phase:" + ph.label, ph.argv.slice(1), campaignFile("terminal-" + slugOf(ph.label)), 600000);

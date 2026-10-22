@@ -69,6 +69,9 @@ function fixturePlan() {
     terminal: {
       scanStateKey: 'java:v3.0.x',
       scanStateEntryPath: 'tmp/api-reference-sync/scan-state/java-v3.0.x.json',
+      // P0-2 (2026-10-22): close-session entry content rides in the plan
+      // (date-less — the dwf template stamps lastScanDate at close).
+      scanStateEntry: { lastScannedTag: 'pr-1181' },
     },
     batch: { defaultSize: 3, cap: 40, firstBatchK1: false },
     crossTrack: { peerTag: 'v2.6.x-latest' },

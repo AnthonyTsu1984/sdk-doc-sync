@@ -69,7 +69,12 @@ function fixturePlan(ws, overrides = {}) {
       note: 'batch 16 slice 3 fixture',
       phases: [{ label: 'close-session', argv: ['node', '-e', '0'] }],
     },
-    terminal: { scanStateKey: 'java:v3.0.x', scanStateEntryPath: 'tmp/api-reference-sync/scan-state/java-v30.json' },
+    terminal: {
+      scanStateKey: 'java:v3.0.x',
+      scanStateEntryPath: 'tmp/api-reference-sync/scan-state/java-v30.json',
+      // P0-2 (2026-10-22): the close-session entry content rides in the plan.
+      scanStateEntry: { lastScannedTag: 'pr-1181' },
+    },
     batch: { defaultSize: 3, cap: 40, firstBatchK1: false },
     crossTrack: { peerTag: 'v2.6.x-latest' },
     seats: { a1: { pagesPerWriter: 12, maxRounds: 3 }, a2: {}, a3: {} },

@@ -14,9 +14,11 @@ description: release-sync 形状的参数化战役编排模板（批 16 切片 5
   ⑥唯一人工停（A3 呈卡，parseCampaignReply 正则逐字校验 APPROVE_CAMPAIGN sha256:<digest>，
   模型输出永不进控制决策）→ ⑦逐批（首批 K=1 金丝雀）逐单元全自动
   （sdk-doc-sync --resume-session --review-unit-id --batch-continue --campaign-approval <收据>
-  --auto-accept --auto-approve；失败按 failure-class.js 分类独立计数重试：transient×3 原样重执行、
+  --approve-batch-digest <当前单元 digest> --auto-accept --auto-approve；失败按 failure-class.js
+  分类独立计数重试：transient×3 原样重执行、
   stale×2 机械重材料化、content×3 回喂 A1 带定位重刷、verbatim×1 即冻、unknown×0 即冻、
-  mutated=true 一律冻结禁盲重跑）→ ⑧全部 finalized → close-session（plan.run.phases 供 argv）→
+  mutated=true 一律冻结禁盲重跑；stale/content 重生后的 fresh digest 经 --approve-batch-digest
+  走 regeneration 轨重新呈现）→ ⑧全部 finalized → close-session（plan.run.phases 供 argv）→
   ⑨campaign-settle --outcome ok。异常道：任意冻结/耗尽 → campaign-settle --outcome frozen
   --reason <located failure JSON 落盘路径>（冻结+门铃，journal 保留），然后照常返回报告。
   rehearsal 模式（args.rehearsal===true 或 plan.rehearsal===true）：零 agent、零文档写、
@@ -211,6 +213,13 @@ const journalPath = runR === null ? missingString("plan.run") : reqString(runR.j
 const freezeDir = runR === null ? "" : reqString(runR.freezeDir, "plan.run.freezeDir");
 const terminalR = planRoot === null ? null : asRecord(planRoot.terminal);
 if (terminalR === null) missing.push("plan.terminal");
+// P0-2（2026-10-22 交接层评审）:close-session 的 --scan-state-entry 文件由本模板
+// 在终点前落盘——内容=生成器钉进 plan 的 terminal.scanStateEntry（无日期,
+// 确定性契约）,close 时盖 lastScanDate。两字段缺一即 PLAN_INVALID,不猜。
+const scanStateEntryPath = terminalR === null ? "" : reqString(terminalR.scanStateEntryPath, "plan.terminal.scanStateEntryPath");
+const scanStateEntryR = terminalR === null ? null : asRecord(terminalR.scanStateEntry);
+if (scanStateEntryR === null) missing.push("plan.terminal.scanStateEntry");
+if (scanStateEntryR !== null && (typeof scanStateEntryR.lastScannedTag !== "string" || scanStateEntryR.lastScannedTag === "")) missing.push("plan.terminal.scanStateEntry.lastScannedTag");
 const batchDefaultSize = batchR === null ? (missing.push("plan.batch"), 0) : reqNumber(batchR.defaultSize, "plan.batch.defaultSize");
 const batchCap = batchR === null ? 40 : (typeof batchR.cap === "number" ? batchR.cap : (missing.push("plan.batch.cap"), 40));
 const firstBatchK1 = batchR !== null && batchR.firstBatchK1 === true;
@@ -354,6 +363,16 @@ if (rehearsal) {
 }
 
 // ===== 步骤 2:W-A 组装链（规格 3:intake CLI 逐段调用,argv 由 plan 派生,只串调用与查 exitCode）=====
+// P0-3 修复（2026-10-22 交接层评审,c1 同款）:intake 链尾 dry-run 以 --session-state
+// 建预检会话——上一次 run 中途冻结留下的 session 文件会让本次 run 死在 intake
+// （"review session already exists"）。进场先清残留（best-effort,不存在则静默）,
+// 中途冻结后的重跑从此自愈。步骤 5 另有一清,职责不同:那是清 intake 刚建的无
+// targets 预检会话,好让 canonical dry-run 以 --targets-json 新建。
+phase("组装发布范围工件链");
+const clearResidueRes = await world.run("node", [PAYLOAD_RUNNER, "clear-session", paths.sessionPath, NONCE], { timeoutMs: 30000 });
+if (clearResidueRes.exitCode !== 0) {
+  return await freezeAndSettle("SESSION_CLEAR_FAILED", { code: "SESSION_CLEAR_FAILED", detail: (String(clearResidueRes.stdout || "") + String(clearResidueRes.stderr || "")).slice(0, 300), note: "清上次运行残留会话失败,intake 链尾 dry-run 会撞 already-exists,不进场" }, null);
+}
 // intake-artifacts.json = intake 链的输入面（intake-assemble --artifacts 的
 // 工件路径映射,由 plan 生成侧/intake 工件链供,按 campaignId 键控约定放在
 // campaignDir 下）。propose-audience 的 entries 是另一形状（{symbol,page,
@@ -414,7 +433,7 @@ if (rehearsal) {
   if (!confirmRun.ok) {
     return await freezeAndSettle("AUDIENCE_CONFIRM_FAILED", { code: "AUDIENCE_CONFIRM_FAILED", detail: confirmRun.detail, note: "confirm 模式要求 proposals+mustAsk 每项显式裁定;A2 输出被 typed 拒绝" }, null);
   }
-  log("A2 归属确认完成:" + confirmations.length + " 项裁定 → " + paths.targetsJson + "（后续 sdk-doc-sync 以 --final-targets 接入取数链）。");
+  log("A2 归属确认完成:" + confirmations.length + " 项裁定 → " + paths.targetsJson + "（后续 sdk-doc-sync 以 --targets-json 接入取数链）。");
 }
 
 // ===== 步骤 4:材料化（P0-1 2026-10-21:UPDATE 确定性,模型席条件启用）=====
@@ -529,13 +548,19 @@ async function sdkBaseArgs(): Promise<string[]> {
     "--sdk-version", identity.track,
     "--release-scope", paths.scopePath,
     "--reference-context", paths.referenceContext,
-    "--final-targets", paths.targetsJson,
+    // P0-1 修复（2026-10-22 交接层评审）:--final-targets 的 CLI 值语义是
+    // "Milvus,Zilliz" 子集字符串,喂 targets.json 路径必在 parseFinalTargets
+    // 抛错;A2 裁定文件的入口是 --targets-json（acceptance 写路径读它,
+    // A2 裁定 > category 表 > 缺省 [Milvus,Zilliz]）。--final-targets 不传
+    // 即取全子缺省,归属全由 A2 文件说了算。
+    "--targets-json", paths.targetsJson,
   ];
 }
 const initialDryrunFile = campaignFile("initial-dryrun");
-// W-A 链尾 dry-run 已建过预检会话（无 --final-targets）;先清旧文件,步骤 5 的 canonical
-// dry-run 才可能以 --session-state 新建带 final-targets 的会话（sdk-doc-sync 对既有文件
-// 一律拒 "review session already exists"）。best-effort,不存在则静默。
+// 步骤 5 的第二清（与进场清残留分工不同）:W-A 链尾 dry-run 刚建过预检会话（无
+// --targets-json）;清掉它,本步 canonical dry-run 才可能以 --session-state 新建带
+// targets 的会话（sdk-doc-sync 对既有文件一律拒 "review session already exists"）。
+// best-effort,不存在则静默。
 // M3: rehearsal 也真跑（dry-run 真跑需清旧会话）,零治理写。
 const clearSessionRes = await world.run("node", [PAYLOAD_RUNNER, "clear-session", paths.sessionPath, NONCE], { timeoutMs: 30000 });
 if (clearSessionRes.exitCode !== 0) {
@@ -639,6 +664,11 @@ async function runExecUnit(unit: UnitDigest): Promise<ExecSummary> {
     "--campaign-approval", receiptPath,
     "--campaign-chain-grouping", paths.groupingPath,
     "--campaign-chain-candidate-spec", paths.candidateSpecPath,
+    // P1-2 修复（2026-10-22 交接层评审）:units-based 收据的双轨接受要求重试时呈现
+    // 当前单元 digest——初始=pinned（直接执行轨）,content/stale 重生后=fresh
+    // （regeneration 轨,消费端自动记 CONTENT_REGENERATED）。不传则永远落回
+    // pinned,重生重试必撞 APPROVED_BATCH_DIGEST_MISMATCH,重试预算形同虚设。
+    "--approve-batch-digest", unit.batchDigest,
     "--auto-accept", "--auto-approve", "--json",
   ]);
   const res = await world.run("node", [PAYLOAD_RUNNER, "exec-classify", JSON.stringify(childArgs), resultFile, feishu.baseToken, feishu.tableId, feishu.rootToken, NONCE], { timeoutMs: 600000 });
@@ -731,6 +761,10 @@ async function executeUnitWithRetry(unit: UnitDigest): Promise<{ frozen: false }
       if (!dr.ok) {
         return { frozen: true, report: await freezeAndSettle("STALE_REMATERIALIZE_FAILED", { code: summary.code, failureClass, unit: unit.reviewUnitId, detail: dr.detail }, unit.reviewUnitId) };
       }
+      // P1-2:机械重材料化后的 fresh digest 同样要走 regeneration 轨呈现
+      // （--approve-batch-digest 吃 unit.batchDigest,见 runExecUnit）。
+      await journalAppend({ type: "CONTENT_REGENERATED", unit: unit.reviewUnitId, pinnedDigest: unit.batchDigest, freshDigest: dr.digest, cause: "stale-rematerialize", run: NONCE });
+      unit.batchDigest = dr.digest === null ? unit.batchDigest : dr.digest;
       continue;
     }
     if (failureClass === "content") {
@@ -791,6 +825,7 @@ if (rehearsal) {
     "--campaign-approval", receiptPath,
     "--campaign-chain-grouping", paths.groupingPath,
     "--campaign-chain-candidate-spec", paths.candidateSpecPath,
+    "--approve-batch-digest", representative.batchDigest,
     "--auto-accept", "--auto-approve", "--json",
   ]);
   argvTrace.push({ label: "逐单元执行（代表行;单元集见 previews,首批 K=" + Math.min(firstK, batchCap) + ",cap=" + batchCap + "）", argv: ["node"].concat(execChild) });
@@ -831,6 +866,13 @@ if (rehearsal) {
     detail: "rehearsal 预演完成（M3 2026-10-21:零 agent,确定性链真跑含 dry-run,零文档写）;确定性链工件已落盘（scope/candidate-spec/reviewed-context/会话/previews/收据）,rehearsal.gate 为门卡 manifest（真实 campaignPlanDigest）。执行段与终点 close-session/settle 未跑（live 才写文档/推进 scan-state）。",
     rehearsal: { argv: argvTrace, gate: gateTrace },
   };
+}
+// P0-2（2026-10-22 交接层评审）:close-session 要读的 scan-state-entry.json 在此落盘
+// （生成器只把内容钉进 plan,文件由 close 时的本模板物化+盖当次时间戳）。写失败即冻
+// 结——文件缺席时终点 phase 必 ENOENT,先写先验比让全部单元的成果死在终点强。
+const entryWritten = await writeJsonFile(scanStateEntryPath, JSON.stringify({ ...scanStateEntryR, lastScanDate: new Date().toISOString() }, null, 2) + "\n");
+if (!entryWritten) {
+  return await freezeAndSettle("SCAN_STATE_ENTRY_WRITE_FAILED", { code: "SCAN_STATE_ENTRY_WRITE_FAILED", path: scanStateEntryPath, note: "close-session 的 --scan-state-entry 文件写失败,不进终点" }, null);
 }
 for (const ph of terminalPhases) {
   const phRun = await runTrackedCli("终点 phase:" + ph.label, ph.argv.slice(1), campaignFile("terminal-" + slugOf(ph.label)), 600000);

@@ -1469,9 +1469,22 @@ class SyncExecutor {
     try {
       this._assertCreatedDocumentLink(plan, copied);
 
-      const patched = await this._patchDocument(plan, artifact, copied.token, {
-        sourceDocumentToken: plan.copySource.documentToken,
-      });
+      // Adopted-page verify-first (stranded-WIP replay, 2026-10-23): the
+      // earlier attempt may have already patched this page with the same
+      // artifact (digest-stable replays) — the patch plan's anchors are the
+      // SOURCE document's blocks and would fail the precondition against a
+      // page that no longer matches them. A clean verification against the
+      // live adopted page proves the patch is a no-op; skip it. A dirty
+      // verification falls through to the normal patch, whose precondition
+      // failure then honestly reports the real divergence.
+      let patched;
+      if (result.adoptedDocument && await this._adoptedDocumentConverged(plan, result)) {
+        patched = { token: copied.token, patched: false, adoptedConverged: true };
+      } else {
+        patched = await this._patchDocument(plan, artifact, copied.token, {
+          sourceDocumentToken: plan.copySource.documentToken,
+        });
+      }
       result.patchedDocument = patched;
       result.completedSteps.push('patchDocument');
 
@@ -1664,6 +1677,19 @@ class SyncExecutor {
       );
       error.step = 'verifyDocument';
       throw error;
+    }
+  }
+
+  // Pure probe: does the adopted page's live content already verify clean
+  // against the plan's artifact? Any verifier absence, throw, or violation
+  // answers false — the caller then patches normally.
+  async _adoptedDocumentConverged(plan, result) {
+    if (typeof this.verifier?.verifyDocument !== 'function') return false;
+    try {
+      const check = await this.verifier.verifyDocument(plan, result);
+      return Boolean(check?.ok);
+    } catch {
+      return false;
     }
   }
 

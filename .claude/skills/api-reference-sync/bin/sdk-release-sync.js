@@ -437,6 +437,14 @@ function cmdSync(config, { only, yes }) {
       saveState(config, state);
       log(`done ${unit.reviewUnitId} (${completed}/${targets.length})`);
     } else {
+      const failureDir = path.join(config.workDir, 'failures');
+      try {
+        fs.mkdirSync(failureDir, { recursive: true });
+        const safeName = unit.reviewUnitId.replace(/[^A-Za-z0-9._-]/g, '_');
+        fs.writeFileSync(path.join(failureDir, `${safeName}.json`), `${JSON.stringify({
+          unit: unit.reviewUnitId, code: outcome.code, detail: outcome.detail, at: new Date().toISOString(),
+        }, null, 2)}\n`);
+      } catch { /* 诊断落盘失败不掩盖结果本身 */ }
       failures.push({ unit: unit.reviewUnitId, code: outcome.code, detail: outcome.detail });
       log(`FAILED ${unit.reviewUnitId} — ${outcome.code}（继续下一个单元）`);
     }

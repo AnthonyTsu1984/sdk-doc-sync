@@ -3072,6 +3072,49 @@ test('SyncExecutor compares reference multisets so cloned-base tokens pass pre-w
   assert.deepEqual(result.completedSteps, ['verifySharedTokenEvidence', 'copyDocument', 'patchDocument', 'verifyDocument', 'updateRecord', 'verify']);
 });
 
+test('copy uniqueness adoption picks the record-linked collision among sibling orphans (2026-10-23 use_database wall)', async () => {
+  const buildExecutor = (collisionTokens) => {
+    const executor = new SyncExecutor({ documentWriter: {}, bitableWriter: {} });
+    executor._assertNoCreateTitleCollision = async () => {
+      const error = new Error('collision');
+      error.code = 'CREATE_TITLE_COLLISION_IN_FOLDER';
+      error.details = { collisionTokens: collisionTokens.join(', '), title: 'use_database()', folderToken: 'folder-db' };
+      throw error;
+    };
+    executor.tokenReferenceReader = {
+      async listTokenReferences({ documentToken }) {
+        // Only the final8 product is linked by the repointed record.
+        return documentToken === 'doc-final8' ? [{ recordId: 'rec-self' }] : [];
+      },
+    };
+    return executor;
+  };
+  const plan = { stableId: 'python:Database:use_database', source: { recordId: 'rec-self' } };
+  const result = {};
+
+  // Three sibling orphans + one linked product -> adopt the linked one.
+  const adopting = buildExecutor(['doc-final4', 'doc-orphan2', 'doc-orphan3', 'doc-final8']);
+  await adopting._verifyCopyUniquenessWithAdoption(plan, result, null, null);
+  assert.equal(result.adoptedDocument.token, 'doc-final8');
+
+  // Orphans only (nothing linked by this plan's record) -> hard refusal.
+  const refusing = buildExecutor(['doc-final4', 'doc-orphan2', 'doc-orphan3']);
+  await assert.rejects(
+    () => refusing._verifyCopyUniquenessWithAdoption(plan, {}, null, null),
+    (error) => error.code === 'CREATE_TITLE_COLLISION_IN_FOLDER',
+  );
+});
+
+test('copy placement gate covers the WITH_CATEGORY_CREATE decision', () => {
+  // Source inspection pin: the gate must not early-return on the
+  // category-create decision (the 2026-10-23 wall that minted a fourth
+  // same-title copy beside three orphans).
+  const srcPath = require('node:path').resolve(__dirname, '../src/sdk-doc-sync/sync-executor.js');
+  const src = require('node:fs').readFileSync(srcPath, 'utf8');
+  const gate = src.slice(src.indexOf('async _verifyCopyTargetPlacement'), src.indexOf('async _verifyCopyUniquenessWithAdoption'));
+  assert.match(gate, /COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE/);
+});
+
 test('SyncExecutor blocks cloned-base mutations when a reference count drifted', async () => {
   const { documentWriter, bitableWriter } = spies();
   const evidence = copyPatchEvidence({

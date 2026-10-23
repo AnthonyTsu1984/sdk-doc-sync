@@ -1143,3 +1143,24 @@ test('python example reflow skips comment-bearing calls and reflows clean ones',
   assert.notEqual(reflowed, clean, 'comment-free multi-arg call still reflows');
   assert.match(reflowed, /collection_name="test_collection",\n {4}dimension=5,\n\)/);
 });
+
+test('N2 replacers consume capture groups, not match characters (2026-10-23 Highlighter wall)', async () => {
+  const { execSync } = require('node:child_process');
+  const script = COMPOSER;
+  const probe = `
+const composer = require(${JSON.stringify(script)});
+const cases = [
+  ['Defines which query terms from text-based filters are highlighted.', (n) => n.startsWith('An option that defines which query terms')],
+  ['Number of characters of leading context to keep.', (n) => n === 'The number of characters of leading context to keep.'],
+  ['Whether search terms are highlighted.', (n) => n === 'A flag that indicates whether search terms are highlighted.'],
+];
+for (const [input, check] of cases) {
+  const out = composer.normalizePythonStart(input);
+  if (!check(out)) throw new Error(\`mangled: \${input} -> \${out}\`);
+}
+console.log('ok');
+`;
+  fs.writeFileSync(path.join(os.tmpdir(), 'n2-probe.cjs'), probe);
+  const result = execSync(`${process.execPath} ${path.join(os.tmpdir(), 'n2-probe.cjs')}`, { encoding: 'utf8' });
+  assert.ok(result.includes('ok'));
+});

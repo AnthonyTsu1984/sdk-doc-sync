@@ -7,7 +7,7 @@
   "exampleFenceLang": "go",
   "requestSyntaxHeading": "^## Request Syntax\\s*$",
   "paramsHeadings": [
-   "^\\*\\*PARAMETERS:\\*\\*\\s*$",
+   "^\\*\\*PARAMETERS(?:\\*\\*:|:\\*\\*)\\s*$",
    "^\\*\\*BUILDER METHODS:\\*\\*\\s*$",
    "^\\*\\*METHODS:\\*\\*\\s*$"
   ],
@@ -70,7 +70,7 @@
   "requestClassFromSignature": "\\((\\w+Req) \\w+\\)",
   "paramsHeadings": [
    "^\\*\\*BUILDER METHODS:\\*\\*\\s*$",
-   "^\\*\\*PARAMETERS:\\*\\*\\s*$"
+   "^\\*\\*PARAMETERS(?:\\*\\*:|:\\*\\*)\\s*$"
   ],
   "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$",
   "returnTypeRequired": true,
@@ -105,7 +105,7 @@
   "exampleFenceLang": "javascript",
   "requestSyntaxHeading": "^## Request Syntax\\s*$",
   "paramsHeadings": [
-   "^\\*\\*PARAMETERS:\\*\\*\\s*$",
+   "^\\*\\*PARAMETERS(?:\\*\\*:|:\\*\\*)\\s*$",
    "^## Constants\\s*$"
   ],
   "returnTypeHeading": null,
@@ -171,7 +171,7 @@
   "exampleFenceLang": "python",
   "requestSyntaxHeading": "^## Request Syntax\\s*$",
   "paramsHeadings": [
-   "^\\*\\*PARAMETERS:\\*\\*\\s*$"
+   "^\\*\\*PARAMETERS(?:\\*\\*:|:\\*\\*)\\s*$"
   ],
   "returnTypeHeading": "^\\*\\*RETURN TYPE:\\*\\*\\s*$|^\\*\\*RETURN TYPE\\*\\*:\\s*$",
   "returnTypeRequired": false,

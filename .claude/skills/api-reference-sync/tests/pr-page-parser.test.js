@@ -780,3 +780,36 @@ test('profile data carries the harvest evidence for every accepted form (review 
     }
   }
 });
+
+test('PARAMS marker accepts both upstream faces and refuses an unparsed marker', () => {
+  const pyProfile = profiles.python;
+  const base = (markerLine) => `# Widget()
+
+Creates a widget.
+
+\`\`\`python
+Widget(x)
+\`\`\`
+
+${markerLine}
+
+- **x** (*int*) - The widget count.
+`;
+  // colon-inside face (the majority upstream face) parses
+  const inside = parsePage(base('**PARAMETERS:**'), pyProfile, 'inside');
+  assert.equal(inside.params.length, 1);
+  assert.equal(inside.params[0].name, 'x');
+  // colon-outside face (2026-10-23 pymilvus Highlighter family) parses too
+  const outside = parsePage(base('**PARAMETERS**:'), pyProfile, 'outside');
+  assert.equal(outside.params.length, 1);
+  assert.equal(outside.params[0].name, 'x');
+  // a marker the profile chain somehow misses is a loud rejection, never a
+  // silent params=[] (the wall that deleted the Highlighter Constructor
+  // section while document==artifact verification stayed green).
+  const strippedProfile = { ...pyProfile, paramsHeadings: [] };
+  assert.throws(
+    () => parsePage(base('**PARAMETERS**:'), strippedProfile, 'unparsed'),
+    (error) => error.code === REJECTION_CODES.PARAMS_SECTION_UNPARSED,
+  );
+});
+

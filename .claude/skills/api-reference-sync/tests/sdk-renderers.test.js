@@ -520,6 +520,52 @@ test('Node renders reviewed deprecation guidance as a native Feishu callout imme
   );
 });
 
+test('Summary callouts default the Notes title when extraction carries none (2026-10-23 use_database wall)', async () => {
+  const symbol = {
+    name: 'useDatabase',
+    parentClass: 'MilvusClient',
+    kind: 'Function',
+    docstring: 'Switches the database.',
+    filePath: 'milvus/client.py',
+    lineNumber: 1,
+    params: [{ name: 'db_name', type: 'str' }],
+  };
+  const adapterContext = {
+    repository: 'milvus-io/pymilvus',
+    revision: 'v3.0.x',
+    category: 'Database',
+    title: 'use_database()',
+    summary: 'This operation switches the client to use a different database.',
+    signature: 'client.use_database(db_name: str)',
+    reviewedEvidence: sourceEvidence('node'),
+    summaryCallouts: [{
+      kind: 'note',
+      text: 'This is an alias method for `using_database()`.',
+    }],
+    requestVariants: [{
+      id: 'default',
+      title: 'Use database request',
+      signature: 'client.use_database({ db_name })',
+      inputs: [],
+    }],
+    result: { type: 'NoneType', description: 'None.' },
+    exceptions: [],
+    examples: [],
+  };
+  const reference = nodeAdapter.toReferenceDocument(symbol, adapterContext);
+  const rendered = nodeRenderer.render(reference);
+  const callout = rendered.children.find((child) => child.type === 'callout');
+  assert.equal(callout.title, 'Notes', 'the convention default title must ride the IR callout');
+  const markdown = renderMarkdown(rendered);
+  assert.match(markdown, /<Admonition icon="📘" title="Notes">/);
+  const converter = new MarkdownToFeishu({ sourceType: 'drive', rootToken: null, baseToken: null });
+  const { tokens } = await converter.parse_markdown(markdown);
+  const blocks = await converter.markdown_to_blocks(tokens);
+  const calloutBlock = blocks.find((block) => block.block_type === 19);
+  assert.equal(calloutBlock.children[0].text.elements[0].text_run.content, 'Notes');
+  assert.equal(calloutBlock.children.length, 2, 'title line + content line');
+});
+
 test('Node omits redundant subheadings for a single request and a single example', () => {
   const symbol = {
     name: 'addCollectionField',

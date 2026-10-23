@@ -575,7 +575,15 @@ function renderSummaryCallouts(document) {
     {
       kind: callout.kind || 'note',
       ...(callout.emoji !== undefined ? { emoji: callout.emoji } : {}),
-      ...(callout.title !== undefined ? { title: callout.title } : {}),
+      // Global callout convention (2026-09-22, markdown-to-feishu
+      // __parse_alert_div): line 1 is the "Notes" title with the callout
+      // emoji beside it, line 2 the body. The structured route's extraction
+      // carries no title, so the renderer supplies the convention default —
+      // without it the Admonition round-trip emitted a title-less callout
+      // and the landed page lost the title line (2026-10-23
+      // Database:use_database acceptance rejection). An explicit extraction
+      // title still wins.
+      title: callout.title !== undefined ? callout.title : 'Notes',
       ...semantic('summary', String(index)),
     },
   ));

@@ -34,8 +34,17 @@ const COMPARE = path.join(__dirname, '..', 'scripts', 'compare-update-spec-conte
 // WITH REVIEW when the parser/composer/assembly intentionally changes output;
 // an unpinned change here is exactly the regression this test exists to catch.
 const GOLDEN_DIGESTS = Object.freeze({
-  candidateSpec: 'sha256:e54c2e8381108d49dde6dbdee034a223483bf304edbec566bb5e8f0375b514e3',
-  reviewedContext: 'sha256:f4afb300b82b5f740e8c471491ecc4943742411adb8845f18c258d8c0c3a0867',
+  // Re-pinned 2026-10-23 (Highlighter acceptance rejection): the N2
+  // description-start replacers consumed String.replace's match as if it
+  // were the groups array (m[1] = second CHARACTER), shredding every
+  // verb-first param description ("A flag that indicates whether he.");
+  // the params marker regex now takes both upstream faces (colon inside
+  // and outside the bold); fenced regions in bullet descriptions are
+  // dropped instead of flattening into prose garbage. The re-pin diff was
+  // reviewed hunk-by-hunk: 14 candidates, every change mangled->real
+  // prose, zero unrelated churn.
+  candidateSpec: 'sha256:279a5807c6d068cdf21b73181d6c69ccaf7267149dd58aaf3a3aefa01b7f819c',
+  reviewedContext: 'sha256:97680a60cf70ea91095a872af8e7af36874ec285860afc754782264ea3f545e6',
   filteredScope: 'sha256:aa87f1b6ef72b30554b098b02a924585120ebe048b9493dbbc7a98c855039d10',
 });
 

@@ -18,6 +18,13 @@ const REJECTION_CODES = Object.freeze({
   SIGNATURE_FENCE_MISSING: 'SIGNATURE_FENCE_MISSING',
   BULLET_FORM_UNRECOGNIZED: 'BULLET_FORM_UNRECOGNIZED',
   RETURN_TYPE_MISSING: 'RETURN_TYPE_MISSING',
+  // 2026-10-23 pymilvus Highlighter wall: a params marker the profile chain
+  // never matched (upstream writes two faces) silently produced params=[]
+  // and the renderer skipped the whole section — the landed page lost it
+  // while document==artifact verification stayed green, because the artifact
+  // shared the loss. A marker on the page with nothing parsed is a loud
+  // compose-time rejection, never a silent skip.
+  PARAMS_SECTION_UNPARSED: 'PARAMS_SECTION_UNPARSED',
   // Composer-side digest gates (design §4.1-3/§4.5-1, review P1-4): the
   // decisions must pin the PR provenance and a well-formed page digest —
   // their absence is a typed rejection, never an unverified fallback. Both
@@ -493,6 +500,14 @@ function firstParagraphAfterH1(parts) {
 
 // Node callout blocks: <div class="alert note"> ... </div> between H1 and the
 // first paragraph — collected as summaryCallouts (node precedent).
+// The params-section marker has two upstream faces: `**PARAMETERS:**`
+// (colon inside the bold — the majority face) and `**PARAMETERS**:` (colon
+// outside — the 2026-10-23 pymilvus Highlighter family face). Both must
+// bound the summary-callout region and both are profile paramsHeadings
+// candidates; matching only one silently drops the section for pages
+// written the other way.
+const PARAMS_MARKER = /^\s*\*\*PARAMETERS(?:\*\*:|:\*\*)\s*$/;
+
 function summaryCalloutsAfterH1(parts) {
   // Scan ALL prose parts after the H1 (not just the pre-first-fence prose):
   // python pages place class-method notes AFTER the Request Syntax fence
@@ -506,7 +521,7 @@ function summaryCalloutsAfterH1(parts) {
     const text = part.text;
     const h1End = text.indexOf('\n');
     const afterH1 = text.slice(h1End + 1);
-    const boundary = afterH1.split('\n').findIndex((line) => /^\s*\*\*PARAMETERS:\*\*\s*$|^#{1,6}\s+(Request|Parameters|Examples|Constructor)/i.test(line.trim()));
+    const boundary = afterH1.split('\n').findIndex((line) => PARAMS_MARKER.test(line.trim()) || /^#{1,6}\s+(Request|Parameters|Examples|Constructor)/i.test(line.trim()));
     prose.push(boundary === -1 ? afterH1 : afterH1.split('\n').slice(0, boundary).join('\n'));
   }
   const joined = prose.join('\n');
@@ -589,6 +604,20 @@ function parsePage(markdown, profile, pageName, opts = {}) {
     }
   }
   stats.sections.params = paramsHeadingHit !== null;
+  // Fail-closed counterpart to the profile match: a marker on the page that
+  // no paramsHeading matched is an extraction gap, not an empty parameter
+  // list (2026-10-23 Highlighter family — both faces now in the profiles,
+  // and any FUTURE third face dies here instead of on a live page).
+  if (!paramsHeadingHit) {
+    const markerInProse = parts.some((part) => !part.fence
+      && part.text.split('\n').some((line) => PARAMS_MARKER.test(line.trim())));
+    if (markerInProse) {
+      throw typedError(
+        REJECTION_CODES.PARAMS_SECTION_UNPARSED,
+        `${pageName}: a **PARAMETERS** section marker is present but no profile paramsHeading matched it`,
+      );
+    }
+  }
 
   // return type: first *type* line in the section
   let returnType = null;

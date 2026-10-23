@@ -210,6 +210,22 @@ function resolveCandidateMarkdownLinks(candidate, { resolveLink, prPath }) {
   }
 }
 
+// Fence-aware description join (2026-10-23 pymilvus Highlighter wall): a
+// bullet description's nested fenced block flattens into the prose join as
+// backtick garbage that the N2 normalizer then mangles into "An option that
+// e f.". Fenced regions carry no prose meaning in a string-typed parameter
+// description — drop them and keep the surrounding prose.
+function proseDescriptionJoin(lines) {
+  const prose = [];
+  let inFence = false;
+  for (const line of lines || []) {
+    if (/^```/.test(String(line).trim())) { inFence = !inFence; continue; }
+    if (inFence) continue;
+    prose.push(line);
+  }
+  return prose.join(' ');
+}
+
 function toField(entry, profile) {
   const structured = profile.structured || {};
   const type = entry.type || entry.builderArgType || null;
@@ -218,7 +234,7 @@ function toField(entry, profile) {
     type,
     required: entry.required === true,
     audience: 'shared',
-    description: plainText((entry.descriptionLines || []).join(' ')),
+    description: plainText(proseDescriptionJoin(entry.descriptionLines)),
     ...(entry.defaultValue != null ? { defaultValue: entry.defaultValue } : {}),
   };
   if (!field.description && type && structured.typedParamFallbackDescription) {
@@ -237,7 +253,7 @@ function getterToField(getter) {
     type: getter.type || null,
     resultFieldKind: 'method',
     audience: 'shared',
-    description: plainText((getter.descriptionLines || []).join(' ')),
+    description: plainText(proseDescriptionJoin(getter.descriptionLines)),
   };
   if (Array.isArray(getter.children) && getter.children.length > 0) {
     field.children = getter.children.map(getterToField);
@@ -273,29 +289,29 @@ const PYTHON_N2_ARTICLE_START = /^(?:The|A|An)\b/;
 const PYTHON_N2_PLURAL_START = /^(?:(?:Files|Paths|URLs|IDs|Keys|Options|Values|Items|Records|Entities|Parameters|Settings)\b|[A-Z][A-Za-z-]*(?:\s+[a-z][A-Za-z-]*)*\s+(?:files|paths|urls|ids|keys|options|values|items|records|entities|parameters|settings)\b)/;
 const PYTHON_N2_FRAGMENT_START = /^(?:url|uri|id|name|path|key|token|description)\s+of\b/i;
 const PYTHON_N2_START_RULES = [
-  [/^Default: `([^`]+)`\s+(.*)$/i, (m) => `${normalizePythonStart(m[2])} Defaults to \`${m[1]}\`.`],
-  [/^Optional (.*)$/i, (m) => `An optional ${m[1]}`],
-  [/^Whether (.*?)([.!?]?$)/i, (m) => `A flag that indicates whether ${m[1]}${m[2]}`],
-  [/^Temporarily (.*)$/i, (m) => `An option to temporarily ${m[1]}`],
-  [/^Extract (.*)$/i, (m) => `An option to extract ${m[1]}`],
-  [/^(Determines|Refines|Groups|Sets|Keeps|Returns|Filters|Limits|Controls|Applies|Instructs|Overrides|Specifies|Defines|Uses|Allows|Enables|Disables|Carries|Holds|Contains|Includes|Provides|Supports|Accepts|Reads|Waits|Streams|Dumps|Lists|Checks) (.*)$/i, (m) => `An option that ${m[1].toLowerCase()}${m[2] ? ` ${m[2]}` : ''}`],
-  [/^This (?:param|parameter|option|value|field|argument|setting)s?(,.*)? (.*)$/i, (m) => `An option${m[1] || ''} ${m[2]}`],
-  [/^This (?:param|parameter|option|value|field|argument|setting) (is|has|does|can|will|should|must|applies|works|behaves|takes|uses)( .*)$/i, (m) => `An option that ${m[1]}${m[2]}`],
-  [/^Must be (.*)$/i, (m) => `An option that must be ${m[1]}`],
-  [/^Required for (.*)$/i, (m) => `An option required for ${m[1]}`],
-  [/^Required when (.*)$/i, (m) => `An option required when ${m[1]}`],
-  [/^Timeout (.*)$/i, (m) => `The timeout ${m[1]}`],
-  [/^Time (limit|window|period|interval) (.*)$/i, (m) => `The time ${m[1]} ${m[2]}`],
-  [/^Name of (.*)$/i, (m) => `The name of ${m[1]}`],
-  [/^Type of (.*)$/i, (m) => `The type of ${m[1]}`],
-  [/^Number of (.*)$/i, (m) => `The number of ${m[1]}`],
-  [/^List of (.*)$/i, (m) => `A list of ${m[1]}`],
-  [/^Dictionary of (.*)$/i, (m) => `A dictionary of ${m[1]}`],
-  [/^Collection name(.*)$/i, (m) => `The collection name${m[1]}`],
-  [/^Field name(.*)$/i, (m) => `The field name${m[1]}`],
-  [/^Index name(.*)$/i, (m) => `The index name${m[1]}`],
-  [/^Partition names?(.*)$/i, (m) => `The partition name${m[1]}`],
-  [/^Search results (.*)$/i, (m) => `Search results ${m[1]}`],
+  [/^Default: `([^`]+)`\s+(.*)$/i, (match, def, rest) => `${normalizePythonStart(rest)} Defaults to \`${def}\`.`],
+  [/^Optional (.*)$/i, (match, p1, p2) => `An optional ${p1}`],
+  [/^Whether (.*?)([.!?]?$)/i, (match, body, tail) => `A flag that indicates whether ${body}${tail}`],
+  [/^Temporarily (.*)$/i, (match, p1, p2) => `An option to temporarily ${p1}`],
+  [/^Extract (.*)$/i, (match, p1, p2) => `An option to extract ${p1}`],
+  [/^(Determines|Refines|Groups|Sets|Keeps|Returns|Filters|Limits|Controls|Applies|Instructs|Overrides|Specifies|Defines|Uses|Allows|Enables|Disables|Carries|Holds|Contains|Includes|Provides|Supports|Accepts|Reads|Waits|Streams|Dumps|Lists|Checks) (.*)$/i, (match, p1, p2) => `An option that ${p1.toLowerCase()}${p2 ? ` ${p2}` : ''}`],
+  [/^This (?:param|parameter|option|value|field|argument|setting)s?(,.*)? (.*)$/i, (match, p1, p2) => `An option${p1 || ''} ${p2}`],
+  [/^This (?:param|parameter|option|value|field|argument|setting) (is|has|does|can|will|should|must|applies|works|behaves|takes|uses)( .*)$/i, (match, p1, p2) => `An option that ${p1}${p2}`],
+  [/^Must be (.*)$/i, (match, p1, p2) => `An option that must be ${p1}`],
+  [/^Required for (.*)$/i, (match, p1, p2) => `An option required for ${p1}`],
+  [/^Required when (.*)$/i, (match, p1, p2) => `An option required when ${p1}`],
+  [/^Timeout (.*)$/i, (match, p1, p2) => `The timeout ${p1}`],
+  [/^Time (limit|window|period|interval) (.*)$/i, (match, p1, p2) => `The time ${p1} ${p2}`],
+  [/^Name of (.*)$/i, (match, p1, p2) => `The name of ${p1}`],
+  [/^Type of (.*)$/i, (match, p1, p2) => `The type of ${p1}`],
+  [/^Number of (.*)$/i, (match, p1, p2) => `The number of ${p1}`],
+  [/^List of (.*)$/i, (match, p1, p2) => `A list of ${p1}`],
+  [/^Dictionary of (.*)$/i, (match, p1, p2) => `A dictionary of ${p1}`],
+  [/^Collection name(.*)$/i, (match, p1, p2) => `The collection name${p1}`],
+  [/^Field name(.*)$/i, (match, p1, p2) => `The field name${p1}`],
+  [/^Index name(.*)$/i, (match, p1, p2) => `The index name${p1}`],
+  [/^Partition names?(.*)$/i, (match, p1, p2) => `The partition name${p1}`],
+  [/^Search results (.*)$/i, (match, p1, p2) => `Search results ${p1}`],
 ];
 
 function normalizePythonStart(text) {

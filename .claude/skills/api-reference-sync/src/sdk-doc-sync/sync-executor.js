@@ -1044,7 +1044,13 @@ class SyncExecutor {
   async _verifyCopyTargetPlacement(plan, result, artifact = null, action = null) {
     const attestation = (plan.invariantAttestations || [])
       .find((entry) => entry?.id === 'api.versioned-tree-delta');
-    if (!attestation || attestation.decision !== 'COPY_PATCH_AND_REPOINT') return;
+    // Both copy decisions gate here — the WITH_CATEGORY_CREATE variant used
+    // to fall through entirely, skipping the live containment chain AND the
+    // same-title uniqueness/adoption guard (2026-10-23 Database:use_database
+    // wall: a fourth same-title copy minted beside three orphans).
+    if (!attestation
+      || (attestation.decision !== 'COPY_PATCH_AND_REPOINT'
+        && attestation.decision !== 'COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE')) return;
     const chain = plan.target?.folderAncestry;
     if (!Array.isArray(chain) || chain.length === 0) {
       // Kernel v3 binds a chain into every plain-copy plan; a v3+ attestation
@@ -1094,22 +1100,29 @@ class SyncExecutor {
       const collisionTokens = String(error.details?.collisionTokens || '')
         .split(',').map((token) => token.trim())
         .filter((token) => token && token !== '(unknown token)');
-      if (collisionTokens.length !== 1) throw error;
+      if (collisionTokens.length === 0) throw error;
       if (!nonEmptyString(plan.source?.recordId)) throw error;
       if (typeof this.tokenReferenceReader?.listTokenReferences !== 'function') throw error;
+      // Replay-after-partial with sibling orphans (2026-10-23
+      // Database:use_database): several same-title docs may already sit in
+      // the folder from earlier failed rounds, but exactly ONE is the plan's
+      // own landed product — the one the repointed record links. Adopt that
+      // one; unlinked strangers stay orphans for the operator's disposal
+      // pass and multiple linked collisions stay a hard refusal.
+      const linked = [];
       for (const collisionToken of collisionTokens) {
         const references = await this.tokenReferenceReader
           .listTokenReferences({ documentToken: collisionToken });
         const recordIds = referenceRecordIds(references);
-        if (!recordIds.includes(plan.source.recordId)) continue;
-        result.adoptedDocument = {
-          token: collisionToken,
-          title: error.details.title,
-          folderToken: error.details.folderToken,
-        };
-        return;
+        if (recordIds.includes(plan.source.recordId)) linked.push(collisionToken);
       }
-      throw error;
+      if (linked.length !== 1) throw error;
+      result.adoptedDocument = {
+        token: linked[0],
+        title: error.details.title,
+        folderToken: error.details.folderToken,
+      };
+      return;
     }
   }
 

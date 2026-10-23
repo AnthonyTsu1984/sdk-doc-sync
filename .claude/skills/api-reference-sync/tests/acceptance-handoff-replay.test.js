@@ -9,11 +9,10 @@
 // scan-state-entry producer) cost a live burn to discover. These tests pin the
 // seam OFFLINE the same way golden-replay pinned the materialization chain:
 //
-//   T1 — the dwf template's REAL flags (extracted from the template source,
-//        not hand-copied) must survive sdk-doc-sync's argument semantics and
-//        drive the acceptance targets chain. Before the P0-1 fix this was
-//        red: the template fed a targets.json PATH to --final-targets, whose
-//        CLI semantics is a "Milvus,Zilliz" subset string.
+//   T1 — RETIRED 2026-10-23 with the dwf template (redesign: the
+//        straight-line runner bin/sdk-release-sync.js replaced the template
+//        orchestration). The acceptance-targets chain T1 protected is now
+//        pinned by the runner's engine argv + tests/sdk-release-sync.test.js.
 //   T8 — the frozen m5-c4 create_role execution journal (byte-identical to
 //        the campaign artifact, digest-pinned) replays the acceptance
 //        identity chain against the frozen c4 session residue: record
@@ -46,8 +45,6 @@ const {
 } = require('../src/sdk-doc-sync/review-session-store');
 const { digestSemantic } = require('../../doc-ops-core/src/digest');
 
-const TEMPLATE = path.resolve(__dirname, '..', 'workflows', 'release-sync-campaign.dwf.ts');
-const template = fs.readFileSync(TEMPLATE, 'utf8');
 const FIXTURES = path.resolve(__dirname, 'conformance-fixtures', 'api-reference-sync', 'python-v30-sync');
 const JOURNAL_FIXTURE = path.join(FIXTURES, 'm5-c4-create-role-execution-journal.jsonl');
 const COPY_JOURNAL_FIXTURE = path.join(FIXTURES, 'm5-c6-remove-privileges-copy-journal.jsonl');
@@ -67,106 +64,6 @@ const C4_DOCUMENT_TOKEN = 'HRqudGOOnokInhxczclcADBDn8g';
 const COPY_UNIT = 'review:python:Authentication:remove_privileges_from_group';
 const COPY_RECORD_ID = 'recuAAA5Ub7Lhm';
 const COPY_DOCUMENT_TOKEN = 'Vm7vddGfYo6dYsxJi1Ycjuycnad';
-
-// ── T1: the template's real flags survive the consumer's semantics ──────────
-
-// Extract the sdkBaseArgs array literal from the template so the test always
-// judges the CURRENT template bytes (template drift changes this extraction,
-// never silently passes).
-function templateSdkBaseArgsBody() {
-    const match = template.match(/async function sdkBaseArgs\(\): Promise<string\[\]> \{\s*return \[([\s\S]*?)\];\s*\}/);
-    assert.ok(match, 'sdkBaseArgs array literal found in release-sync-campaign.dwf.ts');
-    return match[1];
-}
-
-test('T1/P0-1: sdkBaseArgs feeds the A2 ruling FILE through --targets-json, never --final-targets', () => {
-    const body = templateSdkBaseArgsBody();
-    assert.ok(body.includes('"--targets-json"'), 'sdkBaseArgs must pass --targets-json (the A2 ruling file entry)');
-    assert.equal((body.match(/"--final-targets"/g) || []).length, 0,
-        '--final-targets semantics is a "Milvus,Zilliz" subset string; a path value throws in parseFinalTargets (the c3/c4 seam)');
-});
-
-test('T1: the template-flags argv parses into the acceptance-expected argument slots', () => {
-    // Materialize the template argv with the same token order sdkBaseArgs
-    // builds; values are fixture-real where the consumer reads them.
-    const argv = [
-        'node', '.claude/skills/api-reference-sync/bin/sdk-doc-sync.js',
-        '--language', 'python',
-        '--sdk-dir', 'repos/pymilvus',
-        '--sdk-name', 'pymilvus',
-        '--sdk-version', 'v3.0.x',
-        '--release-scope', 'tmp/campaign/release-scope.json',
-        '--reference-context', 'tmp/campaign/reviewed-context.md',
-        '--targets-json', TARGETS_FIXTURE,
-    ];
-    const parsed = parseArgs(argv);
-    assert.equal(parsed.targetsJson, TARGETS_FIXTURE, '--targets-json lands the A2 ruling file');
-    assert.equal(parsed.finalTargets, undefined, '--final-targets is absent (KB-wide default governs)');
-    assert.equal(parsed.language, 'python');
-    assert.equal(parsed.releaseScope, 'tmp/campaign/release-scope.json');
-
-    // Absent --final-targets is the full default pair; the PRE-FIX shape (a
-    // path value into --final-targets) is the exact c3/c4 blow-up — keep the
-    // throw pinned so the wrong flag pair can never look green again.
-    assert.deepEqual(parseFinalTargets(parsed.finalTargets), ['Milvus', 'Zilliz']);
-    assert.throws(() => parseFinalTargets(TARGETS_FIXTURE), /comma-separated subset/);
-});
-
-test('T1: the A2 ruling file resolves per-unit acceptance Targets through the real resolver', () => {
-    const rulings = JSON.parse(fs.readFileSync(TARGETS_FIXTURE, 'utf8'));
-    // A2 ruling > category table > default: the shared ruling keeps the pair,
-    // the milvus-only ruling narrows that unit (never the KB default).
-    assert.deepEqual(targetsFinalForReviewUnit(C4_UNIT, rulings), ['Milvus', 'Zilliz']);
-    assert.deepEqual(
-        targetsFinalForReviewUnit('review:python:ResourceGroup:get_replicate_configuration', rulings),
-        ['Milvus'],
-    );
-});
-
-test('T1/P1-2: the exec argv presents --approve-batch-digest (the regeneration track the retry budget needs)', () => {
-    // Without the presentation, resolveCampaignApprovalForWrite always falls
-    // back to the PINNED unit digest and a regenerated retry dies at the write
-    // gate (APPROVED_BATCH_DIGEST_MISMATCH) — the retry budget was a promise
-    // the argv never kept.
-    assert.ok(template.includes('"--approve-batch-digest", unit.batchDigest'),
-        'runExecUnit must present the unit\'s current digest (pinned first, fresh after regeneration)');
-    const parsed = parseArgs([
-        'node', 'bin/sdk-doc-sync.js',
-        '--resume-session', 'tmp/campaign/session-state.json',
-        '--review-unit-id', C4_UNIT,
-        '--campaign-approval', 'tmp/campaign/receipt.json',
-        '--approve-batch-digest', 'sha256:5fd55a08d39f6bff5ed0335c48448c5e0dd7409df36f55d63ac044d1e5d311b9',
-        '--auto-accept', '--auto-approve',
-    ]);
-    assert.equal(parsed.approveBatchDigest, 'sha256:5fd55a08d39f6bff5ed0335c48448c5e0dd7409df36f55d63ac044d1e5d311b9');
-    assert.equal(parsed.campaignApproval, 'tmp/campaign/receipt.json');
-    assert.equal(parsed.autoAccept, true);
-});
-
-test('T1/P0-3: the residue session clear runs BEFORE the intake chain (c1 self-heal)', () => {
-    // The intake chain's tail dry-run creates the session with --session-state;
-    // a leftover session file from a mid-run freeze therefore killed the NEXT
-    // run at step 2 ("review session already exists") until the clear moved
-    // ahead of intake. Pin the source order.
-    const residueClear = template.indexOf('[PAYLOAD_RUNNER, "clear-session", paths.sessionPath, NONCE]');
-    const intakeRun = template.indexOf('[INTAKE_ASSEMBLE, "--run"]');
-    assert.ok(residueClear >= 0, 'a clear-session payload run exists in the template');
-    assert.ok(intakeRun > residueClear,
-        `the residue clear (offset ${residueClear}) must precede intake-assemble --run (offset ${intakeRun})`);
-    // The step-5 clear (of the intake-built pre-check session) stays — two
-    // clears, two duties.
-    assert.equal(template.indexOf('[PAYLOAD_RUNNER, "clear-session", paths.sessionPath, NONCE]', residueClear + 1) > 0, true,
-        'the second clear (intake pre-check session) is still present');
-});
-
-test('T1/P0-2: the template materializes the scan-state entry before the terminal close-session', () => {
-    assert.ok(template.includes('writeJsonFile(scanStateEntryPath'),
-        'the template writes the scan-state entry file the close-session phase reads');
-    assert.ok(template.includes('plan.terminal.scanStateEntry'),
-        'the entry content comes from the generator-pinned plan field');
-    // And the generator side is pinned in build-campaign-plan.test.js
-    // (terminal.scanStateEntry with the trigger-derived lastScannedTag).
-});
 
 // ── T8: the frozen c4 capsule journal replays the acceptance identity chain ──
 

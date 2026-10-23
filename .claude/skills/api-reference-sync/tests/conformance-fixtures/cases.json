@@ -576,9 +576,7 @@
       "partitionForeignCode": "GROUPING_PARTITION_FOREIGN",
       "lineageUnboundCode": "GROUPING_LINEAGE_UNBOUND",
       "mapMissingCode": "SCOUT_IDENTITY_MAP_MISSING",
-      "cliBuilt": true,
-      "receiptRecorded": true,
-      "receiptRefusedCode": "GROUPING_APPROVAL_INVALID"
+      "cliBuilt": true
     }
   },
   {

@@ -27,7 +27,6 @@ const {
   validateCampaignApprovalReceipt,
   writeCampaignApprovalReceipt,
 } = require('../src/sdk-doc-sync/campaign-approval');
-const { main } = require('../scripts/record-campaign-approval');
 
 function scope(overrides = {}) {
   return { language: 'python', sdkName: 'pymilvus', track: 'v2.6.x', releaseRange: 'v2.6.12..v2.6.17', actions: [{ stableId: 'python:BulkImport:bulk_import' }], ...overrides };
@@ -168,31 +167,6 @@ test('resolveCampaignApprovalForWrite refuses a malformed approval before chaini
     () => resolveCampaignApprovalForWrite({ approval: { schemaVersion: 1, gate: 'APPROVE_GROUPING' }, scope: scope() }),
     (error) => error.code === CAMPAIGN_PLAN_INVALID,
   );
-});
-
-test('the CLI records a receipt and prints the APPROVE_CAMPAIGN reply', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-approval-cli-'));
-  const write = (name, value) => { const p = path.join(dir, name); fs.writeFileSync(p, JSON.stringify(value)); return p; };
-  const scopePath = write('scope.json', scope());
-  const groupingPath = write('grouping.json', { proposals: [], version: 1 });
-  const specPath = write('spec.json', { language: 'python', track: 'v2.6.x', candidates: {} });
-
-  const writes = [];
-  const io = { stdout: { write: (text) => writes.push(text) }, stderr: { write: (text) => writes.push(`ERR:${text}`) } };
-  const code = main([
-    'node', 'record-campaign-approval.js',
-    '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath,
-    '--batch-digest', 'sha256:' + '9'.repeat(64),
-    '--approvals-dir', dir,
-  ], io);
-  assert.equal(code, 0, writes.join(''));
-  assert.match(writes.join(''), /Reply: APPROVE_CAMPAIGN sha256:[0-9a-f]{64}/);
-
-  // Re-running against the same plan keeps the original receipt.
-  const secondWrites = [];
-  const io2 = { stdout: { write: (text) => secondWrites.push(text) }, stderr: { write: () => {} } };
-  assert.equal(main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--batch-digest', 'sha256:' + '9'.repeat(64), '--approvals-dir', dir], io2), 0);
-  assert.match(secondWrites.join(''), /already recorded/);
 });
 
 // --- batch 16 slice 4.5: units-based approvals (P1(b) combined digest, P0-2
@@ -366,44 +340,4 @@ test('dual-track batch acceptance: pinned digest executes, fresh digest regenera
     () => resolveCampaignApprovalForWrite({ approval, scope: scope(), presentedUnitId: 'python:Collections:alpha', presentedBatchDigest: 'garbage', chainComponents: chain }),
     (error) => error.code === CAMPAIGN_PLAN_INVALID,
   );
-});
-
-test('the CLI records a units receipt and keeps the reply line identical', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'campaign-approval-units-'));
-  const write = (name, value) => { const p = path.join(dir, name); fs.writeFileSync(p, JSON.stringify(value)); return p; };
-  const scopePath = write('scope.json', scope());
-  const groupingPath = write('grouping.json', { proposals: [], version: 1 });
-  const specPath = write('spec.json', { language: 'python', track: 'v2.6.x', candidates: {} });
-  // reviewUnitPreviews shape, unsorted, with presentation extras.
-  const previewsPath = write('previews.json', { units: [...unitSet().reverse()].map((unit) => ({ ...unit, actionIds: ['a1'] })) });
-
-  const writes = [];
-  const io = { stdout: { write: (text) => writes.push(text) }, stderr: { write: (text) => writes.push(`ERR:${text}`) } };
-  const code = main([
-    'node', 'record-campaign-approval.js',
-    '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath,
-    '--unit-digests', previewsPath,
-    '--approvals-dir', dir,
-  ], io);
-  assert.equal(code, 0, writes.join(''));
-  assert.match(writes.join(''), /Reply: APPROVE_CAMPAIGN sha256:[0-9a-f]{64}/);
-
-  const digest = writes.join('').match(/sha256:[0-9a-f]{64}/)[0];
-  const receipt = JSON.parse(fs.readFileSync(path.join(dir, `${digest}.json`), 'utf8'));
-  assert.deepEqual(receipt.units, sortApprovalUnits(unitSet()));
-  assert.equal(receipt.components.batchDigest, combinedUnitsDigest(unitSet()));
-
-  // Exactly one of --batch-digest / --unit-digests.
-  const both = main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--batch-digest', 'sha256:' + '9'.repeat(64), '--unit-digests', previewsPath, '--approvals-dir', dir], io);
-  assert.equal(both, 1);
-  const neither = main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--approvals-dir', dir], io);
-  assert.equal(neither, 1);
-  assert.match(writes.join(''), /exactly one of --batch-digest \/ --unit-digests/);
-
-  // A duplicated unit id is refused (review P2-5): membership must never pick
-  // a winner from a shrunken set.
-  const dupPath = write('dup.json', { units: [unitSet()[0], { ...unitSet()[0], batchDigest: 'sha256:' + 'c'.repeat(64) }] });
-  const dup = main(['node', 'record-campaign-approval.js', '--scope', scopePath, '--grouping', groupingPath, '--candidate-spec', specPath, '--unit-digests', dupPath, '--approvals-dir', dir], io);
-  assert.equal(dup, 1);
-  assert.match(writes.join(''), /appears more than once/);
 });

@@ -2236,19 +2236,9 @@ scenarios['grouping-proposal-governance'] = async () => {
   const cliBuilt = built.status === 0
     && JSON.parse(fs.readFileSync(outputFile, 'utf8')).lineage.scopeDigest === digestSemantic(scope);
 
-  const recorder = path.join(__dirname, '..', '..', 'scripts', 'record-grouping-approval.js');
-  const approvalsDir = path.join(temp, 'approvals');
-  const receiptRun = spawnSync(process.execPath, [
-    recorder, '--proposal', outputFile, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
-  const receiptRecorded = receiptRun.status === 0
-    && fs.existsSync(path.join(approvalsDir, `${groupingProposalDigest(proposal)}.json`));
-
-  const handmade = path.join(temp, 'handmade.json');
-  fs.writeFileSync(handmade, JSON.stringify({ schemaVersion: 1, units: [] }));
-  const refused = spawnSync(process.execPath, [
-    recorder, '--proposal', handmade, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
+  // 2026-10-23 redesign: the record-grouping-approval CLI is retired with the
+  // operator ceremony. The builder (build-grouping-proposal.js) stays — the
+  // intake chain regenerates the proposal deterministically.
 
   return {
     lineageBound,
@@ -2257,10 +2247,6 @@ scenarios['grouping-proposal-governance'] = async () => {
     lineageUnboundCode,
     mapMissingCode,
     cliBuilt,
-    receiptRecorded,
-    receiptRefusedCode: refused.status === 1 && /GROUPING_APPROVAL_INVALID/.test(refused.stderr || '')
-      ? 'GROUPING_APPROVAL_INVALID'
-      : null,
   };
 };
 

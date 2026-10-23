@@ -38,7 +38,7 @@
     },
     {
       "id": "api.phase-gates",
-      "description": "Keep grouping and write approval as separate gates; the write approval authorizes acceptance (2026-10-16 ruling).",
+      "description": "Operator approves the unit list before writes (2026-10-23 redesign: digest gate ceremony retired; the write+verify+finalize WIP→Draft runs as one convergence step per unit; no sha256 approval lines).",
       "fixtureIds": [
         "phase-gates"
       ]

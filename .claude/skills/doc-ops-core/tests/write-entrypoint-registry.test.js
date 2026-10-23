@@ -84,7 +84,12 @@ test('tracked entrypoint registry covers the complete frozen inventory with hone
   //     (P1-2 2026-10-21: shared runner replacing template inline node -e
   //     payloads — spawns child CLIs, writes only local tmp artifacts, the
   //     write boundary staying with each child entrypoint), 117→118.
-  assert.equal(discovered.length, 118);
+  //   - 2026-10-23 straight-line redesign: retired 9 orchestration entrypoints
+  //     (dwf-payload-runner, build-campaign-plan, campaign-settle,
+  //     record-campaign-approval, record-grouping-approval, gate-presentation,
+  //     gate-presentation-check, revision-unit-digests, bin/campaign-run) and
+  //     added the canonical runner bin/sdk-release-sync.js, 118→110.
+  assert.equal(discovered.length, 110);
   assert.deepEqual(result, { valid: true, errors: [] });
   const canonical = registry.entries.find((entry) => entry.path.endsWith('/sdk-doc-sync.js'));
   assert.equal(canonical.classification, 'canonical-governed');

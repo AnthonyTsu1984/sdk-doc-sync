@@ -43,19 +43,23 @@ test('api-reference-sync never instructs routine version sync to delete historic
   assert.doesNotMatch(content, /Delete old doc/);
 });
 
-test('api-reference-sync exposes deterministic batch approval, recovery, and acceptance lineage', () => {
+test('api-reference-sync exposes deterministic convergence, recovery, and WIP safety (2026-10-23 redesign)', () => {
   const content = skill('api-reference-sync');
   assert.match(content, /capabilities\.json/);
-  assert.match(content, /proposedExecutionBatch/);
-  assert.match(content, /--approve-batch-digest/);
-  assert.match(content, /EXECUTION_RECONCILIATION_REQUIRED/);
-  assert.match(content, /digest-bound per-unit receipt/);
+  assert.match(content, /sdk-release-sync\.js/);
+  assert.match(content, /单单元失败不冻结全局/);
+  assert.match(content, /WIP 兜底/);
+  assert.match(content, /recover/);
+  // 仪式面不得回流：digest 门禁/收据对账已退役
+  assert.doesNotMatch(content, /APPROVE_WRITES sha256/);
+  assert.doesNotMatch(content, /EXECUTION_RECONCILIATION_REQUIRED/);
 });
 
-test('api-reference-sync: the write approval authorizes acceptance (2026-10-16 ruling)', () => {
+test('api-reference-sync: the operator approves the unit list, and write→verify→Draft is one convergence step (2026-10-23 redesign)', () => {
   const content = skill('api-reference-sync');
-  assert.match(content, /Write approval authorizes Acceptance Finalization/i);
-  assert.match(content, /APPROVE_DOCUMENT.*APPROVE_ACCEPTANCE.*retired/is);
+  assert.match(content, /explicit approval of the unit list/i);
+  assert.match(content, /写→验→Draft/);
+  assert.match(content, /WIP→Draft/);
 });
 
 test('localized-doc-sync uses current table-aware translator options', () => {

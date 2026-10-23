@@ -29,7 +29,6 @@ test('sdk-release-scout CLI path exists', () => {
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-release-impact.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'zilliz-cli-handwritten-audit.js')), true);
   assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'sdk-document-rollback.js')), true);
-  assert.equal(fs.existsSync(path.join(skillRoot, 'bin', 'campaign-run.js')), true);
 });
 
 test('sdk-doc-sync planning helper scripts exist', () => {
@@ -43,16 +42,11 @@ test('sdk-doc-sync planning helper scripts exist', () => {
     'audit-track-topology.js',
     'compose-pr-reconcile-candidate-spec.js',
     'compare-update-spec-context.js',
-    'gate-presentation.js',
-    'gate-presentation-check.js',
     'inject-includes.js',
     'intake-assemble.js',
     'intake-preflight.js',
-    'dwf-payload-runner.js',
     'propose-audience.js',
     'reconcile-content.js',
-    'record-campaign-approval.js',
-    'record-grouping-approval.js',
     'render-grouping-inheritance-table.js',
   ]) {
     assert.equal(fs.existsSync(path.join(skillRoot, 'scripts', script)), true, `Missing script: ${script}`);
@@ -108,13 +102,10 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/bitable-writer.test.js',
     '.claude/skills/api-reference-sync/tests/block-registry.test.js',
     '.claude/skills/api-reference-sync/tests/blocks-to-markdown.test.js',
-    '.claude/skills/api-reference-sync/tests/build-campaign-plan.test.js',
     '.claude/skills/api-reference-sync/tests/build-revision-scope.test.js',
     '.claude/skills/api-reference-sync/tests/campaign-approval.test.js',
     '.claude/skills/api-reference-sync/tests/campaign-completion.test.js',
     '.claude/skills/api-reference-sync/tests/campaign-plan.test.js',
-    '.claude/skills/api-reference-sync/tests/campaign-run.test.js',
-    '.claude/skills/api-reference-sync/tests/campaign-settle.test.js',
     '.claude/skills/api-reference-sync/tests/cli-rest-renderers.test.js',
     '.claude/skills/api-reference-sync/tests/code-variants.test.js',
     '.claude/skills/api-reference-sync/tests/compare-update-spec-context.test.js',
@@ -131,8 +122,6 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/docx-section-patcher.test.js',
     '.claude/skills/api-reference-sync/tests/dump-bitable-snapshot.test.js',
     '.claude/skills/api-reference-sync/tests/dump-pr-pages.test.js',
-    '.claude/skills/api-reference-sync/tests/dwf-payload-runner.test.js',
-    '.claude/skills/api-reference-sync/tests/dwf-template-lint.test.js',
     '.claude/skills/api-reference-sync/tests/evidence-manifest.test.js',
     '.claude/skills/api-reference-sync/tests/execution-outcome.test.js',
     '.claude/skills/api-reference-sync/tests/failure-class.test.js',
@@ -140,8 +129,6 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/feishu-block-safety.test.js',
     '.claude/skills/api-reference-sync/tests/feishu-client.test.js',
     '.claude/skills/api-reference-sync/tests/finalize-acceptance-cli.test.js',
-    '.claude/skills/api-reference-sync/tests/gate-presentation-check.test.js',
-    '.claude/skills/api-reference-sync/tests/gate-presentation.test.js',
     '.claude/skills/api-reference-sync/tests/golden-replay.test.js',
     '.claude/skills/api-reference-sync/tests/grouping-proposal.test.js',
     '.claude/skills/api-reference-sync/tests/identity-reconciliation.test.js',
@@ -199,8 +186,7 @@ test('sdk-doc-sync --list reports sorted tests without executing them', () => {
     '.claude/skills/api-reference-sync/tests/rest-track-review-cli.test.js',
     '.claude/skills/api-reference-sync/tests/rest-zdoc-direct-edit-guidance.test.js',
     '.claude/skills/api-reference-sync/tests/review-session-store.test.js',
-    '.claude/skills/api-reference-sync/tests/revision-campaign.test.js',
-    '.claude/skills/api-reference-sync/tests/revision-unit-digests.test.js',
+    '.claude/skills/api-reference-sync/tests/revision-apply-cli.test.js',
     '.claude/skills/api-reference-sync/tests/rollback-executor.test.js',
     '.claude/skills/api-reference-sync/tests/rollback-planner.test.js',
     '.claude/skills/api-reference-sync/tests/rust-scanner.test.js',

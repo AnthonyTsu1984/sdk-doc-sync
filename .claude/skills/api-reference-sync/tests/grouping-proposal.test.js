@@ -333,46 +333,6 @@ test('formatFatal prefixes typed codes and falls back for plain errors', () => {
   assert.equal(formatFatal(new Error('boom')), 'Fatal error: boom');
 });
 
-test('record-grouping-approval writes a digest-keyed durable receipt, idempotently', () => {
-  const recorder = path.join(__dirname, '..', 'scripts', 'record-grouping-approval.js');
-  const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'grouping-approval-'));
-  const scope = makeScope(scopeActions);
-  const identityMap = makeIdentityMap();
-  const proposal = createGroupingProposal({ scope, identityMap, ...happyDecisions() });
-  const proposalFile = path.join(temp, 'proposal.json');
-  fs.writeFileSync(proposalFile, stableGroupingProposalJson(proposal));
-  const approvalsDir = path.join(temp, 'approvals');
-
-  const first = spawnSync(process.execPath, [
-    recorder, '--proposal', proposalFile, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
-  assert.equal(first.status, 0, `recorder failed: ${first.stderr}`);
-  const digest = groupingProposalDigest(proposal);
-  const receiptPath = path.join(approvalsDir, `${digest}.json`);
-  const receipt = JSON.parse(fs.readFileSync(receiptPath, 'utf8'));
-  assert.equal(receipt.gate, 'APPROVE_GROUPING');
-  assert.equal(receipt.proposalDigest, digest);
-  assert.equal(receipt.approvalCommand, `APPROVE_GROUPING ${digest}`);
-  assert.ok(receipt.approvedAt);
-
-  // First-write-wins: the original approvedAt survives a re-record.
-  const again = spawnSync(process.execPath, [
-    recorder, '--proposal', proposalFile, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
-  assert.equal(again.status, 0);
-  assert.match(again.stdout, /already recorded/);
-  assert.equal(JSON.parse(fs.readFileSync(receiptPath, 'utf8')).approvedAt, receipt.approvedAt);
-
-  // A schema-invalid (hand-assembled) proposal never receives a receipt.
-  const handmade = path.join(temp, 'handmade.json');
-  fs.writeFileSync(handmade, JSON.stringify({ schemaVersion: 1, units: [] }));
-  const refused = spawnSync(process.execPath, [
-    recorder, '--proposal', handmade, '--approvals-dir', approvalsDir,
-  ], { encoding: 'utf8' });
-  assert.equal(refused.status, 1);
-  assert.match(refused.stderr, /GROUPING_APPROVAL_INVALID/);
-});
-
 test('buildGroupingApprovalReceipt embeds lineage and refuses invalid proposals', () => {
   const scope = makeScope(scopeActions);
   const identityMap = makeIdentityMap();

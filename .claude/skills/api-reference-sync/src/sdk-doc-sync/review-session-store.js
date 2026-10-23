@@ -698,7 +698,11 @@ function validateFinalizationEvidence({ reviewUnitId, executionJournalDigest, to
       throw new Error(`Draft transition records must cover every touched record exactly once: ${draft?.recordId || '(missing)'}`);
     }
     seen.add(draft.recordId);
-    if (draft.beforeProgress !== 'WIP' || draft.afterProgress !== 'Draft' || draft.verified !== true) {
+    // beforeProgress 'Draft' (2026-10-23 category VirtualNode amendment): a
+    // record the execution only repointed is born Draft — its acceptance is
+    // the verified no-write skip, not a WIP→Draft transition.
+    if (!(draft.beforeProgress === 'WIP' || draft.beforeProgress === 'Draft')
+      || draft.afterProgress !== 'Draft' || draft.verified !== true) {
       throw new Error(`Draft transition for record ${draft.recordId} is not a verified WIP→Draft transition`);
     }
   }

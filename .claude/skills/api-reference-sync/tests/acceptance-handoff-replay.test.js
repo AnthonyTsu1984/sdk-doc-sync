@@ -262,6 +262,41 @@ test('T8-full: the entire acceptance write path replays green against the frozen
     fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+test('T8-full: a record already at Draft (category VirtualNode) finalizes with zero governed writes', async () => {
+    // 2026-10-23 category-create acceptance wall: a WITH_CATEGORY_CREATE unit's
+    // touched set includes the VirtualNode record the execution only REPOINTED
+    // — born Draft, never WIP. The acceptance's WIP-or-Draft face lets it
+    // through, skips its governed write (its Targets were pinned by the
+    // baseline check), and the unit still finalizes.
+    const journalPath = JOURNAL_FIXTURE;
+    const { tmp, sessionPath, session, stateDigest } = loadResidueSessionWith(journalPath);
+    const { receipt } = c4Receipt(journalPath);
+    const writer = fakeBitableWriterFor(['Milvus', 'Zilliz']);
+    writer.listRecords = async () => [{ record_id: C4_RECORD_ID, fields: { Progress: 'Draft', Targets: ['Milvus', 'Zilliz'] } }];
+    writer.writes = [];
+
+    const nextSession = await acceptExecutedUnit({
+        session,
+        sessionPath,
+        sessionDigest: stateDigest,
+        reviewUnitId: C4_UNIT,
+        executionJournalPath: journalPath,
+        executionJournalDigest: C4_JOURNAL_DIGEST,
+        documentLinks: receipt.documentLinks,
+        recordLinks: receipt.recordLinks,
+        approvedBatchDigest: 'sha256:5fd55a08d39f6bff5ed0335c48448c5e0dd7409df36f55d63ac044d1e5d311b9',
+        targetsJson: TARGETS_FIXTURE,
+        bitableWriter: writer,
+        out: () => {},
+    });
+
+    assert.equal(writer.writes.length, 0, 'an already-Draft record takes no governed write');
+    assert.equal(unitStatusOf(nextSession, C4_UNIT), 'finalized');
+    const reloaded = loadReviewSessionState(sessionPath);
+    assert.equal(unitStatusOf(reloaded.session, C4_UNIT), 'finalized');
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test('T8-full: without the threaded approvedBatchDigest the acceptance refuses with the exact c5 message (fail-closed pin)', async () => {
     const journalPath = JOURNAL_FIXTURE;
     const { tmp, sessionPath, session, stateDigest } = loadResidueSessionWith(journalPath);

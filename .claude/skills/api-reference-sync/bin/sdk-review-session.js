@@ -499,13 +499,18 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
 
   // Pre-write verification: WIP progress and untouched Targets from the
   // unit's journal baseline — the same bar the campaign finalizer applied.
+  // A record already at Draft (2026-10-23 category VirtualNode: the
+  // execution only repointed its Docs link — the record is born Draft and
+  // never had a WIP phase) has no transition to run; its Targets-baseline
+  // check still applies, and the Draft write below skips it.
   const beforeRecords = await writer.listRecords({ pageSize: 500 });
   const beforeMap = new Map((beforeRecords || []).map((record) => [record.record_id, record]));
   for (const touched of prepared.touchedRecords) {
     const before = beforeMap.get(touched.recordId);
     if (!before) throw new Error(`Acceptance record ${touched.recordId} is missing`);
-    if (before.fields?.Progress !== 'WIP') {
-      throw new Error(`Acceptance record ${touched.recordId} must be WIP before the Draft transition, got ${before.fields?.Progress || '(blank)'}`);
+    const beforeProgress = before.fields?.Progress;
+    if (beforeProgress !== 'WIP' && beforeProgress !== 'Draft') {
+      throw new Error(`Acceptance record ${touched.recordId} must be WIP before the Draft transition, got ${beforeProgress || '(blank)'}`);
     }
     const expected = prepared.targetsBaseline.get(touched.actionId) || [];
     const actual = normalizedTargetsValue(before?.fields?.Targets);
@@ -531,6 +536,9 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
   const finalTargets = {};
   for (const touched of prepared.touchedRecords) {
     finalTargets[touched.recordId] = [...unitTargetsFinal];
+    // Already-Draft records (category VirtualNodes) get no governed write —
+    // their Targets were pinned by the baseline check above.
+    if (beforeMap.get(touched.recordId)?.fields?.Progress === 'Draft') continue;
     await writer.updateRecord(touched.recordId, { progress: 'Draft', targets: [...unitTargetsFinal] });
   }
   const afterRecords = await writer.listRecords({ pageSize: 500 });
@@ -545,7 +553,12 @@ async function acceptDocumentTwoGate({ session, sessionPath, sessionDigest, rece
     if (JSON.stringify(actualTargets) !== JSON.stringify(unitTargetsFinal)) {
       throw new Error(`Targets normalization for record ${touched.recordId} did not verify (got [${actualTargets.join(', ')}], expected [${unitTargetsFinal.join(', ')}])`);
     }
-    draftRecords.push({ recordId: touched.recordId, beforeProgress: 'WIP', afterProgress: 'Draft', verified: true });
+    draftRecords.push({
+      recordId: touched.recordId,
+      beforeProgress: beforeMap.get(touched.recordId)?.fields?.Progress || 'WIP',
+      afterProgress: 'Draft',
+      verified: true,
+    });
   }
 
   const acceptedAt = new Date().toISOString();

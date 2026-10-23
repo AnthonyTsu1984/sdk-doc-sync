@@ -1754,29 +1754,32 @@ class SdkDocSync {
                         || file.obj_token === observed.createdDocumentToken
                     ));
                     observed.createdDocumentFolderToken = created ? folderToken : null;
-                    // Kernel v5 copy-structure mirror for the category-create
-                    // decision (post-write only: pre-write the category folder
-                    // does not exist yet). The freshly created category folder
-                    // must sit in a chain that mirrors the source section.
+                    // Kernel v5 post-write placement proof for the category-
+                    // create decision (post-write only: pre-write the category
+                    // folder does not exist yet). The decision's own
+                    // precondition is that the source track lacks the category,
+                    // so comparing the created folder's chain against the
+                    // SOURCE section is unsatisfiable by construction whenever
+                    // the create adds levels (scatter source — the 2026-10-23
+                    // py EmbeddingList/Highlighter wall). The reviewed plan is
+                    // the placement authority: the live chain of the minted
+                    // folder must equal the planned parent chain plus the
+                    // minted folder token.
                     if ((attestation.version || 0) >= 5
                         && created
-                        && plan.copySource?.placement?.versionRootToken
-                        && plan.copySource?.placement?.folderToken) {
+                        && Array.isArray(plan.target?.folderAncestry)
+                        && plan.target.folderAncestry.length > 0) {
                         try {
                             const mirrorListFolder = ({ folderToken: token, type }) => this.m2f.listFolder({ folderToken: token, type });
-                            const sourceNames = await deriveFolderChainNames({
-                                listFolder: mirrorListFolder,
-                                versionRootToken: plan.copySource.placement.versionRootToken,
-                                folderToken: plan.copySource.placement.folderToken,
-                            });
-                            const targetNames = await deriveFolderChainNames({
+                            const liveChain = await deriveFolderAncestry({
                                 listFolder: mirrorListFolder,
                                 versionRootToken: plan.target.versionRootToken,
                                 folderToken,
                             });
-                            observed.copyStructureMirrored = copyChainsMirror(sourceNames, targetNames);
+                            const expectedChain = [...plan.target.folderAncestry, folderToken];
+                            observed.categoryFolderChainMatchesPlan = JSON.stringify(liveChain) === JSON.stringify(expectedChain);
                         } catch (error) {
-                            observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'copyStructureMirror', message: error.message });
+                            observationErrors.push({ code: 'TREE_DELTA_OBSERVATION_FAILED', detail: 'categoryFolderChain', message: error.message });
                         }
                     }
                 } catch (error) {

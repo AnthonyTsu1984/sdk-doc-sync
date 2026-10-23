@@ -89,8 +89,19 @@ function executionTargetsBaseline(entries) {
 
 // Equality over normalized Targets values — the single canonicalizer every
 // Targets comparison (executor virtual-node guards, resume, finalize) shares.
+// 2026-10-23 export-face amendment (py v3.0 Database repoint wall): the scout
+// snapshot transcribes a multi-select cell lossily concatenated
+// ("MilvusZilliz"), and approved category-create plan bodies carry that
+// transcription face in expectedFields; the live API cell is the array face
+// (["Milvus","Zilliz"]). The lossy export cannot be split back, so when the
+// sorted faces disagree the no-separator join is the only reconciliation —
+// the Targets vocabulary has no composite value, and ordering stays pinned
+// by the canonicalizer's sort.
 function sameNormalizedTargets(left, right) {
-  return JSON.stringify(normalizedTargetsValue(left)) === JSON.stringify(normalizedTargetsValue(right));
+  const leftValues = normalizedTargetsValue(left);
+  const rightValues = normalizedTargetsValue(right);
+  if (JSON.stringify(leftValues) === JSON.stringify(rightValues)) return true;
+  return leftValues.join('') === rightValues.join('');
 }
 
 // Progress vocabulary. A record already marked Deprecated is terminal: its

@@ -674,6 +674,46 @@ test('verifyTreeDeltaPostconditions reports kernel v5 copy-structure mirror drif
     assert.equal(clean.ok, true);
 });
 
+test('verifyTreeDeltaPostconditions refuses a created category folder off the planned parent chain', () => {
+    const plan = {
+        stableId: 'cpp:Partitions:LoadPartitions',
+        source: { recordId: 'rec-load-partitions-v30', documentToken: 'doc-load-partitions-v26' },
+        inheritanceEvidence: inheritanceEvidence(),
+        invariantAttestations: [{
+            id: INVARIANT_ID,
+            version: 5,
+            inputDigest: sha('plan'),
+            decision: DECISIONS.COPY_PATCH_AND_REPOINT_WITH_CATEGORY_CREATE,
+            evidenceDigest: null,
+            requiredResourceDag: [],
+        }],
+    };
+    const observed = {
+        olderDocumentReferences: ['rec-load-partitions-v26'],
+        createdDocumentToken: 'doc-copy-new',
+        targetRecordDocumentToken: 'doc-copy-new',
+        categoryFolderToken: 'folder-partitions-v30',
+        categoryFolderLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        categoryNodeLink: 'https://zilliverse.feishu.cn/drive/folder/folder-partitions-v30',
+        createdDocumentFolderToken: 'folder-partitions-v30',
+        // Scatter-source create: no copyStructureMirrored verdict (the
+        // decision's own precondition contradicts a same-depth source); the
+        // plan-chain verdict is the placement proof.
+        categoryFolderChainMatchesPlan: false,
+    };
+    const drifted = verifyTreeDeltaPostconditions({ plan, observed });
+    assert.equal(drifted.ok, false);
+    assert.ok(drifted.errors.some((entry) => entry.code === 'TREE_DELTA_CATEGORY_FOLDER_CHAIN_DRIFT'));
+    const clean = verifyTreeDeltaPostconditions({ plan, observed: { ...observed, categoryFolderChainMatchesPlan: true } });
+    assert.equal(clean.ok, true);
+    // Observations without the verdict (pre-amendment plans) keep verifying.
+    const legacy = verifyTreeDeltaPostconditions({
+        plan,
+        observed: { ...observed, categoryFolderChainMatchesPlan: undefined },
+    });
+    assert.equal(legacy.ok, true);
+});
+
 test('verifyTreeDeltaPostconditions proves the executed transition and catches drift', () => {
     const plan = {
         stableId: 'cpp:Partitions:LoadPartitions',

@@ -49,6 +49,16 @@ test('sameNormalizedTargets compares every raw shape through the shared canonica
   assert.equal(sameNormalizedTargets([' Milvus '], ['Milvus']), true);
 });
 
+test('sameNormalizedTargets reconciles the lossy snapshot export face against the live cell face', () => {
+  // The scout snapshot transcribes the multi-select cell concatenated
+  // ("MilvusZilliz") and approved plan bodies carry that face; the live API
+  // cell is the array face. Join equality is the only lossless reconciliation.
+  assert.equal(sameNormalizedTargets(['Milvus', 'Zilliz'], ['MilvusZilliz']), true);
+  assert.equal(sameNormalizedTargets([{ text: 'Milvus' }, { text: 'Zilliz' }], 'MilvusZilliz'), true);
+  assert.equal(sameNormalizedTargets(['MilvusZilliz'], ['Zilliz']), false);
+  assert.equal(sameNormalizedTargets(['Milvus'], ['MilvusZilliz']), false);
+});
+
 test('isDeprecatedProgress recognizes the terminal Deprecated progress across single-select cell shapes', () => {
   assert.equal(isDeprecatedProgress('Deprecated'), true);
   assert.equal(isDeprecatedProgress({ text: 'Deprecated' }), true);

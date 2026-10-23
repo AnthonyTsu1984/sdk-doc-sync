@@ -638,6 +638,16 @@ function verifyTreeDeltaPostconditions({ plan, observed }) {
     if (observed?.copyStructureMirrored === false) {
       errors.push({ code: 'TREE_DELTA_COPY_STRUCTURE_DRIFT' });
     }
+    // Category-create placement proof (2026-10-23 plan-chain amendment): the
+    // post-write observation re-derives the minted folder's live chain; a
+    // false verdict means the folder no longer sits on the reviewed parent
+    // chain — the world, not the plan, diverged. Only runs for observations
+    // that carry the verdict (walk-bound kernel v5+ category-create plans;
+    // the scatter-source create cannot carry the old source-mirror verdict,
+    // whose same-depth demand the decision's own precondition contradicts).
+    if (observed?.categoryFolderChainMatchesPlan === false) {
+      errors.push({ code: 'TREE_DELTA_CATEGORY_FOLDER_CHAIN_DRIFT' });
+    }
     // Placement closure (2026-10-03 ruling: the copy must land under the
     // target track's tree). For WITH_CATEGORY_CREATE the expected folder is
     // the freshly created category folder; for the plain copy decision it is
